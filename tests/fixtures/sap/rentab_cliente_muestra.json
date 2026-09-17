@@ -1,0 +1,16 @@
+{
+  "d": {
+    "results": [
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPTN", "OrderPartyId": "15927", "Value": "13.5" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPIM", "OrderPartyId": "580", "Value": "5" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPEX", "OrderPartyId": "704", "Value": "8.2" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPTI", "OrderPartyId": "1123", "Value": "12" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPDS", "OrderPartyId": "2044", "Value": "9.75" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000010", "TrqType": "OHUB", "OrderPartyId": "3301", "Value": "15" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000010", "TrqType": "OH3P", "OrderPartyId": "3302", "Value": "18.4" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPSC", "OrderPartyId": "4110", "Value": "7" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPTN", "OrderPartyId": "5000", "Value": "-19.2" },
+      { "__metadata": { "type": "ZGW_RENTAB_CLI_SRV.RentabCliente" }, "SalesOrgId": "50000005", "TrqType": "OPIM", "OrderPartyId": "5001", "Value": "99.9" }
+    ]
+  }
+}
