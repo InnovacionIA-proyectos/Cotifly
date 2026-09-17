@@ -1,0 +1,104 @@
+# Stack de staging para Dokploy (Docker Swarm) — Bot Cotizador.
+#
+# Topología (C4-deployment §9):
+#   - bot-db          Postgres con volumen persistente. Solo red interna.
+#   - bot-mcp         MCP Server. **Solo red interna** (sin `ports`, sin Traefik):
+#                     nunca alcanzable desde internet.
+#   - bot-orquestador Único servicio expuesto, tras Traefik/TLS (webhook + PDFs).
+#                     Habla con el MCP por la red interna (MCP_URL=http://bot-mcp…).
+#
+# Todos los secretos se inyectan como variables de entorno de Dokploy; NUNCA van
+# en el repo. Ver DEPLOY.md para el listado y el aprovisionamiento en Google Cloud.
+
+networks:
+  interna:
+    driver: overlay
+    internal: true          # sin salida a internet: aísla mcp y db
+  web:
+    external: true
+    name: dokploy-network    # red de Traefik gestionada por Dokploy
+
+volumes:
+  pgdata:
+  pdfs:
+  tarifas:
+
+services:
+  bot-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [interna]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      restart_policy:
+        condition: any
+
+  bot-mcp:
+    image: ${REGISTRY}/bot-cotizador-mcp:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@bot-db:5432/${POSTGRES_DB}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      SAP_TM_MODO: ${SAP_TM_MODO:-export_json}
+      SAP_TM_EXPORT_PATH: ${SAP_TM_EXPORT_PATH:-/data/sap/rentab_cliente.json}
+      SAP_SALES_ORG_DEFAULT: ${SAP_SALES_ORG_DEFAULT:-50000005}
+      TARIFA_PROVIDER_DEFAULT: drive_flat_files
+      TARIFA_LOCAL_DIR: /data/tarifas
+      GOOGLE_SA_JSON: ${GOOGLE_SA_JSON:-/run/secrets/google_sa.json}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM:-cotizaciones@boterosoto.com.co}
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: ${PDF_BASE_URL}
+    volumes:
+      - pdfs:/data/pdfs
+      - tarifas:/data/tarifas
+    networks: [interna]        # NO se une a `web`: MCP jamás expuesto
+    depends_on: [bot-db]
+    deploy:
+      restart_policy:
+        condition: any
+
+  bot-orquestador:
+    image: ${REGISTRY}/bot-cotizador-orquestador:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: orquestador/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@bot-db:5432/${POSTGRES_DB}
+      MCP_URL: http://bot-mcp:8080/mcp/    # runner-puente al MCP interno
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-2.5-flash}
+      LLM_API_KEY: ${LLM_API_KEY}
+      GCHAT_PROJECT_NUMBER: ${GCHAT_PROJECT_NUMBER}
+      GCHAT_SUPPORT_SPACE: ${GCHAT_SUPPORT_SPACE}
+      GOOGLE_SA_JSON: ${GOOGLE_SA_JSON:-/run/secrets/google_sa.json}
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: ${PDF_BASE_URL}
+    volumes:
+      - pdfs:/data/pdfs        # comparte el volumen de PDFs para servir /pdfs/{folio}
+    networks: [interna, web]
+    depends_on: [bot-db, bot-mcp]
+    deploy:
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=dokploy-network
+        - traefik.http.routers.botcotizador.rule=Host(`${PUBLIC_HOST}`)
+        - traefik.http.routers.botcotizador.entrypoints=websecure
+        - traefik.http.routers.botcotizador.tls.certresolver=letsencrypt
+        - traefik.http.services.botcotizador.loadbalancer.server.port=8000

@@ -1,0 +1,249 @@
+# Stack de PRODUCCIÓN para Dokploy (Docker Swarm) — Bot Cotizador.
+#
+# Endurecido para clúster multi-nodo:
+#   - Reservas + límites de CPU/RAM por servicio (planificación y aislamiento).
+#   - Reprogramación entre nodos ante caída (restart_policy + rolling updates).
+#   - Servicios sin estado replicables; servicios con estado (BD, MinIO) con
+#     estrategia de almacenamiento explícita (ver "ALMACENAMIENTO" abajo).
+#
+# Topología (C4-deployment §9):
+#   Internet ──TLS──> Traefik ──> bot-orquestador ─┬── bot-mcp   (SOLO red interna)
+#                                                   ├── bot-minio (SOLO red interna)
+#                                                   └── bot-db    (SOLO red interna)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ALMACENAMIENTO Y MOVILIDAD ENTRE NODOS
+# ─────────────────────────────────────────────────────────────────────────────
+# Los servicios SIN estado (bot-mcp, bot-orquestador) se reprograman solos en otro
+# nodo si el suyo muere: no tienen datos que perder. Swarm los reubica por el
+# `restart_policy: condition: any`.
+#
+# Los servicios CON estado (bot-db, bot-minio) guardan datos en un volumen. Para que
+# puedan "moverse entre nodos" hay dos opciones — elige una con la variable
+# VOLUME_DRIVER:
+#
+#   A) VOLUME_DRIVER=local  (por defecto)  → el dato vive en el disco de UN nodo.
+#      Se ANCLA la BD/MinIO a ese nodo con una etiqueta (constraint) para que el dato
+#      y el servicio estén siempre juntos. Si ese nodo muere, el servicio NO se mueve
+#      con sus datos (habría que restaurar del backup). Es lo típico en clústeres
+#      pequeños. Requiere etiquetar el nodo de datos una sola vez:
+#          docker node update --label-add bot-data=true <NODO>
+#
+#   B) VOLUME_DRIVER=<driver-compartido> (nfs, longhorn, glusterfs, rexray…)
+#      → el volumen es de red, accesible desde cualquier nodo. Entonces la BD/MinIO
+#      SÍ se reprograman en otro nodo con sus datos intactos. Quita el constraint
+#      `bot-data` (comenta las líneas placement de bot-db y bot-minio). Requiere el
+#      plugin de volumen instalado en el clúster.
+#
+# En AMBOS casos el backup diario (scripts/backup_db.sh) es la red de seguridad real.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  interna:
+    driver: overlay
+    internal: true          # sin salida a internet: aísla mcp, minio y db
+  web:
+    external: true
+    name: dokploy-network    # red de Traefik gestionada por Dokploy
+
+volumes:
+  pgdata:
+    driver: ${VOLUME_DRIVER:-local}
+  miniodata:
+    driver: ${VOLUME_DRIVER:-local}
+  pdfs:
+    driver: ${VOLUME_DRIVER:-local}
+  tarifas:
+    driver: ${VOLUME_DRIVER:-local}
+  correo_tmp:
+    driver: ${VOLUME_DRIVER:-local}
+
+services:
+  bot-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [interna]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        # Ancla la BD al nodo de datos (VOLUME_DRIVER=local). Con volumen de red,
+        # comenta estas dos líneas para permitir su reprogramación en cualquier nodo.
+        constraints:
+          - node.labels.bot-data == true
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  bot-minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    networks: [interna]        # NO se une a `web`: bucket jamás expuesto
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      placement:
+        constraints:
+          - node.labels.bot-data == true
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
+  bot-mcp:
+    image: ${REGISTRY}/bot-cotizador-mcp:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@bot-db:5432/${POSTGRES_DB}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      SAP_TM_MODO: ${SAP_TM_MODO:-export_json}
+      SAP_TM_EXPORT_PATH: ${SAP_TM_EXPORT_PATH:-/data/sap/rentab_cliente.json}
+      SAP_SALES_ORG_DEFAULT: ${SAP_SALES_ORG_DEFAULT:-50000005}
+      TARIFA_PROVIDER_DEFAULT: drive_flat_files
+      TARIFA_LOCAL_DIR: /data/tarifas
+      GOOGLE_SA_JSON: ${GOOGLE_SA_JSON:-/run/secrets/google_sa.json}
+      DRIVE_TARIFARIO_FILE_ID: ${DRIVE_TARIFARIO_FILE_ID:-}
+      DRIVE_TARIFARIO_FOLDER_ID: ${DRIVE_TARIFARIO_FOLDER_ID:-}
+      # Storage de PDFs en el bucket MinIO (el MCP escribe; el orquestador lee).
+      PDF_STORAGE_MODO: ${PDF_STORAGE_MODO:-s3}
+      S3_ENDPOINT: bot-minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-bot-cotizador-pdfs}
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: ${PDF_BASE_URL}
+      # Correo por relay SMTP interno (remitente = comercial que confirma).
+      CORREO_HABILITADO: ${CORREO_HABILITADO:-false}
+      CORREO_MODO: ${CORREO_MODO:-smtp_relay}
+      SMTP_RELAY_HOST: ${SMTP_RELAY_HOST:-10.10.40.62}
+      SMTP_RELAY_PORT: ${SMTP_RELAY_PORT:-25}
+    volumes:
+      - pdfs:/data/pdfs
+      - tarifas:/data/tarifas
+      - correo_tmp:/data/correo_tmp
+    networks: [interna]        # NO se une a `web`: MCP jamás expuesto
+    depends_on: [bot-db, bot-minio]
+    deploy:
+      replicas: 2              # sin estado: 2 réplicas para alta disponibilidad
+      update_config:
+        parallelism: 1
+        order: start-first     # arranca la nueva antes de bajar la vieja (sin corte)
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      placement:
+        max_replicas_per_node: 1   # reparte las réplicas en nodos distintos
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M          # weasyprint (render PDF) es lo más pesado en RAM
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  bot-orquestador:
+    image: ${REGISTRY}/bot-cotizador-orquestador:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: orquestador/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@bot-db:5432/${POSTGRES_DB}
+      MCP_URL: http://bot-mcp:8080/mcp/    # runner-puente al MCP interno
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN}
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-flash-latest}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_RPM: ${LLM_RPM:-8}
+      GCHAT_PROJECT_NUMBER: ${GCHAT_PROJECT_NUMBER:-}
+      GCHAT_VERIFICAR_JWT: ${GCHAT_VERIFICAR_JWT:-true}
+      GCHAT_SUPPORT_SPACE: ${GCHAT_SUPPORT_SPACE:-}
+      GOOGLE_SA_JSON: ${GOOGLE_SA_JSON:-/run/secrets/google_sa.json}
+      # Storage de PDFs: el orquestador LEE del bucket para servir /pdfs/...
+      PDF_STORAGE_MODO: ${PDF_STORAGE_MODO:-s3}
+      S3_ENDPOINT: bot-minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-bot-cotizador-pdfs}
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: ${PDF_BASE_URL}
+      # Front web (Consola de Cotización): secreto de firma del token de sesión.
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET}
+      # Endpoints internos (POST /internal/sync-sheets, GET /sesiones/...).
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      # Tablero Looker: vuelca la BD a Google Sheets con el service account.
+      SHEETS_HABILITADO: ${SHEETS_HABILITADO:-false}
+      SHEETS_SPREADSHEET_ID: ${SHEETS_SPREADSHEET_ID:-}
+      SHEETS_SYNC_INTERVALO_SEG: ${SHEETS_SYNC_INTERVALO_SEG:-900}
+    volumes:
+      - pdfs:/data/pdfs        # comparte el volumen de PDFs (fallback modo volumen)
+    networks: [interna, web]
+    depends_on: [bot-db, bot-mcp, bot-minio]
+    deploy:
+      # 1 réplica a propósito: corre tareas de fondo (sync a Sheets, barrido de
+      # sesiones) que deben ser únicas. Swarm la reprograma en otro nodo si el suyo
+      # cae (restart_policy). Para HA con >1 réplica habría que elegir un líder.
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=dokploy-network
+        - traefik.http.routers.botcotizador.rule=Host(`${PUBLIC_HOST}`)
+        - traefik.http.routers.botcotizador.entrypoints=websecure
+        - traefik.http.routers.botcotizador.tls.certresolver=letsencrypt
+        - traefik.http.services.botcotizador.loadbalancer.server.port=8000

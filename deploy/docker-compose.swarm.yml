@@ -1,0 +1,149 @@
+# Despliegue Swarm del Bot Cotizador — gestionado por Dokploy (proyecto bot-cotizador).
+#
+# Fuente: git corporativo (BSGit/bot-cotizador). Dokploy (composeType=stack) hace
+# `docker stack deploy` de este archivo. Redeploy tras un ajuste = editar aquí,
+# `git push`, y "Redeploy" en el panel de Dokploy.
+#
+# Notas de este cluster (ver infra/DEPLOY.md y la bitácora del agente Dokploy):
+# - Todos los servicios se ANCLAN al worker (node.hostname == TBSNODO1-DKP): ahí hay
+#   disco (28 GB) y ahí están construidas las imágenes locales bot-cotizador-*.
+#   El manager está al límite de disco, por eso no se construye ni corre ahí.
+# - Los SECRETOS no viven en git: se leen del .env montado desde el worker
+#   (/home/dguerra/bot-cotizador-data/.env -> /app/.env). Igual google-sa.json.
+# - Cambios de CÓDIGO (Python): reconstruir las imágenes en el worker con
+#   deploy/rebuild-on-worker.sh y luego Redeploy en Dokploy. Cambios de CONFIG
+#   (este YAML): git push + Redeploy.
+
+networks:
+  bot-back:
+    driver: overlay
+    internal: true          # BD/MinIO/MCP sin egreso; solo malla interna
+  bot-edge:
+    driver: overlay         # egreso a internet para MCP/Orquestador (Gemini, Sheets, Drive)
+
+volumes:
+  bot_pgdata:
+  bot_miniodata:
+  bot_pdfs:
+  bot_tarifas:
+
+services:
+  bot-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: botcotizador
+    volumes:
+      - bot_pgdata:/var/lib/postgresql/data
+    networks: [bot-back]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d botcotizador"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.hostname == TBSNODO1-DKP]
+      restart_policy: { condition: any, delay: 5s }
+      resources:
+        limits: { cpus: "1.0", memory: 1024M }
+        reservations: { cpus: "0.25", memory: 256M }
+
+  bot-minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - bot_miniodata:/data
+    networks: [bot-back]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.hostname == TBSNODO1-DKP]
+      restart_policy: { condition: any, delay: 5s }
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+        reservations: { cpus: "0.1", memory: 128M }
+
+  bot-mcp:
+    image: bot-cotizador-mcp:latest
+    environment:
+      DATABASE_URL: postgresql+psycopg://bot:bot@bot-db:5432/botcotizador
+      SAP_TM_MODO: export_json
+      SAP_TM_EXPORT_PATH: /data/sap_export.json
+      TARIFA_PROVIDER_DEFAULT: drive_flat_files
+      TARIFA_LOCAL_DIR: /data/tarifas
+      GOOGLE_SA_JSON: /run/secrets/google-sa.json
+      PDF_STORAGE_MODO: s3
+      S3_ENDPOINT: bot-minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: bot-cotizador-pdfs
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: http://10.10.40.31:8091
+      CORREO_HABILITADO: "false"
+      CORREO_MODO: smtp_relay
+    volumes:
+      - bot_pdfs:/data/pdfs
+      - bot_tarifas:/data/tarifas
+      - /home/dguerra/bot-cotizador-data/.env:/app/.env:ro
+      - /home/dguerra/bot-cotizador-data/google-sa.json:/run/secrets/google-sa.json:ro
+      - /home/dguerra/bot-cotizador-data/sap_export.json:/data/sap_export.json:ro
+    networks: [bot-back, bot-edge]
+    depends_on: [bot-db, bot-minio]
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.hostname == TBSNODO1-DKP]
+      restart_policy: { condition: any, delay: 5s }
+      resources:
+        limits: { cpus: "1.0", memory: 1024M }
+        reservations: { cpus: "0.25", memory: 256M }
+
+  bot-orquestador:
+    image: bot-cotizador-orquestador:latest
+    environment:
+      DATABASE_URL: postgresql+psycopg://bot:bot@bot-db:5432/botcotizador
+      MCP_URL: http://bot-mcp:8080/mcp/
+      GCHAT_VERIFICAR_JWT: "false"
+      GOOGLE_SA_JSON: /run/secrets/google-sa.json
+      PDF_STORAGE_MODO: s3
+      S3_ENDPOINT: bot-minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: bot-cotizador-pdfs
+      PDF_STORAGE_DIR: /data/pdfs
+      PDF_BASE_URL: http://10.10.40.31:8091
+    volumes:
+      - bot_pdfs:/data/pdfs
+      - /home/dguerra/bot-cotizador-data/.env:/app/.env:ro
+      - /home/dguerra/bot-cotizador-data/google-sa.json:/run/secrets/google-sa.json:ro
+    networks: [bot-back, bot-edge]
+    ports:
+      # mode:host — bind directo en el nodo donde corre la tarea (worker). Se usa host
+      # (no ingress/routing mesh) porque el overlay cross-node VXLAN (udp/4789) entre las
+      # VMs está caído: en ingress el manager abre el puerto pero no entrega a la tarea del
+      # worker. Con host, acceso fiable en http://10.10.40.31:8091. Volver a ingress cuando
+      # se arregle el overlay (habilitar UDP 4789 entre nodos / recrear red ingress).
+      - target: 8000
+        published: 8091
+        protocol: tcp
+        mode: host
+    depends_on: [bot-db, bot-mcp, bot-minio]
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.hostname == TBSNODO1-DKP]
+      restart_policy: { condition: any, delay: 5s }
+      resources:
+        limits: { cpus: "0.75", memory: 768M }
+        reservations: { cpus: "0.25", memory: 256M }
