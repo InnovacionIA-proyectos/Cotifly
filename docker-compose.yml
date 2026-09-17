@@ -1,0 +1,141 @@
+# Entorno local del Bot Cotizador. Reproduce los servicios del despliegue
+# (orquestador expuesto, mcp interno, postgres, minio) sin Traefik.
+#
+# El Orquestador habla con el MCP por HTTP (MCP_URL) porque su imagen no incluye
+# las deps del servidor MCP; el MCP vive solo en la red interna. Los secretos
+# (LLM_API_KEY, GCHAT_PROJECT_NUMBER, MCP_AUTH_TOKEN) se leen del archivo .env.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: botcotizador
+    ports:
+      # 5434 en el host para no chocar con otros Postgres locales (interno sigue 5432).
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d botcotizador"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      # Host 9002/9003 para no chocar con otros MinIO locales (interno sigue 9000/9001).
+      - "9002:9000"   # API S3
+      - "9003:9001"   # Consola web
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://bot:bot@postgres:5432/botcotizador
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-dev-token}
+      SAP_TM_MODO: export_json
+      # Export real de ZGW_RENTAB_CLI_SRV (margen por cliente+línea), montado abajo.
+      SAP_TM_EXPORT_PATH: /data/sap_export.json
+      TARIFA_PROVIDER_DEFAULT: drive_flat_files
+      TARIFA_LOCAL_DIR: /data/tarifas
+      # Drive: fuente real = Excel único (DRIVE_TARIFARIO_FILE_ID) con la SA.
+      GOOGLE_SA_JSON: /secrets/google-sa.json
+      DRIVE_TARIFARIO_FILE_ID: ${DRIVE_TARIFARIO_FILE_ID:-}
+      DRIVE_TARIFARIO_FOLDER_ID: ${DRIVE_TARIFARIO_FOLDER_ID:-}
+      # Base pública con la que el MCP construye pdf_url (mismo host del front).
+      PDF_BASE_URL: ${PDF_BASE_URL:-http://localhost:8000}
+      # Storage de PDFs en MinIO (bucket S3). El MCP escribe; el orquestador lee.
+      PDF_STORAGE_MODO: ${PDF_STORAGE_MODO:-s3}
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-bot-cotizador-pdfs}
+      # Correo por WSCorreos: carpeta temporal del adjunto (local ↔ D: de tbsservicios).
+      CORREO_MODO: ${CORREO_MODO:-wscorreos}
+      WSCORREOS_ADJUNTO_DIR_LOCAL: /data/correo_tmp
+      WSCORREOS_ADJUNTO_DIR_REMOTO: ${WSCORREOS_ADJUNTO_DIR_REMOTO:-D:\\bot-cotizador}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - pdfs:/data/pdfs
+      - tarifas:/data/tarifas
+      - correo_tmp:/data/correo_tmp
+      - ./secrets/google-sa.json:/secrets/google-sa.json:ro
+      - ./datos/sap_export.json:/data/sap_export.json:ro
+    # Sin `ports`: el MCP vive solo en la red interna (igual que en producción).
+
+  orquestador:
+    build:
+      context: .
+      dockerfile: orquestador/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://bot:bot@postgres:5432/botcotizador
+      PDF_STORAGE_DIR: /data/pdfs
+      # El runner-puente alcanza el MCP interno por HTTP (nunca in-process aquí).
+      MCP_URL: http://mcp:8080/mcp/
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-dev-token}
+      # LLM agnóstico (LiteLLM). Multi-proveedor: LLM_MODEL principal + LLM_FALLBACKS
+      # (CSV) que puede mezclar proveedores; las claves por proveedor las resuelve
+      # LiteLLM según el prefijo del modelo (nvidia_nim/…, openrouter/…).
+      LLM_MODEL: ${LLM_MODEL:-gemini/gemini-2.5-flash}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_FALLBACKS: ${LLM_FALLBACKS:-}
+      LLM_NUM_RETRIES: ${LLM_NUM_RETRIES:-4}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      NVIDIA_NIM_API_KEY: ${NVIDIA_NIM_API_KEY:-}
+      LLM_RPM: ${LLM_RPM:-8}
+      # Storage de PDFs: el orquestador LEE del bucket para servir /pdfs/...
+      PDF_STORAGE_MODO: ${PDF_STORAGE_MODO:-s3}
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-bot-cotizador-pdfs}
+      # Webhook de Google Chat: número del proyecto (audience del JWT) + SA para publicar.
+      GCHAT_PROJECT_NUMBER: ${GCHAT_PROJECT_NUMBER:-}
+      GCHAT_VERIFICAR_JWT: ${GCHAT_VERIFICAR_JWT:-true}
+      GOOGLE_SA_JSON: /secrets/google-sa.json
+      PDF_BASE_URL: ${PDF_BASE_URL:-http://localhost:8000}
+      # Login web: secreto de sesión (firma la cookie de usuario del front).
+      WEB_SESSION_SECRET: ${WEB_SESSION_SECRET:-dev-secret-cambia}
+      # Token del endpoint interno (POST /internal/sync-sheets, GET /sesiones/...).
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      # Tablero Looker: vuelca la BD al libro de Google Sheets con el service account.
+      SHEETS_HABILITADO: ${SHEETS_HABILITADO:-false}
+      SHEETS_SPREADSHEET_ID: ${SHEETS_SPREADSHEET_ID:-}
+      SHEETS_SYNC_INTERVALO_SEG: ${SHEETS_SYNC_INTERVALO_SEG:-900}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mcp:
+        condition: service_started
+      minio:
+        condition: service_started
+    volumes:
+      - pdfs:/data/pdfs
+      - ./secrets/google-sa.json:/secrets/google-sa.json:ro
+
+volumes:
+  pgdata:
+  pdfs:
+  tarifas:
+  correo_tmp:
+  miniodata:

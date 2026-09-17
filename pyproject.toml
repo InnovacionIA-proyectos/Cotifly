@@ -1,0 +1,97 @@
+[project]
+name = "bot-cotizador"
+version = "0.1.0"
+description = "Bot Cotizador Botero Soto — MCP Server + API Orquestador"
+requires-python = ">=3.12"
+readme = "README.md"
+
+# Dependencias base (Fase 0–1). Las integraciones pesadas se agregan por fase
+# como extras para no inflar el entorno hasta que su fase las necesite.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+# Fase 2+: servidor MCP (API 3.x: StaticTokenVerifier, middleware, mask_error_details)
+# openpyxl: lectura de tarifarios XLSX en el DriveFlatFileProvider (F3A).
+mcp = ["fastmcp>=3.4", "openpyxl>=3.1"]
+# Fase 11+: loop agéntico. LiteLLM hace el LLM agnóstico del proveedor
+# (Gemini, Anthropic, OpenAI, …): el modelo se elige por config (LLM_MODEL).
+llm = ["litellm>=1.55"]
+# Fase 15: el Orquestador habla con el MCP interno por HTTP (cliente FastMCP),
+# sin necesitar las deps pesadas del servidor MCP (weasyprint, openpyxl…).
+mcpclient = ["fastmcp>=3.4"]
+# Fase 12: validación del JWT del webhook de Google Chat
+# `requests` es el transporte HTTP que google-auth usa para traer los certs.
+gchat = ["google-auth>=2.0", "requests>=2.31"]
+# Fase 6: generación de PDF (reutiliza armar_cotizacion.py)
+pdf = ["weasyprint>=63"]
+# Fase 3A: lectura de tarifario en Google Drive (openpyxl vive en el extra `mcp`)
+drive = ["google-api-python-client>=2.0", "google-auth>=2.0"]
+# Fase 2 (storage): PDFs en bucket S3/MinIO (PDF_STORAGE_MODO=s3)
+s3 = ["minio>=7.2"]
+# Tablero: sincronización de la BD a Google Sheets (para Looker Studio).
+sheets = ["google-api-python-client>=2.0", "google-auth>=2.0"]
+# Herramientas de desarrollo y prueba (transversal)
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "hypothesis>=6.0",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["shared*", "orquestador*", "mcp_server*"]
+
+[tool.setuptools.package-data]
+"mcp_server.pdf" = ["assets/*.png", "assets/imagenes del pdf/*.png"]
+# Front web (Consola servida por el Orquestador) + logo corporativo.
+"orquestador" = ["static/*.html", "static/*.png"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "drive: prueba de integración real contra Google Drive",
+    "sap: prueba de integración real contra SAP TM (OData)",
+    "smtp: prueba de integración real contra el servidor SMTP",
+    "llm: prueba que consume la Anthropic API (presupuesto de tokens)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Scripts vendorizados de la skill: se reutilizan tal cual, no se lintean.
+extend-exclude = ["mcp_server/pdf/scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Scripts vendorizados de la skill: reutilizados tal cual, sin tipar.
+module = "mcp_server.pdf.scripts.*"
+ignore_errors = true
+
+[tool.coverage.run]
+# Los scripts vendorizados no son código propio: su construir_html se ejercita
+# en los tests estructurales, pero su CLI (main) no se mide.
+omit = ["mcp_server/pdf/scripts/*"]
