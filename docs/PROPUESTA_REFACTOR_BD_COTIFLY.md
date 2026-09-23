@@ -318,6 +318,15 @@ Además:
   esas credenciales entra a la app.
 
 ### 2.7 `margenes_politica` → `lineasNegocioMargenesPolitica`
+
+> **Corrección de nombre (HU-002.3, 2026-09-22):** el nombre final que quedó en firme
+> es el **corto**, `MargenesPolitica` (sin el prefijo `tbl`, retirado también en
+> HU-002.3) — no `lineasNegocioMargenesPolitica`/`LineasNegocioMargenesPolitica` como
+> dice esta sección y el resto de este documento. Ya está así en
+> `migrations_mssql/0001_esquema_objetivo.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
+> El resto del contenido de §2.7 (columnas, decisiones de diseño) sigue vigente, solo
+> cambia el nombre de la tabla.
+
 | Acción | Detalle |
 |---|---|
 | Agregar | `id` (serial/autoincremental, **pasa a ser la nueva PK**), `is_active` (boolean) |
@@ -355,7 +364,9 @@ que reescribir, en backend y front, para que el esquema nuevo tenga sentido:
 
   **Consecuencia directa para el pendiente de HU-002 (Fase 5, datos
   provisionales):** como `margenes_politica` **no queda obsoleta**, pedirle a
-  Gerencia Comercial que valide el 15%/50%(ITR) **no es esfuerzo perdido** — sigue
+  Gerencia Comercial que valide el 15% de las 8 líneas (corrección 2026-09-22: no hay
+  ninguna al 50%, ni siquiera `ITR` — verificado contra la BD real) **no es esfuerzo
+  perdido** — sigue
   siendo el fallback real que usa el cálculo de precio, con o sin Nexo. Ese
   pendiente de validación sigue en pie, sin depender de esta decisión.
 - **`mcp_server/precio.py`** (`calcular_precio`, la distinción `margen`/`markup`) —

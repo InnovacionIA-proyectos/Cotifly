@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     # --- Base de datos (Fase 1) ---
     database_url: str = "postgresql+psycopg://bot:bot@localhost:5432/botcotizador"
 
+    # --- SQL Server 2019 corporativo (HU-002.4) ---
+    # Solo para el script de creación del esquema objetivo contra `dbTarifario_Nexo_
+    # Pruebas` (host `tbsdatacenter`, schema `dbo_cotifly`) — no reemplaza `database_url`
+    # (Postgres sigue siendo la BD viva de la app hasta el corte real). Windows
+    # Authentication (`trusted_connection=yes`, sin usuario/contraseña) — por eso este
+    # script se corre directo desde Windows (sqlcmd -E o Python local), no desde los
+    # contenedores Docker (Linux), donde Windows Auth no funciona sin Kerberos aparte.
+    # Vacío por defecto: cada quien lo llena en su propio `.env`, nunca se comitea con
+    # un valor real.
+    sqlserver_database_url: str = ""
+
     # --- MCP Server (Fase 2) ---
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8080

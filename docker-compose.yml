@@ -1,24 +1,42 @@
 # Entorno local del Bot Cotizador. Reproduce los servicios del despliegue
-# (orquestador expuesto, mcp interno, postgres, minio) sin Traefik.
+# (orquestador expuesto, mcp interno, sqlserver, minio) sin Traefik.
 #
 # El Orquestador habla con el MCP por HTTP (MCP_URL) porque su imagen no incluye
 # las deps del servidor MCP; el MCP vive solo en la red interna. Los secretos
 # (LLM_API_KEY, GCHAT_PROJECT_NUMBER, MCP_AUTH_TOKEN) se leen del archivo .env.
+#
+# HU-002.4 (2026-09-22): swap Postgres -> SQL Server 2019 (§3.4 de la propuesta,
+# docs/PROPUESTA_REFACTOR_BD_COTIFLY.md). Es un contenedor LOCAL propio (usuario
+# `sa`, credenciales locales) -- no tiene relación con la instancia corporativa
+# `tbsdatacenter`/`dbTarifario_Nexo_Pruebas` usada para el esquema real (HU-002.3).
+# Alcance de este cambio: solo config (compose/Dockerfiles/pyproject.toml) -- NO se
+# reescribió `shared/db.py`/`shared/models.py`/`shared/repos.py` (siguen con tipos
+# de Postgres vía SQLAlchemy: UUID/JSONB/ARRAY de `postgresql`, `ilike`,
+# `make_interval`), así que mcp/orquestador NO van a levantar contra este servicio
+# tal como están hoy -- decisión aceptada porque HU-003 reemplaza este backend
+# Python por completo (reescribir esa capa acá sería trabajo desechable).
+# Falta además un paso manual de una sola vez que este compose no resuelve:
+# `CREATE DATABASE bd_cotifly;` (a diferencia de Postgres, la imagen de SQL
+# Server no crea la base automáticamente vía variable de entorno). Nombre nuevo
+# a propósito: "botcotizador" es el nombre viejo del proyecto (Bot Cotizador).
 services:
-  postgres:
-    image: postgres:16
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2019-latest
     environment:
-      POSTGRES_USER: bot
-      POSTGRES_PASSWORD: bot
-      POSTGRES_DB: botcotizador
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Bot_Cotizador_2019!}
     ports:
-      # 5434 en el host para no chocar con otros Postgres locales (interno sigue 5432).
-      - "5434:5432"
+      # 1434 en el host para no chocar con otros SQL Server locales (interno sigue 1433).
+      - "1434:1433"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mssqldata:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bot -d botcotizador"]
-      interval: 5s
+      # Ruta de sqlcmd dentro de la imagen: probamos la variante nueva
+      # (mssql-tools18, driver 18, requiere -C) y si no existe, la vieja
+      # (mssql-tools, driver 17) -- no verificado contra el tag real todavía,
+      # confirmar cuál trae la imagen al levantarla la primera vez.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' -b -o /dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
       timeout: 5s
       retries: 10
 
@@ -45,7 +63,7 @@ services:
       context: .
       dockerfile: mcp_server/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://bot:bot@postgres:5432/botcotizador
+      DATABASE_URL: mssql+pyodbc://sa:${MSSQL_SA_PASSWORD:-Bot_Cotizador_2019!}@sqlserver:1433/bd_cotifly?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-dev-token}
       SAP_TM_MODO: export_json
       # Export real de ZGW_RENTAB_CLI_SRV (margen por cliente+línea), montado abajo.
@@ -69,7 +87,7 @@ services:
       WSCORREOS_ADJUNTO_DIR_LOCAL: /data/correo_tmp
       WSCORREOS_ADJUNTO_DIR_REMOTO: ${WSCORREOS_ADJUNTO_DIR_REMOTO:-D:\\bot-cotizador}
     depends_on:
-      postgres:
+      sqlserver:
         condition: service_healthy
       minio:
         condition: service_started
@@ -86,7 +104,7 @@ services:
       context: .
       dockerfile: orquestador/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://bot:bot@postgres:5432/botcotizador
+      DATABASE_URL: mssql+pyodbc://sa:${MSSQL_SA_PASSWORD:-Bot_Cotizador_2019!}@sqlserver:1433/bd_cotifly?driver=ODBC+Driver+17+for+SQL+Server&TrustServerCertificate=yes
       PDF_STORAGE_DIR: /data/pdfs
       # El runner-puente alcanza el MCP interno por HTTP (nunca in-process aquí).
       MCP_URL: http://mcp:8080/mcp/
@@ -123,7 +141,7 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
+      sqlserver:
         condition: service_healthy
       mcp:
         condition: service_started
@@ -134,7 +152,7 @@ services:
       - ./secrets/google-sa.json:/secrets/google-sa.json:ro
 
 volumes:
-  pgdata:
+  mssqldata:
   pdfs:
   tarifas:
   correo_tmp:
