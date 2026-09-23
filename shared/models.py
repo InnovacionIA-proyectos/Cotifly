@@ -50,7 +50,8 @@ class Cotizacion(Base):
     linea_negocio: Mapped[str | None] = mapped_column(Text, ForeignKey("margenes_politica.linea_negocio"))
     linea_negocio_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("margenes_politica.id")
-    )  # HU-005: id real de Nexo/lineasNegocioMargenesPolitica, sin poblar todavía
+    )  # Poblada por generar_pdf (busca en margenes_politica, local) + backfill 0008.
+    # No depende de Nexo/HU-005 -- eso era una confusión de la propuesta original.
     cliente_nombre: Mapped[str | None] = mapped_column(Text)
     cliente_id_sap: Mapped[str | None] = mapped_column(Text)
     costeo_id: Mapped[str | None] = mapped_column(Text)  # HU-005: id del costeo en Nexo

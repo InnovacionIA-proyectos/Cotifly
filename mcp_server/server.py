@@ -176,7 +176,7 @@ def build_server(
     from shared.almacen_pdf import construir_almacen
     from shared.db import get_session
     from shared.models import Cotizacion
-    from shared.repos import AjusteMargenRepo, CorreoRepo, CotizacionRepo
+    from shared.repos import AjusteMargenRepo, CorreoRepo, CotizacionRepo, MargenPoliticaRepo
 
     # mask_error_details: una excepción no controlada llega al cliente como un
     # error genérico (sin traceback ni detalle interno). Ver contrato en errores.py.
@@ -324,10 +324,17 @@ def build_server(
                 datos_pdf, _paginas = _render_pdf_bytes(html)
                 pdf_path = construir_almacen().guardar(f"{folio}.pdf", datos_pdf)
                 traza = _datos_trazabilidad(cotizacion)
+                linea_negocio = _texto(cotizacion.get("linea_negocio"), "linea", "nombre")
+                # `linea_negocio_id` no depende de Nexo/HU-005 (corrección 2026-09-22):
+                # `margenes_politica` ya vive sembrada localmente (migración 0002), así
+                # que el id se resuelve ya mismo por el mismo texto que hoy escribe el
+                # agente, sin esperar a nadie.
+                politica = MargenPoliticaRepo.obtener(s, linea_negocio) if linea_negocio else None
                 cot = CotizacionRepo.crear(
                     s,
                     folio=folio,
-                    linea_negocio=_texto(cotizacion.get("linea_negocio"), "linea", "nombre"),
+                    linea_negocio=linea_negocio,
+                    linea_negocio_id=politica.id if politica else None,
                     cliente_nombre=cliente_nombre,
                     cliente_id_sap=traza["cliente_id_sap"],
                     costo=traza["costo"],

@@ -58,9 +58,11 @@ Motor: **PostgreSQL 16**. Acceso: SQLAlchemy 2.x + Alembic (`shared/models.py` =
 
 > **HU-002.2:** eliminadas `payload`, `origen`, `destino`, `fuente_tarifa`. `estado` se
 > dividió en `estado_costeo` (Text, sin poblar — HU-005) y `estado_envio` (Text, reemplaza
-> el uso de envío del `estado` anterior). Nuevas sin poblar: `costeo_id`, `bd_cliente`,
-> `linea_negocio_id` (FK a `margenes_politica.id`, HU-005). `linea_negocio` ahora tiene FK
-> real a `margenes_politica.linea_negocio`. `comercial_email` → `usuario_id` (Integer, FK a
+> el uso de envío del `estado` anterior). Nuevas sin poblar: `costeo_id`, `bd_cliente`.
+> `linea_negocio_id` (FK a `margenes_politica.id`) **sí está poblada** (corrección
+> 2026-09-22, migración `0008`): no dependía de Nexo, sale de un cruce local contra
+> `margenes_politica` (sembrada desde `0002`). `linea_negocio` conserva su FK real
+> a `margenes_politica.linea_negocio`. `comercial_email` → `usuario_id` (Integer, FK a
 > `usuarios_web.id`, sin poblar hasta HU-004 — `generar_pdf` ya no tiene de dónde sacar
 > este dato con el login desactivado). `efectiva`/`seguimiento_nota`/
 > `seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at` (migración `0007`,
@@ -231,7 +233,8 @@ cada login válido (`UsuarioWebRepo.upsert`).
 > **HU-002.2:** se agregó `id` (Integer serial, **nueva PK**) e `is_active` (Boolean,
 > default `true`). `linea_negocio` deja de ser PK y pasa a `UNIQUE` — `cotizaciones`
 > referencia esta tabla tanto por `linea_negocio` (FK directa, texto) como por la nueva
-> `linea_negocio_id` (FK a `id`, sin poblar hasta HU-005). El estado *provisional* de los
+> `linea_negocio_id` (FK a `id`, poblada desde `0008` — no dependía de Nexo). El estado
+> *provisional* de los
 > valores (15%/50% ITR) sigue igual — HU-002.1 decidió no bloquear el cierre con la
 > validación de Gerencia Comercial, se ajustará desde el panel admin cuando exista.
 

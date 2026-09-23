@@ -41,14 +41,14 @@ erDiagram
     CORREOS_ENVIADOS }o--o| USUARIOS_WEB : "confirmado_por (FK, sin poblar hasta HU-004)"
     SESIONES ||--o{ EVENTOS_CONVERSACION : "space_id+thread_id (FK)"
     MARGENES_POLITICA ||--o{ COTIZACIONES : "linea_negocio (FK)"
-    MARGENES_POLITICA ||--o{ COTIZACIONES : "id ← linea_negocio_id (FK, sin poblar hasta HU-005)"
+    MARGENES_POLITICA ||--o{ COTIZACIONES : "id ← linea_negocio_id (FK, poblada)"
     MAPEO_TRQTYPE ||..o{ COTIZACIONES : "trq_type→linea_negocio (lookup SAP)"
 
     COTIZACIONES {
         uuid id PK
         text folio UK
         text linea_negocio FK
-        int linea_negocio_id FK "HU-005, sin poblar"
+        int linea_negocio_id FK
         text cliente_nombre
         text cliente_id_sap
         text costeo_id "HU-005, sin poblar"
@@ -241,7 +241,8 @@ para el tablero de Looker Studio (ajustada en HU-002.2 a los nombres de columna 
 | `0003_vista_trazabilidad` | Vista `v_ajustes_margen_por_comercial`. |
 | `0004_trazabilidad` | Vistas `v_trazabilidad_cotizaciones` y `v_actividad_por_comercial`. |
 | `0005_usuarios_y_seguimiento` | Tabla `usuarios_web` + columnas de seguimiento en `cotizaciones` (`efectiva`, `seguimiento_nota`, `seguimiento_actualizado`). |
-| `0006_hu002_2_esquema_completo` | HU-002.2: elimina `payload`/`contexto`/`origen`/`destino`/`fuente_tarifa`; agrega FKs (`eventos_conversacion→sesiones`, `linea_negocio→margenes_politica`, `usuario_id→usuarios_web`); rediseña `usuarios_web` (PK entera de SAP) y `margenes_politica` (id serial); agrega columnas de Nexo sin poblar (`costeo_id`, `bd_cliente`, `linea_negocio_id`, `estado_costeo`). |
+| `0006_hu002_2_esquema_completo` | HU-002.2: elimina `payload`/`contexto`/`origen`/`destino`/`fuente_tarifa`; agrega FKs (`eventos_conversacion→sesiones`, `linea_negocio→margenes_politica`, `usuario_id→usuarios_web`); rediseña `usuarios_web` (PK entera de SAP) y `margenes_politica` (id serial); agrega columnas de Nexo sin poblar (`costeo_id`, `bd_cliente`, `estado_costeo`) y `linea_negocio_id` (poblada aparte, ver `0008`). |
+| `0008_backfill_linea_negocio_id` | Corrección 2026-09-22: `linea_negocio_id` no dependía de Nexo — se rellena por cruce local contra `margenes_politica` (sembrada desde `0002`). `mcp_server/server.py` ya la llena en cotizaciones nuevas. |
 | `0007_ganada_perdida` | HU-002.2 (seguimiento): renombra `efectiva`/`seguimiento_nota`/`seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at` — esquema listo para el resultado sincronizado con Nexo (HU-005), sin poblar todavía. |
 
 Se aplican con `alembic upgrade head` — automático en producción (entrypoint del contenedor
