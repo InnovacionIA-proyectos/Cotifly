@@ -82,6 +82,7 @@ Agregar una validación de arranque en el backend Python actual que compare cada
 Se auditó el esquema real tras aplicar las 5 migraciones Alembic actuales (no solo la documentación) contra el uso real en `orquestador/` y `mcp_server/`. Hallazgos concretos:
 
 - **Columnas escritas pero nunca leídas por la aplicación:** `margenes_politica.metodo_calculo` (el cálculo real usa el `metodo_calculo` que llega en el payload del agente, no esta columna), `cotizaciones.payload` (JSONB, se escribe siempre en `generar_pdf` pero ningún endpoint lo expone), `cotizaciones.seguimiento_actualizado` (se escribe en `marcar_seguimiento` pero no se muestra ni en `/web/mis-cotizaciones` ni en el sync de Sheets).
+- **`usuarios_web` redundante e incompleta:** duplica `email`/`nombre` que ya vive en ClientePro (redundante desde que HU-004 reusa la sesión de ClientePro), y no tiene columna para `celular` — `armar_cotizacion.py:434` imprime lo que venga en `comercial.cel`, y al no existir dato real ni columna que lo respalde, el LLM inventa un placeholder tipo "+57 300 000 0000" en el PDF. Candidata a adelgazar (quitar `email`/`nombre`, vincular por el identificador de usuario de ClientePro) y agregar `celular` capturado una sola vez desde el frontend.
 - **Ruido inofensivo:** `UniqueConstraint("trq_type","sales_org")` en `mapeo_trqtype` es redundante — esa combinación ya es la PK compuesta de la tabla.
 - **FK ya existentes:** `ajustes_margen.cotizacion_id → cotizaciones.id` (nullable por diseño: el ajuste de margen se registra antes de generar el PDF/folio) y `correos_enviados.cotizacion_id → cotizaciones.id` (NOT NULL).
 - **FK faltante y segura de agregar:** `eventos_conversacion (space_id, thread_id) → sesiones (space_id, thread_id)` — confirmado en código que la sesión siempre existe antes de crear el evento.
@@ -132,11 +133,14 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Sara (Datos)
 **Parte de HU-002 (milestone). Este issue NO ejecuta ningún cambio sobre el esquema real — solo evalúa y propone.**
-- [ ] Auditar el esquema actual de PostgreSQL (tablas, columnas, constraints) contra el uso real en el código de `orquestador/` y `mcp_server/`, identificando columnas/constraints que parezcan sin uso real, redundantes, o relaciones que hoy son texto libre y podrían ser FK.
-- [ ] Redactar un documento de propuesta que liste, uno por uno, cada hallazgo con: qué es, evidencia encontrada (dónde se escribe, si se lee o no, dónde), y una recomendación (eliminar / conectar-exponer / agregar FK / dejar como decisión abierta) — sin aplicar todavía ningún cambio.
-- [ ] Incluir en la propuesta una sección aparte para cada FK candidata, señalando explícitamente si es segura de agregar (sin riesgo de romper datos existentes) o si depende de resolver algo antes (ej. unificar un flujo de alta de datos) para no romper información ya guardada.
-- [ ] Incluir en la propuesta el estado de los datos de configuración que el propio código marca como "provisionales" (si los hay), para que el equipo confirme si ya fueron validados por el área de negocio correspondiente o siguen pendientes.
-- [ ] Presentar la propuesta al equipo/negocio y dejar registrada en este issue la decisión final punto por punto (aprobado tal cual, aprobado con ajustes, o rechazado) antes de cerrarlo — este issue no se cierra sin esa aprobación explícita.
+- [x] Auditar el esquema actual de PostgreSQL (tablas, columnas, constraints) contra el uso real en el código de `orquestador/` y `mcp_server/`, identificando columnas/constraints que parezcan sin uso real, redundantes, o relaciones que hoy son texto libre y podrían ser FK.
+- [x] Redactar un documento de propuesta que liste, uno por uno, cada hallazgo con: qué es, evidencia encontrada (dónde se escribe, si se lee o no, dónde), y una recomendación (eliminar / conectar-exponer / agregar FK / dejar como decisión abierta) — sin aplicar todavía ningún cambio.
+- [x] Incluir en la propuesta una sección aparte para cada FK candidata, señalando explícitamente si es segura de agregar (sin riesgo de romper datos existentes) o si depende de resolver algo antes (ej. unificar un flujo de alta de datos) para no romper información ya guardada.
+- [x] Incluir en la propuesta el estado de los datos de configuración que el propio código marca como "provisionales" (si los hay), para que el equipo confirme si ya fueron validados por el área de negocio correspondiente o siguen pendientes.
+- [x] Incluir en la propuesta el rediseño de `usuarios_web`: hoy duplica `email`/`nombre` que ya vive en ClientePro (redundante desde que HU-004 reusa la sesión de ClientePro en vez del login propio), y no tiene ningún campo para el `celular` del comercial — hallazgo confirmado: `armar_cotizacion.py:434` imprime lo que venga en `comercial.cel`, y como no hay dato real ni columna que lo respalde, el LLM termina inventando un placeholder tipo "+57 300 000 0000" en el PDF. Proponer adelgazar la tabla (quitar `email`/`nombre`, vincularla por el identificador de usuario de ClientePro) y agregar `celular`, capturado una sola vez desde el frontend (HU-004) en vez de generado por el LLM.
+- [x] Presentar la propuesta al equipo/negocio y dejar registrada en este issue la decisión final punto por punto (aprobado tal cual, aprobado con ajustes, o rechazado) antes de cerrarlo — este issue no se cierra sin esa aprobación explícita.
+
+**Decisión final (2026-09-22):** Propuesta (`docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`, §0-2) **aprobada tal cual, sin ajustes**, incluyendo las 3 FK candidatas documentadas en §2.9 con su evidencia SQL. Sobre los datos provisionales de `margenes_politica`/`mapeo_trqtype` (punto 4): **se decide no bloquear el cierre de este issue con la validación previa de Gerencia Comercial** — los valores quedan como están hoy, y Gerencia Comercial los ajustará directamente en el panel admin (§2.7) una vez la app esté entregada, en vez de exigir un sello formal antes de ejecutar. HU-002.1 queda **cerrada**, HU-002.2 desbloqueada.
 
 ### [HU-002.2] Ejecutar la propuesta aprobada
 **Labels:** `cotifly`, `datos`, `tarea-tecnica`
@@ -236,6 +240,11 @@ Dado que el equipo decidió migrar también el loop agéntico con LLM (no se que
 Cuando se diseña e implementa el endpoint /web/chat y el webhook de Google Chat en el nuevo backend
 Entonces ambos quedan resueltos en .NET, sin depender de que el backend Python siga vivo para esta funcionalidad
 
+Escenario: El identificador del cliente no se pierde entre turnos
+Dado un comercial que identifica un cliente por nombre en un turno de chat, y confirma la cotización en un turno posterior
+Cuando el agente genera el PDF final
+Entonces el identificador del cliente resuelto (vía la búsqueda de HU-005.2, no texto libre) llega completo hasta la cotización persistida, sin depender de que el LLM lo recuerde por su cuenta — corrigiendo el hallazgo confirmado en el backend Python actual (3 nombres de campo distintos sin mapeo, sin estado estructurado entre turnos)
+
 Escenario: Aislamiento de cotizaciones por comercial
 Dado que el comercial A y el comercial B tienen cada uno sus propias cotizaciones
 Cuando el comercial A consulta /web/mis-cotizaciones, o intenta marcar seguimiento o reenviar por correo una cotización del comercial B
@@ -273,6 +282,8 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 - [x] Datos de conexión reales a la instancia SQL Server 2019 corporativa (servidor, nombre de base, usuario de servicio): los provee directamente el responsable del proyecto.
 - [ ] Confirmar si `mcp_server`/`orquestador` seguirán expuestos durante la convivencia (para no romper integraciones externas que los usen hoy, como el webhook de Google Chat) y documentarlo.
 - [x] Decisión tomada: el agente LLM se limita a **redacción** (componer la respuesta en lenguaje natural, mantener la conversación) — **no** se usa para **extracción/consulta de datos**. Toda lectura de tarifas, márgenes, cotizaciones, clientes, etc. se hace por código determinístico (herramientas explícitas: Tarifas, Margen, Precio, PDF, Correo — HU-003.4/HU-003.5), nunca por el LLM interpretando o generando directamente una consulta a la base de datos. Documentar esta regla como principio de diseño del agente antes de implementarlo (HU-003.6).
+- [ ] **Diseñar un estado de conversación estructurado (slot-filling) en el orquestador .NET** que retenga los datos ya resueltos (ej. cliente identificado, línea de negocio, folio en progreso) y los reinyecte automáticamente en cada llamada a herramienta, en vez de depender de que el LLM los re-infiera del historial de texto en cada turno. Causa raíz confirmada en el backend Python actual: `cliente_id_sap` no llega de forma confiable desde el chat hasta `obtener_margen`/`generar_pdf` porque (a) hay 3 nombres distintos para el mismo dato en el código actual (`cliente`, `cliente_id`, `cliente_id_sap`) sin ningún mapeo programático entre ellos, y (b) el orquestador Python solo reconstruye el hilo de texto entre turnos, no los tool-calls/resultados previos — así que cuando "generar_pdf" ocurre en un turno distinto al de "obtener_margen" (típico, porque el Paso 4 exige esperar confirmación del usuario antes de generar el documento), el LLM tiene que re-adivinar el dato sin ayuda de ningún campo ya resuelto. En .NET, unificar a un solo nombre de campo para el identificador de cliente en todas las herramientas, y que el orquestador (no el LLM) sea responsable de propagarlo entre pasos.
+- [ ] **Conectar el modo de chat en lenguaje natural con la búsqueda real de clientes (HU-005.2)**: hoy, si el usuario escribe "cotiza para Falabella" en el chat, el LLM copia ese texto literal al campo cliente sin resolverlo contra ningún catálogo (no existe tabla de clientes en la BD). En .NET, cuando el agente necesite identificar un cliente por nombre durante la conversación, debe invocar la misma herramienta de búsqueda de clientes que consume el catálogo de Nexo (HU-005.2), en vez de dejar que el LLM copie texto libre al payload — esto resuelve a la vez la falta de catálogo y la propagación poco confiable del ID.
 
 ### [HU-003.2] Esqueleto de la solución Clean Architecture y convenciones de nombres
 **Labels:** `cotifly`, `backend`, `tarea-tecnica`
@@ -312,6 +323,7 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Asignado a:** Duban (Backend)
 **Parte de HU-003 (milestone). Depende de HU-003.3 y de la librería de PDF elegida en HU-003.1.**
 - [ ] Reimplementar la generación de PDF de cotización (hoy `armar_cotizacion.py`/`armar_multi.py` con WeasyPrint) usando la librería .NET elegida en HU-003.1, reproduciendo el mismo layout, assets e imágenes corporativas.
+- [ ] Obtener el `celular` del comercial desde la tabla rediseñada (HU-002.1, capturado una sola vez desde el frontend en HU-004.3), nunca dejar que el LLM lo genere/invente. Si el comercial todavía no tiene el dato guardado, el PDF debe omitir el campo (o marcarlo explícitamente como "no registrado") en vez de mostrar un número de teléfono falso — corrigiendo el hallazgo confirmado en Python (`armar_cotizacion.py:434` sin dato real, LLM inventando un placeholder tipo "+57 300 000 0000").
 - [ ] Confirmar con el equipo cuál de los 3 transportes de correo hoy configurables (`smtp_relay`, `wscorreos`, `smtp`) es realmente el de producción; documentar los otros dos como legacy/retirados si ya no aplican, en vez de mantener 3 caminos de fallo distintos sin necesidad. Nota: `correo_habilitado` está en `False` hoy ("funcionalidad diferida" según `shared/config.py`) — confirmar también si sigue siendo así antes de decidir cuál transporte migrar.
 - [ ] Reimplementar el envío de correo (hoy `mcp_server/correo.py` vía SMTP) como servicio de Infraestructura del módulo Correo, conservando plantillas y remitente actuales, usando solo el transporte confirmado como real en el punto anterior.
 - [ ] Reimplementar `mcp_server/auditoria.py` como servicio transversal de Auditoría, registrando como mínimo los mismos eventos que hoy se auditan (ajustes de margen, envíos de correo, generación de cotizaciones).
@@ -325,6 +337,9 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 - [ ] Implementar los endpoints `/web/login`, `/web/mis-cotizaciones`, `/web/cotizaciones/{folio}/enviar` y `/web/cotizaciones/{folio}/seguimiento` reproduciendo exactamente el contrato documentado en HU-004.1 (mismo shape de request/response, mismos códigos de estado).
 - [ ] Implementar `/web/chat` en .NET, incluyendo el loop agéntico que orquesta las herramientas de negocio (Tarifas, Margen, Precio, PDF, Correo) — confirmado en HU-003.1 que este endpoint migra completo, no se queda sirviéndose desde Python.
 - [ ] Confirmar en la implementación que el LLM solo redacta la respuesta final al usuario y decide qué herramienta invocar — nunca genera ni ejecuta directamente una consulta a la base de datos (regla ya definida en HU-003.1); toda esa lógica vive en las herramientas de negocio ya existentes.
+- [ ] Implementar el estado de conversación estructurado (slot-filling) definido en HU-003.1: el identificador de cliente (y demás datos ya resueltos) se guarda en ese estado apenas se conoce, y el orquestador lo reinyecta automáticamente en las siguientes llamadas a herramienta (`obtener_margen`, `generar_pdf`, etc.) sin depender de que el LLM lo recuerde/re-infiera del texto — incluyendo el caso de que "generar_pdf" ocurra en un turno posterior a "obtener_margen" (después de la confirmación del usuario).
+- [ ] Cuando el usuario mencione un cliente por nombre en texto libre durante el chat, invocar la herramienta de búsqueda de clientes (HU-005.2, catálogo de Nexo) para resolverlo a un identificador real, en vez de copiar el texto libre directo al payload de la cotización.
+- [ ] Escribir un test de integración que reproduzca el escenario exacto del hallazgo en Python (cliente identificado en un turno, confirmación y generación del PDF en el turno siguiente) y confirme que el identificador de cliente llega completo hasta la cotización persistida.
 - [ ] Configurar CORS en la nueva API para aceptar el dominio real de `clientepro-frontend`, igual que se exigió en HU-004.1 para el backend Python.
 - [ ] Configurar autenticación equivalente a la actual (token Bearer) o la que el equipo decida al integrar con la sesión de ClientePro (ver HU-004, escenario "Sesión única con ClientePro").
 - [ ] **Preservar el aislamiento por comercial que ya existe en Python** (`CotizacionRepo.por_comercial` filtra `/web/mis-cotizaciones` por `comercial_email == usuario autenticado`; `enviar_cotizacion` y `marcar_seguimiento` devuelven 404/None si la cotización no es del comercial autenticado): en .NET, un comercial nunca debe poder ver, marcar seguimiento, ni reenviar por correo una cotización de otro comercial. Escribir un test de integración que confirme explícitamente que el comercial A no puede ver ni tocar cotizaciones del comercial B.
@@ -336,7 +351,8 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Asignado a:** Duban (Backend)
 **Parte de HU-003 (milestone). Depende de HU-003.4.**
 - [ ] **Nota (ver HU-005):** el costeo del flete y de servicios conexos pasa a poder venir de Nexo vía la integración de HU-005, en vez del tarifario plano de Drive. Confirmar con el equipo si el tarifario de Drive se retira, se mantiene como respaldo, o se usa solo para líneas de negocio que Nexo no cubre, antes de dar este issue por cerrado.
-- [ ] Reimplementar la lectura del export de SAP TM (`datos/sap_export.json` como referencia de formato) como servicio de Infraestructura, con la puerta abierta a una futura integración OData en vivo (interfaz, no implementación, si el equipo no la pide ahora).
+- [ ] **Nota (ver HU-009):** ya se confirmó que la conexión OData en vivo a SAP TM es necesaria y que su implementación en Python ya funciona (`odata_fuente.py`, probada contra el host real) — no dejar esto como "interfaz sin implementación": reimplementar en .NET el cliente OData completo (consulta a `RentabClienteSet` por sales_org/trq_type/cliente), no solo el modo `export_json`.
+- [ ] Reimplementar la lectura del export de SAP TM (`datos/sap_export.json` como referencia de formato) y el cliente OData en vivo (ver nota anterior) como servicios de Infraestructura, intercambiables por configuración igual que hoy en Python (`SAP_TM_MODO=export_json|odata`).
 - [ ] Reimplementar la lectura del tarifario desde Google Drive (mismo mecanismo de autenticación de cuenta de servicio que usa hoy Python, ver `secrets/google-sa.json` como placeholder de configuración esperada), solo si el punto anterior confirma que sigue siendo necesario.
 - [ ] Reimplementar la sincronización a Google Sheets (para Looker Studio) si el equipo confirma que sigue vigente tras la migración; si ya no se usa, documentar la decisión de no migrarla.
 - [ ] Confirmar si la integración con S3/MinIO para almacenamiento de PDFs se mantiene, se reemplaza, o se descarta, y documentar la decisión.
@@ -387,7 +403,7 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 - El frontend actual de Cotifly es un único archivo `orquestador/static/chat.html` (HTML + CSS + JS vanilla embebido, sin framework, sin build), servido directamente por el backend FastAPI. No es un proyecto Angular ni tiene componentización — la migración es una **reconstrucción como módulo Angular**, no una traducción línea a línea.
 - Funcionalidades cubiertas hoy por `chat.html`: login propio del bot (correo + nombre, sin password), formulario de "Nueva cotización" (con resultado paso a paso: Tarifa → Margen → Precio → PDF, y descarga del PDF generado), listado "Mis cotizaciones" (marcar efectiva/no efectiva, reenviar por correo), y un "Asistente" de chat conversacional con el bot.
 - Endpoints reales consumidos hoy (backend `orquestador`, repo `Cotifly`): `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar`, `POST /web/cotizaciones/{folio}/seguimiento`. Auth actual: token Bearer devuelto por `/web/login`, sin mecanismo de guard formal.
-- Destino: `clientepro-frontend`, Angular objetivo **17.3.8** (el `package.json` actual mezcla paquetes `@angular/*` en `^17.3.8` con Angular Material todavía en `16.1.4` — decisión ya tomada: se alinea **hacia arriba**, subiendo Angular Material y el resto de dependencias rezagadas a la línea 17.3.8, no se baja `@angular/core` a 16). Patrón modular a seguir: `src/app/components/informes-embarque/` (único módulo ya modularizado correctamente en ese repo — routing propio, `*.module.ts`, `pages/`, `components/`, `models/`, `services/`). El `CLAUDE.md` que el README de `clientepro-frontend` menciona como fuente de reglas de arquitectura no existe físicamente en el repo; se usa `informes-embarque/` como estándar de facto en su lugar.
+- Destino: `clientepro-frontend`, Angular objetivo **17.3.8** (el `package.json` actual mezcla paquetes `@angular/*` en `^17.3.8` con Angular Material todavía en `16.1.4`). **Restricción confirmada con el equipo: no se toca el `package.json` raíz ni ninguna dependencia compartida de ClientePro** — el módulo nuevo se construye con las versiones que ya están instaladas hoy (incluida Angular Material `16.1.4`), sin actualizar nada del resto del proyecto; solo se puede agregar lo propio del módulo nuevo. Patrón modular a seguir: `src/app/components/informes-embarque/` (único módulo ya modularizado correctamente en ese repo — routing propio, `*.module.ts`, `pages/`, `components/`, `models/`, `services/`). El `CLAUDE.md` que el README de `clientepro-frontend` menciona como fuente de reglas de arquitectura no existe físicamente en el repo; se usa `informes-embarque/` como estándar de facto en su lugar.
 - Autenticación de ClientePro hoy es ad hoc (localStorage `usuario`/`roles` + `user-role.service.ts`, sin `canActivate` guards formales) — el nuevo módulo debe integrarse a ese mismo esquema de sesión, no mantener el login propio del bot.
 
 ### Criterios de aceptación (Gherkin)
@@ -463,14 +479,15 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 
 **Alcance en este repo:** todo el desarrollo del nuevo módulo Angular. **HU también en:** `Cotifly` (contrato de API + CORS, ver HU-004.1 de ese repo).
 
-### [HU-004.2] Alinear el proyecto a Angular 17.3.8 antes de crear el módulo nuevo
+### [HU-004.2] Confirmar que el módulo nuevo se construye con las dependencias ya instaladas, sin tocar nada compartido
 **Labels:** `frontend`, `tarea-tecnica`
 **Repo donde se crea este issue:** `clientepro-frontend`
 **Asignado a:** Sara (Frontend)
-- [ ] Auditar `package.json` y listar cada paquete que todavía está rezagado respecto a `@angular/core` (ya en `^17.3.8`) — principalmente Angular Material, hoy en `16.1.4`.
-- [ ] Subir/alinear esos paquetes rezagados a la línea Angular 17.3.8 compatible entre sí (`@angular/material`, `@angular/cli`, etc.), corriendo `ng update` donde aplique. No se baja `@angular/core`, se sube todo lo demás para que coincida con él.
-- [ ] Confirmar que `ng build` y `ng serve` siguen funcionando sin warnings de versión incompatible tras el ajuste.
-- [ ] Correr una regresión manual rápida de al menos 2 módulos ya existentes (ej. `tablero-gestion`, `informes-embarque`) para confirmar que la actualización no rompió nada visible.
+**Restricción confirmada con el equipo: no se modifica el `package.json` raíz ni ninguna dependencia compartida de ClientePro — solo se puede agregar lo propio del módulo nuevo, sin afectar el resto del proyecto.**
+- [ ] Confirmar qué versión de Angular Material (`16.1.4`) y de `@angular/core` (`^17.3.8`) están realmente instaladas hoy en `node_modules`/`package-lock.json` (no solo lo que dice `package.json`), ya que ese es el set de versiones con el que el módulo nuevo tiene que trabajar tal cual está.
+- [ ] Construir el módulo nuevo usando únicamente esas versiones ya instaladas — ningún componente de Angular Material que solo exista en una versión más nueva que `16.1.4`.
+- [ ] Si en algún punto de HU-004.3 en adelante se necesita un componente/API que no existe en `16.1.4`, no actualizar la dependencia por cuenta propia: documentarlo en este issue como limitación conocida y buscar una alternativa dentro de lo ya disponible (o escalarlo aparte, fuera de esta HU, a quien sí tenga autoridad sobre las dependencias compartidas de ClientePro).
+- [ ] Confirmar que `ng build` y `ng serve` siguen funcionando sin errores nuevos una vez agregado el módulo (sin haber tocado el `package.json` raíz).
 
 ### [HU-004.3] Estructura del módulo `cotifly` y servicio HTTP
 **Labels:** `frontend`, `tarea-tecnica`
@@ -482,6 +499,7 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 - [ ] Crear `services/cotifly.service.ts` con un método por endpoint (`login` si aplica, `chat`, `misCotizaciones`, `enviarCorreo`, `actualizarSeguimiento`), sin lógica de UI dentro del servicio.
 - [ ] Registrar la ruta del módulo en el routing principal, protegida con el mismo esquema de roles que ya usa `user-role.service.ts`.
 - [ ] Agregar el ítem de menú "Cotizador" en la navegación, visible únicamente para el rol comercial (ya confirmado con negocio; ningún otro rol lo ve, ni siquiera en modo lectura).
+- [ ] Al entrar por primera vez al módulo, si el backend indica que el comercial no tiene `celular` guardado (ver HU-002.1), mostrar un modal de una sola pregunta ("¿Cuál es tu número de celular? Aparecerá en tus cotizaciones") antes de dejarlo generar su primera cotización — guardarlo una sola vez, nunca volver a pedirlo salvo que el comercial lo edite explícitamente.
 
 ### [HU-004.4] Vista "Nueva cotización"
 **Labels:** `frontend`, `tarea-tecnica`
@@ -529,7 +547,7 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 **Parte de HU-004 (milestone). Depende de HU-004.4, HU-004.5 y HU-004.6.**
 - [ ] Ejecutar y documentar casos de prueba manuales para: login integrado (sin pedir credenciales aparte de la sesión de ClientePro), nueva cotización (formulario completo, pasos Tarifa→Margen→Precio→PDF, descarga del PDF), mis cotizaciones (marcar efectiva/no efectiva/limpiar, reenviar correo), asistente (mensaje libre, sesión, render de markdown, manejo de sesión expirada).
 - [ ] Confirmar que el ítem de menú "Cotizador" respeta el control de roles definido en HU-004.3 (solo visible para el rol comercial), probando con un usuario comercial y con al menos un usuario de otro rol para confirmar que no lo ve.
-- [ ] Ejecutar una regresión manual de al menos 2 módulos ya existentes de ClientePro (ej. `tablero-gestion`, `informes-embarque`) tras la actualización de dependencias de HU-004.2, confirmando que nada se rompió fuera del módulo nuevo.
+- [ ] Ejecutar una regresión manual de al menos 2 módulos ya existentes de ClientePro (ej. `tablero-gestion`, `informes-embarque`) tras agregar el módulo nuevo, confirmando que nada se rompió fuera de él — no debería haber cambios en el resto del proyecto, ya que HU-004.2 no toca dependencias compartidas.
 - [ ] Registrar cualquier defecto encontrado como issue aparte, referenciado desde este issue; no cerrar este issue mientras queden defectos críticos sin resolver.
 
 ---
@@ -1052,6 +1070,75 @@ Corregir el filtro faltante por comercial en los endpoints de Bandeja y de detal
 
 ---
 
+## HU-009 — Activar la conexión real a SAP TM para que la extracción de márgenes por cliente sea efectiva
+
+> **HU en Notion:** _(pendiente — crear y pegar el link)_
+> **Sprint:** Sprint 4 · **Épica:** E1 — Migración de Backend y Datos · **Talla:** L · **Roles:** Backend (Duban), QA (Kevin)
+> **Repos donde se crean issues de esta milestone:** `Cotifly`
+
+### Historia
+**Como** equipo de TI, **quiero** activar la conexión OData en vivo a SAP TM (código ya implementado y probado, pero nunca activado en producción) en vez del export JSON estático que se usa hoy, **para** que el margen por cliente que aplica el bot al cotizar sea siempre el dato real y actualizado de SAP, no un archivo fijo que puede quedar desactualizado.
+
+### Contexto técnico (ya construido, confirmado en el código)
+- El cliente OData **ya existe y está probado**: `mcp_server/margen/odata_fuente.py` (`ODataFuente`), con pruebas unitarias vía `respx` (mock) y una prueba marcada `@pytest.mark.sap` contra el host SAP real — hoy excluida del CI por defecto, nunca ejecutada contra el sistema real en este entorno.
+- El cambio de fuente es **solo una bandera de configuración**: `SAP_TM_MODO=export_json` (hoy, lee `sap_tm_export_path`, un archivo fijo de ejemplo) vs. `SAP_TM_MODO=odata` (usa `sap_tm_url`/`sap_tm_user`/`sap_tm_pass` para consultar en vivo la entidad `RentabClienteSet`). No se necesita escribir código Python nuevo para activar esto.
+- El resolver de margen (`mcp_server/margen/servicio.py`) ya contempla resiliencia: si la fuente SAP no responde (`FuenteMargenNoDisponible`), cae automáticamente al fallback de política por línea de negocio (`origen: "politica_linea"`), sin romper el flujo de cotización. También ya marca como "anómalo" cualquier margen fuera del rango [0%, 60%] (`servicio.py:50`).
+- Lo que falta **no es código**: es conectividad de red real desde donde corre el backend hasta el host SAP, credenciales reales de servicio, y validar con datos reales que el margen extraído es correcto antes de confiar en él en producción.
+
+### Criterios de aceptación (Gherkin)
+```gherkin
+Escenario: Margen real extraído de SAP en vivo
+Dado un cliente con Margen Propuesto configurado en SAP TM (entidad RentabClienteSet)
+Cuando el bot cotiza para ese cliente y esa línea de negocio
+Entonces el margen aplicado viene de la consulta OData en vivo (origen: "sap_tm"), no del export JSON estático
+
+Escenario: Resiliencia si SAP no responde
+Dado que el host SAP TM está temporalmente no disponible
+Cuando el bot intenta consultar el margen por cliente
+Entonces cae al fallback de política por línea de negocio (origen: "politica_linea") sin romper el flujo de cotización — comportamiento que ya existe en el código
+
+Escenario: Margen anómalo detectado con datos reales
+Dado un margen extraído de SAP fuera del rango [0%, 60%]
+Cuando se aplica a una cotización real
+Entonces queda marcado explícitamente como anómalo, para que el equipo lo revise antes de confiar en él en producción
+```
+
+### Trazabilidad (event storming)
+Afecta: `mcp_server/margen/` (Python, repo `Cotifly`) — mismo resolver que se reimplementará en .NET (HU-003.4). Depende de: conectividad de red y credenciales que debe proveer el equipo de infraestructura/SAP (fuera del control directo de Cotifly). Relacionado con HU-003.7 (integraciones externas en .NET): la migración debe reimplementar el cliente OData completo, no solo dejarlo como interfaz sin implementación, ya que aquí se confirma que la integración real es necesaria y ya funciona en Python.
+
+### Alcance en este repo (Cotifly)
+1. Coordinar con el equipo de infraestructura/SAP la conectividad de red real y las credenciales de servicio para el endpoint OData (HU-009.1).
+2. Ejecutar las pruebas ya existentes marcadas `@pytest.mark.sap` contra el host real, validar con datos de al menos algunos clientes/líneas de negocio reales, y activar `SAP_TM_MODO=odata` en producción (HU-009.2).
+3. Actualizar HU-003.7 para que la migración a .NET reimplemente el cliente OData completo (no solo la interfaz que se había dejado pendiente).
+
+**HU también en:** ninguna — el trabajo de conectividad/activación es interno a `Cotifly`; la coordinación con el equipo de SAP/infraestructura es externa y no genera un issue en otro repo de este documento.
+
+#### Issues en Cotifly
+
+### [HU-009.1] Obtener conectividad de red y credenciales reales para SAP TM OData
+**Labels:** `cotifly`, `backend`, `infra`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-009 (milestone). Gatilla HU-009.2 — no se activa nada en producción sin cerrar este primero.**
+- [ ] Confirmar con el equipo de infraestructura/SAP si el backend (hoy en Dokploy) tiene o puede tener ruta de red hasta el host SAP TM real (puede requerir VPN, whitelist de IP, o una ruta interna ya existente que usen otros sistemas de la compañía) — documentar la respuesta.
+- [ ] Solicitar al equipo de SAP las credenciales reales de servicio para el endpoint OData (`sap_tm_url`, `sap_tm_user`, `sap_tm_pass`) y el nombre real de la entidad/servicio si difiere de `RentabClienteSet`.
+- [ ] Confirmar con el equipo de SAP el significado exacto de los campos que devuelve la entidad (`SalesOrgId`, `TrqType`, `OrderPartyId`, `Value`) contra al menos un caso real conocido, para tener un punto de referencia antes de validar en el siguiente issue.
+- [ ] Dejar registradas en este issue las credenciales/endpoints confirmados (guardados en el gestor de secretos del equipo, nunca en texto plano en este issue ni en el repo).
+
+### [HU-009.2] Validar la integración OData contra SAP real y activarla en producción
+**Labels:** `cotifly`, `backend`, `qa`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend) + Kevin (QA)
+**Parte de HU-009 (milestone). Depende de HU-009.1.**
+- [ ] Ejecutar las pruebas ya existentes marcadas `@pytest.mark.sap` (hoy excluidas del CI) contra el host SAP real, en un entorno de pruebas, usando las credenciales obtenidas en HU-009.1.
+- [ ] Validar con al menos 3 combinaciones reales de cliente + línea de negocio que el margen extraído es correcto y coherente con lo que el negocio espera (no solo que la llamada HTTP funciona).
+- [ ] Confirmar que el caso de margen "anómalo" (fuera de [0%,60%]) se puede reproducir o al menos queda claramente definido qué hacer operativamente si ocurre con un cliente real.
+- [ ] Confirmar que el fallback a política por línea de negocio funciona correctamente si se simula que SAP no responde (timeout/5xx), sin romper una cotización en curso.
+- [ ] Cambiar `SAP_TM_MODO` a `odata` en la configuración de producción (Dokploy) una vez validado todo lo anterior, y confirmar en producción real que las primeras cotizaciones usan `origen: "sap_tm"` cuando corresponde.
+- [ ] Dejar registrada en este issue la aprobación explícita de QA antes de considerar esta HU cerrada.
+
+---
+
 ## Resumen para copiar rápido
 
 | HU | Título | Alcance real | Repo(s) donde vive el trabajo principal |
@@ -1064,15 +1151,17 @@ Corregir el filtro faltante por comercial en los endpoints de Bandeja y de detal
 | HU-006 | Despliegue del backend .NET en Dokploy | Dockerfiles, registry, TLS, secretos, manifiestos, backups y checklist de salida a producción | `Cotifly` |
 | HU-007 | Auditoría y configuración de variables de entorno para producción | Tabla completa de variables (BD, integración Nexo, storage, secretos) con valor real y verificación post-despliegue | `Cotifly` |
 | HU-008 | Aislamiento de solicitudes por comercial en la Bandeja de Nexo | Fix de seguridad confirmado: un comercial ve hoy las solicitudes de todos los demás | `NEXO` |
+| HU-009 | Activar la conexión real a SAP TM para que la extracción de márgenes por cliente sea efectiva | Conectividad, credenciales y validación real — el código OData ya existe y está probado | `Cotifly` |
 
 **Antes de crear esto en GitHub:**
-- [ ] Crear la HU-001, HU-002, HU-003, HU-004, HU-005, HU-006, HU-007 y HU-008 en Notion y reemplazar los links placeholder.
-- [ ] Crear el label `sprint-4` en GitHub (las 8 HUs ya quedaron asignadas a Sprint 4) y crear las 4 épicas (E1 a E4, ver punto 5.1 de la introducción) antes de crear las HUs, ya que cada una queda asignada a una épica específica (HU-008 queda asociada a E3 solo como referencia cruzada, es un fix independiente).
+- [ ] Crear la HU-001, HU-002, HU-003, HU-004, HU-005, HU-006, HU-007, HU-008 y HU-009 en Notion y reemplazar los links placeholder.
+- [ ] Crear el label `sprint-4` en GitHub (las 9 HUs ya quedaron asignadas a Sprint 4) y crear las 4 épicas (E1 a E4, ver punto 5.1 de la introducción) antes de crear las HUs, ya que cada una queda asignada a una épica específica (HU-008 queda asociada a E3 solo como referencia cruzada, es un fix independiente; HU-009 sí queda dentro de E1).
+- [ ] HU-009.1 (conectividad/credenciales) debe cerrarse **antes** de HU-009.2 (validación + activación en producción) — no se activa nada sin confirmar primero que hay ruta de red y credenciales reales.
 - [ ] El archivo suelto `=0.7` de la raíz del repo (residuo de un `pip install` mal escrito, hallazgo de QA) ya se eliminó directamente del working tree — solo falta que el equipo confirme el commit de ese borrado, no requiere una HU.
 - [ ] Nota de alcance: los issues de este documento se crean en **3 repos**: [`Cotifly`](https://github.com/InnovacionIA-proyectos/Cotifly), [`clientepro-frontend`](https://github.com/InnovacionIA-proyectos/clientepro-frontend) y [`NEXO`](https://github.com/InnovacionIA-proyectos/NEXO) (backend de Nexo, para HU-005.10 y HU-008.1). No se crea ningún issue en `administracion_embarqa_nexo` (frontend de Nexo) — ese repo no se toca.
 - [ ] **HU-008 es una corrección de seguridad ya confirmada** (un comercial de Nexo ve hoy las solicitudes de otros comerciales) — priorizarla independientemente del resto del backlog, no esperar al avance de HU-005 ni de la migración de Cotifly.
 - [ ] Confirmar con negocio la lista exacta de roles que deben ver el ítem de menú "Cotizador" en ClientePro.
-- [ ] HU-004.2 (alinear a Angular 17.3.8) debe ejecutarse **antes** de HU-004.3 en adelante — no tiene sentido construir el módulo nuevo sobre una base de dependencias inconsistente.
+- [ ] HU-004.2 (confirmar versiones ya instaladas, sin tocar nada compartido) debe ejecutarse **antes** de HU-004.3 en adelante, para que el equipo sepa desde el inicio con qué versión real de Angular Material tiene que trabajar. Restricción confirmada: no se modifica el `package.json` raíz ni ninguna dependencia compartida de ClientePro en esta HU.
 - [ ] HU-003.1 (decisiones de arquitectura y estrategia de migración) debe cerrarse **antes** de crear/empezar cualquier otro issue de HU-003 — ya se confirmó que el agente LLM migra a .NET, que el desarrollo vive en el mismo repo `Cotifly`, y que los datos de conexión a SQL Server los provee directamente el responsable del proyecto; falta decidir la estrategia de corte, la librería de PDF, el mecanismo concreto de orquestación del LLM (ej. Semantic Kernel vs. cliente HTTP directo), y si `mcp_server`/`orquestador` (Python) siguen expuestos durante la convivencia.
 - [ ] Coordinar HU-003.6 (paridad de contrato de API) con el equipo de HU-004 para probar el módulo Angular contra ambos backends (Python y .NET) durante la convivencia.
 - [ ] HU-002.1 (propuesta) debe aprobarse **antes** de HU-002.2 (ejecución), y ambas deben cerrarse **antes** de HU-002.3 (diseño del esquema objetivo); HU-002.3 debe cerrarse **antes** de HU-003.3 (implementación EF Core) — el orden real es HU-002 completa → HU-003.3 → resto de HU-003.
