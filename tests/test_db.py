@@ -51,6 +51,35 @@ def test_migraciones_roundtrip() -> None:
     eng.dispose()
 
 
+def test_fks_hu002_2_creadas_por_la_migracion() -> None:
+    """QA de HU-002.2 (PR #38): las FKs aprobadas en HU-002.1 (§2.9 de la propuesta)
+    y las nuevas de `usuario_id` (§2.1-§2.6) quedan realmente creadas por la
+    migración `0006_hu002_2_esquema_completo`, no solo declaradas en `shared/models.py`.
+    """
+    eng = create_engine(DATABASE_URL, future=True)
+    insp = inspect(eng)
+
+    def _fk_cols(tabla: str) -> set[tuple[tuple[str, ...], str]]:
+        return {
+            (tuple(fk["constrained_columns"]), fk["referred_table"])
+            for fk in insp.get_foreign_keys(tabla)
+        }
+
+    cot = _fk_cols("cotizaciones")
+    assert (("linea_negocio",), "margenes_politica") in cot
+    assert (("linea_negocio_id",), "margenes_politica") in cot
+    assert (("usuario_id",), "usuarios_web") in cot
+
+    assert (("usuario_id",), "usuarios_web") in _fk_cols("ajustes_margen")
+
+    ev = _fk_cols("eventos_conversacion")
+    assert (("space_id", "thread_id"), "sesiones") in ev
+    assert (("usuario_id",), "usuarios_web") in ev
+
+    assert (("confirmado_por",), "usuarios_web") in _fk_cols("correos_enviados")
+    eng.dispose()
+
+
 def test_cotizacion_crud(db_session: Session) -> None:
     # `payload` (JSONB) se eliminó en HU-002.2 (sin consumidor real) — ya no hay
     # roundtrip JSONB que probar aquí, solo CRUD básico.
