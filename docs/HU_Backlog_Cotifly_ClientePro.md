@@ -184,10 +184,13 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Asignado a:** Sara (Datos) + Duban (Backend, ejecución técnica de la migración)
 **Parte de HU-002 (milestone). Depende de HU-002.3.**
 - [x] Datos de conexión reales a la instancia SQL Server 2019 corporativa (servidor, nombre de base, usuario de servicio): los provee directamente el responsable del proyecto (no hay que gestionarlo con TI por separado) — confirmar el nombre de base a usar, siguiendo convención corporativa si existe una.
-- [ ] Crear la base de datos de Cotifly en esa instancia y ejecutar el esquema objetivo de HU-002.3 (tablas, FKs, vistas).
+- [ ] Crear la base de datos de Cotifly en esa instancia y ejecutar el esquema objetivo definido en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` (tablas, FKs, constraints, vistas — HU-002.3).
 - [ ] Decidir junto con el equipo de HU-003 si esta migración se ejecuta vía script T-SQL directo o vía las migraciones EF Core de HU-003.3 (evitar hacerlo por ambos caminos a la vez).
-- [ ] Si el equipo decide conservar los datos históricos de PostgreSQL, migrarlos (export/import o script dedicado) y validar que el conteo de filas por tabla coincide entre origen y destino.
+- [ ] **Condición previa a esto:** las migraciones `0006`/`0007`/`0008` de HU-002.2 deben estar ya aplicadas sobre el Postgres de **producción** antes de exportar — si se exporta de un Postgres que todavía no las tiene, los datos no van a coincidir con las tablas del esquema objetivo. Si el equipo decide conservar los datos históricos de PostgreSQL, migrarlos (export/import o script dedicado) y validar que el conteo de filas por tabla coincide entre origen y destino.
 - [ ] Confirmar que el backend (Python o .NET, según el estado de la convivencia en ese momento) puede conectarse y operar contra la BD ya migrada en un entorno de pruebas antes de dar el paso en producción.
+- [ ] Reemplazar el servicio `postgres:16` de `docker-compose.yml` por `mcr.microsoft.com/mssql/server:2019-latest`, ajustando puerto (1433), healthcheck (`sqlcmd`/`SELECT 1`) y variables de entorno (`SA_PASSWORD`/`MSSQL_SA_PASSWORD`) — ver §3.4 de la propuesta.
+- [ ] Instalar el driver ODBC `msodbcsql17` en `mcp_server/Dockerfile` y `orquestador/Dockerfile`; cambiar dependencia `psycopg`→`pyodbc` en `pyproject.toml` y `DATABASE_URL` a `mssql+pyodbc://...` (§3.3 de la propuesta — usar **ODBC Driver 17**, no 18, ya confirmado en HU-002.3).
+- [ ] Reescribir `scripts/backup_db.sh`/`restore_db.sh` con `sqlcmd`/`bcp` o `BACKUP DATABASE`/`RESTORE DATABASE`, y actualizar `DEPLOY.md` (comandos de acceso pasan de `psql` a `sqlcmd`) — §3.4 de la propuesta.
 
 ### [HU-002.5] Validación QA de integridad de datos tras la migración a SQL Server
 **Labels:** `cotifly`, `qa`, `datos`, `tarea-tecnica`
@@ -196,7 +199,7 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Parte de HU-002 (milestone). Depende de HU-002.4.**
 - [ ] Confirmar que el conteo de filas por tabla coincide entre PostgreSQL (origen) y SQL Server 2019 (destino), para cada tabla migrada.
 - [ ] Probar cada FK agregada en HU-002.2 con al menos un caso real que confirme que la integridad referencial funciona como se espera (ej. intentar insertar un registro huérfano y confirmar que la base lo rechaza).
-- [ ] Validar que las 3 vistas migradas (`v_ajustes_margen_por_comercial`, `v_trazabilidad_cotizaciones`, `v_actividad_por_comercial`) devuelven resultados equivalentes a las originales de PostgreSQL para un mismo conjunto de datos de prueba.
+- [ ] Validar que las **2** vistas migradas (`v_ajustes_margen_por_comercial`/`vAjustesMargenPorComercial`, `v_actividad_por_comercial`/`vActividadPorComercial`) devuelven resultados equivalentes a las originales de PostgreSQL para un mismo conjunto de datos de prueba — `v_trazabilidad_cotizaciones` se descartó en HU-002.2, no aplica.
 - [ ] Dejar documentado el resultado de esta validación como requisito de cierre antes de que HU-003.3 (conexión del backend .NET a la nueva base) se dé por completada.
 - [ ] Dejar evidencia trazable de esta ejecución (fecha, quién la corrió, contra qué entorno) en el propio issue o en un commit con mensaje descriptivo — no basta con que "haya pasado", debe quedar registro verificable de cuándo y contra qué sistema real se corrió, dado que hoy el historial de git del repo no permite reconstruir esa trazabilidad por sí solo.
 

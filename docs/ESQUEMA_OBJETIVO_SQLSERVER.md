@@ -219,7 +219,7 @@ erDiagram
 | Columna | Tipo SQL Server | Nulo | Default / constraint |
 |---|---|---|---|
 | `id` | `uniqueidentifier` | NOT NULL | PK, `DEFAULT NEWID()` |
-| `folio` | `nvarchar(max)` | NOT NULL | `UNIQUE` (`uq_cotizaciones_folio`) |
+| `folio` | `nvarchar(50)` | NOT NULL | `UNIQUE` (`uq_cotizaciones_folio`) — ver nota abajo |
 | `lineaNegocioId` | `int` | NULL | FK → `tblMargenesPolitica.id` (poblada, ver §3 — `lineaNegocio` en texto se retira, no se migra) |
 | `clienteNombre` | `nvarchar(max)` | NULL | |
 | `clienteIdSap` | `nvarchar(max)` | NULL | |
@@ -248,6 +248,12 @@ erDiagram
 > aplicación (no es un trigger de Postgres). En SQL Server/EF Core (HU-003.3) hay que
 > replicar el mismo patrón a nivel de aplicación (ej. interceptor de `SaveChanges`), no
 > agregar un trigger nuevo que no existe hoy.
+
+> **Nota `folio` — corrección de tipo (2026-09-22, HU-002.4):** SQL Server no permite
+> `nvarchar(max)` en una columna con `UNIQUE`/PK o referenciada por FK (el límite de
+> índice es ~900 bytes) — `nvarchar(max)` haría fallar el `CREATE TABLE`. Se acota a
+> `nvarchar(50)`, de sobra para el formato real (`PCN-DDMMAAAA[-vN]`). El resto de
+> columnas de texto sin `UNIQUE`/FK sí se quedan en `nvarchar(max)` sin problema.
 
 ### 5.2 `tblMargenAjustes` (antes `ajustes_margen`)
 
@@ -298,8 +304,8 @@ erDiagram
 | Columna | Tipo | Nulo | Constraint |
 |---|---|---|---|
 | `id` | `uniqueidentifier` | NOT NULL | PK, `DEFAULT NEWID()` |
-| `spaceId` | `nvarchar(max)` | NULL | FK compuesta → `tblSesiones(spaceId, threadId)` |
-| `threadId` | `nvarchar(max)` | NULL | (misma FK compuesta) |
+| `spaceId` | `nvarchar(128)` | NULL | FK compuesta → `tblSesiones(spaceId, threadId)` — ver nota de tipo en §5.7 |
+| `threadId` | `nvarchar(128)` | NULL | (misma FK compuesta) |
 | `usuarioId` | `int` | NULL | FK → `tblUsuariosWeb.id`, HU-004 sin poblar |
 | `rol` | `nvarchar(max)` | NOT NULL | `user`/`assistant` |
 | `contenido` | `nvarchar(max)` | NULL | |
@@ -323,10 +329,16 @@ erDiagram
 
 | Columna | Tipo | Nulo | Constraint |
 |---|---|---|---|
-| `spaceId` | `nvarchar(max)` | NOT NULL | PK (compuesta) |
-| `threadId` | `nvarchar(max)` | NOT NULL | PK (compuesta) |
+| `spaceId` | `nvarchar(128)` | NOT NULL | PK (compuesta) — ver nota abajo |
+| `threadId` | `nvarchar(128)` | NOT NULL | PK (compuesta) |
 | `estado` | `nvarchar(max)` | NULL | `CHECK (estado IN ('activa','archivada'))` (`ck_sesiones_estado`) |
 | `ultimaActividad` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` |
+
+> **Nota `spaceId`/`threadId` — corrección de tipo (2026-09-22, HU-002.4):** mismo caso
+> que `folio` (§5.1) — no pueden ser `nvarchar(max)` al ser PK, y `tblEventosConversacion`
+> los referencia por FK compuesta, así que su tipo debe coincidir exactamente. Se acotan
+> a `nvarchar(128)`, de sobra para los ids reales de Google Chat (`spaces/AAAA1234`,
+> `threads/BBBB5678`) o `web/<uuid>`.
 
 ### 5.8 `tblUsuariosWeb` (antes `usuarios_web`)
 
@@ -468,16 +480,21 @@ quedan mapeadas:
    montos, `(9,4)` para márgenes.
 3. **§7** — Collation: confirmada con el DBA, `Latin1_General_100_CI_AS_SC_UTF8`, sin
    conflicto con Nexo/ClientePro.
+4. **§5.1/§5.5/§5.7 (2026-09-22, detectado al preparar el script T-SQL de HU-002.4)** —
+   `folio`, `spaceId` y `threadId` estaban como `nvarchar(max)`, tipo no permitido en
+   columnas `PK`/`UNIQUE`/referenciadas por FK en SQL Server (límite de índice ~900
+   bytes) — habría hecho fallar el `CREATE TABLE`. Se acotaron a `nvarchar(50)` y
+   `nvarchar(128)` respectivamente.
 
 **Pendientes, no bloqueantes, fuera del alcance de este documento:**
 
-4. **§3** — Nota de implementación (no bloquea el documento): quien ejecute HU-002.4 o
+5. **§3** — Nota de implementación (no bloquea el documento): quien ejecute HU-002.4 o
    construya el `DbContext` de HU-003.3 debe leer/escribir la línea de negocio por
    `lineaNegocioId`, no por texto — la columna de texto no se migra a SQL Server.
-5. **§0** — Cuándo se agrega `nombreUsuario`/`nombreCompleto`/`email` a `tblUsuariosWeb`
+6. **§0** — Cuándo se agrega `nombreUsuario`/`nombreCompleto`/`email` a `tblUsuariosWeb`
    (depende de HU-004, migración adicional fuera de este alcance).
-6. Corrección de documentación fuera de alcance: actualizar las tablas columna-por-columna
+7. Corrección de documentación fuera de alcance: actualizar las tablas columna-por-columna
    de `docs/DICCIONARIO_BASE_DE_DATOS.md` §3.1-3.9 al esquema real post-`0006`/`0007`/`0008`.
-7. **§5.9** — `tblMargenesPolitica.metodoCalculo`: decisión abierta heredada de la
+8. **§5.9** — `tblMargenesPolitica.metodoCalculo`: decisión abierta heredada de la
    auditoría de HU-002.1 (`docs/HU_Backlog_Cotifly_ClientePro.md:157`), nunca resuelta —
    columna sin uso real, se mantiene y se migra tal cual por ahora.
