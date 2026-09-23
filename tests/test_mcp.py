@@ -599,13 +599,13 @@ async def test_consultar_cotizacion_por_criterios(tmp_path: Path) -> None:
         from shared.repos import CotizacionRepo
 
         with get_session() as s:
+            # HU-002.2: `comercial_email`/`estado` ya no existen en `cotizaciones`
+            # (ahora `usuario_id`/`estado_costeo`+`estado_envio`).
             CotizacionRepo.crear(
-                s, folio="PCN-CONS-1", cliente_nombre="ACME SA",
-                comercial_email="ana@boterosoto.com.co", estado="generada",
+                s, folio="PCN-CONS-1", cliente_nombre="ACME SA", estado_envio="sin_enviar",
             )
             CotizacionRepo.crear(
                 s, folio="PCN-CONS-2", cliente_nombre="OTRO",
-                comercial_email="beto@boterosoto.com.co",
             )
         async with Client(build_server()) as c:
             async def _consulta(criterio: dict) -> dict:
@@ -613,15 +613,16 @@ async def test_consultar_cotizacion_por_criterios(tmp_path: Path) -> None:
 
             por_folio = await _consulta({"folio": "PCN-CONS-1"})
             por_cliente = await _consulta({"cliente": "acme"})
-            por_comercial = await _consulta({"comercial": "beto@boterosoto.com.co"})
+            # HU-002.2: `comercial` ya no filtra (usuario_id es entero, sin fuente
+            # hasta ClientePro/HU-004) — se acepta pero es un no-op, devuelve todo.
+            por_comercial_noop = await _consulta({"comercial": "beto@boterosoto.com.co"})
 
         assert por_folio["total"] == 1
         assert por_folio["resultados"][0]["folio"] == "PCN-CONS-1"
         assert por_folio["resultados"][0]["cliente_nombre"] == "ACME SA"
         assert por_cliente["total"] == 1
         assert por_cliente["resultados"][0]["folio"] == "PCN-CONS-1"
-        assert por_comercial["total"] == 1
-        assert por_comercial["resultados"][0]["folio"] == "PCN-CONS-2"
+        assert por_comercial_noop["total"] == 2
     finally:
         _borrar_cotizacion_y_correos("PCN-CONS-1")
         _borrar_cotizacion_y_correos("PCN-CONS-2")

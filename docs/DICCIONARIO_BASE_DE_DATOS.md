@@ -16,6 +16,20 @@ foto de lo que se usó en cada cotización (`fuente_tarifa`, `origen_margen`).
 Motor: **PostgreSQL 16**. Acceso: SQLAlchemy 2.x + Alembic (`shared/models.py` = tablas,
 `shared/repos.py` = toda lectura/escritura, `migrations/versions/` = historial versionado).
 
+> **Actualizado por HU-002.2 (2026-09-22):** se ejecutó la propuesta de reestructuración
+> aprobada en HU-002.1 (migración `0006_hu002_2_esquema_completo`). Cambios de fondo: se
+> eliminaron `payload`, `contexto`, `origen`, `destino`, `fuente_tarifa`, y el `estado`
+> único de `cotizaciones` se dividió en `estado_costeo`/`estado_envio`; se agregaron FKs
+> reales (`eventos_conversacion→sesiones`, `linea_negocio→margenes_politica`,
+> `usuario_id→usuarios_web`); `usuarios_web` y `margenes_politica` se rediseñaron. Varias
+> columnas nuevas (`costeo_id`, `bd_cliente`, `linea_negocio_id`, `estado_costeo`,
+> `usuario_id`, `confirmado_por`) **existen pero nadie las llena todavía** — dependen de
+> HU-005 (Nexo) o HU-004 (ClientePro). Consecuencia directa: `POST /web/login` quedó
+> desactivado (sin `email`/`nombre` en `usuarios_web` no hay cómo identificar a nadie), y
+> con él `mis-cotizaciones`, `enviar` y `seguimiento` de la Consola web. Cotizar por Google
+> Chat no se vio afectado. Detalle completo de la decisión:
+> `docs/HU_Backlog_Cotifly_ClientePro.md` (`[HU-002.2]`).
+
 ## 2. Cómo se llena (flujo de una cotización)
 
 1. El comercial escribe en la Consola web (`/web`) o en Google Chat.
@@ -41,6 +55,18 @@ Motor: **PostgreSQL 16**. Acceso: SQLAlchemy 2.x + Alembic (`shared/models.py` =
 ## 3. Tablas
 
 ### 3.1 `cotizaciones` — el registro central
+
+> **HU-002.2:** eliminadas `payload`, `origen`, `destino`, `fuente_tarifa`. `estado` se
+> dividió en `estado_costeo` (Text, sin poblar — HU-005) y `estado_envio` (Text, reemplaza
+> el uso de envío del `estado` anterior). Nuevas sin poblar: `costeo_id`, `bd_cliente`,
+> `linea_negocio_id` (FK a `margenes_politica.id`, HU-005). `linea_negocio` ahora tiene FK
+> real a `margenes_politica.linea_negocio`. `comercial_email` → `usuario_id` (Integer, FK a
+> `usuarios_web.id`, sin poblar hasta HU-004 — `generar_pdf` ya no tiene de dónde sacar
+> este dato con el login desactivado). `efectiva`/`seguimiento_nota`/
+> `seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at` (migración `0007`,
+> misma semántica boolean, sin poblar hasta que HU-005 construya el botón y sincronice
+> con el `Resultado` de Nexo).
+
 
 Una fila por cotización generada (PDF emitido). Se llena **una sola vez** al llamar
 `generar_pdf` (`mcp_server/server.py`); las columnas de seguimiento (`efectiva`, …) se
@@ -77,6 +103,10 @@ actualizan después desde la Consola web.
 
 ### 3.2 `ajustes_margen` — auditoría de desvíos
 
+> **HU-002.2:** `comercial_email` → `usuario_id` (Integer, FK a `usuarios_web.id`, sin
+> poblar hasta HU-004).
+
+
 Una fila **cada vez** que un comercial negocia un margen distinto al que propuso la
 política/SAP. La llena la herramienta `registrar_ajuste_margen`. Es la base de la vista
 `v_ajustes_margen_por_comercial` que usa Gerencia para auditar.
@@ -94,6 +124,12 @@ política/SAP. La llena la herramienta `registrar_ajuste_margen`. Es la base de 
 | `created_at` | timestamptz | Cuándo se registró el ajuste. | `now()` de Postgres. | `2026-03-19 10:04:58+00` |
 
 ### 3.3 `correos_enviados` — trazabilidad de envíos
+
+> **HU-002.2:** `confirmado_por` cambió de texto (el correo) a Integer (FK a
+> `usuarios_web.id`, sin poblar hasta HU-004) — mismo nombre. El envío real (remitente,
+> `Reply-To` del correo al cliente) sigue usando el correo tal cual, sin cambios; solo
+> cambió lo que queda persistido en esta tabla.
+
 
 Un registro por cada **intento** de envío del PDF al cliente (exitoso o fallido). La
 llena la herramienta `enviar_correo`. `CorreoRepo.duplicado_reciente` la consulta antes
@@ -113,6 +149,10 @@ de enviar, para no mandar el mismo correo dos veces en 5 minutos.
 | `created_at` | timestamptz | Cuándo se intentó el envío. | `now()` de Postgres. | `2026-03-19 10:08:15+00` |
 
 ### 3.4 `eventos_conversacion` — historial del agente
+
+> **HU-002.2:** `usuario_email` → `usuario_id` (Integer, FK a `usuarios_web.id`, sin poblar
+> hasta HU-004). Ahora tiene FK compuesta real `(space_id, thread_id) → sesiones`.
+
 
 Un registro por cada **turno** (mensaje del usuario o respuesta del asistente) de una
 conversación. Reconstruye el historial de un hilo (`ConversacionRepo.historial`) y
@@ -148,6 +188,10 @@ no depende del agente ni del negocio — es el log técnico.
 
 ### 3.6 `sesiones` — estado de la conversación
 
+> **HU-002.2:** columna `contexto` (JSONB) eliminada — nunca se leía. `estado` ahora tiene
+> `CHECK (estado IN ('activa','archivada'))`.
+
+
 PK compuesta (`space_id`, `thread_id`): una fila por hilo. Se crea la primera vez que
 llega un mensaje de ese hilo (`SesionRepo.obtener_o_crear`) y se archiva por un barrido
 de inactividad (`SESION_TTL_HORAS`).
@@ -162,6 +206,16 @@ de inactividad (`SESION_TTL_HORAS`).
 
 ### 3.7 `usuarios_web` — comerciales de la Consola
 
+> **HU-002.2 — rediseño completo:** la PK deja de ser `email` (Text) y pasa a ser `id`
+> (Integer, el mismo id de SAP que entregará ClientePro/HU-004, no autoincremental).
+> Se agregó `telefono`. Se eliminaron `email` y `nombre`, y la tabla se vació (`TRUNCATE`)
+> porque ninguna fila existente tenía un id de SAP real que asignarle. **Consecuencia:**
+> `POST /web/login` quedó desactivado (responde 501) y con él `GET /web/mis-cotizaciones`,
+> `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento` —
+> todos dependían de identificar al comercial por `email`. Cotizar por Google Chat, que
+> usa la identidad propia de Google (no este login), no se vio afectado.
+
+
 Identifica a quien usa el front web (`/web`). No hay contraseña: se crea/actualiza en
 cada login válido (`UsuarioWebRepo.upsert`).
 
@@ -173,6 +227,14 @@ cada login válido (`UsuarioWebRepo.upsert`).
 | `ultima_sesion` | timestamptz (nullable) | Último login. | `datetime.now(UTC)` en cada `upsert` (login nuevo o repetido). | `2026-03-19 09:58:00+00` |
 
 ### 3.8 `margenes_politica` — configuración: margen por línea
+
+> **HU-002.2:** se agregó `id` (Integer serial, **nueva PK**) e `is_active` (Boolean,
+> default `true`). `linea_negocio` deja de ser PK y pasa a `UNIQUE` — `cotizaciones`
+> referencia esta tabla tanto por `linea_negocio` (FK directa, texto) como por la nueva
+> `linea_negocio_id` (FK a `id`, sin poblar hasta HU-005). El estado *provisional* de los
+> valores (15%/50% ITR) sigue igual — HU-002.1 decidió no bloquear el cierre con la
+> validación de Gerencia Comercial, se ajustará desde el panel admin cuando exista.
+
 
 **No la llena el bot.** Es la política de margen por defecto (fallback cuando SAP TM no
 tiene el cliente). Se sembró con la migración `0002_seed_config`; se edita a mano en BD
@@ -204,12 +266,13 @@ para saber qué política de margen le corresponde. PK compuesta (`trq_type`,
 Creadas por SQL directo en Alembic, sin modelo ORM propio — pensadas para Gerencia y para
 la sincronización a Google Sheets (`shared/sheets_sync.py`, tablero Looker Studio):
 
-- **`v_ajustes_margen_por_comercial`**: agrega `ajustes_margen` por comercial + línea
-  (número de ajustes, diferencia promedio/mín/máx, fecha del último ajuste).
-- **`v_trazabilidad_cotizaciones`**: una fila por cotización con su precio/margen y
-  cuántos ajustes/correos tuvo asociados.
-- **`v_actividad_por_comercial`**: actividad agregada por comercial (cotizaciones
-  totales/enviadas, ajustes, última actividad).
+- **`v_ajustes_margen_por_comercial`**: agrega `ajustes_margen` por comercial (`usuario_id`
+  desde HU-002.2) + línea (número de ajustes, diferencia promedio/mín/máx, último ajuste).
+- **`v_actividad_por_comercial`**: actividad agregada por comercial (`usuario_id` desde
+  HU-002.2; cotizaciones totales/enviadas vía `estado_envio`, ajustes, última actividad).
+
+> `v_trazabilidad_cotizaciones` se eliminó en HU-002.2: sin consumidor de código, y
+> dependía de `origen`/`destino`/`fuente_tarifa`, ya eliminadas de `cotizaciones`.
 
 ```sql
 SELECT * FROM v_ajustes_margen_por_comercial ORDER BY num_ajustes DESC;

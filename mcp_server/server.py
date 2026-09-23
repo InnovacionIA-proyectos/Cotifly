@@ -323,12 +323,6 @@ def build_server(
                 # Render a bytes y guardado agnóstico (volumen o S3/MinIO según config).
                 datos_pdf, _paginas = _render_pdf_bytes(html)
                 pdf_path = construir_almacen().guardar(f"{folio}.pdf", datos_pdf)
-                comercial = cotizacion.get("comercial")
-                if not isinstance(comercial, dict):
-                    comercial = {}
-                tarifa = cotizacion.get("tarifa")
-                if not isinstance(tarifa, dict):
-                    tarifa = {}
                 traza = _datos_trazabilidad(cotizacion)
                 cot = CotizacionRepo.crear(
                     s,
@@ -336,20 +330,20 @@ def build_server(
                     linea_negocio=_texto(cotizacion.get("linea_negocio"), "linea", "nombre"),
                     cliente_nombre=cliente_nombre,
                     cliente_id_sap=traza["cliente_id_sap"],
-                    origen=_texto(tarifa.get("origen"), "origen", "nombre"),
-                    destino=traza["destino"],
                     costo=traza["costo"],
                     margen_politica=traza["margen_politica"],
                     margen_aplicado=traza["margen_aplicado"],
                     precio_final=traza["precio_final"],
                     metodo_calculo=_texto(cotizacion.get("metodo_calculo"), "metodo"),
                     moneda="COP",
-                    fuente_tarifa=traza["fuente_tarifa"],
                     origen_margen=traza["origen_margen"],
-                    payload=cotizacion,
                     pdf_path=pdf_path,
-                    estado="generada",
-                    comercial_email=_texto(comercial.get("email"), "email", "correo"),
+                    estado_envio="sin_enviar",
+                    # `usuario_id` (HU-002.2) depende de ClientePro (HU-004) — sin
+                    # eso no hay id que guardar; se pierde comercial_email/origen/
+                    # destino/fuente_tarifa/payload como dato persistido en BD
+                    # (decisión aceptada, ver migración 0006).
+                    usuario_id=None,
                     space_id=space_id,
                     thread_id=thread_id,
                 )
@@ -412,7 +406,9 @@ def build_server(
                     para=para,
                     cc=cc or None,
                     asunto=asunto,
-                    confirmado_por=confirmado_por,
+                    # `confirmado_por` en BD es entero (HU-002.2); sin ClientePro
+                    # (HU-004) no hay id que guardar, ver mcp_server/correo.py.
+                    confirmado_por=None,
                     estado="fallido",
                     error=str(e),
                 )
@@ -452,7 +448,9 @@ def build_server(
                     margen_politica=margen_politica,
                     margen_aplicado=margen_aplicado,
                     motivo=motivo,
-                    comercial_email=comercial,
+                    # `usuario_id` (HU-002.2) depende de ClientePro (HU-004); `comercial`
+                    # (el nombre/correo que manda el agente) ya no se persiste en BD.
+                    usuario_id=None,
                 )
                 diferencia = float(ajuste.diferencia) if ajuste.diferencia is not None else 0.0
             return {"registrado": True, "diferencia": diferencia}
@@ -477,27 +475,26 @@ def build_server(
         def _f(valor: Any) -> float | None:
             return float(valor) if valor is not None else None
 
+        # `comercial` ya no filtra (HU-002.2): la identidad es `usuario_id`, entero,
+        # sin forma de resolverse desde un nombre/correo de texto libre hasta que
+        # ClientePro (HU-004) exista. Se conserva el parámetro para no romper el
+        # contrato de la herramienta que ya conoce el agente.
         with get_session() as s:
-            filas = CotizacionRepo.buscar(
-                s, folio=folio, cliente=cliente, comercial=comercial
-            )
+            filas = CotizacionRepo.buscar(s, folio=folio, cliente=cliente)
             resultados = [
                 {
                     "cotizacion_id": str(c.id),
                     "folio": c.folio,
                     "cliente_nombre": c.cliente_nombre,
                     "linea_negocio": c.linea_negocio,
-                    "origen": c.origen,
-                    "destino": c.destino,
                     "costo": _f(c.costo),
                     "margen_politica": _f(c.margen_politica),
                     "margen_aplicado": _f(c.margen_aplicado),
                     "precio_final": _f(c.precio_final),
                     "moneda": c.moneda,
-                    "fuente_tarifa": c.fuente_tarifa,
                     "origen_margen": c.origen_margen,
-                    "estado": c.estado,
-                    "comercial_email": c.comercial_email,
+                    "estado_costeo": c.estado_costeo,
+                    "estado_envio": c.estado_envio,
                     "pdf_url": (
                         f"{settings.pdf_base_url}/pdfs/{c.folio}.pdf" if c.pdf_path else None
                     ),

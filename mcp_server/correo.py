@@ -422,7 +422,10 @@ class ServicioCorreo:
             cc=entrada.cc or None,
             asunto=entrada.asunto,
             message_id=message_id,
-            confirmado_por=entrada.confirmado_por,
+            # `confirmado_por` en BD ahora es el id de usuarios_web (HU-002.2); sin
+            # ClientePro (HU-004) no hay id que guardar. El envío real igual usa
+            # `entrada.confirmado_por` (el correo) como remitente, sin cambios.
+            confirmado_por=None,
             estado="enviado",
         )
         return message_id

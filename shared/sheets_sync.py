@@ -89,13 +89,13 @@ def _anio(dt: datetime | None) -> str:
     return dt.strftime("%Y") if dt else ""
 
 
-def _efectividad(efectiva: bool | None, estado: str | None) -> str:
-    """Etiqueta legible para el tablero a partir de `efectiva` + `estado`."""
-    if efectiva is True:
-        return "Efectiva"
-    if efectiva is False:
-        return "No efectiva"
-    return "Sin marcar"
+def _resultado(ganada: bool | None) -> str:
+    """Etiqueta legible para el tablero a partir de `ganada`."""
+    if ganada is True:
+        return "Ganada"
+    if ganada is False:
+        return "Perdida"
+    return "Sin definir"
 
 
 def _lista(v: Any) -> str:
@@ -114,12 +114,11 @@ def _lista(v: Any) -> str:
 _SQL_COTIZACIONES = text(
     """
     SELECT
-        c.folio, c.created_at, c.estado, c.comercial_email,
+        c.folio, c.created_at, c.estado_costeo, c.estado_envio, c.usuario_id,
         c.linea_negocio, c.cliente_nombre, c.cliente_id_sap,
-        c.origen, c.destino,
         c.costo, c.margen_politica, c.margen_aplicado, c.precio_final, c.moneda,
-        c.metodo_calculo, c.fuente_tarifa, c.origen_margen,
-        c.efectiva, c.seguimiento_nota,
+        c.metodo_calculo, c.origen_margen,
+        c.ganada, c.motivo_rechazo,
         COALESCE(aj.n, 0)  AS num_ajustes,
         COALESCE(co.n, 0)  AS num_correos,
         COALESCE(co.ok, 0) AS num_correos_enviados
@@ -139,17 +138,18 @@ _SQL_COTIZACIONES = text(
 )
 
 _COTIZACIONES_COLS = [
-    "Folio", "Fecha", "Fecha_Hora", "Mes", "Año", "Estado", "Efectividad",
-    "Comercial", "Línea de Negocio", "Cliente", "Cliente ID SAP",
-    "Origen", "Destino", "Ruta",
+    "Folio", "Fecha", "Fecha_Hora", "Mes", "Año", "Estado Costeo", "Estado Envío",
+    "Resultado", "Usuario ID", "Línea de Negocio", "Cliente", "Cliente ID SAP",
     "Costo", "Margen Política %", "Margen Aplicado %", "Precio Final",
     "Utilidad", "Margen Real %", "Moneda",
-    "Método Cálculo", "Fuente Tarifa", "Origen Margen",
-    "N° Ajustes", "N° Correos", "N° Correos Enviados", "Nota Seguimiento",
+    "Método Cálculo", "Origen Margen",
+    "N° Ajustes", "N° Correos", "N° Correos Enviados", "Motivo Rechazo",
 ]
 
 
 def _tabla_cotizaciones(session: Session) -> Tabla:
+    # `Usuario ID`, `Estado Costeo`: sin poblar hasta HU-004/HU-005 (ver HU-002.2).
+    # `Origen`/`Destino`/`Fuente Tarifa` se eliminaron: ese detalle vivirá en Nexo.
     filas: list[Fila] = []
     for r in session.execute(_SQL_COTIZACIONES).mappings():
         costo = _num(r["costo"])
@@ -164,7 +164,6 @@ def _tabla_cotizaciones(session: Session) -> Tabla:
             if isinstance(utilidad, float) and isinstance(precio, float) and precio
             else ""
         )
-        ruta = " → ".join(x for x in (_txt(r["origen"]), _txt(r["destino"])) if x)
         filas.append(
             [
                 _txt(r["folio"]),
@@ -172,15 +171,13 @@ def _tabla_cotizaciones(session: Session) -> Tabla:
                 _fecha_hora(r["created_at"]),
                 _mes(r["created_at"]),
                 _anio(r["created_at"]),
-                _txt(r["estado"]),
-                _efectividad(r["efectiva"], r["estado"]),
-                _txt(r["comercial_email"]),
+                _txt(r["estado_costeo"]),
+                _txt(r["estado_envio"]),
+                _resultado(r["ganada"]),
+                _txt(r["usuario_id"]),
                 _txt(r["linea_negocio"]),
                 _txt(r["cliente_nombre"]),
                 _txt(r["cliente_id_sap"]),
-                _txt(r["origen"]),
-                _txt(r["destino"]),
-                ruta,
                 costo,
                 _pct(r["margen_politica"]),
                 _pct(r["margen_aplicado"]),
@@ -189,12 +186,11 @@ def _tabla_cotizaciones(session: Session) -> Tabla:
                 margen_real,
                 _txt(r["moneda"]) or "COP",
                 _txt(r["metodo_calculo"]),
-                _txt(r["fuente_tarifa"]),
                 _txt(r["origen_margen"]),
                 int(r["num_ajustes"] or 0),
                 int(r["num_correos"] or 0),
                 int(r["num_correos_enviados"] or 0),
-                _txt(r["seguimiento_nota"]),
+                _txt(r["motivo_rechazo"]),
             ]
         )
     return _COTIZACIONES_COLS, filas
@@ -202,13 +198,13 @@ def _tabla_cotizaciones(session: Session) -> Tabla:
 
 _SQL_AJUSTES = text(
     """
-    SELECT folio, created_at, comercial_email,
+    SELECT folio, created_at, usuario_id,
            margen_politica, margen_aplicado, diferencia, motivo
     FROM ajustes_margen ORDER BY created_at
     """
 )
 _AJUSTES_COLS = [
-    "Folio", "Fecha", "Comercial",
+    "Folio", "Fecha", "Usuario ID",
     "Margen Política %", "Margen Aplicado %", "Diferencia %", "Motivo",
 ]
 
@@ -220,7 +216,7 @@ def _tabla_ajustes(session: Session) -> Tabla:
             [
                 _txt(r["folio"]),
                 _fecha_hora(r["created_at"]),
-                _txt(r["comercial_email"]),
+                _txt(r["usuario_id"]),
                 _pct(r["margen_politica"]),
                 _pct(r["margen_aplicado"]),
                 _pct(r["diferencia"]),
@@ -266,14 +262,14 @@ def _tabla_correos(session: Session) -> Tabla:
 
 _SQL_ACTIVIDAD = text(
     """
-    SELECT comercial_email, num_cotizaciones, num_cotizaciones_enviadas,
+    SELECT usuario_id, num_cotizaciones, num_cotizaciones_enviadas,
            num_ajustes, ultima_cotizacion
     FROM v_actividad_por_comercial
     ORDER BY num_cotizaciones DESC
     """
 )
 _ACTIVIDAD_COLS = [
-    "Comercial", "N° Cotizaciones", "N° Enviadas", "N° Ajustes", "Última Cotización",
+    "Usuario ID", "N° Cotizaciones", "N° Enviadas", "N° Ajustes", "Última Cotización",
 ]
 
 
@@ -282,7 +278,7 @@ def _tabla_actividad(session: Session) -> Tabla:
     for r in session.execute(_SQL_ACTIVIDAD).mappings():
         filas.append(
             [
-                _txt(r["comercial_email"]),
+                _txt(r["usuario_id"]),
                 int(r["num_cotizaciones"] or 0),
                 int(r["num_cotizaciones_enviadas"] or 0),
                 int(r["num_ajustes"] or 0),
@@ -332,14 +328,14 @@ _SQL_KPIS = text(
     """
     SELECT
         COUNT(*)                                              AS total,
-        COUNT(*) FILTER (WHERE estado = 'enviada')            AS enviadas,
-        COUNT(*) FILTER (WHERE efectiva IS TRUE)              AS efectivas,
-        COUNT(*) FILTER (WHERE efectiva IS FALSE)             AS no_efectivas,
-        COUNT(*) FILTER (WHERE efectiva IS NULL)              AS sin_marcar,
+        COUNT(*) FILTER (WHERE estado_envio = 'enviada')      AS enviadas,
+        COUNT(*) FILTER (WHERE ganada IS TRUE)                AS ganadas,
+        COUNT(*) FILTER (WHERE ganada IS FALSE)               AS perdidas,
+        COUNT(*) FILTER (WHERE ganada IS NULL)                AS sin_marcar,
         AVG(precio_final)                                     AS ticket_prom,
         SUM(precio_final - costo)                             AS utilidad_total,
         AVG(margen_aplicado)                                  AS margen_prom,
-        COUNT(DISTINCT comercial_email)                       AS comerciales
+        COUNT(DISTINCT usuario_id)                            AS comerciales
     FROM cotizaciones
     """
 )
@@ -349,16 +345,16 @@ _KPIS_COLS = ["Indicador", "Valor"]
 def _tabla_kpis(session: Session, ahora: datetime) -> Tabla:
     r = session.execute(_SQL_KPIS).mappings().first() or {}
     total = int(r.get("total") or 0)
-    efectivas = int(r.get("efectivas") or 0)
-    marcadas = efectivas + int(r.get("no_efectivas") or 0)
-    tasa = round((efectivas / marcadas) * 100, 2) if marcadas else 0
+    ganadas = int(r.get("ganadas") or 0)
+    marcadas = ganadas + int(r.get("perdidas") or 0)
+    tasa = round((ganadas / marcadas) * 100, 2) if marcadas else 0
     filas: list[Fila] = [
         ["Total de cotizaciones", total],
         ["Cotizaciones enviadas", int(r.get("enviadas") or 0)],
-        ["Cotizaciones efectivas", efectivas],
-        ["Cotizaciones no efectivas", int(r.get("no_efectivas") or 0)],
-        ["Cotizaciones sin marcar", int(r.get("sin_marcar") or 0)],
-        ["Tasa de efectividad %", tasa],
+        ["Cotizaciones ganadas", ganadas],
+        ["Cotizaciones perdidas", int(r.get("perdidas") or 0)],
+        ["Cotizaciones sin definir", int(r.get("sin_marcar") or 0)],
+        ["Tasa de éxito %", tasa],
         ["Ticket promedio", _num(r.get("ticket_prom"))],
         ["Utilidad total", _num(r.get("utilidad_total"))],
         ["Margen aplicado promedio %", _pct(r.get("margen_prom"))],

@@ -52,7 +52,8 @@ def test_migraciones_roundtrip() -> None:
 
 
 def test_cotizacion_crud(db_session: Session) -> None:
-    payload = {"referencia": "PCN-16072026", "filas": [{"destino": "BUN", "tarifa": 3000000}]}
+    # `payload` (JSONB) se eliminó en HU-002.2 (sin consumidor real) — ya no hay
+    # roundtrip JSONB que probar aquí, solo CRUD básico.
     cot = CotizacionRepo.crear(
         db_session,
         folio="PCN-16072026",
@@ -63,14 +64,12 @@ def test_cotizacion_crud(db_session: Session) -> None:
         margen_aplicado=0.135,
         precio_final=3294798,
         moneda="COP",
-        payload=payload,
     )
     assert cot.id is not None
 
     leida = CotizacionRepo.obtener_por_folio(db_session, "PCN-16072026")
     assert leida is not None
     assert leida.cliente_nombre == "LONGYIN"
-    assert leida.payload["filas"][0]["destino"] == "BUN"  # jsonb roundtrip
 
 
 def test_folio_unico(db_session: Session) -> None:
@@ -106,32 +105,41 @@ def test_conversacion_y_sesion(db_session: Session) -> None:
         thread_id="threads/BBB",
         rol="user",
         contenido="Cotiza flete Yumbo a Buenaventura",
-        usuario_email="comercial@boterosoto.com.co",
+        # HU-002.2: `usuario_email` ya no existe en el repo (ahora `usuario_id`,
+        # entero, sin fuente hasta ClientePro/HU-004).
+        usuario_id=None,
     )
     assert turno.rol == "user"
 
 
 def test_cotizacion_buscar(db_session: Session) -> None:
+    # HU-002.2: el filtro por comercial pasó de texto libre (`comercial_email`) a
+    # `usuario_id` (entero, FK real a `usuarios_web.id`) — hace falta una fila real
+    # en `usuarios_web` para poder asignarlo (la FK lo exige).
+    from shared.models import UsuarioWeb
+
+    db_session.add(UsuarioWeb(id=501))
+    db_session.flush()
+
     CotizacionRepo.crear(
         db_session,
         folio="PCN-A",
         cliente_nombre="LONGYIN SAS",
-        comercial_email="ana@boterosoto.com.co",
     )
     CotizacionRepo.crear(
         db_session,
         folio="PCN-B",
         cliente_nombre="OTRO CLIENTE",
-        comercial_email="beto@boterosoto.com.co",
+        usuario_id=501,
     )
 
     # Por folio: coincidencia exacta.
     assert [c.folio for c in CotizacionRepo.buscar(db_session, folio="PCN-A")] == ["PCN-A"]
     # Por cliente: ilike parcial e insensible a mayúsculas.
     assert [c.folio for c in CotizacionRepo.buscar(db_session, cliente="longyin")] == ["PCN-A"]
-    # Por comercial: coincidencia exacta.
-    porcom = CotizacionRepo.buscar(db_session, comercial="beto@boterosoto.com.co")
-    assert [c.folio for c in porcom] == ["PCN-B"]
+    # Por usuario_id: coincidencia exacta.
+    porusr = CotizacionRepo.buscar(db_session, usuario_id=501)
+    assert [c.folio for c in porusr] == ["PCN-B"]
     # Sin criterios: devuelve ambas.
     assert {c.folio for c in CotizacionRepo.buscar(db_session)} == {"PCN-A", "PCN-B"}
 
@@ -145,7 +153,9 @@ def test_ajuste_margen_registrar(db_session: Session) -> None:
         margen_politica=0.15,
         margen_aplicado=0.11,
         motivo="Cliente estratégico",
-        comercial_email="ana@boterosoto.com.co",
+        # HU-002.2: `comercial_email` ya no existe (ahora `usuario_id`, sin fuente
+        # hasta ClientePro/HU-004).
+        usuario_id=None,
     )
     assert aj.id is not None
     assert aj.cotizacion_id == cot.id

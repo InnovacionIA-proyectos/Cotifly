@@ -90,7 +90,10 @@ def test_envio_ok_adjunta_pdf_y_persiste(db_session: Session, tmp_path: Path) ->
     assert fila is not None
     assert fila.estado == "enviado"
     assert fila.message_id == message_id
-    assert fila.confirmado_por == "comercial@boterosoto.com.co"
+    # HU-002.2: `confirmado_por` en BD es entero (FK a usuarios_web.id), sin fuente
+    # hasta ClientePro/HU-004 — el envío real sigue usando el correo del parámetro
+    # de entrada como remitente (ver `mcp_server/correo.py`), solo la BD queda NULL.
+    assert fila.confirmado_por is None
 
 
 # --- confirmación obligatoria (invariante #4) --------------------------------
@@ -145,7 +148,7 @@ def test_duplicado_mas_5min_permite(db_session: Session, tmp_path: Path) -> None
         cotizacion_id=cot.id,
         para=["cliente@empresa.com"],
         asunto="prev",
-        confirmado_por="c@boterosoto.com.co",
+        confirmado_por=None,  # HU-002.2: columna entera, sin fuente hasta HU-004
         estado="enviado",
         created_at=tx_now - timedelta(minutes=6),
     )

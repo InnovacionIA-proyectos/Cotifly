@@ -36,7 +36,10 @@ def _sembrar() -> None:
         SesionRepo.obtener_o_crear(s, _SPACE, _THREAD)
         ConversacionRepo.registrar_turno(
             s, space_id=_SPACE, thread_id=_THREAD, rol="user",
-            contenido="Cotiza YUMBO→BUN.", usuario_email="nvargas@boterosoto.com.co",
+            contenido="Cotiza YUMBO→BUN.",
+            # HU-002.2: `usuario_email` ya no existe (ahora `usuario_id`, sin fuente
+            # hasta ClientePro/HU-004).
+            usuario_id=None,
         )
 
 
@@ -72,6 +75,7 @@ def test_bearer_correcto_devuelve_sesiones(monkeypatch: pytest.MonkeyPatch) -> N
         assert cuerpo["total_sesiones"] >= 1
         ses = next(s for s in cuerpo["sesiones"] if s["thread_id"] == _THREAD)
         assert ses["num_turnos"] >= 1
-        assert ses["turnos"][0]["usuario_email"] == "nvargas@boterosoto.com.co"
+        # HU-002.2: `orquestador/sesiones_api.py` expone `usuario_id`, no `usuario_email`.
+        assert ses["turnos"][0]["usuario_id"] is None
     finally:
         _limpiar()

@@ -281,6 +281,6 @@ async def test_flujo_ajuste_margen_republica(db_engine: object) -> None:
         from shared.models import AjusteMargen
 
         with get_session() as s:
-            s.execute(
-                delete(AjusteMargen).where(AjusteMargen.comercial_email == "ana@boterosoto.com.co")
-            )
+            # HU-002.2: `comercial_email` ya no existe (ahora `usuario_id`, siempre
+            # NULL sin ClientePro/HU-004) — se limpia por `motivo`, único en este test.
+            s.execute(delete(AjusteMargen).where(AjusteMargen.motivo == "Negociación"))
