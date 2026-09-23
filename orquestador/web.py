@@ -1,14 +1,17 @@
 """Front web de pruebas del Bot Cotizador (reemplazo temporal de Google Chat).
 
 - `GET  /web`            → página de chat + login + "mis cotizaciones" (un HTML).
-- `POST /web/login`      → identifica al comercial por correo, emite token firmado.
-- `POST /web/chat`       → corre un turno del agente (mismo Agent Runner + MCP).
-- `GET  /web/mis-cotizaciones`            → cotizaciones del comercial autenticado.
-- `POST /web/cotizaciones/{folio}/seguimiento` → marca efectiva/no efectiva + nota.
+- `POST /web/login`      → **desactivado (HU-002.2)**, pendiente de ClientePro (HU-004).
+- `POST /web/chat`       → corre un turno del agente (mismo Agent Runner + MCP);
+  requiere un token que hoy no se puede emitir sin `/web/login`.
+- `GET  /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar`,
+  `POST /web/cotizaciones/{folio}/seguimiento` → **desactivados (HU-002.2)**: dependían
+  de `comercial_email`, reemplazado por `usuario_id` (entero, sin fuente real hasta
+  ClientePro).
 
-La identidad viene del **token** (login), no del cliente: así la firma, el
-`comercial_email` de las cotizaciones y el seguimiento son del usuario real. La
-sesión conversacional es un hilo `web/<id>` (misma trazabilidad que Google Chat).
+`usuarios_web` dejó de tener PK por correo (HU-002.2): la identidad real llegará con
+el id de SAP que entregue ClientePro. Mientras tanto, cotizar por Google Chat (fuera
+de `/web/*`, con su propia identidad de Google) sigue funcionando igual.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from orquestador.web_auth import TokenInvalido, crear_token, es_correo_valido, verificar_token
+from orquestador.web_auth import TokenInvalido, verificar_token
 
 logger = logging.getLogger("bot_cotizador.web")
 
@@ -44,8 +47,8 @@ class MensajeWeb(BaseModel):
 
 
 class SeguimientoWeb(BaseModel):
-    efectiva: bool | None = None
-    nota: str | None = Field(default=None, max_length=2000)
+    ganada: bool | None = None
+    motivo_rechazo: str | None = Field(default=None, max_length=2000)
 
 
 class EnvioWeb(BaseModel):
@@ -106,21 +109,13 @@ def logo() -> FileResponse:
 
 @router.post("/web/login")
 def login(cuerpo: LoginWeb) -> JSONResponse:
-    """Identifica al comercial por su correo corporativo y emite un token de sesión."""
-    email = cuerpo.email.strip().lower()
-    if not es_correo_valido(email):
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Usa tu correo corporativo @boterosoto.com.co"},
-        )
-    from shared.db import get_session
-    from shared.repos import UsuarioWebRepo
-
-    with get_session() as s:
-        u = UsuarioWebRepo.upsert(s, email, cuerpo.nombre)
-        nombre = u.nombre
+    """Desactivado (HU-002.2): `usuarios_web` ya no se llena por correo, sino por el
+    id de SAP que entrega ClientePro (HU-004). Hasta que esa integración exista, no
+    hay ninguna forma real de identificar al comercial desde este endpoint.
+    """
     return JSONResponse(
-        content={"token": crear_token(email, nombre), "email": email, "nombre": nombre}
+        status_code=501,
+        content={"error": "Login pendiente de ClientePro (HU-004). Aún no disponible."},
     )
 
 
@@ -165,6 +160,8 @@ async def web_chat(
 
 
 def _cotizacion_dict(c: Any) -> dict[str, Any]:
+    # Sin uso hasta HU-004: los endpoints que la consumían (`mis-cotizaciones`,
+    # `seguimiento`) quedaron desactivados en HU-002.2 al perder `comercial_email`.
     from shared.config import settings
 
     def _f(v: Any) -> float | None:
@@ -174,38 +171,37 @@ def _cotizacion_dict(c: Any) -> dict[str, Any]:
         "folio": c.folio,
         "cliente": c.cliente_nombre,
         "linea_negocio": c.linea_negocio,
-        "origen": c.origen,
-        "destino": c.destino,
         "precio_final": _f(c.precio_final),
         "margen_aplicado": _f(c.margen_aplicado),
         "moneda": c.moneda,
-        "estado": c.estado,
-        "efectiva": c.efectiva,
-        "seguimiento_nota": c.seguimiento_nota,
+        "estado_costeo": c.estado_costeo,
+        "estado_envio": c.estado_envio,
+        "ganada": c.ganada,
+        "motivo_rechazo": c.motivo_rechazo,
         "pdf_url": f"{settings.pdf_base_url}/pdfs/{c.folio}.pdf" if c.pdf_path else None,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
 
+def _sin_clientepro() -> JSONResponse:
+    return JSONResponse(
+        status_code=501,
+        content={"error": "Identidad de comercial pendiente de ClientePro (HU-004)."},
+    )
+
+
 @router.get("/web/mis-cotizaciones")
 def mis_cotizaciones(authorization: str | None = Header(default=None)) -> JSONResponse:
-    """Lista las cotizaciones del comercial autenticado, para seguimiento."""
-    try:
-        usuario = _usuario(authorization)
-    except TokenInvalido:
-        return JSONResponse(status_code=401, content={"error": "Inicia sesión de nuevo."})
-
-    from shared.db import get_session
-    from shared.repos import CotizacionRepo
-
-    with get_session() as s:
-        filas = CotizacionRepo.por_comercial(s, usuario["email"] or "")
-        cotizaciones = [_cotizacion_dict(c) for c in filas]
-    return JSONResponse(content={"total": len(cotizaciones), "cotizaciones": cotizaciones})
+    """Desactivado (HU-002.2): sin `/web/login`, no hay `usuario_id` real que filtrar."""
+    return _sin_clientepro()
 
 
 async def _invocar_mcp(nombre: str, argumentos: dict[str, Any]) -> dict[str, Any]:
-    """Invoca una herramienta del MCP (por HTTP con bearer, o in-process en dev)."""
+    """Invoca una herramienta del MCP (por HTTP con bearer, o in-process en dev).
+
+    Sin uso hasta HU-004: su único llamador (`enviar_cotizacion`) quedó desactivado
+    en HU-002.2 al perder `comercial_email`.
+    """
     from orquestador.agente import HerramientasMCP
     from shared.config import settings
 
@@ -227,68 +223,17 @@ async def enviar_cotizacion(
 ) -> JSONResponse:
     """Envía la cotización al cliente por correo (relay SMTP), con el PDF adjunto.
 
-    El remitente es el comercial autenticado (enmascaramiento). Solo puede enviar
-    cotizaciones propias. Invoca `enviar_correo` del MCP (que valida, deduplica y
-    traza el envío en `correos_enviados`).
+    Desactivado (HU-002.2): el chequeo de dueño usaba `comercial_email`, que ya no
+    existe (ver `usuario_id`, pendiente de ClientePro/HU-004). Sin identidad real no
+    se puede validar que la cotización sea del comercial que llama.
     """
-    try:
-        usuario = _usuario(authorization)
-    except TokenInvalido:
-        return JSONResponse(status_code=401, content={"error": "Inicia sesión de nuevo."})
-
-    from shared.db import get_session
-    from shared.repos import CotizacionRepo
-
-    with get_session() as s:
-        cot = CotizacionRepo.obtener_por_folio(s, folio)
-        if cot is None or cot.comercial_email != usuario["email"]:
-            return JSONResponse(
-                status_code=404, content={"error": "Cotización no encontrada o no es tuya."}
-            )
-        cot_id = str(cot.id)
-        asunto = cuerpo.asunto or f"Cotización {folio} — Botero Soto"
-
-    salida = await _invocar_mcp(
-        "enviar_correo",
-        {
-            "cotizacion_id": cot_id,
-            "para": cuerpo.para,
-            "cc": cuerpo.cc,
-            "asunto": asunto,
-            "cuerpo": cuerpo.cuerpo,
-            "confirmado_por": usuario["email"],  # remitente = comercial autenticado
-        },
-    )
-    if "error" in salida:
-        return JSONResponse(status_code=400, content=salida)
-    # Marca la cotización como enviada.
-    with get_session() as s:
-        c = CotizacionRepo.obtener_por_folio(s, folio)
-        if c is not None:
-            c.estado = "enviada"
-    return JSONResponse(content={"enviado": True, "message_id": salida.get("message_id")})
+    return _sin_clientepro()
 
 
 @router.post("/web/cotizaciones/{folio}/seguimiento")
 def marcar_seguimiento(
     folio: str, cuerpo: SeguimientoWeb, authorization: str | None = Header(default=None)
 ) -> JSONResponse:
-    """Marca la cotización como efectiva/no efectiva (+nota) — solo si es del usuario."""
-    try:
-        usuario = _usuario(authorization)
-    except TokenInvalido:
-        return JSONResponse(status_code=401, content={"error": "Inicia sesión de nuevo."})
-
-    from shared.db import get_session
-    from shared.repos import CotizacionRepo
-
-    with get_session() as s:
-        cot = CotizacionRepo.marcar_seguimiento(
-            s, folio, usuario["email"] or "", cuerpo.efectiva, cuerpo.nota
-        )
-        if cot is None:
-            return JSONResponse(
-                status_code=404, content={"error": "Cotización no encontrada o no es tuya."}
-            )
-        salida = _cotizacion_dict(cot)
-    return JSONResponse(content=salida)
+    """Desactivado (HU-002.2): `marcar_seguimiento` filtraba por `comercial_email`, que
+    ya no existe (ver `usuario_id`, pendiente de ClientePro/HU-004)."""
+    return _sin_clientepro()

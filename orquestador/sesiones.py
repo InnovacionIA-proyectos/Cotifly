@@ -56,7 +56,13 @@ class GestorSesiones:
         usuario_email: str | None = None,
         herramientas: dict | None = None,
     ) -> EventoConversacion:
-        """Registra un turno y refresca la marca de actividad de la sesión."""
+        """Registra un turno y refresca la marca de actividad de la sesión.
+
+        `usuario_email` ya no se persiste (HU-002.2): `eventos_conversacion` guarda
+        `usuario_id`, entero, sin forma de poblarse hasta que ClientePro (HU-004)
+        entregue el id real. El parámetro se conserva solo para no romper a quien
+        ya llama con la identidad de correo (usada hoy en el prompt, no en BD).
+        """
         self.recuperar_o_crear(session, space_id, thread_id)
         ahora = self._reloj()
         turno = ConversacionRepo.registrar_turno(
@@ -65,7 +71,7 @@ class GestorSesiones:
             thread_id=thread_id,
             rol=rol,
             contenido=contenido,
-            usuario_email=usuario_email,
+            usuario_id=None,
             herramientas=herramientas,
             cuando=ahora,
         )

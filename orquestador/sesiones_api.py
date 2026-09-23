@@ -57,7 +57,9 @@ def inspeccionar_sesion(
                     "turnos": [
                         {
                             "rol": t.rol,
-                            "usuario_email": t.usuario_email,
+                            # HU-002.2: `usuario_email` ya no existe (ahora `usuario_id`,
+                            # entero, sin fuente hasta ClientePro/HU-004).
+                            "usuario_id": t.usuario_id,
                             "contenido": t.contenido,
                             "herramientas": t.herramientas,
                             "created_at": t.created_at.isoformat() if t.created_at else None,

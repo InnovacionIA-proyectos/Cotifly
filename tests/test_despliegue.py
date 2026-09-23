@@ -119,27 +119,33 @@ async def test_worker_invoca_on_error_al_fallar() -> None:
 
 @requiere_pg
 def test_vista_ajustes_por_comercial(db_session: Session) -> None:
+    # HU-002.2: la vista agrupa por `usuario_id` (entero, FK real), ya no por
+    # `comercial_email` (texto libre) — hace falta una fila real en `usuarios_web`.
+    from shared.models import UsuarioWeb
     from shared.repos import AjusteMargenRepo, CotizacionRepo
+
+    db_session.add(UsuarioWeb(id=601))
+    db_session.flush()
 
     cot = CotizacionRepo.crear(
         db_session, folio="PCN-VISTA-1", linea_negocio="Nacional", cliente_nombre="ACME"
     )
     AjusteMargenRepo.registrar(
         db_session, cotizacion_id=cot.id, margen_politica=0.15, margen_aplicado=0.11,
-        motivo="a", comercial_email="ana@boterosoto.com.co",
+        motivo="a", usuario_id=601,
     )
     AjusteMargenRepo.registrar(
         db_session, cotizacion_id=cot.id, margen_politica=0.15, margen_aplicado=0.13,
-        motivo="b", comercial_email="ana@boterosoto.com.co",
+        motivo="b", usuario_id=601,
     )
     db_session.flush()
 
     fila = db_session.execute(
         text(
             "SELECT num_ajustes, diferencia_promedio FROM v_ajustes_margen_por_comercial "
-            "WHERE comercial_email = :c AND linea_negocio = :l"
+            "WHERE usuario_id = :u AND linea_negocio = :l"
         ),
-        {"c": "ana@boterosoto.com.co", "l": "Nacional"},
+        {"u": 601, "l": "Nacional"},
     ).one()
     assert fila.num_ajustes == 2
     # Promedio de (-0.04, -0.02) = -0.03.

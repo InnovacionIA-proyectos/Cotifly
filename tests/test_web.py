@@ -58,20 +58,15 @@ def test_pagina_chat_se_sirve() -> None:
     assert "no-store" in r.headers.get("cache-control", "")
 
 
-def test_login_rechaza_correo_no_corporativo() -> None:
+def test_login_desactivado_devuelve_501() -> None:
+    # HU-002.2: `/web/login` ya no puede identificar a nadie (usuarios_web perdió
+    # `email`/`nombre`, la PK ahora es el id de SAP que entregará ClientePro/HU-004)
+    # — responde 501 sin importar el correo, en vez del 400 de correo no corporativo
+    # o el 200 de antes.
     r = _app().post("/web/login", json={"email": "alguien@gmail.com", "nombre": "X"})
-    assert r.status_code == 400
-
-
-@requiere_pg
-def test_login_corporativo_emite_token(db_engine: object) -> None:
-    try:
-        r = _app().post("/web/login", json={"email": _EMAIL, "nombre": "Daniel"})
-        assert r.status_code == 200
-        d = r.json()
-        assert d["email"] == _EMAIL and d["token"]
-    finally:
-        _limpiar()
+    assert r.status_code == 501
+    r2 = _app().post("/web/login", json={"email": _EMAIL, "nombre": "Daniel"})
+    assert r2.status_code == 501
 
 
 # --- chat requiere token -----------------------------------------------------
@@ -105,7 +100,9 @@ def test_chat_con_token_corre_turno_con_identidad(db_engine: object) -> None:
 
 
 @requiere_pg
-def test_mis_cotizaciones_y_seguimiento(db_engine: object) -> None:
+def test_mis_cotizaciones_desactivado(db_engine: object) -> None:
+    # HU-002.2: sin `/web/login` no hay `usuario_id` real que filtrar — el endpoint
+    # responde 501 en vez de listar (antes filtraba por `comercial_email`).
     from shared.db import get_session
     from shared.repos import CotizacionRepo
 
@@ -113,78 +110,50 @@ def test_mis_cotizaciones_y_seguimiento(db_engine: object) -> None:
         with get_session() as s:
             CotizacionRepo.crear(
                 s, folio="PCN-WEB1", cliente_nombre="ACME", linea_negocio="Nacional",
-                origen="CALI", destino="MEDELLIN", precio_final=1000000, estado="generada",
-                comercial_email=_EMAIL, pdf_path="s3://b/PCN-WEB1.pdf",
+                precio_final=1000000, estado_envio="sin_enviar", pdf_path="s3://b/PCN-WEB1.pdf",
             )
         cli = _app()
-        # lista
         r = cli.get("/web/mis-cotizaciones", headers=_auth())
-        assert r.status_code == 200
-        d = r.json()
-        folios = [c["folio"] for c in d["cotizaciones"]]
-        assert "PCN-WEB1" in folios
-        assert next(c for c in d["cotizaciones"] if c["folio"] == "PCN-WEB1")["efectiva"] is None
-        # marcar efectiva
+        assert r.status_code == 501
         r2 = cli.post(
             "/web/cotizaciones/PCN-WEB1/seguimiento",
-            json={"efectiva": True, "nota": "Cliente aceptó"}, headers=_auth(),
+            json={"ganada": True, "motivo_rechazo": None}, headers=_auth(),
         )
-        assert r2.status_code == 200 and r2.json()["efectiva"] is True
-        # verificar persistencia
-        with get_session() as s:
-            cot = CotizacionRepo.obtener_por_folio(s, "PCN-WEB1")
-            assert cot.efectiva is True and cot.seguimiento_nota == "Cliente aceptó"
+        assert r2.status_code == 501
     finally:
         _limpiar()
 
 
 @requiere_pg
-def test_seguimiento_de_otro_comercial_404(db_engine: object) -> None:
-    from shared.db import get_session
-    from shared.repos import CotizacionRepo
-
-    try:
-        with get_session() as s:
-            CotizacionRepo.crear(
-                s, folio="PCN-WEB2", cliente_nombre="X", comercial_email="otro@boterosoto.com.co",
-            )
-        r = _app().post(
-            "/web/cotizaciones/PCN-WEB2/seguimiento", json={"efectiva": True}, headers=_auth()
-        )
-        assert r.status_code == 404  # no es del usuario autenticado
-    finally:
-        _limpiar()
-
-
-@requiere_pg
-def test_enviar_cotizacion_invoca_mcp_y_marca_enviada(
+def test_enviar_cotizacion_desactivado(
     db_engine: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """El endpoint de envío invoca enviar_correo del MCP (mockeado) y marca 'enviada'."""
+    """HU-002.2: el endpoint de envío responde 501 sin llegar a invocar el MCP —
+    dependía de `comercial_email` para validar que la cotización fuera del usuario."""
     import orquestador.web as web
     from shared.db import get_session
     from shared.repos import CotizacionRepo
 
+    llamado = False
+
     async def _fake_mcp(nombre: str, args: dict[str, Any]) -> dict[str, Any]:
-        assert nombre == "enviar_correo"
-        assert args["confirmado_por"] == _EMAIL  # remitente = comercial autenticado
-        assert args["para"] == ["cliente@x.com"]
+        nonlocal llamado
+        llamado = True
         return {"enviado": True, "message_id": "<abc@boterosoto.com.co>"}
 
     monkeypatch.setattr(web, "_invocar_mcp", _fake_mcp)
     try:
         with get_session() as s:
             CotizacionRepo.crear(
-                s, folio="PCN-WEB3", cliente_nombre="ACME", comercial_email=_EMAIL,
-                pdf_path="s3://b/PCN-WEB3.pdf", estado="generada",
+                s, folio="PCN-WEB3", cliente_nombre="ACME",
+                pdf_path="s3://b/PCN-WEB3.pdf", estado_envio="sin_enviar",
             )
         r = _app().post(
             "/web/cotizaciones/PCN-WEB3/enviar",
             json={"para": ["cliente@x.com"]}, headers=_auth(),
         )
-        assert r.status_code == 200 and r.json()["enviado"] is True
-        with get_session() as s:
-            assert CotizacionRepo.obtener_por_folio(s, "PCN-WEB3").estado == "enviada"
+        assert r.status_code == 501
+        assert llamado is False  # nunca llegó a invocar el MCP
     finally:
         _limpiar()
 
@@ -193,12 +162,12 @@ def _limpiar() -> None:
     from sqlalchemy import delete
 
     from shared.db import get_session
-    from shared.models import Cotizacion, EventoConversacion, Sesion, UsuarioWeb
+    from shared.models import Cotizacion, EventoConversacion, Sesion
 
+    # HU-002.2: estos tests ya no crean filas en `usuarios_web` (no tiene `email`,
+    # y `/web/login` está desactivado) — nada que limpiar ahí.
     clave = f"web/{_SESION}"
     with get_session() as s:
         s.execute(delete(EventoConversacion).where(EventoConversacion.space_id == clave))
         s.execute(delete(Sesion).where(Sesion.space_id == clave))
         s.execute(delete(Cotizacion).where(Cotizacion.folio.like("PCN-WEB%")))
-        correos = [_EMAIL, "otro@boterosoto.com.co"]
-        s.execute(delete(UsuarioWeb).where(UsuarioWeb.email.in_(correos)))

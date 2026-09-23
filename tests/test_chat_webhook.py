@@ -295,7 +295,8 @@ async def test_worker_dispara_runner_y_crea_sesion(db_engine: object) -> None:
             assert ses is not None and ses.estado == "activa"
             turnos = ConversacionRepo.historial(s, space, thread)
             assert [t.rol for t in turnos] == ["user", "assistant"]
-            assert turnos[0].usuario_email == "nvargas@boterosoto.com.co"
+            # HU-002.2: ya no se persiste identidad por correo (ver test_agente.py).
+            assert turnos[0].usuario_id is None
     finally:
         _limpiar_sesion(space)
 

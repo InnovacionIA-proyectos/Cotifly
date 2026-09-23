@@ -142,7 +142,9 @@ def _limpiar() -> None:
         for cid in ids:
             s.execute(delete(CorreoEnviado).where(CorreoEnviado.cotizacion_id == cid))
             s.execute(delete(AjusteMargen).where(AjusteMargen.cotizacion_id == cid))
-        s.execute(delete(AjusteMargen).where(AjusteMargen.comercial_email == _COMERCIAL))
+        # HU-002.2: `comercial_email` ya no existe (ahora `usuario_id`, sin fuente
+        # hasta ClientePro/HU-004) — se limpia por `folio`, que sí identifica el test.
+        s.execute(delete(AjusteMargen).where(AjusteMargen.folio == _FOLIO))
         s.execute(delete(Cotizacion).where(Cotizacion.folio.like(f"{_FOLIO}%")))
         s.execute(delete(EventoConversacion).where(EventoConversacion.space_id == _SPACE))
         s.execute(delete(Sesion).where(Sesion.space_id == _SPACE))
@@ -263,9 +265,10 @@ async def test_e2e_feliz_cotizar_y_enviar(monkeypatch: pytest.MonkeyPatch, tmp_p
             cots = list(s.scalars(select(Cotizacion).where(Cotizacion.folio == _FOLIO)))
             assert len(cots) == 1 and cots[0].pdf_path
 
-            # ajustes_margen
+            # ajustes_margen — HU-002.2: se identifica por `folio` (ya no hay
+            # `comercial_email`; `usuario_id` siempre queda NULL sin ClientePro/HU-004).
             ajustes = list(
-                s.scalars(select(AjusteMargen).where(AjusteMargen.comercial_email == _COMERCIAL))
+                s.scalars(select(AjusteMargen).where(AjusteMargen.folio == _FOLIO))
             )
             assert len(ajustes) == 1
             assert float(ajustes[0].diferencia) == pytest.approx(-0.025)
@@ -276,7 +279,9 @@ async def test_e2e_feliz_cotizar_y_enviar(monkeypatch: pytest.MonkeyPatch, tmp_p
             )
             assert len(correos) == 1
             assert correos[0].estado == "enviado"
-            assert correos[0].confirmado_por == _COMERCIAL  # invariante: envío autorizado
+            # HU-002.2: `confirmado_por` en BD es entero, sin fuente hasta HU-004 — el
+            # envío en sí sí usó `_COMERCIAL` como remitente real (ver `mcp_server/correo.py`).
+            assert correos[0].confirmado_por is None
 
             # eventos_conversacion (4 turnos: user/assistant/herramienta)
             convs = list(

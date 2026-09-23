@@ -145,12 +145,22 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 ### [HU-002.2] Ejecutar la propuesta aprobada
 **Labels:** `cotifly`, `datos`, `tarea-tecnica`
 **Repo donde se crea este issue:** `Cotifly`
-**Asignado a:** Sara (Datos)
+**Asignado a:** Sara (Datos) + Duban (Backend — el alcance final incluyó reescribir código de `mcp_server/`, `shared/` y `orquestador/`, no solo migraciones)
 **Parte de HU-002 (milestone). Depende de HU-002.1 — solo se ejecuta lo que quedó aprobado ahí, nada más.**
-- [ ] Aplicar sobre el esquema únicamente los cambios que quedaron aprobados en HU-002.1 (eliminar lo aprobado para eliminar, conectar/exponer lo aprobado para conectar, agregar las FK aprobadas).
-- [ ] Para cada FK agregada que dependa de un backfill de datos (ej. completar una columna de relación antes de poder declararla como FK), ejecutar ese backfill primero y validar que no quedan filas huérfanas antes de crear la restricción.
-- [ ] Para cada punto que en HU-002.1 haya quedado como "decisión abierta" (no aprobado ni rechazado, sino pendiente de resolver algo más), no ejecutar nada todavía y dejarlo registrado aquí como pendiente para una iteración futura.
-- [ ] Actualizar el diagrama ER (`BASE_DE_DATOS.md` o su equivalente) reflejando exactamente el esquema resultante después de ejecutar la propuesta aprobada.
+- [x] Aplicar sobre el esquema únicamente los cambios que quedaron aprobados en HU-002.1 (eliminar lo aprobado para eliminar, conectar/exponer lo aprobado para conectar, agregar las FK aprobadas). Migración `0006_hu002_2_esquema_completo`.
+- [x] Para la FK riesgosa (`usuario_id`/`confirmado_por` → `usuarios_web.id`): **decisión revisada 2026-09-22** — se ejecuta directo sin backfill, columna nullable. Se acepta perder la trazabilidad histórica de "quién" en `cotizaciones`, `ajustes_margen`, `eventos_conversacion`, `correos_enviados` (no hay forma de mapear un correo a un id de SAP sin ClientePro/HU-004).
+- [x] **Decisión revisada 2026-09-22 — ya no queda nada como "decisión abierta" para más adelante:** el equipo decidió ejecutar también las partes que dependían de Nexo/ClientePro (antes aplazadas), aceptando sus consecuencias:
+  - `cotizaciones`: eliminadas `origen`/`destino`/`fuente_tarifa`; `estado` dividido en `estado_costeo` (sin poblar hasta HU-005) y `estado_envio`; agregadas `costeo_id`/`bd_cliente`/`linea_negocio_id` (sin poblar hasta HU-005).
+  - `margenes_politica`: agregado `id` (nueva PK serial) e `is_active`; `linea_negocio` pasa a `UNIQUE`.
+  - `usuarios_web`: rediseño completo — PK pasa a `id` (entero, el id de SAP que entregará ClientePro); se eliminan `email`/`nombre`; la tabla se vació (`TRUNCATE`, no había id de SAP real que asignarle a ninguna fila existente).
+  - **Consecuencia aceptada:** `POST /web/login` quedó desactivado (sin `email` no hay cómo identificar a nadie) y con él `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento`. Cotizar por Google Chat (identidad propia de Google, no pasa por este login) no se vio afectado.
+  - `margenes_politica.metodo_calculo` (sin uso real, detectado en la auditoría) y el `UniqueConstraint` redundante de `mapeo_trqtype` **sí quedan como decisión abierta** — nunca hubo una recomendación explícita de eliminarlos en la propuesta.
+- [x] Actualizar el diagrama ER (`BASE_DE_DATOS.md`) y el diccionario (`docs/DICCIONARIO_BASE_DE_DATOS.md`) reflejando exactamente el esquema resultante.
+- [x] Ajustar el código que dependía del esquema anterior para que no truene: `mcp_server/server.py`, `mcp_server/correo.py`, `shared/repos.py`, `orquestador/web.py`, `orquestador/sesiones.py`, `shared/sheets_sync.py`, y las 2 vistas SQL que sobreviven (`v_ajustes_margen_por_comercial`, `v_actividad_por_comercial`, recreadas con `usuario_id`/`estado_envio`); `v_trazabilidad_cotizaciones` se descartó (sin consumidor, dependía de columnas eliminadas).
+- [x] **Completado en un segundo paso (2026-09-22, migración `0007_ganada_perdida`):** se terminó de construir el esquema de §2.1/§2.8 que había quedado a medias — `efectiva`/`seguimiento_nota`/`seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at`. Mismo criterio que el resto: la columna ya existe, sin poblar hasta que HU-005 construya el botón y la sincronización con el `Resultado` de Nexo.
+- [x] **Test suite actualizado (2026-09-22):** las 67+ referencias a campos viejos en 18 archivos de `tests/` corregidas. Suite corrida de verdad (no solo revisada): **246/250 pasan**, 1 skip, 4 fallas confirmadas como **preexistentes y ajenas a esta HU** (dependen de configuración de entorno — `PDF_STORAGE_MODO`, fixtures de tarifario — o de un texto de `chat.html` ya desactualizado antes de este cambio, no del esquema). Detalle de las 4 fallas y por qué no son de esta HU: ver el resumen de la sesión.
+- [x] **Bug de producción encontrado y corregido fuera del alcance original:** `orquestador/sesiones_api.py` (`GET /sesiones/{space_id}`) todavía referenciaba `EventoConversacion.usuario_email` directo — habría lanzado `AttributeError` en el primer uso real. Corregido a `usuario_id`.
+- [x] `alembic upgrade head` → `downgrade base` → `upgrade head` verificado end-to-end (`test_migraciones_roundtrip`): las migraciones `0006`/`0007` revierten y re-aplican limpio.
 
 ### [HU-002.3] Diseño del esquema objetivo en SQL Server 2019
 **Labels:** `cotifly`, `datos`, `tarea-tecnica`
@@ -159,7 +169,7 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Parte de HU-002 (milestone). Depende de HU-002.1 y HU-002.2 (el esquema objetivo ya debe reflejar las decisiones tomadas ahí).**
 - [ ] Definir la equivalencia de tipos para cada caso presente en el esquema actual: `UUID` → `uniqueidentifier`, `JSONB` → `nvarchar(max)` (con `CHECK (ISJSON(...) = 1)`), `timestamptz` → `datetimeoffset`.
 - [ ] Decidir y documentar cómo se representa `correos_enviados.para`/`cc` (hoy `text[]`, sin equivalente nativo en SQL Server): tabla relacionada (`tblCorreoDestinatarios`) vs. columna JSON — SQL Server no soporta arrays nativos.
-- [ ] Migrar las 3 vistas de solo lectura (`v_ajustes_margen_por_comercial`, `v_trazabilidad_cotizaciones`, `v_actividad_por_comercial`) a T-SQL equivalente.
+- [ ] Migrar las 2 vistas de solo lectura que sobreviven (`v_ajustes_margen_por_comercial`, `v_actividad_por_comercial`) a T-SQL equivalente — `v_trazabilidad_cotizaciones` se descartó en HU-002.2 (sin consumidor, dependía de columnas ya eliminadas).
 - [ ] Aplicar la convención `tbl`/`tblSap` del estándar `dotnet-enterprise-architect` (HU-003) a cada tabla: `cotizaciones`→`tblCotizaciones`, `ajustes_margen`→`tblMargenAjustes`, `correos_enviados`→`tblCorreos`, `eventos_conversacion`→`tblEventosConversacion`, `eventos_herramienta`→`tblEventosHerramienta`, `sesiones`→`tblSesiones`, `usuarios_web`→`tblUsuariosWeb`, `margenes_politica`→`tblMargenesPolitica`, `mapeo_trqtype`→`tblSapMapeoTrqType`.
 - [ ] Entregar el documento/diagrama del esquema objetivo (tablas, columnas, tipos, FKs, vistas) como insumo directo para HU-003.3 (milestone HU-003), sin dejar ninguna tabla del esquema actual sin mapear.
 
@@ -741,8 +751,9 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend) + Sara (Datos)
 **Parte de HU-005 (milestone). Coordinar con HU-002 (reestructuración de BD) antes de ejecutar — no crear columnas/tablas nuevas por fuera de ese proceso de evaluación/aprobación.**
-- [ ] Incluir en la propuesta de HU-002.1 (o en una propuesta específica de esta HU, si HU-002 ya se cerró) las columnas nuevas necesarias en la tabla de cotizaciones: campos ampliados del formulario (vehículo, carrocería, clase de contenedor, línea de negocio, valor mercancía, exclusivo, consolidado, cliente por identificador), el identificador de la solicitud en Nexo, el costeo recibido (flete + servicios conexos), y el estado del flujo de integración (enviado/en costeo/costeado/error). Incluir también la tabla nueva de "posiciones" (relación uno a muchos con la cotización).
-- [ ] Una vez aprobado ese cambio de esquema, implementarlo (en el backend vigente en ese momento: Python o .NET, según el avance de HU-003).
+- [x] **Ya ejecutado en HU-002.2 (2026-09-22), adelantado sin esperar a esta HU:** `cotizaciones` ya tiene `costeo_id` (identificador de la solicitud en Nexo), `bd_cliente` (cliente por identificador) y `estado_costeo` (estado del flujo de integración) — existen en el esquema, **vacíos**, sin código todavía que los llene. No hay que volver a proponerlos ni crearlos, solo construir el código de esta HU que los popule (`crear_solicitud_nexo`, `consultar_costeo_nexo`, polling).
+- [ ] **Sigue pendiente de proponer/crear:** los campos ampliados del formulario que no se cubrieron en HU-002.2 (`vehículo`, `carrocería`, `clase de contenedor`, `valor mercancía`, `exclusivo`, `consolidado` — el costeo en sí, flete + servicios conexos, no se persiste aparte, se consulta en Nexo vía `costeo_id`) y la tabla nueva de "posiciones" (relación uno a muchos con la cotización, para el cubicaje). Coordinar con HU-002 antes de crearlas, mismo patrón de evaluación/aprobación.
+- [ ] Una vez aprobado ese cambio de esquema pendiente, implementarlo (en el backend vigente en ese momento: Python o .NET, según el avance de HU-003).
 - [ ] Confirmar que el flujo actual de generación de PDF y de "Mis cotizaciones" no se rompe con los campos nuevos (los campos opcionales no aplicables no deben generar errores).
 
 ### [HU-005.9] Pruebas QA end-to-end de la integración con Nexo

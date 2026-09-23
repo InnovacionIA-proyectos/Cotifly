@@ -53,25 +53,27 @@ class CotizacionRepo:
         session: Session,
         *,
         cliente: str | None = None,
-        comercial: str | None = None,
+        usuario_id: int | None = None,
         folio: str | None = None,
     ) -> list[Cotizacion]:
+        # `usuario_id` depende de HU-004 (ClientePro) para tener valores reales;
+        # hasta entonces el filtro nunca encuentra nada (columna siempre NULL).
         stmt = select(Cotizacion)
         if folio:
             stmt = stmt.where(Cotizacion.folio == folio)
         if cliente:
             stmt = stmt.where(Cotizacion.cliente_nombre.ilike(f"%{cliente}%"))
-        if comercial:
-            stmt = stmt.where(Cotizacion.comercial_email == comercial)
+        if usuario_id is not None:
+            stmt = stmt.where(Cotizacion.usuario_id == usuario_id)
         stmt = stmt.order_by(Cotizacion.created_at.desc())
         return list(session.scalars(stmt).all())
 
     @staticmethod
-    def por_comercial(session: Session, comercial: str, limite: int = 100) -> list[Cotizacion]:
+    def por_comercial(session: Session, usuario_id: int, limite: int = 100) -> list[Cotizacion]:
         """Cotizaciones de un comercial, de la más reciente a la más antigua."""
         stmt = (
             select(Cotizacion)
-            .where(Cotizacion.comercial_email == comercial)
+            .where(Cotizacion.usuario_id == usuario_id)
             .order_by(Cotizacion.created_at.desc())
             .limit(limite)
         )
@@ -81,22 +83,22 @@ class CotizacionRepo:
     def marcar_seguimiento(
         session: Session,
         folio: str,
-        comercial: str,
-        efectiva: bool | None,
-        nota: str | None,
+        usuario_id: int,
+        ganada: bool | None,
+        motivo_rechazo: str | None,
         cuando: datetime | None = None,
     ) -> Cotizacion | None:
-        """Marca efectividad/nota de la cotización del comercial. None si no es suya."""
+        """Marca ganada/perdida de la cotización del comercial. None si no es suya."""
         cot = session.scalar(
             select(Cotizacion).where(
-                Cotizacion.folio == folio, Cotizacion.comercial_email == comercial
+                Cotizacion.folio == folio, Cotizacion.usuario_id == usuario_id
             )
         )
         if cot is None:
             return None
-        cot.efectiva = efectiva
-        cot.seguimiento_nota = nota
-        cot.seguimiento_actualizado = cuando or datetime.now(UTC)
+        cot.ganada = ganada
+        cot.motivo_rechazo = motivo_rechazo
+        cot.marcado_at = cuando or datetime.now(UTC)
         session.flush()
         return cot
 
@@ -109,7 +111,7 @@ class AjusteMargenRepo:
         margen_politica: float,
         margen_aplicado: float,
         motivo: str,
-        comercial_email: str,
+        usuario_id: int | None = None,
         cotizacion_id: Any | None = None,
         folio: str | None = None,
     ) -> AjusteMargen:
@@ -120,7 +122,7 @@ class AjusteMargenRepo:
             margen_aplicado=margen_aplicado,
             diferencia=round(margen_aplicado - margen_politica, 6),
             motivo=motivo,
-            comercial_email=comercial_email,
+            usuario_id=usuario_id,
         )
         session.add(aj)
         session.flush()
@@ -135,7 +137,7 @@ class CorreoRepo:
         cotizacion_id: Any,
         para: list[str],
         asunto: str | None,
-        confirmado_por: str,
+        confirmado_por: int | None,
         estado: str,
         cc: list[str] | None = None,
         message_id: str | None = None,
@@ -208,7 +210,7 @@ class ConversacionRepo:
         thread_id: str,
         rol: str,
         contenido: str | None,
-        usuario_email: str | None = None,
+        usuario_id: int | None = None,
         herramientas: dict | None = None,
         cuando: datetime | None = None,
     ) -> EventoConversacion:
@@ -217,7 +219,7 @@ class ConversacionRepo:
         ev = EventoConversacion(
             space_id=space_id,
             thread_id=thread_id,
-            usuario_email=usuario_email,
+            usuario_id=usuario_id,
             rol=rol,
             contenido=contenido,
             herramientas=herramientas,
@@ -249,7 +251,7 @@ class SesionRepo:
     def obtener_o_crear(session: Session, space_id: str, thread_id: str) -> Sesion:
         ses = session.get(Sesion, (space_id, thread_id))
         if ses is None:
-            ses = Sesion(space_id=space_id, thread_id=thread_id, estado="activa", contexto={})
+            ses = Sesion(space_id=space_id, thread_id=thread_id, estado="activa")
             session.add(ses)
             session.flush()
         return ses
@@ -290,16 +292,20 @@ class SesionRepo:
 
 class UsuarioWebRepo:
     @staticmethod
-    def upsert(session: Session, email: str, nombre: str | None) -> UsuarioWeb:
-        """Crea o actualiza el comercial y marca su última sesión."""
-        u = session.get(UsuarioWeb, email)
+    def upsert(session: Session, usuario_id: int, telefono: str | None = None) -> UsuarioWeb:
+        """Crea o actualiza el comercial (por id de SAP/ClientePro) y su última sesión.
+
+        Sin HU-004 todavía no hay ningún emisor real de `usuario_id` — queda sin uso
+        hasta entonces (el login propio que llamaba a esto por correo fue retirado).
+        """
+        u = session.get(UsuarioWeb, usuario_id)
         ahora = datetime.now(UTC)
         if u is None:
-            u = UsuarioWeb(email=email, nombre=nombre, ultima_sesion=ahora)
+            u = UsuarioWeb(id=usuario_id, telefono=telefono, ultima_sesion=ahora)
             session.add(u)
         else:
-            if nombre:
-                u.nombre = nombre
+            if telefono:
+                u.telefono = telefono
             u.ultima_sesion = ahora
         session.flush()
         return u
@@ -308,7 +314,9 @@ class UsuarioWebRepo:
 class MargenPoliticaRepo:
     @staticmethod
     def obtener(session: Session, linea_negocio: str) -> MargenPolitica | None:
-        return session.get(MargenPolitica, linea_negocio)
+        return session.scalar(
+            select(MargenPolitica).where(MargenPolitica.linea_negocio == linea_negocio)
+        )
 
 
 class MapeoTrqTypeRepo:

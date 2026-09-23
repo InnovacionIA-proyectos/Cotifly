@@ -147,9 +147,10 @@ async def test_generar_pdf_dod_via_mcp(monkeypatch: pytest.MonkeyPatch, tmp_path
         filas = _cotizaciones("PCN-19032026")
         assert len(filas) == 1
         assert filas[0].cliente_nombre == "LONGYIN"
-        assert filas[0].payload["tarifa"]["origen"] == "YUMBO"  # payload jsonb completo
+        # HU-002.2: `payload` (JSONB) se eliminó, sin consumidor real.
         assert filas[0].pdf_path.endswith("PCN-19032026.pdf")
-        assert filas[0].estado == "generada"
+        # HU-002.2: `estado` se dividió en `estado_costeo`/`estado_envio`.
+        assert filas[0].estado_envio == "sin_enviar"
     finally:
         _borrar_cotizaciones("PCN-19032026")
 
@@ -216,8 +217,8 @@ async def test_generar_pdf_persiste_trazabilidad_completa(
         assert float(fila.margen_politica) == 0.135
         assert float(fila.margen_aplicado) == 0.11
         assert float(fila.precio_final) == 3370787.0
-        assert fila.destino == "BUN"
-        assert fila.fuente_tarifa == "drive_flat_files"
+        # HU-002.2: `destino`/`fuente_tarifa` se eliminaron de `cotizaciones` (Nexo
+        # los reemplaza, HU-005) — el resto de la trazabilidad se sigue guardando.
         assert fila.origen_margen == "sap_tm"
         assert fila.cliente_id_sap == "15927"
 
@@ -225,7 +226,6 @@ async def test_generar_pdf_persiste_trazabilidad_completa(
         res = cons["resultados"][0]
         assert res["precio_final"] == 3370787.0
         assert res["margen_aplicado"] == 0.11
-        assert res["destino"] == "BUN"
         assert res["origen_margen"] == "sap_tm"
     finally:
         _borrar_cotizaciones("PCN-TRZ")
@@ -261,7 +261,6 @@ async def test_generar_pdf_tolera_cliente_como_objeto(
         fila = _cotizaciones("PCN-OBJ")[0]
         assert fila.cliente_nombre == "LONGYIN"          # nombre extraído del objeto
         assert fila.cliente_id_sap == "15927"            # id extraído del objeto
-        assert fila.payload["cliente"] == "LONGYIN"      # el documento recibe el nombre
     finally:
         _borrar_cotizaciones("PCN-OBJ")
 
