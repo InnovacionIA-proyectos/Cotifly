@@ -242,6 +242,60 @@ def test_seed_mapeo_trqtype(db_session: Session) -> None:
     assert MapeoTrqTypeRepo.trqtype_de(db_session, "Importacion") == "OPIM"
 
 
+def test_backfill_linea_negocio_id_puebla_filas_existentes(db_session: Session) -> None:
+    """QA de HU-002.3 (PR #39): la migración `0008_backfill_linea_negocio_id` solo
+    se ejerció contra una tabla vacía en la suite (el `db_engine` de sesión aplica
+    `alembic upgrade head` una sola vez, antes de que exista ningún dato) — nunca
+    se probó con una fila realmente "sucia" (creada antes de que `linea_negocio_id`
+    existiera, tal como estarían las cotizaciones reales en producción).
+
+    Este test reproduce ese escenario a mano: inserta una cotización con
+    `linea_negocio_id=NULL` (simulando el estado pre-migración), ejecuta el mismo
+    `UPDATE` que hace `0008.upgrade()`, y confirma que la backfillea correctamente
+    por el texto de `linea_negocio` — y que una fila con `linea_negocio=NULL` (el
+    agente no lo mandó) queda sin tocar, sin lanzar error.
+
+    Nota (hallazgo aparte, ver comentario de QA en la PR #39): NO se prueba aquí
+    el caso "línea con typo/desconocida" porque, desde la PR #38 (migración 0006),
+    `cotizaciones.linea_negocio` tiene una FK real a `margenes_politica.linea_negocio`
+    — un valor que no calce ahí ni siquiera llega a insertarse (`ForeignKeyViolation`
+    antes de que este backfill entre en juego). Ese hallazgo es de la FK de #38, no
+    de este backfill de #39.
+    """
+    pol_nacional = MargenPoliticaRepo.obtener(db_session, "Nacional")
+    assert pol_nacional is not None
+
+    CotizacionRepo.crear(
+        db_session, folio="PCN-BACKFILL-1", linea_negocio="Nacional", linea_negocio_id=None
+    )
+    CotizacionRepo.crear(
+        db_session,
+        folio="PCN-BACKFILL-2",
+        linea_negocio=None,
+        linea_negocio_id=None,
+    )
+    db_session.flush()
+
+    db_session.execute(
+        text(
+            """
+            UPDATE cotizaciones c
+            SET linea_negocio_id = mp.id
+            FROM margenes_politica mp
+            WHERE mp.linea_negocio = c.linea_negocio
+              AND c.linea_negocio_id IS NULL
+            """
+        )
+    )
+    db_session.flush()
+    db_session.expire_all()
+
+    conocida = CotizacionRepo.obtener_por_folio(db_session, "PCN-BACKFILL-1")
+    sin_linea = CotizacionRepo.obtener_por_folio(db_session, "PCN-BACKFILL-2")
+    assert conocida is not None and conocida.linea_negocio_id == pol_nacional.id
+    assert sin_linea is not None and sin_linea.linea_negocio_id is None
+
+
 def test_eventos_conversacion_sin_huerfanos_por_construccion(db_session: Session) -> None:
     """QA de HU-002.1 (PR #37): evidencia de la FK candidata `eventos_conversacion
     (space_id, thread_id) → sesiones (space_id, thread_id)` propuesta en

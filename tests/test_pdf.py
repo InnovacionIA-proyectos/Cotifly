@@ -20,7 +20,7 @@ from mcp_server.pdf import construir_html, render_pdf
 from mcp_server.server import build_server
 from shared.config import settings
 from shared.models import Cotizacion, EventoHerramienta
-from shared.repos import CotizacionRepo
+from shared.repos import CotizacionRepo, MargenPoliticaRepo
 from tests.conftest import DATABASE_URL, requiere_pg, requiere_weasyprint
 
 _EJEMPLO = Path(__file__).parent / "fixtures" / "cotizacion" / "ejemplo-solicitud.json"
@@ -151,6 +151,56 @@ async def test_generar_pdf_dod_via_mcp(monkeypatch: pytest.MonkeyPatch, tmp_path
         assert filas[0].pdf_path.endswith("PCN-19032026.pdf")
         # HU-002.2: `estado` se dividió en `estado_costeo`/`estado_envio`.
         assert filas[0].estado_envio == "sin_enviar"
+        # HU-002.3 (PR #39): `linea_negocio_id` se puebla ya mismo desde
+        # `margenes_politica` (corrección 2026-09-22: no dependía de Nexo/HU-005).
+        eng = create_engine(DATABASE_URL, future=True)
+        s: Session = sessionmaker(bind=eng, future=True)()
+        try:
+            pol = MargenPoliticaRepo.obtener(s, "Nacional")
+            assert pol is not None
+            assert filas[0].linea_negocio_id == pol.id
+        finally:
+            s.close()
+            eng.dispose()
+    finally:
+        _borrar_cotizaciones("PCN-19032026")
+
+
+@requiere_pg
+@requiere_weasyprint
+async def test_generar_pdf_linea_negocio_desconocida_hoy_falla_entero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Hallazgo de QA (encontrado revisando HU-002.3/PR #39, AJENO a esta PR — la
+    FK responsable la agregó HU-002.2/PR #38, ya mergeada). Documentado como issue
+    de seguimiento; ver el comentario de QA en la PR #39 para el número exacto.
+
+    Se esperaría que `linea_negocio` desconocida (typo, acento, línea retirada) solo
+    dejara `linea_negocio_id` en `NULL` — el criterio "nunca inventar/asumir" que
+    usa el resto del proyecto. **No es lo que pasa hoy**: `cotizaciones.linea_negocio`
+    tiene una FK real a `margenes_politica.linea_negocio` (migración 0006, HU-002.2),
+    y `generar_pdf` nunca valida el texto del LLM contra las 8 líneas sembradas antes
+    de insertar. El resultado real: el INSERT completo revienta con
+    `ForeignKeyViolation`, `_tool_segura` lo atrapa como error genérico, y la
+    cotización (PDF ya renderizado) se pierde entera — nada queda registrado.
+
+    Este test fija (pin) el comportamiento actual, con un ejemplo concreto y
+    realista (una tilde: "Distribución" vs. la semilla "Distribucion" sin tilde,
+    algo que un LLM de capa gratuita puede producir sin que sea un typo grosero).
+    Debe actualizarse (no solo borrarse) el día que se corrija esa FK/validación.
+    """
+    monkeypatch.setattr(settings, "pdf_storage_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "pdf_storage_modo", "volumen")
+    _borrar_cotizaciones("PCN-19032026")
+    try:
+        payload = {**_ejemplo(), "linea_negocio": "Distribución"}  # con tilde
+        async with Client(build_server()) as c:
+            r = await c.call_tool("generar_pdf", {"cotizacion": payload})
+        salida = r.structured_content
+        assert salida.get("error", {}).get("codigo") == "ERROR_INTERNO"
+
+        filas = _cotizaciones("PCN-19032026")
+        assert len(filas) == 0  # no queda ni rastro: ni PDF registrado, ni fila
     finally:
         _borrar_cotizaciones("PCN-19032026")
 
