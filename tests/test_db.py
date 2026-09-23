@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,35 @@ def test_migraciones_roundtrip() -> None:
     assert not (_TABLAS & tablas)
 
     command.upgrade(cfg, "head")  # restaura head para el resto de la sesión
+    eng.dispose()
+
+
+def test_fks_hu002_2_creadas_por_la_migracion() -> None:
+    """QA de HU-002.2 (PR #38): las FKs aprobadas en HU-002.1 (§2.9 de la propuesta)
+    y las nuevas de `usuario_id` (§2.1-§2.6) quedan realmente creadas por la
+    migración `0006_hu002_2_esquema_completo`, no solo declaradas en `shared/models.py`.
+    """
+    eng = create_engine(DATABASE_URL, future=True)
+    insp = inspect(eng)
+
+    def _fk_cols(tabla: str) -> set[tuple[tuple[str, ...], str]]:
+        return {
+            (tuple(fk["constrained_columns"]), fk["referred_table"])
+            for fk in insp.get_foreign_keys(tabla)
+        }
+
+    cot = _fk_cols("cotizaciones")
+    assert (("linea_negocio",), "margenes_politica") in cot
+    assert (("linea_negocio_id",), "margenes_politica") in cot
+    assert (("usuario_id",), "usuarios_web") in cot
+
+    assert (("usuario_id",), "usuarios_web") in _fk_cols("ajustes_margen")
+
+    ev = _fk_cols("eventos_conversacion")
+    assert (("space_id", "thread_id"), "sesiones") in ev
+    assert (("usuario_id",), "usuarios_web") in ev
+
+    assert (("confirmado_por",), "usuarios_web") in _fk_cols("correos_enviados")
     eng.dispose()
 
 
@@ -211,3 +240,46 @@ def test_seed_mapeo_trqtype(db_session: Session) -> None:
     assert MapeoTrqTypeRepo.linea_de(db_session, "OPTN") == "Nacional"
     assert MapeoTrqTypeRepo.linea_de(db_session, "OPTI") == "Internacional"
     assert MapeoTrqTypeRepo.trqtype_de(db_session, "Importacion") == "OPIM"
+
+
+def test_eventos_conversacion_sin_huerfanos_por_construccion(db_session: Session) -> None:
+    """QA de HU-002.1 (PR #37): evidencia de la FK candidata `eventos_conversacion
+    (space_id, thread_id) → sesiones (space_id, thread_id)` propuesta en
+    `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.9.
+
+    La propuesta la marca "SEGURA" con evidencia SQL puntual (52 eventos, 0
+    huérfanos) contra la BD de desarrollo del autor en su momento — un conteo así
+    no es reproducible tal cual en otro entorno (una BD recién creada da 0/0). Lo
+    verificable y persistible es la garantía real: el único camino de escritura a
+    `eventos_conversacion` es `GestorSesiones.registrar_mensaje`
+    (`orquestador/sesiones.py`), que siempre llama `recuperar_o_crear` (crea la
+    sesión si falta) **antes** de `ConversacionRepo.registrar_turno`. Este test
+    ejercita ese camino real varias veces (mismo space con varios threads, y
+    threads distintos) y reproduce la consulta de huérfanos exacta del §2.9 contra
+    Postgres real. Si en el futuro alguien agrega un camino de escritura que la
+    salte, este test lo detecta antes de que la FK (si se agrega) empiece a
+    rechazar inserciones válidas o, peor, antes de agregarla sobre datos ya rotos.
+    """
+    from orquestador.sesiones import GestorSesiones
+
+    gestor = GestorSesiones()
+    for space_id, thread_id in [
+        ("spaces/HU002-1", "threads/uno"),
+        ("spaces/HU002-1", "threads/dos"),
+        ("spaces/HU002-1-B", "threads/uno"),
+    ]:
+        gestor.registrar_mensaje(db_session, space_id, thread_id, rol="user", contenido="hola")
+    db_session.flush()
+
+    huerfanos = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*) FROM eventos_conversacion ec
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sesiones s
+                WHERE s.space_id = ec.space_id AND s.thread_id = ec.thread_id
+            )
+            """
+        )
+    ).scalar_one()
+    assert huerfanos == 0
