@@ -1,0 +1,1160 @@
+openapi: 3.0.3
+info:
+  title: Cotifly API
+  version: 1.0.0
+  license:
+    name: Propietario — Botero Soto Soluciones Logísticas
+  description: |
+    Contrato congelado de la API de Cotifly (HU-004.1, issue #17) que consume el módulo
+    Angular de ClientePro (HU-004) y que implementa el backend .NET 10 (HU-003).
+
+    Convenciones:
+    - Los endpoints `/web/*` conservan los nombres de campo snake_case del backend
+      Python para que el frontend no tenga que transformar nada.
+    - Los errores de `/web/*` y `/api/auth/*` usan `ErrorWeb` (`{"error": "texto"}`).
+    - Los errores de negocio que vienen de una herramienta usan `ErrorNegocio`
+      (`{"error": {"codigo", "mensaje", "detalle?"}}`).
+    - Autenticación: `Authorization: Bearer <access>` emitido por
+      `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
+servers:
+  - url: http://localhost:8080
+    description: Desarrollo local (contenedor)
+
+tags:
+  - name: auth
+    description: Login SSO desde ClientePro, refresh y logout
+  - name: web
+    description: Consola de cotización del comercial
+  - name: admin
+    description: Administración de políticas de margen (rol gerente_comercial)
+  - name: metricas
+    description: Tablero de efectividad
+  - name: chat
+    description: Webhook de Google Chat
+  - name: sistema
+    description: Salud del servicio y archivos PDF
+
+paths:
+  /api/auth/login-clientepro:
+    post:
+      operationId: loginClientePro
+      tags: [auth]
+      summary: Login SSO desde ClientePro (sin credenciales propias)
+      description: |
+        ClientePro ya autenticó a la persona. El backend revalida `idUsuario` contra el
+        almacén de identidad corporativo (solo lectura), traduce sus roles externos a
+        roles internos y exige el rol `comercial`. Si la persona es válida pero no existe
+        en `UsuariosWeb`, se crea en ese momento (aprovisionamiento just-in-time).
+        Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
+        el mismo 401 genérico.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginClienteProRequest'
+            example:
+              idUsuario: "USR12345"
+              nombreUsuario: "Nombre Apellido"
+              roles: ["34"]
+      responses:
+        '200':
+          description: Sesión emitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/CredencialesInvalidas'
+        '429':
+          $ref: '#/components/responses/DemasiadasPeticiones'
+
+  /api/auth/refresh:
+    post:
+      operationId: refrescarSesion
+      tags: [auth]
+      summary: Rota el refresh token y emite un par nuevo
+      description: |
+        El refresh token se invalida al usarse (rotación). Reutilizar un refresh ya
+        rotado se trata como posible robo de sesión: responde 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Par nuevo emitido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /api/auth/logout:
+    post:
+      operationId: cerrarSesion
+      tags: [auth]
+      summary: Cierra la sesión (revoca refresh y access)
+      description: Responde siempre 204, exista o no el token (anti-enumeración).
+      security:
+        - bearer: []
+        - {}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Sesión cerrada
+
+  /web/chat:
+    post:
+      operationId: enviarMensajeChat
+      tags: [web]
+      summary: Corre un turno del agente cotizador
+      description: |
+        `sesion_id` lo genera el cliente (UUID sin guiones) y agrupa la conversación.
+        La sesión queda ligada al usuario del token: otro usuario no puede continuarla.
+        Un fallo interno del agente responde **200** con `error: true` y un texto
+        legible (paridad con el backend Python; el frontend lo muestra tal cual).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MensajeWeb'
+            example:
+              mensaje: "Cotiza Nacional Bogotá a Medellín tractomula 10000 kg para cliente 15927"
+              sesion_id: "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c"
+      responses:
+        '200':
+          description: Respuesta del agente (o error controlado con `error = true`)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RespuestaChat'
+                  - $ref: '#/components/schemas/RespuestaChatError'
+        '400':
+          description: '`sesion_id` inválido o cuerpo inválido'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: "sesion_id inválido"
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '429':
+          $ref: '#/components/responses/DemasiadasPeticiones'
+
+  /web/mis-cotizaciones:
+    get:
+      operationId: listarMisCotizaciones
+      tags: [web]
+      summary: Lista las cotizaciones del comercial autenticado
+      description: Nunca devuelve cotizaciones de otro comercial. Máximo 100, más recientes primero.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Cotizaciones del comercial
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MisCotizaciones'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/cotizaciones/{folio}/enviar:
+    post:
+      operationId: enviarCotizacion
+      tags: [web]
+      summary: Envía la cotización al cliente por correo con el PDF adjunto
+      description: |
+        El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
+        (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
+        mismos destinatarios en los últimos 5 minutos se rechaza como duplicado.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnvioWeb'
+      responses:
+        '200':
+          description: Correo enviado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespuestaEnvio'
+        '400':
+          description: Error de negocio del envío (duplicado, sin PDF, fallo SMTP, validación)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /web/cotizaciones/{folio}/seguimiento:
+    post:
+      operationId: marcarSeguimiento
+      tags: [web]
+      summary: Marca la cotización como ganada o perdida
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeguimientoWeb'
+      responses:
+        '200':
+          description: Cotización actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /web/admin/lineas-negocio:
+    get:
+      operationId: listarLineasNegocio
+      tags: [admin]
+      summary: Lista todas las líneas de negocio con su política de margen
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Líneas de negocio (activas e inactivas)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LineaNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+
+  /web/admin/lineas-negocio/{id}:
+    put:
+      operationId: actualizarLineaNegocio
+      tags: [admin]
+      summary: Edita margen, método de cálculo y estado de una línea existente
+      description: No crea ni borra líneas.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarLineaNegocio'
+      responses:
+        '200':
+          description: Línea actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineaNegocio'
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          description: La línea no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+
+  /web/metricas/actividad:
+    get:
+      operationId: obtenerActividadComercial
+      tags: [metricas]
+      summary: Actividad por comercial (vista vActividadPorComercial)
+      description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Filas de actividad
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActividadComercial'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/metricas/ajustes-margen:
+    get:
+      operationId: obtenerAjustesMargen
+      tags: [metricas]
+      summary: Ajustes de margen por comercial (vista vAjustesMargenPorComercial)
+      description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Filas de ajustes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AjustesMargenComercial'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/usuario/telefono:
+    get:
+      operationId: obtenerTelefono
+      tags: [web]
+      summary: Teléfono actual del comercial (para confirmarlo antes de generar el PDF)
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Teléfono registrado (null si nunca se ha capturado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelefonoComercial'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+    put:
+      operationId: guardarTelefono
+      tags: [web]
+      summary: Guarda o corrige el teléfono del comercial
+      description: El valor queda persistido en `UsuariosWeb.telefono` y es el que se imprime en los PDF siguientes.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelefonoComercial'
+      responses:
+        '200':
+          description: Teléfono guardado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelefonoComercial'
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/cotizaciones/{id}/nueva-version:
+    get:
+      operationId: obtenerDatosNuevaVersion
+      tags: [web]
+      summary: Datos de una cotización existente para prellenar una nueva versión
+      description: |
+        No modifica la cotización original. El frontend usa estos datos para prellenar
+        "Nueva cotización"; al confirmarse se crea una fila nueva con `version + 1` y
+        folio base con sufijo `-vN`.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Datos para prellenar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatosNuevaVersion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /web/clientes/{nit}/destinatarios-previos:
+    get:
+      operationId: obtenerDestinatariosPrevios
+      tags: [web]
+      summary: Destinatarios usados en envíos anteriores para un cliente
+      description: Solo considera envíos del comercial autenticado. Lista vacía si nunca se le ha enviado.
+      security:
+        - bearer: []
+      parameters:
+        - name: nit
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 20
+      responses:
+        '200':
+          description: Destinatarios del último envío
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destinatarios'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/cotizaciones/{folio}/correo/vista-previa:
+    post:
+      operationId: previsualizarCorreo
+      tags: [web]
+      summary: Renderiza el correo sin enviarlo
+      description: Devuelve asunto, cuerpo y destinatarios prediligenciados para el modal de confirmación.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnvioWeb'
+      responses:
+        '200':
+          description: Vista previa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VistaPreviaCorreo'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /pdfs/{archivo}:
+    get:
+      operationId: descargarPdf
+      tags: [sistema]
+      summary: Descarga el PDF de una cotización (inline)
+      description: |
+        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial) puede descargarlo.
+        En el backend Python este endpoint era público (hallazgo de seguridad corregido).
+      security:
+        - bearer: []
+      parameters:
+        - name: archivo
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]+\.pdf$'
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: No existe o no es tuya
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+
+  /chat/events:
+    post:
+      operationId: recibirEventoChat
+      tags: [chat]
+      summary: Webhook de Google Chat
+      description: |
+        Verifica el JWT de Google (audience = número de proyecto, emisor
+        `chat@system.gserviceaccount.com`), responde de inmediato con un acuse y procesa
+        el turno en segundo plano. La respuesta final se publica en el hilo de Chat.
+      security:
+        - googleChat: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: |
+            Acuse. Evento MESSAGE en formato clásico → `{"text": "..."}`; en formato
+            add-on → `hostAppDataAction.chatDataAction.createMessageAction`. Otros eventos → `{}`.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: El cuerpo no es JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          description: JWT de Google inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+
+  /health:
+    get:
+      operationId: salud
+      tags: [sistema]
+      summary: Liveness
+      security: []
+      responses:
+        '200':
+          description: Servicio vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, servicio, entorno]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  servicio:
+                    type: string
+                    example: cotifly-api
+                  entorno:
+                    type: string
+                    example: Development
+
+  /health/ready:
+    get:
+      operationId: saludListo
+      tags: [sistema]
+      summary: Readiness (base de datos alcanzable)
+      security: []
+      responses:
+        '200':
+          description: Listo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+        '503':
+          description: No disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [unavailable]
+                  detalle:
+                    type: string
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT HS256, 60 minutos. Claims: `sub` (id del usuario), `jti`, `username`,
+        `rol` (`comercial` | `gerente_comercial`), `email`.
+    googleChat:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT firmado por Google Chat (RS256).
+
+  parameters:
+    Folio:
+      name: folio
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 50
+      example: DG-23072026
+
+  responses:
+    Validacion:
+      description: Cuerpo inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+    CredencialesInvalidas:
+      description: Identidad no válida o sin rol autorizado (mensaje genérico)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Credenciales inválidas"
+    SesionExpirada:
+      description: Falta el token, expiró o fue revocado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Inicia sesión de nuevo."
+    SinPermiso:
+      description: El rol del usuario no permite esta operación
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "No tienes permiso para esta operación."
+    NoEsTuya:
+      description: La cotización no existe o pertenece a otro comercial
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+          example:
+            error: "Cotización no encontrada o no es tuya."
+    DemasiadasPeticiones:
+      description: Límite de peticiones alcanzado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorWeb'
+
+  schemas:
+    ErrorWeb:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ErrorNegocio:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [codigo, mensaje]
+          properties:
+            codigo:
+              type: string
+              enum:
+                - TARIFA_FUENTE_NO_DISPONIBLE
+                - TARIFA_CONFIG_INVALIDA
+                - MARGEN_FUENTE_NO_DISPONIBLE
+                - MARGEN_LINEA_DESCONOCIDA
+                - PRECIO_INVALIDO
+                - PDF_PAYLOAD_INVALIDO
+                - PDF_RENDER_NO_DISPONIBLE
+                - CONFIRMACION_REQUERIDA
+                - COTIZACION_NO_ENCONTRADA
+                - CORREO_DUPLICADO
+                - CORREO_PDF_NO_ENCONTRADO
+                - CORREO_ENVIO_FALLIDO
+                - AJUSTE_COTIZACION_INVALIDA
+                - AJUSTE_ID_INVALIDO
+                - CLIENTE_BUSQUEDA_NO_DISPONIBLE
+                - HERRAMIENTA_DESCONOCIDA
+                - ERROR_INTERNO
+            mensaje:
+              type: string
+            detalle:
+              type: object
+              additionalProperties: true
+
+    LoginClienteProRequest:
+      type: object
+      required: [idUsuario]
+      properties:
+        idUsuario:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Único campo que decide la identidad.
+        nombreUsuario:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Respaldo si `idUsuario` no resuelve.
+        roles:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Informativo. Nunca decide el acceso; el rol se resuelve en el servidor.
+
+    RefreshRequest:
+      type: object
+      required: [refresh]
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+
+    LogoutRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          nullable: true
+
+    UsuarioSesion:
+      type: object
+      required: [id, username, email, nombre_completo, rol]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id interno de Cotifly (`UsuariosWeb.id`, UUID generado por Cotifly).
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        username:
+          type: string
+        email:
+          type: string
+        nombre_completo:
+          type: string
+        rol:
+          type: string
+          enum: [comercial, gerente_comercial]
+        ubicacion:
+          type: string
+          nullable: true
+
+    LoginResponse:
+      type: object
+      required: [access, refresh, user, debeCambiarPassword]
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/UsuarioSesion'
+        debeCambiarPassword:
+          type: boolean
+          description: Siempre `false` en la puerta SSO.
+
+    MensajeWeb:
+      type: object
+      required: [mensaje, sesion_id]
+      properties:
+        mensaje:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        sesion_id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{8,64}$'
+
+    SalidaPrecio:
+      type: object
+      required: [precio, costo, margen, metodo, utilidad]
+      properties:
+        precio:
+          type: number
+        costo:
+          type: number
+        margen:
+          type: number
+        metodo:
+          type: string
+          enum: [margen, markup]
+        utilidad:
+          type: number
+
+    SalidaMargen:
+      type: object
+      required: [margen, origen]
+      properties:
+        margen:
+          type: number
+          description: Fracción decimal (0.135 = 13,5 %).
+        origen:
+          type: string
+          enum: [sap_tm, politica_linea]
+        trq_type:
+          type: string
+          nullable: true
+        anomalo:
+          type: boolean
+        detalle:
+          type: string
+          nullable: true
+
+    SalidaPdf:
+      type: object
+      required: [cotizacion_id, folio, pdf_url, registrada_en_bd]
+      properties:
+        cotizacion_id:
+          type: string
+          format: uuid
+        folio:
+          type: string
+        pdf_url:
+          type: string
+        registrada_en_bd:
+          type: boolean
+
+    RespuestaChat:
+      type: object
+      required: [texto, herramientas]
+      properties:
+        texto:
+          type: string
+        herramientas:
+          type: array
+          items:
+            type: string
+          description: Nombres de las herramientas invocadas en el turno, en orden.
+        precio:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SalidaPrecio'
+          nullable: true
+        margen:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SalidaMargen'
+          nullable: true
+        pdf:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/SalidaPdf'
+          nullable: true
+
+    RespuestaChatError:
+      type: object
+      required: [texto, error]
+      properties:
+        texto:
+          type: string
+        error:
+          type: boolean
+          enum: [true]
+
+    CotizacionResumen:
+      type: object
+      required: [folio, moneda, estado_envio]
+      properties:
+        folio:
+          type: string
+        cliente:
+          type: string
+          nullable: true
+        linea_negocio:
+          type: string
+          nullable: true
+        precio_final:
+          type: number
+          nullable: true
+        margen_aplicado:
+          type: number
+          nullable: true
+        moneda:
+          type: string
+          example: COP
+        estado_costeo:
+          type: string
+          nullable: true
+        estado_envio:
+          type: string
+          enum: [sin_enviar, enviada, reenviada]
+        ganada:
+          type: boolean
+          nullable: true
+        motivo_rechazo:
+          type: string
+          nullable: true
+        pdf_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MisCotizaciones:
+      type: object
+      required: [total, cotizaciones]
+      properties:
+        total:
+          type: integer
+        cotizaciones:
+          type: array
+          items:
+            $ref: '#/components/schemas/CotizacionResumen'
+
+    EnvioWeb:
+      type: object
+      required: [para]
+      properties:
+        para:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: email
+        cc:
+          type: array
+          items:
+            type: string
+            format: email
+          default: []
+        asunto:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Por defecto "Cotización {folio} — Botero Soto".
+        cuerpo:
+          type: string
+          nullable: true
+          maxLength: 5000
+
+    RespuestaEnvio:
+      type: object
+      required: [enviado]
+      properties:
+        enviado:
+          type: boolean
+          enum: [true]
+        message_id:
+          type: string
+          nullable: true
+
+    SeguimientoWeb:
+      type: object
+      properties:
+        ganada:
+          type: boolean
+          nullable: true
+        motivo_rechazo:
+          type: string
+          nullable: true
+          maxLength: 2000
+
+    LineaNegocio:
+      type: object
+      required: [id, lineaNegocio, margen, metodoCalculo, isActive]
+      properties:
+        id:
+          type: integer
+        lineaNegocio:
+          type: string
+        margen:
+          type: number
+        metodoCalculo:
+          type: string
+          enum: [margen, markup]
+        isActive:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ActualizarLineaNegocio:
+      type: object
+      required: [margen, metodoCalculo, isActive]
+      properties:
+        margen:
+          type: number
+          minimum: 0
+          maximum: 0.99
+        metodoCalculo:
+          type: string
+          enum: [margen, markup]
+        isActive:
+          type: boolean
+
+    ActividadComercial:
+      type: object
+      required: [usuarioId, numCotizaciones, numCotizacionesEnviadas, numAjustes]
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+        nombreCompleto:
+          type: string
+          nullable: true
+        numCotizaciones:
+          type: integer
+        numCotizacionesEnviadas:
+          type: integer
+        numAjustes:
+          type: integer
+        ultimaCotizacion:
+          type: string
+          format: date-time
+          nullable: true
+
+    AjustesMargenComercial:
+      type: object
+      required: [usuarioId, numAjustes]
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+          nullable: true
+        nombreCompleto:
+          type: string
+          nullable: true
+        lineaNegocio:
+          type: string
+          nullable: true
+        numAjustes:
+          type: integer
+        diferenciaPromedio:
+          type: number
+          nullable: true
+        diferenciaMin:
+          type: number
+          nullable: true
+        diferenciaMax:
+          type: number
+          nullable: true
+        ultimoAjuste:
+          type: string
+          format: date-time
+          nullable: true
+
+    TelefonoComercial:
+      type: object
+      required: [telefono]
+      properties:
+        telefono:
+          type: string
+          nullable: true
+          pattern: '^\+?[0-9 ]{7,20}$'
+
+    Destinatarios:
+      type: object
+      required: [para, cc]
+      properties:
+        para:
+          type: array
+          items:
+            type: string
+            format: email
+        cc:
+          type: array
+          items:
+            type: string
+            format: email
+
+    VistaPreviaCorreo:
+      type: object
+      required: [asunto, cuerpo, para, cc]
+      properties:
+        asunto:
+          type: string
+        cuerpo:
+          type: string
+          description: Cuerpo renderizado con la plantilla real (texto plano).
+        para:
+          type: array
+          items:
+            type: string
+        cc:
+          type: array
+          items:
+            type: string
+        adjunto:
+          type: string
+          description: Nombre del PDF que se adjuntará.
+
+    DatosNuevaVersion:
+      type: object
+      required: [cotizacionOrigenId, folioBase, versionSiguiente]
+      properties:
+        cotizacionOrigenId:
+          type: string
+          format: uuid
+        folioBase:
+          type: string
+        versionSiguiente:
+          type: integer
+        clienteNombre:
+          type: string
+          nullable: true
+        nitCliente:
+          type: string
+          nullable: true
+        origenCliente:
+          type: string
+          nullable: true
+          enum: [cliente, prospecto, null]
+        lineaNegocio:
+          type: string
+          nullable: true
+        costo:
+          type: number
+          nullable: true
+        margenPolitica:
+          type: number
+          nullable: true
+        margenAplicado:
+          type: number
+          nullable: true
+        origenMargen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+        metodoCalculo:
+          type: string
+          nullable: true
+        moneda:
+          type: string
+          nullable: true
