@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+  </ItemGroup>
+</Project>

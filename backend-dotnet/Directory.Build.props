@@ -1,0 +1,25 @@
+<Project>
+  <!--
+    Configuración común a todos los proyectos de backend-dotnet (ADR-002).
+    Cualquier advertencia (compilador, analizadores, estilo) rompe el build,
+    salvo la auditoría NuGet (ver WarningsNotAsErrors).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Fijo en 10.0 (no "latest"): un SDK nuevo no activa reglas nuevas sin revisión. -->
+    <AnalysisLevel>10.0</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <!--
+      Auditoría de vulnerabilidades NuGet (NU1900-NU1904): siguen visibles como warning
+      pero no rompen el build local/Docker. CI tendrá un job de auditoría estricta.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900;NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <Company>Botero Soto Soluciones Logísticas</Company>
+    <Product>Cotifly</Product>
+  </PropertyGroup>
+</Project>

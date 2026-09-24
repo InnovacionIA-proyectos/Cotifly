@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de aplicación: casos de uso, puertos ICls*, DTOs y validadores. Depende solo de Dominio (ADR-002). -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Aplicacion</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Dominio\Cotifly.Dominio.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+</Project>
