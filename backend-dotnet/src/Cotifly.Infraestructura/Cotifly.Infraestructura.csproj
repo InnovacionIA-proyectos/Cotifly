@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de infraestructura: implementa los puertos de Aplicación (EF Core, HTTP, PDF, correo, IA). ADR-002. -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Infraestructura</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+    <ProjectReference Include="..\Cotifly.Dominio\Cotifly.Dominio.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+  </ItemGroup>
+</Project>

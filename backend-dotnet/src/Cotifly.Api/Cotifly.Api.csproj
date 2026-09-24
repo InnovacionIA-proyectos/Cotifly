@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Capa de presentación y composition root (ADR-002).
+    Referencia Infraestructura solo para registrar dependencias (AddInfraestructura);
+    Cotifly.Arquitectura.Tests verifica que no se use para nada más.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+    <ProjectReference Include="..\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+  </ItemGroup>
+</Project>

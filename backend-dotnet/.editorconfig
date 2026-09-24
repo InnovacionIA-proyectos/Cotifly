@@ -1,0 +1,130 @@
+# Convenciones de código de backend-dotnet (ADR-002).
+# Las reglas de nombres se aplican en el build (EnforceCodeStyleInBuild) con
+# severidad "error": un nombre fuera de convención rompe la compilación.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,xml,json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# ---------------------------------------------------------------------------
+# Reglas de nombres (IDE1006) — severidad error
+# Orden de evaluación: Roslyn aplica la regla más específica
+# (accesibilidad > modificadores > tipo de símbolo).
+# ---------------------------------------------------------------------------
+dotnet_diagnostic.IDE1006.severity = error
+
+# Estilos
+dotnet_naming_style.estilo_cls.required_prefix = cls
+dotnet_naming_style.estilo_cls.capitalization = pascal_case
+
+dotnet_naming_style.estilo_icls.required_prefix = ICls
+dotnet_naming_style.estilo_icls.capitalization = pascal_case
+
+dotnet_naming_style.estilo_pascal.capitalization = pascal_case
+
+dotnet_naming_style.estilo_camel.capitalization = camel_case
+
+dotnet_naming_style.estilo_guion_camel.required_prefix = _
+dotnet_naming_style.estilo_guion_camel.capitalization = camel_case
+
+dotnet_naming_style.estilo_t_pascal.required_prefix = T
+dotnet_naming_style.estilo_t_pascal.capitalization = pascal_case
+
+# Símbolos
+# Clases (incluye record class y clases estáticas) con cualquier accesibilidad.
+dotnet_naming_symbols.clases.applicable_kinds = class
+dotnet_naming_symbols.clases.applicable_accessibilities = *
+
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+
+dotnet_naming_symbols.parametros_tipo.applicable_kinds = type_parameter
+
+# Otros tipos (struct, enum, delegate): PascalCase sin prefijo.
+dotnet_naming_symbols.otros_tipos.applicable_kinds = struct, enum, delegate
+dotnet_naming_symbols.otros_tipos.applicable_accessibilities = *
+
+dotnet_naming_symbols.constantes.applicable_kinds = field, local
+dotnet_naming_symbols.constantes.applicable_accessibilities = *
+dotnet_naming_symbols.constantes.required_modifiers = const
+
+# Campos privados (instancia y estáticos): _camelCase.
+dotnet_naming_symbols.campos_privados.applicable_kinds = field
+dotnet_naming_symbols.campos_privados.applicable_accessibilities = private, private_protected
+
+# Miembros no privados (propiedades, métodos, eventos, campos públicos): PascalCase.
+dotnet_naming_symbols.miembros.applicable_kinds = property, method, event, field, local_function
+dotnet_naming_symbols.miembros.applicable_accessibilities = *
+
+dotnet_naming_symbols.parametros_locales.applicable_kinds = parameter, local
+
+# Reglas
+dotnet_naming_rule.clases_con_cls.symbols = clases
+dotnet_naming_rule.clases_con_cls.style = estilo_cls
+dotnet_naming_rule.clases_con_cls.severity = error
+
+dotnet_naming_rule.interfaces_con_icls.symbols = interfaces
+dotnet_naming_rule.interfaces_con_icls.style = estilo_icls
+dotnet_naming_rule.interfaces_con_icls.severity = error
+
+dotnet_naming_rule.parametros_tipo_con_t.symbols = parametros_tipo
+dotnet_naming_rule.parametros_tipo_con_t.style = estilo_t_pascal
+dotnet_naming_rule.parametros_tipo_con_t.severity = error
+
+dotnet_naming_rule.otros_tipos_pascal.symbols = otros_tipos
+dotnet_naming_rule.otros_tipos_pascal.style = estilo_pascal
+dotnet_naming_rule.otros_tipos_pascal.severity = error
+
+dotnet_naming_rule.constantes_pascal.symbols = constantes
+dotnet_naming_rule.constantes_pascal.style = estilo_pascal
+dotnet_naming_rule.constantes_pascal.severity = error
+
+dotnet_naming_rule.campos_privados_guion.symbols = campos_privados
+dotnet_naming_rule.campos_privados_guion.style = estilo_guion_camel
+dotnet_naming_rule.campos_privados_guion.severity = error
+
+dotnet_naming_rule.miembros_pascal.symbols = miembros
+dotnet_naming_rule.miembros_pascal.style = estilo_pascal
+dotnet_naming_rule.miembros_pascal.severity = error
+
+dotnet_naming_rule.parametros_locales_camel.symbols = parametros_locales
+dotnet_naming_rule.parametros_locales_camel.style = estilo_camel
+dotnet_naming_rule.parametros_locales_camel.severity = error
+
+# ---------------------------------------------------------------------------
+# Namespaces file-scoped (IDE0161) — severidad error, rompe el build
+# ---------------------------------------------------------------------------
+csharp_style_namespace_declarations = file_scoped:error
+dotnet_diagnostic.IDE0161.severity = error
+
+# ---------------------------------------------------------------------------
+# Estilo general (sugerencias; no rompen el build)
+# ---------------------------------------------------------------------------
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+csharp_prefer_braces = true:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+
+# El código generado (source generators, *.g.cs) no se analiza.
+[*.{g,generated,designer}.cs]
+generated_code = true
+dotnet_diagnostic.IDE1006.severity = none
+
+# Los nombres de los analizadores .NET que chocan con el prefijo cls se
+# documentan aquí si aparecen (ADR-002, Consecuencias). Hoy no hay ninguno.

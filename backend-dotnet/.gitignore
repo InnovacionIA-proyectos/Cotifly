@@ -1,0 +1,40 @@
+# Artefactos de compilación .NET
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+out/
+publish/
+artifacts/
+
+# Resultados de pruebas y cobertura
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+*.trx
+
+# IDE y archivos de usuario
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+
+# Temporales
+*.tmp
+*.log
+*.swp
+*~
+
+# Variables de entorno y secretos (solo se versiona .env.example)
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets/

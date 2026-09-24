@@ -29,6 +29,16 @@ El estándar corporativo `dotnet-enterprise-architect` exige Clean Architecture 
 
 **Monolito modular:** cada área de negocio es un módulo con carpeta propia en cada capa: `Cotizaciones`, `Tarifas`, `Margen`, `Precio`, `Pdf`, `Correo`, `Auditoria`, `Identidad`, `Agente`, `Clientes`, `Administracion`, `Metricas`.
 
+- Carpetas adicionales (decidido en #8):
+  - `Comun/` en cada capa para lo transversal (`clsResultado<T>`, `clsErrorDominio`, `IClsReloj`…); `Configuracion/` en Infraestructura para las opciones validadas al arrancar.
+  - `Sesiones/` solo en Dominio (entidades `Sesiones`/`EventosConversacion`); sus casos de uso viven en `Agente`.
+  - `Sistema/` solo en Api (`GET /health`, y `/health/ready` en #9).
+  - En Api solo existen carpetas de módulos con endpoints en `specs/openapi.yaml`; Dominio, Aplicacion e Infraestructura tienen los 12 módulos.
+- Subcarpetas en inglés en todas las capas, coherentes con los sufijos de clase (`clsCotizacionService`, `IClsCotizacionRepository`):
+  - Dominio: clases en la carpeta del módulo; si crece, `Entities/`, `ValueObjects/`, `Rules/`.
+  - Aplicacion: `DTOs/`, `Validators/`, `Services/`, `Repositories/` (puertos), `Interfaces/` (otros puertos).
+  - Infraestructura: `Repositories/`, `Services/`.
+  - Api: `Controllers/`, `DTOs/` (solo si el contrato HTTP difiere del DTO de Aplicación).
 - Los módulos se comunican por interfaces de Aplicación, nunca por tablas de otro módulo.
 - El `mcp_server` desaparece como servicio: sus herramientas quedan como casos de uso dentro del monolito.
 - No se prepara el proyecto para partirlo en microservicios.
@@ -44,10 +54,15 @@ El estándar corporativo `dotnet-enterprise-architect` exige Clean Architecture 
 
 **Convenciones de nombres:**
 
-- Clases con prefijo `cls` (`clsCotizacionService`). Interfaces con `ICls` (`IClsCotizacionRepository`).
-- Miembros públicos en PascalCase; variables y parámetros en camelCase.
+- Clases con prefijo `cls` (`clsCotizacionService`), incluidos records, clases estáticas, atributos (`clsSecretoAttribute`, usado como `[clsSecreto]`) y clases de prueba (`clsResultadoTests`). Interfaces con `ICls` (`IClsCotizacionRepository`).
+- Structs, enums y delegados en PascalCase sin prefijo (`EstadoEnvio`).
+- Miembros no privados y constantes en PascalCase; variables y parámetros en camelCase.
+- Campos privados (de instancia y estáticos) en `_camelCase` (`_timeProvider`).
+- Parámetros de tipo con `T` + PascalCase (`TValor`).
+- Namespaces file-scoped (`namespace Cotifly.Dominio.Comun;`), exigidos con IDE0161 en `error`.
+- Controllers: nunca `[Route("[controller]")]`, porque el prefijo `cls` terminaría en la URL; la ruta se escribe explícita según `specs/openapi.yaml` (ej. `[Route("health")]`).
 - Tablas en PascalCase sin prefijo (ya creadas en `dbo_cotifly`) y columnas en camelCase. No se reintroduce `tbl`/`tblSap` (desviación del 2026-09-22, `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §9).
-- `.editorconfig` hace cumplir `cls`/`ICls` con severidad `error`. `Program` queda exento.
+- `.editorconfig` hace cumplir todas estas reglas (IDE1006 e IDE0161) con severidad `error`, y `Cotifly.Arquitectura.Tests` verifica `cls`/`ICls` sobre los ensamblados compilados. `Program` (instrucciones de nivel superior) queda exento: `Program.cs` suprime IDE1006 solo en su primera línea.
 
 **Base técnica:** .NET 10, `Nullable` activado, `TreatWarningsAsErrors`, Central Package Management (`Directory.Packages.props`) con versiones fijas.
 
@@ -64,3 +79,4 @@ El estándar corporativo `dotnet-enterprise-architect` exige Clean Architecture 
 - La serialización JSON se configura por grupo de endpoints, según el contrato #17, sin cambiar los nombres C#:
   - `/web/*` usa snake_case;
   - `/api/auth/*` usa camelCase (patrón "Login SSO — Cliente Pro").
+  - Se resuelve en #12 con un formatter o convención por grupo de endpoints; hoy solo existe `/health`, que usa camelCase por defecto.

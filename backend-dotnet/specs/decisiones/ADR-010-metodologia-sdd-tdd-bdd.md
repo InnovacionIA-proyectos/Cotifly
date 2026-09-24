@@ -14,7 +14,9 @@ El Python tiene casos de prueba útiles que se pueden portar como datos: `tests/
 
 **1. Especificación primero (SDD).** Antes de escribir código de un módulo, deben existir:
 
-- `backend-dotnet/specs/openapi.yaml`: el contrato HTTP congelado, fuente de verdad (#17; llega con el PR #53, aún no está en `QA`). Un test compara el documento OpenAPI que genera la API contra este archivo.
+- `backend-dotnet/specs/openapi.yaml`: el contrato HTTP congelado, fuente de verdad (#17; llega con el PR #53, aún no está en `QA`).
+  - Hoy (#8) `Cotifly.Api.Tests` parsea el yaml (sin errores de diagnóstico) y valida las respuestas reales de los endpoints implementados contra su esquema (campos obligatorios, campos permitidos, enums).
+  - La comparación contra el documento OpenAPI que genere la propia API queda pendiente para #14 (HU-003.8).
 - `backend-dotnet/specs/features/*.feature`: los escenarios Gherkin del backlog, más los nuevos de este diseño (`chat_slot_filling`, `aislamiento_comercial`, `login_clientepro`, `refresh_logout`, entre otros).
 - `backend-dotnet/specs/decisiones/`: estas ADR.
 
@@ -28,13 +30,17 @@ El Python tiene casos de prueba útiles que se pueden portar como datos: `tests/
 | Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `migrations_mssql/` aplicados, esquema igual al modelo EF |
 | API | `Cotifly.Api.Tests` | `WebApplicationFactory` | Forma exacta de las respuestas del contrato, auth, CORS, aislamiento por comercial |
 | Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (BDD) | Los `.feature` de `specs/features` |
-| Arquitectura | en `Cotifly.Aplicacion.Tests` | ArchUnitNET (alternativa: NetArchTest.eNhancedEdition) | Reglas de dependencia entre capas (ADR-002) |
+| Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET (alternativa: NetArchTest.eNhancedEdition) | Reglas de dependencia entre capas, Dominio sin paquetes externos y convención `cls`/`ICls` (ADR-002) |
 
 Metas:
 
 - 100 % de los casos Python portados en precio y margen, y cobertura de Dominio de al menos 90 %.
 - Cero advertencias de build (`TreatWarningsAsErrors`).
 - Las pruebas de integración llevan `[Trait("Categoria","Integracion")]`.
+- Las pruebas de arquitectura van en su propio proyecto, `Cotifly.Arquitectura.Tests`, y no en `Cotifly.Aplicacion.Tests`: tienen que cargar los ensamblados de las 4 capas, y ponerlas en Aplicacion.Tests obligaría a ese proyecto a referenciar Infraestructura y Api (decidido en #8).
+- **Runner:** xUnit v3 sobre Microsoft.Testing.Platform (MTP). `backend-dotnet/global.json` activa MTP para `dotnet test`; el SDK 10 ya no acepta el modo VSTest con xUnit v3.
+  - Filtros con opciones de MTP, por ejemplo `dotnet test --filter-not-trait "Categoria=Integracion"` (excluir integración) o `--filter-trait "Categoria=Integracion"`.
+  - Pendiente para CI (#14): agregar `Microsoft.Testing.Extensions.TrxReport` (reporte TRX) y `Microsoft.Testing.Extensions.CodeCoverage` (cobertura). No se agregan antes porque todavía no se usan.
 
 **4. Build y test dentro de Docker.** La máquina de desarrollo solo tiene SDK .NET 8, así que todo se compila y se prueba con `mcr.microsoft.com/dotnet/sdk:10.0` (ADR-007). CI repite los mismos pasos: restore, build, test y `docker build`.
 
