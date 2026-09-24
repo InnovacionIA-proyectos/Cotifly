@@ -4,21 +4,60 @@
 // instrucción, por eso la supresión cubre solo esa línea. En .NET 10 "Program" ya es
 // pública (generador de ASP.NET Core), así que WebApplicationFactory<Program> no necesita
 // declarar "public partial class Program".
+using System.Reflection;
+using Cotifly.Api.Sistema;
 using Cotifly.Aplicacion;
 using Cotifly.Infraestructura;
 
+// HEALTHCHECK del Dockerfile (#27): "dotnet Cotifly.Api.dll --healthcheck" solo consulta
+// GET /health del proceso que ya corre en el contenedor y termina (0 sano, 1 no sano).
+// No construye el host web ni valida la configuración.
 #pragma warning disable IDE1006
-var builder = WebApplication.CreateBuilder(args);
+if (clsSondaSalud.EsSolicitada(args))
 #pragma warning restore IDE1006
+{
+    return await clsSondaSalud.EjecutarAsync();
+}
 
-builder.Services
-    .AddAplicacion()
-    .AddInfraestructura(builder.Configuration);
+// Fallos de arranque (#27). Si este ensamblado es el proceso (contenedor, "dotnet Cotifly.Api.dll"),
+// cualquier excepción al construir o arrancar el host se registra UNA vez y el proceso termina con 1:
+// dejarla escapar en el PID 1 del contenedor aborta el proceso (código 139) y repite la traza.
+// Bajo WebApplicationFactory (pruebas) el ensamblado de entrada es el de pruebas: la excepción se
+// propaga, porque es la que la fábrica entrega a la prueba.
+var esProcesoPropio = Assembly.GetEntryAssembly() == typeof(Program).Assembly;
 
-builder.Services.AddControllers();
+WebApplication app;
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
 
-var app = builder.Build();
+    builder.Services
+        .AddAplicacion()
+        .AddInfraestructura(builder.Configuration);
+
+    builder.Services.AddControllers();
+
+    app = builder.Build();
+}
+catch (Exception ex) when (esProcesoPropio)
+{
+    // Aún no hay logger: una línea a stderr. En esta fase no se leen valores de configuración
+    // (las opciones se enlazan y validan al arrancar), así que el mensaje no lleva secretos.
+    await Console.Error.WriteLineAsync($"crit: Cotifly.Api no pudo construir el host: {ex.GetType().FullName}: {ex.Message}");
+    return 1;
+}
 
 app.MapControllers();
 
-await app.RunAsync();
+try
+{
+    await app.RunAsync();
+}
+catch (Exception) when (esProcesoPropio)
+{
+    // El host ya registró el error: "Hosting failed to start" (StartAsync, p. ej. ValidateOnStart, que
+    // nombra la clave y nunca el valor, o un puerto inválido) o el fallo al detenerse. No se repite.
+    return 1;
+}
+
+return 0;

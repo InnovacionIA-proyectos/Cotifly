@@ -53,5 +53,9 @@ public static class clsValidadorSecretos
         || _placeholdersExactos.Any(p => valor.Equals(p, StringComparison.OrdinalIgnoreCase))
         || _fragmentosPlaceholder.Any(f => valor.Contains(f, StringComparison.OrdinalIgnoreCase));
 
-    private static string AVariable(string clave) => clave.Replace(":", "__", StringComparison.Ordinal);
+    // "ConnectionStrings:Cotifly (Password)" -> "ConnectionStrings__Cotifly, parámetro Password" (la variable real, no una inventada).
+    private static string AVariable(string clave) =>
+        clave.Split(" (", 2) is [var nombre, var detalle]
+            ? $"{nombre.Replace(":", "__", StringComparison.Ordinal)}, parámetro {detalle.TrimEnd(')')}"
+            : clave.Replace(":", "__", StringComparison.Ordinal);
 }
