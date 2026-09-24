@@ -292,18 +292,39 @@ class SesionRepo:
 
 class UsuarioWebRepo:
     @staticmethod
-    def upsert(session: Session, usuario_id: int, telefono: str | None = None) -> UsuarioWeb:
+    def upsert(
+        session: Session,
+        usuario_id: int,
+        nombre_usuario: str | None = None,
+        nombre_completo: str | None = None,
+        email: str | None = None,
+        telefono: str | None = None,
+    ) -> UsuarioWeb:
         """Crea o actualiza el comercial (por id de SAP/ClientePro) y su última sesión.
 
-        Sin HU-004 todavía no hay ningún emisor real de `usuario_id` — queda sin uso
+        `nombre_usuario`/`nombre_completo`/`email` mapean `tblSAPUsuariosApp` (§2.6).
+        Sin HU-004 todavía no hay ningún emisor real de estos datos — queda sin uso
         hasta entonces (el login propio que llamaba a esto por correo fue retirado).
         """
         u = session.get(UsuarioWeb, usuario_id)
         ahora = datetime.now(UTC)
         if u is None:
-            u = UsuarioWeb(id=usuario_id, telefono=telefono, ultima_sesion=ahora)
+            u = UsuarioWeb(
+                id=usuario_id,
+                nombre_usuario=nombre_usuario,
+                nombre_completo=nombre_completo,
+                email=email,
+                telefono=telefono,
+                ultima_sesion=ahora,
+            )
             session.add(u)
         else:
+            if nombre_usuario:
+                u.nombre_usuario = nombre_usuario
+            if nombre_completo:
+                u.nombre_completo = nombre_completo
+            if email:
+                u.email = email
             if telefono:
                 u.telefono = telefono
             u.ultima_sesion = ahora

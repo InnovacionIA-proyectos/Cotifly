@@ -16,7 +16,13 @@ Internet ──TLS──> Traefik ──> bot-orquestador ─┐   (red web/Trae
   Chat y sirve `/pdfs/{folio}.pdf`. Habla con el MCP por la red interna.
 - **bot-mcp** — las 7 herramientas. **No expuesto a internet** (sin `ports`, sin
   labels de Traefik; solo la red overlay `interna`).
-- **bot-db** — Postgres con volumen persistente; solo red interna.
+- **bot-db** — SQL Server 2019 con volumen persistente; solo red interna. **Nota
+  (HU-002.4, 2026-09-22):** esto describe el manifiesto local (`docker-compose.yml`,
+  ya actualizado a `mcr.microsoft.com/mssql/server:2019-latest`). `infra/stack.
+  staging.yml`/`infra/stack.dokploy.yml` (el manifiesto real de Dokploy) **todavía
+  no se actualizaron** — siguen definiendo Postgres, fuera del alcance de este
+  cambio. No usar este runbook para desplegar SQL Server en Dokploy hasta que se
+  actualicen esos manifiestos también.
 
 Manifiesto: [`infra/stack.staging.yml`](infra/stack.staging.yml).
 
@@ -36,7 +42,7 @@ Nunca viven en el repo. En Dokploy se cargan como *environment* del stack:
 
 | Variable | Servicio | Descripción |
 |---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | todos | credenciales de la BD |
+| `MSSQL_SA_PASSWORD` / `MSSQL_DB` | todos | credenciales de la BD (SQL Server, HU-002.4 — reemplaza `POSTGRES_USER/PASSWORD/DB`; usuario fijo `sa`) |
 | `MCP_AUTH_TOKEN` | mcp, orquestador | bearer compartido del MCP interno |
 | `LLM_MODEL` / `LLM_API_KEY` | orquestador | LLM agnóstico (LiteLLM): proveedor + clave |
 | `GCHAT_PROJECT_NUMBER` | orquestador | audience del JWT del webhook |
@@ -90,11 +96,13 @@ ejecuta `alembic upgrade head` antes de arrancar (idempotente), incluida la vist
 
 ## 7. Trazabilidad para Gerencia
 
-Vista de solo lectura creada por la migración 0003:
+Vista de solo lectura (HU-002.4: `dbo_cotifly.vAjustesMargenPorComercial` en SQL
+Server, ver `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` — equivalente a la
+`v_ajustes_margen_por_comercial` de la migración 0003 de Postgres):
 
 ```sql
-SELECT * FROM v_ajustes_margen_por_comercial
-ORDER BY num_ajustes DESC;   -- ajustes de margen por comercial y línea
+SELECT * FROM dbo_cotifly.vAjustesMargenPorComercial
+ORDER BY numAjustes DESC;   -- ajustes de margen por comercial y línea
 ```
 
 Alertas de error del worker: se publican en `GCHAT_SUPPORT_SPACE` automáticamente.
@@ -105,11 +113,14 @@ Alertas de error del worker: se publican en `GCHAT_SUPPORT_SPACE` automáticamen
 # Backup (programar como tarea diaria de Dokploy o cron del host):
 DB_HOST=bot-db BACKUP_DIR=/backups sh scripts/backup_db.sh
 
-# Restore desde un dump:
-DB_HOST=bot-db sh scripts/restore_db.sh /backups/botcotizador-YYYYmmdd-HHMMSS.dump
+# Restore desde un backup:
+DB_HOST=bot-db sh scripts/restore_db.sh /backups/botcotizador-YYYYmmdd-HHMMSS.bak
 ```
 
-Ambos scripts leen `POSTGRES_USER/PASSWORD/DB` del entorno del servicio db.
+Ambos scripts leen `MSSQL_SA_PASSWORD`/`MSSQL_DB` del entorno del servicio db
+(HU-002.4 — reemplaza `POSTGRES_USER/PASSWORD/DB`, usuario fijo `sa`). El restore
+requiere que nadie tenga la base abierta — ver la nota de `SINGLE_USER` dentro de
+`scripts/restore_db.sh`.
 
 ## 9. Rollback
 

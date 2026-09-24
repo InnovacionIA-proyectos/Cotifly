@@ -15,7 +15,11 @@ dependencies = [
     "httpx>=0.27",
     "SQLAlchemy>=2.0",
     "alembic>=1.13",
-    "psycopg[binary]>=3.2",
+    # HU-002.4 (2026-09-22): psycopg (Postgres) -> pyodbc (SQL Server, requiere el
+    # driver de sistema msodbcsql17, instalado en los Dockerfiles). shared/models.py
+    # sigue con tipos de sqlalchemy.dialects.postgresql (UUID/JSONB/ARRAY) -- no
+    # reescrito todavía, ver nota en docker-compose.yml.
+    "pyodbc>=5.1",
 ]
 
 [project.optional-dependencies]
