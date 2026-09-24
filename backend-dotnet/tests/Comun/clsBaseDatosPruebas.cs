@@ -40,7 +40,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     {
         await _contenedor.StartAsync();
 
-        CadenaMaster = _contenedor.GetConnectionString();
+        CadenaMaster = ConBase(_contenedor.GetConnectionString(), "master");
         CadenaCotifly = ConBase(CadenaMaster, NombreBase);
         CadenaIdentidad = ConBase(CadenaMaster, NombreBaseIdentidad);
 
@@ -100,8 +100,22 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Límite de las órdenes de prueba (s). El SQL Server de Testcontainers corre sobre el disco virtual de Docker
+    /// Desktop (WSL2) y a veces se detiene varios segundos en E/S (visto: <c>CREATE DATABASE</c> del fixture superando
+    /// los 30 s por defecto con "Execution Timeout Expired (258)", sobre todo con otro contenedor recién destruido).
+    /// Es un margen para la infraestructura de pruebas; la API usa el valor por defecto.
+    /// </summary>
+    public const int TiempoMaximoOrdenSeg = 120;
+
+    /// <summary>Cadena a <paramref name="baseDatos"/> en el contenedor, con <see cref="TiempoMaximoOrdenSeg"/>.</summary>
     public static string ConBase(string cadena, string baseDatos) =>
-        new SqlConnectionStringBuilder(cadena) { InitialCatalog = baseDatos, TrustServerCertificate = true }.ConnectionString;
+        new SqlConnectionStringBuilder(cadena)
+        {
+            InitialCatalog = baseDatos,
+            TrustServerCertificate = true,
+            CommandTimeout = TiempoMaximoOrdenSeg,
+        }.ConnectionString;
 
     /// <summary>Ejecuta un lote T-SQL.</summary>
     public static async Task EjecutarAsync(string cadena, string sql)
@@ -135,7 +149,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         await conexion.OpenAsync();
         foreach (var lote in lotes)
         {
-            await using var comando = new SqlCommand(lote, conexion) { CommandTimeout = 120 };
+            await using var comando = new SqlCommand(lote, conexion) { CommandTimeout = TiempoMaximoOrdenSeg };
             await comando.ExecuteNonQueryAsync();
         }
     }

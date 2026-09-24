@@ -58,6 +58,7 @@ Metas:
 - En .NET se usa `Math.Round(valor, MidpointRounding.ToEven)` sobre `decimal`, nunca sobre `double`.
 - Aplica al precio en pesos y a la utilidad con 2 decimales.
 - Hay un test explícito para los casos de punto medio.
+- **Paridad con Python salvo empates exactos de medio peso** (decidido en #10): .NET redondea el valor exacto (half-to-even) y Python arrastra el error de `float`; diferencia máxima 1 peso (~0,04 % de casos). Ejemplos documentados en `clsCalculadoraPrecioTests` y `precio.feature`: 55 con markup 0.1 = 60.5 → **60** (Python 61, porque 55 × 1.1 = 60.50000000000001); 6349 con margen 0.44 = 11337.5 → **11338** (Python 11337, porque calcula 11337.499999999998). Se prefiere el valor exacto; el redondeo queda por confirmar con negocio.
 
 **7. Criterio de licencias.**
 

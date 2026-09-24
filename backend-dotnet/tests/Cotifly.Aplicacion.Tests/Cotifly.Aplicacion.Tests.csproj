@@ -2,4 +2,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Muestra de SAP TM compartida con las pruebas de integración (sin el resto de tests/Comun, que exige SQL Server). -->
+    <Compile Include="..\Comun\clsFuenteMargenMuestra.cs" Link="Comun\clsFuenteMargenMuestra.cs" />
+  </ItemGroup>
 </Project>

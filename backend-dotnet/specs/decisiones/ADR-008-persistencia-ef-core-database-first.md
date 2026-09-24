@@ -84,8 +84,9 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 | `folio_versionado` / nueva versión y búsqueda de cotizaciones por cliente | #12 (ADR-011) |
 | Vistas de métricas (`vAjustesMargenPorComercial`, `vActividadPorComercial`) como entidades sin clave | #45 |
 | Métodos de transición del costeo Nexo (`estadoCosteo`, `costeoListoAt`, `ganada` definitivo) | HU-005 |
-| Resolución de línea de negocio sin tildes: la collation `CI_AS` distingue acentos (`Distribucion` ≠ `Distribución`) | #10 |
-| `clsMargenAjuste` sigue exigiendo márgenes en [0, 1) porque no conoce el método de cálculo; con `markup` un ajuste ≥ 1 se rechazaría | #10 |
+| ~~Resolución de línea de negocio sin tildes: la collation `CI_AS` distingue acentos (`Distribucion` ≠ `Distribución`)~~ | **Resuelto en #10:** `clsMargenResolverService` compara en memoria contra las líneas de `MargenesPolitica` con `clsReglasMargen.NormalizarLinea` (sin tildes, mayúsculas ni espacios) y consulta el mapeo con el nombre canónico. El repositorio sigue comparando con la collation |
+| ~~`clsMargenAjuste` sigue exigiendo márgenes en [0, 1) porque no conoce el método de cálculo; con `markup` un ajuste ≥ 1 se rechazaría~~ | **Resuelto en #10:** `clsMargenAjuste.Registrar` recibe `metodoCalculo` y valida con `clsReglaMargen` |
+| `MargenAjustes.margenPolitica`, `margenAplicado` y `diferencia` son `DECIMAL(9,4)`: el Python redondeaba la diferencia a 6 decimales; .NET redondea los dos márgenes a 4 (half-to-even) antes de calcular la diferencia, así lo guardado cuadra con lo devuelto. Si negocio necesita más precisión, ampliar la escala en un script 0003 | 0003 (datos), si aplica |
 
 ## Pendientes
 

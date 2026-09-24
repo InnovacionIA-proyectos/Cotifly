@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Infraestructura;
 using Microsoft.Extensions.Configuration;
@@ -8,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
-/// Contenedor de dependencias real (<c>AddInfraestructura</c>) apuntando a la base de pruebas y con un
+/// Contenedor de dependencias real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>, como la API) apuntando a la base de pruebas y con un
 /// reloj falso. Así las pruebas de integración y de aceptación ejercitan el mismo registro que la API.
 /// </summary>
 public static class clsServiciosPruebas
@@ -18,7 +19,8 @@ public static class clsServiciosPruebas
         IClsReloj reloj,
         string? cadenaIdentidad = null,
         IDictionary<string, string?>? configuracionExtra = null,
-        string entorno = "Development")
+        string entorno = "Development",
+        Action<IServiceCollection>? configurar = null)
     {
         ArgumentNullException.ThrowIfNull(reloj);
 
@@ -37,7 +39,9 @@ public static class clsServiciosPruebas
         servicios.AddSingleton<IHostEnvironment>(new clsEntornoPruebas(entorno));
         servicios.AddSingleton(reloj); // antes de AddInfraestructura: su TryAdd respeta este reloj
         servicios.AddLogging();
+        servicios.AddAplicacion();
         servicios.AddInfraestructura(configuracion);
+        configurar?.Invoke(servicios); // reemplazos de prueba (ej. la fuente de margen SAP TM de muestra)
         return servicios.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 

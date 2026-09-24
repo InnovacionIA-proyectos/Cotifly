@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -6,7 +7,8 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 
 /// <summary>
 /// Estado de un escenario (Reqnroll lo crea por escenario y lo inyecta en los pasos): proveedor de
-/// servicios real (<c>AddInfraestructura</c>) sobre la base de pruebas, reloj falso y resultados.
+/// servicios real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>) sobre la base de pruebas, reloj falso,
+/// fuente SAP TM de muestra y resultados.
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
@@ -14,10 +16,16 @@ public sealed class clsContextoEscenario : IDisposable
 
     public clsContextoEscenario()
     {
-        _proveedor = clsServiciosPruebas.Crear(clsEntornoAceptacion.BaseDatos.CadenaCotifly, Reloj);
+        _proveedor = clsServiciosPruebas.Crear(
+            clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            Reloj,
+            configurar: s => s.AddSingleton<IClsFuenteMargen>(FuenteSap));
     }
 
     public clsRelojFalso Reloj { get; } = new();
+
+    /// <summary>Fuente SAP TM del escenario: la muestra del Python en memoria (los adaptadores reales llegan con #13).</summary>
+    public clsFuenteMargenMuestra FuenteSap { get; } = new();
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);

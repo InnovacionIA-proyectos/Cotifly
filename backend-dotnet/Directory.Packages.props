@@ -14,6 +14,7 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
   </ItemGroup>
@@ -27,5 +28,7 @@
     <PackageVersion Include="Microsoft.OpenApi.YamlReader" Version="2.12.2" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
     <PackageVersion Include="Reqnroll.xunit.v3" Version="3.3.4" />
+    <!-- Dobles de prueba de los puertos (ADR-010). Licencia BSD-3-Clause. -->
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
   </ItemGroup>
 </Project>
