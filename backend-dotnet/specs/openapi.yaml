@@ -9,8 +9,11 @@ info:
     Angular de ClientePro (HU-004) y que implementa el backend .NET 10 (HU-003).
 
     Convenciones:
-    - Los endpoints `/web/*` conservan los nombres de campo snake_case del backend
-      Python para que el frontend no tenga que transformar nada.
+    - Todo `/web/*` usa nombres de campo snake_case (los heredados del backend Python
+      y los nuevos), para que el frontend no mezcle convenciones.
+    - `/api/auth/*` usa los nombres que define el patrón "Login SSO — Cliente Pro"
+      (`idUsuario`, `debeCambiarPassword`), que ya produce el frontend de ClientePro.
+    - Las operaciones marcadas con `x-estado: borrador` no están congeladas.
     - Los errores de `/web/*` y `/api/auth/*` usan `ErrorWeb` (`{"error": "texto"}`).
     - Los errores de negocio que vienen de una herramienta usan `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`).
@@ -28,7 +31,9 @@ tags:
   - name: admin
     description: Administración de políticas de margen (rol gerente_comercial)
   - name: metricas
-    description: Tablero de efectividad
+    description: |
+      Tablero de efectividad. BORRADOR: exponen las vistas actuales; HU-010.1 definirá
+      los KPIs definitivos y el filtro por regional.
   - name: chat
     description: Webhook de Google Chat
   - name: sistema
@@ -41,10 +46,13 @@ paths:
       tags: [auth]
       summary: Login SSO desde ClientePro (sin credenciales propias)
       description: |
-        ClientePro ya autenticó a la persona. El backend revalida `idUsuario` contra el
-        almacén de identidad corporativo (solo lectura), traduce sus roles externos a
-        roles internos y exige el rol `comercial`. Si la persona es válida pero no existe
-        en `UsuariosWeb`, se crea en ese momento (aprovisionamiento just-in-time).
+        ClientePro ya autenticó a la persona. El backend revalida la identidad contra
+        el almacén corporativo de solo lectura (`tblSAPUsuariosApp`, base
+        `dbsolucionesti`): busca `idUsuario` como `NOMBREUSUARIO` y, si no resuelve,
+        como `ID` numérico. El `NOMBREUSUARIO` de la fila encontrada (nunca el que
+        envía el cliente) es la clave para ubicar o crear al usuario en `UsuariosWeb`
+        (aprovisionamiento just-in-time). Luego traduce sus roles externos a roles
+        internos y exige `comercial` o `gerente_comercial`.
         Cualquier falla (usuario inexistente, rol no autorizado, almacén caído) responde
         el mismo 401 genérico.
       security: []
@@ -124,8 +132,10 @@ paths:
       description: |
         `sesion_id` lo genera el cliente (UUID sin guiones) y agrupa la conversación.
         La sesión queda ligada al usuario del token: otro usuario no puede continuarla.
-        Un fallo interno del agente responde **200** con `error: true` y un texto
-        legible (paridad con el backend Python; el frontend lo muestra tal cual).
+        Un fallo interno del agente (incluido el límite de peticiones del proveedor de
+        IA) responde **200** con `error: true` y un texto legible (paridad con el
+        backend Python; el frontend lo muestra tal cual). El 429 de este endpoint es
+        el límite de peticiones de la propia API, no el del proveedor de IA.
       security:
         - bearer: []
       requestBody:
@@ -156,6 +166,14 @@ paths:
                 error: "sesion_id inválido"
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: El `sesion_id` pertenece a otro usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: "Sesión no encontrada."
         '429':
           $ref: '#/components/responses/DemasiadasPeticiones'
 
@@ -221,6 +239,10 @@ paths:
       operationId: marcarSeguimiento
       tags: [web]
       summary: Marca la cotización como ganada o perdida
+      description: |
+        Interino hasta HU-005.14, que lo reemplaza por `POST /web/cotizaciones/{folio}/resultado`
+        (registra también en Nexo, agrega `comentario` y no permite cambiar el
+        resultado una vez definido).
       security:
         - bearer: []
       parameters:
@@ -309,6 +331,7 @@ paths:
   /web/metricas/actividad:
     get:
       operationId: obtenerActividadComercial
+      x-estado: borrador
       tags: [metricas]
       summary: Actividad por comercial (vista vActividadPorComercial)
       description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
@@ -329,6 +352,7 @@ paths:
   /web/metricas/ajustes-margen:
     get:
       operationId: obtenerAjustesMargen
+      x-estado: borrador
       tags: [metricas]
       summary: Ajustes de margen por comercial (vista vAjustesMargenPorComercial)
       description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
@@ -476,7 +500,9 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial) puede descargarlo.
+        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial) puede
+        descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
+        como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
       security:
         - bearer: []
@@ -609,8 +635,8 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT HS256, 60 minutos. Claims: `sub` (id del usuario), `jti`, `username`,
-        `rol` (`comercial` | `gerente_comercial`), `email`.
+        JWT HS256, 60 minutos. Claims: `sub` (UUID del usuario en `UsuariosWeb`),
+        `jti`, `username`, `rol` (`comercial` | `gerente_comercial`).
     googleChat:
       type: http
       scheme: bearer
@@ -625,7 +651,7 @@ components:
       schema:
         type: string
         maxLength: 50
-      example: DG-23072026
+      example: PCN-23072026
 
   responses:
     Validacion:
@@ -691,6 +717,11 @@ components:
           properties:
             codigo:
               type: string
+              description: |
+                Mismos códigos que el backend Python, más dos nuevos del backend .NET:
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (búsqueda de clientes de HU-005.2 aún
+                no conectada) y `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
+                herramienta inexistente, HU-003.10).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -723,12 +754,12 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-          description: Único campo que decide la identidad.
+          description: Identidad a revalidar contra `tblSAPUsuariosApp` (como NOMBREUSUARIO o como ID).
         nombreUsuario:
           type: string
           nullable: true
           maxLength: 200
-          description: Respaldo si `idUsuario` no resuelve.
+          description: Informativo (nombre para mostrar). No se usa para identificar a la persona.
         roles:
           type: array
           nullable: true
@@ -772,6 +803,7 @@ components:
         ubicacion:
           type: string
           nullable: true
+          description: Regional del usuario (`UsuariosWeb.regional`); null si aún no se ha cruzado con DimEjecutivo.
 
     LoginResponse:
       type: object
@@ -817,14 +849,14 @@ components:
 
     SalidaMargen:
       type: object
-      required: [margen, origen]
+      required: [margen, origen, trq_type, anomalo, detalle]
       properties:
         margen:
           type: number
           description: Fracción decimal (0.135 = 13,5 %).
         origen:
           type: string
-          enum: [sap_tm, politica_linea]
+          enum: [sap_tm, politica_linea, negociado]
         trq_type:
           type: string
           nullable: true
@@ -832,7 +864,6 @@ components:
           type: boolean
         detalle:
           type: string
-          nullable: true
 
     SalidaPdf:
       type: object
@@ -887,10 +918,30 @@ components:
 
     CotizacionResumen:
       type: object
-      required: [folio, moneda, estado_envio]
+      required: [id, folio, version, moneda, estado_envio]
       properties:
+        id:
+          type: string
+          format: uuid
+          description: Se usa en `GET /web/cotizaciones/{id}/nueva-version`.
         folio:
           type: string
+        version:
+          type: integer
+          description: 1 para la original; la tabla muestra "v2", "v3", etc.
+        nit_cliente:
+          type: string
+          nullable: true
+          description: Se usa en `GET /web/clientes/{nit}/destinatarios-previos`.
+        origen_cliente:
+          type: string
+          nullable: true
+          enum: [cliente, prospecto, null]
+        origen_margen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+          description: '`negociado` = ajuste manual del comercial (badge "Ajuste fuera de política").'
         cliente:
           type: string
           nullable: true
@@ -947,11 +998,13 @@ components:
           items:
             type: string
             format: email
+            maxLength: 320
         cc:
           type: array
           items:
             type: string
             format: email
+            maxLength: 320
           default: []
         asunto:
           type: string
@@ -987,85 +1040,89 @@ components:
 
     LineaNegocio:
       type: object
-      required: [id, lineaNegocio, margen, metodoCalculo, isActive]
+      required: [id, linea_negocio, margen, metodo_calculo, is_active]
       properties:
         id:
           type: integer
-        lineaNegocio:
+        linea_negocio:
           type: string
         margen:
           type: number
-        metodoCalculo:
+        metodo_calculo:
           type: string
           enum: [margen, markup]
-        isActive:
+        is_active:
           type: boolean
-        updatedAt:
+        updated_at:
           type: string
           format: date-time
           nullable: true
 
     ActualizarLineaNegocio:
       type: object
-      required: [margen, metodoCalculo, isActive]
+      required: [margen, metodo_calculo, is_active]
       properties:
         margen:
           type: number
           minimum: 0
           maximum: 0.99
-        metodoCalculo:
+        metodo_calculo:
           type: string
           enum: [margen, markup]
-        isActive:
+        is_active:
           type: boolean
 
     ActividadComercial:
       type: object
-      required: [usuarioId, numCotizaciones, numCotizacionesEnviadas, numAjustes]
+      description: |
+        Fila de la vista `vActividadPorComercial` más `nombre_completo` (JOIN con
+        `UsuariosWeb`). `num_cotizaciones_enviadas` debe contar `enviada` y `reenviada`.
+      required: [usuario_id, num_cotizaciones, num_cotizaciones_enviadas, num_ajustes]
       properties:
-        usuarioId:
+        usuario_id:
           type: string
           format: uuid
-        nombreCompleto:
+        nombre_completo:
           type: string
           nullable: true
-        numCotizaciones:
+        num_cotizaciones:
           type: integer
-        numCotizacionesEnviadas:
+        num_cotizaciones_enviadas:
           type: integer
-        numAjustes:
+        num_ajustes:
           type: integer
-        ultimaCotizacion:
+        ultima_cotizacion:
           type: string
           format: date-time
           nullable: true
 
     AjustesMargenComercial:
       type: object
-      required: [usuarioId, numAjustes]
+      description: Fila de la vista `vAjustesMargenPorComercial` más `nombre_completo` (JOIN con `UsuariosWeb`).
+      required: [usuario_id, num_ajustes]
       properties:
-        usuarioId:
+        usuario_id:
           type: string
           format: uuid
           nullable: true
-        nombreCompleto:
+        nombre_completo:
           type: string
           nullable: true
-        lineaNegocio:
+        linea_negocio:
           type: string
           nullable: true
-        numAjustes:
+        num_ajustes:
           type: integer
-        diferenciaPromedio:
+        diferencia_promedio:
           type: number
           nullable: true
-        diferenciaMin:
+        diferencia_min:
           type: number
           nullable: true
-        diferenciaMax:
+        diferencia_max:
           type: number
           nullable: true
-        ultimoAjuste:
+        ultimo_ajuste:
           type: string
           format: date-time
           nullable: true
@@ -1117,44 +1174,48 @@ components:
 
     DatosNuevaVersion:
       type: object
-      required: [cotizacionOrigenId, folioBase, versionSiguiente]
+      description: |
+        Datos de lectura para prellenar el formulario. `cotizacion_origen_id` es solo el
+        id consultado; no se persiste como FK en la versión nueva.
+      required: [cotizacion_origen_id, folio_base, version_siguiente]
       properties:
-        cotizacionOrigenId:
+        cotizacion_origen_id:
           type: string
           format: uuid
-        folioBase:
+        folio_base:
           type: string
-        versionSiguiente:
+        version_siguiente:
           type: integer
-        clienteNombre:
+        cliente_nombre:
           type: string
           nullable: true
-        nitCliente:
+        nit_cliente:
           type: string
           nullable: true
-        origenCliente:
+        origen_cliente:
           type: string
           nullable: true
           enum: [cliente, prospecto, null]
-        lineaNegocio:
+        linea_negocio:
           type: string
           nullable: true
         costo:
           type: number
           nullable: true
-        margenPolitica:
+        margen_politica:
           type: number
           nullable: true
-        margenAplicado:
+        margen_aplicado:
           type: number
           nullable: true
-        origenMargen:
+        origen_margen:
           type: string
           nullable: true
           enum: [sap_tm, politica_linea, negociado, null]
-        metodoCalculo:
+        metodo_calculo:
           type: string
           nullable: true
+          enum: [margen, markup, null]
         moneda:
           type: string
           nullable: true
