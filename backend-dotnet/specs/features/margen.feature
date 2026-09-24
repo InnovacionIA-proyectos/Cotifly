@@ -1,9 +1,10 @@
 # language: es
-# HU-003.4 (#10) — Resolución del margen y margen negociado (ADR-004, ADR-008, ADR-010).
+# HU-003.4 (#10) y HU-003.7 (#13) — Resolución del margen y margen negociado (ADR-004, ADR-008, ADR-010).
 # Casos de tests/test_margen.py del Python contra SQL Server 2019 (Testcontainers) con la semilla del script
 # 0001 (8 líneas al 15 %, TrqType OPTN…OPSC) y la muestra de SAP TM del Python
-# (tests/fixtures/sap/rentab_cliente_muestra.json) como fuente en memoria: los adaptadores reales
-# export_json | odata llegan con #13. Márgenes entre comillas (fracción decimal con punto).
+# (tests/fixtures/sap/rentab_cliente_muestra.json) como fuente en memoria. Los escenarios "se lee en modo" usan los
+# adaptadores reales de #13 (export_json sobre la muestra, odata contra un SAP falso sin red que responde con la
+# misma muestra). Márgenes entre comillas (fracción decimal con punto).
 @integracion
 Característica: Resolución del margen de una cotización
   Como comercial de Botero Soto
@@ -60,17 +61,37 @@ Característica: Resolución del margen de una cotización
     Cuando pido el margen de la línea "Aérea" para el BP "15927"
     Entonces la operación de margen se rechaza con el código "MARGEN_LINEA_DESCONOCIDA"
 
-  Escenario: SAP TM configurado pero caído
+  # Decisión de #13, alineada con HU-009 ("Resiliencia si SAP no responde"): la cotización no se interrumpe.
+  Escenario: SAP TM configurado pero caído usa la política de la línea
     Dado que SAP TM no responde
     Cuando pido el margen de la línea "Nacional" para el BP "15927"
-    Entonces la operación de margen se rechaza con el código "MARGEN_FUENTE_NO_DISPONIBLE"
+    Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
+    Y el detalle menciona "SAP TM no disponible: se usa la política de la línea"
 
-  Escenario: SAP TM todavía no configurado (hasta #13)
+  Escenario: SAP TM sin configurar (SapTm:Modo vacío)
     Dado que SAP TM no está configurado
     Cuando pido el margen de la línea "Nacional" para el BP "15927"
     Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
     Y SAP TM no fue consultado
     Y el detalle menciona "SAP TM no configurado: se usa la política de la línea"
+
+  # test_conmutacion_export_a_odata_misma_salida: pasar a OData en vivo (HU-009) es solo cambiar SapTm:Modo.
+  Esquema del escenario: Cambiar la fuente de SAP TM entre export JSON y OData no cambia el margen
+    Dado que SAP TM se lee en modo "<modo>" con la muestra del Python
+    Cuando pido el margen de la línea "Nacional" para el BP "15927"
+    Entonces el margen es "0.135" con origen "sap_tm" y TrqType "OPTN"
+    Y el detalle menciona "OPTN: 13.5%"
+
+    Ejemplos:
+      | modo        |
+      | export_json |
+      | odata       |
+
+  Escenario: Un BP con comillas no altera la consulta OData a SAP TM
+    Dado que SAP TM se lee en modo "odata" con la muestra del Python
+    Cuando pido el margen de la línea "Nacional" para el BP "15927' or 1 eq 1"
+    Entonces el margen es "0.15" con origen "politica_linea" y TrqType "OPTN"
+    Y SAP TM recibió el filtro OData "SalesOrgId eq '50000005' and TrqType eq 'OPTN' and OrderPartyId eq '15927'' or 1 eq 1'"
 
   Escenario: El comercial negocia un margen distinto al sugerido
     Dado el comercial "ana.negocia" registrado

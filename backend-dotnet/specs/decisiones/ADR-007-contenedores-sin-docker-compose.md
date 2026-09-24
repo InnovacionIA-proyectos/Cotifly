@@ -9,7 +9,7 @@
 El estándar `dotnet-enterprise-architect` exige `Dockerfile` y `docker-compose.yml`, y el Gherkin "Empaquetado y pruebas según el estándar" de HU-003 repite esa exigencia. Pero el backend .NET es un único proceso:
 
 - La base de datos es la instancia corporativa SQL Server 2019 ya existente, no un contenedor.
-- Los PDFs se guardan detrás de `IClsAlmacenPdf`. El destino final (volumen o S3/MinIO) se decide en HU-003.7.
+- Los PDFs se guardan detrás de `IClsAlmacenPdf`. HU-003.7 (#13) mantiene el volumen como único adaptador; S3/MinIO queda pendiente de las réplicas de HU-006.6 (ADR-012).
 - El despliegue real es Docker Swarm con Dokploy (HU-006), que define los servicios desde su propio panel y manifiestos.
 
 Además, la máquina de desarrollo solo tiene SDK .NET 8, así que build y tests de .NET 10 corren dentro de `mcr.microsoft.com/dotnet/sdk:10.0`.

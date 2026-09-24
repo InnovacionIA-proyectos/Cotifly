@@ -7,6 +7,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Margen;
@@ -33,6 +34,7 @@ public sealed class clsMargenResolverServiceTests
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
     private readonly IClsSapMapeoRepository _mapeo = Substitute.For<IClsSapMapeoRepository>();
     private readonly clsFuenteMargenMuestra _fuente = new();
+    private readonly clsLoggerFalso<clsMargenResolverService> _logger = new();
     private readonly List<clsMargenPolitica> _lineas = [.. _trqTypeSemilla.Keys.Select(l => clsMargenPolitica.Crear(l, 0.15m).Valor)];
 
     public clsMargenResolverServiceTests()
@@ -45,7 +47,7 @@ public sealed class clsMargenResolverServiceTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private clsMargenResolverService Resolver(IClsFuenteMargen? fuente = null, string salesOrgDefault = "50000005") =>
-        new(_politicas, _mapeo, fuente ?? _fuente, Options.Create(new clsOpcionesMargen { SalesOrgDefault = salesOrgDefault }));
+        new(_politicas, _mapeo, fuente ?? _fuente, Options.Create(new clsOpcionesMargen { SalesOrgDefault = salesOrgDefault }), _logger);
 
     private async Task<clsSalidaMargen> ResolverOk(string linea, string? bp = null, string? salesOrg = null)
     {
@@ -64,7 +66,7 @@ public sealed class clsMargenResolverServiceTests
         r.Margen.Should().Be(0.135m);
         r.TrqType.Should().Be("OPTN");
         r.Anomalo.Should().BeFalse();
-        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 15927 en OPTN: 13.50%");
+        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 15927 en OPTN: 13.5%");
         _fuente.Consultas.Should().Equal(("50000005", "OPTN", "15927"));
     }
 
@@ -103,7 +105,7 @@ public sealed class clsMargenResolverServiceTests
         r.Origen.Should().Be("sap_tm");
         r.Margen.Should().Be(-0.192m);
         r.Anomalo.Should().BeTrue();
-        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 5000 en OPTN: -19.20% — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.");
+        r.Detalle.Should().Be("Margen propuesto SAP TM para cliente 5000 en OPTN: -19.2% — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.");
     }
 
     // test_resolver_marca_anomalo_atipico
@@ -159,15 +161,52 @@ public sealed class clsMargenResolverServiceTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
     }
 
+    // #13: el Value se muestra tal como llega de SAP, como el f"{value}%" del Python (no con 2 decimales fijos).
+    [Theory]
+    [InlineData("Importacion", "580", "OPIM: 5%")]
+    [InlineData("Distribucion", "2044", "OPDS: 9.75%")]
+    [InlineData("Nacional", "5000", "OPTN: -19.2% — ANÓMALO")]
+    public async Task ElDetalleMuestraElValueTalComoLlegaDeSap(string linea, string bp, string esperado) =>
+        (await ResolverOk(linea, bp)).Detalle.Should().Contain(esperado);
+
+    // Decisión de #13 (Gherkin "Resiliencia si SAP no responde" de HU-009): SAP caído → política, con warning.
     [Fact]
-    public async Task SiLaFuenteSapFallaSeDevuelveMargenFuenteNoDisponibleSinCaerALaPolitica()
+    public async Task SiLaFuenteSapFallaSeUsaLaPoliticaYSeRegistraUnWarning()
     {
         _fuente.NoDisponible = true;
+
+        var r = await ResolverOk("Nacional", "15927");
+
+        r.Origen.Should().Be("politica_linea");
+        r.Margen.Should().Be(0.15m);
+        r.TrqType.Should().Be("OPTN");
+        r.Detalle.Should().Be($"Política de línea Nacional ({clsMargenResolverService.MotivoNoDisponible}): 0.15.");
+        _fuente.Consultas.Should().ContainSingle();
+        _logger.Registros.Should().ContainSingle(l => l.Nivel == LogLevel.Warning)
+            .Which.Mensaje.Should().Contain("SAP TM").And.Contain("OPTN").And.Contain("timeout simulado");
+    }
+
+    [Fact]
+    public async Task SiLaFuenteSapFallaYLaLineaNoTienePoliticaSeDevuelveMargenFuenteNoDisponible()
+    {
+        _fuente.NoDisponible = true;
+        _lineas.RemoveAll(l => l.LineaNegocio == "Nacional");
 
         var resultado = await Resolver().ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.MargenFuenteNoDisponible);
         resultado.Error.Mensaje.Should().Contain("SAP TM");
+    }
+
+    [Fact]
+    public async Task ConSapDisponibleYSinPoliticaSigueSiendoLineaDesconocida()
+    {
+        _lineas.RemoveAll(l => l.LineaNegocio == "Nacional");
+
+        var resultado = await Resolver().ResolverAsync(new clsEntradaMargen("Nacional", "99999"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        _logger.Registros.Should().BeEmpty();
     }
 
     [Fact]
@@ -255,12 +294,13 @@ public sealed class clsMargenResolverServiceTests
     }
 
     [Fact]
-    public async Task LaExcepcionDeFuenteSeTraduceConSuMensaje()
+    public async Task SinPoliticaLaExcepcionDeFuenteSeTraduceConSuMensaje()
     {
         var fuente = Substitute.For<IClsFuenteMargen>();
         fuente.EstaConfigurada.Returns(true);
         fuente.ObtenerValorAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<Task<decimal?>>(_ => throw new clsFuenteMargenNoDisponibleException("export ausente"));
+        _lineas.RemoveAll(l => l.LineaNegocio == "Nacional");
 
         var resultado = await Resolver(fuente).ResolverAsync(new clsEntradaMargen("Nacional", "15927"), Ct);
 

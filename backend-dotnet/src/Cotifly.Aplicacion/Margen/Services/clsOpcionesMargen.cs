@@ -4,8 +4,9 @@ namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
 /// Opciones de la resolución de margen (sección <c>SapTm</c>, variable <c>SapTm__SalesOrgDefault</c>).
-/// Infraestructura la enlaza y la valida al arrancar; #13 agrega en la misma sección el modo de la fuente
-/// (<c>SapTm:Modo</c>) y sus credenciales.
+/// Infraestructura la enlaza y la valida al arrancar. El modo de la fuente y sus credenciales (<c>SapTm:Modo</c>,
+/// <c>ExportPath</c>, <c>Url</c>, <c>User</c>, <c>Pass</c>) viven en la misma sección pero en <c>clsOpcionesSapTm</c> de
+/// Infraestructura (#13): Aplicación no los necesita y la clave usa <c>[clsSecreto]</c>.
 /// </summary>
 public sealed class clsOpcionesMargen
 {

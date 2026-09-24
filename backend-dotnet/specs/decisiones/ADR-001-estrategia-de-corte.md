@@ -41,7 +41,7 @@ Hechos que pesan en la decisión:
    |---|---|
    | `chat.html` (consola `/web`) | Desaparece. La reemplaza el Angular de HU-004 (ver Consecuencias) |
    | `/sesiones/{space_id}` | No se porta en esta HU (soporte interno). Si se necesita, se agrega en un issue aparte |
-   | `/internal/sync-sheets` y sincronización a Sheets | Diferidos. Su destino se decide en HU-003.7 (#13) |
+   | `/internal/sync-sheets` y sincronización a Sheets | Diferidos. HU-003.7 (#13) no los porta: el destino del tablero queda pendiente en ADR-012 |
 
 ## Alternativas consideradas
 

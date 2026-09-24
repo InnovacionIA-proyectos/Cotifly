@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.Interfaces;
+using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,7 +13,7 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
-    private readonly ServiceProvider _proveedor;
+    private ServiceProvider _proveedor;
 
     public clsContextoEscenario()
     {
@@ -24,8 +25,11 @@ public sealed class clsContextoEscenario : IDisposable
 
     public clsRelojFalso Reloj { get; } = new();
 
-    /// <summary>Fuente SAP TM del escenario: la muestra del Python en memoria (los adaptadores reales llegan con #13).</summary>
+    /// <summary>Fuente SAP TM del escenario por defecto: la muestra del Python en memoria.</summary>
     public clsFuenteMargenMuestra FuenteSap { get; } = new();
+
+    /// <summary>SAP TM falso (sin red) que atiende al adaptador OData cuando el escenario usa <see cref="UsarFuenteSapReal"/>.</summary>
+    public clsSapTmFalso SapFalso { get; } = new();
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -35,6 +39,29 @@ public sealed class clsContextoEscenario : IDisposable
 
     /// <summary>Folios de la última consulta de "mis cotizaciones".</summary>
     public IReadOnlyList<string> FoliosConsultados { get; set; } = [];
+
+    /// <summary>
+    /// Rehace el proveedor con el adaptador real de SAP TM que elige <c>SapTm:Modo</c> (#13): <c>export_json</c> sobre la
+    /// muestra del Python u <c>odata</c> contra <see cref="SapFalso"/>, que responde con esa misma muestra.
+    /// </summary>
+    public void UsarFuenteSapReal(string modo)
+    {
+        var configuracion = new Dictionary<string, string?>
+        {
+            ["SapTm:Modo"] = modo,
+            ["SapTm:ExportPath"] = clsSapTmFalso.RutaMuestra,
+            ["SapTm:Url"] = clsSapTmFalso.UrlBase,
+            ["SapTm:User"] = "svc_cotifly",
+            ["SapTm:Pass"] = "Kq7-Vr2m-Xz9p",
+        };
+
+        _proveedor.Dispose();
+        _proveedor = clsServiciosPruebas.Crear(
+            clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            Reloj,
+            configuracionExtra: configuracion,
+            configurar: s => s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso));
+    }
 
     /// <summary>Ejecuta <paramref name="accion"/> en un ámbito nuevo (como una petición) y guarda los cambios.</summary>
     public async Task EnAmbitoAsync(Func<IServiceProvider, Task> accion)
@@ -53,5 +80,9 @@ public sealed class clsContextoEscenario : IDisposable
         return await consulta(ambito.ServiceProvider);
     }
 
-    public void Dispose() => _proveedor.Dispose();
+    public void Dispose()
+    {
+        _proveedor.Dispose();
+        SapFalso.Dispose();
+    }
 }

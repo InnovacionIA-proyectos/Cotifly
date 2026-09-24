@@ -10,5 +10,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <!-- IOptions<T> para las opciones que consumen los casos de uso (ej. SapTm:SalesOrgDefault). -->
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <!-- ILogger<T> para los casos de uso que registran avisos (ej. SAP TM caído → política, #13). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 </Project>

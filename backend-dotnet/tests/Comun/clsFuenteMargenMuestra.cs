@@ -8,7 +8,7 @@ namespace Cotifly.Pruebas.Comun;
 /// <summary>
 /// Fuente de margen en memoria con las filas de <c>tests/fixtures/sap/rentab_cliente_muestra.json</c> del Python
 /// (mismos SalesOrgId, TrqType, OrderPartyId y Value). Registra las consultas y puede simular SAP caído.
-/// Los adaptadores reales (<c>export_json</c> | <c>odata</c>) llegan con #13.
+/// Los adaptadores reales (<c>export_json</c> | <c>odata</c>, #13) se prueban con el archivo de la muestra y con <c>clsSapTmFalso</c>.
 /// </summary>
 public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
 {
@@ -31,7 +31,7 @@ public sealed class clsFuenteMargenMuestra : IClsFuenteMargen
 
     public string Modo => "muestra";
 
-    /// <summary>Si es false, se comporta como la fuente no configurada (hasta #13): no se consulta y no tiene registros.</summary>
+    /// <summary>Si es false, se comporta como la fuente no configurada (<c>SapTm:Modo</c> vacío): no se consulta y no tiene registros.</summary>
     public bool EstaConfigurada { get; set; } = true;
 
     /// <summary>Si es true, toda consulta falla como si SAP TM estuviera caído.</summary>

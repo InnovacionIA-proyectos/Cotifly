@@ -35,6 +35,9 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     [Given("que SAP TM no está configurado")]
     public void DadoQueSapNoEstaConfigurado() => contexto.FuenteSap.EstaConfigurada = false;
 
+    [Given("que SAP TM se lee en modo {string} con la muestra del Python")]
+    public void DadoQueSapSeLeeEnModo(string modo) => contexto.UsarFuenteSapReal(modo);
+
     [When("pido el margen de la línea {string} para el BP {string}")]
     public Task CuandoPidoElMargenConBp(string linea, string bp) => ResolverAsync(new clsEntradaMargen(linea, bp));
 
@@ -79,6 +82,10 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
 
     [Then("SAP TM no fue consultado")]
     public void EntoncesSapNoFueConsultado() => contexto.FuenteSap.Consultas.Should().BeEmpty();
+
+    [Then("SAP TM recibió el filtro OData {string}")]
+    public void EntoncesSapRecibioElFiltro(string filtro) =>
+        clsSapTmFalso.FiltroDe(contexto.SapFalso.Peticiones.Should().ContainSingle().Subject.Url).Should().Be(filtro);
 
     [Then("la línea resuelta es {string} con TrqType {string}")]
     public void EntoncesLaLineaResuelta(string linea, string trqType)

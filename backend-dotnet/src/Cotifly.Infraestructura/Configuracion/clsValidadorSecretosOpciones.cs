@@ -38,6 +38,7 @@ public sealed class clsValidadorSecretosOpciones<TOpciones> : IValidateOptions<T
 
         var esProduccion = _entorno.IsProduction();
         var errores = _secretos
+            .Where(s => !s.Secreto.Opcional || !string.IsNullOrEmpty((string?)s.Propiedad.GetValue(options)))
             .Select(s => clsValidadorSecretos.Validar(
                 $"{_seccion}:{s.Propiedad.Name}",
                 (string?)s.Propiedad.GetValue(options),

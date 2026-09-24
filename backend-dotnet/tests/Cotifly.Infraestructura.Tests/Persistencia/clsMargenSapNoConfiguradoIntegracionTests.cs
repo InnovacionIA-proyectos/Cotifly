@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Con el registro por defecto (sin fuente SAP TM hasta #13, <c>clsFuenteMargenNoConfigurada</c>) un cliente con BP
+/// Con el registro por defecto (<c>SapTm:Modo</c> vacío, <c>clsFuenteMargenNoConfigurada</c>) un cliente con BP
 /// obtiene la política de la línea y no un error: "no configurado" no es "caído".
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

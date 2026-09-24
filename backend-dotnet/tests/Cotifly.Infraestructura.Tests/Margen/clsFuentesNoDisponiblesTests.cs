@@ -14,8 +14,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
-/// Adaptadores por defecto de #10 mientras no existen las fuentes reales: SAP TM (#13) y costeo Nexo (HU-005).
-/// También el registro de la opción <c>SapTm:SalesOrgDefault</c>.
+/// Adaptadores por defecto de #10: SAP TM sin <c>SapTm:Modo</c> (los adaptadores reales de #13 se prueban en
+/// <c>clsRegistroFuenteMargenTests</c>) y costeo Nexo (HU-005). También el registro de la opción <c>SapTm:SalesOrgDefault</c>.
 /// </summary>
 public sealed class clsFuentesNoDisponiblesTests
 {
@@ -43,17 +43,25 @@ public sealed class clsFuentesNoDisponiblesTests
         resultado.Error.Mensaje.Should().Contain("Nexo").And.Contain("HU-005").And.Contain("el comercial ingresa el costo");
     }
 
-    [Theory]
-    [InlineData(typeof(IClsFuenteMargen), typeof(clsFuenteMargenNoConfigurada))]
-    [InlineData(typeof(IClsTarifaProvider), typeof(clsTarifaProviderNoDisponible))]
-    public void AddInfraestructuraRegistraLosAdaptadoresPorDefectoComoSingleton(Type puerto, Type implementacion)
+    [Fact]
+    public void AddInfraestructuraRegistraElProveedorDeTarifasPorDefectoComoSingleton()
     {
         var servicios = new ServiceCollection();
 
         servicios.AddInfraestructura(new ConfigurationBuilder().Build());
 
-        servicios.Should().ContainSingle(d => d.ServiceType == puerto)
-            .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationType == implementacion && d.Lifetime == ServiceLifetime.Singleton);
+        servicios.Should().ContainSingle(d => d.ServiceType == typeof(IClsTarifaProvider))
+            .Which.Should().Match<ServiceDescriptor>(d =>
+                d.ImplementationType == typeof(clsTarifaProviderNoDisponible) && d.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void SinSapTmModoLaFuenteDeMargenSigueSiendoLaNoConfigurada()
+    {
+        // #13: la fuente se elige por SapTm:Modo (fábrica); sin modo se conserva el comportamiento de #10.
+        using var proveedor = Proveedor(salesOrgDefault: null);
+
+        proveedor.GetRequiredService<IClsFuenteMargen>().Should().BeOfType<clsFuenteMargenNoConfigurada>();
     }
 
     [Fact]

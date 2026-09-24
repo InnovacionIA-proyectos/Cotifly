@@ -8,5 +8,6 @@
   <ItemGroup>
     <!-- Muestra de SAP TM compartida con las pruebas de integración (sin el resto de tests/Comun, que exige SQL Server). -->
     <Compile Include="..\Comun\clsFuenteMargenMuestra.cs" Link="Comun\clsFuenteMargenMuestra.cs" />
+    <Compile Include="..\Comun\clsLoggerFalso.cs" Link="Comun\clsLoggerFalso.cs" />
   </ItemGroup>
 </Project>
