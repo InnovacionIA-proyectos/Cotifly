@@ -251,9 +251,9 @@ para el tablero de Looker Studio (ajustada en HU-002.2 a los nombres de columna 
 | `0004_trazabilidad` | Vistas `v_trazabilidad_cotizaciones` y `v_actividad_por_comercial`. |
 | `0005_usuarios_y_seguimiento` | Tabla `usuarios_web` + columnas de seguimiento en `cotizaciones` (`efectiva`, `seguimiento_nota`, `seguimiento_actualizado`). |
 | `0006_hu002_2_esquema_completo` | HU-002.2: elimina `payload`/`contexto`/`origen`/`destino`/`fuente_tarifa`; agrega FKs (`eventos_conversacion→sesiones`, `linea_negocio→margenes_politica`, `usuario_id→usuarios_web`); rediseña `usuarios_web` (PK entera de SAP) y `margenes_politica` (id serial); agrega columnas de Nexo sin poblar (`costeo_id`, `bd_cliente`, `estado_costeo`) y `linea_negocio_id` (poblada aparte, ver `0008`). |
-| `0008_backfill_linea_negocio_id` | Corrección 2026-09-22: `linea_negocio_id` no dependía de Nexo — se rellena por cruce local contra `margenes_politica` (sembrada desde `0002`). `mcp_server/server.py` ya la llena en cotizaciones nuevas. |
-| `0009_usuarios_web_clientepro_columnas` | Agrega `nombre_usuario`/`nombre_completo`/`email` a `usuarios_web` (mapeo de `tblSAPUsuariosApp`, §2.6) — construidas ya, sin poblar hasta HU-004, mismo criterio que las columnas de Nexo. |
 | `0007_ganada_perdida` | HU-002.2 (seguimiento): renombra `efectiva`/`seguimiento_nota`/`seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at` — esquema listo para el resultado sincronizado con Nexo (HU-005), sin poblar todavía. |
+| `0008_backfill_linea_negocio_id` | Corrección 2026-09-22: `linea_negocio_id` no dependía de Nexo — se rellena por cruce local contra `margenes_politica` (sembrada desde `0002`). `mcp_server/server.py` ya la llena en cotizaciones nuevas. |
+| `0009_usuarios_web_clientepro` | Agrega `nombre_usuario`/`nombre_completo`/`email` a `usuarios_web` (mapeo de `tblSAPUsuariosApp`, §2.6) — construidas ya, sin poblar hasta HU-004, mismo criterio que las columnas de Nexo. Nombre de revisión acortado a propósito (28 caracteres, no "...clientepro_columnas") — `alembic_version.version_num` es `VARCHAR(32)`, el nombre completo lo excedía y hacía fallar el `UPDATE` de versión. |
 
 Se aplican con `alembic upgrade head` — automático en producción (entrypoint del contenedor
 `orquestador`, ver `scripts/entrypoint_orquestador.sh`).
