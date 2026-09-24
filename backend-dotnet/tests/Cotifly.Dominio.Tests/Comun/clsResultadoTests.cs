@@ -86,4 +86,23 @@ public sealed class clsResultadoTests
         resultado.EsFallo.Should().BeTrue();
         resultado.Error.Codigo.Should().Be("PRECIO_INVALIDO");
     }
+
+    [Fact]
+    public void ConversionImplicitaDesdeValorCreaUnExito()
+    {
+        clsResultado<string> resultado = "PCN-1";
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.Should().Be("PCN-1");
+    }
+
+    [Fact]
+    public void ConversionImplicitaDesdeValorNuloLanzaArgumentNull()
+    {
+        string? nulo = null;
+
+        var convertir = () => { clsResultado<string> _ = nulo!; };
+
+        convertir.Should().Throw<ArgumentNullException>();
+    }
 }

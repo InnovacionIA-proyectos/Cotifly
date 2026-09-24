@@ -56,11 +56,44 @@ El esquema `dbo_cotifly` ya existe en `dbTarifario_Nexo_Pruebas` (host `tbsdatac
   - En SQL Server esa FK no existe. Solo existe `fk_cotizaciones_lineaNegocioId` (por id, columna nullable) y no hay columna de texto `lineaNegocio`. El bug desaparece con la migración.
   - Además, en .NET la línea se resuelve contra `MargenesPolitica` de forma determinista (sin distinguir tildes ni mayúsculas) antes de renderizar. Si no calza, se responde `MARGEN_LINEA_DESCONOCIDA` sin perder trabajo.
 
+## Implementación (#9, HU-003.3)
+
+Lo decidido arriba se implementó así; donde difiere, manda esta sección:
+
+- `clsCotiflyDbContext` vive en `Infraestructura/Comun/Persistence/` con una configuración Fluent API por tabla en `Configurations/` (tipo SQL explícito en cada columna, nombres de PK/FK/índices del script, CHECK reflejados). Enums guardados con su código snake_case (`clsConvertidorCodigoEnum`); `Sesiones.estadoAgente` como JSON de `clsEstadoConversacion`.
+- `clsMarcasTiempoInterceptor` fija `updatedAt` en filas nuevas y modificadas y también `createdAt` en filas nuevas cuando la entidad no lo trae, siempre con `IClsReloj` (así las reglas con ventana de tiempo, como el dedupe de correo de 5 minutos, se miden con el mismo reloj que escribió la fila).
+- `IClsUnitOfWork` traduce las violaciones de unicidad (SQL 2627/2601) a `clsViolacionUnicidadException` con código de negocio (`uq_cotizaciones_folio` → `FOLIO_DUPLICADO`).
+- **Cambio frente a la decisión:** `clsUsuarioSapApp` se mapea **con clave** (`ID`), no como entidad sin clave: permite `Find`/búsquedas por ID (respaldo del login, ADR-009) y sigue siendo de solo lectura (`NoTracking` + `SaveChanges` lanza). Vive en `Dominio/Identidad` y `clsIdentidadDbContext` en `Infraestructura/Identidad/Persistence/`.
+- El esquema y la tabla de `dbsolucionesti` son configurables (`Identidad:Esquema` = `dbo`, `Identidad:Tabla` = `tblSAPUsuariosApp`) hasta que el DBA confirme la ubicación real.
+- `ConnectionStrings:Regional` / `DWCubosEBSSAP` queda para #12, donde se usa.
+- Validación al arrancar en Production: `[clsSecreto]` sobre `ConnectionStrings:Cotifly` e `Identidad` más `clsValidadorOpcionesConexiones` (rechaza `Trusted_Connection` / `Integrated Security` y contraseñas placeholder).
+- `migrations_mssql/0002_identidad_estado_agente.sql` agrega `Sesiones.estadoAgente` (CHECK `ISJSON`) y `Sesiones.usuarioId` (FK), las tablas `RolesMapeo`, `TokensRefresco` (hash `CHAR(64)` único con collation binaria, `familiaId`, `reemplazadoPorId`) y `TokensRevocados`, e índices de consulta. Es una **extensión aditiva pendiente de aprobación**, idempotente y no destructiva, y un **paso de un solo sentido**: re-ejecutar el 0001 después del 0002 destruye las vistas y 6 tablas (CorreoDestinatarios, MargenAjustes, Correos, EventosConversacion, Cotizaciones, Sesiones) antes de fallar en `DROP TABLE UsuariosWeb` (con `sqlcmd -b`); sin `-b` (SSMS) sigue y recrea Sesiones sin `estadoAgente`/`usuarioId` y sin los índices del 0002. Se propone al PR #40 una guarda al inicio del paso 0bis del 0001: `IF OBJECT_ID(N'dbo_cotifly.TokensRefresco','U') IS NOT NULL THROW 50002, '0002 ya aplicado: el 0001 no debe re-ejecutarse', 1;` (el 0001 no se modifica en #9).
+- La prueba de deriva (`clsEsquemaTests`) aplica 0001 + 0002 en SQL Server 2019 (Testcontainers) y compara en ambos sentidos el modelo EF (modelo de diseño) con el catálogo: tablas, columnas, tipo SQL, nulabilidad y collation (`INFORMATION_SCHEMA.COLUMNS`); nombres y columnas de PK y FK (`sys.key_constraints`, `sys.foreign_keys`); índices y restricciones únicas con orden, `DESC`, `INCLUDE` y filtro (`sys.indexes`); nombres de CHECK (`sys.check_constraints`; la expresión no se compara porque SQL Server la reescribe). La idempotencia del 0002 se verifica con una foto completa del esquema (columnas, defaults, claves, FK, índices, CHECK) y el conteo de filas antes y después de re-aplicarlo. Para que la comparación de índices sea exacta, el modelo quita la convención de EF que crea un índice por FK (`ForeignKeyIndexConvention`).
+- `GET /health/ready` usa `clsBaseDatosHealthCheck`: conecta (`CanConnectAsync`) y verifica que el 0002 está aplicado (`Sesiones.estadoAgente` y `TokensRefresco`); si falta responde 503 con el detalle fijo `esquema incompleto: falta 0002`. La sonda completa tiene un límite de 5 s para no colgar el endpoint los 15 s del timeout de conexión por defecto.
+
+### Deuda técnica anotada (no se mueve código en #9)
+
+| Deuda | Dónde se resuelve |
+|---|---|
+| `IClsCotizacionRepository.MarcarSeguimientoAsync` e `IClsCorreoRepository.VentanaDuplicado` contienen reglas de negocio en puertos de repositorio (se portaron así desde `shared/repos.py`): pasar a casos de uso | #11 / #12 |
+| `clsUsuarioSapApp` (Dominio) pasa a Aplicacion detrás de un puerto de directorio corporativo | #12 |
+| `clsIdentidadDbContext` solo bloquea `SaveChanges`; `ExecuteUpdate`/`ExecuteDelete`/`ExecuteSqlRaw` no pasan por ahí. La garantía real son los permisos de `cotifly_app` (sin UPDATE/DELETE, sin SELECT sobre `CLAVE`) | DBA |
+| `IClsSesionRepository.TocarAsync` crea la sesión si no existe y sin dueño: #12 no debe usarlo para crear sesiones web (usar `ObtenerOCrearAsync` con `usuarioId`) | #12 |
+| El dedupe de correo (`ExisteDuplicadoRecienteAsync`) no toma lock: dos envíos simultáneos pueden pasar ambos (igual que el Python) | #11 |
+| Columnas `NVARCHAR(MAX)` que habrá que acotar e indexar en un script 0003: `Cotizaciones.nitCliente`, `UsuariosWeb.email`, `Cotizaciones.estadoCosteo`, `Cotizaciones.costeoId` | 0003 (datos) |
+| `folio_versionado` / nueva versión y búsqueda de cotizaciones por cliente | #12 (ADR-011) |
+| Vistas de métricas (`vAjustesMargenPorComercial`, `vActividadPorComercial`) como entidades sin clave | #45 |
+| Métodos de transición del costeo Nexo (`estadoCosteo`, `costeoListoAt`, `ganada` definitivo) | HU-005 |
+| Resolución de línea de negocio sin tildes: la collation `CI_AS` distingue acentos (`Distribucion` ≠ `Distribución`) | #10 |
+| `clsMargenAjuste` sigue exigiendo márgenes en [0, 1) porque no conoce el método de cálculo; con `markup` un ajuste ≥ 1 se rechazaría | #10 |
+
 ## Pendientes
 
 | Pendiente | Dueño |
 |---|---|
 | Crear `cotifly_app` con esos permisos y entregar las credenciales por canal seguro | DBA (lo solicita Duban) |
+| Confirmar esquema real de `tblSAPUsuariosApp` en `dbsolucionesti` (hoy se asume `dbo`, configurable) | DBA |
+| Smoke del `DbContext` contra `tbsdatacenter` (diferido de HU-002.4; espera a `cotifly_app`) | Duban |
 | Merge del PR #40 (script 0001) a `QA` | scalderon-bs |
 | Ratificar "solo scripts `.sql`" y revisar y aplicar `0002_identidad_estado_agente.sql` | Sara + scalderon-bs |
 | Acceso de red y permisos a `DWCubosEBSSAP` desde el contenedor | DBA |

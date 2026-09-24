@@ -14,4 +14,15 @@
     <Using Include="Xunit" />
     <Using Include="AwesomeAssertions" />
   </ItemGroup>
+  <!--
+    Proyectos con pruebas de integración sobre SQL Server 2019 (Testcontainers, ADR-008/ADR-010):
+    se activan con <UsaSqlServerPruebas>true</UsaSqlServerPruebas> en el .csproj. Agrega el paquete,
+    el soporte compartido de tests/Comun (contenedor, reloj falso, DI de pruebas) y copia los scripts
+    migrations_mssql/*.sql a la salida para aplicarlos en el contenedor.
+  -->
+  <ItemGroup Condition="'$(UsaSqlServerPruebas)' == 'true'">
+    <PackageReference Include="Testcontainers.MsSql" />
+    <Compile Include="$(MSBuildThisFileDirectory)Comun\**\*.cs" Link="Comun\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

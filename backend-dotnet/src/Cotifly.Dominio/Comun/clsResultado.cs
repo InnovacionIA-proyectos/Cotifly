@@ -51,4 +51,7 @@ public sealed class clsResultado<TValor>
 
     /// <summary>Permite <c>return error;</c> en métodos que devuelven <see cref="clsResultado{TValor}"/>.</summary>
     public static implicit operator clsResultado<TValor>(clsErrorDominio error) => Fallo(error);
+
+    /// <summary>Permite <c>return valor;</c> en métodos que devuelven <see cref="clsResultado{TValor}"/>.</summary>
+    public static implicit operator clsResultado<TValor>(TValor valor) => Exito(valor);
 }
