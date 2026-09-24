@@ -172,7 +172,7 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 - [x] Aplicado tal cual — camelCase, `CorreoDestinatarios` (con la invariante "al menos un `tipo='para'`" documentada como validación de aplicación, no de esquema). Ver §2, §5.4.
 - [x] Las 2 vistas migradas a T-SQL (`vAjustesMargenPorComercial`, `vActividadPorComercial`), reemplazando `COUNT(*) FILTER` por `SUM(CASE WHEN...)`. Ver §6.
 - [x] **Resuelto — se retira `lineaNegocio` (texto), queda solo `lineaNegocioId`.** Ya no hay riesgo (ambas estaban pobladas y consistentes) y mantener las dos sería la misma redundancia que esta iniciativa viene corrigiendo desde HU-002.1. Las 2 vistas se ajustaron con un `JOIN` a `MargenesPolitica` para recuperar el nombre legible. Nota de implementación para HU-002.4/HU-003.3: leer/escribir línea de negocio por `lineaNegocioId`, no por texto. Ver §3.
-- [x] Documento entregado: `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` — diagrama ER, las 9 tablas + `CorreoDestinatarios` (nueva) con columnas/tipos/FKs/constraints, checklist de cobertura sin tablas sin mapear (§4, §5, §8). De paso se marcó explícitamente `MargenesPolitica.metodoCalculo` como decisión abierta heredada de la auditoría de HU-002.1 (sin uso real, nunca resuelta) para no perder ese hilo. **Corrección posterior (2026-09-22):** se retiró el prefijo `tbl`/`tblSap` de todas las tablas — como ya se habían llegado a crear así en `dbo_cotifly`, `migrations_mssql/0001_esquema_objetivo.sql` se reescribió para soltarlas primero y recrearlas con el nombre correcto (ver §9 del documento).
+- [x] Documento entregado: `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` — diagrama ER, las 9 tablas + `CorreoDestinatarios` (nueva) con columnas/tipos/FKs/constraints, checklist de cobertura sin tablas sin mapear (§4, §5, §8). De paso se marcó explícitamente `MargenesPolitica.metodoCalculo` como decisión abierta heredada de la auditoría de HU-002.1 (sin uso real, nunca resuelta) para no perder ese hilo. **Corrección posterior (2026-09-22):** se retiró el prefijo `tbl`/`tblSap` de todas las tablas — como ya se habían llegado a crear así en `dbo_cotifly`, `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` se reescribió para soltarlas primero y recrearlas con el nombre correcto (ver §9 del documento).
 - [x] **Confirmado con el DBA (2026-09-22):** ni Nexo ni ClientePro tienen una collation explícita definida (usan la del servidor por defecto) — no hay nada con qué chocar. Se usa `Latin1_General_100_CI_AS_SC_UTF8` (novedad de SQL Server 2019, soporte UTF-8) para columnas de texto con tildes/ñ, tal como se había propuesto en §3.3. Riesgo de fricción por cruce de texto entre bases además descartado: la integración con Nexo es HTTP/polling, no conexión directa a su BD (ver HU-005).
 - [x] Documentado: usar **ODBC Driver 17** (no 18) para la conexión — el 18 exige TLS por defecto y rompe contra una instancia sin certificado propio (§3.3 de la propuesta, ver `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §7).
 
@@ -184,7 +184,7 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Asignado a:** Sara (Datos) + Duban (Backend, ejecución técnica de la migración)
 **Parte de HU-002 (milestone). Depende de HU-002.3.**
 - [x] Datos de conexión reales a la instancia SQL Server 2019 corporativa (servidor, nombre de base, usuario de servicio): los provee directamente el responsable del proyecto (no hay que gestionarlo con TI por separado) — confirmar el nombre de base a usar, siguiendo convención corporativa si existe una.
-- [x] **Ejecutado y verificado (2026-09-22, Sara):** corrido `migrations_mssql/0001_esquema_objetivo.sql` vía `sqlcmd -S tbsdatacenter -d dbTarifario_Nexo_Pruebas -E -C` — no es una BD nueva, es el schema `dbo_cotifly` dentro de `dbTarifario_Nexo_Pruebas` (ya existente). Verificado contra `INFORMATION_SCHEMA`: las 10 tablas (`Cotizaciones`, `MargenAjustes`, `Correos`, `CorreoDestinatarios`, `EventosConversacion`, `EventosHerramienta`, `Sesiones`, `UsuariosWeb`, `MargenesPolitica`, `SapMapeoTrqType`) y las 2 vistas (`vAjustesMargenPorComercial`, `vActividadPorComercial`) quedaron creadas, ya sin el prefijo `tbl`/`tblSap` (ver desviación documentada en la línea 218).
+- [x] **Ejecutado y verificado (2026-09-22, Sara):** corrido `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` vía `sqlcmd -S tbsdatacenter -d dbTarifario_Nexo_Pruebas -E -C` — no es una BD nueva, es el schema `dbo_cotifly` dentro de `dbTarifario_Nexo_Pruebas` (ya existente). Verificado contra `INFORMATION_SCHEMA`: las 10 tablas (`Cotizaciones`, `MargenAjustes`, `Correos`, `CorreoDestinatarios`, `EventosConversacion`, `EventosHerramienta`, `Sesiones`, `UsuariosWeb`, `MargenesPolitica`, `SapMapeoTrqType`) y las 2 vistas (`vAjustesMargenPorComercial`, `vActividadPorComercial`) quedaron creadas, ya sin el prefijo `tbl`/`tblSap` (ver desviación documentada en la línea 218).
 - [x] **Ejecutado y verificado (2026-09-22, Sara):** corrido `migrations_mssql/0002_seed_configuracion.sql` — hueco encontrado en el checklist original, que no mencionaba datos de configuración: sin sembrar `MargenesPolitica`/`SapMapeoTrqType`, la app fallaría con "línea de negocio desconocida" en la primera cotización (no es dato histórico, es configuración que la app necesita desde el día uno). Valores verificados en vivo contra el Postgres de dev, no copiados de la documentación a ciegas — `BASE_DE_DATOS.md` afirma que `ITR` está al 50%, pero el dato real (BD + migración `0002_seed_config.py`) es 0.15 igual que las otras 7 líneas; ese dato del documento está desactualizado, no se usó.
 - [x] **Confirmado (2026-09-22):** T-SQL directo, no EF Core — ya ejecutado (`0001`/`0002` de `migrations_mssql/`). **Nota para HU-003.3:** revisar contra este esquema antes de ejecutar cualquier migración EF Core propia, para no chocar ni duplicar lo que ya existe en `dbo_cotifly`.
 - [x] **Decisión (2026-09-22):** no se migra ningún dato histórico de Postgres — el volumen real es prácticamente nulo (datos de prueba/dev, no hay producción operando todavía). La condición previa sobre `0006`/`0007`/`0008`/`0009` queda sin objeto.
@@ -193,16 +193,26 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 - [x] **Ejecutado (2026-09-22):** driver ODBC 17 (`msodbcsql17`) instalado en `mcp_server/Dockerfile` y `orquestador/Dockerfile`; `pyproject.toml` cambiado `psycopg[binary]`→`pyodbc`; `DATABASE_URL` de ambos servicios a `mssql+pyodbc://...`.
 - [x] **Ejecutado (2026-09-22) — decisión: opción 2, sin mantener la versión Postgres.** `scripts/backup_db.sh`/`restore_db.sh` reescritos para SQL Server (`sqlcmd` + `BACKUP DATABASE`/`RESTORE DATABASE`), y `DEPLOY.md` actualizado (§1, §3, §7, §8). Se decidió no mantener la versión Postgres en paralelo porque nada está en producción ni en pruebas todavía — se va a publicar de cero. **Nota:** `infra/stack.staging.yml`/`infra/stack.dokploy.yml` (el manifiesto real de Dokploy) siguen sin actualizar, fuera del alcance de este cambio — `DEPLOY.md` ya lo advierte explícitamente.
 
+- [x] **Fase 2 (2026-09-23), consolidada en `0001` (2026-09-24) — ampliación de esquema para rol Gerente Comercial, tablero de métricas y ajustes de negocio.** Se planteó primero como script aparte (`0003_*.sql`, `ALTER` sobre `0001`/`0002` ya creados) y se ejecutó así una vez; al día siguiente se consolidó todo en un único `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` que crea el esquema ya en su forma final desde el inicio — no hay razón para mantener 3 scripts separados cuando nada está en producción. `0002_seed_configuracion.sql` y `0003_fase2_gerente_comercial.sql` ya no existen.
+  - **`UsuariosWeb`:** `id` es `uniqueidentifier` (UUID) generado por Cotifly, como PK. **Corrección sobre el plan original (2026-09-23): NO se agregó `sap_id`.** Decisión confirmada con el equipo: el aprovisionamiento no usa ningún id numérico de SAP — el match contra `tblSAPUsuariosApp` (¿ya existe este usuario?) y contra `DimEjecutivo` (para `regional`) es por `nombreUsuario` (índice único filtrado en la BD; la collation del esquema ya es case-insensitive, así que normalizar a mayúscula es una decisión de estilo de la app, no una necesidad técnica). Se agregó `regional` (nvarchar) — **sigue pendiente agregar las credenciales de conexión a `DWCubosEBSSAP`** (tercera conexión externa de solo lectura, además de `dbsolucionesti` y Nexo) en `shared/config.py`, fuera del alcance de un script SQL. El rol (Comercial / Gerente Comercial) **no** se persiste en `UsuariosWeb` — se consulta en vivo desde los roles que ya expone la sesión de ClientePro (HU-004.3).
+  - **Cascada de tipo:** `Cotizaciones.usuarioId`, `MargenAjustes.usuarioId`, `EventosConversacion.usuarioId` y `Correos.confirmadoPor` son `uniqueidentifier` desde su creación (misma FK a `UsuariosWeb.id`).
+  - **Aprovisionamiento (HU-003.6):** queda pendiente actualizar el diseño ahí para que la búsqueda de "¿ya existe este usuario?" sea explícitamente por `nombreUsuario`, no por ningún id — ver HU-003.6 en la milestone HU-003.
+  - **`MargenesPolitica.mapeoLineasNexo`:** poblado con el catálogo real confirmado con el equipo (2026-09-23): `Nacional`→`Nacional`, `Importacion`→`PuertoAInterior`, `Exportacion`→`InteriorAPuerto`, `Internacional`→`Andino`; `Distribucion`/`Almacenamiento`/`Almacenamiento3PL`/`ITR` sin equivalente en el enum de Nexo, `NULL` a propósito (no es un dato faltante por completar después). **Orden de columna (2026-09-24):** en el `CREATE TABLE` de `MargenesPolitica`, `mapeoLineasNexo` va **justo después de `lineaNegocio`** (antes de `margen`), no al final de la tabla.
+  - **`Cotizaciones`:** `costeoListoAt` — **ajustado a `datetimeoffset`** (no `datetime`, por consistencia con el resto del esquema, que ya usa `datetimeoffset` en toda columna de fecha/hora). `trmAplicada` — **ajustado a `decimal(18,4)`** (no solo "decimal" sin precisión — Postgres/SQL Server truncan silenciosamente sin escala explícita, mismo hallazgo que ya se había hecho para otras columnas decimal en HU-002.3), default `0`. `version` (int, default `1`) para el versionado de folio — **sin `cotizacionOrigenId`** (decisión 2026-09-24: no se agrega el auto-FK; las versiones de una misma cotización se identifican por el folio base compartido, no por una relación explícita en BD). `origenCliente` (nvarchar, `CHECK` `'cliente'`/`'prospecto'`).
+  - **Bug encontrado en vivo (2026-09-24):** `clienteIdSap` (columna vieja, texto libre) quedó **duplicada** junto con `bdCliente` en `Cotizaciones` — el rename original no soltó la columna vieja. **Fix aplicado:** se elimina `clienteIdSap`, y `bdCliente` se renombra a **`nitCliente`** — decisión revisada (2026-09-24): se guarda el **NIT** que devuelve el buscador de clientes de Nexo (HU-005.2, ya viene en su respuesta `{ clienteId, bp, nit, nombre, origen }`), no el `clienteId` interno de Nexo. Motivo: `clienteId`/`bp` cambian de formato según el origen (BP para clientes reales de `DimBpSolicitante`, un UUID interno para prospectos de `tblProspectos`, sin relación entre sí) — el NIT en cambio es estable y existe para ambos casos (incluso es campo obligatorio al crear un prospecto nuevo vía `CrearProspecto`, HU-005.2). Script de corrección contra la instancia real + ajuste de `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` entregado aparte.
+  - **Hallazgo técnico real (2026-09-23):** SQL Server no tiene conversión `int`→`uniqueidentifier` — un `ALTER COLUMN` directo entre esos dos tipos falla siempre, incluso en tabla vacía. No fue un problema en la versión final (todo se crea desde cero en `0001`), pero queda documentado para quien altere este esquema más adelante con datos reales ya cargados: hace falta `DROP`+`ADD` (solo si no hay datos que perder) o una migración de datos explícita.
+  - **No requieren columna nueva (confirmado con el equipo):** "ajuste fuera de política" se deriva en consulta comparando `margenAplicado` (cuando `origenMargen="negociado"`) contra el margen vigente en `MargenesPolitica` — la tabla `MargenAjustes` ya contempla lo necesario para esa comparación. "Cotización nueva/Borrador/incompleta" (escala de color §7.1 del documento de entendimiento) queda fuera de alcance de este cambio — solo aplicaría al formulario ampliado de Nexo (HU-005.3), que sí podría guardar progreso parcial; se retoma ahí si aplica. El score de urgencia y el cruce contra `deadline` para los KPIs del tablero (HU-011) los calcula y expone Nexo, no se duplica en Cotifly.
+
 ### [HU-002.5] Validación QA de integridad de datos tras la migración a SQL Server
 **Labels:** `cotifly`, `qa`, `datos`, `tarea-tecnica`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Kevin (QA) + Sara (Datos)
-**Parte de HU-002 (milestone). Depende de HU-002.4.**
-- [ ] Confirmar que el conteo de filas por tabla coincide entre PostgreSQL (origen) y SQL Server 2019 (destino), para cada tabla migrada.
-- [ ] Probar cada FK agregada en HU-002.2 con al menos un caso real que confirme que la integridad referencial funciona como se espera (ej. intentar insertar un registro huérfano y confirmar que la base lo rechaza).
-- [ ] Validar que las **2** vistas migradas (`v_ajustes_margen_por_comercial`/`vAjustesMargenPorComercial`, `v_actividad_por_comercial`/`vActividadPorComercial`) devuelven resultados equivalentes a las originales de PostgreSQL para un mismo conjunto de datos de prueba — `v_trazabilidad_cotizaciones` se descartó en HU-002.2, no aplica.
+**Parte de HU-002 (milestone). Depende de HU-002.4 — ya cerrada (2026-09-22), `dbo_cotifly` existe y está poblada con la configuración base, esta HU ya se puede empezar.**
+- [ ] **Ajustado (2026-09-22): no hay datos históricos que comparar por conteo.** HU-002.4 decidió no migrar ningún dato de Postgres (volumen real nulo, nada en producción). Lo único sembrado son las 2 tablas de configuración — confirmar que `MargenesPolitica` y `SapMapeoTrqType` tienen **8 filas cada una** en SQL Server, igual que en Postgres (`margenes_politica`/`mapeo_trqtype`). El resto de tablas deben estar **vacías a propósito** — confirmar que están vacías no es un error, es lo esperado.
+- [ ] Probar cada FK con al menos un caso real que confirme que la integridad referencial funciona como se espera (ej. intentar insertar un registro huérfano y confirmar que la base lo rechaza) — contra los nombres reales ya creados en `dbo_cotifly` (`Cotizaciones`, `MargenAjustes`, `Correos`, `CorreoDestinatarios`, `EventosConversacion`, sin prefijo `tbl`, ver HU-002.3/HU-002.4).
+- [ ] Validar que las **2** vistas migradas (`v_ajustes_margen_por_comercial`/`vAjustesMargenPorComercial`, `v_actividad_por_comercial`/`vActividadPorComercial`) devuelven resultados equivalentes a las originales de PostgreSQL — `v_trazabilidad_cotizaciones` se descartó en HU-002.2, no aplica. **Ojo con esto (2026-09-22):** como no hay datos históricos migrados, comparar contra "el mismo conjunto de datos de prueba" no es automático — hoy ambas vistas devolverían vacío en los dos motores, lo cual no prueba nada. Insertar a mano un mismo puñado de filas de prueba (unas pocas cotizaciones + ajustes) en el Postgres de dev y en `dbo_cotifly`, y comparar el resultado de las vistas contra ese set común, antes de dar esto por validado.
 - [ ] Dejar documentado el resultado de esta validación como requisito de cierre antes de que HU-003.3 (conexión del backend .NET a la nueva base) se dé por completada.
-- [ ] Dejar evidencia trazable de esta ejecución (fecha, quién la corrió, contra qué entorno) en el propio issue o en un commit con mensaje descriptivo — no basta con que "haya pasado", debe quedar registro verificable de cuándo y contra qué sistema real se corrió, dado que hoy el historial de git del repo no permite reconstruir esa trazabilidad por sí solo.
+- [ ] Dejar evidencia trazable de esta ejecución (fecha, quién la corrió, contra qué entorno) en el propio issue o en un commit con mensaje descriptivo — no basta con que "haya pasado", debe quedar registro verificable de cuándo y contra qué sistema real se corrió, dado que hoy el historial de git del repo no permite reconstruir esa trazabilidad por sí solo. Mismo patrón ya usado en HU-002.4 (checklist con fecha + comando `sqlcmd` corrido + resultado).
 
 ---
 
@@ -216,12 +226,13 @@ Basado en el esquema PostgreSQL actual (5 migraciones Alembic, `shared/models.py
 **Como** equipo de TI de Botero Soto, **quiero** que el backend de Cotifly esté implementado en C# / .NET 10 siguiendo Clean Architecture (Monolito Modular Moderno) y persistiendo en SQL Server 2019, **para** alinearlo con el estándar corporativo de desarrollo (`dotnet-enterprise-architect`), dejar de depender de un stack Python aislado del resto de sistemas de la compañía, y facilitar su mantenimiento por el equipo interno.
 
 ### Contexto técnico (estándar aplicable y estado actual)
-- **Estándar obligatorio:** skill `dotnet-enterprise-architect` — Clean Architecture de 4 capas (Dominio, Aplicación, API, Infraestructura), Monolito Modular Moderno (módulos por área de negocio, sin microservicios), sin CQRS salvo justificación, convenciones de nombres `cls` para clases (se mantiene), Docker + `docker-compose.yml` obligatorios, `.gitignore` mínimo (`.env`, `bin/`, `obj/`), estrategia de testing completa, y documentación técnica con las 9 secciones que exige la skill (descripción, arquitectura, infraestructura, flujo del sistema, stack, ejecución local, API, testing, estructura del proyecto). **Desviación explícita (2026-09-22):** la parte de este estándar sobre `tbl`/`tblSap` para tablas se retiró puntualmente para las tablas de Cotifly, después de crearlas en `dbo_cotifly` sin prefijo (PascalCase plano, ej. `Cotizaciones`, `SapMapeoTrqType`) — ver `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §9 y `migrations_mssql/0001_esquema_objetivo.sql`. No se confirmó con quien mantiene la skill antes de decidirlo; si esa skill aplica a otros proyectos del mismo estándar corporativo, vale la pena avisarles de esta desviación puntual.
+- **Estándar obligatorio:** skill `dotnet-enterprise-architect` — Clean Architecture de 4 capas (Dominio, Aplicación, API, Infraestructura), Monolito Modular Moderno (módulos por área de negocio, sin microservicios), sin CQRS salvo justificación, convenciones de nombres `cls` para clases (se mantiene), Docker + `docker-compose.yml` obligatorios, `.gitignore` mínimo (`.env`, `bin/`, `obj/`), estrategia de testing completa, y documentación técnica con las 9 secciones que exige la skill (descripción, arquitectura, infraestructura, flujo del sistema, stack, ejecución local, API, testing, estructura del proyecto). **Desviación explícita (2026-09-22):** la parte de este estándar sobre `tbl`/`tblSap` para tablas se retiró puntualmente para las tablas de Cotifly, después de crearlas en `dbo_cotifly` sin prefijo (PascalCase plano, ej. `Cotizaciones`, `SapMapeoTrqType`) — ver `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §9 y `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`. No se confirmó con quien mantiene la skill antes de decidirlo; si esa skill aplica a otros proyectos del mismo estándar corporativo, vale la pena avisarles de esta desviación puntual.
 - **Backend actual a reemplazar (Python, repo `Cotifly`):** `orquestador/` (API FastAPI: webhook de Chat, loop agéntico, sesiones, endpoints `/web/*`), `mcp_server/` (servidor FastMCP con las herramientas de negocio: `margen/`, `tarifas/`, `pdf/`, `correo.py`, `auditoria.py`, `precio.py`), `shared/` (config, modelos ORM, repos), `migrations/` (Alembic sobre PostgreSQL 16).
 - **Decisión ya tomada:** el nuevo backend .NET **sí reimplementa también el loop agéntico con LLM** (el "Asistente" conversacional que interpreta lenguaje natural y orquesta las herramientas de negocio, junto con el webhook de Google Chat) — deja de existir en Python, no hay convivencia para esta pieza. Ver HU-003.1 para la elección concreta del mecanismo de orquestación en .NET (ej. Semantic Kernel, cliente HTTP directo al proveedor LLM equivalente a LiteLLM).
 - **Decisión ya tomada:** el `mcp_server` (herramientas de negocio) se absorbe dentro del monolito .NET como parte de las capas de Aplicación/Infraestructura — deja de existir como servicio MCP separado.
 - **Decisión ya tomada:** la base de datos pasa de PostgreSQL 16 a **SQL Server 2019** (instancia corporativa ya existente, la misma familia de motor que usan otros sistemas de la compañía).
 - **Contrato de referencia:** los endpoints `/web/*` documentados en HU-004.1 (repo `Cotifly`, milestone HU-004) deben reproducirse con el mismo comportamiento en la nueva API .NET, para que el módulo Angular de HU-004 (`clientepro-frontend`) no tenga que cambiar nada al cambiar de backend.
+- **Decisión resuelta (detectada 2026-09-23, cerrada el mismo día):** la propuesta original de HU-002.1 (§2.1 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`) proponía complementar `folio` con el BP del cliente u otro identificador más representativo, con el formato exacto "pendiente de definir", y dejaba el sufijo `-vN` sin definir en el código (`PCN-DDMMAAAA[-vN]`, comentario en `shared/models.py:49`). **Confirmado con el equipo: el folio incluye ambos** — el identificador del cliente (`nitCliente`, el NIT resuelto por catálogo real desde HU-005.2 — ver corrección 2026-09-24 en HU-002.4 Fase 2, antes se llamaba `bdCliente`) y el sufijo de versión (`-vN`, ver HU-002.4 Fase 2 y HU-003.6/HU-004.4/HU-004.5). Formato propuesto: `PCN-{nitCliente}-DDMMAAAA[-vN]` — el orden exacto de los segmentos queda a confirmar con Duban al construir la generación de folio en .NET (HU-003.6), pero ambos componentes ya están decididos, no quedan en el aire.
 
 ### Criterios de aceptación (Gherkin)
 ```gherkin
@@ -323,7 +334,8 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 - [ ] Modelar las entidades de Dominio equivalentes a los modelos SQLAlchemy actuales (cotizaciones, ajustes de margen, correos, sesiones), sin dependencias de tecnología dentro de la capa Dominio.
 - [ ] Definir las interfaces de repositorio en Dominio/Aplicación (ej. `IClsCotizacionRepository`) y sus implementaciones con Entity Framework Core en Infraestructura.
 - [ ] Crear el `DbContext` apuntando a SQL Server 2019, con las tablas nombradas en PascalCase sin prefijo, tal como quedaron creadas en `dbo_cotifly` (ej. `Cotizaciones`, `MargenAjustes`, `Correos`, `Sesiones`, `SapMapeoTrqType`) — el prefijo `tbl`/`tblSap` se probó primero pero el equipo lo retiró después de crear las tablas (2026-09-22, ver `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §9); no reintroducirlo al mapear las entidades de EF Core.
-- [ ] Generar las migraciones EF Core equivalentes a las 5 migraciones Alembic actuales, revisando con el equipo de datos (Sara) que no se pierda ninguna regla de integridad (constraints, índices) ya existente en PostgreSQL. **Revisar antes de ejecutar** contra `dbo_cotifly` (ya creado por HU-002.4, `migrations_mssql/0001_esquema_objetivo.sql`/`0002_seed_configuracion.sql`) — no chocar ni duplicar lo que ya existe ahí.
+- [ ] Generar las migraciones EF Core equivalentes a las 9 migraciones Alembic actuales (`0001`-`0009` — eran 5 al iniciar HU-002.1, la propuesta original creció en el camino), revisando con el equipo de datos (Sara) que no se pierda ninguna regla de integridad (constraints, índices) ya existente en PostgreSQL. **Revisar antes de ejecutar** contra `dbo_cotifly` (ya creado por HU-002.4, script único `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` — crea esquema + seed + Fase 2 de una sola vez, ver nota de consolidación en HU-002.4) — no chocar ni duplicar lo que ya existe ahí.
+- [ ] **Aclaración de enfoque (2026-09-22):** el esquema físico de `dbo_cotifly` ya existe — se creó con T-SQL directo, no con EF Core. Este ítem **no es "generar migraciones EF Core desde cero que creen el esquema"** — sería redundante y arriesga chocar con lo que ya existe (ver ítem anterior). Es más bien: (a) mapear el `DbContext`/entidades contra el esquema ya creado (enfoque Database First — scaffolding o Fluent API escrito a mano contra las tablas reales), y (b) si hace falta un cambio de esquema futuro, decidir con el equipo de datos (Sara) si se sigue haciendo vía un nuevo script en `migrations_mssql/000N_*.sql` (mismo patrón ya establecido) o si a partir de ahí se adopta el flujo de migraciones de EF Core — pero no mezclar los dos caminos para el mismo esquema.
 - [x] ~~Documentar el proceso de migración de datos históricos~~ — **Decidido en HU-002.4 (2026-09-22): no se migra ningún dato histórico** de PostgreSQL (volumen real prácticamente nulo, nada en producción todavía). Parte en limpio.
 - [ ] **Diferido desde HU-002.4 (2026-09-22):** confirmar que el backend puede conectarse y operar contra `dbo_cotifly` en SQL Server — bloqueado hasta ahora porque el backend Python no habla SQL Server (`shared/db.py`/`models.py`/`repos.py` con tipos de Postgres, no reescritos a propósito por ser trabajo desechable). Con el `DbContext` de EF Core ya construido en este mismo issue, esta es la primera oportunidad real de confirmarlo — hacerlo como parte de validar que el `DbContext` conecta y opera correctamente.
 
@@ -332,8 +344,9 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
 **Parte de HU-003 (milestone). Depende de HU-003.3.**
-- [ ] Reimplementar el proveedor de tarifario hoy en `mcp_server/tarifas/` (`DriveFlatFileProvider`, lectura de Google Drive vía CSV/XLSX) como servicio de Infraestructura del módulo Tarifas.
+- [ ] **Decisión tomada (2026-09-23):** el tarifario plano de Google Drive (`DriveFlatFileProvider`) **se retira**, no se reimplementa en .NET — el costeo pasa a venir siempre de Nexo (HU-005). **Riesgo de secuenciación a confirmar con el equipo:** si HU-004 (MVP del formulario, 6 campos) sale a producción antes de que HU-005 (integración Nexo) esté lista, el módulo de "Nueva cotización" se queda sin ninguna fuente de costeo en ese intervalo — decidir si se acelera HU-005, se retrasa el lanzamiento de HU-004, o se mantiene el `DriveFlatFileProvider` como puente temporal solo hasta que HU-005 cierre (contradice la retirada definitiva, pero evita un vacío funcional).
 - [ ] Reimplementar la política de márgenes de `mcp_server/margen/` (fuentes export/OData) como caso de uso del módulo Margen en la capa Aplicación.
+- [ ] **Aceptar y persistir el ajuste manual de margen (hueco detectado 2026-09-23):** cuando el comercial ingresa un margen manual sobre el sugerido por la política, persistirlo con `origen_margen="negociado"` (valor agregado en `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.1, junto a los ya existentes `sap_tm`/`politica_linea`) en vez del que hubiera calculado la política automática, y usar ese valor manual (no recalcularlo) en el cálculo de Precio.
 - [ ] Reimplementar `mcp_server/precio.py` como caso de uso del módulo Precio que orquesta Tarifas + Margen, con la misma fórmula de cálculo que el backend Python.
 - [ ] Escribir pruebas unitarias que comparen, para un conjunto fijo de casos de prueba, el resultado del cálculo de precio en .NET contra el resultado que hoy produce el backend Python (paridad de negocio, no solo de compilación).
 
@@ -344,8 +357,13 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Parte de HU-003 (milestone). Depende de HU-003.3 y de la librería de PDF elegida en HU-003.1.**
 - [ ] Reimplementar la generación de PDF de cotización (hoy `armar_cotizacion.py`/`armar_multi.py` con WeasyPrint) usando la librería .NET elegida en HU-003.1, reproduciendo el mismo layout, assets e imágenes corporativas.
 - [ ] Obtener el `celular` del comercial desde la tabla rediseñada (HU-002.1, capturado una sola vez desde el frontend en HU-004.3), nunca dejar que el LLM lo genere/invente. Si el comercial todavía no tiene el dato guardado, el PDF debe omitir el campo (o marcarlo explícitamente como "no registrado") en vez de mostrar un número de teléfono falso — corrigiendo el hallazgo confirmado en Python (`armar_cotizacion.py:434` sin dato real, LLM inventando un placeholder tipo "+57 300 000 0000").
+- [ ] **Confirmación de teléfono al generar el PDF (hueco detectado 2026-09-23):** antes de generar el PDF, exponer el teléfono actual del comercial (`usuarios_web.telefono`) para que el front (HU-004.4) le pida confirmar si desea usar ese número o editarlo. Si lo edita, el nuevo valor se persiste en `usuarios_web.telefono` (no solo se usa una vez) y es el que queda impreso en el PDF.
+- [ ] **PDF muestra solo lo realmente incluido, itemizado (hueco detectado 2026-09-23):** el PDF hoy lista un texto fijo de "incluye" sin importar qué se cotizó realmente. Debe mostrar dinámicamente: el flete (siempre, con origen/destino) y cada servicio conexo efectivamente seleccionado (ej. levante de contenedor, devolución de contenedor — ver selección de servicios conexos en HU-004.4/HU-011.4), cada uno con su propio precio. Confirmar con el equipo/Nexo si el costeo llega desglosado por servicio o solo como total, para poder mostrar el precio de cada servicio por separado; si Nexo solo da el total, documentar la limitación.
 - [ ] Confirmar con el equipo cuál de los 3 transportes de correo hoy configurables (`smtp_relay`, `wscorreos`, `smtp`) es realmente el de producción; documentar los otros dos como legacy/retirados si ya no aplican, en vez de mantener 3 caminos de fallo distintos sin necesidad. Nota: `correo_habilitado` está en `False` hoy ("funcionalidad diferida" según `shared/config.py`) — confirmar también si sigue siendo así antes de decidir cuál transporte migrar.
 - [ ] Reimplementar el envío de correo (hoy `mcp_server/correo.py` vía SMTP) como servicio de Infraestructura del módulo Correo, conservando plantillas y remitente actuales, usando solo el transporte confirmado como real en el punto anterior.
+- [ ] **Fix del bug de `estado_envio` nunca pasa a "reenviada" (hueco detectado 2026-09-23, `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` líneas 206-212):** hoy (`orquestador/web.py`, `enviar_cotizacion`) siempre escribe `"enviada"`, incluso si ya se había enviado antes — nunca se llega a escribir `"reenviada"`. Al reimplementar el envío, agregar la lógica: si el estado ya era `enviada` o `reenviada`, el siguiente envío exitoso lo pasa a `reenviada`.
+- [ ] **Endpoint de destinatarios previos por cliente (hueco detectado 2026-09-23):** devolver los correos `para`/`cc` ya usados en envíos anteriores para un `nitCliente` dado (`correosDestinatarios` → `correosEnviados` → `cotizaciones`, filtrando por `nitCliente`), para que el frontend precargue el formulario de envío (ver `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.3, "Nueva funcionalidad de front", y HU-004.5). Solo aplica cuando el cliente ya tiene envíos previos; si es la primera vez, no hay nada que precargar.
+- [ ] **Endpoint de vista previa del correo antes de enviar (hueco detectado 2026-09-23):** devolver el asunto/cuerpo renderizado (con la plantilla real) y los destinatarios `para`/`cc` prediligenciados (ver bullet anterior), sin enviar nada todavía — para que el front (HU-004.5) lo muestre en un modal de confirmación antes del envío real.
 - [ ] Reimplementar `mcp_server/auditoria.py` como servicio transversal de Auditoría, registrando como mínimo los mismos eventos que hoy se auditan (ajustes de margen, envíos de correo, generación de cotizaciones).
 - [ ] Comparar visualmente al menos 3 PDFs generados en .NET contra sus equivalentes generados hoy en Python para el mismo folio de prueba, dejando evidencia adjunta en este issue.
 
@@ -354,15 +372,19 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
 **Parte de HU-003 (milestone). Depende de HU-003.4 y HU-003.5.**
-- [ ] Implementar los endpoints `/web/login`, `/web/mis-cotizaciones`, `/web/cotizaciones/{folio}/enviar` y `/web/cotizaciones/{folio}/seguimiento` reproduciendo exactamente el contrato documentado en HU-004.1 (mismo shape de request/response, mismos códigos de estado).
+- [ ] Implementar los endpoints `/web/login`, `/web/mis-cotizaciones`, `/web/cotizaciones/{folio}/enviar` y `/web/cotizaciones/{folio}/seguimiento` reproduciendo el **shape** de request/response documentado en HU-004.1. **Aclaración importante (2026-09-22):** en Python estos 4 endpoints están desactivados (501) desde la migración `0006`/HU-002.2 — no hay identidad real sin ClientePro. "Reproducir el contrato" NO significa replicar el 501: significa implementar el comportamiento real por primera vez, usando la identidad que ClientePro entrega (ver HU-004, escenario "Sesión única con ClientePro") para poblar `usuario_id`. Esta es la primera implementación funcional de este flujo, no un port de algo que ya funcionaba.
+- [ ] **Implementar el flujo de aprovisionamiento de `usuarios_web` (§2.6 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`, hueco detectado 2026-09-23, ajustado 2026-09-24 según lo ya ejecutado en HU-002.4 Fase 2 — corrección sobre el plan original: NO se agregó `sap_id`):** ClientePro entrega el `nombreUsuario`. Validar si ese `nombreUsuario` ya existe en `usuariosWeb` — la búsqueda es **únicamente por `nombreUsuario`**, no hay ningún id numérico de SAP involucrado. Si ya existe, no se crea nada nuevo (a lo sumo se actualiza `ultimaSesion`). Si no existe, recién ahí se crea la fila con un `id` (UUID) nuevo generado por Cotifly, leyendo el resto del perfil desde `tblSAPUsuariosApp` (`NOMBREUSUARIO`→`nombreUsuario`, `DESCRIPCIONUSUARIO`→`nombreCompleto`, `EMAIL`→`email`; **nunca** `CLAVE` — Cotifly no autentica con eso, la sesión ya llega autenticada y autorizada desde ClientePro). Requiere una **segunda conexión de base de datos de solo lectura**, hacia `dbsolucionesti` (distinta de la BD propia de Cotifly y de la de Nexo). Este paso deja lista la fila que el modal de teléfono obligatorio de HU-004.3 da por hecho que ya existe — el orden correcto es: primero se crea/valida esta fila, y solo si la fila se acaba de crear (primer ingreso) se pide el teléfono antes de dejar continuar.
 - [ ] Implementar `/web/chat` en .NET, incluyendo el loop agéntico que orquesta las herramientas de negocio (Tarifas, Margen, Precio, PDF, Correo) — confirmado en HU-003.1 que este endpoint migra completo, no se queda sirviéndose desde Python.
 - [ ] Confirmar en la implementación que el LLM solo redacta la respuesta final al usuario y decide qué herramienta invocar — nunca genera ni ejecuta directamente una consulta a la base de datos (regla ya definida en HU-003.1); toda esa lógica vive en las herramientas de negocio ya existentes.
 - [ ] Implementar el estado de conversación estructurado (slot-filling) definido en HU-003.1: el identificador de cliente (y demás datos ya resueltos) se guarda en ese estado apenas se conoce, y el orquestador lo reinyecta automáticamente en las siguientes llamadas a herramienta (`obtener_margen`, `generar_pdf`, etc.) sin depender de que el LLM lo recuerde/re-infiera del texto — incluyendo el caso de que "generar_pdf" ocurra en un turno posterior a "obtener_margen" (después de la confirmación del usuario).
 - [ ] Cuando el usuario mencione un cliente por nombre en texto libre durante el chat, invocar la herramienta de búsqueda de clientes (HU-005.2, catálogo de Nexo) para resolverlo a un identificador real, en vez de copiar el texto libre directo al payload de la cotización.
+- [ ] **Confirmar el cliente encontrado por similitud, nunca asumirlo (hueco detectado 2026-09-23, `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.1, nota de identificación de cliente):** si la búsqueda de HU-005.2 encuentra una coincidencia por similitud (no exacta), el agente debe mostrarle al comercial con cuál cliente encontró parecido y pedirle que confirme si es ese o no, antes de asociarlo a `nitCliente`. Si el comercial responde que no es, **no** se abre un campo de texto libre — se le presenta el mismo buscador de cliente del formulario (HU-005.2) para que busque y seleccione el correcto ahí. Mismo patrón aplica para ciudad (HU-005.13).
 - [ ] Escribir un test de integración que reproduzca el escenario exacto del hallazgo en Python (cliente identificado en un turno, confirmación y generación del PDF en el turno siguiente) y confirme que el identificador de cliente llega completo hasta la cotización persistida.
 - [ ] Configurar CORS en la nueva API para aceptar el dominio real de `clientepro-frontend`, igual que se exigió en HU-004.1 para el backend Python.
 - [ ] Configurar autenticación equivalente a la actual (token Bearer) o la que el equipo decida al integrar con la sesión de ClientePro (ver HU-004, escenario "Sesión única con ClientePro").
-- [ ] **Preservar el aislamiento por comercial que ya existe en Python** (`CotizacionRepo.por_comercial` filtra `/web/mis-cotizaciones` por `comercial_email == usuario autenticado`; `enviar_cotizacion` y `marcar_seguimiento` devuelven 404/None si la cotización no es del comercial autenticado): en .NET, un comercial nunca debe poder ver, marcar seguimiento, ni reenviar por correo una cotización de otro comercial. Escribir un test de integración que confirme explícitamente que el comercial A no puede ver ni tocar cotizaciones del comercial B.
+- [ ] **Preservar el aislamiento por comercial que existe en el diseño Python** (`CotizacionRepo.por_comercial` filtra `/web/mis-cotizaciones` por `usuario_id == usuario autenticado` — el campo se llamaba `comercial_email` antes de la migración `0006`/HU-002.2, ya no existe; `enviar_cotizacion` y `marcar_seguimiento` devuelven 404/None si la cotización no es del comercial autenticado): en .NET, un comercial nunca debe poder ver, marcar seguimiento, ni reenviar por correo una cotización de otro comercial. Escribir un test de integración que confirme explícitamente que el comercial A no puede ver ni tocar cotizaciones del comercial B. **Ver también la aclaración del primer ítem de este checklist:** hoy este filtro es teórico — el endpoint que lo aplica está desactivado (501).
+- [ ] **Endpoint para generar una nueva versión a partir de una cotización existente:** dado el `id` de una cotización, devolver todos sus datos (cliente, línea de negocio, tarifa, margen, etc.) para prellenar el formulario de "Nueva cotización" en el front (HU-004.4) — **no** edita ni modifica la fila original. Al confirmarse, crea una fila nueva con `version = version_origen + 1` (ver HU-002.4 Fase 2 — sin `cotizacion_origen_id`, sin FK explícita entre versiones), y folio = folio base + sufijo `-vN`.
+- [ ] **Generación de folio con el NIT del cliente (decisión resuelta 2026-09-23, ajustada 2026-09-24, ver HU-003 general):** el folio pasa a incluir `nitCliente` (resuelto por catálogo real desde HU-005.2, antes se llamaba `bdCliente`) además del sufijo de versión — formato propuesto `PCN-{nitCliente}-DDMMAAAA[-vN]`, confirmar el orden exacto de segmentos al implementar. Antes de que HU-005.2 esté disponible, el folio sigue con el formato actual (`PCN-DDMMAAAA[-vN]`) sin el segmento de cliente.
 - [ ] Probar de punta a punta el módulo Angular de HU-004 contra esta nueva API en un entorno de pruebas, confirmando que no requiere ningún cambio de código para funcionar.
 
 ### [HU-003.7] Integraciones externas: SAP TM, Google Drive y Google Sheets
@@ -370,7 +392,7 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
 **Parte de HU-003 (milestone). Depende de HU-003.4.**
-- [ ] **Nota (ver HU-005):** el costeo del flete y de servicios conexos pasa a poder venir de Nexo vía la integración de HU-005, en vez del tarifario plano de Drive. Confirmar con el equipo si el tarifario de Drive se retira, se mantiene como respaldo, o se usa solo para líneas de negocio que Nexo no cubre, antes de dar este issue por cerrado.
+- [x] **Decidido (2026-09-23, ver HU-005 y HU-003.4):** el tarifario plano de Drive **se retira** — el costeo del flete y de servicios conexos viene siempre de Nexo (HU-005). No se reimplementa `DriveFlatFileProvider` en .NET. Ver en HU-003.4 el riesgo de secuenciación si HU-004 sale antes que HU-005.
 - [ ] **Nota (ver HU-009):** ya se confirmó que la conexión OData en vivo a SAP TM es necesaria y que su implementación en Python ya funciona (`odata_fuente.py`, probada contra el host real) — no dejar esto como "interfaz sin implementación": reimplementar en .NET el cliente OData completo (consulta a `RentabClienteSet` por sales_org/trq_type/cliente), no solo el modo `export_json`.
 - [ ] Reimplementar la lectura del export de SAP TM (`datos/sap_export.json` como referencia de formato) y el cliente OData en vivo (ver nota anterior) como servicios de Infraestructura, intercambiables por configuración igual que hoy en Python (`SAP_TM_MODO=export_json|odata`).
 - [ ] Reimplementar la lectura del tarifario desde Google Drive (mismo mecanismo de autenticación de cuenta de servicio que usa hoy Python, ver `secrets/google-sa.json` como placeholder de configuración esperada), solo si el punto anterior confirma que sigue siendo necesario.
@@ -422,7 +444,8 @@ Reemplaza: `orquestador/` + `mcp_server/` + `shared/` (Python, repo `Cotifly`). 
 ### Contexto técnico (levantado del código actual)
 - El frontend actual de Cotifly es un único archivo `orquestador/static/chat.html` (HTML + CSS + JS vanilla embebido, sin framework, sin build), servido directamente por el backend FastAPI. No es un proyecto Angular ni tiene componentización — la migración es una **reconstrucción como módulo Angular**, no una traducción línea a línea.
 - Funcionalidades cubiertas hoy por `chat.html`: login propio del bot (correo + nombre, sin password), formulario de "Nueva cotización" (con resultado paso a paso: Tarifa → Margen → Precio → PDF, y descarga del PDF generado), listado "Mis cotizaciones" (marcar efectiva/no efectiva, reenviar por correo), y un "Asistente" de chat conversacional con el bot.
-- Endpoints reales consumidos hoy (backend `orquestador`, repo `Cotifly`): `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar`, `POST /web/cotizaciones/{folio}/seguimiento`. Auth actual: token Bearer devuelto por `/web/login`, sin mecanismo de guard formal.
+- Endpoints consumidos hoy por `chat.html` (backend `orquestador`, repo `Cotifly`): `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar`, `POST /web/cotizaciones/{folio}/seguimiento`. **Aclaración importante (2026-09-22):** de estos 5, solo `POST /web/chat` funciona hoy — los otros 4 están desactivados (501) desde la migración `0006`/HU-002.2, porque dependían de `comercial_email` (login propio) y ese campo ya no existe (ahora es `usuario_id`, sin forma de poblarse sin ClientePro). El contrato sigue documentado en HU-004.1 como referencia de shape, pero **no es un flujo funcionando hoy que se vaya a portar tal cual** — HU-004 es quien lo desbloquea por primera vez, entregando la identidad real que faltaba. Auth actual: token Bearer devuelto por `/web/login` cuando funcionaba (antes de HU-002.2); hoy sin mecanismo de guard formal y sin emisor real de tokens.
+- **Nuevo ítem (detectado 2026-09-23, de §2.7 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`):** construir el panel admin (no CRUD completo — las líneas de negocio no se crean ni se borran desde acá) para que Gerencia Comercial edite `margen`, `metodoCalculo` y `isActive` por línea en `MargenesPolitica`. Backend: endpoints protegidos por rol admin (`GET`/`PUT` sobre las líneas existentes). Frontend: pantalla nueva en la Consola de ClientePro. Este panel es la única vía prevista para resolver la validación pendiente de los márgenes provisionales de HU-002.1 — sin él, esa decisión de cierre queda sin forma de completarse en la práctica.
 - Destino: `clientepro-frontend`, Angular objetivo **17.3.8** (el `package.json` actual mezcla paquetes `@angular/*` en `^17.3.8` con Angular Material todavía en `16.1.4`). **Restricción confirmada con el equipo: no se toca el `package.json` raíz ni ninguna dependencia compartida de ClientePro** — el módulo nuevo se construye con las versiones que ya están instaladas hoy (incluida Angular Material `16.1.4`), sin actualizar nada del resto del proyecto; solo se puede agregar lo propio del módulo nuevo. Patrón modular a seguir: `src/app/components/informes-embarque/` (único módulo ya modularizado correctamente en ese repo — routing propio, `*.module.ts`, `pages/`, `components/`, `models/`, `services/`). El `CLAUDE.md` que el README de `clientepro-frontend` menciona como fuente de reglas de arquitectura no existe físicamente en el repo; se usa `informes-embarque/` como estándar de facto en su lugar.
 - Autenticación de ClientePro hoy es ad hoc (localStorage `usuario`/`roles` + `user-role.service.ts`, sin `canActivate` guards formales) — el nuevo módulo debe integrarse a ese mismo esquema de sesión, no mantener el login propio del bot.
 
@@ -437,8 +460,8 @@ Y no se agrega lógica de acceso a datos directamente en los componentes (toda l
 Escenario: Sesión única con ClientePro
 Dado un comercial ya autenticado en ClientePro (localStorage usuario/roles)
 Cuando entra al módulo de cotización
-Entonces no se le pide un login aparte (el propio de chat.html desaparece)
-Y el módulo reutiliza la sesión/usuario ya activo para identificar quién cotiza
+Entonces no se le pide un login aparte (el login propio de chat.html desaparece — nota: ese login ya está desactivado en el backend desde HU-002.2, no es una redundancia a eliminar sino la vía real para desbloquearlo)
+Y el módulo reutiliza la sesión/usuario ya activo para identificar quién cotiza, alimentando usuario_id en el backend (antes comercial_email)
 
 Escenario: Nueva cotización
 Dado un comercial en la vista "Nueva cotización" del nuevo módulo
@@ -462,7 +485,7 @@ Escenario: Acceso desde el menú de ClientePro
 Dado un comercial autenticado en ClientePro
 Cuando revisa el menú de navegación
 Entonces encuentra un nuevo ítem "Cotizador" que lo lleva al módulo migrado
-Y el acceso respeta el mismo esquema de roles que ya usa ClientePro (visible únicamente para el rol comercial — decisión ya confirmada, ningún otro rol lo ve)
+Y el acceso respeta el mismo esquema de roles que ya usa ClientePro (el ítem "Cotizador" es visible únicamente para el rol comercial; el rol Gerente Comercial, ver HU-010, tiene su propio ítem "Tablero" separado, no pasa por esta regla)
 ```
 
 ### Trazabilidad (event storming)
@@ -518,7 +541,7 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 - [ ] Crear `models/` con las interfaces TypeScript de los payloads/respuestas documentados en HU-004.1 de Cotifly (cotización, folio, seguimiento, mensaje de chat).
 - [ ] Crear `services/cotifly.service.ts` con un método por endpoint (`login` si aplica, `chat`, `misCotizaciones`, `enviarCorreo`, `actualizarSeguimiento`), sin lógica de UI dentro del servicio.
 - [ ] Registrar la ruta del módulo en el routing principal, protegida con el mismo esquema de roles que ya usa `user-role.service.ts`.
-- [ ] Agregar el ítem de menú "Cotizador" en la navegación, visible únicamente para el rol comercial (ya confirmado con negocio; ningún otro rol lo ve, ni siquiera en modo lectura).
+- [ ] Agregar el ítem de menú "Cotizador" en la navegación, visible únicamente para el rol comercial (ya confirmado con negocio; ningún otro rol lo ve, ni siquiera en modo lectura). **Aclaración (2026-09-23, ver HU-010):** esta restricción aplica solo al ítem "Cotizador" (crear/ver cotizaciones propias) — el rol Gerente Comercial, introducido en HU-010, tiene su propio ítem de menú separado ("Tablero", HU-010.3) que no pasa por esta regla ni le da acceso al resto del módulo de cotización.
 - [ ] Al entrar por primera vez al módulo, si el backend indica que el comercial no tiene `celular` guardado (ver HU-002.1), mostrar un modal de una sola pregunta ("¿Cuál es tu número de celular? Aparecerá en tus cotizaciones") antes de dejarlo generar su primera cotización — guardarlo una sola vez, nunca volver a pedirlo salvo que el comercial lo edite explícitamente.
 
 ### [HU-004.4] Vista "Nueva cotización"
@@ -528,17 +551,27 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 **Depende de HU-004.3. Esta versión cubre el formulario actual (6 campos, MVP); la ampliación con los campos de Nexo (vehículo, carrocería, contenedor, cubicaje, cliente por catálogo) es HU-005, no se agrega aquí.**
 - [ ] Página con el formulario equivalente al de `chat.html`: origen, destino, peso, tipo de vehículo/carga, cliente, ID SAP (opcional), y el campo de texto libre para pegar la solicitud completa.
 - [ ] Componente de progreso con los 4 pasos (Tarifa, Margen, Precio, PDF) reflejando el estado real devuelto por el backend, igual que `pasosHTML()` en `chat.html`.
+- [ ] **Control de margen editable (hueco detectado 2026-09-23):** mostrar el margen sugerido por la política (calculado por el backend) como valor editable, para que el comercial lo ajuste manualmente antes de confirmar la cotización — al enviarlo, el backend lo persiste con `origen_margen="negociado"` (ver HU-003.4). Si el comercial no lo toca, se mantiene el margen automático de la política.
 - [ ] Botón de descarga del PDF una vez generado (usar la URL que devuelve el backend).
+- [ ] **Modal de confirmación de teléfono antes de generar el PDF (hueco detectado 2026-09-23, ver bullet nuevo en HU-003.5):** al llegar al paso de generar el PDF, mostrar el teléfono actual del comercial (traído del backend) en un modal pidiendo confirmar o editarlo. Si lo edita, se guarda en la BD (no solo se usa una vez) y es el que queda en el PDF.
 - [ ] Manejo de error visible (toast o mensaje inline) si el backend responde error en cualquier paso, sin dejar el formulario en un estado de carga infinito.
+- [ ] **Soportar apertura prellenada desde "Generar nueva versión" (hueco detectado 2026-09-23, ver HU-004.5 y HU-003.6):** el formulario debe poder recibir los datos de una cotización existente (vía el endpoint de HU-003.6) y cargarlos ya diligenciados, dejando solo lo que el comercial quiera corregir editable antes de confirmar. Al confirmar, se crea una cotización nueva (nunca edita la original).
+- [ ] **No replicar la tarjeta "Sin tarifa en el sistema — captura manual" (hueco detectado 2026-09-23, `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.8/Front):** existe hoy en `chat.html` para cuando no se encuentra tarifa; deja de tener sentido una vez Nexo (HU-005) siempre resuelve el costeo o lo deja en `pendiente_costeo` para su propio admin de fletes, nunca para el comercial de Cotifly. Confirmar con el equipo si se omite directamente en este MVP o si se retira explícitamente al integrar HU-005.
 
 ### [HU-004.5] Vista "Mis cotizaciones"
 **Labels:** `frontend`, `tarea-tecnica`
 **Repo donde se crea este issue:** `clientepro-frontend`
 **Asignado a:** Sara (Frontend)
-**Depende de HU-004.3.**
-- [ ] Tabla (Angular Material `mat-table`, consistente con el resto del portal) con folio, cliente y estado de seguimiento.
-- [ ] Acciones por fila: marcar "Efectiva", "No efectiva", "Limpiar", y "Enviar" (reenvío de correo), llamando a los endpoints correspondientes y refrescando la fila sin recargar toda la tabla.
-- [ ] Mostrar la nota de seguimiento (`seguimiento_nota`) cuando exista.
+**Depende de HU-004.3 y de HU-005.14 (implementa el endpoint real que el botón ganada/perdida debe llamar).**
+- [ ] Tabla (Angular Material `mat-table`, consistente con el resto del portal) con folio, cliente, estado de seguimiento y **`estado_envio`** (hueco detectado 2026-09-23 — enviado/no enviado, para que el comercial sepa si ya se mandó antes de usar la acción "Enviar").
+- [ ] Acciones por fila: marcar "Ganada", "Perdida", "Limpiar", y "Enviar" (reenvío de correo), llamando a los endpoints correspondientes y refrescando la fila sin recargar toda la tabla. **Nombres actualizados (migración `0007`, HU-002.2):** `efectiva`/`No efectiva` → `ganada`/`Perdida`. **Hueco de fondo:** el diseño real de este botón (§2.1/§2.8 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`) ya no es un simple toggle — implica una llamada a Nexo (`POST /api/cotizaciones/{id}/resultado`) además de la actualización local, implementada en HU-005.14 — este issue solo consume ese endpoint, no reimplementa la escritura local.
+- [ ] **Modal de resultado con `motivo` y `comentario` separados (decisión resuelta 2026-09-23, ver HU-005.14):** al marcar "Perdida" (o "Ganada" si aplica), mostrar un modal con 2 campos separados — `motivo` (se persiste local en `motivoRechazo` y se envía a Nexo) y `comentario` (solo se envía a Nexo, no se persiste en Cotifly).
+- [ ] Mostrar el motivo de rechazo (`motivoRechazo`, antes `seguimiento_nota`) cuando exista.
+- [ ] **Botón "Nueva versión" por fila:** si una cotización necesita rehacerse, este botón navega a "Nueva cotización" (HU-004.4) prellenada con los datos de esa fila vía el endpoint de HU-003.6 — no edita la cotización original, crea una nueva con `version` incrementada. Mostrar también el número de versión en la tabla (ej. "v2"). **Sin agrupación entre versiones** (decisión 2026-09-24: no hay `cotizacion_origen_id`) — cada versión aparece como fila independiente en la tabla, identificable por el folio compartido.
+- [ ] **Deshabilitar el botón ganada/perdida mientras `estado_costeo="pendiente_costeo"` (hueco detectado 2026-09-23, `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` líneas 200-204):** sin precio todavía no tiene sentido marcar resultado — regla distinta a la ya cubierta de deshabilitarlo cuando `ganada` ya tiene un valor definido (ver HU-005.14).
+- [ ] **Precarga de destinatarios de correo (hueco detectado 2026-09-23):** al presionar "Enviar" para un cliente que ya tiene envíos previos, precargar el formulario de correo con los destinatarios (`para`/`cc`) usados la última vez para ese `nitCliente` (ver HU-003.5), permitiendo editarlos o quitarlos antes de confirmar el envío. Si el cliente no tiene envíos previos, el formulario queda vacío.
+- [ ] **Modal de vista previa antes de enviar (hueco detectado 2026-09-23):** al presionar "Enviar", mostrar en un modal cómo va a quedar el correo (asunto/cuerpo renderizado, ver endpoint de vista previa de HU-003.5) junto con los campos `para`/`cc` ya prediligenciados del bullet anterior, editables — el envío real solo ocurre cuando el comercial confirma desde ese modal.
+- [ ] **Badge de color por estado (escala de color §7.1 del documento de entendimiento):** mostrar un indicador de color por fila derivado de los campos ya existentes — azul "Cotización nueva" (`estado_envio="sin_enviar"`), ámbar "Enviada/en negociación" (`estado_envio` en `enviada`/`reenviada`), verde "Ganada" (`ganada=true`), rojo "Perdida" (`ganada=false`), morado "Ajuste fuera de política" (derivado en HU-002.4 Fase 2). **El gris "Borrador/incompleta" no aplica** (decidido en HU-005.3: no se guarda progreso parcial) — solo estos 4 colores se implementan.
 - [ ] Spinner mientras carga el listado; mensaje "No tienes cotizaciones registradas" si vuelve vacío.
 
 ### [HU-004.6] Vista "Asistente" (chat conversacional)
@@ -565,10 +598,29 @@ Backend consumido: API web de Cotifly (`POST /web/login`, `POST /web/chat`, `GET
 **Repo donde se crea este issue:** `clientepro-frontend`
 **Asignado a:** Sara (Frontend) + Kevin (QA)
 **Parte de HU-004 (milestone). Depende de HU-004.4, HU-004.5 y HU-004.6.**
-- [ ] Ejecutar y documentar casos de prueba manuales para: login integrado (sin pedir credenciales aparte de la sesión de ClientePro), nueva cotización (formulario completo, pasos Tarifa→Margen→Precio→PDF, descarga del PDF), mis cotizaciones (marcar efectiva/no efectiva/limpiar, reenviar correo), asistente (mensaje libre, sesión, render de markdown, manejo de sesión expirada).
+- [ ] Ejecutar y documentar casos de prueba manuales para: login integrado (sin pedir credenciales aparte de la sesión de ClientePro), nueva cotización (formulario completo, pasos Tarifa→Margen→Precio→PDF, descarga del PDF), mis cotizaciones (marcar ganada/perdida/limpiar — antes "efectiva/no efectiva", reenviar correo), asistente (mensaje libre, sesión, render de markdown, manejo de sesión expirada).
 - [ ] Confirmar que el ítem de menú "Cotizador" respeta el control de roles definido en HU-004.3 (solo visible para el rol comercial), probando con un usuario comercial y con al menos un usuario de otro rol para confirmar que no lo ve.
 - [ ] Ejecutar una regresión manual de al menos 2 módulos ya existentes de ClientePro (ej. `tablero-gestion`, `informes-embarque`) tras agregar el módulo nuevo, confirmando que nada se rompió fuera de él — no debería haber cambios en el resto del proyecto, ya que HU-004.2 no toca dependencias compartidas.
 - [ ] Registrar cualquier defecto encontrado como issue aparte, referenciado desde este issue; no cerrar este issue mientras queden defectos críticos sin resolver.
+
+### [HU-004.9] Endpoints admin para editar políticas de margen (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-004 (milestone). Depende de HU-002.1 (validación de márgenes provisionales pendiente). Hueco detectado 2026-09-23 — §2.8 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` menciona la necesidad, pero no tenía issue propio.**
+- [ ] Implementar `GET /web/admin/lineas-negocio` (listar todas las líneas existentes con `margen`, `metodoCalculo`, `isActive`).
+- [ ] Implementar `PUT /web/admin/lineas-negocio/{id}` (editar solo `margen`, `metodoCalculo` e `isActive` de una línea existente) — no es CRUD completo, no se crean ni se borran líneas desde acá.
+- [ ] Proteger ambos endpoints para que solo el rol **Gerente Comercial** (ver HU-010) pueda usarlos — no un "rol admin" genérico.
+- [ ] Confirmar que cualquier otro endpoint que liste líneas de negocio para el comercial (no admin) filtre `isActive=true` — el admin ve todas, el comercial solo las activas.
+
+### [HU-004.10] Pantalla admin para editar políticas de margen (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-004 (milestone). Depende de HU-004.9.**
+- [ ] Pantalla nueva en la Consola de ClientePro, visible solo para el rol **Gerente Comercial** (ver HU-010), que liste las líneas de negocio con `margen`, `metodoCalculo` e `isActive` (consumiendo `GET /web/admin/lineas-negocio`).
+- [ ] Formulario de edición por línea (solo esos 3 campos) que llame a `PUT /web/admin/lineas-negocio/{id}` — sin opción de crear ni borrar líneas.
+- [ ] Confirmar que la pantalla no es visible ni accesible para ningún rol distinto de Gerente Comercial.
 
 ---
 
@@ -601,7 +653,7 @@ Una solicitud nace en la bandeja de Nexo (pendiente de flete) y, cuando el polli
 - **Cotifly** (formulario "Nueva cotización" migrado en HU-004.4): hoy solo 6 campos de texto libre (`origen`, `destino`, `peso`, `tipo de vehículo/carga` en texto libre, `cliente` en texto libre, `ID SAP` opcional), más un modo de texto libre completo que el agente LLM interpreta.
 - **Decisión ya tomada con el equipo:** se lleva el set completo de campos de Nexo a Cotifly (no solo alinear nombres); el campo cliente pasa a usar el mismo mecanismo de autocompletado por catálogo; y se **mantienen ambos modos de captura** en Cotifly (texto libre interpretado por el agente + formulario estructurado ampliado), igual que Nexo mantiene manual + importar Excel como modos alternativos.
 - **Decisión ya tomada con el equipo:** Cotifly consulta el catálogo de clientes llamando al backend de Nexo (repo `NEXO`, endpoint `/captura-solicitudes/clientes` o el que se confirme) — no se construye un endpoint propio en Cotifly. Hoy ese endpoint en Nexo toma el cliente de `DimBpSolicitante`; se debe ampliar en el repo `NEXO` para que también combine con la tabla `tblProspectos` (base de datos `dbSolucionesTI`), de forma que el autocompletado devuelva resultados de ambas fuentes. Ver HU-005.2 y el borrador espejo para el repo `NEXO` al final de esta HU.
-- **Decisión ya tomada con el equipo:** el costeo del flete y de los servicios conexos pasa a venir de Nexo (vía la API de esta HU), no del tarifario plano de Google Drive que usa hoy `mcp_server/tarifas/` (HU-003.4/HU-003.7 en `Cotifly`) — a confirmar en HU-003.7 si el tarifario de Drive se retira, se mantiene como fuente de respaldo, o se usa solo para líneas de negocio que Nexo no cubre.
+- **Decisión ya tomada con el equipo:** el costeo del flete y de los servicios conexos pasa a venir de Nexo (vía la API de esta HU), no del tarifario plano de Google Drive que usa hoy `mcp_server/tarifas/`. **Decidido (2026-09-23):** el tarifario de Drive se retira definitivamente, no se mantiene como respaldo ni para líneas que Nexo no cubra (ver HU-003.4/HU-003.7 para el riesgo de secuenciación con HU-004).
 - **Pendiente de decidir con el equipo:** el mecanismo exacto de autenticación con el que Cotifly va a llamar a los endpoints de Nexo (API key compartida, JWT, IP allowlist, etc.), tanto para enviar la solicitud como para el polling periódico de estado. Ver HU-005.5 y HU-005.6.
 
 ### Criterios de aceptación (Gherkin)
@@ -661,7 +713,7 @@ Entonces ve el estado actualizado (ej. "en costeo", "costeado", "ajustado por op
 Escenario: Aislamiento por comercial en "Mis cotizaciones" de Cotifly
 Dado que el comercial A y el comercial B tienen cada uno sus propias cotizaciones
 Cuando el comercial A revisa "Mis cotizaciones" en Cotifly
-Entonces no ve las cotizaciones del comercial B (comportamiento que Cotifly ya garantiza hoy vía comercial_email — ver HU-003.6)
+Entonces no ve las cotizaciones del comercial B (comportamiento que el diseño de Cotifly garantiza vía usuario_id — ver HU-003.6; nota: el endpoint /web/mis-cotizaciones está desactivado hoy (501) hasta que HU-004 entregue identidad real vía ClientePro, así que esto no está "ya garantizado en producción", está garantizado en el diseño a implementar)
 ```
 
 **Nota:** la Bandeja de Nexo hoy **no** filtra por comercial (un comercial ve las solicitudes de todos) — es un hallazgo real, no una hipótesis. Ese fix se registra aparte, en **HU-008** (independiente de esta HU, porque es un problema de seguridad ya existente en Nexo hoy, no algo que dependa de que la integración con Cotifly avance).
@@ -701,9 +753,12 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 **Asignado a:** Duban (Backend) + Sara (Frontend, 3er punto del checklist)
 **Parte de HU-005 (milestone). Depende de HU-005.1 y de la ampliación del endpoint de clientes en el repo `NEXO` (ver borrador espejo al final de esta HU).**
 - [ ] Confirmar con el equipo de Nexo el contrato exacto del endpoint de clientes (`/captura-solicitudes/clientes` u otro) una vez ampliado para combinar `DimBpSolicitante` y `tblProspectos`, incluyendo qué campo identifica el origen de cada resultado (para poder distinguir un prospecto de un cliente ya facturado, si aplica).
+- [ ] **Confirmar que el endpoint trae el NIT de ambas fuentes (ajustado 2026-09-24, ver HU-002.4 Fase 2):** `DimBpSolicitante.NIT` para clientes reales, y la columna NIT de `tblProspectos` para prospectos (**sí existe** para prospectos — es campo obligatorio al crearlos vía `CrearProspecto`, ver HU-005.2 bullet de creación de cliente; verificado también en captura real de `tblProspectos`, columna `Nit` poblada). Si el endpoint de Nexo no expone el NIT del prospecto hoy, coordinar con el equipo de Nexo para que lo agregue — es un campo requerido para `nitCliente`, no opcional.
 - [ ] Implementar en el backend de Cotifly el consumo de ese endpoint de Nexo (incluyendo CORS/autenticación entre sistemas — ver HU-005.5/HU-005.6 para el mecanismo de autenticación general entre Cotifly y Nexo).
 - [ ] Reemplazar el campo de texto libre `cliente`/`ID SAP` del formulario Angular por un autocompletado (mismo patrón de UX que Nexo: búsqueda por nombre/NIT/código, debounce, mínimo de caracteres).
-- [ ] Guardar en la cotización el identificador real del cliente seleccionado (no solo el nombre en texto), ajustando el esquema de datos según lo que resulte de HU-005.5.
+- [ ] **Guardar en la cotización el NIT del cliente seleccionado** (`cotizaciones.nitCliente`, no el `clienteId`/BP interno de Nexo — ver decisión 2026-09-24 en HU-002.4 Fase 2, motivo: `clienteId`/`bp` cambian de formato según el origen, el NIT es estable para ambos casos), en vez del nombre en texto libre que se guardaba antes.
+- [ ] **Decidido (2026-09-23): se persiste el `origen` del cliente en `cotizaciones`:** el endpoint de Nexo distingue si el match fue un cliente real (`DimBPSolicitante`) o apenas un prospecto (`tblProspectos`) — se guarda como `cotizaciones.origenCliente` (`"cliente"`/`"prospecto"`, ver columna en HU-002.4 Fase 2), porque una cotización a un prospecto sin BP formal es un caso de negocio distinto (ej. no debería poder facturarse igual). Guardar el valor que devuelve Nexo al seleccionar el cliente, sin volver a consultarlo después.
+- [ ] **Modal de creación de cliente nuevo cuando no aparece en ninguna fuente (hueco detectado 2026-09-23):** si la búsqueda no encuentra el cliente ni en `DimBpSolicitante` ni en `tblProspectos` (vía Nexo), mostrar una opción de "Crear cliente nuevo" que abre un modal en el front. Consume el backend de ClientePro/Grovity ya existente (`docs/Manual de Conexión ClientePro - Grovity (1).pdf`), **solo** las transacciones necesarias: `ObtenerCiudades` y `ObtenerTipoServicio` (catálogos requeridos por el payload) y `CrearProspecto` (creación). Al crear, el registro queda en `tblProspectos` — el mismo origen que ya consulta el buscador de este issue, así que queda disponible para seleccionarlo de inmediato después de crearlo. Confirmar con el equipo el mecanismo de autenticación (Bearer JWT, token vigente 24h, ver manual §3) y dónde se gestionan esas credenciales (backend de Cotifly, no expuestas al front).
 
 ### [HU-005.3] Ampliar el formulario "Nueva cotización" con los campos estructurados de Nexo
 **Labels:** `frontend`, `tarea-tecnica`
@@ -713,7 +768,9 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 - [ ] Agregar al formulario Angular los campos de encabezado: `tipo` (spot/licitación), `deadline`, `horasCargue`, `horasDescargue`, según el mapeo aprobado en HU-005.1.
 - [ ] Agregar los campos de línea: `tipoVehiculo` (catálogo SICE-TAC), `carroceria`, `claseViaje`, `claseContenedor`, `lineaNegocio`, `valorMercancia`, `exclusivo`, `consolidado`, `retornaContenedor` + `ciudadDevolucion` condicional, `levanteContenedorDiferente` + `ciudadLevante` condicional — replicando el mismo comportamiento condicional (mostrar/ocultar y requerido/opcional) que tiene Nexo.
 - [ ] Mantener visible y funcional el modo de texto libre existente (textarea interpretado por el agente LLM) como alternativa al formulario estructurado, igual que Nexo mantiene manual + importar Excel.
+- [ ] **Filtrar por `isActive=true` el selector de `lineaNegocio` (hueco detectado 2026-09-23):** el comercial solo debe ver líneas de negocio activas en `margenes_politica` — el panel admin (HU-004.9/HU-004.10) puede desactivar una línea, y si este selector no filtra, desactivarla ahí no tendría ningún efecto visible en el flujo de cotización.
 - [ ] Validar con al menos 3 casos reales de cotización (uno spot, uno con contenedor, uno con cupo/vehículo específico) que el formulario ampliado se comporta igual que el de Nexo para esos mismos casos.
+- [x] **Decidido (2026-09-23): no se guarda progreso parcial.** El estado "Borrador/incompleta" (escala de color §7.1 del documento de entendimiento) se descarta explícitamente para esta HU — si el comercial no termina el formulario, se pierde el progreso, sin columnas/estado nuevos más allá de los ya definidos en HU-002.4 Fase 2. Se puede reconsiderar más adelante si negocio lo pide explícitamente. **Consecuencia:** el badge gris "Borrador/incompleta" de HU-004.5 no se implementa; los otros 4 colores (azul/ámbar/verde/rojo) sí aplican.
 
 ### [HU-005.4] Cubicaje por posiciones en el formulario de Cotifly
 **Labels:** `frontend`, `tarea-tecnica`
@@ -751,9 +808,11 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 **Repo donde se crea este issue:** `Cotifly` (el 3er punto del checklist — actualizar la vista "Mis cotizaciones" — se implementa en `clientepro-frontend`)
 **Asignado a:** Duban (Backend) + Sara (Frontend, 3er punto del checklist)
 **Parte de HU-005 (milestone). Depende de HU-005.6.**
+- [ ] **Implementar la derivación de `estado_costeo` (hueco detectado 2026-09-23, `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` líneas 131-198):** cruzar `lineas_solicitud` contra `cotizacion_lineas` por `LineaSolicitudId` (`EXISTS`), reutilizando la misma regla SQL que ya usa `EfSolicitudesCatalogoRepository.cs:55-63` en producción de Nexo — produce los 3 valores reales: `pendiente_costeo` (al menos una línea sin costear), `autocosteo` (todas costeadas, `Estado` de Nexo sigue en `Borrador`) y `entregada` (`Estado="Entregada"` en Nexo, por el camino explícito o por "entrega implícita" desde HU-005.14).
 - [ ] Al detectar vía polling (HU-005.6) que ya hay un costeo válido (flete + servicios conexos), invocar el módulo Margen/Precio existente (HU-003.4) usando ese costeo como el "costo" de entrada, en vez del tarifario plano de Google Drive.
 - [ ] Calcular la tarifa final y el precio al cliente, y generar/actualizar el PDF de la cotización con esos valores (reutilizando el módulo PDF de HU-003.5).
-- [ ] Actualizar el estado de la cotización visible en "Mis cotizaciones" (HU-004.5) reflejando el estado real (ej. "en costeo" mientras se espera a Nexo, "costeado" una vez el polling detecta el resultado y se calcula el precio final).
+- [ ] **Selección de servicios conexos antes de generar el PDF (hueco detectado 2026-09-23, frontend):** cuando el costeo de Nexo trae uno o más servicios conexos disponibles para la línea, mostrárselos al comercial con checkbox para incluir/excluir cada uno del precio final antes de confirmar — el PDF (ver bullet de HU-003.5) solo debe listar los efectivamente seleccionados, cada uno con su propio precio.
+- [ ] Actualizar el estado de la cotización visible en "Mis cotizaciones" (HU-004.5) reflejando el estado real derivado en el punto anterior (`pendiente_costeo`/`autocosteo`/`entregada`), no una terminología distinta.
 - [ ] Confirmar que en ningún punto del flujo se le muestra al comercial el costo bruto de Nexo como si fuera el precio final, sin haber pasado por el margen.
 
 ### [HU-005.8] Persistencia: nuevos campos, identificador de Nexo y estado de la solicitud
@@ -761,7 +820,7 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend) + Sara (Datos)
 **Parte de HU-005 (milestone). Coordinar con HU-002 (reestructuración de BD) antes de ejecutar — no crear columnas/tablas nuevas por fuera de ese proceso de evaluación/aprobación.**
-- [x] **Ya ejecutado en HU-002.2 (2026-09-22), adelantado sin esperar a esta HU:** `cotizaciones` ya tiene `costeo_id` (identificador de la solicitud en Nexo), `bd_cliente` (cliente por identificador) y `estado_costeo` (estado del flujo de integración) — existen en el esquema, **vacíos**, sin código todavía que los llene. No hay que volver a proponerlos ni crearlos, solo construir el código de esta HU que los popule (`crear_solicitud_nexo`, `consultar_costeo_nexo`, polling).
+- [x] **Ya ejecutado en HU-002.2 (2026-09-22), adelantado sin esperar a esta HU:** `cotizaciones` ya tiene `costeo_id` (identificador de la solicitud en Nexo), `nitCliente` (cliente por NIT — antes `bd_cliente`, renombrado 2026-09-24 tras corregir una columna duplicada, ver HU-002.4 Fase 2) y `estado_costeo` (estado del flujo de integración) — existen en el esquema, **vacíos**, sin código todavía que los llene. No hay que volver a proponerlos ni crearlos, solo construir el código de esta HU que los popule (`crear_solicitud_nexo`, `consultar_costeo_nexo`, polling).
 - [ ] **Sigue pendiente de proponer/crear:** los campos ampliados del formulario que no se cubrieron en HU-002.2 (`vehículo`, `carrocería`, `clase de contenedor`, `valor mercancía`, `exclusivo`, `consolidado` — el costeo en sí, flete + servicios conexos, no se persiste aparte, se consulta en Nexo vía `costeo_id`) y la tabla nueva de "posiciones" (relación uno a muchos con la cotización, para el cubicaje). Coordinar con HU-002 antes de crearlas, mismo patrón de evaluación/aprobación.
 - [ ] Una vez aprobado ese cambio de esquema pendiente, implementarlo (en el backend vigente en ese momento: Python o .NET, según el avance de HU-003).
 - [ ] Confirmar que el flujo actual de generación de PDF y de "Mis cotizaciones" no se rompe con los campos nuevos (los campos opcionales no aplicables no deben generar errores).
@@ -770,11 +829,42 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 **Labels:** `frontend`, `qa`, `tarea-tecnica`
 **Repo donde se crea este issue:** `clientepro-frontend`
 **Asignado a:** Sara (Frontend) + Kevin (QA)
-**Parte de HU-005 (milestone). Depende de HU-005.7.**
+**Parte de HU-005 (milestone). Depende de HU-005.7, HU-005.13, HU-005.14 y HU-005.15.**
 - [ ] Probar el flujo completo con al menos 3 casos reales (spot simple, con contenedor, con cupo/vehículo específico): crear solicitud en Cotifly → confirmar que llega a Nexo → ejecutar/simular el ajuste del admin de fletes en Nexo → confirmar que el polling de Cotifly detecta el costeo → confirmar que el margen se aplica correctamente → confirmar que "Mis cotizaciones" refleja el estado final.
 - [ ] Probar los casos de error: Nexo no disponible al enviar la solicitud, Nexo no disponible durante el polling, respuesta de polling con un identificador de solicitud que Cotifly no reconoce, respuesta de polling malformada — confirmar que ninguno de estos casos rompe el sistema ni deja al comercial sin información sobre qué pasó.
 - [ ] Confirmar con un caso real que el costo bruto de Nexo nunca se expone al comercial sin pasar por el margen.
 - [ ] Dejar registrada en este issue la aprobación explícita de QA de esta integración antes de considerarla lista para producción.
+
+### [HU-005.13] Consumir el catálogo de ciudades de Nexo (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-005 (milestone). Depende de HU-005.1. Hueco detectado 2026-09-23 — §2.1b de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` documenta el catálogo, pero no tenía issue propio.**
+- [ ] Implementar en el backend de Cotifly el consumo de `GET /api/captura-solicitudes/departamentos` y `GET /api/captura-solicitudes/ciudades?departamento=&q=` de Nexo (confirmar con el equipo de Nexo si requieren el mismo bearer que el resto de sus endpoints).
+- [ ] Exponer en Cotifly los endpoints equivalentes que el frontend va a consumir para el selector (ver HU-005.15), o confirmar si el frontend llama directo a Nexo — documentar la decisión.
+- [ ] En el flujo de chat (HU-003.1/HU-003.6), cuando el agente extrae una ciudad de texto libre, llamar a `GET /ciudades?q=texto`: si devuelve una sola coincidencia, usarla directo; si devuelve varias, preguntarle al comercial cuál es antes de continuar — mismo patrón de "nunca inventar/asumir" que ya usa `buscar_tarifa` con tarifas ambiguas.
+- [ ] Validar con al menos un caso real de ciudad ambigua (mismo nombre de municipio en más de un departamento) que el flujo de confirmación funciona igual por chat.
+
+### [HU-005.14] Enviar el resultado de la cotización (ganada/perdida) a Nexo
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-005 (milestone). Depende de HU-005.6/HU-005.7 (necesita `costeo_id` ya guardado). Hueco detectado 2026-09-23 — §2.1/§2.8 de `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` documentan el diseño completo, pero HU-004.5 solo lo mencionaba como "coordinar con HU-005", sin destino concreto.**
+- [ ] Implementar `POST /web/cotizaciones/{folio}/resultado` en Cotifly: al oprimirse, hace dos escrituras — (1) llama a `POST /api/cotizaciones/{id}/resultado` de Nexo (`{id}` = `costeo_id`) con `{ resultado: "ganada"|"perdida", motivo?, comentario? }`; (2) solo si Nexo responde `200`, actualiza localmente `cotizaciones.ganada` y `motivo_rechazo` con el mismo valor enviado.
+- [ ] Manejar el rechazo `409 RESULTADO_YA_DEFINIDO` de Nexo: no actualizar nada local en ese caso (evita desincronización), y devolver una respuesta clara para que el front deshabilite el botón — idealmente el front ya lo deshabilita apenas `ganada` tiene un valor, para nunca llegar a este 409 desde la UI (ver HU-004.5).
+- [ ] Documentar y manejar la "entrega implícita": si la cotización en Nexo seguía en `Borrador` (con al menos una línea con flete), este endpoint la pasa a `Entregada` sola, sin correo — esto puede hacer que `estado_costeo` salte directo a `entregada` en el mismo momento de marcar ganada/perdida, aunque antes estuviera en `autocosteo`/`pendiente_costeo`. No tratar esto como un error o estado inconsistente.
+- [ ] Confirmar con el equipo con qué identidad/rol Cotifly llama a este endpoint de Nexo (rol de servicio propio, o el token del comercial ya autenticado vía ClientePro) — el endpoint de Nexo exige uno de `Comercial`/`AdminTarifas`/`CoordinadorFletes`/`Admin`.
+- [ ] **Decidido (2026-09-23):** `comentario` (campo opcional del body de Nexo, distinto de `motivo`) se captura como campo separado en el modal de resultado del front (HU-004.5), y se envía tal cual a `POST /api/cotizaciones/{id}/resultado` de Nexo — pero **no se persiste en Cotifly**, solo se reenvía. Únicamente `motivo` se guarda localmente en `cotizaciones.motivo_rechazo`, como ya estaba definido.
+- [ ] Confirmar que este endpoint alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica` por línea) del lado de Nexo cuando el resultado es "Ganada" por primera vez — no requiere código adicional en Cotifly, solo confirmar con una prueba real que ocurre.
+
+### [HU-005.15] Selector de ciudades en el formulario de Cotifly (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-005 (milestone). Depende de HU-005.13 y de HU-005.3.**
+- [ ] Agregar al formulario Angular un selector cascada Departamento → Ciudad para los campos `origen`/`destino`, reemplazando el texto libre actual, mismo patrón de UX (debounce, búsqueda en vivo) que el selector de clientes de HU-005.2.
+- [ ] Si el comercial completa el formulario estructurado, validar que ambos campos queden asociados a una ciudad real del catálogo, no a texto libre.
+- [ ] Confirmar visualmente con al menos un caso real que el selector se comporta igual que el de Nexo para el mismo departamento/ciudad.
 
 ---
 
@@ -793,6 +883,7 @@ Este alcance es transversal: **frontend** en `clientepro-frontend` (formulario a
 - [ ] Confirmar la conexión desde el backend de Nexo hacia la base de datos `dbSolucionesTI` (si hoy no existe esa conexión, agregarla) para poder consultar la tabla `tblProspectos`.
 - [ ] Ajustar el endpoint de búsqueda de clientes (`/captura-solicitudes/clientes` o el que corresponda) para que combine los resultados de `DimBpSolicitante` (fuente actual) con `tblProspectos` (fuente nueva), sin duplicar un mismo cliente/prospecto si aparece en ambas.
 - [ ] Definir y devolver en la respuesta un campo que distinga el origen de cada resultado (ej. `origen: "cliente"` vs `origen: "prospecto"`), para que Cotifly pueda mostrarlo si lo necesita.
+- [ ] **Incluir el NIT en la respuesta para ambas fuentes (hueco detectado 2026-09-24):** `DimBpSolicitante.NIT` para clientes reales y la columna NIT de `tblProspectos` para prospectos — Cotifly lo necesita como identificador estable (`nitCliente`, ver HU-005.2), en vez del `clienteId`/BP interno de Nexo, que cambia de formato según el origen.
 - [ ] Probar la búsqueda con al menos un caso real de cada fuente (un cliente que solo esté en `DimBpSolicitante` y un prospecto que solo esté en `tblProspectos`) y confirmar que ambos aparecen en el resultado.
 - [ ] Confirmar con el equipo de Cotifly (HU-005.2) que el contrato de respuesta ya ampliado no rompe lo que el frontend espera consumir.
 
@@ -1160,6 +1251,281 @@ Afecta: `mcp_server/margen/` (Python, repo `Cotifly`) — mismo resolver que se 
 
 ---
 
+## HU-010 — Rol Gerente Comercial y tablero de métricas comerciales
+
+> **Sprint:** Por definir · **Épica:** E1 — Migración de Backend y Datos · **Talla:** L · **Roles:** Backend (Duban), Frontend (Sara), QA (Kevin)
+> **Repos donde se crean issues de esta milestone:** `Cotifly` + `clientepro-frontend`
+
+### Historia
+**Como** Gerente Comercial de una regional, **quiero** ver en un tablero las métricas de todos los comerciales de mi regional (y poder filtrarlas a uno individual), **para** monitorear la efectividad de conversión y la salud de las cotizaciones sin depender de reportes externos.
+
+### Contexto técnico
+- 2 roles: **Comercial** (el actual, ve sus propias cotizaciones y métricas básicas) y **Gerente Comercial** (ve el tablero agregado de su regional, filtrable por comercial, y es quien usa el CRUD de políticas de margen ya construido en HU-004.9/HU-004.10 — ese CRUD debe protegerse específicamente por este rol, no por un "rol admin" genérico).
+- El rol se consulta en vivo desde los roles que ya expone la sesión de ClientePro (no se persiste en `UsuariosWeb`, ver HU-002.4 Fase 2).
+- El filtro por regional usa `UsuariosWeb.regional` (ver HU-002.4 Fase 2, poblada desde `DimEjecutivo`/`DWCubosEBSSAP`).
+- Fuente de datos: `Cotizaciones`, `MargenAjustes`, `Correos`, `MargenesPolitica` — el backend debe exponerlas agregadas, no crudas.
+- **Nota de acceso (coordinar con HU-004.3):** la restricción actual de HU-004.3/HU-004.8 dice que el módulo es "visible únicamente para el rol comercial, ningún otro rol lo ve" — con la introducción del rol Gerente Comercial, esa regla debe ajustarse para permitir también su acceso al ítem de menú del tablero (HU-010.3), sin abrirle el resto del módulo de cotización si no aplica.
+
+### Métricas — Comercial (sus propias cotizaciones)
+- Cantidad de cotizaciones
+- Cantidad convertidas a "Ganada"
+- % de conversión (`#ganadas / #totales`)
+- Margen promedio
+- Costeo total
+- Ganancias (`precio - costeo`)
+
+### Métricas — Gerente Comercial (su regional, filtrable a un comercial individual)
+- # cotizaciones totales (filtradas por regional)
+- # pendientes por cotizar
+- # pendientes por marcar como ganada o perdida
+- # cotizaciones marcadas como ganadas
+- % de conversión (`#ganadas / #totales`)
+- Costo de producción total acumulado
+- Ventas acumuladas en COP (convertir USD→COP usando `trm_aplicada` cuando `moneda="USD"`, sumar todo en COP)
+- Tiempo promedio de cotización = `costeo_listo_at - created_at` (momento en que quedó lista para descargar, ver HU-002.4 Fase 2 y HU-005.7) — **no** se mide hasta el envío/descarga real
+- Cantidad de cotizaciones que pasaron el deadline, o con score de urgencia > 75 (dato que expone Nexo, no se recalcula en Cotifly)
+- Margen promedio
+- Desviación promedio (negociado vs. política, usando `MargenAjustes`)
+- Líneas de negocio activas (`MargenesPolitica.is_active`)
+- Visualizaciones adicionales a definir con diseño (ej. torta por línea de negocio, línea de tiempo de cotizaciones, mapa de concentración) — no bloqueante para el MVP del tablero
+
+### Criterios de aceptación (Gherkin)
+```gherkin
+Escenario: Comercial ve solo sus propias métricas
+Dado un usuario con rol Comercial autenticado
+Cuando entra a su tablero de métricas
+Entonces ve únicamente las métricas calculadas sobre sus propias cotizaciones
+
+Escenario: Gerente Comercial ve el agregado de su regional
+Dado un usuario con rol Gerente Comercial, con una regional asignada
+Cuando entra a su tablero
+Entonces ve las métricas agregadas de todos los comerciales de esa misma regional, no de otras regionales
+
+Escenario: Tablero dinámico por comercial
+Dado un Gerente Comercial viendo el tablero de su regional
+Cuando selecciona un comercial específico en el filtro
+Entonces todas las métricas del tablero se recalculan para mostrar solo los datos de ese comercial
+
+Escenario: Métricas de dinero convierten a COP
+Dado que existen cotizaciones en COP y en USD dentro de la misma regional
+Cuando se calcula "ventas acumuladas"
+Entonces las cotizaciones en USD se convierten a COP usando su trm_aplicada antes de sumarlas
+```
+
+### Issues
+
+### [HU-010.1] Endpoints de métricas agregadas (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-010 (milestone). Depende de HU-002.4 (Fase 2).**
+- [ ] Endpoint de métricas para Comercial (propias cotizaciones): cantidad, ganadas, % conversión, margen promedio, costeo total, ganancias.
+- [ ] Endpoint de métricas para Gerente Comercial: todas las métricas listadas arriba, con filtro obligatorio por `regional` (la del usuario autenticado) y filtro opcional por `usuario_id` (comercial individual).
+- [ ] Confirmar y proteger ambos endpoints con el rol correspondiente, leído en vivo de la sesión de ClientePro (no de una columna en `UsuariosWeb`).
+- [ ] Implementar la conversión USD→COP usando `trm_aplicada` para las métricas de dinero.
+- [ ] Confirmar con Nexo el contrato para consumir "score de urgencia" y "deadline vencido" por cotización/solicitud.
+- [ ] **Ajustado (2026-09-24, sin `cotizacion_origen_id`):** cada versión de una cotización es una fila independiente sin relación explícita en BD — todos los conteos (totales, pendientes, ganadas, etc.) cuentan cada fila/versión tal cual, sin intentar deduplicar por "versión vigente" (no hay forma confiable de agruparlas sin la FK). Si esto genera métricas infladas por cotizaciones rehechas varias veces, revisar más adelante si vale la pena agregar la relación.
+
+### [HU-010.2] Tablero Comercial (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-010 (milestone). Depende de HU-010.1.**
+- [ ] Vista con las 6 métricas básicas del comercial autenticado.
+- [ ] Spinner y manejo de vacío (comercial sin cotizaciones todavía).
+
+### [HU-010.3] Tablero Gerente Comercial (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-010 (milestone). Depende de HU-010.1. Coordinar con HU-004.3: el ítem de menú de este tablero debe ser visible para el rol Gerente Comercial, ajustando la restricción actual de "solo visible para el rol comercial".**
+- [ ] Vista con todas las métricas de la regional, con selector para filtrar por comercial individual (dinámico, sin recargar la página).
+- [ ] Al menos una visualización gráfica (a definir el tipo exacto con diseño: torta, línea de tiempo, u otra) además de las métricas numéricas.
+- [ ] Ítem de menú visible solo para el rol Gerente Comercial.
+
+### [HU-010.4] QA de cálculos del tablero
+**Labels:** `frontend`, `qa`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend) + Kevin (QA)
+**Parte de HU-010 (milestone). Depende de HU-010.2 y HU-010.3.**
+- [ ] Validar con datos reales que cada métrica calculada coincide con un conteo/suma manual sobre la BD, para al menos una regional completa.
+
+---
+
+## HU-011 — Cotización de licitaciones vía Excel (carga y exportación)
+
+> **Sprint:** Por definir · **Épica:** E1 — Migración de Backend y Datos · **Talla:** M · **Roles:** Backend (Duban), Frontend (Sara), QA (Kevin)
+> **Repos donde se crean issues de esta milestone:** `Cotifly` + `clientepro-frontend`
+
+### Historia
+**Como** comercial que recibe un pliego de licitación con múltiples rutas/líneas para cotizar, **quiero** subir el Excel del pliego, dejar que Cotifly cotice cada línea, y descargar el mismo Excel con los precios y servicios conexos ya llenados, **para** no tener que armar cada línea manualmente en el formulario ni transcribir los resultados a mano de vuelta al pliego.
+
+### Contexto técnico
+- **No existe hoy una plantilla de Excel definida** para este flujo — es lo primero que hay que resolver con negocio (HU-011.1) antes de construir el parser.
+- Cada línea del Excel se convierte en una línea de la misma solicitud enviada a Nexo (reutiliza el mecanismo ya construido en HU-005.5/HU-005.6: **no se crea un agrupador nuevo en Cotifly**, la propia `solicitud` de Nexo con sus `lineas_solicitud` ya agrupa todas las líneas de una misma licitación).
+- "Servicios conexos elegidos para cada línea" es la misma selección que se construye en HU-005.7 — este HU la reutiliza, no la duplica.
+- El PDF de pliego (múltiples líneas) necesita su propio formato estandarizado, distinto del PDF de una sola cotización.
+
+### Criterios de aceptación (Gherkin)
+```gherkin
+Escenario: Carga de un pliego de licitación
+Dado un comercial con un archivo Excel de licitación en el formato ya definido
+Cuando lo sube a Cotifly
+Entonces cada fila del Excel se envía como una línea de la misma solicitud a Nexo (HU-005.5), sin necesidad de llenar el formulario línea por línea
+
+Escenario: Selección de servicios conexos por línea
+Dado que el costeo de una línea ya llegó desde Nexo, con uno o más servicios conexos disponibles
+Cuando el comercial revisa esa línea
+Entonces puede elegir cuáles servicios conexos incluir en el precio final de esa línea específica
+
+Escenario: Exportación del Excel con resultados
+Dado un pliego cuyas líneas ya tienen costeo, margen y servicios conexos seleccionados
+Cuando el comercial pide exportar el resultado
+Entonces descarga el mismo Excel original con las columnas de precio y servicios conexos llenadas, sin alterar las columnas originales del pliego
+
+Escenario: Pliego con líneas en distintos estados
+Dado un pliego donde algunas líneas ya están costeadas y otras siguen pendientes en Nexo
+Cuando el comercial intenta exportar antes de que todas estén listas
+Entonces el sistema le indica claramente cuáles líneas siguen pendientes, sin bloquear la exportación parcial si el comercial decide continuar igual
+```
+
+### Issues
+
+### [HU-011.1] Definir el formato del Excel de licitación con negocio
+**Labels:** `cotifly`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend) + Sara (Frontend, consume el formato en HU-011.4)
+**Parte de HU-011 (milestone). Gatilla el resto de issues de esta HU.**
+- [ ] Conseguir con negocio (o Gerencia Comercial) un ejemplo real de un Excel de licitación/pliego actual, tal como lo reciben hoy del cliente.
+- [ ] Definir el mapeo exacto: qué columnas del Excel corresponden a qué campos del formulario ampliado de Nexo (HU-005.3), y qué columnas nuevas se agregan para precio y servicios conexos en la exportación.
+- [ ] Documentar y aprobar el formato final con el equipo antes de construir el parser (HU-011.2).
+
+### [HU-011.2] Carga y parseo del Excel (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-011 (milestone). Depende de HU-011.1 y de HU-005.5.**
+- [ ] Endpoint que recibe el Excel, lo parsea según el formato aprobado, y por cada fila válida crea una línea dentro de la misma solicitud enviada a Nexo (reutilizando HU-005.5, no un mecanismo nuevo de agrupación).
+- [ ] Validar filas incompletas o con datos inválidos antes de enviarlas a Nexo, devolviendo un reporte claro de qué filas fallaron y por qué.
+- [ ] Confirmar que el polling de HU-005.6 funciona igual para todas las líneas de una licitación cargada por Excel, sin tratamiento especial.
+
+### [HU-011.3] Exportación del Excel con resultados (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-011 (milestone). Depende de HU-011.2 y de HU-005.7.**
+- [ ] Endpoint que regenera el Excel original agregando las columnas de precio final y servicios conexos seleccionados por línea, sin modificar las columnas originales del pliego.
+- [ ] Marcar explícitamente en el Excel exportado las líneas que todavía no tienen costeo (si el comercial exporta antes de que todas estén listas).
+
+### [HU-011.4] Pantalla de carga/descarga y selección de servicios conexos (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-011 (milestone). Depende de HU-011.1, HU-011.2, HU-011.3.**
+- [ ] Pantalla para subir el Excel de licitación y ver el progreso de costeo de cada línea (reutilizar el patrón de progreso de HU-004.4 por línea).
+- [ ] Por cada línea costeada, mostrar los servicios conexos disponibles con checkbox para incluir/excluir del precio final (mismo mecanismo que HU-005.7/HU-003.5).
+- [ ] Botón de exportar Excel, con aviso claro si hay líneas todavía pendientes de costeo.
+
+### [HU-011.5] PDF de pliego estandarizado (multi-línea)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-011 (milestone). Depende de HU-011.2, HU-011.3 y del bullet de estandarización de PDF en HU-003.5.**
+- [ ] Diseñar y construir un layout de PDF específico para pliegos (múltiples líneas en un mismo documento), reutilizando el mismo criterio de "solo mostrar lo realmente incluido" ya definido para el PDF de una sola cotización (HU-003.5).
+- [ ] Validar con al menos un caso real de pliego con varias líneas que el PDF generado es legible y consistente con el diseño corporativo (ver HU-003.1, RN-03 del documento de entendimiento).
+
+### [HU-011.6] QA end-to-end del flujo de licitación por Excel
+**Labels:** `frontend`, `qa`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend) + Kevin (QA)
+**Parte de HU-011 (milestone). Depende de HU-011.4 y HU-011.5.**
+- [ ] Probar el flujo completo con un pliego real: carga → costeo de todas las líneas → selección de servicios conexos → exportación de Excel → generación del PDF de pliego.
+- [ ] Probar el caso de exportación parcial (algunas líneas sin costeo todavía).
+
+---
+
+## HU-012 — Conversión de moneda COP/USD con TRM del día
+
+> **Sprint:** Por definir · **Épica:** E1 — Migración de Backend y Datos · **Talla:** M · **Roles:** Backend (Duban), Frontend (Sara), QA (Kevin)
+> **Repos donde se crean issues de esta milestone:** `Cotifly` + `clientepro-frontend`
+
+### Historia
+**Como** comercial, **quiero** poder cotizar en dólares además de pesos colombianos, usando el TRM del día, **para** poder atender clientes que necesitan la cotización en USD sin hacer la conversión a mano.
+
+### Contexto técnico
+- `cotizaciones.moneda` ya existe (default `"COP"`); `cotizaciones.trm_aplicada` se agrega en HU-002.4 Fase 2 (decimal, default `0` cuando `moneda="COP"`).
+- Regla de negocio confirmada: si `moneda="USD"`, se convierte usando el TRM del día de la cotización; el PDF debe indicar que el valor se ajusta día a día con el dólar, pero que el **mínimo a pagar es el valor originalmente cotizado** (el TRM guardado en `trm_aplicada` actúa como piso).
+- Requiere una integración nueva: consulta al TRM oficial del día — fuente exacta por confirmar con el equipo (ej. Banco de la República o Superintendencia Financiera).
+
+### Criterios de aceptación (Gherkin)
+```gherkin
+Escenario: Comercial elige cotizar en USD
+Dado un comercial llenando el formulario de "Nueva cotización"
+Cuando selecciona moneda "USD"
+Entonces el precio final se calcula usando el TRM del día, y ese TRM queda guardado en la cotización
+
+Escenario: PDF en dólares con aclaración del piso
+Dado una cotización generada en USD
+Cuando se genera el PDF
+Entonces el precio aparece en USD, con un texto que aclara que el valor se ajusta día a día con el dólar, pero que el mínimo a pagar es el valor cotizado originalmente
+
+Escenario: Cotización en COP no usa TRM
+Dado una cotización con moneda "COP"
+Cuando se genera
+Entonces trm_aplicada queda en 0, no en null, y el PDF se genera en pesos sin ninguna aclaración de TRM
+
+Escenario: Fuente de TRM no disponible
+Dado que el servicio de TRM no responde al momento de cotizar en USD
+Cuando el comercial intenta generar la cotización
+Entonces recibe un error claro (no un 500 genérico) y puede reintentar, sin quedar la cotización a medias
+```
+
+### Issues
+
+### [HU-012.1] Integración con la fuente oficial de TRM
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-012 (milestone). Gatilla el resto de issues de esta HU.**
+- [ ] Confirmar con el equipo cuál es la fuente oficial de TRM a usar (ej. Banco de la República, Superintendencia Financiera u otra ya aprobada) y su mecanismo de consulta (API pública, archivo, etc.).
+- [ ] Implementar el servicio de Infraestructura que consulta el TRM del día, con caché (el TRM no cambia intradía) y manejo explícito de error si la fuente no responde.
+
+### [HU-012.2] Conversión de precio en el módulo Precio (backend)
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-012 (milestone). Depende de HU-012.1 y de HU-003.4.**
+- [ ] En el cálculo de precio (HU-003.4), cuando `moneda="USD"`, convertir el precio final usando el TRM del día obtenido en HU-012.1, y guardarlo en `trm_aplicada`.
+- [ ] Cuando `moneda="COP"`, dejar `trm_aplicada=0` (nunca `null`).
+- [ ] Si la fuente de TRM falla, no generar la cotización en USD — devolver error claro para que el front lo muestre (ver HU-012.4).
+
+### [HU-012.3] PDF en dólares con aclaración de piso mínimo
+**Labels:** `cotifly`, `backend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `Cotifly`
+**Asignado a:** Duban (Backend)
+**Parte de HU-012 (milestone). Depende de HU-012.2 y del módulo PDF de HU-003.5.**
+- [ ] Cuando la cotización es en USD, generar el PDF con el precio en dólares.
+- [ ] Agregar el texto de aclaración: el valor se ajusta día a día con el TRM, pero el mínimo a pagar es el valor cotizado originalmente (usando `trm_aplicada` como referencia del piso).
+
+### [HU-012.4] Selector de moneda en el formulario (frontend)
+**Labels:** `frontend`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend)
+**Parte de HU-012 (milestone). Depende de HU-012.2 y de HU-004.4.**
+- [ ] Agregar al formulario de "Nueva cotización" un selector COP/USD.
+- [ ] Mostrar el precio final en la moneda seleccionada, y manejar visiblemente el error si la fuente de TRM no está disponible al cotizar en USD (sin dejar el formulario en carga infinita).
+- [ ] Mostrar la columna `moneda` en "Mis cotizaciones" (HU-004.5).
+
+### [HU-012.5] QA de conversión de moneda
+**Labels:** `frontend`, `qa`, `tarea-tecnica`
+**Repo donde se crea este issue:** `clientepro-frontend`
+**Asignado a:** Sara (Frontend) + Kevin (QA)
+**Parte de HU-012 (milestone). Depende de HU-012.3 y HU-012.4.**
+- [ ] Validar con un caso real que el precio en USD coincide con el cálculo manual usando el TRM del día.
+- [ ] Confirmar que el texto de aclaración del piso mínimo aparece correctamente en el PDF generado en USD, y no aparece en los generados en COP.
+
+---
+
 ## Resumen para copiar rápido
 
 | HU | Título | Alcance real | Repo(s) donde vive el trabajo principal |
@@ -1173,9 +1539,12 @@ Afecta: `mcp_server/margen/` (Python, repo `Cotifly`) — mismo resolver que se 
 | HU-007 | Auditoría y configuración de variables de entorno para producción | Tabla completa de variables (BD, integración Nexo, storage, secretos) con valor real y verificación post-despliegue | `Cotifly` |
 | HU-008 | Aislamiento de solicitudes por comercial en la Bandeja de Nexo | Fix de seguridad confirmado: un comercial ve hoy las solicitudes de todos los demás | `NEXO` |
 | HU-009 | Activar la conexión real a SAP TM para que la extracción de márgenes por cliente sea efectiva | Conectividad, credenciales y validación real — el código OData ya existe y está probado | `Cotifly` |
+| HU-010 | Rol Gerente Comercial y tablero de métricas comerciales | Endpoints de métricas agregadas por regional/comercial, tablero Comercial y tablero Gerente Comercial | `Cotifly`, `clientepro-frontend` |
+| HU-011 | Cotización de licitaciones vía Excel (carga y exportación) | Definir formato de Excel, cargar/parsear pliego, exportar con precios y servicios conexos, PDF de pliego estandarizado | `Cotifly`, `clientepro-frontend` |
+| HU-012 | Conversión de moneda COP/USD con TRM del día | Integración con fuente de TRM, conversión de precio, PDF en USD con aclaración de piso mínimo, selector de moneda | `Cotifly`, `clientepro-frontend` |
 
 **Antes de crear esto en GitHub:**
-- [ ] Crear la HU-001, HU-002, HU-003, HU-004, HU-005, HU-006, HU-007, HU-008 y HU-009 en Notion y reemplazar los links placeholder.
+- [ ] Crear la HU-001 a HU-012 en Notion y reemplazar los links placeholder.
 - [ ] Crear el label `sprint-4` en GitHub (las 9 HUs ya quedaron asignadas a Sprint 4) y crear las 4 épicas (E1 a E4, ver punto 5.1 de la introducción) antes de crear las HUs, ya que cada una queda asignada a una épica específica (HU-008 queda asociada a E3 solo como referencia cruzada, es un fix independiente; HU-009 sí queda dentro de E1).
 - [ ] HU-009.1 (conectividad/credenciales) debe cerrarse **antes** de HU-009.2 (validación + activación en producción) — no se activa nada sin confirmar primero que hay ruta de red y credenciales reales.
 - [ ] El archivo suelto `=0.7` de la raíz del repo (residuo de un `pip install` mal escrito, hallazgo de QA) ya se eliminó directamente del working tree — solo falta que el equipo confirme el commit de ese borrado, no requiere una HU.

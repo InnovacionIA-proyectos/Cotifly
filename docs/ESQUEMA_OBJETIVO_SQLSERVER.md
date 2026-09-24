@@ -10,7 +10,7 @@ aplica sobre el esquema **real** vigente hoy (post HU-002.2, migraciones `0006`/
 > HU-003) — se aplicó y las tablas se crearon así en `dbo_cotifly`. El equipo decidió
 > después quitarlo (ese estándar no está documentado como archivo en este repo, solo
 > mencionado por nombre en el backlog). Este documento ya refleja los nombres **sin**
-> prefijo; `migrations_mssql/0001_esquema_objetivo.sql` (reescrito, no un script
+> prefijo; `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (reescrito, no un script
 > aparte) suelta los objetos `tbl*` que hayan quedado de la corrida anterior antes
 > de crear las tablas con el nombre correcto.
 
@@ -36,8 +36,8 @@ Se usó como fuente de verdad **`shared/models.py` + `migrations/versions/0006_*
    estas 3 columnas ya, sin poblar hasta HU-004 — en Postgres vía
    `migrations/versions/0009_usuarios_web_clientepro.py`
    (`nombre_usuario`/`nombre_completo`/`email`), y en este esquema objetivo de SQL
-   Server vía `migrations_mssql/0001_esquema_objetivo.sql` (§5.8, camelCase). Mismo
-   criterio que `costeoId`/`bdCliente`/`lineaNegocioId` en `Cotizaciones`. Sin
+   Server vía `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (§5.8, camelCase). Mismo
+   criterio que `costeoId`/`nitCliente`/`lineaNegocioId` en `Cotizaciones`. Sin
    asimetría entre los dos motores.
 
 ## 1. Equivalencia de tipos
@@ -112,10 +112,10 @@ HU-003, no el Python actual) debe leer/escribir la línea de negocio por
 erDiagram
     Cotizaciones ||--o{ MargenAjustes : "cotizacionId (FK)"
     Cotizaciones ||--o{ Correos : "cotizacionId (FK)"
-    Cotizaciones }o--o| UsuariosWeb : "usuarioId (FK, sin poblar hasta HU-004)"
-    MargenAjustes }o--o| UsuariosWeb : "usuarioId (FK, sin poblar hasta HU-004)"
-    EventosConversacion }o--o| UsuariosWeb : "usuarioId (FK, sin poblar hasta HU-004)"
-    Correos }o--o| UsuariosWeb : "confirmadoPor (FK, sin poblar hasta HU-004)"
+    Cotizaciones }o--o| UsuariosWeb : "usuarioId (FK uniqueidentifier, sin poblar hasta HU-004)"
+    MargenAjustes }o--o| UsuariosWeb : "usuarioId (FK uniqueidentifier, sin poblar hasta HU-004)"
+    EventosConversacion }o--o| UsuariosWeb : "usuarioId (FK uniqueidentifier, sin poblar hasta HU-004)"
+    Correos }o--o| UsuariosWeb : "confirmadoPor (FK uniqueidentifier, sin poblar hasta HU-004)"
     Correos ||--o{ CorreoDestinatarios : "correoId (FK)"
     Sesiones ||--o{ EventosConversacion : "spaceId+threadId (FK)"
     MargenesPolitica ||--o{ Cotizaciones : "id <- lineaNegocioId (FK, poblada desde 0008, ver §3)"
@@ -126,25 +126,28 @@ erDiagram
         nvarchar folio UK
         int lineaNegocioId FK "ver §3, lineaNegocio-texto retirada"
         nvarchar clienteNombre
-        nvarchar clienteIdSap
+        nvarchar nitCliente "HU-005, sin poblar; corrección 2026-09-24"
+        nvarchar origenCliente "Fase 2, CHECK cliente|prospecto"
         nvarchar costeoId "HU-005, sin poblar"
-        nvarchar bdCliente "HU-005, sin poblar"
         decimal costo
         decimal margenPolitica
         decimal margenAplicado
+        nvarchar origenMargen
         nvarchar metodoCalculo
         decimal precioFinal
         nvarchar moneda
-        nvarchar origenMargen
+        decimal trmAplicada "Fase 2, default 0"
         nvarchar pdfPath
         nvarchar estadoCosteo "HU-005, sin poblar"
         nvarchar estadoEnvio
-        int usuarioId FK "HU-004, sin poblar"
+        uniqueidentifier usuarioId FK "HU-004, sin poblar"
         nvarchar spaceId
         nvarchar threadId
         bit ganada "HU-005, sin poblar"
         nvarchar motivoRechazo "HU-005, sin poblar"
+        int version "Fase 2, default 1"
         datetimeoffset marcadoAt "HU-005, sin poblar"
+        datetimeoffset costeoListoAt "Fase 2"
         datetimeoffset createdAt
         datetimeoffset updatedAt
     }
@@ -156,7 +159,7 @@ erDiagram
         decimal margenAplicado
         decimal diferencia
         nvarchar motivo
-        int usuarioId FK "HU-004, sin poblar"
+        uniqueidentifier usuarioId FK "HU-004, sin poblar"
         datetimeoffset createdAt
     }
     Correos {
@@ -164,7 +167,7 @@ erDiagram
         uniqueidentifier cotizacionId FK
         nvarchar asunto
         nvarchar messageId
-        int confirmadoPor FK "HU-004, sin poblar"
+        uniqueidentifier confirmadoPor FK "HU-004, sin poblar"
         nvarchar estado
         nvarchar error
         datetimeoffset createdAt
@@ -179,7 +182,7 @@ erDiagram
         uniqueidentifier id PK
         nvarchar spaceId FK
         nvarchar threadId FK
-        int usuarioId FK "HU-004, sin poblar"
+        uniqueidentifier usuarioId FK "HU-004, sin poblar"
         nvarchar rol
         nvarchar contenido
         nvarchar herramientas "CHECK ISJSON"
@@ -202,17 +205,19 @@ erDiagram
         datetimeoffset ultimaActividad
     }
     UsuariosWeb {
-        int id PK "id de SAP/ClientePro, HU-004"
-        nvarchar nombreUsuario "HU-004, sin poblar"
+        uniqueidentifier id PK "Fase 2: UUID generado por Cotifly, antes id de SAP"
+        nvarchar nombreUsuario "HU-004, sin poblar; clave de match aprovisionamiento"
         nvarchar nombreCompleto "HU-004, sin poblar"
         nvarchar email "HU-004, sin poblar"
         nvarchar telefono
+        nvarchar regional "Fase 2, cruce DimEjecutivo/DWCubosEBSSAP"
         datetimeoffset createdAt
         datetimeoffset ultimaSesion
     }
     MargenesPolitica {
         int id PK
         nvarchar lineaNegocio UK
+        nvarchar mapeoLineasNexo "Fase 2, 4/8 líneas sin equivalente"
         decimal margen
         nvarchar metodoCalculo
         bit isActive
@@ -236,25 +241,28 @@ erDiagram
 | `folio` | `nvarchar(50)` | NOT NULL | `UNIQUE` (`uq_cotizaciones_folio`) — ver nota abajo |
 | `lineaNegocioId` | `int` | NULL | FK → `MargenesPolitica.id` (poblada, ver §3 — `lineaNegocio` en texto se retira, no se migra) |
 | `clienteNombre` | `nvarchar(max)` | NULL | |
-| `clienteIdSap` | `nvarchar(max)` | NULL | |
+| `nitCliente` | `nvarchar(max)` | NULL | HU-005, sin poblar — **corrección 2026-09-24**, ver nota abajo |
+| `origenCliente` | `nvarchar(20)` | NULL | `CHECK (origenCliente IN ('cliente','prospecto'))` — **Fase 2:** si el cliente vino de `DimBPSolicitante` (real) o `tblProspectos` (prospecto), según el endpoint de clientes de Nexo |
 | `costeoId` | `nvarchar(max)` | NULL | HU-005, sin poblar |
-| `bdCliente` | `nvarchar(max)` | NULL | HU-005, sin poblar |
 | `costo` | `decimal(18,2)` | NULL | |
 | `margenPolitica` | `decimal(9,4)` | NULL | |
 | `margenAplicado` | `decimal(9,4)` | NULL | |
+| `origenMargen` | `nvarchar(max)` | NULL | |
 | `metodoCalculo` | `nvarchar(max)` | NULL | |
 | `precioFinal` | `decimal(18,2)` | NULL | |
 | `moneda` | `nvarchar(max)` | NULL | `DEFAULT 'COP'` |
-| `origenMargen` | `nvarchar(max)` | NULL | |
+| `trmAplicada` | `decimal(18,4)` | NOT NULL | `DEFAULT 0` — **Fase 2:** TRM vigente cuando `moneda='USD'`; queda en `0` (no `NULL`) cuando `moneda='COP'` |
 | `pdfPath` | `nvarchar(max)` | NULL | |
 | `estadoCosteo` | `nvarchar(max)` | NULL | HU-005, sin poblar |
 | `estadoEnvio` | `nvarchar(max)` | NULL | |
-| `usuarioId` | `int` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar |
+| `usuarioId` | `uniqueidentifier` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar — `uniqueidentifier` desde el diseño Fase 2 (2026-09-23), ver §5.8 |
 | `spaceId` | `nvarchar(max)` | NULL | |
 | `threadId` | `nvarchar(max)` | NULL | |
 | `ganada` | `bit` | NULL | HU-005, sin poblar |
 | `motivoRechazo` | `nvarchar(max)` | NULL | HU-005, sin poblar |
+| `version` | `int` | NOT NULL | `DEFAULT 1` — **Fase 2:** versionado de cotizaciones, resuelve el formato de folio (`-vN`, ver comentario ya existente en `shared/models.py:49`) |
 | `marcadoAt` | `datetimeoffset` | NULL | HU-005, sin poblar |
+| `costeoListoAt` | `datetimeoffset` | NULL | **Fase 2 (2026-09-23):** momento en que la cotización pasó a costeado/autocosteo, ver HU-005.7 |
 | `createdAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` |
 | `updatedAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` — ver nota |
 
@@ -262,6 +270,15 @@ erDiagram
 > aplicación (no es un trigger de Postgres). En SQL Server/EF Core (HU-003.3) hay que
 > replicar el mismo patrón a nivel de aplicación (ej. interceptor de `SaveChanges`), no
 > agregar un trigger nuevo que no existe hoy.
+
+> **Nota `nitCliente` — bug corregido (2026-09-24):** el rename original
+> `clienteIdSap`→`bdCliente` (propuesta §2.1) no soltó la columna vieja al ejecutarse —
+> quedaron las dos, duplicadas, en la instancia real. Se corrigió contra
+> `dbTarifario_Nexo_Pruebas`: se eliminó `clienteIdSap` y se renombró `bdCliente` a
+> `nitCliente`. Cambio de fondo además del nombre: ya no guarda el `clienteId` interno
+> que devuelve Nexo (formato inconsistente — `BP` para clientes reales de
+> `DimBpSolicitante`, `UUID` random para prospectos de `tblProspectos`, sin relación
+> entre sí), sino el **NIT**, estable y presente en ambos casos.
 
 > **Nota `folio` — corrección de tipo (2026-09-22, HU-002.4):** SQL Server no permite
 > `nvarchar(max)` en una columna con `UNIQUE`/PK o referenciada por FK (el límite de
@@ -280,7 +297,7 @@ erDiagram
 | `margenAplicado` | `decimal(9,4)` | NULL | |
 | `diferencia` | `decimal(9,4)` | NULL | |
 | `motivo` | `nvarchar(max)` | NULL | |
-| `usuarioId` | `int` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar |
+| `usuarioId` | `uniqueidentifier` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar — tipo cambiado de `int` en Fase 2, ver §5.8 |
 | `createdAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` |
 
 ### 5.3 `Correos` (antes `correos_enviados`)
@@ -291,7 +308,7 @@ erDiagram
 | `cotizacionId` | `uniqueidentifier` | NOT NULL | FK → `Cotizaciones.id` |
 | `asunto` | `nvarchar(max)` | NULL | |
 | `messageId` | `nvarchar(max)` | NULL | |
-| `confirmadoPor` | `int` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar |
+| `confirmadoPor` | `uniqueidentifier` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar — tipo cambiado de `int` en Fase 2, ver §5.8 |
 | `estado` | `nvarchar(max)` | NULL | `enviado`/`fallido` |
 | `error` | `nvarchar(max)` | NULL | |
 | `createdAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` |
@@ -320,7 +337,7 @@ erDiagram
 | `id` | `uniqueidentifier` | NOT NULL | PK, `DEFAULT NEWID()` |
 | `spaceId` | `nvarchar(128)` | NULL | FK compuesta → `Sesiones(spaceId, threadId)` — ver nota de tipo en §5.7 |
 | `threadId` | `nvarchar(128)` | NULL | (misma FK compuesta) |
-| `usuarioId` | `int` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar |
+| `usuarioId` | `uniqueidentifier` | NULL | FK → `UsuariosWeb.id`, HU-004 sin poblar — tipo cambiado de `int` en Fase 2, ver §5.8 |
 | `rol` | `nvarchar(max)` | NOT NULL | `user`/`assistant` |
 | `contenido` | `nvarchar(max)` | NULL | |
 | `herramientas` | `nvarchar(max)` | NULL | `CHECK (ISJSON(herramientas) = 1)` |
@@ -358,11 +375,12 @@ erDiagram
 
 | Columna | Tipo | Nulo | Constraint |
 |---|---|---|---|
-| `id` | `int` | NOT NULL | PK, **sin** `IDENTITY` (lo asigna SAP/ClientePro) |
-| `nombreUsuario` | `nvarchar(max)` | NULL | HU-004, sin poblar |
+| `id` | `uniqueidentifier` | NOT NULL | PK, `DEFAULT NEWID()` — **Fase 2 (2026-09-23):** cambió de `int` (id de SAP) a UUID generado por Cotifly, ver nota abajo |
+| `nombreUsuario` | `nvarchar(255)` | NULL | HU-004, sin poblar — clave real de match en el aprovisionamiento (índice único filtrado, ver nota abajo). Acotado: no puede ser `nvarchar(max)` al ser clave de índice (mismo caso que `folio`/`spaceId`/`threadId`, §5.1/§5.7) |
 | `nombreCompleto` | `nvarchar(max)` | NULL | HU-004, sin poblar |
 | `email` | `nvarchar(max)` | NULL | HU-004, sin poblar |
 | `telefono` | `nvarchar(max)` | NULL | |
+| `regional` | `nvarchar(max)` | NULL | **Fase 2:** cruce de `nombreUsuario` contra `DimEjecutivo.ID`/`REGIONAL` en `DWCubosEBSSAP` (tercera conexión externa de solo lectura) |
 | `createdAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` |
 | `ultimaSesion` | `datetimeoffset` | NULL | |
 
@@ -373,12 +391,28 @@ equivalentes de `Cotizaciones`. Postgres tiene el equivalente exacto desde
 `migrations/versions/0009_usuarios_web_clientepro.py` (snake_case:
 `nombre_usuario`/`nombre_completo`/`email`) — sin asimetría entre motores.
 
+**Fase 2 (2026-09-23) — `id` deja de ser el id de SAP:** pasa a ser un
+`uniqueidentifier` generado por Cotifly (consolidado en
+`migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`, ver §9 ítem 13).
+**No se agrega ninguna columna de id de SAP** — decisión confirmada: el
+aprovisionamiento (HU-003.6) hace match contra `tblSAPUsuariosApp` y contra
+`DimEjecutivo` (para `regional`) por `nombreUsuario`, no por ningún id numérico
+externo. Cascada obligatoria: `Cotizaciones.usuarioId`, `MargenAjustes.usuarioId`,
+`EventosConversacion.usuarioId` y `Correos.confirmadoPor` cambian de `int` a
+`uniqueidentifier` (mismas FK). Se agrega un índice único filtrado sobre
+`nombreUsuario` (`WHERE nombreUsuario IS NOT NULL`, no un `UNIQUE` de tabla — este
+último en SQL Server solo permite una fila con `NULL`, y varias filas sin
+`nombreUsuario` todavía conviven mientras HU-004 no las puebla). El rol (Comercial
+/ Gerente Comercial) **no se persiste aquí** — se consulta en vivo desde los roles
+que ya expone la sesión de ClientePro (HU-004.3).
+
 ### 5.9 `MargenesPolitica` (antes `margenes_politica`)
 
 | Columna | Tipo | Nulo | Constraint |
 |---|---|---|---|
 | `id` | `int` | NOT NULL | PK, `IDENTITY(1,1)` |
 | `lineaNegocio` | `nvarchar(40)` | NOT NULL | `UNIQUE` (`uq_margenesPolitica_lineaNegocio`) |
+| `mapeoLineasNexo` | `nvarchar(max)` | NULL | **Fase 2 (2026-09-23):** nombre equivalente de la línea en el enum de Nexo (`PuertoAInterior`, `InteriorAPuerto`, `Nacional`, `Andino`) — 4 de las 8 líneas (`Distribucion`, `Almacenamiento`, `Almacenamiento3PL`, `ITR`) no tienen equivalente y quedan `NULL` a propósito |
 | `margen` | `decimal(9,4)` | NOT NULL | |
 | `metodoCalculo` | `nvarchar(max)` | NOT NULL | `DEFAULT 'margen'` — ver nota abajo |
 | `isActive` | `bit` | NOT NULL | `DEFAULT 1` |
@@ -519,11 +553,11 @@ quedan mapeadas:
    Cotifly, es un schema nuevo (`dbo_cotifly`) dentro de `dbTarifario_Nexo_Pruebas`
    (base ya existente). Afecta la calificación de todos los objetos en el script
    (`dbo_cotifly.Cotizaciones`, no `dbo.Cotizaciones`) — ver
-   `migrations_mssql/0001_esquema_objetivo.sql`.
+   `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`.
 6. **§2 (2026-09-22, después de crear las tablas en la BD real)** — Se retira el
    prefijo `tbl`/`tblSap` que pedía originalmente HU-002.3
    (`docs/HU_Backlog_Cotifly_ClientePro.md:174`). Las 10 tablas se llegaron a crear
-   con el prefijo en una primera corrida de `migrations_mssql/0001_esquema_objetivo.sql`
+   con el prefijo en una primera corrida de `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`
    — ese mismo script se reescribió (no se agregó uno aparte) para soltar esos objetos
    `tbl*` como primer paso y crear las tablas ya con el nombre correcto. Este documento
    ya quedó actualizado con los nombres sin prefijo en todas las secciones.
@@ -549,6 +583,65 @@ quedan mapeadas:
     (`trusted_connection=yes`, sin usuario/contraseña). `shared/config.py` ya tiene
     `sqlserver_database_url` separado de `database_url` (Postgres, no se toca), y
     `.env.example` documenta el formato. **Restricción real:** Windows Authentication
-    solo funciona ejecutando `migrations_mssql/0001_esquema_objetivo.sql` directo desde
+    solo funciona ejecutando `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` directo desde
     Windows (`sqlcmd -E` o un runner Python local) — no desde los contenedores Docker
     (Linux) del proyecto, que no soportan Windows Auth sin configurar Kerberos aparte.
+13. **Fase 2 (2026-09-23) — rol Gerente Comercial, tablero de métricas, versionado —
+    consolidada en `0001` (2026-09-24):** originalmente se armó como script `0003`
+    aparte (ALTER sobre el esquema ya creado por `0001`/`0002`), pero como nada de
+    esto está en producción todavía, se consolidó todo en un único
+    `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` que crea el esquema ya en su forma
+    final desde el inicio — `0002`/`0003` se eliminaron, no quedó rastro de la forma
+    intermedia. Cambios: `UsuariosWeb.id` es `uniqueidentifier` generado por Cotifly
+    (nunca fue el id de SAP en la versión final) — **no existe columna de id de SAP**,
+    el aprovisionamiento matchea por `nombreUsuario` (índice único filtrado);
+    `Cotizaciones.usuarioId`/`MargenAjustes.usuarioId`/
+    `EventosConversacion.usuarioId`/`Correos.confirmadoPor` son `uniqueidentifier`
+    desde su creación; `UsuariosWeb.regional` (cruce contra `DimEjecutivo`/
+    `DWCubosEBSSAP`, tercera conexión externa de solo lectura); `MargenesPolitica.
+    mapeoLineasNexo` (4/8 líneas sin equivalente, `NULL` a propósito, poblado en el
+    mismo `INSERT` del seed); en `Cotizaciones`: `costeoListoAt`, `trmAplicada`,
+    `version` y `origenCliente` (`cotizacionOrigenId` se agregó y se retiró después,
+    ver ítem 17 más abajo).
+    **Hallazgo técnico real que sí quedó documentado** (relevante para quien altere
+    este esquema más adelante con datos reales ya cargados): SQL Server no tiene
+    conversión `int`→`uniqueidentifier` — un `ALTER COLUMN` directo entre esos dos
+    tipos falla siempre, incluso en una tabla vacía; hay que pasar por
+    `DROP COLUMN`+`ADD COLUMN` (solo válido sin datos que perder) o por una migración
+    de datos explícita si ya hay filas reales.
+14. **Bug real encontrado al ejecutar contra la instancia real (2026-09-24):**
+    `nombreUsuario` (`UsuariosWeb`) estaba como `nvarchar(max)` — mismo error que
+    `folio`/`spaceId`/`threadId` (§9 ítem 4), esta vez en una columna con índice único
+    filtrado (`uq_usuariosWeb_nombreUsuario`). SQL Server rechazó el `CREATE INDEX`
+    con `Msg 1919`. Se acotó a `nvarchar(255)` (§5.8) y se separó la creación del
+    índice en su propio batch, con su propio chequeo de idempotencia
+    (`sys.indexes`), en vez de vivir dentro del mismo `BEGIN...END` que el
+    `CREATE TABLE`.
+15. **Segundo bug real encontrado en la misma corrida (2026-09-24):** el índice
+    filtrado también falló con `Msg 1934` — SQL Server exige `QUOTED_IDENTIFIER ON`
+    (y de paso `ANSI_NULLS ON`) para crear índices filtrados, y el default de
+    `sqlcmd` en esta instancia vino en `OFF`. Se agregó `SET QUOTED_IDENTIFIER ON;`
+    y `SET ANSI_NULLS ON;` al inicio del script — son opciones de sesión que
+    persisten entre batches (`GO`), así que basta con fijarlas una vez.
+16. **Bug de migración corregido contra la instancia real (2026-09-24):** el rename
+    `clienteIdSap`→`bdCliente` (propuesta §2.1) nunca soltó la columna vieja —
+    quedaron las dos duplicadas en `Cotizaciones`. Se corrió un script de corrección
+    directo contra `dbTarifario_Nexo_Pruebas` (`DROP COLUMN clienteIdSap` +
+    `sp_rename bdCliente → nitCliente`, tabla vacía verificada antes de ejecutar) y
+    se sincronizó `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` + este documento
+    (§5.1) con el resultado. Cambio de fondo: la columna pasa a guardar el **NIT**
+    (estable, existe para clientes reales y prospectos) en vez del `clienteId`
+    interno de Nexo (formato inconsistente según el origen) — ver nota en §5.1.
+17. **Reorden físico de columnas + retiro de `cotizacionOrigenId` (2026-09-24):** a
+    pedido del equipo, el orden de columnas de `Cotizaciones` en el `CREATE TABLE`
+    (y por lo tanto el orden físico real de la tabla) se ajustó para agrupar mejor
+    los campos relacionados: `nitCliente` y `origenCliente` quedan justo después de
+    `clienteNombre`; `origenMargen` justo después de `margenAplicado`; `trmAplicada`
+    justo después de `moneda`; `version` justo después de `motivoRechazo`. SQL
+    Server no tiene un `ALTER TABLE` que reordene columnas directamente — se
+    resolvió editando el orden en el `CREATE TABLE` y dejando que el script (que ya
+    borra y recrea todo desde cero) lo aplicara de nuevo, mismo patrón que el resto
+    de este documento. De paso se **retiró `cotizacionOrigenId`** (la FK
+    auto-referenciada a la v1 de una cotización versionada) — el versionado queda
+    solo con la columna `version` y la convención de sufijo `-vN` en `folio`
+    (`shared/models.py:49`), sin un enlace de FK explícito entre versiones.

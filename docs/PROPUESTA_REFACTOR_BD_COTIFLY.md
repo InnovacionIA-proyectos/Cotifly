@@ -323,7 +323,7 @@ Además:
 > es el **corto**, `MargenesPolitica` (sin el prefijo `tbl`, retirado también en
 > HU-002.3) — no `lineasNegocioMargenesPolitica`/`LineasNegocioMargenesPolitica` como
 > dice esta sección y el resto de este documento. Ya está así en
-> `migrations_mssql/0001_esquema_objetivo.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
+> `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
 > El resto del contenido de §2.7 (columnas, decisiones de diseño) sigue vigente, solo
 > cambia el nombre de la tabla.
 
