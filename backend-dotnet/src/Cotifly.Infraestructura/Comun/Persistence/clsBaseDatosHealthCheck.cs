@@ -1,0 +1,66 @@
+using Cotifly.Infraestructura.Configuracion;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
+
+namespace Cotifly.Infraestructura.Comun.Persistence;
+
+/// <summary>
+/// Readiness de la base <c>dbo_cotifly</c> para <c>GET /health/ready</c>: la cadena debe estar
+/// configurada, la base debe responder y el esquema debe tener aplicado el script 0002
+/// (<c>Sesiones.estadoAgente</c> y <c>TokensRefresco</c>), del que depende el modelo EF.
+/// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>) para no colgar el endpoint
+/// los 15 s del timeout de conexión por defecto. Las descripciones son fijas: no incluyen la cadena
+/// ni el servidor; el detalle técnico queda en la excepción que registra <c>HealthCheckService</c>.
+/// </summary>
+public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptions<clsOpcionesConexiones> opciones) : IHealthCheck
+{
+    public const string Nombre = "base-datos-cotifly";
+    public const string DescripcionSinCadena = "La cadena de conexión 'ConnectionStrings:Cotifly' no está configurada.";
+    public const string DescripcionNoDisponible = "La base de datos de Cotifly no está disponible.";
+    public const string DescripcionEsquemaIncompleto = "esquema incompleto: falta 0002";
+    public const string DescripcionDisponible = "La base de datos de Cotifly responde.";
+
+    /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
+    public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
+
+    /// <summary>1 si las piezas del 0002 que usa el modelo EF existen; 0 si no.</summary>
+    private const string ConsultaEsquema0002 =
+        "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.Sesiones', N'estadoAgente') IS NOT NULL " +
+        "AND OBJECT_ID(N'dbo_cotifly.TokensRefresco', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]";
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(opciones.Value.Cotifly))
+        {
+            return HealthCheckResult.Unhealthy(DescripcionSinCadena);
+        }
+
+        using var limite = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        limite.CancelAfter(TiempoMaximo);
+
+        try
+        {
+            if (!await contexto.Database.CanConnectAsync(limite.Token))
+            {
+                return HealthCheckResult.Unhealthy(DescripcionNoDisponible);
+            }
+
+            var esquemaCompleto = await contexto.Database
+                .SqlQueryRaw<int>(ConsultaEsquema0002)
+                .SingleAsync(limite.Token);
+
+            return esquemaCompleto == 1
+                ? HealthCheckResult.Healthy(DescripcionDisponible)
+                : HealthCheckResult.Unhealthy(DescripcionEsquemaIncompleto);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return HealthCheckResult.Unhealthy(DescripcionNoDisponible, ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return HealthCheckResult.Unhealthy(DescripcionNoDisponible, ex);
+        }
+    }
+}

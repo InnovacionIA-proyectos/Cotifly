@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Integración con SQL Server 2019 en Testcontainers (ver tests/Directory.Build.props). -->
+    <UsaSqlServerPruebas>true</UsaSqlServerPruebas>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
   </ItemGroup>

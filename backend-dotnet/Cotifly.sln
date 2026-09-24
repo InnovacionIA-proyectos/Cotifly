@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cotifly.Dominio.Tests", "te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cotifly.Infraestructura.Tests", "tests\Cotifly.Infraestructura.Tests\Cotifly.Infraestructura.Tests.csproj", "{88DDD68E-5BA4-42FF-9A14-B42206EC116C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cotifly.Aceptacion.Tests", "tests\Cotifly.Aceptacion.Tests\Cotifly.Aceptacion.Tests.csproj", "{18F4B086-F6DC-439E-B68A-9C40B1C69335}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -143,6 +145,18 @@ Global
 		{88DDD68E-5BA4-42FF-9A14-B42206EC116C}.Release|x64.Build.0 = Release|Any CPU
 		{88DDD68E-5BA4-42FF-9A14-B42206EC116C}.Release|x86.ActiveCfg = Release|Any CPU
 		{88DDD68E-5BA4-42FF-9A14-B42206EC116C}.Release|x86.Build.0 = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|x64.Build.0 = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Debug|x86.Build.0 = Debug|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|x64.ActiveCfg = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|x64.Build.0 = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|x86.ActiveCfg = Release|Any CPU
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -157,5 +171,6 @@ Global
 		{094EEB90-D3F7-4146-BB03-078ACB5498F6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{67184B4B-CB40-4FED-8BB9-4A2DF2EF4240} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{88DDD68E-5BA4-42FF-9A14-B42206EC116C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{18F4B086-F6DC-439E-B68A-9C40B1C69335} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

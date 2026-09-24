@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Pruebas de aceptación BDD (ADR-010): los .feature de backend-dotnet/specs/features ejecutados con
+    Reqnroll sobre xUnit v3 (Reqnroll.xunit.v3, runner Microsoft.Testing.Platform) contra SQL Server 2019
+    en Testcontainers con los repositorios reales.
+  -->
+  <PropertyGroup>
+    <UsaSqlServerPruebas>true</UsaSqlServerPruebas>
+    <!-- El code-behind de los .feature (enlazados desde specs/features) se genera en obj/, no junto al .feature. -->
+    <ReqnrollUseIntermediateOutputPathForCodeBehind>true</ReqnrollUseIntermediateOutputPathForCodeBehind>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Reqnroll.xunit.v3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Fuente de verdad SDD: los .feature viven en specs/features y se enlazan aquí. -->
+    <ReqnrollFeatureFiles Include="..\..\specs\features\**\*.feature" Link="Features\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

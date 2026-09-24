@@ -38,3 +38,6 @@ coverage*.info
 !.env.example
 appsettings.*.local.json
 secrets/
+
+# Identificador anónimo de telemetría de Reqnroll (se crea si no hay APPDATA, p. ej. en el contenedor del SDK)
+**/Reqnroll/userid

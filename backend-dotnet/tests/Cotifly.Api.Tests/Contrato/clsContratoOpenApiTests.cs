@@ -55,6 +55,43 @@ public sealed class clsContratoOpenApiTests(clsCotiflyApiFactory factory) : ICla
         valoresStatus.Should().Contain(json.RootElement.GetProperty("status").GetString());
     }
 
+    [Fact]
+    public async Task ElContratoDeclaraGetHealthReadySinSeguridadCon200Y503()
+    {
+        var (documento, _) = await LeerContratoAsync();
+
+        documento!.Paths.Should().ContainKey("/health/ready");
+        var operacion = documento.Paths["/health/ready"].Operations![HttpMethod.Get];
+        operacion.Security.Should().NotBeNull().And.BeEmpty();
+        operacion.Responses.Should().ContainKeys("200", "503");
+    }
+
+    [Fact]
+    public async Task LaRespuesta503RealDeHealthReadyCumpleElEsquemaDelContrato()
+    {
+        var (documento, _) = await LeerContratoAsync();
+        var esquema = documento!.Paths["/health/ready"].Operations![HttpMethod.Get]
+            .Responses!["503"].Content!["application/json"].Schema!;
+
+        // Sin ConnectionStrings:Cotifly la API responde 503 (ver clsSaludListoEndpointTests).
+        using var cliente = factory.CreateClient();
+        using var respuesta = await cliente.GetAsync(new Uri("/health/ready", UriKind.Relative), TestContext.Current.CancellationToken);
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        ((int)respuesta.StatusCode).Should().Be(503);
+        VerificarContraEsquema(json.RootElement, esquema);
+    }
+
+    /// <summary>Campos obligatorios presentes, ningún campo fuera del esquema y <c>status</c> dentro de su enum.</summary>
+    internal static void VerificarContraEsquema(JsonElement raiz, IOpenApiSchema esquema)
+    {
+        var camposReales = raiz.EnumerateObject().Select(p => p.Name).ToList();
+        camposReales.Should().Contain(esquema.Required!, "la respuesta debe traer todos los campos obligatorios del contrato");
+        camposReales.Should().OnlyContain(c => esquema.Properties!.ContainsKey(c), "la respuesta no debe traer campos fuera del contrato");
+        var valoresStatus = esquema.Properties!["status"].Enum!.Select(e => e!.GetValue<string>());
+        valoresStatus.Should().Contain(raiz.GetProperty("status").GetString());
+    }
+
     private static async Task<ReadResult> LeerContratoAsync()
     {
         var opciones = new OpenApiReaderSettings();

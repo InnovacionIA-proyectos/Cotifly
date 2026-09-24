@@ -29,7 +29,7 @@ El Python tiene casos de prueba útiles que se pueden portar como datos: `tests/
 | Unitario | `Cotifly.Dominio.Tests`, `Cotifly.Aplicacion.Tests` | xUnit, NSubstitute, AwesomeAssertions | Reglas puras (precio, margen, folio), casos de uso con puertos simulados, runner del agente con un `IChatClient` guionizado |
 | Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `migrations_mssql/` aplicados, esquema igual al modelo EF |
 | API | `Cotifly.Api.Tests` | `WebApplicationFactory` | Forma exacta de las respuestas del contrato, auth, CORS, aislamiento por comercial |
-| Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (BDD) | Los `.feature` de `specs/features` |
+| Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (BDD) con `Reqnroll.xunit.v3` | Los `.feature` de `specs/features` |
 | Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET (alternativa: NetArchTest.eNhancedEdition) | Reglas de dependencia entre capas, Dominio sin paquetes externos y convención `cls`/`ICls` (ADR-002) |
 
 Metas:
@@ -41,6 +41,8 @@ Metas:
 - **Runner:** xUnit v3 sobre Microsoft.Testing.Platform (MTP). `backend-dotnet/global.json` activa MTP para `dotnet test`; el SDK 10 ya no acepta el modo VSTest con xUnit v3.
   - Filtros con opciones de MTP, por ejemplo `dotnet test --filter-not-trait "Categoria=Integracion"` (excluir integración) o `--filter-trait "Categoria=Integracion"`.
   - Pendiente para CI (#14): agregar `Microsoft.Testing.Extensions.TrxReport` (reporte TRX) y `Microsoft.Testing.Extensions.CodeCoverage` (cobertura). No se agregan antes porque todavía no se usan.
+  - Los filtros por trait dejan proyectos con cero pruebas, y MTP devuelve el código 8 en ese caso; las corridas filtradas agregan `--ignore-exit-code 8` (decidido en #9).
+- **BDD con xUnit v3 (decidido en #9):** se usa `Reqnroll.xunit.v3` (Reqnroll 3.x), que genera pruebas xUnit v3 y corre sobre MTP igual que el resto. Se descartó `Reqnroll.MSTest` solo para aceptación: habría mezclado dos frameworks de prueba sin necesidad. Los `.feature` quedan en `specs/features/` y el proyecto de aceptación los enlaza (code-behind en `obj/`).
 
 **4. Build y test dentro de Docker.** La máquina de desarrollo solo tiene SDK .NET 8, así que todo se compila y se prueba con `mcr.microsoft.com/dotnet/sdk:10.0` (ADR-007). CI repite los mismos pasos: restore, build, test y `docker build`.
 
