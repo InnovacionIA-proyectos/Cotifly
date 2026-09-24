@@ -176,12 +176,18 @@ class UsuarioWeb(Base):
 
     Rediseñada en HU-002.2: la PK deja de ser el correo (login propio, retirado)
     y pasa a ser el mismo id entero de `tblSAPUsuariosApp`, entregado por
-    ClientePro. Sin HU-004 todavía, la tabla queda vacía y sin forma de llenarse.
+    ClientePro. `nombre_usuario`/`nombre_completo`/`email` (migración `0009`) son
+    el mapeo de `tblSAPUsuariosApp.NOMBREUSUARIO`/`DESCRIPCIONUSUARIO`/`EMAIL` del
+    diseño original (§2.6) -- se construyen ya, sin poblar hasta HU-004, siguiendo
+    el mismo criterio que `costeo_id`/`bd_cliente`/`linea_negocio_id`.
     """
 
     __tablename__ = "usuarios_web"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    nombre_usuario: Mapped[str | None] = mapped_column(Text)
+    nombre_completo: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
     telefono: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()

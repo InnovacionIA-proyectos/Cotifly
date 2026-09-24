@@ -250,8 +250,12 @@ de inactividad (`SESION_TTL_HORAS`).
 
 > **HU-002.2 — rediseño completo:** la PK deja de ser `email` (Text) y pasa a ser `id`
 > (Integer, el mismo id de SAP que entregará ClientePro/HU-004, no autoincremental).
-> Se agregó `telefono`. Se eliminaron `email` y `nombre`, y la tabla se vació (`TRUNCATE`)
-> porque ninguna fila existente tenía un id de SAP real que asignarle. **Consecuencia:**
+> Se eliminaron el `email`/`nombre` viejos (del login propio), y la tabla se vació
+> (`TRUNCATE`) porque ninguna fila existente tenía un id de SAP real que asignarle.
+> Se agregó `telefono`, y (migración `0009`, 2026-09-22) `nombre_usuario`/
+> `nombre_completo`/`email` — mapeo de `tblSAPUsuariosApp` del diseño original (§2.6),
+> construidas ya aunque sin poblar, mismo criterio que las columnas de Nexo.
+> **Consecuencia:**
 > `POST /web/login` quedó desactivado (responde 501) y con él `GET /web/mis-cotizaciones`,
 > `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento` —
 > todos dependían de identificar al comercial por `email`. Cotizar por Google Chat, que
@@ -277,9 +281,11 @@ cada login válido (`UsuarioWebRepo.upsert`).
 > default `true`). `linea_negocio` deja de ser PK y pasa a `UNIQUE` — `cotizaciones`
 > referencia esta tabla tanto por `linea_negocio` (FK directa, texto) como por la nueva
 > `linea_negocio_id` (FK a `id`, poblada desde `0008` — no dependía de Nexo). El estado
-> *provisional* de los
-> valores (15%/50% ITR) sigue igual — HU-002.1 decidió no bloquear el cierre con la
-> validación de Gerencia Comercial, se ajustará desde el panel admin cuando exista.
+> *provisional* de los valores (**15% en las 8 líneas, sin excepción** — corrección
+> 2026-09-22: se había documentado por error que `ITR` estaba al 50%, verificado
+> contra la BD real que no es así) sigue igual — HU-002.1 decidió no bloquear el cierre
+> con la validación de Gerencia Comercial, se ajustará desde el panel admin cuando
+> exista.
 
 
 **No la llena el bot.** Es la política de margen por defecto (fallback cuando SAP TM no

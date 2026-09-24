@@ -107,6 +107,9 @@ erDiagram
     }
     USUARIOS_WEB {
         int id PK "id de SAP/ClientePro, HU-004"
+        text nombre_usuario "HU-004, sin poblar"
+        text nombre_completo "HU-004, sin poblar"
+        text email "HU-004, sin poblar"
         text telefono
         timestamptz ultima_sesion
     }
@@ -180,14 +183,20 @@ columna `contexto` (JSONB) se eliminó en HU-002.2 — nunca se leía.
 
 ### `usuarios_web` — comerciales identificados por ClientePro
 Rediseñada por completo en HU-002.2: la PK deja de ser el correo y pasa a ser el mismo id
-entero de SAP que entregará ClientePro (HU-004). Se agregó `telefono`. **La tabla está vacía
+entero de SAP que entregará ClientePro (HU-004). Se agregó `telefono`, y (migración `0009`)
+`nombre_usuario`/`nombre_completo`/`email` — mapeo de `tblSAPUsuariosApp` del diseño
+original (§2.6), construido ya aunque nada lo llene todavía, mismo criterio que
+`costeo_id`/`bd_cliente`/`linea_negocio_id`. **La tabla está vacía
 y sin forma de llenarse hasta que HU-004 exista** — el login propio por correo
 (`POST /web/login`) fue retirado, y con él, `mis-cotizaciones`, `enviar` y `seguimiento` de
 la Consola web (dependían de esa identidad). Cotizar por Google Chat no se vio afectado.
 
 ### `margenes_politica` — configuración: margen por línea
 **Fallback** cuando SAP TM no tiene el margen del cliente. 8 filas hoy (una por línea de
-negocio), todas al **15%** (una al 50%, ITR, intencional), método `margen`. Marcadas como
+negocio), **todas al 15%, incluida `ITR`** — corrección 2026-09-22: se había documentado
+por error que `ITR` estaba al 50% (intencional); verificado contra la BD real y contra
+`migrations/versions/0002_seed_config.py`, `ITR` está al 15% igual que las demás, sin
+excepción. Método `margen`. Marcadas como
 *provisionales, pendientes de validar con Gerencia Comercial* (migración `0002_seed_config`)
 — HU-002.1 decidió no bloquear el cierre con esa validación: Gerencia las ajustará
 directamente desde un panel admin una vez la app esté entregada. Desde HU-002.2 tiene `id`
@@ -242,8 +251,9 @@ para el tablero de Looker Studio (ajustada en HU-002.2 a los nombres de columna 
 | `0004_trazabilidad` | Vistas `v_trazabilidad_cotizaciones` y `v_actividad_por_comercial`. |
 | `0005_usuarios_y_seguimiento` | Tabla `usuarios_web` + columnas de seguimiento en `cotizaciones` (`efectiva`, `seguimiento_nota`, `seguimiento_actualizado`). |
 | `0006_hu002_2_esquema_completo` | HU-002.2: elimina `payload`/`contexto`/`origen`/`destino`/`fuente_tarifa`; agrega FKs (`eventos_conversacion→sesiones`, `linea_negocio→margenes_politica`, `usuario_id→usuarios_web`); rediseña `usuarios_web` (PK entera de SAP) y `margenes_politica` (id serial); agrega columnas de Nexo sin poblar (`costeo_id`, `bd_cliente`, `estado_costeo`) y `linea_negocio_id` (poblada aparte, ver `0008`). |
-| `0008_backfill_linea_negocio_id` | Corrección 2026-09-22: `linea_negocio_id` no dependía de Nexo — se rellena por cruce local contra `margenes_politica` (sembrada desde `0002`). `mcp_server/server.py` ya la llena en cotizaciones nuevas. |
 | `0007_ganada_perdida` | HU-002.2 (seguimiento): renombra `efectiva`/`seguimiento_nota`/`seguimiento_actualizado` → `ganada`/`motivo_rechazo`/`marcado_at` — esquema listo para el resultado sincronizado con Nexo (HU-005), sin poblar todavía. |
+| `0008_backfill_linea_negocio_id` | Corrección 2026-09-22: `linea_negocio_id` no dependía de Nexo — se rellena por cruce local contra `margenes_politica` (sembrada desde `0002`). `mcp_server/server.py` ya la llena en cotizaciones nuevas. |
+| `0009_usuarios_web_clientepro` | Agrega `nombre_usuario`/`nombre_completo`/`email` a `usuarios_web` (mapeo de `tblSAPUsuariosApp`, §2.6) — construidas ya, sin poblar hasta HU-004, mismo criterio que las columnas de Nexo. Nombre de revisión acortado a propósito (28 caracteres, no "...clientepro_columnas") — `alembic_version.version_num` es `VARCHAR(32)`, el nombre completo lo excedía y hacía fallar el `UPDATE` de versión. |
 
 Se aplican con `alembic upgrade head` — automático en producción (entrypoint del contenedor
 `orquestador`, ver `scripts/entrypoint_orquestador.sh`).
