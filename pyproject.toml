@@ -16,6 +16,19 @@ dependencies = [
     "SQLAlchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
+    # HU-002.4 (2026-09-22): se agrega pyodbc (SQL Server, requiere el driver de
+    # sistema msodbcsql17, instalado en los Dockerfiles) -- NO reemplaza a psycopg.
+    # Corrección (bug encontrado por QA, PR #40): la primera versión de este cambio
+    # quitó psycopg por completo, y como Postgres sigue siendo la BD viva de la app
+    # Python hasta el corte real a .NET (HU-003), shared/db.py construye el engine
+    # de Postgres a nivel de módulo -- sin psycopg instalado, eso lanza
+    # ModuleNotFoundError al importar y pytest no puede ni recolectar los tests
+    # (250+ tests inejecutables, no solo fallando). Los dos drivers coexisten sin
+    # conflicto -- SQLAlchemy elige cuál usar según el prefijo de la URL
+    # (postgresql+psycopg://... vs mssql+pyodbc://...). shared/models.py sigue con
+    # tipos de sqlalchemy.dialects.postgresql (UUID/JSONB/ARRAY) -- no reescrito
+    # todavía, ver nota en docker-compose.yml.
+    "pyodbc>=5.1",
 ]
 
 [project.optional-dependencies]
