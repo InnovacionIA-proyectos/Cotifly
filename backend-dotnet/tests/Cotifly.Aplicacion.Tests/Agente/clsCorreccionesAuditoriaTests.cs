@@ -137,7 +137,7 @@ public sealed class clsCorreccionesAuditoriaTests
     {
         var origen = clsCotizacion.Crear(new clsDatosCotizacion
         {
-            Folio = "PCN-24092026-001",
+            Folio = "PCN-NV-24092026-001",
             Version = 1,
             LineaNegocioId = 1,
             ClienteNombre = "LONGYIN S.A.S.",
@@ -167,7 +167,7 @@ public sealed class clsCorreccionesAuditoriaTests
         sembrado.LineaNegocio.Should().Be("Nacional");
         sembrado.CotizacionId.Should().Be(origen.Id);
         _arnes.OrigenesVersion.Should().Equal(origen.Id);
-        _arnes.EntradasPdf.Single().Folio.Should().Be("PCN-24092026-001-v2");
+        _arnes.EntradasPdf.Single().Folio.Should().Be("PCN-NV-24092026-001-v2");
         _arnes.EntradasPdf.Single().Trazabilidad!.NitCliente.Should().Be("900123456");
         await _arnes.Folios.DidNotReceive().CrearConFolioNuevoAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>(), Arg.Any<CancellationToken>());
     }
@@ -185,7 +185,7 @@ public sealed class clsCorreccionesAuditoriaTests
     private static clsEstadoConversacion ConCotizacion() => clsEstadoConversacion.Vacio with
     {
         CotizacionId = Guid.NewGuid(),
-        FolioEnProgreso = "PCN-900123456-24092026-001",
+        FolioEnProgreso = "PCN-900123456-NV-24092026-001",
         Version = 1,
         NitCliente = "900123456",
         ClienteConfirmado = true,

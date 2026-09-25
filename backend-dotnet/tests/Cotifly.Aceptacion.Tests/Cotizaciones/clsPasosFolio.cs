@@ -26,10 +26,10 @@ public sealed class clsPasosFolio(clsContextoEscenario contexto)
     private readonly Dictionary<string, Guid> _ultimaPorComercial = new(StringComparer.OrdinalIgnoreCase);
     private clsErrorDominio? _error;
 
-    [Given("el comercial de folios {string}")]
-    public async Task DadoElComercial(string alias)
+    [Given("el comercial de folios {string} llamado {string}")]
+    public async Task DadoElComercial(string alias, string nombreCompleto)
     {
-        var usuario = clsUsuarioWeb.Crear($"{alias}.{Guid.NewGuid():N}"[..40], alias, $"{alias}@boterosoto.com.co", null, contexto.Reloj.AhoraUtc).Valor;
+        var usuario = clsUsuarioWeb.Crear($"{alias}.{Guid.NewGuid():N}"[..40], nombreCompleto, $"{alias}@boterosoto.com.co", null, contexto.Reloj.AhoraUtc).Valor;
         await contexto.EnAmbitoAsync(s =>
         {
             s.GetRequiredService<IClsUsuarioWebRepository>().Agregar(usuario);

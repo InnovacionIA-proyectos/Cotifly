@@ -9,12 +9,12 @@ public sealed class clsCotizacionTests
     [Fact]
     public void UnaCotizacionNuevaNaceEnVersionUnoEnPesosSinEnviar()
     {
-        var resultado = clsCotizacion.Crear(new clsDatosCotizacion { Folio = " PCN-24092026-001 " });
+        var resultado = clsCotizacion.Crear(new clsDatosCotizacion { Folio = " PCN-DG-24092026-001 " });
 
         resultado.EsExitoso.Should().BeTrue();
         var cotizacion = resultado.Valor;
         cotizacion.Id.Should().NotBeEmpty();
-        cotizacion.Folio.Should().Be("PCN-24092026-001");
+        cotizacion.Folio.Should().Be("PCN-DG-24092026-001");
         cotizacion.Version.Should().Be(1);
         cotizacion.Moneda.Should().Be("COP");
         cotizacion.TrmAplicada.Should().Be(0m);
@@ -39,7 +39,7 @@ public sealed class clsCotizacionTests
 
     [Fact]
     public void UnaNuevaVersionConservaSuNumero() =>
-        clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-24092026-001-v2", Version = 2 }).Valor.Version.Should().Be(2);
+        clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-24092026-001-v2", Version = 2 }).Valor.Version.Should().Be(2);
 
     [Fact]
     public void LaTrmDebeSerCeroCuandoLaMonedaEsCop() =>

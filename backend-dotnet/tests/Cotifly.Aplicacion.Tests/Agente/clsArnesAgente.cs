@@ -70,14 +70,14 @@ internal sealed class clsArnesAgente
             .Returns(ci =>
             {
                 NitsFolio.Add(ci.ArgAt<string?>(1));
-                var folio = clsFolio.Crear(new DateOnly(2026, 9, 24), 1, ci.ArgAt<string?>(1)).Valor;
+                var folio = clsFolio.Crear(new DateOnly(2026, 9, 24), "NV", 1, ci.ArgAt<string?>(1)).Valor;
                 return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
             });
         Folios.CrearNuevaVersionAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 OrigenesVersion.Add(ci.ArgAt<Guid>(1));
-                var folio = clsFolio.Desde("PCN-24092026-001").Valor.ConVersion(2).Valor;
+                var folio = clsFolio.Desde("PCN-NV-24092026-001").Valor.ConVersion(2).Valor;
                 return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
             });
     }

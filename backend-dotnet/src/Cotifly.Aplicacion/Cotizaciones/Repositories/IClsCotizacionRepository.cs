@@ -44,11 +44,13 @@ public interface IClsCotizacionRepository
     Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Mayor consecutivo <c>NNN</c> que ya usó el comercial en la fecha <paramref name="segmentoFecha"/> (<c>DDMMAAAA</c>),
-    /// contando sus folios de versión 1 con y sin NIT (<c>PCN-[nit-]DDMMAAAA-NNN</c>, ADR-011); 0 si no tiene ninguno.
+    /// Mayor consecutivo <c>NNN</c> ya usado con las <paramref name="iniciales"/> en la fecha <paramref name="segmentoFecha"/>
+    /// (<c>DDMMAAAA</c>), contando todos los folios base con y sin NIT (<c>PCN-[nit-]INICIALES-DDMMAAAA-NNN</c>, ADR-011) de
+    /// cualquier comercial: dos comerciales con las mismas iniciales comparten la secuencia, así el siguiente número nunca
+    /// choca con <c>uq_cotizaciones_folio</c>. Los <c>-vN</c> no cuentan (no terminan en <c>NNN</c>). 0 si no hay ninguno.
     /// Se llama dentro del candado del folio (<c>IClsCandadoTransaccional</c>).
     /// </summary>
-    Task<int> ObtenerUltimoConsecutivoDelDiaAsync(Guid usuarioId, string segmentoFecha, CancellationToken cancellationToken = default);
+    Task<int> ObtenerUltimoConsecutivoDelDiaAsync(string iniciales, string segmentoFecha, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Mayor <c>version</c> de la familia de un folio base: la cotización con ese folio y las que llevan <c>{base}-vN</c>;

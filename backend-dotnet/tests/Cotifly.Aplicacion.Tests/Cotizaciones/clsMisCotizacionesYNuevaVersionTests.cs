@@ -42,7 +42,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
     [Fact]
     public async Task ElListadoResumeConCodigosLineaYUrlDelPdf()
     {
-        var cotizacion = Cotizacion("PCN-25092026-001");
+        var cotizacion = Cotizacion("PCN-DG-25092026-001");
         _cotizaciones.ListarConLineaPorUsuarioAsync(_ana, 100, Arg.Any<CancellationToken>())
             .Returns([new clsCotizacionConLinea(cotizacion, "Nacional")]);
         var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf { BaseUrl = "https://api.cotifly/" }));
@@ -54,7 +54,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         fila.Should().BeEquivalentTo(new
         {
             cotizacion.Id,
-            Folio = "PCN-25092026-001",
+            Folio = "PCN-DG-25092026-001",
             Version = 1,
             NitCliente = "900123456",
             OrigenCliente = "cliente",
@@ -65,7 +65,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
             MargenAplicado = 0.1m,
             Moneda = "COP",
             EstadoEnvio = "sin_enviar",
-            PdfUrl = "https://api.cotifly/pdfs/PCN-25092026-001.pdf",
+            PdfUrl = "https://api.cotifly/pdfs/PCN-DG-25092026-001.pdf",
         });
     }
 
@@ -91,9 +91,9 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
     [Fact]
     public async Task LosDatosDeNuevaVersionTraenLaBaseYLaSiguienteDeLaFamilia()
     {
-        var v2 = Cotizacion("PCN-25092026-001-v2", 2);
+        var v2 = Cotizacion("PCN-DG-25092026-001-v2", 2);
         _cotizaciones.ObtenerPorIdDelUsuarioAsync(v2.Id, _ana, Arg.Any<CancellationToken>()).Returns(v2);
-        _cotizaciones.ObtenerVersionMaximaAsync("PCN-25092026-001", Arg.Any<CancellationToken>()).Returns(3);
+        _cotizaciones.ObtenerVersionMaximaAsync("PCN-DG-25092026-001", Arg.Any<CancellationToken>()).Returns(3);
         _politicas.ObtenerPorIdAsync(1, Arg.Any<CancellationToken>()).Returns(clsMargenPolitica.Crear("Nacional", 0.15m).Valor);
 
         var datos = (await new clsNuevaVersionService(_cotizaciones, _politicas).ObtenerDatosAsync(_ana, v2.Id, Ct)).Valor;
@@ -101,7 +101,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         datos.Should().BeEquivalentTo(new
         {
             CotizacionOrigenId = v2.Id,
-            FolioBase = "PCN-25092026-001",
+            FolioBase = "PCN-DG-25092026-001",
             VersionSiguiente = 4,
             ClienteNombre = "Cliente SA",
             OrigenCliente = "cliente",
