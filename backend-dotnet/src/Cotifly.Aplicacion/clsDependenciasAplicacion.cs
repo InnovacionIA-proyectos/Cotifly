@@ -1,4 +1,7 @@
 using Cotifly.Aplicacion.Administracion.Services;
+using Cotifly.Aplicacion.Agente.Herramientas;
+using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
@@ -9,6 +12,7 @@ using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Cotifly.Aplicacion;
 
@@ -62,6 +66,18 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
         servicios.AddScoped<IClsMetricasService, clsMetricasService>();
+
+        // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
+        // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
+        // El IChatClient (proveedor por IA:Proveedor) lo registra Infraestructura; el validador de la respuesta final es el de
+        // paso hasta #16 (TryAdd: #16 registra el suyo).
+        servicios.AddScoped<clsContextoTurnoAgente>();
+        servicios.AddScoped<clsHerramientasCotizador>();
+        servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
+        servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaPasante>();
+        servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
+        servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();
+        servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();
 
         return servicios;
     }

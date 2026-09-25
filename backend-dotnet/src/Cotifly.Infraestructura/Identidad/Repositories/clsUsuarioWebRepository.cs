@@ -26,4 +26,14 @@ public sealed class clsUsuarioWebRepository(clsCotiflyDbContext contexto) : ICls
 
     public Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default) =>
         contexto.UsuariosWeb.FirstOrDefaultAsync(u => u.IdUsuarioExterno == idUsuarioExterno, cancellationToken);
+
+    public async Task<clsUsuarioWeb?> ObtenerPorEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        var buscado = email.Trim();
+
+        // La collation de la columna no distingue mayúsculas. Un correo repetido no identifica a nadie (ADR-011).
+        var encontrados = await contexto.UsuariosWeb.Where(u => u.Email == buscado).Take(2).ToListAsync(cancellationToken);
+        return encontrados.Count == 1 ? encontrados[0] : null;
+    }
 }

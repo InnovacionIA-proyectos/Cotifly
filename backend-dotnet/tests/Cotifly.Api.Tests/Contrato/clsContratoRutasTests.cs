@@ -3,11 +3,13 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cotifly.Api.Administracion.DTOs;
+using Cotifly.Api.Agente.DTOs;
 using Cotifly.Api.Comun;
 using Cotifly.Api.Correo.DTOs;
 using Cotifly.Api.Cotizaciones.DTOs;
 using Cotifly.Api.Identidad.DTOs;
 using Cotifly.Aplicacion.Administracion.DTOs;
+using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Correo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Identidad.Services;
@@ -28,14 +30,10 @@ namespace Cotifly.Api.Tests.Contrato;
 public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) : IClassFixture<clsCotiflyApiFactory>
 {
     /// <summary>
-    /// Operaciones del contrato que todavía no existen: <c>/web/chat</c> (agente) y <c>/chat/events</c> (Google Chat) llegan con la
-    /// parte C de #12. Cuando se implementen, esta lista debe quedar vacía (la prueba lo exige: un pendiente implementado falla).
+    /// Operaciones del contrato que todavía no existen. Vacía desde la parte C de #12 (<c>/web/chat</c> y <c>/chat/events</c>); si una
+    /// operación nueva del contrato llega antes que su endpoint, se anota aquí (la prueba falla si un pendiente ya existe).
     /// </summary>
-    public static readonly IReadOnlySet<string> PendientesParteC = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "POST /web/chat",
-        "POST /chat/events",
-    };
+    public static readonly IReadOnlySet<string> PendientesParteC = new HashSet<string>(StringComparer.Ordinal);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -135,6 +133,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(clsEnvioWebRequest), "EnvioWeb" },
         { typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio" },
         { typeof(clsTelefonoRequest), "TelefonoComercial" },
+        { typeof(clsRespuestaChat), "RespuestaChat" },
+        { typeof(clsRespuestaChatError), "RespuestaChatError" },
+        { typeof(clsMensajeWebRequest), "MensajeWeb" },
     };
 
     /// <summary>

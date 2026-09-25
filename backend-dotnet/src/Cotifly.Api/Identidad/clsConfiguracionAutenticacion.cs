@@ -36,6 +36,23 @@ public sealed class clsOpcionesLimiteAuth
 }
 
 /// <summary>
+/// Límite de peticiones de <c>POST /web/chat</c> (sección <c>LimiteChat</c>): ventana fija por comercial (claim <c>sub</c>). Es el
+/// 429 de la propia API; el límite del proveedor de IA responde 200 con <c>error: true</c> (contrato).
+/// </summary>
+public sealed class clsOpcionesLimiteChat
+{
+    public const string Seccion = "LimiteChat";
+
+    /// <summary>Turnos permitidos por comercial en cada ventana. Por defecto 20.</summary>
+    [Range(1, 100_000)]
+    public int PeticionesPorVentana { get; set; } = 20;
+
+    /// <summary>Duración de la ventana en segundos. Por defecto 60.</summary>
+    [Range(1, 3600)]
+    public int VentanaSegundos { get; set; } = 60;
+}
+
+/// <summary>
 /// Autenticación y autorización de la Api (ADR-009): <c>JwtBearer</c> sobre el access HS256 que emite
 /// <c>/api/auth/login-clientepro</c>, revocación por <c>jti</c>, respuestas <c>ErrorWeb</c> en 401/403/429, políticas por
 /// rol, <see cref="IClsContextoUsuario"/> desde los claims y límite de peticiones de <c>/api/auth/*</c>.
@@ -43,6 +60,7 @@ public sealed class clsOpcionesLimiteAuth
 public static class clsConfiguracionAutenticacion
 {
     public const string PoliticaLimiteAuth = "auth";
+    public const string PoliticaLimiteChat = "chat";
 
     /// <summary>Tolerancia de reloj al validar <c>exp</c>/<c>nbf</c>.</summary>
     public static readonly TimeSpan ToleranciaReloj = TimeSpan.FromSeconds(30);
@@ -64,6 +82,10 @@ public static class clsConfiguracionAutenticacion
 
         servicios.AddOptions<clsOpcionesLimiteAuth>()
             .BindConfiguration(clsOpcionesLimiteAuth.Seccion)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        servicios.AddOptions<clsOpcionesLimiteChat>()
+            .BindConfiguration(clsOpcionesLimiteChat.Seccion)
             .ValidateDataAnnotations()
             .ValidateOnStart();
         servicios.AddRateLimiter(ConfigurarLimite);
@@ -160,6 +182,20 @@ public static class clsConfiguracionAutenticacion
             var limite = http.RequestServices.GetRequiredService<IOptions<clsOpcionesLimiteAuth>>().Value;
             return RateLimitPartition.GetFixedWindowLimiter(
                 http.Connection.RemoteIpAddress?.ToString() ?? "sin-ip",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = limite.PeticionesPorVentana,
+                    Window = TimeSpan.FromSeconds(limite.VentanaSegundos),
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                });
+        });
+        opciones.AddPolicy(PoliticaLimiteChat, http =>
+        {
+            var limite = http.RequestServices.GetRequiredService<IOptions<clsOpcionesLimiteChat>>().Value;
+            var clave = http.User.FindFirst(clsClaimsCotifly.Sub)?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "sin-ip";
+            return RateLimitPartition.GetFixedWindowLimiter(
+                "chat:" + clave,
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = limite.PeticionesPorVentana,

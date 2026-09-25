@@ -76,6 +76,15 @@ El DDL definitivo queda en el script.
 
 Como defensa, `clsGenerarPdfService.ValidarCoherencia` rechaza con `PDF_PAYLOAD_INVALIDO` un payload cuya tarifa impresa (dada o calculada con costo y margen) no sea el `PrecioFinal` de la trazabilidad, un `PrecioFinal` que no salga de costo y margen aplicado, o filas y servicios en otra moneda que la de la cotización (HU-012.3). `Cotizaciones` guarda un solo precio: una cotización con varias tarifas distintas (varios vehículos) no puede traer `PrecioFinal` hasta que se decida cómo guardar un precio por fila.
 
+### Implementación (#12, parte C)
+
+- `clsEstadoConversacion` suma dos campos: `MargenSugerido` (el que propuso `obtener_margen`, referencia de un ajuste negociado; `MargenPolitica` queda como la política de la línea que se guarda en `Cotizaciones`) y `FuenteCosto` (fuente de `buscar_tarifa` o `manual`). `clsCandidatoCliente` suma `Bp` (nulo en prospectos) para que elegir un candidato llene el BP.
+- `clsEstadoConversacionService` (Aplicación, único que escribe el estado) aplica las salidas exitosas y reconoce en el mensaje del comercial la elección de un candidato (por NIT, nombre o posición) y la confirmación explícita ("Confirmo", "sí", "dale"...), que solo vale sobre una previsualización pendiente (`ConfirmacionPendiente`, que deja `calcular_precio`) y solo en su turno. Elegir un candidato no confirma el PDF.
+- `clsInyeccionEstadoFilter`: además de lo descrito arriba, el costo que escribió el comercial (sin Nexo, `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE`) sí llega del mensaje a `calcular_precio`; un costo de la fuente siempre gana. Sin margen resuelto, `calcular_precio` responde `PRECIO_INVALIDO` (el LLM no inventa márgenes). En `generar_pdf` se quitan también los `servicios_conexos` del payload: sus precios vendrán del costeo de Nexo (HU-005).
+- El identificador de los argumentos que inyecta el filtro no es un parámetro de las herramientas (el modelo no lo ve en el esquema): va en `KernelArguments` (`clsArgumentosHerramienta`) y, si el LLM lo manda, se pisa.
+- Persistencia: el mensaje del comercial se guarda al empezar el turno; los eventos del loop (`assistant` con `invocaciones`, `herramienta` con `resultados`) y el estado, al final, sobre la sesión releída (el candado del folio deshace su transacción y limpia el seguimiento de cambios si la creación falla). Marcas de tiempo estrictamente crecientes para el orden.
+- `chat_slot_filling.feature` reproduce el hallazgo por HTTP con SQL Server real y SAP TM de muestra: turno 1 identifica al cliente (BP 15927) y obtiene el margen de SAP con el BP aunque el LLM mande el nombre; turno 2 "Confirmo" persiste la cotización con el NIT, la línea, el margen `sap_tm` y el precio del estado aunque el payload no los traiga. Pruebas unitarias en `clsInyeccionEstadoTests` y `clsEstadoConversacionServiceTests`.
+
 ## Alternativas consideradas
 
 - **Reenviar todo el historial con tool-calls, sin estado:** sigue dependiendo de que el LLM copie bien el id, y el prompt crece con cada turno.

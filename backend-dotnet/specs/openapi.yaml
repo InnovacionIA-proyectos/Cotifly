@@ -508,8 +508,13 @@ paths:
         descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
+        Alternativa sin `Authorization` para Google Chat (ADR-011 §3, #12 parte C): el enlace
+        de la tarjeta del PDF lleva `?t=<token>`, una firma HMAC de vida corta (15 minutos por
+        defecto) sobre el archivo, el comercial y el vencimiento; solo vale para el dueño.
+        Un token alterado o vencido responde 401. El frontend sigue usando Bearer.
       security:
         - bearer: []
+        - {}
       parameters:
         - name: archivo
           in: path
@@ -517,6 +522,13 @@ paths:
           schema:
             type: string
             pattern: '^[A-Za-z0-9_-]+\.pdf$'
+        - name: t
+          in: query
+          required: false
+          description: Token del enlace firmado de Google Chat (`{usuario}.{vence}.{firma}`); con él no se exige Bearer.
+          schema:
+            type: string
+            maxLength: 200
       responses:
         '200':
           description: PDF
@@ -526,7 +538,13 @@ paths:
                 type: string
                 format: binary
         '401':
-          $ref: '#/components/responses/SesionExpirada'
+          description: Falta el token, expiró o fue revocado; o el enlace firmado está alterado o vencido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: "Inicia sesión de nuevo."
         '404':
           description: No existe o no es tuya
           content:
@@ -543,6 +561,9 @@ paths:
         Verifica el JWT de Google (audience = número de proyecto, emisor
         `chat@system.gserviceaccount.com`), responde de inmediato con un acuse y procesa
         el turno en segundo plano. La respuesta final se publica en el hilo de Chat.
+        La identidad es el correo del remitente en `UsuariosWeb.email` (ADR-011): sin cuenta se
+        responde en el hilo "Ingresa primero a Cotifly desde ClientePro." y no se cotiza. Los clics
+        en los botones de la tarjeta de previsualización (`CARD_CLICKED`) cuentan como mensaje.
       security:
         - googleChat: []
       requestBody:

@@ -1,4 +1,7 @@
 using Cotifly.Aplicacion.Administracion.Services;
+using Cotifly.Aplicacion.Agente.Herramientas;
+using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
@@ -54,6 +57,13 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsMetricasService), typeof(clsMetricasService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsAgenteRunner), typeof(clsAgenteRunner), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsContextoTurnoAgente), typeof(clsContextoTurnoAgente), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsHerramientasCotizador), typeof(clsHerramientasCotizador), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsEstadoConversacionService), typeof(clsEstadoConversacionService), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaPasante), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsProcesadorEventoChat), typeof(clsProcesadorEventoChat), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();

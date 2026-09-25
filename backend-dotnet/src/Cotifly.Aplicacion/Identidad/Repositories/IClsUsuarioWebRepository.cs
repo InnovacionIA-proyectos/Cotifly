@@ -20,4 +20,10 @@ public interface IClsUsuarioWebRepository
     /// No se usa para identificar en el login: solo para detectar un <c>NOMBREUSUARIO</c> cambiado (ADR-009).
     /// </summary>
     Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Usuario por <c>email</c> (sin distinguir mayúsculas): identidad de Google Chat (ADR-011 §2). <c>null</c> si no existe o si
+    /// el correo está repetido (no se adivina a cuál comercial pertenece).
+    /// </summary>
+    Task<clsUsuarioWeb?> ObtenerPorEmailAsync(string email, CancellationToken cancellationToken = default);
 }

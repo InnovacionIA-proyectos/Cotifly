@@ -69,4 +69,13 @@ public static class clsCodigosError
 
     /// <summary>Fallo inesperado (ej. el comercial autenticado no existe en <c>UsuariosWeb</c>).</summary>
     public const string ErrorInterno = "ERROR_INTERNO";
+
+    /// <summary>
+    /// La búsqueda de clientes (HU-005.2, endpoint de Nexo) aún no está conectada (ADR-005): el agente sigue sin cliente resuelto.
+    /// Código nuevo del backend .NET (#12).
+    /// </summary>
+    public const string ClienteBusquedaNoDisponible = "CLIENTE_BUSQUEDA_NO_DISPONIBLE";
+
+    /// <summary>El modelo pidió una herramienta que no existe (HU-003.10). Código nuevo del backend .NET (#12).</summary>
+    public const string HerramientaDesconocida = "HERRAMIENTA_DESCONOCIDA";
 }

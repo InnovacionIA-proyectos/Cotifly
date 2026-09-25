@@ -1,6 +1,6 @@
 # ADR-011 — Folio e identidad en Google Chat
 
-- **Estado:** Aceptada (folio: aprobado por Duban el 2026-09-25, implementado en #12 parte B). Los puntos 2 y 3 (identidad y PDF en Google Chat) siguen como propuesta hasta la parte C de #12.
+- **Estado:** Aceptada (folio: aprobado por Duban el 2026-09-25, implementado en #12 parte B; identidad y PDF en Google Chat: implementados en #12 parte C según esta decisión).
 - **Fecha:** 2026-09-24 (aceptación del folio: 2026-09-25)
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6). Relacionada con HU-004.4/HU-004.5, HU-005.2 y HU-010.
 
@@ -65,11 +65,17 @@
 - Pruebas: `clsFolioTests` (Dominio), `clsGeneradorFolioServiceTests` (Aplicación), `clsFolioIntegracionTests` (SQL Server 2019: 10 generaciones simultáneas del mismo comercial → 001…010 sin repetir; 10 simultáneas de dos comerciales sin NIT sin colisión; 5 versiones simultáneas → v2…v6; deshacer ante fallo) y `specs/features/folio.feature`.
 - Consumidor: `generar_pdf` del agente (parte C de #12) pide el folio aquí; `clsGenerarPdfService` sigue exigiendo el folio en la entrada y respondiendo `FOLIO_DUPLICADO` si ya existe.
 
+## Implementación (#12, parte C)
+
+- **Identidad:** `clsProcesadorEventoChat` busca el comercial con `IClsUsuarioWebRepository.ObtenerPorEmailAsync` (la collation no distingue mayúsculas; un correo repetido no identifica a nadie). Sin comercial publica "Ingresa primero a Cotifly desde ClientePro." en el hilo y no llama al agente. La sesión del hilo queda ligada al comercial: si otro escribe en ese hilo, recibe "abre un hilo nuevo".
+- **PDF:** la tarjeta del PDF lleva `{Pdf:BaseUrl}/pdfs/{folio}.pdf?t={token}`. El token es `{usuarioId}.{vence}.{firma}`, con HMAC-SHA256 sobre `archivo\nusuarioId\nvence` (`Pdf:ClaveFirmaUrl`, secreto; sin ella, clave efímera por proceso) y 15 minutos de vida (`Pdf:MinutosUrlFirmada`). `GET /pdfs/{archivo}?t=` lo acepta sin Bearer solo para el dueño (`clsDescargaPdfFirmadaService`); alterado, vencido o de otro archivo → 401; de otro comercial → 404. Con Bearer no cambia nada. `specs/openapi.yaml` documenta el parámetro `t`.
+- **Webhook:** `POST /chat/events` verifica el JWT (RS256, certificados de `chat@system.gserviceaccount.com` en caché, audiencia `GChat:ProjectNumber`), acusa de inmediato y encola; `clsWorkerEventosChat` procesa cada evento en su ámbito y publica con la cuenta de servicio (`GChat:SaJson`). Pruebas con certificados y tokens falsos (`tests/fixtures/chat/`), sin red.
+
 ## Pendientes
 
 | Pendiente | Dueño |
 |---|---|
 | ~~Aprobar el formato de folio y si el consecutivo es por comercial o global~~ | Aprobado el 2026-09-25: por comercial |
 | Si negocio quiere un `NNN` estrictamente por comercial también sin NIT, el formato necesita un segmento del comercial (hoy los folios sin NIT de comerciales distintos comparten numeración) | Duban + negocio |
-| Aprobar la regla de identidad en Google Chat | Duban + negocio |
-| Aprobar URL firmada frente a adjunto y su duración | Duban |
+| ~~Aprobar la regla de identidad en Google Chat~~ | Implementada en #12 parte C según la propuesta; negocio puede pedir otra regla (p. ej. JIT por `tblSAPUsuariosApp.EMAIL`) |
+| ~~Aprobar URL firmada frente a adjunto y su duración~~ | Implementada con URL firmada de 15 minutos (configurable: `Pdf:MinutosUrlFirmada`) |

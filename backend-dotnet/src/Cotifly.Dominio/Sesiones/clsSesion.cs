@@ -52,6 +52,16 @@ public sealed class clsSesion
     /// <summary>Identificador <c>spaceId</c>/<c>threadId</c> de una sesión de la consola web.</summary>
     public static string IdWeb(Guid sesionId) => $"{PrefijoWeb}{sesionId:D}";
 
+    /// <summary>
+    /// Identificador de una sesión de la consola web a partir del <c>sesion_id</c> que genera el cliente
+    /// (<c>^[A-Za-z0-9_-]{8,64}$</c>, contrato <c>MensajeWeb</c>; lo valida la Api): <c>web/{sesion_id}</c>.
+    /// </summary>
+    public static string IdWeb(string sesionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sesionId);
+        return PrefijoWeb + sesionId.Trim();
+    }
+
     public bool EsDe(Guid usuarioId) => UsuarioId == usuarioId;
 
     /// <summary>Registra actividad; una sesión archivada que vuelve a usarse queda activa.</summary>

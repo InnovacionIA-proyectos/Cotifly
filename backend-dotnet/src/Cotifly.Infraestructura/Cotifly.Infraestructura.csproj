@@ -19,6 +19,10 @@
     <PackageReference Include="PDFsharp-MigraDoc" />
     <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <!-- Proveedores del agente (#12 parte C, ADR-003): solo Infraestructura/IA conoce las implementaciones concretas. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="Anthropic" />
   </ItemGroup>
   <ItemGroup>
     <!--

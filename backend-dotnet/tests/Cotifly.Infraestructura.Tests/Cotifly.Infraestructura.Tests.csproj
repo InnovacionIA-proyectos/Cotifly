@@ -8,5 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <!-- Dobles de los puertos en las pruebas del agente (#12 parte C). BSD-3-Clause. -->
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
 </Project>

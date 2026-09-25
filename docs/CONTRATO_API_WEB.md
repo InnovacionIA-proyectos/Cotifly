@@ -61,7 +61,7 @@ ClientePro (ya autenticado)
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
 | `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador**, se define en HU-010.1) |
 | `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador**, se define en HU-010.1) |
-| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>` |
+| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es solo para el enlace firmado de Google Chat (ADR-011); el frontend no lo usa |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
@@ -102,7 +102,8 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 - `precio`, `margen` y `pdf` son `null` si la herramienta no se usó en el turno o terminó en error.
 - El formulario de "Nueva cotización" también usa este endpoint, igual que `chat.html`: arma un mensaje con los datos del formulario y lo envía. El progreso de pasos se deriva de `herramientas` y de qué bloques (`margen`, `precio`, `pdf`) vienen con valor. Con el tarifario de Drive retirado, el costo lo aporta el comercial o Nexo (HU-005).
 - Un fallo interno responde **200** con `error: true` (igual que Python). El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA ("Espera unos segundos y reenvía el mismo mensaje").
-- 429 es otra cosa: el límite de peticiones de la propia API de Cotifly.
+- 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
+- 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
 - 404 `{"error":"Sesión no encontrada."}` si el `sesion_id` pertenece a otro usuario.
 
@@ -144,6 +145,7 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | `/web/login` se reemplaza por `/api/auth/login-clientepro` | Login SSO desde ClientePro (HU-004) |
 | `GET /pdfs/{archivo}` pasa a exigir sesión | En Python era público y los folios son adivinables |
 | `sesion_id` queda ligada al usuario | En Python cualquier token válido podía continuar cualquier sesión |
+| `GET /pdfs/{archivo}?t=` (enlace firmado de 15 minutos) | Google Chat no envía `Authorization` al abrir un enlace (ADR-011); solo para el dueño |
 | `estado_envio` pasa a `reenviada` en el segundo envío | Bug de Python: siempre escribía `enviada` (HU-003.5). La métrica de enviadas cuenta ambos estados. |
 | Seguimiento usa `ganada`/`motivo_rechazo` | Renombrado en HU-002.2 |
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |
