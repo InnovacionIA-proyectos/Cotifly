@@ -152,16 +152,19 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 
 | Job | Qué hace | Falla si | Artefactos |
 |---|---|---|---|
-| `unitarias` | .NET de `global.json` (`actions/setup-dotnet`), restore, build Release con warnings como errores, pruebas sin `Integracion` ni `sap` | Error de build o de estilo, warning, prueba fallida | `trx-unitarias`, `cobertura-unitarias` |
-| `integracion` | Descarga `mssql/server:2019-latest`, build, pruebas `Integracion` (Testcontainers usa el Docker del runner) | Prueba fallida | `trx-integracion`, `cobertura-integracion` |
+| `unitarias` | .NET de `global.json` (`actions/setup-dotnet`), restore, build Release con warnings como errores, pruebas sin `Integracion` ni `sap` | Error de build o de estilo, warning, prueba fallida, o menos de 1300 pruebas ejecutadas según los TRX | `trx-unitarias`, `cobertura-unitarias` |
+| `integracion` | Descarga `mssql/server:2019-latest`, build, pruebas `Integracion` (Testcontainers usa el Docker del runner) | Prueba fallida, o menos de 330 pruebas ejecutadas según los TRX | `trx-integracion`, `cobertura-integracion` |
 | `cobertura` | Tras los dos anteriores: une la cobertura con ReportGenerator, publica el resumen en el job y aplica el umbral de Dominio | `Cotifly.Dominio` < 90 % de líneas | `cobertura-reporte` (HTML y Cobertura unidos) |
-| `auditoria-nuget` | `dotnet list package --vulnerable --include-transitive --format json` | Cualquier paquete vulnerable, directo o transitivo, de cualquier severidad | — |
+| `auditoria-nuget` | `dotnet list package --vulnerable --include-transitive --format json` | Cualquier paquete vulnerable, directo o transitivo, de cualquier severidad, o una auditoría incompleta (`problems` no vacío en el JSON, por ejemplo una fuente sin datos de vulnerabilidades) | — |
 | `imagen-docker` | `docker build` del `Dockerfile` con `VERSION`, `VCS_REF` y `BUILD_DATE`, y prueba de humo: el contenedor en `Development` llega a `healthy`, `/health` 200 y `/health/ready` 503 | Build fallido o sonda que no llega a `healthy` en 60 s | — |
 | `contrato-openapi` | `redocly lint specs/openapi.yaml` (Redocly CLI 2.54.2) | Errores del lint (los warnings se muestran como anotaciones) | — |
 
 - El build local y el de Docker no fallan por avisos de vulnerabilidades (NU1900–NU1904 en `WarningsNotAsErrors`): el job `auditoria-nuget` es el control estricto.
 - El workflow se valida con `actionlint` (incluye `shellcheck` de los bloques `run`): `docker run --rm -v "<repo>:/repo" -w /repo rhysd/actionlint:latest`.
 - Pendiente de ADR-007: si el CI corporativo no es GitHub Actions, el runner necesita Docker para el job `integracion`; sin Docker se corre solo `unitarias`.
+- **Mínimo de pruebas descubiertas:** las corridas filtradas usan `--ignore-exit-code 8` (proyectos que quedan con cero pruebas tras el filtro), lo que también ocultaría un filtro mal escrito que no descubra ninguna. Por eso cada job suma las pruebas ejecutadas de sus TRX (`scripts/contar-pruebas-trx.sh`) y exige un mínimo: 1300 unitarias y 330 de integración (hoy 1395 y 356). Subir los mínimos cuando crezca la suite.
+- **Filtro `paths` y protección de rama:** el workflow solo corre si el cambio toca `backend-dotnet/**`, `migrations_mssql/**` o el propio workflow. Si sus jobs se exigen como verificación obligatoria en la protección de `QA` o `main`, un PR que no toque esas rutas quedaría esperando checks que nunca corren: en ese caso exigirlos con reglas por ruta, o agregar un job liviano sin filtro que informe "no aplica".
+- **Relación con HU-006:** HU-006.4 (#28, imagen en el registry) **extiende el job `imagen-docker`** (login al registry, tags por versión, escaneo de vulnerabilidades de la imagen tipo Trivy y push) en lugar de crear otro pipeline. La prueba de humo del CI (arranque, `HEALTHCHECK`, `/health`) no reemplaza las pruebas de humo del despliegue de HU-006.8, que pueden reutilizar los casos RM de [qa/regresion-manual.md](qa/regresion-manual.md) contra el entorno desplegado.
 
 ## 8.8 Paridad con el Python
 

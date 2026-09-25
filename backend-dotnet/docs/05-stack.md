@@ -54,7 +54,7 @@ Recursos embebidos: Liberation Sans 2.1.5 (SIL Open Font License 1.1; la licenci
 | Reqnroll.xunit.v3 | 3.3.4 | BSD-3-Clause | BDD con los `.feature` de `specs/features/` |
 | PdfPig | 0.1.16 | Apache-2.0 | Lectura de los PDF generados |
 | Microsoft.Testing.Extensions.TrxReport | 2.4.0 | MIT | Reporte TRX (`--report-trx`), desde #14 |
-| Microsoft.Testing.Extensions.CodeCoverage | 18.11.2 | Microsoft Software License Terms (gratuita) | Cobertura (`--coverage`), desde #14. Excepción acotada al criterio de licencias: la preveía ADR-010 para CI, solo corre en las pruebas y no se distribuye |
+| Microsoft.Testing.Extensions.CodeCoverage | 18.11.2 | Microsoft Software License Terms (gratuita) | Cobertura (`--coverage`), desde #14. Excepción acotada al criterio de licencias: la preveía ADR-010 para CI, solo corre en las pruebas y no se distribuye. El paquete exige aceptar la licencia (`requireLicenseAcceptance`) y su cláusula 4.a permite recolectar datos de uso: el CI fija `TESTINGPLATFORM_TELEMETRY_OPTOUT` (ADR-010 §7) |
 
 **Herramientas de CI** (no son dependencias del código): ReportGenerator 5.5.11 (Apache-2.0), Redocly CLI 2.54.2 (MIT), actionlint (MIT, solo para validar el workflow en local).
 
@@ -65,4 +65,4 @@ Recursos embebidos: Liberation Sans 2.1.5 (SIL Open Font License 1.1; la licenci
 | `mcr.microsoft.com/dotnet/sdk:10.0.401-noble` | Etapa de build del `Dockerfile`; build y pruebas en local | MIT (.NET) |
 | `mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra` | Runtime de la imagen `cotifly-api` | MIT (.NET) sobre Ubuntu 24.04 mínimo |
 | `mcr.microsoft.com/mssql/server:2019-latest` | Testcontainers y entorno local | EULA de SQL Server; edición Developer, solo desarrollo y pruebas |
-| `mcr.microsoft.com/mssql-tools` | `sqlcmd` de los scripts de entorno local | EULA de Microsoft |
+| (la misma `mcr.microsoft.com/mssql/server:2019-latest`) | `sqlcmd` 18 de los scripts de entorno local (`/opt/mssql-tools18/bin/sqlcmd`); `mcr.microsoft.com/mssql-tools18` no existe en MCR | EULA de SQL Server |

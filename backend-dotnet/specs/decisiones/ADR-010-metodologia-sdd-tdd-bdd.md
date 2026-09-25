@@ -16,7 +16,7 @@ El Python tiene casos de prueba útiles que se pueden portar como datos: `tests/
 
 - `backend-dotnet/specs/openapi.yaml`: el contrato HTTP congelado, fuente de verdad (#17; llega con el PR #53, aún no está en `QA`).
   - Hoy (#8) `Cotifly.Api.Tests` parsea el yaml (sin errores de diagnóstico) y valida las respuestas reales de los endpoints implementados contra su esquema (campos obligatorios, campos permitidos, enums).
-  - La comparación contra el documento OpenAPI que genere la propia API queda pendiente para #14 (HU-003.8).
+  - La comparación contra el documento OpenAPI que genere la propia API queda pendiente para #14 (HU-003.8). **Resuelto en #14 (2026-09-25): no se compara contra un OpenAPI generado.** La deriva la cubren tres controles: el recorrido de rutas de `Cotifly.Api.Tests/Contrato/clsContratoRutasTests` (cada operación del contrato, `/api/auth/*`, `/web/*`, `/pdfs`, `/chat/events` y `/health*`, tiene su endpoint; ningún `/web/*` ni `/pdfs` queda fuera del contrato; todo `/web/*` y `/pdfs` responde 401 sin token), la validación de los cuerpos reales contra su esquema y `redocly lint` en el CI. `/api/auth/*` es anónimo y queda fuera del recorrido de 401: lo validan `clsAuthEndpointTests` y `login_clientepro.feature`/`refresh_logout.feature` por HTTP contra SQL Server real (`LoginResponse`, `UsuarioSesion` y `ErrorWeb` contra el esquema, 400/401/429, logout 204). `/chat/events` no usa el Bearer de ClientePro: lo valida `clsChatEventosEndpointTests` con los JWT de Google firmados con un certificado falso (acuse 200, 400 sin JSON, 401 con JWT ausente o inválido, formato add-on) y `google_chat.feature`.
 - `backend-dotnet/specs/features/*.feature`: los escenarios Gherkin del backlog, más los nuevos de este diseño (`chat_slot_filling`, `aislamiento_comercial`, `login_clientepro`, `refresh_logout`, entre otros).
 - `backend-dotnet/specs/decisiones/`: estas ADR.
 
@@ -65,6 +65,7 @@ Metas:
 - Solo se usan dependencias con licencia libre para uso corporativo (MIT, Apache-2.0, BSD, SIL OFL).
 - No se usan dependencias con licencia comercial condicionada a ingresos o de pago. Es el mismo criterio que descartó QuestPDF en ADR-006.
 - Por eso las aserciones usan **AwesomeAssertions**, fork Apache-2.0 de FluentAssertions. FluentAssertions 8 pasó a licencia comercial paga de Xceed.
+- **Excepción (#14): herramientas de prueba de Microsoft con licencia gratuita, no distribuidas.** Se admite `Microsoft.Testing.Extensions.CodeCoverage` (Microsoft Software License Terms, no OSI) porque es gratuita, solo corre en las pruebas y el CI, y no viaja en la imagen ni en el código entregado. Su paquete declara `requireLicenseAcceptance`: al restaurarlo se aceptan esos términos. La licencia incluye una cláusula de recolección de datos (4.a: el software puede enviar telemetría de uso a Microsoft); en el CI se fijan `DOTNET_CLI_TELEMETRY_OPTOUT` y `TESTINGPLATFORM_TELEMETRY_OPTOUT` (la licencia advierte que no todos los escenarios admiten exclusión, así que queda para revisar con seguridad de la información). La excepción no se extiende a dependencias de producción.
 
 ## Implementación en CI (#14, HU-003.8, 2026-09-25)
 

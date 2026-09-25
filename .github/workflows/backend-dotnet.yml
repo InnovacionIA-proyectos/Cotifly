@@ -39,6 +39,8 @@ concurrency:
 env:
   DOTNET_NOLOGO: 'true'
   DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  # Telemetría de Microsoft.Testing.Platform y sus extensiones (CodeCoverage, cláusula 4.a de su licencia; ADR-010 §7).
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: '1'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
   REQNROLL_TELEMETRY_ENABLED: '0'
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
@@ -87,6 +89,11 @@ jobs:
           --report-trx
           --coverage --coverage-output-format cobertura
           --coverage-settings "$GITHUB_WORKSPACE/backend-dotnet/tests/cobertura.config.xml"
+
+      # --ignore-exit-code 8 también taparía un filtro que no descubra ninguna prueba: se exige un mínimo.
+      # Subir el mínimo cuando crezca la suite (hoy 1395 unitarias).
+      - name: Pruebas descubiertas (mínimo 1300)
+        run: sh scripts/contar-pruebas-trx.sh TestResults/unitarias 1300
 
       - name: Publicar TRX
         if: always()
@@ -143,6 +150,10 @@ jobs:
           --report-trx
           --coverage --coverage-output-format cobertura
           --coverage-settings "$GITHUB_WORKSPACE/backend-dotnet/tests/cobertura.config.xml"
+
+      # Mismo control que en unitarias (hoy 356 de integración y aceptación).
+      - name: Pruebas descubiertas (mínimo 330)
+        run: sh scripts/contar-pruebas-trx.sh TestResults/integracion 330
 
       - name: Publicar TRX
         if: always()
@@ -225,6 +236,12 @@ jobs:
       - name: Paquetes vulnerables (directos y transitivos)
         run: |
           dotnet list "$SOLUCION" package --vulnerable --include-transitive --format json > vulnerables.json
+          # Una auditoría incompleta (fuente sin datos de vulnerabilidades, proyecto sin restaurar) llega en "problems".
+          jq -e '(.problems // []) | length == 0' vulnerables.json > /dev/null || {
+            echo "::error::Auditoría incompleta: dotnet list package reportó problemas"
+            jq '.problems' vulnerables.json
+            exit 1
+          }
           hallazgos=$(jq '[.projects[]?.frameworks[]? | (.topLevelPackages // []) + (.transitivePackages // []) | .[] | select(.vulnerabilities != null and (.vulnerabilities | length) > 0)] | length' vulnerables.json)
           if [ "$hallazgos" -gt 0 ]; then
             echo "::error::Paquetes NuGet con vulnerabilidades conocidas: $hallazgos"

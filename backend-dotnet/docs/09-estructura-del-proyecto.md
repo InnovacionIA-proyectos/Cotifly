@@ -22,7 +22,8 @@ backend-dotnet/
 │   ├── levantar-local.ps1       # entorno local sin compose: SQL Server + esquema + API (PowerShell)
 │   ├── levantar-local.sh        # lo mismo para Linux, macOS o Git Bash
 │   ├── verificar-cobertura.sh   # umbral de cobertura por ensamblado (lo usa el CI)
-│   └── sql/                     # SOLO desarrollo: bases, dbsolucionesti falsa, IDROLES y login cotifly_app
+│   ├── contar-pruebas-trx.sh    # mínimo de pruebas ejecutadas según los TRX (lo usa el CI)
+│   └── sql/                     # SOLO desarrollo: bases, dbsolucionesti falsa, IDROLES, login cotifly_app y verificación de permisos
 ├── specs/
 │   ├── openapi.yaml             # contrato HTTP (#17)
 │   ├── features/                # escenarios Gherkin (Reqnroll): persistencia, precio, margen, pdf, correo, auditoria,

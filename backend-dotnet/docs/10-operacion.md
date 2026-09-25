@@ -132,7 +132,7 @@ Otras decisiones abiertas:
 |---|---|---|
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
 | Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
-| Login de servicio `cotifly_app` y permisos por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
+| Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
 | Aprobación de los scripts 0002 y 0003 | Sara y scalderon-bs | ADR-008 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
@@ -145,7 +145,7 @@ Otras decisiones abiertas:
 
 | Integración | Pasos | Variables |
 |---|---|---|
-| Login desde ClientePro | 1. Login `cotifly_app` y permisos (DBA). 2. Aplicar 0002 y 0003 con `sqlcmd -I`. 3. `UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial'` (ídem `gerente_comercial`), con `sqlcmd -I`. 4. Clave JWT compartida por todas las réplicas. 5. Origen CORS del frontend | `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`, `Cors__OrigenesPermitidos__0` |
+| Login desde ClientePro | 1. Login `cotifly_app` y permisos (DBA): `GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo_cotifly TO cotifly_app` (por esquema, sin `db_datareader`/`db_datawriter`) y `SELECT` por columna sin `CLAVE` en `dbsolucionesti`; comprobarlo con `scripts/sql/dev-04-verificar-permisos.sql` adaptando la tabla de otro esquema. 2. Aplicar 0002 y 0003 con `sqlcmd -I`. 3. `UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial'` (ídem `gerente_comercial`), con `sqlcmd -I`. 4. Clave JWT compartida por todas las réplicas. 5. Origen CORS del frontend | `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`, `Cors__OrigenesPermitidos__0` |
 | Detrás de Traefik | Encabezados reenviados con la red overlay; readiness de Traefik en `/health/ready`; puerto 8080 | `ForwardedHeaders__Habilitado=true`, `ForwardedHeaders__RedesConocidas__0` |
 | Correo | Confirmar el transporte (D3), autorizar la IP del nodo en el relay, revisar SPF/DMARC | `Correo__Habilitado=true`, `Correo__SmtpRelay__Host` |
 | SAP TM export | Montar el export de solo lectura y reemplazarlo copiando con otro nombre y renombrando | `SapTm__Modo=export_json`, `SapTm__ExportPath` |

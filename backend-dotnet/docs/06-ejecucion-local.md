@@ -14,7 +14,7 @@ Contenido:
 ## 6.1 Requisitos
 
 - Docker Desktop (Windows o macOS) o Docker Engine (Linux), con unos 4 GB de memoria libres para SQL Server.
-- Imágenes que se descargan la primera vez: `mcr.microsoft.com/dotnet/sdk:10.0`, `mcr.microsoft.com/mssql/server:2019-latest` y `mcr.microsoft.com/mssql-tools`.
+- Imágenes que se descargan la primera vez: `mcr.microsoft.com/dotnet/sdk:10.0` y `mcr.microsoft.com/mssql/server:2019-latest` (esta también aporta `sqlcmd` 18).
 - No hace falta el SDK .NET 10 en el equipo (la máquina de desarrollo del equipo solo tiene el SDK 8): build, pruebas e imagen corren en contenedores.
 - En Windows, lanzar los comandos con rutas del repo desde PowerShell: las rutas con espacios se rompen en Git Bash al montar volúmenes. Los scripts de entorno local funcionan en ambos.
 
@@ -41,14 +41,15 @@ Qué hace, en orden (los dos scripts son equivalentes e idempotentes):
 | Paso | Recurso | Detalle |
 |---|---|---|
 | 1 | Red `cotifly-local` | Red de Docker donde la API alcanza a SQL Server por nombre |
-| 2 | Contenedor `cotifly-local-sql` | `mcr.microsoft.com/mssql/server:2019-latest` (edición Developer), volumen `cotifly-local-sqldata`, puerto del host `14333` para SSMS o Azure Data Studio. Espera hasta que responda |
+| 2 | Contenedor `cotifly-local-sql` | `mcr.microsoft.com/mssql/server:2019-latest` (edición Developer), volumen `cotifly-local-sqldata`, puerto `14333` publicado **solo en `127.0.0.1`** para SSMS o Azure Data Studio. Espera hasta que responda |
 | 3 | Bases | `scripts/sql/dev-01-bases.sql`: crea `dbTarifario_Nexo_Pruebas` y `dbsolucionesti` si no existen |
-| 4 | Esquema `dbo_cotifly` | `migrations_mssql/0001` solo si el esquema no existe (después del 0002 el 0001 no se re-ejecuta), luego `0002` y `0003` (idempotentes). Con `sqlcmd -b -I` desde `mcr.microsoft.com/mssql-tools` |
+| 4 | Esquema `dbo_cotifly` | `migrations_mssql/0001` solo si el esquema no existe (después del 0002 el 0001 no se re-ejecuta), luego `0002` y `0003` (idempotentes). Con `sqlcmd -b -I -C` 18 (`/opt/mssql-tools18/bin/sqlcmd`, dentro de la misma imagen de SQL Server 2019) |
 | 5 | `dbsolucionesti` falsa | `scripts/sql/dev-02-identidad.sql`: las tres tablas del login con sus tipos reales y los usuarios de prueba (tabla abajo) |
-| 6 | Roles y login | `scripts/sql/dev-03-roles-y-login.sql`: `Roles.idRolExterno` = 34 (comercial) y 35 (gerente comercial); login `cotifly_app` con `db_datareader` y `db_datawriter` en `dbTarifario_Nexo_Pruebas` y `SELECT` por columna (sin `CLAVE`) en `dbsolucionesti`: la misma receta que se pide al DBA |
+| 6 | Roles y login | `scripts/sql/dev-03-roles-y-login.sql`: `Roles.idRolExterno` = 34 (comercial) y 35 (gerente comercial); login `cotifly_app` con `SELECT`, `INSERT`, `UPDATE`, `DELETE` y `EXECUTE` sobre el **esquema** `dbo_cotifly` (sin `db_datareader` ni `db_datawriter`; si una versión anterior los dejó, los retira) y `SELECT` por columna (sin `CLAVE`) en `dbsolucionesti`: la misma receta que se pide al DBA |
+| 6b | Verificación de permisos | `scripts/sql/dev-04-verificar-permisos.sql`, **conectado como `cotifly_app`**: debe leer y escribir en `dbo_cotifly`, leer las vistas de métricas y tomar un `sp_getapplock`; debe recibir permiso denegado al leer o escribir `dbo.tblOtraAplicacionDev` (tabla ficticia de `dev-01` que representa a otra aplicación de la base compartida) y al leer `CLAVE`. Si algo no se cumple, el script se detiene |
 | 7 | Imagen | `cotifly-api:dev`; se construye si no existe o con `-Construir` / `--construir` |
-| 8 | Variables | `backend-dotnet/.env.local` (no se versiona): se genera la primera vez con las cadenas a `cotifly-local-sql` con `cotifly_app`, una clave JWT aleatoria, CORS para `http://localhost:4200`, `Pdf__BaseUrl` y el correo deshabilitado. No se sobrescribe: se le pueden agregar variables de `.env.example` (por ejemplo `IA__Proveedor`, `IA__Modelo`, `IA__ApiKey` para probar el agente). Con `-EnvFile` / `--env-file` se usa otro archivo |
-| 9 | Contenedor `cotifly-local-api` | `docker run --env-file ... -v cotifly-local-pdfs:/data/pdfs -p 8080:8080` y espera a que `GET /health/ready` responda 200 |
+| 8 | Variables | `backend-dotnet/.env.local` (no se versiona): se genera la primera vez con las cadenas a `cotifly-local-sql` con `cotifly_app`, una clave JWT aleatoria, CORS para `http://localhost:4200`, `Pdf__BaseUrl` y el correo deshabilitado. El `.sh` lo deja con permisos `600` (en Windows hereda los permisos de la carpeta del usuario). No se sobrescribe: se le pueden agregar variables de `.env.example` (por ejemplo `IA__Proveedor`, `IA__Modelo`, `IA__ApiKey` para probar el agente). Con `-EnvFile` / `--env-file` se usa otro archivo |
+| 9 | Contenedor `cotifly-local-api` | `docker run --env-file ... -v cotifly-local-pdfs:/data/pdfs -p 127.0.0.1:8080:8080` (solo loopback) y espera a que `GET /health/ready` responda 200 |
 
 Usuarios de prueba de la `dbsolucionesti` falsa:
 
@@ -66,13 +67,13 @@ $r = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/auth/login-cl
 Invoke-RestMethod -Uri http://localhost:8080/web/mis-cotizaciones -Headers @{ Authorization = "Bearer $($r.access)" }
 ```
 
-Variables opcionales de los scripts: `COTIFLY_SQL_SA_PASSWORD` y `COTIFLY_SQL_APP_PASSWORD` (contraseñas de desarrollo por defecto), `COTIFLY_PUERTO_API` (8080), `COTIFLY_PUERTO_SQL` (14333), `COTIFLY_API_IMAGEN` (`cotifly-api:dev`), `COTIFLY_SQL_IMAGEN` y `COTIFLY_SQLCMD_IMAGEN`. Si se cambia una contraseña después de generar `.env.local`, borrar ese archivo para regenerarlo.
+Variables opcionales de los scripts: `COTIFLY_SQL_SA_PASSWORD` y `COTIFLY_SQL_APP_PASSWORD` (contraseñas de desarrollo por defecto), `COTIFLY_PUERTO_API` (8080), `COTIFLY_PUERTO_SQL` (14333), `COTIFLY_API_IMAGEN` (`cotifly-api:dev`), `COTIFLY_SQL_IMAGEN`, `COTIFLY_SQLCMD_IMAGEN` (por defecto la misma de SQL Server) y `COTIFLY_SQLCMD_RUTA` (`/opt/mssql-tools18/bin/sqlcmd`). `COTIFLY_SQL_APP_PASSWORD` no admite comillas, punto y coma ni espacios (romperían el literal `N'...'` del `CREATE LOGIN` o la cadena de conexión): el script la rechaza antes de empezar. `mcr.microsoft.com/mssql-tools18` no existe como imagen en MCR y `mcr.microsoft.com/mssql-tools` (sqlcmd 13, 2017) está obsoleta, por eso se usa el `sqlcmd` 18 que ya trae la imagen de SQL Server. Si se cambia una contraseña después de generar `.env.local`, borrar ese archivo para regenerarlo.
 
 Sin `IA__Proveedor`, `POST /web/chat` responde 200 `{texto, error: true}` (agente sin configurar). El correo queda deshabilitado (`CORREO_DESHABILITADO`); para probar el envío hace falta un relay SMTP alcanzable desde el contenedor.
 
 Los scripts solo crean y borran recursos con el prefijo `cotifly-local-` (nunca `docker prune`).
 
-Verificado el 2026-09-25 (#14) con ambos scripts, desde cero y repetidos: esquema aplicado, `/health/ready` 200, login de `APEREZ`, `LGOMEZ` y `KCANO`, 401 de `JCONSULTA`, `mis-cotizaciones`, teléfono, administración de líneas (403 para el comercial, 200 para el gerente), métricas y `/web/chat` sin proveedor, todo con el login `cotifly_app` de permisos mínimos.
+Verificado el 2026-09-25 (#14, tras la revisión de seguridad) con ambos scripts, desde cero y repetidos, con la imagen del código integrado: esquema aplicado, verificación de permisos en verde (y en rojo al darle a `cotifly_app` `db_datareader` a propósito), puertos solo en `127.0.0.1`, `/health/ready` 200, login de `APEREZ`, `LGOMEZ` y `KCANO`, 401 de `JCONSULTA`, `mis-cotizaciones`, teléfono, administración de líneas (lectura y edición del gerente), métricas (vistas), logout, y un turno completo de `/web/chat` hasta `generar_pdf` con un proveedor de IA simulado (folios `PCN-AP-25092026-001` y `-002` con el candado por iniciales, PDF descargado), todo con `cotifly_app` de permisos mínimos. Una contraseña con comilla simple o punto y coma se rechaza (código 2).
 
 ## 6.3 Compilar y probar en el contenedor del SDK
 
@@ -136,7 +137,7 @@ curl http://localhost:8080/health
 
 Levantar la API contra un SQL Server local de pruebas: pasar `-e ConnectionStrings__Cotifly="Server=host.docker.internal,1433;Database=dbTarifario_Nexo_Pruebas;User Id=...;Password=...;TrustServerCertificate=True"` al `docker run` anterior y consultar `curl http://localhost:8080/health/ready`.
 
-Para un SQL Server local con el esquema y los usuarios de prueba ya listos, usar el entorno de [6.2](#62-entorno-local-completo-con-sql-server) (puerto del host `14333`).
+Para un SQL Server local con el esquema y los usuarios de prueba ya listos, usar el entorno de [6.2](#62-entorno-local-completo-con-sql-server) (puerto `14333` en `127.0.0.1`).
 
 ## 6.6 Abrir la solución en un IDE
 
