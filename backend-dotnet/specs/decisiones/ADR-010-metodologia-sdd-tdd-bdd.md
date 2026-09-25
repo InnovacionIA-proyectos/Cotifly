@@ -66,6 +66,13 @@ Metas:
 - No se usan dependencias con licencia comercial condicionada a ingresos o de pago. Es el mismo criterio que descartó QuestPDF en ADR-006.
 - Por eso las aserciones usan **AwesomeAssertions**, fork Apache-2.0 de FluentAssertions. FluentAssertions 8 pasó a licencia comercial paga de Xceed.
 
+## Implementación en CI (#14, HU-003.8, 2026-09-25)
+
+- `Microsoft.Testing.Extensions.TrxReport` 2.4.0 (MIT) y `Microsoft.Testing.Extensions.CodeCoverage` 18.11.2 se agregaron a CPM y a todos los proyectos de prueba (`tests/Directory.Build.props`). CodeCoverage tiene licencia gratuita de Microsoft (no MIT): se acepta como excepción acotada al punto 7 porque este ADR ya la preveía, solo corre en las pruebas y no se distribuye en la imagen.
+- Cobertura solo de los ensamblados de `src/` (`tests/cobertura.config.xml`), unida con ReportGenerator. **Umbral obligatorio: `Cotifly.Dominio` ≥ 90 % de líneas** (el job `cobertura` falla por debajo); las demás capas solo se reportan. Medido el 2026-09-25: Dominio 99,3 %, total 97,5 % de líneas.
+- La comparación contra un documento OpenAPI generado por la propia API (punto 1) no se implementa: el recorrido de rutas de `Cotifly.Api.Tests` (toda operación del contrato expuesta, ningún `/web/*` fuera del contrato) y la validación de cada respuesta contra su esquema cubren la deriva sin agregar un generador de OpenAPI. El CI suma `redocly lint`.
+- Detalle en `backend-dotnet/docs/08-testing.md` §8.6 y §8.7.
+
 ## Alternativas consideradas
 
 - **Código primero, tests después:** con paridad obligatoria, el riesgo es descubrir las diferencias tarde, en QA.

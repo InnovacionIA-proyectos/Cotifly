@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Cotifly.Api.Tests.Comun;
 
-/// <summary>Traducción de errores de los casos de uso a HTTP en <c>/web/*</c>: tabla "Para #12" del README (§2) y el contrato.</summary>
+/// <summary>Traducción de errores de los casos de uso a HTTP en <c>/web/*</c>: tabla "Para #12" de docs/07-api.md (§7.4) y el contrato.</summary>
 public sealed class clsRespuestasWebTests
 {
     [Theory]

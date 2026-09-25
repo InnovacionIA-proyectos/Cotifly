@@ -61,7 +61,7 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 - **Fuentes:** `clsResolvedorFuentes` (`IFontResolver`) sirve Liberation Sans 2.1.5 (4 caras, SIL OFL 1.1, licencia en `licencias/LiberationSans-OFL.txt` de la aplicación publicada) para cualquier familia pedida. Se registra una vez por proceso en `GlobalFontSettings` al crear el generador (singleton). Las listas usan viñetas propias (`•` + tabulación y sangría francesa), no las de MigraDoc.
 - **Imágenes:** recursos embebidos con nombres lógicos fijos (`Cotifly.Pdf.Imagenes.*`), entregados a MigraDoc como `base64:` (sin archivos temporales). Las 7 imágenes por línea se renombraron a ASCII y se redujeron de PNG de ~2 MB a JPEG de 1200 px (calidad 88): en el PDF se ven a 122 mm (~250 ppp).
 - **Datos:** el celular de la firma sale de `UsuariosWeb.telefono` (confirmado con `IClsTelefonoComercialService`); nombre y correo, de `UsuariosWeb`; del payload solo el cargo. Los textos se limpian de caracteres de control (`clsTextoSeguro`) y se insertan como texto.
-- **Verificación en la imagen:** una sonda desechable renderizó los 3 casos dentro de `cotifly-api:dev` (chiseled-extra, usuario `app`, sin fontconfig ni fuentes del sistema) con los ensamblados de `/app`: 3/3/2 páginas y solo Liberation Sans embebida (README §3).
+- **Verificación en la imagen:** una sonda desechable renderizó los 3 casos dentro de `cotifly-api:dev` (chiseled-extra, usuario `app`, sin fontconfig ni fuentes del sistema) con los ensamblados de `/app`: 3/3/2 páginas y solo Liberation Sans embebida (`docs/03-infraestructura.md` §3.1).
 
 **Cobertura del layout frente a `armar_cotizacion.py` / `armar_multi.py`:**
 

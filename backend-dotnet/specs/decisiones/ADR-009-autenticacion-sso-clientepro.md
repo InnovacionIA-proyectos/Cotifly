@@ -143,5 +143,5 @@ Mitigaciones a acordar con ClientePro (scalderon-bs), en orden de preferencia:
 | Procedimiento o pantalla para revisar un acceso rechazado por `rol_externo_cambio` / `nombre_usuario_cambio` | Negocio (HU-010) |
 | Regional desde `DWCubosEBSSAP.DimEjecutivo` (`ubicacion` sale `null` mientras tanto) | #12 parte B / DBA |
 | ~~`UseForwardedHeaders` con los proxies de Traefik para que el límite sea por IP real~~ | Implementado en #12 parte B (`ForwardedHeaders:*`, apagado por defecto); falta activarlo en Dokploy con la red de Traefik (HU-006.6) |
-| `sqlcmd` exige `-I` (QUOTED_IDENTIFIER ON) para el `UPDATE dbo_cotifly.Roles SET idRolExterno = ...` por el índice filtrado | DBA (documentado en el encabezado del 0002 y en el README) |
+| `sqlcmd` exige `-I` (QUOTED_IDENTIFIER ON) para el `UPDATE dbo_cotifly.Roles SET idRolExterno = ...` por el índice filtrado | DBA (documentado en el encabezado del 0002 y en `docs/03-infraestructura.md` y `docs/10-operacion.md`) |
 | Dominios de ClientePro para CORS por ambiente | Sara (#12 parte B) |

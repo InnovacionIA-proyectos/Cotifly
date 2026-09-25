@@ -9,7 +9,7 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// <c>/web/*</c> de la consola del comercial por HTTP contra la base real (#12 parte B): respuestas que cumplen
 /// <c>specs/openapi.yaml</c> (snake_case), aislamiento A/B en cada endpoint (404 indistinguible), validaciones 400 y la tabla de
-/// códigos HTTP "Para #12" del README.
+/// códigos HTTP "Para #12" de docs/07-api.md.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]

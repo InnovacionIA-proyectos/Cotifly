@@ -8,7 +8,7 @@ namespace Cotifly.Aplicacion.Pdf.Services;
 /// </summary>
 /// <remarks>
 /// No depende de ICU ni de la cultura del proceso: <c>ToString("C0", es-CO)</c> con ICU da <c>$ 3.294.798</c> (con espacio,
-/// README §3) y sin ICU cambiaría otra vez. Aquí se agrupa con la cultura invariante (datos fijos del runtime) y se cambia
+/// docs/03-infraestructura.md, §3.1) y sin ICU cambiaría otra vez. Aquí se agrupa con la cultura invariante (datos fijos del runtime) y se cambia
 /// la coma por punto. Redondeo a pesos half-to-even sobre <c>decimal</c> (el <c>round</c> del Python, ADR-010 §6).
 /// </remarks>
 public static class clsFormatoMoneda

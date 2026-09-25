@@ -11,14 +11,14 @@
 #
 # Las pruebas NO corren aquí: la imagen se construye desde src/ únicamente (tests/ está en
 # .dockerignore) y las pruebas de integración necesitan el socket de Docker (Testcontainers),
-# que no existe dentro de "docker build". Corren aparte, en CI o con el comando del README §6/§8.
+# que no existe dentro de "docker build". Corren aparte, en CI o con los comandos de docs/06-ejecucion-local.md y docs/08-testing.md.
 #
 # Tags fijos (reproducibles). Para actualizar el parche de .NET:
 #   1. Ver el último parche en https://github.com/dotnet/core/blob/main/release-notes/10.0/releases.json
 #      (o `docker pull mcr.microsoft.com/dotnet/sdk:10.0` y leer DOTNET_SDK_VERSION / ASPNET_VERSION
 #      con `docker image inspect`).
 #   2. Cambiar SDK_VERSION y ASPNET_VERSION juntos (el SDK 10.0.4xx trae el runtime 10.0.N; usar ese N).
-#   3. Reconstruir, correr las pruebas y verificar HEALTHCHECK (README §6).
+#   3. Reconstruir, correr las pruebas y verificar HEALTHCHECK (docs/06-ejecucion-local.md, §6.4).
 # =============================================================================
 ARG SDK_VERSION=10.0.401-noble
 ARG ASPNET_VERSION=10.0.12-noble-chiseled-extra
@@ -101,7 +101,7 @@ ENV ASPNETCORE_HTTP_PORTS=8080 \
 # Binarios con dueño root (0:0) y /app creado por COPY (no por WORKDIR, que con la imagen chiseled
 # lo crearía con dueño app): el usuario app puede leerlos pero no borrarlos ni reemplazarlos.
 COPY --from=build --chown=0:0 /app/publish /app/
-# Única carpeta escribible: PDFs (montar un volumen aquí; ver README §6).
+# Única carpeta escribible: PDFs (montar un volumen aquí; ver docs/06-ejecucion-local.md).
 COPY --from=build --chown=1654:1654 /data/pdfs /data/pdfs
 WORKDIR /app
 

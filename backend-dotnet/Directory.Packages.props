@@ -58,5 +58,12 @@
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <!-- Extracción de texto de los PDF generados, solo en pruebas (#11). Licencia Apache-2.0. -->
     <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <!--
+      Reportes de CI (#14, ADR-010): TRX y cobertura sobre Microsoft.Testing.Platform, en la misma línea 2.4.x de MTP que trae xunit.v3.
+      TrxReport: MIT. CodeCoverage: licencia gratuita de Microsoft (Microsoft Software License Terms); solo se usa en las pruebas y no
+      se distribuye en la imagen. Es una excepción acotada al criterio de ADR-010 §7, que ya la preveía para CI.
+    -->
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.4.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
   </ItemGroup>
 </Project>

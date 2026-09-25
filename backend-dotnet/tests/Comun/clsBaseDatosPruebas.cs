@@ -15,7 +15,7 @@ namespace Cotifly.Pruebas.Comun;
 /// </summary>
 /// <remarks>
 /// Dentro del contenedor del SDK se necesita el socket de Docker montado y
-/// <c>TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal</c> (ver README §8).
+/// <c>TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal</c> (ver docs/08-testing.md, §8.5).
 /// </remarks>
 public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 {

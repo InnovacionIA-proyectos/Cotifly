@@ -15,6 +15,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 | [ADR-009](ADR-009-autenticacion-sso-clientepro.md) | Autenticación: patrón "Login SSO — Cliente Pro" con verificación doble | Aceptada (D8 resuelto el 2026-09-25; IDROLES reales y revisión del 0002 pendientes) | #7 · #12 (HU-003.6), #17 |
 | [ADR-010](ADR-010-metodologia-sdd-tdd-bdd.md) | Metodología: SDD, TDD y BDD | Aceptada | #7 · HU-003.2 a HU-003.10 |
 | [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Aceptada (folio, 2026-09-25; identidad y PDF en Google Chat implementados en #12 parte C) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
+| [ADR-012](ADR-012-integraciones-diferidas-sheets-y-s3.md) | Integraciones diferidas: Google Sheets y almacenamiento S3 | Pendiente | #13 (HU-003.7), HU-006.6 |
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 
