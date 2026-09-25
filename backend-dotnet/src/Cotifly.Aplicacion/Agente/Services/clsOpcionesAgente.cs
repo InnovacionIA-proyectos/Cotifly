@@ -38,4 +38,11 @@ public sealed class clsOpcionesSesiones
     /// <summary>Minutos entre barridos de sesiones inactivas; 0 lo desactiva. Por defecto 60 (el Python: 3600 s).</summary>
     [Range(0, 24 * 60)]
     public int BarridoMinutos { get; set; } = 60;
+
+    /// <summary>
+    /// Segundos que un turno espera a que termine otro de la misma sesión antes de responder "todavía estoy respondiendo"
+    /// (candado por sesión). Por defecto 3.
+    /// </summary>
+    [Range(0, 60)]
+    public int EsperaTurnoSegundos { get; set; } = 3;
 }

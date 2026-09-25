@@ -77,6 +77,11 @@ public sealed partial class clsGenerarPdfService(
             return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, $"Sin mapeo ni política para la línea '{clsTextoSeguro.LimpiarLinea(payload.LineaNegocio)}'.");
         }
 
+        if (!politica.Activa)
+        {
+            return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
+        }
+
         if (await cotizaciones.ExisteFolioAsync(folio!, cancellationToken))
         {
             return FolioDuplicado(folio!);

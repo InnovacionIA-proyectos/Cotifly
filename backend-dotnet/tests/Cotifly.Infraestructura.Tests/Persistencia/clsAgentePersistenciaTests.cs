@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
@@ -92,4 +93,29 @@ public sealed class clsAgentePersistenciaTests(clsBaseDatosPruebas baseDatos) : 
         leida!.EstadoAgente.Should().Be(estado);
         leida.EstadoAgente!.CandidatosCliente[0].Bp.Should().Be("700");
     }
+
+    // Riesgo 4 (auditoría de #12): un turno a la vez por sesión, entre conexiones (y réplicas), con sp_getapplock de sesión.
+    [Fact]
+    public async Task ElCandadoDeLaSesionNoSeTomaDosVecesYSeLiberaAlDesecharlo()
+    {
+        var candado = await ConsultarAsync(s => Task.FromResult(s.GetRequiredService<IClsCandadoSesion>()));
+        var hilo = $"web/candado-{Guid.NewGuid():N}";
+
+        var primero = await candado.IntentarTomarAsync(hilo, hilo, TimeSpan.Zero, Ct);
+        var segundo = await candado.IntentarTomarAsync(hilo, hilo, TimeSpan.FromMilliseconds(300), Ct);
+        var otraSesion = await candado.IntentarTomarAsync(hilo + "-2", hilo + "-2", TimeSpan.Zero, Ct);
+        await primero!.DisposeAsync();
+        var tercero = await candado.IntentarTomarAsync(hilo, hilo, TimeSpan.Zero, Ct);
+
+        primero.Should().NotBeNull();
+        segundo.Should().BeNull("otro turno de la misma sesión sigue en curso");
+        otraSesion.Should().NotBeNull("otra sesión no se bloquea");
+        tercero.Should().NotBeNull("al liberar, la sesión queda libre");
+        await otraSesion!.DisposeAsync();
+        await tercero!.DisposeAsync();
+    }
+
+    [Fact]
+    public void UnRecursoLargoSeAcortaConSuHash() =>
+        clsCandadoSesionSql.Recurso(new string('s', 128), new string('t', 128)).Length.Should().BeLessThanOrEqualTo(255);
 }

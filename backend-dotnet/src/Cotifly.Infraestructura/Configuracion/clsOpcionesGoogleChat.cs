@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Configuracion;
@@ -62,13 +63,32 @@ public sealed class clsOpcionesGoogleChat
     public int CapacidadCola { get; set; } = 200;
 }
 
-/// <summary>Valida <see cref="clsOpcionesGoogleChat"/>: número de proyecto numérico, URLs absolutas y cuenta de servicio legible.</summary>
-public sealed class clsValidadorOpcionesGoogleChat : IValidateOptions<clsOpcionesGoogleChat>
+/// <summary>
+/// Valida <see cref="clsOpcionesGoogleChat"/>: número de proyecto numérico, URLs absolutas y cuenta de servicio legible. En
+/// Production además (auditoría de #12, F2): <c>GChat:VerificarJwt=false</c> no arranca, y con Google Chat configurado
+/// (<c>GChat:ProjectNumber</c> o <c>GChat:SaJson</c>) <c>Pdf:ClaveFirmaUrl</c> es obligatoria. La regla va atada a Google Chat porque es
+/// el único que emite URLs firmadas del PDF (la tarjeta del PDF): sin Google Chat nadie las emite y una clave efímera no abre nada.
+/// </summary>
+public sealed class clsValidadorOpcionesGoogleChat(IHostEnvironment entorno, IOptions<clsOpcionesFirmaUrlPdf> firmaUrl) : IValidateOptions<clsOpcionesGoogleChat>
 {
     public ValidateOptionsResult Validate(string? name, clsOpcionesGoogleChat options)
     {
         ArgumentNullException.ThrowIfNull(options);
         var errores = new List<string>();
+        if (entorno.IsProduction())
+        {
+            if (!options.VerificarJwt)
+            {
+                errores.Add("GChat:VerificarJwt=false no se permite en Production: el webhook aceptaría eventos sin la firma de Google.");
+            }
+
+            var chatConfigurado = !string.IsNullOrWhiteSpace(options.ProjectNumber) || !string.IsNullOrWhiteSpace(options.SaJson);
+            if (chatConfigurado && string.IsNullOrWhiteSpace(firmaUrl.Value.ClaveFirmaUrl))
+            {
+                errores.Add("Pdf:ClaveFirmaUrl es obligatoria en Production con Google Chat configurado (firma los enlaces del PDF; variable Pdf__ClaveFirmaUrl).");
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(options.ProjectNumber) && !options.ProjectNumber.Trim().All(char.IsAsciiDigit))
         {
             errores.Add("GChat:ProjectNumber debe ser el número (solo dígitos) del proyecto de Google Cloud de la app de Chat.");

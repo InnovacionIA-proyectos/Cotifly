@@ -26,6 +26,12 @@ public sealed class clsContextoTurnoAgente
     /// </summary>
     public bool ConfirmadoEnEsteTurno { get; private set; }
 
+    /// <summary>
+    /// Mensajes del comercial en la conversación (historial + el actual): con una confirmación, los destinatarios de un correo deben
+    /// salir de aquí, no de datos externos (auditoría de #12, riesgo 5).
+    /// </summary>
+    public IReadOnlyList<string> MensajesDelComercial { get; private set; } = [];
+
     public bool Iniciado => UsuarioId != Guid.Empty;
 
     /// <summary>Estado después de aplicar la salida de una herramienta (lo llama el runner).</summary>
@@ -35,8 +41,10 @@ public sealed class clsContextoTurnoAgente
         Estado = estado;
     }
 
-    public void Iniciar(Guid usuarioId, string spaceId, string threadId, string mensaje, clsEstadoConversacion estado, bool confirmado)
+    public void Iniciar(
+        Guid usuarioId, string spaceId, string threadId, string mensaje, clsEstadoConversacion estado, bool confirmado, IReadOnlyList<string>? mensajesDelComercial = null)
     {
+        MensajesDelComercial = mensajesDelComercial ?? [mensaje ?? string.Empty];
         ArgumentNullException.ThrowIfNull(estado);
         UsuarioId = usuarioId;
         SpaceId = spaceId;

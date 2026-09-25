@@ -37,3 +37,22 @@ public sealed class clsRespuestaAgenteInvalidaException : Exception
     {
     }
 }
+
+/// <summary>Otro turno de la misma sesión sigue en curso (<c>IClsCandadoSesion</c>): el canal responde el error controlado.</summary>
+public sealed class clsTurnoEnCursoException : Exception
+{
+    public clsTurnoEnCursoException()
+        : base("Hay otro turno en curso en esta sesión.")
+    {
+    }
+
+    public clsTurnoEnCursoException(string message)
+        : base(message)
+    {
+    }
+
+    public clsTurnoEnCursoException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

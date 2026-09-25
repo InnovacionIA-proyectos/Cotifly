@@ -47,11 +47,11 @@ ClientePro (ya autenticado)
 | Método y ruta | Rol | Resumen |
 |---|---|---|
 | `POST /api/auth/login-clientepro` | público | Emite la sesión |
-| `POST /api/auth/refresh` | público | Rota el refresh token |
-| `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 |
+| `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
+| `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
-| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida |
 | `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
@@ -65,7 +65,7 @@ ClientePro (ya autenticado)
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
-"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional.
+"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
 
 **Folio** (ADR-011, aprobado el 2026-09-25): lo genera siempre el servidor, `PCN-[{nitCliente}-]DDMMAAAA-{NNN}[-vN]`: fecha de Bogotá, NIT solo con dígitos cuando la cotización lo tiene, `NNN` consecutivo diario del comercial (`001`…`999`) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-25092026-001`, `PCN-900123456-25092026-002`, `PCN-900123456-25092026-002-v2`. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
@@ -106,6 +106,7 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 - 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
 - 404 `{"error":"Sesión no encontrada."}` si el `sesion_id` pertenece a otro usuario.
+- `cotizacion_origen_id` (UUID, opcional): "Nueva versión" desde el frontend. El agente parte del cliente, la línea y los números de esa cotización y el PDF sale como `{folio base}-vN`. 404 `{"error":"Cotización no encontrada o no es tuya."}` si no es del comercial; 400 `{"error":"cotizacion_origen_id inválido"}` si no es un UUID. Solo siembra el estado en una sesión nueva o sin cotización en curso (se puede reenviar en cada mensaje sin reiniciar el avance); lo habitual es abrir un `sesion_id` nuevo para la nueva versión.
 
 ### Ciclo de vida de `sesion_id`
 

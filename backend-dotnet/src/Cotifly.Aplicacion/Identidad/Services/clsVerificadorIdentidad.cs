@@ -13,7 +13,11 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 public sealed record clsIdentidadVerificada(clsUsuarioWeb Usuario, RolInterno Rol, bool EsNuevo);
 
 /// <summary>Resultado de la verificación: la identidad o el motivo del rechazo, más la regla de rol aplicada.</summary>
-public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad, string Motivo, string? Regla)
+/// <param name="UsuarioIdRechazado">
+/// Id interno (<c>UsuariosWeb.id</c>) del usuario rechazado, cuando ya existe (p. ej. <c>rol_externo_cambio</c>): va a la auditoría para que
+/// el gerente o el administrador lo revise (auditoría de #12).
+/// </param>
+public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad, string Motivo, string? Regla, Guid? UsuarioIdRechazado = null)
 {
     public bool EsValida => Identidad is not null;
 }
@@ -35,7 +39,7 @@ public sealed class clsVerificadorIdentidad(
     IClsAlmacenIdentidadExterno almacen,
     IClsRolRepository roles,
     IClsUsuarioWebRepository usuarios,
-    ILogger<clsVerificadorIdentidad> logger)
+    ILogger<clsVerificadorIdentidad> logger) : IClsVerificadorIdentidad
 {
     /// <param name="idUsuario">Identidad a revalidar (como <c>NOMBREUSUARIO</c> y, si no, como <c>ID</c>).</param>
     /// <param name="permitirAlta"><c>true</c> en el login (JIT); <c>false</c> en el refresh (el usuario ya debe existir).</param>
@@ -97,18 +101,18 @@ public sealed class clsVerificadorIdentidad(
         if (porNombre.IdUsuarioExterno is { } vinculado && vinculado != externo.IdUsuarioExterno)
         {
             // El nombre ahora pertenece a otra fila del almacén.
-            return Rechazo(clsMotivosAcceso.IdentidadInconsistente, regla);
+            return Rechazo(clsMotivosAcceso.IdentidadInconsistente, regla, porNombre.Id);
         }
 
         var asignados = await roles.ListarRolesAsignadosAsync(porNombre.Id, cancellationToken);
         if (asignados.Count == 0)
         {
-            return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla);
+            return Rechazo(clsMotivosAcceso.SinAsignacionActiva, regla, porNombre.Id);
         }
 
         if (asignados.Count != 1 || asignados[0] != rol)
         {
-            return Rechazo(clsMotivosAcceso.RolExternoCambio, regla);
+            return Rechazo(clsMotivosAcceso.RolExternoCambio, regla, porNombre.Id);
         }
 
         if (porNombre.IdUsuarioExterno is null)
@@ -144,5 +148,14 @@ public sealed class clsVerificadorIdentidad(
         };
     }
 
-    private static clsVerificacionIdentidad Rechazo(string motivo, string? regla = null) => new(null, motivo, regla);
+    private static clsVerificacionIdentidad Rechazo(string motivo, string? regla = null, Guid? usuarioId = null) => new(null, motivo, regla, usuarioId);
+}
+
+/// <summary>
+/// Verificación doble de la identidad (login, refresh y, desde #12 parte C, cada turno de Google Chat). Interfaz para poder
+/// simularla en las pruebas del procesamiento de Google Chat.
+/// </summary>
+public interface IClsVerificadorIdentidad
+{
+    Task<clsVerificacionIdentidad> VerificarAsync(string idUsuario, bool permitirAlta, DateTimeOffset ahora, CancellationToken cancellationToken = default);
 }

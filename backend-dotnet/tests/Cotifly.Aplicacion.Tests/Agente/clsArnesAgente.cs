@@ -12,6 +12,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.DTOs;
+using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -72,7 +73,16 @@ internal sealed class clsArnesAgente
                 var folio = clsFolio.Crear(new DateOnly(2026, 9, 24), 1, ci.ArgAt<string?>(1)).Valor;
                 return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
             });
+        Folios.CrearNuevaVersionAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                OrigenesVersion.Add(ci.ArgAt<Guid>(1));
+                var folio = clsFolio.Desde("PCN-24092026-001").Valor.ConVersion(2).Valor;
+                return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
+            });
     }
+
+    public List<Guid> OrigenesVersion { get; } = [];
 
     public Guid CotizacionGenerada { get; } = Guid.NewGuid();
 
@@ -108,6 +118,10 @@ internal sealed class clsArnesAgente
 
     public IClsValidadorRespuestaAgente Validador { get; set; } = new clsValidadorRespuestaPasante();
 
+    public clsCandadoSesionFalso Candado { get; } = new();
+
+    public IClsMargenPoliticaRepository Politicas { get; } = Substitute.For<IClsMargenPoliticaRepository>();
+
     public clsOpcionesAgente OpcionesAgente { get; } = new();
 
     public clsOpcionesSesiones OpcionesSesiones { get; } = new();
@@ -136,16 +150,46 @@ internal sealed class clsArnesAgente
         var herramientas = new clsHerramientasCotizador(
             Contexto, Buscador, Tarifas, Margen, new clsPrecioService(), Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
         return new clsAgenteRunner(
-            Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(), Validador, Auditoria, Contexto, herramientas,
+            Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(), Validador, Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas,
             Options.Create(OpcionesAgente), Options.Create(OpcionesSesiones), Options.Create(OpcionesCorreo), NullLoggerFactory.Instance);
     }
 
-    public Task<clsResultado<clsResultadoTurno>> TurnoAsync(string mensaje, string hilo = Hilo, Guid? usuarioId = null) =>
-        Runner().EjecutarTurnoAsync(new clsSolicitudTurno(mensaje, hilo, hilo, usuarioId ?? Usuario.Id), TestContext.Current.CancellationToken);
+    public Task<clsResultado<clsResultadoTurno>> TurnoAsync(string mensaje, string hilo = Hilo, Guid? usuarioId = null, Guid? cotizacionOrigen = null) =>
+        Runner().EjecutarTurnoAsync(new clsSolicitudTurno(mensaje, hilo, hilo, usuarioId ?? Usuario.Id, cotizacionOrigen), TestContext.Current.CancellationToken);
 
     /// <summary>Estado guardado de la sesión.</summary>
     public Dominio.Agente.clsEstadoConversacion Estado(string hilo = Hilo) =>
         Sesiones.Sesion(hilo)?.EstadoAgente ?? Dominio.Agente.clsEstadoConversacion.Vacio;
+}
+
+/// <summary>Candado por sesión en memoria: registra las tomas y, con <see cref="Ocupado"/>, simula otro turno en curso.</summary>
+internal sealed class clsCandadoSesionFalso : IClsCandadoSesion
+{
+    public bool Ocupado { get; set; }
+
+    public List<string> Tomados { get; } = [];
+
+    public int Liberados { get; private set; }
+
+    public Task<IAsyncDisposable?> IntentarTomarAsync(string spaceId, string threadId, TimeSpan espera, CancellationToken cancellationToken = default)
+    {
+        if (Ocupado)
+        {
+            return Task.FromResult<IAsyncDisposable?>(null);
+        }
+
+        Tomados.Add($"{spaceId}|{threadId}");
+        return Task.FromResult<IAsyncDisposable?>(new clsLiberacion(this));
+    }
+
+    private sealed class clsLiberacion(clsCandadoSesionFalso candado) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            candado.Liberados++;
+            return ValueTask.CompletedTask;
+        }
+    }
 }
 
 /// <summary><see cref="IClsSesionRepository"/> en memoria (los eventos quedan al agregarse).</summary>

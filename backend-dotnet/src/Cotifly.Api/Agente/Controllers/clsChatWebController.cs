@@ -23,6 +23,7 @@ public sealed partial class clsChatWebController(
     ILogger<clsChatWebController> logger) : clsControladorWebBase(usuario)
 {
     public const string MensajeSesionInvalida = "sesion_id inválido";
+    public const string MensajeCotizacionOrigenInvalida = "cotizacion_origen_id inválido";
     public const int LargoMaximoMensaje = 8000;
 
     /// <summary>
@@ -47,10 +48,21 @@ public sealed partial class clsChatWebController(
             return BadRequest(new clsErrorWeb(MensajeSesionInvalida));
         }
 
+        Guid? origen = null;
+        if (!string.IsNullOrWhiteSpace(cuerpo.CotizacionOrigenId))
+        {
+            if (!Guid.TryParse(cuerpo.CotizacionOrigenId, out var id))
+            {
+                return BadRequest(new clsErrorWeb(MensajeCotizacionOrigenInvalida));
+            }
+
+            origen = id;
+        }
+
         var clave = clsSesion.IdWeb(cuerpo.SesionId);
         try
         {
-            var resultado = await runner.EjecutarTurnoAsync(new clsSolicitudTurno(cuerpo.Mensaje, clave, clave, UsuarioId), cancellationToken);
+            var resultado = await runner.EjecutarTurnoAsync(new clsSolicitudTurno(cuerpo.Mensaje, clave, clave, UsuarioId, origen), cancellationToken);
             if (resultado.EsFallo)
             {
                 return resultado.Error.Codigo == clsCodigosAplicacion.NoEncontrado

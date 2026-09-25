@@ -9,7 +9,9 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Sesiones;
@@ -60,6 +62,9 @@ public sealed class clsAgenteRunner(
     IClsEstadoConversacionService estadoService,
     IClsValidadorRespuestaAgente validador,
     IClsAuditoriaService auditoria,
+    IClsCandadoSesion candadoSesion,
+    IClsCotizacionRepository cotizaciones,
+    IClsMargenPoliticaRepository politicas,
     clsContextoTurnoAgente contexto,
     clsHerramientasCotizador herramientas,
     IOptions<clsOpcionesAgente> opcionesAgente,
@@ -83,6 +88,11 @@ public sealed class clsAgenteRunner(
             return new clsErrorDominio(clsCodigosAplicacion.NoAutenticado, "Inicia sesión de nuevo.");
         }
 
+        // Un turno a la vez por sesión (auditoría de #12, riesgo 4): dos mensajes simultáneos se pisarían el estado y el historial.
+        await using var candado = await candadoSesion.IntentarTomarAsync(
+            solicitud.SpaceId, solicitud.ThreadId, TimeSpan.FromSeconds(opcionesSesiones.Value.EsperaTurnoSegundos), cancellationToken)
+            ?? throw new clsTurnoEnCursoException();
+
         var sesion = await sesiones.ObtenerOCrearAsync(solicitud.SpaceId, solicitud.ThreadId, usuario.Id, cancellationToken);
         if (!sesion.AsignarUsuario(usuario.Id))
         {
@@ -90,8 +100,24 @@ public sealed class clsAgenteRunner(
         }
 
         var historial = await sesiones.HistorialAsync(solicitud.SpaceId, solicitud.ThreadId, cancellationToken);
+        var estadoInicial = sesion.EstadoAgente ?? clsEstadoConversacion.Vacio;
+
+        // Solo en una sesión nueva o sin cotización en curso: reenviar el id en cada mensaje no reinicia el avance.
+        if (solicitud.CotizacionOrigenId is { } origenId && (historial.Count == 0 || estadoInicial.CotizacionId is null))
+        {
+            // Nueva versión desde el frontend (auditoría de #12, I2): solo una cotización del comercial siembra el estado.
+            var origen = await cotizaciones.ObtenerPorIdDelUsuarioAsync(origenId, usuario.Id, cancellationToken);
+            if (origen is null)
+            {
+                return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
+            }
+
+            var linea = origen.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
+            estadoInicial = estadoService.SembrarDesdeCotizacion(origen, linea?.LineaNegocio);
+        }
+
         var marcas = new clsMarcasTurno(reloj.AhoraUtc, historial.Count > 0 ? historial[^1].CreatedAt : null);
-        var reconocido = estadoService.ReconocerMensaje(sesion.EstadoAgente ?? clsEstadoConversacion.Vacio, solicitud.Mensaje);
+        var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje);
         var estado = reconocido.Estado;
 
         // El mensaje del comercial se guarda primero: si el proveedor falla, la conversación no pierde la pregunta (como el Python).
@@ -101,7 +127,12 @@ public sealed class clsAgenteRunner(
         sesion.Tocar(reloj.AhoraUtc);
         await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
 
-        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado);
+        var mensajesDelComercial = historial
+            .Where(e => e.Rol == clsEventoConversacion.RolUsuario && !string.IsNullOrWhiteSpace(e.Contenido))
+            .Select(e => e.Contenido!)
+            .Append(solicitud.Mensaje)
+            .ToList();
+        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado, mensajesDelComercial);
         var mensajes = new List<ChatMessage>
         {
             new(ChatRole.System, clsPromptSistema.Construir(usuario.NombreCompleto ?? usuario.NombreUsuario, usuario.Email, calendario.Hoy, estado)),

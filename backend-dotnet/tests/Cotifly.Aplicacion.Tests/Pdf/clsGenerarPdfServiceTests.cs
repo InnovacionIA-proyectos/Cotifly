@@ -234,6 +234,19 @@ public sealed class clsGenerarPdfServiceTests
         await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
+    // #41 (auditoría de #12, F4): con una línea inactiva no se cotiza.
+    [Fact]
+    public async Task UnaLineaInactivaSeRechazaAntesDeRenderizar()
+    {
+        _nacional.Desactivar();
+
+        var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        resultado.Error.Detalle.Should().Be(clsMargenResolverService.DetalleLineaInactiva);
+        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+    }
+
     // test_generar_pdf_idempotencia_versiona: en .NET el folio lo genera #12 y la colisión se informa.
     [Fact]
     public async Task UnFolioExistenteEsFolioDuplicadoSinRenderizar()

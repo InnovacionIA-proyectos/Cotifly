@@ -123,6 +123,7 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<clsTokenCuentaServicioGoogle>();
         servicios.TryAddSingleton<IClsPublicadorChat, clsPublicadorGoogleChat>();
         servicios.TryAddSingleton<IClsColaEventosChat, clsColaEventosChat>();
+        servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
         servicios.AddHostedService<clsWorkerEventosChat>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();
     }

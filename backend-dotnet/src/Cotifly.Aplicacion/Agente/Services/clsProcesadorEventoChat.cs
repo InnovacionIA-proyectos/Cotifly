@@ -1,7 +1,10 @@
 using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -32,12 +35,18 @@ public interface IClsProcesadorEventoChat
 /// </summary>
 public sealed class clsProcesadorEventoChat(
     IClsUsuarioWebRepository usuarios,
+    IClsVerificadorIdentidad verificador,
+    IClsAuditoriaService auditoria,
+    IClsReloj reloj,
     IClsAgenteRunner runner,
     IClsPublicadorChat publicador,
     IClsFirmaUrlPdf firmaUrl,
     IOptions<clsOpcionesPdf> opcionesPdf,
     ILogger<clsProcesadorEventoChat> logger) : IClsProcesadorEventoChat
 {
+    /// <summary>Evento de auditoría del rechazo de la verificación doble en Google Chat.</summary>
+    public const string HerramientaAuditoria = "google_chat_identidad";
+
     public async Task ProcesarAsync(clsEventoChat evento, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(evento);
@@ -52,6 +61,26 @@ public sealed class clsProcesadorEventoChat(
         if (usuario is null)
         {
             logger.LogInformation("Google Chat: el remitente no tiene cuenta en UsuariosWeb; no se cotiza.");
+            await publicador.PublicarAsync(spaceId, evento.ThreadId, clsTarjetasChat.Texto(clsTextosAgente.SinIdentidad), cancellationToken);
+            return;
+        }
+
+        // Verificación doble también en Google Chat (auditoría de #12, I5): el rol externo actual debe coincidir con la asignación activa,
+        // igual que en el login y el refresh; si no, no se cotiza y queda auditado.
+        var verificacion = string.IsNullOrWhiteSpace(usuario.NombreUsuario)
+            ? null
+            : await verificador.VerificarAsync(usuario.NombreUsuario, permitirAlta: false, reloj.AhoraUtc, cancellationToken);
+        if (verificacion?.Identidad?.Usuario.Id != usuario.Id)
+        {
+            var motivo = verificacion?.Motivo ?? "sin_nombre_usuario";
+            logger.LogInformation("Google Chat: la verificación doble rechazó al comercial {UsuarioId} ({Motivo}); no se cotiza.", usuario.Id, motivo);
+            await auditoria.RegistrarAsync(
+                HerramientaAuditoria,
+                new { usuario_id = usuario.Id, space_id = spaceId },
+                new { resultado = "rechazado", motivo },
+                false,
+                0,
+                threadId);
             await publicador.PublicarAsync(spaceId, evento.ThreadId, clsTarjetasChat.Texto(clsTextosAgente.SinIdentidad), cancellationToken);
             return;
         }

@@ -53,6 +53,7 @@ public static class clsDependenciasAplicacion
 
         // Login SSO ClientePro con verificación doble, refresh y logout (HU-003.6, #12). Cada intento se audita.
         servicios.AddScoped<clsVerificadorIdentidad>();
+        servicios.AddScoped<IClsVerificadorIdentidad>(sp => sp.GetRequiredService<clsVerificadorIdentidad>());
         servicios.AddScoped<IClsLoginClienteProService, clsLoginClienteProService>();
         servicios.AddScoped<IClsRefreshTokenService, clsRefreshTokenService>();
         servicios.AddScoped<IClsLogoutService, clsLogoutService>();

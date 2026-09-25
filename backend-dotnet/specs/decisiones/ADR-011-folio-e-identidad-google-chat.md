@@ -67,7 +67,8 @@
 
 ## Implementación (#12, parte C)
 
-- **Identidad:** `clsProcesadorEventoChat` busca el comercial con `IClsUsuarioWebRepository.ObtenerPorEmailAsync` (la collation no distingue mayúsculas; un correo repetido no identifica a nadie). Sin comercial publica "Ingresa primero a Cotifly desde ClientePro." en el hilo y no llama al agente. La sesión del hilo queda ligada al comercial: si otro escribe en ese hilo, recibe "abre un hilo nuevo".
+- **Identidad:** `clsProcesadorEventoChat` busca el comercial con `IClsUsuarioWebRepository.ObtenerPorEmailAsync` (la collation no distingue mayúsculas; un correo repetido no identifica a nadie). Sin comercial publica "Ingresa primero a Cotifly desde ClientePro." en el hilo y no llama al agente. Antes de cada turno aplica además la verificación doble del login (`IClsVerificadorIdentidad`, `permitirAlta: false`: el rol externo actual debe coincidir con la asignación activa); si falla, el mismo mensaje y un evento `google_chat_identidad` en la auditoría. La sesión del hilo queda ligada al comercial: si otro escribe en ese hilo, recibe "abre un hilo nuevo".
+- **Production:** `GChat:VerificarJwt=false` no arranca y, con Google Chat configurado (`GChat:ProjectNumber` o `GChat:SaJson`), `Pdf:ClaveFirmaUrl` es obligatoria (Google Chat es el único que emite enlaces firmados).
 - **PDF:** la tarjeta del PDF lleva `{Pdf:BaseUrl}/pdfs/{folio}.pdf?t={token}`. El token es `{usuarioId}.{vence}.{firma}`, con HMAC-SHA256 sobre `archivo\nusuarioId\nvence` (`Pdf:ClaveFirmaUrl`, secreto; sin ella, clave efímera por proceso) y 15 minutos de vida (`Pdf:MinutosUrlFirmada`). `GET /pdfs/{archivo}?t=` lo acepta sin Bearer solo para el dueño (`clsDescargaPdfFirmadaService`); alterado, vencido o de otro archivo → 401; de otro comercial → 404. Con Bearer no cambia nada. `specs/openapi.yaml` documenta el parámetro `t`.
 - **Webhook:** `POST /chat/events` verifica el JWT (RS256, certificados de `chat@system.gserviceaccount.com` en caché, audiencia `GChat:ProjectNumber`), acusa de inmediato y encola; `clsWorkerEventosChat` procesa cada evento en su ámbito y publica con la cuenta de servicio (`GChat:SaJson`). Pruebas con certificados y tokens falsos (`tests/fixtures/chat/`), sin red.
 
@@ -76,6 +77,6 @@
 | Pendiente | Dueño |
 |---|---|
 | ~~Aprobar el formato de folio y si el consecutivo es por comercial o global~~ | Aprobado el 2026-09-25: por comercial |
-| Si negocio quiere un `NNN` estrictamente por comercial también sin NIT, el formato necesita un segmento del comercial (hoy los folios sin NIT de comerciales distintos comparten numeración) | Duban + negocio |
+| **Decisión pendiente del usuario (auditoría de #12, I1):** hoy, sin NIT, el `NNN` es de hecho global entre comerciales (candado por día). Aceptarlo así o agregar un segmento del comercial al formato. No se cambia el formato hasta decidir | Duban + negocio |
 | ~~Aprobar la regla de identidad en Google Chat~~ | Implementada en #12 parte C según la propuesta; negocio puede pedir otra regla (p. ej. JIT por `tblSAPUsuariosApp.EMAIL`) |
 | ~~Aprobar URL firmada frente a adjunto y su duración~~ | Implementada con URL firmada de 15 minutos (configurable: `Pdf:MinutosUrlFirmada`) |

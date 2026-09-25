@@ -7,7 +7,11 @@ namespace Cotifly.Aplicacion.Agente.DTOs;
 /// <param name="SpaceId">Space de Google Chat, o <c>web/{sesion_id}</c> en la consola web (ADR-004 §6).</param>
 /// <param name="ThreadId">Hilo de Google Chat, o <c>web/{sesion_id}</c> en la consola web.</param>
 /// <param name="UsuarioId">Comercial en <c>UsuariosWeb</c> (del token en la web, del email en Google Chat, ADR-011). Nunca del LLM.</param>
-public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId);
+/// <param name="CotizacionOrigenId">
+/// Cotización del comercial de la que parte una nueva versión (<c>cotizacion_origen_id</c> de <c>MensajeWeb</c>): siembra el estado para
+/// que <c>generar_pdf</c> cree <c>-vN</c>. Se valida el dueño.
+/// </param>
+public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, Guid? CotizacionOrigenId = null);
 
 /// <summary>Salida de un turno del agente (port de <c>ResultadoTurno</c> de <c>orquestador/agente.py</c>).</summary>
 /// <param name="Texto">Respuesta final para el comercial (redactada en la llamada final sin herramientas y validada).</param>

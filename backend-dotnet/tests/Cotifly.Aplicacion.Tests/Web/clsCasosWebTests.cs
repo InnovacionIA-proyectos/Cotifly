@@ -155,7 +155,8 @@ public sealed class clsCasosWebTests
     [InlineData("occidente ", "Occidente", true)]
     [InlineData("Norte", "Occidente", false)]
     [InlineData("Norte", null, false)]
-    [InlineData(null, "Occidente", true)]
+    [InlineData(null, "Occidente", false)]
+    [InlineData(null, null, false)]
     public async Task ElGerenteDescargaSoloPdfDeSuRegionalCuandoLaConoce(string? regionalGerente, string? regionalDueno, bool permitido)
     {
         var gerente = Usuario(RolInterno.GerenteComercial);

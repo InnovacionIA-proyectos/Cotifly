@@ -229,6 +229,14 @@ public sealed class clsPasosAgente(clsContextoWeb web, clsContextoAgente agente)
         agente.CuerpoWebhook = await respuesta.Content.ReadAsStringAsync();
     }
 
+    [Given("que el rol externo de {string} en ClientePro cambió a gerente comercial")]
+    public async Task DadoRolExternoCambiado(string alias)
+    {
+        var idExterno = await clsBaseDatosPruebas.EscalarAsync<long>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT idUsuarioExterno FROM dbo_cotifly.UsuariosWeb WHERE id = '{web.Sesion(alias).UsuarioId}'");
+        await clsEntornoAceptacion.BaseDatos.CambiarRolesExternosAsync(idExterno, clsBaseDatosPruebas.RolExternoGerente);
+    }
+
     [Then("el webhook acusa recibo")]
     public void EntoncesAcusa()
     {

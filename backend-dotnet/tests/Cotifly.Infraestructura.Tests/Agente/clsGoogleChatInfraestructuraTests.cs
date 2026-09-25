@@ -291,7 +291,7 @@ public sealed class clsGoogleChatInfraestructuraTests : IDisposable
     [Fact]
     public void LaValidacionDeGChatRevisaProyectoUrlsCuentaYSpaceDeSoporte()
     {
-        var validador = new clsValidadorOpcionesGoogleChat();
+        var validador = Validador("Development");
 
         validador.Validate(null, OpcionesGoogle()).Succeeded.Should().BeTrue();
         validador.Validate(null, new clsOpcionesGoogleChat { ProjectNumber = "abc" }).FailureMessage.Should().Contain("GChat:ProjectNumber");
@@ -299,6 +299,20 @@ public sealed class clsGoogleChatInfraestructuraTests : IDisposable
         validador.Validate(null, new clsOpcionesGoogleChat { SaJson = "/no/existe/sa.json" }).FailureMessage.Should().Contain("GChat:SaJson");
         validador.Validate(null, new clsOpcionesGoogleChat { SupportSpace = "soporte" }).FailureMessage.Should().Contain("GChat:SupportSpace");
         validador.Validate(null, new clsOpcionesGoogleChat { ApiBase = "no-es-url" }).FailureMessage.Should().Contain("GChat:ApiBase");
+    }
+
+    private static clsValidadorOpcionesGoogleChat Validador(string entorno, string? claveFirma = null) =>
+        new(new Configuracion.clsEntornoFalso(entorno), Options.Create(new clsOpcionesFirmaUrlPdf { ClaveFirmaUrl = claveFirma }));
+
+    // Auditoría de #12 (F2): en Production la verificación del JWT no se apaga y con Google Chat la clave de firma es obligatoria.
+    [Fact]
+    public void EnProductionNoSeApagaElJwtYGoogleChatExigeLaClaveDeFirma()
+    {
+        Validador("Production").Validate(null, new clsOpcionesGoogleChat { VerificarJwt = false }).FailureMessage.Should().Contain("GChat:VerificarJwt");
+        Validador("Production").Validate(null, new clsOpcionesGoogleChat { ProjectNumber = "123" }).FailureMessage.Should().Contain("Pdf:ClaveFirmaUrl");
+        Validador("Production", "clave-hmac-de-produccion-de-32-caracteres").Validate(null, new clsOpcionesGoogleChat { ProjectNumber = "123" }).Succeeded.Should().BeTrue();
+        Validador("Production").Validate(null, new clsOpcionesGoogleChat()).Succeeded.Should().BeTrue("sin Google Chat nadie emite URLs firmadas");
+        Validador("Development").Validate(null, new clsOpcionesGoogleChat { VerificarJwt = false, ProjectNumber = "123" }).Succeeded.Should().BeTrue();
     }
 
     [Fact]
@@ -310,7 +324,7 @@ public sealed class clsGoogleChatInfraestructuraTests : IDisposable
         {
             var opciones = new clsOpcionesGoogleChat { SaJson = ruta };
 
-            new clsValidadorOpcionesGoogleChat().Validate(null, opciones).Succeeded.Should().BeTrue();
+            Validador("Development").Validate(null, opciones).Succeeded.Should().BeTrue();
             opciones.LeerCuentaServicio().Should().Contain("client_email");
         }
         finally

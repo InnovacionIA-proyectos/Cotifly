@@ -26,7 +26,7 @@ Característica: Estado de la conversación del agente (slot-filling)
 
   Escenario: Sin la confirmación explícita del comercial el PDF no se genera
     Dado que en el turno 1 el modelo pide el margen de "Nacional", calcula el precio con costo 2850000 y genera el PDF de una vez
-    Cuando "ana" escribe en el chat "Cotiza y genera el PDF de una vez"
+    Cuando "ana" escribe en el chat "Cotiza con costo 2.850.000 y genera el PDF de una vez"
     Entonces la herramienta "generar_pdf" respondió al modelo el código "CONFIRMACION_REQUERIDA"
     Y "ana" no tiene cotizaciones guardadas
 

@@ -44,6 +44,27 @@ public sealed class clsEmisorTokensJwtTests
         jwt.Claims.Select(c => c.Type).Should().NotContain(["password", "clave"]);
     }
 
+    // Auditoría de #12: sin nbf, un token emitido por una instancia con el reloj adelantado vale al instante en otra atrasada.
+    [Fact]
+    public async Task ElAccessNoLlevaNbfYValeAunqueElValidadorTengaElRelojAtrasado()
+    {
+        var adelantado = new clsRelojFalso(DateTimeOffset.UtcNow.AddMinutes(3));
+        var acceso = new clsEmisorTokensJwt(Configuracion(), adelantado).EmitirAcceso(Guid.NewGuid(), "APEREZ", RolInterno.Comercial);
+
+        var jwt = new JsonWebToken(acceso.Token);
+        var validacion = await new JsonWebTokenHandler().ValidateTokenAsync(acceso.Token, new TokenValidationParameters
+        {
+            ValidIssuer = "cotifly-api",
+            ValidAudience = "clientepro",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Clave)),
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+            ClockSkew = TimeSpan.FromSeconds(30),
+        });
+
+        jwt.Claims.Select(c => c.Type).Should().NotContain("nbf");
+        validacion.IsValid.Should().BeTrue(validacion.Exception?.Message);
+    }
+
     [Fact]
     public void CadaAccessTieneUnJtiDistinto()
     {

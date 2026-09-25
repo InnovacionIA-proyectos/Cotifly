@@ -66,7 +66,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         (await gerenteOtraRegional.Content.ReadAsStringAsync(Ct)).Should().Be(NoEsTuya);
         comercialAjeno.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await comercialAjeno.Content.ReadAsStringAsync(Ct)).Should().Be(NoEsTuya);
-        gerenteSinRegional.StatusCode.Should().Be(HttpStatusCode.OK, "sin regional conocida no se puede restringir (contrato: dueño o gerente_comercial)");
+        gerenteSinRegional.StatusCode.Should().Be(HttpStatusCode.NotFound, "sin regional conocida no se comprueba el alcance: fail-closed, solo el dueño");
         auditados.Should().Be(4, "cada acceso de alguien que no es el dueño queda auditado, permitido o no");
     }
 

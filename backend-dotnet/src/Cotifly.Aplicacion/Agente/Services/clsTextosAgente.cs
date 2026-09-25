@@ -53,6 +53,14 @@ public static class clsTextosAgente
         return false;
     }
 
+    /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
+    public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
+
     /// <summary>Texto para el comercial ante un fallo del turno.</summary>
-    public static string ParaFallo(Exception error) => EsLimiteDePeticiones(error) ? LimiteModelo : ErrorInterno;
+    public static string ParaFallo(Exception error) => error switch
+    {
+        Exceptions.clsTurnoEnCursoException => TurnoEnCurso,
+        _ when EsLimiteDePeticiones(error) => LimiteModelo,
+        _ => ErrorInterno,
+    };
 }

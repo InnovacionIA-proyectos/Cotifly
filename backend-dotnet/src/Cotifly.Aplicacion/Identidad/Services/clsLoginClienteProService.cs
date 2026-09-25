@@ -59,6 +59,7 @@ public sealed class clsLoginClienteProService(
         var inicio = Stopwatch.GetTimestamp();
         string motivo;
         string? regla = null;
+        Guid? usuarioRechazado = null;
         clsSesionEmitida? sesion = null;
         try
         {
@@ -66,6 +67,7 @@ public sealed class clsLoginClienteProService(
             var verificacion = await verificador.VerificarAsync(idUsuario, permitirAlta: true, ahora, cancellationToken);
             motivo = verificacion.Motivo;
             regla = verificacion.Regla;
+            usuarioRechazado = verificacion.UsuarioIdRechazado;
             if (verificacion.Identidad is { } identidad)
             {
                 identidad.Usuario.RegistrarSesion(ahora);
@@ -104,7 +106,7 @@ public sealed class clsLoginClienteProService(
                 Resultado = sesion is null ? "rechazado" : "aceptado",
                 Motivo = motivo,
                 Regla = regla,
-                UsuarioId = sesion?.Usuario.Id,
+                UsuarioId = sesion?.Usuario.Id ?? usuarioRechazado,
                 Rol = sesion?.Usuario.Rol,
             },
             sesion is not null,

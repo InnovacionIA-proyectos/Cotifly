@@ -30,6 +30,15 @@
         comercial, dedupe de correo, historial de conversación, barrido de
         sesiones, purga de tokens).
 
+   *** sqlcmd: usar -I (QUOTED_IDENTIFIER ON) al correr este script y al fijar
+       Roles.idRolExterno ***
+   `dbo_cotifly.Roles` tiene un índice único filtrado; SQL Server rechaza todo
+   INSERT/UPDATE sobre esa tabla con QUOTED_IDENTIFIER OFF, que es el valor por
+   defecto de sqlcmd. Ejemplo:
+     sqlcmd -S <host> -d dbTarifario_Nexo_Pruebas -I -Q "UPDATE dbo_cotifly.Roles
+       SET idRolExterno = <IDROLES> WHERE codigo = 'comercial';"
+   (SSMS y Azure Data Studio ya lo traen activado.)
+
    Idempotente y NO destructivo: cada ADD/CREATE/INSERT va guardado con
    comprobaciones de existencia; se puede correr varias veces (la semilla de Roles
    no pisa los idRolExterno que haya fijado el DBA). A diferencia del 0001 NO suelta

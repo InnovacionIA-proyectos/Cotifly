@@ -32,6 +32,12 @@ public interface IClsEstadoConversacionService
 
     /// <summary>Reconoce en el mensaje del comercial la elección de un cliente candidato o la confirmación de la previsualización.</summary>
     clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje);
+
+    /// <summary>
+    /// Estado de una nueva versión (auditoría de #12, I2): la cotización de origen (ya validada como del comercial) con su cliente, línea
+    /// y números; <c>generar_pdf</c> crea entonces <c>{folio base}-vN</c>. Sin previsualización pendiente: el comercial revisa y confirma.
+    /// </summary>
+    clsEstadoConversacion SembrarDesdeCotizacion(Dominio.Cotizaciones.clsCotizacion origen, string? lineaNegocio);
 }
 
 /// <summary>Implementación de <see cref="IClsEstadoConversacionService"/>.</summary>
@@ -52,7 +58,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
                    && resultado.Error!.Codigo == clsCodigosError.ClienteBusquedaNoDisponible
                    && !estado.ClienteConfirmado
                    && Texto(argumentos, "nombre") is { } referencia
-                ? estado with { ClienteNombre = referencia, NitCliente = null, OrigenCliente = null, BpCliente = null }
+                ? SinDocumentoSi(!string.Equals(estado.ClienteNombre, referencia, StringComparison.OrdinalIgnoreCase) || estado.NitCliente is not null, estado)
+                    with { ClienteNombre = referencia, NitCliente = null, OrigenCliente = null, BpCliente = null }
                 : estado;
         }
 
@@ -71,6 +78,34 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
                 ConfirmacionPendiente = false,
             },
             _ => estado,
+        };
+    }
+
+    public clsEstadoConversacion SembrarDesdeCotizacion(Dominio.Cotizaciones.clsCotizacion origen, string? lineaNegocio)
+    {
+        ArgumentNullException.ThrowIfNull(origen);
+        return clsEstadoConversacion.Vacio with
+        {
+            CotizacionId = origen.Id,
+            FolioEnProgreso = origen.Folio,
+            Version = origen.Version,
+            NitCliente = origen.NitCliente,
+            ClienteNombre = origen.ClienteNombre,
+            OrigenCliente = origen.OrigenCliente,
+            ClienteConfirmado = origen.NitCliente is not null,
+            LineaNegocioId = origen.LineaNegocioId,
+            LineaNegocio = lineaNegocio,
+            Costo = origen.Costo,
+            FuenteCosto = origen.Costo is null ? null : clsEstadoConversacion.FuenteCostoManual,
+            CosteoId = origen.CosteoId,
+            MargenPolitica = origen.MargenPolitica,
+            MargenSugerido = origen.MargenPolitica,
+            MargenAplicado = origen.MargenAplicado,
+            OrigenMargen = origen.OrigenMargen,
+            MetodoCalculo = origen.MetodoCalculo,
+            PrecioFinal = origen.PrecioFinal,
+            Moneda = origen.Moneda,
+            ConfirmacionPendiente = false,
         };
     }
 
@@ -108,7 +143,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             return ConCliente(estado, candidatos[0]);
         }
 
-        return estado with
+        return SinDocumentoSi(estado.NitCliente is not null, estado) with
         {
             NitCliente = null,
             OrigenCliente = null,
@@ -118,7 +153,20 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
         };
     }
 
-    private static clsEstadoConversacion ConCliente(clsEstadoConversacion estado, clsCandidatoCliente cliente) => estado with
+    /// <summary>
+    /// Cotización en curso descartada (auditoría de #12, F3/I3): si cambia el cliente, la línea o la ruta, la siguiente cotización
+    /// es nueva (folio nuevo), no una versión <c>-vN</c> de la anterior.
+    /// </summary>
+    private static clsEstadoConversacion SinDocumentoSi(bool cambio, clsEstadoConversacion estado) =>
+        cambio && (estado.CotizacionId is not null || estado.FolioEnProgreso is not null)
+            ? estado with { CotizacionId = null, FolioEnProgreso = null, Version = null }
+            : estado;
+
+    private static bool Distinto(string? anterior, string? nuevo) =>
+        anterior is not null && nuevo is not null && !string.Equals(Normalizar(anterior), Normalizar(nuevo), StringComparison.Ordinal);
+
+    private static clsEstadoConversacion ConCliente(clsEstadoConversacion estado, clsCandidatoCliente cliente) =>
+        SinDocumentoSi(estado.NitCliente != cliente.NitCliente, estado) with
     {
         NitCliente = cliente.NitCliente,
         ClienteNombre = cliente.Nombre,
@@ -136,7 +184,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
     private static clsEstadoConversacion AplicarTarifa(clsEstadoConversacion estado, clsSalidaTarifa tarifa, IReadOnlyDictionary<string, object?> argumentos)
     {
-        var nuevo = estado with
+        var cambioDeRuta = Distinto(estado.Origen, Texto(argumentos, "origen")) || Distinto(estado.Destino, Texto(argumentos, "destino"));
+        var nuevo = SinDocumentoSi(cambioDeRuta, estado) with
         {
             Origen = Texto(argumentos, "origen") ?? estado.Origen,
             Destino = Texto(argumentos, "destino") ?? estado.Destino,
@@ -153,7 +202,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     private static clsEstadoConversacion AplicarMargen(clsEstadoConversacion estado, clsMargenResuelto margen)
     {
         clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(margen.Salida.Origen, out var origen);
-        return estado with
+        var cambioDeLinea = estado.LineaNegocioId is { } anterior && anterior != margen.LineaNegocioId;
+        return SinDocumentoSi(cambioDeLinea, estado) with
         {
             LineaNegocio = margen.LineaNegocio,
             LineaNegocioId = margen.LineaNegocioId,

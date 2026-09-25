@@ -96,6 +96,16 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         {
             Sobrescribir(args, herramienta, clsArgumentosHerramienta.Costo, costo);
         }
+        else if (clsArgumentosHerramienta.Decimal(args, clsArgumentosHerramienta.Costo) is { } costoDelLlm
+                 && costoDelLlm != estado.Costo
+                 && !clsNumerosDelMensaje.Contiene(contexto.MensajeUsuario, costoDelLlm))
+        {
+            // Auditoría de #12 (riesgo 5): un costo manual solo vale si el comercial lo escribió en este turno (o es el que ya dio antes).
+            logger.LogInformation("{Herramienta}: costo que el comercial no escribió en su mensaje.", herramienta);
+            return new clsErrorDominio(
+                clsCodigosError.PrecioInvalido,
+                "El costo debe darlo el comercial: pídele el costo del flete (no lo tomes de otra fuente ni lo estimes).");
+        }
 
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Margen, margen);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Metodo, estado.MetodoCalculo ?? "margen");
@@ -179,14 +189,11 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
 
     private clsErrorDominio? ValidarCorreo(KernelArguments args, string herramienta)
     {
-        if (contexto.ConfirmadoEnEsteTurno)
-        {
-            return null;
-        }
-
+        // Sin confirmación, los destinatarios deben estar en el mensaje de este turno; con confirmación, en algún mensaje del comercial en
+        // la conversación. Nunca de datos externos (auditoría de #12, riesgo 5).
         var destinatarios = clsArgumentosHerramienta.Lista(args, "para").Concat(clsArgumentosHerramienta.Lista(args, "cc")).ToList();
-        var mensaje = contexto.MensajeUsuario;
-        if (destinatarios.Count > 0 && destinatarios.All(d => mensaje.Contains(d, StringComparison.OrdinalIgnoreCase)))
+        var fuentes = contexto.ConfirmadoEnEsteTurno ? contexto.MensajesDelComercial : [contexto.MensajeUsuario];
+        if (destinatarios.Count > 0 && destinatarios.All(d => fuentes.Any(m => m.Contains(d, StringComparison.OrdinalIgnoreCase))))
         {
             return null;
         }
@@ -194,7 +201,7 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         logger.LogInformation("{Herramienta}: destinatarios que el comercial no escribió en su mensaje y sin confirmación.", herramienta);
         return new clsErrorDominio(
             clsCodigosError.ConfirmacionRequerida,
-            "El envío exige que el comercial lo pida de forma explícita con los correos de los destinatarios, o que confirme el envío.");
+            "El envío exige que el comercial escriba los correos de los destinatarios (y lo pida o lo confirme de forma explícita).");
     }
 
     private static IEnumerable<JsonObject> Filas(JsonObject payload)

@@ -4,7 +4,9 @@ using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Comun;
+using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
@@ -185,7 +187,13 @@ public sealed class clsGoogleChatTests
             Usuarios.ObtenerPorEmailAsync("nvargas@boterosoto.com.co", Arg.Any<CancellationToken>()).Returns(Usuario);
             Firma.Firmar(Arg.Any<string>(), Arg.Any<Guid>()).Returns("token.firmado");
             Publicador.PublicarAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Do<JsonObject>(m => Publicados.Add(m)), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+            Verificador.VerificarAsync("nvargas", false, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+                .Returns(new clsVerificacionIdentidad(new clsIdentidadVerificada(Usuario, RolInterno.Comercial, false), clsMotivosAcceso.UsuarioExistente, null));
         }
+
+        public IClsVerificadorIdentidad Verificador { get; } = Substitute.For<IClsVerificadorIdentidad>();
+
+        public IClsAuditoriaService Auditoria { get; } = Substitute.For<IClsAuditoriaService>();
 
         public IClsUsuarioWebRepository Usuarios { get; } = Substitute.For<IClsUsuarioWebRepository>();
 
@@ -200,7 +208,7 @@ public sealed class clsGoogleChatTests
         public clsUsuarioWeb Usuario { get; }
 
         public clsProcesadorEventoChat Crear() =>
-            new(Usuarios, Runner, Publicador, Firma, Options.Create(new clsOpcionesPdf { BaseUrl = "https://cotifly.boterosoto.com.co" }), new clsLoggerFalso<clsProcesadorEventoChat>());
+            new(Usuarios, Verificador, Auditoria, new clsRelojFalso(), Runner, Publicador, Firma, Options.Create(new clsOpcionesPdf { BaseUrl = "https://cotifly.boterosoto.com.co" }), new clsLoggerFalso<clsProcesadorEventoChat>());
     }
 
     private static clsEventoChat Mensaje(string email = "nvargas@boterosoto.com.co", string texto = "Cotiza YUMBO→BUN.") =>
@@ -235,6 +243,21 @@ public sealed class clsGoogleChatTests
         Botones(proc.Publicados.Single())[0]["onClick"]!["openLink"]!["url"]!.GetValue<string>()
             .Should().Be("https://cotifly.boterosoto.com.co/pdfs/PCN-24092026-001.pdf?t=token.firmado");
         proc.Firma.Received(1).Firmar("PCN-24092026-001.pdf", proc.Usuario.Id);
+    }
+
+    // I5: la verificación doble también en Google Chat; si el rol externo cambió, no se cotiza y queda auditado.
+    [Fact]
+    public async Task SiLaVerificacionDobleFallaNoSeCotizaYSeAudita()
+    {
+        var proc = new clsProcesador();
+        proc.Verificador.VerificarAsync("nvargas", false, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new clsVerificacionIdentidad(null, clsMotivosAcceso.RolExternoCambio, null, proc.Usuario.Id));
+
+        await proc.Crear().ProcesarAsync(Mensaje(), Ct);
+
+        proc.Publicados.Single()["text"]!.GetValue<string>().Should().Be(clsTextosAgente.SinIdentidad);
+        await proc.Runner.DidNotReceive().EjecutarTurnoAsync(Arg.Any<clsSolicitudTurno>(), Arg.Any<CancellationToken>());
+        await proc.Auditoria.Received(1).RegistrarAsync(clsProcesadorEventoChat.HerramientaAuditoria, Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), "spaces/PROC/threads/1");
     }
 
     // test_procesador_no_mensaje_no_publica

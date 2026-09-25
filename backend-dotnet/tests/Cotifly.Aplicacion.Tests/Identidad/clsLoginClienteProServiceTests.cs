@@ -205,6 +205,7 @@ public sealed class clsLoginClienteProServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosAcceso.CredencialesInvalidas);
         _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("motivo").GetString().Should().Be(clsMotivosAcceso.RolExternoCambio);
+        _e.SalidaAuditada(clsCodigosAcceso.HerramientaLogin).GetProperty("usuario_id").GetGuid().Should().Be(usuario.Id, "la auditoría del rechazo lleva el id interno para revisarlo");
         usuario.UltimaSesion.Should().Be(sesionAnterior);
         _e.Roles.DidNotReceiveWithAnyArgs().AgregarAsignacion(default!);
         _e.Tokens.DidNotReceiveWithAnyArgs().Agregar(default!);

@@ -32,9 +32,8 @@ public interface IClsDescargaPdfService
 /// <list type="bullet">
 /// <item>El archivo debe cumplir <c>^[A-Za-z0-9_-]+\.pdf$</c> y ser el PDF guardado de la cotización con ese folio.</item>
 /// <item>Dueño: siempre.</item>
-/// <item><c>gerente_comercial</c>: si su regional (<c>UsuariosWeb.regional</c>) es conocida, solo PDF de comerciales de esa
-/// regional; si la suya es nula (aún no se cruza con DimEjecutivo) no se puede comprobar y se permite, como dice el contrato
-/// ("o un gerente_comercial"). Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
+/// <item><c>gerente_comercial</c>: solo PDF de comerciales de su misma regional (<c>UsuariosWeb.regional</c>). Si la regional del
+/// gerente es nula (aún no se cruza con DimEjecutivo), no se puede comprobar el alcance y se niega (fail-closed): solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
 /// (<c>descargar_pdf</c>).</item>
 /// </list>
 /// </summary>
@@ -97,7 +96,8 @@ public sealed partial class clsDescargaPdfService(
 
         if (string.IsNullOrWhiteSpace(gerente.Regional))
         {
-            return true;
+            // Fail-closed (#12, auditoría F1): sin la regional del gerente no se puede comprobar el alcance; solo el dueño.
+            return false;
         }
 
         var dueno = cotizacion.UsuarioId is { } duenoId ? await usuarios.ObtenerPorIdAsync(duenoId, cancellationToken) : null;

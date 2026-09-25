@@ -104,6 +104,8 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '429':
+          $ref: '#/components/responses/DemasiadasPeticiones'
 
   /api/auth/logout:
     post:
@@ -123,6 +125,8 @@ paths:
       responses:
         '204':
           description: Sesión cerrada
+        '429':
+          $ref: '#/components/responses/DemasiadasPeticiones'
 
   /web/chat:
     post:
@@ -157,7 +161,7 @@ paths:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
         '400':
-          description: '`sesion_id` inválido o cuerpo inválido'
+          description: '`sesion_id` o `cotizacion_origen_id` inválido, o cuerpo inválido'
           content:
             application/json:
               schema:
@@ -167,7 +171,9 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
-          description: El `sesion_id` pertenece a otro usuario
+          description: |
+            El `sesion_id` pertenece a otro usuario (`Sesión no encontrada.`), o `cotizacion_origen_id`
+            no existe o no es del comercial (`Cotización no encontrada o no es tuya.`).
           content:
             application/json:
               schema:
@@ -233,6 +239,16 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '503':
+          description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: CORREO_DESHABILITADO
+                  mensaje: "El envío de correo está deshabilitado."
 
   /web/cotizaciones/{folio}/seguimiento:
     post:
@@ -504,8 +520,8 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial) puede
-        descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
+        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial de su misma
+        regional; si la regional del gerente no se conoce, solo el dueño) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
         Alternativa sin `Authorization` para Google Chat (ADR-011 §3, #12 parte C): el enlace
@@ -725,6 +741,14 @@ components:
             $ref: '#/components/schemas/ErrorWeb'
 
   schemas:
+    Nulo:
+      description: |
+        Valor `null` en OAS 3.0.3 (que no tiene `type: 'null'`): un objeto anulable sin propiedades. Se usa como
+        alternativa de `oneOf` para campos que pueden no traer valor; el servidor siempre envía `null`, nunca `{}`.
+      type: object
+      nullable: true
+      maxProperties: 0
+
     ErrorWeb:
       type: object
       required: [error]
@@ -871,6 +895,14 @@ components:
         sesion_id:
           type: string
           pattern: '^[A-Za-z0-9_-]{8,64}$'
+        cotizacion_origen_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
+            parte de su cliente, línea y números, y el PDF sale como `{folio base}-vN`. Si no es del
+            comercial responde 404 (igual que si no existe); si no es un UUID, 400.
 
     SalidaPrecio:
       type: object
@@ -932,20 +964,20 @@ components:
             type: string
           description: Nombres de las herramientas invocadas en el turno, en orden.
         precio:
-          type: object
-          allOf:
+          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          oneOf:
             - $ref: '#/components/schemas/SalidaPrecio'
-          nullable: true
+            - $ref: '#/components/schemas/Nulo'
         margen:
-          type: object
-          allOf:
+          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          oneOf:
             - $ref: '#/components/schemas/SalidaMargen'
-          nullable: true
+            - $ref: '#/components/schemas/Nulo'
         pdf:
-          type: object
-          allOf:
+          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          oneOf:
             - $ref: '#/components/schemas/SalidaPdf'
-          nullable: true
+            - $ref: '#/components/schemas/Nulo'
 
     RespuestaChatError:
       type: object

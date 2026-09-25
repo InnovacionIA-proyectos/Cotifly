@@ -91,7 +91,7 @@ public sealed class clsInyeccionEstadoTests
             .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.5, metodo = "markup" })
             .Cerrar("ok");
 
-        var precio = (await _arnes.TurnoAsync("cotiza")).Valor.UltimaSalida<clsSalidaPrecio>("calcular_precio")!;
+        var precio = (await _arnes.TurnoAsync("cotiza con costo 2.850.000")).Valor.UltimaSalida<clsSalidaPrecio>("calcular_precio")!;
 
         precio.Margen.Should().Be(0.135m);
         precio.Metodo.Should().Be("margen");
@@ -156,7 +156,7 @@ public sealed class clsInyeccionEstadoTests
             .Llamar("generar_pdf", new { cotizacion = _payloadDelLlm })
             .Cerrar("Necesito tu confirmación.");
 
-        var resultado = (await _arnes.TurnoAsync("cotiza y genera el PDF de una vez")).Valor;
+        var resultado = (await _arnes.TurnoAsync("cotiza con costo 2.850.000 y genera el PDF de una vez")).Valor;
 
         resultado.Salidas[^1].Error!.Codigo.Should().Be(clsCodigosError.ConfirmacionRequerida);
         await _arnes.Pdf.DidNotReceive().GenerarAsync(Arg.Any<clsEntradaGenerarPdf>(), Arg.Any<CancellationToken>());
@@ -217,7 +217,7 @@ public sealed class clsInyeccionEstadoTests
             .Llamar("registrar_ajuste_margen", new { margenAplicado = 0.11, motivo = "Negociación", margenPolitica = 0.5, comercial = "otro@x.co" })
             .Cerrar("Recalculé con 11%.");
 
-        await _arnes.TurnoAsync("Ajusta el margen a 11%");
+        await _arnes.TurnoAsync("Costo 2.850.000; ajusta el margen a 11%");
 
         recibida!.MargenPolitica.Should().Be(0.135m);
         recibida.MargenAplicado.Should().Be(0.11m);
@@ -242,7 +242,7 @@ public sealed class clsInyeccionEstadoTests
             .Llamar("generar_pdf", new { cotizacion = _payloadDelLlm })
             .Cerrar("Listo.");
 
-        await _arnes.TurnoAsync("cotiza");
+        await _arnes.TurnoAsync("cotiza con costo 2.850.000");
         await _arnes.TurnoAsync("Confirmo");
 
         await _arnes.Auditoria.Received(1).RegistrarAsync("calcular_precio", Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), clsArnesAgente.Hilo);
@@ -262,7 +262,7 @@ public sealed class clsInyeccionEstadoTests
             .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.9, metodo = "markup" })
             .Cerrar("ok");
 
-        await _arnes.TurnoAsync("cotiza");
+        await _arnes.TurnoAsync("cotiza con costo 2.850.000");
 
         var json = JsonSerializer.Serialize(entrada);
         json.Should().Contain("\"margen\":0.135").And.Contain("\"metodo\":\"margen\"").And.Contain(_arnes.Usuario.Id.ToString());

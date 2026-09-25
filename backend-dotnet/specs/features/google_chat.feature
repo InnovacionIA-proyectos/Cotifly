@@ -2,7 +2,8 @@
 # HU-003.6 (#12, parte C) — Webhook de Google Chat (POST /chat/events) y worker: JWT de Google verificado con los certificados
 # públicos de chat@system.gserviceaccount.com (aquí, falsos), acuse inmediato, turno en segundo plano y respuesta publicada en el
 # hilo con la API de Chat y la cuenta de servicio (aquí, un Google falso sin red). La identidad es el correo del evento en
-# UsuariosWeb.email (ADR-011): sin cuenta no se cotiza. SQL Server 2019 en Testcontainers y el modelo guionizado.
+# UsuariosWeb.email (ADR-011): sin cuenta no se cotiza, y la verificación doble del login (rol externo actual = asignación
+# activa) también se exige en cada turno. SQL Server 2019 en Testcontainers y el modelo guionizado.
 @integracion
 Característica: Cotizar desde Google Chat
   Como comercial de Botero Soto
@@ -30,3 +31,10 @@ Característica: Cotizar desde Google Chat
     Cuando Google Chat envía el mensaje "hola" de "ana" en el hilo "T3" con un JWT inválido
     Entonces el webhook responde 401
     Y no se publicó nada en Google Chat
+
+  Escenario: Si el rol externo del comercial cambió en ClientePro, Google Chat no cotiza (verificación doble)
+    Dado que el rol externo de "ana" en ClientePro cambió a gerente comercial
+    Cuando Google Chat envía el mensaje "Cotiza Nacional YUMBO a BUN" de "ana" en el hilo "T4"
+    Entonces el webhook acusa recibo
+    Y en el hilo "T4" se publica el texto "Ingresa primero a Cotifly desde ClientePro."
+    Y el modelo no recibió ninguna llamada
