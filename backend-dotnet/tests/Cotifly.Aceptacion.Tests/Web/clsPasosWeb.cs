@@ -55,7 +55,7 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     public async Task EntoncesLaMismaRespuesta(string operacion)
     {
         var (estado, cuerpo) = (web.UltimoEstado, web.UltimoCuerpo);
-        var inexistente = new clsCotizacionPrueba(Guid.NewGuid(), "PCN-01011999-999", "PCN-01011999-999.pdf", null);
+        var inexistente = new clsCotizacionPrueba(Guid.NewGuid(), "PCN-XX-01011999-999", "PCN-XX-01011999-999.pdf", null);
 
         await OperarAsync(operacion, web.Sesion(_ultimoActor!).Access, inexistente);
 

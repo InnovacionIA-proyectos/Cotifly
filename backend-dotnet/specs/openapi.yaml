@@ -692,7 +692,11 @@ components:
       schema:
         type: string
         maxLength: 50
-      example: PCN-23072026
+      description: |
+        Folio de la cotización (ADR-011): `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`.
+        Se acepta cualquier folio existente (también los heredados del Python, como
+        `PCN-23072026`), por eso no se valida con un patrón.
+      example: PCN-DG-25092026-001
 
   responses:
     Validacion:
@@ -776,7 +780,7 @@ components:
                 `margen`/`markup`), `FOLIO_DUPLICADO` (HU-003.5: ya existe una cotización
                 con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
                 genera HU-003.6 y la colisión se informa), `FOLIO_CONSECUTIVO_AGOTADO` (HU-003.6:
-                el comercial ya usó los 999 folios del día, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
+                ya se usaron los 999 folios del día de esas iniciales, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
                 `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503) y
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
