@@ -36,7 +36,9 @@ public sealed class clsValidadorOpcionesConexionesTests
         var resultado = Validar("Production", cadena);
 
         resultado.Failed.Should().BeTrue();
-        resultado.FailureMessage.Should().Contain("ConnectionStrings:Cotifly (Password)").And.NotContain("cambiar-esto");
+        resultado.FailureMessage.Should().Contain("ConnectionStrings:Cotifly (Password)")
+            .And.Contain("variable ConnectionStrings__Cotifly, parámetro Password")
+            .And.NotContain("cambiar-esto");
     }
 
     [Fact]

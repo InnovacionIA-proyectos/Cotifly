@@ -1,0 +1,19 @@
+# Contexto de "docker build ... backend-dotnet" (#27). Lista blanca: la imagen solo necesita
+# los props/global.json/.editorconfig de la raíz y src/. Todo lo demás queda fuera
+# (tests, specs, docs, artefactos de build, secretos).
+*
+!global.json
+!Directory.Build.props
+!Directory.Packages.props
+!.editorconfig
+!src/
+
+# Dentro de src/: artefactos de compilación locales o del contenedor del SDK, y archivos de usuario.
+**/bin/
+**/obj/
+**/*.user
+**/.vs/
+**/*.md
+**/.env
+**/.env.*
+**/appsettings.*.local.json

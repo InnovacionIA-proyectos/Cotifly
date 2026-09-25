@@ -6,6 +6,11 @@
   -->
   <PropertyGroup>
     <RootNamespace>Cotifly.Api</RootNamespace>
+    <!--
+      Globalización completa (ICU): formato es-CO de dinero y fechas en PDF y correo.
+      La imagen runtime (aspnet chiseled-extra, ver Dockerfile) trae ICU y tzdata (#27).
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
