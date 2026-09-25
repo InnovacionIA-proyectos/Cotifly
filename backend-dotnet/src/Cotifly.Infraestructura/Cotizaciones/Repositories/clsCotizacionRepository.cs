@@ -38,6 +38,12 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
         return contexto.Cotizaciones.AnyAsync(c => c.Folio == buscado, cancellationToken);
     }
 
+    public Task RecargarAsync(clsCotizacion cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return contexto.Entry(cotizacion).ReloadAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<clsCotizacion>> ListarPorUsuarioAsync(
         Guid usuarioId, int limite = IClsCotizacionRepository.LimitePorDefecto, CancellationToken cancellationToken = default)
     {
@@ -49,18 +55,5 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
             .ThenByDescending(c => c.Folio)
             .Take(limite)
             .ToListAsync(cancellationToken);
-    }
-
-    public async Task<clsCotizacion?> MarcarSeguimientoAsync(
-        string folio,
-        Guid usuarioId,
-        bool? ganada,
-        string? motivoRechazo,
-        DateTimeOffset cuando,
-        CancellationToken cancellationToken = default)
-    {
-        var cotizacion = await ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        cotizacion?.MarcarSeguimiento(ganada, motivoRechazo, cuando);
-        return cotizacion;
     }
 }

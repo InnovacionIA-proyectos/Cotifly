@@ -16,6 +16,18 @@
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="PDFsharp-MigraDoc" />
+    <PackageReference Include="MailKit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Recursos del PDF (#11, ADR-006) embebidos en el ensamblado: la imagen runtime (chiseled) no trae fontconfig ni
+      fuentes del sistema. Nombres lógicos fijos, independientes de la carpeta (ver clsRecursosPdf).
+    -->
+    <EmbeddedResource Include="Pdf\Recursos\Fuentes\*.ttf" LogicalName="Cotifly.Pdf.Fuentes.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Pdf\Recursos\Imagenes\*.jpg;Pdf\Recursos\Imagenes\*.png" LogicalName="Cotifly.Pdf.Imagenes.%(Filename)%(Extension)" />
+    <!-- Licencia SIL OFL 1.1 de Liberation Sans: viaja con la aplicación publicada (licencias/ en la imagen). -->
+    <None Include="Pdf\Recursos\Fuentes\LiberationSans-OFL.txt" Link="licencias\LiberationSans-OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- Las pruebas de integración ejercitan las configuraciones EF y utilidades internas. -->

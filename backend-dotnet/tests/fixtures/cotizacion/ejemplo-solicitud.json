@@ -1,0 +1,37 @@
+{
+  "referencia": "PCN-19032026",
+  "ciudad": "Yumbo",
+  "fecha": "2026-03-19",
+  "cliente": "LONGYIN",
+  "contactos": ["Sr. Nicolás Alarcon", "Sra. Sandra Fernandez"],
+  "linea_negocio": "Nacional",
+  "modalidad": "Exportaciones",
+  "metodo_calculo": "margen",
+  "comercial": {
+    "nombre": "Nathaly Vargas Garcia",
+    "cargo": "Ejecutiva Comercial",
+    "email": "nvargas@boterosoto.com.co",
+    "cel": "3134156187"
+  },
+  "tarifa": {
+    "titulo": "COTIZACIÓN TRANSPORTE NACIONAL EXPO – BSSL",
+    "origen": "YUMBO",
+    "filas": [
+      {
+        "destino": "BUN",
+        "vehiculo_peso": "Tractomula - 34 TON",
+        "tarifa": 3000000,
+        "nota": "La tarifa aplica para vehículo tipo Tractomula en plancha apta para el transporte de contenedores con una capacidad máxima de 34 toneladas. Incluye candado satelital y levante del contenedor vacío en Yumbo con destino puerto Buenaventura."
+      },
+      {
+        "destino": "BUN",
+        "vehiculo_peso": "Tractomula - 34 TON",
+        "tarifa": 3600000,
+        "nota": "La tarifa aplica para vehículo tipo Tractomula en plancha apta para el transporte de contenedores con una capacidad máxima de 34 toneladas. Incluye candado satelital, levante del contenedor vacío en BUN, llenado en Yumbo y destino puerto Buenaventura."
+      }
+    ]
+  },
+  "aduana": null,
+  "extradimensionada": null,
+  "refrigerada": null
+}

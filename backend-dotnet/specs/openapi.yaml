@@ -390,7 +390,11 @@ paths:
       operationId: guardarTelefono
       tags: [web]
       summary: Guarda o corrige el teléfono del comercial
-      description: El valor queda persistido en `UsuariosWeb.telefono` y es el que se imprime en los PDF siguientes.
+      description: |
+        El valor queda persistido en `UsuariosWeb.telefono` y es el que se imprime en los PDF siguientes
+        (`null` o vacío lo borra y el PDF omite "Cel"). Errores, siempre con `ErrorWeb`: un teléfono fuera
+        del patrón (`TELEFONO_INVALIDO` en el caso de uso) responde 400; si el comercial del token ya no
+        existe en `UsuariosWeb` (`USUARIO_NO_ENCONTRADO`) responde 401.
       security:
         - bearer: []
       requestBody:
@@ -718,13 +722,20 @@ components:
             codigo:
               type: string
               description: |
-                Mismos códigos que el backend Python, más tres nuevos del backend .NET:
+                Mismos códigos que el backend Python, más seis nuevos del backend .NET:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (búsqueda de clientes de HU-005.2 aún
                 no conectada), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
-                herramienta inexistente, HU-003.10) y `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
+                herramienta inexistente, HU-003.10), `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
                 el margen negociado por el comercial está fuera de rango para su método de
                 cálculo, es decir negativo o ≥ 1 con `margen`, o el método no es
-                `margen`/`markup`). `PRECIO_INVALIDO` queda solo para el cálculo de precio.
+                `margen`/`markup`), `FOLIO_DUPLICADO` (HU-003.5: ya existe una cotización
+                con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
+                genera HU-003.6 y la colisión se informa), `CORREO_DESHABILITADO` (HU-003.5:
+                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503) y
+                `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
+                de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
+                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400).
+                `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -741,6 +752,9 @@ components:
                 - AJUSTE_COTIZACION_INVALIDA
                 - AJUSTE_ID_INVALIDO
                 - AJUSTE_MARGEN_INVALIDO
+                - FOLIO_DUPLICADO
+                - CORREO_DESHABILITADO
+                - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
                 - ERROR_INTERNO

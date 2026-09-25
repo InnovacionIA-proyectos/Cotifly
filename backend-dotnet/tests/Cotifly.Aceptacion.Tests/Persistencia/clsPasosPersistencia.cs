@@ -2,6 +2,7 @@ using System.Globalization;
 using Cotifly.Aceptacion.Tests.Soporte;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Comun;
@@ -171,12 +172,12 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
         });
     }
 
+    /// <summary>Marca como ganada con el caso de uso de seguimiento (#11); <c>null</c> si no es del comercial.</summary>
     private async Task<clsCotizacion?> MarcarGanadaAsync(string nombreUsuario, string folio)
     {
-        clsCotizacion? marcada = null;
-        await contexto.EnAmbitoAsync(async s => marcada = await s.GetRequiredService<IClsCotizacionRepository>()
-            .MarcarSeguimientoAsync(folio, Usuario(nombreUsuario), true, null, contexto.Reloj.AhoraUtc));
-        return marcada;
+        var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
+            .MarcarAsync(Usuario(nombreUsuario), folio, true, null));
+        return resultado.EsExitoso ? resultado.Valor : null;
     }
 
     private async Task<clsCotizacion> Leer(string folio)

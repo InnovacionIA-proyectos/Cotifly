@@ -1,12 +1,16 @@
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
+using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Auditoria.Repositories;
@@ -14,11 +18,13 @@ using Cotifly.Infraestructura.Comun;
 using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Correo.Repositories;
+using Cotifly.Infraestructura.Correo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
+using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -54,10 +60,17 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSapTm>(configuracion, clsOpcionesSapTm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesSapTm>, clsValidadorOpcionesSapTm>();
+        servicios.AddOpcionesValidadas<clsOpcionesPdf>(configuracion, clsOpcionesPdf.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesAlmacenPdf>(configuracion, clsOpcionesAlmacenPdf.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesAlmacenPdf>, clsValidadorOpcionesAlmacenPdf>();
+        servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
+        servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
         AgregarPersistencia(servicios);
 
@@ -65,7 +78,21 @@ public static class clsDependenciasInfraestructura
         AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
+        AgregarPdfYCorreo(servicios);
+
         return servicios;
+    }
+
+    /// <summary>
+    /// PDF (MigraDoc con fuentes embebidas, almacén en volumen) y transporte de correo elegido por <c>Correo:Modo</c> (#11).
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarPdfYCorreo(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<IClsGeneradorPdf, clsGeneradorPdfMigraDoc>();
+        servicios.TryAddSingleton<IClsAlmacenPdf, clsAlmacenPdfVolumen>();
+        servicios.TryAddSingleton<clsTransporteSmtpRelay>();
+        servicios.TryAddSingleton<IClsTransporteCorreo>(clsFabricaTransporteCorreo.Crear);
     }
 
     /// <summary>

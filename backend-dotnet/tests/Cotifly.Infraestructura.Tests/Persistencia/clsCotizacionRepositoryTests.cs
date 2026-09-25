@@ -1,7 +1,9 @@
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Dominio.Clientes;
+using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
@@ -162,12 +164,12 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         var deAna = NuevaCotizacion(ana);
         await GuardarAsync(deAna);
 
-        clsCotizacion? marcada = null;
-        await EnAmbitoAsync(async s => marcada = await s.GetRequiredService<IClsCotizacionRepository>()
-            .MarcarSeguimientoAsync(deAna.Folio, luis, true, null, Reloj.AhoraUtc, Ct));
+        // La regla vive en IClsSeguimientoService desde #11 (deuda de ADR-008); aquí se prueba con el repositorio real.
+        var marcada = await ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
+            .MarcarAsync(luis, deAna.Folio, true, null, Ct));
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(deAna.Folio, Ct));
 
-        marcada.Should().BeNull();
+        marcada.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
         leida!.Ganada.Should().BeNull();
         leida.MarcadoAt.Should().BeNull();
     }
@@ -181,8 +183,9 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         var creada = Reloj.AhoraUtc;
         Reloj.Avanzar(TimeSpan.FromHours(2));
 
-        await EnAmbitoAsync(s => s.GetRequiredService<IClsCotizacionRepository>()
-            .MarcarSeguimientoAsync(cotizacion.Folio, ana, false, "Precio alto", Reloj.AhoraUtc, Ct));
+        var marcada = await ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
+            .MarcarAsync(ana, cotizacion.Folio, false, "Precio alto", Ct));
+        marcada.EsExitoso.Should().BeTrue();
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
 
         leida!.Ganada.Should().BeFalse();

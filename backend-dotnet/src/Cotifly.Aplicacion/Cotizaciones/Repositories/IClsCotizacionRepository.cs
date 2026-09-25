@@ -27,18 +27,12 @@ public interface IClsCotizacionRepository
     /// <summary>¿Existe ya una cotización con ese folio? (folio único, <c>uq_cotizaciones_folio</c>).</summary>
     Task<bool> ExisteFolioAsync(string folio, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Vuelve a leer de la base los valores de una cotización ya cargada en esta unidad de trabajo (descarta lo que tenía en
+    /// memoria). Lo usa el envío de correo dentro de su candado, para calcular <c>estadoEnvio</c> sobre el valor vigente.
+    /// </summary>
+    Task RecargarAsync(clsCotizacion cotizacion, CancellationToken cancellationToken = default);
+
     /// <summary>Cotizaciones del comercial, de la más reciente a la más antigua, hasta <paramref name="limite"/>.</summary>
     Task<IReadOnlyList<clsCotizacion>> ListarPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Marca ganada/perdida la cotización del comercial. Devuelve <c>null</c> si no existe o no es suya.
-    /// El cambio se escribe al guardar la unidad de trabajo.
-    /// </summary>
-    Task<clsCotizacion?> MarcarSeguimientoAsync(
-        string folio,
-        Guid usuarioId,
-        bool? ganada,
-        string? motivoRechazo,
-        DateTimeOffset cuando,
-        CancellationToken cancellationToken = default);
 }
