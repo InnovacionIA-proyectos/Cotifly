@@ -162,4 +162,34 @@ public sealed class clsMargenTests
         ajuste.Motivo.Should().Be("Cliente estratégico");
         ajuste.Diferencia.Should().Be(-0.03m);
     }
+
+    [Fact]
+    public void LaAdministracionCambiaMargenMetodoYEstadoALaVez()
+    {
+        var politica = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
+
+        var resultado = politica.Actualizar(0.2m, " MARKUP ", activa: false);
+
+        resultado.EsExitoso.Should().BeTrue();
+        politica.Margen.Should().Be(0.2m);
+        politica.MetodoCalculo.Should().Be("markup");
+        politica.Activa.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0.2, "otro")]
+    [InlineData(0.2, "")]
+    [InlineData(-0.1, "margen")]
+    [InlineData(1.0, "margen")]
+    public void UnaEdicionInvalidaNoCambiaLaLinea(double margen, string metodo)
+    {
+        var politica = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
+
+        var resultado = politica.Actualizar((decimal)margen, metodo, activa: false);
+
+        resultado.Error.Codigo.Should().Be(clsMargenPolitica.CodigoError);
+        politica.Margen.Should().Be(0.15m);
+        politica.MetodoCalculo.Should().Be("margen");
+        politica.Activa.Should().BeTrue();
+    }
 }

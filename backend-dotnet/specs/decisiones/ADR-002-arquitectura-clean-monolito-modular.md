@@ -79,4 +79,4 @@ El estándar corporativo `dotnet-enterprise-architect` exige Clean Architecture 
 - La serialización JSON se configura por grupo de endpoints, según el contrato #17, sin cambiar los nombres C#:
   - `/web/*` usa snake_case;
   - `/api/auth/*` usa camelCase (patrón "Login SSO — Cliente Pro").
-  - Se resuelve en #12 con un formatter o convención por grupo de endpoints; hoy solo existe `/health`, que usa camelCase por defecto.
+  - Resuelto en #12 (parte B): `clsJsonSnakeCaseAttribute` marca el grupo (lo lleva `clsControladorWebBase`, base de todos los controllers de `/web/*`) y dos formateadores System.Text.Json snake_case (`clsFormateadorEntradaWeb`, `clsFormateadorSalidaWeb`), insertados al inicio de la lista de MVC, solo aceptan endpoints con esa marca. El resto (`/api/auth/*`, que usa nombres explícitos; `/health`; `/pdfs`) sigue con los formateadores por defecto. `clsContratoRutasTests` verifica que todo controller con ruta `web/...` tenga la marca y que cada DTO de `/web/*` produzca exactamente las propiedades snake_case de su esquema en `specs/openapi.yaml`.

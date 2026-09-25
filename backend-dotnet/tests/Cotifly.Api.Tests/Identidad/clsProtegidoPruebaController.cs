@@ -24,6 +24,11 @@ public sealed class clsProtegidoPruebaController(IClsContextoUsuario usuario) : 
         autenticado = usuario.EstaAutenticado,
     });
 
+    /// <summary>IP del cliente tal como la ve la tubería (después de los encabezados reenviados).</summary>
+    [HttpGet("ip")]
+    [AllowAnonymous]
+    public IActionResult Ip() => Ok(HttpContext.Connection.RemoteIpAddress?.ToString());
+
     [HttpGet("gerente")]
     [Authorize(Policy = clsPoliticas.GerenteComercial)]
     public IActionResult Gerente() => Ok(new { rol = "gerente_comercial" });

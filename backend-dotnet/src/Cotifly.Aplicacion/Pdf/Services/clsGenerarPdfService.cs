@@ -290,11 +290,7 @@ public sealed partial class clsGenerarPdfService(
         return creada.EsExitoso ? creada : Invalido(creada.Error.Mensaje);
     }
 
-    private string UrlPdf(string nombre)
-    {
-        var baseUrl = (opciones.Value.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
-        return $"{baseUrl}/pdfs/{Uri.EscapeDataString(nombre)}";
-    }
+    private string UrlPdf(string nombre) => clsUrlPdf.Construir(opciones.Value.BaseUrl, nombre);
 
     private static clsErrorDominio FolioDuplicado(string folio, string? detalle = null) =>
         new(clsCodigosError.FolioDuplicado, $"Ya existe una cotización con el folio {folio}.", detalle);

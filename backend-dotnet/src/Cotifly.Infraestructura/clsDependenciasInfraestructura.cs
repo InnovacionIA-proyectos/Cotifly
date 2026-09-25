@@ -10,6 +10,7 @@ using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Metricas.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
@@ -26,6 +27,7 @@ using Cotifly.Infraestructura.Identidad.Repositories;
 using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
+using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
@@ -170,6 +172,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsCorreoRepository, clsCorreoRepository>();
         servicios.AddScoped<IClsAuditoriaRepository, clsAuditoriaRepository>();
         servicios.AddScoped<IClsSesionRepository, clsSesionRepository>();
+        servicios.AddScoped<IClsMetricasRepository, clsMetricasRepository>();
+        servicios.AddScoped<IClsCandadoTransaccional, clsCandadoTransaccionalSql>();
 
         servicios.AddHealthChecks()
             .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness]);

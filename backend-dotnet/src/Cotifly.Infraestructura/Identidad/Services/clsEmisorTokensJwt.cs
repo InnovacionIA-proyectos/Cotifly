@@ -63,6 +63,15 @@ public sealed class clsEmisorTokensJwt(IClsConfiguracionJwt configuracion, IClsR
 {
     private readonly JsonWebTokenHandler _manejador = new() { SetDefaultTimesOnTokenCreation = false };
 
+    // Una sola clave por emisor y sin caché global de proveedores de firma: crear una clave por token llenaba la caché de
+    // Microsoft.IdentityModel, que desecha proveedores aún en uso por otras peticiones (fallos intermitentes).
+    private readonly SigningCredentials _credenciales = new(
+        new SymmetricSecurityKey(configuracion.ObtenerClaveFirma())
+        {
+            CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false },
+        },
+        SecurityAlgorithms.HmacSha256);
+
     public clsTokenAccesoEmitido EmitirAcceso(Guid usuarioId, string nombreUsuario, RolInterno rol)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nombreUsuario);
@@ -84,8 +93,7 @@ public sealed class clsEmisorTokensJwt(IClsConfiguracionJwt configuracion, IClsR
                 [clsClaimsCotifly.Username] = nombreUsuario,
                 [clsClaimsCotifly.Rol] = clsCodigoEnum.ACodigo(rol),
             },
-            SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(configuracion.ObtenerClaveFirma()), SecurityAlgorithms.HmacSha256),
+            SigningCredentials = _credenciales,
         };
 
         return new clsTokenAccesoEmitido(_manejador.CreateToken(descriptor), jti, DateTimeOffset.FromUnixTimeSeconds(expira.ToUnixTimeSeconds()));

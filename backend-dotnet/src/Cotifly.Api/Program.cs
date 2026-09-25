@@ -38,8 +38,15 @@ try
         .AddInfraestructura(builder.Configuration);
 
     // Errores de validación automática como ErrorWeb ({"error": "..."}, contrato #17), no ProblemDetails.
+    // JSON por grupo (#12, ADR-002): /web/* en snake_case (clsJsonSnakeCaseAttribute); /api/auth/* y /health sin cambios.
     builder.Services.AddControllers()
-        .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = clsErrorWeb.RespuestaValidacion);
+        .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = clsErrorWeb.RespuestaValidacion)
+        .AddConvencionJsonWeb();
+    clsFabricaErroresCliente.Registrar(builder.Services);
+
+    // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
+    builder.Services.AddSeguridadHttp();
+    builder.WebHost.ConfigureKestrel(k => k.AddServerHeader = false);
 
     // JwtBearer + revocación por jti + políticas por rol + límite de /api/auth/* (#12, ADR-009).
     builder.Services.AddAutenticacionCotifly();
@@ -54,6 +61,7 @@ catch (Exception ex) when (esProcesoPropio)
     return 1;
 }
 
+app.UseSeguridadHttp();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();

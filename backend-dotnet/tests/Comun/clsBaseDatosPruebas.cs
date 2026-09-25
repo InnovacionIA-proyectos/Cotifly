@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>migrations_mssql/0001</c> y <c>0002</c> partidos por
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>migrations_mssql/0001</c>, <c>0002</c> y <c>0003</c> partidos por
 /// <c>GO</c>, y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
 /// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
@@ -22,7 +22,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Imagen = "mcr.microsoft.com/mssql/server:2019-latest";
     public const string NombreBase = "dbTarifario_Nexo_Pruebas";
     public const string NombreBaseIdentidad = "dbsolucionesti";
-    public static readonly string[] Scripts = ["0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql"];
+    public static readonly string[] Scripts = ["0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql"];
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
     public const int RolExternoComercial = 34;

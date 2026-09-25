@@ -11,7 +11,7 @@ namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
 /// Los DTOs de Precio y Margen (#10) y los códigos de error cumplen <c>specs/openapi.yaml</c> (SDD, ADR-010).
-/// Se serializan en snake_case, la convención de <c>/web/*</c> (ADR-002; el formatter por grupo llega con #12).
+/// Se serializan en snake_case, la convención de <c>/web/*</c> (ADR-002; en la Api la aplica <c>clsJsonWeb</c>, #12).
 /// </summary>
 public sealed class clsContratoPrecioMargenTests
 {

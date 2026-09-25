@@ -1,9 +1,11 @@
+using Cotifly.Aplicacion.Administracion.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,6 +53,15 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsRefreshTokenService, clsRefreshTokenService>();
         servicios.AddScoped<IClsLogoutService, clsLogoutService>();
         servicios.AddSingleton<IClsRevocacionAccesos, clsCacheTokensRevocados>();
+
+        // API web /web/* (HU-003.6, #12 parte B): mis cotizaciones, nueva versión, folio del servidor (ADR-011), descarga
+        // autenticada del PDF, administración de líneas (HU-004.9) y métricas en borrador (HU-010.1).
+        servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
+        servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
+        servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
+        servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
+        servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
+        servicios.AddScoped<IClsMetricasService, clsMetricasService>();
 
         return servicios;
     }

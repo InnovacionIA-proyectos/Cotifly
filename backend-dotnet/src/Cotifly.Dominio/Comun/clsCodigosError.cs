@@ -40,6 +40,12 @@ public static class clsCodigosError
     /// </summary>
     public const string FolioDuplicado = "FOLIO_DUPLICADO";
 
+    /// <summary>
+    /// El comercial ya usó los 999 folios del día (<c>PCN-[nit-]DDMMAAAA-NNN</c>, ADR-011). Código nuevo del backend .NET
+    /// (#12): el consecutivo diario por comercial tiene tres dígitos.
+    /// </summary>
+    public const string FolioConsecutivoAgotado = "FOLIO_CONSECUTIVO_AGOTADO";
+
     /// <summary>El envío de correo exige la confirmación del comercial autenticado (<c>confirmado_por</c>).</summary>
     public const string ConfirmacionRequerida = "CONFIRMACION_REQUERIDA";
 

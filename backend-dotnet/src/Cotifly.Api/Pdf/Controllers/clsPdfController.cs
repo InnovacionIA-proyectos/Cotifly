@@ -1,0 +1,35 @@
+using Cotifly.Api.Comun;
+using Cotifly.Api.Identidad;
+using Cotifly.Aplicacion.Pdf.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
+
+namespace Cotifly.Api.Pdf.Controllers;
+
+/// <summary>
+/// Descarga autenticada del PDF (<c>GET /pdfs/{archivo}</c>; en el Python era público, hallazgo corregido). Dueño o
+/// <c>gerente_comercial</c> de la misma regional; cualquier otro caso 404 <c>ErrorWeb</c>, igual que si no existiera.
+/// </summary>
+[ApiController]
+[Route("pdfs")]
+[Authorize(Policy = clsPoliticas.Comercial)]
+public sealed class clsPdfController(IClsDescargaPdfService descarga) : ControllerBase
+{
+    /// <summary>200 <c>application/pdf</c> inline; 401 sin sesión; 404 <c>ErrorWeb</c>.</summary>
+    [HttpGet("{archivo}")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound, "application/json")]
+    public async Task<IActionResult> Descargar(string archivo, CancellationToken cancellationToken)
+    {
+        var resultado = await descarga.ObtenerAsync(archivo, cancellationToken);
+        if (resultado.EsFallo)
+        {
+            return clsRespuestasWeb.Error(resultado.Error);
+        }
+
+        var pdf = resultado.Valor;
+        Response.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileNameStar = pdf.Nombre, FileName = pdf.Nombre }.ToString();
+        return File(pdf.Contenido, "application/pdf");
+    }
+}

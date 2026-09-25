@@ -1,0 +1,54 @@
+using Cotifly.Api.Comun;
+using Cotifly.Api.Cotizaciones.DTOs;
+using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Cotizaciones.DTOs;
+using Cotifly.Aplicacion.Cotizaciones.Services;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Cotifly.Api.Cotizaciones.Controllers;
+
+/// <summary>
+/// Cotizaciones del comercial (<c>specs/openapi.yaml</c>): listado, seguimiento y datos para una versión nueva. Solo las del
+/// comercial autenticado; una ajena responde 404 igual que una inexistente.
+/// </summary>
+[Route("web")]
+public sealed class clsCotizacionesController(
+    IClsContextoUsuario usuario,
+    IClsMisCotizacionesService misCotizaciones,
+    IClsSeguimientoService seguimiento,
+    IClsNuevaVersionService nuevaVersion) : clsControladorWebBase(usuario)
+{
+    /// <summary>200 <c>MisCotizaciones</c>: máximo 100, de la más reciente a la más antigua.</summary>
+    [HttpGet("mis-cotizaciones")]
+    [ProducesResponseType<clsMisCotizaciones>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Listar(CancellationToken cancellationToken) =>
+        Ok(await misCotizaciones.ListarAsync(UsuarioId, cancellationToken));
+
+    /// <summary>200 <c>CotizacionResumen</c>; 400 motivo de más de 2000 caracteres; 404 si no es suya.</summary>
+    [HttpPost("cotizaciones/{folio}/seguimiento")]
+    [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> MarcarSeguimiento(string folio, [FromBody] clsSeguimientoWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        var resultado = await seguimiento.MarcarAsync(UsuarioId, folio, cuerpo.Ganada, cuerpo.MotivoRechazo, cancellationToken);
+        return resultado.EsFallo ? Error(resultado.Error) : Ok(await misCotizaciones.ResumirAsync(resultado.Valor, cancellationToken));
+    }
+
+    /// <summary>200 <c>DatosNuevaVersion</c> (no modifica la original); 404 si no existe, no es suya o el id no es un UUID.</summary>
+    [HttpGet("cotizaciones/{id}/nueva-version")]
+    [ProducesResponseType<clsDatosNuevaVersion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DatosNuevaVersion(string id, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(id, out var cotizacionId))
+        {
+            return clsRespuestasWeb.NoEsTuya();
+        }
+
+        var resultado = await nuevaVersion.ObtenerDatosAsync(UsuarioId, cotizacionId, cancellationToken);
+        return resultado.Coincidir<IActionResult>(datos => Ok(datos), Error);
+    }
+}

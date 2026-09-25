@@ -85,7 +85,12 @@ public static class clsConfiguracionAutenticacion
             RequireExpirationTime = true,
             ValidateIssuerSigningKey = true,
             RequireSignedTokens = true,
-            IssuerSigningKey = new SymmetricSecurityKey(configuracion.ObtenerClaveFirma()),
+            // Sin caché de proveedores de firma: la caché global de Microsoft.IdentityModel desecha proveedores en uso cuando
+            // muchas claves conviven (varias instancias en un proceso) y la validación falla de forma intermitente (401).
+            IssuerSigningKey = new SymmetricSecurityKey(configuracion.ObtenerClaveFirma())
+            {
+                CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false },
+            },
             ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
             ClockSkew = ToleranciaReloj,
             NameClaimType = clsClaimsCotifly.Username,
@@ -94,6 +99,14 @@ public static class clsConfiguracionAutenticacion
         opciones.Events = new JwtBearerEvents
         {
             OnTokenValidated = ValidarRevocacionAsync,
+            OnAuthenticationFailed = contexto =>
+            {
+                // Solo el tipo y el mensaje (IdentityModel oculta los datos personales): diagnóstico de 401 inesperados.
+                contexto.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(clsConfiguracionAutenticacion).FullName!)
+                    .LogInformation("Access token rechazado ({Tipo}): {Mensaje}", contexto.Exception.GetType().Name, contexto.Exception.Message);
+                return Task.CompletedTask;
+            },
             OnChallenge = async contexto =>
             {
                 contexto.HandleResponse();
