@@ -12,9 +12,9 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 | [ADR-006](ADR-006-libreria-pdf.md) | Librería de PDF: PDFsharp-MigraDoc | Aceptada | #7 · #11 (HU-003.5) |
 | [ADR-007](ADR-007-contenedores-sin-docker-compose.md) | Contenedores: solo Dockerfile multi-stage, sin docker-compose | Aceptada (desviación del estándar) | #7 · #14 (HU-003.8), #27 (HU-006.3) |
 | [ADR-008](ADR-008-persistencia-ef-core-database-first.md) | Persistencia: EF Core Database First sobre `dbo_cotifly` | Aceptada (desviación del Gherkin de HU-003; login `cotifly_app` pendiente) | #7 · #9 (HU-003.3), #5, #44 |
-| [ADR-009](ADR-009-autenticacion-sso-clientepro.md) | Autenticación: patrón "Login SSO — Cliente Pro" | Aceptada (D8 pendiente) | #7 · #12 (HU-003.6), #17 |
+| [ADR-009](ADR-009-autenticacion-sso-clientepro.md) | Autenticación: patrón "Login SSO — Cliente Pro" con verificación doble | Aceptada (D8 resuelto el 2026-09-25; IDROLES reales y revisión del 0002 pendientes) | #7 · #12 (HU-003.6), #17 |
 | [ADR-010](ADR-010-metodologia-sdd-tdd-bdd.md) | Metodología: SDD, TDD y BDD | Aceptada | #7 · HU-003.2 a HU-003.10 |
-| [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Propuesta (decide Duban con negocio) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
+| [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Aceptada (folio, 2026-09-25; identidad y PDF en Google Chat implementados en #12 parte C) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 

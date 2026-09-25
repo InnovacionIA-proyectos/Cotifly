@@ -11,10 +11,21 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+    <!-- Escenarios HTTP de /web/* (#12 parte B): la API real en memoria (WebApplicationFactory). -->
+    <ProjectReference Include="..\..\src\Cotifly.Api\Cotifly.Api.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Reqnroll.xunit.v3" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi.YamlReader" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Soporte HTTP y validador del contrato compartidos con Cotifly.Api.Tests. -->
+    <Compile Include="..\Cotifly.Api.Tests\Soporte\clsApiWebPruebas.cs" Link="Soporte\clsApiWebPruebas.cs" />
+    <Compile Include="..\Cotifly.Api.Tests\Soporte\clsValidadorEsquemaOpenApi.cs" Link="Soporte\clsValidadorEsquemaOpenApi.cs" />
+    <None Include="..\..\specs\openapi.yaml" Link="specs\openapi.yaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <!-- Fuente de verdad SDD: los .feature viven en specs/features y se enlazan aquí. -->

@@ -12,5 +12,14 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!-- ILogger<T> para los casos de uso que registran avisos (ej. SAP TM caído → política, #13). -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!--
+      Agente (#12, ADR-003): Kernel de Semantic Kernel (herramientas como KernelFunction, filtros IFunctionInvocationFilter) e
+      IChatClient de Microsoft.Extensions.AI (lo trae Semantic Kernel). MIT. Los proveedores concretos viven en Infraestructura/IA.
+    -->
+    <PackageReference Include="Microsoft.SemanticKernel.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Prompt de sistema del agente (port de SYSTEM_COTIZADOR, orquestador/prompt.py), embebido con un nombre lógico fijo. -->
+    <EmbeddedResource Include="Agente\Recursos\prompt_cotizador.md" LogicalName="Cotifly.Agente.PromptCotizador.md" />
   </ItemGroup>
 </Project>

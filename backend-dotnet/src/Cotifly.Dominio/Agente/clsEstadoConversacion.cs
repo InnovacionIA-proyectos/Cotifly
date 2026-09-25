@@ -13,6 +13,9 @@ public sealed record clsEstadoConversacion
     /// <summary>Estado inicial de una sesión nueva.</summary>
     public static clsEstadoConversacion Vacio { get; } = new();
 
+    /// <summary>Valor de <see cref="FuenteCosto"/> cuando el costo lo escribió el comercial en el chat.</summary>
+    public const string FuenteCostoManual = "manual";
+
     // Cliente
     public string? NitCliente { get; init; }
     public string? ClienteNombre { get; init; }
@@ -34,8 +37,19 @@ public sealed record clsEstadoConversacion
 
     // Resultado
     public decimal? Costo { get; init; }
+
+    /// <summary>
+    /// De dónde salió <see cref="Costo"/>: la fuente de <c>buscar_tarifa</c> (ej. <c>nexo</c>) o <see cref="FuenteCostoManual"/>
+    /// si lo escribió el comercial (#12). Solo un costo de la fuente se impone sobre el que manda el LLM.
+    /// </summary>
+    public string? FuenteCosto { get; init; }
     public string? CosteoId { get; init; }
+
+    /// <summary>Margen de la política de la línea (<c>MargenesPolitica</c>), referencia de la trazabilidad.</summary>
     public decimal? MargenPolitica { get; init; }
+
+    /// <summary>Margen que propuso <c>obtener_margen</c> (SAP TM o política): referencia de un ajuste negociado (#12).</summary>
+    public decimal? MargenSugerido { get; init; }
     public decimal? MargenAplicado { get; init; }
     public OrigenMargen? OrigenMargen { get; init; }
     public string? MetodoCalculo { get; init; }
@@ -65,8 +79,10 @@ public sealed record clsEstadoConversacion
         && TipoCarga == other.TipoCarga
         && PesoKg == other.PesoKg
         && Costo == other.Costo
+        && FuenteCosto == other.FuenteCosto
         && CosteoId == other.CosteoId
         && MargenPolitica == other.MargenPolitica
+        && MargenSugerido == other.MargenSugerido
         && MargenAplicado == other.MargenAplicado
         && OrigenMargen == other.OrigenMargen
         && MetodoCalculo == other.MetodoCalculo

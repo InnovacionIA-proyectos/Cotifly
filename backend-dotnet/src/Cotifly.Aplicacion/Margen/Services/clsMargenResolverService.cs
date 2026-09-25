@@ -62,6 +62,12 @@ public sealed class clsMargenResolverService(
         var bp = string.IsNullOrWhiteSpace(entrada.BpCliente) ? null : entrada.BpCliente.Trim();
 
         var politica = await BuscarPoliticaAsync(lineaRecibida, cancellationToken);
+        if (politica is { Activa: false })
+        {
+            // #41 (auditoría F4): el comercial no cotiza con una línea inactiva (la administración sí la ve y la reactiva).
+            return LineaInactiva(politica.LineaNegocio);
+        }
+
         var linea = politica?.LineaNegocio ?? lineaRecibida;
         var metodo = politica is null || string.IsNullOrWhiteSpace(politica.MetodoCalculo)
             ? clsReglaMargen.MetodoMargen
@@ -138,6 +144,13 @@ public sealed class clsMargenResolverService(
             margen,
             metodo);
     }
+
+    /// <summary>Detalle de <c>MARGEN_LINEA_DESCONOCIDA</c> cuando la línea existe pero está inactiva (#41).</summary>
+    public const string DetalleLineaInactiva = "línea inactiva";
+
+    /// <summary>Error de una línea inactiva: <c>MARGEN_LINEA_DESCONOCIDA</c> con el detalle <see cref="DetalleLineaInactiva"/>.</summary>
+    public static clsErrorDominio LineaInactiva(string linea) =>
+        new(clsCodigosError.MargenLineaDesconocida, $"La línea '{linea}' está inactiva: no se puede cotizar con ella.", DetalleLineaInactiva);
 
     public Task<clsMargenPolitica?> ResolverLineaAsync(string? lineaNegocio, CancellationToken cancellationToken = default)
     {

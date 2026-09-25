@@ -25,6 +25,23 @@
     <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
     <!-- Transporte SMTP del correo (#11, relay interno). MIT; trae MimeKit (MIT) y BouncyCastle.Cryptography (MIT). -->
     <PackageVersion Include="MailKit" Version="4.18.0" />
+    <!--
+      Login SSO (#12, ADR-009). MIT. JwtBearer valida el access en la Api; JsonWebTokens lo emite en Infraestructura.
+      JsonWebTokens se fija en la versión que trae JwtBearer 10.0.12 (Microsoft.IdentityModel.* 8.19.2).
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.2" />
+    <!--
+      Agente IA (#12 parte C, ADR-003). Todo MIT. Semantic Kernel (Kernel, KernelFunction, IFunctionInvocationFilter) en Aplicacion;
+      Microsoft.Extensions.AI (IChatClient, ChatClientBuilder/UseLogging) y los proveedores en Infraestructura/IA:
+      OpenAI (openai, azure_openai por su API v1, openai_compatible, gemini y ollama por su endpoint compatible) y el SDK oficial
+      de Anthropic, que trae su IChatClient. Microsoft.Extensions.AI.Abstractions se fija en la versión que pide el adaptador de OpenAI.
+    -->
+    <PackageVersion Include="Microsoft.SemanticKernel.Core" Version="1.80.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+    <PackageVersion Include="Anthropic" Version="12.50.0" />
   </ItemGroup>
   <ItemGroup Label="Pruebas">
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

@@ -32,7 +32,7 @@ ClientePro (ya autenticado)
 | Tema | Regla |
 |---|---|
 | Identidad | El backend revalida `idUsuario` contra el almacén corporativo (`tblSAPUsuariosApp`) en cada login, primero como `NOMBREUSUARIO` y luego como `ID`. El `NOMBREUSUARIO` de esa fila (no el que envía el cliente) ubica o crea al usuario en `UsuariosWeb`. `nombreUsuario` y `roles` del request son informativos y nunca deciden el acceso. |
-| Roles | `comercial` (cotiza y ve lo suyo) y `gerente_comercial` (tablero de su regional y políticas de margen). Ambos pueden iniciar sesión. El rol viaja en el claim `rol` del JWT y en `user.rol`. Un `gerente_comercial` que llame un endpoint solo de comercial recibe 403. |
+| Roles | `comercial` (cotiza y ve lo suyo) y `gerente_comercial` (tablero de su regional y políticas de margen). Ambos pueden iniciar sesión. El rol viaja en el claim `rol` del JWT y en `user.rol`. El `gerente_comercial` también puede usar la consola del comercial (cotiza y ve lo suyo); un `comercial` en `/web/admin/*` recibe 403. |
 | Access token | JWT HS256, 60 minutos. Claims: `sub` (UUID de `UsuariosWeb`), `jti`, `username`, `rol`. |
 | Refresh token | Opaco, 30 días, se rota en cada uso. Reutilizar uno ya rotado responde 401. |
 | Almacenamiento en el cliente | Guardar `access` y `refresh` fuera de logs y de la URL. |
@@ -47,23 +47,27 @@ ClientePro (ya autenticado)
 | Método y ruta | Rol | Resumen |
 |---|---|---|
 | `POST /api/auth/login-clientepro` | público | Emite la sesión |
-| `POST /api/auth/refresh` | público | Rota el refresh token |
-| `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 |
-| `POST /web/chat` | comercial | Turno del agente cotizador |
-| `GET /web/mis-cotizaciones` | comercial | Cotizaciones propias (máx. 100) |
-| `POST /web/cotizaciones/{folio}/enviar` | comercial | Envía la cotización por correo con el PDF |
-| `POST /web/cotizaciones/{folio}/correo/vista-previa` | comercial | Asunto, cuerpo y destinatarios sin enviar |
-| `POST /web/cotizaciones/{folio}/seguimiento` | comercial | Marca ganada o perdida |
-| `GET /web/cotizaciones/{id}/nueva-version` | comercial | Datos para prellenar una nueva versión |
-| `GET /web/clientes/{nit}/destinatarios-previos` | comercial | `para`/`cc` del último envío a ese cliente |
-| `GET` / `PUT /web/usuario/telefono` | comercial | Teléfono que se imprime en el PDF |
+| `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
+| `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
+| `POST /web/chat` | ambos | Turno del agente cotizador |
+| `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
+| `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
+| `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar |
+| `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida |
+| `GET /web/cotizaciones/{id}/nueva-version` | ambos | Datos para prellenar una nueva versión |
+| `GET /web/clientes/{nit}/destinatarios-previos` | ambos | `para`/`cc` del último envío a ese cliente |
+| `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
 | `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
 | `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador**, se define en HU-010.1) |
 | `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador**, se define en HU-010.1) |
-| `GET /pdfs/{archivo}` | dueño o gerente | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>` |
+| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es solo para el enlace firmado de Google Chat (ADR-011); el frontend no lo usa |
 
-Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos.
+Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
+
+"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
+
+**Folio** (ADR-011, aprobado el 2026-09-25): lo genera siempre el servidor, `PCN-[{nitCliente}-]DDMMAAAA-{NNN}[-vN]`: fecha de Bogotá, NIT solo con dígitos cuando la cotización lo tiene, `NNN` consecutivo diario del comercial (`001`…`999`) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-25092026-001`, `PCN-900123456-25092026-002`, `PCN-900123456-25092026-002-v2`. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
 ### Reservados para la próxima versión (HU-005)
 
@@ -98,9 +102,11 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 - `precio`, `margen` y `pdf` son `null` si la herramienta no se usó en el turno o terminó en error.
 - El formulario de "Nueva cotización" también usa este endpoint, igual que `chat.html`: arma un mensaje con los datos del formulario y lo envía. El progreso de pasos se deriva de `herramientas` y de qué bloques (`margen`, `precio`, `pdf`) vienen con valor. Con el tarifario de Drive retirado, el costo lo aporta el comercial o Nexo (HU-005).
 - Un fallo interno responde **200** con `error: true` (igual que Python). El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA ("Espera unos segundos y reenvía el mismo mensaje").
-- 429 es otra cosa: el límite de peticiones de la propia API de Cotifly.
+- 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
+- 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
 - 404 `{"error":"Sesión no encontrada."}` si el `sesion_id` pertenece a otro usuario.
+- `cotizacion_origen_id` (UUID, opcional): "Nueva versión" desde el frontend. El agente parte del cliente, la línea y los números de esa cotización y el PDF sale como `{folio base}-vN`. 404 `{"error":"Cotización no encontrada o no es tuya."}` si no es del comercial; 400 `{"error":"cotizacion_origen_id inválido"}` si no es un UUID. Solo siembra el estado en una sesión nueva o sin cotización en curso (se puede reenviar en cada mensaje sin reiniciar el avance); lo habitual es abrir un `sesion_id` nuevo para la nueva versión.
 
 ### Ciclo de vida de `sesion_id`
 
@@ -122,12 +128,14 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 |---|---|
 | 401 | Sesión vencida o revocada: intentar refresh una vez. |
 | 403 | El rol no permite la operación (por ejemplo, un comercial en `/web/admin/*`). |
-| 404 | No existe o no es del usuario. Son indistinguibles a propósito. |
+| 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
+| 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
+| 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. |
 
 ## 6. CORS
 
-El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. Se permiten los métodos `GET`, `POST` y `PUT` y los headers `Authorization` y `Content-Type`, sin cookies.
+El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. (origen exacto, `https://host[:puerto]`, sin ruta ni comodines; en producción la API no arranca sin al menos uno). Se permiten los métodos `GET`, `POST` y `PUT` y los headers `Authorization` y `Content-Type`, sin cookies ni credenciales; el preflight se cachea 10 minutos.
 
 **Pendiente:** el dominio real de `clientepro-frontend` en pruebas y en producción. Lo debe confirmar el equipo de frontend.
 
@@ -138,8 +146,11 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | `/web/login` se reemplaza por `/api/auth/login-clientepro` | Login SSO desde ClientePro (HU-004) |
 | `GET /pdfs/{archivo}` pasa a exigir sesión | En Python era público y los folios son adivinables |
 | `sesion_id` queda ligada al usuario | En Python cualquier token válido podía continuar cualquier sesión |
+| `GET /pdfs/{archivo}?t=` (enlace firmado de 15 minutos) | Google Chat no envía `Authorization` al abrir un enlace (ADR-011); solo para el dueño |
 | `estado_envio` pasa a `reenviada` en el segundo envío | Bug de Python: siempre escribía `enviada` (HU-003.5). La métrica de enviadas cuenta ambos estados. |
 | Seguimiento usa `ganada`/`motivo_rechazo` | Renombrado en HU-002.2 |
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |
 | 404 de `/pdfs` responde `{"error": "..."}` | En Python era `{"detail": "..."}` |
 | Nuevos códigos `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y `HERRAMIENTA_DESCONOCIDA` | Búsqueda de clientes (HU-005.2) y validación del modelo (HU-003.10) |
+| Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con un consecutivo diario de 3 dígitos por comercial (ADR-011); el Python lo tomaba del LLM |
+| `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrige el script `0003` |

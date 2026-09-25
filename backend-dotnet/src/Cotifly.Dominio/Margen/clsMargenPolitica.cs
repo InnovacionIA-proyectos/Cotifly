@@ -60,6 +60,30 @@ public sealed class clsMargenPolitica
         return this;
     }
 
+    /// <summary>
+    /// Edición de la línea desde la administración (HU-004.9, <c>PUT /web/admin/lineas-negocio/{id}</c>): margen, método y
+    /// estado a la vez. El método debe ser <c>margen</c> o <c>markup</c> y el margen válido para ese método
+    /// (<see cref="clsReglaMargen"/>); si algo falla la línea no cambia.
+    /// </summary>
+    public clsResultado<clsMargenPolitica> Actualizar(decimal margen, string metodoCalculo, bool activa)
+    {
+        var metodo = metodoCalculo?.Trim().ToLowerInvariant();
+        if (metodo is not (clsReglaMargen.MetodoMargen or clsReglaMargen.MetodoMarkup))
+        {
+            return new clsErrorDominio(CodigoError, "El método de cálculo debe ser 'margen' o 'markup'.");
+        }
+
+        if (clsReglaMargen.Validar(CodigoError, "margen", margen, metodo) is { } error)
+        {
+            return error;
+        }
+
+        Margen = margen;
+        MetodoCalculo = metodo;
+        Activa = activa;
+        return this;
+    }
+
     public void Activar() => Activa = true;
 
     public void Desactivar() => Activa = false;

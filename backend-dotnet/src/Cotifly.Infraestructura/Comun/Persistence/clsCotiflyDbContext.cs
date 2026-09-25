@@ -35,7 +35,8 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     public DbSet<clsUsuarioWeb> UsuariosWeb => Set<clsUsuarioWeb>();
     public DbSet<clsMargenPolitica> MargenesPolitica => Set<clsMargenPolitica>();
     public DbSet<clsSapMapeoTrqType> SapMapeoTrqType => Set<clsSapMapeoTrqType>();
-    public DbSet<clsRolMapeo> RolesMapeo => Set<clsRolMapeo>();
+    public DbSet<clsRol> Roles => Set<clsRol>();
+    public DbSet<clsUsuarioRol> UsuariosRoles => Set<clsUsuarioRol>();
     public DbSet<clsTokenRefresco> TokensRefresco => Set<clsTokenRefresco>();
     public DbSet<clsTokenRevocado> TokensRevocados => Set<clsTokenRevocado>();
 

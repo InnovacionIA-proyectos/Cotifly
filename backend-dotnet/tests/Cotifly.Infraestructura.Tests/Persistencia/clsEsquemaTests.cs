@@ -18,12 +18,12 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     private static readonly string[] _tablasEsperadas =
     [
         "CorreoDestinatarios", "Correos", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
-        "MargenAjustes", "MargenesPolitica", "RolesMapeo", "SapMapeoTrqType", "Sesiones",
-        "TokensRefresco", "TokensRevocados", "UsuariosWeb",
+        "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
+        "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
     ];
 
     [Fact]
-    public async Task LosScripts0001Y0002CreanLasTreceTablas()
+    public async Task LosScripts0001Y0002CreanLasCatorceTablas()
     {
         var tablas = await LeerAsync(
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'",
@@ -123,6 +123,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         ef.Should().BeEquivalentTo(bd);
         bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(10, "el 0002 crea 10 índices ix_");
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));
+        bd.Should().Contain(x => x.StartsWith("UsuariosRoles:uq_usuariosRoles_usuarioId_activo unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=activo=1", StringComparison.Ordinal));
+        bd.Should().Contain(x => x.StartsWith("Roles:uq_roles_idRolExterno unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=idrolexternoisnotnull", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -255,7 +257,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             await c.UsuariosWeb.Take(1).ToListAsync(Ct);
             await c.MargenesPolitica.Take(1).ToListAsync(Ct);
             await c.SapMapeoTrqType.Take(1).ToListAsync(Ct);
-            await c.RolesMapeo.Take(1).ToListAsync(Ct);
+            await c.Roles.Take(1).ToListAsync(Ct);
+            await c.UsuariosRoles.Take(1).ToListAsync(Ct);
             await c.TokensRefresco.Take(1).ToListAsync(Ct);
             await c.TokensRevocados.Take(1).ToListAsync(Ct);
             return true;
@@ -272,12 +275,25 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task ElCheckDeRolInternoSoloAceptaLosRolesDeCotifly()
+    public async Task ElCheckDeRolesSoloAceptaLosRolesDeCotifly()
     {
         var insertar = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"INSERT INTO dbo_cotifly.RolesMapeo (rolExterno, rolInterno) VALUES ('x-{Guid.NewGuid():N}', 'admin')");
+            "INSERT INTO dbo_cotifly.Roles (codigo) VALUES ('admin')");
 
-        (await insertar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_rolesMapeo_rolInterno");
+        (await insertar.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_roles_codigo");
+    }
+
+    [Fact]
+    public async Task ReaplicarEl0002NoPisaElRolExternoQueFijoElDba()
+    {
+        await clsBaseDatosPruebas.EjecutarScriptAsync(BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0002_identidad_estado_agente.sql"));
+
+        var comercial = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+            "SELECT idRolExterno FROM dbo_cotifly.Roles WHERE codigo = 'comercial'");
+        var filas = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly, "SELECT COUNT(*) FROM dbo_cotifly.Roles");
+
+        comercial.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
+        filas.Should().Be(2);
     }
 
     /// <summary>Modelo de diseño: el de ejecución no conserva CHECK, INCLUDE ni otros metadatos solo relacionales.</summary>

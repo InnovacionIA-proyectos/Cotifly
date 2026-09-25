@@ -6,9 +6,12 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>migrations_mssql/0001</c> y <c>0002</c> partidos por
-/// <c>GO</c>, y crea una <c>dbsolucionesti</c> mínima con <c>dbo.tblSAPUsuariosApp</c> (incluida la columna
-/// CLAVE, que el backend nunca debe leer). Un contenedor por ensamblado de pruebas.
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>migrations_mssql/0001</c>, <c>0002</c> y <c>0003</c> partidos por
+/// <c>GO</c>, y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
+/// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
+/// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
+/// <c>dbo_cotifly.Roles</c> a los roles externos de prueba (<see cref="RolExternoComercial"/>,
+/// <see cref="RolExternoGerente"/>). Un contenedor por ensamblado de pruebas (o por clase, según el fixture).
 /// </summary>
 /// <remarks>
 /// Dentro del contenedor del SDK se necesita el socket de Docker montado y
@@ -19,7 +22,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Imagen = "mcr.microsoft.com/mssql/server:2019-latest";
     public const string NombreBase = "dbTarifario_Nexo_Pruebas";
     public const string NombreBaseIdentidad = "dbsolucionesti";
-    public static readonly string[] Scripts = ["0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql"];
+    public static readonly string[] Scripts = ["0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql"];
+
+    /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
+    public const int RolExternoComercial = 34;
+
+    /// <summary>IDROLES externo de prueba mapeado a <c>gerente_comercial</c>.</summary>
+    public const int RolExternoGerente = 35;
+
+    /// <summary>IDROLES externo de prueba sin mapeo (no da acceso).</summary>
+    public const int RolExternoSinMapeo = 40;
+
+    private static long _siguienteIdExterno = 10_000;
 
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
@@ -51,18 +65,84 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         }
 
         await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreBaseIdentidad}];");
-        await EjecutarAsync(CadenaIdentidad, """
+        await EjecutarAsync(CadenaIdentidad, $"""
             CREATE TABLE dbo.tblSAPUsuariosApp (
-                ID                  INT           NOT NULL PRIMARY KEY,
+                ID                  NUMERIC(18,0) NOT NULL PRIMARY KEY,
                 NOMBREUSUARIO       VARCHAR(50)   NULL,
-                DESCRIPCIONUSUARIO  VARCHAR(200)  NULL,
-                EMAIL               VARCHAR(200)  NULL,
+                DESCRIPCIONUSUARIO  VARCHAR(250)  NULL,
+                EMAIL               VARCHAR(100)  NULL,
                 CLAVE               VARCHAR(200)  NULL
+            );
+            CREATE TABLE dbo.tblSAPRoles (
+                IDROLES             INT           NOT NULL PRIMARY KEY,
+                DESCRIPCION         VARCHAR(50)   NULL
+            );
+            CREATE TABLE dbo.tblSAPUsuarioRoles (
+                ID                  INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                IDUSUARIO           INT           NOT NULL,
+                IDROLES             INT           NOT NULL
             );
             INSERT INTO dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL, CLAVE) VALUES
                 (101, 'APEREZ', 'Ana Pérez', 'aperez@boterosoto.com.co', 'no-debe-leerse'),
-                (102, 'LGOMEZ', 'Luis Gómez', 'lgomez@boterosoto.com.co', 'no-debe-leerse');
+                (102, 'LGOMEZ', 'Luis Gómez', 'lgomez@boterosoto.com.co', 'no-debe-leerse'),
+                (3000000000, 'FUERARANGO', 'ID fuera de INT', NULL, 'no-debe-leerse');
+            INSERT INTO dbo.tblSAPRoles (IDROLES, DESCRIPCION) VALUES
+                ({RolExternoComercial}, 'COMERCIAL'), ({RolExternoGerente}, 'GERENTE COMERCIAL'), ({RolExternoSinMapeo}, 'CONSULTA');
+            INSERT INTO dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES) VALUES
+                (101, {RolExternoComercial}), (102, {RolExternoGerente}), (102, {RolExternoSinMapeo});
             """);
+
+        // Los IDROLES reales están pendientes (el 0002 siembra los roles sin mapeo): aquí se fijan los de prueba.
+        await EjecutarAsync(CadenaCotifly, $"""
+            UPDATE dbo_cotifly.Roles SET idRolExterno = {RolExternoComercial} WHERE codigo = 'comercial';
+            UPDATE dbo_cotifly.Roles SET idRolExterno = {RolExternoGerente} WHERE codigo = 'gerente_comercial';
+            """);
+    }
+
+    /// <summary>ID externo nuevo y único en este proceso de pruebas.</summary>
+    public static long NuevoIdExterno() => Interlocked.Increment(ref _siguienteIdExterno);
+
+    /// <summary>Agrega una persona a <c>tblSAPUsuariosApp</c> con sus roles externos; devuelve su ID.</summary>
+    public async Task<long> CrearPersonaExternaAsync(string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos)
+    {
+        ArgumentNullException.ThrowIfNull(rolesExternos);
+        var id = NuevoIdExterno();
+        await using var conexion = new SqlConnection(CadenaIdentidad);
+        await conexion.OpenAsync();
+        await using (var comando = new SqlCommand(
+            "INSERT INTO dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL, CLAVE) VALUES (@id, @nombre, @descripcion, @email, 'no-debe-leerse');",
+            conexion))
+        {
+            comando.Parameters.AddWithValue("@id", (decimal)id);
+            comando.Parameters.AddWithValue("@nombre", nombreUsuario);
+            comando.Parameters.AddWithValue("@descripcion", (object?)descripcion ?? DBNull.Value);
+            comando.Parameters.AddWithValue("@email", (object?)email ?? DBNull.Value);
+            await comando.ExecuteNonQueryAsync();
+        }
+
+        await CambiarRolesExternosAsync(id, rolesExternos);
+        return id;
+    }
+
+    /// <summary>Reemplaza los roles externos de la persona en <c>tblSAPUsuarioRoles</c>.</summary>
+    public async Task CambiarRolesExternosAsync(long idExterno, params int[] rolesExternos)
+    {
+        ArgumentNullException.ThrowIfNull(rolesExternos);
+        var valores = string.Join(", ", rolesExternos.Select(r => $"({idExterno}, {r})"));
+        await EjecutarAsync(CadenaIdentidad,
+            $"DELETE FROM dbo.tblSAPUsuarioRoles WHERE IDUSUARIO = {idExterno};"
+            + (rolesExternos.Length == 0 ? string.Empty : $" INSERT INTO dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES) VALUES {valores};"));
+    }
+
+    /// <summary>Cambia el <c>NOMBREUSUARIO</c> de la persona en el almacén.</summary>
+    public async Task RenombrarPersonaExternaAsync(long idExterno, string nuevoNombre)
+    {
+        await using var conexion = new SqlConnection(CadenaIdentidad);
+        await conexion.OpenAsync();
+        await using var comando = new SqlCommand("UPDATE dbo.tblSAPUsuariosApp SET NOMBREUSUARIO = @nombre WHERE ID = @id;", conexion);
+        comando.Parameters.AddWithValue("@nombre", nuevoNombre);
+        comando.Parameters.AddWithValue("@id", (decimal)idExterno);
+        await comando.ExecuteNonQueryAsync();
     }
 
     public ValueTask DisposeAsync()

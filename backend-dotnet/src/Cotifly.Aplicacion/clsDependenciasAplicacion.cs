@@ -1,11 +1,18 @@
+using Cotifly.Aplicacion.Administracion.Services;
+using Cotifly.Aplicacion.Agente.Herramientas;
+using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Cotifly.Aplicacion;
 
@@ -43,6 +50,35 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsDestinatariosPreviosService, clsDestinatariosPreviosService>();
         servicios.AddScoped<IClsTelefonoComercialService, clsTelefonoComercialService>();
         servicios.AddScoped<IClsSeguimientoService, clsSeguimientoService>();
+
+        // Login SSO ClientePro con verificación doble, refresh y logout (HU-003.6, #12). Cada intento se audita.
+        servicios.AddScoped<clsVerificadorIdentidad>();
+        servicios.AddScoped<IClsVerificadorIdentidad>(sp => sp.GetRequiredService<clsVerificadorIdentidad>());
+        servicios.AddScoped<IClsLoginClienteProService, clsLoginClienteProService>();
+        servicios.AddScoped<IClsRefreshTokenService, clsRefreshTokenService>();
+        servicios.AddScoped<IClsLogoutService, clsLogoutService>();
+        servicios.AddSingleton<IClsRevocacionAccesos, clsCacheTokensRevocados>();
+
+        // API web /web/* (HU-003.6, #12 parte B): mis cotizaciones, nueva versión, folio del servidor (ADR-011), descarga
+        // autenticada del PDF, administración de líneas (HU-004.9) y métricas en borrador (HU-010.1).
+        servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
+        servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
+        servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
+        servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
+        servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
+        servicios.AddScoped<IClsMetricasService, clsMetricasService>();
+
+        // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
+        // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
+        // El IChatClient (proveedor por IA:Proveedor) lo registra Infraestructura; el validador de la respuesta final es el de
+        // paso hasta #16 (TryAdd: #16 registra el suyo).
+        servicios.AddScoped<clsContextoTurnoAgente>();
+        servicios.AddScoped<clsHerramientasCotizador>();
+        servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
+        servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaPasante>();
+        servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
+        servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();
+        servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();
 
         return servicios;
     }

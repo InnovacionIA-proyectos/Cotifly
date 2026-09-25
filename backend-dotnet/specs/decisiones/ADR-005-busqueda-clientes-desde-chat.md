@@ -32,6 +32,12 @@ HU-005.2 también permite consumir la API Grovity de ClientePro (`docs/Manual de
    - `clienteNombre` guarda el texto del usuario solo como referencia visible;
    - el margen sale de `politica_linea`.
 
+### Implementación (#12, parte C)
+
+- Puerto `Cotifly.Aplicacion/Clientes/Interfaces/IClsBuscadorClientes` (`clsResultadoBusquedaClientes { Exacta, Candidatos[{NitCliente, Nombre, OrigenCliente, Bp?}] }`) y stub `Cotifly.Infraestructura/Clientes/Services/clsBuscadorClientesNoDisponible` (`CLIENTE_BUSQUEDA_NO_DISPONIBLE`, registrado con `TryAdd` para que el adaptador de Nexo lo reemplace).
+- La herramienta `buscar_cliente(nombre)` no le muestra el BP al modelo (solo NIT, nombre y origen); el BP pasa al estado.
+- Con el stub, el texto del comercial queda en `ClienteNombre` como referencia y la cotización sin NIT; `obtener_margen` no consulta SAP aunque el LLM mande un BP (`clsInyeccionEstadoTests.SinClienteConfirmadoObtenerMargenNoConsultaSapConLoQueMandeElLlm`, `chat_slot_filling.feature`).
+
 ## Alternativas consideradas
 
 - **Tabla propia de clientes en Cotifly:** duplicaría el maestro que ya mantienen SAP (vía Nexo) y ClientePro.

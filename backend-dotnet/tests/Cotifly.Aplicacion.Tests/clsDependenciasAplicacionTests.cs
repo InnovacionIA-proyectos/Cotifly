@@ -1,8 +1,14 @@
+using Cotifly.Aplicacion.Administracion.Services;
+using Cotifly.Aplicacion.Agente.Herramientas;
+using Cotifly.Aplicacion.Agente.Interfaces;
+using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +46,24 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsSeguimientoService), typeof(clsSeguimientoService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAuditoriaService), typeof(clsAuditoriaService), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsCandadoEnvios), typeof(clsCandadoEnvios), ServiceLifetime.Singleton)]
+    [InlineData(typeof(clsVerificadorIdentidad), typeof(clsVerificadorIdentidad), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsLoginClienteProService), typeof(clsLoginClienteProService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsRefreshTokenService), typeof(clsRefreshTokenService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsLogoutService), typeof(clsLogoutService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsRevocacionAccesos), typeof(clsCacheTokensRevocados), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsMisCotizacionesService), typeof(clsMisCotizacionesService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsNuevaVersionService), typeof(clsNuevaVersionService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsGeneradorFolioService), typeof(clsGeneradorFolioService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsMetricasService), typeof(clsMetricasService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsAgenteRunner), typeof(clsAgenteRunner), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsContextoTurnoAgente), typeof(clsContextoTurnoAgente), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsHerramientasCotizador), typeof(clsHerramientasCotizador), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsEstadoConversacionService), typeof(clsEstadoConversacionService), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaPasante), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsProcesadorEventoChat), typeof(clsProcesadorEventoChat), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();

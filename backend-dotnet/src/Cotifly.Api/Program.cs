@@ -5,6 +5,8 @@
 // pública (generador de ASP.NET Core), así que WebApplicationFactory<Program> no necesita
 // declarar "public partial class Program".
 using System.Reflection;
+using Cotifly.Api.Comun;
+using Cotifly.Api.Identidad;
 using Cotifly.Api.Sistema;
 using Cotifly.Aplicacion;
 using Cotifly.Infraestructura;
@@ -35,7 +37,19 @@ try
         .AddAplicacion()
         .AddInfraestructura(builder.Configuration);
 
-    builder.Services.AddControllers();
+    // Errores de validación automática como ErrorWeb ({"error": "..."}, contrato #17), no ProblemDetails.
+    // JSON por grupo (#12, ADR-002): /web/* en snake_case (clsJsonSnakeCaseAttribute); /api/auth/* y /health sin cambios.
+    builder.Services.AddControllers()
+        .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = clsErrorWeb.RespuestaValidacion)
+        .AddConvencionJsonWeb();
+    clsFabricaErroresCliente.Registrar(builder.Services);
+
+    // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
+    builder.Services.AddSeguridadHttp();
+    builder.WebHost.ConfigureKestrel(k => k.AddServerHeader = false);
+
+    // JwtBearer + revocación por jti + políticas por rol + límite de /api/auth/* (#12, ADR-009).
+    builder.Services.AddAutenticacionCotifly();
 
     app = builder.Build();
 }
@@ -47,6 +61,10 @@ catch (Exception ex) when (esProcesoPropio)
     return 1;
 }
 
+app.UseSeguridadHttp();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 
 try

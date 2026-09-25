@@ -1,19 +1,26 @@
+using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Repositories;
+using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Repositories;
+using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Metricas.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
+using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
+using Cotifly.Infraestructura.Clientes.Services;
 using Cotifly.Infraestructura.Comun;
 using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Configuracion;
@@ -22,11 +29,15 @@ using Cotifly.Infraestructura.Correo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
+using Cotifly.Infraestructura.IA.Services;
+using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
+using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,7 +62,7 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt/IA/GChat...).
+        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA/GChat...).
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
@@ -66,6 +77,15 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
+        servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
+        servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
+        servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
+        servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -80,7 +100,44 @@ public static class clsDependenciasInfraestructura
 
         AgregarPdfYCorreo(servicios);
 
+        AgregarIdentidad(servicios);
+
+        AgregarAgente(servicios);
+
         return servicios;
+    }
+
+    /// <summary>
+    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes (stub hasta
+    /// HU-005.2), Google Chat (verificación del JWT, cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido
+    /// de sesiones inactivas. TryAdd: un adaptador registrado antes (pruebas, HU-005.2) se respeta.
+    /// </summary>
+    private static void AgregarAgente(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
+        servicios.TryAddScoped<IClsBuscadorClientes, clsBuscadorClientesNoDisponible>();
+        servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
+
+        servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
+        servicios.TryAddSingleton<IClsVerificadorJwtGoogleChat, clsVerificadorJwtGoogleChat>();
+        servicios.TryAddSingleton<clsTokenCuentaServicioGoogle>();
+        servicios.TryAddSingleton<IClsPublicadorChat, clsPublicadorGoogleChat>();
+        servicios.TryAddSingleton<IClsColaEventosChat, clsColaEventosChat>();
+        servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
+        servicios.AddHostedService<clsWorkerEventosChat>();
+        servicios.AddHostedService<clsBarridoSesionesHostedService>();
+    }
+
+    /// <summary>
+    /// Login SSO ClientePro (#12, ADR-009): almacén corporativo de solo lectura, emisión de JWT y purga horaria de tokens
+    /// vencidos. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarIdentidad(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<IClsConfiguracionJwt, clsConfiguracionJwt>();
+        servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
+        servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
+        servicios.AddHostedService<clsLimpiezaTokensHostedService>();
     }
 
     /// <summary>
@@ -136,7 +193,7 @@ public static class clsDependenciasInfraestructura
             opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // dbsolucionesti: solo lectura (login, #12).
+        // dbsolucionesti: solo lectura (usuarios y roles de ClientePro para el login, #12).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 
@@ -146,9 +203,14 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsSapMapeoRepository, clsSapMapeoRepository>();
         servicios.AddScoped<IClsMargenAjusteRepository, clsMargenAjusteRepository>();
         servicios.AddScoped<IClsUsuarioWebRepository, clsUsuarioWebRepository>();
+        servicios.AddScoped<IClsRolRepository, clsRolRepository>();
+        servicios.AddScoped<IClsTokenRefrescoRepository, clsTokenRefrescoRepository>();
+        servicios.AddScoped<IClsTokenRevocadoRepository, clsTokenRevocadoRepository>();
         servicios.AddScoped<IClsCorreoRepository, clsCorreoRepository>();
         servicios.AddScoped<IClsAuditoriaRepository, clsAuditoriaRepository>();
         servicios.AddScoped<IClsSesionRepository, clsSesionRepository>();
+        servicios.AddScoped<IClsMetricasRepository, clsMetricasRepository>();
+        servicios.AddScoped<IClsCandadoTransaccional, clsCandadoTransaccionalSql>();
 
         servicios.AddHealthChecks()
             .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness]);

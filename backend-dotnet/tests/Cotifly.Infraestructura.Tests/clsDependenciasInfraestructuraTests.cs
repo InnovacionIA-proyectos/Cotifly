@@ -3,8 +3,10 @@ using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
+using Cotifly.Aplicacion.Metricas.Repositories;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Auditoria.Repositories;
 using Cotifly.Infraestructura.Comun;
@@ -14,7 +16,9 @@ using Cotifly.Infraestructura.Correo.Repositories;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
+using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
+using Cotifly.Infraestructura.Metricas.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -72,6 +76,12 @@ public sealed class clsDependenciasInfraestructuraTests
     [InlineData(typeof(IClsCorreoRepository), typeof(clsCorreoRepository))]
     [InlineData(typeof(IClsAuditoriaRepository), typeof(clsAuditoriaRepository))]
     [InlineData(typeof(IClsSesionRepository), typeof(clsSesionRepository))]
+    [InlineData(typeof(IClsRolRepository), typeof(clsRolRepository))]
+    [InlineData(typeof(IClsTokenRefrescoRepository), typeof(clsTokenRefrescoRepository))]
+    [InlineData(typeof(IClsTokenRevocadoRepository), typeof(clsTokenRevocadoRepository))]
+    [InlineData(typeof(IClsAlmacenIdentidadExterno), typeof(clsAlmacenIdentidadSolucionesTi))]
+    [InlineData(typeof(IClsMetricasRepository), typeof(clsMetricasRepository))]
+    [InlineData(typeof(IClsCandadoTransaccional), typeof(clsCandadoTransaccionalSql))]
     public void AddInfraestructuraRegistraLosPuertosDePersistenciaComoScoped(Type puerto, Type implementacion)
     {
         var servicios = new ServiceCollection();

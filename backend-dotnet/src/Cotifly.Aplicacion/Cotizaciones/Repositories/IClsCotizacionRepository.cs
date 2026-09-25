@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -35,4 +36,23 @@ public interface IClsCotizacionRepository
 
     /// <summary>Cotizaciones del comercial, de la más reciente a la más antigua, hasta <paramref name="limite"/>.</summary>
     Task<IReadOnlyList<clsCotizacion>> ListarPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Igual que <see cref="ListarPorUsuarioAsync"/>, con el nombre de la línea de negocio (JOIN con <c>MargenesPolitica</c>)
+    /// para <c>GET /web/mis-cotizaciones</c>. Solo las del comercial.
+    /// </summary>
+    Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mayor consecutivo <c>NNN</c> que ya usó el comercial en la fecha <paramref name="segmentoFecha"/> (<c>DDMMAAAA</c>),
+    /// contando sus folios de versión 1 con y sin NIT (<c>PCN-[nit-]DDMMAAAA-NNN</c>, ADR-011); 0 si no tiene ninguno.
+    /// Se llama dentro del candado del folio (<c>IClsCandadoTransaccional</c>).
+    /// </summary>
+    Task<int> ObtenerUltimoConsecutivoDelDiaAsync(Guid usuarioId, string segmentoFecha, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mayor <c>version</c> de la familia de un folio base: la cotización con ese folio y las que llevan <c>{base}-vN</c>;
+    /// 0 si no existe ninguna.
+    /// </summary>
+    Task<int> ObtenerVersionMaximaAsync(string folioBase, CancellationToken cancellationToken = default);
 }

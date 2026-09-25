@@ -17,19 +17,35 @@
    Qué agrega (todo en dbo_cotifly, dentro de dbTarifario_Nexo_Pruebas):
      1. Sesiones.estadoAgente  NVARCHAR(MAX) NULL + CHECK ISJSON  (ADR-004)
         Sesiones.usuarioId     UNIQUEIDENTIFIER NULL + FK UsuariosWeb (ADR-004)
-     2. RolesMapeo       rol externo de ClientePro -> rol interno (ADR-009)
+     1bis. UsuariosWeb.idUsuarioExterno BIGINT NULL, único filtrado: vínculo con
+        tblSAPUsuariosApp.ID para la verificación doble del login (ADR-009)
+     2. Roles            roles internos (comercial | gerente_comercial) y su rol
+                         externo de ClientePro (tblSAPRoles.IDROLES) (ADR-009)
+        UsuariosRoles    rol interno asignado a cada usuario en su primer login
+                         (verificación doble) (ADR-009)
+        Ambas reemplazan a la RolesMapeo del borrador anterior (nunca aplicado).
      3. TokensRefresco   hash SHA-256 del refresh token, rotación (ADR-009)
      4. TokensRevocados  jti revocados hasta su vencimiento (ADR-009)
      5. Índices para las consultas frecuentes del backend .NET (listado del
         comercial, dedupe de correo, historial de conversación, barrido de
         sesiones, purga de tokens).
 
-   Idempotente y NO destructivo: cada ADD/CREATE va guardado con comprobaciones
-   de existencia; se puede correr varias veces. A diferencia del 0001 NO suelta
+   *** sqlcmd: usar -I (QUOTED_IDENTIFIER ON) al correr este script y al fijar
+       Roles.idRolExterno ***
+   `dbo_cotifly.Roles` tiene un índice único filtrado; SQL Server rechaza todo
+   INSERT/UPDATE sobre esa tabla con QUOTED_IDENTIFIER OFF, que es el valor por
+   defecto de sqlcmd. Ejemplo:
+     sqlcmd -S <host> -d dbTarifario_Nexo_Pruebas -I -Q "UPDATE dbo_cotifly.Roles
+       SET idRolExterno = <IDROLES> WHERE codigo = 'comercial';"
+   (SSMS y Azure Data Studio ya lo traen activado.)
+
+   Idempotente y NO destructivo: cada ADD/CREATE/INSERT va guardado con
+   comprobaciones de existencia; se puede correr varias veces (la semilla de Roles
+   no pisa los idRolExterno que haya fijado el DBA). A diferencia del 0001 NO suelta
    ni recrea nada (el 0001 advierte que ese patrón no sirve una vez haya datos).
 
    *** PASO DE UN SOLO SENTIDO: después de este script NO se re-ejecuta el 0001 ***
-   TokensRefresco, TokensRevocados y Sesiones.usuarioId tienen FK a UsuariosWeb.
+   TokensRefresco, TokensRevocados, UsuariosRoles y Sesiones.usuarioId tienen FK a UsuariosWeb.
    El paso 0bis del 0001 suelta tablas en orden y NO falla hasta llegar a
    `DROP TABLE UsuariosWeb` (bloqueado por esas FK). Re-ejecutarlo DESTRUYE antes:
      - las vistas vAjustesMargenPorComercial y vActividadPorComercial, y
@@ -100,24 +116,101 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_sesiones_usuario
 GO
 
 -- =============================================================================
--- 2. dbo_cotifly.RolesMapeo — rol externo de ClientePro -> rol interno (ADR-009)
---    Sin semilla: los códigos externos están pendientes (negocio + ClientePro).
---    Un rol externo mapea a un solo rol interno; `activo` permite retirarlo sin
---    borrarlo.
+-- 1bis. dbo_cotifly.UsuariosWeb.idUsuarioExterno — vínculo con el almacén corporativo
+--    (ADR-009, verificación doble). Guarda tblSAPUsuariosApp.ID del usuario al que se
+--    le creó la cuenta. NO es la clave de búsqueda (esa sigue siendo nombreUsuario,
+--    HU-003.6): sirve para detectar que el NOMBREUSUARIO cambió en el almacén (mismo ID
+--    con otro nombre -> 401 y revisión, en vez de crear una cuenta duplicada) o que un
+--    nombre pasó a otra persona. BIGINT: tblSAPUsuariosApp.ID es NUMERIC sin decimales.
+--    Nullable: filas creadas antes quedan sin vínculo y se vinculan en su próximo login.
 -- =============================================================================
-IF OBJECT_ID(N'dbo_cotifly.RolesMapeo', N'U') IS NULL
+IF COL_LENGTH(N'dbo_cotifly.UsuariosWeb', N'idUsuarioExterno') IS NULL
+    ALTER TABLE dbo_cotifly.UsuariosWeb
+        ADD idUsuarioExterno BIGINT NULL;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_usuariosWeb_idUsuarioExterno'
+               AND object_id = OBJECT_ID(N'dbo_cotifly.UsuariosWeb'))
+    CREATE UNIQUE INDEX uq_usuariosWeb_idUsuarioExterno ON dbo_cotifly.UsuariosWeb (idUsuarioExterno)
+        WHERE idUsuarioExterno IS NOT NULL;
+GO
+
+-- =============================================================================
+-- 2. dbo_cotifly.Roles — roles internos de Cotifly y su rol externo (ADR-009)
+--    Reemplaza a la tabla RolesMapeo del borrador anterior de este script (nunca se
+--    aplicó). Un rol interno por fila (`codigo`), mapeado a lo sumo a un rol de
+--    ClientePro (`idRolExterno` = dbsolucionesti.dbo.tblSAPRoles.IDROLES; la
+--    DESCRIPCION externa es solo informativa y no se usa para mapear).
+--    Semilla: los dos roles internos SIN rol externo: los IDROLES de "Comercial" y
+--    "Gerente Comercial" todavía no se conocen. Mientras idRolExterno sea NULL nadie
+--    puede iniciar sesión con ese rol (fail-closed). El DBA los fija con:
+--      UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial';
+--      UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'gerente_comercial';
+--    Re-ejecutar este script no pisa esos valores (la semilla solo inserta si falta).
+-- =============================================================================
+IF OBJECT_ID(N'dbo_cotifly.Roles', N'U') IS NULL
 BEGIN
-    CREATE TABLE dbo_cotifly.RolesMapeo (
+    CREATE TABLE dbo_cotifly.Roles (
         id              INT IDENTITY(1,1)   NOT NULL,
-        rolExterno      NVARCHAR(100) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
-        rolInterno      NVARCHAR(30)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
-        activo          BIT                 NOT NULL CONSTRAINT df_rolesMapeo_activo DEFAULT (1),
-        updatedAt       DATETIMEOFFSET      NOT NULL CONSTRAINT df_rolesMapeo_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
-        CONSTRAINT pk_rolesMapeo PRIMARY KEY (id),
-        CONSTRAINT uq_rolesMapeo_rolExterno UNIQUE (rolExterno),
-        CONSTRAINT ck_rolesMapeo_rolInterno CHECK (rolInterno IN ('comercial', 'gerente_comercial'))
+        codigo          NVARCHAR(30)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,
+        descripcion     NVARCHAR(200) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
+        idRolExterno    INT                 NULL,
+        activo          BIT                 NOT NULL CONSTRAINT df_roles_activo DEFAULT (1),
+        updatedAt       DATETIMEOFFSET      NOT NULL CONSTRAINT df_roles_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
+        CONSTRAINT pk_roles PRIMARY KEY (id),
+        CONSTRAINT uq_roles_codigo UNIQUE (codigo),
+        CONSTRAINT ck_roles_codigo CHECK (codigo IN ('comercial', 'gerente_comercial'))
     );
 END
+GO
+
+-- Un rol externo mapea a un solo rol interno (varios NULL conviven: índice filtrado).
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_roles_idRolExterno'
+               AND object_id = OBJECT_ID(N'dbo_cotifly.Roles'))
+    CREATE UNIQUE INDEX uq_roles_idRolExterno ON dbo_cotifly.Roles (idRolExterno)
+        WHERE idRolExterno IS NOT NULL;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = N'comercial')
+    INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'comercial', N'Comercial');
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.Roles WHERE codigo = N'gerente_comercial')
+    INSERT INTO dbo_cotifly.Roles (codigo, descripcion) VALUES (N'gerente_comercial', N'Gerente comercial');
+GO
+
+-- =============================================================================
+-- 2bis. dbo_cotifly.UsuariosRoles — rol interno asignado a cada usuario (ADR-009)
+--    Se llena en el primer login (JIT) con el rol que resulta del rol externo. En los
+--    logins siguientes el rol externo actual debe coincidir con la asignación activa;
+--    si no, 401 hasta que un gerente/admin lo revise (`revisadoPor`, `revisadoAt`):
+--    la asignación NO se re-sincroniza sola.
+--    Un usuario tiene a lo sumo UNA asignación activa (índice único filtrado) y no
+--    repite rol (UNIQUE usuarioId, rolId; `activo` = 0 conserva el historial).
+-- =============================================================================
+IF OBJECT_ID(N'dbo_cotifly.UsuariosRoles', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo_cotifly.UsuariosRoles (
+        id              INT IDENTITY(1,1)   NOT NULL,
+        usuarioId       UNIQUEIDENTIFIER    NOT NULL,
+        rolId           INT                 NOT NULL,
+        asignadoAt      DATETIMEOFFSET      NOT NULL CONSTRAINT df_usuariosRoles_asignadoAt DEFAULT (SYSDATETIMEOFFSET()),
+        activo          BIT                 NOT NULL CONSTRAINT df_usuariosRoles_activo DEFAULT (1),
+        revisadoPor     UNIQUEIDENTIFIER    NULL,
+        revisadoAt      DATETIMEOFFSET      NULL,
+        CONSTRAINT pk_usuariosRoles PRIMARY KEY (id),
+        CONSTRAINT uq_usuariosRoles_usuarioId_rolId UNIQUE (usuarioId, rolId),
+        CONSTRAINT fk_usuariosRoles_usuarioId FOREIGN KEY (usuarioId) REFERENCES dbo_cotifly.UsuariosWeb (id),
+        CONSTRAINT fk_usuariosRoles_rolId FOREIGN KEY (rolId) REFERENCES dbo_cotifly.Roles (id),
+        CONSTRAINT fk_usuariosRoles_revisadoPor FOREIGN KEY (revisadoPor) REFERENCES dbo_cotifly.UsuariosWeb (id)
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_usuariosRoles_usuarioId_activo'
+               AND object_id = OBJECT_ID(N'dbo_cotifly.UsuariosRoles'))
+    CREATE UNIQUE INDEX uq_usuariosRoles_usuarioId_activo ON dbo_cotifly.UsuariosRoles (usuarioId)
+        WHERE activo = 1;
 GO
 
 -- =============================================================================
@@ -126,7 +219,8 @@ GO
 --    el token. `familiaId` agrupa la cadena de rotación: reutilizar un token ya
 --    rotado revoca toda la familia. `reemplazadoPorId` encadena la rotación; la
 --    rotación atómica es un único UPDATE condicional
---    (... WHERE id = @id AND revocadoAt IS NULL AND reemplazadoPorId IS NULL).
+--    (... WHERE id = @id AND revocadoAt IS NULL AND reemplazadoPorId IS NULL
+--    AND expiraAt > @ahora): de dos rotaciones simultáneas solo una afecta la fila.
 -- =============================================================================
 IF OBJECT_ID(N'dbo_cotifly.TokensRefresco', N'U') IS NULL
 BEGIN
@@ -237,5 +331,10 @@ GO
      SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
      WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'
      ORDER BY TABLE_NAME;
-     -- Debe listar 13 tablas: las 10 del 0001 + RolesMapeo, TokensRefresco, TokensRevocados.
+     -- Debe listar 14 tablas: las 10 del 0001 + Roles, UsuariosRoles,
+     -- TokensRefresco y TokensRevocados.
+
+     SELECT codigo, idRolExterno FROM dbo_cotifly.Roles ORDER BY codigo;
+     -- 2 filas (comercial, gerente_comercial); idRolExterno NULL hasta que el DBA
+     -- fije los IDROLES de ClientePro (ver sección 2).
    ============================================================================ */

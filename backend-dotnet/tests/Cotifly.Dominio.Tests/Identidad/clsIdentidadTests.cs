@@ -107,19 +107,70 @@ public sealed class clsIdentidadTests
     }
 
     [Fact]
-    public void UnRolMapeadoSoloAceptaRolesInternosConocidos()
+    public void UnRolInternoNaceActivoYSinRolExternoHastaQueSeMapee()
     {
-        var rol = clsRolMapeo.Crear(" COTIZADOR ", RolInterno.Comercial).Valor;
+        var rol = clsRol.Crear(RolInterno.Comercial, " Comercial ").Valor;
 
-        rol.RolExterno.Should().Be("COTIZADOR");
+        rol.Codigo.Should().Be(RolInterno.Comercial);
+        rol.Descripcion.Should().Be("Comercial");
+        rol.IdRolExterno.Should().BeNull();
         rol.Activo.Should().BeTrue();
-        clsRolMapeo.Crear("X", (RolInterno)9).EsFallo.Should().BeTrue();
-        FluentActions.Invoking(() => rol.CambiarRolInterno((RolInterno)9)).Should().Throw<ArgumentOutOfRangeException>();
 
-        rol.CambiarRolInterno(RolInterno.GerenteComercial);
+        rol.MapearRolExterno(34);
         rol.Desactivar();
-        rol.RolInterno.Should().Be(RolInterno.GerenteComercial);
+
+        rol.IdRolExterno.Should().Be(34);
         rol.Activo.Should().BeFalse();
+    }
+
+    [Fact]
+    public void UnRolSoloAceptaRolesInternosConocidosYDescripcionAcotada()
+    {
+        clsRol.Crear((RolInterno)9, null).EsFallo.Should().BeTrue();
+        clsRol.Crear(RolInterno.GerenteComercial, new string('d', 201)).EsFallo.Should().BeTrue();
+    }
+
+    [Fact]
+    public void UnaAsignacionDeRolNaceActivaYAlRetirarlaQuedaLaRevision()
+    {
+        var usuario = Guid.NewGuid();
+        var revisor = Guid.NewGuid();
+        var asignacion = clsUsuarioRol.Asignar(usuario, 2, _ahora).Valor;
+
+        asignacion.UsuarioId.Should().Be(usuario);
+        asignacion.RolId.Should().Be(2);
+        asignacion.AsignadoAt.Should().Be(_ahora);
+        asignacion.Activo.Should().BeTrue();
+        asignacion.RevisadoPor.Should().BeNull();
+
+        asignacion.Retirar(revisor, _ahora.AddDays(1));
+
+        asignacion.Activo.Should().BeFalse();
+        asignacion.RevisadoPor.Should().Be(revisor);
+        asignacion.RevisadoAt.Should().Be(_ahora.AddDays(1));
+        FluentActions.Invoking(() => asignacion.RegistrarRevision(Guid.Empty, _ahora)).Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void UnaAsignacionExigeUsuarioYRol()
+    {
+        clsUsuarioRol.Asignar(Guid.Empty, 1, _ahora).EsFallo.Should().BeTrue();
+        clsUsuarioRol.Asignar(Guid.NewGuid(), 0, _ahora).EsFallo.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ElVinculoConElAlmacenCorporativoSeFijaUnaVezYNoCambia()
+    {
+        var sinVinculo = clsUsuarioWeb.Crear("APEREZ", null, null, null, _ahora).Valor;
+        var vinculado = clsUsuarioWeb.Crear("LGOMEZ", null, null, null, _ahora, idUsuarioExterno: 102).Valor;
+
+        sinVinculo.IdUsuarioExterno.Should().BeNull();
+        sinVinculo.VincularUsuarioExterno(101);
+        sinVinculo.VincularUsuarioExterno(101);
+
+        sinVinculo.IdUsuarioExterno.Should().Be(101);
+        vinculado.IdUsuarioExterno.Should().Be(102);
+        FluentActions.Invoking(() => vinculado.VincularUsuarioExterno(999)).Should().Throw<InvalidOperationException>();
     }
 
     [Fact]

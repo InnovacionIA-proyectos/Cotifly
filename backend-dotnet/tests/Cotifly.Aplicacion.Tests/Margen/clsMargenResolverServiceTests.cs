@@ -315,4 +315,17 @@ public sealed class clsMargenResolverServiceTests
         r.Origen.Should().Be("sap_tm");
         _fuente.Consultas.Should().Equal(("50000005", "OPTN", "15927"));
     }
+
+    // #41 (auditoría de #12, F4): el comercial no cotiza con una línea inactiva (la administración sí la ve).
+    [Fact]
+    public async Task UnaLineaInactivaNoSeCotiza()
+    {
+        _lineas.Single(l => l.LineaNegocio == "Nacional").Desactivar();
+
+        var resultado = await Resolver().ResolverAsync(new clsEntradaMargen("nacional", "15927"), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        resultado.Error.Detalle.Should().Be(clsMargenResolverService.DetalleLineaInactiva);
+        resultado.Error.Mensaje.Should().Contain("inactiva");
+    }
 }
