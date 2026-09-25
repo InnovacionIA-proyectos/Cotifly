@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Margen;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Margen.Services;
@@ -16,9 +17,12 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// <item>Si hay BP del cliente y TrqType: consulta la fuente SAP TM por (salesOrg, TrqType, BP). Con valor →
 /// <c>sap_tm</c>, valor/100 a 6 decimales y anomalía fuera de [0, 60 %].</item>
 /// <item>Sin BP no se consulta SAP (ADR-004, nunca con el NIT); sin BP, sin TrqType, sin registro en SAP o con la
-/// fuente no configurada (hasta #13) → política de la línea (<c>politica_linea</c>) con el motivo en <c>detalle</c>.</item>
-/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>. Si una fuente configurada falla → <c>MARGEN_FUENTE_NO_DISPONIBLE</c>
-/// (no cae a la política, igual que el Python).</item>
+/// fuente no configurada (<c>SapTm:Modo</c> vacío) → política de la línea (<c>politica_linea</c>) con el motivo en <c>detalle</c>.</item>
+/// <item>Si una fuente configurada falla (export ausente, SAP caído, timeout) → política de la línea con el motivo
+/// "SAP TM no disponible" y un warning en el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009:
+/// la cotización no se interrumpe). El Python devolvía el error sin respaldo.</item>
+/// <item>Sin política → <c>MARGEN_LINEA_DESCONOCIDA</c>, salvo que además SAP haya fallado: entonces
+/// <c>MARGEN_FUENTE_NO_DISPONIBLE</c> (SAP era la única fuente posible).</item>
 /// </list>
 /// A diferencia del Python, el nombre de la línea se compara sin tildes, mayúsculas ni espacios
 /// contra las líneas de <c>MargenesPolitica</c> (la collation <c>CI_AS</c> distingue tildes, deuda de ADR-008).
@@ -27,7 +31,8 @@ public sealed class clsMargenResolverService(
     IClsMargenPoliticaRepository politicas,
     IClsSapMapeoRepository mapeo,
     IClsFuenteMargen fuente,
-    IOptions<clsOpcionesMargen> opciones) : IClsMargenResolverService
+    IOptions<clsOpcionesMargen> opciones,
+    ILogger<clsMargenResolverService> logger) : IClsMargenResolverService
 {
     /// <summary>Sin BP del cliente (prospecto o cliente no identificado): no se consulta SAP TM (ADR-004).</summary>
     public const string MotivoSinBp = "cliente nuevo: sin BP de SAP, no se consulta SAP TM";
@@ -35,8 +40,11 @@ public sealed class clsMargenResolverService(
     /// <summary>Con BP, pero sin TrqType mapeado o sin fila en SAP TM (texto del Python).</summary>
     public const string MotivoSinRegistro = "sin registro en SAP TM";
 
-    /// <summary>La fuente SAP TM no está configurada (hasta #13).</summary>
+    /// <summary>La fuente SAP TM no está configurada (<c>SapTm:Modo</c> vacío).</summary>
     public const string MotivoNoConfigurado = "SAP TM no configurado: se usa la política de la línea";
+
+    /// <summary>La fuente SAP TM está configurada pero falló (decisión de #13: respaldo en la política).</summary>
+    public const string MotivoNoDisponible = "SAP TM no disponible: se usa la política de la línea";
 
     private readonly string _salesOrgDefault = opciones.Value.SalesOrgDefault.Trim();
 
@@ -61,23 +69,27 @@ public sealed class clsMargenResolverService(
         var trqType = await mapeo.TrqTypeDeAsync(linea, salesOrg, cancellationToken);
 
         // 1) SAP TM: solo con BP del cliente, TrqType mapeado y fuente configurada.
+        clsFuenteMargenNoDisponibleException? caidaSap = null;
         if (bp is not null && trqType is not null && fuente.EstaConfigurada)
         {
-            decimal? valor;
+            decimal? valor = null;
             try
             {
                 valor = await fuente.ObtenerValorAsync(salesOrg, trqType, bp, cancellationToken);
             }
             catch (clsFuenteMargenNoDisponibleException ex)
             {
-                return new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, ex.Message);
+                caidaSap = ex;
+                logger.LogWarning(
+                    "SAP TM ({Modo}) no disponible para {TrqType} en {SalesOrg}: {Motivo} Se usa la política de la línea.",
+                    fuente.Modo, trqType, salesOrg, ex.Message);
             }
 
             if (valor is { } porcentaje)
             {
                 var margenSap = clsReglasMargen.NormalizarValorSap(porcentaje);
                 var anomaloSap = clsReglasMargen.EsAnomalo(margenSap);
-                var detalleSap = $"Margen propuesto SAP TM para cliente {bp} en {trqType}: {porcentaje.ToString("0.00", CultureInfo.InvariantCulture)}%";
+                var detalleSap = $"Margen propuesto SAP TM para cliente {bp} en {trqType}: {porcentaje.ToString(CultureInfo.InvariantCulture)}%";
                 if (anomaloSap)
                 {
                     detalleSap += " — ANÓMALO (fuera de [0, 60%]): validar antes de aplicar.";
@@ -95,6 +107,11 @@ public sealed class clsMargenResolverService(
         // 2) Respaldo: política de la línea.
         if (politica is null)
         {
+            if (caidaSap is not null)
+            {
+                return new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, caidaSap.Message);
+            }
+
             return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, $"Sin mapeo ni política para la línea '{lineaRecibida}'.");
         }
 
@@ -102,6 +119,7 @@ public sealed class clsMargenResolverService(
         // Textos del Python ("cliente nuevo", "sin registro en SAP TM"); el de "sin BP" agrega el motivo de ADR-004.
         var motivo = (bp, trqType, fuente.EstaConfigurada) switch
         {
+            _ when caidaSap is not null => MotivoNoDisponible,
             (null, _, _) => MotivoSinBp,
             (_, null, _) => MotivoSinRegistro,
             (_, _, false) => MotivoNoConfigurado,

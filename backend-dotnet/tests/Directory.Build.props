@@ -24,5 +24,7 @@
     <PackageReference Include="Testcontainers.MsSql" />
     <Compile Include="$(MSBuildThisFileDirectory)Comun\**\*.cs" Link="Comun\%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="$(MSBuildThisFileDirectory)..\..\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Datos de prueba portados del Python (#13): muestra de RentabClienteSet de SAP TM (= datos/sap_export.json). -->
+    <None Include="$(MSBuildThisFileDirectory)fixtures\**\*.json" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

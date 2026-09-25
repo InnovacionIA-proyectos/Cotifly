@@ -26,6 +26,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Polly.Telemetry;
 
 namespace Cotifly.Infraestructura;
 
@@ -51,6 +52,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesConexiones>, clsValidadorOpcionesConexiones>();
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesSapTm>(configuracion, clsOpcionesSapTm.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesSapTm>, clsValidadorOpcionesSapTm>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -58,12 +61,39 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Fuentes externas de Margen y Tarifas (HU-003.4, #10). TryAdd: #13 (SAP TM export_json | odata) y
-        // HU-005 (costeo Nexo) registran sus adaptadores antes o los reemplazan.
-        servicios.TryAddSingleton<IClsFuenteMargen, clsFuenteMargenNoConfigurada>();
+        // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
+        AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
         return servicios;
+    }
+
+    /// <summary>
+    /// Fuente SAP TM elegida por <c>SapTm:Modo</c> al resolver (<see cref="clsFabricaFuenteMargen"/>): <c>export_json</c>,
+    /// <c>odata</c> o, sin modo, la no configurada (#10). El cliente OData es tipado (<c>IHttpClientFactory</c>) con la tubería
+    /// estándar de resiliencia (10 s en total, reintentos ante fallos transitorios) y sin registrar cabeceras en los logs.
+    /// </summary>
+    private static void AgregarFuenteMargen(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<clsFuenteMargenNoConfigurada>();
+        servicios.TryAddSingleton<clsFuenteMargenExportJson>();
+        servicios.AddHttpClient<clsFuenteMargenOData>(clsFuenteMargenOData.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler(clsFuenteMargenOData.ConfigurarResiliencia);
+        servicios.TryAddTransient<IClsFuenteMargen>(clsFabricaFuenteMargen.Crear);
+
+        // Los eventos de Polly de cada intento (reintento, timeout) traen la traza completa: en esta tubería bajan a
+        // Debug; el adaptador deja una sola línea de warning por consulta fallida.
+        servicios.Configure<TelemetryOptions>(telemetria =>
+        {
+            var anterior = telemetria.SeverityProvider;
+            telemetria.SeverityProvider = argumentos =>
+                argumentos.Source.PipelineName?.StartsWith(clsFuenteMargenOData.NombreCliente + "-", StringComparison.Ordinal) == true
+                    ? ResilienceEventSeverity.Debug
+                    : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
+        });
+
+        servicios.AddHostedService<clsAvisosArranqueSapTm>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

@@ -4,8 +4,8 @@ namespace Cotifly.Aplicacion.Margen.Interfaces;
 
 /// <summary>
 /// Puerto (Strategy, ADR-002) de la rentabilidad por cliente en SAP TM (<c>FuenteMargen</c> del Python).
-/// Las implementaciones reales (<c>export_json</c> | <c>odata</c>, según <c>SapTm:Modo</c>) llegan con #13;
-/// mientras tanto Infraestructura registra una fuente no configurada.
+/// Infraestructura elige la implementación por <c>SapTm:Modo</c> (#13): <c>export_json</c> (<c>clsFuenteMargenExportJson</c>),
+/// <c>odata</c> (<c>clsFuenteMargenOData</c>) o, sin modo, <c>clsFuenteMargenNoConfigurada</c>.
 /// </summary>
 public interface IClsFuenteMargen
 {
@@ -14,7 +14,8 @@ public interface IClsFuenteMargen
 
     /// <summary>
     /// False si no hay fuente SAP TM configurada: el resolver no la consulta y usa la política de la línea
-    /// (no es una caída, que sí se reporta como <c>MARGEN_FUENTE_NO_DISPONIBLE</c>).
+    /// (no es una caída: una caída lanza <see cref="clsFuenteMargenNoDisponibleException"/>, se registra como warning
+    /// y también cae a la política, con otro motivo en el detalle).
     /// </summary>
     bool EstaConfigurada { get; }
 
