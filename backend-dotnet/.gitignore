@@ -41,3 +41,6 @@ secrets/
 
 # Identificador anónimo de telemetría de Reqnroll (se crea si no hay APPDATA, p. ej. en el contenedor del SDK)
 **/Reqnroll/userid
+
+# PDFs de muestra que generan las pruebas para la comparación visual (#11); no se versionan.
+tests/artefactos/

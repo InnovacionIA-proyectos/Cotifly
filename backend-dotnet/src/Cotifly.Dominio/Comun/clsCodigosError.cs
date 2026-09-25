@@ -27,4 +27,40 @@ public static class clsCodigosError
 
     /// <summary>El ajuste de margen apunta a una cotización que no existe (o no es del comercial).</summary>
     public const string AjusteCotizacionInvalida = "AJUSTE_COTIZACION_INVALIDA";
+
+    /// <summary>El payload del PDF no es válido (falta el folio, textos demasiado largos, sin filas de tarifa...).</summary>
+    public const string PdfPayloadInvalido = "PDF_PAYLOAD_INVALIDO";
+
+    /// <summary>El PDF no se pudo renderizar (fuentes o recursos embebidos no disponibles).</summary>
+    public const string PdfRenderNoDisponible = "PDF_RENDER_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Ya existe una cotización con ese folio. Código nuevo del backend .NET (#11): el Python versionaba solo el folio
+    /// (<c>-v2</c>, <c>-v3</c>); en .NET el folio lo genera #12 (ADR-011) y la colisión se informa.
+    /// </summary>
+    public const string FolioDuplicado = "FOLIO_DUPLICADO";
+
+    /// <summary>El envío de correo exige la confirmación del comercial autenticado (<c>confirmado_por</c>).</summary>
+    public const string ConfirmacionRequerida = "CONFIRMACION_REQUERIDA";
+
+    /// <summary>La cotización no existe o no es del comercial (aislamiento por dueño).</summary>
+    public const string CotizacionNoEncontrada = "COTIZACION_NO_ENCONTRADA";
+
+    /// <summary>Ya se envió la cotización a los mismos destinatarios <c>para</c> hace menos de 5 minutos.</summary>
+    public const string CorreoDuplicado = "CORREO_DUPLICADO";
+
+    /// <summary>La cotización no tiene PDF en el almacén para adjuntar.</summary>
+    public const string CorreoPdfNoEncontrado = "CORREO_PDF_NO_ENCONTRADO";
+
+    /// <summary>El transporte de correo falló (red, relay que rechaza destinatarios, timeout).</summary>
+    public const string CorreoEnvioFallido = "CORREO_ENVIO_FALLIDO";
+
+    /// <summary>
+    /// El envío de correo está deshabilitado (<c>Correo:Habilitado=false</c>, valor por defecto, igual que
+    /// <c>correo_habilitado</c> del Python). Código nuevo del backend .NET (#11).
+    /// </summary>
+    public const string CorreoDeshabilitado = "CORREO_DESHABILITADO";
+
+    /// <summary>Fallo inesperado (ej. el comercial autenticado no existe en <c>UsuariosWeb</c>).</summary>
+    public const string ErrorInterno = "ERROR_INTERNO";
 }

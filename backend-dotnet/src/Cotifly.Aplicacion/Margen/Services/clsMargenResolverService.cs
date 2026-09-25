@@ -139,6 +139,14 @@ public sealed class clsMargenResolverService(
             metodo);
     }
 
+    public Task<clsMargenPolitica?> ResolverLineaAsync(string? lineaNegocio, CancellationToken cancellationToken = default)
+    {
+        var linea = lineaNegocio?.Trim() ?? string.Empty;
+        return clsReglasMargen.NormalizarLinea(linea).Length == 0
+            ? Task.FromResult<clsMargenPolitica?>(null)
+            : BuscarPoliticaAsync(linea, cancellationToken);
+    }
+
     /// <summary>
     /// Política de la línea comparando en memoria sin tildes ni mayúsculas (8 líneas canónicas). Si dos líneas
     /// normalizan igual, gana la que coincide exactamente (sin distinguir mayúsculas) y luego la primera por nombre.

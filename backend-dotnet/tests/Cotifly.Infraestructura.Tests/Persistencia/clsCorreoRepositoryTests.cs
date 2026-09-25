@@ -1,10 +1,16 @@
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Dominio.Correo;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
+/// <summary>
+/// Consultas de <c>Correos</c>/<c>CorreoDestinatarios</c>. La regla de deduplicación pasó a <c>clsCorreoService</c> (#11,
+/// deuda de ADR-008); aquí se prueban los datos que la alimentan (envíos exitosos desde un instante) y la consulta de
+/// destinatarios previos por cliente.
+/// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsCorreoRepositoryTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
@@ -16,11 +22,7 @@ public sealed class clsCorreoRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         await GuardarAsync(cotizacion);
         var correo = clsCorreo.Crear(cotizacion.Id, ["cliente@empresa.com"], EstadoCorreo.Enviado, "Cotización", ["jefe@empresa.com"]).Valor;
 
-        await EnAmbitoAsync(s =>
-        {
-            s.GetRequiredService<IClsCorreoRepository>().Agregar(correo);
-            return Task.CompletedTask;
-        });
+        await AgregarAsync(correo);
         var correos = await ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>().ListarPorCotizacionAsync(cotizacion.Id, Ct));
 
         correos.Should().ContainSingle();
@@ -31,64 +33,73 @@ public sealed class clsCorreoRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     }
 
     [Fact]
-    public async Task UnEnvioALosMismosDestinatariosDentroDeCincoMinutosEsDuplicadoSinImportarMayusculasNiOrden()
-    {
-        var cotizacionId = await CrearCotizacionConCorreoAsync(EstadoCorreo.Enviado, "a@x.com", "b@x.com");
-        Reloj.Avanzar(TimeSpan.FromMinutes(4));
-
-        var duplicado = await ExisteDuplicadoAsync(cotizacionId, "B@X.com", " a@x.com ");
-
-        duplicado.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task PasadaLaVentanaDeCincoMinutosYaNoEsDuplicado()
-    {
-        var cotizacionId = await CrearCotizacionConCorreoAsync(EstadoCorreo.Enviado, "a@x.com");
-        Reloj.Avanzar(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
-
-        (await ExisteDuplicadoAsync(cotizacionId, "a@x.com")).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task OtroConjuntoDeDestinatariosNoEsDuplicado()
-    {
-        var cotizacionId = await CrearCotizacionConCorreoAsync(EstadoCorreo.Enviado, "a@x.com", "b@x.com");
-
-        (await ExisteDuplicadoAsync(cotizacionId, "a@x.com")).Should().BeFalse();
-        (await ExisteDuplicadoAsync(cotizacionId, "a@x.com", "b@x.com", "c@x.com")).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task UnEnvioFallidoNoCuentaComoDuplicado()
-    {
-        var cotizacionId = await CrearCotizacionConCorreoAsync(EstadoCorreo.Fallido, "a@x.com");
-
-        (await ExisteDuplicadoAsync(cotizacionId, "a@x.com")).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task ElEnvioDeOtraCotizacionNoCuentaComoDuplicado()
-    {
-        await CrearCotizacionConCorreoAsync(EstadoCorreo.Enviado, "a@x.com");
-        var otra = NuevaCotizacion(null);
-        await GuardarAsync(otra);
-
-        (await ExisteDuplicadoAsync(otra.Id, "a@x.com")).Should().BeFalse();
-    }
-
-    private async Task<Guid> CrearCotizacionConCorreoAsync(EstadoCorreo estado, params string[] para)
+    public async Task LosEnviadosDesdeUnInstanteSoloIncluyenEnviosExitososDeEsaCotizacion()
     {
         var cotizacion = NuevaCotizacion(null);
         await GuardarAsync(cotizacion);
-        await EnAmbitoAsync(s =>
-        {
-            s.GetRequiredService<IClsCorreoRepository>().Agregar(clsCorreo.Crear(cotizacion.Id, para, estado).Valor);
-            return Task.CompletedTask;
-        });
-        return cotizacion.Id;
+        var otra = NuevaCotizacion(null);
+        await GuardarAsync(otra);
+        var desde = Reloj.AhoraUtc;
+
+        await AgregarAsync(clsCorreo.Crear(cotizacion.Id, ["a@x.com", "b@x.com"], EstadoCorreo.Enviado).Valor);
+        await AgregarAsync(clsCorreo.Crear(cotizacion.Id, ["c@x.com"], EstadoCorreo.Fallido, error: "relay caído").Valor);
+        await AgregarAsync(clsCorreo.Crear(otra.Id, ["a@x.com"], EstadoCorreo.Enviado).Valor);
+
+        var enviados = await ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>().ListarEnviadosDesdeAsync(cotizacion.Id, desde, Ct));
+
+        enviados.Should().ContainSingle();
+        enviados[0].Para.Should().BeEquivalentTo(["a@x.com", "b@x.com"], "los destinatarios vienen cargados para comparar el conjunto");
     }
 
-    private Task<bool> ExisteDuplicadoAsync(Guid cotizacionId, params string[] para) =>
-        ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>().ExisteDuplicadoRecienteAsync(cotizacionId, para, cancellationToken: Ct));
+    [Fact]
+    public async Task UnEnvioAnteriorAlInstanteNoSeLista()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        await GuardarAsync(cotizacion);
+        await AgregarAsync(clsCorreo.Crear(cotizacion.Id, ["a@x.com"], EstadoCorreo.Enviado).Valor);
+        Reloj.Avanzar(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+
+        var enviados = await ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>()
+            .ListarEnviadosDesdeAsync(cotizacion.Id, Reloj.AhoraUtc - TimeSpan.FromMinutes(5), Ct));
+
+        enviados.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LosDestinatariosPreviosSonLosDelUltimoEnvioExitosoDelComercialAEseCliente()
+    {
+        var ana = await CrearUsuarioAsync();
+        var luis = await CrearUsuarioAsync();
+        var nit = $"NIT{Guid.NewGuid():N}"[..15];
+        var primera = ConNit(ana, nit);
+        var segunda = ConNit(ana, nit);
+        var deLuis = ConNit(luis, nit);
+        await GuardarAsync(primera);
+        await GuardarAsync(segunda);
+        await GuardarAsync(deLuis);
+
+        await AgregarAsync(clsCorreo.Crear(primera.Id, ["viejo@cliente.com"], EstadoCorreo.Enviado).Valor);
+        Reloj.Avanzar(TimeSpan.FromMinutes(1));
+        await AgregarAsync(clsCorreo.Crear(segunda.Id, ["compras@cliente.com"], EstadoCorreo.Enviado, cc: ["gerente@cliente.com"]).Valor);
+        Reloj.Avanzar(TimeSpan.FromMinutes(1));
+        await AgregarAsync(clsCorreo.Crear(segunda.Id, ["fallido@cliente.com"], EstadoCorreo.Fallido, error: "x").Valor);
+        await AgregarAsync(clsCorreo.Crear(deLuis.Id, ["deluis@cliente.com"], EstadoCorreo.Enviado).Valor);
+
+        var deAna = await ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>().ObtenerUltimoEnviadoAClienteAsync(ana, nit, Ct));
+        var otroCliente = await ConsultarAsync(s => s.GetRequiredService<IClsCorreoRepository>().ObtenerUltimoEnviadoAClienteAsync(ana, "000", Ct));
+
+        deAna!.Para.Should().Equal("compras@cliente.com");
+        deAna.Cc.Should().Equal("gerente@cliente.com");
+        otroCliente.Should().BeNull();
+    }
+
+    private static clsCotizacion ConNit(Guid usuarioId, string nit) =>
+        clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = usuarioId, NitCliente = nit }).Valor;
+
+    private Task AgregarAsync(clsCorreo correo) =>
+        EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsCorreoRepository>().Agregar(correo);
+            return Task.CompletedTask;
+        });
 }

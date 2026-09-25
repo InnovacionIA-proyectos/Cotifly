@@ -1,4 +1,9 @@
+using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -29,8 +34,13 @@ public sealed class clsDependenciasAplicacionTests
     [Theory]
     [InlineData(typeof(IClsPrecioService), typeof(clsPrecioService), ServiceLifetime.Singleton)]
     [InlineData(typeof(IClsMargenResolverService), typeof(clsMargenResolverService), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsAjusteMargenService), typeof(clsAjusteMargenService), ServiceLifetime.Scoped)]
-    public void AddAplicacionRegistraLosCasosDeUsoDePrecioYMargen(Type servicio, Type implementacion, ServiceLifetime ciclo)
+    [InlineData(typeof(IClsVistaPreviaCorreoService), typeof(clsVistaPreviaCorreoService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsDestinatariosPreviosService), typeof(clsDestinatariosPreviosService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsTelefonoComercialService), typeof(clsTelefonoComercialService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsSeguimientoService), typeof(clsSeguimientoService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsAuditoriaService), typeof(clsAuditoriaService), ServiceLifetime.Singleton)]
+    [InlineData(typeof(clsCandadoEnvios), typeof(clsCandadoEnvios), ServiceLifetime.Singleton)]
+    public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();
 
@@ -38,5 +48,22 @@ public sealed class clsDependenciasAplicacionTests
 
         servicios.Should().ContainSingle(d => d.ServiceType == servicio)
             .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationType == implementacion && d.Lifetime == ciclo);
+    }
+
+    /// <summary>Los casos de uso auditados (#11) se registran como decorador sobre la implementación concreta.</summary>
+    [Theory]
+    [InlineData(typeof(IClsAjusteMargenService), typeof(clsAjusteMargenService), typeof(clsAjusteMargenServiceAuditado))]
+    [InlineData(typeof(IClsGenerarPdfService), typeof(clsGenerarPdfService), typeof(clsGenerarPdfServiceAuditado))]
+    [InlineData(typeof(IClsCorreoService), typeof(clsCorreoService), typeof(clsCorreoServiceAuditado))]
+    public void LosCasosDeUsoAuditadosSeRegistranConSuDecorador(Type servicio, Type implementacion, Type decorador)
+    {
+        var servicios = new ServiceCollection();
+
+        servicios.AddAplicacion();
+
+        servicios.Should().ContainSingle(d => d.ServiceType == servicio)
+            .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationFactory != null && d.Lifetime == ServiceLifetime.Scoped);
+        servicios.Should().ContainSingle(d => d.ServiceType == implementacion && d.Lifetime == ServiceLifetime.Scoped);
+        decorador.GetInterfaces().Should().Contain(servicio);
     }
 }

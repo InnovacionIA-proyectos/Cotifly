@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.Interfaces;
+using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,14 +14,15 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
+    private readonly Dictionary<string, string?> _configuracion;
     private ServiceProvider _proveedor;
+    private clsServidorSmtpFalso? _relay;
 
     public clsContextoEscenario()
     {
-        _proveedor = clsServiciosPruebas.Crear(
-            clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            Reloj,
-            configurar: s => s.AddSingleton<IClsFuenteMargen>(FuenteSap));
+        // Carpeta de PDFs fija durante el escenario: sobrevive a Reconfigurar (#11).
+        _configuracion = new Dictionary<string, string?> { ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal() };
+        _proveedor = CrearProveedor();
     }
 
     public clsRelojFalso Reloj { get; } = new();
@@ -33,6 +35,18 @@ public sealed class clsContextoEscenario : IDisposable
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Relay SMTP falso del escenario (se crea al pedirlo por primera vez, #11).</summary>
+    public clsServidorSmtpFalso Relay => _relay ??= new clsServidorSmtpFalso();
+
+    /// <summary>Correos que recibió el relay falso (0 si el escenario no lo creó).</summary>
+    public int CorreosRecibidos => _relay?.Recibidos.Count ?? 0;
+
+    /// <summary>Error de negocio de la última operación de PDF o correo (#11), o <c>null</c> si salió bien.</summary>
+    public clsErrorDominio? UltimoErrorNegocio { get; set; }
+
+    /// <summary>Bytes del último PDF generado (#11).</summary>
+    public byte[]? UltimoPdf { get; set; }
 
     /// <summary>Error de la última operación que se esperaba que fallara.</summary>
     public Exception? UltimoError { get; set; }
@@ -56,12 +70,37 @@ public sealed class clsContextoEscenario : IDisposable
         };
 
         _proveedor.Dispose();
+        foreach (var (clave, valor) in configuracion)
+        {
+            _configuracion[clave] = valor;
+        }
+
         _proveedor = clsServiciosPruebas.Crear(
             clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             Reloj,
-            configuracionExtra: configuracion,
+            configuracionExtra: _configuracion,
             configurar: s => s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso));
     }
+
+    /// <summary>Rehace el proveedor con claves de configuración adicionales (ej. <c>Correo:Habilitado</c>), conservando las anteriores.</summary>
+    public void Reconfigurar(IDictionary<string, string?> configuracion)
+    {
+        ArgumentNullException.ThrowIfNull(configuracion);
+        foreach (var (clave, valor) in configuracion)
+        {
+            _configuracion[clave] = valor;
+        }
+
+        _proveedor.Dispose();
+        _proveedor = CrearProveedor();
+    }
+
+    private ServiceProvider CrearProveedor() =>
+        clsServiciosPruebas.Crear(
+            clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            Reloj,
+            configuracionExtra: _configuracion,
+            configurar: s => s.AddSingleton<IClsFuenteMargen>(FuenteSap));
 
     /// <summary>Ejecuta <paramref name="accion"/> en un ámbito nuevo (como una petición) y guarda los cambios.</summary>
     public async Task EnAmbitoAsync(Func<IServiceProvider, Task> accion)
@@ -84,5 +123,6 @@ public sealed class clsContextoEscenario : IDisposable
     {
         _proveedor.Dispose();
         SapFalso.Dispose();
+        _relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

@@ -75,14 +75,15 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 
 | Deuda | Dónde se resuelve |
 |---|---|
-| `IClsCotizacionRepository.MarcarSeguimientoAsync` e `IClsCorreoRepository.VentanaDuplicado` contienen reglas de negocio en puertos de repositorio (se portaron así desde `shared/repos.py`): pasar a casos de uso | #11 / #12 |
+| ~~`IClsCotizacionRepository.MarcarSeguimientoAsync` e `IClsCorreoRepository.VentanaDuplicado` contienen reglas de negocio en puertos de repositorio (se portaron así desde `shared/repos.py`): pasar a casos de uso~~ | **Resuelto en #11:** `IClsSeguimientoService` (dueño, ganada/motivo ≤ 2000, `marcadoAt` con `IClsReloj`) y `clsCorreoService` (ventana de 5 min y comparación de destinatarios); el repositorio de correos solo expone consultas (`ListarEnviadosDesdeAsync`, `ObtenerUltimoEnviadoAClienteAsync`) |
 | `clsUsuarioSapApp` (Dominio) pasa a Aplicacion detrás de un puerto de directorio corporativo | #12 |
 | `clsIdentidadDbContext` solo bloquea `SaveChanges`; `ExecuteUpdate`/`ExecuteDelete`/`ExecuteSqlRaw` no pasan por ahí. La garantía real son los permisos de `cotifly_app` (sin UPDATE/DELETE, sin SELECT sobre `CLAVE`) | DBA |
 | `IClsSesionRepository.TocarAsync` crea la sesión si no existe y sin dueño: #12 no debe usarlo para crear sesiones web (usar `ObtenerOCrearAsync` con `usuarioId`) | #12 |
-| El dedupe de correo (`ExisteDuplicadoRecienteAsync`) no toma lock: dos envíos simultáneos pueden pasar ambos (igual que el Python) | #11 |
+| ~~El dedupe de correo (`ExisteDuplicadoRecienteAsync`) no toma lock: dos envíos simultáneos pueden pasar ambos (igual que el Python)~~ | **Resuelto en parte en #11:** `clsCandadoEnvios` serializa los envíos de una cotización dentro del proceso. Con varias réplicas hace falta un candado en la base (`sp_getapplock`): HU-006.6, si se escala |
 | Columnas `NVARCHAR(MAX)` que habrá que acotar e indexar en un script 0003: `Cotizaciones.nitCliente`, `UsuariosWeb.email`, `Cotizaciones.estadoCosteo`, `Cotizaciones.costeoId` | 0003 (datos) |
 | `folio_versionado` / nueva versión y búsqueda de cotizaciones por cliente | #12 (ADR-011) |
 | Vistas de métricas (`vAjustesMargenPorComercial`, `vActividadPorComercial`) como entidades sin clave | #45 |
+| `vActividadPorComercial` cuenta los envíos con `estadoEnvio = 'enviada'`; desde #11 un reenvío deja `reenviada`, así que la vista subcuenta. Script 0003 con `estadoEnvio IN ('enviada','reenviada')` (el contrato `ActividadComercial` ya lo pide) | 0003 (Sara) + #45 |
 | Métodos de transición del costeo Nexo (`estadoCosteo`, `costeoListoAt`, `ganada` definitivo) | HU-005 |
 | ~~Resolución de línea de negocio sin tildes: la collation `CI_AS` distingue acentos (`Distribucion` ≠ `Distribución`)~~ | **Resuelto en #10:** `clsMargenResolverService` compara en memoria contra las líneas de `MargenesPolitica` con `clsReglasMargen.NormalizarLinea` (sin tildes, mayúsculas ni espacios) y consulta el mapeo con el nombre canónico. El repositorio sigue comparando con la collation |
 | ~~`clsMargenAjuste` sigue exigiendo márgenes en [0, 1) porque no conoce el método de cálculo; con `markup` un ajuste ≥ 1 se rechazaría~~ | **Resuelto en #10:** `clsMargenAjuste.Registrar` recibe `metodoCalculo` y valida con `clsReglaMargen` |

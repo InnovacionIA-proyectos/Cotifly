@@ -66,6 +66,16 @@ El mismo patrón aplica a ciudades (HU-005.13).
 
 El DDL definitivo queda en el script.
 
+### Números del PDF desde el estado (#11)
+
+`generar_pdf` recibe el payload que redacta el LLM, pero ningún número del PDF puede salir de él (ADR-003). El filtro de invocación de herramientas de #12, antes de llamar a `IClsGenerarPdfService`:
+
+- sobrescribe en cada fila del payload `costo`, `margen` y `tarifa` con los valores del estado (resultado de `calcular_precio`, o del ajuste negociado), y los `precio` de `servicios_conexos` con los del costeo (Nexo, HU-005; mientras tanto, los del formulario);
+- arma `clsTrazabilidadCotizacion` (costo, márgenes, `origenMargen`, método, `PrecioFinal`, moneda, TRM, NIT) desde el estado, nunca desde el payload;
+- pone el folio que genera el servidor (ADR-011); la `referencia` del payload se ignora.
+
+Como defensa, `clsGenerarPdfService.ValidarCoherencia` rechaza con `PDF_PAYLOAD_INVALIDO` un payload cuya tarifa impresa (dada o calculada con costo y margen) no sea el `PrecioFinal` de la trazabilidad, un `PrecioFinal` que no salga de costo y margen aplicado, o filas y servicios en otra moneda que la de la cotización (HU-012.3). `Cotizaciones` guarda un solo precio: una cotización con varias tarifas distintas (varios vehículos) no puede traer `PrecioFinal` hasta que se decida cómo guardar un precio por fila.
+
 ## Alternativas consideradas
 
 - **Reenviar todo el historial con tool-calls, sin estado:** sigue dependiendo de que el LLM copie bien el id, y el prompt crece con cada turno.

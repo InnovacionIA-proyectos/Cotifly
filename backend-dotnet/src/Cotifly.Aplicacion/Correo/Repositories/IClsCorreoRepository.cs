@@ -2,24 +2,26 @@ using Cotifly.Dominio.Correo;
 
 namespace Cotifly.Aplicacion.Correo.Repositories;
 
-/// <summary>Puerto de los correos enviados y sus destinatarios (<c>Correos</c>, <c>CorreoDestinatarios</c>).</summary>
+/// <summary>
+/// Puerto de los correos enviados y sus destinatarios (<c>Correos</c>, <c>CorreoDestinatarios</c>). Solo consultas y altas:
+/// la regla de deduplicación (ventana de 5 minutos, mismo conjunto de <c>para</c>) vive en <c>clsCorreoService</c>
+/// (deuda de ADR-008 resuelta en #11).
+/// </summary>
 public interface IClsCorreoRepository
 {
-    /// <summary>Ventana de deduplicación del contrato: 5 minutos.</summary>
-    static readonly TimeSpan VentanaDuplicado = TimeSpan.FromMinutes(5);
-
     void Agregar(clsCorreo correo);
 
     /// <summary>
-    /// ¿Ya hay un envío exitoso (<c>enviado</c>) de la cotización al mismo conjunto de destinatarios
-    /// <c>para</c> (sin distinguir mayúsculas ni orden) dentro de la ventana? La ventana se mide con
-    /// el reloj de la aplicación (<c>IClsReloj</c>), no con el de la base.
+    /// Envíos exitosos (<c>enviado</c>) de la cotización con <c>createdAt</c> ≥ <paramref name="desde"/>, con sus destinatarios
+    /// (base de la deduplicación).
     /// </summary>
-    Task<bool> ExisteDuplicadoRecienteAsync(
-        Guid cotizacionId,
-        IEnumerable<string> para,
-        TimeSpan? ventana = null,
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<clsCorreo>> ListarEnviadosDesdeAsync(Guid cotizacionId, DateTimeOffset desde, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Último envío exitoso del comercial a un cliente (<c>Cotizaciones.nitCliente</c>), con sus destinatarios, o <c>null</c>
+    /// si nunca le ha enviado (<c>GET /web/clientes/{nit}/destinatarios-previos</c>). Solo considera cotizaciones del comercial.
+    /// </summary>
+    Task<clsCorreo?> ObtenerUltimoEnviadoAClienteAsync(Guid usuarioId, string nitCliente, CancellationToken cancellationToken = default);
 
     /// <summary>Correos de una cotización con sus destinatarios, del más reciente al más antiguo.</summary>
     Task<IReadOnlyList<clsCorreo>> ListarPorCotizacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default);

@@ -13,6 +13,7 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 /// <param name="CotizacionId">Cotización a la que pertenece el ajuste (debe existir y ser del comercial).</param>
 /// <param name="Folio">Folio de la cotización, si ya existe.</param>
 /// <param name="TrqType">TrqType de la línea, solo informativo para la salida.</param>
+/// <param name="ThreadId">Hilo de la conversación, solo para la auditoría (#11).</param>
 public sealed record clsEntradaAjusteMargen(
     decimal MargenPolitica,
     decimal MargenAplicado,
@@ -22,4 +23,5 @@ public sealed record clsEntradaAjusteMargen(
     decimal? Costo = null,
     Guid? CotizacionId = null,
     string? Folio = null,
-    string? TrqType = null);
+    string? TrqType = null,
+    string? ThreadId = null);

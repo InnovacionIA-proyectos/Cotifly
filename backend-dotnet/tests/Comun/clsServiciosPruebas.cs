@@ -28,6 +28,8 @@ public static class clsServiciosPruebas
         {
             ["ConnectionStrings:Cotifly"] = cadenaCotifly,
             ["ConnectionStrings:Identidad"] = cadenaIdentidad,
+            // Los PDFs de las pruebas van a una carpeta temporal propia, nunca a /data/pdfs (#11).
+            ["Pdf:StorageDir"] = CarpetaPdfsTemporal(),
         };
         foreach (var (clave, valor) in configuracionExtra ?? new Dictionary<string, string?>())
         {
@@ -44,6 +46,9 @@ public static class clsServiciosPruebas
         configurar?.Invoke(servicios); // reemplazos de prueba (ej. la fuente de margen SAP TM de muestra)
         return servicios.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
+
+    /// <summary>Carpeta temporal nueva para el almacén de PDFs de un proveedor de pruebas.</summary>
+    public static string CarpetaPdfsTemporal() => Path.Combine(Path.GetTempPath(), "cotifly-pruebas-pdfs", Guid.NewGuid().ToString("N"));
 
     private sealed class clsEntornoPruebas(string nombre) : IHostEnvironment
     {
