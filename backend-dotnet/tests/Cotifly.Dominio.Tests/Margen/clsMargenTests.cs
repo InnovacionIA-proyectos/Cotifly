@@ -107,6 +107,22 @@ public sealed class clsMargenTests
         ajuste.Motivo.Should().Be("Cliente estratégico");
     }
 
+    // Los márgenes se guardan con la escala de la columna (4 decimales) y la diferencia sale de esos valores.
+    [Fact]
+    public void UnAjusteRedondeaLosMargenesACuatroDecimalesAntesDeLaDiferencia()
+    {
+        var ajuste = clsMargenAjuste.Registrar(0.10005m, 0.20015m, "motivo").Valor;
+
+        ajuste.MargenPolitica.Should().Be(0.1m);     // 0.10005 → 0.1000 (half-to-even)
+        ajuste.MargenAplicado.Should().Be(0.2002m);  // 0.20015 → 0.2002 (half-to-even)
+        ajuste.Diferencia.Should().Be(0.1002m);      // 0.2002 − 0.1000; redondear la diferencia cruda daría 0.1001
+        ajuste.Diferencia.Should().Be(ajuste.MargenAplicado - ajuste.MargenPolitica);
+    }
+
+    [Fact]
+    public void UnMargenQueRedondeaAUnoSeRechazaConMetodoMargen() =>
+        clsMargenAjuste.Registrar(0.15m, 0.99995m, "motivo").Error.Codigo.Should().Be("AJUSTE_MARGEN_INVALIDO");
+
     [Fact]
     public void UnAjusteExigeMotivo() =>
         clsMargenAjuste.Registrar(0.15m, 0.1m, " ").Error.Codigo.Should().Be(clsMargenAjuste.CodigoError);
@@ -114,6 +130,36 @@ public sealed class clsMargenTests
     [Theory]
     [InlineData(1.0, 0.1)]
     [InlineData(0.1, -0.1)]
-    public void UnAjusteExigeMargenesEnCeroUno(double politica, double aplicado) =>
-        clsMargenAjuste.Registrar((decimal)politica, (decimal)aplicado, "motivo").EsFallo.Should().BeTrue();
+    [InlineData(0.1, 1.0)]
+    public void ConMetodoMargenUnAjusteExigeMargenesEnCeroUno(double politica, double aplicado) =>
+        clsMargenAjuste.Registrar((decimal)politica, (decimal)aplicado, "motivo").Error.Codigo.Should().Be(clsMargenAjuste.CodigoError);
+
+    // Deuda de ADR-008 resuelta en #10: el ajuste valida por método; con markup admite m ≥ 1.
+    [Fact]
+    public void ConMetodoMarkupUnAjustePuedeSerMayorOIgualAUno()
+    {
+        var ajuste = clsMargenAjuste.Registrar(0.8m, 1.25m, "Recargo pactado", metodoCalculo: clsReglaMargen.MetodoMarkup).Valor;
+
+        ajuste.MargenAplicado.Should().Be(1.25m);
+        ajuste.Diferencia.Should().Be(0.45m);
+    }
+
+    [Fact]
+    public void ConMetodoMarkupUnAjusteTampocoPuedeSerNegativo() =>
+        clsMargenAjuste.Registrar(0.2m, -0.01m, "motivo", metodoCalculo: clsReglaMargen.MetodoMarkup).EsFallo.Should().BeTrue();
+
+    [Fact]
+    public void UnAjusteGuardaComercialCotizacionYFolioNormalizado()
+    {
+        var usuario = Guid.NewGuid();
+        var cotizacion = Guid.NewGuid();
+
+        var ajuste = clsMargenAjuste.Registrar(0.15m, 0.12m, " Cliente estratégico ", usuario, cotizacion, "  ").Valor;
+
+        ajuste.UsuarioId.Should().Be(usuario);
+        ajuste.CotizacionId.Should().Be(cotizacion);
+        ajuste.Folio.Should().BeNull();
+        ajuste.Motivo.Should().Be("Cliente estratégico");
+        ajuste.Diferencia.Should().Be(-0.03m);
+    }
 }

@@ -718,10 +718,13 @@ components:
             codigo:
               type: string
               description: |
-                Mismos códigos que el backend Python, más dos nuevos del backend .NET:
+                Mismos códigos que el backend Python, más tres nuevos del backend .NET:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (búsqueda de clientes de HU-005.2 aún
-                no conectada) y `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
-                herramienta inexistente, HU-003.10).
+                no conectada), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
+                herramienta inexistente, HU-003.10) y `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
+                el margen negociado por el comercial está fuera de rango para su método de
+                cálculo, es decir negativo o ≥ 1 con `margen`, o el método no es
+                `margen`/`markup`). `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -737,6 +740,7 @@ components:
                 - CORREO_ENVIO_FALLIDO
                 - AJUSTE_COTIZACION_INVALIDA
                 - AJUSTE_ID_INVALIDO
+                - AJUSTE_MARGEN_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
                 - ERROR_INTERNO

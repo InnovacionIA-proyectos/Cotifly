@@ -32,10 +32,17 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
     private readonly ServiceProvider _proveedor;
 
     protected clsPruebaIntegracion(clsBaseDatosPruebas baseDatos)
+        : this(baseDatos, configurar: null)
+    {
+    }
+
+    /// <param name="baseDatos">SQL Server compartido de la colección.</param>
+    /// <param name="configurar">Reemplazos de prueba sobre el registro real (ej. la fuente de margen SAP TM de muestra).</param>
+    protected clsPruebaIntegracion(clsBaseDatosPruebas baseDatos, Action<IServiceCollection>? configurar)
     {
         ArgumentNullException.ThrowIfNull(baseDatos);
         BaseDatos = baseDatos;
-        _proveedor = clsServiciosPruebas.Crear(baseDatos.CadenaCotifly, Reloj, baseDatos.CadenaIdentidad);
+        _proveedor = clsServiciosPruebas.Crear(baseDatos.CadenaCotifly, Reloj, baseDatos.CadenaIdentidad, configurar: configurar);
     }
 
     protected clsBaseDatosPruebas BaseDatos { get; }

@@ -4,7 +4,10 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
+using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Auditoria.Repositories;
 using Cotifly.Infraestructura.Comun;
@@ -15,6 +18,8 @@ using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
 using Cotifly.Infraestructura.Margen.Repositories;
+using Cotifly.Infraestructura.Margen.Services;
+using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -45,12 +50,18 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesConexiones>, clsValidadorOpcionesConexiones>();
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
 
         AgregarPersistencia(servicios);
+
+        // Fuentes externas de Margen y Tarifas (HU-003.4, #10). TryAdd: #13 (SAP TM export_json | odata) y
+        // HU-005 (costeo Nexo) registran sus adaptadores antes o los reemplazan.
+        servicios.TryAddSingleton<IClsFuenteMargen, clsFuenteMargenNoConfigurada>();
+        servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
         return servicios;
     }

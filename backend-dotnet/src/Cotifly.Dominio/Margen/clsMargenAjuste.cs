@@ -4,11 +4,16 @@ namespace Cotifly.Dominio.Margen;
 
 /// <summary>
 /// Ajuste (negociación) del margen frente a la política (<c>dbo_cotifly.MargenAjustes</c>).
-/// <see cref="Diferencia"/> = aplicado − política, redondeada a 4 decimales (escala de la columna).
+/// Los márgenes se redondean a 4 decimales half-to-even (escala de las columnas <c>DECIMAL(9,4)</c>) antes de
+/// validar y de calcular <see cref="Diferencia"/> = aplicado − política, para que lo que queda en memoria sea
+/// exactamente lo que guarda la base (el Python redondeaba la diferencia a 6, pero la columna solo guarda 4).
 /// </summary>
 public sealed class clsMargenAjuste
 {
-    public const string CodigoError = "AJUSTE_MARGEN_INVALIDO";
+    public const string CodigoError = clsCodigosError.AjusteMargenInvalido;
+
+    /// <summary>Decimales de los márgenes y de la diferencia (escala de <c>MargenAjustes</c>).</summary>
+    public const int Decimales = 4;
 
     private clsMargenAjuste()
     {
@@ -24,19 +29,29 @@ public sealed class clsMargenAjuste
     public Guid? UsuarioId { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
-    /// <summary>Registra un ajuste. El motivo es obligatorio y los márgenes deben estar en [0, 1).</summary>
+    /// <summary>Margen con la escala de la columna: 4 decimales half-to-even (0.123456 → 0.1235).</summary>
+    public static decimal RedondearMargen(decimal margen) => Math.Round(margen, Decimales, MidpointRounding.ToEven);
+
+    /// <summary>
+    /// Registra un ajuste. El motivo es obligatorio y los márgenes (ya redondeados a 4 decimales) se validan según
+    /// el método de cálculo (<see cref="clsReglaMargen"/>): con <c>margen</c> deben estar en [0, 1); con
+    /// <c>markup</c> basta m ≥ 0.
+    /// </summary>
     public static clsResultado<clsMargenAjuste> Registrar(
         decimal margenPolitica,
         decimal margenAplicado,
         string motivo,
         Guid? usuarioId = null,
         Guid? cotizacionId = null,
-        string? folio = null)
+        string? folio = null,
+        string? metodoCalculo = clsReglaMargen.MetodoMargen)
     {
+        var politica = RedondearMargen(margenPolitica);
+        var aplicado = RedondearMargen(margenAplicado);
         var error = clsValidacion.Primero(
             clsValidacion.Requerido(CodigoError, "motivo", motivo),
-            margenPolitica is < 0m or >= 1m ? new clsErrorDominio(CodigoError, "El margen de política debe estar en [0, 1).") : null,
-            margenAplicado is < 0m or >= 1m ? new clsErrorDominio(CodigoError, "El margen aplicado debe estar en [0, 1).") : null);
+            clsReglaMargen.Validar(CodigoError, "margenPolitica", politica, metodoCalculo),
+            clsReglaMargen.Validar(CodigoError, "margenAplicado", aplicado, metodoCalculo));
 
         if (error is not null)
         {
@@ -48,9 +63,9 @@ public sealed class clsMargenAjuste
             Id = Guid.NewGuid(),
             CotizacionId = cotizacionId,
             Folio = clsValidacion.Normalizar(folio),
-            MargenPolitica = margenPolitica,
-            MargenAplicado = margenAplicado,
-            Diferencia = Math.Round(margenAplicado - margenPolitica, 4, MidpointRounding.ToEven),
+            MargenPolitica = politica,
+            MargenAplicado = aplicado,
+            Diferencia = aplicado - politica,
             Motivo = motivo.Trim(),
             UsuarioId = usuarioId,
         };

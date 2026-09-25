@@ -9,6 +9,10 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 [Trait("Categoria", "Integracion")]
 public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
+    // Organización ficticia: la base es compartida y una fila específica de la organización por defecto
+    // (50000005) le ganaría al comodín en las pruebas del resolver de margen (#10).
+    private const string OrganizacionDePrueba = "99990001";
+
     [Theory]
     [InlineData("Nacional")]
     [InlineData("nacional")]
@@ -82,12 +86,12 @@ public sealed class clsMargenRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         var trqType = $"Z{Guid.NewGuid():N}"[..8].ToUpperInvariant();
         await AgregarMapeosAsync(
             clsSapMapeoTrqType.Crear(trqType, "Nacional").Valor,
-            clsSapMapeoTrqType.Crear(trqType, "Exportacion", "50000005").Valor);
+            clsSapMapeoTrqType.Crear(trqType, "Exportacion", OrganizacionDePrueba).Valor);
 
         var (especifica, otraOrganizacion, comodin) = await ConsultarAsync(async s =>
         {
             var repo = s.GetRequiredService<IClsSapMapeoRepository>();
-            return (await repo.LineaDeAsync(trqType, "50000005", Ct),
+            return (await repo.LineaDeAsync(trqType, OrganizacionDePrueba, Ct),
                 await repo.LineaDeAsync(trqType, "99999999", Ct),
                 await repo.LineaDeAsync(trqType, cancellationToken: Ct));
         });

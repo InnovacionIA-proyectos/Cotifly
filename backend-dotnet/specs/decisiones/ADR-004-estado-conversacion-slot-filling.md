@@ -39,6 +39,8 @@ El LLM **nunca** escribe el estado.
   - Si no hay BP (prospecto o cliente sin búsqueda), **no** se consulta SAP con el NIT.
   - En ese caso se cae a `politica_linea` y el motivo se registra en `detalle`.
 - Los argumentos de texto libre (origen, destino, texto de búsqueda) sí vienen del LLM.
+- **Números del estado (anotado en #10, se implementa en #12):** el filtro también sobrescribe `MargenPolitica`, `MetodoCalculo`, `Costo` y `MargenAplicado` desde el estado en `calcular_precio`, `registrar_ajuste_margen` y `generar_pdf`: el LLM no transcribe números (ADR-003 §2). `obtener_margen` los llena a partir de `clsMargenResuelto` (`Salida.Margen`, `MargenPolitica`, `MetodoCalculo`, `LineaNegocioId`) y el ajuste negociado a partir de `clsSalidaAjusteMargen`.
+- **Margen negociado:** si el comercial negoció (`clsAjusteMargenService`, origen `negociado`), la creación de la cotización debe persistir `Cotizaciones.origenMargen = negociado` con el `margenAplicado` guardado en `MargenAjustes` y el `margenPolitica` de referencia, sin volver a resolver la política.
 
 Además, el estado se inyecta en el prompt de sistema como un bloque compacto "Estado resuelto", para que el LLM redacte con los datos correctos. Ese bloque es informativo; la fuente de verdad es el filtro.
 
