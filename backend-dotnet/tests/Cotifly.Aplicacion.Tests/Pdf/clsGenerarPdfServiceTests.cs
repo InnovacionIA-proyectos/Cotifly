@@ -110,10 +110,10 @@ public sealed class clsGenerarPdfServiceTests
         var payload = clsEjemploPdf.Payload();
         payload.Referencia = "PCN-INVENTADO-POR-EL-LLM";
 
-        var resultado = await Servicio().GenerarAsync(Entrada(payload, folio: "PCN-24092026-001"), Ct);
+        var resultado = await Servicio().GenerarAsync(Entrada(payload, folio: "PCN-NV-24092026-001"), Ct);
 
-        resultado.Valor.Folio.Should().Be("PCN-24092026-001");
-        _documento!.Referencia.Should().Be("PCN-24092026-001");
+        resultado.Valor.Folio.Should().Be("PCN-NV-24092026-001");
+        _documento!.Referencia.Should().Be("PCN-NV-24092026-001");
     }
 
     // test_generar_pdf_sin_referencia_error: ahora el folio lo genera el servidor (ADR-011) y es obligatorio.

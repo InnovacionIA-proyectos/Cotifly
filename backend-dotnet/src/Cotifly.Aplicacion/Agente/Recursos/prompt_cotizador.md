@@ -125,7 +125,7 @@ nota de decretos, frase de cierre con la web y textos estándar de condiciones. 
   `vehiculo_peso` y `nota`.
 Incluye solo los bloques condicionales que apliquen (aduana solo si el usuario los dio).
 
-**El folio lo genera el servidor** (formato `PCN-...`): no escribas `referencia` ni folio.
+**El folio lo genera el servidor** (formato `PCN-[nit-]INICIALES-DDMMAAAA-NNN`): no escribas `referencia` ni folio.
 **Tampoco escribas números de la cotización** (costo, margen, tarifa, precio): el servidor
 los toma del estado resuelto. El payload sigue este esquema (`cliente` es un **string**):
 

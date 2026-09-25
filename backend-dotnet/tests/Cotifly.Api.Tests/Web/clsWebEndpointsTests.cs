@@ -63,7 +63,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId, "800333444");
-        var inexistente = new clsCotizacionPrueba(Guid.NewGuid(), $"PCN-01011999-{Random.Shared.Next(100, 999)}", "PCN-X.pdf", null);
+        var inexistente = new clsCotizacionPrueba(Guid.NewGuid(), $"PCN-XX-01011999-{Random.Shared.Next(100, 999)}", "PCN-X.pdf", null);
 
         using var ajena = await OperarAsync(operacion, ana.Access, deLuis);
         using var noExiste = await OperarAsync(operacion, ana.Access, inexistente);

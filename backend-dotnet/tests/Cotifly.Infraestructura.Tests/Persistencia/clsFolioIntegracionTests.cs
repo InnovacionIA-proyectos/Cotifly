@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Folio del servidor (ADR-011) contra SQL Server 2019 real: <c>sp_getapplock</c> serializa las generaciones simultáneas (del
+/// Folio del servidor (ADR-011) contra SQL Server 2019 real: <c>sp_getapplock</c> por iniciales y día serializa las generaciones simultáneas (del
 /// mismo comercial y de varios), la transacción deshace el número si la creación falla y las versiones no se repiten.
 /// Cada prueba usa su propio día (reloj falso) para no compartir consecutivos.
 /// </summary>
@@ -31,43 +31,76 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
     public async Task DiezGeneracionesSimultaneasDelMismoComercialObtienenConsecutivosUnicos()
     {
         var dia = UsarDiaPropio();
-        var ana = await CrearUsuarioAsync();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
 
         var resultados = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => CrearAsync(ana, null)));
 
         resultados.Should().OnlyContain(r => r.EsExitoso, string.Join("; ", resultados.Where(r => r.EsFallo).Select(r => r.Error.Mensaje)));
-        resultados.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(1, 10).Select(n => $"PCN-{dia}-{n:000}"));
+        resultados.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(1, 10).Select(n => $"PCN-AD-{dia}-{n:000}"));
     }
 
     [Fact]
-    public async Task GeneracionesSimultaneasDeDosComercialesSinNitNuncaColisionan()
+    public async Task DosComercialesConInicialesDistintasEmpiezanAmbosEn001AunqueGenerenALaVez()
     {
         var dia = UsarDiaPropio();
-        var ana = await CrearUsuarioAsync();
-        var luis = await CrearUsuarioAsync();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
+        var luis = await CrearUsuarioAsync(nombreCompleto: "Luis Pérez Ríos");
 
         var resultados = await Task.WhenAll(Enumerable.Range(0, 10).Select(i => CrearAsync(i % 2 == 0 ? ana : luis, null)));
 
-        resultados.Should().OnlyContain(r => r.EsExitoso);
-        resultados.Select(r => r.Valor).Should().OnlyHaveUniqueItems().And.HaveCount(10).And.OnlyContain(f => f.StartsWith($"PCN-{dia}-", StringComparison.Ordinal));
+        resultados.Should().OnlyContain(r => r.EsExitoso, string.Join("; ", resultados.Where(r => r.EsFallo).Select(r => r.Error.Mensaje)));
+        resultados.Select(r => r.Valor).Should().BeEquivalentTo(
+            Enumerable.Range(1, 5).SelectMany(n => new[] { $"PCN-AD-{dia}-{n:000}", $"PCN-LP-{dia}-{n:000}" }));
     }
 
     [Fact]
-    public async Task ElConsecutivoEsPorComercialYCuentaSusFoliosConYSinNit()
+    public async Task DosComercialesConLasMismasInicialesCompartenElConsecutivoSinColisionar()
     {
         var dia = UsarDiaPropio();
-        var ana = await CrearUsuarioAsync();
-        var luis = await CrearUsuarioAsync();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
+        var andres = await CrearUsuarioAsync(nombreCompleto: "Andrés Díaz");
+
+        var resultados = await Task.WhenAll(CrearAsync(ana, null), CrearAsync(andres, null));
+
+        resultados.Should().OnlyContain(r => r.EsExitoso, string.Join("; ", resultados.Where(r => r.EsFallo).Select(r => r.Error.Mensaje)));
+        resultados.Select(r => r.Valor).Should().BeEquivalentTo($"PCN-AD-{dia}-001", $"PCN-AD-{dia}-002");
+    }
+
+    [Fact]
+    public async Task ElConsecutivoEsPorInicialesYCuentaLosFoliosConYSinNit()
+    {
+        var dia = UsarDiaPropio();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
+        var luis = await CrearUsuarioAsync(nombreCompleto: "Luis Pérez Ríos");
 
         var primera = await CrearAsync(ana, "900.123.456-7");
         var segunda = await CrearAsync(ana, null);
         var deLuis = await CrearAsync(luis, "860000111");
-        var ultimo = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerUltimoConsecutivoDelDiaAsync(ana, dia, Ct));
+        var ultimo = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerUltimoConsecutivoDelDiaAsync("AD", dia, Ct));
 
-        primera.Valor.Should().Be($"PCN-9001234567-{dia}-001");
-        segunda.Valor.Should().Be($"PCN-{dia}-002");
-        deLuis.Valor.Should().Be($"PCN-860000111-{dia}-001");
+        primera.Valor.Should().Be($"PCN-9001234567-AD-{dia}-001");
+        segunda.Valor.Should().Be($"PCN-AD-{dia}-002");
+        deLuis.Valor.Should().Be($"PCN-860000111-LP-{dia}-001");
         ultimo.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ElUltimoConsecutivoNoCuentaVersionesNiFoliosDeOtrasInicialesODiasNiHeredados()
+    {
+        var dia = UsarDiaPropio();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
+        await GuardarAsync(NuevaCotizacion(ana, $"PCN-AD-{dia}-004"));
+        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"PCN-AD-{dia}-004-v2", Version = 2, UsuarioId = ana }).Valor);
+        await GuardarAsync(NuevaCotizacion(ana, $"PCN-800111222-AD-{dia}-006"));
+        await GuardarAsync(NuevaCotizacion(ana, $"PCN-ZAD-{dia}-900"));
+        await GuardarAsync(NuevaCotizacion(ana, $"PCN-LP-{dia}-950"));
+        await GuardarAsync(NuevaCotizacion(ana, $"PCN-{dia}-990"));
+
+        var ultimo = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerUltimoConsecutivoDelDiaAsync("AD", dia, Ct));
+        var siguiente = await CrearAsync(ana, null);
+
+        ultimo.Should().Be(6);
+        siguiente.Valor.Should().Be($"PCN-AD-{dia}-007");
     }
 
     [Fact]
@@ -90,7 +123,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
 
         var siguiente = await CrearAsync(ana, null);
 
-        siguiente.Valor.Should().Be($"PCN-{dia}-001", "la fila de la creación fallida se deshizo con la transacción");
+        siguiente.Valor.Should().Be($"PCN-CP-{dia}-001", "la fila de la creación fallida se deshizo con la transacción");
     }
 
     [Fact]
@@ -107,9 +140,25 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
             $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = '{v1.Valor}-v6'");
 
         versiones.Should().OnlyContain(r => r.EsExitoso);
-        versiones.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(2, 5).Select(n => $"PCN-{dia}-001-v{n}"));
+        versiones.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(2, 5).Select(n => $"PCN-CP-{dia}-001-v{n}"));
         maxima.Should().Be(6);
         columnaVersion.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task LaVersionNuevaDeUnFolioHeredadoSinInicialesEsV2SobreSuBase()
+    {
+        var dia = UsarDiaPropio();
+        var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
+        var heredada = NuevaCotizacion(ana, $"PCN-{dia}-001");
+        await GuardarAsync(heredada);
+
+        var v2 = await CrearVersionAsync(ana, heredada.Id);
+        var columnaVersion = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+            $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = 'PCN-{dia}-001-v2'");
+
+        v2.Valor.Should().Be($"PCN-{dia}-001-v2");
+        columnaVersion.Should().Be(2);
     }
 
     [Fact]

@@ -76,18 +76,27 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
         return filas.Select(f => new clsCotizacionConLinea(f.Cotizacion, f.Linea)).ToList();
     }
 
-    public async Task<int> ObtenerUltimoConsecutivoDelDiaAsync(Guid usuarioId, string segmentoFecha, CancellationToken cancellationToken = default)
+    public async Task<int> ObtenerUltimoConsecutivoDelDiaAsync(string iniciales, string segmentoFecha, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(segmentoFecha);
+        if (!clsInicialesComercial.EsValida(iniciales))
+        {
+            throw new ArgumentException("Las iniciales del folio deben ser dos letras A-Z en mayúscula.", nameof(iniciales));
+        }
+
         if (segmentoFecha.Length != 8 || !segmentoFecha.All(char.IsAsciiDigit))
         {
             throw new ArgumentException("La fecha del folio debe ser DDMMAAAA.", nameof(segmentoFecha));
         }
 
-        // PCN-[nit-]DDMMAAAA-NNN (ADR-011): los tres últimos caracteres son el consecutivo. Solo versión 1 (las -vN no cuentan).
-        var patron = $"PCN-%{segmentoFecha}-[0-9][0-9][0-9]";
+        // PCN-[nit-]INICIALES-DDMMAAAA-NNN (ADR-011): los tres últimos caracteres son el consecutivo. Sin filtrar por comercial
+        // ni por versión: cuenta cualquier fila con esa forma (las -vN no terminan en NNN), así el siguiente nunca está tomado.
+        // Dos patrones: sin NIT, o con un NIT (termina en dígito) antes de las iniciales; ninguno admite comodines del usuario.
+        var sufijo = $"{iniciales}-{segmentoFecha}-[0-9][0-9][0-9]";
+        var sinNit = $"PCN-{sufijo}";
+        var conNit = $"PCN-%[0-9]-{sufijo}";
         var folios = await contexto.Cotizaciones.AsNoTracking()
-            .Where(c => c.UsuarioId == usuarioId && c.Version == 1 && EF.Functions.Like(c.Folio, patron))
+            .Where(c => EF.Functions.Like(c.Folio, sinNit) || EF.Functions.Like(c.Folio, conNit))
             .Select(c => c.Folio)
             .ToListAsync(cancellationToken);
 

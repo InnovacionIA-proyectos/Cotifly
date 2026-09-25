@@ -118,11 +118,11 @@ public sealed class clsSesionRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         await EnAmbitoAsync(async s =>
         {
             var sesion = await s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(space, hilo, Ct);
-            sesion!.ActualizarEstadoAgente(sesion.EstadoAgente! with { FolioEnProgreso = "PCN-24092026-001" });
+            sesion!.ActualizarEstadoAgente(sesion.EstadoAgente! with { FolioEnProgreso = "PCN-DG-24092026-001" });
         });
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(space, hilo, Ct));
 
-        leida!.EstadoAgente!.FolioEnProgreso.Should().Be("PCN-24092026-001");
+        leida!.EstadoAgente!.FolioEnProgreso.Should().Be("PCN-DG-24092026-001");
     }
 
     [Fact]

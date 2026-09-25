@@ -67,7 +67,7 @@ Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints n
 
 "Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
 
-**Folio** (ADR-011, aprobado el 2026-09-25): lo genera siempre el servidor, `PCN-[{nitCliente}-]DDMMAAAA-{NNN}[-vN]`: fecha de Bogotá, NIT solo con dígitos cuando la cotización lo tiene, `NNN` consecutivo diario del comercial (`001`…`999`) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-25092026-001`, `PCN-900123456-25092026-002`, `PCN-900123456-25092026-002-v2`. El frontend no debe asumir el formato para nada distinto de mostrarlo.
+**Folio** (ADR-011, aprobado el 2026-09-25, con iniciales desde el mismo día): lo genera siempre el servidor, `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`: NIT solo con dígitos cuando la cotización lo tiene, dos letras con las iniciales del comercial (primer nombre + primer apellido, sin tildes; p. ej. "Duban Guerra Castro" → `DG`), fecha de Bogotá, `NNN` consecutivo diario de esas iniciales (`001`…`999`; dos comerciales con las mismas iniciales comparten la secuencia) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`. Máximo 50 caracteres. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
 ### Reservados para la próxima versión (HU-005)
 
@@ -152,5 +152,5 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |
 | 404 de `/pdfs` responde `{"error": "..."}` | En Python era `{"detail": "..."}` |
 | Nuevos códigos `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y `HERRAMIENTA_DESCONOCIDA` | Búsqueda de clientes (HU-005.2) y validación del modelo (HU-003.10) |
-| Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con un consecutivo diario de 3 dígitos por comercial (ADR-011); el Python lo tomaba del LLM |
+| Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con las iniciales del comercial y un consecutivo diario de 3 dígitos por iniciales (ADR-011); el Python lo tomaba del LLM |
 | `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrige el script `0003` |
