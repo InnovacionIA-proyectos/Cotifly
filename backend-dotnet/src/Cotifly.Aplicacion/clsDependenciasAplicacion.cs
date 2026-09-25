@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -43,6 +44,13 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsDestinatariosPreviosService, clsDestinatariosPreviosService>();
         servicios.AddScoped<IClsTelefonoComercialService, clsTelefonoComercialService>();
         servicios.AddScoped<IClsSeguimientoService, clsSeguimientoService>();
+
+        // Login SSO ClientePro con verificación doble, refresh y logout (HU-003.6, #12). Cada intento se audita.
+        servicios.AddScoped<clsVerificadorIdentidad>();
+        servicios.AddScoped<IClsLoginClienteProService, clsLoginClienteProService>();
+        servicios.AddScoped<IClsRefreshTokenService, clsRefreshTokenService>();
+        servicios.AddScoped<IClsLogoutService, clsLogoutService>();
+        servicios.AddSingleton<IClsRevocacionAccesos, clsCacheTokensRevocados>();
 
         return servicios;
     }

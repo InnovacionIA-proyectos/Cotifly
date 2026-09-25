@@ -14,4 +14,10 @@ public interface IClsUsuarioWebRepository
     /// la collation no distingue mayúsculas).
     /// </summary>
     Task<clsUsuarioWeb?> ObtenerPorNombreUsuarioAsync(string nombreUsuario, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Usuario vinculado a la fila <paramref name="idUsuarioExterno"/> del almacén corporativo (índice único filtrado).
+    /// No se usa para identificar en el login: solo para detectar un <c>NOMBREUSUARIO</c> cambiado (ADR-009).
+    /// </summary>
+    Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default);
 }

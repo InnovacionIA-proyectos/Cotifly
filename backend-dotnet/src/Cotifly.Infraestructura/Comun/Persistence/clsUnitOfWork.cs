@@ -24,7 +24,11 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         ["uq_cotizaciones_folio"] = new(clsViolacionUnicidadException.CodigoFolioDuplicado, "Ya existe una cotización con ese folio."),
         ["uq_usuariosWeb_nombreUsuario"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ya existe un usuario con ese nombre de usuario."),
         ["uq_margenesPolitica_lineaNegocio"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ya existe esa línea de negocio."),
-        ["uq_rolesMapeo_rolExterno"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ese rol externo ya tiene mapeo."),
+        ["uq_usuariosWeb_idUsuarioExterno"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ya existe un usuario vinculado a esa fila del almacén corporativo."),
+        ["uq_roles_idRolExterno"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ese rol externo ya está mapeado a otro rol interno."),
+        ["uq_usuariosRoles_usuarioId_activo"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "El usuario ya tiene un rol activo asignado."),
+        ["uq_usuariosRoles_usuarioId_rolId"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "El usuario ya tiene ese rol asignado."),
+        ["pk_tokensRevocados"] = new(clsViolacionUnicidadException.CodigoRegistroDuplicado, "Ese access token ya estaba revocado."),
     };
 
     public async Task<int> GuardarCambiosAsync(CancellationToken cancellationToken = default)

@@ -1,0 +1,159 @@
+using System.ComponentModel.DataAnnotations;
+using System.Threading.RateLimiting;
+using Cotifly.Api.Comun;
+using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Identidad.Interfaces;
+using Cotifly.Aplicacion.Identidad.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+
+namespace Cotifly.Api.Identidad;
+
+/// <summary>Políticas de autorización por rol interno (claim <c>rol</c>), para los endpoints de <c>/web/*</c>.</summary>
+public static class clsPoliticas
+{
+    /// <summary>Consola del comercial: <c>comercial</c> o <c>gerente_comercial</c> (el gerente también cotiza).</summary>
+    public const string Comercial = "Comercial";
+
+    /// <summary>Administración de márgenes y métricas: solo <c>gerente_comercial</c>.</summary>
+    public const string GerenteComercial = "GerenteComercial";
+}
+
+/// <summary>Límite de peticiones de <c>/api/auth/*</c> (sección <c>LimiteAuth</c>): ventana fija por IP.</summary>
+public sealed class clsOpcionesLimiteAuth
+{
+    public const string Seccion = "LimiteAuth";
+
+    /// <summary>Peticiones permitidas por IP en cada ventana. Por defecto 30.</summary>
+    [Range(1, 100_000)]
+    public int PeticionesPorVentana { get; set; } = 30;
+
+    /// <summary>Duración de la ventana en segundos. Por defecto 60.</summary>
+    [Range(1, 3600)]
+    public int VentanaSegundos { get; set; } = 60;
+}
+
+/// <summary>
+/// Autenticación y autorización de la Api (ADR-009): <c>JwtBearer</c> sobre el access HS256 que emite
+/// <c>/api/auth/login-clientepro</c>, revocación por <c>jti</c>, respuestas <c>ErrorWeb</c> en 401/403/429, políticas por
+/// rol, <see cref="IClsContextoUsuario"/> desde los claims y límite de peticiones de <c>/api/auth/*</c>.
+/// </summary>
+public static class clsConfiguracionAutenticacion
+{
+    public const string PoliticaLimiteAuth = "auth";
+
+    /// <summary>Tolerancia de reloj al validar <c>exp</c>/<c>nbf</c>.</summary>
+    public static readonly TimeSpan ToleranciaReloj = TimeSpan.FromSeconds(30);
+
+    public static IServiceCollection AddAutenticacionCotifly(this IServiceCollection servicios)
+    {
+        ArgumentNullException.ThrowIfNull(servicios);
+
+        servicios.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+        servicios.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IClsConfiguracionJwt>(Configurar);
+
+        servicios.AddAuthorizationBuilder()
+            .AddPolicy(clsPoliticas.Comercial, p => p.RequireAuthenticatedUser().RequireRole("comercial", "gerente_comercial"))
+            .AddPolicy(clsPoliticas.GerenteComercial, p => p.RequireAuthenticatedUser().RequireRole("gerente_comercial"));
+
+        servicios.AddHttpContextAccessor();
+        servicios.AddScoped<IClsContextoUsuario, clsContextoUsuarioHttp>();
+
+        servicios.AddOptions<clsOpcionesLimiteAuth>()
+            .BindConfiguration(clsOpcionesLimiteAuth.Seccion)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        servicios.AddRateLimiter(ConfigurarLimite);
+
+        return servicios;
+    }
+
+    /// <summary>Parámetros de validación del access token y eventos (revocación, 401 y 403 con <c>ErrorWeb</c>).</summary>
+    internal static void Configurar(JwtBearerOptions opciones, IClsConfiguracionJwt configuracion)
+    {
+        opciones.MapInboundClaims = false;
+        opciones.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = configuracion.Emisor,
+            ValidateAudience = true,
+            ValidAudience = configuracion.Audiencia,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true,
+            IssuerSigningKey = new SymmetricSecurityKey(configuracion.ObtenerClaveFirma()),
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+            ClockSkew = ToleranciaReloj,
+            NameClaimType = clsClaimsCotifly.Username,
+            RoleClaimType = clsClaimsCotifly.Rol,
+        };
+        opciones.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = ValidarRevocacionAsync,
+            OnChallenge = async contexto =>
+            {
+                contexto.HandleResponse();
+                contexto.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                contexto.Response.Headers.WWWAuthenticate = "Bearer";
+                await contexto.Response.WriteAsJsonAsync(new clsErrorWeb(clsCodigosAcceso.MensajeSesionExpirada));
+            },
+            OnForbidden = async contexto =>
+            {
+                contexto.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await contexto.Response.WriteAsJsonAsync(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso));
+            },
+        };
+    }
+
+    /// <summary>
+    /// Después de validar firma, emisor, audiencia y vigencia: exige <c>sub</c> (UUID) y <c>jti</c>, y rechaza el token si
+    /// su <c>jti</c> fue revocado en un logout (<see cref="IClsRevocacionAccesos"/>, memoria con foto de 60 s).
+    /// </summary>
+    internal static async Task ValidarRevocacionAsync(TokenValidatedContext contexto)
+    {
+        var jti = contexto.Principal?.FindFirst(clsClaimsCotifly.Jti)?.Value;
+        var sub = contexto.Principal?.FindFirst(clsClaimsCotifly.Sub)?.Value;
+        if (string.IsNullOrEmpty(jti) || !Guid.TryParse(sub, out _))
+        {
+            contexto.Fail("El token no trae sub o jti válidos.");
+            return;
+        }
+
+        var revocacion = contexto.HttpContext.RequestServices.GetRequiredService<IClsRevocacionAccesos>();
+        if (await revocacion.EstaRevocadoAsync(jti, contexto.HttpContext.RequestAborted))
+        {
+            contexto.Fail("Token revocado.");
+        }
+    }
+
+    private static void ConfigurarLimite(RateLimiterOptions opciones)
+    {
+        opciones.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        opciones.OnRejected = async (contexto, cancellationToken) =>
+        {
+            if (contexto.Lease.TryGetMetadata(MetadataName.RetryAfter, out var espera))
+            {
+                contexto.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(espera.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            await contexto.HttpContext.Response.WriteAsJsonAsync(new clsErrorWeb(clsErrorWeb.MensajeDemasiadasPeticiones), cancellationToken);
+        };
+        opciones.AddPolicy(PoliticaLimiteAuth, http =>
+        {
+            var limite = http.RequestServices.GetRequiredService<IOptions<clsOpcionesLimiteAuth>>().Value;
+            return RateLimitPartition.GetFixedWindowLimiter(
+                http.Connection.RemoteIpAddress?.ToString() ?? "sin-ip",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = limite.PeticionesPorVentana,
+                    Window = TimeSpan.FromSeconds(limite.VentanaSegundos),
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                });
+        });
+    }
+}

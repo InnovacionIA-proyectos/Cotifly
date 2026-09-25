@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -40,6 +41,11 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsSeguimientoService), typeof(clsSeguimientoService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAuditoriaService), typeof(clsAuditoriaService), ServiceLifetime.Singleton)]
     [InlineData(typeof(clsCandadoEnvios), typeof(clsCandadoEnvios), ServiceLifetime.Singleton)]
+    [InlineData(typeof(clsVerificadorIdentidad), typeof(clsVerificadorIdentidad), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsLoginClienteProService), typeof(clsLoginClienteProService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsRefreshTokenService), typeof(clsRefreshTokenService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsLogoutService), typeof(clsLogoutService), ServiceLifetime.Scoped)]
+    [InlineData(typeof(IClsRevocacionAccesos), typeof(clsCacheTokensRevocados), ServiceLifetime.Singleton)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();

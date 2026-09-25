@@ -1,5 +1,7 @@
 using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Comun.Exceptions;
+using Cotifly.Aplicacion.Identidad.DTOs;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Auditoria;
 using Cotifly.Dominio.Identidad;
@@ -10,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
-/// <summary>Usuarios, tokens y roles (script 0002), auditoría y el contexto de solo lectura de dbsolucionesti.</summary>
+/// <summary>Usuarios, tokens, roles y asignaciones (script 0002), auditoría y el contexto de solo lectura de dbsolucionesti.</summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
@@ -115,29 +117,119 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
     }
 
     [Fact]
-    public async Task UnJtiRevocadoYUnRolMapeadoSeGuardanYLeen()
+    public async Task UnJtiRevocadoSeGuardaYLee()
     {
         var usuario = await CrearUsuarioAsync();
         var jti = Guid.NewGuid().ToString();
-        var rolExterno = $"COTIZADOR_{Guid.NewGuid():N}";
 
         await EnAmbitoAsync(s =>
         {
             Contexto(s).TokensRevocados.Add(clsTokenRevocado.Crear(jti, Reloj.AhoraUtc.AddMinutes(60), usuario).Valor);
-            Contexto(s).RolesMapeo.Add(clsRolMapeo.Crear(rolExterno, RolInterno.GerenteComercial).Valor);
             return Task.CompletedTask;
         });
-        var (revocado, rol) = await ConsultarAsync(async s => (
-            await Contexto(s).TokensRevocados.AsNoTracking().SingleAsync(t => t.Jti == jti, Ct),
-            await Contexto(s).RolesMapeo.AsNoTracking().SingleAsync(r => r.RolExterno == rolExterno, Ct)));
-        var rolEnBase = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
-            $"SELECT rolInterno FROM dbo_cotifly.RolesMapeo WHERE rolExterno = '{rolExterno}'");
+        var revocado = await ConsultarAsync(s => Contexto(s).TokensRevocados.AsNoTracking().SingleAsync(t => t.Jti == jti, Ct));
 
         revocado.UsuarioId.Should().Be(usuario);
         revocado.CreatedAt.Should().Be(Reloj.AhoraUtc);
-        rol.RolInterno.Should().Be(RolInterno.GerenteComercial);
-        rol.UpdatedAt.Should().Be(Reloj.AhoraUtc);
-        rolEnBase.Should().Be("gerente_comercial");
+    }
+
+    [Fact]
+    public async Task ElScript0002SiembraLosDosRolesInternosConSuCodigo()
+    {
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
+        var codigos = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.Roles WHERE codigo IN ('comercial', 'gerente_comercial')");
+
+        codigos.Should().Be(2);
+        roles.Select(r => r.Codigo).Should().BeEquivalentTo([RolInterno.Comercial, RolInterno.GerenteComercial]);
+        roles.Single(r => r.Codigo == RolInterno.Comercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoComercial);
+        roles.Single(r => r.Codigo == RolInterno.GerenteComercial).IdRolExterno.Should().Be(clsBaseDatosPruebas.RolExternoGerente);
+    }
+
+    [Fact]
+    public async Task UnaAsignacionDeRolSeGuardaYSeLeeComoRolInterno()
+    {
+        var usuario = await CrearUsuarioAsync();
+        var gerente = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
+            .Single(r => r.Codigo == RolInterno.GerenteComercial);
+
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(usuario, gerente.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+        var asignados = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesAsignadosAsync(usuario, Ct));
+        var enBase = await ConsultarAsync(s => Contexto(s).UsuariosRoles.AsNoTracking().SingleAsync(a => a.UsuarioId == usuario, Ct));
+
+        asignados.Should().Equal(RolInterno.GerenteComercial);
+        enBase.AsignadoAt.Should().Be(Reloj.AhoraUtc);
+        enBase.Activo.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnUsuarioNoPuedeTenerDosAsignacionesActivas()
+    {
+        var usuario = await CrearUsuarioAsync();
+        var roles = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct));
+
+        var asignarAmbos = () => EnAmbitoAsync(s =>
+        {
+            var repo = s.GetRequiredService<IClsRolRepository>();
+            foreach (var rol in roles)
+            {
+                repo.AgregarAsignacion(clsUsuarioRol.Asignar(usuario, rol.Id, Reloj.AhoraUtc).Valor);
+            }
+
+            return Task.CompletedTask;
+        });
+
+        (await asignarAmbos.Should().ThrowAsync<clsViolacionUnicidadException>()).Which.Restriccion.Should().Be("uq_usuariosRoles_usuarioId_activo");
+    }
+
+    [Fact]
+    public async Task UnaAsignacionRetiradaYaNoCuentaComoRolAsignado()
+    {
+        var usuario = await CrearUsuarioAsync();
+        var revisor = await CrearUsuarioAsync();
+        var comercial = (await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarActivosAsync(Ct)))
+            .Single(r => r.Codigo == RolInterno.Comercial);
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsRolRepository>().AgregarAsignacion(clsUsuarioRol.Asignar(usuario, comercial.Id, Reloj.AhoraUtc).Valor);
+            return Task.CompletedTask;
+        });
+
+        await EnAmbitoAsync(async s =>
+        {
+            var asignacion = await Contexto(s).UsuariosRoles.SingleAsync(a => a.UsuarioId == usuario, Ct);
+            asignacion.Retirar(revisor, Reloj.AhoraUtc);
+        });
+        var asignados = await ConsultarAsync(s => s.GetRequiredService<IClsRolRepository>().ListarRolesAsignadosAsync(usuario, Ct));
+
+        asignados.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ElVinculoConElAlmacenEsUnicoYPermiteBuscarElUsuario()
+    {
+        var idExterno = clsBaseDatosPruebas.NuevoIdExterno();
+        var usuario = clsUsuarioWeb.Crear($"u{Guid.NewGuid():N}", null, null, null, Reloj.AhoraUtc, idExterno).Valor;
+        await EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsUsuarioWebRepository>().Agregar(usuario);
+            return Task.CompletedTask;
+        });
+
+        var encontrado = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ObtenerPorIdUsuarioExternoAsync(idExterno, Ct));
+        var repetido = () => EnAmbitoAsync(s =>
+        {
+            s.GetRequiredService<IClsUsuarioWebRepository>().Agregar(
+                clsUsuarioWeb.Crear($"u{Guid.NewGuid():N}", null, null, null, Reloj.AhoraUtc, idExterno).Valor);
+            return Task.CompletedTask;
+        });
+
+        encontrado!.Id.Should().Be(usuario.Id);
+        (await repetido.Should().ThrowAsync<clsViolacionUnicidadException>()).Which.Restriccion.Should().Be("uq_usuariosWeb_idUsuarioExterno");
     }
 
     [Fact]
@@ -175,13 +267,13 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
         var (porNombre, porId, sql) = await ConsultarAsync(async s =>
         {
             var identidad = s.GetRequiredService<clsIdentidadDbContext>();
-            var consulta = identidad.UsuariosSapApp.Where(u => u.NombreUsuario == "apErez");
+            var consulta = identidad.Usuarios.Where(u => u.NombreUsuario == "apErez");
             return (await consulta.SingleOrDefaultAsync(Ct),
-                await identidad.UsuariosSapApp.SingleOrDefaultAsync(u => u.Id == 102, Ct),
+                await identidad.Usuarios.SingleOrDefaultAsync(u => u.Id == 102m, Ct),
                 consulta.ToQueryString());
         });
 
-        porNombre!.Id.Should().Be(101);
+        porNombre!.Id.Should().Be(101m);
         porNombre.DescripcionUsuario.Should().Be("Ana Pérez");
         porNombre.Email.Should().Be("aperez@boterosoto.com.co");
         porId!.NombreUsuario.Should().Be("LGOMEZ");
@@ -206,17 +298,30 @@ public sealed class clsIdentidadPersistenciaTests(clsBaseDatosPruebas baseDatos)
             IF SCHEMA_ID('seg') IS NULL EXEC('CREATE SCHEMA seg');
             IF OBJECT_ID('seg.UsuariosApp') IS NULL
             BEGIN
-                CREATE TABLE seg.UsuariosApp (ID INT PRIMARY KEY, NOMBREUSUARIO NVARCHAR(50), DESCRIPCIONUSUARIO NVARCHAR(200), EMAIL NVARCHAR(200), CLAVE NVARCHAR(200));
+                CREATE TABLE seg.UsuariosApp (ID NUMERIC(18,0) PRIMARY KEY, NOMBREUSUARIO VARCHAR(50), DESCRIPCIONUSUARIO VARCHAR(250), EMAIL VARCHAR(100), CLAVE VARCHAR(200));
+                CREATE TABLE seg.UsuarioRoles (ID INT IDENTITY PRIMARY KEY, IDUSUARIO INT, IDROLES INT);
+                CREATE TABLE seg.RolesApp (IDROLES INT PRIMARY KEY, DESCRIPCION VARCHAR(50));
                 INSERT INTO seg.UsuariosApp VALUES (7, 'OTRO', 'Otro Usuario', 'otro@x.com', 'x');
+                INSERT INTO seg.UsuarioRoles (IDUSUARIO, IDROLES) VALUES (7, 77);
+                INSERT INTO seg.RolesApp VALUES (77, 'OTRO ROL');
             END
             """);
         await using var proveedor = clsServiciosPruebas.Crear(BaseDatos.CadenaCotifly, Reloj, BaseDatos.CadenaIdentidad,
-            new Dictionary<string, string?> { ["Identidad:Esquema"] = "seg", ["Identidad:Tabla"] = "UsuariosApp" });
+            new Dictionary<string, string?>
+            {
+                ["Identidad:Esquema"] = "seg",
+                ["Identidad:TablaUsuarios"] = "UsuariosApp",
+                ["Identidad:TablaUsuarioRoles"] = "UsuarioRoles",
+                ["Identidad:TablaRoles"] = "RolesApp",
+            });
         await using var ambito = proveedor.CreateAsyncScope();
+        var almacen = ambito.ServiceProvider.GetRequiredService<IClsAlmacenIdentidadExterno>();
 
-        var usuario = await ambito.ServiceProvider.GetRequiredService<clsIdentidadDbContext>().UsuariosSapApp.SingleAsync(Ct);
+        var usuario = await almacen.BuscarUsuarioAsync("otro", Ct);
+        var roles = await almacen.ObtenerRolesAsync(7, Ct);
 
-        usuario.NombreUsuario.Should().Be("OTRO");
+        usuario!.NombreUsuario.Should().Be("OTRO");
+        roles.Should().Equal(new clsRolExterno(77, "OTRO ROL"));
     }
 
     private static string HashAleatorio() =>

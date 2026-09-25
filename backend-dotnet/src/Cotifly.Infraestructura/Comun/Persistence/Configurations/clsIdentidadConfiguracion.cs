@@ -5,7 +5,10 @@ using static Cotifly.Infraestructura.Comun.Persistence.clsCotiflyDbContext;
 
 namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 
-/// <summary><c>dbo_cotifly.UsuariosWeb</c> (script 0001 §3): índice único filtrado sobre <c>nombreUsuario</c>.</summary>
+/// <summary>
+/// <c>dbo_cotifly.UsuariosWeb</c> (script 0001 §3): índice único filtrado sobre <c>nombreUsuario</c>; <c>idUsuarioExterno</c>
+/// y su índice único filtrado vienen del script 0002 §1bis.
+/// </summary>
 internal sealed class clsUsuarioWebConfiguracion : IEntityTypeConfiguration<clsUsuarioWeb>
 {
     public void Configure(EntityTypeBuilder<clsUsuarioWeb> builder)
@@ -20,28 +23,64 @@ internal sealed class clsUsuarioWebConfiguracion : IEntityTypeConfiguration<clsU
         builder.Property(u => u.Regional).Columna("regional", TipoTexto);
         builder.Property(u => u.CreatedAt).Fecha("createdAt");
         builder.Property(u => u.UltimaSesion).Fecha("ultimaSesion");
+        builder.Property(u => u.IdUsuarioExterno).Columna("idUsuarioExterno", "bigint");
 
         builder.HasIndex(u => u.NombreUsuario).IsUnique()
             .HasFilter("[nombreUsuario] IS NOT NULL")
             .HasDatabaseName("uq_usuariosWeb_nombreUsuario");
+        builder.HasIndex(u => u.IdUsuarioExterno).IsUnique()
+            .HasFilter("[idUsuarioExterno] IS NOT NULL")
+            .HasDatabaseName("uq_usuariosWeb_idUsuarioExterno");
     }
 }
 
-/// <summary><c>dbo_cotifly.RolesMapeo</c> (script 0002 §2).</summary>
-internal sealed class clsRolMapeoConfiguracion : IEntityTypeConfiguration<clsRolMapeo>
+/// <summary><c>dbo_cotifly.Roles</c> (script 0002 §2): código interno único y rol externo único cuando existe.</summary>
+internal sealed class clsRolConfiguracion : IEntityTypeConfiguration<clsRol>
 {
-    public void Configure(EntityTypeBuilder<clsRolMapeo> builder)
+    public void Configure(EntityTypeBuilder<clsRol> builder)
     {
-        builder.ToTable("RolesMapeo", t => t.HasCheckConstraint(
-            "ck_rolesMapeo_rolInterno", "rolInterno IN ('comercial', 'gerente_comercial')"));
-        builder.HasKey(r => r.Id).HasName("pk_rolesMapeo");
+        builder.ToTable("Roles", t => t.HasCheckConstraint(
+            "ck_roles_codigo", "codigo IN ('comercial', 'gerente_comercial')"));
+        builder.HasKey(r => r.Id).HasName("pk_roles");
         builder.Property(r => r.Id).Columna("id", "int").UseIdentityColumn();
-        builder.Property(r => r.RolExterno).Columna("rolExterno", "nvarchar(100)").HasMaxLength(clsRolMapeo.LargoMaximoRolExterno).IsRequired();
-        builder.Property(r => r.RolInterno).Columna("rolInterno", "nvarchar(30)").HasMaxLength(30)
+        builder.Property(r => r.Codigo).Columna("codigo", "nvarchar(30)").HasMaxLength(30)
             .HasConversion(new clsConvertidorCodigoEnum<RolInterno>());
+        builder.Property(r => r.Descripcion).Columna("descripcion", "nvarchar(200)").HasMaxLength(clsRol.LargoMaximoDescripcion);
+        builder.Property(r => r.IdRolExterno).Columna("idRolExterno", "int");
         builder.Property(r => r.Activo).Columna("activo", "bit");
         builder.Property(r => r.UpdatedAt).Fecha("updatedAt");
-        builder.HasIndex(r => r.RolExterno).IsUnique().HasDatabaseName("uq_rolesMapeo_rolExterno");
+        builder.HasIndex(r => r.Codigo).IsUnique().HasDatabaseName("uq_roles_codigo");
+        builder.HasIndex(r => r.IdRolExterno).IsUnique()
+            .HasFilter("[idRolExterno] IS NOT NULL")
+            .HasDatabaseName("uq_roles_idRolExterno");
+    }
+}
+
+/// <summary><c>dbo_cotifly.UsuariosRoles</c> (script 0002 §2bis): un rol una vez por usuario y una sola asignación activa.</summary>
+internal sealed class clsUsuarioRolConfiguracion : IEntityTypeConfiguration<clsUsuarioRol>
+{
+    public void Configure(EntityTypeBuilder<clsUsuarioRol> builder)
+    {
+        builder.ToTable("UsuariosRoles");
+        builder.HasKey(r => r.Id).HasName("pk_usuariosRoles");
+        builder.Property(r => r.Id).Columna("id", "int").UseIdentityColumn();
+        builder.Property(r => r.UsuarioId).Columna("usuarioId", "uniqueidentifier");
+        builder.Property(r => r.RolId).Columna("rolId", "int");
+        builder.Property(r => r.AsignadoAt).Fecha("asignadoAt");
+        builder.Property(r => r.Activo).Columna("activo", "bit");
+        builder.Property(r => r.RevisadoPor).Columna("revisadoPor", "uniqueidentifier");
+        builder.Property(r => r.RevisadoAt).Fecha("revisadoAt");
+
+        builder.HasIndex(r => new { r.UsuarioId, r.RolId }).IsUnique().HasDatabaseName("uq_usuariosRoles_usuarioId_rolId");
+        builder.HasIndex(r => r.UsuarioId).IsUnique()
+            .HasFilter("[activo] = 1")
+            .HasDatabaseName("uq_usuariosRoles_usuarioId_activo");
+        builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(r => r.UsuarioId)
+            .HasConstraintName("fk_usuariosRoles_usuarioId").OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<clsRol>().WithMany().HasForeignKey(r => r.RolId)
+            .HasConstraintName("fk_usuariosRoles_rolId").OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(r => r.RevisadoPor)
+            .HasConstraintName("fk_usuariosRoles_revisadoPor").OnDelete(DeleteBehavior.NoAction);
     }
 }
 

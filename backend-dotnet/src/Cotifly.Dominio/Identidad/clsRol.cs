@@ -1,0 +1,53 @@
+using Cotifly.Dominio.Comun;
+
+namespace Cotifly.Dominio.Identidad;
+
+/// <summary>
+/// Rol interno de Cotifly y su rol externo de ClientePro (<c>dbo_cotifly.Roles</c>, script 0002, ADR-009).
+/// <see cref="IdRolExterno"/> es el <c>IDROLES</c> de <c>dbsolucionesti.tblSAPRoles</c>; mientras sea <c>null</c>
+/// ningún rol externo da acceso con este rol (fail-closed). El script siembra <c>comercial</c> y
+/// <c>gerente_comercial</c> sin rol externo: los IDROLES reales los fija el DBA.
+/// </summary>
+public sealed class clsRol
+{
+    public const string CodigoError = "ROL_INVALIDO";
+    public const int LargoMaximoDescripcion = 200;
+
+    private clsRol()
+    {
+    }
+
+    public int Id { get; private set; }
+    public RolInterno Codigo { get; private set; }
+    public string? Descripcion { get; private set; }
+    public int? IdRolExterno { get; private set; }
+    public bool Activo { get; private set; }
+    public DateTimeOffset UpdatedAt { get; private set; }
+
+    public static clsResultado<clsRol> Crear(RolInterno codigo, string? descripcion, int? idRolExterno = null)
+    {
+        var error = clsValidacion.Primero(
+            Enum.IsDefined(codigo) ? null : new clsErrorDominio(CodigoError, "Rol interno desconocido."),
+            clsValidacion.LargoMaximo(CodigoError, "descripcion", descripcion, LargoMaximoDescripcion));
+
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return new clsRol
+        {
+            Codigo = codigo,
+            Descripcion = clsValidacion.Normalizar(descripcion),
+            IdRolExterno = idRolExterno,
+            Activo = true,
+        };
+    }
+
+    /// <summary>Mapea (o desmapea con <c>null</c>) el rol externo de ClientePro.</summary>
+    public void MapearRolExterno(int? idRolExterno) => IdRolExterno = idRolExterno;
+
+    public void Activar() => Activo = true;
+
+    public void Desactivar() => Activo = false;
+}

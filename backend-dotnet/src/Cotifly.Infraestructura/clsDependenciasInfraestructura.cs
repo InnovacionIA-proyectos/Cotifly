@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
@@ -22,6 +23,7 @@ using Cotifly.Infraestructura.Correo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
+using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Infraestructura.Pdf.Services;
@@ -51,7 +53,7 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt/IA/GChat...).
+        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA/GChat...).
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
@@ -66,6 +68,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesCorreo>(configuracion, clsOpcionesCorreo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCorreoTransporte>(configuracion, clsOpcionesCorreoTransporte.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCorreoTransporte>, clsValidadorOpcionesCorreoTransporte>();
+        servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -80,7 +84,21 @@ public static class clsDependenciasInfraestructura
 
         AgregarPdfYCorreo(servicios);
 
+        AgregarIdentidad(servicios);
+
         return servicios;
+    }
+
+    /// <summary>
+    /// Login SSO ClientePro (#12, ADR-009): almacén corporativo de solo lectura, emisión de JWT y purga horaria de tokens
+    /// vencidos. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarIdentidad(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<IClsConfiguracionJwt, clsConfiguracionJwt>();
+        servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
+        servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
+        servicios.AddHostedService<clsLimpiezaTokensHostedService>();
     }
 
     /// <summary>
@@ -136,7 +154,7 @@ public static class clsDependenciasInfraestructura
             opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // dbsolucionesti: solo lectura (login, #12).
+        // dbsolucionesti: solo lectura (usuarios y roles de ClientePro para el login, #12).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 
@@ -146,6 +164,9 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsSapMapeoRepository, clsSapMapeoRepository>();
         servicios.AddScoped<IClsMargenAjusteRepository, clsMargenAjusteRepository>();
         servicios.AddScoped<IClsUsuarioWebRepository, clsUsuarioWebRepository>();
+        servicios.AddScoped<IClsRolRepository, clsRolRepository>();
+        servicios.AddScoped<IClsTokenRefrescoRepository, clsTokenRefrescoRepository>();
+        servicios.AddScoped<IClsTokenRevocadoRepository, clsTokenRevocadoRepository>();
         servicios.AddScoped<IClsCorreoRepository, clsCorreoRepository>();
         servicios.AddScoped<IClsAuditoriaRepository, clsAuditoriaRepository>();
         servicios.AddScoped<IClsSesionRepository, clsSesionRepository>();

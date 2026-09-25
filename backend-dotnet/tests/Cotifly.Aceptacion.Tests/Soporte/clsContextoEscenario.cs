@@ -9,8 +9,8 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 
 /// <summary>
 /// Estado de un escenario (Reqnroll lo crea por escenario y lo inyecta en los pasos): proveedor de
-/// servicios real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>) sobre la base de pruebas, reloj falso,
-/// fuente SAP TM de muestra y resultados.
+/// servicios real (<c>AddAplicacion</c> + <c>AddInfraestructura</c>) sobre la base de pruebas y la <c>dbsolucionesti</c>
+/// falsa, reloj falso, fuente SAP TM de muestra y resultados.
 /// </summary>
 public sealed class clsContextoEscenario : IDisposable
 {
@@ -78,6 +78,7 @@ public sealed class clsContextoEscenario : IDisposable
         _proveedor = clsServiciosPruebas.Crear(
             clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             Reloj,
+            clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
             configurar: s => s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso));
     }
@@ -99,6 +100,7 @@ public sealed class clsContextoEscenario : IDisposable
         clsServiciosPruebas.Crear(
             clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             Reloj,
+            clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
             configurar: s => s.AddSingleton<IClsFuenteMargen>(FuenteSap));
 

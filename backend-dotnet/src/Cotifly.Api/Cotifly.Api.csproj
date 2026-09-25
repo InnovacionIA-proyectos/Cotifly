@@ -13,6 +13,10 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Validación del access token de /api/auth/login-clientepro (#12, ADR-009). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
     <ProjectReference Include="..\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
   </ItemGroup>

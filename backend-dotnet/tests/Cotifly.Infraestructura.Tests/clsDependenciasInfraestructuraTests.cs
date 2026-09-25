@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Infraestructura.Agente.Repositories;
@@ -14,6 +15,7 @@ using Cotifly.Infraestructura.Correo.Repositories;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
+using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,6 +74,10 @@ public sealed class clsDependenciasInfraestructuraTests
     [InlineData(typeof(IClsCorreoRepository), typeof(clsCorreoRepository))]
     [InlineData(typeof(IClsAuditoriaRepository), typeof(clsAuditoriaRepository))]
     [InlineData(typeof(IClsSesionRepository), typeof(clsSesionRepository))]
+    [InlineData(typeof(IClsRolRepository), typeof(clsRolRepository))]
+    [InlineData(typeof(IClsTokenRefrescoRepository), typeof(clsTokenRefrescoRepository))]
+    [InlineData(typeof(IClsTokenRevocadoRepository), typeof(clsTokenRevocadoRepository))]
+    [InlineData(typeof(IClsAlmacenIdentidadExterno), typeof(clsAlmacenIdentidadSolucionesTi))]
     public void AddInfraestructuraRegistraLosPuertosDePersistenciaComoScoped(Type puerto, Type implementacion)
     {
         var servicios = new ServiceCollection();

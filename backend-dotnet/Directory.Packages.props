@@ -25,6 +25,12 @@
     <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
     <!-- Transporte SMTP del correo (#11, relay interno). MIT; trae MimeKit (MIT) y BouncyCastle.Cryptography (MIT). -->
     <PackageVersion Include="MailKit" Version="4.18.0" />
+    <!--
+      Login SSO (#12, ADR-009). MIT. JwtBearer valida el access en la Api; JsonWebTokens lo emite en Infraestructura.
+      JsonWebTokens se fija en la versión que trae JwtBearer 10.0.12 (Microsoft.IdentityModel.* 8.19.2).
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.2" />
   </ItemGroup>
   <ItemGroup Label="Pruebas">
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

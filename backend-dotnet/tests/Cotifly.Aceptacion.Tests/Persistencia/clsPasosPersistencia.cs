@@ -23,7 +23,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
     {
         var tablas = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'");
-        tablas.Should().Be(13);
+        tablas.Should().Be(14, "las 10 del 0001 + Roles, UsuariosRoles, TokensRefresco y TokensRevocados del 0002");
     }
 
     [Given("el comercial {string} registrado")]

@@ -11,7 +11,7 @@ El esquema `dbo_cotifly` ya existe en `dbTarifario_Nexo_Pruebas` (host `tbsdatac
 - HU-003.3 aclara que no deben generarse migraciones EF que recreen el esquema, ni mezclarse los dos caminos.
 - El Gherkin general de HU-003 pide "migraciones EF Core versionadas equivalentes a las que hoy provee Alembic".
 - El backend corre en un contenedor Linux, sin autenticación integrada de Windows.
-- Además de su base, necesita leer `dbsolucionesti.tblSAPUsuariosApp` (identidad para el login, HU-003.6) y `DWCubosEBSSAP.DimEjecutivo` (regional del comercial).
+- Además de su base, necesita leer `dbsolucionesti` (`tblSAPUsuariosApp`, `tblSAPUsuarioRoles` y `tblSAPRoles`: identidad y roles para el login, HU-003.6, ADR-009) y `DWCubosEBSSAP.DimEjecutivo` (regional del comercial).
 
 ## Decisión
 
@@ -27,13 +27,13 @@ El esquema `dbo_cotifly` ya existe en `dbTarifario_Nexo_Pruebas` (host `tbsdatac
    - **Desviación explícita** del Gherkin de HU-003 ("migraciones EF Core versionadas"), del mismo tipo que ADR-007 con compose. Queda pendiente la ratificación de Sara (HU-003.3).
 3. **Tres conexiones, cada una con su propio `DbContext`:**
    - `ConnectionStrings:Cotifly`: lectura y escritura sobre `dbo_cotifly`.
-   - `ConnectionStrings:Identidad`: solo lectura a `dbsolucionesti`. Usa la entidad sin clave `clsUsuarioSapApp {Id, NombreUsuario, DescripcionUsuario, Email}`; `CLAVE` nunca se mapea.
+   - `ConnectionStrings:Identidad`: solo lectura a `dbsolucionesti` (usuarios y roles de ClientePro); `CLAVE` nunca se mapea. Ver "Implementación" para cómo quedó.
    - `ConnectionStrings:Regional`: solo lectura a `DWCubosEBSSAP.DimEjecutivo`.
 
    Los contextos de solo lectura usan `NoTracking` y sobrescriben `SaveChanges` / `SaveChangesAsync` para lanzar una excepción. Lo que garantiza la solo lectura son los permisos del login. (`ApplicationIntent=ReadOnly` no se usa: solo redirige a réplicas de lectura en grupos de disponibilidad y no impide escribir.)
 4. **Login SQL de servicio `cotifly_app`** con permisos mínimos:
    - DML sobre `dbo_cotifly`;
-   - `SELECT` sobre `tblSAPUsuariosApp` sin `CLAVE` (vía vista o permiso por columna);
+   - `SELECT` sobre `tblSAPUsuariosApp` sin `CLAVE` (vía vista o permiso por columna: `ID`, `NOMBREUSUARIO`, `DESCRIPCIONUSUARIO`, `EMAIL`) y sobre `tblSAPUsuarioRoles` (`ID`, `IDUSUARIO`, `IDROLES`) y `tblSAPRoles` (`IDROLES`, `DESCRIPCION`) (#12);
    - `SELECT` sobre `DimEjecutivo`.
 
    Todos los secretos (contraseña SQL, SAP OData, Grovity, API key del LLM, `Jwt:SigningKey`) llegan por Dokploy (HU-006.5). En `Production`, el arranque falla si falta alguno, si queda un valor por defecto o si la cadena usa `Trusted_Connection`.
@@ -63,11 +63,12 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 - `clsCotiflyDbContext` vive en `Infraestructura/Comun/Persistence/` con una configuración Fluent API por tabla en `Configurations/` (tipo SQL explícito en cada columna, nombres de PK/FK/índices del script, CHECK reflejados). Enums guardados con su código snake_case (`clsConvertidorCodigoEnum`); `Sesiones.estadoAgente` como JSON de `clsEstadoConversacion`.
 - `clsMarcasTiempoInterceptor` fija `updatedAt` en filas nuevas y modificadas y también `createdAt` en filas nuevas cuando la entidad no lo trae, siempre con `IClsReloj` (así las reglas con ventana de tiempo, como el dedupe de correo de 5 minutos, se miden con el mismo reloj que escribió la fila).
 - `IClsUnitOfWork` traduce las violaciones de unicidad (SQL 2627/2601) a `clsViolacionUnicidadException` con código de negocio (`uq_cotizaciones_folio` → `FOLIO_DUPLICADO`).
-- **Cambio frente a la decisión:** `clsUsuarioSapApp` se mapea **con clave** (`ID`), no como entidad sin clave: permite `Find`/búsquedas por ID (respaldo del login, ADR-009) y sigue siendo de solo lectura (`NoTracking` + `SaveChanges` lanza). Vive en `Dominio/Identidad` y `clsIdentidadDbContext` en `Infraestructura/Identidad/Persistence/`.
-- El esquema y la tabla de `dbsolucionesti` son configurables (`Identidad:Esquema` = `dbo`, `Identidad:Tabla` = `tblSAPUsuariosApp`) hasta que el DBA confirme la ubicación real.
+- **Cambio frente a la decisión:** la fila de `tblSAPUsuariosApp` se mapea **con clave** (`ID`), no como entidad sin clave: permite búsquedas por ID (respaldo del login, ADR-009) y sigue siendo de solo lectura (`NoTracking` + `SaveChanges` lanza). `clsIdentidadDbContext` vive en `Infraestructura/Identidad/Persistence/`.
+- **#12:** `clsIdentidadDbContext` mapea las tres tablas con tipos internos de Infraestructura (`clsFilaUsuarioSap` con `ID` NUMERIC como `decimal`, `clsFilaUsuarioRolSap` y `clsFilaRolSap` con INT; textos VARCHAR sin Unicode para no forzar conversiones implícitas). Fuera de Infraestructura solo existe el puerto `IClsAlmacenIdentidadExterno` (Aplicacion) con `BuscarUsuarioAsync` y `ObtenerRolesAsync`, implementado por `clsAlmacenIdentidadSolucionesTi`, que convierte el `ID` NUMERIC a `long` y a `int` (para `IDUSUARIO`) solo cuando cabe. `clsUsuarioSapApp` se eliminó de Dominio.
+- El esquema y las tablas de `dbsolucionesti` son configurables (`Identidad:Esquema` = `dbo`, `Identidad:TablaUsuarios` = `tblSAPUsuariosApp`, `Identidad:TablaUsuarioRoles` = `tblSAPUsuarioRoles`, `Identidad:TablaRoles` = `tblSAPRoles`) hasta que el DBA confirme la ubicación real.
 - `ConnectionStrings:Regional` / `DWCubosEBSSAP` queda para #12, donde se usa.
 - Validación al arrancar en Production: `[clsSecreto]` sobre `ConnectionStrings:Cotifly` e `Identidad` más `clsValidadorOpcionesConexiones` (rechaza `Trusted_Connection` / `Integrated Security` y contraseñas placeholder).
-- `migrations_mssql/0002_identidad_estado_agente.sql` agrega `Sesiones.estadoAgente` (CHECK `ISJSON`) y `Sesiones.usuarioId` (FK), las tablas `RolesMapeo`, `TokensRefresco` (hash `CHAR(64)` único con collation binaria, `familiaId`, `reemplazadoPorId`) y `TokensRevocados`, e índices de consulta. Es una **extensión aditiva pendiente de aprobación**, idempotente y no destructiva, y un **paso de un solo sentido**: re-ejecutar el 0001 después del 0002 destruye las vistas y 6 tablas (CorreoDestinatarios, MargenAjustes, Correos, EventosConversacion, Cotizaciones, Sesiones) antes de fallar en `DROP TABLE UsuariosWeb` (con `sqlcmd -b`); sin `-b` (SSMS) sigue y recrea Sesiones sin `estadoAgente`/`usuarioId` y sin los índices del 0002. Se propone al PR #40 una guarda al inicio del paso 0bis del 0001: `IF OBJECT_ID(N'dbo_cotifly.TokensRefresco','U') IS NOT NULL THROW 50002, '0002 ya aplicado: el 0001 no debe re-ejecutarse', 1;` (el 0001 no se modifica en #9).
+- `migrations_mssql/0002_identidad_estado_agente.sql` agrega `Sesiones.estadoAgente` (CHECK `ISJSON`) y `Sesiones.usuarioId` (FK), las tablas `TokensRefresco` (hash `CHAR(64)` único con collation binaria, `familiaId`, `reemplazadoPorId`) y `TokensRevocados`, e índices de consulta. **Cambio de #12:** la tabla `RolesMapeo` del borrador se reemplaza por `Roles` (rol interno + `idRolExterno`, sembrada sin mapeo) y `UsuariosRoles` (asignación por usuario, una activa como máximo), y se agrega `UsuariosWeb.idUsuarioExterno` (BIGINT, único filtrado) para la verificación doble del login (ADR-009). El 0002 deja 14 tablas. Es una **extensión aditiva pendiente de aprobación**, idempotente y no destructiva, y un **paso de un solo sentido**: re-ejecutar el 0001 después del 0002 destruye las vistas y 6 tablas (CorreoDestinatarios, MargenAjustes, Correos, EventosConversacion, Cotizaciones, Sesiones) antes de fallar en `DROP TABLE UsuariosWeb` (con `sqlcmd -b`); sin `-b` (SSMS) sigue y recrea Sesiones sin `estadoAgente`/`usuarioId` y sin los índices del 0002. Se propone al PR #40 una guarda al inicio del paso 0bis del 0001: `IF OBJECT_ID(N'dbo_cotifly.TokensRefresco','U') IS NOT NULL THROW 50002, '0002 ya aplicado: el 0001 no debe re-ejecutarse', 1;` (el 0001 no se modifica en #9).
 - La prueba de deriva (`clsEsquemaTests`) aplica 0001 + 0002 en SQL Server 2019 (Testcontainers) y compara en ambos sentidos el modelo EF (modelo de diseño) con el catálogo: tablas, columnas, tipo SQL, nulabilidad y collation (`INFORMATION_SCHEMA.COLUMNS`); nombres y columnas de PK y FK (`sys.key_constraints`, `sys.foreign_keys`); índices y restricciones únicas con orden, `DESC`, `INCLUDE` y filtro (`sys.indexes`); nombres de CHECK (`sys.check_constraints`; la expresión no se compara porque SQL Server la reescribe). La idempotencia del 0002 se verifica con una foto completa del esquema (columnas, defaults, claves, FK, índices, CHECK) y el conteo de filas antes y después de re-aplicarlo. Para que la comparación de índices sea exacta, el modelo quita la convención de EF que crea un índice por FK (`ForeignKeyIndexConvention`).
 - `GET /health/ready` usa `clsBaseDatosHealthCheck`: conecta (`CanConnectAsync`) y verifica que el 0002 está aplicado (`Sesiones.estadoAgente` y `TokensRefresco`); si falta responde 503 con el detalle fijo `esquema incompleto: falta 0002`. La sonda completa tiene un límite de 5 s para no colgar el endpoint los 15 s del timeout de conexión por defecto.
 
@@ -76,7 +77,7 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 | Deuda | Dónde se resuelve |
 |---|---|
 | ~~`IClsCotizacionRepository.MarcarSeguimientoAsync` e `IClsCorreoRepository.VentanaDuplicado` contienen reglas de negocio en puertos de repositorio (se portaron así desde `shared/repos.py`): pasar a casos de uso~~ | **Resuelto en #11:** `IClsSeguimientoService` (dueño, ganada/motivo ≤ 2000, `marcadoAt` con `IClsReloj`) y `clsCorreoService` (ventana de 5 min y comparación de destinatarios); el repositorio de correos solo expone consultas (`ListarEnviadosDesdeAsync`, `ObtenerUltimoEnviadoAClienteAsync`) |
-| `clsUsuarioSapApp` (Dominio) pasa a Aplicacion detrás de un puerto de directorio corporativo | #12 |
+| ~~`clsUsuarioSapApp` (Dominio) pasa a Aplicacion detrás de un puerto de directorio corporativo~~ | **Resuelto en #12:** puerto `IClsAlmacenIdentidadExterno` (Aplicacion) con DTOs `clsUsuarioExterno` y `clsRolExterno`; las filas de `dbsolucionesti` son tipos internos de Infraestructura |
 | `clsIdentidadDbContext` solo bloquea `SaveChanges`; `ExecuteUpdate`/`ExecuteDelete`/`ExecuteSqlRaw` no pasan por ahí. La garantía real son los permisos de `cotifly_app` (sin UPDATE/DELETE, sin SELECT sobre `CLAVE`) | DBA |
 | `IClsSesionRepository.TocarAsync` crea la sesión si no existe y sin dueño: #12 no debe usarlo para crear sesiones web (usar `ObtenerOCrearAsync` con `usuarioId`) | #12 |
 | ~~El dedupe de correo (`ExisteDuplicadoRecienteAsync`) no toma lock: dos envíos simultáneos pueden pasar ambos (igual que el Python)~~ | **Resuelto en parte en #11:** `clsCandadoEnvios` serializa los envíos de una cotización dentro del proceso. Con varias réplicas hace falta un candado en la base (`sp_getapplock`): HU-006.6, si se escala |
@@ -94,7 +95,7 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 | Pendiente | Dueño |
 |---|---|
 | Crear `cotifly_app` con esos permisos y entregar las credenciales por canal seguro | DBA (lo solicita Duban) |
-| Confirmar esquema real de `tblSAPUsuariosApp` en `dbsolucionesti` (hoy se asume `dbo`, configurable) | DBA |
+| Confirmar esquema real de `tblSAPUsuariosApp`, `tblSAPUsuarioRoles` y `tblSAPRoles` en `dbsolucionesti` (hoy se asume `dbo`, configurable) y la precisión de `ID` (se lee NUMERIC sin decimales) | DBA |
 | Smoke del `DbContext` contra `tbsdatacenter` (diferido de HU-002.4; espera a `cotifly_app`) | Duban |
 | Merge del PR #40 (script 0001) a `QA` | scalderon-bs |
 | Ratificar "solo scripts `.sql`" y revisar y aplicar `0002_identidad_estado_agente.sql` | Sara + scalderon-bs |

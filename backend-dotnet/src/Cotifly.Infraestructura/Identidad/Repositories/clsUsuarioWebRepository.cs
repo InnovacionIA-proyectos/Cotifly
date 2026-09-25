@@ -23,4 +23,7 @@ public sealed class clsUsuarioWebRepository(clsCotiflyDbContext contexto) : ICls
         var buscado = nombreUsuario.Trim();
         return contexto.UsuariosWeb.FirstOrDefaultAsync(u => u.NombreUsuario == buscado, cancellationToken);
     }
+
+    public Task<clsUsuarioWeb?> ObtenerPorIdUsuarioExternoAsync(long idUsuarioExterno, CancellationToken cancellationToken = default) =>
+        contexto.UsuariosWeb.FirstOrDefaultAsync(u => u.IdUsuarioExterno == idUsuarioExterno, cancellationToken);
 }
