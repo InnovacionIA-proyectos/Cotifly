@@ -75,7 +75,9 @@ public static class clsTarjetasChat
 
     /// <summary>
     /// Mensaje según lo que produjo el turno (port de <c>mensaje_para_resultado</c>): PDF generado → tarjeta del PDF; precio
-    /// calculado → previsualización; si no, texto. Las salidas con error no cuentan.
+    /// calculado → previsualización; respuesta estructurada (HU-003.10) que pide confirmación con acciones sugeridas → texto con
+    /// sus botones; si no, texto. Las salidas con error no cuentan. Con el respaldo del validador (respuesta no validada) no se
+    /// muestran botones de control: solo el PDF ya generado, si lo hay, o el texto.
     /// </summary>
     /// <param name="urlPdf">URL firmada del PDF de la salida de <c>generar_pdf</c>.</param>
     public static JsonObject ParaResultado(clsResultadoTurno resultado, Func<clsSalidaPdf, string?> urlPdf)
@@ -88,13 +90,43 @@ public static class clsTarjetasChat
             return Pdf(pdf.Folio, urlPdf(pdf), resultado.Texto);
         }
 
+        if (resultado.EsRespaldo)
+        {
+            return Texto(resultado.Texto);
+        }
+
         if (resultado.UltimaSalida<clsSalidaPrecio>(clsNombresHerramientas.CalcularPrecio) is { } precio)
         {
             var politica = resultado.UltimaSalida<clsSalidaMargen>(clsNombresHerramientas.ObtenerMargen)?.Margen;
             return Previsualizacion(precio.Costo, precio.Margen, precio.Precio, precio.Utilidad, politica);
         }
 
+        if (resultado.Respuesta is { RequiereConfirmacion: true, AccionesSugeridas.Count: > 0 } respuesta)
+        {
+            return ConAcciones(resultado.Texto, respuesta.AccionesSugeridas);
+        }
+
         return Texto(resultado.Texto);
+    }
+
+    /// <summary>
+    /// Texto con los botones de las acciones sugeridas (el validador ya comprobó que hay una previsualización pendiente): los mismos
+    /// "Confirmar y generar PDF" y "Ajustar margen" de la previsualización.
+    /// </summary>
+    public static JsonObject ConAcciones(string texto, IReadOnlyList<AccionSugeridaAgente> acciones)
+    {
+        ArgumentNullException.ThrowIfNull(acciones);
+        var botones = new JsonArray();
+        foreach (var accion in acciones)
+        {
+            botones.Add(accion switch
+            {
+                AccionSugeridaAgente.ConfirmarPdf => Boton("Confirmar y generar PDF", new JsonObject { ["action"] = new JsonObject { ["function"] = clsEventoChat.AccionConfirmar } }),
+                _ => Boton("Ajustar margen", new JsonObject { ["action"] = new JsonObject { ["function"] = clsEventoChat.AccionAjustarMargen } }),
+            });
+        }
+
+        return Tarjeta(texto, "confirmacion", "Confirmación pendiente", "Elige cómo seguir", [new JsonObject { ["buttonList"] = new JsonObject { ["buttons"] = botones } }]);
     }
 
     /// <summary>Tarjeta de alerta para el space de soporte (port de <c>card_alerta_error</c>).</summary>

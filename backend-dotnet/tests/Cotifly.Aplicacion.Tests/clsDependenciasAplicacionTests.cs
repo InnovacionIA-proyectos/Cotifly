@@ -61,7 +61,7 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(clsContextoTurnoAgente), typeof(clsContextoTurnoAgente), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsHerramientasCotizador), typeof(clsHerramientasCotizador), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsEstadoConversacionService), typeof(clsEstadoConversacionService), ServiceLifetime.Singleton)]
-    [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaPasante), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaAgente), ServiceLifetime.Singleton)]
     [InlineData(typeof(IClsProcesadorEventoChat), typeof(clsProcesadorEventoChat), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)

@@ -17,6 +17,28 @@ public sealed class clsOpcionesAgente
     /// <summary>Llamadas al modelo con herramientas por turno antes de cortar (evita bucles). Por defecto 12.</summary>
     [Range(1, 50)]
     public int MaxIteraciones { get; set; } = 12;
+
+    /// <summary>
+    /// ¿El proveedor acepta <c>response_format</c> con JSON Schema en la llamada final (HU-003.10, #16)? Por defecto true. Con false
+    /// la respuesta final se pide sin formato y el esquema va solo en las instrucciones; la validación manual es la misma. Si el
+    /// proveedor rechaza el esquema en tiempo de ejecución, el validador lo detecta y pasa a ese modo solo.
+    /// </summary>
+    public bool SoportaJsonSchema { get; set; } = true;
+
+    /// <summary>
+    /// Minutos que el validador pide la respuesta final sin JSON Schema después de que el proveedor lo rechazó (400/422); pasado
+    /// ese tiempo vuelve a probar con esquema (re-sonda). Por defecto 30.
+    /// </summary>
+    [Range(1, 24 * 60)]
+    public int MinutosSinJsonSchema { get; set; } = 30;
+
+    /// <summary>
+    /// Modo estricto de JSON Schema (<c>ChatOptions.AdditionalProperties["strict"] = true</c>, la clave que lee
+    /// Microsoft.Extensions.AI.OpenAI para <c>jsonSchemaIsStrict</c>). Por defecto false: solo aplica a proveedores del SDK de OpenAI
+    /// y el modo estricto no admite <c>minLength</c>/<c>maxLength</c>/<c>uniqueItems</c>, que en ese modo se quitan del esquema (la
+    /// validación manual los sigue exigiendo).
+    /// </summary>
+    public bool JsonSchemaEstricto { get; set; }
 }
 
 /// <summary>

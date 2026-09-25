@@ -30,8 +30,9 @@ public interface IClsAgenteRunner
     /// <summary>
     /// Corre el turno: registra el mensaje, arma el contexto, ejecuta el loop de herramientas y pide la respuesta final. Fallos de
     /// negocio: <c>NO_AUTENTICADO</c> (el comercial no existe) y <c>NO_ENCONTRADO</c> (la sesión es de otro usuario, 404 del contrato).
-    /// Un fallo del proveedor de IA, <see cref="clsMaxIteracionesExcedidasException"/> o <see cref="clsRespuestaAgenteInvalidaException"/>
-    /// se propagan como excepción: el canal responde el error controlado.
+    /// Un fallo del proveedor de IA o <see cref="clsMaxIteracionesExcedidasException"/> se propagan como excepción: el canal responde
+    /// el error controlado. Una respuesta final que no pasa la validación ni con el reintento no lanza: vuelve con
+    /// <see cref="clsResultadoTurno.EsRespaldo"/> y el texto de respaldo (HU-003.10).
     /// </summary>
     Task<clsResultado<clsResultadoTurno>> EjecutarTurnoAsync(clsSolicitudTurno solicitud, CancellationToken cancellationToken = default);
 }
@@ -48,8 +49,9 @@ public interface IClsAgenteRunner
 /// a mano con <c>kernel.InvokeAsync</c> (sin <c>UseFunctionInvocation()</c>), así corren los filtros de auditoría e inyección de
 /// estado. Una herramienta inexistente responde <c>HERRAMIENTA_DESCONOCIDA</c> como resultado; el error estructurado de una
 /// herramienta llega al modelo tal cual. Tras cada herramienta, <c>clsEstadoConversacionService</c> actualiza el estado.</item>
-/// <item>Respuesta final en una llamada aparte sin herramientas (<see cref="IClsValidadorRespuestaAgente.FormatoRespuesta"/>),
-/// validada con <see cref="IClsValidadorRespuestaAgente"/>; se persisten el turno y el estado (<c>Sesiones.estadoAgente</c>).</item>
+/// <item>Respuesta final en una llamada aparte sin herramientas con <see cref="IClsValidadorRespuestaAgente"/> (HU-003.10): JSON
+/// Schema de <see cref="clsRespuestaAgenteEstructurada"/>, validación manual, un reintento y respaldo controlado; se persisten el
+/// turno y el estado (<c>Sesiones.estadoAgente</c>).</item>
 /// </list>
 /// </summary>
 public sealed class clsAgenteRunner(
@@ -219,18 +221,23 @@ public sealed class clsAgenteRunner(
             AgregarEvento(solicitud, RolHerramienta, null, new { resultados = traza }, null, marcas.Siguiente());
         }
 
-        // Respuesta final en una llamada aparte sin herramientas (ADR-003): mismo camino de validación para todos los turnos.
-        iteraciones++;
-        var final = await chat.GetResponseAsync(mensajes, OpcionesFinales(), cancellationToken);
-        var validada = await validador.ValidarAsync(final.Text, cancellationToken);
-        if (validada.EsFallo)
-        {
-            throw new clsRespuestaAgenteInvalidaException($"{validada.Error.Codigo}: {validada.Error.Mensaje}");
-        }
+        // Respuesta final en una llamada aparte sin herramientas (ADR-003): el validador (#16) la pide con JSON Schema, la valida,
+        // reintenta una vez y, si no hay respuesta válida, entrega el respaldo controlado. Nada sin validar llega al comercial.
+        var final = await validador.ObtenerRespuestaFinalAsync(
+            chat,
+            mensajes,
+            new clsContextoValidacionRespuesta(contexto.Estado, salidas, contexto.MensajesDelComercial, funciones.Keys.ToList()),
+            cancellationToken);
+        iteraciones += final.Llamadas;
 
-        AgregarEvento(solicitud, clsEventoConversacion.RolAsistente, validada.Valor, null, null, marcas.Siguiente());
+        AgregarEvento(solicitud, clsEventoConversacion.RolAsistente, final.Respuesta.Texto, null, null, marcas.Siguiente());
         await GuardarAsync(solicitud, cancellationToken);
-        return new clsResultadoTurno(validada.Valor, iteraciones, invocadas, detenerPor, salidas);
+        return new clsResultadoTurno(final.Respuesta.Texto, iteraciones, invocadas, detenerPor, salidas)
+        {
+            Respuesta = final.Respuesta,
+            EsRespaldo = final.EsRespaldo,
+            ReintentosRespuesta = final.Reintentos,
+        };
     }
 
     /// <summary>
@@ -295,12 +302,6 @@ public sealed class clsAgenteRunner(
         Tools = declaraciones,
         ToolMode = ChatToolMode.Auto,
         MaxOutputTokens = opcionesAgente.Value.MaxTokens,
-    };
-
-    private ChatOptions OpcionesFinales() => new()
-    {
-        MaxOutputTokens = opcionesAgente.Value.MaxTokens,
-        ResponseFormat = validador.FormatoRespuesta,
     };
 
     /// <summary>Historial de texto (user/assistant con contenido) + el mensaje actual, recortado por la ventana de tokens.</summary>

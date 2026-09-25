@@ -1,6 +1,5 @@
-using System.Net;
-using System.Reflection;
 using System.Runtime.CompilerServices;
+using Cotifly.Aplicacion.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -88,29 +87,5 @@ public sealed class clsChatClientConRespaldo : IChatClient
     /// Código HTTP de la excepción o de sus internas: <see cref="HttpRequestException.StatusCode"/> o una propiedad <c>Status</c> /
     /// <c>StatusCode</c> numérica (<c>ClientResultException</c> del SDK de OpenAI, excepciones del SDK de Anthropic).
     /// </summary>
-    public static int? Estado(Exception? error)
-    {
-        for (var actual = error; actual is not null; actual = actual.InnerException)
-        {
-            if (actual is HttpRequestException { StatusCode: { } codigo })
-            {
-                return (int)codigo;
-            }
-
-            foreach (var nombre in new[] { "Status", "StatusCode" })
-            {
-                var propiedad = actual.GetType().GetProperty(nombre, BindingFlags.Public | BindingFlags.Instance);
-                var valor = propiedad?.GetValue(actual);
-                switch (valor)
-                {
-                    case int entero when entero > 0:
-                        return entero;
-                    case HttpStatusCode http:
-                        return (int)http;
-                }
-            }
-        }
-
-        return null;
-    }
+    public static int? Estado(Exception? error) => clsEstadoHttpExcepcion.Estado(error);
 }

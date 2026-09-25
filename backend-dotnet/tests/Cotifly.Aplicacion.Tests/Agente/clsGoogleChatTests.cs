@@ -179,6 +179,45 @@ public sealed class clsGoogleChatTests
     [Fact]
     public void LaTarjetaDelPdfSinUrlNoTieneBoton() => Botones(clsTarjetasChat.Pdf("PCN-1", null, "ok")).Should().BeEmpty();
 
+    // HU-003.10: una respuesta estructurada que pide confirmación con acciones sugeridas se publica con sus botones.
+    [Fact]
+    public void UnaConfirmacionConAccionesSugeridasSePublicaConSusBotones()
+    {
+        var resultado = Resultado("¿Genero el PDF con el precio que ya revisaste?") with
+        {
+            Respuesta = new clsRespuestaAgenteEstructurada
+            {
+                Tipo = TipoRespuestaAgente.ConfirmacionRequerida,
+                Texto = "¿Genero el PDF con el precio que ya revisaste?",
+                RequiereConfirmacion = true,
+                AccionesSugeridas = [AccionSugeridaAgente.ConfirmarPdf, AccionSugeridaAgente.AjustarMargen],
+            },
+        };
+
+        var mensaje = clsTarjetasChat.ParaResultado(resultado, _ => null);
+
+        mensaje["text"]!.GetValue<string>().Should().Be("¿Genero el PDF con el precio que ya revisaste?");
+        Botones(mensaje).Select(b => b["onClick"]!["action"]!["function"]!.GetValue<string>())
+            .Should().Equal(clsEventoChat.AccionConfirmar, clsEventoChat.AccionAjustarMargen);
+    }
+
+    // HU-003.10: con el respaldo del validador no se muestran los botones de control humano, aunque haya un precio del turno.
+    [Fact]
+    public void ConElRespaldoDelValidadorSePublicaSoloElTexto()
+    {
+        var resultado = Resultado(clsTextosAgente.RespuestaNoEstructurada,
+            clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "margen", 444_798m))) with
+        {
+            EsRespaldo = true,
+            Respuesta = clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada),
+        };
+
+        var mensaje = clsTarjetasChat.ParaResultado(resultado, _ => null);
+
+        mensaje.Should().ContainSingle();
+        mensaje["text"]!.GetValue<string>().Should().Be(clsTextosAgente.RespuestaNoEstructurada);
+    }
+
     private sealed class clsProcesador
     {
         public clsProcesador()

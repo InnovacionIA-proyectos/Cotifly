@@ -12,6 +12,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <!-- ILogger<T> para los casos de uso que registran avisos (ej. SAP TM caído → política, #13). -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- IMeterFactory/AddMetrics para las métricas del validador de la respuesta final del agente (#16). -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
     <!--
       Agente (#12, ADR-003): Kernel de Semantic Kernel (herramientas como KernelFunction, filtros IFunctionInvocationFilter) e
       IChatClient de Microsoft.Extensions.AI (lo trae Semantic Kernel). MIT. Los proveedores concretos viven en Infraestructura/IA.
