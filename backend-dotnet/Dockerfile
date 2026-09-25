@@ -35,7 +35,6 @@ FROM mcr.microsoft.com/dotnet/sdk:${SDK_VERSION} AS build
 # RID del servidor (Swarm/Dokploy es linux-x64). Publicar para un RID concreto deja fuera los
 # binarios nativos de Windows/macOS que traen los paquetes (SqlClient, MSAL): ~25 MB menos.
 ARG RID=linux-x64
-ARG VERSION
 WORKDIR /src
 
 # 1) Solo lo que define el restore: si no cambian los .csproj ni los props, esta capa se reutiliza.
@@ -54,9 +53,15 @@ RUN --mount=type=cache,id=cotifly-nuget,target=/root/.nuget/packages \
 #      excepción conservan tipo y método, no número de línea.
 #    - SatelliteResourceLanguages=es: solo los recursos localizados en español (mensajes de SqlClient).
 #    - IsTransformWebConfigDisabled: sin web.config (es de IIS).
+#    - VERSION: todo ARG de la etapa llega a los RUN como variable de entorno, y MSBuild lee las variables de entorno
+#      como propiedades sin distinguir mayúsculas: VERSION=dev se volvía $(Version)=dev y el restore fallaba con
+#      NU1105 ("dev" no es una versión válida; #11, antes quedaba oculto porque la capa del restore venía de caché).
+#      Por eso el ARG se declara después del restore y el publish corre con "env -u VERSION": el valor solo entra
+#      como InformationalVersion (el shell expande $VERSION antes de quitar la variable del entorno).
 COPY src/ src/
+ARG VERSION
 RUN --mount=type=cache,id=cotifly-nuget,target=/root/.nuget/packages \
-    dotnet publish src/Cotifly.Api/Cotifly.Api.csproj \
+    env -u VERSION dotnet publish src/Cotifly.Api/Cotifly.Api.csproj \
       -c Release --no-restore -r $RID --self-contained false -o /app/publish \
       -p:UseAppHost=false -p:DebugType=none -p:DebugSymbols=false \
       -p:SatelliteResourceLanguages=es -p:IsTransformWebConfigDisabled=true \
