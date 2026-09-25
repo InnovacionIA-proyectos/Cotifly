@@ -91,7 +91,7 @@ Riesgos registrados en #12 y #16:
 | Tema | Estado |
 |---|---|
 | **Frontera de confianza del login (CRÍTICO)** | `/api/auth/login-clientepro` es anónimo y confía en `idUsuario`: quien alcance la API y conozca un `NOMBREUSUARIO` (o enumere IDs) obtiene un JWT. Mitigaciones y dueño en ADR-009 ("Riesgo abierto"): aserción firmada por el backend de ClientePro o validación de su token; mientras tanto, restringir la red al origen de ClientePro y considerar quitar el respaldo por `ID` numérico |
-| Folio (ADR-011) | El formato y el alcance del consecutivo se definen en ADR-011; cualquier ajuste se registra allí y en `folio.feature` |
+| Folio con iniciales (ADR-011) | Formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`; consecutivo por iniciales y día con el candado `cotifly:folio:DDMMAAAA:INICIALES`. Dos comerciales con las mismas iniciales comparten la secuencia del día (no chocan, pero el `NNN` no empieza en `001` para cada uno). Las iniciales salen de `DESCRIPCIONUSUARIO` (vía `UsuariosWeb.nombreCompleto`) con limitaciones conocidas (orden nombre y apellido, texto agregado, abreviaturas); **pendiente** revisar una muestra real antes de producción. Si el comercial cambia de nombre, solo cambian sus folios nuevos |
 | Latencia del chat | Con `IA:Rpm=8` un turno típico (~4 llamadas: herramientas + la llamada final) puede tardar ~30 s solo por el limitador; subir `IA:Rpm` según el plan del proveedor |
 | Cola de Google Chat | En memoria del proceso: se pierde al reiniciar; sin orden entre réplicas (el candado por sesión evita turnos simultáneos del mismo hilo) |
 | Revocación de `jti` | Un logout tarda hasta 60 s en verse en las demás réplicas (foto de `TokensRevocados`) |
@@ -131,6 +131,7 @@ Otras decisiones abiertas:
 | Decisión | Dueño | Referencia |
 |---|---|---|
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
+| Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
 | Login de servicio `cotifly_app` y permisos por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
 | Aprobación de los scripts 0002 y 0003 | Sara y scalderon-bs | ADR-008 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |

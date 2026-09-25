@@ -152,11 +152,11 @@ Content-Type: application/json
   "herramientas": ["generar_pdf"],
   "precio": null,
   "margen": null,
-  "pdf": { "cotizacion_id": "…", "folio": "…", "pdf_url": "/pdfs/….pdf", "registrada_en_bd": true }
+  "pdf": { "cotizacion_id": "…", "folio": "PCN-DG-25092026-001", "pdf_url": "/pdfs/PCN-DG-25092026-001.pdf", "registrada_en_bd": true }
 }
 ```
 
-Ante un fallo del agente o del proveedor: `200 {"texto": "...", "error": true}` (`RespuestaChatError`). El formato del folio está en [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md).
+Ante un fallo del agente o del proveedor: `200 {"texto": "...", "error": true}` (`RespuestaChatError`). El folio tiene el formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (iniciales del comercial, fecha de Bogotá y consecutivo diario por iniciales; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)). Los folios sin iniciales de la primera implementación se aceptan como heredados.
 
 ## 7.6 Límites, CORS y encabezados
 

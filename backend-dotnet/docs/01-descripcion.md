@@ -65,7 +65,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | TrqType | Tipo de solicitud de transporte de SAP TM; cada línea de negocio se mapea a uno (`SapMapeoTrqType`) |
 | Política de la línea | Margen y método por línea de negocio en `MargenesPolitica`, editables por el gerente comercial |
 | Margen / markup | `margen`: precio = costo / (1 − m). `markup`: precio = costo × (1 + m) |
-| Folio | Identificador de la cotización que genera el servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)); una nueva versión agrega `-vN` |
+| Folio | Identificador de la cotización que genera el servidor: `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`, con las iniciales del comercial y un consecutivo diario por iniciales (ej. `PCN-DG-25092026-001`, [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)); una nueva versión agrega `-vN` |
 | Slot-filling | Estado estructurado de la conversación: lo resuelto por las herramientas (cliente, línea, margen, precio, folio) viaja entre turnos sin depender del texto |
 | Previsualización | Resumen con el precio que el agente muestra antes de generar el PDF; el PDF exige la confirmación explícita del comercial |
 | Verificación doble | El rol externo de ClientePro debe coincidir con la asignación interna en `UsuariosRoles` en cada login |

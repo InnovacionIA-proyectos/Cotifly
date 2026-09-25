@@ -18,7 +18,7 @@ Decididas por el equipo y documentadas; si aparecen, se marcan como "esperada" c
 | Tema | Python | .NET | Referencia |
 |---|---|---|---|
 | Redondeo en empates exactos de medio peso | Arrastra el error de `float` | Half-to-even sobre el valor exacto (diferencia máxima 1 peso, ~0,04 % de los casos; ej. 55 con markup 0.1 → 60, Python 61) | ADR-010 §6 |
-| Folio | `PCN-DDMMAAAA`, versión `-v2` en silencio, o el `referencia` del LLM | Generado por el servidor con consecutivo; una colisión se informa (`FOLIO_DUPLICADO`) | ADR-011 |
+| Folio | `PCN-DDMMAAAA`, versión `-v2` en silencio, o el `referencia` del LLM | Generado por el servidor: `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`, con las iniciales del comercial y consecutivo diario por iniciales; una colisión se informa (`FOLIO_DUPLICADO`) | ADR-011 |
 | Firma del PDF | Datos que mandaba el LLM | Nombre y correo de `UsuariosWeb`; "Cel" solo con teléfono registrado | [02-arquitectura](../02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | SAP TM caído | `MARGEN_FUENTE_NO_DISPONIBLE` | Política de la línea con el motivo en `detalle` | Decisión de #13 (HU-009) |
 | Línea con tilde ("Distribución") | Fallaba la cotización entera (issue #44) | Se resuelve | #11 |
