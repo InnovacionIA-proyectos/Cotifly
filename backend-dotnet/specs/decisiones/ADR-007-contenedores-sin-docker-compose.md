@@ -34,7 +34,7 @@ Además, la máquina de desarrollo solo tiene SDK .NET 8, así que build y tests
    En Windows se lanza desde PowerShell, por las rutas con espacios.
 5. **Tests de integración con Testcontainers** (`Testcontainers.MsSql`):
    - Imagen `mcr.microsoft.com/mssql/server:2019-latest`, la misma versión que producción.
-   - Se crea la base `dbTarifario_Nexo_Pruebas` y se aplican los scripts `migrations_mssql/*.sql`, partidos por `GO`.
+   - Se crea la base `dbTarifario_Nexo_Pruebas` y se aplican los scripts `db/migrations_mssql/*.sql`, partidos por `GO`.
    - Así se cubre la "BD local" que normalmente justificaría un compose.
    - Si los tests corren dentro del contenedor del SDK, se monta `/var/run/docker.sock` y puede hacer falta `TESTCONTAINERS_HOST_OVERRIDE` para que el contenedor alcance a SQL Server.
 

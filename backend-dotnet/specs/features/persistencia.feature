@@ -1,7 +1,7 @@
 # language: es
 # HU-003.3 (#9) — Persistencia en SQL Server 2019 (ADR-008, ADR-010).
 # Se ejecuta en Cotifly.Aceptacion.Tests contra SQL Server 2019 en Testcontainers,
-# con el esquema de migrations_mssql/0001 y 0002 y los repositorios EF Core reales.
+# con el esquema de db/migrations_mssql/0001 y 0002 y los repositorios EF Core reales.
 # Folios con el formato vigente del backlog (PCN-DDMMAAAA[-vN], hasta HU-005.2); el formato
 # con consecutivo de ADR-011 sigue en estado Propuesta. Cada escenario usa un folio distinto
 # porque la base es compartida durante la corrida.

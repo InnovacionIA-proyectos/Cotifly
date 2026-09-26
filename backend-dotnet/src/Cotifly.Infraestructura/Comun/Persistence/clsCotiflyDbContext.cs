@@ -11,7 +11,7 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
 /// Contexto de <c>dbo_cotifly</c> (lectura y escritura), Database First (ADR-008): el mapeo es Fluent
-/// API escrito a mano contra las tablas que crean los scripts <c>migrations_mssql/0001</c> y <c>0002</c>
+/// API escrito a mano contra las tablas que crean los scripts <c>db/migrations_mssql/0001</c> y <c>0002</c>
 /// (ver <c>Configurations/</c>). No hay migraciones EF: los cambios de esquema van en scripts nuevos.
 /// </summary>
 public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> options) : DbContext(options)

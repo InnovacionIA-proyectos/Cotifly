@@ -69,7 +69,7 @@
    `DimEjecutivo`) se construyen ya, sin poblar hasta HU-004, mismo criterio que
    `costeoId`/`nitCliente`/`lineaNegocioId` en `Cotizaciones`. Postgres tiene el
    equivalente exacto de `nombreUsuario`/`nombreCompleto`/`email` desde
-   `migrations/versions/0009_usuarios_web_clientepro.py` (snake_case) — sin
+   `db/migrations/versions/0009_usuarios_web_clientepro.py` (snake_case) — sin
    asimetría entre motores en esas 3; `regional` no tiene equivalente en
    Postgres (columna nueva, solo SQL Server).
 
@@ -462,7 +462,7 @@ GO
 
 -- =============================================================================
 -- 12. Seed de configuración: MargenesPolitica + SapMapeoTrqType
---     (equivalente a migrations/versions/0002_seed_config.py del lado Postgres)
+--     (equivalente a db/migrations/versions/0002_seed_config.py del lado Postgres)
 --     Sin esto, la app fallaría con "línea de negocio desconocida" en la
 --     primera cotización -- no es dato histórico, es configuración que la app
 --     necesita desde el día uno. Valores verificados en vivo contra el

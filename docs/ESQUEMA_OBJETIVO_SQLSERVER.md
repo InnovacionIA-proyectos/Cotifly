@@ -10,13 +10,13 @@ aplica sobre el esquema **real** vigente hoy (post HU-002.2, migraciones `0006`/
 > HU-003) — se aplicó y las tablas se crearon así en `dbo_cotifly`. El equipo decidió
 > después quitarlo (ese estándar no está documentado como archivo en este repo, solo
 > mencionado por nombre en el backlog). Este documento ya refleja los nombres **sin**
-> prefijo; `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (reescrito, no un script
+> prefijo; `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (reescrito, no un script
 > aparte) suelta los objetos `tbl*` que hayan quedado de la corrida anterior antes
 > de crear las tablas con el nombre correcto.
 
 ## 0. Fuente de verdad usada y 2 discrepancias encontradas
 
-Se usó como fuente de verdad **`shared/models.py` + `migrations/versions/0006_*.py` y
+Se usó como fuente de verdad **`shared/models.py` + `db/migrations/versions/0006_*.py` y
 `0007_*.py`** (esquema corriendo de verdad), no la prosa de `BASE_DE_DATOS.md` /
 `docs/DICCIONARIO_BASE_DE_DATOS.md` a ciegas. Dos hallazgos que afectan este mapeo:
 
@@ -34,9 +34,9 @@ Se usó como fuente de verdad **`shared/models.py` + `migrations/versions/0006_*
    `tblSAPUsuariosApp` vía ClientePro). Eso no se ejecutó en la migración `0006`
    original. **Corrección 2026-09-22 (en paralelo, en ambos motores):** se agregaron
    estas 3 columnas ya, sin poblar hasta HU-004 — en Postgres vía
-   `migrations/versions/0009_usuarios_web_clientepro.py`
+   `db/migrations/versions/0009_usuarios_web_clientepro.py`
    (`nombre_usuario`/`nombre_completo`/`email`), y en este esquema objetivo de SQL
-   Server vía `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (§5.8, camelCase). Mismo
+   Server vía `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` (§5.8, camelCase). Mismo
    criterio que `costeoId`/`nitCliente`/`lineaNegocioId` en `Cotizaciones`. Sin
    asimetría entre los dos motores.
 
@@ -88,7 +88,7 @@ realidad apunta a `margenes_politica`, sembrada localmente desde la migración
 - `mcp_server/server.py` (`generar_pdf`) ahora resuelve y guarda `linea_negocio_id` en
   cada cotización nueva, cruzando por el mismo texto (`linea_negocio`) que ya usa el
   flujo de negocio.
-- `migrations/versions/0008_backfill_linea_negocio_id.py` rellenó las filas históricas.
+- `db/migrations/versions/0008_backfill_linea_negocio_id.py` rellenó las filas históricas.
 - Verificado end-to-end: ambas columnas quedan pobladas y consistentes hoy en Postgres.
 
 **Decisión para el esquema objetivo de SQL Server: se retira `lineaNegocio` (texto),
@@ -388,12 +388,12 @@ erDiagram
 `email` (mapeo de `tblSAPUsuariosApp`, §2.6 de la propuesta) sí se construyen en este
 esquema objetivo, sin poblar hasta HU-004 — mismo criterio que las columnas
 equivalentes de `Cotizaciones`. Postgres tiene el equivalente exacto desde
-`migrations/versions/0009_usuarios_web_clientepro.py` (snake_case:
+`db/migrations/versions/0009_usuarios_web_clientepro.py` (snake_case:
 `nombre_usuario`/`nombre_completo`/`email`) — sin asimetría entre motores.
 
 **Fase 2 (2026-09-23) — `id` deja de ser el id de SAP:** pasa a ser un
 `uniqueidentifier` generado por Cotifly (consolidado en
-`migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`, ver §9 ítem 13).
+`db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`, ver §9 ítem 13).
 **No se agrega ninguna columna de id de SAP** — decisión confirmada: el
 aprovisionamiento (HU-003.6) hace match contra `tblSAPUsuariosApp` y contra
 `DimEjecutivo` (para `regional`) por `nombreUsuario`, no por ningún id numérico
@@ -553,11 +553,11 @@ quedan mapeadas:
    Cotifly, es un schema nuevo (`dbo_cotifly`) dentro de `dbTarifario_Nexo_Pruebas`
    (base ya existente). Afecta la calificación de todos los objetos en el script
    (`dbo_cotifly.Cotizaciones`, no `dbo.Cotizaciones`) — ver
-   `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`.
+   `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`.
 6. **§2 (2026-09-22, después de crear las tablas en la BD real)** — Se retira el
    prefijo `tbl`/`tblSap` que pedía originalmente HU-002.3
    (`docs/HU_Backlog_Cotifly_ClientePro.md:174`). Las 10 tablas se llegaron a crear
-   con el prefijo en una primera corrida de `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`
+   con el prefijo en una primera corrida de `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`
    — ese mismo script se reescribió (no se agregó uno aparte) para soltar esos objetos
    `tbl*` como primer paso y crear las tablas ya con el nombre correcto. Este documento
    ya quedó actualizado con los nombres sin prefijo en todas las secciones.
@@ -583,14 +583,14 @@ quedan mapeadas:
     (`trusted_connection=yes`, sin usuario/contraseña). `shared/config.py` ya tiene
     `sqlserver_database_url` separado de `database_url` (Postgres, no se toca), y
     `.env.example` documenta el formato. **Restricción real:** Windows Authentication
-    solo funciona ejecutando `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` directo desde
+    solo funciona ejecutando `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` directo desde
     Windows (`sqlcmd -E` o un runner Python local) — no desde los contenedores Docker
     (Linux) del proyecto, que no soportan Windows Auth sin configurar Kerberos aparte.
 13. **Fase 2 (2026-09-23) — rol Gerente Comercial, tablero de métricas, versionado —
     consolidada en `0001` (2026-09-24):** originalmente se armó como script `0003`
     aparte (ALTER sobre el esquema ya creado por `0001`/`0002`), pero como nada de
     esto está en producción todavía, se consolidó todo en un único
-    `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` que crea el esquema ya en su forma
+    `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` que crea el esquema ya en su forma
     final desde el inicio — `0002`/`0003` se eliminaron, no quedó rastro de la forma
     intermedia. Cambios: `UsuariosWeb.id` es `uniqueidentifier` generado por Cotifly
     (nunca fue el id de SAP en la versión final) — **no existe columna de id de SAP**,
@@ -628,7 +628,7 @@ quedan mapeadas:
     quedaron las dos duplicadas en `Cotizaciones`. Se corrió un script de corrección
     directo contra `dbTarifario_Nexo_Pruebas` (`DROP COLUMN clienteIdSap` +
     `sp_rename bdCliente → nitCliente`, tabla vacía verificada antes de ejecutar) y
-    se sincronizó `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` + este documento
+    se sincronizó `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` + este documento
     (§5.1) con el resultado. Cambio de fondo: la columna pasa a guardar el **NIT**
     (estable, existe para clientes reales y prospectos) en vez del `clienteId`
     interno de Nexo (formato inconsistente según el origen) — ver nota en §5.1.

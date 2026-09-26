@@ -21,7 +21,7 @@ externas** que el bot consulta en el momento — sus datos no viven aquí, solo 
 foto de lo que se usó en cada cotización (`fuente_tarifa`, `origen_margen`).
 
 Motor: **PostgreSQL 16**. Acceso: SQLAlchemy 2.x + Alembic (`shared/models.py` = tablas,
-`shared/repos.py` = toda lectura/escritura, `migrations/versions/` = historial versionado).
+`shared/repos.py` = toda lectura/escritura, `db/migrations/versions/` = historial versionado).
 
 > **Actualizado por HU-002.2 (2026-09-22):** se ejecutó la propuesta de reestructuración
 > aprobada en HU-002.1 (migración `0006_hu002_2_esquema_completo`). Cambios de fondo: se
@@ -317,7 +317,7 @@ para saber qué política de margen le corresponde. PK compuesta (`trq_type`,
 | `activo` | boolean | Si el mapeo está vigente (permite desactivar sin borrar histórico). | Igual, default `true`. | `true` | Sí — filtro `activo.is_(True)` en ambos métodos del repo. |
 
 **Constraints reales (Postgres, verificado 2026-09-21):**
-- PK compuesta: (`trq_type`, `sales_org`). **Divergencia encontrada:** `shared/models.py` declara además `UniqueConstraint("trq_type", "sales_org", name="uq_trqtype_salesorg")` en `__table_args__`, pero esa constraint **nunca se creó en la BD real** — `migrations/versions/0001_initial.py` solo define la tabla con la PK compuesta, no ejecuta ningún `create_unique_constraint` para `uq_trqtype_salesorg`. Confirmado con `pg_constraint`: la tabla solo tiene `mapeo_trqtype_pkey`. En la práctica no genera ningún problema (la PK ya cubre esa unicidad), pero el modelo ORM declara algo que la migración no aplicó — el ORM y el esquema real están desalineados en este punto.
+- PK compuesta: (`trq_type`, `sales_org`). **Divergencia encontrada:** `shared/models.py` declara además `UniqueConstraint("trq_type", "sales_org", name="uq_trqtype_salesorg")` en `__table_args__`, pero esa constraint **nunca se creó en la BD real** — `db/migrations/versions/0001_initial.py` solo define la tabla con la PK compuesta, no ejecuta ningún `create_unique_constraint` para `uq_trqtype_salesorg`. Confirmado con `pg_constraint`: la tabla solo tiene `mapeo_trqtype_pkey`. En la práctica no genera ningún problema (la PK ya cubre esa unicidad), pero el modelo ORM declara algo que la migración no aplicó — el ORM y el esquema real están desalineados en este punto.
 
 ## 4. Vistas de solo lectura (no son tablas, se recalculan al consultarlas)
 

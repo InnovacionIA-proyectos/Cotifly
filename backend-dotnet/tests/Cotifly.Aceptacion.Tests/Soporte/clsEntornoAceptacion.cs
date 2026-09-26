@@ -9,7 +9,7 @@ namespace Cotifly.Aceptacion.Tests.Soporte;
 
 /// <summary>
 /// Un SQL Server 2019 (Testcontainers) para toda la corrida de aceptación, con el esquema de
-/// <c>migrations_mssql/0001</c> y <c>0002</c> aplicado (ver <see cref="clsBaseDatosPruebas"/>).
+/// <c>db/migrations_mssql/0001</c> y <c>0002</c> aplicado (ver <see cref="clsBaseDatosPruebas"/>).
 /// </summary>
 [Binding]
 public sealed class clsEntornoAceptacion

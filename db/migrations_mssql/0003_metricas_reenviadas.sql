@@ -3,7 +3,7 @@
    ============================================================================
    HU-003.6 (#12, parte B). Patrón de scripts: backend-dotnet/specs/decisiones/ADR-008
    (EF Core Database First: el esquema SOLO cambia con scripts
-   `migrations_mssql/000N_*.sql`; no hay migraciones EF).
+   `db/migrations_mssql/000N_*.sql`; no hay migraciones EF).
 
    *** PENDIENTE DE APROBACIÓN — igual que el 0002, no ejecutar en tbsdatacenter
        sin el visto bueno del equipo de datos (Sara + scalderon-bs) ***

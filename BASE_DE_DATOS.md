@@ -23,7 +23,7 @@ shared/models.py    → 9 tablas ORM (DeclarativeBase)
 shared/repos.py     → repositorios estáticos (CotizacionRepo, SesionRepo, ...) — toda
                       consulta/escritura pasa por aquí, no hay SQL suelto en
                       orquestador/mcp_server
-migrations/versions/ → 5 migraciones Alembic (esquema versionado)
+db/migrations/versions/ → 5 migraciones Alembic (esquema versionado)
 ```
 
 `get_session()` (`shared/db.py`) hace commit al salir sin error y rollback ante excepción —
@@ -195,7 +195,7 @@ la Consola web (dependían de esa identidad). Cotizar por Google Chat no se vio 
 **Fallback** cuando SAP TM no tiene el margen del cliente. 8 filas hoy (una por línea de
 negocio), **todas al 15%, incluida `ITR`** — corrección 2026-09-22: se había documentado
 por error que `ITR` estaba al 50% (intencional); verificado contra la BD real y contra
-`migrations/versions/0002_seed_config.py`, `ITR` está al 15% igual que las demás, sin
+`db/migrations/versions/0002_seed_config.py`, `ITR` está al 15% igual que las demás, sin
 excepción. Método `margen`. Marcadas como
 *provisionales, pendientes de validar con Gerencia Comercial* (migración `0002_seed_config`)
 — HU-002.1 decidió no bloquear el cierre con esa validación: Gerencia las ajustará

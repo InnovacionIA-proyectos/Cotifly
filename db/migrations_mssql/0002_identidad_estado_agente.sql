@@ -4,7 +4,7 @@
    HU-003.3 (#9). Diseño: backend-dotnet/specs/decisiones/ADR-004 (estado de
    conversación / slot-filling) y ADR-009 (login SSO — Cliente Pro); patrón de
    scripts en ADR-008 (EF Core Database First: el esquema SOLO cambia con
-   scripts `migrations_mssql/000N_*.sql`; no hay migraciones EF).
+   scripts `db/migrations_mssql/000N_*.sql`; no hay migraciones EF).
 
    *** EXTENSIÓN ADITIVA PENDIENTE DE APROBACIÓN — no ejecutar en tbsdatacenter
        sin el visto bueno del equipo de datos ***

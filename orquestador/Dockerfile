@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md alembic.ini ./
 COPY shared ./shared
 COPY orquestador ./orquestador
-COPY migrations ./migrations
+COPY db/migrations ./db/migrations
 
 # llm (Anthropic) + mcpclient (habla con el MCP interno por HTTP) + gchat
 # (verifica el JWT del webhook y publica en Chat) + sheets (vuelca la BD a Google
