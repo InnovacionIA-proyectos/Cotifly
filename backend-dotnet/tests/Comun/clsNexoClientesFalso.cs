@@ -39,23 +39,25 @@ public sealed class clsNexoClientesFalso : HttpMessageHandler
         return this;
     }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        var cuerpo = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         _peticiones.Enqueue(new clsPeticionNexo(
             request.Method,
             request.RequestUri!,
             request.Headers.TryGetValues("X-Portal-Usuario-Id", out var valores) ? valores.FirstOrDefault() : null,
-            request.Headers.Accept.ToString()));
+            request.Headers.Accept.ToString(),
+            cuerpo));
 
         var respuesta = _respuestas.TryDequeue(out var fabrica) ? fabrica(request) : new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("[]", Encoding.UTF8, "application/json"),
         };
-        return Task.FromResult(respuesta);
+        return respuesta;
     }
 }
 
-/// <summary>Petición recibida por <see cref="clsNexoClientesFalso"/>.</summary>
-public sealed record clsPeticionNexo(HttpMethod Metodo, Uri Url, string? IdPortalUsuario, string Accept);
+/// <summary>Petición recibida por <see cref="clsNexoClientesFalso"/>. <paramref name="Cuerpo"/> es <c>null</c> en un GET sin cuerpo.</summary>
+public sealed record clsPeticionNexo(HttpMethod Metodo, Uri Url, string? IdPortalUsuario, string Accept, string? Cuerpo = null);

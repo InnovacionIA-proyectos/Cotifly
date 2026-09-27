@@ -555,6 +555,47 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/cubicacion:
+    post:
+      operationId: cubicar
+      tags: [web]
+      summary: Cubicación rápida - mejor vehículo y flota necesaria para un conjunto de bultos
+      description: |
+        Reenvía la solicitud a `POST {Nexo:UrlBase}/api/cubicacion` (la "cubicación rápida" de Nexo, sin
+        persistencia: dado un conjunto de bultos, sugiere qué vehículo conviene usar), que a su vez es la única
+        llamada síncrona de Nexo al servicio Cubicador. Unidades: **centímetros y kilogramos** (distinto del resto
+        del catálogo "Plan de Cargue" de Nexo, que usa milímetros). Cotifly siempre evalúa contra todo el catálogo
+        estándar de vehículos: no expone `unidad_ids` de Nexo. Se omiten de la respuesta las matrices de
+        factibilidad por vehículo y las disposiciones de colocación 3D de la flota (`matrices` y
+        `sugerencia_flota.disposiciones` de Nexo): demasiado detalle para el formulario de cotización.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CubicacionRequest'
+      responses:
+        '200':
+          description: Sugerencia de vehículo/flota, advertencias y detección de extradimensión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoCubicacion'
+        '400':
+          description: |
+            `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `CUBICACION_DEMASIADO_GRANDE` si Nexo/Cubicador
+            rechaza la solicitud (típicamente por superar el límite de bultos por solicitud, pero Nexo no distingue
+            el motivo exacto en su propio código de error); `CUBICACION_NO_DISPONIBLE` si Nexo no responde o no está
+            configurado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -877,8 +918,12 @@ components:
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
                 `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
                 `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
-                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo) y `CATALOGOS_FLETE_NO_DISPONIBLE`
-                (`GET /web/catalogos-flete`: idem, catálogos de tipo de vehículo/carrocería/clase de viaje).
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo), `CATALOGOS_FLETE_NO_DISPONIBLE`
+                (`GET /web/catalogos-flete`: idem, catálogos de tipo de vehículo/carrocería/clase de viaje),
+                `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío, mismo código que usa Nexo),
+                `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
+                rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
+                solicitud, típicamente por superar el límite de bultos por solicitud).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -904,6 +949,9 @@ components:
                 - HERRAMIENTA_DESCONOCIDA
                 - MUNICIPIOS_NO_DISPONIBLE
                 - CATALOGOS_FLETE_NO_DISPONIBLE
+                - ITEMS_REQUERIDOS
+                - CUBICACION_NO_DISPONIBLE
+                - CUBICACION_DEMASIADO_GRANDE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1399,6 +1447,167 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcionCatalogo'
+
+    ItemCubicacion:
+      type: object
+      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      properties:
+        descripcion:
+          type: string
+          nullable: true
+        cantidad:
+          type: integer
+          description: Cuántos bultos idénticos con estas medidas.
+        largo_cm:
+          type: number
+          description: Largo en centímetros.
+        ancho_cm:
+          type: number
+          description: Ancho en centímetros.
+        alto_cm:
+          type: number
+          description: Alto en centímetros.
+        peso_kg:
+          type: number
+          nullable: true
+          description: Peso en kilogramos de cada bulto.
+
+    CubicacionRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Obligatorio; 400 `ITEMS_REQUERIDOS` si falta o viene vacío.
+          items:
+            $ref: '#/components/schemas/ItemCubicacion'
+        clase_viaje:
+          type: string
+          nullable: true
+
+    SugerenciaVehiculo:
+      type: object
+      required: [unidad_id, unidad_nombre, banda, factor_utilizacion]
+      properties:
+        unidad_id:
+          type: string
+        unidad_nombre:
+          type: string
+        banda:
+          type: string
+        factor_utilizacion:
+          type: number
+        config_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
+
+    SugerenciaFlota:
+      type: object
+      required: [unidad_id, unidad_nombre, cantidad_vehiculos, utilizacion_promedio]
+      description: Igual que Nexo salvo que omite `disposiciones` (colocaciones 3D detalladas por vehículo de la flota).
+      properties:
+        unidad_id:
+          type: string
+        unidad_nombre:
+          type: string
+        cantidad_vehiculos:
+          type: integer
+        utilizacion_promedio:
+          type: number
+        config_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
+
+    MedidasEstandar:
+      type: object
+      required: [largo_max_cm, ancho_max_cm, alto_max_cm, peso_max_kg]
+      properties:
+        largo_max_cm:
+          type: number
+        ancho_max_cm:
+          type: number
+        alto_max_cm:
+          type: number
+        peso_max_kg:
+          type: number
+
+    PiezaExcedida:
+      type: object
+      required: [descripcion, excesos, largo_cm, ancho_cm, alto_cm]
+      properties:
+        descripcion:
+          type: string
+        excesos:
+          type: array
+          items:
+            type: string
+        largo_cm:
+          type: number
+        ancho_cm:
+          type: number
+        alto_cm:
+          type: number
+        peso_kg:
+          type: number
+          nullable: true
+
+    DeteccionExtradimension:
+      type: object
+      required: [hay_extradimension, medidas_estandar, piezas]
+      properties:
+        hay_extradimension:
+          type: boolean
+        medidas_estandar:
+          $ref: '#/components/schemas/MedidasEstandar'
+        piezas:
+          type: array
+          items:
+            $ref: '#/components/schemas/PiezaExcedida'
+        sugerencia:
+          type: string
+          nullable: true
+
+    ResultadoCubicacion:
+      type: object
+      required: [advertencias]
+      properties:
+        sugerencia:
+          description: Mejor vehículo único, o `null` si ninguno de la flota estándar sirve.
+          oneOf:
+            - $ref: '#/components/schemas/SugerenciaVehiculo'
+            - $ref: '#/components/schemas/Nulo'
+        sugerencia_flota:
+          description: Flota sugerida cuando hace falta más de un vehículo, o `null`.
+          oneOf:
+            - $ref: '#/components/schemas/SugerenciaFlota'
+            - $ref: '#/components/schemas/Nulo'
+        advertencias:
+          type: array
+          items:
+            type: string
+        extradimension:
+          description: Detección de piezas que exceden las medidas estándar, o `null`.
+          oneOf:
+            - $ref: '#/components/schemas/DeteccionExtradimension'
+            - $ref: '#/components/schemas/Nulo'
 
     VistaPreviaCorreo:
       type: object

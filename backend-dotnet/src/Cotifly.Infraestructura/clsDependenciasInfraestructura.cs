@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
@@ -30,6 +31,7 @@ using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Correo.Repositories;
 using Cotifly.Infraestructura.Correo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
+using Cotifly.Infraestructura.Cubicacion.Services;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
 using Cotifly.Infraestructura.IA.Services;
@@ -106,6 +108,7 @@ public static class clsDependenciasInfraestructura
         // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
+        AgregarCubicacion(servicios);
 
         AgregarPdfYCorreo(servicios);
 
@@ -235,6 +238,20 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
         servicios.AddHttpClient<clsCatalogosFleteNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
+    }
+
+    /// <summary>
+    /// Cubicación rápida elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCubicacion.Crear"/>):
+    /// configurada → <see cref="clsCubicacionNexo"/>; vacía → <see cref="clsCubicacionNoDisponible"/>. Mismo cliente
+    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
+    /// mismo servicio Nexo. No repite la configuración de resiliencia/redacción por la misma razón que
+    /// <see cref="AgregarMunicipios"/>. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCubicacion(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCubicacionNoDisponible>();
+        servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)
