@@ -61,7 +61,7 @@ public sealed class clsBuscadorClientesFalso : IClsBuscadorClientes
 
     public bool Disponible { get; set; } = true;
 
-    public Task<clsResultado<clsResultadoBusquedaClientes>> BuscarAsync(string texto, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsResultadoBusquedaClientes>> BuscarAsync(Guid usuarioId, string texto, CancellationToken cancellationToken = default)
     {
         if (!Disponible)
         {

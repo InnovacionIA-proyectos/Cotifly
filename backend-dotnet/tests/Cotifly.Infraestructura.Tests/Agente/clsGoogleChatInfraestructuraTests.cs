@@ -351,7 +351,7 @@ public sealed class clsGoogleChatInfraestructuraTests : IDisposable
         proveedor.GetRequiredService<IClsFirmaUrlPdf>().Should().BeOfType<clsFirmaUrlPdfHmac>();
         proveedor.GetServices<IHostedService>().Select(h => h.GetType()).Should().Contain([typeof(clsWorkerEventosChat), typeof(clsBarridoSesionesHostedService)]);
         var buscador = ambito.ServiceProvider.GetRequiredService<IClsBuscadorClientes>();
-        (await buscador.BuscarAsync("Falabella", Ct)).Error.Codigo.Should().Be(clsCodigosError.ClienteBusquedaNoDisponible);
+        (await buscador.BuscarAsync(Guid.NewGuid(), "Falabella", Ct)).Error.Codigo.Should().Be(clsCodigosError.ClienteBusquedaNoDisponible);
         proveedor.GetRequiredService<IOptions<clsOpcionesAgente>>().Value.MaxIteraciones.Should().Be(12);
         proveedor.GetRequiredService<IOptions<clsOpcionesSesiones>>().Value.LimiteTokens.Should().Be(6000);
     }

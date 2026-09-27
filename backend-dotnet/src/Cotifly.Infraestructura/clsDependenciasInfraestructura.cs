@@ -86,6 +86,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
         servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -108,14 +109,15 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes (stub hasta
-    /// HU-005.2), Google Chat (verificación del JWT, cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido
-    /// de sesiones inactivas. TryAdd: un adaptador registrado antes (pruebas, HU-005.2) se respeta.
+    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes en Nexo
+    /// (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), Google Chat (verificación del JWT,
+    /// cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido de sesiones inactivas. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
-        servicios.TryAddScoped<IClsBuscadorClientes, clsBuscadorClientesNoDisponible>();
+        AgregarBuscadorClientes(servicios);
         servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
         servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
@@ -178,6 +180,21 @@ public static class clsDependenciasInfraestructura
         });
 
         servicios.AddHostedService<clsAvisosArranqueSapTm>();
+    }
+
+    /// <summary>
+    /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
+    /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
+    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-Usuario-Id</c> en los
+    /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarBuscadorClientes(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsBuscadorClientesNoDisponible>();
+        servicios.AddHttpClient<clsBuscadorClientesNexo>(clsBuscadorClientesNexo.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
+        servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

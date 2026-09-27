@@ -48,7 +48,7 @@ internal sealed class clsArnesAgente
         Usuarios.ObtenerPorIdAsync(Usuario.Id, Arg.Any<CancellationToken>()).Returns(Usuario);
         Calendario.Hoy.Returns(new DateOnly(2026, 9, 24));
 
-        Buscador.BuscarAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Fallo(new clsErrorDominio(clsCodigosError.ClienteBusquedaNoDisponible, "Búsqueda no disponible.")));
         Tarifas.BuscarAsync(Arg.Any<clsEntradaBuscarTarifa>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsSalidaTarifa>.Fallo(new clsErrorDominio(clsCodigosError.TarifaFuenteNoDisponible, "Sin fuente de tarifas.")));
@@ -141,7 +141,7 @@ internal sealed class clsArnesAgente
 
     /// <summary>El catálogo de clientes encuentra exactamente a LONGYIN (NIT 900123456, BP 15927).</summary>
     public void CatalogoConLongyin() =>
-        Buscador.BuscarAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Exito(new clsResultadoBusquedaClientes(true, [new clsClienteEncontrado(NitLongyin, "LONGYIN S.A.S.", "cliente", BpLongyin)])));
 
     public clsAgenteRunner Runner()

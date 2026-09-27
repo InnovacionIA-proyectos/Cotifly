@@ -461,6 +461,45 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
 
+  /web/clientes:
+    get:
+      operationId: buscarClientes
+      tags: [web]
+      summary: Busca clientes y prospectos en el catálogo de Nexo
+      description: |
+        Mismo catálogo (clientes de `DimBPSolicitante` y prospectos) que usa el formulario
+        "Nueva solicitud" de Nexo y la herramienta `buscar_cliente` del agente (HU-005.2,
+        ADR-005). `exacta=true` solo cuando hay un único candidato — Nexo no distingue
+        coincidencia exacta de aproximada en la respuesta; el frontend nunca debe tratar el
+        texto buscado como NIT/origen/BP: esos datos salen únicamente de `candidatos`.
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Nombre o NIT, tal como lo escribió el comercial.
+      responses:
+        '200':
+          description: Candidatos encontrados (vacío si ninguno)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoBusquedaClientes'
+        '400':
+          description: Falta `q`, o la búsqueda en Nexo no está disponible (`CLIENTE_BUSQUEDA_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -768,8 +807,9 @@ components:
               type: string
               description: |
                 Mismos códigos que el backend Python, más siete nuevos del backend .NET:
-                `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (búsqueda de clientes de HU-005.2 aún
-                no conectada), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (HU-005.2: Nexo sin configurar, sin
+                respuesta o el comercial sin `idUsuarioExterno`; nunca por "no hubo
+                candidatos", que es `200` con `candidatos: []`), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
                 herramienta inexistente, HU-003.10), `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
                 el margen negociado por el comercial está fuera de rango para su método de
                 cálculo, es decir negativo o ≥ 1 con `margen`, o el método no es
@@ -1223,6 +1263,34 @@ components:
           items:
             type: string
             format: email
+
+    ResultadoBusquedaClientes:
+      type: object
+      required: [exacta, candidatos]
+      properties:
+        exacta:
+          type: boolean
+          description: Único candidato encontrado (ver descripción del endpoint sobre el criterio provisional).
+        candidatos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClienteEncontrado'
+
+    ClienteEncontrado:
+      type: object
+      required: [nit_cliente, nombre, origen_cliente]
+      properties:
+        nit_cliente:
+          type: string
+        nombre:
+          type: string
+        origen_cliente:
+          type: string
+          enum: [cliente, prospecto]
+        bp:
+          type: string
+          nullable: true
+          description: BP de Nexo; nunca se muestra al comercial (solo se usa internamente para consultar SAP TM).
 
     VistaPreviaCorreo:
       type: object
