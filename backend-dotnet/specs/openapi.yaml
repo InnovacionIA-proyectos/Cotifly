@@ -529,6 +529,32 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/catalogos-flete:
+    get:
+      operationId: obtenerCatalogosFlete
+      tags: [web]
+      summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
+      description: |
+        Catálogos de la biblioteca SAP TM histórico de Nexo para el formulario de captura. Se omite
+        `lineasNegocio` de la respuesta de Nexo: Cotifly ya tiene su propio catálogo de línea de negocio.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Los tres catálogos completos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogosFlete'
+        '400':
+          description: Los catálogos de flete en Nexo no están disponibles (`CATALOGOS_FLETE_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -835,7 +861,7 @@ components:
             codigo:
               type: string
               description: |
-                Mismos códigos que el backend Python, más ocho nuevos del backend .NET:
+                Mismos códigos que el backend Python, más nueve nuevos del backend .NET:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (HU-005.2: Nexo sin configurar, sin
                 respuesta o el comercial sin `idUsuarioExterno`; nunca por "no hubo
                 candidatos", que es `200` con `candidatos: []`), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
@@ -846,12 +872,13 @@ components:
                 con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
                 genera HU-003.6 y la colisión se informa), `FOLIO_CONSECUTIVO_AGOTADO` (HU-003.6:
                 el comercial ya usó los 999 folios del día, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
-                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503) y
+                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503),
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
-                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400) y
+                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
                 `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
-                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo).
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo) y `CATALOGOS_FLETE_NO_DISPONIBLE`
+                (`GET /web/catalogos-flete`: idem, catálogos de tipo de vehículo/carrocería/clase de viaje).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -876,6 +903,7 @@ components:
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
                 - MUNICIPIOS_NO_DISPONIBLE
+                - CATALOGOS_FLETE_NO_DISPONIBLE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1343,6 +1371,34 @@ components:
         pais:
           type: string
           nullable: true
+
+    OpcionCatalogo:
+      type: object
+      required: [valor, etiqueta]
+      properties:
+        valor:
+          type: string
+          description: Valor interno de la opción (el que viaja en la cotización).
+        etiqueta:
+          type: string
+          description: Texto legible para mostrar en el formulario.
+
+    CatalogosFlete:
+      type: object
+      required: [tipos_vehiculo, tipos_carroceria, clases_viaje]
+      properties:
+        tipos_vehiculo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+        tipos_carroceria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+        clases_viaje:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
 
     VistaPreviaCorreo:
       type: object

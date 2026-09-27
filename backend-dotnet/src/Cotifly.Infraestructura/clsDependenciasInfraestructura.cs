@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Repositories;
+using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Interfaces;
@@ -21,6 +22,7 @@ using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
+using Cotifly.Infraestructura.CatalogosFlete.Services;
 using Cotifly.Infraestructura.Clientes.Services;
 using Cotifly.Infraestructura.Comun;
 using Cotifly.Infraestructura.Comun.Persistence;
@@ -103,6 +105,7 @@ public static class clsDependenciasInfraestructura
 
         // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
         AgregarMunicipios(servicios);
+        AgregarCatalogosFlete(servicios);
 
         AgregarPdfYCorreo(servicios);
 
@@ -217,6 +220,21 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<clsMunicipiosNoDisponible>();
         servicios.AddHttpClient<clsMunicipiosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsMunicipiosProvider>(clsFabricaMunicipios.Crear);
+    }
+
+    /// <summary>
+    /// Catálogos de tipo de vehículo/carrocería/clase de viaje elegidos por <c>Nexo:UrlBase</c> al resolver
+    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/>; vacía →
+    /// <see cref="clsCatalogosFleteNoDisponible"/>. Mismo cliente HTTP tipado (nombre
+    /// <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el mismo servicio Nexo.
+    /// No repite la configuración de resiliencia/redacción por la misma razón que <see cref="AgregarMunicipios"/>.
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCatalogosFlete(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
+        servicios.AddHttpClient<clsCatalogosFleteNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

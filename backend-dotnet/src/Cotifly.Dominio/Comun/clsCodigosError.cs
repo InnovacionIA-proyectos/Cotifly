@@ -84,4 +84,11 @@ public static class clsCodigosError
     /// configurar, sin respuesta o el comercial sin <c>idUsuarioExterno</c>. Código nuevo del backend .NET.
     /// </summary>
     public const string MunicipiosNoDisponible = "MUNICIPIOS_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Los catálogos de flete (<c>GET /web/catalogos-flete</c>: tipos de vehículo, tipos de carrocería y clases de
+    /// viaje, endpoint de Nexo) no están disponibles: mismas causas que <see cref="MunicipiosNoDisponible"/>. Código
+    /// nuevo del backend .NET.
+    /// </summary>
+    public const string CatalogosFleteNoDisponible = "CATALOGOS_FLETE_NO_DISPONIBLE";
 }
