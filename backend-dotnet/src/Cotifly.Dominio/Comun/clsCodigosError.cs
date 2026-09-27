@@ -78,4 +78,10 @@ public static class clsCodigosError
 
     /// <summary>El modelo pidió una herramienta que no existe (HU-003.10). Código nuevo del backend .NET (#12).</summary>
     public const string HerramientaDesconocida = "HERRAMIENTA_DESCONOCIDA";
+
+    /// <summary>
+    /// El catálogo de municipios (<c>GET /web/municipios</c>, endpoint de Nexo) no está disponible: Nexo sin
+    /// configurar, sin respuesta o el comercial sin <c>idUsuarioExterno</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MunicipiosNoDisponible = "MUNICIPIOS_NO_DISPONIBLE";
 }

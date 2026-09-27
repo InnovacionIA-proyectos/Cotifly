@@ -500,6 +500,35 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/municipios:
+    get:
+      operationId: listarMunicipios
+      tags: [web]
+      summary: Catálogo completo de municipios para origen/destino
+      description: |
+        Mismo catálogo de municipios (sin paginar) que usa el formulario "Nueva solicitud" de Nexo para el
+        origen y el destino. Se omiten los campos de costeo interno (`nombreTarifasPlaza`, `zonaTarificacion`
+        en la respuesta de Nexo): el frontend no los necesita.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Catálogo completo de municipios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Municipio'
+        '400':
+          description: El catálogo de municipios en Nexo no está disponible (`MUNICIPIOS_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -806,7 +835,7 @@ components:
             codigo:
               type: string
               description: |
-                Mismos códigos que el backend Python, más siete nuevos del backend .NET:
+                Mismos códigos que el backend Python, más ocho nuevos del backend .NET:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (HU-005.2: Nexo sin configurar, sin
                 respuesta o el comercial sin `idUsuarioExterno`; nunca por "no hubo
                 candidatos", que es `200` con `candidatos: []`), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
@@ -820,7 +849,9 @@ components:
                 `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503) y
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
-                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400).
+                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400) y
+                `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -844,6 +875,7 @@ components:
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
+                - MUNICIPIOS_NO_DISPONIBLE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1291,6 +1323,26 @@ components:
           type: string
           nullable: true
           description: BP de Nexo; nunca se muestra al comercial (solo se usa internamente para consultar SAP TM).
+
+    Municipio:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+          description: Id del municipio en el catálogo de Nexo.
+        codigo_dane:
+          type: string
+          nullable: true
+        municipio:
+          type: string
+          nullable: true
+        departamento:
+          type: string
+          nullable: true
+        pais:
+          type: string
+          nullable: true
 
     VistaPreviaCorreo:
       type: object

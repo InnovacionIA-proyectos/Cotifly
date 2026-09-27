@@ -14,6 +14,7 @@ using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Aplicacion.Metricas.Repositories;
+using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
@@ -34,6 +35,7 @@ using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Infraestructura.Metricas.Repositories;
+using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +100,9 @@ public static class clsDependenciasInfraestructura
         // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
         AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
+
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        AgregarMunicipios(servicios);
 
         AgregarPdfYCorreo(servicios);
 
@@ -195,6 +200,23 @@ public static class clsDependenciasInfraestructura
             .RedactLoggedHeaders(_ => true)
             .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
+    }
+
+    /// <summary>
+    /// Catálogo de municipios elegido por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaMunicipios.Crear"/>):
+    /// configurada → <see cref="clsMunicipiosNexo"/>; vacía → <see cref="clsMunicipiosNoDisponible"/>. Mismo cliente
+    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
+    /// mismo servicio Nexo. No se repite <c>.RedactLoggedHeaders(...).AddStandardResilienceHandler(...)</c> aquí:
+    /// <c>IHttpClientFactory</c> asocia esa configuración al nombre <c>"Nexo"</c>, no al tipo, así que volver a
+    /// encadenarla en cada cliente tipado apilaría una tubería de resiliencia por cada uno (reintentos y timeouts
+    /// multiplicados); <see cref="AgregarBuscadorClientes"/> ya la registra una sola vez para ese nombre. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarMunicipios(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsMunicipiosNoDisponible>();
+        servicios.AddHttpClient<clsMunicipiosNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsMunicipiosProvider>(clsFabricaMunicipios.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)
