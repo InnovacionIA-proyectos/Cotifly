@@ -264,7 +264,7 @@ public static class clsDependenciasInfraestructura
     /// <see cref="clsCosteoNexo"/>; vacía → <see cref="clsCosteoNexoNoDisponible"/>. A diferencia de clientes, municipios, catálogos y
     /// cubicación, usa su propio cliente HTTP (<see cref="clsCosteoNexo.NombreCliente"/>) con su propia tubería: 30 s (el alta de Nexo
     /// auto-costea en línea) y sin reintentar los POST (el alta no es idempotente). Sin registrar cabeceras en los logs. TryAdd: un
-    /// adaptador registrado antes (pruebas) se respeta.
+    /// adaptador registrado antes (pruebas) se respeta. El polling (HU-005.6) corre en <see cref="clsWorkerCosteoNexo"/>.
     /// </summary>
     private static void AgregarCosteo(IServiceCollection servicios)
     {
@@ -273,6 +273,7 @@ public static class clsDependenciasInfraestructura
             .RedactLoggedHeaders(_ => true)
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
+        servicios.AddHostedService<clsWorkerCosteoNexo>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

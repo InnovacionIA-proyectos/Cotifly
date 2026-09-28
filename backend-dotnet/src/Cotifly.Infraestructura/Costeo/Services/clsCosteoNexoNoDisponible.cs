@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Infraestructura.Costeo.Services;
 
@@ -17,6 +18,9 @@ public sealed class clsCosteoNexoNoDisponible : IClsCosteoNexo
 
     public Task<clsResultado<clsSolicitudCreadaNexo>> EnviarSolicitudAsync(Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default) =>
         Task.FromResult(NoDisponible<clsSolicitudCreadaNexo>());
+
+    public Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(NoDisponible<clsCosteoConsultadoNexo>());
 
     private static clsResultado<T> NoDisponible<T>() => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, Mensaje);
 }

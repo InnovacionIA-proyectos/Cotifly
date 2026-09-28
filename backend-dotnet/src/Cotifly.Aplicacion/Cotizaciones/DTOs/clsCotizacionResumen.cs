@@ -84,3 +84,6 @@ public sealed record clsDatosNuevaVersion(
     string? OrigenMargen,
     string? MetodoCalculo,
     string? Moneda);
+
+/// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
+public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);

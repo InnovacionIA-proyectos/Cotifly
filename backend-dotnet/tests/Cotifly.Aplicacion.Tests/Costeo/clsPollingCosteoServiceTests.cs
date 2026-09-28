@@ -1,0 +1,205 @@
+using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Costeo.Services;
+using Cotifly.Aplicacion.Cotizaciones.DTOs;
+using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+
+namespace Cotifly.Aplicacion.Tests.Costeo;
+
+/// <summary>
+/// Polling del costeo (HU-005.6, ADR-015 §4): espaciado por edad, reclamo por cotización, derivación del estado, errores de Nexo
+/// que no detienen el polling, edad máxima y auditoría de cada cambio.
+/// </summary>
+public sealed class clsPollingCosteoServiceTests
+{
+    private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
+    private readonly IClsCosteoNexo _nexo = Substitute.For<IClsCosteoNexo>();
+    private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
+    private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
+    private readonly clsRelojFalso _reloj = new();
+    private readonly clsOpcionesCosteoNexo _opciones = new();
+    private readonly Guid _ana = Guid.NewGuid();
+    private readonly clsCotizacion _cotizacion;
+    private readonly clsConsultaCosteoPendiente _pendiente;
+
+    public clsPollingCosteoServiceTests()
+    {
+        _cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-001", UsuarioId = _ana }).Valor;
+        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        _cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc.AddSeconds(5));
+        _pendiente = new clsConsultaCosteoPendiente(_cotizacion.Id, _reloj.AhoraUtc.AddSeconds(5));
+        _reloj.Avanzar(TimeSpan.FromSeconds(8));
+        _cotizaciones.ReclamarConsultaCosteoAsync(_cotizacion.Id, _pendiente.SiguienteConsultaAt, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(true);
+        _cotizaciones.ObtenerPorIdAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_cotizacion);
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task SinFleteSigueEnPendienteDeCosteoYSeReprogramaSinAuditarCambio()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: false));
+
+        var resultado = await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        resultado.Should().Be(ResultadoConsultaCosteo.SinCambio);
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        _cotizacion.CosteoUltimaConsultaAt.Should().Be(_reloj.AhoraUtc);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5), "al principio se pregunta cada 5 s");
+        _cotizacion.CotizacionNexoId.Should().Be("COT-1");
+        await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+    }
+
+    [Fact]
+    public async Task ConTodasLasLineasCosteadasPasaAAutocosteoYElCambioQuedaEnLaAuditoria()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: true));
+
+        var resultado = await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        resultado.Should().Be(ResultadoConsultaCosteo.Cambio);
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("en autocosteo se sigue consultando hasta la entrega o la edad máxima");
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task EntregadaYDescartadaSonTerminalesYNoSeVuelvenAConsultar()
+    {
+        NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
+
+        await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+        _cotizacion.SeConsultaEnNexo.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcesarDosVecesLaMismaFotoEsIdempotente()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: true));
+        await Servicio().ProcesarAsync(_pendiente, Ct);
+        var segunda = new clsConsultaCosteoPendiente(_cotizacion.Id, _cotizacion.CosteoSiguienteConsultaAt!.Value);
+        _cotizaciones.ReclamarConsultaCosteoAsync(_cotizacion.Id, segunda.SiguienteConsultaAt, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        (await Servicio().ProcesarAsync(segunda, Ct)).Should().Be(ResultadoConsultaCosteo.SinCambio);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task SiOtraReplicaLaReclamoNoSeConsultaANexo()
+    {
+        _cotizaciones.ReclamarConsultaCosteoAsync(_cotizacion.Id, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.NoReclamada);
+
+        await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElReclamoDuraMasQueLaConsultaANexo()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: false));
+
+        await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        await _cotizaciones.Received(1).ReclamarConsultaCosteoAsync(_cotizacion.Id, _pendiente.SiguienteConsultaAt, _reloj.AhoraUtc.AddSeconds(120), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(clsCodigosError.CosteoNexoNoDisponible, "HTTP 503")]
+    [InlineData(clsCodigosError.CosteoNexoTiempoAgotado, null)]
+    [InlineData(clsCodigosError.CosteoNexoRechazada, "HTTP 404 SOLICITUD_NO_ENCONTRADA: Solicitud no encontrada.")]
+    public async Task UnErrorDeNexoSeAuditaYSeReprogramaConEspaciadoSinCambiarElEstado(string codigo, string? detalle)
+    {
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(codigo, "falló", detalle));
+
+        var resultado = await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        resultado.Should().Be(ResultadoConsultaCosteo.Error);
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        _cotizacion.CosteoConsultasFallidas.Should().Be(1);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(10), "tras un fallo la espera se duplica");
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaErrorConsulta, Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task PasadaLaEdadMaximaSinCosteoQuedaVencidaVisibleYNoSeConsultaMas()
+    {
+        _reloj.Avanzar(TimeSpan.FromHours(73));
+
+        var resultado = await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        resultado.Should().Be(ResultadoConsultaCosteo.Detenida);
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido);
+        _cotizacion.MotivoEstadoCosteo.Should().Contain("72 h");
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+        await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task UnaCotizacionQueYaNoSeSigueSaleDeLaAgenda()
+    {
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Descartada, null, _reloj.AhoraUtc, _reloj.AhoraUtc);
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LaAgendaPideElLoteConfigurado()
+    {
+        _opciones.Lote = 7;
+
+        await Servicio().PendientesAsync(Ct);
+
+        await _cotizaciones.Received(1).ListarConsultasCosteoPendientesAsync(_reloj.AhoraUtc, 7, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0, 0, 5)]
+    [InlineData(60, 0, 15)]
+    [InlineData(3600, 0, 900)]
+    [InlineData(20, 1, 10)]
+    [InlineData(20, 3, 40)]
+    [InlineData(20, 9, 160)]
+    [InlineData(36000, 2, 900)]
+    public void ElEspaciadoCreceConLaEdadYConLosFallosHastaElMaximo(int edadSegundos, int fallos, int esperaSegundos)
+    {
+        var ahora = new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
+
+        clsAgendaPollingCosteo.Espera(ahora, ahora.AddSeconds(-edadSegundos), fallos, _opciones).Should().Be(TimeSpan.FromSeconds(esperaSegundos));
+    }
+
+    [Fact]
+    public void PasadaLaEdadMaximaNoHaySiguienteConsulta()
+    {
+        var ahora = new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
+
+        clsAgendaPollingCosteo.Siguiente(ahora, ahora.AddHours(-72), 0, _opciones).Should().BeNull();
+        clsAgendaPollingCosteo.Siguiente(ahora, ahora.AddHours(-71), 0, _opciones).Should().Be(ahora.AddMinutes(15));
+    }
+
+    private void NexoResponde(clsCosteoConsultadoNexo foto) =>
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(foto);
+
+    private static clsCosteoConsultadoNexo Foto(string estado, bool conFlete, string estadoCotizacion = "Borrador") =>
+        new(estado, ["L1"], new clsCotizacionNexo("COT-1", estadoCotizacion, "SinDefinir",
+            conFlete ? [new clsLineaCosteoNexo("L1", 2_000_000m, null, null)] : [], []));
+
+    private clsPollingCosteoService Servicio() => new(
+        _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance);
+}

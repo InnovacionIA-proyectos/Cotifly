@@ -30,6 +30,21 @@ public interface IClsCotizacionRepository
     /// </summary>
     Task<bool> ReclamarReenvioCosteoAsync(Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Agenda del polling de Nexo (HU-005.6): hasta <paramref name="lote"/> cotizaciones con <c>costeoSiguienteConsultaAt &lt;=
+    /// ahora</c>, de la más atrasada a la más reciente (índice filtrado del 0004).
+    /// </summary>
+    Task<IReadOnlyList<clsConsultaCosteoPendiente>> ListarConsultasCosteoPendientesAsync(DateTimeOffset ahora, int lote, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclama una cotización para consultarla (dos réplicas nunca la procesan a la vez): si <c>costeoSiguienteConsultaAt</c> sigue
+    /// siendo <paramref name="esperada"/> la mueve a <paramref name="reclamoHasta"/> y devuelve <c>true</c>. Escribe de inmediato.
+    /// </summary>
+    Task<bool> ReclamarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
+
+    /// <summary>Cotización por id, sin filtro de dueño (uso interno del polling de Nexo).</summary>
+    Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default);
+
     /// <summary>Cotización por folio, sin filtro de dueño (uso interno de herramientas del agente).</summary>
     Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 

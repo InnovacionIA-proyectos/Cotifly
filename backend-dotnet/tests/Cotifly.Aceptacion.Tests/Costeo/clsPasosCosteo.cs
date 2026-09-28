@@ -70,6 +70,45 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         linea["posiciones"]!.AsArray().Should().HaveCount(posiciones);
     }
 
+    [When("Nexo costea la solicitud de {string} con un flete de {int}")]
+    public async Task CuandoNexoCostea(string cotizacion, int flete) =>
+        _nexo.Costear((await Columna(cotizacion, "costeoId"))!, flete);
+
+    [When("Nexo entrega la cotización de {string}")]
+    public async Task CuandoNexoEntrega(string cotizacion) => _nexo.Entregar((await Columna(cotizacion, "costeoId"))!);
+
+    [When("Nexo deja de responder")]
+    public void CuandoNexoSeCae() => _nexo.Caido = HttpStatusCode.ServiceUnavailable;
+
+    [When("el polling consulta a Nexo")]
+    public Task CuandoElPollingConsulta() => ProcesarTodasAsync(null);
+
+    [When("el polling consulta a Nexo {int} horas después del envío")]
+    public Task CuandoElPollingConsultaDespues(int horas) => ProcesarTodasAsync(TimeSpan.FromHours(horas));
+
+    [Then("el cambio de estado de {string} queda en la auditoría")]
+    public async Task EntoncesElCambioAuditado(string cotizacion) =>
+        (await EventosAsync("costeo_nexo_estado", cotizacion, exito: true)).Should().BeGreaterThan(0);
+
+    [Then("el error de consulta de {string} queda en la auditoría")]
+    public async Task EntoncesElErrorAuditado(string cotizacion) =>
+        (await EventosAsync("costeo_nexo_consulta", cotizacion, exito: false)).Should().BeGreaterThan(0);
+
+    [Then("la cotización {string} ya no se consulta en Nexo")]
+    public async Task EntoncesYaNoSeConsulta(string cotizacion) => (await Columna(cotizacion, "costeoSiguienteConsultaAt")).Should().BeNull();
+
+    private async Task ProcesarTodasAsync(TimeSpan? enviadaHace)
+    {
+        foreach (var folio in _folios.Values)
+        {
+            await web.Api.ProcesarPollingAsync(folio, enviadaHace);
+        }
+    }
+
+    private Task<int> EventosAsync(string herramienta, string cotizacion, bool exito) =>
+        clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = '{herramienta}' AND exito = {(exito ? 1 : 0)} AND input LIKE '%{Folio(cotizacion)}%'");
+
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 
