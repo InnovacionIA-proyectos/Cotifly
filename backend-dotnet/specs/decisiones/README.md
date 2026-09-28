@@ -16,7 +16,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 | [ADR-010](ADR-010-metodologia-sdd-tdd-bdd.md) | Metodología: SDD, TDD y BDD | Aceptada | #7 · HU-003.2 a HU-003.10 |
 | [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Aceptada (folio con iniciales del comercial, 2026-09-25; identidad y PDF en Google Chat implementados en #12 parte C) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
 | [ADR-012](ADR-012-integraciones-diferidas-sheets-y-s3.md) | Integraciones diferidas: Google Sheets y almacenamiento S3 | Pendiente | #13 (HU-003.7), HU-006.6 |
-| [ADR-013](ADR-013-despliegue-dokploy.md) | Despliegue del backend .NET en Dokploy: secretos, registry, pipeline y manifiestos | Propuesta (mecanismo de secretos y cuenta del registry pendientes de confirmar con infraestructura; staging sin probar) | #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #33 (HU-007.1) |
+| [ADR-013](ADR-013-despliegue-dokploy.md) | Despliegue del backend .NET en Dokploy: secretos, registry, pipeline, manifiestos, backups y JWT de Google Chat | Propuesta (secretos, cuenta del registry y backups nativos pendientes de confirmar con infraestructura y el DBA; staging sin probar) | #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #31 (HU-006.7), #33 (HU-007.1) |
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 

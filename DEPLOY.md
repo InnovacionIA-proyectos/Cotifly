@@ -23,6 +23,7 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 | #29 (HU-006.5) | Secretos fuera del repositorio | [§2](#2-secretos-y-variables-hu-0065-29), [§3](#3-tabla-de-variables-de-producción-plantilla-para-hu-0071-33) |
 | #28 (HU-006.4) | Registry, imagen versionada y release | [§4](#4-registry-imagen-versionada-y-release-hu-0064-28) |
 | #30 (HU-006.6) | Manifiestos del stack .NET + SQL Server externo | [§5](#5-manifiestos-del-stack-net-hu-0066-30) |
+| #31 (HU-006.7) | Backups de `dbo_cotifly` y verificación del JWT de Google Chat | [§6](#6-backups-de-dbo_cotifly-hu-0067-31), [§7](#7-webhook-de-google-chat-verificación-del-jwt-hu-0067-31) |
 
 ## 2. Secretos y variables (HU-006.5, #29)
 
@@ -169,7 +170,7 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003) | no | Negocio / Backend | `LLM_MODEL` |
 | `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM | no | Negocio | `LLM_API_KEY` |
 | `GChat__ProjectNumber` | no | Google Cloud (proyecto de la app de Chat) | no | Backend | `GCHAT_PROJECT_NUMBER` |
-| `GChat__VerificarJwt` | no | fijo: `true` (HU-006.7, #31) | no | Backend | `GCHAT_VERIFICAR_JWT` (hoy `false`) |
+| `GChat__VerificarJwt` | no | fijo: `true` (§7) | no | Backend | `GCHAT_VERIFICAR_JWT` (hoy `false`) |
 | `GChat__SaJson` (secreto de Swarm) | sí | Google Cloud (cuenta de servicio `chat.bot`) | no | Backend | `GOOGLE_SA_JSON` |
 | `GChat__SupportSpace` | no | Google Chat (space de soporte) | no | Backend | `GCHAT_SUPPORT_SPACE` |
 | `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
@@ -392,6 +393,143 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
   valores por defecto vacíos (IA, Google Chat, SAP, Nexo, correo) no rompen la validación de arranque.
 - **Pendiente:** el despliegue completo en staging (Dokploy real, pull desde GHCR, secreto de Swarm, conectividad del
   worker a `tbsdatacenter`, Traefik). Necesita acceso al clúster y aprobación; no se ejecutó.
+
+## 6. Backups de `dbo_cotifly` (HU-006.7, #31)
+
+### 6.1 Política propuesta (pendiente de confirmar con el DBA)
+
+La base ya no es un contenedor del stack: `dbo_cotifly` es un esquema dentro de `dbTarifario_Nexo_Pruebas`, una base
+**compartida** con otras aplicaciones en la instancia corporativa `tbsdatacenter`, que administra el DBA. Por eso:
+
+1. **Respaldo principal: los backups nativos del DBA** de `dbTarifario_Nexo_Pruebas` (completo, diferencial y de log,
+   con la retención corporativa). Cotifly no ejecuta `BACKUP DATABASE` sobre una base ajena ni pide permisos para
+   hacerlo. **Pendiente con el DBA:** confirmar frecuencia, retención, dónde se guardan y el procedimiento para
+   recuperar un esquema (hoy exigiría restaurar la base completa en otra instancia y copiar `dbo_cotifly`).
+2. **Respaldo complementario, opcional: exportación lógica diaria solo de `dbo_cotifly`** con
+   `backend-dotnet/scripts/respaldo/exportar-dbo-cotifly.sh`. Sirve para recuperar Cotifly sin tocar los datos de las
+   demás aplicaciones y para cargar una instancia de pruebas.
+
+`scripts/backup_db.sh` y `scripts/restore_db.sh` (raíz del repositorio) usan `BACKUP/RESTORE DATABASE` con `sa`: solo
+sirven para el SQL Server en contenedor del desarrollo local del Python. No aplican a la instancia corporativa.
+
+### 6.2 Exportación lógica (`exportar-dbo-cotifly.sh`)
+
+- **Qué exporta:** los datos de cada tabla de `dbo_cotifly` con `bcp` en formato nativo (un archivo por tabla), más
+  `columnas.txt` (tabla, columna, tipo, largo, nulable), `filas.txt`, `metadatos.txt` y `SHA256SUMS`, en un
+  `dbo_cotifly-AAAAMMDD-HHMMSS.tar.gz`. La estructura no se exporta: la definen los scripts `db/migrations_mssql/`.
+- **Herramienta:** `bcp` y `sqlcmd` 18 (mssql-tools18). Si el equipo no los tiene, el script se ejecuta solo dentro de
+  un contenedor de `mcr.microsoft.com/mssql/server:2019-latest`, que los trae (no hace falta instalar nada en el
+  worker; la imagen pesa ~1,5 GB, configurable con `COTIFLY_RESPALDO_IMAGEN`). Se descartó `sqlpackage`/BACPAC:
+  exporta la base completa (los esquemas de otras aplicaciones) y exige permisos sobre toda la base.
+- **Permiso que necesita:** solo `SELECT` sobre el esquema. Se pide al DBA un login propio de solo lectura:
+
+  ```sql
+  CREATE LOGIN cotifly_respaldo WITH PASSWORD = '<secreto>';
+  USE dbTarifario_Nexo_Pruebas;
+  CREATE USER cotifly_respaldo FOR LOGIN cotifly_respaldo;
+  GRANT SELECT ON SCHEMA::dbo_cotifly TO cotifly_respaldo;
+  ```
+
+  `cotifly_app` también podría (ya tiene `SELECT` sobre el esquema), pero además escribe; un login aparte limita el
+  daño si se filtra la clave del respaldo. Probado: con solo `CONNECT` + `SELECT ON SCHEMA` exporta las 14 tablas.
+- **Cifrado:** conexión cifrada y certificado validado por defecto; `COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1` solo si el
+  certificado de `tbsdatacenter` no es de una CA de confianza.
+- **Consistencia:** `bcp` exporta tabla por tabla, no es una foto transaccional; por eso se programa de madrugada. El
+  restore revalida las llaves foráneas y avisa si algo quedó inconsistente.
+- **Contenido sensible:** correos, nombres y NIT de clientes. Archivos `600`, carpetas `700`, dueño root.
+
+### 6.3 Programación, ubicación y retención
+
+- **Dónde corre:** cron del host en el **worker** (`TBSNODO1-DKP`, donde está el disco y la ruta de red a
+  `tbsdatacenter`). No se usa una tarea de Dokploy: la imagen del backend no tiene shell ni herramientas.
+
+  ```bash
+  # Una vez, en el worker (root):
+  install -d -m 700 /opt/cotifly/respaldo /etc/cotifly /var/backups/cotifly
+  cp backend-dotnet/scripts/respaldo/*.sh /opt/cotifly/respaldo/
+  cp backend-dotnet/scripts/respaldo/respaldo.env.example /etc/cotifly/respaldo.env   # completar; chmod 600
+  printf '%s\n' '<clave de cotifly_respaldo>' > /etc/cotifly/respaldo.clave && chmod 600 /etc/cotifly/respaldo.clave
+  # /etc/cron.d/cotifly-respaldo
+  30 2 * * * root sh /opt/cotifly/respaldo/exportar-dbo-cotifly.sh --entorno /etc/cotifly/respaldo.env >> /var/log/cotifly-respaldo.log 2>&1
+  ```
+
+- **Ubicación:** `/var/backups/cotifly/diario` y `/var/backups/cotifly/semanal` en el worker. **Pendiente con
+  infraestructura:** una copia fuera del nodo (recurso compartido o almacenamiento corporativo); si el worker se pierde,
+  se pierden también sus respaldos.
+- **Retención propuesta: 7 diarios + 4 semanales.** Cada ejecución deja un archivo en `diario/`; los domingos
+  (`COTIFLY_RESPALDO_DIA_SEMANAL=7`) se copia también a `semanal/`. Se conservan los 7 y los 4 más recientes. Tamaño
+  medido en pruebas: ~32 KB con 540 filas; crece con `EventosHerramienta` y `EventosConversacion`.
+- **Alerta:** el script sale con código distinto de 0 ante cualquier fallo. **Pendiente:** conectar el log a una
+  alerta (por ejemplo, el space de soporte de Google Chat) o revisar `/var/log/cotifly-respaldo.log` en la rutina de
+  operación.
+
+### 6.4 Restore en una instancia de pruebas (`restaurar-dbo-cotifly.sh`)
+
+```bash
+COTIFLY_RESPALDO_SERVIDOR=<instancia-de-pruebas>,1433 COTIFLY_RESPALDO_USUARIO=<admin-de-pruebas> \
+COTIFLY_RESPALDO_CLAVE_ARCHIVO=<archivo> \
+  sh backend-dotnet/scripts/respaldo/restaurar-dbo-cotifly.sh --destino-pruebas --aplicar-migraciones \
+     /var/backups/cotifly/diario/dbo_cotifly-AAAAMMDD-HHMMSS.tar.gz
+```
+
+1. Verifica `SHA256SUMS` y el formato.
+2. Con `--aplicar-migraciones` crea la base si falta y aplica `db/migrations_mssql` (el `0001` solo si el esquema no
+   existe).
+3. Compara las columnas de destino con las del respaldo; si difieren, no toca nada.
+4. Deshabilita las llaves foráneas, **borra** las filas del esquema, carga con `bcp` (conserva `IDENTITY` y `NULL`),
+   reajusta los `IDENTITY` y vuelve a validar las llaves (`WITH CHECK`).
+5. Compara las filas de cada tabla con las del respaldo.
+
+Protecciones: exige `--destino-pruebas` y se niega si el servidor contiene algún nombre de
+`COTIFLY_RESPALDO_PROHIBIDOS` (por defecto `tbsdatacenter`). Recuperar producción es una decisión del DBA con sus
+backups nativos; si hiciera falta cargar un respaldo lógico en producción, se hace con el DBA, a mano y con la app
+detenida.
+
+### 6.5 Prueba de backup y restore (2026-09-28)
+
+Contra SQL Server 2019 en contenedores locales (`mcr.microsoft.com/mssql/server:2019-latest`), sin tocar
+`tbsdatacenter`. Los pasos 1 a 4 se repiten con **`sh backend-dotnet/scripts/respaldo/probar-respaldo-local.sh`**
+(datos ficticios de `probar-respaldo-datos.sql`, ~3–5 minutos, borra sus contenedores al terminar); el paso 5 se hizo
+una vez con la imagen de la API.
+
+1. Origen con `0001`–`0003`, datos reales de la API (dos logins por `/api/auth/login-clientepro`: `UsuariosWeb`,
+   `UsuariosRoles`, `TokensRefresco`) y filas de prueba en las demás tablas (Unicode, emoji, saltos de línea, `NULL`,
+   JSON, 500 filas de 10 KB en `EventosHerramienta`, un `UsuariosWeb` sin `nombreUsuario` para el índice filtrado).
+2. Exportación como `cotifly_respaldo` con solo `CONNECT` + `SELECT ON SCHEMA::dbo_cotifly`: 14 tablas, 540 filas,
+   31,7 KB. Retención: con 9 diarios previos quedaron los 7 más recientes; la copia semanal se creó el día configurado.
+3. Controles: sin `--destino-pruebas`, con servidor `TBSDATACENTER` y con un `.dat` alterado, el restore se niega.
+4. Restore en una **instancia nueva y vacía** con `--aplicar-migraciones`: columnas iguales (116), filas iguales en
+   las 14 tablas (incluidas las semillas de las migraciones, que se reemplazan) y **SHA-256 del contenido de cada tabla
+   idéntico** entre origen y destino (`SELECT * ... FOR JSON`), llaves foráneas confiables, `IDENTITY` reajustado.
+5. **El respaldo es usable:** la API arrancó contra la base restaurada (`/health/ready` 200) y el login de `APEREZ`
+   respondió 200 con su usuario y rol restaurados (verificación doble de ADR-009).
+
+**Pendiente:** repetir la prueba con un respaldo real de `tbsdatacenter` en una instancia de pruebas corporativa, cuando
+exista el login `cotifly_respaldo` y la instancia de pruebas (DBA).
+
+## 7. Webhook de Google Chat: verificación del JWT (HU-006.7, #31)
+
+**Decisión: la verificación del JWT queda activada en el backend .NET** (`GChat__VerificarJwt=true`, fija en los
+manifiestos del §5; en `Production` la API ni siquiera arranca con `false`, `clsValidadorOpcionesGoogleChat`).
+
+- **Qué verifica:** `POST /chat/events` exige el `Authorization: Bearer` que firma Google: RS256 con los certificados
+  públicos de `chat@system.gserviceaccount.com`, emisor `chat@system.gserviceaccount.com`, audiencia =
+  **`GChat__ProjectNumber`** y vigencia. Sin token válido responde 401 y no procesa nada.
+- **Qué necesita:** `GChat__ProjectNumber` = el **número** (solo dígitos, no el ID) del proyecto de Google Cloud donde
+  se crea la app de Chat (*Google Cloud Console → Panel del proyecto → Número del proyecto*). En la configuración de la
+  app de Chat, *Authentication Audience* debe ser **Project Number** (no *HTTP endpoint URL*). Sin el número, con la
+  verificación activa, todo evento responde 401 (fail-closed). La URL de la app debe ser HTTPS pública
+  (`https://<PUBLIC_HOST>/chat/events`), así que depende de HU-006.2.
+- **Por qué estaba apagada en el Python** (`GCHAT_VERIFICAR_JWT=false` en `deploy/docker-compose.swarm.yml`):
+  **pendiente de confirmar con el equipo.** Lo más probable, por el resto de ese manifiesto, es que se apagara para
+  probar mientras el servicio estaba expuesto por HTTP en `10.10.40.31:8091` sin Traefik ni TLS y sin
+  `GCHAT_PROJECT_NUMBER` configurado.
+- **Riesgo de dejarla apagada:** cualquiera que alcance el endpoint puede enviar eventos falsos. En el backend .NET la
+  identidad sale del correo del evento (`UsuariosWeb.email`, ADR-011), así que un evento falso **suplanta a un
+  comercial**: ve sus cotizaciones y clientes, genera cotizaciones y PDF a su nombre y dispara correos con su
+  remitente por el relay interno. Además consume cuota del proveedor LLM. Con la API en la red corporativa y detrás de
+  Traefik el riesgo no desaparece (cualquier equipo interno, o una SSRF, llega al endpoint).
+- `GChat__VerificarJwt=false` solo se admite fuera de `Production` para pruebas locales con túnel.
 
 ## Anexo A. Stack Python (solo rollback)
 

@@ -288,4 +288,4 @@ DB_HOST=bot-db BACKUP_DIR=/backups sh scripts/backup_db.sh
 DB_HOST=bot-db sh scripts/restore_db.sh /backups/botcotizador-YYYYmmdd-HHMMSS.dump
 ```
 Formato `pg_dump -Fc` (custom, comprimido, restaurable selectivamente). En producción se
-recomienda programarlo diario (ver `DEPLOY.md` §A.8, stack Python).
+recomienda programarlo diario (ver `DEPLOY.md` §A.8, stack Python; el backend .NET usa §6).
