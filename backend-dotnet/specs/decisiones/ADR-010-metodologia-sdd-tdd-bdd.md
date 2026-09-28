@@ -27,7 +27,7 @@ El Python tiene casos de prueba útiles que se pueden portar como datos: `tests/
 | Nivel | Proyecto | Herramientas | Alcance |
 |---|---|---|---|
 | Unitario | `Cotifly.Dominio.Tests`, `Cotifly.Aplicacion.Tests` | xUnit, NSubstitute, AwesomeAssertions | Reglas puras (precio, margen, folio), casos de uso con puertos simulados, runner del agente con un `IChatClient` guionizado |
-| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `migrations_mssql/` aplicados, esquema igual al modelo EF |
+| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `db/migrations_mssql/` aplicados, esquema igual al modelo EF |
 | API | `Cotifly.Api.Tests` | `WebApplicationFactory` | Forma exacta de las respuestas del contrato, auth, CORS, aislamiento por comercial |
 | Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (BDD) con `Reqnroll.xunit.v3` | Los `.feature` de `specs/features` |
 | Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET (alternativa: NetArchTest.eNhancedEdition) | Reglas de dependencia entre capas, Dominio sin paquetes externos y convención `cls`/`ICls` (ADR-002) |

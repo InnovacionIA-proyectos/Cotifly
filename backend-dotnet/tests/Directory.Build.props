@@ -18,14 +18,14 @@
     Proyectos con pruebas de integración sobre SQL Server 2019 (Testcontainers, ADR-008/ADR-010):
     se activan con <UsaSqlServerPruebas>true</UsaSqlServerPruebas> en el .csproj. Agrega el paquete,
     el soporte compartido de tests/Comun (contenedor, reloj falso, DI de pruebas) y copia los scripts
-    migrations_mssql/*.sql a la salida para aplicarlos en el contenedor.
+    db/migrations_mssql/*.sql a la salida para aplicarlos en el contenedor.
   -->
   <ItemGroup Condition="'$(UsaSqlServerPruebas)' == 'true'">
     <PackageReference Include="Testcontainers.MsSql" />
     <!-- Lectura de los PDF generados (#11): texto, páginas, fuentes e imágenes (tests/Comun/clsLectorPdf). -->
     <PackageReference Include="PdfPig" />
     <Compile Include="$(MSBuildThisFileDirectory)Comun\**\*.cs" Link="Comun\%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\db\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Datos de prueba portados del Python: muestra de RentabClienteSet de SAP TM (#13) y payload del PDF (#11, ejemplo-solicitud.json). -->
     <None Include="$(MSBuildThisFileDirectory)fixtures\**\*.json" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- JWT de Google Chat firmados con un certificado falso (#12 parte C): válido y con la firma de otra clave. -->

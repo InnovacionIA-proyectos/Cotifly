@@ -59,7 +59,7 @@ El mismo patrón aplica a ciudades (HU-005.13).
 - Se mantiene la convención de Python para las sesiones web: `spaceId = threadId = "web/{sesion_id}"`.
 - Una sesión queda ligada a su usuario: si otro usuario la usa, recibe 404 (contrato #17).
 
-**Columnas nuevas** en `dbo_cotifly.Sesiones`, vía el script `migrations_mssql/0002_identidad_estado_agente.sql` (ADR-008):
+**Columnas nuevas** en `dbo_cotifly.Sesiones`, vía el script `db/migrations_mssql/0002_identidad_estado_agente.sql` (ADR-008):
 
 - `estadoAgente` JSON, con `CHECK (estadoAgente IS NULL OR ISJSON(estadoAgente) = 1)`;
 - `usuarioId` nullable, con FK a `UsuariosWeb`.

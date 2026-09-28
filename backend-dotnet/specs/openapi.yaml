@@ -461,6 +461,141 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
 
+  /web/clientes:
+    get:
+      operationId: buscarClientes
+      tags: [web]
+      summary: Busca clientes y prospectos en el catálogo de Nexo
+      description: |
+        Mismo catálogo (clientes de `DimBPSolicitante` y prospectos) que usa el formulario
+        "Nueva solicitud" de Nexo y la herramienta `buscar_cliente` del agente (HU-005.2,
+        ADR-005). `exacta=true` solo cuando hay un único candidato — Nexo no distingue
+        coincidencia exacta de aproximada en la respuesta; el frontend nunca debe tratar el
+        texto buscado como NIT/origen/BP: esos datos salen únicamente de `candidatos`.
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Nombre o NIT, tal como lo escribió el comercial.
+      responses:
+        '200':
+          description: Candidatos encontrados (vacío si ninguno)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoBusquedaClientes'
+        '400':
+          description: Falta `q`, o la búsqueda en Nexo no está disponible (`CLIENTE_BUSQUEDA_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/municipios:
+    get:
+      operationId: listarMunicipios
+      tags: [web]
+      summary: Catálogo completo de municipios para origen/destino
+      description: |
+        Mismo catálogo de municipios (sin paginar) que usa el formulario "Nueva solicitud" de Nexo para el
+        origen y el destino. Se omiten los campos de costeo interno (`nombreTarifasPlaza`, `zonaTarificacion`
+        en la respuesta de Nexo): el frontend no los necesita.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Catálogo completo de municipios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Municipio'
+        '400':
+          description: El catálogo de municipios en Nexo no está disponible (`MUNICIPIOS_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/catalogos-flete:
+    get:
+      operationId: obtenerCatalogosFlete
+      tags: [web]
+      summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
+      description: |
+        Catálogos de la biblioteca SAP TM histórico de Nexo para el formulario de captura. Se omite
+        `lineasNegocio` de la respuesta de Nexo: Cotifly ya tiene su propio catálogo de línea de negocio.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Los tres catálogos completos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogosFlete'
+        '400':
+          description: Los catálogos de flete en Nexo no están disponibles (`CATALOGOS_FLETE_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/cubicacion:
+    post:
+      operationId: cubicar
+      tags: [web]
+      summary: Cubicación rápida - mejor vehículo y flota necesaria para un conjunto de bultos
+      description: |
+        Reenvía la solicitud a `POST {Nexo:UrlBase}/api/cubicacion` (la "cubicación rápida" de Nexo, sin
+        persistencia: dado un conjunto de bultos, sugiere qué vehículo conviene usar), que a su vez es la única
+        llamada síncrona de Nexo al servicio Cubicador. Unidades: **centímetros y kilogramos** (distinto del resto
+        del catálogo "Plan de Cargue" de Nexo, que usa milímetros). Cotifly siempre evalúa contra todo el catálogo
+        estándar de vehículos: no expone `unidad_ids` de Nexo. Se omiten de la respuesta las matrices de
+        factibilidad por vehículo y las disposiciones de colocación 3D de la flota (`matrices` y
+        `sugerencia_flota.disposiciones` de Nexo): demasiado detalle para el formulario de cotización.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CubicacionRequest'
+      responses:
+        '200':
+          description: Sugerencia de vehículo/flota, advertencias y detección de extradimensión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoCubicacion'
+        '400':
+          description: |
+            `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `CUBICACION_DEMASIADO_GRANDE` si Nexo/Cubicador
+            rechaza la solicitud (típicamente por superar el límite de bultos por solicitud, pero Nexo no distingue
+            el motivo exacto en su propio código de error); `CUBICACION_NO_DISPONIBLE` si Nexo no responde o no está
+            configurado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -771,9 +906,10 @@ components:
             codigo:
               type: string
               description: |
-                Mismos códigos que el backend Python, más siete nuevos del backend .NET:
-                `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (búsqueda de clientes de HU-005.2 aún
-                no conectada), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
+                Mismos códigos que el backend Python, más nueve nuevos del backend .NET:
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (HU-005.2: Nexo sin configurar, sin
+                respuesta o el comercial sin `idUsuarioExterno`; nunca por "no hubo
+                candidatos", que es `200` con `candidatos: []`), `HERRAMIENTA_DESCONOCIDA` (el modelo pidió una
                 herramienta inexistente, HU-003.10), `AJUSTE_MARGEN_INVALIDO` (HU-003.4:
                 el margen negociado por el comercial está fuera de rango para su método de
                 cálculo, es decir negativo o ≥ 1 con `margen`, o el método no es
@@ -781,10 +917,17 @@ components:
                 con ese folio; el Python versionaba el folio en silencio, en .NET el folio lo
                 genera HU-003.6 y la colisión se informa), `FOLIO_CONSECUTIVO_AGOTADO` (HU-003.6:
                 ya se usaron los 999 folios del día de esas iniciales, ADR-011), `CORREO_DESHABILITADO` (HU-003.5:
-                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503) y
+                `Correo:Habilitado=false`, el valor por defecto; en `/web/*` se responde 503),
                 `CORREO_INVALIDO` (HU-003.5: destinatarios `para`/`cc` inválidos o vacíos, asunto
                 de más de 300 caracteres o cuerpo de más de 5000; lo devuelve la herramienta
-                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400).
+                `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
+                `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
+                `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo), `CATALOGOS_FLETE_NO_DISPONIBLE`
+                (`GET /web/catalogos-flete`: idem, catálogos de tipo de vehículo/carrocería/clase de viaje),
+                `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío, mismo código que usa Nexo),
+                `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
+                rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
+                solicitud, típicamente por superar el límite de bultos por solicitud).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -808,6 +951,11 @@ components:
                 - CORREO_INVALIDO
                 - CLIENTE_BUSQUEDA_NO_DISPONIBLE
                 - HERRAMIENTA_DESCONOCIDA
+                - MUNICIPIOS_NO_DISPONIBLE
+                - CATALOGOS_FLETE_NO_DISPONIBLE
+                - ITEMS_REQUERIDOS
+                - CUBICACION_NO_DISPONIBLE
+                - CUBICACION_DEMASIADO_GRANDE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1227,6 +1375,243 @@ components:
           items:
             type: string
             format: email
+
+    ResultadoBusquedaClientes:
+      type: object
+      required: [exacta, candidatos]
+      properties:
+        exacta:
+          type: boolean
+          description: Único candidato encontrado (ver descripción del endpoint sobre el criterio provisional).
+        candidatos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClienteEncontrado'
+
+    ClienteEncontrado:
+      type: object
+      required: [nit_cliente, nombre, origen_cliente]
+      properties:
+        nit_cliente:
+          type: string
+        nombre:
+          type: string
+        origen_cliente:
+          type: string
+          enum: [cliente, prospecto]
+        bp:
+          type: string
+          nullable: true
+          description: BP de Nexo; nunca se muestra al comercial (solo se usa internamente para consultar SAP TM).
+
+    Municipio:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+          description: Id del municipio en el catálogo de Nexo.
+        codigo_dane:
+          type: string
+          nullable: true
+        municipio:
+          type: string
+          nullable: true
+        departamento:
+          type: string
+          nullable: true
+        pais:
+          type: string
+          nullable: true
+
+    OpcionCatalogo:
+      type: object
+      required: [valor, etiqueta]
+      properties:
+        valor:
+          type: string
+          description: Valor interno de la opción (el que viaja en la cotización).
+        etiqueta:
+          type: string
+          description: Texto legible para mostrar en el formulario.
+
+    CatalogosFlete:
+      type: object
+      required: [tipos_vehiculo, tipos_carroceria, clases_viaje]
+      properties:
+        tipos_vehiculo:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+        tipos_carroceria:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+        clases_viaje:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+
+    ItemCubicacion:
+      type: object
+      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      properties:
+        descripcion:
+          type: string
+          nullable: true
+        cantidad:
+          type: integer
+          description: Cuántos bultos idénticos con estas medidas.
+        largo_cm:
+          type: number
+          description: Largo en centímetros.
+        ancho_cm:
+          type: number
+          description: Ancho en centímetros.
+        alto_cm:
+          type: number
+          description: Alto en centímetros.
+        peso_kg:
+          type: number
+          nullable: true
+          description: Peso en kilogramos de cada bulto.
+
+    CubicacionRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Obligatorio; 400 `ITEMS_REQUERIDOS` si falta o viene vacío.
+          items:
+            $ref: '#/components/schemas/ItemCubicacion'
+        clase_viaje:
+          type: string
+          nullable: true
+
+    SugerenciaVehiculo:
+      type: object
+      required: [unidad_id, unidad_nombre, banda, factor_utilizacion]
+      properties:
+        unidad_id:
+          type: string
+        unidad_nombre:
+          type: string
+        banda:
+          type: string
+        factor_utilizacion:
+          type: number
+        config_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
+
+    SugerenciaFlota:
+      type: object
+      required: [unidad_id, unidad_nombre, cantidad_vehiculos, utilizacion_promedio]
+      description: Igual que Nexo salvo que omite `disposiciones` (colocaciones 3D detalladas por vehículo de la flota).
+      properties:
+        unidad_id:
+          type: string
+        unidad_nombre:
+          type: string
+        cantidad_vehiculos:
+          type: integer
+        utilizacion_promedio:
+          type: number
+        config_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
+
+    MedidasEstandar:
+      type: object
+      required: [largo_max_cm, ancho_max_cm, alto_max_cm, peso_max_kg]
+      properties:
+        largo_max_cm:
+          type: number
+        ancho_max_cm:
+          type: number
+        alto_max_cm:
+          type: number
+        peso_max_kg:
+          type: number
+
+    PiezaExcedida:
+      type: object
+      required: [descripcion, excesos, largo_cm, ancho_cm, alto_cm]
+      properties:
+        descripcion:
+          type: string
+        excesos:
+          type: array
+          items:
+            type: string
+        largo_cm:
+          type: number
+        ancho_cm:
+          type: number
+        alto_cm:
+          type: number
+        peso_kg:
+          type: number
+          nullable: true
+
+    DeteccionExtradimension:
+      type: object
+      required: [hay_extradimension, medidas_estandar, piezas]
+      properties:
+        hay_extradimension:
+          type: boolean
+        medidas_estandar:
+          $ref: '#/components/schemas/MedidasEstandar'
+        piezas:
+          type: array
+          items:
+            $ref: '#/components/schemas/PiezaExcedida'
+        sugerencia:
+          type: string
+          nullable: true
+
+    ResultadoCubicacion:
+      type: object
+      required: [advertencias]
+      properties:
+        sugerencia:
+          description: Mejor vehículo único, o `null` si ninguno de la flota estándar sirve.
+          oneOf:
+            - $ref: '#/components/schemas/SugerenciaVehiculo'
+            - $ref: '#/components/schemas/Nulo'
+        sugerencia_flota:
+          description: Flota sugerida cuando hace falta más de un vehículo, o `null`.
+          oneOf:
+            - $ref: '#/components/schemas/SugerenciaFlota'
+            - $ref: '#/components/schemas/Nulo'
+        advertencias:
+          type: array
+          items:
+            type: string
+        extradimension:
+          description: Detección de piezas que exceden las medidas estándar, o `null`.
+          oneOf:
+            - $ref: '#/components/schemas/DeteccionExtradimension'
+            - $ref: '#/components/schemas/Nulo'
 
     VistaPreviaCorreo:
       type: object

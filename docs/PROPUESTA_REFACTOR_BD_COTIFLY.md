@@ -323,7 +323,7 @@ Además:
 > es el **corto**, `MargenesPolitica` (sin el prefijo `tbl`, retirado también en
 > HU-002.3) — no `lineasNegocioMargenesPolitica`/`LineasNegocioMargenesPolitica` como
 > dice esta sección y el resto de este documento. Ya está así en
-> `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
+> `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
 > El resto del contenido de §2.7 (columnas, decisiones de diseño) sigue vigente, solo
 > cambia el nombre de la tabla.
 
@@ -571,7 +571,7 @@ identificadores).
   misma migración en otro motor": hay que reescribir el historial de migraciones con
   tipos cross-dialect (`sa.Uuid()`, columnas JSON-como-texto) o partir con una
   migración baseline nueva específica para SQL Server.
-- **Vistas SQL crudas** (`migrations/versions/0003_vista_trazabilidad.py`,
+- **Vistas SQL crudas** (`db/migrations/versions/0003_vista_trazabilidad.py`,
   `0004_trazabilidad.py`) — **decisión: 2 de las 3 pasan a SQL Server, 1 se
   descarta**:
   - **`v_actividad_por_comercial`** → **se mantiene y se reescribe** (usa

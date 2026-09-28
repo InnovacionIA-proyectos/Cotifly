@@ -24,7 +24,8 @@ HU-005.2 también permite consumir la API Grovity de ClientePro (`docs/Manual de
 3. **Grovity desde el agente:**
    - Solo con las transacciones que permite HU-005.2.
    - `CrearProspecto` es un flujo del formulario, no del agente.
-   - Credenciales solo en el backend (secretos, HU-006.5); el token de 24 h se cachea en el servidor.
+   - **Corrección (2026-09-27, se creía lo contrario):** el flujo del formulario ("Crear cliente nuevo", HU-005.2 punto 7) **no necesita ningún adaptador Grovity en el backend de Cotifly**. Ya existe en `clientepro-frontend` un componente completo y funcional (`RegistroclienteprospectoComponent`, ruta `/prospecto`) que resuelve `ValidarCliente`/`BuscarCiudadesSAPPWA`/`CrearProspecto` a través de `RequestDataService` — el mismo canal cifrado (`{tx, data}`, AES-CBC) que usa el login de ClientePro, contra `environment.backendUrl` (el backend de ClientePro, no el de Cotifly). Las credenciales de Grovity ya viven allá, nunca llegan al navegador ni a Cotifly. El trabajo real es solo Angular: reutilizar/adaptar ese componente dentro del módulo de Cotifly. Si en el futuro el **agente** (chat, proceso servidor, no puede llamar a un servicio de Angular) quisiera usar Grovity directamente, ahí sí haría falta un adaptador en el backend de Cotifly — pero eso sigue siendo la propuesta de abajo, sin aprobar.
+   - Credenciales solo en el backend (secretos, HU-006.5); el token de 24 h se cachea en el servidor. **Aplica únicamente si se aprueba la propuesta de abajo (uso desde el agente); no aplica al flujo del formulario.**
    - *Propuesta, pendiente de aprobación (sería una desviación de HU-005.2):* usar `ValidacionNIT` e `InfoClienteActual` / `InfoClienteProspecto` cuando el texto del usuario sea un NIT.
 4. **Nunca texto libre.** El texto del usuario es solo un término de búsqueda. `nitCliente`, `origenCliente` y `bp` se llenan únicamente desde un resultado del catálogo, a través del estado (ADR-004). Si la coincidencia no es exacta o hay varias, se pide confirmación.
 5. **Stub hasta HU-005.2.** Mientras no exista el endpoint, `clsBuscadorClientesNoDisponible` responde `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, código ya declarado en `openapi.yaml`. El agente sigue sin cliente resuelto:
@@ -56,4 +57,4 @@ HU-005.2 también permite consumir la API Grovity de ClientePro (`docs/Manual de
 |---|---|
 | Contrato exacto del endpoint de Nexo (campos, criterio de coincidencia exacta frente a similitud, autenticación entre sistemas) | Duban + equipo Nexo (HU-005.2 / HU-005.10) |
 | Aprobar o descartar el uso de `ValidacionNIT` / `InfoCliente*` desde el agente | Duban + scalderon-bs |
-| Credenciales de servicio de Grovity y URL por ambiente | Duban + scalderon-bs |
+| ~~Credenciales de servicio de Grovity y URL por ambiente~~ — **resuelto (2026-09-27): no aplica**, el flujo del formulario reutiliza `RequestDataService` de `clientepro-frontend`, sin backend nuevo en Cotifly. Solo volvería a aplicar si se aprueba el punto anterior (Grovity desde el agente). | — |

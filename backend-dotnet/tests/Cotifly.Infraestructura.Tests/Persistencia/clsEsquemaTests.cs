@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Scripts <c>migrations_mssql</c> aplicados en SQL Server 2019 y verificación de deriva entre el modelo
+/// Scripts <c>db/migrations_mssql</c> aplicados en SQL Server 2019 y verificación de deriva entre el modelo
 /// EF (Database First) y el esquema real (ADR-008): tablas, columnas, tipos y nulabilidad.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]

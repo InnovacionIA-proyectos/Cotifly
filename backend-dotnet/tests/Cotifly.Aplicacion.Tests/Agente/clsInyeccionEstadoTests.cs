@@ -178,7 +178,7 @@ public sealed class clsInyeccionEstadoTests
     [Fact]
     public async Task ConCandidatosPendientesElPdfEsperaYElegirPorNitConfirmaAlCliente()
     {
-        _arnes.Buscador.BuscarAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _arnes.Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Exito(new clsResultadoBusquedaClientes(false,
             [
                 new clsClienteEncontrado("900111222", "ACME S.A.S.", "cliente", "700"),

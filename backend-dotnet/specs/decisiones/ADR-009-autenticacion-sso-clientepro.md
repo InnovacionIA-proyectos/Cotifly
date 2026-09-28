@@ -72,7 +72,7 @@ Por qué no rechazar la ambigüedad: en ClientePro es normal que un gerente cons
 - **Serialización:** `/api/auth/*` usa camelCase (`idUsuario`, `debeCambiarPassword`) salvo `user.nombre_completo`, tal como lo define `openapi.yaml`. `ubicacion` es `UsuariosWeb.regional` o `null`; `debeCambiarPassword` siempre `false`.
 - **Auditoría de acceso:** cada login, refresh y logout queda en `EventosHerramienta` (herramientas `login_clientepro`, `refresh_sesion`, `logout`; hilo `auth/{idUsuario}` o `auth/{nombreUsuario}`) con resultado, motivo, regla, usuario y rol. Nunca incluye tokens.
 
-### Tablas (script `migrations_mssql/0002_identidad_estado_agente.sql`)
+### Tablas (script `db/migrations_mssql/0002_identidad_estado_agente.sql`)
 
 | Tabla / columna | Propósito |
 |---|---|

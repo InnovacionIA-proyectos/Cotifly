@@ -2,24 +2,28 @@ using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Repositories;
+using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Aplicacion.Metricas.Repositories;
+using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
+using Cotifly.Infraestructura.CatalogosFlete.Services;
 using Cotifly.Infraestructura.Clientes.Services;
 using Cotifly.Infraestructura.Comun;
 using Cotifly.Infraestructura.Comun.Persistence;
@@ -27,6 +31,7 @@ using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Correo.Repositories;
 using Cotifly.Infraestructura.Correo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
+using Cotifly.Infraestructura.Cubicacion.Services;
 using Cotifly.Infraestructura.Identidad.Persistence;
 using Cotifly.Infraestructura.Identidad.Repositories;
 using Cotifly.Infraestructura.IA.Services;
@@ -34,6 +39,7 @@ using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Infraestructura.Margen.Repositories;
 using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Infraestructura.Metricas.Repositories;
+using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
@@ -86,6 +92,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
         servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -98,6 +105,11 @@ public static class clsDependenciasInfraestructura
         AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        AgregarMunicipios(servicios);
+        AgregarCatalogosFlete(servicios);
+        AgregarCubicacion(servicios);
+
         AgregarPdfYCorreo(servicios);
 
         AgregarIdentidad(servicios);
@@ -108,14 +120,15 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes (stub hasta
-    /// HU-005.2), Google Chat (verificación del JWT, cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido
-    /// de sesiones inactivas. TryAdd: un adaptador registrado antes (pruebas, HU-005.2) se respeta.
+    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes en Nexo
+    /// (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), Google Chat (verificación del JWT,
+    /// cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido de sesiones inactivas. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
-        servicios.TryAddScoped<IClsBuscadorClientes, clsBuscadorClientesNoDisponible>();
+        AgregarBuscadorClientes(servicios);
         servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
         servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
@@ -178,6 +191,67 @@ public static class clsDependenciasInfraestructura
         });
 
         servicios.AddHostedService<clsAvisosArranqueSapTm>();
+    }
+
+    /// <summary>
+    /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
+    /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
+    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-Usuario-Id</c> en los
+    /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarBuscadorClientes(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsBuscadorClientesNoDisponible>();
+        servicios.AddHttpClient<clsBuscadorClientesNexo>(clsBuscadorClientesNexo.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
+        servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
+    }
+
+    /// <summary>
+    /// Catálogo de municipios elegido por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaMunicipios.Crear"/>):
+    /// configurada → <see cref="clsMunicipiosNexo"/>; vacía → <see cref="clsMunicipiosNoDisponible"/>. Mismo cliente
+    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
+    /// mismo servicio Nexo. No se repite <c>.RedactLoggedHeaders(...).AddStandardResilienceHandler(...)</c> aquí:
+    /// <c>IHttpClientFactory</c> asocia esa configuración al nombre <c>"Nexo"</c>, no al tipo, así que volver a
+    /// encadenarla en cada cliente tipado apilaría una tubería de resiliencia por cada uno (reintentos y timeouts
+    /// multiplicados); <see cref="AgregarBuscadorClientes"/> ya la registra una sola vez para ese nombre. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarMunicipios(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsMunicipiosNoDisponible>();
+        servicios.AddHttpClient<clsMunicipiosNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsMunicipiosProvider>(clsFabricaMunicipios.Crear);
+    }
+
+    /// <summary>
+    /// Catálogos de tipo de vehículo/carrocería/clase de viaje elegidos por <c>Nexo:UrlBase</c> al resolver
+    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/>; vacía →
+    /// <see cref="clsCatalogosFleteNoDisponible"/>. Mismo cliente HTTP tipado (nombre
+    /// <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el mismo servicio Nexo.
+    /// No repite la configuración de resiliencia/redacción por la misma razón que <see cref="AgregarMunicipios"/>.
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCatalogosFlete(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
+        servicios.AddHttpClient<clsCatalogosFleteNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
+    }
+
+    /// <summary>
+    /// Cubicación rápida elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCubicacion.Crear"/>):
+    /// configurada → <see cref="clsCubicacionNexo"/>; vacía → <see cref="clsCubicacionNoDisponible"/>. Mismo cliente
+    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
+    /// mismo servicio Nexo. No repite la configuración de resiliencia/redacción por la misma razón que
+    /// <see cref="AgregarMunicipios"/>. TryAdd: un adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCubicacion(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCubicacionNoDisponible>();
+        servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

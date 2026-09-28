@@ -78,4 +78,39 @@ public static class clsCodigosError
 
     /// <summary>El modelo pidió una herramienta que no existe (HU-003.10). Código nuevo del backend .NET (#12).</summary>
     public const string HerramientaDesconocida = "HERRAMIENTA_DESCONOCIDA";
+
+    /// <summary>
+    /// El catálogo de municipios (<c>GET /web/municipios</c>, endpoint de Nexo) no está disponible: Nexo sin
+    /// configurar, sin respuesta o el comercial sin <c>idUsuarioExterno</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MunicipiosNoDisponible = "MUNICIPIOS_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Los catálogos de flete (<c>GET /web/catalogos-flete</c>: tipos de vehículo, tipos de carrocería y clases de
+    /// viaje, endpoint de Nexo) no están disponibles: mismas causas que <see cref="MunicipiosNoDisponible"/>. Código
+    /// nuevo del backend .NET.
+    /// </summary>
+    public const string CatalogosFleteNoDisponible = "CATALOGOS_FLETE_NO_DISPONIBLE";
+
+    /// <summary>
+    /// <c>POST /web/cubicacion</c> sin <c>items</c> (falta o viene vacío): mismo código que usa Nexo
+    /// (<c>ITEMS_REQUERIDOS</c> en <c>POST /api/cubicacion</c>) para no introducir uno nuevo por el mismo motivo.
+    /// Código nuevo del backend .NET.
+    /// </summary>
+    public const string ItemsRequeridos = "ITEMS_REQUERIDOS";
+
+    /// <summary>
+    /// La cubicación rápida (<c>POST /web/cubicacion</c>, endpoint de Nexo) no está disponible: Nexo sin configurar,
+    /// sin respuesta o el comercial sin <c>idUsuarioExterno</c>; mismas causas que
+    /// <see cref="MunicipiosNoDisponible"/>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CubicacionNoDisponible = "CUBICACION_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Nexo rechazó la solicitud de cubicación con 400 (el Cubicador la evaluó y no la aceptó: el motivo típico es
+    /// superar el límite de bultos por solicitud, pero Nexo devuelve el mismo código de validación genérico
+    /// <c>CUBICACION_INVALIDA</c> para cualquier rechazo de Cubicador, incluidas medidas inválidas — no distingue el
+    /// motivo exacto en su respuesta). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
 }
