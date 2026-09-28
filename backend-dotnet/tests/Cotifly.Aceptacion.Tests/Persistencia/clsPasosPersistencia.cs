@@ -18,12 +18,12 @@ namespace Cotifly.Aceptacion.Tests.Persistencia;
 [Binding]
 public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
 {
-    [Given("el esquema dbo_cotifly creado con los scripts 0001 y 0002")]
+    [Given("el esquema dbo_cotifly creado con los scripts 0001 a 0004")]
     public async Task DadoElEsquemaCreado()
     {
         var tablas = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'");
-        tablas.Should().Be(14, "las 10 del 0001 + Roles, UsuariosRoles, TokensRefresco y TokensRevocados del 0002");
+        tablas.Should().Be(15, "las 10 del 0001 + Roles, UsuariosRoles, TokensRefresco y TokensRevocados del 0002 + CotizacionPosiciones del 0004");
     }
 
     [Given("el comercial {string} registrado")]

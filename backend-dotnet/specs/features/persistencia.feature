@@ -12,7 +12,7 @@ Característica: Persistencia de cotizaciones en SQL Server 2019
   Para que no se pierdan y cada comercial vea y modifique solo las suyas
 
   Antecedentes:
-    Dado el esquema dbo_cotifly creado con los scripts 0001 y 0002
+    Dado el esquema dbo_cotifly creado con los scripts 0001 a 0004
     Y el comercial "ana.perez" registrado
     Y el comercial "luis.gomez" registrado
 
