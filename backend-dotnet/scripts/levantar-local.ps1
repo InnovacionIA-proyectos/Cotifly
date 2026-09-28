@@ -10,7 +10,7 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002 y 0003 (idempotentes)
+                        - db/migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002 y 0003 (idempotentes)
                         - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
                         - IDROLES de desarrollo en Roles y login cotifly_app con permisos mínimos
                                                                                        (scripts/sql/dev-03-roles-y-login.sql)
@@ -57,7 +57,7 @@ function Valor([string]$Nombre, [string]$PorDefecto) {
 
 $DirScripts = $PSScriptRoot
 $DirBackend = (Resolve-Path (Join-Path $DirScripts '..')).Path
-$DirMigraciones = (Resolve-Path (Join-Path $DirBackend '..\migrations_mssql')).Path
+$DirMigraciones = (Resolve-Path (Join-Path $DirBackend '..\db\migrations_mssql')).Path
 
 $Red = 'cotifly-local'
 $SqlContenedor = 'cotifly-local-sql'

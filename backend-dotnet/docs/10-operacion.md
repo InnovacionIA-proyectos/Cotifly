@@ -158,7 +158,7 @@ Otras decisiones abiertas:
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
 | El contenedor termina con código 1 al arrancar | Configuración inválida o faltante | `docker logs`: el mensaje nombra la clave. Revisar [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
-| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `migrations_mssql/0002` y `0003` con `sqlcmd -I` |
+| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002` y `0003` con `sqlcmd -I` |
 | `/health/ready` 503 con la base caída | Red, credenciales o certificado de SQL Server | Revisar la cadena; si el certificado no es de una CA de confianza, instalar la CA (preferido) o `TrustServerCertificate=True` temporal y documentado |
 | Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, o `dbsolucionesti` inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |

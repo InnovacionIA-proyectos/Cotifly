@@ -19,13 +19,13 @@ on:
     branches: [QA, main]
     paths:
       - 'backend-dotnet/**'
-      - 'migrations_mssql/**'
+      - 'db/migrations_mssql/**'
       - '.github/workflows/backend-dotnet.yml'
   pull_request:
     branches: [QA, main]
     paths:
       - 'backend-dotnet/**'
-      - 'migrations_mssql/**'
+      - 'db/migrations_mssql/**'
       - '.github/workflows/backend-dotnet.yml'
   workflow_dispatch:
 

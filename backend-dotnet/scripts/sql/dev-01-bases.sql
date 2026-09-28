@@ -1,7 +1,7 @@
 /* ============================================================================
    Cotifly — SOLO DESARROLLO LOCAL (scripts/levantar-local.*, #14). Nunca en QA ni producción.
    Crea en el SQL Server local las dos bases que en el entorno real ya existen:
-     - dbTarifario_Nexo_Pruebas: la base donde vive el esquema dbo_cotifly (migrations_mssql/0001..0003).
+     - dbTarifario_Nexo_Pruebas: la base donde vive el esquema dbo_cotifly (db/migrations_mssql/0001..0003).
      - dbsolucionesti: almacén corporativo de usuarios y roles de ClientePro (solo lectura para Cotifly).
    Idempotente. Se ejecuta en master con sqlcmd -I (QUOTED_IDENTIFIER ON).
    ============================================================================ */

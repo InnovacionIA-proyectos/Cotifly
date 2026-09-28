@@ -55,7 +55,7 @@ backend-dotnet/
     ├── Cotifly.Arquitectura.Tests/
     └── Cotifly.Aceptacion.Tests/
 
-migrations_mssql/                # scripts de esquema SQL Server (0001, 0002, 0003): única vía de cambio de esquema
+db/migrations_mssql/                # scripts de esquema SQL Server (0001, 0002, 0003): única vía de cambio de esquema
 docs/CONTRATO_API_WEB.md         # resumen del contrato para el frontend (HU-004.1)
 ```
 
@@ -68,7 +68,7 @@ docs/CONTRATO_API_WEB.md         # resumen del contrato para el frontend (HU-004
 | Un adaptador (base, HTTP, SDK) | `Cotifly.Infraestructura/<Módulo>/Services/` o `Repositories/`, registrado en `clsDependenciasInfraestructura` |
 | Un endpoint | Primero `specs/openapi.yaml`; luego `Cotifly.Api/<Módulo>/Controllers/` heredando de `clsControladorWebBase` si es `/web/*` |
 | Una herramienta del agente | `Cotifly.Aplicacion/Agente/Herramientas/clsHerramientasCotizador` + inyección en `clsInyeccionEstadoFilter` + estado en `clsEstadoConversacionService` |
-| Un cambio de esquema | Script nuevo `migrations_mssql/000N_*.sql` idempotente (nunca migraciones EF), mapeo en `Comun/Persistence/Configurations/` y prueba de deriva |
+| Un cambio de esquema | Script nuevo `db/migrations_mssql/000N_*.sql` idempotente (nunca migraciones EF), mapeo en `Comun/Persistence/Configurations/` y prueba de deriva |
 | Una opción de configuración | Clase `clsOpcionesXxx` con `AddOpcionesValidadas<T>()`, variable en `.env.example` y fila en [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
 | Una decisión de arquitectura | ADR nueva en `specs/decisiones/` con la plantilla del índice |
 

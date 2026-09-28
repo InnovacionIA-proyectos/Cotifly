@@ -54,6 +54,7 @@ public sealed class clsHerramientasCotizador(
     [Description("Busca al cliente en el catálogo (clientes y prospectos) con el texto que escribió el comercial. Devuelve si hubo coincidencia exacta y los candidatos; si hay varios, pide al comercial que confirme cuál es.")]
     public async Task<clsResultadoHerramienta> BuscarClienteAsync(
         [Description("Nombre o NIT del cliente tal como lo escribió el comercial.")] string nombre,
+        KernelArguments? argumentos = null,
         CancellationToken cancellationToken = default)
     {
         var herramienta = clsNombresHerramientas.BuscarCliente;
@@ -62,7 +63,7 @@ public sealed class clsHerramientasCotizador(
             return clsResultadoHerramienta.Fallo(herramienta, clsCodigosError.ClienteBusquedaNoDisponible, "Falta el nombre o NIT del cliente que se busca.");
         }
 
-        var resultado = await buscadorClientes.BuscarAsync(nombre.Trim(), cancellationToken);
+        var resultado = await buscadorClientes.BuscarAsync(UsuarioDe(Argumentos(argumentos)), nombre.Trim(), cancellationToken);
         if (resultado.EsFallo)
         {
             return clsResultadoHerramienta.Fallo(herramienta, resultado.Error);

@@ -43,7 +43,7 @@ Qué hace, en orden (los dos scripts son equivalentes e idempotentes):
 | 1 | Red `cotifly-local` | Red de Docker donde la API alcanza a SQL Server por nombre |
 | 2 | Contenedor `cotifly-local-sql` | `mcr.microsoft.com/mssql/server:2019-latest` (edición Developer), volumen `cotifly-local-sqldata`, puerto `14333` publicado **solo en `127.0.0.1`** para SSMS o Azure Data Studio. Espera hasta que responda |
 | 3 | Bases | `scripts/sql/dev-01-bases.sql`: crea `dbTarifario_Nexo_Pruebas` y `dbsolucionesti` si no existen |
-| 4 | Esquema `dbo_cotifly` | `migrations_mssql/0001` solo si el esquema no existe (después del 0002 el 0001 no se re-ejecuta), luego `0002` y `0003` (idempotentes). Con `sqlcmd -b -I -C` 18 (`/opt/mssql-tools18/bin/sqlcmd`, dentro de la misma imagen de SQL Server 2019) |
+| 4 | Esquema `dbo_cotifly` | `db/migrations_mssql/0001` solo si el esquema no existe (después del 0002 el 0001 no se re-ejecuta), luego `0002` y `0003` (idempotentes). Con `sqlcmd -b -I -C` 18 (`/opt/mssql-tools18/bin/sqlcmd`, dentro de la misma imagen de SQL Server 2019) |
 | 5 | `dbsolucionesti` falsa | `scripts/sql/dev-02-identidad.sql`: las tres tablas del login con sus tipos reales y los usuarios de prueba (tabla abajo) |
 | 6 | Roles y login | `scripts/sql/dev-03-roles-y-login.sql`: `Roles.idRolExterno` = 34 (comercial) y 35 (gerente comercial); login `cotifly_app` con `SELECT`, `INSERT`, `UPDATE`, `DELETE` y `EXECUTE` sobre el **esquema** `dbo_cotifly` (sin `db_datareader` ni `db_datawriter`; si una versión anterior los dejó, los retira) y `SELECT` por columna (sin `CLAVE`) en `dbsolucionesti`: la misma receta que se pide al DBA |
 | 6b | Verificación de permisos | `scripts/sql/dev-04-verificar-permisos.sql`, **conectado como `cotifly_app`**: debe leer y escribir en `dbo_cotifly`, leer las vistas de métricas y tomar un `sp_getapplock`; debe recibir permiso denegado al leer o escribir `dbo.tblOtraAplicacionDev` (tabla ficticia de `dev-01` que representa a otra aplicación de la base compartida) y al leer `CLAVE`. Si algo no se cumple, el script se detiene |
@@ -90,7 +90,7 @@ docker run --rm `
   sh -c "dotnet build -c Release && dotnet test -c Release --no-build"
 ```
 
-- Se monta el repo completo (no solo `backend-dotnet/`) porque las pruebas copian `../migrations_mssql/*.sql` para aplicarlas en Testcontainers.
+- Se monta el repo completo (no solo `backend-dotnet/`) porque las pruebas copian `../db/migrations_mssql/*.sql` para aplicarlas en Testcontainers.
 - El socket de Docker y `TESTCONTAINERS_HOST_OVERRIDE` permiten que las pruebas de integración levanten SQL Server 2019 como contenedor hermano (detalle en [08-testing](08-testing.md)).
 - El volumen `cotifly-nuget` conserva la caché de NuGet entre ejecuciones. Las carpetas `bin/` y `obj/` que crea el contenedor están en `.gitignore`.
 

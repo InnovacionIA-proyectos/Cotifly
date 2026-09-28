@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>migrations_mssql/0001</c>, <c>0002</c> y <c>0003</c> partidos por
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c>, <c>0002</c> y <c>0003</c> partidos por
 /// <c>GO</c>, y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
 /// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de

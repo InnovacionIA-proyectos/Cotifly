@@ -97,7 +97,7 @@ ejecuta `alembic upgrade head` antes de arrancar (idempotente), incluida la vist
 ## 7. Trazabilidad para Gerencia
 
 Vista de solo lectura (HU-002.4: `dbo_cotifly.vAjustesMargenPorComercial` en SQL
-Server, ver `migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` — equivalente a la
+Server, ver `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` — equivalente a la
 `v_ajustes_margen_por_comercial` de la migración 0003 de Postgres):
 
 ```sql

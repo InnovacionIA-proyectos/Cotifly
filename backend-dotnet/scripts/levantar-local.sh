@@ -8,7 +8,7 @@
 #                                        puerto 14333 solo en 127.0.0.1 para SSMS/Azure Data Studio)
 #   3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
 #                     - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-#                     - migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002 y 0003 (idempotentes)
+#                     - db/migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002 y 0003 (idempotentes)
 #                     - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
 #                     - IDROLES de desarrollo en Roles y login cotifly_app con permisos mínimos
 #                                                                                    (scripts/sql/dev-03-roles-y-login.sql)
@@ -47,7 +47,7 @@ ruta_absoluta() { (cd "$1" && (pwd -W 2>/dev/null || pwd)); }
 
 DIR_SCRIPTS=$(ruta_absoluta "$(dirname "$0")")
 DIR_BACKEND=$(ruta_absoluta "$DIR_SCRIPTS/..")
-DIR_MIGRACIONES=$(ruta_absoluta "$DIR_BACKEND/../migrations_mssql")
+DIR_MIGRACIONES=$(ruta_absoluta "$DIR_BACKEND/../db/migrations_mssql")
 
 RED=cotifly-local
 SQL_CONTENEDOR=cotifly-local-sql
