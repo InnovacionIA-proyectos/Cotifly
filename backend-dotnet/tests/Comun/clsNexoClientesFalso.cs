@@ -11,7 +11,7 @@ namespace Cotifly.Pruebas.Comun;
 public sealed class clsNexoClientesFalso : HttpMessageHandler
 {
     /// <summary>URL base del servicio en las pruebas.</summary>
-    public const string UrlBase = "http://nexo-test.local/api";
+    public const string UrlBase = "http://nexo-test.local";
 
     private readonly ConcurrentQueue<Func<HttpRequestMessage, HttpResponseMessage>> _respuestas = new();
     private readonly ConcurrentQueue<clsPeticionNexo> _peticiones = new();

@@ -25,7 +25,8 @@ namespace Cotifly.Aplicacion.Agente.Filtros;
 /// <item><c>buscar_tarifa</c>, <c>calcular_precio</c>, <c>registrar_ajuste_margen</c> y <c>generar_pdf</c>: con un origen o destino
 /// ambiguo en el catálogo de municipios (candidatos sin elegir) se rechazan con <c>CONFIRMACION_REQUERIDA</c> hasta que el comercial
 /// elija (HU-005.13). En <c>buscar_tarifa</c>, si el texto del modelo es el municipio ya verificado, se reemplaza por su forma
-/// canónica <c>Municipio, Departamento</c>.</item>
+/// canónica <c>Municipio, Departamento</c>; en <c>generar_pdf</c>, el origen de la tabla de tarifa y el destino de su única fila también
+/// salen de los municipios verificados.</item>
 /// <item><c>obtener_margen</c>: el cliente de la consulta SAP TM es el BP del estado; sin BP no se consulta SAP (nunca con el NIT ni
 /// con el texto del LLM).</item>
 /// <item><c>calcular_precio</c>: margen y método del estado (sin margen resuelto, <c>PRECIO_INVALIDO</c>); el costo, si vino de
@@ -227,6 +228,17 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         else if (payload["cliente"] is null && estado.ClienteNombre is not null)
         {
             payload["cliente"] = estado.ClienteNombre;
+        }
+
+        // Origen y destino verificados en el catálogo de municipios (HU-005.13): el origen de la tabla y, con una sola fila, su destino.
+        if (estado.OrigenMunicipio is { } municipioOrigen && payload["tarifa"] is JsonObject tablaOrigen)
+        {
+            tablaOrigen["origen"] = municipioOrigen.Canonico();
+        }
+
+        if (estado.DestinoMunicipio is { } municipioDestino && payload["tarifa"]?["filas"] is JsonArray { Count: 1 } unaFila && unaFila[0] is JsonObject filaDestino)
+        {
+            filaDestino["destino"] = municipioDestino.Canonico();
         }
 
         var moneda = estado.Moneda ?? "COP";

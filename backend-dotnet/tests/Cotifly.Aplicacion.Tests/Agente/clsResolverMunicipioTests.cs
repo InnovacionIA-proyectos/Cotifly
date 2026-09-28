@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
+using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Agente;
 
@@ -19,6 +20,11 @@ public sealed class clsResolverMunicipioTests
     private static readonly clsMunicipioResuelto _unionNarino = new(2, "La Unión", "Nariño", "Colombia", "52399");
     private static readonly clsMunicipioResuelto _unionValle = new(3, "La Unión", "Valle del Cauca", "Colombia", "76400");
     private static readonly clsMunicipioResuelto _yumbo = new(5, "Yumbo", "Valle del Cauca", "Colombia", "76892");
+    private static readonly clsMunicipioResuelto _sanPedroAntioquia = new(10, "San Pedro", "Antioquia", "Colombia");
+    private static readonly clsMunicipioResuelto _sanPedroSucre = new(11, "San Pedro", "Sucre", "Colombia");
+    private static readonly clsMunicipioResuelto _argeliaAntioquia = new(20, "Argelia", "Antioquia", "Colombia");
+    private static readonly clsMunicipioResuelto _argeliaCauca = new(21, "Argelia", "Cauca", "Colombia");
+    private static readonly clsMunicipioResuelto _argeliaValle = new(22, "Argelia", "Valle del Cauca", "Colombia");
 
     private readonly clsEstadoConversacionService _servicio = new();
     private readonly clsArnesAgente _arnes = new();
@@ -155,6 +161,86 @@ public sealed class clsResolverMunicipioTests
         porDepartamento.CandidatosDestino.Should().HaveCount(2);
     }
 
+    [Theory]
+    [InlineData("el origen es el de Antioquia")]
+    [InlineData("Origen: Antioquia")]
+    public void NombrarElCampoEligeSoloEnEsaLista(string mensaje)
+    {
+        var pendiente = clsEstadoConversacion.Vacio with
+        {
+            Origen = "San Pedro",
+            CandidatosOrigen = [_sanPedroAntioquia, _sanPedroSucre],
+            Destino = "La Unión",
+            CandidatosDestino = [_unionAntioquia, _unionNarino, _unionValle],
+        };
+
+        var estado = _servicio.ReconocerMensaje(pendiente, mensaje).Estado;
+
+        estado.OrigenMunicipio.Should().Be(_sanPedroAntioquia);
+        estado.DestinoMunicipio.Should().BeNull("el comercial solo habló del origen");
+        estado.CandidatosDestino.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void ConLasDosListasYElDepartamentoEnAmbasNoEligeNinguna()
+    {
+        var pendiente = clsEstadoConversacion.Vacio with
+        {
+            CandidatosOrigen = [_sanPedroAntioquia, _sanPedroSucre],
+            CandidatosDestino = [_unionAntioquia, _unionNarino],
+        };
+
+        _servicio.ReconocerMensaje(pendiente, "el de Antioquia").Estado.Should().Be(pendiente, "no dice si es el origen o el destino");
+    }
+
+    [Theory]
+    [InlineData("el destino es Medellín, Antioquia")]
+    [InlineData("Medellín, Antioquia")]
+    [InlineData("no es el de Nariño")]
+    [InlineData("No, la de Nariño no")]
+    public void UnMensajeQueNoEligeUnCandidatoNoEligeNada(string mensaje)
+    {
+        var pendiente = clsEstadoConversacion.Vacio with { Origen = "La Unión", CandidatosOrigen = [_unionAntioquia, _unionNarino, _unionValle] };
+
+        var estado = _servicio.ReconocerMensaje(pendiente, mensaje).Estado;
+
+        estado.OrigenMunicipio.Should().BeNull();
+        estado.CandidatosOrigen.Should().HaveCount(3);
+    }
+
+    [Theory]
+    [InlineData("Valle del Cauca", 22)]
+    [InlineData("Argelia, Valle del Cauca", 22)]
+    [InlineData("la del Cauca", 21)]
+    public void DeDepartamentosAnidadosGanaElNombradoMasLargo(string mensaje, int id)
+    {
+        var pendiente = clsEstadoConversacion.Vacio with { Origen = "Argelia", CandidatosOrigen = [_argeliaAntioquia, _argeliaCauca, _argeliaValle] };
+
+        _servicio.ReconocerMensaje(pendiente, mensaje).Estado.OrigenMunicipio!.Id.Should().Be(id);
+    }
+
+    [Fact]
+    public void UnConfirmoConMunicipioPendienteNoConfirmaLaPrevisualizacion()
+    {
+        var pendiente = clsEstadoConversacion.Vacio with
+        {
+            Origen = "La Unión",
+            CandidatosOrigen = [_unionAntioquia, _unionNarino],
+            PrecioFinal = 3_000_000m,
+            ConfirmacionPendiente = true,
+        };
+
+        _servicio.ReconocerMensaje(pendiente, "Confirmo").Confirmado.Should().BeFalse("el municipio sigue sin elegir");
+    }
+
+    [Fact]
+    public void UnaEntradaMuyLargaNoRompeElReconocimiento()
+    {
+        var largo = string.Concat(Enumerable.Repeat("La Unión, Nariño (", 20_000));
+
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio with { CandidatosOrigen = [_unionAntioquia, _unionNarino] }, largo).Should().NotBeNull();
+    }
+
     [Fact]
     public void ConClientesCandidatosLaPosicionEligeAlClienteYNoAlMunicipio()
     {
@@ -289,6 +375,91 @@ public sealed class clsResolverMunicipioTests
         _arnes.EntradasTarifa.Should().ContainSingle().Which.Origen.Should().Be("La Unión", "sin Nexo no se bloquea la cotización");
         _arnes.Estado().Origen.Should().Be("La Unión");
         _arnes.Estado().OrigenMunicipio.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("generar_pdf")]
+    [InlineData("registrar_ajuste_margen")]
+    [InlineData("calcular_precio")]
+    [InlineData("buscar_tarifa")]
+    public async Task ConElMunicipioAmbiguoElFiltroNoDejaCotizar(string herramienta)
+    {
+        _arnes.CatalogoMunicipios();
+        object args = herramienta switch
+        {
+            "generar_pdf" => new { cotizacion = new { cliente = "X" } },
+            "registrar_ajuste_margen" => new { margenAplicado = 0.2, motivo = "negociado" },
+            "calcular_precio" => new { costo = 1_000_000, margen = 0.1, metodo = "margen" },
+            _ => new { lineaNegocio = "Nacional", origen = "La Unión", destino = "Yumbo" },
+        };
+        _arnes.Modelo
+            .Llamar("resolver_municipio", new { texto = "La Unión", campo = "origen" })
+            .Llamar(herramienta, args)
+            .Cerrar("¿Cuál La Unión?");
+
+        var resultado = (await _arnes.TurnoAsync("Cotiza de La Unión a Yumbo")).Valor;
+
+        resultado.Salidas[^1].Error!.Codigo.Should().Be(clsCodigosError.ConfirmacionRequerida);
+    }
+
+    [Theory]
+    [InlineData("ruta", "La Unión")]
+    [InlineData("", "La Unión")]
+    [InlineData("origen", "  ")]
+    public async Task ConArgumentosInvalidosLaHerramientaFallaSinConsultarNexo(string campo, string texto)
+    {
+        _arnes.CatalogoMunicipios();
+        _arnes.Modelo
+            .Llamar("resolver_municipio", new { texto, campo })
+            .Cerrar("Corrijo la llamada.");
+
+        var resultado = (await _arnes.TurnoAsync("de La Unión a Yumbo")).Valor;
+
+        resultado.Salidas[0].Error!.Codigo.Should().Be(clsCodigosError.MunicipioArgumentoInvalido);
+        await _arnes.Municipios.DidNotReceive().ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _arnes.Estado().Origen.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ElPdfLlevaElOrigenYElDestinoVerificados()
+    {
+        _arnes.CatalogoMunicipios();
+        _arnes.Modelo
+            .Llamar("resolver_municipio", new { texto = "Yumbo", campo = "origen" })
+            .Llamar("resolver_municipio", new { texto = "Buenaventura", campo = "destino" })
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
+            .Cerrar("Previsualización lista. ¿Confirmas?")
+            .Llamar("generar_pdf", new
+            {
+                cotizacion = new
+                {
+                    cliente = "Cliente del chat",
+                    linea_negocio = "Nacional",
+                    textos = new { intro = new[] { "Gracias." } },
+                    tarifa = new { titulo = "COTIZACIÓN", origen = "YUMBO", filas = new[] { new { destino = "BUN", vehiculo_peso = "Tractomula" } } },
+                },
+            })
+            .Cerrar("PDF listo.");
+
+        await _arnes.TurnoAsync("Cotiza Nacional de Yumbo a Buenaventura, costo 2.850.000");
+        await _arnes.TurnoAsync("Confirmo");
+
+        var tarifa = _arnes.EntradasPdf.Should().ContainSingle().Subject.Cotizacion.Tarifa!;
+        tarifa.Origen.Should().Be("Yumbo, Valle del Cauca");
+        tarifa.Filas!.Should().ContainSingle().Which.Destino.Should().Be("Buenaventura, Valle del Cauca");
+    }
+
+    [Fact]
+    public async Task LaSalidaDeVariasNoLlevaIdsNiDane()
+    {
+        _arnes.CatalogoMunicipios();
+        _arnes.Modelo.Llamar("resolver_municipio", new { texto = "La Unión", campo = "origen" }).Cerrar("¿Cuál?");
+
+        await _arnes.TurnoAsync("de La Unión");
+
+        _arnes.Modelo.Llamadas[1].ResultadosHerramientas[^1].Should().NotContainAny("05400", "52399", "76400", "\"id\"", "codigo_dane", "codigoDane");
+        clsPromptSistema.BloqueEstado(_arnes.Estado()).Should().NotContainAny("05400", "52399", "76400");
     }
 
     [Fact]

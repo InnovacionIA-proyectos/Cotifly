@@ -12,19 +12,30 @@ namespace Cotifly.Aplicacion.Municipios.Services;
 /// <c>docs/MAPEO_CAMPOS_NEXO_COTIFLY.md</c>), así que la búsqueda se hace aquí, no en Nexo.
 /// </summary>
 /// <remarks>
-/// Se compara sin tildes, sin mayúsculas y sin signos (<see cref="Clave"/>). Orden de las reglas, la primera que encuentra algo gana:
+/// Se compara con <see cref="Clave"/>: sin tildes, sin mayúsculas, sin signos y con las siglas de una letra unidas
+/// (<c>D.C.</c>, <c>DC</c> y <c>D C</c> son <c>dc</c>). Un país al final (<c>Medellín Antioquia Colombia</c>) se ignora. Orden de las
+/// reglas; la primera que encuentra algo gana:
 /// <list type="number">
 /// <item><b>Exacta:</b> el texto es el municipio (<c>La Unión</c>) o el municipio y su departamento (<c>La Unión Nariño</c>,
 /// <c>La Unión, Nariño</c>).</item>
-/// <item><b>Con pista de departamento:</b> <c>Municipio, pista</c> o <c>Municipio (pista)</c> con un municipio exacto; la pista
-/// filtra por departamento (<c>La Unión (Valle)</c> → Valle del Cauca). Si la pista no coincide con ninguno, quedan todos los del
-/// nombre.</item>
-/// <item><b>Prefijo de palabra:</b> el texto es el comienzo del nombre (<c>Cartagena</c> → <c>Cartagena de Indias</c>).</item>
-/// <item><b>Aproximada:</b> el texto (3 letras o más) aparece dentro del nombre. Siempre se pide confirmación, aunque sea una
-/// sola: nunca se asume un municipio por parecido.</item>
+/// <item><b>Nombre con pista de departamento:</b> <c>Nombre, pista</c>, <c>Nombre (pista)</c> o un departamento del catálogo al
+/// final (<c>Cúcuta Norte de Santander</c>). El nombre se busca con los niveles de la regla 3 y la pista filtra por departamento;
+/// si varios departamentos coinciden porque uno contiene al otro (<c>Cauca</c> y <c>Valle del Cauca</c>), gana el más largo que
+/// aparece en la pista. Si la pista no coincide con ninguno, quedan todos los del nombre.</item>
+/// <item><b>Por niveles sobre el texto completo</b>, el primero que encuentra algo:
+///   <list type="bullet">
+///   <item>nombre exacto;</item>
+///   <item>palabras completas dentro del nombre (<c>Cali</c> → <c>Santiago de Cali</c>, nunca <c>Calima</c> ni
+///   <c>California</c>). Si hay varias y una sola es capital de departamento (código Dane terminado en <c>001</c>), se usa esa
+///   (<c>Cartagena</c> → <c>Cartagena de Indias</c>, no <c>Cartagena del Chairá</c>);</item>
+///   <item>comienzo de una palabra del nombre, con 4 letras o más (<c>Barranq</c> → <c>Barranquilla</c>);</item>
+///   <item><b>aproximada:</b> el texto (3 letras o más) aparece dentro del nombre. Siempre se pide confirmación, aunque sea una
+///   sola: nunca se asume un municipio por parecido.</item>
+///   </list></item>
 /// </list>
-/// Una sola coincidencia de las reglas 1 a 3 es <see cref="CoincidenciaMunicipio.Unica"/>; más de una, o cualquiera de la regla 4,
-/// <see cref="CoincidenciaMunicipio.Varias"/>. Las filas repetidas (mismo municipio, departamento y país) cuentan una vez.
+/// Un solo resultado que no sea aproximado es <see cref="CoincidenciaMunicipio.Unica"/>; más de uno, o cualquiera aproximado,
+/// <see cref="CoincidenciaMunicipio.Varias"/>. Dos municipios con el mismo nombre exacto siempre se preguntan (el desempate por
+/// capital solo aplica a coincidencias por palabra). Las filas repetidas (mismo municipio, departamento y país) cuentan una vez.
 /// </remarks>
 public static class clsResolvedorMunicipios
 {
@@ -34,21 +45,27 @@ public static class clsResolvedorMunicipios
     /// <summary>Largo mínimo del texto para la coincidencia aproximada.</summary>
     public const int LargoMinimoAproximada = 3;
 
+    /// <summary>Largo mínimo del texto para la coincidencia por comienzo de palabra.</summary>
+    public const int LargoMinimoPrefijo = 4;
+
+    /// <summary>Sufijo del código Dane de las capitales de departamento.</summary>
+    public const string SufijoDaneCapital = "001";
+
     public static clsResolucionMunicipio Resolver(string? texto, IReadOnlyList<clsMunicipio> catalogo)
     {
         ArgumentNullException.ThrowIfNull(catalogo);
         var original = texto?.Trim() ?? string.Empty;
-        var clave = Clave(original);
-        if (clave.Length == 0)
-        {
-            return new clsResolucionMunicipio(original, CoincidenciaMunicipio.Ninguna, [], 0);
-        }
-
         var filas = catalogo
             .Where(m => Clave(m.Municipio).Length > 0)
             .Select(m => new clsFila(m, Clave(m.Municipio), Clave(m.Departamento), Clave(m.Pais)))
             .DistinctBy(f => (f.Municipio, f.Departamento, f.Pais))
             .ToList();
+        var paises = filas.Select(f => f.Pais).Where(p => p.Length > 0).Distinct().ToList();
+        var clave = SinPais(Clave(original), paises);
+        if (clave.Length == 0)
+        {
+            return Ninguna(original);
+        }
 
         var exactas = filas.Where(f => f.Municipio == clave || (f.Departamento.Length > 0 && $"{f.Municipio} {f.Departamento}" == clave)).ToList();
         if (exactas.Count > 0)
@@ -56,29 +73,28 @@ public static class clsResolvedorMunicipios
             return Con(original, exactas, aproximada: false);
         }
 
-        if (Separar(original) is { } separado)
+        foreach (var (nombre, pista) in Divisiones(original, clave, filas, paises))
         {
-            var porNombre = filas.Where(f => f.Municipio == separado.Municipio).ToList();
-            if (porNombre.Count > 0)
+            var porNombre = Buscar(nombre, filas, desempatar: false);
+            if (porNombre.Filas.Count == 0)
             {
-                var conPista = porNombre.Where(f => f.Departamento.Length > 0 && (ContienePalabras(f.Departamento, separado.Pista) || ContienePalabras(separado.Pista, f.Departamento))).ToList();
-                return Con(original, conPista.Count > 0 ? conPista : porNombre, aproximada: false);
+                continue;
             }
+
+            var conPista = FiltrarPorDepartamento(porNombre.Filas, pista);
+            return conPista.Count > 0
+                ? Con(original, conPista, porNombre.Aproximada)
+                : Con(original, Desempatar(porNombre.Filas, porNombre.PorPalabra), porNombre.Aproximada);
         }
 
-        var porPrefijo = filas.Where(f => f.Municipio.StartsWith(clave + " ", StringComparison.Ordinal)).ToList();
-        if (porPrefijo.Count > 0)
-        {
-            return Con(original, porPrefijo, aproximada: false);
-        }
-
-        var aproximadas = clave.Length >= LargoMinimoAproximada
-            ? filas.Where(f => f.Municipio.Contains(clave, StringComparison.Ordinal)).ToList()
-            : [];
-        return Con(original, aproximadas, aproximada: true);
+        var niveles = Buscar(clave, filas, desempatar: true);
+        return Con(original, niveles.Filas, niveles.Aproximada);
     }
 
-    /// <summary>Texto para comparar: minúsculas, sin tildes, sin signos (cada signo es un espacio) y con espacios simples.</summary>
+    /// <summary>
+    /// Texto para comparar: minúsculas, sin tildes, sin signos (cada signo es un espacio), con espacios simples y con las siglas de
+    /// una letra unidas (<c>D.C.</c> → <c>dc</c>).
+    /// </summary>
     public static string Clave(string? texto)
     {
         if (string.IsNullOrWhiteSpace(texto))
@@ -87,44 +103,166 @@ public static class clsResolvedorMunicipios
         }
 
         var descompuesto = texto.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var limpio = new StringBuilder(descompuesto.Length);
-        var espacio = false;
+        var palabras = new List<string>();
+        var actual = new StringBuilder();
         foreach (var caracter in descompuesto)
         {
-            var categoria = CharUnicodeInfo.GetUnicodeCategory(caracter);
-            if (categoria == UnicodeCategory.NonSpacingMark)
+            if (CharUnicodeInfo.GetUnicodeCategory(caracter) == UnicodeCategory.NonSpacingMark)
             {
                 continue;
             }
 
             if (char.IsLetterOrDigit(caracter))
             {
-                if (espacio && limpio.Length > 0)
-                {
-                    limpio.Append(' ');
-                }
-
-                limpio.Append(caracter);
-                espacio = false;
+                actual.Append(caracter);
             }
-            else
+            else if (actual.Length > 0)
             {
-                espacio = true;
+                palabras.Add(actual.ToString());
+                actual.Clear();
             }
         }
 
-        return limpio.ToString().Normalize(NormalizationForm.FormC);
+        if (actual.Length > 0)
+        {
+            palabras.Add(actual.ToString());
+        }
+
+        // Siglas: palabras seguidas de una sola letra se unen ("d c" → "dc").
+        var unidas = new List<string>(palabras.Count);
+        var anteriorEsSigla = false;
+        foreach (var palabra in palabras)
+        {
+            var letra = palabra.Length == 1 && char.IsLetter(palabra[0]);
+            if (letra && anteriorEsSigla)
+            {
+                unidas[^1] += palabra;
+            }
+            else
+            {
+                unidas.Add(palabra);
+            }
+
+            anteriorEsSigla = letra || (anteriorEsSigla && letra);
+        }
+
+        return string.Join(' ', unidas).Normalize(NormalizationForm.FormC);
     }
 
     /// <summary>¿<paramref name="texto"/> (clave) contiene <paramref name="palabras"/> (clave) como palabras completas?</summary>
     public static bool ContienePalabras(string texto, string palabras) =>
         palabras.Length > 0 && $" {texto} ".Contains($" {palabras} ", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Departamentos (claves) nombrados en <paramref name="pista"/>: los que aparecen como palabras completas, quedándose con el más
+    /// largo cuando uno contiene al otro (<c>valle del cauca</c> gana sobre <c>cauca</c>).
+    /// </summary>
+    public static IReadOnlyList<string> DepartamentosNombrados(string pista, IEnumerable<string> departamentos)
+    {
+        ArgumentNullException.ThrowIfNull(departamentos);
+        var nombrados = departamentos.Where(d => d.Length > 0 && ContienePalabras(pista, d)).Distinct().ToList();
+        return nombrados.Where(d => !nombrados.Any(otro => otro.Length > d.Length && ContienePalabras(otro, d))).ToList();
+    }
+
+    private static clsBusqueda Buscar(string clave, List<clsFila> filas, bool desempatar)
+    {
+        var exactas = filas.Where(f => f.Municipio == clave).ToList();
+        if (exactas.Count > 0)
+        {
+            return new clsBusqueda(exactas, false, false);
+        }
+
+        var porPalabra = filas.Where(f => ContienePalabras(f.Municipio, clave)).ToList();
+        if (porPalabra.Count > 0)
+        {
+            return new clsBusqueda(desempatar ? Desempatar(porPalabra, true) : porPalabra, false, true);
+        }
+
+        if (clave.Length >= LargoMinimoPrefijo)
+        {
+            var porPrefijo = filas.Where(f => $" {f.Municipio}".Contains($" {clave}", StringComparison.Ordinal)).ToList();
+            if (porPrefijo.Count > 0)
+            {
+                return new clsBusqueda(porPrefijo, false, false);
+            }
+        }
+
+        var aproximadas = clave.Length >= LargoMinimoAproximada
+            ? filas.Where(f => f.Municipio.Contains(clave, StringComparison.Ordinal)).ToList()
+            : [];
+        return new clsBusqueda(aproximadas, true, false);
+    }
+
+    /// <summary>Entre varias coincidencias por palabra, la única capital de departamento (Dane <c>XX001</c>), si la hay.</summary>
+    private static List<clsFila> Desempatar(List<clsFila> filas, bool porPalabra)
+    {
+        if (!porPalabra || filas.Count < 2)
+        {
+            return filas;
+        }
+
+        var capitales = filas.Where(f => f.Original.CodigoDane?.Trim() is { Length: 5 } dane && dane.EndsWith(SufijoDaneCapital, StringComparison.Ordinal)).ToList();
+        return capitales.Count == 1 ? capitales : filas;
+    }
+
+    private static List<clsFila> FiltrarPorDepartamento(List<clsFila> filas, string pista)
+    {
+        var nombrados = DepartamentosNombrados(pista, filas.Select(f => f.Departamento));
+        if (nombrados.Count > 0)
+        {
+            return filas.Where(f => nombrados.Contains(f.Departamento)).ToList();
+        }
+
+        // La pista es parte del departamento ("Valle" → "Valle del Cauca").
+        return filas.Where(f => f.Departamento.Length > 0 && ContienePalabras(f.Departamento, pista)).ToList();
+    }
+
+    /// <summary>
+    /// Formas de partir el texto en nombre y pista de departamento: primero por el separador (<c>,</c> o <c>(</c>), luego por un
+    /// departamento del catálogo al final del texto (el más largo primero).
+    /// </summary>
+    private static IEnumerable<(string Nombre, string Pista)> Divisiones(string original, string clave, List<clsFila> filas, List<string> paises)
+    {
+        var corte = original.IndexOfAny([',', '(']);
+        if (corte > 0)
+        {
+            var nombre = SinPais(Clave(original[..corte]), paises);
+            var pista = SinPais(Clave(original[(corte + 1)..]), paises);
+            if (nombre.Length > 0 && pista.Length > 0)
+            {
+                yield return (nombre, pista);
+            }
+        }
+
+        foreach (var departamento in filas.Select(f => f.Departamento).Where(d => d.Length > 0).Distinct().OrderByDescending(d => d.Length))
+        {
+            if (clave.Length > departamento.Length + 1 && clave.EndsWith(" " + departamento, StringComparison.Ordinal))
+            {
+                yield return (clave[..^(departamento.Length + 1)], departamento);
+            }
+        }
+    }
+
+    private static string SinPais(string clave, List<string> paises)
+    {
+        foreach (var pais in paises)
+        {
+            if (clave.Length > pais.Length + 1 && clave.EndsWith(" " + pais, StringComparison.Ordinal))
+            {
+                return clave[..^(pais.Length + 1)];
+            }
+        }
+
+        return clave;
+    }
+
+    private static clsResolucionMunicipio Ninguna(string texto) => new(texto, CoincidenciaMunicipio.Ninguna, [], 0);
+
     private static clsResolucionMunicipio Con(string texto, List<clsFila> filas, bool aproximada)
     {
         if (filas.Count == 0)
         {
-            return new clsResolucionMunicipio(texto, CoincidenciaMunicipio.Ninguna, [], 0);
+            return Ninguna(texto);
         }
 
         var candidatos = filas
@@ -146,19 +284,7 @@ public static class clsResolvedorMunicipios
 
     private static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
 
-    /// <summary><c>Municipio, pista</c> o <c>Municipio (pista)</c> → las dos claves; null si el texto no trae separador.</summary>
-    private static (string Municipio, string Pista)? Separar(string texto)
-    {
-        var corte = texto.IndexOfAny([',', '(']);
-        if (corte <= 0)
-        {
-            return null;
-        }
-
-        var municipio = Clave(texto[..corte]);
-        var pista = Clave(texto[(corte + 1)..]);
-        return municipio.Length > 0 && pista.Length > 0 ? (municipio, pista) : null;
-    }
-
     private sealed record clsFila(clsMunicipio Original, string Municipio, string Departamento, string Pais);
+
+    private sealed record clsBusqueda(List<clsFila> Filas, bool Aproximada, bool PorPalabra);
 }

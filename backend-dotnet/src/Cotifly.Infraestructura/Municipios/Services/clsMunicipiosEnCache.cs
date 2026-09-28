@@ -8,15 +8,18 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Municipios.Services;
 
 /// <summary>
-/// Foto en memoria (singleton) del catálogo de municipios de Nexo (HU-005.13). Una sola por proceso: el catálogo es el mismo para
-/// todos los comerciales (Nexo lo devuelve completo, sin filtrar por usuario) y no es sensible (municipios y departamentos).
+/// Foto en memoria (singleton) del catálogo de municipios de Nexo (HU-005.13) y la consulta en curso. Una sola por proceso: el
+/// catálogo es el mismo para todos los comerciales (Nexo lo devuelve completo, sin filtrar por usuario) y no es sensible
+/// (municipios y departamentos).
 /// </summary>
-public sealed class clsCacheCatalogoMunicipios : IDisposable
+public sealed class clsCacheCatalogoMunicipios
 {
     private clsFoto? _foto;
 
-    /// <summary>Una sola recarga a la vez: los turnos simultáneos esperan la misma respuesta de Nexo.</summary>
-    internal SemaphoreSlim Candado { get; } = new(1, 1);
+    internal object Candado { get; } = new();
+
+    /// <summary>La consulta a Nexo en curso, compartida por todos los que llegan mientras dura.</summary>
+    internal Task<clsResultado<IReadOnlyList<clsMunicipio>>>? EnCurso { get; set; }
 
     internal clsFoto? Foto
     {
@@ -24,54 +27,82 @@ public sealed class clsCacheCatalogoMunicipios : IDisposable
         set => Volatile.Write(ref _foto, value);
     }
 
-    public void Dispose() => Candado.Dispose();
-
     internal sealed record clsFoto(IReadOnlyList<clsMunicipio> Municipios, DateTimeOffset VenceAt);
 }
 
 /// <summary>
 /// Decorador de <see cref="IClsMunicipiosProvider"/> que reutiliza el catálogo de Nexo durante <c>Nexo:MinutosCacheMunicipios</c>
-/// (HU-005.13). Solo se guardan respuestas exitosas: un <c>MUNICIPIOS_NO_DISPONIBLE</c> no se cachea y la siguiente consulta vuelve
-/// a Nexo. <c>clsFabricaMunicipios</c> lo pone delante de <see cref="clsMunicipiosNexo"/> cuando Nexo está configurado y los
+/// (HU-005.13). <c>clsFabricaMunicipios</c> lo pone delante de <see cref="clsMunicipiosNexo"/> cuando Nexo está configurado y los
 /// minutos son mayores que cero. Lo usan <c>GET /web/municipios</c> y la herramienta <c>resolver_municipio</c> del agente.
 /// </summary>
 /// <remarks>
-/// La primera consulta (o la que llega con la foto vencida) sí exige un comercial con <c>idUsuarioExterno</c>, porque va a Nexo;
-/// mientras la foto esté vigente se sirve a cualquier comercial autenticado (el catálogo no depende del usuario).
+/// <list type="bullet">
+/// <item><b>Qué se guarda:</b> solo un catálogo exitoso y no vacío. Un <c>MUNICIPIOS_NO_DISPONIBLE</c> o un arreglo vacío no se
+/// guardan: la siguiente consulta vuelve a Nexo.</item>
+/// <item><b>Una consulta a la vez:</b> quien llega mientras hay una consulta a Nexo en curso espera esa misma y recibe su mismo
+/// resultado, sea éxito o fallo; no se encolan consultas una detrás de otra. La consulta compartida no usa la cancelación de
+/// ningún llamador (la limita el tiempo total de 8 s del cliente de Nexo): si un llamador cancela, deja de esperar y los demás
+/// siguen.</item>
+/// <item><b>Sin caché negativa:</b> un fallo solo se comparte con los que esperaban esa consulta. No se guarda porque Nexo
+/// responde el mismo código cuando el comercial que consulta no tiene <c>idUsuarioExterno</c>, y ese fallo no debe dejar sin
+/// catálogo a los demás.</item>
+/// <item><b>Identidad:</b> la consulta que va a Nexo usa al comercial que la disparó (exige su <c>idUsuarioExterno</c>); mientras
+/// la foto esté vigente se sirve a cualquier comercial autenticado.</item>
+/// </list>
 /// </remarks>
 public sealed class clsMunicipiosEnCache(
     IClsMunicipiosProvider interno, clsCacheCatalogoMunicipios cache, IClsReloj reloj, IOptions<clsOpcionesNexo> opciones)
     : IClsMunicipiosProvider
 {
-    public async Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
     {
-        if (Vigente(cache.Foto) is { } foto)
+        if (Vigente() is { } foto)
         {
-            return clsResultado<IReadOnlyList<clsMunicipio>>.Exito(foto.Municipios);
+            return Task.FromResult(clsResultado<IReadOnlyList<clsMunicipio>>.Exito(foto.Municipios));
         }
 
-        await cache.Candado.WaitAsync(cancellationToken);
-        try
+        Task<clsResultado<IReadOnlyList<clsMunicipio>>> tarea;
+        lock (cache.Candado)
         {
-            if (Vigente(cache.Foto) is { } recargada)
+            if (Vigente() is { } recargada)
             {
-                return clsResultado<IReadOnlyList<clsMunicipio>>.Exito(recargada.Municipios);
+                return Task.FromResult(clsResultado<IReadOnlyList<clsMunicipio>>.Exito(recargada.Municipios));
             }
 
-            var resultado = await interno.ObtenerAsync(usuarioId, cancellationToken);
-            if (resultado.EsExitoso)
+            tarea = cache.EnCurso ??= CargarAsync(usuarioId);
+        }
+
+        return tarea.WaitAsync(cancellationToken);
+    }
+
+    private async Task<clsResultado<IReadOnlyList<clsMunicipio>>> CargarAsync(Guid usuarioId)
+    {
+        // Sale del lock antes de consultar: la tarea se publica en EnCurso antes de que pueda terminar.
+        await Task.Yield();
+        try
+        {
+            var resultado = await interno.ObtenerAsync(usuarioId, CancellationToken.None);
+            if (resultado.EsExitoso && resultado.Valor.Count > 0)
             {
                 cache.Foto = new clsCacheCatalogoMunicipios.clsFoto(resultado.Valor, reloj.AhoraUtc.AddMinutes(opciones.Value.MinutosCacheMunicipios));
             }
 
             return resultado;
         }
+        catch (ObjectDisposedException)
+        {
+            // El ámbito del comercial que disparó la consulta terminó antes (petición cancelada): para los demás es "no disponible".
+            return new clsErrorDominio(clsCodigosError.MunicipiosNoDisponible, clsMunicipiosNexo.Mensaje);
+        }
         finally
         {
-            cache.Candado.Release();
+            lock (cache.Candado)
+            {
+                cache.EnCurso = null;
+            }
         }
     }
 
-    private clsCacheCatalogoMunicipios.clsFoto? Vigente(clsCacheCatalogoMunicipios.clsFoto? foto) =>
-        foto is not null && reloj.AhoraUtc < foto.VenceAt ? foto : null;
+    private clsCacheCatalogoMunicipios.clsFoto? Vigente() =>
+        cache.Foto is { } foto && reloj.AhoraUtc < foto.VenceAt ? foto : null;
 }

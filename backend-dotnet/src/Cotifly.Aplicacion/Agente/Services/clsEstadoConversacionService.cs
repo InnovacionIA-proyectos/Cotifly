@@ -48,6 +48,15 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     private static readonly string[] _ordinales = ["primero", "segundo", "tercero", "cuarto", "quinto"];
     private static readonly string[] _ordinalesFemeninos = ["primera", "segunda", "tercera", "cuarta", "quinta"];
 
+    /// <summary>Palabras con mayúscula que no nombran un lugar (inicio de frase, cortesía, confirmación, campo).</summary>
+    private static readonly string[] _palabrasDeRelleno =
+    [
+        "el", "la", "los", "las", "de", "del", "en", "es", "ese", "esa", "este", "esta", "eso", "que", "sea", "si", "no", "ok", "okay",
+        "dale", "listo", "claro", "perfecto", "correcto", "confirmo", "gracias", "por", "favor", "porfa", "opcion", "numero", "municipio",
+        "ciudad", "departamento", "origen", "destino", "sale", "llega", "va", "primero", "primera", "segundo", "segunda", "tercero",
+        "tercera", "cuarto", "cuarta", "quinto", "quinta", "ultimo", "ultima", "uno", "dos", "tres", "cuatro", "cinco", "hola", "bueno",
+    ];
+
     public clsEstadoConversacion Aplicar(clsEstadoConversacion estado, clsResultadoHerramienta resultado, IReadOnlyDictionary<string, object?> argumentos)
     {
         ArgumentNullException.ThrowIfNull(estado);
@@ -60,7 +69,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             {
                 // Sin catálogo de municipios (HU-005.13): la cotización sigue con el texto libre del comercial, sin municipio verificado.
                 return resultado.Error!.Codigo == clsCodigosError.MunicipiosNoDisponible
-                       && clsHerramientasCotizador.CampoMunicipio(Texto(argumentos, clsArgumentosHerramienta.Campo)) is { } campoLibre
+                       && clsArgumentosHerramienta.CampoMunicipio(Texto(argumentos, clsArgumentosHerramienta.Campo)) is { } campoLibre
                        && Texto(argumentos, clsArgumentosHerramienta.TextoLibre) is { } textoLibre
                     ? ConTextoLibre(estado, campoLibre, textoLibre)
                     : estado;
@@ -141,19 +150,10 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             }
         }
 
-        if (actual.TieneMunicipiosPorConfirmar())
+        if (actual.TieneMunicipiosPorConfirmar() && ElegirMunicipio(actual, mensaje ?? string.Empty, normalizado, clientePendiente) is { } eleccion)
         {
-            // La posición ("1", "la segunda") o un "sí" solo valen si no hay otra lista pendiente con la que confundirse.
-            var sinOtraLista = !clientePendiente && (actual.CandidatosOrigen.Count == 0 || actual.CandidatosDestino.Count == 0);
-            foreach (var campo in new[] { clsArgumentosHerramienta.Origen, clsArgumentosHerramienta.Destino })
-            {
-                var candidatos = campo == clsArgumentosHerramienta.Origen ? actual.CandidatosOrigen : actual.CandidatosDestino;
-                if (candidatos.Count > 0 && ElegirMunicipio(candidatos, normalizado, sinOtraLista) is { } municipio)
-                {
-                    actual = ConMunicipio(actual, campo, municipio);
-                    eligio = true;
-                }
-            }
+            actual = ConMunicipio(actual, eleccion.Campo, eleccion.Municipio);
+            eligio = true;
         }
 
         if (eligio)
@@ -162,7 +162,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             return new clsMensajeReconocido(actual, false);
         }
 
-        var confirmado = estado.ConfirmacionPendiente && estado.PrecioFinal is not null && EsConfirmacion(normalizado);
+        // Con un municipio por elegir no hay previsualización que confirmar (HU-005.13).
+        var confirmado = estado.ConfirmacionPendiente && estado.PrecioFinal is not null && !estado.TieneMunicipiosPorConfirmar() && EsConfirmacion(normalizado);
         return new clsMensajeReconocido(estado, confirmado);
     }
 
@@ -245,7 +246,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
     private static clsEstadoConversacion AplicarMunicipio(clsEstadoConversacion estado, clsResolucionMunicipio resolucion, IReadOnlyDictionary<string, object?> argumentos)
     {
-        if (clsHerramientasCotizador.CampoMunicipio(Texto(argumentos, clsArgumentosHerramienta.Campo)) is not { } campo)
+        if (clsArgumentosHerramienta.CampoMunicipio(Texto(argumentos, clsArgumentosHerramienta.Campo)) is not { } campo)
         {
             return estado;
         }
@@ -309,46 +310,109 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             : estado;
 
     /// <summary>
-    /// Elige un municipio candidato por el mensaje del comercial: por el departamento que nombra ("el de Nariño"), por posición
-    /// ("1", "la segunda") o, con un solo candidato, por un "sí". La posición y el "sí" solo si <paramref name="porPosicion"/>.
+    /// Elige un municipio candidato por el mensaje del comercial (HU-005.13). Nunca elige si:
+    /// <list type="bullet">
+    /// <item>el mensaje niega ("no es el de Nariño");</item>
+    /// <item>nombra con mayúscula un lugar que no es de los candidatos ("el destino es Medellín, Antioquia");</item>
+    /// <item>nombra solo el campo que no está pendiente ("el destino..." con el origen por elegir);</item>
+    /// <item>con el origen y el destino pendientes y sin nombrar el campo, el departamento coincide en las dos listas.</item>
+    /// </list>
+    /// Elige por el departamento (el más largo si uno contiene al otro: "Valle del Cauca" sobre "Cauca") o, con una sola lista en
+    /// juego y sin clientes candidatos, por posición ("2", "la segunda") o por un "sí" con un solo candidato.
     /// </summary>
-    private static clsMunicipioResuelto? ElegirMunicipio(IReadOnlyList<clsMunicipioResuelto> candidatos, string normalizado, bool porPosicion)
+    private static (string Campo, clsMunicipioResuelto Municipio)? ElegirMunicipio(
+        clsEstadoConversacion estado, string mensaje, string normalizado, bool clientePendiente)
     {
-        var clave = clsResolvedorMunicipios.Clave(normalizado);
-        var porDepartamento = candidatos
-            .Where(c => clsResolvedorMunicipios.ContienePalabras(clave, clsResolvedorMunicipios.Clave(c.Departamento)))
-            .ToList();
-        if (porDepartamento.Count == 1)
-        {
-            return porDepartamento[0];
-        }
-
-        if (porDepartamento.Count > 1)
-        {
-            var porNombre = porDepartamento.Where(c => clsResolvedorMunicipios.ContienePalabras(clave, clsResolvedorMunicipios.Clave(c.Municipio))).ToList();
-            return porNombre.Count == 1 ? porNombre[0] : null;
-        }
-
-        if (!porPosicion)
+        if (ExpresionNegacion().IsMatch(normalizado) || NombraOtroLugar(estado, mensaje))
         {
             return null;
         }
 
+        var clave = clsResolvedorMunicipios.Clave(normalizado);
+        var nombraOrigen = clsResolvedorMunicipios.ContienePalabras(clave, clsArgumentosHerramienta.Origen);
+        var nombraDestino = clsResolvedorMunicipios.ContienePalabras(clave, clsArgumentosHerramienta.Destino);
+        var listas = new List<(string Campo, IReadOnlyList<clsMunicipioResuelto> Candidatos)>();
+        if (estado.CandidatosOrigen.Count > 0 && (nombraOrigen || !nombraDestino))
+        {
+            listas.Add((clsArgumentosHerramienta.Origen, estado.CandidatosOrigen));
+        }
+
+        if (estado.CandidatosDestino.Count > 0 && (nombraDestino || !nombraOrigen))
+        {
+            listas.Add((clsArgumentosHerramienta.Destino, estado.CandidatosDestino));
+        }
+
+        var porDepartamento = listas
+            .Select(l => (l.Campo, Municipio: PorDepartamento(l.Candidatos, clave)))
+            .Where(e => e.Municipio is not null)
+            .ToList();
+        if (porDepartamento.Count == 1)
+        {
+            return (porDepartamento[0].Campo, porDepartamento[0].Municipio!);
+        }
+
+        if (porDepartamento.Count > 1 || listas.Count != 1 || clientePendiente)
+        {
+            return null;
+        }
+
+        var (campo, candidatos) = listas[0];
         var posicion = ExpresionPosicion().Match(normalizado);
         if (posicion.Success && int.TryParse(posicion.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 1 && n <= candidatos.Count)
         {
-            return candidatos[n - 1];
+            return (campo, candidatos[n - 1]);
         }
 
         for (var i = 0; i < _ordinalesFemeninos.Length && i < candidatos.Count; i++)
         {
             if (Regex.IsMatch(normalizado, $@"\b(el|la) ({_ordinales[i]}|{_ordinalesFemeninos[i]})\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)))
             {
-                return candidatos[i];
+                return (campo, candidatos[i]);
             }
         }
 
-        return candidatos.Count == 1 && EsConfirmacion(normalizado) ? candidatos[0] : null;
+        return candidatos.Count == 1 && EsConfirmacion(normalizado) ? (campo, candidatos[0]) : null;
+    }
+
+    /// <summary>El candidato cuyo departamento nombra el mensaje (el más largo si uno contiene al otro), o el nombre si empatan.</summary>
+    private static clsMunicipioResuelto? PorDepartamento(IReadOnlyList<clsMunicipioResuelto> candidatos, string clave)
+    {
+        var nombrados = clsResolvedorMunicipios.DepartamentosNombrados(clave, candidatos.Select(c => clsResolvedorMunicipios.Clave(c.Departamento)));
+        var porDepartamento = candidatos.Where(c => nombrados.Contains(clsResolvedorMunicipios.Clave(c.Departamento))).ToList();
+        if (porDepartamento.Count == 1)
+        {
+            return porDepartamento[0];
+        }
+
+        var porNombre = porDepartamento.Where(c => clsResolvedorMunicipios.ContienePalabras(clave, clsResolvedorMunicipios.Clave(c.Municipio))).ToList();
+        return porNombre.Count == 1 ? porNombre[0] : null;
+    }
+
+    /// <summary>
+    /// ¿El mensaje nombra con mayúscula inicial un lugar que no es ninguno de los candidatos pendientes (ni su departamento o país)?
+    /// Heurística para "el destino es Medellín, Antioquia" con el origen "La Unión" pendiente: no elige la de Antioquia.
+    /// </summary>
+    private static bool NombraOtroLugar(clsEstadoConversacion estado, string mensaje)
+    {
+        var permitidas = new HashSet<string>(_palabrasDeRelleno, StringComparer.Ordinal);
+        foreach (var candidato in estado.CandidatosOrigen.Concat(estado.CandidatosDestino))
+        {
+            foreach (var texto in new[] { candidato.Municipio, candidato.Departamento, candidato.Pais })
+            {
+                permitidas.UnionWith(clsResolvedorMunicipios.Clave(texto).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        foreach (Match palabra in ExpresionPalabraConMayuscula().Matches(mensaje))
+        {
+            var clave = clsResolvedorMunicipios.Clave(palabra.Value);
+            if (clave.Length >= 3 && !permitidas.Contains(clave))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static clsEstadoConversacion AplicarMargen(clsEstadoConversacion estado, clsMargenResuelto margen)
@@ -470,6 +534,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
     [GeneratedRegex(@"^\W*(opcion |el |la |numero )?(?<n>[1-9])\W*$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionPosicion();
+
+    [GeneratedRegex(@"\b\p{Lu}[\p{L}\p{Mn}]*", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionPalabraConMayuscula();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacios();
