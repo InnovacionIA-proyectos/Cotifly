@@ -41,6 +41,17 @@ public sealed class clsContratoPrecioMargenTests
         Verificar(new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "markup", 444_798m), esquemas["SalidaPrecio"], "metodo");
     }
 
+    // HU-012.2: el precio en dólares trae moneda, TRM y precio en pesos, todos declarados en el contrato.
+    [Fact]
+    public async Task SalidaPrecioEnDolaresCumpleElEsquema()
+    {
+        var esquemas = await EsquemasAsync();
+        var enDolares = new clsSalidaPrecio(996.35m, 2_850_000m, 0.135m, "margen", 444_798m, "USD", 3306.86m, 3_294_798m);
+
+        Verificar(enDolares, esquemas["SalidaPrecio"], "metodo");
+        Verificar(enDolares, esquemas["SalidaPrecio"], "moneda");
+    }
+
     [Theory]
     [InlineData(OrigenMargen.SapTm, "OPTN")]
     [InlineData(OrigenMargen.PoliticaLinea, null)]

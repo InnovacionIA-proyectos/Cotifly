@@ -440,7 +440,8 @@ public static partial class clsReglasRespuestaAgente
         var numeros = new HashSet<decimal>();
         var cadenas = new List<string>();
         var estado = contexto.Estado;
-        foreach (var valor in new[] { estado.Costo, estado.PrecioFinal, estado.PrecioFinal - estado.Costo })
+        // La TRM aplicada (HU-012.2) también respalda: el agente puede citarla al presentar un precio en USD.
+        foreach (var valor in new[] { estado.Costo, estado.PrecioFinal, estado.PrecioFinal - estado.Costo, estado.TrmAplicada })
         {
             if (valor is { } v)
             {

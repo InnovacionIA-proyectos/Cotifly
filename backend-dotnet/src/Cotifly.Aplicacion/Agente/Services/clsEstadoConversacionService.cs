@@ -12,6 +12,7 @@ using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Clientes;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Margen;
+using Cotifly.Dominio.Precio;
 
 namespace Cotifly.Aplicacion.Agente.Services;
 
@@ -38,6 +39,12 @@ public interface IClsEstadoConversacionService
     /// y números; <c>generar_pdf</c> crea entonces <c>{folio base}-vN</c>. Sin previsualización pendiente: el comercial revisa y confirma.
     /// </summary>
     clsEstadoConversacion SembrarDesdeCotizacion(Dominio.Cotizaciones.clsCotizacion origen, string? lineaNegocio);
+
+    /// <summary>
+    /// Moneda que eligió el comercial en el selector del formulario web (HU-012.2/HU-012.4), ya validada (<c>COP</c> o <c>USD</c>). Si cambia,
+    /// el precio calculado en la otra moneda deja de valer (se recalcula) y no queda previsualización pendiente.
+    /// </summary>
+    clsEstadoConversacion ElegirMoneda(clsEstadoConversacion estado, string moneda);
 }
 
 /// <summary>Implementación de <see cref="IClsEstadoConversacionService"/>.</summary>
@@ -105,8 +112,23 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             MetodoCalculo = origen.MetodoCalculo,
             PrecioFinal = origen.PrecioFinal,
             Moneda = origen.Moneda,
+            TrmAplicada = origen.TrmAplicada,
             ConfirmacionPendiente = false,
         };
+    }
+
+    public clsEstadoConversacion ElegirMoneda(clsEstadoConversacion estado, string moneda)
+    {
+        ArgumentNullException.ThrowIfNull(estado);
+        ArgumentException.ThrowIfNullOrWhiteSpace(moneda);
+        var nueva = moneda.Trim().ToUpperInvariant();
+        var actual = string.IsNullOrWhiteSpace(estado.Moneda) ? clsConversorMoneda.Pesos : estado.Moneda.Trim().ToUpperInvariant();
+        if (nueva == actual)
+        {
+            return estado.Moneda is null ? estado with { Moneda = nueva } : estado;
+        }
+
+        return estado with { Moneda = nueva, PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false };
     }
 
     public clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje)
@@ -195,7 +217,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
         };
 
         return tarifa is { Encontrada: true, Costo: { } costo }
-            ? nuevo with { Costo = costo, FuenteCosto = tarifa.Fuente, CosteoId = tarifa.Referencia, Moneda = tarifa.Moneda, PrecioFinal = null, ConfirmacionPendiente = false }
+            ? nuevo with { Costo = costo, FuenteCosto = tarifa.Fuente, CosteoId = tarifa.Referencia, PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false }
             : nuevo;
     }
 
@@ -215,6 +237,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
             // Un margen nuevo deja sin valor el precio calculado antes.
             PrecioFinal = null,
+            TrmAplicada = null,
             ConfirmacionPendiente = false,
         };
     }
@@ -229,7 +252,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             MargenAplicado = precio.Margen,
             MetodoCalculo = precio.Metodo,
             PrecioFinal = precio.Precio,
-            Moneda = estado.Moneda ?? "COP",
+            Moneda = precio.Moneda,
+            TrmAplicada = precio.TrmAplicada,
             ConfirmacionPendiente = true,
         };
     }
@@ -238,8 +262,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     {
         var nuevo = estado with { MargenAplicado = ajuste.Margen.Margen, OrigenMargen = OrigenMargen.Negociado };
         return ajuste.Precio is { } precio
-            ? nuevo with { Costo = precio.Costo, MetodoCalculo = precio.Metodo, PrecioFinal = precio.Precio, Moneda = estado.Moneda ?? "COP", ConfirmacionPendiente = true }
-            : nuevo with { PrecioFinal = null, ConfirmacionPendiente = false };
+            ? nuevo with { Costo = precio.Costo, MetodoCalculo = precio.Metodo, PrecioFinal = precio.Precio, Moneda = precio.Moneda, TrmAplicada = precio.TrmAplicada, ConfirmacionPendiente = true }
+            : nuevo with { PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false };
     }
 
     private static clsCandidatoCliente? ElegirCandidato(IReadOnlyList<clsCandidatoCliente> candidatos, string mensaje, string normalizado)

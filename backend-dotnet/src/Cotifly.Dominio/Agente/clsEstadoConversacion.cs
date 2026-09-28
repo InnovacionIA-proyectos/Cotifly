@@ -54,7 +54,15 @@ public sealed record clsEstadoConversacion
     public OrigenMargen? OrigenMargen { get; init; }
     public string? MetodoCalculo { get; init; }
     public decimal? PrecioFinal { get; init; }
+
+    /// <summary>
+    /// Moneda de la cotización (<c>COP</c> por defecto, o <c>USD</c>, HU-012.2): la elige el comercial (selector del formulario web o su
+    /// mensaje); el costo siempre está en COP y <see cref="PrecioFinal"/> en esta moneda.
+    /// </summary>
     public string? Moneda { get; init; }
+
+    /// <summary>TRM oficial con que se convirtió <see cref="PrecioFinal"/> a USD (la de <c>calcular_precio</c>); nula o 0 en COP.</summary>
+    public decimal? TrmAplicada { get; init; }
 
     // Documento
     public string? FolioEnProgreso { get; init; }
@@ -88,6 +96,7 @@ public sealed record clsEstadoConversacion
         && MetodoCalculo == other.MetodoCalculo
         && PrecioFinal == other.PrecioFinal
         && Moneda == other.Moneda
+        && TrmAplicada == other.TrmAplicada
         && FolioEnProgreso == other.FolioEnProgreso
         && CotizacionId == other.CotizacionId
         && Version == other.Version

@@ -160,4 +160,53 @@ public sealed class clsEstadoConversacionServiceTests
         reconocido.Estado.ClienteConfirmado.Should().BeTrue();
         reconocido.Confirmado.Should().BeFalse("elegir el cliente no confirma el PDF");
     }
+
+    // HU-012.2: moneda y TRM en el estado.
+    [Fact]
+    public void UnPrecioEnDolaresGuardaLaMonedaYLaTrm()
+    {
+        var precio = new clsSalidaPrecio(996.35m, 2_850_000m, 0.135m, "margen", 444_798m, "USD", 3306.86m, 3_294_798m);
+
+        var estado = _servicio.Aplicar(clsEstadoConversacion.Vacio, clsResultadoHerramienta.Exito(clsNombresHerramientas.CalcularPrecio, precio), _sinArgumentos);
+
+        estado.PrecioFinal.Should().Be(996.35m);
+        estado.Costo.Should().Be(2_850_000m);
+        estado.Moneda.Should().Be("USD");
+        estado.TrmAplicada.Should().Be(3306.86m);
+    }
+
+    [Fact]
+    public void ElegirOtraMonedaDescartaElPrecioYLaTrm()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true, Costo = 2_850_000m };
+
+        var estado = _servicio.ElegirMoneda(conPrecio, "cop");
+
+        estado.Moneda.Should().Be("COP");
+        estado.PrecioFinal.Should().BeNull();
+        estado.TrmAplicada.Should().BeNull();
+        estado.ConfirmacionPendiente.Should().BeFalse();
+        estado.Costo.Should().Be(2_850_000m, "el costo sigue en pesos: solo se recalcula el precio");
+    }
+
+    [Fact]
+    public void ElegirLaMismaMonedaNoCambiaNada()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true };
+
+        _servicio.ElegirMoneda(conPrecio, "USD").Should().Be(conPrecio);
+        _servicio.ElegirMoneda(clsEstadoConversacion.Vacio with { PrecioFinal = 1m }, "COP").PrecioFinal.Should().Be(1m, "sin moneda el estado ya estaba en COP");
+    }
+
+    [Fact]
+    public void LaTarifaNoCambiaLaMonedaDeLaCotizacion()
+    {
+        var enDolares = clsEstadoConversacion.Vacio with { Moneda = "USD" };
+        var tarifa = new Tarifas.DTOs.clsSalidaTarifa(true, 2_000_000m, "COP", "nexo", "C-1");
+
+        var estado = _servicio.Aplicar(enDolares, clsResultadoHerramienta.Exito(clsNombresHerramientas.BuscarTarifa, tarifa), _sinArgumentos);
+
+        estado.Moneda.Should().Be("USD", "el costo es en pesos; la moneda la elige el comercial");
+        estado.Costo.Should().Be(2_000_000m);
+    }
 }

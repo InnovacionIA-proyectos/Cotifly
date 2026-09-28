@@ -102,7 +102,7 @@ public static class clsPromptSistema
         if (estado.Costo is { } costo)
         {
             var fuente = estado.FuenteCosto == clsEstadoConversacion.FuenteCostoManual ? "lo dio el comercial" : $"fuente {estado.FuenteCosto}";
-            lineas.Add($"- Costo: {clsFormatoMoneda.Formatear(costo, estado.Moneda)} ({fuente})");
+            lineas.Add($"- Costo: {clsFormatoMoneda.Formatear(costo, "COP")} ({fuente})");
         }
 
         if (estado.MargenAplicado is { } aplicado)
@@ -129,6 +129,11 @@ public static class clsPromptSistema
         if (estado.PrecioFinal is { } precio)
         {
             lineas.Add($"- Precio final: {clsFormatoMoneda.Formatear(precio, estado.Moneda)}");
+        }
+
+        if (!Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda))
+        {
+            lineas.Add($"- Moneda: {estado.Moneda} (TRM aplicada: {(estado.TrmAplicada is { } trm ? clsFormatoMoneda.FormatearTrm(trm) : "se consulta al calcular el precio")})");
         }
 
         if (estado.FolioEnProgreso is not null)

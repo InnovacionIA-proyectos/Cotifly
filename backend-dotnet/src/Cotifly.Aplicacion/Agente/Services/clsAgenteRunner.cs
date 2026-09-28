@@ -119,6 +119,12 @@ public sealed class clsAgenteRunner(
         }
 
         var marcas = new clsMarcasTurno(reloj.AhoraUtc, historial.Count > 0 ? historial[^1].CreatedAt : null);
+        // La moneda del selector del formulario (HU-012.2) entra al estado antes del turno: si cambió, el precio anterior ya no vale.
+        if (!string.IsNullOrWhiteSpace(solicitud.Moneda))
+        {
+            estadoInicial = estadoService.ElegirMoneda(estadoInicial, solicitud.Moneda);
+        }
+
         var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje);
         var estado = reconocido.Estado;
 
@@ -134,7 +140,7 @@ public sealed class clsAgenteRunner(
             .Select(e => e.Contenido!)
             .Append(solicitud.Mensaje)
             .ToList();
-        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado, mensajesDelComercial);
+        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado, mensajesDelComercial, solicitud.Moneda);
         var mensajes = new List<ChatMessage>
         {
             new(ChatRole.System, clsPromptSistema.Construir(usuario.NombreCompleto ?? usuario.NombreUsuario, usuario.Email, calendario.Hoy, estado)),

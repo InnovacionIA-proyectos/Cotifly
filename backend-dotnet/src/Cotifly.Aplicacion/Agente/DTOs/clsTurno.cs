@@ -11,7 +11,11 @@ namespace Cotifly.Aplicacion.Agente.DTOs;
 /// Cotización del comercial de la que parte una nueva versión (<c>cotizacion_origen_id</c> de <c>MensajeWeb</c>): siembra el estado para
 /// que <c>generar_pdf</c> cree <c>-vN</c>. Se valida el dueño.
 /// </param>
-public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, Guid? CotizacionOrigenId = null);
+/// <param name="Moneda">
+/// Moneda del selector del formulario web (<c>COP</c> | <c>USD</c>, <c>moneda</c> de <c>MensajeWeb</c>, HU-012.2), ya validada por el canal; <c>null</c>
+/// si no vino. Queda en el estado y manda sobre la que pida el modelo.
+/// </param>
+public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, Guid? CotizacionOrigenId = null, string? Moneda = null);
 
 /// <summary>Salida de un turno del agente (port de <c>ResultadoTurno</c> de <c>orquestador/agente.py</c>).</summary>
 /// <param name="Texto">Respuesta final para el comercial (redactada en la llamada final sin herramientas y validada).</param>

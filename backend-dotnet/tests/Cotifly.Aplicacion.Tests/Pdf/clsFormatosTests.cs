@@ -14,8 +14,8 @@ public sealed class clsFormatosTests
     [Theory]
     [InlineData(3294798, null, "$3.294.798")]
     [InlineData(3000000, "COP", "$3.000.000")]
-    [InlineData(1200, "USD", "US$1.200")]
-    [InlineData(1200, "usd", "US$1.200")]
+    [InlineData(1200, "USD", "US$1.200,00")]
+    [InlineData(1200, "usd", "US$1.200,00")]
     [InlineData(0, null, "$0")]
     [InlineData(999, null, "$999")]
     [InlineData(1000, null, "$1.000")]
@@ -32,6 +32,24 @@ public sealed class clsFormatosTests
     public void RedondeaAPesosHalfToEven(string valor, string esperado) =>
         clsFormatoMoneda.Formatear(decimal.Parse(valor, CultureInfo.InvariantCulture)).Should().Be(esperado);
 
+    // HU-012.3: en dólares el precio lleva centavos (convertido con la TRM); la TRM se imprime con 2 decimales.
+    [Theory]
+    [InlineData("996.35", "US$996,35")]
+    [InlineData("996.355", "US$996,36")]
+    [InlineData("996.345", "US$996,34")]
+    [InlineData("0.5", "US$0,50")]
+    [InlineData("1234567.8", "US$1.234.567,80")]
+    [InlineData("-10", "US$-10,00")]
+    public void EnDolaresFormateaConDosDecimales(string valor, string esperado) =>
+        clsFormatoMoneda.Formatear(decimal.Parse(valor, CultureInfo.InvariantCulture), "USD").Should().Be(esperado);
+
+    [Theory]
+    [InlineData("3306.86", "$3.306,86")]
+    [InlineData("4123.4567", "$4.123,46")]
+    [InlineData("950", "$950,00")]
+    public void LaTrmSeFormateaConDosDecimales(string trm, string esperado) =>
+        clsFormatoMoneda.FormatearTrm(decimal.Parse(trm, CultureInfo.InvariantCulture)).Should().Be(esperado);
+
     [Fact]
     public void SinValorDevuelveLaRaya() => clsFormatoMoneda.Formatear(null).Should().Be("—");
 
@@ -46,7 +64,9 @@ public sealed class clsFormatosTests
             CultureInfo.CurrentUICulture = CultureInfo.CurrentCulture;
 
             clsFormatoMoneda.Formatear(3294798m).Should().Be("$3.294.798");
-            clsFormatoMoneda.Formatear(1200m, "USD").Should().Be("US$1.200");
+            clsFormatoMoneda.Formatear(1200m, "USD").Should().Be("US$1.200,00");
+            clsFormatoMoneda.Formatear(996.35m, "USD").Should().Be("US$996,35");
+            clsFormatoMoneda.FormatearTrm(3306.86m).Should().Be("$3.306,86");
         }
         finally
         {

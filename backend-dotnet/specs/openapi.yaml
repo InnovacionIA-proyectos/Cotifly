@@ -161,7 +161,7 @@ paths:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
         '400':
-          description: '`sesion_id` o `cotizacion_origen_id` inválido, o cuerpo inválido'
+          description: '`sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido'
           content:
             application/json:
               schema:
@@ -1059,10 +1059,26 @@ components:
             Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
             parte de su cliente, línea y números, y el PDF sale como `{folio base}-vN`. Si no es del
             comercial responde 404 (igual que si no existe); si no es un UUID, 400.
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: |
+            Opcional (HU-012.2, ADR-013). Moneda de la cotización que eligió el comercial en el selector del
+            formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
+            si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
+            con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
+            del día; si la fuente de la TRM falla, el agente responde que no puede cotizar en dólares
+            (`TRM_NO_DISPONIBLE` en la herramienta) y el comercial puede reintentar o cotizar en COP.
+            Otro valor responde 400 (`moneda inválida`).
 
     SalidaPrecio:
       type: object
       required: [precio, costo, margen, metodo, utilidad]
+      description: |
+        `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
+        enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-013).
+        `moneda`, `trm_aplicada` y `precio_cop` son opcionales para compatibilidad: si faltan, la moneda es COP.
       properties:
         precio:
           type: number
@@ -1075,6 +1091,17 @@ components:
           enum: [margen, markup]
         utilidad:
           type: number
+        moneda:
+          type: string
+          enum: [COP, USD]
+          description: Moneda de `precio` (COP por defecto).
+        trm_aplicada:
+          type: number
+          description: TRM oficial del día (COP por USD) con que se convirtió el precio; 0 cuando la moneda es COP.
+        precio_cop:
+          type: number
+          nullable: true
+          description: Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`).
 
     SalidaMargen:
       type: object
@@ -1186,6 +1213,11 @@ components:
         moneda:
           type: string
           example: COP
+        trm_aplicada:
+          type: number
+          description: |
+            TRM con que se convirtió el precio (HU-012.2); 0 cuando la moneda es COP. En USD es la referencia del
+            piso: el mínimo a pagar es `precio_final × trm_aplicada` en pesos.
         estado_costeo:
           type: string
           nullable: true
