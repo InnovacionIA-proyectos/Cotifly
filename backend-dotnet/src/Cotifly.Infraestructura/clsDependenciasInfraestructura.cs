@@ -19,6 +19,7 @@ using Cotifly.Aplicacion.Metricas.Repositories;
 using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
+using Cotifly.Aplicacion.Precio.Interfaces;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
@@ -41,6 +42,7 @@ using Cotifly.Infraestructura.Margen.Services;
 using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
+using Cotifly.Infraestructura.Precio.Services;
 using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -48,6 +50,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly.Telemetry;
 
@@ -93,6 +96,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
         servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -104,6 +109,9 @@ public static class clsDependenciasInfraestructura
         // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
         AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
+
+        // TRM oficial del día para cotizar en USD (HU-012.1, ADR-013).
+        AgregarTrm(servicios);
 
         // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
         AgregarMunicipios(servicios);
@@ -191,6 +199,36 @@ public static class clsDependenciasInfraestructura
         });
 
         servicios.AddHostedService<clsAvisosArranqueSapTm>();
+    }
+
+    /// <summary>
+    /// TRM oficial (HU-012.1, ADR-013): <see cref="clsProveedorTrmSuperfinanciera"/> (datos abiertos de la Superintendencia Financiera)
+    /// detrás de la caché por día <see cref="clsProveedorTrmEnCache"/>, ambos singleton. Cliente HTTP con nombre (se crea por consulta
+    /// con <c>IHttpClientFactory</c>), tubería estándar de resiliencia con el tiempo de <c>Trm:TiempoEsperaSegundos</c> y sin registrar
+    /// cabeceras. Los eventos de Polly de cada intento bajan a Debug, como en SAP TM. TryAdd: un adaptador registrado antes (pruebas) se
+    /// respeta.
+    /// </summary>
+    private static void AgregarTrm(IServiceCollection servicios)
+    {
+        var tuberia = servicios.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler();
+
+        // Las opciones de la tubería son opciones con nombre (el de la tubería): así toman Trm:TiempoEsperaSegundos ya validado.
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesTrm>>((resiliencia, opciones) => clsProveedorTrmSuperfinanciera.ConfigurarResiliencia(resiliencia, opciones.Value));
+        servicios.TryAddSingleton<clsProveedorTrmSuperfinanciera>();
+        servicios.TryAddSingleton<IClsProveedorTrm>(proveedor => new clsProveedorTrmEnCache(
+            proveedor.GetRequiredService<clsProveedorTrmSuperfinanciera>(), proveedor.GetRequiredService<IClsReloj>()));
+
+        servicios.Configure<TelemetryOptions>(telemetria =>
+        {
+            var anterior = telemetria.SeverityProvider;
+            telemetria.SeverityProvider = argumentos =>
+                argumentos.Source.PipelineName?.StartsWith(clsProveedorTrmSuperfinanciera.NombreCliente + "-", StringComparison.Ordinal) == true
+                    ? ResilienceEventSeverity.Debug
+                    : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
+        });
     }
 
     /// <summary>

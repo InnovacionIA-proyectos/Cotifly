@@ -20,6 +20,12 @@ public static class clsCodigosError
     public const string PrecioInvalido = "PRECIO_INVALIDO";
 
     /// <summary>
+    /// La fuente oficial de la TRM (Superintendencia Financiera, datos abiertos, ADR-013) no respondió, respondió algo inválido
+    /// o no tiene TRM vigente para la fecha: no se cotiza en USD (HU-012.1/HU-012.2). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TrmNoDisponible = "TRM_NO_DISPONIBLE";
+
+    /// <summary>
     /// El margen negociado está fuera de rango para su método (negativo, o ≥ 1 con <c>margen</c>), el método no es
     /// <c>margen</c>/<c>markup</c> o falta el motivo. Código nuevo del backend .NET (agregado al contrato en #10).
     /// </summary>
