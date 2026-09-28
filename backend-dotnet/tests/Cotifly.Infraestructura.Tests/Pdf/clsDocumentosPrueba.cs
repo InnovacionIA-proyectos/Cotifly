@@ -18,6 +18,15 @@ internal static class clsDocumentosPrueba
     public static clsDocumentoCotizacion Documento(clsCotizacionPdfPayload payload, clsFirmaDocumento? firma = null, string folio = "PCN-19032026") =>
         clsConstructorDocumentoCotizacion.Construir(payload, folio, firma ?? Firma, new DateOnly(2026, 9, 24)).Valor;
 
+    /// <summary>Solicitud de ejemplo en USD (HU-012.3): una fila de US$996,35 con la TRM 3.306,86 y la aclaración del piso mínimo.</summary>
+    public static clsDocumentoCotizacion Dolares()
+    {
+        var payload = Payload();
+        payload.Tarifa!.Filas!.RemoveAt(1);
+        payload.Tarifa.Filas[0].Tarifa = 996.35m;
+        return clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-1", Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m).Valor;
+    }
+
     /// <summary>Solicitud de ejemplo tal cual (Nacional, 2 filas).</summary>
     public static clsDocumentoCotizacion Nacional(clsFirmaDocumento? firma = null) => Documento(Payload(), firma);
 

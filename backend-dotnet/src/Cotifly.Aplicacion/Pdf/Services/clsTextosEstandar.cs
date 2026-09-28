@@ -38,6 +38,7 @@ public static class clsTextosEstandar
     public const string EtiquetaAsunto = "Asunto:";
     public const string EtiquetaNota = "Nota:";
     public const string EtiquetaTiemposLogisticos = "Tiempos logísticos:";
+    public const string EtiquetaMoneda = "Cotización en dólares:";
     public const string EtiquetaCelular = "Cel";
 
     /// <summary>Encabezados de columna de la tabla de tarifa (tarifa única).</summary>
@@ -71,6 +72,20 @@ public static class clsTextosEstandar
         "Los tiempos logísticos se rigen por el Decreto 1017 del 21 de septiembre de 2025 "
         + "(RNDC/SICETAC), que determina los valores de los fletes y puede variar mensualmente. "
         + "Asimismo, el Decreto 16075 regula el manejo y la devolución de los contenedores vacíos.";
+
+    /// <summary>
+    /// Aclaración de la cotización en USD (HU-012.3, regla de negocio del backlog): el valor en pesos se ajusta día a día con la TRM, pero el
+    /// mínimo a pagar es el valor cotizado originalmente, con la TRM aplicada (<c>trmAplicada</c>) como referencia del piso. Texto de
+    /// referencia pendiente de validar con Gerencia Comercial / jurídica (ADR-013).
+    /// </summary>
+    public static string AclaracionDolares(decimal trmAplicada)
+    {
+        var trm = clsFormatoMoneda.FormatearTrm(trmAplicada);
+        return "Los valores de esta cotización están expresados en dólares estadounidenses (USD) y se liquidaron con la "
+            + $"TRM de {trm} por dólar, vigente el día de la cotización. El valor en pesos colombianos se ajusta día a día "
+            + "con la TRM vigente, pero el mínimo a pagar es el valor cotizado originalmente: cada tarifa en USD por la "
+            + $"TRM de referencia de {trm}.";
+    }
 
     /// <summary>Frase de cierre (<c>FRASE_FINAL_STD</c>); el enlace va en la línea siguiente.</summary>
     public const string FraseFinal = "Para conocer más de nuestra organización, ingresa a:";

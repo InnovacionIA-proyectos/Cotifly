@@ -360,6 +360,36 @@ public sealed class clsConstructorDocumentoCotizacionTests
         documento.Incluye.Should().Contain("Levante: US$100,00");
     }
 
+    // HU-012.3: en USD la aclaración con la TRM aplicada y el piso mínimo; en COP ninguna aclaración de TRM.
+    [Fact]
+    public void EnDolaresElDocumentoAclaraLaTrmYElPisoMinimo()
+    {
+        var documento = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor;
+
+        documento.NotaMoneda.Should().NotBeNull();
+        documento.NotaMoneda.Should().Contain("dólares estadounidenses (USD)")
+            .And.Contain("TRM de $3.306,86")
+            .And.Contain("se ajusta día a día con la TRM vigente")
+            .And.Contain("el mínimo a pagar es el valor cotizado originalmente");
+    }
+
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData("COP", 0)]
+    [InlineData("USD", 0)]
+    public void SinDolaresOSinTrmNoHayAclaracionDeTrm(string? moneda, int trm) =>
+        clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, moneda, trm).Valor.NotaMoneda.Should().BeNull();
+
+    [Fact]
+    public void LaVarianteMultiTambienLlevaLaAclaracion()
+    {
+        var payload = clsEjemploPdf.Payload();
+        payload.Secciones = [payload.Tarifa!];
+        payload.Tarifa = null;
+
+        clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor.NotaMoneda.Should().Contain("$3.306,86");
+    }
+
     [Fact]
     public void ElJsonDelPayloadAceptaNumerosComoTextoEnLosCamposLibres()
     {

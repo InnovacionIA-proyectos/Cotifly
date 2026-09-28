@@ -212,6 +212,7 @@ public sealed class clsGenerarPdfServiceTests
         _agregada.TrmAplicada.Should().Be(3306.86m);
         _agregada.Costo.Should().Be(2_850_000m);
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
+        _documento.NotaMoneda.Should().Contain("TRM de $3.306,86", "HU-012.3: la aclaración usa la TRM de la trazabilidad");
     }
 
     [Fact]

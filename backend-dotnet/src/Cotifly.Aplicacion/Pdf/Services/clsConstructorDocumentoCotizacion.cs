@@ -23,8 +23,9 @@ public static class clsConstructorDocumentoCotizacion
     /// <param name="firma">Firma con los datos de <c>UsuariosWeb</c> (el celular solo si hay teléfono).</param>
     /// <param name="hoy">Fecha de negocio para cuando el payload no trae <c>fecha</c>.</param>
     /// <param name="monedaPorDefecto">Moneda de la cotización para las filas y servicios sin moneda propia (<c>USD</c> → <c>US$</c>).</param>
+    /// <param name="trmAplicada">TRM de la cotización (HU-012.3): con <c>USD</c> y TRM &gt; 0 agrega la aclaración del piso mínimo.</param>
     public static clsResultado<clsDocumentoCotizacion> Construir(
-        clsCotizacionPdfPayload payload, string folio, clsFirmaDocumento firma, DateOnly hoy, string? monedaPorDefecto = null)
+        clsCotizacionPdfPayload payload, string folio, clsFirmaDocumento firma, DateOnly hoy, string? monedaPorDefecto = null, decimal trmAplicada = 0m)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);
@@ -81,6 +82,7 @@ public static class clsConstructorDocumentoCotizacion
                 ? null
                 : clsTextoSeguro.Limpiar(payload.Tarifa?.NotaGeneral) ?? clsTextoSeguro.Limpiar(payload.Textos?.NotaGeneral) ?? textos.NotaGeneral,
             NotaDecreto = esMulti ? null : clsTextoSeguro.Limpiar(payload.NotaDecreto) ?? clsTextosEstandar.NotaDecreto,
+            NotaMoneda = !clsConversorMoneda.EsPesos(monedaPorDefecto) && trmAplicada > 0m ? clsTextosEstandar.AclaracionDolares(trmAplicada) : null,
             BloquesAdicionales = BloquesAdicionales(payload, linea),
             Incluye = [.. incluye.Select(t => Celda(t))],
             NoIncluye = [.. noIncluye.Select(t => Celda(t))],

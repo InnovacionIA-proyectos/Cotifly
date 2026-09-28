@@ -147,6 +147,7 @@ Otras decisiones abiertas:
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
 | Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-013 |
+| Texto legal de la aclaración del piso mínimo en el PDF en USD (`clsTextosEstandar.AclaracionDolares`) | Gerencia Comercial / jurídica | ADR-013 |
 
 ## 10.8 Activación por integración
 

@@ -111,7 +111,7 @@ public sealed partial class clsGenerarPdfService(
             clsTextoSeguro.LimpiarLinea(payload.Comercial?.Cargo),
             usuario.Email,
             clsTextoSeguro.LimpiarLinea(usuario.Telefono));
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, folio!, firma, calendario.Hoy, moneda);
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, folio!, firma, calendario.Hoy, moneda, traza.TrmAplicada);
         if (documento.EsFallo)
         {
             return documento.Error;
