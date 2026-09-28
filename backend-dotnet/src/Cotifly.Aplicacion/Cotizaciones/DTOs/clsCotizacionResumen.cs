@@ -46,7 +46,7 @@ public sealed record clsCotizacionResumen(
             cotizacion.PrecioFinal,
             cotizacion.MargenAplicado,
             cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
-            cotizacion.EstadoCosteo,
+            cotizacion.EstadoCosteo is { } estadoCosteo ? clsCodigoEnum.ACodigo(estadoCosteo) : null,
             clsCodigoEnum.ACodigo(cotizacion.EstadoEnvio ?? Dominio.Cotizaciones.EstadoEnvio.SinEnviar),
             cotizacion.Ganada,
             cotizacion.MotivoRechazo,

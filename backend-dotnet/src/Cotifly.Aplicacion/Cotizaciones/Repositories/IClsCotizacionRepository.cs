@@ -16,6 +16,12 @@ public interface IClsCotizacionRepository
     /// <summary>Agrega una cotización nueva (se escribe al guardar la unidad de trabajo).</summary>
     void Agregar(clsCotizacion cotizacion);
 
+    /// <summary>Agrega las posiciones de cubicaje de una cotización (script 0004, HU-005.8); se escriben al guardar.</summary>
+    void AgregarPosiciones(IEnumerable<clsCotizacionPosicion> posiciones);
+
+    /// <summary>Posiciones de cubicaje de la cotización, en el orden del formulario (vacía si no tiene).</summary>
+    Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+
     /// <summary>Cotización por folio, sin filtro de dueño (uso interno de herramientas del agente).</summary>
     Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 

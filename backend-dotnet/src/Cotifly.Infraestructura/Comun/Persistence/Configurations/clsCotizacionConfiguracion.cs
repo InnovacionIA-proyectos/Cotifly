@@ -13,8 +13,12 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
 {
     public void Configure(EntityTypeBuilder<clsCotizacion> builder)
     {
-        builder.ToTable("Cotizaciones", t => t.HasCheckConstraint(
-            "ck_cotizaciones_origenCliente", "origenCliente IS NULL OR origenCliente IN ('cliente', 'prospecto')"));
+        builder.ToTable("Cotizaciones", t =>
+        {
+            t.HasCheckConstraint("ck_cotizaciones_origenCliente", "origenCliente IS NULL OR origenCliente IN ('cliente', 'prospecto')");
+            t.HasCheckConstraint("ck_cotizaciones_tipoSolicitud", "tipoSolicitud IS NULL OR tipoSolicitud IN ('spot', 'licitacion')");
+            t.HasCheckConstraint("ck_cotizaciones_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
+        });
 
         builder.HasKey(c => c.Id).HasName("pk_cotizaciones");
         builder.Property(c => c.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
@@ -35,7 +39,8 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
         builder.Property(c => c.Moneda).Columna("moneda", TipoTexto);
         builder.Property(c => c.TrmAplicada).Columna("trmAplicada", "decimal(18,4)");
         builder.Property(c => c.PdfPath).Columna("pdfPath", TipoTexto);
-        builder.Property(c => c.EstadoCosteo).Columna("estadoCosteo", TipoTexto);
+        builder.Property(c => c.EstadoCosteo).Columna("estadoCosteo", TipoTexto)
+            .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());
         builder.Property(c => c.EstadoEnvio).Columna("estadoEnvio", TipoTexto)
             .HasConversion(new clsConvertidorCodigoEnum<EstadoEnvio>());
         builder.Property(c => c.UsuarioId).Columna("usuarioId", "uniqueidentifier");
@@ -49,13 +54,79 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
         builder.Property(c => c.CreatedAt).Fecha("createdAt");
         builder.Property(c => c.UpdatedAt).Fecha("updatedAt");
 
+        // Script 0004 (HU-005.8): formulario ampliado.
+        builder.Property(c => c.TipoSolicitud).Columna("tipoSolicitud", "nvarchar(20)").HasMaxLength(20)
+            .HasConversion(new clsConvertidorCodigoEnum<TipoSolicitud>());
+        builder.Property(c => c.Deadline).Fecha("deadline");
+        builder.Property(c => c.ValorEstimado).Columna("valorEstimado", "decimal(18,2)");
+        builder.Property(c => c.Referencia).Columna("referencia", "nvarchar(200)").HasMaxLength(clsSolicitudCosteo.LargoReferencia);
+        builder.Property(c => c.HorasCargue).Columna("horasCargue", "decimal(6,2)");
+        builder.Property(c => c.HorasDescargue).Columna("horasDescargue", "decimal(6,2)");
+        builder.Property(c => c.Origen).Columna("origen", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(c => c.Destino).Columna("destino", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(c => c.TipoVehiculo).Columna("tipoVehiculo", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
+        builder.Property(c => c.Carroceria).Columna("carroceria", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
+        builder.Property(c => c.Tipologia).Columna("tipologia", "nvarchar(50)").HasMaxLength(clsSolicitudCosteo.LargoCorto);
+        builder.Property(c => c.ClaseViaje).Columna("claseViaje", "nvarchar(50)").HasMaxLength(clsSolicitudCosteo.LargoCorto);
+        builder.Property(c => c.ClaseContenedor).Columna("claseContenedor", "nvarchar(20)").HasMaxLength(clsSolicitudCosteo.LargoClaseContenedor);
+        builder.Property(c => c.Exclusivo).Columna("exclusivo", "bit");
+        builder.Property(c => c.Consolidado).Columna("consolidado", "bit");
+        builder.Property(c => c.RetornaContenedor).Columna("retornaContenedor", "bit");
+        builder.Property(c => c.CiudadDevolucionContenedor).Columna("ciudadDevolucionContenedor", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(c => c.LevanteContenedorDiferente).Columna("levanteContenedorDiferente", "bit");
+        builder.Property(c => c.CiudadLevanteContenedor).Columna("ciudadLevanteContenedor", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(c => c.ValorAprovisionamiento).Columna("valorAprovisionamiento", "decimal(18,2)");
+        builder.Property(c => c.PesoKg).Columna("pesoKg", "decimal(12,2)");
+        builder.Property(c => c.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
+
+        // Script 0004 (ADR-015): seguimiento de la integración con Nexo.
+        builder.Property(c => c.CotizacionNexoId).Columna("cotizacionNexoId", "nvarchar(64)").HasMaxLength(64);
+        builder.Property(c => c.MotivoEstadoCosteo).Columna("motivoEstadoCosteo", "nvarchar(1000)").HasMaxLength(clsCotizacion.LargoMaximoMotivoCosteo);
+        builder.Property(c => c.CosteoEnviadoAt).Fecha("costeoEnviadoAt");
+        builder.Property(c => c.CosteoUltimaConsultaAt).Fecha("costeoUltimaConsultaAt");
+        builder.Property(c => c.CosteoSiguienteConsultaAt).Fecha("costeoSiguienteConsultaAt");
+        builder.Property(c => c.CosteoConsultasFallidas).Columna("costeoConsultasFallidas", "int");
+        builder.Property(c => c.ServiciosConexos).Columna("serviciosConexos", TipoTexto);
+
         builder.HasIndex(c => c.Folio).IsUnique().HasDatabaseName("uq_cotizaciones_folio");
         // Script 0002: (usuarioId, createdAt DESC) para "mis cotizaciones" (más recientes primero).
         builder.HasIndex(c => new { c.UsuarioId, c.CreatedAt }).IsDescending(false, true).HasDatabaseName("ix_cotizaciones_usuarioId_createdAt");
+        // Script 0004: agenda del polling de Nexo (HU-005.6).
+        builder.HasIndex(c => c.CosteoSiguienteConsultaAt).HasDatabaseName("ix_cotizaciones_costeoSiguienteConsultaAt")
+            .HasFilter("[costeoSiguienteConsultaAt] IS NOT NULL");
 
         builder.HasOne<clsMargenPolitica>().WithMany().HasForeignKey(c => c.LineaNegocioId)
             .HasConstraintName("fk_cotizaciones_lineaNegocioId").OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(c => c.UsuarioId)
             .HasConstraintName("fk_cotizaciones_usuarioId").OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+/// <summary><c>dbo_cotifly.CotizacionPosiciones</c> (script 0004 §3, HU-005.8).</summary>
+internal sealed class clsCotizacionPosicionConfiguracion : IEntityTypeConfiguration<clsCotizacionPosicion>
+{
+    public void Configure(EntityTypeBuilder<clsCotizacionPosicion> builder)
+    {
+        builder.ToTable("CotizacionPosiciones", t =>
+        {
+            t.HasCheckConstraint("ck_cotizacionPosiciones_cantidad", "cantidad >= 1");
+            t.HasCheckConstraint("ck_cotizacionPosiciones_medidas", "largoCm > 0 AND anchoCm > 0 AND altoCm > 0 AND (pesoKg IS NULL OR pesoKg >= 0)");
+        });
+
+        builder.HasKey(p => p.Id).HasName("pk_cotizacionPosiciones");
+        builder.Property(p => p.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
+        builder.Property(p => p.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
+        builder.Property(p => p.Orden).Columna("orden", "int");
+        builder.Property(p => p.Descripcion).Columna("descripcion", "nvarchar(200)").HasMaxLength(clsPosicionCarga.LargoDescripcion);
+        builder.Property(p => p.Cantidad).Columna("cantidad", "int");
+        builder.Property(p => p.LargoCm).Columna("largoCm", "decimal(10,2)");
+        builder.Property(p => p.AnchoCm).Columna("anchoCm", "decimal(10,2)");
+        builder.Property(p => p.AltoCm).Columna("altoCm", "decimal(10,2)");
+        builder.Property(p => p.PesoKg).Columna("pesoKg", "decimal(12,2)");
+        builder.Property(p => p.CreatedAt).Fecha("createdAt");
+
+        builder.HasIndex(p => new { p.CotizacionId, p.Orden }).IsUnique().HasDatabaseName("uq_cotizacionPosiciones_cotizacionId_orden");
+        builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(p => p.CotizacionId)
+            .HasConstraintName("fk_cotizacionPosiciones_cotizacionId").OnDelete(DeleteBehavior.NoAction);
     }
 }

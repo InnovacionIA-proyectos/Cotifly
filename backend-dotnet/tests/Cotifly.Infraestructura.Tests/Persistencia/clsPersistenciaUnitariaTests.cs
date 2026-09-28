@@ -63,7 +63,7 @@ public sealed class clsPersistenciaUnitariaTests
         modelo.GetDefaultSchema().Should().Be("dbo_cotifly");
         modelo.FindEntityType(typeof(clsCotizacion))!.GetTableName().Should().Be("Cotizaciones");
         modelo.FindEntityType(typeof(clsMargenPolitica))!.GetTableName().Should().Be("MargenesPolitica");
-        modelo.GetEntityTypes().Should().HaveCount(14);
+        modelo.GetEntityTypes().Should().HaveCount(15, "14 tablas del 0001-0002 y CotizacionPosiciones del 0004");
     }
 
     [Fact]

@@ -10,7 +10,7 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - db/migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002 y 0003 (idempotentes)
+                        - db/migrations_mssql/0001 (solo si dbo_cotifly no existe), 0002, 0003 y 0004 (idempotentes)
                         - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
                         - IDROLES de desarrollo en Roles y login cotifly_app con permisos mínimos
                                                                                        (scripts/sql/dev-03-roles-y-login.sql)
@@ -181,7 +181,7 @@ if ((SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.schemas 
     # Después del 0002 el 0001 no se re-ejecuta (ver encabezado del 0002 y ADR-008).
     Write-Host 'dbo_cotifly ya existe: se omite el 0001'
 }
-foreach ($script in @('0002_identidad_estado_agente.sql', '0003_metricas_reenviadas.sql')) {
+foreach ($script in @('0002_identidad_estado_agente.sql', '0003_metricas_reenviadas.sql', '0004_costeo_nexo.sql')) {
     Write-Host "aplicando $script"
     SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/migraciones/$script"
 }

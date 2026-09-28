@@ -19,7 +19,7 @@ Contenido:
 | Sonda | Uso | Respuesta |
 |---|---|---|
 | `GET /health` | Vida. La consulta el `HEALTHCHECK` de la imagen (`dotnet /app/Cotifly.Api.dll --healthcheck`, cada 30 s, timeout 5 s, 3 reintentos, `start-period` 20 s) | `200 {"status":"ok","servicio":"cotifly-api","entorno":"..."}` |
-| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` |
+| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` / `falta 0004` |
 
 - `/health/ready` ejecuta los health checks con etiqueta `ready` (`clsBaseDatosHealthCheck`: conexión a `dbo_cotifly` más la verificación de `Sesiones.estadoAgente` y `TokensRefresco`, con 5 s de límite). `detalle` nunca trae la cadena ni el servidor; la excepción queda en el log.
 - Una base caída no debe reiniciar el contenedor: por eso el `HEALTHCHECK` usa `/health` y no `/health/ready`.
@@ -138,7 +138,7 @@ Otras decisiones abiertas:
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
 | Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
 | Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
-| Aprobación de los scripts 0002 y 0003 | Sara y scalderon-bs | ADR-008 |
+| Aprobación de los scripts 0002, 0003 y 0004 (el 0004 con el DBA, coordinado con HU-002) | Sara, scalderon-bs y DBA | ADR-008, ADR-015 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
 | Proveedor y modelo de IA de producción, custodia de la clave | Negocio | ADR-003 |
@@ -165,7 +165,8 @@ Otras decisiones abiertas:
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
 | El contenedor termina con código 1 al arrancar | Configuración inválida o faltante | `docker logs`: el mensaje nombra la clave. Revisar [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
-| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002` y `0003` con `sqlcmd -I` |
+| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002`, `0003` y `0004` con `sqlcmd -I` |
+| `/health/ready` 503 `esquema incompleto: falta 0004` | El 0004 (costeo en Nexo) no está aplicado y el modelo de `Cotizaciones` ya lo usa | Aplicar `db/migrations_mssql/0004_costeo_nexo.sql` con `sqlcmd -I` (idempotente) |
 | `/health/ready` 503 con la base caída | Red, credenciales o certificado de SQL Server | Revisar la cadena; si el certificado no es de una CA de confianza, instalar la CA (preferido) o `TrustServerCertificate=True` temporal y documentado |
 | Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, o `dbsolucionesti` inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |
