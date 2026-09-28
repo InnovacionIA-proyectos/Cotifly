@@ -6,8 +6,14 @@
 #   integracion       build + pruebas Integracion (Testcontainers: SQL Server 2019 en el Docker del runner)
 #   cobertura         une la cobertura de ambos, publica el resumen y exige Cotifly.Dominio >= 90 % (ADR-010)
 #   auditoria-nuget   vulnerabilidades NuGet directas y transitivas: cualquier hallazgo falla
-#   imagen-docker     docker build del Dockerfile + prueba de humo (/health y HEALTHCHECK)
+#   imagen-docker     docker build del Dockerfile + prueba de humo (/health y HEALTHCHECK); en push guarda la imagen probada
 #   contrato-openapi  redocly lint de specs/openapi.yaml (falla con errores; los warnings solo se muestran)
+#   publicar-imagen   (solo push a QA/main o tag vX.Y.Z) sube a GHCR la MISMA imagen que pasó la prueba de humo, después de
+#                     que pasen todos los demás jobs (HU-006.4, #28). Tags: X.Y.Z (tag git vX.Y.Z), sha-<corto>, qa | main.
+#                     Nunca "latest". Registry: ghcr.io/innovacionia-proyectos/cotifly-backend, con GITHUB_TOKEN.
+#
+# NOTA (2026-09-28): GitHub Actions está bloqueado en la organización por facturación. Mientras tanto la imagen se
+# publica con backend-dotnet/scripts/publicar-imagen.sh (o .ps1), con los mismos tags. Ver DEPLOY.md §4.
 #
 # La categoría "sap" (pruebas contra SAP TM real, HU-009) se excluye siempre: necesita red corporativa.
 # Sin docker-compose (ADR-007): SQL Server lo levanta Testcontainers dentro de las pruebas.
@@ -17,6 +23,10 @@ name: backend-dotnet
 on:
   push:
     branches: [QA, main]
+    # Release: tag semver en main (vX.Y.Z o vX.Y.Z-rc.N). GitHub no evalúa "paths" en los push de tags.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
     paths:
       - 'backend-dotnet/**'
       - 'db/migrations_mssql/**'
@@ -29,12 +39,14 @@ on:
       - '.github/workflows/backend-dotnet.yml'
   workflow_dispatch:
 
+# Mínimo por defecto; solo publicar-imagen agrega packages: write.
 permissions:
   contents: read
 
+# En PR se cancela la corrida anterior; en push (QA, main, tags) no, para no dejar a medias una publicación.
 concurrency:
   group: backend-dotnet-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: 'true'
@@ -254,13 +266,44 @@ jobs:
     name: Imagen Docker
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      etiquetas: ${{ steps.meta.outputs.etiquetas }}
+      version: ${{ steps.meta.outputs.version }}
+    env:
+      IMAGEN_REGISTRY: ghcr.io/innovacionia-proyectos/cotifly-backend
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Historial completo: un tag de release debe apuntar a un commit que ya esté en main (ver "Metadatos").
+          fetch-depth: 0
+
+      # Convención de tags (HU-006.4, #28; la misma de scripts/publicar-imagen.sh):
+      #   tag vX.Y.Z en main -> X.Y.Z y sha-<corto>      push a QA -> qa y sha-<corto>      push a main -> main y sha-<corto>
+      # Nunca "latest": Dokploy despliega un tag inmutable (X.Y.Z o sha-<corto>).
+      - name: Metadatos de la imagen
+        id: meta
+        run: |
+          corto="${GITHUB_SHA::7}"
+          etiquetas="sha-$corto"
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              git fetch --no-tags origin main
+              git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+                || { echo "::error::El tag $GITHUB_REF_NAME no apunta a un commit de main"; exit 1; }
+              version="${GITHUB_REF_NAME#v}"
+              etiquetas="$version $etiquetas" ;;
+            refs/heads/QA)   version="qa-$corto";   etiquetas="$etiquetas qa" ;;
+            refs/heads/main) version="main-$corto"; etiquetas="$etiquetas main" ;;
+            *)               version="ci-$corto" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "etiquetas=$etiquetas" >> "$GITHUB_OUTPUT"
+          echo "Versión: $version · etiquetas: $etiquetas"
 
       - name: docker build
         run: >
           docker build
-          --build-arg VERSION="ci-${GITHUB_SHA::7}"
+          --build-arg VERSION="${{ steps.meta.outputs.version }}"
           --build-arg VCS_REF="${GITHUB_SHA::7}"
           --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           -t cotifly-api:ci -f Dockerfile .
@@ -281,9 +324,82 @@ jobs:
           echo
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health/ready)" = "503"
 
+      # Vulnerabilidades de la imagen final (paquetes de Ubuntu chiseled y runtime/dependencias .NET): HIGH o CRITICAL con
+      # parche disponible falla el job, y por lo tanto la publicación. Versión fija de Trivy (la misma de publicar-imagen.sh).
+      - name: Escaneo de vulnerabilidades (Trivy)
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.74.0
+          image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 cotifly-api:ci
+
+      # Solo en push: la imagen probada pasa tal cual (mismos bytes) al job publicar-imagen, que espera a los demás jobs.
+      - name: Guardar la imagen probada
+        if: github.event_name == 'push'
+        run: docker save cotifly-api:ci | gzip -1 > "$RUNNER_TEMP/cotifly-api.tar.gz"
+
+      - name: Publicar la imagen como artefacto
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v5
+        with:
+          name: imagen-cotifly-api
+          path: ${{ runner.temp }}/cotifly-api.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Limpiar
         if: always()
         run: docker rm -f cotifly-api-ci || true
+
+  publicar-imagen:
+    name: Publicar imagen en GHCR
+    # Solo push a QA/main o tag vX.Y.Z (los PR nunca publican) y solo si todo lo demás pasó.
+    if: github.event_name == 'push'
+    needs: [unitarias, integracion, cobertura, auditoria-nuget, imagen-docker, contrato-openapi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGEN_REGISTRY: ghcr.io/innovacionia-proyectos/cotifly-backend
+    defaults:
+      run:
+        working-directory: .
+        shell: bash
+    steps:
+      - name: Descargar la imagen probada
+        uses: actions/download-artifact@v5
+        with:
+          name: imagen-cotifly-api
+          path: ${{ runner.temp }}
+
+      - name: Cargar la imagen
+        run: gunzip -c "$RUNNER_TEMP/cotifly-api.tar.gz" | docker load
+
+      - name: Login en GHCR (GITHUB_TOKEN)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Etiquetar y subir
+        env:
+          ETIQUETAS: ${{ needs.imagen-docker.outputs.etiquetas }}
+        run: |
+          for etiqueta in $ETIQUETAS; do
+            docker tag cotifly-api:ci "$IMAGEN_REGISTRY:$etiqueta"
+            docker push "$IMAGEN_REGISTRY:$etiqueta"
+          done
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGEN_REGISTRY:sha-${GITHUB_SHA::7}")
+          {
+            echo "### Imagen publicada"
+            echo
+            echo "- Versión: \`${{ needs.imagen-docker.outputs.version }}\`"
+            for etiqueta in $ETIQUETAS; do echo "- \`$IMAGEN_REGISTRY:$etiqueta\`"; done
+            echo "- Digest: \`$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Logout
+        if: always()
+        run: docker logout ghcr.io || true
 
   contrato-openapi:
     name: Lint del contrato OpenAPI

@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (pendiente de confirmar con el equipo de infraestructura los puntos marcados en Pendientes)
 - **Fecha:** 2026-09-28
-- **Issue / HU:** HU-006: #29 (HU-006.5). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
+- **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
 
 ## Contexto
 
@@ -28,6 +28,22 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 5. No se reescribe el historial de git: la auditoría del 2026-09-28 (`DEPLOY.md` §2.3) no encontró claves reales; las
    credenciales por defecto del stack Python (`bot`/`minioadmin`) se retiran con él.
 
+### 2. Registry y pipeline (HU-006.4, #28)
+
+1. **Registry: GHCR**, `ghcr.io/innovacionia-proyectos/cotifly-backend`, paquete privado de la organización.
+2. **Tags:** `X.Y.Z` desde un tag git `vX.Y.Z` sobre `main`, `sha-<corto>` siempre, y `qa`/`main` como canal móvil.
+   Nunca `latest`. Dokploy despliega un tag inmutable (`sha-<corto>` en staging, `X.Y.Z` en producción) en la variable
+   `COTIFLY_TAG` del stack.
+3. **Pipeline:** el mismo workflow `backend-dotnet.yml`. `imagen-docker` construye, prueba (humo) y escanea (Trivy
+   0.74.0) la imagen; `publicar-imagen` sube esos mismos bytes a GHCR con `GITHUB_TOKEN` (`packages: write` solo en ese
+   job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs.
+4. **Script manual versionado** `backend-dotnet/scripts/publicar-imagen.sh` (y `.ps1`), mismos tags y controles, desde
+   cualquier equipo con Docker. Reemplaza a `deploy/rebuild-on-worker.sh` para el backend .NET; es el camino vigente
+   mientras GitHub Actions siga bloqueado por facturación en la organización (2026-09-28).
+5. **Pull en el clúster:** PAT clásico de solo `read:packages` de una cuenta de servicio, registrado en Dokploy y con
+   `docker login ghcr.io` en el manager (`--with-registry-auth` lo reenvía al worker).
+6. `DebugType=none` se mantiene (sin `.pdb` en la imagen).
+
 ## Alternativas consideradas
 
 - **Todo como secreto de Swarm** con el proveedor *key-per-file* de ASP.NET Core: más aislado (no aparece en
@@ -36,6 +52,13 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   clúster; se adopta si infraestructura lo define.
 - **Archivo `.env` montado desde el worker** (como el Python, `/home/dguerra/bot-cotizador-data/.env`): descartado; ata
   el servicio a un nodo y el archivo queda fuera del control de Dokploy.
+- **Registry propio en el clúster** (`registry:2` en Swarm) o **Docker Hub**: el primero suma un servicio con estado,
+  TLS y backups que mantener; el segundo saca la imagen de la organización de GitHub. GHCR ya autentica con los
+  permisos del repositorio.
+- **Que Dokploy construya desde git en el nodo** (como hoy): es lo que HU-006 pide eliminar (sin versión, disco del
+  nodo, sin pruebas antes de desplegar).
+- **Reconstruir en el job de publicación** (`docker/build-push-action`): publicaría bytes distintos a los probados; se
+  prefirió pasar la imagen probada como artefacto.
 
 ## Consecuencias
 
@@ -51,3 +74,6 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 | Confirmar el mecanismo de secretos (variables de Dokploy + secreto de Swarm) o el estándar corporativo | Duban con infraestructura |
 | Cargar los valores reales en Dokploy (tabla de `DEPLOY.md` §3) | HU-007.1 (#33) |
 | Rotar o retirar las credenciales por defecto del stack Python al apagarlo | Duban |
+| Resolver la facturación de GitHub Actions de la organización (mientras tanto, script manual) | Administración de la organización de GitHub |
+| Cuenta de servicio de GitHub que emite el PAT `read:packages` del clúster, y su renovación | Duban con infraestructura |
+| Verificar en el primer despliegue a staging que el worker baja la imagen privada | Duban (HU-006.6) |
