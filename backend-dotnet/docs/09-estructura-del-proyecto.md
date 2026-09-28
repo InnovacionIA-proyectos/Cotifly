@@ -43,7 +43,7 @@ backend-dotnet/
     ├── Directory.Build.props    # xUnit v3, AwesomeAssertions, TRX y cobertura; Testcontainers y soporte con UsaSqlServerPruebas
     ├── cobertura.config.xml     # ensamblados medidos por la cobertura (#14)
     ├── Comun/                   # soporte compartido de integración (enlazado, no es proyecto): SQL Server, reloj, SMTP, SAP,
-    │                            # Google y modelo de IA falsos, lector de PDF
+    │                            # Google, Nexo y modelo de IA falsos, lector de PDF
     ├── fixtures/sap/            # muestra de RentabClienteSet portada del Python
     ├── fixtures/cotizacion/     # ejemplo-solicitud.json del Python (payload del PDF, #11)
     ├── fixtures/chat/           # evento_mensaje.json del Python; jwt_valido/jwt_invalido.txt y certs_chat_falsos.json
@@ -57,6 +57,7 @@ backend-dotnet/
 
 db/migrations_mssql/                # scripts de esquema SQL Server (0001, 0002, 0003): única vía de cambio de esquema
 docs/CONTRATO_API_WEB.md         # resumen del contrato para el frontend (HU-004.1)
+docs/MAPEO_CAMPOS_NEXO_COTIFLY.md # mapeo de campos Nexo ↔ Cotifly del formulario de captura (HU-005)
 ```
 
 ## 9.1 Dónde va cada cosa

@@ -50,7 +50,11 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | POST | `/web/cotizaciones/{folio}/correo/vista-previa` | `200 VistaPreviaCorreo` (cuerpo opcional); `404` |
 | POST | `/web/cotizaciones/{folio}/seguimiento` | `200 CotizacionResumen`; `400` (motivo > 2000, cuerpo inválido); `404` |
 | GET | `/web/cotizaciones/{id}/nueva-version` | `200 DatosNuevaVersion` (`folio_base`, `version_siguiente`...); `404` (también si `id` no es UUID) |
+| GET | `/web/clientes?q=` | `200 ResultadoBusquedaClientes` `{exacta, candidatos: [{nit_cliente, nombre, origen_cliente, bp}]}` desde Nexo (HU-005.2; `candidatos: []` si no hubo coincidencias; `exacta=true` solo con un único candidato); `400 ErrorWeb` si falta `q`; `400 ErrorNegocio` `CLIENTE_BUSQUEDA_NO_DISPONIBLE` si Nexo no está configurado, no responde o el comercial no tiene `idUsuarioExterno` |
 | GET | `/web/clientes/{nit}/destinatarios-previos` | `200 Destinatarios` del último envío del comercial a ese NIT (vacío si no hay); `400` si el NIT supera 20 caracteres |
+| GET | `/web/municipios` | `200 [Municipio]` `{id, codigo_dane, municipio, departamento, pais}`, catálogo completo de Nexo sin paginar (HU-005.13); `400 ErrorNegocio` `MUNICIPIOS_NO_DISPONIBLE` |
+| GET | `/web/catalogos-flete` | `200 CatalogosFlete` `{tipos_vehiculo, tipos_carroceria, clases_viaje}` (cada opción `{valor, etiqueta}`) desde la biblioteca SAP TM histórico de Nexo (HU-005.3); `400 ErrorNegocio` `CATALOGOS_FLETE_NO_DISPONIBLE` |
+| POST | `/web/cubicacion` | Cuerpo `CubicacionRequest` `{items: [{descripcion?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}], clase_viaje?}` (centímetros y kilogramos). `200 ResultadoCubicacion` `{sugerencia, sugerencia_flota, advertencias, extradimension}`, sin persistir nada (HU-005.4); `400 ErrorNegocio` `ITEMS_REQUERIDOS` (falta `items` o viene vacío), `CUBICACION_DEMASIADO_GRANDE` (Nexo/Cubicador respondió 400: típicamente el límite de bultos por solicitud, también medidas inválidas) o `CUBICACION_NO_DISPONIBLE` |
 | GET / PUT | `/web/usuario/telefono` | `200 TelefonoComercial`; PUT `400` fuera del patrón; `401` si el comercial ya no existe |
 | GET | `/web/admin/lineas-negocio` | `200 [LineaNegocio]` (todas); `403` salvo `gerente_comercial` |
 | PUT | `/web/admin/lineas-negocio/{id}` | `200 LineaNegocio` (auditado); `400` (margen fuera de 0–0,99, método, campo faltante, número como texto); `403`; `404` |
@@ -59,6 +63,8 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | GET | `/pdfs/{archivo}` | `200 application/pdf` inline (dueño o gerente de su regional con Bearer; o el dueño con el enlace firmado `?t=` de Google Chat, 15 min); `401` (sin sesión, o enlace alterado o vencido); `404 ErrorWeb` (no existe o no es tuyo) |
 | POST | `/web/chat` | `200 RespuestaChat` `{texto, herramientas, precio, margen, pdf}` (los números salen de las herramientas del turno); `200 RespuestaChatError` `{texto, error: true}` ante un fallo del agente o del proveedor (texto del límite de peticiones del Python si es un 429); `400` (`sesion_id inválido`, mensaje vacío o de más de 8000); `401`; `404 {"error":"Sesión no encontrada."}` (sesión de otro comercial); `429` (`LimiteChat`) |
 | POST | `/chat/events` | Webhook de Google Chat (sin Bearer de ClientePro): `200` acuse (`{"text": ...}`, `hostAppDataAction...` en add-on, `{}` si no es mensaje); `400 {"error":"payload no es JSON"}`; `401 {"error":"JWT inválido o ausente"}` |
+
+Los cuatro endpoints de Nexo (`/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete`, `/web/cubicacion`) usan la política `Comercial` como el resto de la consola. El backend reenvía la consulta a `Nexo__UrlBase` sin token: identifica al comercial ante Nexo con `X-Portal-Usuario-Id` (su `UsuariosWeb.idUsuarioExterno`, resuelto a partir del `sub` del JWT, nunca del cliente). Sin `Nexo__UrlBase` los cuatro responden su código `*_NO_DISPONIBLE`. Detalle en [2.14](02-arquitectura.md#214-integración-con-nexo) y [3.5](03-infraestructura.md#35-servicios-externos).
 
 Endpoints protegidos (parte B de #12): `Authorization: Bearer <access>`; sin token, vencido, de otra clave o revocado → `401 {"error":"Inicia sesión de nuevo."}`; rol insuficiente → `403 {"error":"No tienes permiso para esta operación."}`.
 
@@ -91,7 +97,7 @@ Errores de `/web/*` (`clsRespuestasWeb`, cumple la tabla "Para #12" de abajo):
 | `SIN_PERMISO` (rol revalidado en el caso de uso) | 403 `ErrorWeb` |
 | `CORREO_DESHABILITADO` | 503 `ErrorNegocio` |
 | `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`, `SEGUIMIENTO_INVALIDO`, cuerpo mal formado | 400 `ErrorWeb` |
-| Resto de códigos de negocio (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`...) | 400 `ErrorNegocio` (`detalle` como objeto `{"motivo": ...}`) |
+| Resto de códigos de negocio (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`, y los de Nexo: `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_NO_DISPONIBLE`, `CUBICACION_DEMASIADO_GRANDE`...) | 400 `ErrorNegocio` (`detalle` como objeto `{"motivo": ...}`) |
 | Cuerpo de más de `SeguridadHttp:LimiteCuerpoWebBytes` | 413 `ErrorWeb` (fuera del contrato: transporte) |
 
 La validación automática de `[ApiController]` responde `400 ErrorWeb` (no `ProblemDetails`). `/api/auth/*`: 400 `ErrorWeb` por cuerpo inválido en el login, 401 genérico para cualquier rechazo, refresh con cuerpo inválido también 401, logout siempre 204, 429 al pasar el límite.

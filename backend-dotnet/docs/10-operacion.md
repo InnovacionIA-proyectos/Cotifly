@@ -38,6 +38,8 @@ Contenido:
 | `Hosting failed to start` con el nombre de una clave | Critical | Configuración inválida en el arranque (el contenedor termina con 1) |
 | "SAP TM no disponible" con TrqType y organización | Warning | SAP TM caído o lento: la cotización siguió con la política de la línea |
 | "SAP TM no configurado (SapTm:Modo vacío)" | Warning (al arrancar, Production) | Todos los márgenes salen de la política |
+| "Búsqueda de clientes en Nexo no disponible ({Motivo})", "Catálogo de municipios de Nexo no disponible", "Catálogos de flete de Nexo no disponibles", "Cubicación en Nexo no disponible" | Warning | Nexo sin configurar, caído, lento, con HTTP no exitoso o JSON inválido, o el comercial sin `idUsuarioExterno`; el motivo va entre paréntesis ("tiempo agotado", "circuito abierto tras fallos repetidos", "error de red", "HTTP 500 (...)") y el detalle de la excepción en Debug |
+| "Cubicación rechazada por Nexo/Cubicador (400)" | Warning | Nexo no aceptó los bultos (límite por solicitud o medidas inválidas); el comercial recibe `CUBICACION_DEMASIADO_GRANDE` |
 | "Fallo procesando el evento de Google Chat" | Error | Un evento del webhook falló; el worker sigue y alerta a `GChat:SupportSpace` |
 | "Fallo en el barrido de sesiones inactivas" | Warning | Se reintenta en el siguiente ciclo |
 | `OnAuthenticationFailed` con el tipo de rechazo | Information | Tokens vencidos, de otra clave o mal formados |
@@ -55,7 +57,7 @@ Sin exportador todavía (OpenTelemetry o Prometheus se evalúan en HU-006). Las 
 | `Cotifly.Agente` | `cotifly.agente.respuesta_final.invalidas` (etiqueta `motivo`), `cotifly.agente.respuesta_final.reintentos`, `cotifly.agente.respuesta_final.respaldos`, `cotifly.agente.esquema_rechazado` | Calidad de la respuesta del modelo (#16): una tasa alta de respaldos o de esquema rechazado indica un modelo o proveedor inadecuado |
 | `System.Runtime` | GC, memoria, hilos, excepciones | Salud del proceso |
 | `Microsoft.AspNetCore.Hosting`, `Microsoft.AspNetCore.Server.Kestrel` | Peticiones, duración, conexiones | Carga HTTP |
-| `System.Net.Http` | Peticiones salientes | SAP TM, proveedor de IA, Google |
+| `System.Net.Http` | Peticiones salientes | SAP TM, Nexo, proveedor de IA, Google |
 
 ```bash
 dotnet-counters monitor -p 1 --counters Cotifly.Agente,System.Runtime,Microsoft.AspNetCore.Hosting
@@ -98,6 +100,9 @@ Riesgos registrados en #12 y #16:
 | Límites de peticiones | `LimiteAuth` y `LimiteChat` son por proceso: con N réplicas el límite efectivo es N veces mayor |
 | `generar_pdf` multi-destino | Pone el mismo precio final en todas las filas (`Cotizaciones` guarda un solo precio); un precio por fila queda pendiente de modelo |
 | `trmAplicada` | Siempre 0 hasta HU-012 (conversión a USD) |
+| Coincidencia exacta de clientes en Nexo | Nexo no la distingue: hoy es exacta solo con un único candidato (ADR-005, pendiente con el equipo de Nexo) |
+| Catálogos de Nexo sin caché | `GET /web/municipios` y `GET /web/catalogos-flete` consultan Nexo en cada petición; si Nexo cae, el formulario se queda sin catálogos (`*_NO_DISPONIBLE`) |
+| URL base de Nexo | El código agrega `/api/...` a `Nexo__UrlBase`, pero el ejemplo de `.env.example` ya termina en `/api` ([03-infraestructura](03-infraestructura.md#nexo)); confirmar la URL real antes de activar |
 | E2E con el Angular | Pendiente (HU-004.8): el contrato está cubierto por pruebas contra `openapi.yaml`, no contra el frontend real |
 | #45 | Queda parcial con este PR; lo que falta sigue abierto en el issue |
 | Validador de la respuesta final (#16) | La regla de montos es práctica (ADR-003). Batería de 52 textos del validador: falsos positivos 3 → 0 (NIT, teléfono, NIT con puntos) y falsos negativos 11 de 24 → 2 (montos en palabras, "tres millones y medio"; el folio base de una versión, aceptado a propósito). Sigue rechazando aproximaciones honestas ("3,29 millones", centavos que no existen). Cada reintento cuesta una llamada más (con `IA:Rpm=8`, unos 8 s). Si el proveedor rechaza el JSON Schema (400/422), el proceso sigue sin formato `IA:MinutosSinJsonSchema` (30) y luego re-sonda, también para los proveedores de `IA:Fallbacks`. El respaldo no alerta al space de soporte. Falta medir con el proveedor real la tasa de reintentos, respaldos y rechazos (`cotifly.agente.*`) |
@@ -137,6 +142,7 @@ Otras decisiones abiertas:
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
 | Proveedor y modelo de IA de producción, custodia de la clave | Negocio | ADR-003 |
+| Criterio de coincidencia exacta de la búsqueda de clientes y URL base de Nexo por ambiente | Duban con el equipo de Nexo | ADR-005, [03-infraestructura](03-infraestructura.md#nexo) |
 | Destinatarios previos: último envío o unión de todos | Negocio | [02-arquitectura](02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
@@ -150,6 +156,7 @@ Otras decisiones abiertas:
 | Correo | Confirmar el transporte (D3), autorizar la IP del nodo en el relay, revisar SPF/DMARC | `Correo__Habilitado=true`, `Correo__SmtpRelay__Host` |
 | SAP TM export | Montar el export de solo lectura y reemplazarlo copiando con otro nombre y renombrando | `SapTm__Modo=export_json`, `SapTm__ExportPath` |
 | SAP TM OData (HU-009) | Ruta de red y usuario de servicio (HU-009.1); confirmar el formato del BP (ceros a la izquierda); validar con al menos 3 casos reales (`Categoria=sap`) | `SapTm__Modo=odata`, `SapTm__Url`, `SapTm__User`, `SapTm__Pass`, `SapTm__SapClient` |
+| Nexo (clientes, municipios, catálogos de flete, cubicación) | Confirmar la URL base con el equipo de Nexo y la ruta de red desde el contenedor; los comerciales necesitan `idUsuarioExterno` (lo llena su login desde ClientePro); probar `GET /web/clientes?q=`, `GET /web/municipios`, `GET /web/catalogos-flete` y `POST /web/cubicacion` con un comercial real | `Nexo__UrlBase` |
 | Agente de IA | Elegir proveedor y modelo; guardar la clave como secreto; ajustar `IA:Rpm` al plan del proveedor; medir respaldos y reintentos | `IA__Proveedor`, `IA__Modelo`, `IA__ApiKey`, `IA__Endpoint`, `IA__Rpm`, `IA__Fallbacks__*` |
 | Google Chat | App de Chat con endpoint `https://<api>/chat/events`, cuenta de servicio con alcance `chat.bot`; cada comercial entra una vez desde ClientePro con el mismo correo de Google | `GChat__ProjectNumber`, `GChat__SaJson`, `GChat__SupportSpace`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl` |
 
@@ -168,4 +175,6 @@ Otras decisiones abiertas:
 | `CORREO_ENVIO_FALLIDO` con 550 5.7.1 | IP del nodo no autorizada en el relay | Pedir a TI que autorice la IP |
 | Márgenes siempre de la política con SAP configurado | SAP caído, BP sin registro o formato del BP distinto (ceros a la izquierda) | Revisar los warnings de SAP TM y la tasa de "sin registro en SAP TM" |
 | Google Chat no responde | JWT inválido (401 en `/chat/events`), cola llena o sin `GChat__SaJson` | Revisar `GChat__ProjectNumber`, `GChat__CapacidadCola` y el warning de publicación |
+| `/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete` o `/web/cubicacion` responden 400 `*_NO_DISPONIBLE` y el agente no resuelve clientes | `Nexo__UrlBase` vacía, Nexo caído o lento (más de 8 s en total o 3 s por intento), URL base mal armada (404 de Nexo) o el comercial sin `idUsuarioExterno` | Revisar el warning de Nexo y su motivo; con "HTTP 404" revisar la URL base (el código agrega `/api/...`); con "circuito abierto" esperar a que Nexo se recupere; sin `idUsuarioExterno`, que el comercial vuelva a entrar desde ClientePro |
+| `POST /web/cubicacion` responde `CUBICACION_DEMASIADO_GRANDE` | Nexo/Cubicador rechazó los bultos (límite por solicitud o medidas inválidas) | Ver el `detalle` (mensaje de Nexo); dividir la carga o corregir las medidas (centímetros y kilogramos) |
 | Error de permisos al escribir el PDF | `/data/pdfs` no es del UID 1654 | Volumen con nombre, o `chown 1654:1654` en el bind mount |

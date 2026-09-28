@@ -25,6 +25,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 - **PDF** de la cotización con PDFsharp-MigraDoc (una tarifa o varias secciones), folio generado por el servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)) y almacén en volumen.
 - **Correo** por el relay interno con vista previa, destinatarios previos, deduplicación de 5 minutos y estado `enviada`/`reenviada`.
 - **Consola web** `/web/*`: mis cotizaciones, seguimiento ganada/perdida, nueva versión, teléfono del comercial, descarga autenticada del PDF, administración de líneas de negocio y métricas.
+- **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el agente y el formulario, catálogo de municipios, catálogos de flete (tipo de vehículo, carrocería y clase de viaje) y cubicación rápida.
 - **Auditoría** de cada herramienta y de los accesos sensibles en `EventosHerramienta`.
 
 ## 1.4 Estado por issue (milestone HU-003)
@@ -43,14 +44,16 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | #12 parte C | HU-003.6 | Agente de IA, `POST /web/chat`, webhook de Google Chat con worker y enlace firmado del PDF |
 | #16 | HU-003.10 | Validador de la respuesta final del agente |
 | #14 | HU-003.8 | Integración continua, scripts de ejecución local, cobertura, documentación técnica y casos de regresión manual (este conjunto de documentos) |
+| #20 (PR #65) | HU-005.2, HU-005.3, HU-005.4, HU-005.13 | Fuera del milestone HU-003: integración con Nexo (`GET /web/clientes?q=` y `buscar_cliente`, `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion`) |
 | #15 | HU-003.9 | Paridad funcional Python vs .NET ejecutada por QA: pendiente (plantilla en [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md)) |
 
 ## 1.5 Fuera del alcance actual
 
 | Tema | Dónde se resuelve |
 |---|---|
-| Costeo real de rutas (Nexo) | HU-005; mientras tanto `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` y el comercial escribe el costo |
-| Búsqueda real de clientes (Grovity/Nexo) | HU-005.2, [ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md) |
+| Costeo real de rutas (Nexo) | HU-005.5 en adelante; mientras tanto `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` y el comercial escribe el costo |
+| Criterio de coincidencia exacta de la búsqueda de clientes | Pendiente con el equipo de Nexo ([ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)); hasta entonces es exacta solo con un único candidato |
+| Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005; el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
 | Regional del comercial desde `DWCubosEBSSAP` | Pendiente; hasta entonces el gerente solo ve su propia fila de métricas |
 | Conversión a USD con TRM | HU-012 (`trmAplicada` queda en 0) |
 | Sincronización a Google Sheets y PDF en S3/MinIO | Diferidas, [ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md) |

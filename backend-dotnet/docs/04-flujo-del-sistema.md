@@ -59,7 +59,7 @@ Conversación típica (el texto lo redacta el LLM; los datos y los números sale
 
 | Paso | El comercial | El sistema |
 |---|---|---|
-| 1 | "Cotiza un flete nacional de Cali a Bogotá para el cliente X, costo 2.850.000" | `buscar_cliente` (stub hasta HU-005.2: el nombre queda como referencia, sin NIT ni BP), `obtener_margen` (sin BP: política de la línea), `calcular_precio` con el costo escrito por el comercial. Estado: línea, margen, método, costo y precio |
+| 1 | "Cotiza un flete nacional de Cali a Bogotá para el cliente X, costo 2.850.000" | `buscar_cliente` en Nexo (HU-005.2: un único candidato → NIT, origen y BP en el estado; varios → candidatos para que el comercial elija; ninguno → sin cliente resuelto; sin `Nexo__UrlBase`, con Nexo caído o sin `idUsuarioExterno` → `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y el nombre queda como referencia, sin NIT ni BP), `obtener_margen` (con BP: SAP TM si `SapTm__Modo` está configurado; sin BP: política de la línea), `calcular_precio` con el costo escrito por el comercial. Estado: línea, margen, método, costo y precio |
 | 2 | — | El agente muestra la **previsualización** (precio, margen, método, origen del margen) y pide confirmación; `acciones_sugeridas`: `confirmar_pdf`, `ajustar_margen` |
 | 3a | "Confirmo" | `generar_pdf`: el filtro exige la confirmación del turno y un precio calculado, reescribe el payload con el estado, el servidor genera el folio `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` con las iniciales del comercial (ej. `PCN-DG-25092026-001`; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), renderiza, guarda el PDF y registra la fila en `Cotizaciones`. La respuesta trae `pdf.url` |
 | 3b | "Déjalo en 18 %" | `registrar_ajuste_margen` (margen negociado, auditado en `MargenAjustes`), nuevo precio y nueva previsualización |
@@ -73,6 +73,8 @@ Reglas que el flujo garantiza (pruebas en `chat_slot_filling.feature`, `chat_web
 - Un turno a la vez por conversación; un segundo mensaje simultáneo recibe "Todavía estoy respondiendo tu mensaje anterior...".
 
 El recorrido técnico de un turno (candado, filtros, validador) está en [2.12](02-arquitectura.md#212-turno-de-webchat-de-punta-a-punta).
+
+El formulario de captura del frontend (HU-004) consulta a Nexo a través de la API, sin pasar por el agente: `GET /web/clientes?q=` (el mismo catálogo que `buscar_cliente`), `GET /web/municipios` (origen y destino), `GET /web/catalogos-flete` (tipo de vehículo, carrocería y clase de viaje) y `POST /web/cubicacion` (vehículo o flota sugeridos para los bultos). Respuestas y códigos en [7.3](07-api.md#73-endpoints).
 
 ## 4.4 Mis cotizaciones, seguimiento y nueva versión
 

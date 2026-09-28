@@ -33,7 +33,7 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | Sección | Contenido |
 |---|---|
 | [1. Descripción](docs/01-descripcion.md) | Objetivo, roles, capacidades, estado por issue, alcance y glosario |
-| [2. Arquitectura](docs/02-arquitectura.md) | Capas, módulos, convenciones, modelo de dominio, cada módulo de negocio, turno de `/web/chat`, login SSO y validador del agente (diagramas Mermaid) |
+| [2. Arquitectura](docs/02-arquitectura.md) | Capas, módulos, convenciones, modelo de dominio, cada módulo de negocio, turno de `/web/chat`, login SSO, validador del agente e integración con Nexo (diagramas Mermaid) |
 | [3. Infraestructura](docs/03-infraestructura.md) | Imagen Docker, variables de entorno, SQL Server (`dbo_cotifly`, `dbsolucionesti`, `DWCubosEBSSAP`), configuración por área y servicios externos |
 | [4. Flujo del sistema](docs/04-flujo-del-sistema.md) | Login, nueva cotización, mis cotizaciones, margen, Google Chat, correo, estados y procesos en segundo plano |
 | [5. Stack](docs/05-stack.md) | Tecnologías, paquetes NuGet con versión y licencia, imágenes |
@@ -59,6 +59,6 @@ Clases `cls*` e interfaces `ICls*` (el build falla si no), tablas PascalCase y c
 | Criterio del issue | Estado | Evidencia |
 |---|---|---|
 | `Dockerfile` multi-stage (build con SDK, runtime sin SDK) y `docker-compose.yml` para ejecución local | Cumplido con desviación | `Dockerfile` de #27 (build `--no-cache` verificado en #14). Sin `docker-compose` por decisión registrada en [ADR-007](specs/decisiones/ADR-007-contenedores-sin-docker-compose.md); en su lugar `scripts/levantar-local.ps1` y `.sh` levantan SQL Server 2019, el esquema y la API con `docker run` (desarrollo y QA local) |
-| Pruebas unitarias de los módulos de negocio y de integración de `/web/*`, ejecutables automáticamente en CI | Cumplido | 1752 pruebas en verde (1395 unitarias y 356 de integración; 1 omitida a propósito, `Categoria=sap`); jobs `unitarias` e `integracion` del CI con reportes TRX y cobertura (97,5 % de líneas en total, 99,3 % en Dominio) |
+| Pruebas unitarias de los módulos de negocio y de integración de `/web/*`, ejecutables automáticamente en CI | Cumplido | 1845 pruebas en verde el 2026-09-28 (1488 unitarias y 356 de integración; 1 omitida a propósito, `Categoria=sap`), ya con la integración de Nexo ([docs/08-testing.md](docs/08-testing.md#82-proyectos-y-alcance)); jobs `unitarias` e `integracion` del CI con reportes TRX y cobertura (97,5 % de líneas en total, 99,3 % en Dominio) |
 | Documentación técnica con las 9 secciones del estándar, sin emojis | Cumplido | `docs/01` a `docs/09`, más `docs/10-operacion.md` |
 | Ronda de regresión manual con Kevin (QA) de los 3 flujos principales en un entorno de pruebas | **Pendiente** | Casos listos en [docs/qa/regresion-manual.md](docs/qa/regresion-manual.md); requiere el backend desplegado en pruebas (HU-006) |
