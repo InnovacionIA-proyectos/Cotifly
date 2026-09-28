@@ -86,8 +86,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         {
             "{id}" when partes[1].Contains("admin", StringComparison.Ordinal) => "1",
             "{id}" => Guid.NewGuid().ToString(),
-            "{archivo}" => "PCN-01011999-001.pdf",
-            _ => "PCN-01011999-001",
+            "{archivo}" => "PCN-XX-01011999-001.pdf",
+            _ => "PCN-XX-01011999-001",
         });
         using var cliente = factory.CreateClient();
         using var peticion = new HttpRequestMessage(new HttpMethod(partes[0]), ruta);

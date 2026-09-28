@@ -27,6 +27,22 @@ public sealed record clsResultadoTurno(
     IReadOnlyList<clsResultadoHerramienta> Salidas)
 {
     /// <summary>
+    /// Respuesta final estructurada y validada (HU-003.10, #16): tipo de interacción, confirmación y acciones sugeridas. Si no se
+    /// indica, una respuesta conversacional con <see cref="Texto"/>.
+    /// </summary>
+    public clsRespuestaAgenteEstructurada Respuesta { get; init; } =
+        new() { Tipo = TipoRespuestaAgente.Conversacional, Texto = Texto, RequiereConfirmacion = false };
+
+    /// <summary>
+    /// True si el modelo no produjo una respuesta válida ni con el reintento y <see cref="Texto"/> es el respaldo controlado del
+    /// validador: los canales lo muestran como error (<c>200 {texto, error: true}</c> en <c>/web/chat</c>).
+    /// </summary>
+    public bool EsRespaldo { get; init; }
+
+    /// <summary>Reintentos de la respuesta final por validación fallida (0 o 1).</summary>
+    public int ReintentosRespuesta { get; init; }
+
+    /// <summary>
     /// Última salida de la herramienta <paramref name="herramienta"/> en el turno si terminó bien y es del tipo pedido (como
     /// <c>ultima_salida</c> + <c>_ok</c> del Python: si la última terminó con error, no hay salida).
     /// </summary>

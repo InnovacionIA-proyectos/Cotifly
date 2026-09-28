@@ -13,6 +13,7 @@ public sealed class clsChatClientGuionizado : IChatClient
 {
     private readonly ConcurrentQueue<Func<ChatResponse>> _guion = new();
     private Func<ChatResponse>? _repetir;
+    private Exception? _rechazoEsquema;
     private int _secuencia;
 
     /// <summary>Llamadas recibidas, en orden, con una copia de los mensajes de ese momento.</summary>
@@ -37,8 +38,35 @@ public sealed class clsChatClientGuionizado : IChatClient
         return this;
     }
 
-    /// <summary>Cierra el turno: la respuesta sin herramientas que termina el loop y la de la llamada final (ADR-003).</summary>
-    public clsChatClientGuionizado Cerrar(string texto) => Responder(texto).Responder(texto);
+    /// <summary>
+    /// Cierra el turno: la respuesta sin herramientas que termina el loop y la de la llamada final (ADR-003) como respuesta
+    /// estructurada válida (HU-003.10) de tipo <c>conversacional</c> con <paramref name="texto"/>.
+    /// </summary>
+    public clsChatClientGuionizado Cerrar(string texto) => Responder(texto).ResponderFinal(texto);
+
+    /// <summary>Respuesta de la llamada final con el JSON de <see cref="JsonFinal"/>.</summary>
+    public clsChatClientGuionizado ResponderFinal(string texto, string tipo = "conversacional", bool requiereConfirmacion = false, params string[] acciones) =>
+        Responder(JsonFinal(texto, tipo, requiereConfirmacion, acciones));
+
+    /// <summary>JSON de la respuesta final estructurada (<c>clsRespuestaAgenteEstructurada</c>): <c>acciones_sugeridas</c> null si no hay.</summary>
+    public static string JsonFinal(string texto, string tipo = "conversacional", bool requiereConfirmacion = false, params string[] acciones) =>
+        JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["tipo"] = tipo,
+            ["texto"] = texto,
+            ["requiere_confirmacion"] = requiereConfirmacion,
+            ["acciones_sugeridas"] = acciones is { Length: > 0 } ? acciones : null,
+        });
+
+    /// <summary>
+    /// Simula un proveedor sin JSON Schema: toda llamada que pida <c>response_format</c> con esquema lanza <paramref name="error"/>
+    /// (sin consumir el guion); las demás siguen el guion.
+    /// </summary>
+    public clsChatClientGuionizado RechazarJsonSchema(Exception error)
+    {
+        _rechazoEsquema = error;
+        return this;
+    }
 
     /// <summary>La siguiente llamada lanza <paramref name="error"/> (proveedor caído, 429...).</summary>
     public clsChatClientGuionizado Fallar(Exception error)
@@ -60,6 +88,11 @@ public sealed class clsChatClientGuionizado : IChatClient
     public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         Llamadas.Add(new clsLlamadaModelo([.. messages.Select(m => m.Clone())], options?.Clone()));
+        if (_rechazoEsquema is not null && options?.ResponseFormat is ChatResponseFormatJson { Schema: not null })
+        {
+            return Task.FromException<ChatResponse>(_rechazoEsquema);
+        }
+
         if (_guion.TryDequeue(out var siguiente))
         {
             return Task.FromResult(siguiente());

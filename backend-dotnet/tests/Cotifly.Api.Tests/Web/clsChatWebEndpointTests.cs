@@ -112,6 +112,74 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             $"SELECT COUNT(*) FROM dbo_cotifly.EventosConversacion WHERE spaceId = 'web/{sesion}' AND rol = 'user'")).Should().Be(1);
     }
 
+    // HU-003.10 (#16): una respuesta final malformada se reintenta una vez con la corrección y llega la válida; con el JSON Schema.
+    [Fact]
+    public async Task UnaRespuestaFinalMalformadaSeCorrigeConUnReintento()
+    {
+        var modelo = new clsChatClientGuionizado()
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.9, metodo = "markup" })
+            .Responder("fin del loop")
+            .Responder("{\"tipo\": \"previsualizacion\", \"texto\": \"El precio final es $3.500.000\", \"requiere_confirmacion\": true, \"herramienta\": \"reservar\"}")
+            .ResponderFinal("El precio final es $3.352.941. ¿Confirmas?", "previsualizacion", true, "confirmar_pdf");
+        using var api = Api(modelo);
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var sesion = SesionId();
+
+        using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("Cotiza Nacional YUMBO a BUN, costo 2.850.000", sesion));
+
+        var json = await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK);
+        json.GetProperty("texto").GetString().Should().Be("El precio final es $3.352.941. ¿Confirmas?");
+        json.GetProperty("precio").GetProperty("precio").GetDecimal().Should().Be(3_352_941m);
+        modelo.Llamadas.Should().HaveCount(5);
+        modelo.Llamadas[3].Opciones!.ResponseFormat.Should().BeOfType<ChatResponseFormatJson>();
+        modelo.Llamadas[3].Herramientas.Should().BeEmpty();
+        modelo.Llamadas[4].Mensajes[^1].Text.Should().Contain("herramienta");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(entorno.BaseDatos.CadenaCotifly,
+            $"SELECT TOP 1 contenido FROM dbo_cotifly.EventosConversacion WHERE spaceId = 'web/{sesion}' AND rol = 'assistant' ORDER BY createdAt DESC"))
+            .Should().Be("El precio final es $3.352.941. ¿Confirmas?");
+    }
+
+    // HU-003.10 (#16): si el reintento también falla, 200 RespuestaChatError con el texto de respaldo; nada sin validar llega al comercial.
+    [Fact]
+    public async Task SiLaRespuestaFinalNoValidaNiConElReintentoEs200ConErrorYElRespaldo()
+    {
+        var modelo = new clsChatClientGuionizado().Responder("fin del loop").Responder("{\"tipo\": \"conversacional\", \"texto\": \"Hol").Responder("Hola, ¿qué cotizamos?");
+        using var api = Api(modelo);
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("hola", SesionId()));
+
+        var json = await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK);
+        json.GetProperty("error").GetBoolean().Should().BeTrue();
+        json.GetProperty("texto").GetString().Should().Be(Cotifly.Aplicacion.Agente.Services.clsTextosAgente.RespuestaNoEstructurada);
+        modelo.Pendientes.Should().Be(0);
+    }
+
+    // HU-003.10 (#16): con el respaldo, lo que ya calcularon las herramientas (precio, margen) no se pierde: RespuestaChat con el texto
+    // de respaldo, así el comercial no repite el turno ni regenera el PDF.
+    [Fact]
+    public async Task ConElRespaldoLasSalidasDeLasHerramientasSiguenEnLaRespuesta()
+    {
+        var modelo = new clsChatClientGuionizado()
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.9, metodo = "markup" })
+            .Responder("fin del loop")
+            .Responder("{\"tipo\": \"previsualizacion\"")
+            .Responder("El precio es $9.999.999");
+        using var api = Api(modelo);
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("Cotiza Nacional YUMBO a BUN, costo 2.850.000", SesionId()));
+
+        var json = await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK);
+        json.TryGetProperty("error", out _).Should().BeFalse("es RespuestaChat, no RespuestaChatError");
+        json.GetProperty("texto").GetString().Should().Be(Cotifly.Aplicacion.Agente.Services.clsTextosAgente.RespuestaNoEstructurada);
+        json.GetProperty("precio").GetProperty("precio").GetDecimal().Should().Be(3_352_941m);
+        json.GetProperty("margen").GetProperty("origen").GetString().Should().Be("politica_linea");
+        json.GetProperty("herramientas").EnumerateArray().Select(h => h.GetString()).Should().Equal("obtener_margen", "calcular_precio");
+    }
+
     // Paridad con el Python: un fallo del proveedor responde 200 con error = true y el texto del límite de peticiones.
     [Fact]
     public async Task UnFalloDelProveedorEs200ConErrorYElTextoDelLimite()

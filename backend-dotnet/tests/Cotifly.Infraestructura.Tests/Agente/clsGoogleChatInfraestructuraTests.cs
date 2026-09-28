@@ -262,20 +262,20 @@ public sealed class clsGoogleChatInfraestructuraTests : IDisposable
         var reloj = new clsRelojFalso();
         var firma = Firma(reloj);
         var usuario = Guid.NewGuid();
-        var token = firma.Firmar("PCN-24092026-001.pdf", usuario);
+        var token = firma.Firmar("PCN-NV-24092026-001.pdf", usuario);
 
-        firma.Verificar("PCN-24092026-001.pdf", token).Should().Be(usuario);
-        firma.Verificar("PCN-24092026-002.pdf", token).Should().BeNull("el token es de otro archivo");
-        firma.Verificar("PCN-24092026-001.pdf", token[..^2] + (token[^2] == 'A' ? "BB" : "AA")).Should().BeNull("firma alterada");
-        firma.Verificar("PCN-24092026-001.pdf", $"{Guid.NewGuid():N}{token[32..]}").Should().BeNull("otro comercial con la misma firma");
-        firma.Verificar("PCN-24092026-001.pdf", "basura").Should().BeNull();
-        firma.Verificar("PCN-24092026-001.pdf", null).Should().BeNull();
-        Firma(reloj, "otra-clave-hmac-distinta-de-32-caracteres").Verificar("PCN-24092026-001.pdf", token).Should().BeNull("otra clave");
+        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().Be(usuario);
+        firma.Verificar("PCN-NV-24092026-002.pdf", token).Should().BeNull("el token es de otro archivo");
+        firma.Verificar("PCN-NV-24092026-001.pdf", token[..^2] + (token[^2] == 'A' ? "BB" : "AA")).Should().BeNull("firma alterada");
+        firma.Verificar("PCN-NV-24092026-001.pdf", $"{Guid.NewGuid():N}{token[32..]}").Should().BeNull("otro comercial con la misma firma");
+        firma.Verificar("PCN-NV-24092026-001.pdf", "basura").Should().BeNull();
+        firma.Verificar("PCN-NV-24092026-001.pdf", null).Should().BeNull();
+        Firma(reloj, "otra-clave-hmac-distinta-de-32-caracteres").Verificar("PCN-NV-24092026-001.pdf", token).Should().BeNull("otra clave");
 
         reloj.Avanzar(TimeSpan.FromMinutes(14));
-        firma.Verificar("PCN-24092026-001.pdf", token).Should().Be(usuario);
+        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().Be(usuario);
         reloj.Avanzar(TimeSpan.FromMinutes(2));
-        firma.Verificar("PCN-24092026-001.pdf", token).Should().BeNull("venció a los 15 minutos");
+        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().BeNull("venció a los 15 minutos");
     }
 
     [Fact]

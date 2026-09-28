@@ -70,14 +70,14 @@ internal sealed class clsArnesAgente
             .Returns(ci =>
             {
                 NitsFolio.Add(ci.ArgAt<string?>(1));
-                var folio = clsFolio.Crear(new DateOnly(2026, 9, 24), 1, ci.ArgAt<string?>(1)).Valor;
+                var folio = clsFolio.Crear(new DateOnly(2026, 9, 24), "NV", 1, ci.ArgAt<string?>(1)).Valor;
                 return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
             });
         Folios.CrearNuevaVersionAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 OrigenesVersion.Add(ci.ArgAt<Guid>(1));
-                var folio = clsFolio.Desde("PCN-24092026-001").Valor.ConVersion(2).Valor;
+                var folio = clsFolio.Desde("PCN-NV-24092026-001").Valor.ConVersion(2).Valor;
                 return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsSalidaPdf>>>>()(folio, CancellationToken.None);
             });
     }
@@ -116,7 +116,8 @@ internal sealed class clsArnesAgente
 
     public IClsCotizacionRepository Cotizaciones { get; } = Substitute.For<IClsCotizacionRepository>();
 
-    public IClsValidadorRespuestaAgente Validador { get; set; } = new clsValidadorRespuestaPasante();
+    /// <summary>Validador de la respuesta final; por defecto el real (HU-003.10) con <see cref="OpcionesAgente"/>.</summary>
+    public IClsValidadorRespuestaAgente? Validador { get; set; }
 
     public clsCandadoSesionFalso Candado { get; } = new();
 
@@ -150,7 +151,8 @@ internal sealed class clsArnesAgente
         var herramientas = new clsHerramientasCotizador(
             Contexto, Buscador, Tarifas, Margen, new clsPrecioService(), Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
         return new clsAgenteRunner(
-            Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(), Validador, Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas,
+            Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(),
+            Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas,
             Options.Create(OpcionesAgente), Options.Create(OpcionesSesiones), Options.Create(OpcionesCorreo), NullLoggerFactory.Instance);
     }
 
@@ -160,6 +162,27 @@ internal sealed class clsArnesAgente
     /// <summary>Estado guardado de la sesión.</summary>
     public Dominio.Agente.clsEstadoConversacion Estado(string hilo = Hilo) =>
         Sesiones.Sesion(hilo)?.EstadoAgente ?? Dominio.Agente.clsEstadoConversacion.Vacio;
+}
+
+/// <summary><see cref="System.Diagnostics.Metrics.IMeterFactory"/> mínimo para pruebas: un medidor nuevo por llamada.</summary>
+internal sealed class clsFabricaMedidoresPrueba : System.Diagnostics.Metrics.IMeterFactory
+{
+    private readonly List<System.Diagnostics.Metrics.Meter> _medidores = [];
+
+    public System.Diagnostics.Metrics.Meter Create(System.Diagnostics.Metrics.MeterOptions options)
+    {
+        var medidor = new System.Diagnostics.Metrics.Meter(options);
+        _medidores.Add(medidor);
+        return medidor;
+    }
+
+    public void Dispose()
+    {
+        foreach (var medidor in _medidores)
+        {
+            medidor.Dispose();
+        }
+    }
 }
 
 /// <summary>Candado por sesión en memoria: registra las tomas y, con <see cref="Ocupado"/>, simula otro turno en curso.</summary>

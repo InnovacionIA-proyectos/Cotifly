@@ -27,7 +27,9 @@ public sealed partial class clsChatWebController(
     public const int LargoMaximoMensaje = 8000;
 
     /// <summary>
-    /// 200 <c>RespuestaChat</c> (o <c>RespuestaChatError</c> con <c>error: true</c> ante un fallo del agente o del proveedor de IA);
+    /// 200 <c>RespuestaChat</c> (o <c>RespuestaChatError</c> con <c>error: true</c> ante un fallo del agente o del proveedor de IA, o
+    /// si la respuesta final no pasó la validación ni con el reintento y el turno no produjo PDF, precio ni margen, HU-003.10; si
+    /// los produjo, <c>RespuestaChat</c> con ellos y el texto de respaldo);
     /// 400 <c>sesion_id</c> o cuerpo inválido; 401 sin sesión; 404 si la sesión es de otro comercial; 429 límite de la API.
     /// </summary>
     [HttpPost("chat")]
@@ -70,7 +72,13 @@ public sealed partial class clsChatWebController(
                     : Error(resultado.Error);
             }
 
-            return Ok(clsRespuestaChat.Desde(resultado.Valor));
+            // Respaldo del validador (HU-003.10): el modelo no dio una respuesta válida ni con el reintento. Si las herramientas del turno
+            // ya produjeron datos (PDF, precio, margen), van en RespuestaChat con el texto de respaldo: el comercial no pierde el PDF
+            // generado ni lo vuelve a generar. Sin datos, el error controlado.
+            var respuesta = clsRespuestaChat.Desde(resultado.Valor);
+            return resultado.Valor.EsRespaldo && respuesta is { Pdf: null, Precio: null, Margen: null }
+                ? Ok(new clsRespuestaChatError(resultado.Valor.Texto))
+                : Ok(respuesta);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {

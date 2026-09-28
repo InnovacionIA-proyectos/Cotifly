@@ -107,10 +107,10 @@ public sealed class clsEstadoConversacionServiceTests
         var id = Guid.NewGuid();
         var inicial = clsEstadoConversacion.Vacio with { ConfirmacionPendiente = true };
 
-        var estado = _servicio.Aplicar(inicial, clsResultadoHerramienta.Exito(clsNombresHerramientas.GenerarPdf, new clsSalidaPdf(id, "PCN-24092026-001-v2", "/pdfs/x.pdf", true)), _sinArgumentos);
+        var estado = _servicio.Aplicar(inicial, clsResultadoHerramienta.Exito(clsNombresHerramientas.GenerarPdf, new clsSalidaPdf(id, "PCN-NV-24092026-001-v2", "/pdfs/x.pdf", true)), _sinArgumentos);
 
         estado.CotizacionId.Should().Be(id);
-        estado.FolioEnProgreso.Should().Be("PCN-24092026-001-v2");
+        estado.FolioEnProgreso.Should().Be("PCN-NV-24092026-001-v2");
         estado.Version.Should().Be(2);
         estado.ConfirmacionPendiente.Should().BeFalse();
     }

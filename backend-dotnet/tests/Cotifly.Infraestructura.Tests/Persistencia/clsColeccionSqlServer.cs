@@ -85,11 +85,14 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
     /// <summary>Folio único por prueba (la base es compartida y <c>folio</c> es UNIQUE).</summary>
     protected static string FolioUnico() => $"PCN-T-{Guid.NewGuid():N}";
 
-    /// <summary>Crea y guarda un comercial con nombre único; devuelve su id.</summary>
-    protected async Task<Guid> CrearUsuarioAsync(string? nombreUsuario = null)
+    /// <summary>
+    /// Crea y guarda un comercial con nombre único; devuelve su id. El nombre completo por defecto ("Comercial de prueba") da
+    /// las iniciales <c>CP</c> en el folio (ADR-011).
+    /// </summary>
+    protected async Task<Guid> CrearUsuarioAsync(string? nombreUsuario = null, string nombreCompleto = "Comercial de prueba")
     {
         var usuario = clsUsuarioWeb.Crear(
-            nombreUsuario ?? $"u{Guid.NewGuid():N}", "Comercial de prueba", "comercial@boterosoto.com.co", "Antioquia", Reloj.AhoraUtc).Valor;
+            nombreUsuario ?? $"u{Guid.NewGuid():N}", nombreCompleto, "comercial@boterosoto.com.co", "Antioquia", Reloj.AhoraUtc).Valor;
         await EnAmbitoAsync(s =>
         {
             s.GetRequiredService<IClsUsuarioWebRepository>().Agregar(usuario);

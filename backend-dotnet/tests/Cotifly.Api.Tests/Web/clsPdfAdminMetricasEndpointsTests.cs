@@ -72,7 +72,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
 
     [Theory]
     [InlineData("otro-sin-extension")]
-    [InlineData("PCN-01011999-001.pdf")]
+    [InlineData("PCN-NV-01011999-001.pdf")]
     [InlineData("..%2F..%2Fetc%2Fpasswd.pdf")]
     public async Task UnArchivoInvalidoOInexistenteResponde404(string archivo)
     {

@@ -53,6 +53,13 @@ public static class clsTextosAgente
         return false;
     }
 
+    /// <summary>
+    /// Respaldo del validador de la respuesta final (HU-003.10, #16): el modelo no produjo una respuesta válida ni con el reintento.
+    /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>, texto simple en Google Chat).
+    /// </summary>
+    public const string RespuestaNoEstructurada =
+        "No pude estructurar la respuesta. Reenvía tu mensaje o reformúlalo; lo que ya calculé en esta conversación no se pierde.";
+
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
 

@@ -173,10 +173,10 @@ public sealed class clsPasosAgente(clsContextoWeb web, clsContextoAgente agente)
     public void EntoncesTexto(string inicio) => web.UltimoJson().GetProperty("texto").GetString().Should().StartWith(inicio);
 
     [Then("la respuesta del chat trae el PDF con un folio del NIT {string}")]
-    public void EntoncesPdfConNit(string nit) => FolioDelPdf().Should().MatchRegex($"^PCN-{nit}-[0-9]{{8}}-[0-9]{{3}}$");
+    public void EntoncesPdfConNit(string nit) => FolioDelPdf().Should().MatchRegex($"^PCN-{nit}-[A-Z]{{2}}-[0-9]{{8}}-[0-9]{{3}}$");
 
     [Then("la respuesta del chat trae el PDF con un folio sin NIT")]
-    public void EntoncesPdfSinNit() => FolioDelPdf().Should().MatchRegex("^PCN-[0-9]{8}-[0-9]{3}$");
+    public void EntoncesPdfSinNit() => FolioDelPdf().Should().MatchRegex("^PCN-[A-Z]{2}-[0-9]{8}-[0-9]{3}$");
 
     [Then(@"^la cotización del PDF quedó guardada para ""([^""]+)"" con el NIT ""([^""]+)"" de origen ""([^""]+)"", la línea ""([^""]+)"", el margen ""([^""]+)"" de origen ""([^""]+)"" y el precio ""([^""]+)""$")]
     public Task EntoncesGuardadaConNit(string alias, string nit, string origenCliente, string linea, string margen, string origenMargen, string precio) =>

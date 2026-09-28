@@ -35,6 +35,10 @@ public static partial class clsNumerosDelMensaje
         return valores;
     }
 
+    /// <summary>Valores posibles de un número suelto (sin sufijo de millones); los apóstrofos de miles se ignoran.</summary>
+    internal static IEnumerable<decimal> CandidatosDe(string numero) =>
+        Candidatos(numero.Replace("'", string.Empty, StringComparison.Ordinal).Replace("’", string.Empty, StringComparison.Ordinal));
+
     private static IEnumerable<decimal> Candidatos(string texto)
     {
         // Sin separadores de decimales: puntos y comas como miles.
