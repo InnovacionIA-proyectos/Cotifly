@@ -57,7 +57,7 @@ Medida del 2026-09-25 (#14, `docker build --no-cache` con el código de #16): **
 
 **Variables de entorno:** se documentan en `.env.example` (copiar a `.env`, que no se versiona). Ningún secreto va en `appsettings*.json` ni en el código.
 
-ASP.NET Core traduce `__` (doble guion bajo) a `:`: `Jwt__SigningKey` es la clave `Jwt:SigningKey`, y `Cors__OrigenesPermitidos__0` el primer elemento de `Cors:OrigenesPermitidos`. En QA y producción los valores llegan por Dokploy (HU-006.5).
+ASP.NET Core traduce `__` (doble guion bajo) a `:`: `Jwt__SigningKey` es la clave `Jwt:SigningKey`, y `Cors__OrigenesPermitidos__0` el primer elemento de `Cors:OrigenesPermitidos`. En QA y producción los valores llegan por Dokploy (HU-006.5, #29, ADR-013): variables de entorno del stack para todo, y un secreto de Docker Swarm montado en `/run/secrets/gchat_sa.json` para `GChat__SaJson`. Listado con dónde se carga cada una y la plantilla de la tabla de producción (HU-007.1, #33): [`DEPLOY.md`](../../DEPLOY.md) §2 y §3.
 
 Resumen de todas las variables de [`.env.example`](../.env.example). "Production" indica si la API no arranca sin la variable (o con un valor de ejemplo) en ese entorno; las columnas de detalle enlazan a la tabla de cada área.
 
