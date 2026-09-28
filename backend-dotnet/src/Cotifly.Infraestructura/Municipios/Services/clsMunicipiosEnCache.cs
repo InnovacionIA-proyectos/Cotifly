@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Configuracion;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Municipios.Services;
@@ -46,12 +47,18 @@ public sealed class clsCacheCatalogoMunicipios
 /// <item><b>Sin caché negativa:</b> un fallo solo se comparte con los que esperaban esa consulta. No se guarda porque Nexo
 /// responde el mismo código cuando el comercial que consulta no tiene <c>idUsuarioExterno</c>, y ese fallo no debe dejar sin
 /// catálogo a los demás.</item>
+/// <item><b>Excepciones:</b> una excepción inesperada de la consulta compartida se registra una vez en <c>Warning</c> y llega a
+/// todos los que esperaban.</item>
 /// <item><b>Identidad:</b> la consulta que va a Nexo usa al comercial que la disparó (exige su <c>idUsuarioExterno</c>); mientras
 /// la foto esté vigente se sirve a cualquier comercial autenticado.</item>
 /// </list>
 /// </remarks>
 public sealed class clsMunicipiosEnCache(
-    IClsMunicipiosProvider interno, clsCacheCatalogoMunicipios cache, IClsReloj reloj, IOptions<clsOpcionesNexo> opciones)
+    IClsMunicipiosProvider interno,
+    clsCacheCatalogoMunicipios cache,
+    IClsReloj reloj,
+    IOptions<clsOpcionesNexo> opciones,
+    ILogger<clsMunicipiosEnCache> logger)
     : IClsMunicipiosProvider
 {
     public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
@@ -89,10 +96,17 @@ public sealed class clsMunicipiosEnCache(
 
             return resultado;
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException ex)
         {
             // El ámbito del comercial que disparó la consulta terminó antes (petición cancelada): para los demás es "no disponible".
+            logger.LogWarning(ex, "La consulta compartida del catálogo de municipios se interrumpió (ámbito liberado).");
             return new clsErrorDominio(clsCodigosError.MunicipiosNoDisponible, clsMunicipiosNexo.Mensaje);
+        }
+        catch (Exception ex)
+        {
+            // Una sola vez, aunque ningún llamador siga esperando (todos cancelaron): la excepción no queda sin observar.
+            logger.LogWarning(ex, "Falló la consulta compartida del catálogo de municipios de Nexo.");
+            throw;
         }
         finally
         {

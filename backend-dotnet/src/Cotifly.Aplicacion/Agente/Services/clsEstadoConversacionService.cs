@@ -48,13 +48,17 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     private static readonly string[] _ordinales = ["primero", "segundo", "tercero", "cuarto", "quinto"];
     private static readonly string[] _ordinalesFemeninos = ["primera", "segunda", "tercera", "cuarta", "quinta"];
 
-    /// <summary>Palabras con mayúscula que no nombran un lugar (inicio de frase, cortesía, confirmación, campo).</summary>
+    /// <summary>
+    /// Palabras (en su <c>Clave</c>: sin tildes ni mayúsculas) que puede traer un mensaje que elige un municipio candidato además de
+    /// los nombres de los candidatos (HU-005.13): artículos, cortesía, confirmación, el campo y la posición.
+    /// </summary>
     private static readonly string[] _palabrasDeRelleno =
     [
-        "el", "la", "los", "las", "de", "del", "en", "es", "ese", "esa", "este", "esta", "eso", "que", "sea", "si", "no", "ok", "okay",
-        "dale", "listo", "claro", "perfecto", "correcto", "confirmo", "gracias", "por", "favor", "porfa", "opcion", "numero", "municipio",
-        "ciudad", "departamento", "origen", "destino", "sale", "llega", "va", "primero", "primera", "segundo", "segunda", "tercero",
-        "tercera", "cuarto", "cuarta", "quinto", "quinta", "ultimo", "ultima", "uno", "dos", "tres", "cuatro", "cinco", "hola", "bueno",
+        "el", "la", "los", "las", "lo", "de", "del", "en", "es", "era", "seria", "sea", "ese", "esa", "este", "esta", "eso", "misma",
+        "mismo", "que", "si", "no", "ok", "okay", "dale", "listo", "claro", "perfecto", "correcto", "exacto", "obvio", "bueno", "pues",
+        "mejor", "elijo", "escojo", "quiero", "confirmo", "gracias", "por", "favor", "porfa", "opcion", "numero", "municipio", "ciudad",
+        "departamento", "origen", "destino", "primero", "primera", "segundo", "segunda", "tercero", "tercera", "cuarto", "cuarta",
+        "quinto", "quinta", "ultimo", "ultima", "uno", "dos", "tres", "cuatro", "cinco", "hola",
     ];
 
     public clsEstadoConversacion Aplicar(clsEstadoConversacion estado, clsResultadoHerramienta resultado, IReadOnlyDictionary<string, object?> argumentos)
@@ -150,7 +154,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             }
         }
 
-        if (actual.TieneMunicipiosPorConfirmar() && ElegirMunicipio(actual, mensaje ?? string.Empty, normalizado, clientePendiente) is { } eleccion)
+        if (actual.TieneMunicipiosPorConfirmar() && ElegirMunicipio(actual, normalizado, clientePendiente) is { } eleccion)
         {
             actual = ConMunicipio(actual, eleccion.Campo, eleccion.Municipio);
             eligio = true;
@@ -313,7 +317,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     /// Elige un municipio candidato por el mensaje del comercial (HU-005.13). Nunca elige si:
     /// <list type="bullet">
     /// <item>el mensaje niega ("no es el de Nariño");</item>
-    /// <item>nombra con mayúscula un lugar que no es de los candidatos ("el destino es Medellín, Antioquia");</item>
+    /// <item>trae alguna palabra que no es de los candidatos (municipio, departamento o país), del campo, de la posición ni de
+    /// relleno: "va para medellin antioquia" o "el cliente es de antioquia" no eligen la de Antioquia; el modelo vuelve a llamar a
+    /// <c>resolver_municipio</c>;</item>
     /// <item>nombra solo el campo que no está pendiente ("el destino..." con el origen por elegir);</item>
     /// <item>con el origen y el destino pendientes y sin nombrar el campo, el departamento coincide en las dos listas.</item>
     /// </list>
@@ -321,9 +327,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     /// juego y sin clientes candidatos, por posición ("2", "la segunda") o por un "sí" con un solo candidato.
     /// </summary>
     private static (string Campo, clsMunicipioResuelto Municipio)? ElegirMunicipio(
-        clsEstadoConversacion estado, string mensaje, string normalizado, bool clientePendiente)
+        clsEstadoConversacion estado, string normalizado, bool clientePendiente)
     {
-        if (ExpresionNegacion().IsMatch(normalizado) || NombraOtroLugar(estado, mensaje))
+        if (ExpresionNegacion().IsMatch(normalizado) || !SoloPalabrasDeEleccion(estado, normalizado))
         {
             return null;
         }
@@ -389,10 +395,11 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     }
 
     /// <summary>
-    /// ¿El mensaje nombra con mayúscula inicial un lugar que no es ninguno de los candidatos pendientes (ni su departamento o país)?
-    /// Heurística para "el destino es Medellín, Antioquia" con el origen "La Unión" pendiente: no elige la de Antioquia.
+    /// ¿Todas las palabras del mensaje son de una elección? Nombres de los candidatos pendientes (municipio, departamento, país),
+    /// palabras de relleno (<see cref="_palabrasDeRelleno"/>) o un dígito de posición. Criterio conservador: ante cualquier otra
+    /// palabra no se elige nada.
     /// </summary>
-    private static bool NombraOtroLugar(clsEstadoConversacion estado, string mensaje)
+    private static bool SoloPalabrasDeEleccion(clsEstadoConversacion estado, string normalizado)
     {
         var permitidas = new HashSet<string>(_palabrasDeRelleno, StringComparer.Ordinal);
         foreach (var candidato in estado.CandidatosOrigen.Concat(estado.CandidatosDestino))
@@ -403,16 +410,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             }
         }
 
-        foreach (Match palabra in ExpresionPalabraConMayuscula().Matches(mensaje))
-        {
-            var clave = clsResolvedorMunicipios.Clave(palabra.Value);
-            if (clave.Length >= 3 && !permitidas.Contains(clave))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return clsResolvedorMunicipios.Clave(normalizado)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .All(palabra => permitidas.Contains(palabra) || (palabra.Length == 1 && char.IsAsciiDigit(palabra[0])));
     }
 
     private static clsEstadoConversacion AplicarMargen(clsEstadoConversacion estado, clsMargenResuelto margen)
@@ -534,9 +534,6 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
     [GeneratedRegex(@"^\W*(opcion |el |la |numero )?(?<n>[1-9])\W*$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionPosicion();
-
-    [GeneratedRegex(@"\b\p{Lu}[\p{L}\p{Mn}]*", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex ExpresionPalabraConMayuscula();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacios();

@@ -208,6 +208,33 @@ public sealed class clsResolverMunicipioTests
         estado.CandidatosOrigen.Should().HaveCount(3);
     }
 
+    // N1: un mensaje en minúsculas sobre otro lugar tampoco elige; N3: las palabras de relleno sí dejan elegir.
+    [Theory]
+    [InlineData("va para medellin antioquia")]
+    [InlineData("el cliente es de antioquia")]
+    [InlineData("la carga sale de antioquia hacia narino")]
+    public void UnMensajeConPalabrasQueNoSonDeLaEleccionNoEligeNada(string mensaje)
+    {
+        var pendiente = clsEstadoConversacion.Vacio with { Origen = "La Unión", CandidatosOrigen = [_unionAntioquia, _unionNarino, _unionValle] };
+
+        _servicio.ReconocerMensaje(pendiente, mensaje).Estado.Should().Be(pendiente);
+    }
+
+    [Theory]
+    [InlineData("Exacto, la de Nariño")]
+    [InlineData("Pues la de Nariño")]
+    [InlineData("Elijo la de Nariño")]
+    [InlineData("Mejor la de Nariño")]
+    [InlineData("Sería la de Nariño, por favor")]
+    [InlineData("Escojo esa misma, la de Nariño")]
+    [InlineData("Quiero la de Nariño")]
+    public void LasPalabrasDeRellenoDejanElegirPorDepartamento(string mensaje)
+    {
+        var pendiente = clsEstadoConversacion.Vacio with { Origen = "La Unión", CandidatosOrigen = [_unionAntioquia, _unionNarino, _unionValle] };
+
+        _servicio.ReconocerMensaje(pendiente, mensaje).Estado.OrigenMunicipio.Should().Be(_unionNarino);
+    }
+
     [Theory]
     [InlineData("Valle del Cauca", 22)]
     [InlineData("Argelia, Valle del Cauca", 22)]

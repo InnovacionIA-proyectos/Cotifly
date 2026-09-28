@@ -37,6 +37,15 @@ public sealed class clsResolvedorMunicipiosTests
         new(21, "19050", "Argelia", "Cauca", "Colombia"),
         new(22, "76054", "Argelia", "Valle del Cauca", "Colombia"),
         new(23, "05001", "Medellín", "Antioquia", "Colombia"),
+        new(30, "47001", "Santa Marta", "Magdalena", "Colombia"),
+        new(31, "13683", "Santa Rosa", "Bolívar", "Colombia"),
+        new(32, "05686", "Santa Rosa de Osos", "Antioquia", "Colombia"),
+        new(33, "52001", "San Juan de Pasto", "Nariño", "Colombia"),
+        new(34, "44650", "San Juan del Cesar", "La Guajira", "Colombia"),
+        new(35, "08372", "Juan de Acosta", "Atlántico", "Colombia"),
+        new(36, "99001", "Puerto Carreño", "Vichada", "Colombia"),
+        new(37, "15572", "Puerto Boyacá", "Boyacá", "Colombia"),
+        new(38, "86568", "Puerto Asís", "Putumayo", "Colombia"),
     ];
 
     [Theory]
@@ -85,6 +94,24 @@ public sealed class clsResolvedorMunicipiosTests
         resolucion.Coincidencia.Should().Be(CoincidenciaMunicipio.Unica, texto);
         resolucion.Resuelto!.Id.Should().Be(id);
     }
+
+    // N2: el desempate por capital no convierte un componente genérico del nombre en un resultado único.
+    [Theory]
+    [InlineData("Santa", 30, 3)]
+    [InlineData("Juan", 33, 3)]
+    [InlineData("Puerto", 36, 3)]
+    public void UnComponenteGenericoSePreguntaConLaCapitalPrimero(string texto, int capital, int total)
+    {
+        var resolucion = clsResolvedorMunicipios.Resolver(texto, _catalogo);
+
+        resolucion.Coincidencia.Should().Be(CoincidenciaMunicipio.Varias, texto);
+        resolucion.Candidatos[0].Id.Should().Be(capital, "la capital va primera");
+        resolucion.Total.Should().Be(total);
+    }
+
+    [Fact]
+    public void UnaPalabraCompletaQueSoloEstaEnUnMunicipioSeUsaAunqueNoSeaSuComienzo() =>
+        clsResolvedorMunicipios.Resolver("Marta", _catalogo).Resuelto!.Id.Should().Be(30, "regla de palabra completa, como Cali, no el desempate");
 
     [Fact]
     public void CartagenaConElDepartamentoDelOtroMunicipioEligeEse()

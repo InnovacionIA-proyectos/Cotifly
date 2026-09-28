@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Municipios.Services;
@@ -25,7 +26,12 @@ internal static class clsFabricaMunicipios
 
         var nexo = servicios.GetRequiredService<clsMunicipiosNexo>();
         return opciones.Value.MinutosCacheMunicipios > 0
-            ? new clsMunicipiosEnCache(nexo, servicios.GetRequiredService<clsCacheCatalogoMunicipios>(), servicios.GetRequiredService<IClsReloj>(), opciones)
+            ? new clsMunicipiosEnCache(
+                nexo,
+                servicios.GetRequiredService<clsCacheCatalogoMunicipios>(),
+                servicios.GetRequiredService<IClsReloj>(),
+                opciones,
+                servicios.GetRequiredService<ILogger<clsMunicipiosEnCache>>())
             : nexo;
     }
 }

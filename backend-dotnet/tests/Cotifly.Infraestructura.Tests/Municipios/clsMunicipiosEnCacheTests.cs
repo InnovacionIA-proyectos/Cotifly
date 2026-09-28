@@ -23,6 +23,7 @@ public sealed class clsMunicipiosEnCacheTests
     private readonly IClsMunicipiosProvider _interno = Substitute.For<IClsMunicipiosProvider>();
     private readonly clsCacheCatalogoMunicipios _cache = new();
     private readonly clsRelojFalso _reloj = new();
+    private readonly clsLoggerFalso<clsMunicipiosEnCache> _logger = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -143,6 +144,28 @@ public sealed class clsMunicipiosEnCacheTests
     }
 
     [Fact]
+    public async Task UnaExcepcionDeLaConsultaCompartidaSeRegistraUnaVezYLlegaATodos()
+    {
+        var liberar = new TaskCompletionSource();
+        _interno.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns<Task<clsResultado<IReadOnlyList<clsMunicipio>>>>(async _ =>
+        {
+            await liberar.Task;
+            throw new InvalidOperationException("inesperado");
+        });
+        var proveedor = Proveedor(minutos: 60);
+
+        var consultas = Enumerable.Range(0, 3).Select(_ => proveedor.ObtenerAsync(Guid.NewGuid(), Ct)).ToList();
+        liberar.SetResult();
+
+        foreach (var consulta in consultas)
+        {
+            await FluentActions.Awaiting(() => consulta).Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        _logger.Registros.Should().ContainSingle(e => e.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && e.Excepcion is InvalidOperationException);
+    }
+
+    [Fact]
     public void ElEstadoConMunicipiosSobreviveAlJsonDeSesiones()
     {
         var estado = clsEstadoConversacion.Vacio with
@@ -159,5 +182,5 @@ public sealed class clsMunicipiosEnCacheTests
     }
 
     private clsMunicipiosEnCache Proveedor(int minutos) =>
-        new(_interno, _cache, _reloj, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, MinutosCacheMunicipios = minutos }));
+        new(_interno, _cache, _reloj, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, MinutosCacheMunicipios = minutos }), _logger);
 }

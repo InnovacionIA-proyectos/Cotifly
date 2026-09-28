@@ -27,7 +27,8 @@ namespace Cotifly.Aplicacion.Municipios.Services;
 ///   <item>nombre exacto;</item>
 ///   <item>palabras completas dentro del nombre (<c>Cali</c> → <c>Santiago de Cali</c>, nunca <c>Calima</c> ni
 ///   <c>California</c>). Si hay varias y una sola es capital de departamento (código Dane terminado en <c>001</c>), se usa esa
-///   (<c>Cartagena</c> → <c>Cartagena de Indias</c>, no <c>Cartagena del Chairá</c>);</item>
+///   solo si el texto es el comienzo de su nombre y no es un componente genérico (<c>Cartagena</c> → <c>Cartagena de Indias</c>,
+///   no <c>Cartagena del Chairá</c>; <c>Santa</c>, <c>Juan</c> o <c>Puerto</c> se preguntan, con la capital primera);</item>
 ///   <item>comienzo de una palabra del nombre, con 4 letras o más (<c>Barranq</c> → <c>Barranquilla</c>);</item>
 ///   <item><b>aproximada:</b> el texto (3 letras o más) aparece dentro del nombre. Siempre se pide confirmación, aunque sea una
 ///   sola: nunca se asume un municipio por parecido.</item>
@@ -82,13 +83,17 @@ public static class clsResolvedorMunicipios
             }
 
             var conPista = FiltrarPorDepartamento(porNombre.Filas, pista);
-            return conPista.Count > 0
-                ? Con(original, conPista, porNombre.Aproximada)
-                : Con(original, Desempatar(porNombre.Filas, porNombre.PorPalabra), porNombre.Aproximada);
+            if (conPista.Count > 0)
+            {
+                return Con(original, conPista, porNombre.Aproximada);
+            }
+
+            var (desempatadas, primero) = Desempatar(porNombre.Filas, porNombre.PorPalabra, nombre);
+            return Con(original, desempatadas, porNombre.Aproximada, primero);
         }
 
         var niveles = Buscar(clave, filas, desempatar: true);
-        return Con(original, niveles.Filas, niveles.Aproximada);
+        return Con(original, niveles.Filas, niveles.Aproximada, niveles.Primero);
     }
 
     /// <summary>
@@ -175,7 +180,8 @@ public static class clsResolvedorMunicipios
         var porPalabra = filas.Where(f => ContienePalabras(f.Municipio, clave)).ToList();
         if (porPalabra.Count > 0)
         {
-            return new clsBusqueda(desempatar ? Desempatar(porPalabra, true) : porPalabra, false, true);
+            var (desempatadas, primero) = desempatar ? Desempatar(porPalabra, true, clave) : (porPalabra, null);
+            return new clsBusqueda(desempatadas, false, true, primero);
         }
 
         if (clave.Length >= LargoMinimoPrefijo)
@@ -193,17 +199,41 @@ public static class clsResolvedorMunicipios
         return new clsBusqueda(aproximadas, true, false);
     }
 
-    /// <summary>Entre varias coincidencias por palabra, la única capital de departamento (Dane <c>XX001</c>), si la hay.</summary>
-    private static List<clsFila> Desempatar(List<clsFila> filas, bool porPalabra)
+    /// <summary>
+    /// Entre varias coincidencias por palabra, la única capital de departamento (Dane <c>XX001</c>), solo si el texto es el comienzo
+    /// del nombre de la capital (palabras completas) y no es un componente genérico de nombres (<see cref="ComponentesGenericos"/>):
+    /// <c>Cartagena</c> → <c>Cartagena de Indias</c>; <c>Santa</c>, <c>Juan</c> o <c>Puerto</c> no. Si no aplica, se devuelven todas y
+    /// la capital va primera en los candidatos.
+    /// </summary>
+    private static (List<clsFila> Filas, clsFila? Primero) Desempatar(List<clsFila> filas, bool porPalabra, string clave)
     {
         if (!porPalabra || filas.Count < 2)
         {
-            return filas;
+            return (filas, null);
         }
 
         var capitales = filas.Where(f => f.Original.CodigoDane?.Trim() is { Length: 5 } dane && dane.EndsWith(SufijoDaneCapital, StringComparison.Ordinal)).ToList();
-        return capitales.Count == 1 ? capitales : filas;
+        if (capitales.Count != 1)
+        {
+            return (filas, null);
+        }
+
+        var capital = capitales[0];
+        var alComienzo = capital.Municipio.StartsWith(clave + " ", StringComparison.Ordinal);
+        return alComienzo && !ComponentesGenericos.Contains(clave) ? ([capital], null) : (filas, capital);
     }
+
+    /// <summary>
+    /// Palabras (claves) que forman parte de muchos nombres de municipios y no identifican uno solo: nunca desempatan por capital
+    /// (<c>Santa</c> no es <c>Santa Marta</c>).
+    /// </summary>
+    public static readonly IReadOnlySet<string> ComponentesGenericos = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "san", "santa", "santo", "santos", "puerto", "villa", "villa de", "el", "la", "los", "las", "nueva", "nuevo", "san jose",
+        "san juan", "santiago", "san andres", "san antonio", "san carlos", "san luis", "san martin", "san pedro", "san rafael",
+        "san vicente", "san bernardo", "santa ana", "santa cruz", "santa rosa", "santa maria", "santa barbara", "juan", "jose", "maria",
+        "valle", "monte", "alto", "bajo", "la paz", "el carmen", "de", "del",
+    };
 
     private static List<clsFila> FiltrarPorDepartamento(List<clsFila> filas, string pista)
     {
@@ -258,7 +288,7 @@ public static class clsResolvedorMunicipios
 
     private static clsResolucionMunicipio Ninguna(string texto) => new(texto, CoincidenciaMunicipio.Ninguna, [], 0);
 
-    private static clsResolucionMunicipio Con(string texto, List<clsFila> filas, bool aproximada)
+    private static clsResolucionMunicipio Con(string texto, List<clsFila> filas, bool aproximada, clsFila? primero = null)
     {
         if (filas.Count == 0)
         {
@@ -266,7 +296,8 @@ public static class clsResolvedorMunicipios
         }
 
         var candidatos = filas
-            .OrderBy(f => f.Municipio, StringComparer.Ordinal)
+            .OrderBy(f => ReferenceEquals(f, primero) ? 0 : 1)
+            .ThenBy(f => f.Municipio, StringComparer.Ordinal)
             .ThenBy(f => f.Departamento, StringComparer.Ordinal)
             .Take(MaximoCandidatos)
             .Select(f => Resuelto(f.Original))
@@ -286,5 +317,5 @@ public static class clsResolvedorMunicipios
 
     private sealed record clsFila(clsMunicipio Original, string Municipio, string Departamento, string Pais);
 
-    private sealed record clsBusqueda(List<clsFila> Filas, bool Aproximada, bool PorPalabra);
+    private sealed record clsBusqueda(List<clsFila> Filas, bool Aproximada, bool PorPalabra, clsFila? Primero = null);
 }
