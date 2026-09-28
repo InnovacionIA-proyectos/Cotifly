@@ -1,0 +1,296 @@
+# =============================================================================
+# CI del backend .NET 10 de Cotifly (HU-003.8, #14). Documentación: backend-dotnet/docs/08-testing.md.
+#
+# Jobs (independientes salvo "cobertura"):
+#   unitarias         restore + build Release (warnings como errores) + pruebas sin la categoría Integracion
+#   integracion       build + pruebas Integracion (Testcontainers: SQL Server 2019 en el Docker del runner)
+#   cobertura         une la cobertura de ambos, publica el resumen y exige Cotifly.Dominio >= 90 % (ADR-010)
+#   auditoria-nuget   vulnerabilidades NuGet directas y transitivas: cualquier hallazgo falla
+#   imagen-docker     docker build del Dockerfile + prueba de humo (/health y HEALTHCHECK)
+#   contrato-openapi  redocly lint de specs/openapi.yaml (falla con errores; los warnings solo se muestran)
+#
+# La categoría "sap" (pruebas contra SAP TM real, HU-009) se excluye siempre: necesita red corporativa.
+# Sin docker-compose (ADR-007): SQL Server lo levanta Testcontainers dentro de las pruebas.
+# =============================================================================
+name: backend-dotnet
+
+on:
+  push:
+    branches: [QA, main]
+    paths:
+      - 'backend-dotnet/**'
+      - 'db/migrations_mssql/**'
+      - '.github/workflows/backend-dotnet.yml'
+  pull_request:
+    branches: [QA, main]
+    paths:
+      - 'backend-dotnet/**'
+      - 'db/migrations_mssql/**'
+      - '.github/workflows/backend-dotnet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-dotnet-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  # Telemetría de Microsoft.Testing.Platform y sus extensiones (CodeCoverage, cláusula 4.a de su licencia; ADR-010 §7).
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  REQNROLL_TELEMETRY_ENABLED: '0'
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  SOLUCION: Cotifly.sln
+
+defaults:
+  run:
+    working-directory: backend-dotnet
+    shell: bash
+
+jobs:
+  unitarias:
+    name: Build y pruebas unitarias
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar .NET (versión de global.json)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: backend-dotnet/global.json
+
+      - name: Caché de NuGet
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('backend-dotnet/Directory.Packages.props', 'backend-dotnet/**/*.csproj', 'backend-dotnet/**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "$SOLUCION"
+
+      # TreatWarningsAsErrors está en Directory.Build.props: cualquier warning rompe el build
+      # (salvo NU1900-NU1904, que revisa el job auditoria-nuget de forma estricta).
+      - name: Build (Release, warnings como errores)
+        run: dotnet build "$SOLUCION" -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      # --ignore-exit-code 8: tras el filtro, Cotifly.Aceptacion.Tests queda con cero pruebas (código 8 de MTP).
+      - name: Pruebas unitarias (sin Integracion ni sap)
+        run: >
+          dotnet test --solution "$SOLUCION" -c Release --no-build
+          --filter-not-trait "Categoria=Integracion" --filter-not-trait "Categoria=sap"
+          --ignore-exit-code 8
+          --results-directory "$GITHUB_WORKSPACE/backend-dotnet/TestResults/unitarias"
+          --report-trx
+          --coverage --coverage-output-format cobertura
+          --coverage-settings "$GITHUB_WORKSPACE/backend-dotnet/tests/cobertura.config.xml"
+
+      # --ignore-exit-code 8 también taparía un filtro que no descubra ninguna prueba: se exige un mínimo.
+      # Subir el mínimo cuando crezca la suite (hoy 1395 unitarias).
+      - name: Pruebas descubiertas (mínimo 1300)
+        run: sh scripts/contar-pruebas-trx.sh TestResults/unitarias 1300
+
+      - name: Publicar TRX
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: trx-unitarias
+          path: backend-dotnet/TestResults/unitarias/*.trx
+          if-no-files-found: warn
+
+      - name: Publicar cobertura
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cobertura-unitarias
+          path: backend-dotnet/TestResults/unitarias/*.cobertura.xml
+          if-no-files-found: warn
+
+  integracion:
+    name: Pruebas de integración (Testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar .NET (versión de global.json)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: backend-dotnet/global.json
+
+      - name: Caché de NuGet
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('backend-dotnet/Directory.Packages.props', 'backend-dotnet/**/*.csproj', 'backend-dotnet/**/Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # La imagen pesa ~1,5 GB: bajarla antes deja el tiempo de descarga fuera del timeout de las pruebas.
+      - name: Descargar SQL Server 2019
+        run: docker pull mcr.microsoft.com/mssql/server:2019-latest
+
+      - name: Restore
+        run: dotnet restore "$SOLUCION"
+
+      - name: Build (Release, warnings como errores)
+        run: dotnet build "$SOLUCION" -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      # Testcontainers usa el Docker del runner (ubuntu-latest lo trae); sin TESTCONTAINERS_HOST_OVERRIDE.
+      - name: Pruebas de integración y aceptación
+        run: >
+          dotnet test --solution "$SOLUCION" -c Release --no-build
+          --filter-trait "Categoria=Integracion" --filter-not-trait "Categoria=sap"
+          --ignore-exit-code 8
+          --results-directory "$GITHUB_WORKSPACE/backend-dotnet/TestResults/integracion"
+          --report-trx
+          --coverage --coverage-output-format cobertura
+          --coverage-settings "$GITHUB_WORKSPACE/backend-dotnet/tests/cobertura.config.xml"
+
+      # Mismo control que en unitarias (hoy 356 de integración y aceptación).
+      - name: Pruebas descubiertas (mínimo 330)
+        run: sh scripts/contar-pruebas-trx.sh TestResults/integracion 330
+
+      - name: Publicar TRX
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: trx-integracion
+          path: backend-dotnet/TestResults/integracion/*.trx
+          if-no-files-found: warn
+
+      - name: Publicar cobertura
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cobertura-integracion
+          path: backend-dotnet/TestResults/integracion/*.cobertura.xml
+          if-no-files-found: warn
+
+  cobertura:
+    name: Cobertura (umbral de Dominio)
+    needs: [unitarias, integracion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar .NET (versión de global.json)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: backend-dotnet/global.json
+
+      - name: Descargar cobertura
+        uses: actions/download-artifact@v5
+        with:
+          pattern: cobertura-*
+          path: backend-dotnet/TestResults/cobertura-entrada
+
+      - name: Instalar ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+
+      - name: Unir los reportes
+        run: >
+          reportgenerator
+          "-reports:TestResults/cobertura-entrada/**/*.cobertura.xml"
+          "-targetdir:TestResults/cobertura"
+          "-reporttypes:Cobertura;HtmlInline;MarkdownSummaryGithub"
+          "-title:Cotifly backend .NET"
+
+      - name: Resumen en el job
+        run: cat TestResults/cobertura/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Umbral de ADR-010: Cotifly.Dominio >= 90 % de líneas. Los demás ensamblados solo se reportan.
+      - name: Umbral de Dominio (90 % de líneas)
+        run: sh scripts/verificar-cobertura.sh TestResults/cobertura/Cobertura.xml Cotifly.Dominio 90
+
+      - name: Publicar reporte HTML
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cobertura-reporte
+          path: backend-dotnet/TestResults/cobertura
+          if-no-files-found: warn
+
+  auditoria-nuget:
+    name: Auditoría de vulnerabilidades NuGet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Instalar .NET (versión de global.json)
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: backend-dotnet/global.json
+
+      - name: Restore
+        run: dotnet restore "$SOLUCION"
+
+      # Estricta: cualquier paquete vulnerable (directo o transitivo, cualquier severidad) falla el job.
+      # En el build local y en Docker las advertencias NU1900-NU1904 no rompen (Directory.Build.props).
+      - name: Paquetes vulnerables (directos y transitivos)
+        run: |
+          dotnet list "$SOLUCION" package --vulnerable --include-transitive --format json > vulnerables.json
+          # Una auditoría incompleta (fuente sin datos de vulnerabilidades, proyecto sin restaurar) llega en "problems".
+          jq -e '(.problems // []) | length == 0' vulnerables.json > /dev/null || {
+            echo "::error::Auditoría incompleta: dotnet list package reportó problemas"
+            jq '.problems' vulnerables.json
+            exit 1
+          }
+          hallazgos=$(jq '[.projects[]?.frameworks[]? | (.topLevelPackages // []) + (.transitivePackages // []) | .[] | select(.vulnerabilities != null and (.vulnerabilities | length) > 0)] | length' vulnerables.json)
+          if [ "$hallazgos" -gt 0 ]; then
+            echo "::error::Paquetes NuGet con vulnerabilidades conocidas: $hallazgos"
+            dotnet list "$SOLUCION" package --vulnerable --include-transitive
+            exit 1
+          fi
+          echo "Sin vulnerabilidades conocidas en paquetes directos ni transitivos."
+
+  imagen-docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: docker build
+        run: >
+          docker build
+          --build-arg VERSION="ci-${GITHUB_SHA::7}"
+          --build-arg VCS_REF="${GITHUB_SHA::7}"
+          --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          -t cotifly-api:ci -f Dockerfile .
+
+      # Development sin cadenas de conexión: /health 200, /health/ready 503 y HEALTHCHECK "healthy".
+      - name: Prueba de humo
+        run: |
+          docker run -d --name cotifly-api-ci -p 8080:8080 -e ASPNETCORE_ENVIRONMENT=Development cotifly-api:ci
+          estado=""
+          for _ in $(seq 1 30); do
+            estado=$(docker inspect --format '{{.State.Health.Status}}' cotifly-api-ci)
+            [ "$estado" = "healthy" ] && break
+            sleep 2
+          done
+          docker logs cotifly-api-ci
+          [ "$estado" = "healthy" ] || { echo "::error::HEALTHCHECK en estado '$estado'"; exit 1; }
+          curl -fsS http://localhost:8080/health
+          echo
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health/ready)" = "503"
+
+      - name: Limpiar
+        if: always()
+        run: docker rm -f cotifly-api-ci || true
+
+  contrato-openapi:
+    name: Lint del contrato OpenAPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: redocly lint
+        run: npx --yes @redocly/cli@2.54.2 lint specs/openapi.yaml --format=github-actions

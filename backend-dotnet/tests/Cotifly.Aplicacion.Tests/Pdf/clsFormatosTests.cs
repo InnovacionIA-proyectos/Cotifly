@@ -5,7 +5,7 @@ namespace Cotifly.Aplicacion.Tests.Pdf;
 
 /// <summary>
 /// Formato de dinero (<c>money()</c> del Python) y fecha larga (<c>fecha_larga</c>): valores exactos e independencia de la
-/// cultura del proceso y de ICU (README §3: <c>ToString("C0", es-CO)</c> con ICU da <c>$ 3.294.798</c>, con espacio).
+/// cultura del proceso y de ICU (docs/03-infraestructura.md, §3.1: <c>ToString("C0", es-CO)</c> con ICU da <c>$ 3.294.798</c>, con espacio).
 /// </summary>
 public sealed class clsFormatosTests
 {

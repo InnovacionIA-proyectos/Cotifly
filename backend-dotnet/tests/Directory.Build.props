@@ -9,6 +9,9 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="AwesomeAssertions" />
+    <!-- Reportes de CI (#14): opciones report-trx y coverage de Microsoft.Testing.Platform (docs/08-testing.md). -->
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

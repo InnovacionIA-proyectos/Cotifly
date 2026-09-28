@@ -33,7 +33,7 @@ public sealed record clsErrorNegocioWeb([property: JsonPropertyName("error")] cl
 }
 
 /// <summary>
-/// Traducción única de los errores de los casos de uso a HTTP en <c>/web/*</c> (tabla "Para #12" del README, §2, y
+/// Traducción única de los errores de los casos de uso a HTTP en <c>/web/*</c> (tabla "Para #12" de docs/07-api.md, §7.4, y
 /// <c>specs/openapi.yaml</c>). Un 404 nunca distingue "no existe" de "no es tuya".
 /// </summary>
 public static class clsRespuestasWeb

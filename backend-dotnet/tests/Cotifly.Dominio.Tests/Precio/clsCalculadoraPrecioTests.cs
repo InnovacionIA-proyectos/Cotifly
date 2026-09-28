@@ -5,7 +5,7 @@ namespace Cotifly.Dominio.Tests.Precio;
 
 /// <summary>
 /// Paridad con <c>tests/test_precio.py</c> (Python). Cada prueba indica en su comentario el test de origen;
-/// la tabla completa está en README §8.
+/// la tabla completa está en docs/08-testing.md, §8.8.
 /// </summary>
 public sealed class clsCalculadoraPrecioTests
 {
