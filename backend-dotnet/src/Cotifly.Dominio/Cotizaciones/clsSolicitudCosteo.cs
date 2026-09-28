@@ -11,7 +11,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// </summary>
 public sealed record clsSolicitudCosteo
 {
-    public const string CodigoError = "SOLICITUD_COSTEO_INVALIDA";
+    public const string CodigoError = clsCodigosError.SolicitudCosteoInvalida;
     public const int LargoCiudad = 150;
     public const int LargoCatalogo = 100;
     public const int LargoCorto = 50;

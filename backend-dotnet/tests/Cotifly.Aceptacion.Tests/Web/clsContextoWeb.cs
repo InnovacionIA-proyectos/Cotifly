@@ -34,6 +34,9 @@ public sealed class clsContextoWeb : IDisposable
 
     public void Iniciar(bool correoHabilitado) => _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, correoHabilitado);
 
+    /// <summary>API ya armada por el escenario (ej. conectada al Nexo falso del costeo, ADR-015).</summary>
+    public void Iniciar(clsApiWebPruebas api) => _api = api;
+
     /// <summary>API con configuración y reemplazos de prueba (el agente guionizado y Google falso, #12 parte C).</summary>
     public void Iniciar(IDictionary<string, string?>? extra, Action<Microsoft.AspNetCore.Hosting.IWebHostBuilder> configurar) =>
         _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, extra: extra, configurar: configurar);

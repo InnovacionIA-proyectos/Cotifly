@@ -216,15 +216,16 @@ SAP TM:
 
 ### Nexo
 
-**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13).** Una sola opción, `Nexo:UrlBase` (`clsOpcionesNexo`, sin validaciones: Nexo todavía no es obligatorio en todos los ambientes). Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
+**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13, costeo HU-005.5 en adelante).** La URL es `Nexo:UrlBase` (`clsOpcionesNexo`, sin validaciones: Nexo todavía no es obligatorio en todos los ambientes); el ritmo del polling del costeo va en `CosteoNexo:*` (`clsOpcionesCosteoNexo`, validada al arrancar, ADR-015). Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
 
 | Clave | Por defecto | Uso | Variable |
 |---|---|---|---|
-| `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE` | `Nexo__UrlBase` |
+| `Nexo:UrlBase` | vacío | Raíz de Nexo **sin `/api`** ni barra final (ej. `https://nexo.boterosoto.com.co`). Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE`, `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE` y el envío a costeo deja la cotización en `error_envio` | `Nexo__UrlBase` |
+| `CosteoNexo:IntervaloInicialSegundos` | 5 | Primera consulta del polling tras el envío (1 a 3600 s; fuera de rango no arranca) | `CosteoNexo__IntervaloInicialSegundos` |
 
 - **Sin token ni usuario de servicio.** Cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial; Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro. Un comercial sin `idUsuarioExterno` no puede usar estas funciones (código "no disponible"). El encabezado no se registra en los logs.
-- **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros` y `/api/cubicacion`. El ejemplo de `.env.example` (`https://<host-nexo>/api`) y el de las pruebas (`http://nexo-test.local/api`) terminan en `/api`, lo que daría `/api/api/...`: confirmar con el equipo de Nexo la URL base real antes de configurarla en QA.
-- **Tiempos:** 8 s en total por consulta, 3 s por intento y 2 reintentos (cliente HTTP `Nexo` compartido por los cuatro adaptadores). No son configurables.
+- **Rutas (resuelto en ADR-015 §8):** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros`, `/api/cubicacion` y `/api/captura-solicitudes` (alta del costeo): todas las rutas de `CONTRATO.md` de Nexo empiezan por `/api`, así que `Nexo__UrlBase` es la raíz del servicio **sin** `/api`. Se corrigieron el ejemplo de `.env.example` y la URL de las pruebas (`http://nexo-test.local`), que terminaban en `/api` y habrían dado `/api/api/...`; las rutas del código no cambiaron. La URL real de cada ambiente sigue pendiente de confirmar con el equipo de Nexo.
+- **Tiempos:** consultas (clientes, municipios, catálogos, cubicación): 8 s en total, 3 s por intento y 2 reintentos (cliente HTTP `Nexo`). Costeo: 30 s en total y por intento, reintentos solo en GET (cliente HTTP `NexoCosteo`; el alta no se reintenta porque no es idempotente). No son configurables.
 - **Activar en un ambiente:** fijar `Nexo__UrlBase` en Dokploy; los comerciales deben tener `idUsuarioExterno` (lo llena el login de ClientePro). No hay aviso al arrancar si falta.
 
 ### Agente de IA

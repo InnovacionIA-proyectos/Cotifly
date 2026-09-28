@@ -113,4 +113,31 @@ public static class clsCodigosError
     /// motivo exacto en su respuesta). Código nuevo del backend .NET.
     /// </summary>
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// El formulario ampliado del costeo (<c>POST /web/solicitudes-costeo</c>) no cumple los límites de Nexo (ADR-015). Mismo
+    /// valor que <c>clsSolicitudCosteo.CodigoError</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SolicitudCosteoInvalida = "SOLICITUD_COSTEO_INVALIDA";
+
+    /// <summary>
+    /// El costeo de Nexo no está disponible: Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
+    /// <c>idUsuarioExterno</c> (ADR-015). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoNoDisponible = "COSTEO_NEXO_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Nexo no respondió a tiempo. En un alta la solicitud pudo quedar creada (Nexo no ofrece clave de idempotencia, ADR-015).
+    /// Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoTiempoAgotado = "COSTEO_NEXO_TIEMPO_AGOTADO";
+
+    /// <summary>Nexo respondió 4xx; el código y el mensaje de Nexo van en el detalle (ADR-015). Código nuevo del backend .NET.</summary>
+    public const string CosteoNexoRechazada = "COSTEO_NEXO_RECHAZADA";
+
+    /// <summary>
+    /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
+    /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNoReintentable = "COSTEO_NO_REINTENTABLE";
 }

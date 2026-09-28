@@ -16,6 +16,12 @@ public sealed class clsCotizacion
     public const int LargoMaximoFolio = 50;
     public const int LargoMaximoMotivoCosteo = 1000;
 
+    /// <summary>
+    /// Una cotización que quedó en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> solo se puede reenviar pasado este
+    /// tiempo: antes, el envío original puede seguir esperando la respuesta de Nexo (hasta 30 s) y reenviar duplicaría la solicitud.
+    /// </summary>
+    public static readonly TimeSpan EsperaReenvioPendiente = TimeSpan.FromMinutes(2);
+
     private clsCotizacion()
     {
     }
@@ -219,6 +225,60 @@ public sealed class clsCotizacion
             ValorMercancia = ValorMercancia,
             Posiciones = [.. posiciones.OrderBy(p => p.Orden).Select(p => p.APosicion())],
         };
+    }
+
+    /// <summary>
+    /// ¿Se puede (re)enviar la solicitud a Nexo? Sí desde <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/>, y desde
+    /// <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> cuando el último cambio tiene más de
+    /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias, HU-005.5).
+    /// </summary>
+    public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
+        EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio
+        || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente);
+
+    /// <summary>Nombre y origen oficiales del catálogo de Nexo (ADR-005 §4: el cliente sale del catálogo, no del formulario).</summary>
+    public void ActualizarClienteDelCatalogo(string nombre, Clientes.OrigenCliente? origen)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nombre);
+        ClienteNombre = nombre.Trim();
+        OrigenCliente = origen ?? OrigenCliente;
+    }
+
+    /// <summary>
+    /// Nexo recibió la solicitud (HU-005.5): guarda su id (<see cref="CosteoId"/>), la deja en
+    /// <see cref="Cotizaciones.EstadoCosteo.Autocosteo"/> si Nexo ya costeó todas las líneas o en
+    /// <see cref="Cotizaciones.EstadoCosteo.PendienteCosteo"/> si no, y agenda la primera consulta del polling (HU-005.6).
+    /// </summary>
+    public void RegistrarEnvioCosteo(string costeoId, bool costeoCompleto, DateTimeOffset enviadoAt, DateTimeOffset primeraConsulta)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(costeoId);
+        CosteoId = costeoId.Trim();
+        EstadoCosteo = costeoCompleto ? Cotizaciones.EstadoCosteo.Autocosteo : Cotizaciones.EstadoCosteo.PendienteCosteo;
+        MotivoEstadoCosteo = null;
+        CosteoEnviadoAt = enviadoAt;
+        CosteoSiguienteConsultaAt = primeraConsulta;
+        CosteoConsultasFallidas = 0;
+    }
+
+    /// <summary>
+    /// Nexo no recibió la solicitud (tiempo agotado, 4xx, 5xx, red, cliente sin BP): queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/> con el motivo (recortado a <see cref="LargoMaximoMotivoCosteo"/>) y sin
+    /// polling; el comercial la reintenta sin volver a llenar el formulario.
+    /// </summary>
+    public void RegistrarErrorEnvioCosteo(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        EstadoCosteo = Cotizaciones.EstadoCosteo.ErrorEnvio;
+        MotivoEstadoCosteo = Recortar(motivo);
+        CosteoSiguienteConsultaAt = null;
+    }
+
+    /// <summary>Recorta un motivo a <see cref="LargoMaximoMotivoCosteo"/> caracteres (la columna es <c>NVARCHAR(1000)</c>).</summary>
+    public static string Recortar(string motivo)
+    {
+        ArgumentNullException.ThrowIfNull(motivo);
+        var limpio = motivo.Trim();
+        return limpio.Length <= LargoMaximoMotivoCosteo ? limpio : limpio[..(LargoMaximoMotivoCosteo - 1)] + "…";
     }
 
     /// <summary>¿La cotización pertenece al comercial? (aislamiento por dueño, ADR-009).</summary>

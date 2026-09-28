@@ -16,6 +16,7 @@ using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -82,6 +83,21 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     public WebApplicationFactory<Program> Factory { get; }
+
+    /// <summary>
+    /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
+    /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red.
+    /// </summary>
+    public static clsApiWebPruebas ConNexo(clsBaseDatosPruebas baseDatos, clsNexoFalso nexo, IDictionary<string, string?>? extra = null)
+    {
+        ArgumentNullException.ThrowIfNull(nexo);
+        var valores = new Dictionary<string, string?>(extra ?? new Dictionary<string, string?>()) { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase };
+        return new clsApiWebPruebas(baseDatos, extra: valores, configurar: b => b.ConfigureTestServices(s =>
+        {
+            s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+        }));
+    }
 
     public HttpClient Cliente { get; }
 
