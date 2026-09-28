@@ -86,6 +86,17 @@ Como defensa, `clsGenerarPdfService.ValidarCoherencia` rechaza con `PDF_PAYLOAD_
 - Persistencia: el mensaje del comercial se guarda al empezar el turno; los eventos del loop (`assistant` con `invocaciones`, `herramienta` con `resultados`) y el estado, al final, sobre la sesión releída (el candado del folio deshace su transacción y limpia el seguimiento de cambios si la creación falla). Marcas de tiempo estrictamente crecientes para el orden.
 - `chat_slot_filling.feature` reproduce el hallazgo por HTTP con SQL Server real y SAP TM de muestra: turno 1 identifica al cliente (BP 15927) y obtiene el margen de SAP con el BP aunque el LLM mande el nombre; turno 2 "Confirmo" persiste la cotización con el NIT, la línea, el margen `sap_tm` y el precio del estado aunque el payload no los traiga. Pruebas unitarias en `clsInyeccionEstadoTests` y `clsEstadoConversacionServiceTests`.
 
+### Origen y destino contra el catálogo de municipios (HU-005.13, #43)
+
+El comercial escribe la ciudad en texto libre y hay municipios con el mismo nombre en varios departamentos ("La Unión", "San Pedro"). Se aplica el mismo patrón que a los clientes candidatos:
+
+- **Herramienta nueva `resolver_municipio(texto, campo)`** en el plugin `cotizador`, no resolución implícita dentro del servicio de estado: el modelo decide cuándo hay una ciudad nueva y el servicio de estado sigue siendo determinista. La herramienta lee el catálogo con `IClsMunicipiosProvider` y lo resuelve con `clsResolvedorMunicipios` (Aplicacion). El catálogo de Nexo no tiene filtro (el mapeo aprobado reemplazó la cascada `/departamentos` → `/ciudades?q=` de la issue), así que la búsqueda se hace en Cotifly.
+- **Estado:** `OrigenMunicipio`/`DestinoMunicipio` (id, municipio, departamento, país, código Dane) y `CandidatosOrigen`/`CandidatosDestino`. Una coincidencia deja el texto canónico `Municipio, Departamento` en `Origen`/`Destino`; varias dejan los candidatos; ninguna no escribe nada. La elección del comercial ("la de Nariño", "2") la reconoce `ReconocerMensaje`, como la de un cliente.
+- **Filtro:** con candidatos sin elegir, `buscar_tarifa`, `calcular_precio`, `registrar_ajuste_margen` y `generar_pdf` responden `CONFIRMACION_REQUERIDA`; el validador (#16) rechaza una `previsualizacion` en ese estado. En `buscar_tarifa` el municipio verificado va en su forma canónica.
+- **Sin catálogo** (`MUNICIPIOS_NO_DISPONIBLE`: Nexo sin configurar, caído o el comercial sin `idUsuarioExterno`) el texto libre queda como ruta y nada se bloquea.
+- **Al modelo** solo van nombres (municipio, departamento, país), sin id ni código Dane, para no sumar números que respalden montos en el validador.
+- **Caché:** el catálogo se reutiliza `Nexo:MinutosCacheMunicipios` (60 por defecto) en una foto singleton de Infraestructura (`clsMunicipiosEnCache`), sin `IMemoryCache` para no sumar un paquete por un solo valor.
+
 ## Alternativas consideradas
 
 - **Reenviar todo el historial con tool-calls, sin estado:** sigue dependiendo de que el LLM copie bien el id, y el prompt crece con cada turno.
@@ -108,3 +119,5 @@ Como defensa, `clsGenerarPdfService.ValidarCoherencia` rechaza con `PDF_PAYLOAD_
 | Revisar y aprobar el DDL de `0002_identidad_estado_agente.sql` (columnas nuevas de `Sesiones`) | Sara + scalderon-bs (redacta Duban) |
 | Confirmar con HU-009.1 que el `bp` que devuelve Nexo es el `OrderPartyId` de SAP TM | Duban + equipo Nexo |
 | Cómo presentar el buscador en Google Chat tras rechazar candidatas (tarjeta o remisión a la web) | Negocio + Sara |
+| Validar `resolver_municipio` con un municipio ambiguo real contra Nexo (RM-15 de `docs/qa/regresion-manual.md`) | Kevin (QA) + Duban |
+| Confirmar con Nexo el host de `Nexo__UrlBase` (sin `/api`: el código agrega `/api/captura-solicitudes/...`) | Duban + equipo Nexo |

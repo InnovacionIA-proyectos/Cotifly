@@ -10,6 +10,9 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Municipios.DTOs;
+using Cotifly.Aplicacion.Municipios.Interfaces;
+using Cotifly.Aplicacion.Municipios.Services;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Services;
@@ -37,6 +40,7 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 public sealed class clsHerramientasCotizador(
     clsContextoTurnoAgente contexto,
     IClsBuscadorClientes buscadorClientes,
+    IClsMunicipiosProvider municipios,
     IClsTarifaProvider tarifas,
     IClsMargenResolverService margen,
     IClsPrecioService precio,
@@ -79,6 +83,50 @@ public sealed class clsHerramientasCotizador(
         };
         return clsResultadoHerramienta.Exito(herramienta, salida, busqueda);
     }
+
+    [KernelFunction(clsNombresHerramientas.ResolverMunicipio)]
+    [Description("Resuelve el origen o el destino que escribió el comercial contra el catálogo de municipios de Nexo. Llámala antes de buscar_tarifa con cada ciudad nueva. coincidencia 'unica': usa ese municipio; 'varias': muestra los candidatos (municipio y departamento) y pregunta cuál es antes de seguir; 'ninguna': dilo y pide que la escriba de nuevo, nunca inventes un municipio. Si el catálogo no está disponible, sigue con el texto del comercial.")]
+    public async Task<clsResultadoHerramienta> ResolverMunicipioAsync(
+        [Description("Ciudad o municipio tal como lo escribió el comercial; puede incluir el departamento (ej. 'La Unión, Nariño').")] string texto,
+        [Description("origen o destino.")] string campo,
+        KernelArguments? argumentos = null,
+        CancellationToken cancellationToken = default)
+    {
+        var herramienta = clsNombresHerramientas.ResolverMunicipio;
+        var catalogo = await municipios.ObtenerAsync(UsuarioDe(Argumentos(argumentos)), cancellationToken);
+        if (catalogo.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, catalogo.Error);
+        }
+
+        var resolucion = clsResolvedorMunicipios.Resolver(texto, catalogo.Valor);
+
+        // Al modelo solo van nombres (sin id ni código Dane): ningún número nuevo que respalde un monto en el validador (#16).
+        var salida = new
+        {
+            campo = CampoMunicipio(campo),
+            texto = resolucion.Texto,
+            coincidencia = resolucion.Coincidencia switch
+            {
+                CoincidenciaMunicipio.Unica => "unica",
+                CoincidenciaMunicipio.Varias => "varias",
+                _ => "ninguna",
+            },
+            municipio = resolucion.Resuelto is { } unico ? ParaModelo(unico) : null,
+            candidatos = resolucion.Coincidencia == CoincidenciaMunicipio.Varias ? resolucion.Candidatos.Select(ParaModelo).ToList() : [],
+            total = resolucion.Total,
+        };
+        return clsResultadoHerramienta.Exito(herramienta, salida, resolucion);
+    }
+
+    /// <summary><c>origen</c> o <c>destino</c> (sin mayúsculas ni espacios); null si el modelo mandó otra cosa.</summary>
+    public static string? CampoMunicipio(string? campo) =>
+        clsEstadoConversacionService.Normalizar(campo) switch
+        {
+            clsArgumentosHerramienta.Origen => clsArgumentosHerramienta.Origen,
+            clsArgumentosHerramienta.Destino => clsArgumentosHerramienta.Destino,
+            _ => null,
+        };
 
     [KernelFunction(clsNombresHerramientas.BuscarTarifa)]
     [Description("Busca la tarifa de costo de la ruta. La tarifa depende del peso: pasa pesoKg. Si la fuente no está disponible o no hay tarifa, pide al comercial el costo; nunca inventes una tarifa.")]
@@ -255,6 +303,9 @@ public sealed class clsHerramientasCotizador(
             0m,
             estado.CosteoId);
     }
+
+    private static object ParaModelo(Dominio.Agente.clsMunicipioResuelto municipio) =>
+        new { municipio = municipio.Municipio, departamento = municipio.Departamento, pais = municipio.Pais };
 
     private static object SalidaAjuste(clsSalidaAjusteMargen ajuste) => new
     {

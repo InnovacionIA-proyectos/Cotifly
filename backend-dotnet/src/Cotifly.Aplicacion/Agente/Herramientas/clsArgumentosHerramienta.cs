@@ -25,6 +25,10 @@ public static class clsArgumentosHerramienta
     public const string Metodo = "metodo";
     public const string Cliente = "cliente";
     public const string Cotizacion = "cotizacion";
+    public const string Origen = "origen";
+    public const string Destino = "destino";
+    public const string TextoLibre = "texto";
+    public const string Campo = "campo";
 
     /// <summary>Texto del argumento (sin espacios sobrantes), o <c>null</c> si falta o está vacío.</summary>
     public static string? Texto(IReadOnlyDictionary<string, object?> argumentos, string clave)

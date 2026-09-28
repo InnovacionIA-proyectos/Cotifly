@@ -59,15 +59,17 @@ Conversación típica (el texto lo redacta el LLM; los datos y los números sale
 
 | Paso | El comercial | El sistema |
 |---|---|---|
-| 1 | "Cotiza un flete nacional de Cali a Bogotá para el cliente X, costo 2.850.000" | `buscar_cliente` en Nexo (HU-005.2: un único candidato → NIT, origen y BP en el estado; varios → candidatos para que el comercial elija; ninguno → sin cliente resuelto; sin `Nexo__UrlBase`, con Nexo caído o sin `idUsuarioExterno` → `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y el nombre queda como referencia, sin NIT ni BP), `obtener_margen` (con BP: SAP TM si `SapTm__Modo` está configurado; sin BP: política de la línea), `calcular_precio` con el costo escrito por el comercial. Estado: línea, margen, método, costo y precio |
+| 1 | "Cotiza un flete nacional de Cali a Bogotá para el cliente X, costo 2.850.000" | `buscar_cliente` en Nexo (HU-005.2: un único candidato → NIT, origen y BP en el estado; varios → candidatos para que el comercial elija; ninguno → sin cliente resuelto; sin `Nexo__UrlBase`, con Nexo caído o sin `idUsuarioExterno` → `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y el nombre queda como referencia, sin NIT ni BP), `resolver_municipio` con el origen y con el destino (HU-005.13, ver 1b), `obtener_margen` (con BP: SAP TM si `SapTm__Modo` está configurado; sin BP: política de la línea), `calcular_precio` con el costo escrito por el comercial. Estado: línea, municipios, margen, método, costo y precio |
+| 1b | "La de Nariño" | Solo si el origen o el destino coincidieron con varios municipios (ej. "La Unión" en Antioquia, Nariño y Valle del Cauca): el agente mostró los candidatos con su departamento y, mientras el comercial no elige, el filtro rechaza `buscar_tarifa`, `calcular_precio`, `registrar_ajuste_margen` y `generar_pdf` con `CONFIRMACION_REQUERIDA`. El servidor reconoce la elección por el departamento o, si no hay otra lista pendiente, por posición ("2", "la segunda"); si no, el agente vuelve a llamar a `resolver_municipio` con lo que escribió. Una sola coincidencia se usa directo (`Yumbo, Valle del Cauca`); ninguna se informa sin inventar un municipio. Sin catálogo (`MUNICIPIOS_NO_DISPONIBLE`: Nexo sin configurar o caído) la cotización sigue con el texto libre |
 | 2 | — | El agente muestra la **previsualización** (precio, margen, método, origen del margen) y pide confirmación; `acciones_sugeridas`: `confirmar_pdf`, `ajustar_margen` |
 | 3a | "Confirmo" | `generar_pdf`: el filtro exige la confirmación del turno y un precio calculado, reescribe el payload con el estado, el servidor genera el folio `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` con las iniciales del comercial (ej. `PCN-DG-25092026-001`; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), renderiza, guarda el PDF y registra la fila en `Cotizaciones`. La respuesta trae `pdf.url` |
 | 3b | "Déjalo en 18 %" | `registrar_ajuste_margen` (margen negociado, auditado en `MargenAjustes`), nuevo precio y nueva previsualización |
 | 4 | "Envíala a compras@cliente.com" | Con la confirmación o los destinatarios escritos por el comercial, `enviar_correo` (ver [4.7](#47-envío-de-correo)) |
 
-Reglas que el flujo garantiza (pruebas en `chat_slot_filling.feature`, `chat_web.feature` y `validador_respuesta_ia.feature`):
+Reglas que el flujo garantiza (pruebas en `chat_slot_filling.feature`, `chat_municipios.feature`, `chat_web.feature` y `validador_respuesta_ia.feature`):
 
-- Un "sí" sin previsualización pendiente no confirma nada; elegir un cliente candidato no confirma el PDF.
+- Un "sí" sin previsualización pendiente no confirma nada; elegir un cliente candidato o un municipio no confirma el PDF.
+- Con un origen o destino ambiguo sin elegir no se busca tarifa, no se calcula precio y no hay previsualización.
 - Si cambia el cliente, la línea o la ruta, la cotización en curso se descarta: la siguiente es nueva, no una versión de otra.
 - Un costo que no viene de la fuente solo se acepta si el comercial lo escribió (`2.850.000`, `2,85 millones`...).
 - Un turno a la vez por conversación; un segundo mensaje simultáneo recibe "Todavía estoy respondiendo tu mensaje anterior...".

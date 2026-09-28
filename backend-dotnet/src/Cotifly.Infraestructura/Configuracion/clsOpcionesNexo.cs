@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
@@ -12,6 +14,16 @@ public sealed class clsOpcionesNexo
 {
     public const string Seccion = "Nexo";
 
-    /// <summary>URL base de la API de Nexo (sin barra final), ej. <c>https://nexo.boterosoto.com.co/api</c>.</summary>
+    /// <summary>
+    /// URL base de Nexo, sin barra final y <b>sin</b> <c>/api</c>: el código agrega <c>/api/captura-solicitudes/...</c>, así
+    /// que el valor es el host, ej. <c>https://nexo.boterosoto.com.co</c> (pendiente de confirmar con el equipo de Nexo).
+    /// </summary>
     public string? UrlBase { get; set; }
+
+    /// <summary>
+    /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta
+    /// en cada <c>resolver_municipio</c>). Solo se guardan respuestas exitosas; <c>0</c> desactiva la caché. Por defecto 60.
+    /// </summary>
+    [Range(0, 1440)]
+    public int MinutosCacheMunicipios { get; set; } = 60;
 }
