@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (pendiente de confirmar con el equipo de infraestructura los puntos marcados en Pendientes)
 - **Fecha:** 2026-09-28
-- **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
+- **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
 
 ## Contexto
 
@@ -44,6 +44,22 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    `docker login ghcr.io` en el manager (`--with-registry-auth` lo reenvía al worker).
 6. `DebugType=none` se mantiene (sin `.pdb` en la imagen).
 
+### 3. Manifiestos (HU-006.6, #30)
+
+1. **Archivos nuevos** `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`; los del Python no se tocan
+   (rollback = redesplegar el stack Python).
+2. **SQL Server externo** (`tbsdatacenter`, HU-002.4): ningún servicio de base de datos en el stack.
+3. **Un servicio**, `cotifly-api`, una réplica, volumen local `/data/pdfs` (resuelve para HU-006 el pendiente de
+   réplicas y volumen de ADR-012: volumen, no S3).
+4. **Redes:** `dokploy-network` (externa) solo para la entrada desde Traefik; overlay propia `salida` con egreso
+   (equivale a `bot-edge`). Sin red interna: no hay servicios internos.
+5. **Anclado al worker** `TBSNODO1-DKP` mientras el overlay VXLAN esté caído (HU-006.1). Staging se accede por un
+   puerto en modo host (8092, HTTP, `stop-first`); producción no publica puertos y espera a HU-006.2 (TLS por
+   Traefik, `start-first`).
+6. **Healthcheck** exec de vida (`/health`) en Swarm y de disponibilidad (`/health/ready`) en Traefik;
+   `update_config` con `failure_action: rollback`; límites 1 CPU / 1024 MB.
+7. **Variables** con `${VAR}` (obligatorias con `${VAR:?}`); `GChat__VerificarJwt=true` fijo en el manifiesto.
+
 ## Alternativas consideradas
 
 - **Todo como secreto de Swarm** con el proveedor *key-per-file* de ASP.NET Core: más aislado (no aparece en
@@ -57,6 +73,10 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   permisos del repositorio.
 - **Que Dokploy construya desde git en el nodo** (como hoy): es lo que HU-006 pide eliminar (sin versión, disco del
   nodo, sin pruebas antes de desplegar).
+- **Editar `infra/stack.dokploy.yml` / `stack.staging.yml` en el sitio**: más corto, pero el rollback al Python
+  obligaría a revertir commits. Se descartó mientras el Python siga vigente.
+- **SQL Server como servicio del stack**: descartado por HU-002.4 (la base es corporativa y compartida).
+- **Puerto en modo host también en producción**: expondría la API sin TLS; producción espera a HU-006.2.
 - **Reconstruir en el job de publicación** (`docker/build-push-action`): publicaría bytes distintos a los probados; se
   prefirió pasar la imagen probada como artefacto.
 
@@ -77,3 +97,5 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 | Resolver la facturación de GitHub Actions de la organización (mientras tanto, script manual) | Administración de la organización de GitHub |
 | Cuenta de servicio de GitHub que emite el PAT `read:packages` del clúster, y su renovación | Duban con infraestructura |
 | Verificar en el primer despliegue a staging que el worker baja la imagen privada | Duban (HU-006.6) |
+| Probar el despliegue completo en staging (Dokploy, secreto, conectividad del worker a `tbsdatacenter:1433`, Traefik) | Duban, con acceso al clúster y aprobación |
+| Quitar el puerto en modo host y el anclaje al worker cuando se resuelva el overlay | HU-006.2 |
