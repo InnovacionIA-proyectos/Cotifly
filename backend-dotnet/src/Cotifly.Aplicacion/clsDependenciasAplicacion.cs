@@ -70,12 +70,13 @@ public static class clsDependenciasAplicacion
 
         // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
         // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
-        // El IChatClient (proveedor por IA:Proveedor) lo registra Infraestructura; el validador de la respuesta final es el de
-        // paso hasta #16 (TryAdd: #16 registra el suyo).
+        // El IChatClient (proveedor por IA:Proveedor) lo registra Infraestructura. La respuesta final pasa por el validador con
+        // JSON Schema, validación manual, un reintento y respaldo (HU-003.10, #16; TryAdd: las pruebas pueden cambiarlo).
         servicios.AddScoped<clsContextoTurnoAgente>();
         servicios.AddScoped<clsHerramientasCotizador>();
         servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
-        servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaPasante>();
+        servicios.AddMetrics(); // IMeterFactory del medidor "Cotifly.Agente" (idempotente; el host web ya lo registra).
+        servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaAgente>();
         servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
         servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();
         servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();

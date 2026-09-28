@@ -57,7 +57,7 @@ public sealed class clsInyeccionEstadoTests
         turno2.HerramientasInvocadas.Should().Equal("generar_pdf");
         _arnes.NitsFolio.Should().Equal(clsArnesAgente.NitLongyin);
         var pdf = _arnes.EntradasPdf.Should().ContainSingle().Subject;
-        pdf.Folio.Should().Be("PCN-900123456-24092026-001", "el folio lo genera el servidor, con el NIT del estado");
+        pdf.Folio.Should().Be("PCN-900123456-NV-24092026-001", "el folio lo genera el servidor, con el NIT del estado");
         pdf.UsuarioId.Should().Be(_arnes.Usuario.Id);
         pdf.SpaceId.Should().Be(clsArnesAgente.Hilo);
         pdf.Trazabilidad!.NitCliente.Should().Be(clsArnesAgente.NitLongyin);
@@ -78,7 +78,7 @@ public sealed class clsInyeccionEstadoTests
         estado.NitCliente.Should().Be(clsArnesAgente.NitLongyin);
         estado.BpCliente.Should().Be(clsArnesAgente.BpLongyin);
         estado.CotizacionId.Should().Be(_arnes.CotizacionGenerada);
-        estado.FolioEnProgreso.Should().Be("PCN-900123456-24092026-001");
+        estado.FolioEnProgreso.Should().Be("PCN-900123456-NV-24092026-001");
         estado.ConfirmacionPendiente.Should().BeFalse();
     }
 
@@ -277,7 +277,7 @@ public sealed class clsInyeccionEstadoTests
             .Returns(clsResultado<clsSalidaEnvioCorreo>.Exito(new clsSalidaEnvioCorreo(true, "<id@x>", true)));
         var sesion = await _arnes.Sesiones.ObtenerOCrearAsync(clsArnesAgente.Hilo, clsArnesAgente.Hilo, _arnes.Usuario.Id, TestContext.Current.CancellationToken);
         var cotizacionId = Guid.NewGuid();
-        sesion.ActualizarEstadoAgente(Dominio.Agente.clsEstadoConversacion.Vacio with { CotizacionId = cotizacionId, FolioEnProgreso = "PCN-24092026-001" });
+        sesion.ActualizarEstadoAgente(Dominio.Agente.clsEstadoConversacion.Vacio with { CotizacionId = cotizacionId, FolioEnProgreso = "PCN-NV-24092026-001" });
         _arnes.Modelo
             .Llamar("enviar_correo", new { para = new[] { "inventado@cliente.com" } })
             .Cerrar("¿A quién se lo envío?")

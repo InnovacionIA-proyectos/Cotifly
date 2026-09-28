@@ -138,10 +138,10 @@ public sealed class clsCasosWebTests
     {
         var dueno = Usuario(RolInterno.Comercial);
         var otro = Usuario(RolInterno.Comercial);
-        var cotizacion = CotizacionConPdf("PCN-25092026-001", dueno.UsuarioId!.Value);
+        var cotizacion = CotizacionConPdf("PCN-DG-25092026-001", dueno.UsuarioId!.Value);
 
-        var propia = await Descarga(dueno).ObtenerAsync("PCN-25092026-001.pdf", Ct);
-        var ajena = await Descarga(otro).ObtenerAsync("PCN-25092026-001.pdf", Ct);
+        var propia = await Descarga(dueno).ObtenerAsync("PCN-DG-25092026-001.pdf", Ct);
+        var ajena = await Descarga(otro).ObtenerAsync("PCN-DG-25092026-001.pdf", Ct);
 
         propia.Valor.Contenido.Should().Equal(1, 2, 3);
         ajena.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
@@ -161,13 +161,13 @@ public sealed class clsCasosWebTests
     {
         var gerente = Usuario(RolInterno.GerenteComercial);
         var duenoId = Guid.NewGuid();
-        CotizacionConPdf("PCN-25092026-002", duenoId);
+        CotizacionConPdf("PCN-DG-25092026-002", duenoId);
         _usuarios.ObtenerPorIdAsync(gerente.UsuarioId!.Value, Arg.Any<CancellationToken>())
             .Returns(clsUsuarioWeb.Crear("gerente", null, null, regionalGerente, DateTimeOffset.UtcNow).Valor);
         _usuarios.ObtenerPorIdAsync(duenoId, Arg.Any<CancellationToken>())
             .Returns(clsUsuarioWeb.Crear("dueno", null, null, regionalDueno, DateTimeOffset.UtcNow).Valor);
 
-        var resultado = await Descarga(gerente).ObtenerAsync("PCN-25092026-002.pdf", Ct);
+        var resultado = await Descarga(gerente).ObtenerAsync("PCN-DG-25092026-002.pdf", Ct);
 
         resultado.EsExitoso.Should().Be(permitido);
         await _auditoria.Received(1).RegistrarAsync(clsDescargaPdfService.HerramientaAuditoria, Arg.Any<object>(), Arg.Any<object>(), permitido, Arg.Any<int>(), null);

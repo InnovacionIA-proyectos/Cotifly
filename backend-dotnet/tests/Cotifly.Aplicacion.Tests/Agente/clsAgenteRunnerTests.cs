@@ -27,7 +27,7 @@ public sealed class clsAgenteRunnerTests
     [Fact]
     public async Task SinHerramientasElTurnoCierraConLaRespuestaDeLaLlamadaFinal()
     {
-        _arnes.Modelo.Responder("borrador del loop").Responder("¿De qué origen sale la carga?");
+        _arnes.Modelo.Responder("borrador del loop").ResponderFinal("¿De qué origen sale la carga?");
 
         var resultado = (await _arnes.TurnoAsync("hola")).Valor;
 
@@ -37,7 +37,9 @@ public sealed class clsAgenteRunnerTests
         resultado.DetenerPor.Should().Be("stop");
         _arnes.Modelo.Llamadas[0].Herramientas.Should().BeEquivalentTo(_herramientasSinCorreo);
         _arnes.Modelo.Llamadas[1].Herramientas.Should().BeEmpty("la respuesta final se pide sin herramientas");
-        _arnes.Modelo.Llamadas[1].Opciones!.ResponseFormat.Should().BeNull("el validador de paso no pide esquema hasta #16");
+        _arnes.Modelo.Llamadas[1].Opciones!.ResponseFormat.Should().BeOfType<ChatResponseFormatJson>("la respuesta final se pide con JSON Schema (#16)")
+            .Which.SchemaName.Should().Be(clsReglasRespuestaAgente.NombreEsquema);
+        resultado.Respuesta.Tipo.Should().Be(TipoRespuestaAgente.Conversacional);
     }
 
     // test_loop_tool_use_invoca_mcp_y_cierra: dos herramientas encadenadas; la salida REAL vuelve al modelo.
@@ -152,16 +154,16 @@ public sealed class clsAgenteRunnerTests
     [Fact]
     public async Task ElSegundoTurnoLlevaLaSolicitudOriginalYLasRespuestasPrevias()
     {
-        _arnes.Modelo.Cerrar("El precio final es 3.294.798 COP.").Cerrar("Con margen 11% queda en 3.202.247 COP.");
+        _arnes.Modelo.Cerrar("¿De qué línea de negocio es la carga?").Cerrar("Listo, lo ajusto al margen de 11%.");
 
         await _arnes.TurnoAsync("Cotiza YUMBO→BUN.");
         var segundo = (await _arnes.TurnoAsync("Ahora ajústalo a margen 11%.")).Valor;
 
-        segundo.Texto.Should().Contain("3.202.247");
+        segundo.Texto.Should().Contain("11%");
         var mensajes = _arnes.Modelo.Llamadas[2].Mensajes;
         mensajes[0].Role.Should().Be(ChatRole.System);
         mensajes.Should().Contain(m => m.Role == ChatRole.User && m.Text == "Cotiza YUMBO→BUN.");
-        mensajes.Should().Contain(m => m.Role == ChatRole.Assistant && m.Text == "El precio final es 3.294.798 COP.");
+        mensajes.Should().Contain(m => m.Role == ChatRole.Assistant && m.Text == "¿De qué línea de negocio es la carga?");
         mensajes[^1].Role.Should().Be(ChatRole.User);
         mensajes[^1].Text.Should().Be("Ahora ajústalo a margen 11%.");
     }
@@ -199,35 +201,64 @@ public sealed class clsAgenteRunnerTests
         _arnes.Modelo.Llamadas[0].Herramientas.Should().Contain("enviar_correo").And.HaveCount(8);
     }
 
-    // IClsValidadorRespuestaAgente (#16): la respuesta final pasa por el validador; un fallo es una excepción controlada.
+    // IClsValidadorRespuestaAgente (#16): el runner delega la llamada final con el contexto del turno y usa la respuesta validada.
     [Fact]
-    public async Task LaRespuestaFinalPasaPorElValidador()
+    public async Task LaRespuestaFinalLaPideElValidadorConElContextoDelTurno()
     {
         var validador = Substitute.For<IClsValidadorRespuestaAgente>();
-        validador.FormatoRespuesta.Returns(ChatResponseFormat.Json);
-        validador.ValidarAsync("crudo", Arg.Any<CancellationToken>()).Returns(clsResultado<string>.Exito("validado"));
+        var estructurada = new clsRespuestaAgenteEstructurada { Tipo = TipoRespuestaAgente.Previsualizacion, Texto = "validado", RequiereConfirmacion = true };
+        validador.ObtenerRespuestaFinalAsync(Arg.Any<IChatClient>(), Arg.Any<IReadOnlyList<ChatMessage>>(), Arg.Any<clsContextoValidacionRespuesta>(), Arg.Any<CancellationToken>())
+            .Returns(new clsRespuestaFinalAgente(estructurada, 2, 1, false, ["json_invalido"]));
         _arnes.Validador = validador;
-        _arnes.Modelo.Responder("loop").Responder("crudo");
+        _arnes.Modelo.Llamar("obtener_margen", new { lineaNegocio = "Nacional" }).Responder("loop");
+
+        var resultado = (await _arnes.TurnoAsync("Cotiza Nacional, costo 2.850.000")).Valor;
+
+        resultado.Texto.Should().Be("validado");
+        resultado.Respuesta.Should().Be(estructurada);
+        resultado.ReintentosRespuesta.Should().Be(1);
+        resultado.EsRespaldo.Should().BeFalse();
+        resultado.Iteraciones.Should().Be(4, "dos llamadas del loop y dos de la respuesta final (con el reintento)");
+        _arnes.Sesiones.Eventos[^1].Contenido.Should().Be("validado");
+        await validador.Received(1).ObtenerRespuestaFinalAsync(
+            _arnes.Modelo,
+            Arg.Is<IReadOnlyList<ChatMessage>>(m => m.Last().Role == ChatRole.Tool),
+            Arg.Is<clsContextoValidacionRespuesta>(c =>
+                c.Salidas.Count == 1 && c.Estado.MargenAplicado == 0.135m && c.MensajesDelComercial.Last() == "Cotiza Nacional, costo 2.850.000"
+                && c.HerramientasDeclaradas.Contains("generar_pdf") && !c.HerramientasDeclaradas.Contains("enviar_correo")),
+            Arg.Any<CancellationToken>());
+    }
+
+    // El respaldo del validador no lanza: el turno queda guardado con el texto controlado y marcado para que el canal lo muestre como error.
+    [Fact]
+    public async Task ElRespaldoDelValidadorNoLanzaYQuedaMarcado()
+    {
+        var validador = Substitute.For<IClsValidadorRespuestaAgente>();
+        validador.ObtenerRespuestaFinalAsync(Arg.Any<IChatClient>(), Arg.Any<IReadOnlyList<ChatMessage>>(), Arg.Any<clsContextoValidacionRespuesta>(), Arg.Any<CancellationToken>())
+            .Returns(new clsRespuestaFinalAgente(clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada), 2, 1, true, ["json_invalido", "json_invalido"]));
+        _arnes.Validador = validador;
+        _arnes.Modelo.Responder("loop");
 
         var resultado = (await _arnes.TurnoAsync("hola")).Valor;
 
-        resultado.Texto.Should().Be("validado");
-        _arnes.Modelo.Llamadas[1].Opciones!.ResponseFormat.Should().Be(ChatResponseFormat.Json);
-        _arnes.Sesiones.Eventos[^1].Contenido.Should().Be("validado");
+        resultado.EsRespaldo.Should().BeTrue();
+        resultado.Texto.Should().Be(clsTextosAgente.RespuestaNoEstructurada);
+        resultado.Respuesta.Tipo.Should().Be(TipoRespuestaAgente.Error);
+        _arnes.Sesiones.Eventos.Select(e => e.Rol).Should().Equal("user", "assistant");
     }
 
+    // Con el validador real: una respuesta final malformada se corrige con un reintento dentro del mismo turno.
     [Fact]
-    public async Task UnaRespuestaQueNoPasaLaValidacionEsUnErrorControlado()
+    public async Task ConElValidadorRealUnaRespuestaMalformadaSeReintentaEnElMismoTurno()
     {
-        var validador = Substitute.For<IClsValidadorRespuestaAgente>();
-        validador.ValidarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<string>.Fallo(new clsErrorDominio("RESPUESTA_INVALIDA", "JSON truncado")));
-        _arnes.Validador = validador;
-        _arnes.Modelo.Responder("loop").Responder("{\"tipo\":");
+        _arnes.Modelo.Responder("loop").Responder("{\"tipo\": \"conversacional\", \"texto\": \"hol").ResponderFinal("Hola, ¿qué cotizamos?");
 
-        var turno = async () => await _arnes.TurnoAsync("hola");
+        var resultado = (await _arnes.TurnoAsync("hola")).Valor;
 
-        await turno.Should().ThrowAsync<clsRespuestaAgenteInvalidaException>();
+        resultado.Texto.Should().Be("Hola, ¿qué cotizamos?");
+        resultado.ReintentosRespuesta.Should().Be(1);
+        resultado.Iteraciones.Should().Be(3);
+        _arnes.Modelo.Llamadas[2].Mensajes[^1].Text.Should().Contain("JSON");
     }
 
     // Un fallo del proveedor (429) se propaga; el mensaje del comercial ya quedó guardado (el canal responde error: true).

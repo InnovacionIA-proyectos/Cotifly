@@ -155,11 +155,11 @@ public sealed class clsGoogleChatTests
     {
         var mensaje = clsTarjetasChat.ParaResultado(Resultado("Cotización generada.",
             clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "margen", 444_798m)),
-            clsResultadoHerramienta.Exito("generar_pdf", new clsSalidaPdf(Guid.NewGuid(), "PCN-24092026-001", "/pdfs/PCN-24092026-001.pdf", true))),
+            clsResultadoHerramienta.Exito("generar_pdf", new clsSalidaPdf(Guid.NewGuid(), "PCN-NV-24092026-001", "/pdfs/PCN-NV-24092026-001.pdf", true))),
             pdf => $"https://cotifly/pdfs/{pdf.Folio}.pdf?t=firma");
 
         mensaje["cardsV2"]![0]!["cardId"]!.GetValue<string>().Should().Be("pdf");
-        Botones(mensaje)[0]["onClick"]!["openLink"]!["url"]!.GetValue<string>().Should().Be("https://cotifly/pdfs/PCN-24092026-001.pdf?t=firma");
+        Botones(mensaje)[0]["onClick"]!["openLink"]!["url"]!.GetValue<string>().Should().Be("https://cotifly/pdfs/PCN-NV-24092026-001.pdf?t=firma");
     }
 
     // test_mensaje_texto_cuando_no_hay_precio_ni_pdf + test_mensaje_ignora_salida_con_error
@@ -178,6 +178,45 @@ public sealed class clsGoogleChatTests
     // test_card_pdf_sin_url
     [Fact]
     public void LaTarjetaDelPdfSinUrlNoTieneBoton() => Botones(clsTarjetasChat.Pdf("PCN-1", null, "ok")).Should().BeEmpty();
+
+    // HU-003.10: una respuesta estructurada que pide confirmación con acciones sugeridas se publica con sus botones.
+    [Fact]
+    public void UnaConfirmacionConAccionesSugeridasSePublicaConSusBotones()
+    {
+        var resultado = Resultado("¿Genero el PDF con el precio que ya revisaste?") with
+        {
+            Respuesta = new clsRespuestaAgenteEstructurada
+            {
+                Tipo = TipoRespuestaAgente.ConfirmacionRequerida,
+                Texto = "¿Genero el PDF con el precio que ya revisaste?",
+                RequiereConfirmacion = true,
+                AccionesSugeridas = [AccionSugeridaAgente.ConfirmarPdf, AccionSugeridaAgente.AjustarMargen],
+            },
+        };
+
+        var mensaje = clsTarjetasChat.ParaResultado(resultado, _ => null);
+
+        mensaje["text"]!.GetValue<string>().Should().Be("¿Genero el PDF con el precio que ya revisaste?");
+        Botones(mensaje).Select(b => b["onClick"]!["action"]!["function"]!.GetValue<string>())
+            .Should().Equal(clsEventoChat.AccionConfirmar, clsEventoChat.AccionAjustarMargen);
+    }
+
+    // HU-003.10: con el respaldo del validador no se muestran los botones de control humano, aunque haya un precio del turno.
+    [Fact]
+    public void ConElRespaldoDelValidadorSePublicaSoloElTexto()
+    {
+        var resultado = Resultado(clsTextosAgente.RespuestaNoEstructurada,
+            clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "margen", 444_798m))) with
+        {
+            EsRespaldo = true,
+            Respuesta = clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada),
+        };
+
+        var mensaje = clsTarjetasChat.ParaResultado(resultado, _ => null);
+
+        mensaje.Should().ContainSingle();
+        mensaje["text"]!.GetValue<string>().Should().Be(clsTextosAgente.RespuestaNoEstructurada);
+    }
 
     private sealed class clsProcesador
     {
@@ -232,7 +271,7 @@ public sealed class clsGoogleChatTests
     {
         var proc = new clsProcesador();
         proc.Runner.EjecutarTurnoAsync(Arg.Any<clsSolicitudTurno>(), Arg.Any<CancellationToken>()).Returns(clsResultado<clsResultadoTurno>.Exito(Resultado("Listo.",
-            clsResultadoHerramienta.Exito("generar_pdf", new clsSalidaPdf(Guid.NewGuid(), "PCN-24092026-001", "/pdfs/PCN-24092026-001.pdf", true)))));
+            clsResultadoHerramienta.Exito("generar_pdf", new clsSalidaPdf(Guid.NewGuid(), "PCN-NV-24092026-001", "/pdfs/PCN-NV-24092026-001.pdf", true)))));
 
         await proc.Crear().ProcesarAsync(Mensaje(), Ct);
 
@@ -241,8 +280,8 @@ public sealed class clsGoogleChatTests
             Arg.Any<CancellationToken>());
         await proc.Publicador.Received(1).PublicarAsync("spaces/PROC", "spaces/PROC/threads/1", Arg.Any<JsonObject>(), Arg.Any<CancellationToken>());
         Botones(proc.Publicados.Single())[0]["onClick"]!["openLink"]!["url"]!.GetValue<string>()
-            .Should().Be("https://cotifly.boterosoto.com.co/pdfs/PCN-24092026-001.pdf?t=token.firmado");
-        proc.Firma.Received(1).Firmar("PCN-24092026-001.pdf", proc.Usuario.Id);
+            .Should().Be("https://cotifly.boterosoto.com.co/pdfs/PCN-NV-24092026-001.pdf?t=token.firmado");
+        proc.Firma.Received(1).Firmar("PCN-NV-24092026-001.pdf", proc.Usuario.Id);
     }
 
     // I5: la verificación doble también en Google Chat; si el rol externo cambió, no se cotiza y queda auditado.

@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 
@@ -7,7 +8,7 @@ namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
 /// Genera el folio de una cotización y la crea en la misma transacción (ADR-011, aprobado el 2026-09-25). El folio lo decide
-/// siempre el servidor, nunca el LLM: <c>PCN-[{nitCliente}-]DDMMAAAA-{NNN}[-vN]</c> (<see cref="clsFolio"/>).
+/// siempre el servidor, nunca el LLM: <c>PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]</c> (<see cref="clsFolio"/>).
 /// </summary>
 /// <remarks>
 /// La creación se pasa como función (<c>crear</c>): recibe el folio, agrega la cotización con <c>version = folio.Version</c> y
@@ -18,8 +19,10 @@ namespace Cotifly.Aplicacion.Cotizaciones.Services;
 public interface IClsGeneradorFolioService
 {
     /// <summary>
-    /// Folio de una cotización nueva (versión 1) del comercial: la fecha de hoy en la zona de negocio, el NIT (solo dígitos) si
-    /// viene y el siguiente consecutivo del comercial en el día. <c>FOLIO_CONSECUTIVO_AGOTADO</c> después del 999.
+    /// Folio de una cotización nueva (versión 1) del comercial: el NIT (solo dígitos) si viene, sus iniciales
+    /// (<see cref="clsInicialesComercial"/> sobre <c>UsuariosWeb.nombreCompleto</c> o <c>nombreUsuario</c>), la fecha de hoy en la
+    /// zona de negocio y el siguiente consecutivo de esas iniciales en el día. <c>FOLIO_CONSECUTIVO_AGOTADO</c> después del 999;
+    /// <c>ERROR_INTERNO</c> si el comercial no existe en <c>UsuariosWeb</c>.
     /// </summary>
     Task<clsResultado<TValor>> CrearConFolioNuevoAsync<TValor>(
         Guid usuarioId,
@@ -41,53 +44,48 @@ public interface IClsGeneradorFolioService
 /// <summary>
 /// Implementación de <see cref="IClsGeneradorFolioService"/>.
 /// <list type="bullet">
-/// <item><b>Candado del día</b> (<c>cotifly:folio:DDMMAAAA</c>): uno para todos los comerciales, no por comercial. El formato no
-/// lleva un segmento del comercial, así que dos comerciales pueden llegar al mismo folio (sin NIT, o con el mismo NIT el mismo
-/// día); con un candado global el segundo salta los números ya tomados sin colisionar nunca. Con el volumen esperado (decenas
-/// de cotizaciones al día) la espera es despreciable.</item>
-/// <item><b>Consecutivo por comercial</b>: el mayor <c>NNN</c> de sus folios v1 del día (con y sin NIT) + 1; si ese folio ya lo
-/// tiene otra cotización (de otro comercial), se toma el siguiente libre.</item>
+/// <item><b>Candado por iniciales y día</b> (<c>cotifly:folio:DDMMAAAA:INICIALES</c>): serializa solo a quienes comparten la
+/// secuencia; comerciales con iniciales distintas generan en paralelo.</item>
+/// <item><b>Consecutivo por iniciales</b>: el mayor <c>NNN</c> del día entre todos los folios base con esas iniciales (con y sin
+/// NIT, de cualquier comercial) + 1. En la práctica es el consecutivo diario del comercial; si dos comerciales tienen las mismas
+/// iniciales, comparten la secuencia (<c>001</c> uno, <c>002</c> el otro). Como el conteo incluye toda fila con esa forma, el
+/// número siguiente nunca está tomado y no hace falta buscar huecos: <c>uq_cotizaciones_folio</c> queda como última defensa.</item>
 /// <item><b>Versiones</b> (<c>cotifly:folio-version:{base}</c>): la familia se serializa por su folio base.</item>
 /// </list>
 /// </summary>
 public sealed class clsGeneradorFolioService(
     IClsCandadoTransaccional candado,
     IClsCotizacionRepository cotizaciones,
+    IClsUsuarioWebRepository usuarios,
     IClsCalendarioNegocio calendario) : IClsGeneradorFolioService
 {
     public const string PrefijoCandadoDia = "cotifly:folio:";
     public const string PrefijoCandadoVersion = "cotifly:folio-version:";
 
-    public Task<clsResultado<TValor>> CrearConFolioNuevoAsync<TValor>(
+    /// <summary>Recurso del candado del consecutivo: <c>cotifly:folio:DDMMAAAA:INICIALES</c>.</summary>
+    public static string RecursoCandadoDia(string segmentoFecha, string iniciales) => $"{PrefijoCandadoDia}{segmentoFecha}:{iniciales}";
+
+    public async Task<clsResultado<TValor>> CrearConFolioNuevoAsync<TValor>(
         Guid usuarioId,
         string? nitCliente,
         Func<clsFolio, CancellationToken, Task<clsResultado<TValor>>> crear,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(crear);
-        if (usuarioId == Guid.Empty)
+        var comercial = usuarioId == Guid.Empty ? null : await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
+        if (comercial is null)
         {
-            return Task.FromResult<clsResultado<TValor>>(SinComercial());
+            return SinComercial();
         }
 
+        var iniciales = clsInicialesComercial.Calcular(comercial.NombreCompleto, comercial.NombreUsuario);
         var fecha = calendario.Hoy;
         var segmento = clsFolio.SegmentoFecha(fecha);
-        return candado.EjecutarAsync(PrefijoCandadoDia + segmento, async ct =>
+        return await candado.EjecutarAsync(RecursoCandadoDia(segmento, iniciales), async ct =>
         {
-            var ultimo = await cotizaciones.ObtenerUltimoConsecutivoDelDiaAsync(usuarioId, segmento, ct);
-            for (var consecutivo = ultimo + 1; ; consecutivo++)
-            {
-                var folio = clsFolio.Crear(fecha, consecutivo, nitCliente);
-                if (folio.EsFallo)
-                {
-                    return folio.Error;
-                }
-
-                if (!await cotizaciones.ExisteFolioAsync(folio.Valor.Valor, ct))
-                {
-                    return await crear(folio.Valor, ct);
-                }
-            }
+            var ultimo = await cotizaciones.ObtenerUltimoConsecutivoDelDiaAsync(iniciales, segmento, ct);
+            var folio = clsFolio.Crear(fecha, iniciales, ultimo + 1, nitCliente);
+            return folio.EsFallo ? folio.Error : await crear(folio.Valor, ct);
         }, cancellationToken);
     }
 
