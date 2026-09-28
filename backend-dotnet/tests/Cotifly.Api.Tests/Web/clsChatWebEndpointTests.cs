@@ -81,8 +81,10 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         var precio = (await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK)).GetProperty("precio");
         precio.GetProperty("moneda").GetString().Should().Be("USD");
         precio.GetProperty("trm_aplicada").GetDecimal().Should().Be(3306.86m);
-        precio.GetProperty("precio_cop").GetDecimal().Should().Be(3_294_798m);
-        precio.GetProperty("precio").GetDecimal().Should().Be(996.35m);
+        // Política sembrada de Nacional: 15 % → 2.850.000 / 0,85 = 3.352.941 pesos; / 3.306,86 = US$1.013,93.
+        precio.GetProperty("margen").GetDecimal().Should().Be(0.15m);
+        precio.GetProperty("precio_cop").GetDecimal().Should().Be(3_352_941m);
+        precio.GetProperty("precio").GetDecimal().Should().Be(1013.93m);
         precio.GetProperty("costo").GetDecimal().Should().Be(2_850_000m);
         trm.Peticiones.Should().ContainSingle();
     }
