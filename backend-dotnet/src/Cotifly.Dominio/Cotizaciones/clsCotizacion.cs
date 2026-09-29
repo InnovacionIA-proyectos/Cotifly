@@ -233,8 +233,16 @@ public sealed class clsCotizacion
     /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias, HU-005.5).
     /// </summary>
     public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
-        EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio
+        (EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
         || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente);
+
+    /// <summary>Prefijo del motivo de un <c>error_envio</c> definitivo (Nexo rechazó los datos con 400: reenviarlos igual no sirve).</summary>
+    public const string PrefijoRechazoDefinitivo = "Rechazo definitivo de Nexo (corrige el formulario en una versión nueva): ";
+
+    /// <summary>¿El <c>error_envio</c> es definitivo? (400 de validación de Nexo: no se reintenta.)</summary>
+    public bool ErrorEnvioDefinitivo =>
+        EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio
+        && MotivoEstadoCosteo?.StartsWith(PrefijoRechazoDefinitivo, StringComparison.Ordinal) == true;
 
     /// <summary>Nombre y origen oficiales del catálogo de Nexo (ADR-005 §4: el cliente sale del catálogo, no del formulario).</summary>
     public void ActualizarClienteDelCatalogo(string nombre, Clientes.OrigenCliente? origen)
@@ -265,11 +273,11 @@ public sealed class clsCotizacion
     /// <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/> con el motivo (recortado a <see cref="LargoMaximoMotivoCosteo"/>) y sin
     /// polling; el comercial la reintenta sin volver a llenar el formulario.
     /// </summary>
-    public void RegistrarErrorEnvioCosteo(string motivo)
+    public void RegistrarErrorEnvioCosteo(string motivo, bool definitivo = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
         EstadoCosteo = Cotizaciones.EstadoCosteo.ErrorEnvio;
-        MotivoEstadoCosteo = Recortar(motivo);
+        MotivoEstadoCosteo = Recortar(definitivo ? PrefijoRechazoDefinitivo + motivo.Trim() : motivo);
         CosteoSiguienteConsultaAt = null;
     }
 

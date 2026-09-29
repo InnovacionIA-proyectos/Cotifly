@@ -631,7 +631,8 @@ paths:
         '400':
           description: |
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
-            posiciones), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
+            posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -648,7 +649,8 @@ paths:
       tags: [web]
       summary: Reenvía a Nexo la solicitud guardada de una cotización que no llegó
       description: |
-        HU-005.5. Solo desde `estado_costeo` `error_envio` o `pendiente_envio`; reenvía el formulario y las posiciones
+        HU-005.5. Solo desde `estado_costeo` `error_envio` (salvo un rechazo 400 de Nexo, que es definitivo: el
+        motivo empieza por "Rechazo definitivo de Nexo") o `pendiente_envio`; reenvía el formulario y las posiciones
         guardados (no hace falta volver a llenarlos). Mismo resultado que el envío: 200 con la cotización en
         `pendiente_costeo`/`autocosteo`, o de nuevo en `error_envio` con el motivo. Si el motivo anterior era
         "tiempo agotado", Nexo pudo haber creado la solicitud: el comercial debe verificar antes de reintentar
@@ -1010,7 +1012,8 @@ components:
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
-                (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`) y `COSTEO_NO_REINTENTABLE` (409: la
+                (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`), `COSTEO_NEXO_SOLICITUD_INVALIDA` (Nexo respondió 400 al alta:
+                `error_envio` definitivo, no se reintenta) y `COSTEO_NO_REINTENTABLE` (409: la
                 cotización no está en `error_envio` ni en `pendiente_envio`).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
@@ -1044,6 +1047,7 @@ components:
                 - COSTEO_NEXO_NO_DISPONIBLE
                 - COSTEO_NEXO_TIEMPO_AGOTADO
                 - COSTEO_NEXO_RECHAZADA
+                - COSTEO_NEXO_SOLICITUD_INVALIDA
                 - COSTEO_NO_REINTENTABLE
                 - ERROR_INTERNO
             mensaje:

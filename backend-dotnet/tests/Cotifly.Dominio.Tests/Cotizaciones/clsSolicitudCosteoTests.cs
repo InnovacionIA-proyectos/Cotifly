@@ -32,6 +32,43 @@ public sealed class clsSolicitudCosteoTests
     }
 
     [Fact]
+    public void SinPesoNiPosicionesConPesoEsPesoRequeridoComoEnNexo()
+    {
+        var error = (Valida() with { PesoKg = null, Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null)] }).Validar()!;
+
+        error.Codigo.Should().Be(clsSolicitudCosteo.CodigoError);
+        error.Detalle.Should().Be(clsSolicitudCosteo.PesoRequerido);
+        (Valida() with { PesoKg = 0m, Posiciones = [] }).Validar()!.Detalle.Should().Be(clsSolicitudCosteo.PesoRequerido);
+    }
+
+    [Fact]
+    public void SinPesoDeLaLineaSeUsaLaSumaDeLasPosiciones() =>
+        (Valida() with { PesoKg = null }).Validar().Should().BeNull("3 × 4.000 kg = 12.000 kg");
+
+    [Theory]
+    [InlineData(12_121, null)]
+    [InlineData(11_882, null)]
+    [InlineData(12_200, clsSolicitudCosteo.PesoInconsistente)]
+    [InlineData(11_800, clsSolicitudCosteo.PesoInconsistente)]
+    public void ElPesoNoPuedeDiferirMasDelUnoPorCientoDeLaSumaDeLasPosiciones(int peso, string? detalle) =>
+        (Valida() with { PesoKg = peso }).Validar()?.Detalle.Should().Be(detalle);
+
+    [Fact]
+    public void UnRechazoDefinitivoDeNexoNoSeReenvia()
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-002" }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(Valida());
+
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo rechazó los datos (HTTP 400 PESO_INCONSISTENTE)", definitivo: true);
+
+        cotizacion.ErrorEnvioDefinitivo.Should().BeTrue();
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacion.PrefijoRechazoDefinitivo);
+        cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeFalse();
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeTrue();
+    }
+
+    [Fact]
     public void CadaPosicionSeValidaConSuNumero()
     {
         var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null), new clsPosicionCarga(null, 0, 10m, 10m, 10m, null)] };
@@ -81,6 +118,6 @@ public sealed class clsSolicitudCosteoTests
         Carroceria = "FURGON",
         HorasCargue = 4m,
         PesoKg = 12_000m,
-        Posiciones = [new clsPosicionCarga("Caja", 3, 50m, 40m, 30m, 12.5m), new clsPosicionCarga(null, 1, 100m, 100m, 100m, null)],
+        Posiciones = [new clsPosicionCarga("Caja", 3, 50m, 40m, 30m, 4_000m), new clsPosicionCarga(null, 1, 100m, 100m, 100m, null)],
     };
 }
