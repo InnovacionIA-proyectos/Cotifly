@@ -258,9 +258,10 @@ paths:
       deprecated: true
       description: |
         Obsoleto desde HU-005.14: las cotizaciones que pasaron por Nexo usan `POST /web/cotizaciones/{folio}/resultado`.
-        Se conserva por compatibilidad con el frontend y para las cotizaciones del chat con costo manual. Una
-        cotización que pasó por Nexo (tiene costeo) responde 409 `USAR_RESULTADO_NEXO`: marcarla solo en Cotifly
-        desincronizaría el resultado con Nexo.
+        Se conserva por compatibilidad con el frontend y para las cotizaciones del chat con costo manual
+        (`estado_costeo` nulo). Una cotización del flujo de costeo en Nexo responde 409 `USAR_RESULTADO_NEXO`
+        (marcarla solo en Cotifly desincronizaría el resultado), salvo en `descartada` y `costeo_vencido`: Nexo no les
+        acepta resultado y se marcan aquí, solo en Cotifly.
         Interino hasta HU-005.14, que lo reemplaza por `POST /web/cotizaciones/{folio}/resultado`
         (registra también en Nexo, agrega `comentario` y no permite cambiar el
         resultado una vez definido).
@@ -660,7 +661,7 @@ paths:
       tags: [web]
       summary: Reenvía a Nexo la solicitud guardada de una cotización que no llegó
       description: |
-        HU-005.5. Solo desde `estado_costeo` `error_envio` (salvo un rechazo 400 de Nexo, que es definitivo: el
+        HU-005.5. Nunca si la cotización ya tiene resultado (`ganada` con valor). Solo desde `estado_costeo` `error_envio` (salvo un rechazo 400 de Nexo, que es definitivo: el
         motivo empieza por "Rechazo definitivo de Nexo") o `pendiente_envio`; reenvía el formulario y las posiciones
         guardados (no hace falta volver a llenarlos). Mismo resultado que el envío: 200 con la cotización en
         `pendiente_costeo`/`autocosteo`, o de nuevo en `error_envio` con el motivo. Si el motivo anterior era
@@ -722,7 +723,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`resultado` que no es `ganada`/`perdida`, o `motivo`/`comentario` fuera de los límites de Nexo (100 y 500)'
+          description: '`resultado` que no es `ganada`/`perdida` o `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
           content:
             application/json:
               schema:
@@ -734,13 +735,16 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`RESULTADO_YA_DEFINIDO` o `COTIZACION_NO_ENTREGADA` (de Nexo), o `COSTEO_NO_LISTO` (la cotización no se envió a Nexo); sin cambio local'
+          description: |
+            Sin cambio local. De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin llamar a Nexo si el
+            costeo no está en `autocosteo` ni `entregada`) y `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO`
+            (chat, descartada o costeo vencido, que se marcan con `/seguimiento`; o todavía no enviada a Nexo)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
         '503':
-          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`; sin cambio local'
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: identidad o rol del comercial en Nexo, es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`; sin cambio local'
           content:
             application/json:
               schema:
@@ -1235,6 +1239,7 @@ components:
                 - RESULTADO_YA_DEFINIDO
                 - COTIZACION_NO_ENTREGADA
                 - USAR_RESULTADO_NEXO
+                - SOLICITUD_NO_TRANSICIONABLE
                 - ERROR_INTERNO
             mensaje:
               type: string

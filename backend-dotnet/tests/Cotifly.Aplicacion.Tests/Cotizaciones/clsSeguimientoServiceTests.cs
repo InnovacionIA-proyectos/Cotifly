@@ -53,10 +53,38 @@ public sealed class clsSeguimientoServiceTests
     }
 
     [Fact]
+    public async Task UnaCotizacionDelChatConReferenciaEnCosteoIdSeSigueMarcandoAqui()
+    {
+        var chat = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-C1", UsuarioId = _ana, CosteoId = "TARIFA-REF-9" }).Valor;
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C1", _ana, Arg.Any<CancellationToken>()).Returns(chat);
+
+        (await Servicio().MarcarAsync(_ana, "PCN-C1", true, null, Ct)).Valor.Ganada.Should().BeTrue("costeoId no dice que pasó por Nexo");
+    }
+
+    [Theory]
+    [InlineData(EstadoCosteo.Descartada)]
+    [InlineData(EstadoCosteo.CosteoVencido)]
+    public async Task UnaDescartadaOVencidaSeMarcaSoloEnCotifly(EstadoCosteo estado)
+    {
+        var cotizacion = EnFlujo("PCN-D1", estado);
+
+        (await Servicio().MarcarAsync(_ana, "PCN-D1", false, "Cliente desistió", Ct)).Valor.Ganada.Should().BeFalse();
+    }
+
+    private clsCotizacion EnFlujo(string folio, EstadoCosteo estado)
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = _ana }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
+        cotizacion.RegistrarConsultaCosteo(estado, "COT-1", _reloj.AhoraUtc, null);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        return cotizacion;
+    }
+
+    [Fact]
     public async Task UnaCotizacionQuePasoPorNexoNoSeMarcaSoloEnCotifly()
     {
-        var enNexo = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-N1", UsuarioId = _ana, CosteoId = "SOL-1" }).Valor;
-        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-N1", _ana, Arg.Any<CancellationToken>()).Returns(enNexo);
+        var enNexo = EnFlujo("PCN-N1", EstadoCosteo.Entregada);
 
         var resultado = await Servicio().MarcarAsync(_ana, "PCN-N1", true, null, Ct);
 

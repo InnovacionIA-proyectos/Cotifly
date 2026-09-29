@@ -306,9 +306,24 @@ public sealed class clsCosteoNexo(
                 logger.LogWarning("Nexo rechazó {Metodo} {Ruta}: {Detalle}", metodo, ruta, detalle);
 
                 // Conflictos de estado de Nexo que el llamador distingue (HU-005.14): viajan con el código de Nexo.
-                if (respuesta.StatusCode == HttpStatusCode.Conflict && codigoNexo is clsCodigosError.ResultadoYaDefinido or clsCodigosError.CotizacionNoEntregada)
+                if (respuesta.StatusCode == HttpStatusCode.Conflict
+                    && codigoNexo is clsCodigosError.ResultadoYaDefinido or clsCodigosError.CotizacionNoEntregada or clsCodigosError.SolicitudNoTransicionable)
                 {
                     return new clsErrorDominio(codigoNexo, mensajeNexo ?? MensajeRechazada, detalle);
+                }
+
+                if (respuesta.StatusCode == HttpStatusCode.NotFound && codigoNexo == clsCodigosError.CotizacionNoEncontrada)
+                {
+                    return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, mensajeNexo ?? "Cotización no encontrada en Nexo.", detalle);
+                }
+
+                // 401/403: la identidad del comercial no vale en Nexo (sin idUsuarioExterno válido o sin rol en Cabina de Fletes). Es
+                // configuración, no un rechazo de los datos: no disponible (503), con una línea de error clara.
+                if (respuesta.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                {
+                    logger.LogError("Nexo respondió {Estado} a {Metodo} {Ruta}: revisar la identidad X-Portal-Usuario-Id del comercial y su rol en Cabina de Fletes ({Detalle}).",
+                        (int)respuesta.StatusCode, metodo, ruta, detalle);
+                    return new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, MensajeNoDisponible, detalle);
                 }
 
                 return new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeRechazada, detalle);

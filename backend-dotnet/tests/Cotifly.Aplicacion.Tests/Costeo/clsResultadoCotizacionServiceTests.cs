@@ -55,6 +55,9 @@ public sealed class clsResultadoCotizacionServiceTests
     [Theory]
     [InlineData(clsCodigosError.ResultadoYaDefinido)]
     [InlineData(clsCodigosError.CotizacionNoEntregada)]
+    [InlineData(clsCodigosError.SolicitudNoTransicionable)]
+    [InlineData(clsCodigosError.CotizacionNoEncontrada)]
+    [InlineData(clsCodigosError.CosteoNexoRechazada)]
     [InlineData(clsCodigosError.CosteoNexoNoDisponible)]
     [InlineData(clsCodigosError.CosteoNexoTiempoAgotado)]
     public async Task SiNexoNoRespondeOkNoSeCambiaNadaLocal(string codigo)
@@ -90,6 +93,7 @@ public sealed class clsResultadoCotizacionServiceTests
         var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-005", UsuarioId = _ana }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-2", true, _reloj.AhoraUtc, _reloj.AhoraUtc);
+        cotizacion.CotizacionNexoId.Should().BeNull("autocosteo desde el alta: el polling aún no guardó la cotización de Nexo");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
         _nexo.ObtenerCotizacionAsync(_ana, "SOL-2", Arg.Any<CancellationToken>()).Returns(new clsCotizacionNexo("COT-2", "Entregada", "SinDefinir", [], []));
         _nexo.MarcarResultadoAsync(_ana, "COT-2", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
@@ -110,6 +114,44 @@ public sealed class clsResultadoCotizacionServiceTests
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", new string('m', 101), null, Ct)).Error.Codigo.Should().Be(clsSeguimientoService.CodigoSeguimientoInvalido);
 
         await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData(EstadoCosteo.PendienteCosteo)]
+    [InlineData(EstadoCosteo.PendienteEnvio)]
+    public async Task SinCosteoEntregadoNiAutocosteoEsCotizacionNoEntregadaSinLlamarANexo(EstadoCosteo estado)
+    {
+        _cotizacion.RegistrarConsultaCosteo(estado, "COT-1", _reloj.AhoraUtc, null);
+
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEntregada);
+
+        await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+        await _nexo.DidNotReceiveWithAnyArgs().ObtenerCotizacionAsync(default, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData(EstadoCosteo.Descartada)]
+    [InlineData(EstadoCosteo.CosteoVencido)]
+    public async Task UnaDescartadaOVencidaNoVaANexo(EstadoCosteo estado)
+    {
+        _cotizacion.RegistrarConsultaCosteo(estado, "COT-1", _reloj.AhoraUtc, null);
+
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+    }
+
+    [Fact]
+    public async Task ConResultadoYaMarcadoNoSeReintentaElEnvio()
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-R1", UsuarioId = _ana }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeTrue();
+
+        cotizacion.MarcarSeguimiento(false, "Perdida antes de reintentar", _reloj.AhoraUtc);
+
+        cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeFalse();
+        await Task.CompletedTask;
     }
 
     [Fact]

@@ -48,12 +48,31 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     public async Task UnBorradorEnNexoEs409CotizacionNoEntregadaSinCambioLocal()
     {
         var (sesion, folio, _) = await EnviarAsync(entregar: false);
+        var antes = _nexo.Peticiones.Count;
 
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(respuesta, "COTIZACION_NO_ENTREGADA");
+        _nexo.Peticiones.Count.Should().BeGreaterThan(antes, "en autocosteo se le pregunta a Nexo (pudo entregarse sin que el polling lo viera)");
         (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+    }
+
+    [Fact]
+    public async Task UnaDescartadaSeMarcaConElSeguimientoYNoConElResultado()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, clsCosteoEndpointsTests.Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.Descartar(_nexo.SolicitudesCreadas[^1]);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var resultado = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida"}""");
+        using var seguimiento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/seguimiento", sesion.Access, """{"ganada":false,"motivo_rechazo":"Descartada"}""");
+
+        resultado.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(resultado, "COSTEO_NO_LISTO");
+        (await VerificarContratoAsync(seguimiento, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK)).GetProperty("ganada").GetBoolean().Should().BeFalse();
     }
 
     [Fact]

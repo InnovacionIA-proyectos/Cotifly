@@ -179,4 +179,7 @@ public static class clsCodigosError
     /// se marca con <c>POST .../resultado</c>, que escribe primero en Nexo (409, HU-005.14). Código nuevo del backend .NET.
     /// </summary>
     public const string UsarResultadoNexo = "USAR_RESULTADO_NEXO";
+
+    /// <summary>Nexo no puede pasar la solicitud a <c>Entregada</c> (está descartada): 409, sin cambio local. Mismo código que usa Nexo.</summary>
+    public const string SolicitudNoTransicionable = "SOLICITUD_NO_TRANSICIONABLE";
 }

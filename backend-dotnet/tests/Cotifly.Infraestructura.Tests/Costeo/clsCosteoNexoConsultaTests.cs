@@ -159,6 +159,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     [Theory]
     [InlineData("RESULTADO_YA_DEFINIDO")]
     [InlineData("COTIZACION_NO_ENTREGADA")]
+    [InlineData("SOLICITUD_NO_TRANSICIONABLE")]
     public async Task Un409DeNexoConservaSuCodigo(string codigo)
     {
         _nexo.Responder(HttpStatusCode.Conflict, $$"""{"code":"{{codigo}}","message":"No se puede."}""");
@@ -170,9 +171,19 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
+    public async Task Un404CotizacionNoEncontradaEsCotizacionNoEncontrada()
+    {
+        _nexo.Responder(HttpStatusCode.NotFound, """{"code":"COTIZACION_NO_ENCONTRADA","message":"Cotización no encontrada."}""");
+
+        var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-X", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
+    }
+
+    [Fact]
     public async Task Otro409EsRechazada()
     {
-        _nexo.Responder(HttpStatusCode.Conflict, """{"code":"SOLICITUD_NO_TRANSICIONABLE","message":"Descartada."}""");
+        _nexo.Responder(HttpStatusCode.Conflict, """{"code":"CONFLICTO_CONCURRENCIA","message":"Otra edición."}""");
 
         var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-1", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
 

@@ -72,10 +72,19 @@ public sealed class clsResultadoCotizacionService(
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
-        if (cotizacion.CosteoId is null)
+        if (cotizacion.ResultadoSoloLocal || cotizacion.CosteoId is null)
         {
-            return new clsErrorDominio(clsCodigosError.CosteoNoListo,
-                $"La cotización {cotizacion.Folio} no se envió a Nexo: el resultado se marca con el seguimiento de Cotifly.");
+            return new clsErrorDominio(clsCodigosError.CosteoNoListo, cotizacion.ResultadoSoloLocal
+                ? $"La cotización {cotizacion.Folio} no tiene resultado en Nexo (chat, descartada o costeo vencido): márcalo con el seguimiento de Cotifly."
+                : $"La cotización {cotizacion.Folio} todavía no está en Nexo: reintenta el envío antes de marcar el resultado.");
+        }
+
+        // Nexo solo acepta el resultado de una cotización entregada: sin costeo completo no se le pregunta (y no se crea en
+        // Nexo un borrador vacío solo para que lo rechace). En autocosteo sí se intenta: el polling pudo no ver aún la entrega.
+        if (cotizacion.EstadoCosteo is not (EstadoCosteo.Entregada or EstadoCosteo.Autocosteo))
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionNoEntregada,
+                $"La cotización {cotizacion.Folio} todavía no tiene el costeo entregado por Nexo: no se puede marcar el resultado.");
         }
 
         var cronometro = Stopwatch.StartNew();
