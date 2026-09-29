@@ -31,8 +31,13 @@ public interface IClsEstadoConversacionService
     /// <param name="argumentos">Argumentos con que se ejecutó (ya con lo que inyectó el filtro): textos libres como la ruta.</param>
     clsEstadoConversacion Aplicar(clsEstadoConversacion estado, clsResultadoHerramienta resultado, IReadOnlyDictionary<string, object?> argumentos);
 
-    /// <summary>Reconoce en el mensaje del comercial la elección de un cliente candidato o la confirmación de la previsualización.</summary>
-    clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje);
+    /// <summary>
+    /// Reconoce en el mensaje del comercial la elección de un cliente candidato, la confirmación de la previsualización y (HU-012.2) la
+    /// moneda que nombró ("en dólares", "USD", "US$" → USD; "en pesos", "COP" → COP): queda en el estado para los turnos siguientes, así un
+    /// "en dólares" del primer mensaje vale cuando se calcula el precio más adelante (Google Chat, sin selector). Con
+    /// <paramref name="monedaDelFormulario"/> la moneda ya la fijó el selector y el texto no la cambia.
+    /// </summary>
+    clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje, bool monedaDelFormulario = false);
 
     /// <summary>
     /// Estado de una nueva versión (auditoría de #12, I2): la cotización de origen (ya validada como del comercial) con su cliente, línea
@@ -128,13 +133,17 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             return estado.Moneda is null ? estado with { Moneda = nueva } : estado;
         }
 
-        return estado with { Moneda = nueva, PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false };
+        return estado with { Moneda = nueva, PrecioFinal = null, TrmAplicada = null, PrecioCop = null, TrmVigenciaDesde = null, TrmVigenciaHasta = null, ConfirmacionPendiente = false };
     }
 
-    public clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje)
+    public clsMensajeReconocido ReconocerMensaje(clsEstadoConversacion estado, string mensaje, bool monedaDelFormulario = false)
     {
         ArgumentNullException.ThrowIfNull(estado);
         var normalizado = Normalizar(mensaje);
+        if (!monedaDelFormulario && MonedaNombrada(normalizado) is { } nombrada)
+        {
+            estado = ElegirMoneda(estado, nombrada);
+        }
 
         if (estado.CandidatosCliente.Count > 0 && !estado.ClienteConfirmado)
         {
@@ -148,6 +157,21 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
         var confirmado = estado.ConfirmacionPendiente && estado.PrecioFinal is not null && EsConfirmacion(normalizado);
         return new clsMensajeReconocido(estado, confirmado);
+    }
+
+    /// <summary>
+    /// Moneda que nombra el mensaje (normalizado): dólares gana si aparecen ambas (el costo suele darse en pesos y la cotización pedirse en
+    /// dólares); "pesos" suelto no cuenta (es la unidad del costo), sí "en pesos", "pesos colombianos" o "COP".
+    /// </summary>
+    public static string? MonedaNombrada(string? mensaje)
+    {
+        var texto = Normalizar(mensaje);
+        if (ExpresionDolares().IsMatch(texto))
+        {
+            return clsConversorMoneda.Dolares;
+        }
+
+        return ExpresionPesos().IsMatch(texto) ? clsConversorMoneda.Pesos : null;
     }
 
     /// <summary>¿El mensaje (normalizado) es una confirmación explícita? ("Confirmo", "sí", "dale", "genera el PDF"...).</summary>
@@ -217,7 +241,7 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
         };
 
         return tarifa is { Encontrada: true, Costo: { } costo }
-            ? nuevo with { Costo = costo, FuenteCosto = tarifa.Fuente, CosteoId = tarifa.Referencia, PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false }
+            ? nuevo with { Costo = costo, FuenteCosto = tarifa.Fuente, CosteoId = tarifa.Referencia, PrecioFinal = null, TrmAplicada = null, PrecioCop = null, TrmVigenciaDesde = null, TrmVigenciaHasta = null, ConfirmacionPendiente = false }
             : nuevo;
     }
 
@@ -238,6 +262,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             // Un margen nuevo deja sin valor el precio calculado antes.
             PrecioFinal = null,
             TrmAplicada = null,
+            PrecioCop = null,
+            TrmVigenciaDesde = null,
+            TrmVigenciaHasta = null,
             ConfirmacionPendiente = false,
         };
     }
@@ -254,6 +281,9 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
             PrecioFinal = precio.Precio,
             Moneda = precio.Moneda,
             TrmAplicada = precio.TrmAplicada,
+            PrecioCop = precio.PrecioCop,
+            TrmVigenciaDesde = precio.TrmVigenciaDesde,
+            TrmVigenciaHasta = precio.TrmVigenciaHasta,
             ConfirmacionPendiente = true,
         };
     }
@@ -262,8 +292,8 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     {
         var nuevo = estado with { MargenAplicado = ajuste.Margen.Margen, OrigenMargen = OrigenMargen.Negociado };
         return ajuste.Precio is { } precio
-            ? nuevo with { Costo = precio.Costo, MetodoCalculo = precio.Metodo, PrecioFinal = precio.Precio, Moneda = precio.Moneda, TrmAplicada = precio.TrmAplicada, ConfirmacionPendiente = true }
-            : nuevo with { PrecioFinal = null, TrmAplicada = null, ConfirmacionPendiente = false };
+            ? nuevo with { Costo = precio.Costo, MetodoCalculo = precio.Metodo, PrecioFinal = precio.Precio, Moneda = precio.Moneda, TrmAplicada = precio.TrmAplicada, PrecioCop = precio.PrecioCop, TrmVigenciaDesde = precio.TrmVigenciaDesde, TrmVigenciaHasta = precio.TrmVigenciaHasta, ConfirmacionPendiente = true }
+            : nuevo with { PrecioFinal = null, TrmAplicada = null, PrecioCop = null, TrmVigenciaDesde = null, TrmVigenciaHasta = null, ConfirmacionPendiente = false };
     }
 
     private static clsCandidatoCliente? ElegirCandidato(IReadOnlyList<clsCandidatoCliente> candidatos, string mensaje, string normalizado)
@@ -342,6 +372,12 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
 
     [GeneratedRegex(@"^\W*(opcion |el |la |numero )?(?<n>[1-9])\W*$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionPosicion();
+
+    [GeneratedRegex(@"(?<![a-z])(usd|us\$|dolar(es)?)(?![a-z])", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionDolares();
+
+    [GeneratedRegex(@"(?<![a-z])(cop|en pesos|pesos colombianos)(?![a-z])", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionPesos();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacios();

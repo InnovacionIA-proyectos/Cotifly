@@ -440,8 +440,11 @@ public static partial class clsReglasRespuestaAgente
         var numeros = new HashSet<decimal>();
         var cadenas = new List<string>();
         var estado = contexto.Estado;
-        // La TRM aplicada (HU-012.2) también respalda: el agente puede citarla al presentar un precio en USD.
-        foreach (var valor in new[] { estado.Costo, estado.PrecioFinal, estado.PrecioFinal - estado.Costo, estado.TrmAplicada })
+        // Montos en su moneda (HU-012.2): costo y utilidad siempre en COP. En USD el precio final no se resta del costo (monedas distintas):
+        // respaldan el equivalente en pesos (PrecioCop), la utilidad en pesos (PrecioCop − Costo) y la TRM aplicada.
+        var enPesos = Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda);
+        var precioCop = enPesos ? estado.PrecioFinal : estado.PrecioCop;
+        foreach (var valor in new[] { estado.Costo, estado.PrecioFinal, precioCop, precioCop - estado.Costo, enPesos ? null : estado.TrmAplicada })
         {
             if (valor is { } v)
             {

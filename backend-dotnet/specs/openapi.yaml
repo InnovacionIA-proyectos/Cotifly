@@ -1064,7 +1064,7 @@ components:
           nullable: true
           enum: [COP, USD, null]
           description: |
-            Opcional (HU-012.2, ADR-013). Moneda de la cotización que eligió el comercial en el selector del
+            Opcional (HU-012.2, ADR-014). Moneda de la cotización que eligió el comercial en el selector del
             formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
             si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
             con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
@@ -1077,7 +1077,7 @@ components:
       required: [precio, costo, margen, metodo, utilidad]
       description: |
         `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
-        enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-013).
+        enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-014).
         `moneda`, `trm_aplicada` y `precio_cop` son opcionales para compatibilidad: si faltan, la moneda es COP.
       properties:
         precio:
@@ -1098,6 +1098,18 @@ components:
         trm_aplicada:
           type: number
           description: TRM oficial del día (COP por USD) con que se convirtió el precio; 0 cuando la moneda es COP.
+        trm_vigencia_desde:
+          type: string
+          format: date
+          nullable: true
+          description: Primer día de vigencia de `trm_aplicada` (Superintendencia Financiera); `null` en COP.
+        trm_vigencia_hasta:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Último día de vigencia de `trm_aplicada`; `null` en COP. Si el comercial confirma después de esta
+            fecha (America/Bogota), el servidor recalcula el precio con la TRM vigente y vuelve a previsualizar.
         precio_cop:
           type: number
           nullable: true
@@ -1161,6 +1173,26 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SalidaPdf'
             - $ref: '#/components/schemas/Nulo'
+        errores:
+          type: array
+          description: |
+            Opcional (HU-012.4, aditivo). Errores de negocio que devolvieron las herramientas del turno, en orden,
+            para que el frontend reaccione sin interpretar el texto del agente (por ejemplo `TRM_NO_DISPONIBLE`:
+            no hay precio en dólares, ofrecer reintentar o cotizar en COP). Vacío si ninguna herramienta falló.
+            Los códigos son los de `ErrorNegocio`.
+          items:
+            $ref: '#/components/schemas/ErrorHerramienta'
+
+    ErrorHerramienta:
+      type: object
+      required: [herramienta, codigo]
+      properties:
+        herramienta:
+          type: string
+          description: Nombre de la herramienta (`calcular_precio`, `registrar_ajuste_margen`...).
+        codigo:
+          type: string
+          description: Código de `ErrorNegocio` (ej. `TRM_NO_DISPONIBLE`).
 
     RespuestaChatError:
       type: object

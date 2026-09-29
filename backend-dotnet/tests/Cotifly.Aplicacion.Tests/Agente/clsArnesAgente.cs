@@ -157,11 +157,12 @@ internal sealed class clsArnesAgente
     public clsAgenteRunner Runner()
     {
         Contexto = new clsContextoTurnoAgente();
+        var precio = new clsPrecioService(Trm, Calendario);
         var herramientas = new clsHerramientasCotizador(
-            Contexto, Buscador, Tarifas, Margen, new clsPrecioService(Trm, Calendario), Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
+            Contexto, Buscador, Tarifas, Margen, precio, Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
         return new clsAgenteRunner(
             Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(),
-            Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas,
+            Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas, precio,
             Options.Create(OpcionesAgente), Options.Create(OpcionesSesiones), Options.Create(OpcionesCorreo), NullLoggerFactory.Instance);
     }
 

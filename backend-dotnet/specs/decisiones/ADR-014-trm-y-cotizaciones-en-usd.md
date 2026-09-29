@@ -50,7 +50,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 - El costo siempre está en COP (Nexo o el comercial). El precio en pesos se calcula como hoy (`clsCalculadoraPrecio`, redondeo a pesos half-to-even).
 - Con `moneda="USD"`: `precio = round(precio_cop / trm, 2)` half-to-even. `costo` y `utilidad` siguen en COP. La salida de `calcular_precio` agrega `moneda`, `trm_aplicada` y `precio_cop`.
-- La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF. El LLM nunca la aporta (ADR-003).
+- La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF, siempre que siga vigente al confirmar: si hoy ya está fuera de su rango de vigencia, el servidor recalcula con la TRM vigente y vuelve a previsualizar. El LLM nunca la aporta (ADR-003).
 - Con `moneda="COP"`: `trm_aplicada = 0`.
 - Si la TRM falla, `calcular_precio` (y el ajuste de margen en USD) devuelve `TRM_NO_DISPONIBLE` y no hay precio en el estado: no se puede generar el PDF en USD.
 - La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4); en Google Chat, cuando lo pide en su mensaje. La detalla #51.
@@ -79,3 +79,4 @@ La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TR
 | Confirmar con el equipo que la fuente oficial es la Superintendencia Financiera por datos abiertos (checkbox 1 de #50) | Duban con Gerencia Comercial |
 | Confirmar el texto legal de la aclaración del piso mínimo en el PDF | Gerencia Comercial / jurídica |
 | Abrir la salida HTTPS a `www.datos.gov.co` en el clúster (HU-006) | Infraestructura |
+| Nueva versión (v2) en USD: hoy se siembra con la TRM de la original y, al recalcular, usa la del día; decidir cuál aplica | Gerencia Comercial |

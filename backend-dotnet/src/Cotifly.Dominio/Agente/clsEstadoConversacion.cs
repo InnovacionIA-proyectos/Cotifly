@@ -64,11 +64,30 @@ public sealed record clsEstadoConversacion
     /// <summary>TRM oficial con que se convirtió <see cref="PrecioFinal"/> a USD (la de <c>calcular_precio</c>); nula o 0 en COP.</summary>
     public decimal? TrmAplicada { get; init; }
 
+    /// <summary>Precio en pesos antes de convertir a USD (respaldo del equivalente en COP que puede citar el agente); nulo en COP.</summary>
+    public decimal? PrecioCop { get; init; }
+
+    /// <summary>Rango de vigencia de <see cref="TrmAplicada"/> (Superintendencia Financiera); nulo en COP.</summary>
+    public DateOnly? TrmVigenciaDesde { get; init; }
+
+    /// <inheritdoc cref="TrmVigenciaDesde"/>
+    public DateOnly? TrmVigenciaHasta { get; init; }
+
     // Documento
     public string? FolioEnProgreso { get; init; }
     public Guid? CotizacionId { get; init; }
     public int? Version { get; init; }
     public bool ConfirmacionPendiente { get; init; }
+
+    /// <summary>
+    /// ¿El precio en dólares se calculó con una TRM que ya no está vigente en <paramref name="hoy"/> (America/Bogota)? Entonces no se emite
+    /// el PDF: se recalcula con la TRM vigente y se vuelve a previsualizar (HU-012.2). Sin rango conocido (ej. una nueva versión sembrada
+    /// desde una cotización guardada) también cuenta como vencida. En COP o sin precio, nunca.
+    /// </summary>
+    public bool TrmVencidaEn(DateOnly hoy) =>
+        PrecioFinal is not null
+        && !Precio.clsConversorMoneda.EsPesos(Moneda)
+        && (TrmVigenciaHasta is not { } hasta || hoy > hasta || (TrmVigenciaDesde is { } desde && hoy < desde));
 
     /// <summary>Igualdad por valor, incluida la lista de candidatos (un record compara listas por referencia).</summary>
     public bool Equals(clsEstadoConversacion? other) =>
@@ -97,6 +116,9 @@ public sealed record clsEstadoConversacion
         && PrecioFinal == other.PrecioFinal
         && Moneda == other.Moneda
         && TrmAplicada == other.TrmAplicada
+        && PrecioCop == other.PrecioCop
+        && TrmVigenciaDesde == other.TrmVigenciaDesde
+        && TrmVigenciaHasta == other.TrmVigenciaHasta
         && FolioEnProgreso == other.FolioEnProgreso
         && CotizacionId == other.CotizacionId
         && Version == other.Version
