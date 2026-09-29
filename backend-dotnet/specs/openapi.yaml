@@ -1070,7 +1070,8 @@ components:
             con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
             del día; si la fuente de la TRM falla, el agente responde que no puede cotizar en dólares
             (`TRM_NO_DISPONIBLE` en la herramienta) y el comercial puede reintentar o cotizar en COP.
-            Otro valor responde 400 (`moneda inválida`).
+            Se acepta sin distinguir mayúsculas ni espacios al borde (`usd`, ` Usd ` → `USD`). Otro valor, o una cadena
+            vacía, responde 400 (`moneda inválida`).
 
     SalidaPrecio:
       type: object

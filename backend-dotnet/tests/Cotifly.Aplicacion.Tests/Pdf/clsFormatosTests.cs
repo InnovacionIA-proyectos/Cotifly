@@ -45,9 +45,11 @@ public sealed class clsFormatosTests
 
     [Theory]
     [InlineData("3306.86", "$3.306,86")]
-    [InlineData("4123.4567", "$4.123,46")]
-    [InlineData("950", "$950,00")]
-    public void LaTrmSeFormateaConDosDecimales(string trm, string esperado) =>
+    [InlineData("3306.8612", "$3.306,8612")]
+    [InlineData("4123.4567", "$4.123,4567")]
+    [InlineData("3306.80", "$3.306,8")]
+    [InlineData("950", "$950")]
+    public void LaTrmSeFormateaConSuEscalaReal(string trm, string esperado) =>
         clsFormatoMoneda.FormatearTrm(decimal.Parse(trm, CultureInfo.InvariantCulture)).Should().Be(esperado);
 
     [Fact]

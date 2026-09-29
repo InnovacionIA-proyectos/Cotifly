@@ -238,7 +238,9 @@ public sealed class clsMonedaUsdTests
         _arnes.Calendario.Hoy.Returns(manana);
         var confirmacionVencida = (await _arnes.TurnoAsync("Confirmo", moneda: "USD")).Valor;
 
-        confirmacionVencida.Salidas.Single().Error!.Codigo.Should().Be(clsCodigosError.ConfirmacionRequerida);
+        confirmacionVencida.Salidas.Select(x => x.Herramienta).Should().Equal("calcular_precio", "generar_pdf");
+        confirmacionVencida.Salidas[0].EsExitoso.Should().BeTrue("el recálculo del servidor es una salida del turno");
+        confirmacionVencida.Salidas[1].Error!.Codigo.Should().Be(clsCodigosError.ConfirmacionRequerida);
         _arnes.EntradasPdf.Should().BeEmpty("con la TRM vencida no se emite el PDF");
         var estado = _arnes.Estado();
         estado.TrmAplicada.Should().Be(3400m);
@@ -328,5 +330,47 @@ public sealed class clsMonedaUsdTests
 
         respuesta.Errores.Should().Equal(new clsErrorHerramienta("calcular_precio", clsCodigosError.TrmNoDisponible));
         respuesta.Precio.Should().BeNull();
+    }
+
+    // Validación de HU-012 (6): el recálculo por TRM vencida es una salida de calcular_precio del turno (RespuestaChat.precio).
+    [Fact]
+    public async Task ElRecalculoPorTrmVencidaLlegaALaRespuestaDelChat()
+    {
+        var manana = new DateOnly(2026, 9, 25);
+        _arnes.Trm.ObtenerAsync(manana, Arg.Any<CancellationToken>()).Returns(new clsTrm(3400m, manana, manana, "prueba"));
+        _arnes.Modelo
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
+            .Cerrar("Previsualización en USD.")
+            .Cerrar("La TRM cambió: nueva previsualización.");
+
+        await _arnes.TurnoAsync("cotiza con costo 2.850.000", moneda: "USD");
+        _arnes.Calendario.Hoy.Returns(manana);
+        var turno = (await _arnes.TurnoAsync("Confirmo", moneda: "USD")).Valor;
+
+        var respuesta = clsRespuestaChat.Desde(turno);
+        respuesta.Precio.Should().NotBeNull();
+        respuesta.Precio!.Precio.Should().Be(969.06m);
+        respuesta.Precio.TrmAplicada.Should().Be(3400m);
+        respuesta.Errores.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ElRecalculoSinTrmVigenteLlegaComoErrorDeLaRespuesta()
+    {
+        var manana = new DateOnly(2026, 9, 25);
+        _arnes.Trm.ObtenerAsync(manana, Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.TrmNoDisponible, "caída"));
+        _arnes.Modelo
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
+            .Cerrar("Previsualización en USD.")
+            .Cerrar("La TRM de hoy no está disponible.");
+
+        await _arnes.TurnoAsync("cotiza con costo 2.850.000", moneda: "USD");
+        _arnes.Calendario.Hoy.Returns(manana);
+        var respuesta = clsRespuestaChat.Desde((await _arnes.TurnoAsync("Confirmo", moneda: "USD")).Valor);
+
+        respuesta.Precio.Should().BeNull();
+        respuesta.Errores.Should().Equal(new clsErrorHerramienta("calcular_precio", clsCodigosError.TrmNoDisponible));
     }
 }

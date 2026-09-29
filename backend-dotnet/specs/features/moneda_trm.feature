@@ -3,7 +3,8 @@
 # La fuente de la TRM son los datos abiertos de la Superintendencia Financiera (conjunto 32sa-8pi3); aquí la atiende un
 # servidor falso sin red (tests/Comun/clsTrmFalso.cs) con la TRM real de la semana del 2026-09-21: la del viernes 25
 # (3306,86) vale del sábado 26 al lunes 28. Las fechas son de America/Bogota. Registro real de dependencias
-# (AddAplicacion + AddInfraestructura) sobre SQL Server 2019 en Testcontainers.
+# (AddAplicacion + AddInfraestructura) sobre SQL Server 2019 en Testcontainers. Las características corren en paralelo sobre la
+# misma base: este archivo usa su propio comercial ("trm.comercial"), nunca el de pdf.feature.
 @integracion @trm
 Característica: Cotización en dólares con la TRM del día
   Como comercial de Botero Soto
@@ -48,13 +49,13 @@ Característica: Cotización en dólares con la TRM del día
     Entonces el cálculo en la moneda pedida se rechaza con el código "TRM_NO_DISPONIBLE"
 
   Escenario: La TRM aplicada queda guardada en la cotización en USD
-    Dado el comercial "nathaly.vargas" con nombre "Nathaly Vargas Garcia" y correo "nvargas@boterosoto.com.co"
+    Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
     Y que la fecha de negocio es "2026-09-27"
-    Cuando "nathaly.vargas" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-27092026"
+    Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-27092026"
     Entonces la cotización "PCN-USD-27092026" queda guardada en "USD" con precio final "996.35" y TRM "3306.86"
 
   Escenario: En COP la TRM guardada es 0, no nula
-    Dado el comercial "nathaly.vargas" con nombre "Nathaly Vargas Garcia" y correo "nvargas@boterosoto.com.co"
+    Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
     Y que la fecha de negocio es "2026-09-27"
-    Cuando "nathaly.vargas" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-27092026"
+    Cuando "trm.comercial" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-27092026"
     Entonces la cotización "PCN-COP-27092026" queda guardada en "COP" con precio final "3294798" y TRM "0"
