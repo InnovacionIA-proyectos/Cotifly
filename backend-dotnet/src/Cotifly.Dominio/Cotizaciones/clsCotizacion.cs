@@ -325,6 +325,55 @@ public sealed class clsCotizacion
         return true;
     }
 
+    /// <summary>
+    /// Margen resuelto al enviar la solicitud a Nexo (HU-005.7, ADR-015 §5: con el BP del catálogo): se guarda para aplicarlo cuando
+    /// llegue el costeo. Valida el margen con su método (<see cref="clsReglaMargen"/>).
+    /// </summary>
+    public void RegistrarMargenCosteo(decimal? margenPolitica, decimal margenAplicado, OrigenMargen origen, string metodoCalculo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(metodoCalculo);
+        var metodo = metodoCalculo.Trim().ToLowerInvariant();
+        if (clsValidacion.Primero(
+                clsReglaMargen.Validar(CodigoError, "margenPolitica", margenPolitica, metodo),
+                clsReglaMargen.Validar(CodigoError, "margenAplicado", margenAplicado, metodo)) is { } error)
+        {
+            throw new ArgumentException(error.Mensaje, nameof(margenAplicado));
+        }
+
+        MargenPolitica = margenPolitica;
+        MargenAplicado = margenAplicado;
+        OrigenMargen = origen;
+        MetodoCalculo = metodo;
+    }
+
+    /// <summary>
+    /// Precio sobre el costeo de Nexo (HU-005.7): <paramref name="costo"/> es el costo de Nexo (interno) y
+    /// <paramref name="precioFinal"/> el que salió del módulo de Precio con el margen guardado. <see cref="CosteoListoAt"/> queda en
+    /// la primera vez.
+    /// </summary>
+    public void RegistrarPrecioCosteo(decimal costo, decimal precioFinal, string? serviciosConexos, DateTimeOffset listoAt)
+    {
+        if (costo < 0m || precioFinal < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(costo), "El costo y el precio no pueden ser negativos.");
+        }
+
+        Costo = costo;
+        PrecioFinal = precioFinal;
+        ServiciosConexos = serviciosConexos;
+        CosteoListoAt ??= listoAt;
+    }
+
+    /// <summary>Advertencia sobre el costeo (sin margen, costeo cambiado después del PDF...), visible en "Mis cotizaciones".</summary>
+    public void AdvertirCosteo(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        MotivoEstadoCosteo = Recortar(motivo);
+    }
+
+    /// <summary>Guarda la selección de servicios conexos del comercial (JSON de <c>serviciosConexos</c>).</summary>
+    public void SeleccionarServiciosConexos(string? serviciosConexos) => ServiciosConexos = serviciosConexos;
+
     /// <summary>Deja de consultar a Nexo (estado que ya no se sigue, o datos incompletos).</summary>
     public void DetenerPollingCosteo() => CosteoSiguienteConsultaAt = null;
 

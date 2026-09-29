@@ -140,4 +140,13 @@ public static class clsCodigosError
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>
     public const string CosteoNoReintentable = "COSTEO_NO_REINTENTABLE";
+
+    /// <summary>
+    /// La cotización todavía no tiene el costeo de Nexo con margen aplicado (precio): no se pueden elegir servicios conexos ni
+    /// generar el PDF del costeo (409, ADR-015 §5). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNoListo = "COSTEO_NO_LISTO";
+
+    /// <summary>La cotización ya tiene PDF: para cambiar precios o servicios se genera una versión nueva (409). Código nuevo del backend .NET.</summary>
+    public const string PdfYaGenerado = "PDF_YA_GENERADO";
 }

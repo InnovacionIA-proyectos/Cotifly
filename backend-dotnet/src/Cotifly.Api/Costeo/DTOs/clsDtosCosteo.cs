@@ -88,3 +88,6 @@ public sealed class clsPosicionCargaWebRequest
     public decimal AltoCm { get; init; }
     public decimal? PesoKg { get; init; }
 }
+
+/// <summary><c>SeleccionServiciosConexos</c>: ids de los servicios conexos del costeo que van en el PDF (los demás se excluyen).</summary>
+public sealed record clsSeleccionServiciosConexosWebRequest(IReadOnlyList<string>? Incluidos);

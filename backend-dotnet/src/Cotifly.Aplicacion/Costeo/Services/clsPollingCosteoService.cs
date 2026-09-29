@@ -54,7 +54,8 @@ public sealed class clsPollingCosteoService(
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
     IOptions<clsOpcionesCosteoNexo> opciones,
-    ILogger<clsPollingCosteoService> logger) : IClsPollingCosteoService
+    ILogger<clsPollingCosteoService> logger,
+    IClsPrecioCosteoService precioCosteo) : IClsPollingCosteoService
 {
     /// <summary>Evento de auditoría de cada cambio de estado detectado (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaCambioEstado = "costeo_nexo_estado";
@@ -125,6 +126,8 @@ public sealed class clsPollingCosteoService(
         var estado = clsDerivacionEstadoCosteo.Derivar(foto);
         var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado) ? null : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, 0, config);
         var cambio = cotizacion.RegistrarConsultaCosteo(estado, foto.Cotizacion?.Id, ahora, siguiente);
+        var precio = precioCosteo.Aplicar(cotizacion, foto, ahora);
+        cambio |= precio;
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         if (cambio)
         {
@@ -143,6 +146,7 @@ public sealed class clsPollingCosteoService(
                 estado_costeo = cotizacion.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,
                 cotizacion_nexo_id = cotizacion.CotizacionNexoId,
                 motivo = cotizacion.MotivoEstadoCosteo,
+                precio_final = cotizacion.PrecioFinal,
             },
             exito: true,
             duracionMs,

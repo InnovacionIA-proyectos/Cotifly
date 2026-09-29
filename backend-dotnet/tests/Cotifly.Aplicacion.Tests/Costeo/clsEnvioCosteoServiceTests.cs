@@ -47,6 +47,9 @@ public sealed class clsEnvioCosteoServiceTests
     {
         _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(_politica);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
+        _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>()).Returns(
+            new Cotifly.Aplicacion.Margen.DTOs.clsMargenResuelto(
+                new Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen(0.18m, "sap_tm", "ZIMP", false, "SAP TM"), "Importacion", 3, 0.15m, "margen"));
         _folios.CrearConFolioNuevoAsync(_ana, Nit, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacion>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -99,6 +102,20 @@ public sealed class clsEnvioCosteoServiceTests
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
             Arg.Is<clsSolicitudNexo>(s => s.ClienteBp == "15927" && s.LineaNegocioNexo == "PuertoAInterior" && s.Solicitud.Origen == "Buenaventura"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElMargenSeResuelveAlEnviarConElBpDelCatalogoParaAplicarloCuandoLlegueElCosteo()
+    {
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.MargenAplicado.Should().Be(0.18m);
+        cotizacion.MargenPolitica.Should().Be(0.15m);
+        cotizacion.OrigenMargen.Should().Be(OrigenMargen.SapTm);
+        cotizacion.MetodoCalculo.Should().Be("margen");
+        cotizacion.PrecioFinal.Should().BeNull("sin costeo no hay precio");
+        await _margen.Received(1).ResolverAsync(
+            Arg.Is<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(e => e.BpCliente == "15927" && e.LineaNegocio == "Importacion"), Arg.Any<CancellationToken>());
     }
 
     [Fact]

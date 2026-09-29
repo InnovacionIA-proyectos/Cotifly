@@ -675,6 +675,113 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
 
+  /web/cotizaciones/{folio}/costeo:
+    get:
+      operationId: obtenerCosteo
+      tags: [web]
+      summary: Estado del costeo en Nexo, precio final y servicios conexos de la cotización
+      description: |
+        HU-005.7 (ADR-015 §5). Solo precios: el costo bruto de Nexo nunca se muestra (ni aquí ni en "Mis
+        cotizaciones"); `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
+        de la cotización (resuelto al enviarla: SAP TM con el BP o la política de la línea). `precio_final` es `null`
+        mientras no haya costeo. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: Costeo de la cotización
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
+  /web/cotizaciones/{folio}/costeo/servicios-conexos:
+    put:
+      operationId: seleccionarServiciosConexos
+      tags: [web]
+      summary: Elige qué servicios conexos del costeo se incluyen en el precio y en el PDF
+      description: |
+        HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
+        mientras la cotización tenga precio y no tenga PDF. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeleccionServiciosConexos'
+      responses:
+        '200':
+          description: Selección guardada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`SOLICITUD_COSTEO_INVALIDA`: algún id no es un servicio conexo del costeo'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO` (todavía sin precio) o `PDF_YA_GENERADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/cotizaciones/{folio}/costeo/pdf:
+    post:
+      operationId: generarPdfCosteo
+      tags: [web]
+      summary: Genera el PDF de la cotización con el precio sobre el costeo de Nexo
+      description: |
+        HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
+        destino, vehículo y `precio_final`, y solo los servicios conexos incluidos, cada uno con su precio. Una sola
+        vez por cotización (para cambiarla, versión nueva). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '201':
+          description: PDF generado y registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalidaPdf'
+        '400':
+          description: Error del módulo PDF (`PDF_PAYLOAD_INVALIDO`, `PDF_RENDER_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO` o `PDF_YA_GENERADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -1011,7 +1118,8 @@ components:
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
                 (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`) y `COSTEO_NO_REINTENTABLE` (409: la
-                cotización no está en `error_envio` ni en `pendiente_envio`).
+                cotización no está en `error_envio` ni en `pendiente_envio`), `COSTEO_NO_LISTO` (409: la cotización todavía no
+                tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene PDF, se cambia con una versión nueva).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -1045,6 +1153,8 @@ components:
                 - COSTEO_NEXO_TIEMPO_AGOTADO
                 - COSTEO_NEXO_RECHAZADA
                 - COSTEO_NO_REINTENTABLE
+                - COSTEO_NO_LISTO
+                - PDF_YA_GENERADO
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1552,6 +1662,71 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcionCatalogo'
+
+    ServicioConexoCosteo:
+      type: object
+      required: [id, nombre, categoria, cantidad, precio, incluido]
+      description: Servicio conexo del costeo de Nexo con su precio (margen de la cotización). Nunca trae el costo.
+      properties:
+        id:
+          type: string
+        nombre:
+          type: string
+          nullable: true
+        categoria:
+          type: string
+          example: logistico
+        cantidad:
+          type: number
+        precio:
+          type: number
+        incluido:
+          type: boolean
+          description: Si va en el precio y en el PDF (por defecto sí).
+
+    CosteoCotizacion:
+      type: object
+      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url]
+      properties:
+        folio:
+          type: string
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+        motivo_estado_costeo:
+          type: string
+          nullable: true
+        costeo_listo_at:
+          type: string
+          format: date-time
+          nullable: true
+        precio_final:
+          type: number
+          nullable: true
+          description: Precio al cliente (costeo de Nexo con margen). `null` mientras no haya costeo.
+        margen_aplicado:
+          type: number
+          nullable: true
+        moneda:
+          type: string
+          example: COP
+        servicios_conexos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServicioConexoCosteo'
+        pdf_url:
+          type: string
+          nullable: true
+
+    SeleccionServiciosConexos:
+      type: object
+      required: [incluidos]
+      properties:
+        incluidos:
+          type: array
+          items:
+            type: string
 
     PosicionCargaWeb:
       type: object

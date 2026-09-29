@@ -201,5 +201,6 @@ public sealed class clsPollingCosteoServiceTests
             conFlete ? [new clsLineaCosteoNexo("L1", 2_000_000m, null, null)] : [], []));
 
     private clsPollingCosteoService Servicio() => new(
-        _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance);
+        _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance,
+        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService()));
 }

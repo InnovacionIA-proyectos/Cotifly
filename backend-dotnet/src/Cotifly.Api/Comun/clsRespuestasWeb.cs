@@ -53,6 +53,8 @@ public static class clsRespuestasWeb
     private static readonly HashSet<string> _conflicto = new(StringComparer.Ordinal)
     {
         clsCodigosError.CosteoNoReintentable,
+        clsCodigosError.CosteoNoListo,
+        clsCodigosError.PdfYaGenerado,
     };
 
     public static IActionResult Error(clsErrorDominio error)
