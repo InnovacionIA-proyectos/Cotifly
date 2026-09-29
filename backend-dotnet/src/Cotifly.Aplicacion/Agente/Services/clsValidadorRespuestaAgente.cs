@@ -223,7 +223,7 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         texto.Append("Reglas: tipo es ").Append(string.Join(" | ", clsReglasRespuestaAgente.Tipos)).Append("; ")
             .Append($"texto en español, de 1 a {clsRespuestaAgenteEstructurada.LargoMaximoTexto} caracteres; ")
             .Append("requiere_confirmacion es true solo con previsualizacion o confirmacion_requerida; ")
-            .Append("previsualizacion solo si calcular_precio ya dio un precio; ")
+            .Append("previsualizacion solo si calcular_precio ya dio un precio y no hay un origen o destino con municipios por confirmar; ")
             .Append("acciones_sugeridas (").Append(string.Join(", ", clsReglasRespuestaAgente.Acciones))
             .Append(") solo con una previsualización pendiente de confirmar, si no null; ")
             .Append("no escribas montos ni folios que no estén, tal cual, en las salidas de las herramientas o en el estado resuelto.");

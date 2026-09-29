@@ -119,4 +119,10 @@ public static class clsCodigosError
     /// motivo exacto en su respuesta). Código nuevo del backend .NET.
     /// </summary>
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
+    /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
 }

@@ -68,6 +68,12 @@ public sealed class clsMunicipiosNexo(
 
             await using var cuerpo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
             using var documento = await JsonDocument.ParseAsync(cuerpo, cancellationToken: cancellationToken);
+            if (documento.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                // Un 200 que no es un arreglo no es un catálogo vacío: es una respuesta que no se entiende (HU-005.13).
+                return NoDisponible("la respuesta no es un arreglo");
+            }
+
             return clsResultado<IReadOnlyList<clsMunicipio>>.Exito(LeerMunicipios(documento.RootElement));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -100,11 +106,6 @@ public sealed class clsMunicipiosNexo(
     /// <summary><c>MunicipioDto[]</c> de Nexo: filas sin <c>id</c> numérico se descartan (no identifican nada sin id).</summary>
     private static IReadOnlyList<clsMunicipio> LeerMunicipios(JsonElement raiz)
     {
-        if (raiz.ValueKind != JsonValueKind.Array)
-        {
-            return [];
-        }
-
         var municipios = new List<clsMunicipio>();
         foreach (var fila in raiz.EnumerateArray())
         {
