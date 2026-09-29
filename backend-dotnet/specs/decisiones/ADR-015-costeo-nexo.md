@@ -29,7 +29,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - El costeo en sí no se duplica: el flete queda en `costo` (columna existente) cuando se detecta y el resto se consulta en Nexo por `costeoId`. La excepción son los servicios conexos (`serviciosConexos`): hace falta guardar la selección del comercial y el precio con margen de cada uno para el PDF.
 - `/health/ready` responde 503 `esquema incompleto: falta 0004` si el script no está aplicado (el modelo EF de `Cotizaciones` ya lo exige). **Precondición de despliegue:** el 0004 aplicado antes de desplegar esta versión (`DEPLOY.md`).
 - `ck_cotizaciones_estadoCosteo` limita `estadoCosteo` a los 7 códigos de la sección 2 (el 0004 se detiene si hay filas con otro valor).
-- **Deuda consciente (HU-011):** los campos de línea quedan en `Cotizaciones`. HU-011 multi-línea requiere un 0005 que mueva los campos de línea a `CotizacionLineasSolicitud`. Anotado también en el encabezado del 0004 para el DBA.
+- **Deuda consciente (HU-011):** los campos de línea quedan en `Cotizaciones`. HU-011 multi-línea requiere un script nuevo (000N; el 0005 es de la TRM, ADR-014) que mueva los campos de línea a `CotizacionLineasSolicitud`. Anotado también en el encabezado del 0004 para el DBA.
 
 ### 2. Estados (`Cotizaciones.estadoCosteo`)
 
@@ -126,4 +126,4 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Identidad y rol con que Cotifly marca el resultado (hoy el comercial; Nexo exige `Comercial`, `AdminTarifas`, `CoordinadorFletes` o `Admin`) y confirmar que la entrega implícita no vuelve (issue #171 de Nexo) | Duban + equipo de Nexo |
 | Si los servicios conexos llevan el mismo margen que el flete | Negocio (Gerencia Comercial) |
 | Probar contra Nexo real que marcar "ganada" alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica`) | Duban + equipo de Nexo |
-| Licitaciones de varias líneas (HU-011): un 0005 que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA |
+| Licitaciones de varias líneas (HU-011): un script 000N (el 0005 es de la TRM) que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA |
