@@ -14,18 +14,22 @@
 #   5. Compara las filas de cada tabla con filas.txt.
 # No es transaccional: si falla a mitad, la instancia de pruebas queda a medio cargar (volver a correrlo).
 #
-# SEGURIDAD: está pensado solo para una instancia de pruebas. Exige --destino-pruebas y se niega si el servidor
-# contiene alguno de COTIFLY_RESPALDO_PROHIBIDOS (por defecto "tbsdatacenter", separados por coma), tanto en el
-# nombre que se le pasa (COTIFLY_RESPALDO_SERVIDOR) como en lo que el servidor dice de sí mismo al conectarse
-# (@@SERVERNAME, SERVERPROPERTY('MachineName') y 'ServerName'), antes de tocar nada. Restaurar en producción es una
-# decisión del DBA con sus backups nativos, no de este script.
+# SEGURIDAD: está pensado solo para una instancia de pruebas. Antes de tocar nada:
+#   - exige --destino-pruebas;
+#   - se niega si el servidor contiene un nombre prohibido: "tbsdatacenter" SIEMPRE, más los que agregue
+#     COTIFLY_RESPALDO_PROHIBIDOS (lista adicional separada por comas; no reemplaza a tbsdatacenter), tanto en el
+#     nombre que se le pasa (COTIFLY_RESPALDO_SERVIDOR) como en lo que el servidor dice de sí mismo (@@SERVERNAME,
+#     SERVERPROPERTY('MachineName'), 'ServerName' y 'ComputerNamePhysicalNetBIOS');
+#   - se niega si el destino tiene la misma identidad que el servidor de origen registrado en metadatos.txt.
+# Límite: un CNAME o un listener de Availability Group muestran el nombre del nodo real; si ese nodo no está prohibido
+# ni es el origen registrado, no se detecta. Restaurar en producción es una decisión del DBA con sus backups nativos.
 #
 # Permisos en la instancia de pruebas: con --aplicar-migraciones, crear base y esquema (p. ej. sa o dbcreator +
 # db_owner); sin él, db_owner de la base (ALTER de las tablas, DELETE, INSERT, DBCC CHECKIDENT).
 #
 # Uso:
 #   sh restaurar-dbo-cotifly.sh --destino-pruebas [--aplicar-migraciones] [--entorno ARCHIVO] <respaldo.tar.gz>
-# Variables: las de conexión de _comun.sh (apuntando a la instancia de PRUEBAS), COTIFLY_RESPALDO_PROHIBIDOS y
+# Variables: las de conexión de _comun.sh (apuntando a la instancia de PRUEBAS), COTIFLY_RESPALDO_PROHIBIDOS (adicionales) y
 # COTIFLY_RESPALDO_MIGRACIONES (por defecto ../../../db/migrations_mssql desde esta carpeta).
 # =============================================================================
 set -eu
@@ -43,7 +47,7 @@ while [ "$#" -gt 0 ]; do
     --destino-pruebas) destino_pruebas=1 ;;
     --aplicar-migraciones) aplicar_migraciones=1 ;;
     --entorno) shift; cargar_entorno "${1:?falta el archivo después de --entorno}" ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     -*) fallar "opción desconocida: $1 (ver --help)" ;;
     *) archivo=$1 ;;
   esac
@@ -53,9 +57,12 @@ done
 [ "$destino_pruebas" -eq 1 ] || fallar "falta --destino-pruebas: este script solo restaura en una instancia de pruebas"
 [ -n "$archivo" ] || fallar "falta el archivo del respaldo (.tar.gz)"
 servidor_min=$(printf '%s' "${COTIFLY_RESPALDO_SERVIDOR:-}" | tr '[:upper:]' '[:lower:]')
-prohibidos=$(printf '%s' "${COTIFLY_RESPALDO_PROHIBIDOS:-tbsdatacenter}" | tr '[:upper:]' '[:lower:]' | tr ',' ' ')
+# tbsdatacenter SIEMPRE está prohibido; COTIFLY_RESPALDO_PROHIBIDOS AGREGA nombres (no reemplaza la lista).
+prohibidos=$(printf 'tbsdatacenter,%s' "${COTIFLY_RESPALDO_PROHIBIDOS:-}" | tr '[:upper:]' '[:lower:]' | tr ',' ' ')
+case " $prohibidos " in *" tbsdatacenter "*) ;; *) fallar "la lista de servidores prohibidos no incluye tbsdatacenter" ;; esac
+[ -n "$(printf '%s' "$prohibidos" | tr -d ' ')" ] || fallar "la lista de servidores prohibidos quedó vacía"
 for p in $prohibidos; do
-  case "$servidor_min" in *"$p"*) fallar "el servidor '$COTIFLY_RESPALDO_SERVIDOR' está en COTIFLY_RESPALDO_PROHIBIDOS ($p): no se restaura ahí" ;; esac
+  case "$servidor_min" in *"$p"*) fallar "el servidor '$COTIFLY_RESPALDO_SERVIDOR' contiene el nombre prohibido '$p': no se restaura ahí" ;; esac
 done
 
 if [ "${COTIFLY_RESPALDO_EN_CONTENEDOR:-0}" != "1" ]; then
@@ -79,22 +86,9 @@ else
 fi
 cargar_conexion
 
-# Segunda barrera, además del nombre en COTIFLY_RESPALDO_SERVIDOR: un alias DNS, una IP o un puerto reenviado pueden
-# apuntar a tbsdatacenter sin nombrarlo. Se le pregunta al propio servidor quién es (@@SERVERNAME, MachineName y
-# ServerName) y se rechaza si alguno contiene un nombre prohibido, sin distinguir mayúsculas.
-paso "Comprobando la identidad del servidor de destino"
-base_objetivo=$BASE
-BASE=master
-identidad=$(sql "SELECT ISNULL(CAST(@@SERVERNAME AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('MachineName') AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)), N'');")
-BASE=$base_objetivo
-identidad_min=$(printf '%s' "$identidad" | tr '[:upper:]' '[:lower:]')
-for p in $prohibidos; do
-  case "$identidad_min" in *"$p"*) fallar "el servidor de destino se identifica como '$identidad' (contiene '$p', COTIFLY_RESPALDO_PROHIBIDOS): no se restaura ahí" ;; esac
-done
-echo "  @@SERVERNAME|MachineName|ServerName = $identidad"
-
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT INT TERM
+trap 'rm -rf "$TMP"' EXIT
+trap 'exit 130' INT TERM
 
 paso "Verificando $archivo"
 tar -xzf "$archivo" -C "$TMP"
@@ -103,6 +97,33 @@ grep -qx "formato=cotifly-bcp-nativo-1" "$TMP/metadatos.txt" || fallar "formato 
 esquema_respaldo=$(sed -n 's/^esquema=//p' "$TMP/metadatos.txt")
 [ "$esquema_respaldo" = "$ESQUEMA" ] || fallar "el respaldo es del esquema $esquema_respaldo y el destino es $ESQUEMA"
 sed 's/^/  /' "$TMP/metadatos.txt"
+
+# Segunda y tercera barrera, además del nombre en COTIFLY_RESPALDO_SERVIDOR (un alias DNS, una IP o un puerto
+# reenviado pueden apuntar a tbsdatacenter sin nombrarlo). Se le pregunta al propio servidor quién es y se rechaza si:
+#   - alguno de sus nombres contiene un nombre prohibido (sin distinguir mayúsculas), o
+#   - coincide con la identidad del servidor ORIGEN del respaldo (metadatos.txt): nunca se restaura encima del origen.
+# Límite conocido: con un CNAME o un listener de Availability Group que apunte a otro nodo, el servidor responde con el
+# nombre del nodo real; si ese nodo no está en la lista ni es el origen registrado, no se detecta.
+paso "Comprobando la identidad del servidor de destino"
+base_objetivo=$BASE
+BASE=master
+identidad=$(sql "SELECT ISNULL(CAST(@@SERVERNAME AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('MachineName') AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('ComputerNamePhysicalNetBIOS') AS nvarchar(256)), N'');")
+BASE=$base_objetivo
+identidad_min=$(printf '%s' "$identidad" | tr '[:upper:]' '[:lower:]')
+echo "  @@SERVERNAME|MachineName|ServerName|ComputerNamePhysicalNetBIOS = $identidad"
+for p in $prohibidos; do
+  case "$identidad_min" in *"$p"*) fallar "el servidor de destino se identifica como '$identidad' y contiene el nombre prohibido '$p': no se restaura ahí" ;; esac
+done
+origen_ids=$(sed -n 's/^origen_\(servername\|machinename\|netbios\)=//p' "$TMP/metadatos.txt" | tr '[:upper:]' '[:lower:]')
+if [ -z "$origen_ids" ]; then
+  echo "  AVISO: el respaldo no registra la identidad del servidor de origen (formato anterior); se omite esa comparación"
+fi
+destino_ids=$(printf '%s' "$identidad_min" | tr '|' '\n')
+for o in $origen_ids; do
+  for d in $destino_ids; do
+    [ -n "$o" ] && [ "$o" = "$d" ] && fallar "el servidor de destino es el mismo que el de origen del respaldo ('$o'): no se restaura encima del origen"
+  done
+done
 
 if [ "$aplicar_migraciones" -eq 1 ]; then
   paso "Migraciones en [$BASE] de $SERVIDOR"

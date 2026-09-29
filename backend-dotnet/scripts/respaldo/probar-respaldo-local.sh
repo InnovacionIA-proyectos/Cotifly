@@ -4,16 +4,20 @@
 # SOLO PRUEBAS LOCALES: no toca tbsdatacenter ni ningún servidor real.
 #
 # Con "docker run" y nombres propios (prefijo cotifly-prueba-respaldo-), todo se borra al terminar:
-#   1. Origen: SQL Server 2019 con 0001-0003 y datos ficticios (probar-respaldo-datos.sql).
+#   1. Origen: SQL Server 2019 con las migraciones de db/migrations_mssql y datos ficticios (probar-respaldo-datos.sql).
 #   2. Login cotifly_respaldo con SOLO CONNECT + SELECT ON SCHEMA::dbo_cotifly (el permiso que se pide al DBA).
-#   3. Exportación como cotifly_respaldo, con retención (9 diarios previos simulados; quedan 7).
-#   4. Controles del restore: sin --destino-pruebas, contra "tbsdatacenter", contra un servidor que se identifica
-#      (MachineName) con un nombre prohibido y con un archivo alterado, se niega.
+#   3. Exportación como cotifly_respaldo, con retención (9 diarios previos simulados; quedan 7) e identidad del origen
+#      en metadatos.txt; parámetros de retención inválidos rechazados antes de exportar; una segunda corrida el día
+#      semanal deja una sola copia semanal.
+#   4. Controles del restore, cada uno con su código de salida Y su mensaje: sin --destino-pruebas; tbsdatacenter por
+#      nombre (también con COTIFLY_RESPALDO_PROHIBIDOS=otro, que no lo quita); un SQL Server con hostname
+#      tbsdatacenter alcanzado por un alias; archivo alterado; destino que se identifica con un nombre prohibido;
+#      restaurar encima del propio servidor de origen.
 #   5. Destino: SQL Server 2019 NUEVO y vacío; restore con --aplicar-migraciones.
 #   6. Verificación: SHA-256 del contenido de cada tabla (SELECT * FOR JSON) igual en origen y destino, llaves foráneas
 #      confiables e IDENTITY reajustado.
 # Requisitos: docker. Uso: sh backend-dotnet/scripts/respaldo/probar-respaldo-local.sh
-# Tarda ~3-5 minutos (arranque de dos SQL Server). Sale con 0 solo si todo pasa.
+# Tarda ~4-6 minutos (arranque de tres SQL Server). Sale con 0 solo si todo pasa.
 # =============================================================================
 set -eu
 
@@ -27,6 +31,7 @@ PREFIJO=cotifly-prueba-respaldo
 RED=$PREFIJO-red
 ORIGEN=$PREFIJO-origen
 DESTINO=$PREFIJO-destino
+FALSO_TBS=$PREFIJO-tbsdatacenter
 IMG=${COTIFLY_RESPALDO_IMAGEN:-mcr.microsoft.com/mssql/server:2019-latest}
 SQLCMD=/opt/mssql-tools18/bin/sqlcmd
 SA="Prueba_Sa#$(date +%s)"
@@ -34,11 +39,12 @@ CLAVE_RESPALDO="Prueba_Resp#$(date +%s)"
 TRABAJO=$(mktemp -d)
 
 limpiar() {
-  docker rm -f "$ORIGEN" "$DESTINO" >/dev/null 2>&1 || true
+  docker rm -f "$ORIGEN" "$DESTINO" "$FALSO_TBS" >/dev/null 2>&1 || true
   docker network rm "$RED" >/dev/null 2>&1 || true
   rm -rf "$TRABAJO"
 }
-trap limpiar EXIT INT TERM
+trap limpiar EXIT
+trap 'exit 130' INT TERM
 
 # sqlcmd como sa: q <servidor> <base> <consulta>; archivo: qf <servidor> <base> <archivo>
 q() { docker run --rm --network "$RED" --entrypoint "$SQLCMD" "$IMG" -S "$1" -U sa -P "$SA" -C -d "$2" -b -I -h -1 -W -Q "SET NOCOUNT ON; $3" </dev/null | tr -d '\r'; }
@@ -82,28 +88,68 @@ archivo=$(find "$TRABAJO/respaldos/diario" -name 'dbo_cotifly-*.tar.gz' ! -name 
 [ "$(find "$TRABAJO/respaldos/semanal" -name '*.tar.gz' | wc -l | tr -d ' ')" = "1" ] || fallar "no se creó la copia semanal"
 echo "  retención: 7 diarios, 1 semanal"
 
-paso "4. Controles de seguridad del restore"
-if sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" "$archivo" >/dev/null 2>&1; then fallar "restauró sin --destino-pruebas"; fi
-echo "  sin --destino-pruebas: rechazado"
-if COTIFLY_RESPALDO_SERVIDOR=TBSDATACENTER,1433 COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE=x \
-   sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo" >/dev/null 2>&1; then fallar "no rechazó tbsdatacenter"; fi
-echo "  servidor tbsdatacenter: rechazado"
+
+paso "3b. Retención: parámetros inválidos y segunda corrida del mismo día"
+if COTIFLY_RESPALDO_DIARIOS=0 COTIFLY_RESPALDO_DIR="$TRABAJO/respaldos" \
+   sh "$DIR_SCRIPT/exportar-dbo-cotifly.sh" 2>"$TRABAJO/err" >/dev/null; then fallar "aceptó COTIFLY_RESPALDO_DIARIOS=0"; fi
+grep -q "COTIFLY_RESPALDO_DIARIOS debe ser un entero >= 1" "$TRABAJO/err" || { cat "$TRABAJO/err" >&2; fallar "mensaje inesperado con DIARIOS=0"; }
+if COTIFLY_RESPALDO_SEMANALES=siete COTIFLY_RESPALDO_DIR="$TRABAJO/respaldos" \
+   sh "$DIR_SCRIPT/exportar-dbo-cotifly.sh" 2>"$TRABAJO/err" >/dev/null; then fallar "aceptó COTIFLY_RESPALDO_SEMANALES=siete"; fi
+grep -q "COTIFLY_RESPALDO_SEMANALES debe ser un entero >= 1" "$TRABAJO/err" || { cat "$TRABAJO/err" >&2; fallar "mensaje inesperado con SEMANALES=siete"; }
+echo "  DIARIOS=0 y SEMANALES=siete: rechazados antes de exportar"
+sleep 1
+COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$ORIGEN COTIFLY_RESPALDO_USUARIO=cotifly_respaldo \
+COTIFLY_RESPALDO_CLAVE_ARCHIVO="$TRABAJO/clave" COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1 COTIFLY_RESPALDO_RED_DOCKER=$RED \
+COTIFLY_RESPALDO_DIR="$TRABAJO/respaldos" COTIFLY_RESPALDO_DIA_SEMANAL="$(date -u +%u)" \
+  sh "$DIR_SCRIPT/exportar-dbo-cotifly.sh" >/dev/null
+[ "$(find "$TRABAJO/respaldos/semanal" -name '*.tar.gz' | wc -l | tr -d ' ')" = "1" ] || fallar "dos corridas el mismo día dejaron más de una copia semanal"
+echo "  segunda corrida el día semanal: sigue habiendo 1 copia semanal (una por semana ISO)"
+gunzip -c "$archivo" | tar -xOf - ./metadatos.txt > "$TRABAJO/metadatos-origen.txt"
+grep -q '^origen_machinename=.' "$TRABAJO/metadatos-origen.txt" || fallar "metadatos.txt no registra la identidad del origen"
+echo "  metadatos: $(grep '^origen_' "$TRABAJO/metadatos-origen.txt" | tr '\n' ' ')"
+
+paso "4. Controles de seguridad del restore (código de salida Y mensaje esperado)"
+# rechaza <descripción> <texto esperado en stderr> -- <comando...>
+rechaza() {
+  descripcion=$1; esperado=$2; shift 3
+  if "$@" >/dev/null 2>"$TRABAJO/err"; then fallar "$descripcion: no se rechazó"; fi
+  grep -q -- "$esperado" "$TRABAJO/err" || { cat "$TRABAJO/err" >&2; fallar "$descripcion: se rechazó, pero sin el mensaje esperado ('$esperado')"; }
+  echo "  $descripcion: rechazado ('$esperado')"
+}
+rechaza "sin --destino-pruebas" "falta --destino-pruebas" -- sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" "$archivo"
+rechaza "servidor TBSDATACENTER por nombre" "contiene el nombre prohibido 'tbsdatacenter'" -- \
+  env COTIFLY_RESPALDO_SERVIDOR=TBSDATACENTER,1433 COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE=x \
+  sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo"
+rechaza "PROHIBIDOS=otro no quita tbsdatacenter (por nombre)" "contiene el nombre prohibido 'tbsdatacenter'" -- \
+  env COTIFLY_RESPALDO_SERVIDOR=tbsdatacenter.boterosoto.local COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE=x \
+  COTIFLY_RESPALDO_PROHIBIDOS=otro sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo"
 
 levantar_sql "$DESTINO"
+# Un SQL Server cuyo hostname es tbsdatacenter, alcanzado por otro nombre (alias de red): con PROHIBIDOS=otro, la
+# identidad que reporta el servidor sigue siendo rechazada.
+docker run -d --name "$FALSO_TBS" --hostname tbsdatacenter --network "$RED" --network-alias "$PREFIJO-alias" \
+  -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e "MSSQL_SA_PASSWORD=$SA" "$IMG" >/dev/null
+esperar_sql "$FALSO_TBS"
+restaurar_en() { # servidor [variables extra...]
+  servidor=$1; shift
+  env COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR="$servidor" COTIFLY_RESPALDO_USUARIO=sa \
+    COTIFLY_RESPALDO_CLAVE="$SA" COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1 COTIFLY_RESPALDO_RED_DOCKER="$RED" "$@"
+}
+rechaza "hostname tbsdatacenter tras un alias, con PROHIBIDOS=otro" "contiene el nombre prohibido 'tbsdatacenter'" -- \
+  restaurar_en "$PREFIJO-alias" COTIFLY_RESPALDO_PROHIBIDOS=otro sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo"
+docker rm -f "$FALSO_TBS" >/dev/null
+
 mkdir -p "$TRABAJO/alterado"
 (cd "$TRABAJO/alterado" && gunzip -c "$archivo" | tar -xf - && printf 'x' >> Roles.dat && tar -cf - . | gzip > "$TRABAJO/respaldos/alterado.tar.gz")
-if COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE="$SA" \
-   COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1 COTIFLY_RESPALDO_RED_DOCKER=$RED \
-   sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$TRABAJO/respaldos/alterado.tar.gz" >/dev/null 2>&1; then fallar "aceptó un archivo alterado"; fi
+rechaza "archivo alterado" "el respaldo está dañado" -- \
+  restaurar_en "$DESTINO" sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$TRABAJO/respaldos/alterado.tar.gz"
 rm -f "$TRABAJO/respaldos/alterado.tar.gz"
-echo "  archivo alterado: rechazado"
-# Identidad del servidor: el nombre que se pasa (cotifly-prueba-respaldo-destino) no está prohibido, pero lo que el
-# servidor dice de sí mismo (MachineName = hostname del contenedor) sí.
+
 maquina=$(q "$DESTINO" master "SELECT CAST(SERVERPROPERTY('MachineName') AS nvarchar(256));")
-if COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE="$SA" \
-   COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1 COTIFLY_RESPALDO_RED_DOCKER=$RED COTIFLY_RESPALDO_PROHIBIDOS="$maquina" \
-   sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo" >/dev/null 2>&1; then fallar "no rechazó un servidor que se identifica con un nombre prohibido"; fi
-echo "  servidor que se identifica como prohibido ($maquina): rechazado"
+rechaza "destino que se identifica ($maquina) con un nombre de PROHIBIDOS" "contiene el nombre prohibido" -- \
+  restaurar_en "$DESTINO" COTIFLY_RESPALDO_PROHIBIDOS="$maquina" sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo"
+rechaza "restaurar encima del servidor de origen" "es el mismo que el de origen del respaldo" -- \
+  restaurar_en "$ORIGEN" sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo"
 
 paso "5. Restore en la instancia nueva $DESTINO con --aplicar-migraciones"
 COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE="$SA" \

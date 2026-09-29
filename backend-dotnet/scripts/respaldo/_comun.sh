@@ -13,7 +13,7 @@
 #   COTIFLY_RESPALDO_ESQUEMA               esquema (por defecto dbo_cotifly)
 #   COTIFLY_RESPALDO_USUARIO               SQL login (obligatoria)
 #   COTIFLY_RESPALDO_CLAVE_ARCHIVO         archivo con la clave en la primera línea (preferido: permisos 600)
-#   COTIFLY_RESPALDO_CLAVE                 la clave en una variable (si no hay archivo)
+#   COTIFLY_RESPALDO_CLAVE                 la clave en una variable: SOLO pruebas locales (queda visible en docker inspect)
 #   COTIFLY_RESPALDO_CONFIAR_CERTIFICADO   1 = aceptar un certificado TLS no confiable (sqlcmd -C, bcp -u). Por
 #                                          defecto 0: el cifrado es obligatorio y el certificado se valida.
 #   COTIFLY_RESPALDO_IMAGEN                imagen con mssql-tools18 (por defecto mcr.microsoft.com/mssql/server:2019-latest)
@@ -139,7 +139,9 @@ listar_tablas() {
   sql "SELECT t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = N'$ESQUEMA' AND t.is_ms_shipped = 0 ORDER BY t.name;"
 }
 
-# Columnas de las tablas del esquema: tabla|columna|tipo|largo|nulable, en orden. Compara origen y destino.
+# Columnas de las tablas del esquema: tabla|columna|tipo|largo|precisión|escala|precisión de fecha|nulable, en orden.
+# Compara origen y destino (un DECIMAL(18,2) frente a DECIMAL(18,4) o un DATETIMEOFFSET(7) frente a (3) cuenta como
+# esquema distinto: bcp nativo no convierte entre ellos sin perder datos).
 listar_columnas() {
-  sql "SELECT c.TABLE_NAME + '|' + c.COLUMN_NAME + '|' + c.DATA_TYPE + '|' + ISNULL(CAST(c.CHARACTER_MAXIMUM_LENGTH AS varchar(12)), '') + '|' + c.IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS c JOIN INFORMATION_SCHEMA.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME WHERE c.TABLE_SCHEMA = N'$ESQUEMA' AND t.TABLE_TYPE = 'BASE TABLE' ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;"
+  sql "SELECT c.TABLE_NAME + '|' + c.COLUMN_NAME + '|' + c.DATA_TYPE + '|' + ISNULL(CAST(c.CHARACTER_MAXIMUM_LENGTH AS varchar(12)), '') + '|' + ISNULL(CAST(c.NUMERIC_PRECISION AS varchar(4)), '') + '|' + ISNULL(CAST(c.NUMERIC_SCALE AS varchar(4)), '') + '|' + ISNULL(CAST(c.DATETIME_PRECISION AS varchar(4)), '') + '|' + c.IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS c JOIN INFORMATION_SCHEMA.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME WHERE c.TABLE_SCHEMA = N'$ESQUEMA' AND t.TABLE_TYPE = 'BASE TABLE' ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;"
 }

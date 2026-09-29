@@ -531,6 +531,10 @@ sirven para el SQL Server en contenedor del desarrollo local del Python. No apli
 
   `cotifly_app` también podría (ya tiene `SELECT` sobre el esquema), pero además escribe; un login aparte limita el
   daño si se filtra la clave del respaldo. Probado: con solo `CONNECT` + `SELECT ON SCHEMA` exporta las 14 tablas.
+- **Clave: usar `COTIFLY_RESPALDO_CLAVE_ARCHIVO`, no `COTIFLY_RESPALDO_CLAVE`.** Con el archivo (600, root) el
+  contenedor de herramientas lo monta de solo lectura en `/run/secrets`; con la variable, la clave pasa como `-e` al
+  contenedor y queda visible en `docker inspect` y en el entorno del proceso. `COTIFLY_RESPALDO_CLAVE` queda solo para
+  pruebas locales.
 - **Cifrado:** conexión cifrada y certificado validado por defecto; `COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1` solo si el
   certificado de `tbsdatacenter` no es de una CA de confianza.
 - **Clave en la línea de comandos de `bcp`:** `sqlcmd` recibe la clave por `SQLCMDPASSWORD` (no se ve), pero `bcp`
@@ -562,7 +566,14 @@ sirven para el SQL Server en contenedor del desarrollo local del Python. No apli
   infraestructura:** una copia fuera del nodo (recurso compartido o almacenamiento corporativo); si el worker se pierde,
   se pierden también sus respaldos.
 - **Retención propuesta: 7 diarios + 4 semanales.** Cada ejecución deja un archivo en `diario/`; los domingos
-  (`COTIFLY_RESPALDO_DIA_SEMANAL=7`) se copia también a `semanal/`. Se conservan los 7 y los 4 más recientes. Tamaño
+  (`COTIFLY_RESPALDO_DIA_SEMANAL=7`) se copia también a `semanal/`. Se conservan los 7 y los 4 más recientes.
+  - `COTIFLY_RESPALDO_DIARIOS` y `SEMANALES` deben ser enteros `>= 1` y `DIA_SEMANAL` de 1 a 7: se validan **antes**
+    de exportar.
+  - Una sola copia semanal por semana ISO: si el script corre dos veces el día semanal (un reintento a mano), la copia
+    nueva reemplaza a la anterior de esa semana, así "4 semanales" son 4 semanas. Las copias diarias sí se acumulan
+    (un reintento cuenta como un diario más).
+
+  Tamaño
   medido en pruebas: ~32 KB con 540 filas; crece con `EventosHerramienta` y `EventosConversacion`.
 - **Alerta:** el script sale con código distinto de 0 ante cualquier fallo. **Pendiente:** conectar el log a una
   alerta (por ejemplo, el space de soporte de Google Chat) o revisar `/var/log/cotifly-respaldo.log` en la rutina de
@@ -588,21 +599,28 @@ COTIFLY_RESPALDO_CLAVE_ARCHIVO=<archivo> \
 Protecciones, antes de tocar nada:
 
 - exige `--destino-pruebas`;
-- se niega si `COTIFLY_RESPALDO_SERVIDOR` contiene algún nombre de `COTIFLY_RESPALDO_PROHIBIDOS` (por defecto
-  `tbsdatacenter`, lista separada por comas, sin distinguir mayúsculas);
-- se conecta y pregunta al servidor quién es (`@@SERVERNAME`, `SERVERPROPERTY('MachineName')` y
-  `SERVERPROPERTY('ServerName')`): si alguno contiene un nombre prohibido, se niega. Cubre un alias DNS, una IP o un
-  puerto reenviado que apunten a `tbsdatacenter` sin nombrarlo.
+- nombres prohibidos: **`tbsdatacenter` siempre**, más los que agregue `COTIFLY_RESPALDO_PROHIBIDOS` (lista
+  **adicional**, separada por comas, sin distinguir mayúsculas; definirla no quita `tbsdatacenter`). Se niega si
+  `COTIFLY_RESPALDO_SERVIDOR` contiene alguno;
+- se conecta y pregunta al servidor quién es (`@@SERVERNAME`, `SERVERPROPERTY('MachineName')`, `'ServerName'` y
+  `'ComputerNamePhysicalNetBIOS'`): si alguno contiene un nombre prohibido, se niega. Cubre un alias DNS, una IP o un
+  puerto reenviado que apunten a `tbsdatacenter` sin nombrarlo;
+- se niega si esa identidad coincide con la del **servidor de origen** del respaldo, que la exportación registra en
+  `metadatos.txt` (`origen_servername`, `origen_machinename`, `origen_netbios`): nunca se restaura encima del origen,
+  aunque se llame distinto.
+- **Límite conocido:** con un CNAME o un *listener* de Availability Group, el servidor responde con el nombre del nodo
+  real. Si ese nodo no está en la lista de prohibidos ni es el origen registrado, no se detecta: agregar los nombres
+  de los nodos del AG corporativo a `COTIFLY_RESPALDO_PROHIBIDOS` (pendiente con el DBA).
 
 Recuperar producción es una decisión del DBA con sus
 backups nativos; si hiciera falta cargar un respaldo lógico en producción, se hace con el DBA, a mano y con la app
 detenida.
 
-### 6.5 Prueba de backup y restore (2026-09-28)
+### 6.5 Prueba de backup y restore (2026-09-28, controles repetidos el 2026-09-29)
 
 Contra SQL Server 2019 en contenedores locales (`mcr.microsoft.com/mssql/server:2019-latest`), sin tocar
 `tbsdatacenter`. Los pasos 1 a 4 se repiten con **`sh backend-dotnet/scripts/respaldo/probar-respaldo-local.sh`**
-(datos ficticios de `probar-respaldo-datos.sql`, ~3–5 minutos, borra sus contenedores al terminar); el paso 5 se hizo
+(datos ficticios de `probar-respaldo-datos.sql`, ~4–6 minutos, borra sus contenedores al terminar); el paso 5 se hizo
 una vez con la imagen de la API.
 
 1. Origen con `0001`–`0003`, datos reales de la API (dos logins por `/api/auth/login-clientepro`: `UsuariosWeb`,
@@ -610,10 +628,13 @@ una vez con la imagen de la API.
    JSON, 500 filas de 10 KB en `EventosHerramienta`, un `UsuariosWeb` sin `nombreUsuario` para el índice filtrado).
 2. Exportación como `cotifly_respaldo` con solo `CONNECT` + `SELECT ON SCHEMA::dbo_cotifly`: 14 tablas, 540 filas,
    31,7 KB. Retención: con 9 diarios previos quedaron los 7 más recientes; la copia semanal se creó el día configurado.
-3. Controles: sin `--destino-pruebas`, con servidor `TBSDATACENTER` y con un `.dat` alterado, el restore se niega.
-   La comprobación por identidad del servidor (`@@SERVERNAME`/`MachineName`) se agregó después, en la revisión del
-   auditor; `probar-respaldo-local.sh` ya tiene su caso, pero **no se volvió a ejecutar** (el candado de Docker estaba
-   ocupado): queda cubierta por revisión y pendiente de la próxima corrida.
+3. Controles (2026-09-29, `probar-respaldo-local.sh`, cada uno verificado por código de salida **y** por su mensaje):
+   sin `--destino-pruebas`; `TBSDATACENTER` por nombre, también con `COTIFLY_RESPALDO_PROHIBIDOS=otro`; un SQL
+   Server con hostname `tbsdatacenter` alcanzado por un alias de red, con `PROHIBIDOS=otro` (identidad del servidor);
+   un `.dat` alterado; un destino cuyo `MachineName` está en `PROHIBIDOS`; y restaurar encima del propio servidor de
+   origen (identidad registrada en `metadatos.txt`). Todos se niegan. También: `COTIFLY_RESPALDO_DIARIOS=0` y
+   `SEMANALES=siete` se rechazan antes de exportar, y una segunda corrida el día semanal deja una sola copia semanal.
+   Resultado de la corrida: **OK** (14 tablas con SHA-256 idéntico).
 4. Restore en una **instancia nueva y vacía** con `--aplicar-migraciones`: columnas iguales (116), filas iguales en
    las 14 tablas (incluidas las semillas de las migraciones, que se reemplazan) y **SHA-256 del contenido de cada tabla
    idéntico** entre origen y destino (`SELECT * ... FOR JSON`), llaves foráneas confiables, `IDENTITY` reajustado.

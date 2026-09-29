@@ -83,8 +83,11 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    frecuencia, retención y recuperación de un esquema). Como complemento opcional, exportación lógica diaria solo de
    `dbo_cotifly` con `bcp` nativo (`scripts/respaldo/exportar-dbo-cotifly.sh`), desde cron en el worker, con un login
    de solo lectura `cotifly_respaldo` (`GRANT SELECT ON SCHEMA::dbo_cotifly`). Retención 7 diarios + 4 semanales en
-   `/var/backups/cotifly`. Restore solo en instancias de pruebas (`restaurar-dbo-cotifly.sh --destino-pruebas`),
-   verificado de punta a punta con SQL Server 2019 local.
+   `/var/backups/cotifly` (una copia semanal por semana ISO; parámetros validados antes de exportar). Restore solo en
+   instancias de pruebas (`restaurar-dbo-cotifly.sh --destino-pruebas`), verificado de punta a punta con SQL Server
+   2019 local. Se niega con `tbsdatacenter` (siempre; `COTIFLY_RESPALDO_PROHIBIDOS` solo agrega nombres), por el
+   nombre dado o por la identidad que reporta el servidor, y encima del servidor de origen registrado en el respaldo.
+   Límite: un CNAME o listener de AG que resuelva a un nodo no listado.
 2. **JWT del webhook:** la verificación queda activada (`GChat__VerificarJwt=true`, obligatoria en `Production`), con
    audiencia `GChat__ProjectNumber` (*Authentication Audience* = Project Number en la app de Chat). Apagarla permitiría
    suplantar a cualquier comercial con un evento falso.
