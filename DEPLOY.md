@@ -96,8 +96,11 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SapTm__ExportPath` | no | con `export_json` | vacío | Dokploy | archivo montado de solo lectura |
 | `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | no | `Url` y `User` con `odata` | vacío | Dokploy | |
 | `SapTm__Pass` | **sí** (≥ 8) | con `odata` | vacío | Dokploy | no definirla si no se usa `odata` |
-| `Nexo__UrlBase` | no | no | vacío | Dokploy | sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` |
+| `Nexo__UrlBase` | no | no | vacío | Dokploy | **raíz** del servicio (`https://<host-nexo>`), sin `/api`: el cliente agrega las rutas `/api/...`. Sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` y el costeo no corre |
 | `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
+| `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
+| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
+| `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
 | `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos; exige salida a `www.datos.gov.co:443` |
 | `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta de la TRM |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
@@ -282,6 +285,11 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0004` aplicados** en la base del ambiente (con un usuario
+   administrador y `sqlcmd -I`; la app no aplica migraciones). **El `0004` (costeo en Nexo, HU-005.8) va ANTES de
+   desplegar la versión que lo incluye:** sin él, `/health/ready` responde `503` con `falta 0004`, Traefik no manda
+   tráfico a la tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5). Cada script nuevo
+   `000N` sigue la misma regla: primero la migración, después la imagen.
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).
@@ -447,6 +455,11 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
   incluidos) se pasó tal cual a la imagen contra un SQL Server 2019 local con `0001`–`0003` y el login `cotifly_app` de
   permisos mínimos: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200. Confirma que los
   valores por defecto vacíos (IA, Google Chat, SAP, Nexo, correo) no rompen la validación de arranque.
+  - Esa corrida fue con la imagen de `QA` de ese día, que exigía `0001`–`0003`. **Desde el costeo en Nexo (HU-005.8)
+    la precondición es `0001`–`0004`**: una imagen que incluye el costeo contra una base sin `0004` responde `503`
+    `falta 0004` en `/health/ready` (§4.5, paso 0). Las variables `CosteoNexo__*`, `Trm__*` y
+    `Nexo__MinutosCacheMunicipios` se agregaron después con valores por defecto válidos; `docker stack config` y
+    `docker compose config` se repitieron y pasan.
 - **Pendiente:** el despliegue completo en staging (Dokploy real, pull desde GHCR, secreto de Swarm, conectividad del
   worker a `tbsdatacenter`, Traefik). Necesita acceso al clúster y aprobación; no se ejecutó.
 

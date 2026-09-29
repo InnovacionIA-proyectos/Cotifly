@@ -108,8 +108,19 @@ services:
       SapTm__Pass: ${SapTm__Pass:-}
 
       # Nexo (HU-005): sin token; URL de PRODUCCIÓN de Nexo, no la de pruebas (HU-007).
+      # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
       Nexo__UrlBase: ${Nexo__UrlBase:-}
       Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+      # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). Encendido en producción; sin Nexo__UrlBase no
+      # corre de todos modos. Staging lo trae apagado mientras no se confirme que no comparte dbo_cotifly (DEPLOY.md §2.2).
+      CosteoNexo__Habilitado: ${CosteoNexo__Habilitado:-true}
+      CosteoNexo__IntervaloInicialSegundos: ${CosteoNexo__IntervaloInicialSegundos:-5}
+      CosteoNexo__IntervaloMaximoMinutos: ${CosteoNexo__IntervaloMaximoMinutos:-15}
+      CosteoNexo__FactorEdad: ${CosteoNexo__FactorEdad:-0.25}
+      CosteoNexo__EdadMaximaHoras: ${CosteoNexo__EdadMaximaHoras:-72}
+      CosteoNexo__IntervaloTickSegundos: ${CosteoNexo__IntervaloTickSegundos:-5}
+      CosteoNexo__Lote: ${CosteoNexo__Lote:-20}
+      CosteoNexo__ReclamoSegundos: ${CosteoNexo__ReclamoSegundos:-120}
 
       # TRM del día (frente C): datos abiertos de la Superintendencia Financiera. Salida a www.datos.gov.co:443.
       # Trm__Url vacía impide arrancar: por eso lleva valor por defecto.
