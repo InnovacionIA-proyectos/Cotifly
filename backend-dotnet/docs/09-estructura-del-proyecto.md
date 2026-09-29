@@ -55,7 +55,7 @@ backend-dotnet/
     ├── Cotifly.Arquitectura.Tests/
     └── Cotifly.Aceptacion.Tests/
 
-db/migrations_mssql/                # scripts de esquema SQL Server (0001, 0002, 0003): única vía de cambio de esquema
+db/migrations_mssql/                # scripts de esquema SQL Server (0001 a 0004): única vía de cambio de esquema
 docs/CONTRATO_API_WEB.md         # resumen del contrato para el frontend (HU-004.1)
 docs/MAPEO_CAMPOS_NEXO_COTIFLY.md # mapeo de campos Nexo ↔ Cotifly del formulario de captura (HU-005)
 ```

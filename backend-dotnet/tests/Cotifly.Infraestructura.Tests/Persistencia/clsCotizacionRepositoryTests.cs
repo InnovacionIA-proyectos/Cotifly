@@ -210,6 +210,53 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     [Fact]
+    public async Task LaSolicitudDeCosteoYSusPosicionesSeGuardanYSeReconstruyenSinPerderDatos()
+    {
+        var solicitud = clsSolicitudCosteoMuestra.Crear();
+        var cotizacion = NuevaCotizacion(await CrearUsuarioAsync());
+        cotizacion.RegistrarSolicitudCosteo(solicitud);
+
+        await EnAmbitoAsync(s =>
+        {
+            var repo = s.GetRequiredService<IClsCotizacionRepository>();
+            repo.Agregar(cotizacion);
+            repo.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones));
+            return Task.CompletedTask;
+        });
+
+        var (leida, posiciones) = await ConsultarAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsCotizacionRepository>();
+            return (await repo.ObtenerPorFolioAsync(cotizacion.Folio, Ct), await repo.ListarPosicionesAsync(cotizacion.Id, Ct));
+        });
+
+        leida!.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
+        posiciones.Select(p => p.Orden).Should().Equal(1, 2);
+        leida.SolicitudCosteo(posiciones).Should().BeEquivalentTo(solicitud, "reenviar a Nexo no debe exigir volver a llenar el formulario");
+        var fila = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+            $"SELECT CONCAT(tipoSolicitud, '|', estadoCosteo, '|', claseContenedor, '|', pesoKg) FROM dbo_cotifly.Cotizaciones WHERE id = '{cotizacion.Id}'");
+        fila.Should().Be("spot|pendiente_envio|CNT40.HC|28500.50");
+    }
+
+    [Fact]
+    public async Task UnaCotizacionSinFormularioAmpliadoNoTienePosicionesNiSolicitudDeCosteo()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        await GuardarAsync(cotizacion);
+
+        var (leida, posiciones) = await ConsultarAsync(async s =>
+        {
+            var repo = s.GetRequiredService<IClsCotizacionRepository>();
+            return (await repo.ObtenerPorFolioAsync(cotizacion.Folio, Ct), await repo.ListarPosicionesAsync(cotizacion.Id, Ct));
+        });
+
+        posiciones.Should().BeEmpty();
+        leida!.EstadoCosteo.Should().BeNull("las cotizaciones del chat con costo manual no pasan por Nexo");
+        leida.SolicitudCosteo(posiciones).Should().BeNull();
+        leida.CosteoConsultasFallidas.Should().Be(0);
+    }
+
+    [Fact]
     public async Task UnaCotizacionEnDolaresGuardaLaTrmConCuatroDecimales()
     {
         var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), Moneda = "USD", TrmAplicada = 4123.4567m }).Valor;

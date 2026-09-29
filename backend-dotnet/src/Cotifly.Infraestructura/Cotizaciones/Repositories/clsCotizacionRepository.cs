@@ -16,6 +16,18 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
         contexto.Cotizaciones.Add(cotizacion);
     }
 
+    public void AgregarPosiciones(IEnumerable<clsCotizacionPosicion> posiciones)
+    {
+        ArgumentNullException.ThrowIfNull(posiciones);
+        contexto.CotizacionPosiciones.AddRange(posiciones);
+    }
+
+    public async Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
+        await contexto.CotizacionPosiciones.AsNoTracking()
+            .Where(p => p.CotizacionId == cotizacionId)
+            .OrderBy(p => p.Orden)
+            .ToListAsync(cancellationToken);
+
     public Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);

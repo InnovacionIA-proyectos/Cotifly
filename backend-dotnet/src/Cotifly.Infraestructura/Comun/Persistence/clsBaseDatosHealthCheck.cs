@@ -19,15 +19,21 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
     public const string DescripcionSinCadena = "La cadena de conexión 'ConnectionStrings:Cotifly' no está configurada.";
     public const string DescripcionNoDisponible = "La base de datos de Cotifly no está disponible.";
     public const string DescripcionEsquemaIncompleto = "esquema incompleto: falta 0002";
+
+    /// <summary>El 0002 está, pero no el 0004 (costeo en Nexo, HU-005.8): el modelo EF de <c>Cotizaciones</c> ya lo exige.</summary>
+    public const string DescripcionEsquemaSin0004 = "esquema incompleto: falta 0004";
     public const string DescripcionDisponible = "La base de datos de Cotifly responde.";
 
     /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
     public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
 
     /// <summary>1 si las piezas del 0002 que usa el modelo EF existen; 0 si no.</summary>
-    private const string ConsultaEsquema0002 =
-        "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.Sesiones', N'estadoAgente') IS NOT NULL " +
-        "AND OBJECT_ID(N'dbo_cotifly.TokensRefresco', N'U') IS NOT NULL THEN 1 ELSE 0 END AS [Value]";
+    /// <summary>0 = falta el 0002; 1 = falta el 0004; 2 = esquema completo.</summary>
+    private const string ConsultaEsquema =
+        "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.Sesiones', N'estadoAgente') IS NULL " +
+        "OR OBJECT_ID(N'dbo_cotifly.TokensRefresco', N'U') IS NULL THEN 0 " +
+        "WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'serviciosConexos') IS NULL " +
+        "OR OBJECT_ID(N'dbo_cotifly.CotizacionPosiciones', N'U') IS NULL THEN 1 ELSE 2 END AS [Value]";
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
@@ -46,13 +52,16 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
                 return HealthCheckResult.Unhealthy(DescripcionNoDisponible);
             }
 
-            var esquemaCompleto = await contexto.Database
-                .SqlQueryRaw<int>(ConsultaEsquema0002)
+            var esquema = await contexto.Database
+                .SqlQueryRaw<int>(ConsultaEsquema)
                 .SingleAsync(limite.Token);
 
-            return esquemaCompleto == 1
-                ? HealthCheckResult.Healthy(DescripcionDisponible)
-                : HealthCheckResult.Unhealthy(DescripcionEsquemaIncompleto);
+            return esquema switch
+            {
+                2 => HealthCheckResult.Healthy(DescripcionDisponible),
+                1 => HealthCheckResult.Unhealthy(DescripcionEsquemaSin0004),
+                _ => HealthCheckResult.Unhealthy(DescripcionEsquemaIncompleto),
+            };
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {

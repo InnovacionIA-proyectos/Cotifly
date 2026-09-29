@@ -11,7 +11,7 @@ Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaci
 | Requisito | Cómo verificarlo | Listo |
 |---|---|---|
 | Backend .NET desplegado en pruebas, con la versión (commit) anotada abajo | `GET /health` responde 200 con `entorno` del ambiente de pruebas; `GET /health/ready` responde 200 | [ ] |
-| Scripts `0002` y `0003` aplicados y `Roles.idRolExterno` con los IDROLES reales de ClientePro | `/health/ready` 200 y el login del paso RM-01 funciona | [ ] |
+| Scripts `0002`, `0003` y `0004` aplicados y `Roles.idRolExterno` con los IDROLES reales de ClientePro | `/health/ready` 200 y el login del paso RM-01 funciona | [ ] |
 | Dos usuarios comerciales de prueba (A y B) y un gerente comercial en ClientePro | Existen en `dbsolucionesti` con su rol | [ ] |
 | Proveedor de IA configurado (`IA__Proveedor`, `IA__Modelo`, `IA__ApiKey`) | Un "Hola" en `/web/chat` no responde `error: true` | [ ] |
 | Correo habilitado contra el relay, con la IP del nodo autorizada, y un buzón de prueba accesible | `Correo__Habilitado=true`; vista previa responde 200 | [ ] |

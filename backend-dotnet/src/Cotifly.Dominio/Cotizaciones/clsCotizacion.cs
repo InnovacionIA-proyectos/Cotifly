@@ -14,6 +14,7 @@ public sealed class clsCotizacion
     public const string CodigoError = "COTIZACION_INVALIDA";
     public const string MonedaPesos = "COP";
     public const int LargoMaximoFolio = 50;
+    public const int LargoMaximoMotivoCosteo = 1000;
 
     private clsCotizacion()
     {
@@ -35,7 +36,7 @@ public sealed class clsCotizacion
     public string? Moneda { get; private set; }
     public decimal TrmAplicada { get; private set; }
     public string? PdfPath { get; private set; }
-    public string? EstadoCosteo { get; private set; }
+    public EstadoCosteo? EstadoCosteo { get; private set; }
     public EstadoEnvio? EstadoEnvio { get; private set; }
     public Guid? UsuarioId { get; private set; }
     public string? SpaceId { get; private set; }
@@ -47,6 +48,47 @@ public sealed class clsCotizacion
     public DateTimeOffset? CosteoListoAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    // Formulario ampliado (script 0004, HU-005.8): encabezado y única línea de la solicitud de Nexo.
+    public TipoSolicitud? TipoSolicitud { get; private set; }
+    public DateTimeOffset? Deadline { get; private set; }
+    public decimal? ValorEstimado { get; private set; }
+    public string? Referencia { get; private set; }
+    public decimal? HorasCargue { get; private set; }
+    public decimal? HorasDescargue { get; private set; }
+    public string? Origen { get; private set; }
+    public string? Destino { get; private set; }
+    public string? TipoVehiculo { get; private set; }
+    public string? Carroceria { get; private set; }
+    public string? Tipologia { get; private set; }
+    public string? ClaseViaje { get; private set; }
+    public string? ClaseContenedor { get; private set; }
+    public bool? Exclusivo { get; private set; }
+    public bool? Consolidado { get; private set; }
+    public bool? RetornaContenedor { get; private set; }
+    public string? CiudadDevolucionContenedor { get; private set; }
+    public bool? LevanteContenedorDiferente { get; private set; }
+    public string? CiudadLevanteContenedor { get; private set; }
+    public decimal? ValorAprovisionamiento { get; private set; }
+    public decimal? PesoKg { get; private set; }
+    public decimal? ValorMercancia { get; private set; }
+
+    // Seguimiento de la integración con Nexo (script 0004, ADR-015).
+
+    /// <summary>Id de la cotización (borrador o entregada) de Nexo; lo exige <c>POST /api/cotizaciones/{id}/resultado</c>.</summary>
+    public string? CotizacionNexoId { get; private set; }
+
+    /// <summary>Motivo legible de <see cref="EstadoCosteo"/> (error al enviar, rechazo de Nexo, costeo vencido...).</summary>
+    public string? MotivoEstadoCosteo { get; private set; }
+    public DateTimeOffset? CosteoEnviadoAt { get; private set; }
+    public DateTimeOffset? CosteoUltimaConsultaAt { get; private set; }
+
+    /// <summary>Agenda del polling (HU-005.6): <c>null</c> = no se consulta más.</summary>
+    public DateTimeOffset? CosteoSiguienteConsultaAt { get; private set; }
+    public int CosteoConsultasFallidas { get; private set; }
+
+    /// <summary>JSON con los servicios conexos del costeo, su precio y si el comercial los incluye (HU-005.7).</summary>
+    public string? ServiciosConexos { get; private set; }
 
     /// <summary>
     /// Crea una cotización validando las invariantes baratas: folio obligatorio (máx. 50),
@@ -91,12 +133,91 @@ public sealed class clsCotizacion
             Moneda = moneda,
             TrmAplicada = datos.TrmAplicada,
             PdfPath = clsValidacion.Normalizar(datos.PdfPath),
-            EstadoCosteo = clsValidacion.Normalizar(datos.EstadoCosteo),
+            EstadoCosteo = datos.EstadoCosteo,
             EstadoEnvio = Cotizaciones.EstadoEnvio.SinEnviar,
             UsuarioId = datos.UsuarioId,
             SpaceId = clsValidacion.Normalizar(datos.SpaceId),
             ThreadId = clsValidacion.Normalizar(datos.ThreadId),
             CosteoListoAt = datos.CosteoListoAt,
+        };
+    }
+
+    /// <summary>
+    /// Guarda los datos del formulario ampliado (ya validados con <see cref="clsSolicitudCosteo.Validar"/>) y deja la cotización
+    /// en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>: así nunca se pierde lo que llenó el comercial aunque Nexo no
+    /// responda (HU-005.5). Las posiciones van en <see cref="clsCotizacionPosicion"/>.
+    /// </summary>
+    public void RegistrarSolicitudCosteo(clsSolicitudCosteo solicitud)
+    {
+        ArgumentNullException.ThrowIfNull(solicitud);
+        if (solicitud.Validar() is { } error)
+        {
+            throw new ArgumentException(error.Mensaje, nameof(solicitud));
+        }
+
+        TipoSolicitud = solicitud.Tipo;
+        Deadline = solicitud.Deadline;
+        ValorEstimado = solicitud.ValorEstimado;
+        Referencia = clsValidacion.Normalizar(solicitud.Referencia);
+        HorasCargue = solicitud.HorasCargue;
+        HorasDescargue = solicitud.HorasDescargue;
+        Origen = solicitud.Origen.Trim();
+        Destino = solicitud.Destino.Trim();
+        TipoVehiculo = clsValidacion.Normalizar(solicitud.TipoVehiculo);
+        Carroceria = clsValidacion.Normalizar(solicitud.Carroceria);
+        Tipologia = clsValidacion.Normalizar(solicitud.Tipologia);
+        ClaseViaje = clsValidacion.Normalizar(solicitud.ClaseViaje);
+        ClaseContenedor = clsValidacion.Normalizar(solicitud.ClaseContenedor);
+        Exclusivo = solicitud.Exclusivo;
+        Consolidado = solicitud.Consolidado;
+        RetornaContenedor = solicitud.RetornaContenedor;
+        CiudadDevolucionContenedor = clsValidacion.Normalizar(solicitud.CiudadDevolucionContenedor);
+        LevanteContenedorDiferente = solicitud.LevanteContenedorDiferente;
+        CiudadLevanteContenedor = clsValidacion.Normalizar(solicitud.CiudadLevanteContenedor);
+        ValorAprovisionamiento = solicitud.ValorAprovisionamiento;
+        PesoKg = solicitud.PesoKg;
+        ValorMercancia = solicitud.ValorMercancia;
+        EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteEnvio;
+        MotivoEstadoCosteo = null;
+    }
+
+    /// <summary>
+    /// La solicitud guardada, para reenviarla a Nexo sin volver a llenar el formulario (HU-005.5); <c>null</c> si la cotización
+    /// no nació del formulario ampliado (no tiene tipo, origen o destino).
+    /// </summary>
+    public clsSolicitudCosteo? SolicitudCosteo(IEnumerable<clsCotizacionPosicion> posiciones)
+    {
+        ArgumentNullException.ThrowIfNull(posiciones);
+        if (TipoSolicitud is not { } tipo || Origen is null || Destino is null)
+        {
+            return null;
+        }
+
+        return new clsSolicitudCosteo
+        {
+            Tipo = tipo,
+            Deadline = Deadline,
+            ValorEstimado = ValorEstimado,
+            Referencia = Referencia,
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
+            Origen = Origen,
+            Destino = Destino,
+            TipoVehiculo = TipoVehiculo,
+            Carroceria = Carroceria,
+            Tipologia = Tipologia,
+            ClaseViaje = ClaseViaje,
+            ClaseContenedor = ClaseContenedor,
+            Exclusivo = Exclusivo,
+            Consolidado = Consolidado,
+            RetornaContenedor = RetornaContenedor,
+            CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+            LevanteContenedorDiferente = LevanteContenedorDiferente,
+            CiudadLevanteContenedor = CiudadLevanteContenedor,
+            ValorAprovisionamiento = ValorAprovisionamiento,
+            PesoKg = PesoKg,
+            ValorMercancia = ValorMercancia,
+            Posiciones = [.. posiciones.OrderBy(p => p.Orden).Select(p => p.APosicion())],
         };
     }
 

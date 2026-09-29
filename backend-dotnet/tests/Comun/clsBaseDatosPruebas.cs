@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c>, <c>0002</c> y <c>0003</c> partidos por
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c>, <c>0002</c>, <c>0003</c> y <c>0004</c> partidos por
 /// <c>GO</c>, y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
 /// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
@@ -22,7 +22,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string Imagen = "mcr.microsoft.com/mssql/server:2019-latest";
     public const string NombreBase = "dbTarifario_Nexo_Pruebas";
     public const string NombreBaseIdentidad = "dbsolucionesti";
-    public static readonly string[] Scripts = ["0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql"];
+    public static readonly string[] Scripts =
+    [
+        "0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql", "0004_costeo_nexo.sql",
+    ];
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
     public const int RolExternoComercial = 34;
@@ -38,6 +41,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
     private string? _cadenaSolo0001;
+    private string? _cadenaSin0004;
 
     /// <summary>Cadena a <c>dbTarifario_Nexo_Pruebas</c> con el esquema aplicado.</summary>
     public string CadenaCotifly { get; private set; } = string.Empty;
@@ -173,6 +177,38 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             }
 
             return _cadenaSolo0001;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>
+    /// Base auxiliar con 0001, 0002 y 0003 pero SIN el 0004 (costeo en Nexo), para probar que la readiness lo detecta. Se crea
+    /// una vez por contenedor; igual que en <see cref="CadenaSolo0001Async"/>, el <c>USE</c> de cada script se redirige.
+    /// </summary>
+    public async Task<string> CadenaSin0004Async()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaSin0004 is null)
+            {
+                const string NombreAuxiliar = "dbSin0004_Pruebas";
+                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                var cadena = ConBase(CadenaMaster, NombreAuxiliar);
+                foreach (var nombre in Scripts.Take(3))
+                {
+                    var script = (await File.ReadAllTextAsync(RutaScript(nombre)))
+                        .Replace($"USE {NombreBase};", $"USE [{NombreAuxiliar}];", StringComparison.OrdinalIgnoreCase);
+                    await EjecutarLotesAsync(cadena, PartirPorGo(script));
+                }
+
+                _cadenaSin0004 = cadena;
+            }
+
+            return _cadenaSin0004;
         }
         finally
         {

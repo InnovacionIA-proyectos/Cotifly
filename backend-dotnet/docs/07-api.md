@@ -41,7 +41,7 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | Método | Ruta | Respuesta |
 |---|---|---|
 | GET | `/health` | `200 {"status":"ok","servicio":"cotifly-api","entorno":"<ASPNETCORE_ENVIRONMENT>"}` |
-| GET | `/health/ready` | `200 {"status":"ready"}` si `dbo_cotifly` acepta conexiones y tiene el 0002 aplicado; `503 {"status":"unavailable","detalle":"..."}` si no (sin cadena configurada, base caída o `esquema incompleto: falta 0002`) |
+| GET | `/health/ready` | `200 {"status":"ready"}` si `dbo_cotifly` acepta conexiones y tiene el 0002 aplicado; `503 {"status":"unavailable","detalle":"..."}` si no (sin cadena configurada, base caída, `esquema incompleto: falta 0002` o `esquema incompleto: falta 0004`) |
 | POST | `/api/auth/login-clientepro` | `200 LoginResponse` (`access`, `refresh`, `user{id, username, email, nombre_completo, rol, ubicacion}`, `debeCambiarPassword=false`); `400 ErrorWeb` (cuerpo inválido); `401 {"error":"Credenciales inválidas"}` (cualquier rechazo); `429 ErrorWeb` |
 | POST | `/api/auth/refresh` | `200 LoginResponse` con el par rotado; `401 {"error":"Inicia sesión de nuevo."}` (incluye cuerpo inválido, reuso y rotación perdida); `429` |
 | POST | `/api/auth/logout` | Siempre `204` (con o sin `Authorization: Bearer`, con o sin `{"refresh": ...}`); `429` |
