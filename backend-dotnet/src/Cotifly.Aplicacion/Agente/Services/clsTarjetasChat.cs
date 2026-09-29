@@ -27,7 +27,10 @@ public static class clsTarjetasChat
         (valor * 100m).ToString("0.0", CultureInfo.InvariantCulture).Replace('.', ',') + "%";
 
     /// <summary>Tarjeta de previsualización con el resumen y los botones "Confirmar y generar PDF" y "Ajustar margen".</summary>
-    public static JsonObject Previsualizacion(decimal costo, decimal margenAplicado, decimal precio, decimal utilidad, decimal? margenPolitica = null)
+    /// <param name="moneda">Moneda del precio (<c>USD</c> → <c>US$</c> y la TRM aplicada, HU-012.2); costo y utilidad siempre en COP.</param>
+    /// <param name="trm">TRM con que se convirtió el precio (solo en USD).</param>
+    public static JsonObject Previsualizacion(
+        decimal costo, decimal margenAplicado, decimal precio, decimal utilidad, decimal? margenPolitica = null, string? moneda = null, decimal trm = 0m)
     {
         var politica = margenPolitica ?? margenAplicado;
         var widgets = new JsonArray { Decorado("Costo", FormatoCop(costo)), Decorado("Margen de política", FormatoPct(politica)) };
@@ -36,7 +39,12 @@ public static class clsTarjetasChat
             widgets.Add(Decorado("Margen aplicado", FormatoPct(margenAplicado)));
         }
 
-        widgets.Add(Decorado("Precio", FormatoCop(precio)));
+        widgets.Add(Decorado("Precio", clsFormatoMoneda.Formatear(precio, moneda)));
+        if (!Dominio.Precio.clsConversorMoneda.EsPesos(moneda))
+        {
+            widgets.Add(Decorado("TRM aplicada", clsFormatoMoneda.FormatearTrm(trm)));
+        }
+
         widgets.Add(Decorado("Utilidad", FormatoCop(utilidad)));
         widgets.Add(new JsonObject
         {
@@ -98,7 +106,7 @@ public static class clsTarjetasChat
         if (resultado.UltimaSalida<clsSalidaPrecio>(clsNombresHerramientas.CalcularPrecio) is { } precio)
         {
             var politica = resultado.UltimaSalida<clsSalidaMargen>(clsNombresHerramientas.ObtenerMargen)?.Margen;
-            return Previsualizacion(precio.Costo, precio.Margen, precio.Precio, precio.Utilidad, politica);
+            return Previsualizacion(precio.Costo, precio.Margen, precio.Precio, precio.Utilidad, politica, precio.Moneda, precio.TrmAplicada);
         }
 
         if (resultado.Respuesta is { RequiereConfirmacion: true, AccionesSugeridas.Count: > 0 } respuesta)

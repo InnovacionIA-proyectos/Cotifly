@@ -186,7 +186,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         payload.Tarifa!.Filas![0].Moneda = "USD";
         payload.Tarifa.Filas[0].Tarifa = 1200m;
 
-        Construir(payload).Secciones[0].Filas[0].Tarifa.Should().Be("US$1.200");
+        Construir(payload).Secciones[0].Filas[0].Tarifa.Should().Be("US$1.200,00");
     }
 
     [Fact]
@@ -356,8 +356,8 @@ public sealed class clsConstructorDocumentoCotizacionTests
 
         var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD").Valor;
 
-        documento.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000");
-        documento.Incluye.Should().Contain("Levante: US$100");
+        documento.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000,00");
+        documento.Incluye.Should().Contain("Levante: US$100,00");
     }
 
     [Fact]
