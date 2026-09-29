@@ -101,8 +101,8 @@ Riesgos registrados en #12 y #16:
 | `generar_pdf` multi-destino | Pone el mismo precio final en todas las filas (`Cotizaciones` guarda un solo precio); un precio por fila queda pendiente de modelo |
 | `trmAplicada` | Siempre 0 hasta HU-012 (conversión a USD) |
 | Coincidencia exacta de clientes en Nexo | Nexo no la distingue: hoy es exacta solo con un único candidato (ADR-005, pendiente con el equipo de Nexo) |
-| Catálogos de Nexo sin caché | `GET /web/municipios` y `GET /web/catalogos-flete` consultan Nexo en cada petición; si Nexo cae, el formulario se queda sin catálogos (`*_NO_DISPONIBLE`) |
-| URL base de Nexo | El código agrega `/api/...` a `Nexo__UrlBase`, pero el ejemplo de `.env.example` ya termina en `/api` ([03-infraestructura](03-infraestructura.md#nexo)); confirmar la URL real antes de activar |
+| Catálogos de Nexo | `GET /web/catalogos-flete` consulta Nexo en cada petición. El de municipios se reutiliza `Nexo__MinutosCacheMunicipios` (60 por defecto, HU-005.13): con Nexo caído se sigue sirviendo la foto vigente, y al vencer responde `MUNICIPIOS_NO_DISPONIBLE` (el chat sigue con el texto libre). Un cambio del catálogo en Nexo tarda hasta ese tiempo en verse. Solo se guarda un catálogo exitoso y no vacío; un 200 que no es un arreglo cuenta como `MUNICIPIOS_NO_DISPONIBLE`. Sin foto vigente, las consultas que llegan mientras hay una en curso esperan esa misma y reciben su mismo resultado (éxito o fallo): con Nexo caído no se encolan una detrás de otra (cada una tardaría hasta 8 s). No hay caché negativa: un fallo no se guarda, porque Nexo da el mismo código cuando el comercial que consulta no tiene `idUsuarioExterno`, y eso no debe dejar sin catálogo a los demás |
+| URL base de Nexo | El código agrega `/api/...` a `Nexo__UrlBase`, así que va sin `/api` (el ejemplo de `.env.example` se corrigió en HU-005.13, [03-infraestructura](03-infraestructura.md#nexo)); confirmar el host real con el equipo de Nexo antes de activar |
 | E2E con el Angular | Pendiente (HU-004.8): el contrato está cubierto por pruebas contra `openapi.yaml`, no contra el frontend real |
 | #45 | Queda parcial con este PR; lo que falta sigue abierto en el issue |
 | Validador de la respuesta final (#16) | La regla de montos es práctica (ADR-003). Batería de 52 textos del validador: falsos positivos 3 → 0 (NIT, teléfono, NIT con puntos) y falsos negativos 11 de 24 → 2 (montos en palabras, "tres millones y medio"; el folio base de una versión, aceptado a propósito). Sigue rechazando aproximaciones honestas ("3,29 millones", centavos que no existen). Cada reintento cuesta una llamada más (con `IA:Rpm=8`, unos 8 s). Si el proveedor rechaza el JSON Schema (400/422), el proceso sigue sin formato `IA:MinutosSinJsonSchema` (30) y luego re-sonda, también para los proveedores de `IA:Fallbacks`. El respaldo no alerta al space de soporte. Falta medir con el proveedor real la tasa de reintentos, respaldos y rechazos (`cotifly.agente.*`) |
@@ -128,7 +128,7 @@ Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al c
 - ~~Líneas inactivas en `MargenesPolitica`: hoy se siguen usando~~ Resuelto en #12 (auditoría F4, #41): el comercial no cotiza con una línea inactiva (`obtener_margen` y `generar_pdf` responden `MARGEN_LINEA_DESCONOCIDA` con el detalle `línea inactiva`); la administración sí la lista y la reactiva.
 - Anomalía con `markup`: un margen > 0.6 se marca anómalo aunque con markup sea normal; decidir el umbral por método.
 - Redondeo half-to-even sobre el valor exacto (diferencia máxima 1 peso con el Python): confirmar con negocio.
-- HU-012: convertir a USD después de calcular el precio en COP.
+- ~~HU-012: convertir a USD después de calcular el precio en COP.~~ Decidido en ADR-014 (#50 a #52): el precio se calcula en COP y se convierte con la TRM oficial del día.
 - Riesgo de secuenciación HU-004 vs HU-005: sin Nexo no hay fuente de costeo (`TARIFA_FUENTE_NO_DISPONIBLE`, el comercial ingresa el costo).
 
 Otras decisiones abiertas:
@@ -146,6 +146,7 @@ Otras decisiones abiertas:
 | Destinatarios previos: último envío o unión de todos | Negocio | [02-arquitectura](02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
+| Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
 
 ## 10.8 Activación por integración
 
@@ -157,6 +158,7 @@ Otras decisiones abiertas:
 | SAP TM export | Montar el export de solo lectura y reemplazarlo copiando con otro nombre y renombrando | `SapTm__Modo=export_json`, `SapTm__ExportPath` |
 | SAP TM OData (HU-009) | Ruta de red y usuario de servicio (HU-009.1); confirmar el formato del BP (ceros a la izquierda); validar con al menos 3 casos reales (`Categoria=sap`) | `SapTm__Modo=odata`, `SapTm__Url`, `SapTm__User`, `SapTm__Pass`, `SapTm__SapClient` |
 | Nexo (clientes, municipios, catálogos de flete, cubicación) | Confirmar la URL base con el equipo de Nexo y la ruta de red desde el contenedor; los comerciales necesitan `idUsuarioExterno` (lo llena su login desde ClientePro); probar `GET /web/clientes?q=`, `GET /web/municipios`, `GET /web/catalogos-flete` y `POST /web/cubicacion` con un comercial real | `Nexo__UrlBase` |
+| TRM para cotizar en USD (HU-012) | Abrir la salida HTTPS a `www.datos.gov.co` desde el contenedor; cotizar una prueba en USD y comparar la TRM con la publicada por la Superintendencia Financiera | `Trm__Url` (por defecto el conjunto oficial), `Trm__TiempoEsperaSegundos` |
 | Agente de IA | Elegir proveedor y modelo; guardar la clave como secreto; ajustar `IA:Rpm` al plan del proveedor; medir respaldos y reintentos | `IA__Proveedor`, `IA__Modelo`, `IA__ApiKey`, `IA__Endpoint`, `IA__Rpm`, `IA__Fallbacks__*` |
 | Google Chat | App de Chat con endpoint `https://<api>/chat/events`, cuenta de servicio con alcance `chat.bot`; cada comercial entra una vez desde ClientePro con el mismo correo de Google | `GChat__ProjectNumber`, `GChat__SaJson`, `GChat__SupportSpace`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl` |
 
@@ -177,4 +179,5 @@ Otras decisiones abiertas:
 | Google Chat no responde | JWT inválido (401 en `/chat/events`), cola llena o sin `GChat__SaJson` | Revisar `GChat__ProjectNumber`, `GChat__CapacidadCola` y el warning de publicación |
 | `/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete` o `/web/cubicacion` responden 400 `*_NO_DISPONIBLE` y el agente no resuelve clientes | `Nexo__UrlBase` vacía, Nexo caído o lento (más de 8 s en total o 3 s por intento), URL base mal armada (404 de Nexo) o el comercial sin `idUsuarioExterno` | Revisar el warning de Nexo y su motivo; con "HTTP 404" revisar la URL base (el código agrega `/api/...`); con "circuito abierto" esperar a que Nexo se recupere; sin `idUsuarioExterno`, que el comercial vuelva a entrar desde ClientePro |
 | `POST /web/cubicacion` responde `CUBICACION_DEMASIADO_GRANDE` | Nexo/Cubicador rechazó los bultos (límite por solicitud o medidas inválidas) | Ver el `detalle` (mensaje de Nexo); dividir la carga o corregir las medidas (centímetros y kilogramos) |
+| Las cotizaciones en USD fallan con `TRM_NO_DISPONIBLE` | Sin salida a `www.datos.gov.co`, la fuente caída o lenta (más de `Trm__TiempoEsperaSegundos`), o sin TRM vigente para la fecha | Revisar el warning "Fuente de TRM no disponible" y su motivo; probar la URL desde el nodo; el comercial puede reintentar (los fallos no quedan en caché) o cotizar en COP |
 | Error de permisos al escribir el PDF | `/data/pdfs` no es del UID 1654 | Volumen con nombre, o `chown 1654:1654` en el bind mount |

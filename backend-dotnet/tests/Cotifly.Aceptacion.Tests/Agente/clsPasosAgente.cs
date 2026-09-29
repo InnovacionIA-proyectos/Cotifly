@@ -10,6 +10,10 @@ using Cotifly.Aceptacion.Tests.Web;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Clientes.DTOs;
 using Cotifly.Aplicacion.Clientes.Interfaces;
+using Cotifly.Aplicacion.Municipios.DTOs;
+using Cotifly.Aplicacion.Municipios.Interfaces;
+using Cotifly.Aplicacion.Tarifas.DTOs;
+using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Pruebas.Comun;
@@ -34,6 +38,12 @@ public sealed class clsContextoAgente : IDisposable
     public clsChatClientGuionizado Modelo { get; } = new();
 
     public clsBuscadorClientesFalso Buscador { get; } = new();
+
+    /// <summary>Catálogo de municipios de Nexo falso (HU-005.13). Sin filas cargadas responde como Nexo sin configurar.</summary>
+    public clsMunicipiosFalso Municipios { get; } = new();
+
+    /// <summary>Fuente de tarifas falsa: responde como el stub (sin fuente) y guarda con qué ruta se buscó.</summary>
+    public clsTarifasFalsas Tarifas { get; } = new();
 
     public clsGoogleFalso Google { get; } = new();
 
@@ -74,6 +84,34 @@ public sealed class clsBuscadorClientesFalso : IClsBuscadorClientes
 }
 
 /// <summary>
+/// Catálogo de municipios falso (HU-005.13): responde las filas cargadas, o <c>MUNICIPIOS_NO_DISPONIBLE</c> si no hay filas o
+/// <see cref="Disponible"/> es false (así los escenarios que no lo usan se comportan como Nexo sin configurar).
+/// </summary>
+public sealed class clsMunicipiosFalso : IClsMunicipiosProvider
+{
+    public List<clsMunicipio> Filas { get; } = [];
+
+    public bool Disponible { get; set; } = true;
+
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Disponible && Filas.Count > 0
+            ? clsResultado<IReadOnlyList<clsMunicipio>>.Exito(Filas.ToList())
+            : clsResultado<IReadOnlyList<clsMunicipio>>.Fallo(new clsErrorDominio(clsCodigosError.MunicipiosNoDisponible, "Catálogo de municipios no disponible.")));
+}
+
+/// <summary>Fuente de tarifas falsa: igual que <c>clsTarifaProviderNoDisponible</c>, pero guarda cada entrada.</summary>
+public sealed class clsTarifasFalsas : IClsTarifaProvider
+{
+    public System.Collections.Concurrent.ConcurrentQueue<clsEntradaBuscarTarifa> Entradas { get; } = new();
+
+    public Task<clsResultado<clsSalidaTarifa>> BuscarAsync(clsEntradaBuscarTarifa entrada, CancellationToken cancellationToken = default)
+    {
+        Entradas.Enqueue(entrada);
+        return new Cotifly.Infraestructura.Tarifas.Services.clsTarifaProviderNoDisponible().BuscarAsync(entrada, cancellationToken);
+    }
+}
+
+/// <summary>
 /// Pasos de <c>chat_slot_filling.feature</c>, <c>chat_web.feature</c> y <c>google_chat.feature</c> (#12 parte C): la API real en
 /// memoria con el modelo guionizado, el catálogo de clientes falso y Google falso; aserciones contra el contrato y la base.
 /// </summary>
@@ -95,6 +133,8 @@ public sealed class clsPasosAgente(clsContextoWeb web, clsContextoAgente agente)
         {
             s.AddSingleton<IChatClient>(agente.Modelo);
             s.AddScoped<IClsBuscadorClientes>(_ => agente.Buscador);
+            s.AddScoped<IClsMunicipiosProvider>(_ => agente.Municipios);
+            s.AddSingleton<IClsTarifaProvider>(agente.Tarifas);
             s.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => agente.Google);
         });
 

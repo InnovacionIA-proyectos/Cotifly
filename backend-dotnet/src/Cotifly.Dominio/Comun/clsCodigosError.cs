@@ -20,6 +20,12 @@ public static class clsCodigosError
     public const string PrecioInvalido = "PRECIO_INVALIDO";
 
     /// <summary>
+    /// La fuente oficial de la TRM (Superintendencia Financiera, datos abiertos, ADR-014) no respondió, respondió algo inválido
+    /// o no tiene TRM vigente para la fecha: no se cotiza en USD (HU-012.1/HU-012.2). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TrmNoDisponible = "TRM_NO_DISPONIBLE";
+
+    /// <summary>
     /// El margen negociado está fuera de rango para su método (negativo, o ≥ 1 con <c>margen</c>), el método no es
     /// <c>margen</c>/<c>markup</c> o falta el motivo. Código nuevo del backend .NET (agregado al contrato en #10).
     /// </summary>
@@ -113,4 +119,10 @@ public static class clsCodigosError
     /// motivo exacto en su respuesta). Código nuevo del backend .NET.
     /// </summary>
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
+
+    /// <summary>
+    /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
+    /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
 }

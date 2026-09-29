@@ -25,6 +25,22 @@ public static class clsArgumentosHerramienta
     public const string Metodo = "metodo";
     public const string Cliente = "cliente";
     public const string Cotizacion = "cotizacion";
+    public const string Origen = "origen";
+    public const string Destino = "destino";
+    public const string TextoLibre = "texto";
+    public const string Campo = "campo";
+
+    /// <summary>
+    /// <c>origen</c> o <c>destino</c> (sin mayúsculas ni espacios al borde) del argumento <c>campo</c> de <c>resolver_municipio</c>
+    /// (HU-005.13); <c>null</c> si es otra cosa.
+    /// </summary>
+    public static string? CampoMunicipio(string? campo) =>
+        campo?.Trim().ToLowerInvariant() switch
+        {
+            Origen => Origen,
+            Destino => Destino,
+            _ => null,
+        };
 
     /// <summary>Texto del argumento (sin espacios sobrantes), o <c>null</c> si falta o está vacío.</summary>
     public static string? Texto(IReadOnlyDictionary<string, object?> argumentos, string clave)
