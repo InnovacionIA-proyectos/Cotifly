@@ -333,6 +333,24 @@ public sealed class clsCotizacion
         return true;
     }
 
+    /// <summary>
+    /// Nexo ya no reconoce la solicitud (404): se deja de consultar con el motivo; sin costeo queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/>. Devuelve <c>true</c> si el estado cambió.
+    /// </summary>
+    public bool DetenerPorSolicitudDesconocida(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        CosteoSiguienteConsultaAt = null;
+        MotivoEstadoCosteo = Recortar(motivo);
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.CosteoVencido;
+        return true;
+    }
+
     /// <summary>Deja de consultar a Nexo (estado que ya no se sigue, o datos incompletos).</summary>
     public void DetenerPollingCosteo() => CosteoSiguienteConsultaAt = null;
 

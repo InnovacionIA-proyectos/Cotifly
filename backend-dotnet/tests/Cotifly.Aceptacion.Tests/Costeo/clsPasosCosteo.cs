@@ -77,6 +77,9 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     [When("Nexo entrega la cotización de {string}")]
     public async Task CuandoNexoEntrega(string cotizacion) => _nexo.Entregar((await Columna(cotizacion, "costeoId"))!);
 
+    [When("Nexo descarta la solicitud de {string}")]
+    public async Task CuandoNexoDescarta(string cotizacion) => _nexo.Descartar((await Columna(cotizacion, "costeoId"))!);
+
     [When("Nexo deja de responder")]
     public void CuandoNexoSeCae() => _nexo.Caido = HttpStatusCode.ServiceUnavailable;
 

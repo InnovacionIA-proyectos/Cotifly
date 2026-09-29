@@ -1048,6 +1048,7 @@ components:
                 - COSTEO_NEXO_TIEMPO_AGOTADO
                 - COSTEO_NEXO_RECHAZADA
                 - COSTEO_NEXO_SOLICITUD_INVALIDA
+                - COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA
                 - COSTEO_NO_REINTENTABLE
                 - ERROR_INTERNO
             mensaje:

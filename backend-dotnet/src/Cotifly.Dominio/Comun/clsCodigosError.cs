@@ -142,6 +142,12 @@ public static class clsCodigosError
     public const string CosteoNexoSolicitudInvalida = "COSTEO_NEXO_SOLICITUD_INVALIDA";
 
     /// <summary>
+    /// Nexo ya no reconoce la solicitud (404 <c>SOLICITUD_NO_ENCONTRADA</c> al consultarla): el polling la deja de consultar con el
+    /// motivo, en vez de reintentar hasta la edad máxima (ADR-015 §4). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
+
+    /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>
