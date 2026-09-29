@@ -110,7 +110,7 @@ public static class clsDependenciasInfraestructura
         AgregarFuenteMargen(servicios);
         servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
-        // TRM oficial del día para cotizar en USD (HU-012.1, ADR-013).
+        // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
 
         // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
@@ -202,7 +202,7 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// TRM oficial (HU-012.1, ADR-013): <see cref="clsProveedorTrmSuperfinanciera"/> (datos abiertos de la Superintendencia Financiera)
+    /// TRM oficial (HU-012.1, ADR-014): <see cref="clsProveedorTrmSuperfinanciera"/> (datos abiertos de la Superintendencia Financiera)
     /// detrás de la caché por día <see cref="clsProveedorTrmEnCache"/>, ambos singleton. Cliente HTTP con nombre (se crea por consulta
     /// con <c>IHttpClientFactory</c>), tubería estándar de resiliencia con el tiempo de <c>Trm:TiempoEsperaSegundos</c> y sin registrar
     /// cabeceras. Los eventos de Polly de cada intento bajan a Debug, como en SAP TM. TryAdd: un adaptador registrado antes (pruebas) se

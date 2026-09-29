@@ -20,7 +20,7 @@ public static class clsCodigosError
     public const string PrecioInvalido = "PRECIO_INVALIDO";
 
     /// <summary>
-    /// La fuente oficial de la TRM (Superintendencia Financiera, datos abiertos, ADR-013) no respondió, respondió algo inválido
+    /// La fuente oficial de la TRM (Superintendencia Financiera, datos abiertos, ADR-014) no respondió, respondió algo inválido
     /// o no tiene TRM vigente para la fecha: no se cotiza en USD (HU-012.1/HU-012.2). Código nuevo del backend .NET.
     /// </summary>
     public const string TrmNoDisponible = "TRM_NO_DISPONIBLE";

@@ -928,7 +928,7 @@ components:
                 `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
                 rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
                 solicitud, típicamente por superar el límite de bultos por solicitud) y `TRM_NO_DISPONIBLE`
-                (HU-012.1/HU-012.2, ADR-013: la fuente oficial de la TRM, datos abiertos de la Superintendencia
+                (HU-012.1/HU-012.2, ADR-014: la fuente oficial de la TRM, datos abiertos de la Superintendencia
                 Financiera, no respondió o no tiene TRM vigente para el día; no se cotiza en USD y el comercial
                 puede reintentar o cotizar en COP).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
