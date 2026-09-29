@@ -91,3 +91,7 @@ public sealed class clsPosicionCargaWebRequest
 
 /// <summary><c>SeleccionServiciosConexos</c>: ids de los servicios conexos del costeo que van en el PDF (los demás se excluyen).</summary>
 public sealed record clsSeleccionServiciosConexosWebRequest(IReadOnlyList<string>? Incluidos);
+
+/// <summary><c>ResultadoWeb</c>: <c>resultado</c> (<c>ganada</c> | <c>perdida</c>), <c>motivo</c> (se guarda en <c>motivo_rechazo</c>) y
+/// <c>comentario</c> (solo se reenvía a Nexo).</summary>
+public sealed record clsResultadoWebRequest(string? Resultado, string? Motivo, string? Comentario);

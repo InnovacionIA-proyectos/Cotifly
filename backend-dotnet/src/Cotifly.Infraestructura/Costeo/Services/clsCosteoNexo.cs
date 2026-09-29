@@ -120,9 +120,18 @@ public sealed class clsCosteoNexo(
             return new clsCosteoConsultadoNexo(estado, lineas, null);
         }
 
-        // "Crear o recuperar" (Nexo no tiene GET de la cotización por solicitud): devuelve la entregada, el borrador existente o uno
-        // vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la solicitud). Pendiente de confirmar con el equipo de Nexo.
-        var cotizacion = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/cotizaciones", new { solicitudId = id }, cancellationToken);
+        var cotizacion = await ObtenerCotizacionAsync(usuarioId, id, cancellationToken);
+        return cotizacion.EsFallo ? cotizacion.Error : new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor);
+    }
+
+    /// <summary>
+    /// "Crear o recuperar" (Nexo no tiene GET de la cotización por solicitud): devuelve la entregada, el borrador existente o uno
+    /// vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la solicitud). Pendiente de confirmar con el equipo de Nexo.
+    /// </summary>
+    public async Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudId);
+        var cotizacion = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/cotizaciones", new { solicitudId = solicitudId.Trim() }, cancellationToken);
         if (cotizacion.EsFallo)
         {
             return cotizacion.Error;
@@ -130,7 +139,25 @@ public sealed class clsCosteoNexo(
 
         using var cuerpo = cotizacion.Valor;
         var leida = LeerCotizacion(cuerpo.RootElement);
-        return leida is null ? NoDisponible("respuesta de la cotización sin id") : new clsCosteoConsultadoNexo(estado, lineas, leida);
+        return leida is null ? NoDisponible("respuesta de la cotización sin id") : leida;
+    }
+
+    public async Task<clsResultado<clsCotizacionNexo>> MarcarResultadoAsync(
+        Guid usuarioId, string cotizacionNexoId, clsResultadoNexo resultado, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
+        ArgumentNullException.ThrowIfNull(resultado);
+        var cuerpo = new clsResultadoWire(resultado.Ganada ? "ganada" : "perdida", resultado.Motivo, resultado.Comentario);
+        var respuesta = await EnviarAsync(
+            usuarioId, HttpMethod.Post, $"/api/cotizaciones/{Uri.EscapeDataString(cotizacionNexoId.Trim())}/resultado", cuerpo, cancellationToken);
+        if (respuesta.EsFallo)
+        {
+            return respuesta.Error;
+        }
+
+        using var documento = respuesta.Valor;
+        var leida = LeerCotizacion(documento.RootElement);
+        return leida is null ? NoDisponible("respuesta del resultado sin id") : leida;
     }
 
     /// <summary><c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan.</summary>
@@ -251,8 +278,15 @@ public sealed class clsCosteoNexo(
             using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if ((int)respuesta.StatusCode is >= 400 and < 500)
             {
-                var detalle = await LeerErrorNexoAsync(respuesta, cancellationToken);
+                var (codigoNexo, mensajeNexo, detalle) = await LeerErrorNexoAsync(respuesta, cancellationToken);
                 logger.LogWarning("Nexo rechazó {Metodo} {Ruta}: {Detalle}", metodo, ruta, detalle);
+
+                // Conflictos de estado de Nexo que el llamador distingue (HU-005.14): viajan con el código de Nexo.
+                if (respuesta.StatusCode == HttpStatusCode.Conflict && codigoNexo is clsCodigosError.ResultadoYaDefinido or clsCodigosError.CotizacionNoEntregada)
+                {
+                    return new clsErrorDominio(codigoNexo, mensajeNexo ?? MensajeRechazada, detalle);
+                }
+
                 return new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeRechazada, detalle);
             }
 
@@ -285,7 +319,7 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>Error de Nexo (<c>{code, message, timestamp, details?}</c>) como <c>HTTP {estado} {code}: {message}</c> (máx. 400 caracteres).</summary>
-    private static async Task<string> LeerErrorNexoAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)
+    private static async Task<(string? Codigo, string? Mensaje, string Detalle)> LeerErrorNexoAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)
     {
         var estado = (int)respuesta.StatusCode;
         var texto = await respuesta.Content.ReadAsStringAsync(cancellationToken);
@@ -309,7 +343,7 @@ public sealed class clsCosteoNexo(
         var detalle = $"HTTP {estado.ToString(CultureInfo.InvariantCulture)}"
             + (codigo is null ? string.Empty : $" {codigo}")
             + (explicacion is null ? string.Empty : $": {explicacion}");
-        return detalle.Length <= 400 ? detalle : detalle[..399] + "…";
+        return (codigo, mensaje, detalle.Length <= 400 ? detalle : detalle[..399] + "…");
     }
 
     internal static string? Texto(JsonElement objeto, string propiedad) =>
@@ -356,6 +390,8 @@ public sealed class clsCosteoNexo(
         string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado, bool? RetornaContenedor,
         string? CiudadDevolucionContenedor, bool? LevanteContenedorDiferente, string? CiudadLevanteContenedor,
         decimal? ValorAprovisionamiento, decimal? Peso, decimal? ValorMercancia, IReadOnlyList<clsCapturaPosicionWire>? Posiciones);
+
+    private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 
     private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 }

@@ -117,6 +117,46 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
+    public async Task ElResultadoVaAApiCotizacionesIdResultadoEnMinusculaConMotivoYComentario()
+    {
+        _nexo.Responder(HttpStatusCode.OK, Cotizacion.Replace("\"SinDefinir\"", "\"Ganada\"", StringComparison.Ordinal));
+
+        var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-1", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, "Mejor precio", "Nota"), Ct);
+
+        resultado.Valor.Resultado.Should().Be("Ganada");
+        var peticion = _nexo.Peticiones.Single();
+        peticion.Metodo.Should().Be(HttpMethod.Post);
+        peticion.Url.AbsoluteUri.Should().Be("http://nexo-test.local/api/cotizaciones/COT-1/resultado");
+        using var cuerpo = JsonDocument.Parse(peticion.Cuerpo!);
+        cuerpo.RootElement.GetProperty("resultado").GetString().Should().Be("ganada", "Nexo valida el resultado en minúscula");
+        cuerpo.RootElement.GetProperty("motivo").GetString().Should().Be("Mejor precio");
+        cuerpo.RootElement.GetProperty("comentario").GetString().Should().Be("Nota");
+    }
+
+    [Theory]
+    [InlineData("RESULTADO_YA_DEFINIDO")]
+    [InlineData("COTIZACION_NO_ENTREGADA")]
+    public async Task Un409DeNexoConservaSuCodigo(string codigo)
+    {
+        _nexo.Responder(HttpStatusCode.Conflict, $$"""{"code":"{{codigo}}","message":"No se puede."}""");
+
+        var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-1", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(false, null, null), Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+        resultado.Error.Mensaje.Should().Be("No se puede.");
+    }
+
+    [Fact]
+    public async Task Otro409EsRechazada()
+    {
+        _nexo.Responder(HttpStatusCode.Conflict, """{"code":"SOLICITUD_NO_TRANSICIONABLE","message":"Descartada."}""");
+
+        var resultado = await Adaptador().MarcarResultadoAsync(_usuarioId, "COT-1", new Cotifly.Aplicacion.Costeo.DTOs.clsResultadoNexo(true, null, null), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
+    }
+
+    [Fact]
     public async Task ElIdSeCodificaEnLaRuta()
     {
         _nexo.Responder(HttpStatusCode.NotFound);

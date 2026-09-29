@@ -134,6 +134,29 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         return web.UltimoJson().GetProperty("cotizaciones").EnumerateArray().Single(c => c.GetProperty("folio").GetString() == Folio(cotizacion));
     }
 
+    [When("{string} marca el resultado de {string} como {string} con el motivo {string} y el comentario {string}")]
+    public Task CuandoMarcaResultado(string alias, string cotizacion, string resultado, string motivo, string comentario) =>
+        web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+            clsApiWebPruebas.Json(new { resultado, motivo, comentario }));
+
+    [Then("Nexo registró la cotización de {string} como {string}")]
+    public async Task EntoncesNexoRegistro(string cotizacion, string resultado) =>
+        _nexo.Resultado((await Columna(cotizacion, "costeoId"))!).Should().Be(resultado);
+
+    [Then("la cotización {string} queda ganada {string} con el motivo {string}")]
+    public async Task EntoncesGanada(string cotizacion, string ganada, string motivo)
+    {
+        (await Columna(cotizacion, "ganada")).Should().Be(bool.Parse(ganada) ? "1" : "0");
+        (await Columna(cotizacion, "motivoRechazo")).Should().Be(motivo);
+    }
+
+    [Then("la cotización {string} sigue sin resultado")]
+    public async Task EntoncesSinResultado(string cotizacion)
+    {
+        (await Columna(cotizacion, "ganada")).Should().BeNull();
+        (await Columna(cotizacion, "motivoRechazo")).Should().BeNull();
+    }
+
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 

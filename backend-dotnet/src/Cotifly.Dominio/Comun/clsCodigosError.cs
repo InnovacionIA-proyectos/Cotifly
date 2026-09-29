@@ -149,4 +149,16 @@ public static class clsCodigosError
 
     /// <summary>La cotización ya tiene PDF: para cambiar precios o servicios se genera una versión nueva (409). Código nuevo del backend .NET.</summary>
     public const string PdfYaGenerado = "PDF_YA_GENERADO";
+
+    /// <summary>
+    /// Nexo rechazó cambiar el resultado de la cotización (ya estaba ganada o perdida con el otro valor): 409, sin cambio local
+    /// (HU-005.14). Mismo código que usa Nexo.
+    /// </summary>
+    public const string ResultadoYaDefinido = "RESULTADO_YA_DEFINIDO";
+
+    /// <summary>
+    /// Nexo solo marca el resultado de una cotización entregada (su issue #171 quitó la "entrega implícita"): 409, sin cambio local.
+    /// Mismo código que usa Nexo.
+    /// </summary>
+    public const string CotizacionNoEntregada = "COTIZACION_NO_ENTREGADA";
 }

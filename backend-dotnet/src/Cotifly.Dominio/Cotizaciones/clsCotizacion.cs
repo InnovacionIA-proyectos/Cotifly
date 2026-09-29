@@ -374,6 +374,13 @@ public sealed class clsCotizacion
     /// <summary>Guarda la selección de servicios conexos del comercial (JSON de <c>serviciosConexos</c>).</summary>
     public void SeleccionarServiciosConexos(string? serviciosConexos) => ServiciosConexos = serviciosConexos;
 
+    /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado, HU-005.14).</summary>
+    public void RegistrarCotizacionNexo(string cotizacionNexoId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
+        CotizacionNexoId = cotizacionNexoId.Trim();
+    }
+
     /// <summary>Deja de consultar a Nexo (estado que ya no se sigue, o datos incompletos).</summary>
     public void DetenerPollingCosteo() => CosteoSiguienteConsultaAt = null;
 

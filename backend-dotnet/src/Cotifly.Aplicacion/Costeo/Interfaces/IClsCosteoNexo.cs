@@ -28,4 +28,15 @@ public interface IClsCosteoNexo
     /// servicios conexos). Un id que Nexo ya no reconoce responde <c>COSTEO_NEXO_RECHAZADA</c> con <c>HTTP 404</c> en el detalle.
     /// </summary>
     Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
+
+    /// <summary>"Crear o recuperar" la cotización de Nexo de una solicitud (<c>POST /api/cotizaciones {solicitudId}</c>).</summary>
+    Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marca el resultado en Nexo (<c>POST /api/cotizaciones/{cotizacionNexoId}/resultado</c>, HU-005.14) con
+    /// <c>{resultado: "ganada"|"perdida", motivo?, comentario?}</c>. Un 409 de Nexo llega con su código:
+    /// <c>RESULTADO_YA_DEFINIDO</c> o <c>COTIZACION_NO_ENTREGADA</c>. No se reintenta (POST).
+    /// </summary>
+    Task<clsResultado<clsCotizacionNexo>> MarcarResultadoAsync(
+        Guid usuarioId, string cotizacionNexoId, clsResultadoNexo resultado, CancellationToken cancellationToken = default);
 }
