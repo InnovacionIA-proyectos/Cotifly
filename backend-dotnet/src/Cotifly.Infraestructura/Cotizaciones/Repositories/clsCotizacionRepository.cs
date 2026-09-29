@@ -28,6 +28,18 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
             .OrderBy(p => p.Orden)
             .ToListAsync(cancellationToken);
 
+    public async Task<bool> ReclamarReenvioCosteoAsync(
+        Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.Cotizaciones
+            .Where(c => c.Id == cotizacionId && c.UpdatedAt == updatedAtLeido
+                        && (c.EstadoCosteo == EstadoCosteo.ErrorEnvio || c.EstadoCosteo == EstadoCosteo.PendienteEnvio))
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(c => c.EstadoCosteo, (EstadoCosteo?)EstadoCosteo.PendienteEnvio).SetProperty(c => c.UpdatedAt, ahora),
+                cancellationToken);
+        return filas == 1;
+    }
+
     public Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);

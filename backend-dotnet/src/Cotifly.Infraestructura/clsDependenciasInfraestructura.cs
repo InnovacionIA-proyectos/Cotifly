@@ -8,6 +8,8 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Interfaces;
 using Cotifly.Aplicacion.Correo.Repositories;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Identidad.Interfaces;
@@ -31,6 +33,7 @@ using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Correo.Repositories;
 using Cotifly.Infraestructura.Correo.Services;
+using Cotifly.Infraestructura.Costeo.Services;
 using Cotifly.Infraestructura.Cotizaciones.Repositories;
 using Cotifly.Infraestructura.Cubicacion.Services;
 using Cotifly.Infraestructura.Identidad.Persistence;
@@ -96,6 +99,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
         servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
 
@@ -117,6 +121,7 @@ public static class clsDependenciasInfraestructura
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
         AgregarCubicacion(servicios);
+        AgregarCosteo(servicios);
 
         AgregarPdfYCorreo(servicios);
 
@@ -291,6 +296,22 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<clsCubicacionNoDisponible>();
         servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
+    }
+
+    /// <summary>
+    /// Costeo en Nexo (ADR-015) elegido por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCosteoNexo.Crear"/>): configurada →
+    /// <see cref="clsCosteoNexo"/>; vacía → <see cref="clsCosteoNexoNoDisponible"/>. A diferencia de clientes, municipios, catálogos y
+    /// cubicación, usa su propio cliente HTTP (<see cref="clsCosteoNexo.NombreCliente"/>) con su propia tubería: 30 s (el alta de Nexo
+    /// auto-costea en línea) y sin reintentar los POST (el alta no es idempotente). Sin registrar cabeceras en los logs. TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCosteo(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCosteoNexoNoDisponible>();
+        servicios.AddHttpClient<clsCosteoNexo>(clsCosteoNexo.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
+        servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

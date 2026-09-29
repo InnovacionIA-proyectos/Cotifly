@@ -22,6 +22,14 @@ public interface IClsCotizacionRepository
     /// <summary>Posiciones de cubicaje de la cotización, en el orden del formulario (vacía si no tiene).</summary>
     Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reclamo optimista de un reenvío a Nexo (HU-005.5): si la cotización sigue con el <c>updatedAt</c> leído y en
+    /// <c>error_envio</c> o <c>pendiente_envio</c>, la deja en <c>pendiente_envio</c> con <c>updatedAt = ahora</c> y devuelve
+    /// <c>true</c>; si otro envío la tocó antes, <c>false</c> (dos reintentos simultáneos nunca duplican la solicitud en Nexo).
+    /// Escribe de inmediato, fuera de la unidad de trabajo: el llamador debe recargar la cotización.
+    /// </summary>
+    Task<bool> ReclamarReenvioCosteoAsync(Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default);
+
     /// <summary>Cotización por folio, sin filtro de dueño (uso interno de herramientas del agente).</summary>
     Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 

@@ -596,6 +596,87 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/solicitudes-costeo:
+    post:
+      operationId: enviarSolicitudCosteo
+      tags: [web]
+      summary: Crea la cotización con el formulario ampliado y la envía a costeo en Nexo
+      description: |
+        HU-005.5 (ADR-015). Crea la cotización del comercial (folio del servidor, ADR-011, con el NIT) con el
+        formulario ampliado y sus posiciones en `estado_costeo = pendiente_envio`, la **confirma antes de llamar a
+        Nexo** y luego envía `POST {Nexo:UrlBase}/api/captura-solicitudes` con una sola línea. El BP del cliente sale
+        del catálogo de Nexo (búsqueda por `nit_cliente`), nunca del cuerpo. Los catálogos cerrados (`tipo_vehiculo`,
+        `carroceria`, `tipologia`, `clase_viaje`, `clase_contenedor`) van con el código de Nexo tal cual.
+
+        Responde **201 aunque Nexo falle**: la cotización queda en `error_envio` con `motivo_estado_costeo`
+        (tiempo agotado, rechazo 4xx con el código de Nexo, 5xx, red, cliente sin BP) y el comercial puede
+        reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar` sin volver a llenar el formulario. Con
+        éxito queda en `pendiente_costeo` (o `autocosteo` si Nexo costeó la línea en la misma petición) y el polling
+        (HU-005.6) sigue su estado. `precio_final` es `null` hasta que el costeo pasa por el margen (HU-005.7).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitudCosteoWeb'
+      responses:
+        '201':
+          description: Cotización creada; `estado_costeo` dice si Nexo recibió la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '400':
+          description: |
+            `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
+            posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
+            posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/cotizaciones/{folio}/costeo/reintentar:
+    post:
+      operationId: reintentarCosteo
+      tags: [web]
+      summary: Reenvía a Nexo la solicitud guardada de una cotización que no llegó
+      description: |
+        HU-005.5. Solo desde `estado_costeo` `error_envio` (salvo un rechazo 400 de Nexo, que es definitivo: el
+        motivo empieza por "Rechazo definitivo de Nexo") o `pendiente_envio`; reenvía el formulario y las posiciones
+        guardados (no hace falta volver a llenarlos). Mismo resultado que el envío: 200 con la cotización en
+        `pendiente_costeo`/`autocosteo`, o de nuevo en `error_envio` con el motivo. Si el motivo anterior era
+        "tiempo agotado", Nexo pudo haber creado la solicitud: el comercial debe verificar antes de reintentar
+        (pendiente de confirmar con el equipo de Nexo una clave de idempotencia). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: Reenvío intentado; `estado_costeo` dice si Nexo lo recibió
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_REINTENTABLE`: la cotización no está en `error_envio` ni en `pendiente_envio`, o no nació del formulario ampliado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -933,6 +1014,12 @@ components:
                 puede reintentar o cotizar en COP). Solo en la herramienta
                 `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
                 (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
+                Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
+                Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
+                `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
+                (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`), `COSTEO_NEXO_SOLICITUD_INVALIDA` (Nexo respondió 400 al alta:
+                `error_envio` definitivo, no se reintenta) y `COSTEO_NO_REINTENTABLE` (409: la
+                cotización no está en `error_envio` ni en `pendiente_envio`).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -961,6 +1048,12 @@ components:
                 - ITEMS_REQUERIDOS
                 - CUBICACION_NO_DISPONIBLE
                 - CUBICACION_DEMASIADO_GRANDE
+                - SOLICITUD_COSTEO_INVALIDA
+                - COSTEO_NEXO_NO_DISPONIBLE
+                - COSTEO_NEXO_TIEMPO_AGOTADO
+                - COSTEO_NEXO_RECHAZADA
+                - COSTEO_NEXO_SOLICITUD_INVALIDA
+                - COSTEO_NO_REINTENTABLE
                 - TRM_NO_DISPONIBLE
                 - MUNICIPIO_ARGUMENTO_INVALIDO
                 - ERROR_INTERNO
@@ -1260,6 +1353,18 @@ components:
         estado_costeo:
           type: string
           nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+          description: |
+            Estado del costeo en Nexo (ADR-015). `null` = la cotización no pasa por Nexo (chat con costo manual).
+            `pendiente_envio` y `error_envio` = Nexo todavía no la tiene (ver `motivo_estado_costeo`; se puede
+            reintentar); `pendiente_costeo` = alguna línea sin flete ("en costeo"); `autocosteo` = todas las líneas con
+            flete y la cotización de Nexo en borrador; `entregada` = Nexo la entregó; `descartada` = Nexo descartó la
+            solicitud; `costeo_vencido` = se agotó el tiempo máximo del polling sin costeo. "Costeado" = `autocosteo`
+            o `entregada` con `precio_final`.
+        motivo_estado_costeo:
+          type: string
+          nullable: true
+          description: Motivo legible del estado del costeo (error al enviar, rechazo de Nexo, costeo vencido...).
         estado_envio:
           type: string
           enum: [sin_enviar, enviada, reenviada]
@@ -1526,6 +1631,150 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpcionCatalogo'
+
+    PosicionCargaWeb:
+      type: object
+      required: [largo_cm, ancho_cm, alto_cm]
+      description: Posición de cubicaje (`CapturaPosicionRequest` de Nexo), en centímetros y kilogramos.
+      properties:
+        descripcion:
+          type: string
+          nullable: true
+          maxLength: 200
+        cantidad:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+        largo_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        ancho_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        alto_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+
+    SolicitudCosteoWeb:
+      type: object
+      required: [tipo, nit_cliente, linea_negocio, origen, destino]
+      description: |
+        Formulario ampliado (HU-005.3, mapeo aprobado en `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`): encabezado y la única
+        línea de `CapturaSolicitudRequest` de Nexo, con sus mismos límites.
+      properties:
+        tipo:
+          type: string
+          enum: [spot, licitacion]
+        nit_cliente:
+          type: string
+          maxLength: 20
+          description: NIT elegido en el buscador (`GET /web/clientes`). El BP se resuelve en el catálogo de Nexo.
+        cliente_nombre:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Referencia visible mientras se resuelve; se reemplaza por el nombre del catálogo de Nexo.
+        linea_negocio:
+          type: string
+          description: Línea de negocio de Cotifly (`MargenesPolitica`); a Nexo va su `mapeoLineasNexo`.
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        valor_estimado:
+          type: number
+          nullable: true
+          minimum: 0
+        referencia:
+          type: string
+          nullable: true
+          maxLength: 200
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        origen:
+          type: string
+          maxLength: 150
+          description: Municipio de `GET /web/municipios`.
+        destino:
+          type: string
+          maxLength: 150
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: Código SICE-TAC de Nexo (`2`, `2S3`, `3S3`...).
+        carroceria:
+          type: string
+          nullable: true
+          maxLength: 100
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        valor_aprovisionamiento:
+          type: number
+          nullable: true
+          minimum: 0
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+        posiciones:
+          type: array
+          maxItems: 200
+          default: []
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
 
     ItemCubicacion:
       type: object

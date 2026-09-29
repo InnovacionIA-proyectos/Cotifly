@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
@@ -67,6 +68,9 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
         servicios.AddScoped<IClsMetricasService, clsMetricasService>();
+
+        // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud. El adaptador de Nexo lo registra Infraestructura.
+        servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
 
         // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
         // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
