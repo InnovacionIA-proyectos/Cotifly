@@ -11,7 +11,7 @@ Contenido:
 ## 3.1 Contenedor e imagen
 
 - Un solo `Dockerfile` multi-stage y un único servicio expuesto: `Cotifly.Api` (ADR-007, #27). Sin `docker-compose` **para ejecución local** (desviación de lo que pide HU-003.8, #14, registrada en ADR-007).
-- Despliegue: Docker Swarm + Dokploy (HU-006). El manifiesto de Swarm (`infra/stack*.yml`, formato compose para `docker stack deploy`/Dokploy) sí existe y lo adapta al backend .NET HU-006.6 (#30).
+- Despliegue: Docker Swarm + Dokploy (HU-006). Manifiestos de Swarm del backend .NET (formato compose para `docker stack deploy`/Dokploy, HU-006.6, #30): `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`. Los `infra/stack*.yml` y `deploy/docker-compose.swarm.yml` del Python quedan para rollback. Detalle en [`DEPLOY.md`](../../DEPLOY.md) §5.
 - Nombre lógico de la imagen: **`cotifly-api`**. En local `cotifly-api:dev`; en el registry **`ghcr.io/innovacionia-proyectos/cotifly-backend`** con tags `X.Y.Z` (tag git `vX.Y.Z`), `sha-<corto>` y `qa`/`main`, nunca `latest` (HU-006.4, #28). La publican el job `publicar-imagen` del CI o `scripts/publicar-imagen.sh`/`.ps1`; release paso a paso en [`DEPLOY.md`](../../DEPLOY.md) §4.
 
 **Imagen de contenedor (`Dockerfile`, #27):**
@@ -41,7 +41,7 @@ Las pruebas **no** corren dentro de `docker build`: el contexto no incluye `test
 
 **Actualizar los tags de .NET** (parche mensual): leer el último parche en las [release notes de .NET 10](https://github.com/dotnet/core/blob/main/release-notes/10.0/releases.json) o con `docker pull mcr.microsoft.com/dotnet/sdk:10.0` + `docker image inspect` (`DOTNET_SDK_VERSION`, `ASPNET_VERSION`); cambiar `SDK_VERSION` y `ASPNET_VERSION` juntos en el `Dockerfile` (el runtime de la imagen debe ser el que trae ese SDK); reconstruir, correr las pruebas y repetir la verificación de [06-ejecucion-local](06-ejecucion-local.md). `global.json` (`10.0.100` + `latestFeature`) acepta cualquier SDK 10.0.x, no hace falta tocarlo.
 
-**Para HU-006.6 (#30), manifiestos de Swarm/Dokploy** (este issue no los toca). Hoy el Python expone `bot-orquestador` en **8000** (Traefik `loadbalancer.server.port=8000` en `infra/stack.dokploy.yml` e `infra/stack.staging.yml`; `deploy/docker-compose.swarm.yml` publica `8091 → 8000`) y `bot-mcp` en 8080 solo en la red interna. Con el backend .NET:
+**Para HU-006.6 (#30), manifiestos de Swarm/Dokploy** (condiciones que fijó #27; #30 las aplica en `infra/stack.dotnet.*.yml`, ver [`DEPLOY.md`](../../DEPLOY.md) §5). Hoy el Python expone `bot-orquestador` en **8000** (Traefik `loadbalancer.server.port=8000` en `infra/stack.dokploy.yml` e `infra/stack.staging.yml`; `deploy/docker-compose.swarm.yml` publica `8091 → 8000`) y `bot-mcp` en 8080 solo en la red interna. Con el backend .NET:
 - Puerto **8080** en el `target` y en `traefik.http.services.<svc>.loadbalancer.server.port`.
 - Si el stack redefine el healthcheck, en forma exec: `test: ["CMD", "dotnet", "/app/Cotifly.Api.dll", "--healthcheck"]`. Nunca `CMD-SHELL`: la imagen no tiene shell.
 - Readiness con el healthcheck de Traefik contra `/health/ready`: saca la tarea del balanceo mientras la base no está lista, sin que Swarm la reinicie (el `HEALTHCHECK` de la imagen es solo de vida, `/health`).
@@ -328,8 +328,9 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 ```mermaid
 flowchart LR
     subgraph swarm[Docker Swarm + Dokploy - HU-006]
-        traefik[Traefik<br/>TLS, HSTS] --> api[cotifly-api:8080<br/>réplicas: 1]
+        traefik[Traefik<br/>TLS, HSTS] --> api[cotifly-api:8080<br/>réplicas: 1, worker]
         api --- vol[(cotifly_pdfs<br/>/data/pdfs)]
+        sec[/secreto gchat_sa.json/] --- api
     end
     front[clientepro-frontend] --> traefik
     google[Google Chat] --> traefik
@@ -341,4 +342,4 @@ flowchart LR
     api --> trm[datos.gov.co<br/>TRM]
 ```
 
-El manifiesto de Swarm para el backend .NET lo define HU-006.6 (#30); las condiciones que debe cumplir están en [3.1](#31-contenedor-e-imagen) ("Para HU-006.6").
+Manifiestos de Swarm del backend .NET (HU-006.6, #30): `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`. Una réplica anclada al worker mientras el overlay entre nodos siga caído (HU-006.1), red `dokploy-network` solo para la entrada desde Traefik y una overlay propia con egreso para SQL Server y los servicios externos; SQL Server es externo, no un servicio del stack. Detalle y validación en [`DEPLOY.md`](../../DEPLOY.md) §5.

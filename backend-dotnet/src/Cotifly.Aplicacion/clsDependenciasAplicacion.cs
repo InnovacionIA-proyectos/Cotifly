@@ -74,6 +74,8 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
+        servicios.AddScoped<IClsResultadoCotizacionService, clsResultadoCotizacionService>();
+
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         servicios.AddScoped<IClsTableroMetricasService, clsTableroMetricasService>();

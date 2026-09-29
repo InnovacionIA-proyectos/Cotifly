@@ -55,6 +55,10 @@ public static class clsRespuestasWeb
         clsCodigosError.CosteoNoReintentable,
         clsCodigosError.CosteoNoListo,
         clsCodigosError.PdfYaGenerado,
+        clsCodigosError.ResultadoYaDefinido,
+        clsCodigosError.CotizacionNoEntregada,
+        clsCodigosError.UsarResultadoNexo,
+        clsCodigosError.SolicitudNoTransicionable,
     };
 
     public static IActionResult Error(clsErrorDominio error)
@@ -67,7 +71,8 @@ public static class clsRespuestasWeb
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
                 new UnauthorizedObjectResult(new clsErrorWeb(clsCodigosAcceso.MensajeSesionExpirada)),
             clsCodigosAplicacion.SinPermiso => new ObjectResult(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso)) { StatusCode = StatusCodes.Status403Forbidden },
-            clsCodigosError.CorreoDeshabilitado or clsCodigosAplicacion.RegionalNoDisponible =>
+            clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
+                or clsCodigosAplicacion.RegionalNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),

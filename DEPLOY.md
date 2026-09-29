@@ -22,6 +22,7 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 |---|---|---|
 | #29 (HU-006.5) | Secretos fuera del repositorio | [§2](#2-secretos-y-variables-hu-0065-29), [§3](#3-tabla-de-variables-de-producción-plantilla-para-hu-0071-33) |
 | #28 (HU-006.4) | Registry, imagen versionada y release | [§4](#4-registry-imagen-versionada-y-release-hu-0064-28) |
+| #30 (HU-006.6) | Manifiestos del stack .NET + SQL Server externo | [§5](#5-manifiestos-del-stack-net-hu-0066-30) |
 
 ## 2. Secretos y variables (HU-006.5, #29)
 
@@ -44,8 +45,8 @@ distinto, por ejemplo un gestor de secretos):
    docker secret create cotifly_gchat_sa_v1 ./cuenta-servicio-chat.json && shred -u ./cuenta-servicio-chat.json
    ```
 
-   Rotar = crear `cotifly_gchat_sa_v2`, cambiar el nombre en la variable del stack y redesplegar; luego
-   `docker secret rm cotifly_gchat_sa_v1`.
+   Rotar = crear `cotifly_gchat_sa_v2`, cambiar el nombre en la variable del stack (`GCHAT_SA_SECRETO`) y redesplegar;
+   luego `docker secret rm cotifly_gchat_sa_v1`. Staging usa su propio secreto, `cotifly_staging_gchat_sa_v1` (§5.3).
 
 Por qué no todo como secreto de Swarm: el backend lee la configuración de variables de entorno; solo `GChat__SaJson`
 acepta una ruta de archivo. Llevar las cadenas de conexión o la clave JWT a `/run/secrets` exige agregar el proveedor
@@ -80,7 +81,9 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
 | `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, `Database=dbsolucionesti` (solo lectura) |
-| `ConnectionStrings__Regional` | **sí** | no (planeada) | — | Dokploy | `DWCubosEBSSAP`, aún no conectada |
+| `ConnectionStrings__Regional` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosEBSSAP`, solo lectura de `DimEjecutivo` (HU-010.1, #45, ADR-016). Vacía = no configurada: la regional sale de `UsuariosWeb.regional` y el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` si está vacía. Con valor exige salida desde el worker a la instancia de `DWCubosEBSSAP` y `GRANT SELECT` sobre la tabla para `cotifly_app` (**pendiente con el DBA**); si la consulta falla, el tablero del gerente responde 503 |
+| `Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional` | no | no (pero nunca vacías: identificadores obligatorios) | `dbo`, `DimEjecutivo`, `ID`, `REGIONAL` | manifiesto | ubicación de la tabla de ejecutivos, por confirmar con el DBA |
+| `Regional__TiempoEsperaSegundos` | no | no | `10` (2 a 60) | manifiesto | límite de cada consulta a `DWCubosEBSSAP` |
 | `Identidad__Esquema`, `Identidad__TablaUsuarios`, `Identidad__TablaUsuarioRoles`, `Identidad__TablaRoles` | no | no | `dbo`, `tblSAPUsuariosApp`, `tblSAPUsuarioRoles`, `tblSAPRoles` | manifiesto | por confirmar con el DBA |
 | `Jwt__Issuer`, `Jwt__Audience` | no | no | `cotifly-api`, `clientepro` | manifiesto | |
 | `Jwt__SigningKey` | **sí** (≥ 32 bytes) | **sí** | vacío | Dokploy | `openssl rand -base64 48`; distinta por ambiente |
@@ -95,7 +98,13 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SapTm__ExportPath` | no | con `export_json` | vacío | Dokploy | archivo montado de solo lectura |
 | `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | no | `Url` y `User` con `odata` | vacío | Dokploy | |
 | `SapTm__Pass` | **sí** (≥ 8) | con `odata` | vacío | Dokploy | no definirla si no se usa `odata` |
-| `Nexo__UrlBase` | no | no | vacío | Dokploy | sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` |
+| `Nexo__UrlBase` | no | no | vacío | Dokploy | **raíz** del servicio (`https://<host-nexo>`), sin `/api`: el cliente agrega las rutas `/api/...`. Sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` y el costeo no corre |
+| `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
+| `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
+| `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
+| `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
+| `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos; exige salida a `www.datos.gov.co:443` |
+| `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta de la TRM |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web, pero la tarjeta de Google Chat no lo puede abrir; configurarla si Google Chat está activo |
 | `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | con Google Chat configurado | vacío | Dokploy | `openssl rand -base64 48` |
@@ -158,7 +167,8 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `ASPNETCORE_ENVIRONMENT` | no | fijo: `Production` | no | Backend | — |
 | `ConnectionStrings__Cotifly` | sí | DBA: login `cotifly_app` y permisos por esquema (03-infraestructura §3.3) | no | DBA / Backend | `DATABASE_URL` |
 | `ConnectionStrings__Identidad` | sí | DBA: `SELECT` por columna en `dbsolucionesti` | no | DBA / Backend | — |
-| `ConnectionStrings__Regional` | sí | DBA (`DWCubosEBSSAP`); planeada | no | DBA | — |
+| `ConnectionStrings__Regional` | sí | DBA (`DWCubosEBSSAP`: login, `GRANT SELECT` sobre `DimEjecutivo` para `cotifly_app` y ruta de red desde el worker); opcional | no | DBA / Infraestructura | — |
+| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` | no | DBA confirma el esquema real de `DimEjecutivo` (hoy `dbo`, `DimEjecutivo`, `ID`, `REGIONAL`) | no | DBA | — |
 | `Identidad__Esquema` y tablas | no | DBA confirma ubicación real | no | DBA | — |
 | `Jwt__SigningKey` | sí | generada por el equipo de despliegue (`openssl rand -base64 48`) | no | Backend | `WEB_SESSION_SECRET` |
 | `Cors__OrigenesPermitidos__0` | no | equipo de frontend (dominio de `clientepro-frontend`) | no | Frontend | — |
@@ -292,6 +302,11 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0004` aplicados** en la base del ambiente (con un usuario
+   administrador y `sqlcmd -I`; la app no aplica migraciones). **El `0004` (costeo en Nexo, HU-005.8) va ANTES de
+   desplegar la versión que lo incluye:** sin él, `/health/ready` responde `503` con `falta 0004`, Traefik no manda
+   tráfico a la tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5). Cada script nuevo
+   `000N` sigue la misma regla: primero la migración, después la imagen.
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).
@@ -301,15 +316,205 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging. Si el tag llega
    antes, su corrida falla con "espera a que termine la corrida de main"; se vuelve a ejecutar cuando termine.
 3. **Producción.** En Dokploy, stack de producción: `COTIFLY_TAG=X.Y.Z` → *Deploy*. Swarm actualiza con `start-first`
-   y vuelve atrás solo si el healthcheck falla (manifiesto, HU-006.6).
+   y vuelve atrás solo si falla la sonda de vida `/health` (manifiesto, HU-006.6); la disponibilidad se verifica a
+   mano en el paso 5.
 4. **Verificar** qué imagen corre: `docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
    <stack>_cotifly-api` (muestra tag y digest).
-5. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
+5. **Verificar la disponibilidad después de cada despliegue.** El rollback automático de Swarm solo mira la sonda de
+   vida (`/health`, el `HEALTHCHECK`): una versión que arranca pero no llega a la base (cadena mal escrita, permisos,
+   red a `tbsdatacenter`) queda *healthy* y **no** se revierte sola. Por eso, tras cada *Deploy*:
+   `curl -s -o /dev/null -w '%{http_code}' https://<PUBLIC_HOST>/health/ready` (en staging, mientras el overlay esté
+   caído, `http://10.10.40.31:8092/health/ready`) debe dar `200` en menos de 2 minutos. Si no:
+   `docker service rollback <stack>_cotifly-api` en el manager (o volver `COTIFLY_TAG` al valor anterior y *Deploy*).
+6. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
+7. **Rollback al stack Python** (corte único, ADR-001: solo si el backend .NET no puede seguir en producción):
+   1. Redesplegar en Dokploy el stack Python (`deploy/docker-compose.swarm.yml`, proyecto `bot-cotizador`) y
+      comprobar `http://10.10.40.31:8091/health`.
+   2. En Google Cloud, volver a apuntar la app de Google Chat (URL del endpoint HTTP) al orquestador Python; mientras
+      apunte a la API .NET, Chat seguirá llegando a .NET.
+   3. Escalar a 0 el servicio .NET (`docker service scale <stack>_cotifly-api=0`) para que no haya dos backends activos.
+   4. **Aviso de datos:** el Python usa su propia base Postgres. Lo que el backend .NET escribió en SQL Server
+      (`dbo_cotifly`: cotizaciones, ajustes, correos, sesiones, usuarios) **no** es visible para el Python; no hay
+      migración inversa. Las cotizaciones hechas en .NET se consultan en SQL Server hasta volver a .NET.
+
+## 5. Manifiestos del stack .NET (HU-006.6, #30)
+
+### 5.1 Archivos
+
+| Manifiesto | Ambiente | Reemplaza (se conserva para rollback) |
+|---|---|---|
+| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (nunca desplegado) |
+| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | **`deploy/docker-compose.swarm.yml`**, el stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091). `infra/stack.dokploy.yml` es su versión "ideal", nunca desplegada |
+
+**Qué Python corre de verdad:** según el backlog de HU-006 (auditoría del despliegue) y la cabecera del propio archivo,
+Dokploy despliega `deploy/docker-compose.swarm.yml` (Postgres, MinIO, MCP y orquestador anclados al worker, orquestador
+en `10.10.40.31:8091` en modo host). `infra/stack.dokploy.yml` e `infra/stack.staging.yml` están documentados en el
+Anexo A pero no se desplegaron (siguen con Postgres y `${REGISTRY}`). **El rollback al Python redespliega
+`deploy/docker-compose.swarm.yml`** (§4.5 paso 7).
+
+Se crearon archivos nuevos en vez de editar los del Python para que el rollback siga siendo "redesplegar el stack
+Python" sin tocar git. Los dos manifiestos .NET son iguales salvo lo que marca la tabla del §5.3.
+
+### 5.2 Topología
+
+```
+Internet / red corporativa
+        │ HTTPS (TLS en Traefik: HU-006.2)
+        ▼
+  Traefik (Dokploy, red dokploy-network)
+        │ HTTP :8080, healthcheck de Traefik a /health/ready
+        ▼
+  cotifly-api (1 réplica, anclada al worker TBSNODO1-DKP)
+        ├── volumen cotifly_pdfs → /data/pdfs
+        ├── secreto de Swarm → /run/secrets/gchat_sa.json
+        └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
+                                              → proveedor LLM, Google Chat, Nexo, SAP TM, relay SMTP,
+                                                TRM en www.datos.gov.co:443
+```
+
+- **SQL Server es externo.** HU-002.4 lo decidió: la instancia corporativa `tbsdatacenter` (base
+  `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`; `dbsolucionesti` de solo lectura). No hay servicio de base de
+  datos en el stack; la API llega por `ConnectionStrings__Cotifly`/`__Identidad` desde el worker. Requisito de red: el
+  worker debe alcanzar `tbsdatacenter:1433` (pendiente de verificar en staging).
+- **Pendiente (HU-007.1, #33, con el DBA):** ¿staging y producción comparten `dbTarifario_Nexo_Pruebas`/`dbo_cotifly`?
+  Hoy solo existe esa base; si ambos stacks apuntan a ella, las pruebas de staging escriben en los datos de
+  producción. Definir una base o esquema de staging aparte, o aceptar explícitamente el riesgo, antes del primer
+  despliegue de producción.
+- **Un solo servicio** (ADR-002): no hay `bot-mcp` (las herramientas viven en el monolito) ni MinIO (ADR-012).
+- **Redes, equivalentes a las del Python:**
+
+  | Python | .NET | Para qué |
+  |---|---|---|
+  | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, TRM (`www.datos.gov.co`), relay, SQL Server |
+  | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
+
+- **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,
+  vida, `/health`), con `start_period` de 30 s; Swarm reinicia la tarea si falla. La disponibilidad (`/health/ready`,
+  base de datos) la mira Traefik con su healthcheck: saca la tarea del balanceo sin reiniciarla.
+- **Recursos:** límite 1 CPU / 1024 MB, reserva 0,25 CPU / 384 MB (cada sonda levanta otro proceso `dotnet` de
+  40–70 MB).
+- **Actualización:** `update_config` con `failure_action: rollback`, `monitor: 60s` y `max_failure_ratio: 0`: si la
+  tarea nueva no llega a *healthy*, Swarm vuelve a la imagen anterior sola. `start-first` en producción (sin corte);
+  `stop-first` en staging mientras use el puerto en modo host (§5.3).
+  - **Límite:** *healthy* es la sonda de vida `/health`, que no toca la base. Una versión que arranca pero no llega a
+    SQL Server no se revierte sola: después de cada despliegue hay que comprobar `/health/ready` = 200 y, si no,
+    `docker service rollback` (§4.5, paso 5).
+- **Riesgo bajo, encabezados reenviados:** `dokploy-network` la comparten todos los servicios que Dokploy publica, y
+  `ForwardedHeaders__RedesConocidas__0` confía en toda su subred. Un contenedor de otra aplicación en esa red podría
+  llamar a la API con un `X-Forwarded-For` falso y saltarse el límite por IP de `/api/auth/*` (no la autenticación:
+  el login sigue exigiendo la verificación contra ClientePro). Propuesta: en cuanto Traefik tenga una IP estable o un
+  rango propio dentro de la red (verificarlo con `docker network inspect dokploy-network` en staging), usar
+  `ForwardedHeaders__ProxiesConocidos__0=<IP de Traefik>` (agregando esa línea al manifiesto, §5.4) o un CIDR más
+  estrecho en `RedesConocidas`.
+- **Una réplica:** la cola de Google Chat y el barrido de sesiones viven en el proceso, y el volumen de PDFs es local
+  (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
+- **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
+  `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
+  - **Versión de Traefik (informativo):** los manifiestos usan `traefik.docker.network`, la etiqueta de Traefik v2
+    (la que usa el Python). En Traefik v3 el proveedor de Swarm lee `traefik.swarm.network`. **Pendiente:** confirmar
+    la versión del Traefik de Dokploy (`docker service inspect dokploy-traefik --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`)
+    y, si es v3, cambiar esa etiqueta en los dos manifiestos.
+
+### 5.3 Anclado al worker mientras el overlay esté caído (HU-006.1)
+
+El overlay VXLAN entre el manager y el worker está caído (HU-006.1, diagnóstico; HU-006.2, solución). Consecuencias
+para los manifiestos, iguales a las que ya asumía el Python:
+
+- `placement.constraints: node.hostname == TBSNODO1-DKP`: la tarea corre en el worker, donde hay disco (el manager está
+  al límite) y donde vive el volumen local de PDFs.
+- Traefik corre en el manager y hoy no alcanza por la overlay a una tarea del worker. Por eso:
+
+  | | Staging (`stack.dotnet.staging.yml`) | Producción (`stack.dotnet.dokploy.yml`) |
+  |---|---|---|
+  | Acceso mientras el overlay esté caído | Puerto en modo host `10.10.40.31:${COTIFLY_PUERTO_HOST:-8092}` → 8080, HTTP **sin TLS**, solo red corporativa (el Python usa 8091) | Ninguno: sin `ports`. **No se despliega hasta HU-006.2** |
+  | Orden de actualización | `stop-first` (dos tareas no pueden usar el mismo puerto del nodo); `COTIFLY_ORDEN_UPDATE=start-first` al quitar el puerto | `start-first` |
+  | Volumen / secreto / router | `cotifly_staging_pdfs` / `cotifly_staging_gchat_sa_v1` / `cotifly-api-staging` | `cotifly_pdfs` / `cotifly_gchat_sa_v1` / `cotifly-api` |
+  | `ASPNETCORE_ENVIRONMENT` | `Production` fijo (mismas validaciones de arranque) | `Production` fijo |
+
+- Al resolverse HU-006.2: quitar `ports` de staging, pasar a `start-first` y validar el acceso por Traefik con TLS. La
+  restricción de nodo puede quitarse solo con un volumen de PDFs compartido entre nodos.
+
+### 5.4 Variables del stack en Dokploy
+
+Las variables del §2.2 se cargan en la pestaña *Environment* del compose (tipo *stack*). Además, las propias del
+manifiesto:
+
+| Variable | Obligatoria | Uso |
+|---|---|---|
+| `COTIFLY_TAG` | **sí** | Tag inmutable de la imagen (`sha-<corto>` o `X.Y.Z`, §4) |
+| `PUBLIC_HOST` | **sí** | Dominio del router de Traefik |
+| `GCHAT_SA_SECRETO` | no | Nombre del secreto de Swarm (por defecto `cotifly_gchat_sa_v1` o `cotifly_staging_gchat_sa_v1`) |
+| `COTIFLY_PUERTO_HOST` | no (staging) | Puerto del worker en modo host (por defecto 8092) |
+| `COTIFLY_ORDEN_UPDATE` | no (staging) | `stop-first` (por defecto) o `start-first` |
+
+Obligatorias por el manifiesto (`${VAR:?}`: sin ellas `docker stack deploy` falla antes de tocar el servicio):
+`COTIFLY_TAG`, `PUBLIC_HOST`, `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`,
+`Cors__OrigenesPermitidos__0` y `ForwardedHeaders__RedesConocidas__0` (la subred de `dokploy-network`:
+`docker network inspect dokploy-network --format '{{(index .IPAM.Config 0).Subnet}}'`).
+
+Fijas en el manifiesto (no se leen de Dokploy): `GChat__VerificarJwt=true`, `ForwardedHeaders__Habilitado=true`,
+`Pdf__StorageModo=volumen`, `Pdf__StorageDir=/data/pdfs`, `Zona__ZonaHoraria=America/Bogota`.
+
+Opcionales con valor vacío = "no configurada" (verificado en el código de cada opción): `ConnectionStrings__Regional`
+(HU-010.1, #45: vacía, la regional sale de `UsuariosWeb.regional`; con valor necesita salida a `DWCubosEBSSAP` y
+`GRANT SELECT` para `cotifly_app`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`, `GChat__ProjectNumber`,
+`GChat__SaJson`, `SapTm__Modo`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl`. En cambio `Regional__Esquema`, `__Tabla`,
+`__ColumnaUsuario` y `__ColumnaRegional` son identificadores obligatorios: el manifiesto trae los valores por defecto de
+`clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `ID`, `REGIONAL`) y no deben cargarse vacías en Dokploy.
+
+**Una variable que no está en el manifiesto no llega al contenedor**, aunque se cargue en Dokploy (Dokploy solo la usa
+para sustituir `${...}`). Para usar, por ejemplo, un proveedor LLM de respaldo (`IA__Fallbacks__0__*`) hay que agregar
+esas líneas al manifiesto (con `${...}`, sin valores) en un commit. No se dejaron con valor vacío porque un elemento de
+lista vacío no pasa la validación de arranque.
+
+### 5.5 Desplegar en Dokploy (pasos; staging pendiente de aprobación)
+
+1. En el manager: `docker secret create cotifly_staging_gchat_sa_v1 <archivo>` (o con `{}` mientras no exista la app
+   de Chat) y `docker login ghcr.io` con el PAT de solo lectura (§4.4).
+2. En Dokploy: proyecto Cotifly → *Compose* de tipo **Stack**, fuente: este repositorio, rama `QA`, archivo
+   `infra/stack.dotnet.staging.yml`.
+3. *Environment*: variables del §2.2 y del §5.4, con `COTIFLY_TAG=sha-<corto>` publicado (§4).
+4. *Deploy*. Verificar: `docker service ps <stack>_cotifly-api --no-trunc` (tarea `Running` en `TBSNODO1-DKP`),
+   `curl http://10.10.40.31:8092/health` → `200` con `"entorno":"Production"` y `/health/ready` → `200`.
+5. Producción: igual con `infra/stack.dotnet.dokploy.yml`, rama `main`, `COTIFLY_TAG=X.Y.Z`, después de HU-006.2 y del
+   checklist de HU-006.8.
+
+Aviso esperado en el log al arrancar: `Storing keys in a directory '/home/app/.aspnet/DataProtection-Keys' that may not
+be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos con esas claves, es inocuo).
+
+### 5.6 Validación hecha (2026-09-28, sin desplegar)
+
+- `docker stack config -c` y `docker compose -f ... config` de ambos manifiestos: válidos; sin las variables
+  obligatorias fallan con el mensaje `falta <VARIABLE>`.
+- Arranque real (2026-09-28): el `environment` que producía cada manifiesto (`docker compose config`, 61 variables en
+  ese momento, defaults incluidos) se pasó tal cual a la imagen contra un SQL Server 2019 local con `0001`–`0003` y el login `cotifly_app` de
+  permisos mínimos: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200. Confirma que los
+  valores por defecto vacíos (IA, Google Chat, SAP, Nexo, correo) no rompen la validación de arranque.
+  - Esa corrida fue con la imagen de `QA` de ese día, que exigía `0001`–`0003`. **Desde el costeo en Nexo (HU-005.8)
+    la precondición es `0001`–`0004`**: una imagen que incluye el costeo contra una base sin `0004` responde `503`
+    `falta 0004` en `/health/ready` (§4.5, paso 0). Las variables `CosteoNexo__*`, `Trm__*` y
+    `Nexo__MinutosCacheMunicipios` se agregaron después con valores por defecto válidos; `docker stack config` y
+    `docker compose config` se repitieron y pasan.
+- Arranque real repetido por el validador (2026-09-29): las **72 variables** que produce hoy
+  `infra/stack.dotnet.staging.yml` (con `Trm__*`, `CosteoNexo__*` y `Nexo__MinutosCacheMunicipios`) se pasaron a la
+  imagen: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200.
+- Después se agregaron `ConnectionStrings__Regional` (vacía) y `Regional__*` (HU-010.1, #45, todavía no en `QA`):
+  `docker compose config` de ambos manifiestos pasa; la imagen actual las ignora (no tiene la sección) y la de #45
+  acepta la cadena vacía (`clsSecreto(Opcional = true)`, el validador de conexiones omite las vacías) y los
+  identificadores por defecto. No se repitió el arranque real.
+- **Pendiente:** el despliegue completo en staging (Dokploy real, pull desde GHCR, secreto de Swarm, conectividad del
+  worker a `tbsdatacenter`, Traefik). Necesita acceso al clúster y aprobación; no se ejecutó.
 
 ## Anexo A. Stack Python (solo rollback)
 
 Runbook del stack Python (Fase 15), sin cambios de contenido. Se conserva para volver atrás si el backend .NET falla
 en producción. **No usarlo para el backend .NET.**
+
+> **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
+> `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con
+> `deploy/rebuild-on-worker.sh`). Es el destino del rollback (§4.5 paso 7). Lo que sigue (A.1 a A.9) describe el
+> diseño con `infra/stack.staging.yml`/`infra/stack.dokploy.yml`, que **no** se llegó a desplegar.
 
 ### A.1 Topología
 
@@ -435,3 +640,5 @@ no sirven para la instancia corporativa (`sa` no está disponible ahí).
 - Redeploy de la imagen anterior (`TAG` previo) desde Dokploy.
 - Las migraciones son aditivas; si una versión introduce una migración incompatible,
   usar `alembic downgrade <rev>` desde un contenedor del orquestador antes de bajar imagen.
+- **Volver del backend .NET al Python** (redesplegar este stack, reapuntar la app de Google Chat, escalar a 0 el
+  servicio .NET, datos de SQL Server no visibles para el Python): ver §4.5, paso 7.

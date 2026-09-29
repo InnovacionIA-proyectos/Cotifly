@@ -175,6 +175,27 @@ public static class clsCodigosError
     public const string PdfYaGenerado = "PDF_YA_GENERADO";
 
     /// <summary>
+    /// Nexo rechazó cambiar el resultado de la cotización (ya estaba ganada o perdida con el otro valor): 409, sin cambio local
+    /// (HU-005.14). Mismo código que usa Nexo.
+    /// </summary>
+    public const string ResultadoYaDefinido = "RESULTADO_YA_DEFINIDO";
+
+    /// <summary>
+    /// Nexo solo marca el resultado de una cotización entregada (su issue #171 quitó la "entrega implícita"): 409, sin cambio local.
+    /// Mismo código que usa Nexo.
+    /// </summary>
+    public const string CotizacionNoEntregada = "COTIZACION_NO_ENTREGADA";
+
+    /// <summary>
+    /// <c>POST /web/cotizaciones/{folio}/seguimiento</c> sobre una cotización del flujo de costeo en Nexo (<c>estadoCosteo</c> con valor, salvo descartada o costeo vencido): el resultado
+    /// se marca con <c>POST .../resultado</c>, que escribe primero en Nexo (409, HU-005.14). Código nuevo del backend .NET.
+    /// </summary>
+    public const string UsarResultadoNexo = "USAR_RESULTADO_NEXO";
+
+    /// <summary>Nexo no puede pasar la solicitud a <c>Entregada</c> (está descartada): 409, sin cambio local. Mismo código que usa Nexo.</summary>
+    public const string SolicitudNoTransicionable = "SOLICITUD_NO_TRANSICIONABLE";
+
+    /// <summary>
     /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
     /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
     /// </summary>
