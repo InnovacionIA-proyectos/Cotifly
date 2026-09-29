@@ -9,7 +9,7 @@
 #   imagen-docker     docker build del Dockerfile + prueba de humo (/health y HEALTHCHECK); en push guarda la imagen probada
 #   contrato-openapi  redocly lint de specs/openapi.yaml (falla con errores; los warnings solo se muestran)
 #   publicar-imagen   (solo push a QA/main o tag vX.Y.Z) sube a GHCR la MISMA imagen que pasó la prueba de humo, después de
-#                     que pasen todos los demás jobs (HU-006.4, #28). Tags: X.Y.Z (tag git vX.Y.Z), sha-<corto>, qa | main.
+#                     que pasen todos los demás jobs (HU-006.4, #28). Tags: sha-<corto> y qa | main (push), X.Y.Z (tag git: reetiqueta el digest de sha-<corto>).
 #                     Nunca "latest". Registry: ghcr.io/innovacionia-proyectos/cotifly-backend, con GITHUB_TOKEN.
 #
 # NOTA (2026-09-28): GitHub Actions está bloqueado en la organización por facturación. Mientras tanto la imagen se
@@ -278,7 +278,7 @@ jobs:
           fetch-depth: 0
 
       # Convención de tags (HU-006.4, #28; la misma de scripts/publicar-imagen.sh):
-      #   tag vX.Y.Z en main -> X.Y.Z y sha-<corto>      push a QA -> qa y sha-<corto>      push a main -> main y sha-<corto>
+      #   push a QA -> sha-<corto> y qa      push a main -> sha-<corto> y main      tag vX.Y.Z -> solo X.Y.Z (mismo digest que sha-<corto>)
       # Nunca "latest": Dokploy despliega un tag inmutable (X.Y.Z o sha-<corto>).
       - name: Metadatos de la imagen
         id: meta
@@ -287,11 +287,19 @@ jobs:
           etiquetas="sha-$corto"
           case "$GITHUB_REF" in
             refs/tags/v*)
-              git fetch --no-tags origin main
-              git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
-                || { echo "::error::El tag $GITHUB_REF_NAME no apunta a un commit de main"; exit 1; }
               version="${GITHUB_REF_NAME#v}"
-              etiquetas="$version $etiquetas" ;;
+              # Release final (X.Y.Z): solo sobre un commit de main. Candidata (X.Y.Z-rc.N): puede salir de QA u otra
+              # rama, para probar en staging la versión exacta antes de cerrar la release.
+              case "$version" in
+                *-*) ;;
+                *)
+                  git fetch --no-tags origin main
+                  git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+                    || { echo "::error::El tag $GITHUB_REF_NAME no apunta a un commit de main"; exit 1; } ;;
+              esac
+              # En un tag solo se publica X.Y.Z: sha-<corto> ya existe (lo publicó el push de la rama) y republicarlo
+              # con otro build cambiaría sus bytes. publicar-imagen reetiqueta ese digest si existe (ver abajo).
+              etiquetas="$version" ;;
             refs/heads/QA)   version="qa-$corto";   etiquetas="$etiquetas qa" ;;
             refs/heads/main) version="main-$corto"; etiquetas="$etiquetas main" ;;
             *)               version="ci-$corto" ;;
@@ -380,15 +388,37 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # Tags inmutables: sha-<corto> y X.Y.Z nunca se sobrescriben con otros bytes.
+      #   - sha-<corto>: se sube una sola vez; si ya existe (otro push del mismo commit, o una re-ejecución) se conserva.
+      #   - Cualquier otro tag (X.Y.Z en un tag git; qa/main en un push) se crea sobre el digest de sha-<corto> con
+      #     "docker buildx imagetools create", sin reconstruir: X.Y.Z es exactamente la imagen que se probó en staging.
+      #     Solo si sha-<corto> no existe (commit que nunca se publicó por rama) se sube la imagen recién construida y
+      #     probada en este workflow.
+      #   - X.Y.Z que ya existe: error (una versión publicada no cambia). qa/main son canales móviles.
       - name: Etiquetar y subir
         env:
           ETIQUETAS: ${{ needs.imagen-docker.outputs.etiquetas }}
         run: |
+          corto="${GITHUB_SHA::7}"
+          existe() { docker buildx imagetools inspect "$IMAGEN_REGISTRY:$1" >/dev/null 2>&1; }
+          subir() { docker tag cotifly-api:ci "$IMAGEN_REGISTRY:$1" && docker push "$IMAGEN_REGISTRY:$1"; }
           for etiqueta in $ETIQUETAS; do
-            docker tag cotifly-api:ci "$IMAGEN_REGISTRY:$etiqueta"
-            docker push "$IMAGEN_REGISTRY:$etiqueta"
+            if [ "$etiqueta" = "sha-$corto" ]; then
+              if existe "$etiqueta"; then echo "sha-$corto ya publicado: se conserva"; else subir "$etiqueta"; fi
+              continue
+            fi
+            case "$etiqueta" in
+              qa|main) ;;
+              *) if existe "$etiqueta"; then echo "::error::$IMAGEN_REGISTRY:$etiqueta ya existe y no se sobrescribe"; exit 1; fi ;;
+            esac
+            if existe "sha-$corto"; then
+              docker buildx imagetools create -t "$IMAGEN_REGISTRY:$etiqueta" "$IMAGEN_REGISTRY:sha-$corto"
+            else
+              subir "$etiqueta"
+            fi
           done
-          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGEN_REGISTRY:sha-${GITHUB_SHA::7}")
+          primera=$(echo "$ETIQUETAS" | cut -d' ' -f1)
+          digest=$(docker buildx imagetools inspect "$IMAGEN_REGISTRY:$primera" | sed -n 's/^Digest: *//p' | head -n 1)
           {
             echo "### Imagen publicada"
             echo

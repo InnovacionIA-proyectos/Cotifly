@@ -7,10 +7,12 @@
 # después un tag concreto (DEPLOY.md §4). Mismo resultado que el job publicar-imagen de
 # .github/workflows/backend-dotnet.yml, que hoy no corre porque GitHub Actions está bloqueado por facturación.
 #
-# Tags (nunca "latest"):
-#   sha-<commit corto>    siempre
-#   X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con --version X.Y.Z, que exige ese tag en HEAD)
-#   qa | main             con --canal qa | --canal main
+# Tags (nunca "latest"; sha-<corto> y X.Y.Z son inmutables: nunca se reemplazan con otros bytes):
+#   sha-<commit corto>    siempre; si ya existe en el registry se conserva
+#   X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con --version X.Y.Z, que exige ese tag en HEAD); se crea
+#                         sobre el digest de sha-<corto> con "docker buildx imagetools create", sin reconstruir.
+#                         Final solo desde un commit de origin/main; X.Y.Z-rc.N puede salir de otra rama (QA).
+#   qa | main             con --canal qa | --canal main, desde esa rama y con HEAD subido a origin
 #
 # Uso (desde cualquier carpeta; Linux, macOS o Git Bash en Windows; en PowerShell usar publicar-imagen.ps1):
 #   sh backend-dotnet/scripts/publicar-imagen.sh --canal qa           build + humo + escaneo + push de sha-xxxxxxx y qa
@@ -61,7 +63,7 @@ while [ "$#" -gt 0 ]; do
     --sin-prueba) prueba=0 ;;
     --sin-escaneo) escaneo=0 ;;
     --permitir-sucio) permitir_sucio=1 ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1 (ver --help)" >&2; exit 2 ;;
   esac
   shift
@@ -95,8 +97,32 @@ elif [ -n "$tag_git" ]; then
   version=${tag_git#v}
 fi
 
+# Trazabilidad antes de publicar (no aplica con --sin-push):
+#   --canal qa|main   se corre desde esa rama (QA o main) y con HEAD ya subido a origin.
+#   X.Y.Z (final)     el commit está en origin/main y el tag vX.Y.Z está subido.
+#   X.Y.Z-rc.N        puede salir de otra rama (p. ej. QA, para probar en staging la candidata exacta), con el tag subido.
+if [ "$push" -eq 1 ]; then
+  if [ -n "$canal" ]; then
+    rama_canal=QA
+    [ "$canal" = main ] && rama_canal=main
+    rama_actual=$(git rev-parse --abbrev-ref HEAD)
+    [ "$rama_actual" = "$rama_canal" ] || fallar "--canal $canal se publica desde la rama $rama_canal (rama actual: $rama_actual)"
+    git fetch -q origin "$rama_canal"
+    git merge-base --is-ancestor HEAD "origin/$rama_canal" || fallar "HEAD no está en origin/$rama_canal: hacer push antes de publicar"
+  fi
+  if [ -n "$version" ]; then
+    git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || fallar "el tag v$version no está en origin (git push origin v$version)"
+    case "$version" in
+      *-*) ;;
+      *) git fetch -q origin main
+         git merge-base --is-ancestor HEAD origin/main || fallar "una versión final (v$version) sale de un commit de origin/main; para probar fuera de main usar vX.Y.Z-rc.N" ;;
+    esac
+  fi
+fi
+
+# sha-<corto> va primero: los demás tags se crean sobre su digest (mismos bytes).
 etiquetas="sha-$commit"
-[ -n "$version" ] && etiquetas="$version $etiquetas"
+[ -n "$version" ] && etiquetas="$etiquetas $version"
 [ -n "$canal" ] && etiquetas="$etiquetas $canal"
 if [ -n "$version" ]; then
   version_build=$version
@@ -168,12 +194,29 @@ else
   echo "Sin GHCR_USUARIO/GHCR_TOKEN: se usa la sesión existente de docker login."
 fi
 
+# Tags inmutables (igual que el job publicar-imagen del CI):
+#   sha-<corto>  se sube solo si no existe; si ya existe se conserva (no se reemplaza con un build nuevo).
+#   X.Y.Z        error si ya existe; si no, se crea sobre el digest de sha-<corto> (docker buildx imagetools create).
+#   qa | main    canal móvil: se mueve al digest de sha-<corto>.
 paso "Etiquetar y subir"
+existe() { docker buildx imagetools inspect "$IMAGEN:$1" >/dev/null 2>&1; }
 for etiqueta in $etiquetas; do
-  docker tag "$IMAGEN_LOCAL" "$IMAGEN:$etiqueta"
-  docker push "$IMAGEN:$etiqueta"
+  if [ "$etiqueta" = "sha-$commit" ]; then
+    if existe "$etiqueta"; then
+      echo "$IMAGEN:$etiqueta ya existe: se conserva (los demás tags apuntan a ese digest, no a este build)"
+    else
+      docker tag "$IMAGEN_LOCAL" "$IMAGEN:$etiqueta"
+      docker push "$IMAGEN:$etiqueta"
+    fi
+    continue
+  fi
+  case "$etiqueta" in
+    qa|main) ;;
+    *) existe "$etiqueta" && fallar "$IMAGEN:$etiqueta ya existe; una versión publicada no se sobrescribe" ;;
+  esac
+  docker buildx imagetools create -t "$IMAGEN:$etiqueta" "$IMAGEN:sha-$commit"
 done
-digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGEN:sha-$commit" 2>/dev/null || echo "?")
+digest=$(docker buildx imagetools inspect "$IMAGEN:sha-$commit" | sed -n 's/^Digest: *//p' | head -n 1)
 
 cat <<EOF
 

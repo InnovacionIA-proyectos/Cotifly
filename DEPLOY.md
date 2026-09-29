@@ -76,7 +76,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 
 | Variable | Secreto | Obligatoria en Production | Por defecto | Dónde se carga | Nota |
 |---|---|---|---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Staging` en staging, `Production` en producción |
+| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Production` en staging **y** en producción, a propósito: así staging aplica las mismas validaciones de arranque (`clsValidadorSecretos`, CORS obligatorio, `GChat:VerificarJwt=false` prohibido) y un error de configuración aparece antes de producción |
 | `ASPNETCORE_HTTP_PORTS` | no | no | `8080` (imagen) | imagen | no se cambia |
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
@@ -188,16 +188,28 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 
   | Evento | Tags | Uso |
   |---|---|---|
-  | Tag git `vX.Y.Z` (o `vX.Y.Z-rc.N`) sobre un commit de `main` | `X.Y.Z`, `sha-<corto>` | producción |
   | Push a `QA` | `sha-<corto>`, `qa` | staging |
   | Push a `main` | `sha-<corto>`, `main` | referencia |
+  | Tag git `vX.Y.Z` sobre un commit de `main` | solo `X.Y.Z` | producción |
+  | Tag git `vX.Y.Z-rc.N` (puede ser de `QA` u otra rama) | solo `X.Y.Z-rc.N` | candidata en staging |
 
-  `qa` y `main` son tags móviles (apuntan al último build del canal). **Dokploy despliega siempre un tag inmutable**:
-  `sha-<corto>` en staging y `X.Y.Z` en producción. Así el rollback es volver al tag anterior y cualquier réplica
-  nueva baja exactamente la misma imagen.
-- La versión (`X.Y.Z`, `qa-<corto>`, `main-<corto>`) va en la etiqueta OCI `org.opencontainers.image.version` y en la
-  `InformationalVersion` del `.dll`; el commit en `org.opencontainers.image.revision`. Para ver qué corre:
-  `docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <imagen>`.
+- **Inmutables:** `sha-<corto>` y `X.Y.Z` nunca se reemplazan con otros bytes.
+  - `sha-<corto>` se sube una sola vez; si ya existe (otro push del mismo commit, una re-ejecución), se conserva.
+  - `X.Y.Z` **no se reconstruye**: se crea sobre el digest que ya tiene `sha-<corto>` con
+    `docker buildx imagetools create -t ...:X.Y.Z ...:sha-<corto>`. Producción corre exactamente los bytes que se
+    probaron en staging. Solo si ese commit nunca se publicó por rama, se sube la imagen construida y probada en esa
+    corrida, únicamente como `X.Y.Z`.
+  - Una `X.Y.Z` que ya existe no se sobrescribe (el job o el script fallan).
+  - `qa` y `main` son canales móviles (apuntan al último `sha-<corto>` del canal).
+- **Dokploy despliega siempre un tag inmutable:** `sha-<corto>` o `X.Y.Z-rc.N` en staging y `X.Y.Z` en producción.
+  Así el rollback es volver al tag anterior y cualquier réplica nueva baja exactamente la misma imagen.
+- **Por qué se permiten candidatas fuera de `main`:** `vX.Y.Z-rc.N` sirve para probar en staging, con número de
+  versión, un commit de `QA` antes de pasarlo a `main`. Las versiones finales exigen un commit de `main`.
+- **Etiquetas OCI:** la versión del build (`qa-<corto>`, `main-<corto>`, `ci-<corto>`, o `X.Y.Z` si el commit nunca se
+  publicó por rama) va en `org.opencontainers.image.version` y en la `InformationalVersion` del `.dll`. Como `X.Y.Z`
+  reutiliza el digest de `sha-<corto>`, esa etiqueta suele decir `main-<corto>`: la versión de release la da el tag,
+  y el commit `org.opencontainers.image.revision`. Para ver qué corre:
+  `docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' <imagen>`.
 
 ### 4.2 Pipeline (GitHub Actions)
 
@@ -207,9 +219,10 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
    `/health` 200, `/health/ready` 503 sin base), la escanea con Trivy 0.74.0 (falla con vulnerabilidades HIGH o
    CRITICAL que tengan parche) y, solo en push, guarda esa misma imagen como artefacto.
 2. `publicar-imagen` corre solo en push a `QA`/`main` o en un tag `v*`, **después de que pasen** unitarias,
-   integración, cobertura, auditoría NuGet, imagen y contrato. Carga la imagen probada (mismos bytes, no la reconstruye),
-   la etiqueta y la sube a GHCR con `GITHUB_TOKEN` (permiso `packages: write` solo en ese job). Un tag que no apunte a
-   un commit de `main` falla.
+   integración, cobertura, auditoría NuGet, imagen y contrato. Carga la imagen probada (mismos bytes, no la reconstruye)
+   y la sube a GHCR con `GITHUB_TOKEN` (permiso `packages: write` solo en ese job), con las reglas de inmutabilidad
+   del §4.1 (en un tag, `imagetools create` sobre el digest de `sha-<corto>`). Un tag final que no apunte a un commit de
+   `main` falla.
 3. Los pull requests nunca publican.
 
 **Bloqueo actual (2026-09-28): GitHub Actions no corre en la organización por un problema de facturación.** Mientras
@@ -220,8 +233,14 @@ nada: el job empieza a publicar solo.
 
 `backend-dotnet/scripts/publicar-imagen.sh` (Git Bash, Linux, macOS) y `publicar-imagen.ps1` (PowerShell) hacen lo
 mismo que el pipeline desde cualquier equipo con Docker, **no desde el worker**: build con versión y commit, prueba de
-humo en un puerto libre de `127.0.0.1`, escaneo con Trivy y push. Se niegan a publicar con cambios sin commit en `backend-dotnet/`, y
-`--version X.Y.Z` exige que HEAD tenga el tag `vX.Y.Z`.
+humo en un puerto libre de `127.0.0.1`, escaneo con Trivy y push con las mismas reglas de inmutabilidad del §4.1.
+Antes de publicar se niegan si:
+
+- hay cambios sin commit en `backend-dotnet/`;
+- `--canal qa|main` no se corre desde la rama `QA`/`main`, o HEAD no está subido a `origin/<rama>`;
+- la versión (`--version` o el tag `vX.Y.Z` de HEAD) no tiene su tag subido a `origin`, o es final (`X.Y.Z`) y el
+  commit no está en `origin/main`;
+- el tag `X.Y.Z` ya existe en el registry.
 
 ```bash
 # Una vez: PAT clásico de GitHub con write:packages (de quien publica), o la sesión de "docker login ghcr.io".
@@ -233,7 +252,11 @@ sh backend-dotnet/scripts/publicar-imagen.sh --canal qa      # publica sha-<cort
 
 # Producción: desde main con el tag de release
 git switch main && git pull && git tag -a v1.0.0 -m "Cotifly 1.0.0" && git push origin v1.0.0
-sh backend-dotnet/scripts/publicar-imagen.sh --canal main    # publica 1.0.0, sha-<corto> y main
+sh backend-dotnet/scripts/publicar-imagen.sh --canal main    # sha-<corto> (si no existía), 1.0.0 y main sobre su digest
+
+# Candidata en staging desde QA (sin pasar por main):
+git switch QA && git pull && git tag -a v1.0.0-rc.1 -m "Cotifly 1.0.0-rc.1" && git push origin v1.0.0-rc.1
+sh backend-dotnet/scripts/publicar-imagen.sh --canal qa      # sha-<corto>, 1.0.0-rc.1 y qa
 
 # Solo validar el Dockerfile y la sonda, sin subir nada:
 sh backend-dotnet/scripts/publicar-imagen.sh --sin-push
@@ -259,9 +282,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).
-2. **Release.** Merge `QA` → `main`; crear y subir el tag `vX.Y.Z` en `main` → se publica `X.Y.Z` (la imagen se
-   construye y se prueba otra vez desde ese commit de `main`; si el merge a `main` trajo algo que no pasó por staging, desplegar
-   antes `sha-<corto>` de ese commit en staging).
+2. **Release.** Merge `QA` → `main` (el push a `main` publica `sha-<corto>` del commit de `main`); desplegar ese
+   `sha-<corto>` en staging si el merge creó un commit nuevo. Luego crear y subir el tag `vX.Y.Z` sobre ese mismo
+   commit → `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging.
 3. **Producción.** En Dokploy, stack de producción: `COTIFLY_TAG=X.Y.Z` → *Deploy*. Swarm actualiza con `start-first`
    y vuelve atrás solo si el healthcheck falla (manifiesto, HU-006.6).
 4. **Verificar** qué imagen corre: `docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
