@@ -1,8 +1,9 @@
 # =============================================================================
 # Stack de STAGING para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
 #
-# Reemplaza, para el backend .NET, a infra/stack.staging.yml y deploy/docker-compose.swarm.yml (Python), que se
-# conservan sin cambios para rollback hasta validar producción (corte único, ADR-001). Decisiones: ADR-013.
+# Equivale, para el backend .NET, a infra/stack.staging.yml (Python, documentado pero nunca desplegado). El stack Python
+# que corre hoy es deploy/docker-compose.swarm.yml (destino del rollback, DEPLOY.md §4.5 paso 7); ambos se conservan
+# sin cambios hasta validar producción (corte único, ADR-001). Decisiones: ADR-013.
 # Runbook: DEPLOY.md §5. NO desplegar sin aprobación: la prueba en staging está pendiente (HU-006.6).
 #
 # Topología:
@@ -74,8 +75,9 @@ services:
         protocol: tcp
         mode: host
     environment:
-      # Staging corre como Production a propósito: mismas validaciones de arranque (secretos, CORS, JWT de Chat).
-      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      # Staging corre como Production a propósito y fijo (no se lee del entorno): mismas validaciones de arranque
+      # que producción (secretos, CORS, JWT de Chat).
+      ASPNETCORE_ENVIRONMENT: Production
       Zona__ZonaHoraria: America/Bogota
 
       # Persistencia (ADR-008): SQL login cotifly_app contra tbsdatacenter. Secretos.
@@ -215,6 +217,8 @@ services:
           memory: 384M
       labels:
         # Traefik (Dokploy). Escritas para cuando la overlay funcione; TLS real depende de HU-006.2.
+        # traefik.docker.network es la etiqueta de Traefik v2. En Traefik v3 el proveedor Swarm usa traefik.swarm.network:
+        # confirmar la versión de Traefik de Dokploy (docker service inspect dokploy-traefik) y ajustar si es v3.
         - traefik.enable=true
         - traefik.docker.network=dokploy-network
         - traefik.http.routers.cotifly-api-staging.rule=Host(`${PUBLIC_HOST:?falta PUBLIC_HOST}`)

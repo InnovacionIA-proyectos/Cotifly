@@ -1,8 +1,11 @@
 # =============================================================================
 # Stack de PRODUCCIÓN para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
 #
-# Reemplaza, para el backend .NET, a infra/stack.dokploy.yml (Python), que se conserva sin cambios para rollback
-# hasta validar producción (corte único, ADR-001). Decisiones: ADR-013. Runbook: DEPLOY.md §5.
+# Reemplaza, para el backend .NET, al stack Python que CORRE HOY en Dokploy: deploy/docker-compose.swarm.yml (proyecto
+# bot-cotizador, anclado al worker, puerto 8091 en modo host). Ese archivo se conserva sin cambios para el rollback
+# hasta validar producción (corte único, ADR-001; DEPLOY.md §4.5 paso 7). infra/stack.dokploy.yml es el manifiesto
+# "ideal" del Python que nunca se desplegó (backlog HU-006): no es destino de rollback.
+# Decisiones: ADR-013. Runbook: DEPLOY.md §5.
 # Mismo contenido que infra/stack.dotnet.staging.yml salvo: sin puerto en modo host (solo Traefik con TLS),
 # start-first, nombres propios (volumen, secreto, router) y ASPNETCORE_ENVIRONMENT fijo en Production.
 # NO desplegar antes de: staging probado (HU-006.6), TLS resuelto (HU-006.2) y checklist de salida (HU-006.8).
@@ -211,6 +214,8 @@ services:
           memory: 384M
       labels:
         # Traefik (Dokploy). Escritas para cuando la overlay funcione; TLS real depende de HU-006.2.
+        # traefik.docker.network es la etiqueta de Traefik v2. En Traefik v3 el proveedor Swarm usa traefik.swarm.network:
+        # confirmar la versión de Traefik de Dokploy (docker service inspect dokploy-traefik) y ajustar si es v3.
         - traefik.enable=true
         - traefik.docker.network=dokploy-network
         - traefik.http.routers.cotifly-api.rule=Host(`${PUBLIC_HOST:?falta PUBLIC_HOST}`)
