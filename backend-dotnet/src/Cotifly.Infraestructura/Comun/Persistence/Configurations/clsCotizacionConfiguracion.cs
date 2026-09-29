@@ -18,6 +18,8 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
             t.HasCheckConstraint("ck_cotizaciones_origenCliente", "origenCliente IS NULL OR origenCliente IN ('cliente', 'prospecto')");
             t.HasCheckConstraint("ck_cotizaciones_tipoSolicitud", "tipoSolicitud IS NULL OR tipoSolicitud IN ('spot', 'licitacion')");
             t.HasCheckConstraint("ck_cotizaciones_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
+            t.HasCheckConstraint("ck_cotizaciones_estadoCosteo",
+                "estadoCosteo IS NULL OR estadoCosteo IN ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido')");
         });
 
         builder.HasKey(c => c.Id).HasName("pk_cotizaciones");

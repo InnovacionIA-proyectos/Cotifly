@@ -47,6 +47,15 @@
         mismas unidades que Nexo (centímetros y kilogramos).
      4. Índice filtrado para la agenda del polling.
 
+   Nota para el DBA (deuda consciente, ADR-015): los campos de LÍNEA van en
+   Cotizaciones porque hoy una cotización = una solicitud de Nexo con una línea.
+   HU-011 (multi-línea / licitaciones) requiere un 0005 que mueva los campos de
+   línea (origen ... valorMercancia) a `CotizacionLineasSolicitud`.
+
+   Además: CHECK ck_cotizaciones_estadoCosteo con los 7 códigos de estado del
+   costeo (la columna del 0001 es NVARCHAR(MAX), vacía hasta este frente; el
+   CHECK se agrega WITH CHECK solo si ninguna fila tiene otro valor).
+
    Idempotente y NO destructivo: cada ADD/CREATE va guardado con comprobaciones de
    existencia; se puede correr varias veces. Todas las columnas nuevas son
    nullable (salvo costeoConsultasFallidas, con DEFAULT 0): las cotizaciones
@@ -185,6 +194,20 @@ IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_cotizacione
                AND parent_object_id = OBJECT_ID(N'dbo_cotifly.Cotizaciones'))
     ALTER TABLE dbo_cotifly.Cotizaciones
         ADD CONSTRAINT ck_cotizaciones_serviciosConexos_json CHECK (serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1);
+GO
+
+-- Estados del costeo (ADR-015 §2). Si alguna fila trae un valor fuera de la lista, el
+-- script se detiene con un error explícito en vez de crear el CHECK sin validar.
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_cotizaciones_estadoCosteo'
+               AND parent_object_id = OBJECT_ID(N'dbo_cotifly.Cotizaciones'))
+BEGIN
+    IF EXISTS (SELECT 1 FROM dbo_cotifly.Cotizaciones WHERE estadoCosteo IS NOT NULL AND estadoCosteo NOT IN
+               ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido'))
+        THROW 50002, 'Cotizaciones.estadoCosteo tiene valores fuera de los 7 códigos del costeo: revíselos antes de aplicar el 0004.', 1;
+    ALTER TABLE dbo_cotifly.Cotizaciones
+        ADD CONSTRAINT ck_cotizaciones_estadoCosteo CHECK (estadoCosteo IS NULL OR estadoCosteo IN
+            ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido'));
+END
 GO
 
 -- Agenda del polling (HU-005.6): solo las cotizaciones que todavía se consultan.
