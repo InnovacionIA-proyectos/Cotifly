@@ -8,6 +8,7 @@ using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -162,6 +163,49 @@ public sealed class clsDirectorioEjecutivosIntegracionTests(clsBaseDatosPruebas 
         nombres.Select(n => n.ToUpperInvariant()).Distinct().Should().BeEquivalentTo(
             new[] { perez, gomez, doble, sinDominio }.Select(n => n.ToUpperInvariant()), "los nombres salen sin dominio y sin vacíos");
         nombres.Should().NotContain(n => n.Contains('\\', StringComparison.Ordinal) || n.Length == 0);
+    }
+
+    [Fact]
+    public async Task ParteEnLaUltimaBarraValidaElDominioYLimpiaTabuladoresYSaltosDeLinea()
+    {
+        var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
+        var sufijo = Guid.NewGuid().ToString("N")[..8];
+        var (doble, ajeno, otro, tab, salto, regional) =
+            ($"dob{sufijo}", $"b{sufijo}", $"x{sufijo}", $"tab{sufijo}", $"cr{sufijo}", Unico("OTR"));
+        await clsBaseDatosPruebas.EjecutarAsync(cadena, $"""
+            INSERT INTO dbo.DimEjecutivo (NOMBRE, REGIONAL, USUARIO) VALUES
+                ('Dos barras',   '{regional}', 'boterosoto\\{doble}'),
+                ('Otro prefijo', '{regional}', 'a\\{ajeno}'),
+                ('Otro dominio', '{regional}', 'otrodominio\{otro}'),
+                ('Tabulador',    '{regional}', 'boterosoto\{tab}' + CHAR(9)),
+                ('Salto',        '{regional}', CHAR(13) + CHAR(10) + 'BoteroSoto\{salto}' + CHAR(13) + CHAR(10));
+            """);
+        var logger = new clsLoggerFalso<clsDirectorioEjecutivosDimEjecutivo>();
+        var directorio = new clsDirectorioEjecutivosDimEjecutivo(
+            Options.Create(new clsOpcionesConexiones { Regional = cadena }), Options.Create(new clsOpcionesRegional()),
+            new clsCacheDirectorioEjecutivos(new clsRelojFalso()), logger);
+
+        var mapa = await directorio.ObtenerRegionalesAsync([doble, ajeno, otro, tab, salto], Ct);
+        var nombres = await directorio.ListarNombresUsuarioAsync(regional, Ct);
+
+        mapa.Keys.Should().BeEquivalentTo([doble, tab, salto], "'a\\\\b' tiene dominio 'a' y 'otrodominio\\x' no es el configurado");
+        nombres.Select(n => n.ToUpperInvariant()).Should().BeEquivalentTo(new[] { doble, tab, salto }.Select(n => n.ToUpperInvariant()));
+        logger.Registros.Where(r => r.Nivel == LogLevel.Warning && r.Mensaje.Contains("dominio distinto", StringComparison.Ordinal))
+            .Select(r => r.Mensaje).Should().Contain(m => m.Contains(otro)).And.Contain(m => m.Contains(ajeno))
+            .And.NotContain(m => m.Contains("otrodominio"), "el warning solo lleva el nombre de usuario");
+    }
+
+    [Fact]
+    public async Task ConDominioVacioSeAceptaCualquierDominio()
+    {
+        var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
+        var (otro, regional) = ($"o{Guid.NewGuid():N}"[..12], Unico("CUA"));
+        await clsBaseDatosPruebas.EjecutarAsync(cadena, $"INSERT INTO dbo.DimEjecutivo (NOMBRE, REGIONAL, USUARIO) VALUES ('X', '{regional}', 'otrodominio\\{otro}');");
+        var directorio = new clsDirectorioEjecutivosDimEjecutivo(
+            Options.Create(new clsOpcionesConexiones { Regional = cadena }), Options.Create(new clsOpcionesRegional { Dominio = "" }),
+            new clsCacheDirectorioEjecutivos(new clsRelojFalso()), NullLogger<clsDirectorioEjecutivosDimEjecutivo>.Instance);
+
+        (await directorio.ObtenerRegionalesAsync([otro], Ct))[otro].Should().Be(regional);
     }
 
     [Fact]

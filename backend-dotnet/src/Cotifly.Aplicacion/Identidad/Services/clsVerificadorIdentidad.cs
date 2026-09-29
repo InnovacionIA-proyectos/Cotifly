@@ -140,7 +140,15 @@ public sealed class clsVerificadorIdentidad(
         {
             // Login ya verificado (rol y NOMBREUSUARIO coinciden): solo se refrescan datos que no deciden el acceso.
             var regional = await BuscarRegionalAsync(externo.NombreUsuario, cancellationToken);
+            var correoAnterior = porNombre.Email;
             porNombre.ActualizarDatos(externo.NombreCompleto, externo.Email, regional);
+            if (!string.Equals(correoAnterior, porNombre.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                // El correo es la identidad en Google Chat (ADR-011): se deja rastro del cambio, sin los valores.
+                logger.LogWarning(
+                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: su identidad en Google Chat pasa a ser el correo nuevo.",
+                    externo.NombreUsuario);
+            }
         }
 
         return new clsVerificacionIdentidad(new clsIdentidadVerificada(porNombre, rol, EsNuevo: false), clsMotivosAcceso.UsuarioExistente, regla);
@@ -187,11 +195,13 @@ public sealed class clsVerificadorIdentidad(
         using var tiempo = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         tiempo.CancelAfter(limite);
         Task<IReadOnlyDictionary<string, string>>? consulta = null;
+        var esperada = false;
         try
         {
             // WaitAsync corta la espera aunque el cliente SQL tarde en atender la cancelación (p. ej. al abrir la conexión).
             consulta = directorio.ObtenerRegionalesAsync([nombreUsuario], tiempo.Token);
             var mapa = await consulta.WaitAsync(limite, cancellationToken);
+            esperada = true;
             var clave = nombreUsuario.Trim();
             var regional = mapa.TryGetValue(clave, out var exacta)
                 ? exacta
@@ -208,10 +218,11 @@ public sealed class clsVerificadorIdentidad(
         }
         finally
         {
-            if (consulta is { IsCompleted: false })
+            if (!esperada && consulta is not null)
             {
-                // La consulta abandonada se cancela y su error, si llega, se observa aquí (no queda como excepción sin observar).
-                await tiempo.CancelAsync();
+                // No se esperó con éxito (límite vencido, cancelación del llamador o fallo): se cancela y su error, llegue antes o
+                // después, se observa aquí para que no quede como excepción sin observar.
+                tiempo.Cancel();
                 _ = consulta.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             }
         }

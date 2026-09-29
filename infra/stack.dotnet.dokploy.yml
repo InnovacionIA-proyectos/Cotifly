@@ -84,16 +84,20 @@ services:
       Identidad__TablaUsuarioRoles: ${Identidad__TablaUsuarioRoles:-tblSAPUsuarioRoles}
       Identidad__TablaRoles: ${Identidad__TablaRoles:-tblSAPRoles}
 
-      # Regional del comercial (HU-010.1, #45, ADR-016): OPCIONAL, solo lectura de DWCubosEBSSAP (DimEjecutivo).
+      # Regional del comercial (HU-010.1 #45, HU-003.6 #81, ADR-016): OPCIONAL, solo lectura de DWCubosEBSSAP (DimEjecutivo).
+      # La usan el tablero del gerente y el login (llena y refresca UsuariosWeb.regional sin bloquear el login).
       # Vacía = no configurada: la regional sale de UsuariosWeb.regional. Con valor es SECRETO (se valida en Production)
-      # y exige salida a la instancia de DWCubosEBSSAP y GRANT SELECT para cotifly_app (pendiente con el DBA).
+      # y exige salida del cluster al servidor del cubo (puerto 1433) y un usuario SQL de solo lectura sobre DimEjecutivo.
       ConnectionStrings__Regional: ${ConnectionStrings__Regional:-}
       # Obligatorias con valor (identificadores SQL): los defaults son los de clsOpcionesRegional; no dejarlas vacías.
       Regional__Esquema: ${Regional__Esquema:-dbo}
       Regional__Tabla: ${Regional__Tabla:-DimEjecutivo}
-      Regional__ColumnaUsuario: ${Regional__ColumnaUsuario:-ID}
+      Regional__ColumnaUsuario: ${Regional__ColumnaUsuario:-USUARIO}
       Regional__ColumnaRegional: ${Regional__ColumnaRegional:-REGIONAL}
       Regional__TiempoEsperaSegundos: ${Regional__TiempoEsperaSegundos:-10}
+      # Límite de la consulta durante el login (1 a 10 s) y dominio aceptado en USUARIO (vacío = cualquiera; #81).
+      Regional__TiempoEsperaLoginSegundos: ${Regional__TiempoEsperaLoginSegundos:-3}
+      Regional__Dominio: ${Regional__Dominio:-boterosoto}
 
       # Autenticación (ADR-009). Jwt__SigningKey: secreto, >= 32 bytes, propio de producción (distinto al de staging).
       Jwt__Issuer: ${Jwt__Issuer:-cotifly-api}

@@ -24,12 +24,20 @@ public sealed class clsOpcionesRegional
 
     /// <summary>
     /// Columna que coincide con <c>UsuariosWeb.nombreUsuario</c> (el <c>NOMBREUSUARIO</c> de ClientePro). Por defecto <c>USUARIO</c>,
-    /// que viene con el dominio pegado (<c>boterosoto\usuario</c>): el adaptador quita todo hasta la primera <c>\</c> antes de
-    /// comparar (#81). Un valor sin <c>\</c> se compara tal cual.
+    /// que viene con el dominio pegado (<c>boterosoto\usuario</c>): el adaptador parte el valor en la última <c>\</c>, compara el
+    /// nombre y valida el dominio contra <see cref="Dominio"/> (#81). Un valor sin <c>\</c> se compara tal cual.
     /// </summary>
     [Required(AllowEmptyStrings = false)]
     [RegularExpression(PatronIdentificador)]
     public string ColumnaUsuario { get; set; } = "USUARIO";
+
+    /// <summary>
+    /// Dominio que se acepta en la columna de usuario (<c>boterosoto\usuario</c>, sin distinguir mayúsculas). Por defecto
+    /// <c>boterosoto</c>. Una fila de otro dominio (<c>otrodominio\jperez</c>) no cuenta; una sin dominio (sin <c>\</c>) sí.
+    /// Vacío: se acepta cualquier dominio (#81).
+    /// </summary>
+    [RegularExpression("^[A-Za-z0-9_.-]*$")]
+    public string Dominio { get; set; } = "boterosoto";
 
     /// <summary>Columna con la regional. Por defecto <c>REGIONAL</c>.</summary>
     [Required(AllowEmptyStrings = false)]

@@ -10,10 +10,11 @@ namespace Cotifly.Infraestructura.Identidad.Services;
 /// Adaptador de <see cref="IClsDirectorioEjecutivos"/> sobre la tabla de ejecutivos de <c>DWCubosEBSSAP</c>
 /// (<c>ConnectionStrings:Regional</c>, sección <see cref="clsOpcionesRegional"/>; ADR-016 §6). Solo <c>SELECT</c> parametrizado;
 /// esquema, tabla y columnas vienen de la configuración, validados como identificadores y citados con corchetes. Las columnas
-/// se leen como texto (<c>CAST ... AS nvarchar</c>), recortadas y en mayúsculas para comparar; a la de usuario (<c>USUARIO</c>,
-/// <c>boterosoto\usuario</c>) se le quita el prefijo de dominio (#81). Los fallos de la base se propagan (el tablero responde
-/// 503; el login sigue sin refrescar) y no se guardan; las respuestas exitosas se reutilizan 60 s
-/// (<see cref="clsCacheDirectorioEjecutivos"/>).
+/// se leen como texto (<c>CAST ... AS nvarchar</c>), sin espacios, tabuladores ni saltos de línea a los lados y en mayúsculas para
+/// comparar. La columna de usuario (<c>USUARIO</c>, <c>boterosoto\usuario</c>) se parte en la ÚLTIMA <c>\</c>: el nombre se
+/// compara en SQL y el dominio se valida aquí contra <see cref="clsOpcionesRegional.Dominio"/> (#81); una fila de otro dominio no
+/// cuenta. Los fallos de la base se propagan (el tablero responde 503; el login sigue sin refrescar) y no se guardan; las
+/// respuestas exitosas se reutilizan 60 s (<see cref="clsCacheDirectorioEjecutivos"/>).
 /// </summary>
 public sealed class clsDirectorioEjecutivosDimEjecutivo(
     IOptions<clsOpcionesConexiones> conexiones,
@@ -54,7 +55,7 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
             return resultado;
         }
 
-        var filas = new List<(string Usuario, string? Regional)>();
+        var filas = new List<(string Usuario, string Dominio, string? Regional)>();
         await using (var conexion = await AbrirAsync(cancellationToken))
         {
             foreach (var lote in pendientes.Chunk(TamanoLote))
@@ -68,22 +69,23 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
                     comando.Parameters.Add(new SqlParameter(nombre, System.Data.SqlDbType.NVarChar, 255) { Value = lote[i].ToUpperInvariant() });
                 }
 
+                var columna = opciones.Value.ColumnaUsuario;
                 comando.CommandText = $"""
-                    SELECT {SinDominio(opciones.Value.ColumnaUsuario)} AS usuario, {Texto(opciones.Value.ColumnaRegional)} AS regional
+                    SELECT {SinDominio(columna)} AS usuario, {SoloDominio(columna)} AS dominio, {Texto(opciones.Value.ColumnaRegional)} AS regional
                     FROM {Tabla()}
-                    WHERE UPPER({SinDominio(opciones.Value.ColumnaUsuario)}) IN ({string.Join(", ", parametros)});
+                    WHERE UPPER({SinDominio(columna)}) IN ({string.Join(", ", parametros)});
                     """;
                 comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
                 await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
                 while (await lector.ReadAsync(cancellationToken))
                 {
-                    filas.Add((lector.GetString(0), lector.IsDBNull(1) ? null : lector.GetString(1)));
+                    filas.Add((lector.GetString(0), lector.IsDBNull(1) ? string.Empty : lector.GetString(1), lector.IsDBNull(2) ? null : lector.GetString(2)));
                 }
             }
         }
 
         var encontrados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var grupo in filas.GroupBy(f => f.Usuario, StringComparer.OrdinalIgnoreCase))
+        foreach (var grupo in DelDominio(filas).GroupBy(f => f.Usuario, StringComparer.OrdinalIgnoreCase))
         {
             var regionales = grupo.Select(f => f.Regional).Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r!)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -122,27 +124,52 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
 
         await using var conexion = await AbrirAsync(cancellationToken);
         await using var comando = conexion.CreateCommand();
+        var columna = opciones.Value.ColumnaUsuario;
         comando.CommandText = $"""
-            SELECT DISTINCT {SinDominio(opciones.Value.ColumnaUsuario)} AS usuario
+            SELECT DISTINCT {SinDominio(columna)} AS usuario, {SoloDominio(columna)} AS dominio
             FROM {Tabla()}
             WHERE UPPER({Texto(opciones.Value.ColumnaRegional)}) = @regional
-              AND {SinDominio(opciones.Value.ColumnaUsuario)} <> N'';
+              AND {SinDominio(columna)} <> N'';
             """;
         comando.Parameters.Add(new SqlParameter("@regional", System.Data.SqlDbType.NVarChar, 255) { Value = buscada.ToUpperInvariant() });
         comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
 
-        var nombres = new List<string>();
-        await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
-        while (await lector.ReadAsync(cancellationToken))
+        var filas = new List<(string Usuario, string Dominio, string? Regional)>();
+        await using (var lector = await comando.ExecuteReaderAsync(cancellationToken))
         {
-            if (!lector.IsDBNull(0) && lector.GetString(0) is { Length: > 0 } nombre)
+            while (await lector.ReadAsync(cancellationToken))
             {
-                nombres.Add(nombre);
+                if (!lector.IsDBNull(0) && lector.GetString(0) is { Length: > 0 } nombre)
+                {
+                    filas.Add((nombre, lector.IsDBNull(1) ? string.Empty : lector.GetString(1), buscada));
+                }
             }
         }
 
+        IReadOnlyList<string> nombres = [.. DelDominio(filas).Select(f => f.Usuario).Distinct(StringComparer.OrdinalIgnoreCase)];
         cache.GuardarRegional(buscada, nombres);
         return nombres;
+    }
+
+    /// <summary>
+    /// Filas cuyo dominio es el configurado (<see cref="clsOpcionesRegional.Dominio"/>, sin distinguir mayúsculas) o no tienen
+    /// dominio (valor sin <c>\</c>). Con <c>Regional:Dominio</c> vacío se acepta cualquiera. Una fila de otro dominio
+    /// (<c>otrodominio\jperez</c>) no cuenta y deja un warning solo con el nombre de usuario.
+    /// </summary>
+    private IEnumerable<(string Usuario, string Dominio, string? Regional)> DelDominio(IEnumerable<(string Usuario, string Dominio, string? Regional)> filas)
+    {
+        var esperado = opciones.Value.Dominio?.Trim() ?? string.Empty;
+        foreach (var fila in filas)
+        {
+            if (esperado.Length == 0 || fila.Dominio.Length == 0 || string.Equals(fila.Dominio, esperado, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return fila;
+            }
+            else
+            {
+                logger.LogWarning("La tabla de ejecutivos tiene al usuario '{Usuario}' con un dominio distinto del configurado: esa fila se ignora.", fila.Usuario);
+            }
+        }
     }
 
     private async Task<SqlConnection> AbrirAsync(CancellationToken cancellationToken)
@@ -169,17 +196,42 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
     /// <summary><c>[esquema].[tabla]</c> (los identificadores ya pasaron la validación de <see cref="clsOpcionesRegional"/>).</summary>
     private string Tabla() => $"[{opciones.Value.Esquema}].[{opciones.Value.Tabla}]";
 
-    /// <summary>Columna leída como texto recortado.</summary>
-    private static string Texto(string columna) => $"LTRIM(RTRIM(CAST([{columna}] AS nvarchar(255))))";
+    /// <summary>
+    /// Texto sin espacios, tabuladores ni saltos de línea (<c>CHAR(9)</c>, <c>CHAR(10)</c>, <c>CHAR(13)</c>) a los lados. Se usa
+    /// <c>REPLACE</c> + <c>LTRIM</c>/<c>RTRIM</c> en vez de <c>TRIM(... FROM ...)</c> porque no se conoce la versión ni el nivel de
+    /// compatibilidad de <c>DWCubosEBSSAP</c> (<c>TRIM</c> exige SQL Server 2017). Un nombre de usuario no lleva esos caracteres dentro.
+    /// </summary>
+    private static string Limpio(string expresion) =>
+        $"LTRIM(RTRIM(REPLACE(REPLACE(REPLACE({expresion}, CHAR(9), N' '), CHAR(10), N' '), CHAR(13), N' ')))";
+
+    /// <summary>Columna leída como texto limpio.</summary>
+    private static string Texto(string columna) => Limpio($"CAST([{columna}] AS nvarchar(255))");
+
+    /// <summary>Posición de la ÚLTIMA <c>\</c> contada desde el final (0 si no hay).</summary>
+    private static string PosicionDesdeElFinal(string texto) => $"CHARINDEX(N'\\', REVERSE({texto}))";
 
     /// <summary>
-    /// Columna de usuario como texto recortado y sin el prefijo de dominio: <c>boterosoto\apérez</c> → <c>apérez</c> (#81). Solo se
-    /// quita hasta la primera <c>\</c>; un valor sin <c>\</c> queda igual. Se hace en SQL para que el filtro siga parametrizado y
-    /// la base devuelva solo las filas de los usuarios pedidos (la tabla es pequeña: el índice de la columna no hace falta).
+    /// Nombre de usuario: lo que va después de la ÚLTIMA <c>\</c>, limpio (<c>boterosoto\apérez</c> → <c>apérez</c>,
+    /// <c>a\\b</c> → <c>b</c>); sin <c>\</c>, el valor tal cual. En SQL para que el filtro siga parametrizado (la tabla es pequeña:
+    /// el índice de la columna no hace falta).
     /// </summary>
     private static string SinDominio(string columna)
     {
         var texto = Texto(columna);
-        return $"LTRIM(RTRIM(CASE WHEN CHARINDEX(N'\\', {texto}) > 0 THEN SUBSTRING({texto}, CHARINDEX(N'\\', {texto}) + 1, 255) ELSE {texto} END))";
+        var posicion = PosicionDesdeElFinal(texto);
+        return Limpio($"CASE WHEN {posicion} > 0 THEN RIGHT({texto}, {posicion} - 1) ELSE {texto} END");
+    }
+
+    /// <summary>
+    /// Dominio: lo que va antes de la última <c>\</c>, sin las <c>\</c> sobrantes a la derecha (<c>boterosoto\\x</c> → <c>boterosoto</c>,
+    /// <c>a\\b</c> → <c>a</c>); vacío si no hay <c>\</c>.
+    /// </summary>
+    private static string SoloDominio(string columna)
+    {
+        var texto = Texto(columna);
+        var posicion = PosicionDesdeElFinal(texto);
+        var antes = $"LEFT({texto}, LEN({texto}) - {posicion})";
+        var sinBarras = $"REVERSE(SUBSTRING(REVERSE({antes}), PATINDEX(N'%[^\\]%', REVERSE({antes}) + N'x'), 255))";
+        return $"CASE WHEN {posicion} > 0 THEN {Limpio(sinBarras)} ELSE N'' END";
     }
 }

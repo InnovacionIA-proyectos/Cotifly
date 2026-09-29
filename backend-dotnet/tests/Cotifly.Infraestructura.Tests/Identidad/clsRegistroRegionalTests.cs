@@ -27,6 +27,7 @@ public sealed class clsRegistroRegionalTests
         opciones.Tabla.Should().Be("DimEjecutivo");
         opciones.ColumnaUsuario.Should().Be("USUARIO");
         opciones.ColumnaRegional.Should().Be("REGIONAL");
+        opciones.Dominio.Should().Be("boterosoto");
         opciones.TiempoEsperaSegundos.Should().Be(10);
         opciones.TiempoEsperaLoginSegundos.Should().Be(3);
         opciones.LimiteLogin.Should().Be(TimeSpan.FromSeconds(3));
@@ -68,6 +69,8 @@ public sealed class clsRegistroRegionalTests
     [InlineData("Regional:ColumnaUsuario", "USUARIO; DROP TABLE x", "ColumnaUsuario")]
     [InlineData("Regional:ColumnaUsuario", "boterosoto\\USUARIO", "ColumnaUsuario")]
     [InlineData("Regional:Tabla", "", "Tabla")]
+    [InlineData("Regional:Dominio", "boterosoto\\", "Dominio")]
+    [InlineData("Regional:Dominio", "otro dominio", "Dominio")]
     [InlineData("Regional:TiempoEsperaSegundos", "1", "TiempoEsperaSegundos")]
     [InlineData("Regional:TiempoEsperaLoginSegundos", "0", "TiempoEsperaLoginSegundos")]
     [InlineData("Regional:TiempoEsperaLoginSegundos", "30", "TiempoEsperaLoginSegundos")]
