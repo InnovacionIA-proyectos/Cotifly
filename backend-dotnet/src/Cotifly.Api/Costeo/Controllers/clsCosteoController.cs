@@ -16,8 +16,38 @@ namespace Cotifly.Api.Costeo.Controllers;
 public sealed class clsCosteoController(
     IClsContextoUsuario usuario,
     IClsEnvioCosteoService envio,
-    IClsMisCotizacionesService misCotizaciones) : clsControladorWebBase(usuario)
+    IClsMisCotizacionesService misCotizaciones,
+    IClsCosteoCotizacionService costeo) : clsControladorWebBase(usuario)
 {
+    /// <summary>200 <c>CosteoCotizacion</c> (estado, precio final y servicios conexos con su precio; nunca el costo de Nexo); 404 si no es suya.</summary>
+    [HttpGet("cotizaciones/{folio}/costeo")]
+    [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Obtener(string folio, CancellationToken cancellationToken) =>
+        (await costeo.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(c => Ok(c), Error);
+
+    /// <summary>200 <c>CosteoCotizacion</c> con la selección; 400 id desconocido; 404; 409 <c>COSTEO_NO_LISTO</c> o <c>PDF_YA_GENERADO</c>.</summary>
+    [HttpPut("cotizaciones/{folio}/costeo/servicios-conexos")]
+    [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SeleccionarServiciosConexos(
+        string folio, [FromBody] clsSeleccionServiciosConexosWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        var resultado = await costeo.SeleccionarServiciosConexosAsync(UsuarioId, folio, cuerpo.Incluidos ?? [], cancellationToken);
+        return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
+    }
+
+    /// <summary>201 <c>SalidaPdf</c>; 404; 409 <c>COSTEO_NO_LISTO</c> o <c>PDF_YA_GENERADO</c>; 400 errores del PDF.</summary>
+    [HttpPost("cotizaciones/{folio}/costeo/pdf")]
+    [ProducesResponseType<Aplicacion.Pdf.DTOs.clsSalidaPdf>(StatusCodes.Status201Created)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> GenerarPdf(string folio, CancellationToken cancellationToken)
+    {
+        var resultado = await costeo.GenerarPdfAsync(UsuarioId, folio, cancellationToken);
+        return resultado.Coincidir<IActionResult>(p => StatusCode(StatusCodes.Status201Created, p), Error);
+    }
+
     /// <summary>
     /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>,
     /// <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c> (nada queda guardado).

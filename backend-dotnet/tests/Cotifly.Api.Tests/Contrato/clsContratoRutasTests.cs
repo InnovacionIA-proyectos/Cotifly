@@ -138,6 +138,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(clsMensajeWebRequest), "MensajeWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsSolicitudCosteoWebRequest), "SolicitudCosteoWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsPosicionCargaWebRequest), "PosicionCargaWeb" },
+        { typeof(Cotifly.Aplicacion.Costeo.Services.clsCosteoCotizacion), "CosteoCotizacion" },
+        { typeof(Cotifly.Aplicacion.Costeo.Services.clsServicioConexoPrecio), "ServicioConexoCosteo" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
     };
 
     /// <summary>

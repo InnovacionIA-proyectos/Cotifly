@@ -166,6 +166,15 @@ public static class clsCodigosError
     public const string CosteoNoReintentable = "COSTEO_NO_REINTENTABLE";
 
     /// <summary>
+    /// La cotización todavía no tiene el costeo de Nexo con margen aplicado (precio): no se pueden elegir servicios conexos ni
+    /// generar el PDF del costeo (409, ADR-015 §5). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNoListo = "COSTEO_NO_LISTO";
+
+    /// <summary>La cotización ya tiene PDF: para cambiar precios o servicios se genera una versión nueva (409). Código nuevo del backend .NET.</summary>
+    public const string PdfYaGenerado = "PDF_YA_GENERADO";
+
+    /// <summary>
     /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
     /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
     /// </summary>

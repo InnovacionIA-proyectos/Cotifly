@@ -76,6 +76,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - Cuando el polling ve el costeo completo (`autocosteo` o `entregada`): `costo` = flete + aprovisionamiento + retorno del contenedor de la línea; `precioFinal` = `IClsPrecioService.Calcular(costo, margenAplicado, metodo)` (HU-003.4); `costeoListoAt`. Cada servicio conexo guarda su precio con el mismo margen y método, e `incluido = true` por defecto.
 - Si el costeo cambia después, el precio se recalcula mientras no haya PDF; con PDF ya generado se conserva, se audita y `motivoEstadoCosteo` lo advierte (el comercial genera una versión nueva).
 - **El costo bruto de Nexo nunca llega al comercial como precio:** `CotizacionResumen` no tiene costo y `precio_final` sigue `null` hasta que pasa por Margen/Precio; `GET /web/cotizaciones/{folio}/costeo` solo devuelve precios.
+- **Solo COP en esta iteración.** Esta rama sale de `QA`, que todavía no tiene la TRM (frente de HU-012, #50 a #52, ADR-014). Cuando se integre, una cotización en USD debe pasar por `IClsPrecioService.CalcularAsync` con la moneda, fijar la TRM en el momento en que llega el costeo y pasar `trmAplicada` al PDF. **Pendiente de integración con HU-012.**
 - Selección de servicios conexos: `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`. PDF: `POST /web/cotizaciones/{folio}/costeo/pdf` arma el payload desde la cotización (flete con `precioFinal` y los conexos incluidos con su precio) y reutiliza el módulo PDF (HU-003.5); si ya tiene PDF responde `PDF_YA_GENERADO`.
 
 ### 6. Resultado ganada/perdida (#42)
@@ -130,5 +131,6 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Cómo enviar prospectos (Nexo exige `clienteId` o `clienteBp`; el buscador de Cotifly no expone el `clienteId` de Nexo) | Duban + equipo de Nexo |
 | Identidad y rol con que Cotifly marca el resultado (hoy el comercial; Nexo exige `Comercial`, `AdminTarifas`, `CoordinadorFletes` o `Admin`) y confirmar que la entrega implícita no vuelve (issue #171 de Nexo) | Duban + equipo de Nexo |
 | Si los servicios conexos llevan el mismo margen que el flete | Negocio (Gerencia Comercial) |
+| Precio en USD sobre el costeo: `IClsPrecioService.CalcularAsync` con la moneda, TRM fijada al llegar el costeo y `trmAplicada` en el PDF (hoy solo COP) | Duban (integración con HU-012, #50 a #52) |
 | Probar contra Nexo real que marcar "ganada" alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica`) | Duban + equipo de Nexo |
 | Licitaciones de varias líneas (HU-011): un script 000N (el 0005 es de la TRM) que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA |

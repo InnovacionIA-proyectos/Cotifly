@@ -112,6 +112,31 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = '{herramienta}' AND exito = {(exito ? 1 : 0)} AND input LIKE '%{Folio(cotizacion)}%'");
 
+    [Then("\"Mis cotizaciones\" de {string} muestra {string} sin precio final")]
+    public async Task EntoncesSinPrecio(string alias, string cotizacion) =>
+        (await FilaAsync(alias, cotizacion)).GetProperty("precio_final").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+
+    [Then("\"Mis cotizaciones\" de {string} muestra {string} en {string} con el precio final {int}")]
+    public async Task EntoncesConPrecio(string alias, string cotizacion, string estado, int precio)
+    {
+        var fila = await FilaAsync(alias, cotizacion);
+        fila.GetProperty("estado_costeo").GetString().Should().Be(estado);
+        fila.GetProperty("precio_final").GetDecimal().Should().Be(precio);
+    }
+
+    [Then("ninguna respuesta de \"Mis cotizaciones\" de {string} contiene el costo {int}")]
+    public async Task EntoncesSinCosto(string alias, int costo)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", web.Sesion(alias).Access);
+        web.UltimoCuerpo.Should().NotContain(costo.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private async Task<System.Text.Json.JsonElement> FilaAsync(string alias, string cotizacion)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", web.Sesion(alias).Access);
+        return web.UltimoJson().GetProperty("cotizaciones").EnumerateArray().Single(c => c.GetProperty("folio").GetString() == Folio(cotizacion));
+    }
+
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 

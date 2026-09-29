@@ -240,7 +240,30 @@ public sealed class clsEnvioCosteoService(
                 + "Pendiente de confirmar con el equipo de Nexo cómo enviar prospectos.");
         }
 
+        await ResolverMargenAsync(cotizacion, politica, candidato.Bp.Trim(), cancellationToken);
         return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(candidato.Bp.Trim(), solicitud, politica?.MapeoLineasNexo), cancellationToken);
+    }
+
+    /// <summary>
+    /// Margen de la cotización al enviar (HU-005.7, ADR-015 §5): SAP TM con el BP del catálogo o la política de la línea
+    /// (<see cref="IClsMargenResolverService"/>). Se guarda para aplicarlo cuando llegue el costeo; si no se puede resolver, el
+    /// polling lo advierte y nunca muestra el costo sin margen.
+    /// </summary>
+    private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string bp, CancellationToken cancellationToken)
+    {
+        if (politica is null)
+        {
+            return;
+        }
+
+        var resuelto = await margen.ResolverAsync(new Margen.DTOs.clsEntradaMargen(politica.LineaNegocio, bp), cancellationToken);
+        if (resuelto.EsFallo || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Valor.Salida.Origen, out var origen))
+        {
+            logger.LogWarning("No se resolvió el margen de la cotización {Folio} al enviarla a Nexo.", cotizacion.Folio);
+            return;
+        }
+
+        cotizacion.RegistrarMargenCosteo(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen, resuelto.Valor.MetodoCalculo);
     }
 
     /// <summary>Motivo legible para <c>motivoEstadoCosteo</c>: el mensaje y, si hay, el detalle (código y mensaje de Nexo).</summary>
