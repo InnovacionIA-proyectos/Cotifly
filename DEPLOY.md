@@ -341,8 +341,14 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 | Manifiesto | Ambiente | Reemplaza (se conserva para rollback) |
 |---|---|---|
-| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml`, `deploy/docker-compose.swarm.yml` |
-| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | `infra/stack.dokploy.yml` |
+| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (nunca desplegado) |
+| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | **`deploy/docker-compose.swarm.yml`**, el stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091). `infra/stack.dokploy.yml` es su versión "ideal", nunca desplegada |
+
+**Qué Python corre de verdad:** según el backlog de HU-006 (auditoría del despliegue) y la cabecera del propio archivo,
+Dokploy despliega `deploy/docker-compose.swarm.yml` (Postgres, MinIO, MCP y orquestador anclados al worker, orquestador
+en `10.10.40.31:8091` en modo host). `infra/stack.dokploy.yml` e `infra/stack.staging.yml` están documentados en el
+Anexo A pero no se desplegaron (siguen con Postgres y `${REGISTRY}`). **El rollback al Python redespliega
+`deploy/docker-compose.swarm.yml`** (§4.5 paso 7).
 
 Se crearon archivos nuevos en vez de editar los del Python para que el rollback siga siendo "redesplegar el stack
 Python" sin tocar git. Los dos manifiestos .NET son iguales salvo lo que marca la tabla del §5.3.
@@ -403,6 +409,10 @@ Internet / red corporativa
   (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
   `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
+  - **Versión de Traefik (informativo):** los manifiestos usan `traefik.docker.network`, la etiqueta de Traefik v2
+    (la que usa el Python). En Traefik v3 el proveedor de Swarm lee `traefik.swarm.network`. **Pendiente:** confirmar
+    la versión del Traefik de Dokploy (`docker service inspect dokploy-traefik --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`)
+    y, si es v3, cambiar esa etiqueta en los dos manifiestos.
 
 ### 5.3 Anclado al worker mientras el overlay esté caído (HU-006.1)
 
@@ -418,7 +428,7 @@ para los manifiestos, iguales a las que ya asumía el Python:
   | Acceso mientras el overlay esté caído | Puerto en modo host `10.10.40.31:${COTIFLY_PUERTO_HOST:-8092}` → 8080, HTTP **sin TLS**, solo red corporativa (el Python usa 8091) | Ninguno: sin `ports`. **No se despliega hasta HU-006.2** |
   | Orden de actualización | `stop-first` (dos tareas no pueden usar el mismo puerto del nodo); `COTIFLY_ORDEN_UPDATE=start-first` al quitar el puerto | `start-first` |
   | Volumen / secreto / router | `cotifly_staging_pdfs` / `cotifly_staging_gchat_sa_v1` / `cotifly-api-staging` | `cotifly_pdfs` / `cotifly_gchat_sa_v1` / `cotifly-api` |
-  | `ASPNETCORE_ENVIRONMENT` | `Production` por defecto (mismas validaciones de arranque) | `Production` fijo |
+  | `ASPNETCORE_ENVIRONMENT` | `Production` fijo (mismas validaciones de arranque) | `Production` fijo |
 
 - Al resolverse HU-006.2: quitar `ports` de staging, pasar a `start-first` y validar el acceso por Traefik con TLS. La
   restricción de nodo puede quitarse solo con un volumen de PDFs compartido entre nodos.
@@ -468,8 +478,8 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
 
 - `docker stack config -c` y `docker compose -f ... config` de ambos manifiestos: válidos; sin las variables
   obligatorias fallan con el mensaje `falta <VARIABLE>`.
-- Arranque real: el `environment` que produce cada manifiesto (`docker compose config`, 61 variables, defaults
-  incluidos) se pasó tal cual a la imagen contra un SQL Server 2019 local con `0001`–`0003` y el login `cotifly_app` de
+- Arranque real (2026-09-28): el `environment` que producía cada manifiesto (`docker compose config`, 61 variables en
+  ese momento, defaults incluidos) se pasó tal cual a la imagen contra un SQL Server 2019 local con `0001`–`0003` y el login `cotifly_app` de
   permisos mínimos: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200. Confirma que los
   valores por defecto vacíos (IA, Google Chat, SAP, Nexo, correo) no rompen la validación de arranque.
   - Esa corrida fue con la imagen de `QA` de ese día, que exigía `0001`–`0003`. **Desde el costeo en Nexo (HU-005.8)
@@ -477,6 +487,9 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
     `falta 0004` en `/health/ready` (§4.5, paso 0). Las variables `CosteoNexo__*`, `Trm__*` y
     `Nexo__MinutosCacheMunicipios` se agregaron después con valores por defecto válidos; `docker stack config` y
     `docker compose config` se repitieron y pasan.
+- Arranque real repetido por el validador (2026-09-29): las **72 variables** que produce hoy
+  `infra/stack.dotnet.staging.yml` (con `Trm__*`, `CosteoNexo__*` y `Nexo__MinutosCacheMunicipios`) se pasaron a la
+  imagen: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200.
 - **Pendiente:** el despliegue completo en staging (Dokploy real, pull desde GHCR, secreto de Swarm, conectividad del
   worker a `tbsdatacenter`, Traefik). Necesita acceso al clúster y aprobación; no se ejecutó.
 
@@ -638,6 +651,11 @@ manifiestos del §5; en `Production` la API ni siquiera arranca con `false`, `cl
 
 Runbook del stack Python (Fase 15), sin cambios de contenido. Se conserva para volver atrás si el backend .NET falla
 en producción. **No usarlo para el backend .NET.**
+
+> **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
+> `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con
+> `deploy/rebuild-on-worker.sh`). Es el destino del rollback (§4.5 paso 7). Lo que sigue (A.1 a A.9) describe el
+> diseño con `infra/stack.staging.yml`/`infra/stack.dokploy.yml`, que **no** se llegó a desplegar.
 
 ### A.1 Topología
 
