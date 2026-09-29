@@ -77,3 +77,22 @@ Característica: Costeo de la cotización en Nexo
     Y el polling consulta a Nexo
     Entonces "Mis cotizaciones" de "ana" muestra "C1" en "autocosteo" con el precio final 3000000
     Y ninguna respuesta de "Mis cotizaciones" de "ana" contiene el costo 2550000
+
+  # HU-005.14 — Resultado ganada/perdida en Nexo
+  Escenario: Marcar ganada escribe primero en Nexo y luego en Cotifly
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y Nexo entrega la cotización de "C1"
+    Y el polling consulta a Nexo
+    Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "Cliente frecuente"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo registró la cotización de "C1" como "Ganada"
+    Y la cotización "C1" queda ganada "true" con el motivo "Mejor precio"
+
+  Escenario: Si Nexo rechaza el resultado no cambia nada en Cotifly
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y el polling consulta a Nexo
+    Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Precio alto" y el comentario "-"
+    Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
+    Y la cotización "C1" sigue sin resultado

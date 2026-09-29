@@ -17,8 +17,24 @@ public sealed class clsCosteoController(
     IClsContextoUsuario usuario,
     IClsEnvioCosteoService envio,
     IClsMisCotizacionesService misCotizaciones,
-    IClsCosteoCotizacionService costeo) : clsControladorWebBase(usuario)
+    IClsCosteoCotizacionService costeo,
+    IClsResultadoCotizacionService resultadoCotizacion) : clsControladorWebBase(usuario)
 {
+    /// <summary>
+    /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
+    /// 409 <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c> o <c>COSTEO_NO_LISTO</c>; 503 si Nexo no responde.
+    /// </summary>
+    [HttpPost("cotizaciones/{folio}/resultado")]
+    [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> MarcarResultado(string folio, [FromBody] clsResultadoWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        var resultado = await resultadoCotizacion.MarcarAsync(UsuarioId, folio, cuerpo.Resultado, cuerpo.Motivo, cuerpo.Comentario, cancellationToken);
+        return resultado.EsFallo ? Error(resultado.Error) : Ok(await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
+    }
+
     /// <summary>200 <c>CosteoCotizacion</c> (estado, precio final y servicios conexos con su precio; nunca el costo de Nexo); 404 si no es suya.</summary>
     [HttpGet("cotizaciones/{folio}/costeo")]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]

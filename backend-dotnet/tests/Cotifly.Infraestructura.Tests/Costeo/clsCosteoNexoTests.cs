@@ -142,14 +142,24 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "Identidad no válida.")]
     [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", "Sin permiso.")]
-    public async Task Un4xxEsRechazadaConElCodigoYElMensajeDeNexo(HttpStatusCode estado, string codigo, string mensaje)
+    public async Task Un401O403EsConfiguracionNoDisponibleConUnaLineaDeError(HttpStatusCode estado, string codigo, string mensaje)
     {
+        var logger = new clsLoggerFalso<clsCosteoNexo>();
         _nexo.Responder(estado, JsonSerializer.Serialize(new { code = codigo, message = mensaje, timestamp = "2026-09-28T15:00:00Z" }));
 
-        var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+        var resultado = await Adaptador(logger: logger).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
         resultado.Error.Detalle.Should().Be($"HTTP {(int)estado} {codigo}: {mensaje}");
+        logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Error && r.Mensaje.Contains("X-Portal-Usuario-Id"));
+    }
+
+    [Fact]
+    public async Task Otro4xxEsRechazadaConElCodigoDeNexo()
+    {
+        _nexo.Responder(HttpStatusCode.UnprocessableEntity, """{"code":"X","message":"y"}""");
+
+        (await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
     }
 
     [Fact]

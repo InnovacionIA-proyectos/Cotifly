@@ -233,8 +233,22 @@ public sealed class clsCotizacion
     /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias, HU-005.5).
     /// </summary>
     public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
-        (EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
-        || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente);
+        Ganada is null
+        && ((EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
+            || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
+
+    /// <summary>
+    /// ¿La cotización nació del flujo de costeo en Nexo? (formulario ampliado: <see cref="EstadoCosteo"/> con valor). No se usa
+    /// <see cref="CosteoId"/>: también lo llena el chat (referencia de la tarifa) y lo traen filas del Python.
+    /// </summary>
+    public bool EnFlujoCosteo => EstadoCosteo is not null;
+
+    /// <summary>
+    /// ¿El resultado ganada/perdida se marca solo en Cotifly? Sí fuera del flujo de costeo (chat) y en <c>descartada</c> o
+    /// <c>costeo_vencido</c>, donde Nexo no acepta un resultado (HU-005.14).
+    /// </summary>
+    public bool ResultadoSoloLocal =>
+        EstadoCosteo is null or Cotizaciones.EstadoCosteo.Descartada or Cotizaciones.EstadoCosteo.CosteoVencido;
 
     /// <summary>Prefijo del motivo de un <c>error_envio</c> definitivo (Nexo rechazó los datos con 400: reenviarlos igual no sirve).</summary>
     public const string PrefijoRechazoDefinitivo = "Rechazo definitivo de Nexo (corrige el formulario en una versión nueva): ";
@@ -381,6 +395,13 @@ public sealed class clsCotizacion
 
     /// <summary>Guarda la selección de servicios conexos del comercial (JSON de <c>serviciosConexos</c>).</summary>
     public void SeleccionarServiciosConexos(string? serviciosConexos) => ServiciosConexos = serviciosConexos;
+
+    /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado, HU-005.14).</summary>
+    public void RegistrarCotizacionNexo(string cotizacionNexoId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
+        CotizacionNexoId = cotizacionNexoId.Trim();
+    }
 
     /// <summary>
     /// Nexo ya no reconoce la solicitud (404): se deja de consultar con el motivo; sin costeo queda en

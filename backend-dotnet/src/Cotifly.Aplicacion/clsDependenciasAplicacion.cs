@@ -74,6 +74,7 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
+        servicios.AddScoped<IClsResultadoCotizacionService, clsResultadoCotizacionService>();
 
         // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
         // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
