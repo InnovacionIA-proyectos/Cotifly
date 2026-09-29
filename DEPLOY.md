@@ -84,6 +84,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, `Database=dbsolucionesti` (solo lectura) |
 | `ConnectionStrings__Regional` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosEBSSAP`, solo lectura de `dbo.DimEjecutivo` (ADR-016, ADR-008). El **login** llena y refresca `UsuariosWeb.regional` (#81) y el **tablero del gerente** la lee en vivo (#45). Vacía = no configurada: se usa lo que ya haya en `UsuariosWeb.regional`, y el tablero responde 409 `REGIONAL_NO_ASIGNADA` si está vacía. Con valor exige salida desde el worker a **`10.10.40.24:1433`** y un **usuario SQL de solo lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`** (**pendiente con el DBA**); si la consulta falla, el login sigue (sin bloquear) y el tablero responde 503 |
 | `Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional` | no | no (pero nunca vacías: identificadores obligatorios) | `dbo`, `DimEjecutivo`, **`USUARIO`**, `REGIONAL` | manifiesto | ubicación de la tabla de ejecutivos. `USUARIO` guarda `boterosoto\usuario`: el código quita el dominio antes de comparar con `UsuariosWeb.nombreUsuario` (#81). **No usar `ID`**: con ese valor el cruce nunca coincide |
+| `Regional__Dominio` | no | no | `boterosoto` | manifiesto | dominio aceptado en `USUARIO` (#81): una fila de otro dominio no cuenta; una sin dominio sí. El manifiesto usa `:-`, así que para aceptar cualquier dominio hay que editar el manifiesto |
 | `Regional__TiempoEsperaSegundos` | no | no | `10` (2 a 60) | manifiesto | límite de cada consulta a `DWCubosEBSSAP` |
 | `Regional__TiempoEsperaLoginSegundos` | no | no | `3` (1 a 10) | manifiesto | espera máxima del login por `DimEjecutivo` (#81); pasado ese tiempo el login continúa sin la regional nueva. Se usa el menor entre este y `Regional__TiempoEsperaSegundos` |
 | `Identidad__Esquema`, `Identidad__TablaUsuarios`, `Identidad__TablaUsuarioRoles`, `Identidad__TablaRoles` | no | no | `dbo`, `tblSAPUsuariosApp`, `tblSAPUsuarioRoles`, `tblSAPRoles` | manifiesto | por confirmar con el DBA |
@@ -170,7 +171,7 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `ConnectionStrings__Cotifly` | sí | DBA: login `cotifly_app` y permisos por esquema (03-infraestructura §3.3) | no | DBA / Backend | `DATABASE_URL` |
 | `ConnectionStrings__Identidad` | sí | DBA: `SELECT` por columna en `dbsolucionesti` | no | DBA / Backend | — |
 | `ConnectionStrings__Regional` | sí | DBA: usuario SQL de solo lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo` en `DWCubosEBSSAP`; infraestructura: salida desde el worker a `10.10.40.24:1433`. Opcional | no | DBA / Infraestructura | — |
-| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` | no | DBA confirma el esquema real de `DimEjecutivo` (hoy `dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`, #81) | no | DBA | — |
+| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional`, `__Dominio` | no | DBA confirma el esquema real de `DimEjecutivo` (hoy `dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`, dominio `boterosoto`, #81) | no | DBA | — |
 | `Regional__TiempoEsperaSegundos`, `Regional__TiempoEsperaLoginSegundos` | no | fijos: `10` y `3` salvo que se mida otra cosa en staging | no | Backend | — |
 | `Identidad__Esquema` y tablas | no | DBA confirma ubicación real | no | DBA | — |
 | `Jwt__SigningKey` | sí | generada por el equipo de despliegue (`openssl rand -base64 48`) | no | Backend | `WEB_SESSION_SECRET` |
@@ -464,12 +465,12 @@ Opcionales con valor vacío = "no configurada" (verificado en el código de cada
 del gerente la lee en vivo (#45), y necesita salida desde el worker a `10.10.40.24:1433` y un usuario SQL de solo
 lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`,
 `GChat__ProjectNumber`, `GChat__SaJson`, `SapTm__Modo`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl`. En cambio
-`Regional__Esquema`, `__Tabla`, `__ColumnaUsuario` y `__ColumnaRegional` son identificadores obligatorios: el manifiesto
-trae los valores por defecto de `clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`) y no deben
-cargarse vacías en Dokploy. **Ojo:** como el manifiesto siempre manda la variable, su valor por defecto manda sobre el
-del código; si el código cambia un valor por defecto (como `ColumnaUsuario`: `ID` → `USUARIO` en #81), hay que
-cambiarlo también en los manifiestos. `Regional__TiempoEsperaLoginSegundos` (3, de 1 a 10) limita cuánto espera el login
-por `DimEjecutivo` antes de seguir sin bloquear.
+`Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` y `__Dominio` son identificadores obligatorios:
+el manifiesto trae los valores por defecto de `clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`,
+`boterosoto`) y no deben cargarse vacías en Dokploy. **Ojo:** como el manifiesto siempre manda la variable, su valor por
+defecto manda sobre el del código; si el código cambia un valor por defecto (como `ColumnaUsuario`: `ID` → `USUARIO`
+en #81), hay que cambiarlo también en los manifiestos. `Regional__TiempoEsperaLoginSegundos` (3, de 1 a 10) limita
+cuánto espera el login por `DimEjecutivo` antes de seguir sin bloquear.
 
 **Una variable que no está en el manifiesto no llega al contenedor**, aunque se cargue en Dokploy (Dokploy solo la usa
 para sustituir `${...}`). Para usar, por ejemplo, un proveedor LLM de respaldo (`IA__Fallbacks__0__*`) hay que agregar

@@ -1,8 +1,8 @@
 # ADR-016 — Métricas agregadas del tablero y regional del usuario
 
-- **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional depende del DBA, ver Pendientes)
+- **Estado:** Propuesta (definiciones pendientes de validar con Gerencia Comercial; la fuente de la regional ya está verificada en #81, faltan la credencial en el despliegue y la salida de red, ver Pendientes)
 - **Fecha:** 2026-09-29
-- **Issue / HU:** #45 (HU-010.1). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
+- **Issue / HU:** #45 (HU-010.1) y #81 (HU-003.6, regional en el login). Consumidores: clientepro-frontend #50 (HU-010.2, tablero del comercial), #51 (HU-010.3, tablero del gerente) y #52 (HU-010.4, QA de cálculos). Relacionada con ADR-009 (rol en el token), ADR-011 (folio y versiones), ADR-014 (TRM y cotizaciones en USD) y ADR-015 (costeo de Nexo, script 0004).
 
 ## Contexto
 
@@ -13,6 +13,7 @@
 - `Cotizaciones.moneda` y `trmAplicada` existen desde el 0001. En USD, `precioFinal` está en dólares y `costo` siempre en pesos (ADR-014).
 - `origen` y `destino` de la cotización llegan con el script 0004 (ADR-015), que todavía no está en `QA`.
 - `UsuariosWeb.regional` existe desde el 0001 pero nadie la llena. La fuente prevista es `DWCubosEBSSAP.DimEjecutivo` (cruce `nombreUsuario` → `DimEjecutivo.ID`, columna `REGIONAL`; 0001 y `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §5.8), que no está conectada. No hay más información de esa tabla en el repositorio (ni en el Python, ni en `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md`, ni en `docs/Entendimiento_Cotifly.docx.md`).
+- **Actualización (#81, 2026-09-29):** el equipo verificó la fuente real: `DWCubosEBSSAP` con un usuario SQL de solo lectura, tabla `DimEjecutivo(ID, NOMBRE, REGIONAL, CORREO, USUARIO, FECHACREACION, FECHAMODIFICACION)`. El cruce es por `USUARIO` (con el dominio `boterosoto\` pegado), no por `ID`. #81 conecta además el login (sección 6).
 
 ## Decisión
 
@@ -96,8 +97,8 @@ Otras reglas:
 
 Puerto `IClsRegionalUsuario` (Aplicación) con dos fuentes:
 
-1. **`DWCubosEBSSAP.DimEjecutivo`** tras el puerto `IClsDirectorioEjecutivos` (adaptador `clsDirectorioEjecutivosDimEjecutivo`, SQL parametrizado de solo lectura). Se activa solo si hay `ConnectionStrings__Regional`. Esquema, tabla y columnas son configurables (`Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional`; por defecto `dbo.DimEjecutivo`, `ID`, `REGIONAL`) porque el esquema real no está confirmado. El usuario se cruza por `nombreUsuario` recortado y sin distinguir mayúsculas; un usuario con dos regionales distintas en la tabla se ignora en ella (warning en el log) y se usa su respaldo.
-2. **`UsuariosWeb.regional`** como respaldo explícito: la llena el DBA con un `UPDATE` (plantilla en `docs/10-operacion.md`). No hace falta un script de esquema nuevo: la columna ya existe desde el 0001. La fila de `UsuariosWeb` se crea en el primer login (alta JIT), así que el `UPDATE` va después de ese primer ingreso.
+1. **`DWCubosEBSSAP.DimEjecutivo`** tras el puerto `IClsDirectorioEjecutivos` (adaptador `clsDirectorioEjecutivosDimEjecutivo`, SQL parametrizado de solo lectura). Se activa solo si hay `ConnectionStrings__Regional`. Esquema, tabla y columnas son configurables (`Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional`; por defecto `dbo.DimEjecutivo`, `USUARIO`, `REGIONAL`). **Esquema real (verificado en #81):** `DimEjecutivo(ID, NOMBRE, REGIONAL, CORREO, USUARIO, FECHACREACION, FECHAMODIFICACION)`; el cruce con `tblSAPUsuariosApp.NOMBREUSUARIO` es `USUARIO`, que viene con el dominio pegado (`boterosoto\usuario`). El adaptador parte el valor en SQL en la **última** `\` (`CHARINDEX('\', REVERSE(col))`), limpia espacios, tabuladores y saltos de línea a los lados (`REPLACE` de `CHAR(9)`, `CHAR(10)` y `CHAR(13)` + `LTRIM`/`RTRIM`, porque no se conoce el nivel de compatibilidad de `DWCubosEBSSAP` para usar `TRIM(... FROM ...)`) y compara el nombre sin distinguir mayúsculas contra una lista de parámetros. El dominio (lo de antes de la última `\`, sin `\` sobrantes) debe ser `Regional__Dominio` (por defecto `boterosoto`, sin distinguir mayúsculas): una fila de otro dominio (`otrodominio\jperez`, o `a\\b`) no cuenta y deja un warning con el nombre de usuario; un valor sin `\` se compara tal cual. Con `Regional__Dominio` vacío se acepta cualquier dominio. Un usuario con dos regionales distintas en la tabla (también `boterosoto\x` y `x` con regionales distintas) se ignora en ella (warning en el log) y se usa su respaldo. No todos los usuarios de ClientePro están en la tabla (solo los ejecutivos): para ellos no hay regional de esta fuente, y eso no es un error.
+2. **`UsuariosWeb.regional`**: desde #81 el login la copia de `DimEjecutivo` (ver "Regional en el login"). Para quien no está en `DimEjecutivo`, la llena el DBA con un `UPDATE` (plantilla en `docs/10-operacion.md`). No hace falta un script de esquema nuevo: la columna ya existe desde el 0001. La fila de `UsuariosWeb` se crea en el primer login (alta JIT), así que el `UPDATE` va después de ese primer ingreso.
 
 Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regional`, comparando sin espacios sobrantes y sin distinguir mayúsculas. Los miembros de una regional R son los usuarios de `UsuariosWeb` cuya regional efectiva es R.
 
@@ -107,7 +108,18 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 - **Caché corta:** las respuestas exitosas de `DimEjecutivo` (regional de cada usuario, incluido "no aparece", y usuarios de cada regional) se reutilizan 60 s por proceso (`clsCacheDirectorioEjecutivos`), así cada cambio del selector no vuelve a consultar la tabla. Los fallos no se guardan.
 - **El gerente es miembro de su regional:** aparece en `comerciales` con `rol: gerente_comercial` y sus propias cotizaciones cuentan en el agregado. El `rol` de cada item sale de las tablas propias de Cotifly (`UsuariosRoles` + `Roles`, ADR-009), que guardan el rol verificado en el login; `null` si el usuario no tiene asignación activa.
 - **Nota para el DBA:** el texto de la regional debe escribirse igual en `DimEjecutivo` y en `UsuariosWeb.regional` (se compara sin mayúsculas ni espacios sobrantes, pero "Antioquia" y "Regional Antioquia" son regionales distintas).
-- **Seguimiento:** los borradores (`/actividad`, `/ajustes-margen`), la descarga de PDF ajenos (`clsDescargaPdfService`), `LoginResponse.user.ubicacion` y el futuro "Mis cotizaciones" del gerente (HU-004.5) siguen leyendo solo `UsuariosWeb.regional`. Deben pasar a `IClsRegionalUsuario` para que todos usen la misma regional efectiva; queda fuera de esta HU para no cambiar su comportamiento.
+- **Regional en el login (#81, HU-003.6 / ADR-008):** `clsVerificadorIdentidad` usa el mismo puerto `IClsDirectorioEjecutivos` (no hay un segundo DbContext ni otro puerto para la tabla):
+  - **Primer ingreso (alta JIT):** `UsuariosWeb.regional` nace con la regional de `DimEjecutivo`, o NULL si el usuario no aparece.
+  - **Cada login siguiente**, ya superada la verificación doble de ADR-009 (rol y `NOMBREUSUARIO` coinciden): `clsUsuarioWeb.ActualizarDatos` refresca la regional y, de paso, el nombre (`DESCRIPCIONUSUARIO`) y el correo (`EMAIL`) del almacén. Ninguno de los tres decide si la persona entra, así que la regla de "rol y nombre de usuario deben coincidir" no cambia. Un login rechazado no consulta nada ni cambia datos. El refresh y Google Chat (`permitirAlta: false`) tampoco. Si el correo cambia, queda un warning con el nombre de usuario (sin los correos), porque el correo es la identidad en Google Chat (ADR-011).
+  - **La regional sí decide el alcance de los datos del gerente:** qué comerciales ve en el tablero (`/web/metricas/regional`) y de quiénes puede descargar PDF (`clsDescargaPdfService`). Por eso `DimEjecutivo` es una **fuente de autorización de alcance**, aunque no de acceso: quien pueda escribir en esa tabla (o en `UsuariosWeb.regional`) puede ampliar lo que ve un gerente. Se trata con el mismo cuidado que `tblSAPUsuarioRoles`: conexión de solo lectura, dominio validado, filas ambiguas ignoradas, y los cambios se ven en el login siguiente.
+  - **Usuario ausente de `DimEjecutivo`:** se conserva la regional que tenga (NULL o la que puso el DBA). Solo se sobrescribe cuando la tabla devuelve un valor, para no borrar una asignación manual. Consecuencia (riesgo operativo): si alguien sale de la tabla, conserva su última regional, y con ella el alcance de gerente, hasta que el DBA la cambie. Seguimiento: marcar el origen de la regional para limpiarla solo cuando vino de `DimEjecutivo` (hace falta una columna nueva, script 000N).
+  - **Nunca bloquea el login:** sin `ConnectionStrings__Regional` no se consulta; si la base falla, se agota el tiempo o hay cualquier error, queda un warning con el nombre de usuario y el tipo de error (sin el mensaje de la base) y el login sigue con la regional que ya tenía. Nunca un 401 ni un 500. A diferencia del tablero (fail-closed, 503), aquí no se cambia nada: la regional guardada, y con ella el alcance del gerente, queda como estaba. Los fallos no se guardan en caché, así que mientras `DimEjecutivo` esté caída cada login paga hasta el límite (3 s); un circuit breaker queda como mejora futura (`docs/10-operacion.md`).
+  - **Tiempo:** límite total de `min(Regional__TiempoEsperaLoginSegundos, Regional__TiempoEsperaSegundos)`, por defecto 3 s, con cancelación propia y `WaitAsync` (corta la espera aunque el cliente SQL tarde en atender la cancelación al abrir la conexión). La caché de 60 s también sirve al login.
+- **Convergencia (cierra el seguimiento anterior):** todo sale ahora de `DimEjecutivo`, directamente o a través de la columna refrescada en cada login:
+  - el tablero del gerente (`IClsRegionalUsuario`) la consulta en vivo, con `UsuariosWeb.regional` como respaldo;
+  - `LoginResponse.user.ubicacion` lee la columna, recién refrescada en ese mismo login;
+  - la descarga de PDF ajenos (`clsDescargaPdfService`) y los borradores `/actividad` y `/ajustes-margen` leen la columna, que tiene el valor de `DimEjecutivo` del último login de cada usuario. No se pasan a `IClsRegionalUsuario`: agregarían una consulta externa por descarga y un 503 nuevo por un dato que ya está fresco. La diferencia solo aparece si alguien cambia de regional en `DimEjecutivo` y todavía no vuelve a entrar; se corrige en su siguiente login.
+  - El futuro "Mis cotizaciones" del gerente (HU-004.5) puede leer la columna con el mismo criterio.
 
 ### 7. Concentración por ciudad
 
@@ -134,7 +146,9 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 - **Agregar en SQL con vistas nuevas:** exige un script de esquema (y aprobación del DBA) y deja la conversión, la serie y la zona horaria repartidas en T-SQL, más difícil de probar. El volumen (unos 6.000 cotizaciones al mes en total, una regional es una fracción) cabe de sobra en memoria.
 - **Tabla de mapeo nueva `RegionalesUsuarios` (un script 000N nuevo):** duplicaría `UsuariosWeb.regional`, que ya es exactamente ese mapeo, y agregaría un script más a la cola de aprobación del DBA (el 0005 es del frente de TRM; HU-011 usará un 000N nuevo).
 - **Mapeo por configuración (`Regional__Asignaciones__APEREZ=...`):** obliga a redesplegar para mover a un comercial de regional. Descartado frente al `UPDATE` del DBA.
-- **Sincronizar `UsuariosWeb.regional` en cada login:** metería una tercera base externa en el camino crítico del login (ADR-009 es fail-closed). Se prefirió la consulta al pedir las métricas.
+- **Sincronizar `UsuariosWeb.regional` en cada login como única fuente** (propuesta original de #45): metería una tercera base externa en el camino crítico del login (ADR-009 es fail-closed). En #81 se adoptó **además** de la consulta en vivo del tablero, pero sin bloquear: la búsqueda tiene un límite corto y cualquier fallo solo deja un warning (sección 6, "Regional en el login"). El tablero sigue consultando en vivo.
+- **Un DbContext `clsRegionalDbContext` y un puerto nuevo `IClsAlmacenRegionalExterno` para el login** (lo que sugería #81): habría dos accesos a la misma tabla con reglas de cruce que podrían divergir (quitar el dominio, mayúsculas, filas ambiguas) y dos cachés. Se reutilizó el adaptador de #45 (SQL parametrizado con `Microsoft.Data.SqlClient`): la tabla es de solo lectura, se leen dos columnas y un DbContext de EF no aporta nada (sin seguimiento de cambios, sin modelo que validar). La intención de la issue se mantiene: `DimEjecutivo` de solo lectura detrás de un puerto de Aplicación.
+- **Dejar en NULL la regional del usuario que no aparece en `DimEjecutivo`:** borraría la regional que el DBA puso a mano a quien no es ejecutivo (por ejemplo, un gerente fuera de la tabla), y el tablero le respondería 409. Se conserva el valor existente.
 - **Filtrar un comercial ajeno con 200 vacío en vez de 404:** confunde al frontend (un selector con un id mal armado parecería "sin datos"). Se usa 404 como en el resto de `/web/*`.
 
 ## Consecuencias
@@ -143,17 +157,18 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 - El tablero del gerente responde 409 hasta que exista la regional (DimEjecutivo conectada o `UsuariosWeb.regional` llenada por el DBA). Es deliberado.
 - El mapa responde `disponible = false` hasta que se aplique el 0004.
 - `IClsCalendarioNegocio` gana `FechaDe(instante)` e `InicioDelDia(fecha)` para convertir entre UTC y la fecha de Bogotá.
-- Nueva conexión opcional `ConnectionStrings__Regional` y sección `Regional__*` (documentadas en `docs/03-infraestructura.md` y `.env.example`).
+- Nueva conexión opcional `ConnectionStrings__Regional` y sección `Regional__*`, con `Regional__TiempoEsperaLoginSegundos` desde #81 (documentadas en `docs/03-infraestructura.md` y `.env.example`).
+- Desde #81, con la conexión configurada, `UsuariosWeb.regional` y `LoginResponse.user.ubicacion` quedan al día en cada login, y el tablero del gerente deja de responder 409 para los ejecutivos que están en `DimEjecutivo`.
 
 ## Pendientes
 
 | Pendiente | Dueño |
 |---|---|
-| Confirmar la tabla de la regional: base (`DWCubosEBSSAP`), esquema, tabla (`DimEjecutivo`), la columna que coincide con `tblSAPUsuariosApp.NOMBREUSUARIO` (¿`ID`?), la columna de regional (¿`REGIONAL`?), si los gerentes están en ella y el catálogo de valores de regional | DBA / equipo de datos |
-| Crear el acceso de solo lectura (`SELECT` para `cotifly_app` sobre esa tabla) y la salida de red desde el contenedor; entregar `ConnectionStrings__Regional` | DBA / Infraestructura |
-| Mientras tanto, llenar `UsuariosWeb.regional` de gerentes y comerciales (plantilla en `docs/10-operacion.md`) | DBA con Gerencia Comercial |
+| ~~Confirmar la tabla de la regional~~: hecho en #81 (`DWCubosEBSSAP.dbo.DimEjecutivo`, cruce por `USUARIO` sin el dominio, columna `REGIONAL`). Sigue pendiente saber si los gerentes están en ella y el catálogo de valores de regional | Equipo de datos / Gerencia Comercial |
+| Cargar `ConnectionStrings__Regional` (usuario SQL de solo lectura ya probado por el equipo) en los secretos de Dokploy para QA y producción, y abrir la salida de red del clúster al servidor del cubo (puerto 1433) | Infraestructura (credencial: Sara / scalderon-bs) |
+| Llenar `UsuariosWeb.regional` de quien no esté en `DimEjecutivo` (plantilla en `docs/10-operacion.md`) | DBA con Gerencia Comercial |
 | Validar las definiciones: versión vigente vs. todas las versiones, `conversion` sobre el total, `costeo_total` sobre todo el universo, `ganancias` solo de ganadas y periodo por defecto (año en curso) | Gerencia Comercial (Sara / scalderon-bs) |
 | Contrato de Nexo para el "score de urgencia" por solicitud (el deadline vencido ya se calcula con el 0004) | Equipo de Nexo |
 | Integrar los servicios conexos (ADR-015) en precio y costo del tablero | Duban, después de #42 |
-| Pasar la descarga de PDF ajenos, `LoginResponse.ubicacion` y "Mis cotizaciones" del gerente a `IClsRegionalUsuario` | Duban (HU-004.5 y seguimiento) |
+| ~~Pasar la descarga de PDF ajenos y `LoginResponse.ubicacion` a `IClsRegionalUsuario`~~: resuelto en #81 con la columna refrescada en cada login (sección 6, "Convergencia"). "Mis cotizaciones" del gerente lee la columna | Duban (HU-004.5) |
 | Aplicar el 0004 para que el mapa por ciudad y `deadline_vencidas` tengan datos | DBA (ADR-015) |

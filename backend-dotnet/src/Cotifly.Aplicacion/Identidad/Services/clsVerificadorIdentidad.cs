@@ -32,17 +32,32 @@ public sealed record clsVerificacionIdentidad(clsIdentidadVerificada? Identidad,
 /// Si no existe y el ID externo tampoco está vinculado a otra cuenta, se crea (JIT) con su asignación en
 /// <c>UsuariosRoles</c>. Si existe, su asignación activa debe ser el rol resuelto y su vínculo, el mismo ID externo.</item>
 /// </list>
-/// Cualquier diferencia es un rechazo con motivo; nada se re-sincroniza solo. Los fallos del almacén son
-/// <see cref="clsMotivosAcceso.AlmacenNoDisponible"/> (fail-closed). Los fallos de <c>dbo_cotifly</c> se propagan.
+/// Cualquier diferencia de rol o de <c>NOMBREUSUARIO</c> es un rechazo con motivo; eso nunca se re-sincroniza solo. Los fallos
+/// del almacén son <see cref="clsMotivosAcceso.AlmacenNoDisponible"/> (fail-closed). Los fallos de <c>dbo_cotifly</c> se propagan.
+/// <para>
+/// <b>Datos corporativos (#81, solo en el login):</b> la regional se busca en <c>DimEjecutivo</c>
+/// (<see cref="IClsDirectorioEjecutivos"/>) al crear el usuario y en cada login siguiente ya verificado, que además refresca
+/// nombre y correo desde el almacén (<see cref="clsUsuarioWeb.ActualizarDatos"/>). Solo se sobrescribe con valores no vacíos:
+/// un usuario que no aparece en <c>DimEjecutivo</c> conserva la regional que tenga (la del DBA, o NULL). Esa búsqueda nunca
+/// bloquea el login: sin conexión no se consulta, y si falla o supera <see cref="IClsDirectorioEjecutivos.LimiteLogin"/> se
+/// registra un warning y el login sigue con la regional que ya tenía.
+/// </para>
 /// </summary>
 public sealed class clsVerificadorIdentidad(
     IClsAlmacenIdentidadExterno almacen,
     IClsRolRepository roles,
     IClsUsuarioWebRepository usuarios,
+    IClsDirectorioEjecutivos directorio,
     ILogger<clsVerificadorIdentidad> logger) : IClsVerificadorIdentidad
 {
+    /// <summary>Límite de la búsqueda de la regional si el directorio no da uno válido.</summary>
+    public static readonly TimeSpan LimiteLoginPorDefecto = TimeSpan.FromSeconds(3);
+
     /// <param name="idUsuario">Identidad a revalidar (como <c>NOMBREUSUARIO</c> y, si no, como <c>ID</c>).</param>
-    /// <param name="permitirAlta"><c>true</c> en el login (JIT); <c>false</c> en el refresh (el usuario ya debe existir).</param>
+    /// <param name="permitirAlta">
+    /// <c>true</c> en el login: alta JIT y refresco de los datos corporativos (nombre, correo y regional). <c>false</c> en el
+    /// refresh y en Google Chat: el usuario ya debe existir y no se toca.
+    /// </param>
     /// <param name="ahora">Instante de la operación.</param>
     /// <param name="cancellationToken">Cancelación del llamador.</param>
     public async Task<clsVerificacionIdentidad> VerificarAsync(
@@ -90,8 +105,9 @@ public sealed class clsVerificadorIdentidad(
                 return Rechazo(clsMotivosAcceso.UsuarioNoEncontrado, regla);
             }
 
+            var regional = await BuscarRegionalAsync(externo.NombreUsuario, cancellationToken);
             var nuevo = clsUsuarioWeb.Crear(
-                externo.NombreUsuario, externo.NombreCompleto, externo.Email, regional: null, ahora, externo.IdUsuarioExterno);
+                externo.NombreUsuario, externo.NombreCompleto, externo.Email, regional, ahora, externo.IdUsuarioExterno);
             var asignacion = clsUsuarioRol.Asignar(nuevo.Valor.Id, catalogo.First(r => r.Codigo == rol).Id, ahora);
             usuarios.Agregar(nuevo.Valor);
             roles.AgregarAsignacion(asignacion.Valor);
@@ -120,6 +136,21 @@ public sealed class clsVerificadorIdentidad(
             porNombre.VincularUsuarioExterno(externo.IdUsuarioExterno);
         }
 
+        if (permitirAlta)
+        {
+            // Login ya verificado (rol y NOMBREUSUARIO coinciden): solo se refrescan datos que no deciden el acceso.
+            var regional = await BuscarRegionalAsync(externo.NombreUsuario, cancellationToken);
+            var correoAnterior = porNombre.Email;
+            porNombre.ActualizarDatos(externo.NombreCompleto, externo.Email, regional);
+            if (!string.Equals(correoAnterior, porNombre.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                // El correo es la identidad en Google Chat (ADR-011): se deja rastro del cambio, sin los valores.
+                logger.LogWarning(
+                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: su identidad en Google Chat pasa a ser el correo nuevo.",
+                    externo.NombreUsuario);
+            }
+        }
+
         return new clsVerificacionIdentidad(new clsIdentidadVerificada(porNombre, rol, EsNuevo: false), clsMotivosAcceso.UsuarioExistente, regla);
     }
 
@@ -146,6 +177,55 @@ public sealed class clsVerificadorIdentidad(
             1 => (mapeados[0], clsMotivosAcceso.ReglaMapeoUnico),
             _ => (RolInterno.GerenteComercial, clsMotivosAcceso.ReglaPrecedenciaGerente),
         };
+    }
+
+    /// <summary>
+    /// Regional de <paramref name="nombreUsuario"/> en <c>DimEjecutivo</c>, o <c>null</c> si no está configurada, el usuario no
+    /// aparece (o aparece con dos regionales) o la fuente falla o tarda más de <see cref="IClsDirectorioEjecutivos.LimiteLogin"/>.
+    /// Nunca lanza, salvo la cancelación del llamador. El log solo lleva el nombre de usuario y el tipo de error.
+    /// </summary>
+    private async Task<string?> BuscarRegionalAsync(string nombreUsuario, CancellationToken cancellationToken)
+    {
+        if (!directorio.Configurado)
+        {
+            return null;
+        }
+
+        var limite = directorio.LimiteLogin > TimeSpan.Zero ? directorio.LimiteLogin : LimiteLoginPorDefecto;
+        using var tiempo = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        tiempo.CancelAfter(limite);
+        Task<IReadOnlyDictionary<string, string>>? consulta = null;
+        var esperada = false;
+        try
+        {
+            // WaitAsync corta la espera aunque el cliente SQL tarde en atender la cancelación (p. ej. al abrir la conexión).
+            consulta = directorio.ObtenerRegionalesAsync([nombreUsuario], tiempo.Token);
+            var mapa = await consulta.WaitAsync(limite, cancellationToken);
+            esperada = true;
+            var clave = nombreUsuario.Trim();
+            var regional = mapa.TryGetValue(clave, out var exacta)
+                ? exacta
+                : mapa.FirstOrDefault(p => string.Equals(p.Key, clave, StringComparison.OrdinalIgnoreCase)).Value;
+            return string.IsNullOrWhiteSpace(regional) ? null : regional.Trim();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "No se pudo consultar la regional de '{NombreUsuario}' en DimEjecutivo ({Tipo}); el login sigue con la regional guardada.",
+                nombreUsuario, ex.GetType().Name);
+            logger.LogDebug(ex, "Detalle del fallo de la consulta de la regional en el login.");
+            return null;
+        }
+        finally
+        {
+            if (!esperada && consulta is not null)
+            {
+                // No se esperó con éxito (límite vencido, cancelación del llamador o fallo): se cancela y su error, llegue antes o
+                // después, se observa aquí para que no quede como excepción sin observar.
+                tiempo.Cancel();
+                _ = consulta.ContinueWith(t => _ = t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            }
+        }
     }
 
     private static clsVerificacionIdentidad Rechazo(string motivo, string? regla = null, Guid? usuarioId = null) => new(null, motivo, regla, usuarioId);

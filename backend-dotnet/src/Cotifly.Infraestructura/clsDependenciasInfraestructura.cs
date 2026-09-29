@@ -166,7 +166,8 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
 
-        // Regional del usuario (HU-010.1, ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional.
+        // Regional del usuario (HU-010.1, ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional. La
+        // usan el tablero del gerente y el login (clsVerificadorIdentidad, #81), que comparten el adaptador y la caché.
         servicios.TryAddSingleton<clsCacheDirectorioEjecutivos>();
         servicios.TryAddScoped<clsDirectorioEjecutivosDimEjecutivo>();
         servicios.TryAddSingleton<clsDirectorioEjecutivosNoDisponible>();

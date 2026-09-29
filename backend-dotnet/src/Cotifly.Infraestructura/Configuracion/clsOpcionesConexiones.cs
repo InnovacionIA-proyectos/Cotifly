@@ -23,8 +23,9 @@ public sealed class clsOpcionesConexiones
     public string? Identidad { get; set; }
 
     /// <summary>
-    /// Opcional: solo lectura de la tabla de ejecutivos con su regional en <c>DWCubosEBSSAP</c> (<c>DimEjecutivo</c>, HU-010.1,
-    /// ADR-016). Vacía: la regional sale de <c>UsuariosWeb.regional</c>. Con valor, se valida como las otras en Production.
+    /// Opcional: solo lectura de la tabla de ejecutivos con su regional en <c>DWCubosEBSSAP</c> (<c>DimEjecutivo</c>, HU-010.1 y
+    /// #81, ADR-016): la usan el tablero del gerente y el login (que llena y refresca <c>UsuariosWeb.regional</c> sin bloquearse).
+    /// Vacía: no se consulta y la regional sale de <c>UsuariosWeb.regional</c>. Con valor, se valida como las otras en Production.
     /// </summary>
     [clsSecreto(LargoMinimo = 20, Opcional = true)]
     public string? Regional { get; set; }

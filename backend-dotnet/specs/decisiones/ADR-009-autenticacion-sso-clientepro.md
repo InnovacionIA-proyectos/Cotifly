@@ -30,9 +30,12 @@
    - **Tipos:** `tblSAPUsuariosApp.ID` es NUMERIC y `tblSAPUsuarioRoles.IDUSUARIO` es INT. El `ID` se lee como `decimal`, se convierte a `long` solo si es entero positivo, y para buscar roles se convierte a `int` solo si cabe: un `ID` fuera del rango de INT no puede tener roles (lista vacía, 401).
 2. **Interna (`dbo_cotifly`):**
    - El `NOMBREUSUARIO` de la fila encontrada (nunca el del request) ubica al usuario en `UsuariosWeb`.
-   - **Primer ingreso (no existe):** si el `ID` externo tampoco está vinculado a otra cuenta, se crea (JIT) con UUID nuevo, `nombreCompleto = DESCRIPCIONUSUARIO`, `email = EMAIL`, `idUsuarioExterno = ID` y una asignación activa en **`UsuariosRoles`** con el rol interno resuelto.
+   - **Primer ingreso (no existe):** si el `ID` externo tampoco está vinculado a otra cuenta, se crea (JIT) con UUID nuevo, `nombreCompleto = DESCRIPCIONUSUARIO`, `email = EMAIL`, `regional` de `DimEjecutivo` (#81, ADR-016 §6; NULL si no aparece o la fuente no responde), `idUsuarioExterno = ID` y una asignación activa en **`UsuariosRoles`** con el rol interno resuelto.
    - **Ingresos siguientes:** la asignación activa debe ser exactamente el rol resuelto y el vínculo (`idUsuarioExterno`) el mismo `ID`. Si difieren: **401 genérico y auditoría**; no se re-sincroniza solo. Un gerente o administrador lo revisa (`UsuariosRoles.revisadoPor`, `revisadoAt`; la pantalla o el procedimiento de revisión queda fuera de esta parte).
    - Si todo coincide se actualiza `ultimaSesion` (y, si la cuenta no tenía vínculo, se vincula).
+   - **Datos corporativos (#81, solo en el login):** también se refrescan `nombreCompleto` y `email` desde el almacén y `regional` desde `DimEjecutivo` (`clsUsuarioWeb.ActualizarDatos`; un valor vacío no borra el existente). No deciden si la persona entra: la regla de que rol y `NOMBREUSUARIO` deben coincidir no cambia, y un login rechazado no toca nada. La consulta a `DimEjecutivo` nunca bloquea el login (límite corto; si falla, warning y sigue). El refresh y Google Chat no los refrescan. Dos matices:
+     - **La regional sí decide el alcance de los datos del gerente** (qué comerciales ve en el tablero y de quiénes descarga PDF, ADR-016 §6): `DimEjecutivo` es una fuente de autorización de alcance, no de acceso.
+     - **El correo es la identidad en Google Chat** (ADR-011): si el almacén trae otro `EMAIL`, desde ese login Google Chat reconoce a la persona por el correo nuevo y deja de reconocerla por el anterior. Queda un warning con el nombre de usuario (sin los correos) para poder rastrearlo.
 3. **Los `roles` y el `nombreUsuario` del body nunca deciden nada.** Solo se auditan.
 
 **Motivos auditados** (hacia afuera todos son el mismo 401 `{"error":"Credenciales inválidas"}`):
@@ -141,7 +144,7 @@ Mitigaciones a acordar con ClientePro (scalderon-bs), en orden de preferencia:
 | Revisión y aplicación del script 0002 (`Roles`, `UsuariosRoles`, `UsuariosWeb.idUsuarioExterno` en lugar de `RolesMapeo`) | Sara + scalderon-bs |
 | Esquema real de las tres tablas en `dbsolucionesti` y permisos de `cotifly_app` (SELECT sin `CLAVE`) | DBA |
 | Procedimiento o pantalla para revisar un acceso rechazado por `rol_externo_cambio` / `nombre_usuario_cambio` | Negocio (HU-010) |
-| Regional desde `DWCubosEBSSAP.DimEjecutivo` (`ubicacion` sale `null` mientras tanto) | #12 parte B / DBA |
+| ~~Regional desde `DWCubosEBSSAP.DimEjecutivo`~~: implementada en #81 (ADR-016 §6). El login la llena y la refresca sin bloquearse (fuera de la verificación doble: no decide el acceso). Falta cargar `ConnectionStrings__Regional` en Dokploy y abrir la red; mientras tanto `ubicacion` sale `null` o con la regional que puso el DBA | Infraestructura (#81) |
 | ~~`UseForwardedHeaders` con los proxies de Traefik para que el límite sea por IP real~~ | Implementado en #12 parte B (`ForwardedHeaders:*`, apagado por defecto); falta activarlo en Dokploy con la red de Traefik (HU-006.6) |
 | `sqlcmd` exige `-I` (QUOTED_IDENTIFIER ON) para el `UPDATE dbo_cotifly.Roles SET idRolExterno = ...` por el índice filtrado | DBA (documentado en el encabezado del 0002 y en `docs/03-infraestructura.md` y `docs/10-operacion.md`) |
 | Dominios de ClientePro para CORS por ambiente | Sara (#12 parte B) |

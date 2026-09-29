@@ -38,6 +38,9 @@ internal sealed class clsEscenarioIdentidad
     public IClsAlmacenIdentidadExterno Almacen { get; } = Substitute.For<IClsAlmacenIdentidadExterno>();
     public IClsRolRepository Roles { get; } = Substitute.For<IClsRolRepository>();
     public IClsUsuarioWebRepository Usuarios { get; } = Substitute.For<IClsUsuarioWebRepository>();
+
+    /// <summary>Directorio de ejecutivos (<c>DimEjecutivo</c>, #81): sin configurar salvo que la prueba lo active con <see cref="ConRegional"/>.</summary>
+    public IClsDirectorioEjecutivos Directorio { get; } = Substitute.For<IClsDirectorioEjecutivos>();
     public IClsTokenRefrescoRepository Tokens { get; } = Substitute.For<IClsTokenRefrescoRepository>();
     public IClsTokenRevocadoRepository Revocados { get; } = Substitute.For<IClsTokenRevocadoRepository>();
     public IClsRevocacionAccesos Revocacion { get; } = Substitute.For<IClsRevocacionAccesos>();
@@ -54,7 +57,7 @@ internal sealed class clsEscenarioIdentidad
     public clsRol Gerente { get; }
     public List<clsRol> Catalogo => [Comercial, Gerente];
 
-    public clsVerificadorIdentidad Verificador() => new(Almacen, Roles, Usuarios, LoggerVerificador);
+    public clsVerificadorIdentidad Verificador() => new(Almacen, Roles, Usuarios, Directorio, LoggerVerificador);
 
     public clsLoginClienteProService Login() =>
         new(Verificador(), Tokens, Emisor, Configuracion, UnidadTrabajo, Reloj, Auditoria, LoggerLogin);
@@ -73,6 +76,24 @@ internal sealed class clsEscenarioIdentidad
         Almacen.ObtenerRolesAsync(id, Arg.Any<CancellationToken>())
             .Returns(rolesExternos.Select(r => new clsRolExterno(r, $"ROL {r}")).ToList());
         return persona;
+    }
+
+    /// <summary>
+    /// Activa el directorio de ejecutivos: <paramref name="nombreUsuario"/> tiene <paramref name="regional"/> en <c>DimEjecutivo</c>
+    /// (<c>null</c>: no aparece). Límite del login de 3 s.
+    /// </summary>
+    public void ConRegional(string nombreUsuario, string? regional)
+    {
+        Directorio.Configurado.Returns(true);
+        Directorio.LimiteLogin.Returns(TimeSpan.FromSeconds(3));
+        var mapa = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (regional is not null)
+        {
+            mapa[nombreUsuario] = regional;
+        }
+
+        Directorio.ObtenerRegionalesAsync(Arg.Is<IReadOnlyCollection<string>>(n => n.Contains(nombreUsuario)), Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<string, string>)mapa);
     }
 
     /// <summary>Usuario ya creado en Cotifly (vinculado o no) con su rol asignado.</summary>

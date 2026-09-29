@@ -103,6 +103,8 @@ services:
       Regional__TiempoEsperaSegundos: ${Regional__TiempoEsperaSegundos:-10}
       # Espera máxima del login por DimEjecutivo (1 a 10 s): pasado ese tiempo el login sigue sin bloquearse (#81).
       Regional__TiempoEsperaLoginSegundos: ${Regional__TiempoEsperaLoginSegundos:-3}
+      # Dominio aceptado en USUARIO (vacío = cualquiera); una fila de otro dominio no cuenta y deja un warning (#81).
+      Regional__Dominio: ${Regional__Dominio:-boterosoto}
 
       # Autenticación (ADR-009). Jwt__SigningKey: secreto, >= 32 bytes, distinto al de producción.
       Jwt__Issuer: ${Jwt__Issuer:-cotifly-api}
