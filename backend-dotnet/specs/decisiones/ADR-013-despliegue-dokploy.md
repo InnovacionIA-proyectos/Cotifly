@@ -63,7 +63,15 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    Traefik, `start-first`).
 6. **Healthcheck** exec de vida (`/health`) en Swarm y de disponibilidad (`/health/ready`) en Traefik;
    `update_config` con `failure_action: rollback`; límites 1 CPU / 1024 MB.
-7. **Variables** con `${VAR}` (obligatorias con `${VAR:?}`); `GChat__VerificarJwt=true` fijo en el manifiesto.
+7. **Variables** con `${VAR}` (obligatorias con `${VAR:?}`); `GChat__VerificarJwt=true` fijo en el manifiesto. Las
+   de otros frentes llevan valor por defecto (`Trm__Url` vacía impide arrancar; `Trm__TiempoEsperaSegundos`,
+   `Nexo__MinutosCacheMunicipios`); la TRM exige salida a `www.datos.gov.co`.
+8. **Verificación manual de disponibilidad:** el rollback automático solo mira `/health` (vida); tras cada despliegue se
+   comprueba `/health/ready` y, si falla, `docker service rollback`. Rollback al Python documentado (reapuntar la app
+   de Google Chat; los datos escritos en SQL Server no son visibles para el Python).
+9. **Riesgo bajo aceptado:** `ForwardedHeaders__RedesConocidas` confía en toda la subred compartida de
+   `dokploy-network`; otro contenedor de esa red podría falsear `X-Forwarded-For` y saltarse el límite por IP de
+   `/api/auth/*`. Propuesta: acotar a la IP o rango de Traefik cuando se conozca.
 
 ## Alternativas consideradas
 
@@ -106,3 +114,5 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 | Verificar en el primer despliegue a staging que el worker baja la imagen privada | Duban (HU-006.6) |
 | Probar el despliegue completo en staging (Dokploy, secreto, conectividad del worker a `tbsdatacenter:1433`, Traefik) | Duban, con acceso al clúster y aprobación |
 | Quitar el puerto en modo host y el anclaje al worker cuando se resuelva el overlay | HU-006.2 |
+| ¿Staging y producción comparten `dbTarifario_Nexo_Pruebas`/`dbo_cotifly`? | HU-007.1 (#33) con el DBA |
+| Acotar `ForwardedHeaders` a la IP o rango de Traefik | Duban con infraestructura (staging) |

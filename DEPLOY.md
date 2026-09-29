@@ -97,6 +97,9 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SapTm__Url`, `SapTm__User`, `SapTm__SapClient` | no | `Url` y `User` con `odata` | vacío | Dokploy | |
 | `SapTm__Pass` | **sí** (≥ 8) | con `odata` | vacío | Dokploy | no definirla si no se usa `odata` |
 | `Nexo__UrlBase` | no | no | vacío | Dokploy | sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` |
+| `Nexo__MinutosCacheMunicipios` | no | no | `60` | manifiesto | caché de la lista de municipios de Nexo (frente B) |
+| `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos; exige salida a `www.datos.gov.co:443` |
+| `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta de la TRM |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (sí para Google Chat) | vacío | Dokploy | URL pública de la API |
 | `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | con Google Chat configurado | vacío | Dokploy | `openssl rand -base64 48` |
@@ -286,10 +289,26 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    `sha-<corto>` en staging si el merge creó un commit nuevo. Luego crear y subir el tag `vX.Y.Z` sobre ese mismo
    commit → `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging.
 3. **Producción.** En Dokploy, stack de producción: `COTIFLY_TAG=X.Y.Z` → *Deploy*. Swarm actualiza con `start-first`
-   y vuelve atrás solo si el healthcheck falla (manifiesto, HU-006.6).
+   y vuelve atrás solo si falla la sonda de vida `/health` (manifiesto, HU-006.6); la disponibilidad se verifica a
+   mano en el paso 5.
 4. **Verificar** qué imagen corre: `docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
    <stack>_cotifly-api` (muestra tag y digest).
-5. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
+5. **Verificar la disponibilidad después de cada despliegue.** El rollback automático de Swarm solo mira la sonda de
+   vida (`/health`, el `HEALTHCHECK`): una versión que arranca pero no llega a la base (cadena mal escrita, permisos,
+   red a `tbsdatacenter`) queda *healthy* y **no** se revierte sola. Por eso, tras cada *Deploy*:
+   `curl -s -o /dev/null -w '%{http_code}' https://<PUBLIC_HOST>/health/ready` (en staging, mientras el overlay esté
+   caído, `http://10.10.40.31:8092/health/ready`) debe dar `200` en menos de 2 minutos. Si no:
+   `docker service rollback <stack>_cotifly-api` en el manager (o volver `COTIFLY_TAG` al valor anterior y *Deploy*).
+6. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
+7. **Rollback al stack Python** (corte único, ADR-001: solo si el backend .NET no puede seguir en producción):
+   1. Redesplegar en Dokploy el stack Python (`deploy/docker-compose.swarm.yml`, proyecto `bot-cotizador`) y
+      comprobar `http://10.10.40.31:8091/health`.
+   2. En Google Cloud, volver a apuntar la app de Google Chat (URL del endpoint HTTP) al orquestador Python; mientras
+      apunte a la API .NET, Chat seguirá llegando a .NET.
+   3. Escalar a 0 el servicio .NET (`docker service scale <stack>_cotifly-api=0`) para que no haya dos backends activos.
+   4. **Aviso de datos:** el Python usa su propia base Postgres. Lo que el backend .NET escribió en SQL Server
+      (`dbo_cotifly`: cotizaciones, ajustes, correos, sesiones, usuarios) **no** es visible para el Python; no hay
+      migración inversa. Las cotizaciones hechas en .NET se consultan en SQL Server hasta volver a .NET.
 
 ## 5. Manifiestos del stack .NET (HU-006.6, #30)
 
@@ -316,20 +335,25 @@ Internet / red corporativa
         ├── volumen cotifly_pdfs → /data/pdfs
         ├── secreto de Swarm → /run/secrets/gchat_sa.json
         └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
-                                              → proveedor LLM, Google Chat, Nexo, SAP TM, relay SMTP
+                                              → proveedor LLM, Google Chat, Nexo, SAP TM, relay SMTP,
+                                                TRM en www.datos.gov.co:443
 ```
 
 - **SQL Server es externo.** HU-002.4 lo decidió: la instancia corporativa `tbsdatacenter` (base
   `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`; `dbsolucionesti` de solo lectura). No hay servicio de base de
   datos en el stack; la API llega por `ConnectionStrings__Cotifly`/`__Identidad` desde el worker. Requisito de red: el
   worker debe alcanzar `tbsdatacenter:1433` (pendiente de verificar en staging).
+- **Pendiente (HU-007.1, #33, con el DBA):** ¿staging y producción comparten `dbTarifario_Nexo_Pruebas`/`dbo_cotifly`?
+  Hoy solo existe esa base; si ambos stacks apuntan a ella, las pruebas de staging escriben en los datos de
+  producción. Definir una base o esquema de staging aparte, o aceptar explícitamente el riesgo, antes del primer
+  despliegue de producción.
 - **Un solo servicio** (ADR-002): no hay `bot-mcp` (las herramientas viven en el monolito) ni MinIO (ADR-012).
 - **Redes, equivalentes a las del Python:**
 
   | Python | .NET | Para qué |
   |---|---|---|
   | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
-  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, relay, SQL Server |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, TRM (`www.datos.gov.co`), relay, SQL Server |
   | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
 
 - **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,
@@ -340,6 +364,16 @@ Internet / red corporativa
 - **Actualización:** `update_config` con `failure_action: rollback`, `monitor: 60s` y `max_failure_ratio: 0`: si la
   tarea nueva no llega a *healthy*, Swarm vuelve a la imagen anterior sola. `start-first` en producción (sin corte);
   `stop-first` en staging mientras use el puerto en modo host (§5.3).
+  - **Límite:** *healthy* es la sonda de vida `/health`, que no toca la base. Una versión que arranca pero no llega a
+    SQL Server no se revierte sola: después de cada despliegue hay que comprobar `/health/ready` = 200 y, si no,
+    `docker service rollback` (§4.5, paso 5).
+- **Riesgo bajo, encabezados reenviados:** `dokploy-network` la comparten todos los servicios que Dokploy publica, y
+  `ForwardedHeaders__RedesConocidas__0` confía en toda su subred. Un contenedor de otra aplicación en esa red podría
+  llamar a la API con un `X-Forwarded-For` falso y saltarse el límite por IP de `/api/auth/*` (no la autenticación:
+  el login sigue exigiendo la verificación contra ClientePro). Propuesta: en cuanto Traefik tenga una IP estable o un
+  rango propio dentro de la red (verificarlo con `docker network inspect dokploy-network` en staging), usar
+  `ForwardedHeaders__ProxiesConocidos__0=<IP de Traefik>` (agregando esa línea al manifiesto, §5.4) o un CIDR más
+  estrecho en `RedesConocidas`.
 - **Una réplica:** la cola de Google Chat y el barrido de sesiones viven en el proceso, y el volumen de PDFs es local
   (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
@@ -545,3 +579,5 @@ no sirven para la instancia corporativa (`sa` no está disponible ahí).
 - Redeploy de la imagen anterior (`TAG` previo) desde Dokploy.
 - Las migraciones son aditivas; si una versión introduce una migración incompatible,
   usar `alembic downgrade <rev>` desde un contenedor del orquestador antes de bajar imagen.
+- **Volver del backend .NET al Python** (redesplegar este stack, reapuntar la app de Google Chat, escalar a 0 el
+  servicio .NET, datos de SQL Server no visibles para el Python): ver §4.5, paso 7.
