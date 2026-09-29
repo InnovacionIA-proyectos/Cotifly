@@ -20,7 +20,7 @@ Contenido:
 | `/api/auth/*` | camelCase del patrón "Login SSO — Cliente Pro" (`idUsuario`, `debeCambiarPassword`) | Excepción definida por el contrato: `user.nombre_completo` |
 | `/health`, `/health/ready`, `/pdfs/*`, `/chat/events` | JSON por defecto de ASP.NET Core o binario | `/pdfs/*` devuelve `application/pdf` inline |
 
-- Operaciones con `x-estado: borrador` (métricas de HU-010.1) no están congeladas.
+- Operaciones con `x-estado: borrador` no están congeladas; hoy son solo `/web/metricas/actividad` y `/ajustes-margen`, además obsoletas (`deprecated: true`) desde que HU-010.1 (#45) agregó `/web/metricas/comercial` y `/regional`.
 - Las rutas de los controllers son explícitas (`[Route("web/...")]`), nunca `[controller]`.
 - `ubicacion` del usuario sale `null` hasta que se cruce la regional con `DimEjecutivo`.
 
@@ -58,8 +58,10 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | GET / PUT | `/web/usuario/telefono` | `200 TelefonoComercial`; PUT `400` fuera del patrón; `401` si el comercial ya no existe |
 | GET | `/web/admin/lineas-negocio` | `200 [LineaNegocio]` (todas); `403` salvo `gerente_comercial` |
 | PUT | `/web/admin/lineas-negocio/{id}` | `200 LineaNegocio` (auditado); `400` (margen fuera de 0–0,99, método, campo faltante, número como texto); `403`; `404` |
-| GET | `/web/metricas/actividad` | **Borrador.** `200 [ActividadComercial]`: el comercial su fila; el gerente su regional |
-| GET | `/web/metricas/ajustes-margen` | **Borrador.** `200 [AjustesMargenComercial]`, mismo alcance |
+| GET | `/web/metricas/comercial?desde&hasta` | `200 MetricasComercial` `{periodo, usuario_id, indicadores, serie_mensual}` de las cotizaciones propias (comercial o gerente); `400 ErrorWeb` fechas no `AAAA-MM-DD`, `hasta < desde` o más de 3 años. Definiciones en el tag `metricas` del contrato y en [ADR-016](../specs/decisiones/ADR-016-metricas-agregadas-y-regional.md) |
+| GET | `/web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial`. `200 MetricasRegional` `{periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales, serie_mensual, concentracion_ciudades}` de su regional (o de un comercial de ella); `400` fechas o `usuario_id` no UUID; `403` comercial; `404 ErrorWeb` `Comercial no encontrado en tu regional.`; `409 ErrorNegocio` `REGIONAL_NO_ASIGNADA`; `503 ErrorNegocio` `REGIONAL_NO_DISPONIBLE` |
+| GET | `/web/metricas/actividad` | **Borrador obsoleto.** `200 [ActividadComercial]`: el comercial su fila; el gerente su regional |
+| GET | `/web/metricas/ajustes-margen` | **Borrador obsoleto.** `200 [AjustesMargenComercial]`, mismo alcance |
 | GET | `/pdfs/{archivo}` | `200 application/pdf` inline (dueño o gerente de su regional con Bearer; o el dueño con el enlace firmado `?t=` de Google Chat, 15 min); `401` (sin sesión, o enlace alterado o vencido); `404 ErrorWeb` (no existe o no es tuyo) |
 | POST | `/web/chat` | `200 RespuestaChat` `{texto, herramientas, precio, margen, pdf}` (los números salen de las herramientas del turno); `200 RespuestaChatError` `{texto, error: true}` ante un fallo del agente o del proveedor (texto del límite de peticiones del Python si es un 429); `400` (`sesion_id inválido`, mensaje vacío o de más de 8000); `401`; `404 {"error":"Sesión no encontrada."}` (sesión de otro comercial); `429` (`LimiteChat`) |
 | POST | `/chat/events` | Webhook de Google Chat (sin Bearer de ClientePro): `200` acuse (`{"text": ...}`, `hostAppDataAction...` en add-on, `{}` si no es mensaje); `400 {"error":"payload no es JSON"}`; `401 {"error":"JWT inválido o ausente"}` |
@@ -95,7 +97,8 @@ Errores de `/web/*` (`clsRespuestasWeb`, cumple la tabla "Para #12" de abajo):
 | `COTIZACION_NO_ENCONTRADA`, `NO_ENCONTRADO` (no existe o no es tuya; PDF ajeno) | 404 `ErrorWeb` (`Cotización no encontrada o no es tuya.`, igual en ambos casos) |
 | `NO_AUTENTICADO`, `USUARIO_NO_ENCONTRADO` | 401 `ErrorWeb` (`Inicia sesión de nuevo.`) |
 | `SIN_PERMISO` (rol revalidado en el caso de uso) | 403 `ErrorWeb` |
-| `CORREO_DESHABILITADO` | 503 `ErrorNegocio` |
+| `CORREO_DESHABILITADO`, `REGIONAL_NO_DISPONIBLE` | 503 `ErrorNegocio` |
+| `REGIONAL_NO_ASIGNADA` (tablero del gerente sin regional, #45) | 409 `ErrorNegocio` |
 | `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`, `SEGUIMIENTO_INVALIDO`, cuerpo mal formado | 400 `ErrorWeb` |
 | Resto de códigos de negocio (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`, y los de Nexo: `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_NO_DISPONIBLE`, `CUBICACION_DEMASIADO_GRANDE`...) | 400 `ErrorNegocio` (`detalle` como objeto `{"motivo": ...}`) |
 | Cuerpo de más de `SeguridadHttp:LimiteCuerpoWebBytes` | 413 `ErrorWeb` (fuera del contrato: transporte) |

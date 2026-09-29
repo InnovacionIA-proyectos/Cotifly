@@ -74,6 +74,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesConexiones>, clsValidadorOpcionesConexiones>();
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesRegional>(configuracion, clsOpcionesRegional.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSapTm>(configuracion, clsOpcionesSapTm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesSapTm>, clsValidadorOpcionesSapTm>();
@@ -151,6 +152,11 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsEmisorTokens, clsEmisorTokensJwt>();
         servicios.TryAddScoped<IClsAlmacenIdentidadExterno, clsAlmacenIdentidadSolucionesTi>();
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
+
+        // Regional del usuario (HU-010.1, ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional.
+        servicios.TryAddScoped<clsDirectorioEjecutivosDimEjecutivo>();
+        servicios.TryAddSingleton<clsDirectorioEjecutivosNoDisponible>();
+        servicios.TryAddScoped<IClsDirectorioEjecutivos>(clsFabricaDirectorioEjecutivos.Crear);
     }
 
     /// <summary>

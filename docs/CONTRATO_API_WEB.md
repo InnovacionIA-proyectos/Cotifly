@@ -59,15 +59,58 @@ ClientePro (ya autenticado)
 | `GET` / `PUT /web/usuario/telefono` | ambos | Teléfono que se imprime en el PDF |
 | `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
-| `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador**, se define en HU-010.1) |
-| `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador**, se define en HU-010.1) |
+| `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
+| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
+| `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador obsoleto**: usar `/web/metricas/comercial` y `/regional`) |
+| `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador obsoleto**) |
 | `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es solo para el enlace firmado de Google Chat (ADR-011); el frontend no lo usa |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
-"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
+"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas del borrador (`/actividad`, `/ajustes-margen`) el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
 
 **Folio** (ADR-011, aprobado el 2026-09-25, con iniciales desde el mismo día): lo genera siempre el servidor, `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`: NIT solo con dígitos cuando la cotización lo tiene, dos letras con las iniciales del comercial (primer nombre + primer apellido, sin tildes; p. ej. "Duban Guerra Castro" → `DG`), fecha de Bogotá, `NNN` consecutivo diario de esas iniciales (`001`…`999`; dos comerciales con las mismas iniciales comparten la secuencia) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`. Máximo 50 caracteres. El frontend no debe asumir el formato para nada distinto de mostrarlo.
+
+### 3.1 Métricas del tablero (HU-010.1, #45)
+
+Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agregadas-y-regional.md`; esquemas y ejemplos en el tag `metricas` del spec.
+
+**Parámetros.** `desde` y `hasta` opcionales (`AAAA-MM-DD`, fechas de Bogotá, ambas incluidas; por defecto del 1 de enero del año en curso a hoy; máximo 3 años). En `/regional`, `usuario_id` opcional (UUID de un comercial de la regional). Fechas mal formadas, `hasta < desde` o `usuario_id` que no es UUID: 400.
+
+**Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
+- `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).
+- `/regional`: solo `gerente_comercial` (un comercial recibe 403). Siempre la regional del gerente autenticado; no se puede pedir otra. `comerciales` trae a todos los usuarios de la regional (para el selector); `usuario_id` recalcula `indicadores`, `serie_mensual` y `concentracion_ciudades` para ese comercial. Un `usuario_id` que no es de la regional: 404 `{"error":"Comercial no encontrado en tu regional."}`.
+- Gerente sin regional: 409 `ErrorNegocio` `REGIONAL_NO_ASIGNADA` (el frontend muestra "tu usuario no tiene regional asignada"). Fuente de la regional caída: 503 `REGIONAL_NO_DISPONIBLE` (reintentar más tarde).
+
+**Qué se cuenta.** Solo la **versión vigente** de cada cotización (la de mayor `version` entre las filas del mismo comercial con el mismo folio base, es decir, el folio sin `-vN`), creada dentro del periodo, **en cualquier estado** (lo mismo que lista "Mis cotizaciones"). `versiones` informa cuántas filas hay contando todas las versiones.
+
+**Definiciones** (para recalcular a mano sobre `dbo_cotifly`, HU-010.4):
+
+| Campo | Definición |
+|---|---|
+| `cantidad` | Cotizaciones vigentes del periodo |
+| `versiones` | Filas del periodo contando todas las versiones |
+| `ganadas` / `perdidas` / `sin_resultado` | `ganada = 1` / `ganada = 0` / `ganada` nulo |
+| `pendientes_por_cotizar` | `precioFinal` nulo |
+| `conversion` | ganadas / cantidad (definición del backlog); `null` si cantidad = 0 |
+| `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
+| `margen_promedio` | Promedio simple de `margenAplicado` (0.15 = 15 %) |
+| `costeo_total` | SUM(`costo`), en COP |
+| `valor_cotizado_cop` | SUM(`precio_cop`) |
+| `valor_ganado_cop` | SUM(`precio_cop`) de las ganadas (el "dinero recaudado" del mapa) |
+| `ganancias` | SUM(`precio_cop` − `costo`) de las ganadas con precio y costo |
+| `cotizaciones_usd` | Cotizaciones en moneda distinta de COP |
+| `tiempo_promedio_cotizacion_horas` | Promedio de `costeoListoAt` − `createdAt`, en horas |
+| `desviacion_promedio_margen` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` y cantidad de ajustes de esas cotizaciones |
+| `lineas_negocio_activas` (solo `/regional`) | `MargenesPolitica.isActive = 1` |
+
+`precio_cop` = `precioFinal` en COP; en USD, `round(precioFinal × trmAplicada, 2)`. El costo ya está en COP y nunca se convierte. Montos con 2 decimales; fracciones de 0 a 1 con 4 decimales; redondeo half-to-even.
+
+**Gráficas.** `serie_mensual` trae un punto por mes del periodo (`AAAA-MM`, también los meses vacíos) con cantidad, ganadas, perdidas, valor cotizado y valor ganado. `concentracion_ciudades.por_destino` (municipio de destino, el que usa el mapa) y `por_origen` traen cantidad, ganadas y dinero por municipio, con el texto del catálogo de Nexo; `disponible` es `false` hasta que se aplique el script 0004 (columnas `origen`/`destino`), y las cotizaciones sin ciudad cuentan en `sin_destino`/`sin_origen`.
+
+**Estado vacío.** Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios y la serie en 0.
+
+**Pendiente de Nexo, no está en el contrato:** "score de urgencia" y "deadline vencido" por cotización. Se agregarán como campos nuevos de `indicadores` (cambio compatible) cuando Nexo publique su contrato.
 
 ### Reservados para la próxima versión (HU-005)
 
@@ -131,7 +174,8 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
-| 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. |
+| 409 | `GET /web/metricas/regional` de un gerente sin regional: `ErrorNegocio` con `REGIONAL_NO_ASIGNADA`. |
+| 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. |
 
 ## 6. CORS
 

@@ -32,8 +32,38 @@ tags:
     description: Administración de políticas de margen (rol gerente_comercial)
   - name: metricas
     description: |
-      Tablero de efectividad. BORRADOR: exponen las vistas actuales; HU-010.1 definirá
-      los KPIs definitivos y el filtro por regional.
+      Tablero de métricas agregadas (HU-010.1, ADR-016). `GET /web/metricas/comercial` (las cotizaciones
+      propias) y `GET /web/metricas/regional` (solo `gerente_comercial`: su regional, filtrable por comercial).
+      `/web/metricas/actividad` y `/web/metricas/ajustes-margen` son el borrador anterior y quedan obsoletos.
+
+      Definiciones (recalculables a mano sobre `dbo_cotifly`, ver `docs/CONTRATO_API_WEB.md` §Métricas):
+      - **Universo:** filas de `Cotizaciones` de los comerciales del alcance, **solo la versión vigente** de cada
+        cotización y con `createdAt` (de esa versión) dentro del periodo, en fechas de America/Bogota. La cadena de
+        versiones es `(usuarioId, folio base)`, donde el folio base es el folio sin el sufijo `-vN` (ADR-011: la v2+
+        reutiliza el folio de la v1); la vigente es la de mayor `version`. Se cuentan todos los estados (lo mismo que
+        lista "Mis cotizaciones"), también las que aún no tienen precio.
+      - **Moneda:** `precio_cop = precioFinal` si `moneda` es `COP` (o nula); `precio_cop = round(precioFinal ×
+        trmAplicada, 2)` si es otra moneda (USD) con `trmAplicada > 0`. Una fila en USD con `trmAplicada = 0` no suma
+        dinero. `costo` siempre está en COP y nunca se convierte.
+      - `cantidad` = filas del universo; `versiones` = todas las filas (cualquier versión) creadas en el periodo.
+      - `ganadas` = `ganada = 1`; `perdidas` = `ganada = 0`; `sin_resultado` = `ganada` nulo.
+      - `pendientes_por_cotizar` = `precioFinal` nulo (sin precio todavía, p. ej. esperando el costeo de Nexo).
+      - `conversion` = ganadas / cantidad (definición del backlog HU-010, "#ganadas / #totales");
+        `conversion_sobre_cerradas` = ganadas / (ganadas + perdidas). Fracción de 0 a 1 con 4 decimales; `null` si el
+        denominador es 0.
+      - `margen_promedio` = promedio simple de `margenAplicado` (fracción, 0.15 = 15 %) de las filas que lo tienen.
+      - `costeo_total` = SUM(`costo`) en COP de todo el universo.
+      - `valor_cotizado_cop` = SUM(`precio_cop`); `valor_ganado_cop` = SUM(`precio_cop`) de las ganadas ("dinero
+        recaudado" del mapa).
+      - `ganancias` = SUM(`precio_cop` − `costo`) de las ganadas con precio y costo.
+      - `tiempo_promedio_cotizacion_horas` = promedio de (`costeoListoAt` − `createdAt`) en horas, de las filas con
+        `costeoListoAt`.
+      - `desviacion_promedio_margen` = promedio de `MargenAjustes.diferencia` (negociado − política) de los ajustes
+        de las cotizaciones del universo; `ajustes_margen` = cuántos ajustes hay.
+      - Montos en COP con 2 decimales; redondeo half-to-even.
+
+      Pendiente de Nexo, NO implementado: "score de urgencia" y "deadline vencido" por cotización (su contrato
+      depende del equipo de Nexo, ver ADR-016).
   - name: chat
     description: Webhook de Google Chat
   - name: sistema
@@ -344,13 +374,205 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
 
+  /web/metricas/comercial:
+    get:
+      operationId: obtenerMetricasComercial
+      tags: [metricas]
+      summary: Métricas de las cotizaciones propias (tablero del comercial, HU-010.2)
+      description: |
+        Indicadores de las cotizaciones del usuario autenticado (roles `comercial` y `gerente_comercial`: el gerente
+        también cotiza y aquí ve solo las suyas). El rol sale del claim `rol` del access token, emitido en el login SSO
+        con la verificación doble de ClientePro (ADR-009); no se lee de `UsuariosWeb`. Definiciones en el tag
+        `metricas`. Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios y la serie con cada mes
+        en 0 (el frontend muestra el estado vacío).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/DesdeMetricas'
+        - $ref: '#/components/parameters/HastaMetricas'
+      responses:
+        '200':
+          description: Indicadores del comercial en el periodo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricasComercial'
+              example:
+                periodo: {desde: '2026-01-01', hasta: '2026-09-29', zona_horaria: America/Bogota}
+                usuario_id: 5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10
+                indicadores:
+                  cantidad: 12
+                  versiones: 14
+                  ganadas: 3
+                  perdidas: 4
+                  sin_resultado: 5
+                  pendientes_por_cotizar: 2
+                  conversion: 0.25
+                  conversion_sobre_cerradas: 0.4286
+                  margen_promedio: 0.1542
+                  costeo_total: 38500000.00
+                  valor_cotizado_cop: 45310000.00
+                  valor_ganado_cop: 12400000.00
+                  ganancias: 1860000.00
+                  cotizaciones_usd: 1
+                  tiempo_promedio_cotizacion_horas: 5.75
+                  desviacion_promedio_margen: -0.015
+                  ajustes_margen: 2
+                serie_mensual:
+                  - {mes: '2026-08', cantidad: 5, ganadas: 1, perdidas: 2, valor_cotizado_cop: 18200000.00, valor_ganado_cop: 4100000.00}
+                  - {mes: '2026-09', cantidad: 7, ganadas: 2, perdidas: 2, valor_cotizado_cop: 27110000.00, valor_ganado_cop: 8300000.00}
+        '400':
+          description: '`desde`/`hasta` no son fechas AAAA-MM-DD, `hasta` es anterior a `desde` o el rango supera 3 años'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: "El parámetro 'desde' debe ser una fecha AAAA-MM-DD."
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
+  /web/metricas/regional:
+    get:
+      operationId: obtenerMetricasRegional
+      tags: [metricas]
+      summary: Métricas de la regional del gerente comercial (tablero del gerente, HU-010.3)
+      description: |
+        Solo `gerente_comercial` (claim `rol` del token; un `comercial` recibe 403). El alcance es SIEMPRE la regional
+        del usuario autenticado, resuelta en el servidor (`DWCubosEBSSAP.DimEjecutivo` cuando está conectada; si no,
+        `UsuariosWeb.regional`, que fija el DBA; ADR-016). No se acepta una regional por parámetro.
+
+        - Sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales).
+        - Fuente de la regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE`.
+        - `usuario_id` filtra `indicadores`, `serie_mensual` y `concentracion_ciudades` a un comercial. Si no es de la
+          regional (o no existe) responde 404, igual en los dos casos. `comerciales` trae siempre a todos los de la
+          regional (para el selector), cada uno con sus indicadores del periodo.
+        - `concentracion_ciudades` agrupa por el municipio de destino (`por_destino`, el que usa el mapa) y también por
+          el de origen (`por_origen`). Las columnas `origen`/`destino` llegan con el script 0004 (HU-005.8); mientras
+          no esté aplicado, `disponible` es `false` y las listas van vacías.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/DesdeMetricas'
+        - $ref: '#/components/parameters/HastaMetricas'
+        - name: usuario_id
+          in: query
+          required: false
+          description: Id (`UsuariosWeb.id`) de un comercial de la regional para filtrar los indicadores.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Indicadores de la regional (o del comercial filtrado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricasRegional'
+              example:
+                periodo: {desde: '2026-01-01', hasta: '2026-09-29', zona_horaria: America/Bogota}
+                regional: ANTIOQUIA
+                fuente_regional: usuarios_web
+                usuario_id: null
+                lineas_negocio_activas: 8
+                indicadores:
+                  cantidad: 40
+                  versiones: 46
+                  ganadas: 9
+                  perdidas: 11
+                  sin_resultado: 20
+                  pendientes_por_cotizar: 6
+                  conversion: 0.225
+                  conversion_sobre_cerradas: 0.45
+                  margen_promedio: 0.1497
+                  costeo_total: 131000000.00
+                  valor_cotizado_cop: 154100000.00
+                  valor_ganado_cop: 36900000.00
+                  ganancias: 5530000.00
+                  cotizaciones_usd: 3
+                  tiempo_promedio_cotizacion_horas: 7.2
+                  desviacion_promedio_margen: -0.0125
+                  ajustes_margen: 6
+                comerciales:
+                  - usuario_id: 5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10
+                    nombre_usuario: APEREZ
+                    nombre_completo: Ana Pérez
+                    indicadores:
+                      cantidad: 12
+                      versiones: 14
+                      ganadas: 3
+                      perdidas: 4
+                      sin_resultado: 5
+                      pendientes_por_cotizar: 2
+                      conversion: 0.25
+                      conversion_sobre_cerradas: 0.4286
+                      margen_promedio: 0.1542
+                      costeo_total: 38500000.00
+                      valor_cotizado_cop: 45310000.00
+                      valor_ganado_cop: 12400000.00
+                      ganancias: 1860000.00
+                      cotizaciones_usd: 1
+                      tiempo_promedio_cotizacion_horas: 5.75
+                      desviacion_promedio_margen: -0.015
+                      ajustes_margen: 2
+                serie_mensual:
+                  - {mes: '2026-08', cantidad: 18, ganadas: 4, perdidas: 5, valor_cotizado_cop: 70100000.00, valor_ganado_cop: 16400000.00}
+                  - {mes: '2026-09', cantidad: 22, ganadas: 5, perdidas: 6, valor_cotizado_cop: 84000000.00, valor_ganado_cop: 20500000.00}
+                concentracion_ciudades:
+                  disponible: true
+                  sin_destino: 4
+                  sin_origen: 4
+                  por_destino:
+                    - {ciudad: BOGOTA D.C., cantidad: 15, ganadas: 4, valor_cotizado_cop: 60200000.00, valor_ganado_cop: 17100000.00}
+                    - {ciudad: CARTAGENA, cantidad: 9, ganadas: 2, valor_cotizado_cop: 35800000.00, valor_ganado_cop: 8900000.00}
+                  por_origen:
+                    - {ciudad: MEDELLIN, cantidad: 30, ganadas: 7, valor_cotizado_cop: 118000000.00, valor_ganado_cop: 28700000.00}
+        '400':
+          description: Fechas inválidas (como en `/web/metricas/comercial`) o `usuario_id` que no es un UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          description: El `usuario_id` no es un comercial de la regional del gerente (o no existe)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: "Comercial no encontrado en tu regional."
+        '409':
+          description: El gerente no tiene regional asignada (`REGIONAL_NO_ASIGNADA`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: REGIONAL_NO_ASIGNADA
+                  mensaje: "Tu usuario no tiene una regional asignada. Pide al administrador que la registre."
+        '503':
+          description: La fuente de la regional (`DimEjecutivo`) está configurada pero no responde (`REGIONAL_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/metricas/actividad:
     get:
       operationId: obtenerActividadComercial
       x-estado: borrador
+      deprecated: true
       tags: [metricas]
-      summary: Actividad por comercial (vista vActividadPorComercial)
-      description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
+      summary: Actividad por comercial (vista vActividadPorComercial). Obsoleto, usar /web/metricas/comercial y /regional
+      description: |
+        Borrador anterior a HU-010.1; se conserva por compatibilidad. El rol gerente_comercial ve a los comerciales de
+        su regional (`UsuariosWeb.regional`; si es nula, solo su fila); el rol comercial solo su propia fila. Cuenta
+        todas las versiones y no convierte moneda.
       security:
         - bearer: []
       responses:
@@ -369,9 +591,13 @@ paths:
     get:
       operationId: obtenerAjustesMargen
       x-estado: borrador
+      deprecated: true
       tags: [metricas]
-      summary: Ajustes de margen por comercial (vista vAjustesMargenPorComercial)
-      description: El rol gerente_comercial ve a los comerciales de su regional; el rol comercial solo su propia fila.
+      summary: Ajustes de margen por comercial (vista vAjustesMargenPorComercial). Obsoleto, usar /web/metricas/regional
+      description: |
+        Borrador anterior a HU-010.1; se conserva por compatibilidad (la desviación promedio pasó a
+        `IndicadoresMetricas.desviacion_promedio_margen`). El rol gerente_comercial ve a los comerciales de su regional;
+        el rol comercial solo su propia fila.
       security:
         - bearer: []
       responses:
@@ -832,6 +1058,27 @@ components:
         Se acepta cualquier folio existente (también los heredados del Python, como
         `PCN-23072026`), por eso no se valida con un patrón.
       example: PCN-DG-25092026-001
+    DesdeMetricas:
+      name: desde
+      in: query
+      required: false
+      description: |
+        Primer día del periodo (AAAA-MM-DD, fecha de America/Bogota, incluido). Por defecto el 1 de enero del año en
+        curso. El periodo va de `desde` 00:00 a `hasta` 24:00 en Bogotá (UTC−5) y se compara con `createdAt` de la
+        versión vigente. Rango máximo de 3 años.
+      schema:
+        type: string
+        format: date
+      example: '2026-01-01'
+    HastaMetricas:
+      name: hasta
+      in: query
+      required: false
+      description: Último día del periodo (AAAA-MM-DD, America/Bogota, incluido). Por defecto hoy.
+      schema:
+        type: string
+        format: date
+      example: '2026-09-29'
 
   responses:
     Validacion:
@@ -931,6 +1178,9 @@ components:
                 `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
                 (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
+                Solo en `GET /web/metricas/regional` (HU-010.1, ADR-016): `REGIONAL_NO_ASIGNADA` (409: el gerente no
+                tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
+                conexión a `DimEjecutivo` está configurada pero falla).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -959,6 +1209,8 @@ components:
                 - CUBICACION_NO_DISPONIBLE
                 - CUBICACION_DEMASIADO_GRANDE
                 - MUNICIPIO_ARGUMENTO_INVALIDO
+                - REGIONAL_NO_ASIGNADA
+                - REGIONAL_NO_DISPONIBLE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1299,6 +1551,219 @@ components:
           enum: [margen, markup]
         is_active:
           type: boolean
+
+    PeriodoMetricas:
+      type: object
+      description: Periodo efectivamente aplicado (con los valores por defecto ya resueltos).
+      required: [desde, hasta, zona_horaria]
+      properties:
+        desde:
+          type: string
+          format: date
+        hasta:
+          type: string
+          format: date
+        zona_horaria:
+          type: string
+          example: America/Bogota
+
+    IndicadoresMetricas:
+      type: object
+      description: |
+        KPIs de un conjunto de cotizaciones (versión vigente, periodo). Definición exacta de cada campo en el tag
+        `metricas` y en ADR-016. Montos en COP con 2 decimales; fracciones de 0 a 1.
+      required: [cantidad, versiones, ganadas, perdidas, sin_resultado, pendientes_por_cotizar, conversion,
+                 conversion_sobre_cerradas, margen_promedio, costeo_total, valor_cotizado_cop, valor_ganado_cop, ganancias,
+                 cotizaciones_usd, tiempo_promedio_cotizacion_horas, desviacion_promedio_margen, ajustes_margen]
+      properties:
+        cantidad:
+          type: integer
+          description: Cotizaciones (versión vigente) creadas en el periodo, en cualquier estado.
+        versiones:
+          type: integer
+          description: Filas creadas en el periodo contando todas las versiones (referencia; no entra en ningún cociente).
+        ganadas:
+          type: integer
+          description: '`ganada = 1`.'
+        perdidas:
+          type: integer
+          description: '`ganada = 0`.'
+        sin_resultado:
+          type: integer
+          description: '`ganada` nulo (pendientes por marcar ganada o perdida).'
+        pendientes_por_cotizar:
+          type: integer
+          description: '`precioFinal` nulo (sin precio todavía).'
+        conversion:
+          type: number
+          nullable: true
+          description: ganadas / cantidad (backlog HU-010). `null` si cantidad es 0.
+        conversion_sobre_cerradas:
+          type: number
+          nullable: true
+          description: ganadas / (ganadas + perdidas). `null` si no hay ninguna cerrada.
+        margen_promedio:
+          type: number
+          nullable: true
+          description: Promedio simple de `margenAplicado` (fracción). `null` si ninguna lo tiene.
+        costeo_total:
+          type: number
+          description: SUM(`costo`) en COP (el costo nunca se convierte).
+        valor_cotizado_cop:
+          type: number
+          description: SUM(`precio_cop`), con `precio_cop = round(precioFinal × trmAplicada, 2)` en USD.
+        valor_ganado_cop:
+          type: number
+          description: SUM(`precio_cop`) de las ganadas.
+        ganancias:
+          type: number
+          description: SUM(`precio_cop` − `costo`) de las ganadas con precio y costo.
+        cotizaciones_usd:
+          type: integer
+          description: Cotizaciones del universo en una moneda distinta de COP.
+        tiempo_promedio_cotizacion_horas:
+          type: number
+          nullable: true
+          description: Promedio de (`costeoListoAt` − `createdAt`) en horas (2 decimales). `null` si ninguna tiene `costeoListoAt`.
+        desviacion_promedio_margen:
+          type: number
+          nullable: true
+          description: Promedio de `MargenAjustes.diferencia` de las cotizaciones del universo (4 decimales). `null` sin ajustes.
+        ajustes_margen:
+          type: integer
+          description: Ajustes de margen (`MargenAjustes`) de las cotizaciones del universo.
+
+    PuntoSerieMensual:
+      type: object
+      description: |
+        Un mes (America/Bogota) del periodo, para la línea de tiempo. La serie trae todos los meses del periodo en orden,
+        también los que no tienen cotizaciones (en 0). Mismo universo y mismas definiciones que `IndicadoresMetricas`.
+      required: [mes, cantidad, ganadas, perdidas, valor_cotizado_cop, valor_ganado_cop]
+      properties:
+        mes:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+          example: '2026-09'
+        cantidad:
+          type: integer
+        ganadas:
+          type: integer
+        perdidas:
+          type: integer
+        valor_cotizado_cop:
+          type: number
+        valor_ganado_cop:
+          type: number
+
+    MetricaCiudad:
+      type: object
+      description: Cotizaciones del universo con ese municipio (texto del catálogo de Nexo, tal como se guardó).
+      required: [ciudad, cantidad, ganadas, valor_cotizado_cop, valor_ganado_cop]
+      properties:
+        ciudad:
+          type: string
+        cantidad:
+          type: integer
+        ganadas:
+          type: integer
+        valor_cotizado_cop:
+          type: number
+        valor_ganado_cop:
+          type: number
+          description: Dinero recaudado (ganadas) en COP.
+
+    ConcentracionCiudades:
+      type: object
+      description: |
+        Concentración por municipio para el mapa (HU-010.3). `por_destino` es la vista principal (dónde se entrega);
+        `por_origen` se da como complemento. Ordenadas por `cantidad` descendente y luego por nombre. Las cotizaciones del
+        chat no guardan ciudades y cuentan en `sin_destino`/`sin_origen`.
+      required: [disponible, por_destino, por_origen, sin_destino, sin_origen]
+      properties:
+        disponible:
+          type: boolean
+          description: '`false` mientras el esquema no tenga las columnas `origen`/`destino` (script 0004 sin aplicar).'
+        por_destino:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricaCiudad'
+        por_origen:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricaCiudad'
+        sin_destino:
+          type: integer
+        sin_origen:
+          type: integer
+
+    MetricasComercial:
+      type: object
+      required: [periodo, usuario_id, indicadores, serie_mensual]
+      properties:
+        periodo:
+          $ref: '#/components/schemas/PeriodoMetricas'
+        usuario_id:
+          type: string
+          format: uuid
+        indicadores:
+          $ref: '#/components/schemas/IndicadoresMetricas'
+        serie_mensual:
+          type: array
+          items:
+            $ref: '#/components/schemas/PuntoSerieMensual'
+
+    ComercialRegional:
+      type: object
+      description: Un usuario de la regional con sus indicadores del periodo (para el selector del tablero).
+      required: [usuario_id, nombre_usuario, nombre_completo, indicadores]
+      properties:
+        usuario_id:
+          type: string
+          format: uuid
+        nombre_usuario:
+          type: string
+          nullable: true
+        nombre_completo:
+          type: string
+          nullable: true
+        indicadores:
+          $ref: '#/components/schemas/IndicadoresMetricas'
+
+    MetricasRegional:
+      type: object
+      required: [periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales,
+                 serie_mensual, concentracion_ciudades]
+      properties:
+        periodo:
+          $ref: '#/components/schemas/PeriodoMetricas'
+        regional:
+          type: string
+          description: Regional del gerente autenticado.
+        fuente_regional:
+          type: string
+          enum: [dim_ejecutivo, usuarios_web]
+          description: De dónde salió la regional (`DWCubosEBSSAP.DimEjecutivo` o `UsuariosWeb.regional`).
+        usuario_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Comercial filtrado, o `null` si los indicadores son de toda la regional.
+        indicadores:
+          $ref: '#/components/schemas/IndicadoresMetricas'
+        lineas_negocio_activas:
+          type: integer
+          description: Líneas de `MargenesPolitica` con `isActive = 1` (no depende del periodo ni de la regional).
+        comerciales:
+          type: array
+          description: Todos los usuarios de la regional, ordenados por nombre, aunque se filtre por `usuario_id`.
+          items:
+            $ref: '#/components/schemas/ComercialRegional'
+        serie_mensual:
+          type: array
+          items:
+            $ref: '#/components/schemas/PuntoSerieMensual'
+        concentracion_ciudades:
+          $ref: '#/components/schemas/ConcentracionCiudades'
 
     ActividadComercial:
       type: object

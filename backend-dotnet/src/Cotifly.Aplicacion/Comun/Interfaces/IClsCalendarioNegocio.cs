@@ -9,4 +9,13 @@ public interface IClsCalendarioNegocio
 {
     /// <summary>Fecha actual en la zona de negocio.</summary>
     DateOnly Hoy { get; }
+
+    /// <summary>Id de la zona de negocio (p. ej. <c>America/Bogota</c>).</summary>
+    string ZonaHoraria { get; }
+
+    /// <summary>Fecha de negocio de un instante (HU-010.1: mes de la serie de métricas).</summary>
+    DateOnly FechaDe(DateTimeOffset instante);
+
+    /// <summary>Instante en que empieza <paramref name="fecha"/> (00:00) en la zona de negocio (HU-010.1: límites del periodo).</summary>
+    DateTimeOffset InicioDelDia(DateOnly fecha);
 }

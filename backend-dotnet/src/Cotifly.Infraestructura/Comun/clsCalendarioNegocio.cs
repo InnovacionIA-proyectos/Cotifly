@@ -12,5 +12,15 @@ public sealed class clsCalendarioNegocio(IClsReloj reloj, IOptions<clsOpcionesZo
 {
     private readonly TimeZoneInfo _zona = TimeZoneInfo.FindSystemTimeZoneById(opciones.Value.ZonaHoraria);
 
-    public DateOnly Hoy => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(reloj.AhoraUtc, _zona).DateTime);
+    public DateOnly Hoy => FechaDe(reloj.AhoraUtc);
+
+    public string ZonaHoraria { get; } = opciones.Value.ZonaHoraria;
+
+    public DateOnly FechaDe(DateTimeOffset instante) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instante, _zona).DateTime);
+
+    public DateTimeOffset InicioDelDia(DateOnly fecha)
+    {
+        var local = fecha.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, _zona.GetUtcOffset(local));
+    }
 }

@@ -38,6 +38,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
     private string? _cadenaSolo0001;
+    private string? _cadenaConCiudades;
+    private string? _cadenaDirectorio;
 
     /// <summary>Cadena a <c>dbTarifario_Nexo_Pruebas</c> con el esquema aplicado.</summary>
     public string CadenaCotifly { get; private set; } = string.Empty;
@@ -173,6 +175,76 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             }
 
             return _cadenaSolo0001;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>
+    /// Base auxiliar con 0001 a 0003 y además las columnas <c>origen</c>/<c>destino</c> de <c>Cotizaciones</c> con la misma
+    /// definición que el script 0004 (HU-005.8, en otro PR): para probar la concentración por ciudad de HU-010.1 sin alterar la
+    /// base compartida (la prueba de deriva del modelo EF la compara con el catálogo). Se crea una vez por contenedor.
+    /// </summary>
+    public async Task<string> CadenaConCiudadesAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaConCiudades is null)
+            {
+                const string NombreAuxiliar = "dbCiudades_Pruebas";
+                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                var cadena = ConBase(CadenaMaster, NombreAuxiliar);
+                foreach (var nombre in Scripts)
+                {
+                    var script = (await File.ReadAllTextAsync(RutaScript(nombre)))
+                        .Replace($"USE {NombreBase};", $"USE [{NombreAuxiliar}];", StringComparison.OrdinalIgnoreCase);
+                    await EjecutarLotesAsync(cadena, PartirPorGo(script));
+                }
+
+                await EjecutarAsync(cadena, """
+                    ALTER TABLE dbo_cotifly.Cotizaciones ADD origen NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
+                    ALTER TABLE dbo_cotifly.Cotizaciones ADD destino NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
+                    """);
+                _cadenaConCiudades = cadena;
+            }
+
+            return _cadenaConCiudades;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>
+    /// <c>DWCubosEBSSAP</c> falsa con <c>dbo.DimEjecutivo</c> (<c>ID</c> y <c>REGIONAL</c> VARCHAR, el cruce que documenta el 0001;
+    /// el esquema real está pendiente del DBA) para el directorio de ejecutivos de HU-010.1. Se crea una vez por contenedor;
+    /// cada prueba inserta sus propias filas con nombres únicos.
+    /// </summary>
+    public async Task<string> CadenaDirectorioEjecutivosAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaDirectorio is null)
+            {
+                const string NombreAuxiliar = "DWCubosEBSSAP";
+                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                var cadena = ConBase(CadenaMaster, NombreAuxiliar);
+                await EjecutarAsync(cadena, """
+                    CREATE TABLE dbo.DimEjecutivo (
+                        ID          VARCHAR(50)  NULL,
+                        NOMBRE      VARCHAR(200) NULL,
+                        REGIONAL    VARCHAR(100) NULL
+                    );
+                    """);
+                _cadenaDirectorio = cadena;
+            }
+
+            return _cadenaDirectorio;
         }
         finally
         {
