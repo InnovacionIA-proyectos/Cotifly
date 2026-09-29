@@ -22,6 +22,44 @@ public sealed class clsGeneradorPdfMigraDocTests
         return (pdf, clsLectorPdf.Leer(pdf.Contenido));
     }
 
+    // HU-012.3: PDF en dólares con la aclaración del piso mínimo bajo la tabla; en pesos, sin ninguna aclaración de TRM.
+    [Fact]
+    public void EnDolaresLaTarifaVaEnUsdConLaAclaracionDelPisoMinimo()
+    {
+        var (pdf, lector) = Generar(clsDocumentosPrueba.Dolares());
+
+        pdf.Paginas.Should().Be(3, "la aclaración cabe en la página de la tarifa");
+        var tarifa = lector.Paginas[1];
+        tarifa.Should().Contain("US$996,35");
+        tarifa.Should().Contain("Cotización en dólares:");
+        tarifa.Should().Contain("TRM de $3.306,86 por dólar");
+        tarifa.Should().Contain("se ajusta día a día con la TRM vigente");
+        tarifa.Should().Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
+        tarifa.IndexOf("Cotización en dólares:", StringComparison.Ordinal).Should()
+            .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la aclaración va debajo de la tabla");
+    }
+
+    [Fact]
+    public void EnPesosElPdfNoTraeAclaracionDeTrm()
+    {
+        var (_, lector) = Generar(clsDocumentosPrueba.Nacional());
+
+        lector.Texto.Should().NotContain("TRM").And.NotContain("Cotización en dólares").And.NotContain("US$");
+    }
+
+    [Fact]
+    public void LaVarianteMultiEnDolaresTambienTraeLaAclaracion()
+    {
+        var payload = clsDocumentosPrueba.Payload();
+        payload.Secciones = [payload.Tarifa!];
+        payload.Tarifa = null;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-2", clsDocumentosPrueba.Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m, 3_294_798m).Valor;
+
+        var (_, lector) = Generar(documento);
+
+        lector.Texto.Should().Contain("Cotización en dólares:").And.Contain("TRM de $3.306,86");
+    }
+
     // test_render_pdf_genera_archivo_y_paginas
     [Fact]
     public void LaSolicitudDeEjemploTieneTresPaginasConLosBloquesEnSuSitio()
@@ -218,6 +256,7 @@ public sealed class clsGeneradorPdfMigraDocTests
             ("dotnet-1-nacional-PCN-19032026.pdf", clsDocumentosPrueba.Nacional()),
             ("dotnet-2-internacional-PCN-24092026.pdf", clsDocumentosPrueba.Internacional()),
             ("dotnet-3-multiseccion-PCN-19032026-v2.pdf", clsDocumentosPrueba.Multi()),
+            ("dotnet-4-dolares-PCN-USD-1.pdf", clsDocumentosPrueba.Dolares()),
         };
 
         foreach (var (nombre, documento) in casos)

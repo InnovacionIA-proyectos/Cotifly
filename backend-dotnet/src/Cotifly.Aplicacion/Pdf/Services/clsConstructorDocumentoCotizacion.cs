@@ -22,13 +22,35 @@ public static class clsConstructorDocumentoCotizacion
     /// <param name="folio">Folio que se imprime como referencia.</param>
     /// <param name="firma">Firma con los datos de <c>UsuariosWeb</c> (el celular solo si hay teléfono).</param>
     /// <param name="hoy">Fecha de negocio para cuando el payload no trae <c>fecha</c>.</param>
-    /// <param name="monedaPorDefecto">Moneda de la cotización para las filas y servicios sin moneda propia (<c>USD</c> → <c>US$</c>).</param>
+    /// <param name="monedaPorDefecto">
+    /// Moneda de la cotización (obligatoria: <c>COP</c> o <c>USD</c>) para las filas y servicios sin moneda propia (<c>USD</c> → <c>US$</c>).
+    /// </param>
+    /// <param name="trmAplicada">
+    /// TRM de la cotización (HU-012.3): 0 en COP; en USD debe ser &gt; 0 (si no, <c>PDF_PAYLOAD_INVALIDO</c>: no hay un PDF en dólares sin la TRM
+    /// del piso) y agrega la aclaración del piso mínimo.
+    /// </param>
+    /// <param name="precioCop">Valor cotizado originalmente en pesos: en USD es obligatorio (&gt; 0), es el piso que imprime la aclaración.</param>
     public static clsResultado<clsDocumentoCotizacion> Construir(
-        clsCotizacionPdfPayload payload, string folio, clsFirmaDocumento firma, DateOnly hoy, string? monedaPorDefecto = null)
+        clsCotizacionPdfPayload payload, string folio, clsFirmaDocumento firma, DateOnly hoy, string monedaPorDefecto, decimal trmAplicada, decimal? precioCop = null)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);
         ArgumentNullException.ThrowIfNull(firma);
+        ArgumentException.ThrowIfNullOrWhiteSpace(monedaPorDefecto);
+        var enDolares = !clsConversorMoneda.EsPesos(monedaPorDefecto);
+        if (enDolares && trmAplicada <= 0m)
+        {
+            return new clsErrorDominio(
+                clsCodigosError.PdfPayloadInvalido,
+                $"La cotización en {monedaPorDefecto.Trim().ToUpperInvariant()} no trae la TRM aplicada: sin ella no se puede aclarar el piso mínimo (HU-012.3).");
+        }
+
+        if (enDolares && precioCop is not > 0m)
+        {
+            return new clsErrorDominio(
+                clsCodigosError.PdfPayloadInvalido,
+                $"La cotización en {monedaPorDefecto.Trim().ToUpperInvariant()} no trae el valor cotizado en pesos: es el mínimo a pagar que aclara el PDF (HU-012.3).");
+        }
 
         var esMulti = payload.Secciones is { Count: > 0 };
         var textos = esMulti ? clsTextosEstandar.MultiSeccion : clsTextosEstandar.TarifaUnica;
@@ -81,6 +103,7 @@ public static class clsConstructorDocumentoCotizacion
                 ? null
                 : clsTextoSeguro.Limpiar(payload.Tarifa?.NotaGeneral) ?? clsTextoSeguro.Limpiar(payload.Textos?.NotaGeneral) ?? textos.NotaGeneral,
             NotaDecreto = esMulti ? null : clsTextoSeguro.Limpiar(payload.NotaDecreto) ?? clsTextosEstandar.NotaDecreto,
+            NotaMoneda = enDolares ? clsTextosEstandar.AclaracionDolares(trmAplicada, precioCop!.Value) : null,
             BloquesAdicionales = BloquesAdicionales(payload, linea),
             Incluye = [.. incluye.Select(t => Celda(t))],
             NoIncluye = [.. noIncluye.Select(t => Celda(t))],
