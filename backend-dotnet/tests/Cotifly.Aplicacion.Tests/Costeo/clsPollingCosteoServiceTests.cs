@@ -120,7 +120,7 @@ public sealed class clsPollingCosteoServiceTests
     [Theory]
     [InlineData(clsCodigosError.CosteoNexoNoDisponible, "HTTP 503")]
     [InlineData(clsCodigosError.CosteoNexoTiempoAgotado, null)]
-    [InlineData(clsCodigosError.CosteoNexoRechazada, "HTTP 404 SOLICITUD_NO_ENCONTRADA: Solicitud no encontrada.")]
+    [InlineData(clsCodigosError.CosteoNexoRechazada, "HTTP 403 SIN_PERMISO_CABINA_FLETES: Sin permiso.")]
     public async Task UnErrorDeNexoSeAuditaYSeReprogramaConEspaciadoSinCambiarElEstado(string codigo, string? detalle)
     {
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(codigo, "falló", detalle));
@@ -132,6 +132,32 @@ public sealed class clsPollingCosteoServiceTests
         _cotizacion.CosteoConsultasFallidas.Should().Be(1);
         _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(10), "tras un fallo la espera se duplica");
         await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaErrorConsulta, Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task UnaDescartadaEnNexoEsTerminalYNoSeVuelveAConsultar()
+    {
+        NexoResponde(new clsCosteoConsultadoNexo("Descartada", [], null));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Cambio);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Descartada);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnIdQueNexoYaNoReconoceTerminaElPollingConUnMotivoClaro()
+    {
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudNoEncontrada, "No existe", "HTTP 404 SOLICITUD_NO_ENCONTRADA"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido);
+        _cotizacion.MotivoEstadoCosteo.Should().Contain("ya no reconoce");
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull("no se reintenta 72 h");
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaErrorConsulta, Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
     }
 
     [Fact]

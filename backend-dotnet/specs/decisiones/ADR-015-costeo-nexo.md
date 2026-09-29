@@ -3,7 +3,7 @@
 - **Estado:** Aceptada (se implementa por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado). Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
-- **Nota de numeración:** ADR-013 ya lo usa otro frente (despliegue en Dokploy); esta queda como ADR-015 para no chocar.
+- **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
 
 ## Contexto
 
@@ -27,7 +27,9 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
   - tabla `CotizacionPosiciones` (cubicaje, 1 a N, centímetros y kilogramos como Nexo).
 - Las columnas `costeoId`, `nitCliente` y `estadoCosteo` del 0001 se usan tal cual. `estadoCosteo` pasa a ser el enum `EstadoCosteo` (códigos snake_case).
 - El costeo en sí no se duplica: el flete queda en `costo` (columna existente) cuando se detecta y el resto se consulta en Nexo por `costeoId`. La excepción son los servicios conexos (`serviciosConexos`): hace falta guardar la selección del comercial y el precio con margen de cada uno para el PDF.
-- `/health/ready` responde 503 `esquema incompleto: falta 0004` si el script no está aplicado (el modelo EF de `Cotizaciones` ya lo exige).
+- `/health/ready` responde 503 `esquema incompleto: falta 0004` si el script no está aplicado (el modelo EF de `Cotizaciones` ya lo exige). **Precondición de despliegue:** el 0004 aplicado antes de desplegar esta versión (`DEPLOY.md`).
+- `ck_cotizaciones_estadoCosteo` limita `estadoCosteo` a los 7 códigos de la sección 2 (el 0004 se detiene si hay filas con otro valor).
+- **Deuda consciente (HU-011):** los campos de línea quedan en `Cotizaciones`. HU-011 multi-línea requiere un 0005 que mueva los campos de línea a `CotizacionLineasSolicitud`. Anotado también en el encabezado del 0004 para el DBA.
 
 ### 2. Estados (`Cotizaciones.estadoCosteo`)
 
@@ -53,6 +55,8 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
   5. con 201 guarda `costeoId`, `costeoEnviadoAt`, el estado (`autocosteo` si `lineasPorCostear = 0`, si no `pendiente_costeo`) y la primera consulta del polling; con cualquier fallo deja `error_envio` y el motivo, y responde igual 201 con la cotización (no es un error del comercial).
 - `POST /web/cotizaciones/{folio}/costeo/reintentar` reenvía la solicitud guardada (sin volver a llenar el formulario) desde `error_envio` o `pendiente_envio`; en otro estado responde 409 `COSTEO_NO_REINTENTABLE`.
 - **Cliente HTTP propio `NexoCosteo`** (no el `Nexo` de las búsquedas): 30 s en total y por intento (el alta auto-costea en línea), **sin reintentos en POST** (el alta no es idempotente: un reintento automático podría duplicar la solicitud en Nexo) y 2 reintentos en GET. Es la única desviación del patrón de PR #65 y se justifica por eso; comparte `Nexo:UrlBase`, `X-Portal-Usuario-Id` y la fábrica `clsFabrica*` (`*Nexo` / `*NoDisponible`).
+- **Validación de Nexo replicada antes de guardar** (`CapturarSolicitudValidador`): peso de la línea > 0 o posiciones con peso (`PESO_REQUERIDO`) y peso a no más del 1 % de `sum(cantidad × pesoKg)` (`PESO_INCONSISTENTE`); responde `SOLICITUD_COSTEO_INVALIDA` con el código de Nexo en el detalle.
+- **Un 400 de Nexo en el alta es definitivo** (`COSTEO_NEXO_SOLICITUD_INVALIDA`): la cotización queda en `error_envio` con el motivo "Rechazo definitivo de Nexo..." y el reintento responde `COSTEO_NO_REINTENTABLE` (los mismos datos volverían a fallar; se corrige en una versión nueva). Tiempo agotado, 5xx, red y 401/403 siguen siendo reintentables.
 - Tiempo agotado: Nexo pudo haber creado la solicitud. El motivo lo advierte ("verifica en Nexo antes de reintentar"); Nexo no ofrece clave de idempotencia (pendiente).
 
 ### 4. Polling (#22)
@@ -60,7 +64,9 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - `clsWorkerCosteoNexo` (`BackgroundService`) cada `CosteoNexo:IntervaloTickSegundos` toma hasta `CosteoNexo:Lote` cotizaciones con `costeoSiguienteConsultaAt <= ahora`. Cada cotización se procesa en **su propio ámbito de DI** (un fallo no contamina a las demás) después de **reclamarla** con un `UPDATE` condicional sobre `costeoSiguienteConsultaAt` (dos réplicas nunca la procesan a la vez; reprocesar el mismo estado no cambia nada).
 - Espaciado por edad: la siguiente consulta es `ahora + clamp(edad × FactorEdad, IntervaloInicial, IntervaloMaximo)`, multiplicado por `2^min(fallos, 5)` tras errores seguidos. Por defecto 5 s al inicio (como el frontend de Nexo), hasta 15 min, y edad máxima de 72 h: con `pendiente_costeo` pasa a `costeo_vencido`; con `autocosteo` se deja de consultar sin cambiar el estado.
 - Consulta: `GET /api/solicitudes/{costeoId}` y `POST /api/cotizaciones {solicitudId}` (crear o recuperar). Derivación en el dominio (`clsDerivacionEstadoCosteo`): `Descartada` → `descartada`; cotización `Entregada` → `entregada`; toda línea con flete → `autocosteo`; si no, `pendiente_costeo`.
-- Errores (tiempo, 4xx, 5xx, 404 "id no reconocido", JSON inválido): evento de auditoría con `exito = false` y se reprograma con espaciado; nunca detiene el lote. Cada cambio de estado deja un evento `costeo_nexo_estado` en `EventosHerramienta`.
+- **Descartada:** `ObtenerCosteoQuery` de Nexo responde **409 `SOLICITUD_DESCARTADA`** (nunca 200 con "Descartada"); el adaptador lo traduce a la foto `Descartada`, terminal.
+- **Id no reconocido:** 404 `SOLICITUD_NO_ENCONTRADA` es terminal (`COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA`): se deja de consultar con el motivo (sin costeo, `costeo_vencido`) en vez de reintentar 72 h.
+- Otros errores (tiempo, 4xx, 5xx, JSON inválido): evento de auditoría con `exito = false` y se reprograma con espaciado; nunca detiene el lote. Cada cambio de estado deja un evento `costeo_nexo_estado` en `EventosHerramienta`.
 - Opciones `CosteoNexo:*` validadas al arrancar; sin `Nexo:UrlBase` el worker no consulta (lo anota una vez al arrancar).
 
 ### 5. Margen y precio (#23)
@@ -101,7 +107,11 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 - "Mis cotizaciones" muestra el estado real del costeo (`estado_costeo` y `motivo_estado_costeo`), y `precio_final` solo cuando pasó por el margen.
 - Las cotizaciones del chat (costo manual) no cambian: `estado_costeo = null`, sin polling.
 - El 0004 debe aplicarse antes de desplegar esta versión (la readiness lo exige).
-- Cada consulta del polling puede crear en Nexo el borrador vacío de una solicitud que no se auto-costeó (lo mismo que hace la Mesa de Nexo al abrirla).
+- La primera consulta del polling crea en Nexo el borrador vacío de una solicitud que no se auto-costeó (lo mismo que hace la Mesa de Nexo al abrirla). Es **una sola vez por solicitud**: las consultas siguientes recuperan ese mismo borrador ("crear o recuperar").
+- **Efecto de `GET /api/solicitudes/{id}` en Nexo:** abrir la solicitud la pasa de `Pendiente` a `EnCosteo` (`ObtenerCosteoQuery`). La primera consulta del polling (a los 5 s) cambia así la bandeja de la Mesa y los KPIs de Nexo ("pendientes" vs "en costeo") aunque nadie la haya abierto. Pendiente con Nexo (ver Pendientes).
+- **Ambientes con base compartida:** si staging y producción de Nexo comparten base, el polling de un staging de Cotifly consultaría (y cambiaría de estado) solicitudes reales. Staging corre con `CosteoNexo__Habilitado=false` hasta que el DBA confirme esquemas separados.
+- **PDF en `autocosteo`:** se permite generar el PDF con el costeo automático, sin esperar a que el coordinador entregue (`entregada`). Pendiente de confirmar con negocio si debe exigirse `entregada`.
+- **Concurrencia polling vs selección de conexos:** el polling (si el costeo cambia) y `PUT .../servicios-conexos` escriben `serviciosConexos` sin control optimista; el polling conserva la selección que leyó, pero una selección guardada en el mismo instante puede perderse. Pendiente: control por `updatedAt` en ese caso.
 
 ## Pendientes
 
@@ -110,6 +120,10 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Aprobar el DDL del `0004_costeo_nexo.sql` (coordinación con HU-002) | scalderon-bs + DBA (redacta Duban) |
 | Confirmar el endpoint real de alta (`POST /api/captura-solicitudes`) y el mecanismo de autenticación para Cotifly (hoy `X-Portal-Usuario-Id` del comercial, sin token; ¿API key, JWT de servicio, allowlist de IP?) | Duban + equipo de Nexo |
 | Confirmar el endpoint de consulta del costeo: no existe `GET /api/captura-solicitudes/{id}`; se usa `GET /api/solicitudes/{id}` + `POST /api/cotizaciones` (crear o recuperar), que crea un borrador vacío si no hay auto-costeo | Duban + equipo de Nexo |
+| Efecto de `GET /api/solicitudes/{id}` (pasa `Pendiente` → `EnCosteo` y afecta la bandeja y los KPIs de la Mesa): ¿endpoint de lectura sin efecto para integraciones? | Equipo de Nexo |
+| Confirmar esquemas separados entre staging y producción de Nexo (mientras tanto, staging con `CosteoNexo__Habilitado=false`) | DBA |
+| ¿PDF permitido en `autocosteo` o solo en `entregada`? | Negocio |
+| Control optimista (`updatedAt`) entre el polling y `PUT .../servicios-conexos` | Duban |
 | Intervalo de polling que acepta Nexo (por defecto 5 s al inicio, hasta 15 min, 72 h de edad máxima) y límites de rate limiting | Equipo de Nexo |
 | Clave de idempotencia o referencia externa en el alta, para reintentar sin riesgo de duplicar tras un tiempo agotado | Equipo de Nexo |
 | Cómo enviar prospectos (Nexo exige `clienteId` o `clienteBp`; el buscador de Cotifly no expone el `clienteId` de Nexo) | Duban + equipo de Nexo |
@@ -117,4 +131,4 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Si los servicios conexos llevan el mismo margen que el flete | Negocio (Gerencia Comercial) |
 | Precio en USD sobre el costeo: `IClsPrecioService.CalcularAsync` con la moneda, TRM fijada al llegar el costeo y `trmAplicada` en el PDF (hoy solo COP) | Duban (integración con HU-012, #50 a #52) |
 | Probar contra Nexo real que marcar "ganada" alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica`) | Duban + equipo de Nexo |
-| Licitaciones de varias líneas (una cotización por línea, o un precio por fila) | Negocio + Duban |
+| Licitaciones de varias líneas (HU-011): un 0005 que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA |

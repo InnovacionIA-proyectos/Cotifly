@@ -32,7 +32,7 @@ public static class clsSolicitudCosteoMuestra
         ValorMercancia = 250_000_000m,
         Posiciones =
         [
-            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 850.25m),
+            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m),
             new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null),
         ],
     };

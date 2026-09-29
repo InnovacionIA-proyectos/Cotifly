@@ -105,6 +105,27 @@ public sealed class clsPollingCosteoService(
 
         var cronometro = Stopwatch.StartNew();
         var consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, cancellationToken);
+        if (consulta.EsFallo && consulta.Error.Codigo == clsCodigosError.CosteoNexoSolicitudNoEncontrada)
+        {
+            var cambioDesconocida = cotizacion.DetenerPorSolicitudDesconocida(
+                $"Nexo ya no reconoce la solicitud {cotizacion.CosteoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
+            cotizacion.RegistrarFalloConsultaCosteo(ahora, siguiente: null);
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            await auditoria.RegistrarAsync(
+                HerramientaErrorConsulta,
+                new { folio = cotizacion.Folio, costeo_id = cotizacion.CosteoId, terminal = true },
+                new { error = new { codigo = consulta.Error.Codigo, mensaje = consulta.Error.Mensaje, detalle = consulta.Error.Detalle } },
+                exito: false,
+                (int)cronometro.ElapsedMilliseconds,
+                cotizacion.ThreadId);
+            if (cambioDesconocida)
+            {
+                await AuditarCambioAsync(cotizacion, anterior, (int)cronometro.ElapsedMilliseconds);
+            }
+
+            return ResultadoConsultaCosteo.Detenida;
+        }
+
         if (consulta.EsFallo)
         {
             var fallos = cotizacion.CosteoConsultasFallidas + 1;

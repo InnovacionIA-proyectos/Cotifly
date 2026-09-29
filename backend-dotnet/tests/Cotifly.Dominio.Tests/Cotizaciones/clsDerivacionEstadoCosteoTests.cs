@@ -93,10 +93,22 @@ public sealed class clsDerivacionEstadoCosteoTests
         conCosteo.CosteoSiguienteConsultaAt.Should().BeNull();
     }
 
+    [Fact]
+    public void UnaSolicitudQueNexoYaNoReconoceDejaDeConsultarseConElMotivo()
+    {
+        var cotizacion = Enviada();
+
+        cotizacion.DetenerPorSolicitudDesconocida("Nexo ya no reconoce la solicitud").Should().BeTrue();
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido);
+        cotizacion.MotivoEstadoCosteo.Should().Be("Nexo ya no reconoce la solicitud");
+        cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
     private static clsCotizacion Enviada()
     {
         var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(new clsSolicitudCosteo { Tipo = TipoSolicitud.Spot, Origen = "Cali", Destino = "Bogotá" });
+        cotizacion.RegistrarSolicitudCosteo(new clsSolicitudCosteo { Tipo = TipoSolicitud.Spot, Origen = "Cali", Destino = "Bogotá", PesoKg = 1_000m });
         cotizacion.RegistrarEnvioCosteo("SOL-1", costeoCompleto: false, _ahora, _ahora.AddSeconds(5));
         cotizacion.SeConsultaEnNexo.Should().BeTrue();
         return cotizacion;

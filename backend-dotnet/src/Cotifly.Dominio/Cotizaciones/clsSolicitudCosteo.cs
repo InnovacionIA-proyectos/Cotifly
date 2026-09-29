@@ -22,6 +22,15 @@ public sealed record clsSolicitudCosteo
     public const decimal MaximoPeso = 999_999.99m;
     public const decimal MaximoValor = 9_999_999_999_999.99m;
 
+    /// <summary>Tolerancia de Nexo entre el peso de la línea y la suma de las posiciones (1 %, <c>CapturarSolicitudValidador</c>).</summary>
+    public const decimal ToleranciaPeso = 0.01m;
+
+    /// <summary>Código de Nexo (va en el detalle): la línea no trae peso &gt; 0 ni posiciones con peso.</summary>
+    public const string PesoRequerido = "PESO_REQUERIDO";
+
+    /// <summary>Código de Nexo (va en el detalle): el peso difiere más del 1 % de la suma de las posiciones.</summary>
+    public const string PesoInconsistente = "PESO_INCONSISTENTE";
+
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public decimal? ValorEstimado { get; init; }
@@ -73,9 +82,38 @@ public sealed record clsSolicitudCosteo
                 ? new clsErrorDominio(CodigoError, $"Una solicitud admite máximo {MaximoPosiciones} posiciones.")
                 : null);
 
-        return error ?? Posiciones.Select((p, i) => p is null
-            ? new clsErrorDominio(CodigoError, $"La posición {i + 1} está vacía.")
-            : p.Validar(i + 1)).FirstOrDefault(e => e is not null);
+        return error
+            ?? Posiciones.Select((p, i) => p is null
+                ? new clsErrorDominio(CodigoError, $"La posición {i + 1} está vacía.")
+                : p.Validar(i + 1)).FirstOrDefault(e => e is not null)
+            ?? ValidarPeso();
+    }
+
+    /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
+    public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+
+    /// <summary>
+    /// Regla de peso de Nexo (<c>CapturarSolicitudValidador.ValidarLinea</c>): el peso de la línea es <see cref="PesoKg"/> o, si
+    /// falta, la suma de las posiciones; debe ser &gt; 0 (<see cref="PesoRequerido"/>) y, si hay posiciones con peso, no diferir de
+    /// su suma más del 1 % (<see cref="PesoInconsistente"/>). Se valida antes de guardar para no enviar algo que Nexo rechazará.
+    /// </summary>
+    private clsErrorDominio? ValidarPeso()
+    {
+        var suma = SumaPesoPosiciones;
+        var peso = PesoKg ?? (suma > 0 ? suma : null);
+        if (peso is null or <= 0)
+        {
+            return new clsErrorDominio(CodigoError,
+                $"La línea {Origen} → {Destino} debe traer el peso total en kg (o posiciones con peso).", PesoRequerido);
+        }
+
+        if (suma > 0 && Math.Abs(peso.Value - suma) / peso.Value > ToleranciaPeso)
+        {
+            return new clsErrorDominio(CodigoError,
+                $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg).", PesoInconsistente);
+        }
+
+        return null;
     }
 
     internal static clsErrorDominio? Rango(string campo, decimal? valor, decimal minimo, decimal maximo) =>

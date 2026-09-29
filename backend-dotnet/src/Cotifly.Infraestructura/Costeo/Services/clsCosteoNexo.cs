@@ -45,6 +45,13 @@ public sealed class clsCosteoNexo(
         "Nexo no respondió a tiempo: la solicitud pudo quedar creada en Nexo; verifica en Nexo antes de reintentar.";
     public const string MensajeRechazada = "Nexo rechazó la solicitud.";
 
+    /// <summary>Código de Nexo de <c>GET /api/solicitudes/{id}</c> sobre una solicitud descartada (409).</summary>
+    public const string CodigoNexoDescartada = "SOLICITUD_DESCARTADA";
+
+    /// <summary>Código de Nexo de <c>GET /api/solicitudes/{id}</c> con un id inexistente (404).</summary>
+    public const string CodigoNexoNoEncontrada = "SOLICITUD_NO_ENCONTRADA";
+    public const string MensajeSolicitudInvalida = "Nexo rechazó los datos de la solicitud.";
+
     /// <summary>Límite de toda la operación y de cada intento (el alta de Nexo auto-costea en línea).</summary>
     public static readonly TimeSpan TiempoTotal = TimeSpan.FromSeconds(30);
 
@@ -67,7 +74,10 @@ public sealed class clsCosteoNexo(
         var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud), cancellationToken);
         if (respuesta.EsFallo)
         {
-            return respuesta.Error;
+            // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo.
+            return respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true
+                ? new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, respuesta.Error.Detalle)
+                : respuesta.Error;
         }
 
         using var documento = respuesta.Valor;
@@ -94,6 +104,20 @@ public sealed class clsCosteoNexo(
         var solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, $"/api/solicitudes/{Uri.EscapeDataString(id)}", null, cancellationToken);
         if (solicitud.EsFallo)
         {
+            // ObtenerCosteoQuery de Nexo responde 409 SOLICITUD_DESCARTADA (nunca 200 con "Descartada") y 404
+            // SOLICITUD_NO_ENCONTRADA si el id ya no existe: ambos terminan el polling.
+            var detalle = solicitud.Error.Detalle ?? string.Empty;
+            if (detalle.StartsWith("HTTP 409 " + CodigoNexoDescartada, StringComparison.Ordinal))
+            {
+                return new clsCosteoConsultadoNexo(clsCosteoConsultadoNexo.SolicitudDescartada, [], null);
+            }
+
+            if (detalle.StartsWith("HTTP 404 " + CodigoNexoNoEncontrada, StringComparison.Ordinal))
+            {
+                return new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudNoEncontrada,
+                    $"Nexo ya no reconoce la solicitud {id}.", detalle);
+            }
+
             return solicitud.Error;
         }
 
