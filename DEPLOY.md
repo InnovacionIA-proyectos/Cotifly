@@ -82,7 +82,9 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
 | `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, `Database=dbsolucionesti` (solo lectura) |
-| `ConnectionStrings__Regional` | **sí** | no (planeada) | — | Dokploy | `DWCubosEBSSAP`, aún no conectada |
+| `ConnectionStrings__Regional` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosEBSSAP`, solo lectura de `DimEjecutivo` (HU-010.1, #45, ADR-016). Vacía = no configurada: la regional sale de `UsuariosWeb.regional` y el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` si está vacía. Con valor exige salida desde el worker a la instancia de `DWCubosEBSSAP` y `GRANT SELECT` sobre la tabla para `cotifly_app` (**pendiente con el DBA**); si la consulta falla, el tablero del gerente responde 503 |
+| `Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional` | no | no (pero nunca vacías: identificadores obligatorios) | `dbo`, `DimEjecutivo`, `ID`, `REGIONAL` | manifiesto | ubicación de la tabla de ejecutivos, por confirmar con el DBA |
+| `Regional__TiempoEsperaSegundos` | no | no | `10` (2 a 60) | manifiesto | límite de cada consulta a `DWCubosEBSSAP` |
 | `Identidad__Esquema`, `Identidad__TablaUsuarios`, `Identidad__TablaUsuarioRoles`, `Identidad__TablaRoles` | no | no | `dbo`, `tblSAPUsuariosApp`, `tblSAPUsuarioRoles`, `tblSAPRoles` | manifiesto | por confirmar con el DBA |
 | `Jwt__Issuer`, `Jwt__Audience` | no | no | `cotifly-api`, `clientepro` | manifiesto | |
 | `Jwt__SigningKey` | **sí** (≥ 32 bytes) | **sí** | vacío | Dokploy | `openssl rand -base64 48`; distinta por ambiente |
@@ -166,7 +168,8 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `ASPNETCORE_ENVIRONMENT` | no | fijo: `Production` | no | Backend | — |
 | `ConnectionStrings__Cotifly` | sí | DBA: login `cotifly_app` y permisos por esquema (03-infraestructura §3.3) | no | DBA / Backend | `DATABASE_URL` |
 | `ConnectionStrings__Identidad` | sí | DBA: `SELECT` por columna en `dbsolucionesti` | no | DBA / Backend | — |
-| `ConnectionStrings__Regional` | sí | DBA (`DWCubosEBSSAP`); planeada | no | DBA | — |
+| `ConnectionStrings__Regional` | sí | DBA (`DWCubosEBSSAP`: login, `GRANT SELECT` sobre `DimEjecutivo` para `cotifly_app` y ruta de red desde el worker); opcional | no | DBA / Infraestructura | — |
+| `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` | no | DBA confirma el esquema real de `DimEjecutivo` (hoy `dbo`, `DimEjecutivo`, `ID`, `REGIONAL`) | no | DBA | — |
 | `Identidad__Esquema` y tablas | no | DBA confirma ubicación real | no | DBA | — |
 | `Jwt__SigningKey` | sí | generada por el equipo de despliegue (`openssl rand -base64 48`) | no | Backend | `WEB_SESSION_SECRET` |
 | `Cors__OrigenesPermitidos__0` | no | equipo de frontend (dominio de `clientepro-frontend`) | no | Frontend | — |
@@ -454,6 +457,13 @@ Obligatorias por el manifiesto (`${VAR:?}`: sin ellas `docker stack deploy` fall
 Fijas en el manifiesto (no se leen de Dokploy): `GChat__VerificarJwt=true`, `ForwardedHeaders__Habilitado=true`,
 `Pdf__StorageModo=volumen`, `Pdf__StorageDir=/data/pdfs`, `Zona__ZonaHoraria=America/Bogota`.
 
+Opcionales con valor vacío = "no configurada" (verificado en el código de cada opción): `ConnectionStrings__Regional`
+(HU-010.1, #45: vacía, la regional sale de `UsuariosWeb.regional`; con valor necesita salida a `DWCubosEBSSAP` y
+`GRANT SELECT` para `cotifly_app`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`, `GChat__ProjectNumber`,
+`GChat__SaJson`, `SapTm__Modo`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl`. En cambio `Regional__Esquema`, `__Tabla`,
+`__ColumnaUsuario` y `__ColumnaRegional` son identificadores obligatorios: el manifiesto trae los valores por defecto de
+`clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `ID`, `REGIONAL`) y no deben cargarse vacías en Dokploy.
+
 **Una variable que no está en el manifiesto no llega al contenedor**, aunque se cargue en Dokploy (Dokploy solo la usa
 para sustituir `${...}`). Para usar, por ejemplo, un proveedor LLM de respaldo (`IA__Fallbacks__0__*`) hay que agregar
 esas líneas al manifiesto (con `${...}`, sin valores) en un commit. No se dejaron con valor vacío porque un elemento de
@@ -490,6 +500,10 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
 - Arranque real repetido por el validador (2026-09-29): las **72 variables** que produce hoy
   `infra/stack.dotnet.staging.yml` (con `Trm__*`, `CosteoNexo__*` y `Nexo__MinutosCacheMunicipios`) se pasaron a la
   imagen: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200.
+- Después se agregaron `ConnectionStrings__Regional` (vacía) y `Regional__*` (HU-010.1, #45, todavía no en `QA`):
+  `docker compose config` de ambos manifiestos pasa; la imagen actual las ignora (no tiene la sección) y la de #45
+  acepta la cadena vacía (`clsSecreto(Opcional = true)`, el validador de conexiones omite las vacías) y los
+  identificadores por defecto. No se repitió el arranque real.
 - **Pendiente:** el despliegue completo en staging (Dokploy real, pull desde GHCR, secreto de Swarm, conectividad del
   worker a `tbsdatacenter`, Traefik). Necesita acceso al clúster y aprobación; no se ejecutó.
 
