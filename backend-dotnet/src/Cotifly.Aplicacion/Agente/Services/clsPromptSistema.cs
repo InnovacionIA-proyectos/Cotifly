@@ -87,7 +87,13 @@ public static class clsPromptSistema
             lineas.Add("- Línea de negocio: " + estado.LineaNegocio);
         }
 
-        var ruta = new[] { estado.Origen, estado.Destino }.Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
+        var ruta = new[]
+            {
+                Punto(estado.Origen, estado.OrigenMunicipio, estado.CandidatosOrigen),
+                Punto(estado.Destino, estado.DestinoMunicipio, estado.CandidatosDestino),
+            }
+            .OfType<string>()
+            .ToList();
         if (ruta.Count > 0)
         {
             var detalle = string.Join(" → ", ruta);
@@ -98,6 +104,9 @@ public static class clsPromptSistema
 
             lineas.Add("- Ruta: " + detalle);
         }
+
+        AgregarCandidatosMunicipio(lineas, "origen", estado.CandidatosOrigen);
+        AgregarCandidatosMunicipio(lineas, "destino", estado.CandidatosDestino);
 
         if (estado.Costo is { } costo)
         {
@@ -160,6 +169,31 @@ public static class clsPromptSistema
 
         bloque.Append("Estos datos los resolvió el servidor: úsalos para redactar; no hace falta repetirlos como argumentos.");
         return bloque.ToString();
+    }
+
+    /// <summary>Origen o destino con su marca: verificado en el catálogo de municipios, por confirmar o texto libre.</summary>
+    private static string? Punto(string? texto, clsMunicipioResuelto? municipio, IReadOnlyList<clsMunicipioResuelto> candidatos)
+    {
+        if (municipio is not null)
+        {
+            return municipio.Canonico() + " (verificado en el catálogo de municipios)";
+        }
+
+        if (string.IsNullOrWhiteSpace(texto))
+        {
+            return null;
+        }
+
+        return candidatos.Count > 0 ? texto.Trim() + " (ambiguo: por confirmar)" : texto.Trim();
+    }
+
+    private static void AgregarCandidatosMunicipio(List<string> lineas, string campo, IReadOnlyList<clsMunicipioResuelto> candidatos)
+    {
+        if (candidatos.Count > 0)
+        {
+            lineas.Add($"- Municipios candidatos para el {campo}, por confirmar con el comercial: "
+                + string.Join("; ", candidatos.Select((c, i) => $"{i + 1}. {c.Canonico()}")));
+        }
     }
 
     /// <summary>0.135 → <c>13,5 %</c> (hasta 2 decimales).</summary>

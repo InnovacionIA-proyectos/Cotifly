@@ -930,7 +930,9 @@ components:
                 solicitud, típicamente por superar el límite de bultos por solicitud) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: la fuente oficial de la TRM, datos abiertos de la Superintendencia
                 Financiera, no respondió o no tiene TRM vigente para el día; no se cotiza en USD y el comercial
-                puede reintentar o cotizar en COP).
+                puede reintentar o cotizar en COP). Solo en la herramienta
+                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
+                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -960,6 +962,7 @@ components:
                 - CUBICACION_NO_DISPONIBLE
                 - CUBICACION_DEMASIADO_GRANDE
                 - TRM_NO_DISPONIBLE
+                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - ERROR_INTERNO
             mensaje:
               type: string
