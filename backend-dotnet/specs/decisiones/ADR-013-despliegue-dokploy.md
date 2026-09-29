@@ -35,13 +35,17 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    sobre `main` (o `X.Y.Z-rc.N` desde otra rama, para candidatas en staging). Nunca `latest`. Dokploy despliega un
    tag inmutable en la variable `COTIFLY_TAG` del stack.
    - **Inmutabilidad:** `sha-<corto>` se sube una vez y no se reemplaza; `X.Y.Z` no se reconstruye, se crea sobre el
-     digest de `sha-<corto>` con `docker buildx imagetools create` (producción corre los bytes probados en staging), y
-     una `X.Y.Z` existente no se sobrescribe. En un evento de tag solo se publica `X.Y.Z`.
-   - Los scripts manuales exigen además que `--canal qa|main` corra desde esa rama con HEAD subido, y que el tag de
-     versión esté en `origin`.
+     digest de `sha-<corto>` con `docker buildx imagetools create --prefer-index=false` (mismo manifiesto, mismo
+     digest: producción corre los bytes probados en staging), y una `X.Y.Z` existente no se sobrescribe. En un evento
+     de tag solo se publica `X.Y.Z`; si `sha-<corto>` todavía no existe, una versión final falla ("espera a que termine
+     la corrida de main") y solo una `-rc.N` sube su propio build. Un publicador por commit (`concurrency`).
+   - Los scripts manuales exigen además `--canal` o una versión, HEAD en alguna rama de `origin`, `--canal qa|main`
+     desde esa rama con HEAD subido, y el tag de versión de `origin` apuntando a HEAD. Un error del registry que no sea
+     "no existe" detiene la publicación.
 3. **Pipeline:** el mismo workflow `backend-dotnet.yml`. `imagen-docker` construye, prueba (humo) y escanea (Trivy
-   0.74.0) la imagen; `publicar-imagen` sube esos mismos bytes a GHCR con `GITHUB_TOKEN` (`packages: write` solo en ese
-   job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs.
+   0.74.0 fijado por digest) la imagen; `publicar-imagen` sube esos mismos bytes a GHCR con `GITHUB_TOKEN`
+   (`packages: write` solo en ese job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs. El
+   nombre del tag se valida como semver y los valores del evento llegan a los `run` por `env:`, no con `${{ }}`.
 4. **Script manual versionado** `backend-dotnet/scripts/publicar-imagen.sh` (y `.ps1`), mismos tags y controles, desde
    cualquier equipo con Docker. Reemplaza a `deploy/rebuild-on-worker.sh` para el backend .NET; es el camino vigente
    mientras GitHub Actions siga bloqueado por facturación en la organización (2026-09-28).

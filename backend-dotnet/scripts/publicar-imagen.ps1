@@ -6,12 +6,12 @@
     Equivalente de publicar-imagen.sh para PowerShell (Windows PowerShell 5.1 o PowerShell 7). Reemplaza a
     deploy/rebuild-on-worker.sh para el backend .NET: construye la imagen, hace la prueba de humo (Development sin base:
     HEALTHCHECK healthy, GET /health 200, GET /health/ready 503), la escanea con Trivy (HIGH/CRITICAL con parche fallan;
-    COTIFLY_TRIVY_VERSION, por defecto 0.74.0) y la sube a GHCR con tags inmutables. Nunca "latest".
+    COTIFLY_TRIVY_IMAGEN, por defecto aquasec/trivy:0.74.0 fijada por digest) y la sube a GHCR con tags inmutables. Nunca "latest".
 
     Tags (sha-<corto> y X.Y.Z son inmutables):
       sha-<commit corto>    siempre; si ya existe en el registry se conserva
       X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con -Version X.Y.Z, que exige ese tag en HEAD); se crea
-                            sobre el digest de sha-<corto> (docker buildx imagetools create). Final solo desde
+                            sobre el digest de sha-<corto> (imagetools create --prefer-index=false). Final desde
                             origin/main; X.Y.Z-rc.N puede salir de otra rama
       qa | main             con -Canal qa | -Canal main, desde esa rama y con HEAD subido a origin
 
@@ -58,16 +58,30 @@ $Imagen = [Environment]::GetEnvironmentVariable('COTIFLY_IMAGEN')
 if ([string]::IsNullOrEmpty($Imagen)) { $Imagen = 'ghcr.io/innovacionia-proyectos/cotifly-backend' }
 $ImagenLocal = 'cotifly-api:publicar'
 $Contenedor = "cotifly-publicar-$PID"
-$Trivy = [Environment]::GetEnvironmentVariable('COTIFLY_TRIVY_VERSION')
-if ([string]::IsNullOrEmpty($Trivy)) { $Trivy = '0.74.0' }
+# Trivy fijado por digest (misma imagen que el CI). COTIFLY_TRIVY_IMAGEN permite cambiarlo.
+$TrivyImagen = [Environment]::GetEnvironmentVariable('COTIFLY_TRIVY_IMAGEN')
+if ([string]::IsNullOrEmpty($TrivyImagen)) { $TrivyImagen = 'aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969' }
 $Registry = $Imagen.Split('/')[0]
-$Semver = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+$Semver = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+
+# Salida de un comando nativo recortada; cadena vacía si no devolvió nada (evita .Trim() sobre $null).
+function Texto($Valor) {
+    if ($null -eq $Valor) { return '' }
+    return (@($Valor) -join "`n").Trim()
+}
+# git que debe terminar bien (fetch, rev-parse...).
+function GitOk {
+    $ErrorActionPreference = 'Continue'
+    $salida = & git @args
+    if ($LASTEXITCODE -ne 0) { Fallar "git $($args -join ' ') terminó con código $LASTEXITCODE" }
+    return $salida
+}
 
 Push-Location $DirBackend
 try {
     # ------------------------------------------------------------------------- commit y versión
-    $Commit = (& git rev-parse --short=7 HEAD).Trim()
-    $Sucio = (& git status --porcelain -- .)
+    $Commit = Texto (GitOk rev-parse --short=7 HEAD)
+    $Sucio = Texto (GitOk status --porcelain -- .)
     if ($Sucio) {
         if ($PermitirSucio -and $SinPush) {
             Write-Host "AVISO: hay cambios sin commit; la imagen no corresponde exactamente a $Commit."
@@ -77,31 +91,40 @@ try {
         }
     }
 
-    $TagsHead = @(& git tag --points-at HEAD)
+    $TagsHead = @(GitOk tag --points-at HEAD)
     if ($Version) {
         if ($Version -notmatch $Semver) { Fallar '-Version debe ser semver (X.Y.Z o X.Y.Z-rc.N)' }
         if ($TagsHead -notcontains "v$Version") { Fallar "HEAD no tiene el tag v$Version" }
     } else {
-        $TagGit = $TagsHead | Where-Object { $_ -match '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' } | Select-Object -First 1
+        $TagGit = $TagsHead | Where-Object { $_ -match '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' } | Select-Object -First 1
         if ($TagGit) { $Version = $TagGit.Substring(1) }
     }
 
-    # Trazabilidad antes de publicar (igual que publicar-imagen.sh): -Canal desde su rama con HEAD en origin; versión
-    # final X.Y.Z desde un commit de origin/main; X.Y.Z-rc.N puede salir de otra rama; el tag debe estar en origin.
+    # Trazabilidad antes de publicar (igual que publicar-imagen.sh):
+    #   - hace falta -Canal o una versión, y HEAD debe estar en alguna rama de origin (un commit local no ocupa sha-<corto>);
+    #   - -Canal desde su rama (QA o main) con HEAD en origin/<rama>;
+    #   - la versión: el tag de origin apunta a HEAD; final (X.Y.Z) solo desde origin/main; X.Y.Z-rc.N desde cualquier rama.
     if (-not $SinPush) {
+        if (-not $Canal -and -not $Version) { Fallar 'para publicar hace falta -Canal qa|main o una versión (tag vX.Y.Z en HEAD o -Version)' }
+        GitOk fetch -q origin | Out-Null
+        $Ramas = @(GitOk branch -r --contains HEAD) | Where-Object { $_ -notmatch '->' -and $_ -match '^\s*origin/' }
+        if (-not $Ramas) { Fallar "HEAD ($Commit) no está en ninguna rama de origin: hacer push antes de publicar" }
         if ($Canal) {
             $RamaCanal = if ($Canal -eq 'main') { 'main' } else { 'QA' }
-            $RamaActual = (& git rev-parse --abbrev-ref HEAD).Trim()
+            $RamaActual = Texto (GitOk rev-parse --abbrev-ref HEAD)
             if ($RamaActual -cne $RamaCanal) { Fallar "-Canal $Canal se publica desde la rama $RamaCanal (rama actual: $RamaActual)" }
-            & git fetch -q origin $RamaCanal
             & git merge-base --is-ancestor HEAD "origin/$RamaCanal"
             if ($LASTEXITCODE -ne 0) { Fallar "HEAD no está en origin/${RamaCanal}: hacer push antes de publicar" }
         }
         if ($Version) {
-            & git ls-remote --exit-code --tags origin "refs/tags/v$Version" | Out-Null
-            if ($LASTEXITCODE -ne 0) { Fallar "el tag v$Version no está en origin (git push origin v$Version)" }
+            # Tag anotado: "^{}" da el commit; tag liviano: la propia referencia.
+            $Remoto = Texto (GitOk ls-remote origin "refs/tags/v$Version^{}")
+            if (-not $Remoto) { $Remoto = Texto (GitOk ls-remote origin "refs/tags/v$Version") }
+            if (-not $Remoto) { Fallar "el tag v$Version no está en origin (git push origin v$Version)" }
+            $Remoto = ($Remoto -split '\s+')[0]
+            $Head = Texto (GitOk rev-parse HEAD)
+            if ($Remoto -ne $Head) { Fallar "el tag v$Version de origin apunta a $Remoto, no a HEAD" }
             if ($Version -notmatch '-') {
-                & git fetch -q origin main
                 & git merge-base --is-ancestor HEAD origin/main
                 if ($LASTEXITCODE -ne 0) { Fallar "una versión final (v$Version) sale de un commit de origin/main; para probar fuera de main usar vX.Y.Z-rc.N" }
             }
@@ -129,10 +152,10 @@ try {
         Paso 'Prueba de humo (Development, sin base: /health 200, /health/ready 503, HEALTHCHECK healthy)'
         try {
             DockerOk run -d --name $Contenedor -p '127.0.0.1::8080' -e ASPNETCORE_ENVIRONMENT=Development $ImagenLocal | Out-Null
-            $Puerto = ((& docker port $Contenedor 8080/tcp) | Select-Object -First 1).Split(':')[-1].Trim()
+            $Puerto = (Texto ((& docker port $Contenedor 8080/tcp) | Select-Object -First 1)).Split(':')[-1]
             $Estado = ''
             for ($i = 0; $i -lt 45; $i++) {
-                $Estado = (& docker inspect --format '{{.State.Health.Status}}' $Contenedor).Trim()
+                $Estado = Texto (& docker inspect --format '{{.State.Health.Status}}' $Contenedor)
                 if ($Estado -eq 'healthy' -or $Estado -eq 'unhealthy') { break }
                 Start-Sleep -Seconds 2
             }
@@ -153,16 +176,18 @@ try {
             if ($Listo -ne 503) { Fallar "GET /health/ready respondió $Listo (se esperaba 503 sin base)" }
             Write-Host 'GET /health/ready -> 503 (esperado sin base)'
         } finally {
-            & docker rm -f $Contenedor 2>$null | Out-Null
+            # Sin 'Stop' aquí: si el contenedor no existe, este error no debe tapar el original.
+            $ErrorActionPreference = 'Continue'
+            & docker rm -f $Contenedor 2>&1 | Out-Null
+            $ErrorActionPreference = 'Stop'
         }
     }
 
     # ------------------------------------------------------------------------- escaneo de vulnerabilidades
     if (-not $SinEscaneo) {
-        Paso "Escaneo de vulnerabilidades (Trivy ${Trivy}: HIGH/CRITICAL con parche disponible fallan)"
-        & docker run --rm -v //var/run/docker.sock:/var/run/docker.sock "aquasec/trivy:$Trivy" `
+        Paso "Escaneo de vulnerabilidades (${TrivyImagen}: HIGH/CRITICAL con parche disponible fallan)"
+        DockerOk run --rm -v //var/run/docker.sock:/var/run/docker.sock $TrivyImagen `
             image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 $ImagenLocal
-        if ($LASTEXITCODE -ne 0) { Fallar 'la imagen tiene vulnerabilidades HIGH/CRITICAL con parche (actualizar ASPNET_VERSION/SDK_VERSION o el paquete)' }
     }
 
     # ------------------------------------------------------------------------- push
@@ -183,11 +208,14 @@ try {
 
     Paso 'Etiquetar y subir'
     # Tags inmutables: sha-<corto> se sube solo si no existe; X.Y.Z falla si ya existe y se crea sobre el digest de
-    # sha-<corto>; qa/main se mueven a ese digest. Nada se reconstruye ni se sobrescribe.
+    # sha-<corto> con --prefer-index=false (mismo manifiesto, mismo digest); qa/main se mueven a ese digest.
+    # Existe: "not found"/MANIFEST_UNKNOWN = no existe; cualquier otro error (red, credenciales) detiene el script.
     function Existe([string]$Etiqueta) {
         $ErrorActionPreference = 'Continue'
-        & docker buildx imagetools inspect "${Imagen}:$Etiqueta" 2>&1 | Out-Null
-        return ($LASTEXITCODE -eq 0)
+        $Salida = Texto (& docker buildx imagetools inspect "${Imagen}:$Etiqueta" 2>&1)
+        if ($LASTEXITCODE -eq 0) { return $true }
+        if ($Salida -match '(?i)not found|manifest_unknown|manifest unknown') { return $false }
+        Fallar "no se pudo consultar ${Imagen}:${Etiqueta}: $Salida"
     }
     foreach ($Etiqueta in $Etiquetas) {
         if ($Etiqueta -eq "sha-$Commit") {
@@ -202,7 +230,7 @@ try {
         if ($Etiqueta -ne 'qa' -and $Etiqueta -ne 'main' -and (Existe $Etiqueta)) {
             Fallar "${Imagen}:$Etiqueta ya existe; una versión publicada no se sobrescribe"
         }
-        DockerOk buildx imagetools create -t "${Imagen}:$Etiqueta" "${Imagen}:sha-$Commit"
+        DockerOk buildx imagetools create --prefer-index=false -t "${Imagen}:$Etiqueta" "${Imagen}:sha-$Commit"
     }
     $Digest = ((& docker buildx imagetools inspect "${Imagen}:sha-$Commit") | Where-Object { $_ -match '^Digest:' } | Select-Object -First 1) -replace '^Digest:\s*', ''
     Write-Host ''
