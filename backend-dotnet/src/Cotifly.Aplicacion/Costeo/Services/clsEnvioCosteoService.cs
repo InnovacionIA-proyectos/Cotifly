@@ -126,7 +126,8 @@ public sealed class clsEnvioCosteoService(
             return creada.Error;
         }
 
-        await EnviarANexoAsync(creada.Valor, entrada.Solicitud, politica, usuarioId, reintento: false, cancellationToken);
+        // Desde aquí, sin el token de la petición (ver EnviarANexoAsync).
+        await EnviarANexoAsync(creada.Valor, entrada.Solicitud, politica, usuarioId, reintento: false);
         return creada.Valor;
     }
 
@@ -147,24 +148,34 @@ public sealed class clsEnvioCosteoService(
             return NoReintentable(cotizacion);
         }
 
+        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría.
+        if (solicitud.Validar() is { } invalida)
+        {
+            return invalida;
+        }
+
         // Reclamo optimista: de dos reintentos simultáneos solo uno envía (el otro vería otro updatedAt).
         if (!await cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, ahora, cancellationToken))
         {
             return NoReintentable(cotizacion, "otro envío de esta cotización está en curso");
         }
 
-        await cotizaciones.RecargarAsync(cotizacion, cancellationToken);
-        var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        await EnviarANexoAsync(cotizacion, solicitud, politica, usuarioId, reintento: true, cancellationToken);
+        // Reclamada: desde aquí, sin el token de la petición (ver EnviarANexoAsync).
+        await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
+        var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
+        await EnviarANexoAsync(cotizacion, solicitud, politica, usuarioId, reintento: true);
         return cotizacion;
     }
 
-    /// <summary>Resuelve el BP, llama a Nexo y guarda el resultado (con <see cref="CancellationToken.None"/>: la respuesta de Nexo no se pierde).</summary>
-    private async Task EnviarANexoAsync(
-        clsCotizacion cotizacion, clsSolicitudCosteo solicitud, clsMargenPolitica? politica, Guid usuarioId, bool reintento, CancellationToken cancellationToken)
+    /// <summary>
+    /// Resuelve el BP, llama a Nexo y guarda el resultado, todo con <see cref="CancellationToken.None"/>: si el cliente HTTP se
+    /// desconecta cuando Nexo ya recibió el alta, la respuesta (el <c>costeoId</c>) no se pierde y un reintento no duplica la solicitud
+    /// en Nexo. El límite lo pone el cliente <c>NexoCosteo</c> (30 s).
+    /// </summary>
+    private async Task EnviarANexoAsync(clsCotizacion cotizacion, clsSolicitudCosteo solicitud, clsMargenPolitica? politica, Guid usuarioId, bool reintento)
     {
         var cronometro = Stopwatch.StartNew();
-        var resultado = await ResolverClienteYEnviarAsync(cotizacion, solicitud, politica, usuarioId, cancellationToken);
+        var resultado = await ResolverClienteYEnviarAsync(cotizacion, solicitud, politica, usuarioId, CancellationToken.None);
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {

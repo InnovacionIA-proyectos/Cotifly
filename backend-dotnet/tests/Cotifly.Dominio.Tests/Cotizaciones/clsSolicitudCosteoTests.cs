@@ -69,6 +69,15 @@ public sealed class clsSolicitudCosteoTests
     }
 
     [Fact]
+    public void LosNumerosAdmitenMaximoDosDecimalesComoLasColumnasDelEsquema()
+    {
+        (Valida() with { PesoKg = 12_000.005m }).Validar()!.Mensaje.Should().Contain("peso_kg").And.Contain("2 decimales");
+        (Valida() with { HorasCargue = 4.125m }).Validar()!.Mensaje.Should().Contain("horas_cargue");
+        (Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10.001m, 10m, 10m, null)] }).Validar()!.Mensaje.Should().Contain("largo_cm");
+        (Valida() with { PesoKg = 12_000.500m }).Validar().Should().BeNull("los ceros a la derecha no son decimales de más");
+    }
+
+    [Fact]
     public void CadaPosicionSeValidaConSuNumero()
     {
         var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null), new clsPosicionCarga(null, 0, 10m, 10m, 10m, null)] };
