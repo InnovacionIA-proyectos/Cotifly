@@ -215,14 +215,15 @@ SAP TM:
 
 ### Nexo
 
-**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13).** Una sola opción, `Nexo:UrlBase` (`clsOpcionesNexo`, sin validaciones: Nexo todavía no es obligatorio en todos los ambientes). Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
+**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13).** Dos opciones en `clsOpcionesNexo`: `Nexo:UrlBase` (sin validaciones: Nexo todavía no es obligatorio en todos los ambientes) y `Nexo:MinutosCacheMunicipios`. Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
 
 | Clave | Por defecto | Uso | Variable |
 |---|---|---|---|
-| `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE` | `Nexo__UrlBase` |
+| `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE`; en el chat, `resolver_municipio` responde `MUNICIPIOS_NO_DISPONIBLE` y el agente sigue con el texto libre del origen y el destino | `Nexo__UrlBase` |
+| `Nexo:MinutosCacheMunicipios` | `60` | Minutos que se reutiliza en memoria el catálogo de municipios (HU-005.13; lo usan `GET /web/municipios` y `resolver_municipio`). Solo guarda respuestas exitosas; `0` desactiva la caché; de 0 a 1440 (fuera de rango no arranca) | `Nexo__MinutosCacheMunicipios` |
 
-- **Sin token ni usuario de servicio.** Cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial; Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro. Un comercial sin `idUsuarioExterno` no puede usar estas funciones (código "no disponible"). El encabezado no se registra en los logs.
-- **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros` y `/api/cubicacion`. El ejemplo de `.env.example` (`https://<host-nexo>/api`) y el de las pruebas (`http://nexo-test.local/api`) terminan en `/api`, lo que daría `/api/api/...`: confirmar con el equipo de Nexo la URL base real antes de configurarla en QA.
+- **Sin token ni usuario de servicio.** Cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial; Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro. Un comercial sin `idUsuarioExterno` no puede usar estas funciones (código "no disponible"), salvo el catálogo de municipios mientras haya una foto vigente en caché (`Nexo:MinutosCacheMunicipios`): esa foto se sirve a cualquier comercial autenticado, y solo la recarga exige su `idUsuarioExterno`. El encabezado no se registra en los logs.
+- **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros` y `/api/cubicacion`. Por eso `Nexo__UrlBase` va **sin** `/api` al final (el host, ej. `https://<host-nexo>`). El ejemplo de `.env.example` se corrigió en HU-005.13 (antes terminaba en `/api`, lo que daba `/api/api/...`); las pruebas usan `http://nexo-test.local`, también sin `/api` (mismo criterio que el costeo, ADR-015). Falta confirmar con el equipo de Nexo el host real antes de configurarlo en QA.
 - **Tiempos:** 8 s en total por consulta, 3 s por intento y 2 reintentos (cliente HTTP `Nexo` compartido por los cuatro adaptadores). No son configurables.
 - **Activar en un ambiente:** fijar `Nexo__UrlBase` en Dokploy; los comerciales deben tener `idUsuarioExterno` (lo llena el login de ClientePro). No hay aviso al arrancar si falta.
 

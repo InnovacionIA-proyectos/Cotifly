@@ -927,7 +927,9 @@ components:
                 `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío, mismo código que usa Nexo),
                 `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
                 rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
-                solicitud, típicamente por superar el límite de bultos por solicitud).
+                solicitud, típicamente por superar el límite de bultos por solicitud). Solo en la herramienta
+                `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
+                (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -956,6 +958,7 @@ components:
                 - ITEMS_REQUERIDOS
                 - CUBICACION_NO_DISPONIBLE
                 - CUBICACION_DEMASIADO_GRANDE
+                - MUNICIPIO_ARGUMENTO_INVALIDO
                 - ERROR_INTERNO
             mensaje:
               type: string

@@ -221,6 +221,7 @@ public static class clsDependenciasInfraestructura
     private static void AgregarMunicipios(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsMunicipiosNoDisponible>();
+        servicios.TryAddSingleton<clsCacheCatalogoMunicipios>();
         servicios.AddHttpClient<clsMunicipiosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsMunicipiosProvider>(clsFabricaMunicipios.Crear);
     }
