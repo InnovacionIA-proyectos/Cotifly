@@ -90,7 +90,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         posiciones[0].GetProperty("descripcion").GetString().Should().Be("Estiba de café");
         posiciones[0].GetProperty("cantidad").GetInt32().Should().Be(20);
         posiciones[0].GetProperty("largoCm").GetDecimal().Should().Be(120m);
-        posiciones[0].GetProperty("pesoKg").GetDecimal().Should().Be(850.25m);
+        posiciones[0].GetProperty("pesoKg").GetDecimal().Should().Be(1425m);
         posiciones[1].TryGetProperty("descripcion", out _).Should().BeFalse();
     }
 
@@ -128,8 +128,18 @@ public sealed class clsCosteoNexoTests : IDisposable
         (await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct)).Valor.CosteoCompleto.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Un400DelAltaEsSolicitudInvalidaDefinitivaConElCodigoDeNexo()
+    {
+        _nexo.Responder(HttpStatusCode.BadRequest, """{"code":"PESO_INCONSISTENTE","message":"No coincide."}""");
+
+        var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoSolicitudInvalida);
+        resultado.Error.Detalle.Should().Be("HTTP 400 PESO_INCONSISTENTE: No coincide.");
+    }
+
     [Theory]
-    [InlineData(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "El BP '15927' no existe en el catálogo de clientes.")]
     [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "Identidad no válida.")]
     [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", "Sin permiso.")]
     public async Task Un4xxEsRechazadaConElCodigoYElMensajeDeNexo(HttpStatusCode estado, string codigo, string mensaje)

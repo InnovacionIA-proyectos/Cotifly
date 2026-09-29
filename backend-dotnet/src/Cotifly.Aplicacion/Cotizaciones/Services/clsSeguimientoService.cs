@@ -43,6 +43,13 @@ public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones,
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
+        if (cotizacion.CosteoId is not null)
+        {
+            // Pasó por Nexo: marcarla solo en Cotifly desincronizaría el resultado (HU-005.14).
+            return new clsErrorDominio(clsCodigosError.UsarResultadoNexo,
+                $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST /web/cotizaciones/{cotizacion.Folio}/resultado.");
+        }
+
         cotizacion.MarcarSeguimiento(ganada, motivoRechazo, reloj.AhoraUtc);
         await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
         return cotizacion;

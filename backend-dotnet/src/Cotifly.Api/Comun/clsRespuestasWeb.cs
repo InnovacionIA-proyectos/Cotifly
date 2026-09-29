@@ -57,6 +57,7 @@ public static class clsRespuestasWeb
         clsCodigosError.PdfYaGenerado,
         clsCodigosError.ResultadoYaDefinido,
         clsCodigosError.CotizacionNoEntregada,
+        clsCodigosError.UsarResultadoNexo,
     };
 
     public static IActionResult Error(clsErrorDominio error)

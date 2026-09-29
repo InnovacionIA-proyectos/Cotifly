@@ -136,6 +136,18 @@ public static class clsCodigosError
     public const string CosteoNexoRechazada = "COSTEO_NEXO_RECHAZADA";
 
     /// <summary>
+    /// Nexo respondió 400 al alta (validación de los datos: <c>PESO_INCONSISTENTE</c>, <c>LINEA_INCOMPLETA</c>...): reenviar los mismos
+    /// datos no puede funcionar, así que el <c>error_envio</c> es definitivo (ADR-015 §3). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudInvalida = "COSTEO_NEXO_SOLICITUD_INVALIDA";
+
+    /// <summary>
+    /// Nexo ya no reconoce la solicitud (404 <c>SOLICITUD_NO_ENCONTRADA</c> al consultarla): el polling la deja de consultar con el
+    /// motivo, en vez de reintentar hasta la edad máxima (ADR-015 §4). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
+
+    /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>
@@ -161,4 +173,10 @@ public static class clsCodigosError
     /// Mismo código que usa Nexo.
     /// </summary>
     public const string CotizacionNoEntregada = "COTIZACION_NO_ENTREGADA";
+
+    /// <summary>
+    /// <c>POST /web/cotizaciones/{folio}/seguimiento</c> sobre una cotización que pasó por Nexo (tiene <c>costeoId</c>): el resultado
+    /// se marca con <c>POST .../resultado</c>, que escribe primero en Nexo (409, HU-005.14). Código nuevo del backend .NET.
+    /// </summary>
+    public const string UsarResultadoNexo = "USAR_RESULTADO_NEXO";
 }

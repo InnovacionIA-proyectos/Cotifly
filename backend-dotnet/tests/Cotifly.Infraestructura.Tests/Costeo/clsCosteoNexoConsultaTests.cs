@@ -94,14 +94,37 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
     }
 
     [Fact]
-    public async Task UnIdQueNexoYaNoReconoceEsRechazadaCon404EnElDetalle()
+    public async Task UnIdQueNexoYaNoReconoceEsSolicitudNoEncontradaTerminal()
     {
         _nexo.Responder(HttpStatusCode.NotFound, """{"code":"SOLICITUD_NO_ENCONTRADA","message":"No existe."}""");
 
         var resultado = await Adaptador().ConsultarCosteoAsync(_usuarioId, "SOL-X", Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoSolicitudNoEncontrada);
         resultado.Error.Detalle.Should().Be("HTTP 404 SOLICITUD_NO_ENCONTRADA: No existe.");
+    }
+
+    [Fact]
+    public async Task Un409SolicitudDescartadaEsLaFotoDescartadaComoLaDaElNexoReal()
+    {
+        _nexo.Responder(HttpStatusCode.Conflict, """{"code":"SOLICITUD_DESCARTADA","message":"La solicitud está descartada y no puede costearse."}""");
+
+        var foto = (await Adaptador().ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Valor;
+
+        foto.EstadoSolicitud.Should().Be("Descartada");
+        foto.Cotizacion.Should().BeNull();
+        Cotifly.Dominio.Cotizaciones.clsDerivacionEstadoCosteo.Derivar(foto).Should().Be(Cotifly.Dominio.Cotizaciones.EstadoCosteo.Descartada);
+        _nexo.Peticiones.Should().ContainSingle("no se crea cotización de una descartada");
+    }
+
+    [Fact]
+    public async Task Otro404U409SigueSiendoUnErrorReintentable()
+    {
+        _nexo.Responder(HttpStatusCode.NotFound, "no");
+        _nexo.Responder(HttpStatusCode.Conflict, """{"code":"CONFLICTO_CONCURRENCIA","message":"x"}""");
+
+        (await Adaptador().ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
+        (await Adaptador().ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNexoRechazada);
     }
 
     [Fact]

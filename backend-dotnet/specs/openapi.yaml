@@ -258,7 +258,9 @@ paths:
       deprecated: true
       description: |
         Obsoleto desde HU-005.14: las cotizaciones que pasaron por Nexo usan `POST /web/cotizaciones/{folio}/resultado`.
-        Se conserva por compatibilidad con el frontend y para las cotizaciones del chat con costo manual.
+        Se conserva por compatibilidad con el frontend y para las cotizaciones del chat con costo manual. Una
+        cotización que pasó por Nexo (tiene costeo) responde 409 `USAR_RESULTADO_NEXO`: marcarla solo en Cotifly
+        desincronizaría el resultado con Nexo.
         Interino hasta HU-005.14, que lo reemplaza por `POST /web/cotizaciones/{folio}/resultado`
         (registra también en Nexo, agrega `comentario` y no permite cambiar el
         resultado una vez definido).
@@ -285,6 +287,12 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`USAR_RESULTADO_NEXO`: la cotización pasó por Nexo; usar `POST /web/cotizaciones/{folio}/resultado`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/admin/lineas-negocio:
     get:
@@ -634,7 +642,8 @@ paths:
         '400':
           description: |
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
-            posiciones), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
+            posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -651,7 +660,8 @@ paths:
       tags: [web]
       summary: Reenvía a Nexo la solicitud guardada de una cotización que no llegó
       description: |
-        HU-005.5. Solo desde `estado_costeo` `error_envio` o `pendiente_envio`; reenvía el formulario y las posiciones
+        HU-005.5. Solo desde `estado_costeo` `error_envio` (salvo un rechazo 400 de Nexo, que es definitivo: el
+        motivo empieza por "Rechazo definitivo de Nexo") o `pendiente_envio`; reenvía el formulario y las posiciones
         guardados (no hace falta volver a llenarlos). Mismo resultado que el envío: 200 con la cotización en
         `pendiente_costeo`/`autocosteo`, o de nuevo en `error_envio` con el motivo. Si el motivo anterior era
         "tiempo agotado", Nexo pudo haber creado la solicitud: el comercial debe verificar antes de reintentar
@@ -1178,11 +1188,13 @@ components:
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
                 Nexo), `COSTEO_NEXO_NO_DISPONIBLE` (Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
                 `idUsuarioExterno`), `COSTEO_NEXO_TIEMPO_AGOTADO` (Nexo no respondió a tiempo), `COSTEO_NEXO_RECHAZADA`
-                (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`) y `COSTEO_NO_REINTENTABLE` (409: la
+                (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`), `COSTEO_NEXO_SOLICITUD_INVALIDA` (Nexo respondió 400 al alta:
+                `error_envio` definitivo, no se reintenta), `COSTEO_NO_REINTENTABLE` (409: la
                 cotización no está en `error_envio` ni en `pendiente_envio`), `COSTEO_NO_LISTO` (409: la cotización todavía no
                 tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene PDF, se cambia con una versión nueva).
                 Resultado en Nexo (HU-005.14), con el mismo código de Nexo: `RESULTADO_YA_DEFINIDO` y
-                `COTIZACION_NO_ENTREGADA` (409, sin cambio local).
+                `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
+                sobre una cotización que pasó por Nexo).
                 `PRECIO_INVALIDO` queda solo para el cálculo de precio.
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
@@ -1215,11 +1227,14 @@ components:
                 - COSTEO_NEXO_NO_DISPONIBLE
                 - COSTEO_NEXO_TIEMPO_AGOTADO
                 - COSTEO_NEXO_RECHAZADA
+                - COSTEO_NEXO_SOLICITUD_INVALIDA
+                - COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA
                 - COSTEO_NO_REINTENTABLE
                 - COSTEO_NO_LISTO
                 - PDF_YA_GENERADO
                 - RESULTADO_YA_DEFINIDO
                 - COTIZACION_NO_ENTREGADA
+                - USAR_RESULTADO_NEXO
                 - ERROR_INTERNO
             mensaje:
               type: string

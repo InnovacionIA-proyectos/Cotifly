@@ -59,7 +59,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         valor_mercancia = 250000000,
         posiciones = new object[]
         {
-            new { descripcion = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 850.25 },
+            new { descripcion = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
             new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
         },
     });
@@ -114,7 +114,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task Un4xxDeNexoQuedaComoMotivoConElCodigoDeNexo()
+    public async Task Un400DeNexoEsUnErrorDefinitivoQueNoSeReintenta()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.AltaFalla = HttpStatusCode.BadRequest;
@@ -123,7 +123,12 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
         json.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
-        json.GetProperty("motivo_estado_costeo").GetString().Should().Contain("HTTP 400 VALIDATION_ERROR");
+        json.GetProperty("motivo_estado_costeo").GetString().Should().StartWith("Rechazo definitivo de Nexo").And.Contain("HTTP 400 VALIDATION_ERROR");
+
+        _nexo.AltaFalla = null;
+        using var reintento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{json.GetProperty("folio").GetString()}/costeo/reintentar", ana.Access);
+        reintento.StatusCode.Should().Be(HttpStatusCode.Conflict, "los mismos datos volverían a fallar");
+        await VerificarErrorNegocioAsync(reintento, "COSTEO_NO_REINTENTABLE");
     }
 
     [Fact]
@@ -147,7 +152,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     [InlineData("""{"tipo":"urgente","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá"}""", "SOLICITUD_COSTEO_INVALIDA")]
     [InlineData("""{"tipo":"spot","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá"}""", "SOLICITUD_COSTEO_INVALIDA")]
     [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","posiciones":[{"largo_cm":0,"ancho_cm":1,"alto_cm":1}]}""", "SOLICITUD_COSTEO_INVALIDA")]
-    [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Marítima","origen":"Cali","destino":"Bogotá"}""", "MARGEN_LINEA_DESCONOCIDA")]
+    [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Marítima","origen":"Cali","destino":"Bogotá","peso_kg":1000}""", "MARGEN_LINEA_DESCONOCIDA")]
+    [InlineData("""{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000,"posiciones":[{"cantidad":2,"largo_cm":1,"ancho_cm":1,"alto_cm":1,"peso_kg":400}]}""", "SOLICITUD_COSTEO_INVALIDA")]
     public async Task UnFormularioInvalidoEs400ConErrorNegocioYNoSeGuardaNada(string cuerpo, string codigo)
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

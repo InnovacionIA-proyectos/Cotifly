@@ -113,6 +113,21 @@ public sealed class clsRegistroCosteoNexoTests
     }
 
     [Fact]
+    public async Task Un409DescartadaNoSeReintentaYLlegaComoFotoDescartada()
+    {
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.Conflict, """{"code":"SOLICITUD_DESCARTADA","message":"Descartada."}""")
+            .Responder(HttpStatusCode.OK, "{}");
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, s => UsarNexoFalso(s, nexo));
+        using var ambito = proveedor.CreateScope();
+
+        var resultado = await ambito.ServiceProvider.GetRequiredService<IClsCosteoNexo>().ConsultarCosteoAsync(_usuarioId, "S", Ct);
+
+        resultado.Valor.EstadoSolicitud.Should().Be("Descartada");
+        nexo.Peticiones.Should().ContainSingle("un 409 no es transitorio");
+    }
+
+    [Fact]
     public void ElIntervaloMaximoNoPuedeSerMenorQueElInicial()
     {
         using var proveedor = Proveedor(new() { ["CosteoNexo:IntervaloInicialSegundos"] = "120", ["CosteoNexo:IntervaloMaximoMinutos"] = "1" });

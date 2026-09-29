@@ -53,6 +53,19 @@ public sealed class clsSeguimientoServiceTests
     }
 
     [Fact]
+    public async Task UnaCotizacionQuePasoPorNexoNoSeMarcaSoloEnCotifly()
+    {
+        var enNexo = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-N1", UsuarioId = _ana, CosteoId = "SOL-1" }).Valor;
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-N1", _ana, Arg.Any<CancellationToken>()).Returns(enNexo);
+
+        var resultado = await Servicio().MarcarAsync(_ana, "PCN-N1", true, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.UsarResultadoNexo);
+        enNexo.Ganada.Should().BeNull();
+        await _unidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+    }
+
+    [Fact]
     public async Task UnMotivoDemasiadoLargoSeRechaza()
     {
         var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", false, new string('m', 2001), Ct);

@@ -153,6 +153,29 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task UnRechazo400DeNexoEsDefinitivoYNoSeReintenta()
+    {
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, "Nexo rechazó los datos de la solicitud.", "HTTP 400 LINEA_INCOMPLETA"));
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+        Registrada(cotizacion);
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        cotizacion.ErrorEnvioDefinitivo.Should().BeTrue();
+        (await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoReintentable);
+    }
+
+    [Fact]
+    public async Task UnFormularioQueNexoRechazariaPorPesoNoSeGuarda()
+    {
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.Crear() with { PesoKg = 10_000m } }, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        resultado.Error.Detalle.Should().Be(clsSolicitudCosteo.PesoInconsistente);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task SiElCatalogoDeNexoNoRespondeQuedaEnErrorEnvioSinLlamarAlAlta()
     {
         _buscador.BuscarAsync(_ana, Nit, Arg.Any<CancellationToken>())

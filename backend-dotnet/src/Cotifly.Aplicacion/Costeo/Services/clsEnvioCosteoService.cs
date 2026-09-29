@@ -173,7 +173,7 @@ public sealed class clsEnvioCosteoService(
         }
         else
         {
-            cotizacion.RegistrarErrorEnvioCosteo(Motivo(resultado.Error));
+            cotizacion.RegistrarErrorEnvioCosteo(Motivo(resultado.Error), definitivo: resultado.Error.Codigo == clsCodigosError.CosteoNexoSolicitudInvalida);
         }
 
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);

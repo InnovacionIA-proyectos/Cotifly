@@ -89,6 +89,18 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
     }
 
+    [Fact]
+    public async Task ElSeguimientoInterinoRespondeUsarResultadoNexoParaUnaCotizacionDeNexo()
+    {
+        var (sesion, folio, _) = await EnviarAsync(entregar: true);
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/seguimiento", sesion.Access, """{"ganada":true}""");
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(respuesta, "USAR_RESULTADO_NEXO");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+    }
+
     private async Task<(clsSesionPrueba Sesion, string Folio, string Solicitud)> EnviarAsync(bool entregar)
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

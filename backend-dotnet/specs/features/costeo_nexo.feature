@@ -57,6 +57,13 @@ Característica: Costeo de la cotización en Nexo
     Y el polling consulta a Nexo
     Entonces la cotización "C1" queda en el estado de costeo "autocosteo"
 
+  Escenario: Una solicitud descartada en Nexo queda descartada y se deja de consultar
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo descarta la solicitud de "C1"
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "descartada"
+    Y la cotización "C1" ya no se consulta en Nexo
+
   Escenario: Una solicitud que nunca se costea queda vencida y visible
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y el polling consulta a Nexo 73 horas después del envío

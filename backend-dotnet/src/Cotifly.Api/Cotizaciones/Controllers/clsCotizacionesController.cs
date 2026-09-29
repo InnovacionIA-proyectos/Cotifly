@@ -30,6 +30,7 @@ public sealed class clsCotizacionesController(
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> MarcarSeguimiento(string folio, [FromBody] clsSeguimientoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
