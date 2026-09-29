@@ -97,6 +97,7 @@ Errores de `/web/*` (`clsRespuestasWeb`, cumple la tabla "Para #12" de abajo):
 | `SIN_PERMISO` (rol revalidado en el caso de uso) | 403 `ErrorWeb` |
 | `CORREO_DESHABILITADO` | 503 `ErrorNegocio` |
 | `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`, `SEGUIMIENTO_INVALIDO`, cuerpo mal formado | 400 `ErrorWeb` |
+| `TRM_NO_DISPONIBLE` (HU-012: la fuente oficial de la TRM no respondió; no se cotiza en USD) | Lo devuelven las herramientas `calcular_precio` y `registrar_ajuste_margen` del agente; en `/web/chat` llega en la conversación (el agente explica que puede reintentar o cotizar en COP), no como HTTP de error |
 | Resto de códigos de negocio (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`, y los de Nexo: `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_NO_DISPONIBLE`, `CUBICACION_DEMASIADO_GRANDE`...) | 400 `ErrorNegocio` (`detalle` como objeto `{"motivo": ...}`) |
 | Cuerpo de más de `SeguridadHttp:LimiteCuerpoWebBytes` | 413 `ErrorWeb` (fuera del contrato: transporte) |
 

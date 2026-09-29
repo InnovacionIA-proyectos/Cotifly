@@ -128,7 +128,7 @@ Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al c
 - ~~Líneas inactivas en `MargenesPolitica`: hoy se siguen usando~~ Resuelto en #12 (auditoría F4, #41): el comercial no cotiza con una línea inactiva (`obtener_margen` y `generar_pdf` responden `MARGEN_LINEA_DESCONOCIDA` con el detalle `línea inactiva`); la administración sí la lista y la reactiva.
 - Anomalía con `markup`: un margen > 0.6 se marca anómalo aunque con markup sea normal; decidir el umbral por método.
 - Redondeo half-to-even sobre el valor exacto (diferencia máxima 1 peso con el Python): confirmar con negocio.
-- HU-012: convertir a USD después de calcular el precio en COP.
+- ~~HU-012: convertir a USD después de calcular el precio en COP.~~ Decidido en ADR-014 (#50 a #52): el precio se calcula en COP y se convierte con la TRM oficial del día.
 - Riesgo de secuenciación HU-004 vs HU-005: sin Nexo no hay fuente de costeo (`TARIFA_FUENTE_NO_DISPONIBLE`, el comercial ingresa el costo).
 
 Otras decisiones abiertas:
@@ -146,6 +146,7 @@ Otras decisiones abiertas:
 | Destinatarios previos: último envío o unión de todos | Negocio | [02-arquitectura](02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
+| Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
 
 ## 10.8 Activación por integración
 
@@ -157,6 +158,7 @@ Otras decisiones abiertas:
 | SAP TM export | Montar el export de solo lectura y reemplazarlo copiando con otro nombre y renombrando | `SapTm__Modo=export_json`, `SapTm__ExportPath` |
 | SAP TM OData (HU-009) | Ruta de red y usuario de servicio (HU-009.1); confirmar el formato del BP (ceros a la izquierda); validar con al menos 3 casos reales (`Categoria=sap`) | `SapTm__Modo=odata`, `SapTm__Url`, `SapTm__User`, `SapTm__Pass`, `SapTm__SapClient` |
 | Nexo (clientes, municipios, catálogos de flete, cubicación) | Confirmar la URL base con el equipo de Nexo y la ruta de red desde el contenedor; los comerciales necesitan `idUsuarioExterno` (lo llena su login desde ClientePro); probar `GET /web/clientes?q=`, `GET /web/municipios`, `GET /web/catalogos-flete` y `POST /web/cubicacion` con un comercial real | `Nexo__UrlBase` |
+| TRM para cotizar en USD (HU-012) | Abrir la salida HTTPS a `www.datos.gov.co` desde el contenedor; cotizar una prueba en USD y comparar la TRM con la publicada por la Superintendencia Financiera | `Trm__Url` (por defecto el conjunto oficial), `Trm__TiempoEsperaSegundos` |
 | Agente de IA | Elegir proveedor y modelo; guardar la clave como secreto; ajustar `IA:Rpm` al plan del proveedor; medir respaldos y reintentos | `IA__Proveedor`, `IA__Modelo`, `IA__ApiKey`, `IA__Endpoint`, `IA__Rpm`, `IA__Fallbacks__*` |
 | Google Chat | App de Chat con endpoint `https://<api>/chat/events`, cuenta de servicio con alcance `chat.bot`; cada comercial entra una vez desde ClientePro con el mismo correo de Google | `GChat__ProjectNumber`, `GChat__SaJson`, `GChat__SupportSpace`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl` |
 
@@ -177,4 +179,5 @@ Otras decisiones abiertas:
 | Google Chat no responde | JWT inválido (401 en `/chat/events`), cola llena o sin `GChat__SaJson` | Revisar `GChat__ProjectNumber`, `GChat__CapacidadCola` y el warning de publicación |
 | `/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete` o `/web/cubicacion` responden 400 `*_NO_DISPONIBLE` y el agente no resuelve clientes | `Nexo__UrlBase` vacía, Nexo caído o lento (más de 8 s en total o 3 s por intento), URL base mal armada (404 de Nexo) o el comercial sin `idUsuarioExterno` | Revisar el warning de Nexo y su motivo; con "HTTP 404" revisar la URL base (el código agrega `/api/...`); con "circuito abierto" esperar a que Nexo se recupere; sin `idUsuarioExterno`, que el comercial vuelva a entrar desde ClientePro |
 | `POST /web/cubicacion` responde `CUBICACION_DEMASIADO_GRANDE` | Nexo/Cubicador rechazó los bultos (límite por solicitud o medidas inválidas) | Ver el `detalle` (mensaje de Nexo); dividir la carga o corregir las medidas (centímetros y kilogramos) |
+| Las cotizaciones en USD fallan con `TRM_NO_DISPONIBLE` | Sin salida a `www.datos.gov.co`, la fuente caída o lenta (más de `Trm__TiempoEsperaSegundos`), o sin TRM vigente para la fecha | Revisar el warning "Fuente de TRM no disponible" y su motivo; probar la URL desde el nodo; el comercial puede reintentar (los fallos no quedan en caché) o cotizar en COP |
 | Error de permisos al escribir el PDF | `/data/pdfs` no es del UID 1654 | Volumen con nombre, o `chown 1654:1654` en el bind mount |

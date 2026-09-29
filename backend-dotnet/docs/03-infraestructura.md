@@ -227,6 +227,22 @@ SAP TM:
 - **Tiempos:** 8 s en total por consulta, 3 s por intento y 2 reintentos (cliente HTTP `Nexo` compartido por los cuatro adaptadores). No son configurables.
 - **Activar en un ambiente:** fijar `Nexo__UrlBase` en Dokploy; los comerciales deben tener `idUsuarioExterno` (lo llena el login de ClientePro). No hay aviso al arrancar si falta.
 
+### TRM (cotizaciones en USD)
+
+**TRM oficial (HU-012.1, ADR-014).** Sección `Trm` (`clsOpcionesTrm` + `clsValidadorOpcionesTrm`), validada al arrancar. Arquitectura en [2.6](02-arquitectura.md#26-precio-margen-y-tarifas).
+
+| Clave | Por defecto | Uso | Variable |
+|---|---|---|---|
+| `Trm:Url` | `https://www.datos.gov.co/resource/32sa-8pi3.json` | Recurso SODA del conjunto "Tasa de Cambio Representativa del Mercado - Histórico" de la Superintendencia Financiera. http o https absoluta, sin usuario, consulta ni fragmento | `Trm__Url` |
+| `Trm:TiempoEsperaSegundos` | `10` | Límite de toda la consulta, reintentos incluidos (2 a 60). Cada intento tiene un tercio; 2 reintentos ante fallos transitorios | `Trm__TiempoEsperaSegundos` |
+
+- **Fuente pública:** sin credenciales ni datos personales. El contenedor necesita salida HTTPS a `www.datos.gov.co`. Sin esa salida, las cotizaciones en COP siguen igual y las de USD responden `TRM_NO_DISPONIBLE`.
+- **Consulta:** `GET {Trm__Url}?$select=valor,vigenciadesde,vigenciahasta&$where=vigenciadesde <= 'AAAA-MM-DDT00:00:00' AND vigenciahasta >= 'AAAA-MM-DDT00:00:00'&$order=vigenciadesde DESC&$limit=1`, con la fecha de negocio de America/Bogota. La TRM de un sábado, domingo o festivo es la del rango que lo cubre.
+- **Caché:** una consulta por fecha cada 6 horas como máximo, en memoria de cada réplica. Las consultas simultáneas comparten una sola llamada (y su resultado, también un fallo). Un fallo se recuerda 20 s: pasado ese lapso, el siguiente intento vuelve a consultar.
+- **Circuito:** abre con 5 intentos en 60 s si la mitad falla, y corta 30 s.
+- **Logs:** un fallo deja una sola línea de warning con el motivo (`HTTP 503`, `tiempo agotado`, `JSON inválido`, `sin TRM vigente para la fecha`) y la fecha; los eventos de Polly de la tubería `Trm-standard` bajan a Debug.
+- **Límite de Socrata:** sin token de aplicación, Socrata limita las peticiones por IP. Con la caché el volumen es mínimo. Si hiciera falta, se agregaría un `X-App-Token` como secreto (ADR-014).
+
 ### Agente de IA
 
 **Agente de IA (#12 parte C, ADR-003).** `clsOpcionesIA` (+ `clsValidadorOpcionesIA`) en Infraestructura y `clsOpcionesAgente` en Aplicación leen la misma sección `IA`:
@@ -288,6 +304,7 @@ SAP TM:
 | Relay SMTP interno (en el Python `10.10.40.62`) | Envío de la cotización | SMTP 25 sin AUTH ni STARTTLS, control por IP | Deshabilitado por defecto; transporte real por confirmar (D3) | `CORREO_DESHABILITADO` (503) o `CORREO_ENVIO_FALLIDO` con la fila `fallido` |
 | Volumen `/data/pdfs` | Almacén de los PDF | Sistema de archivos del contenedor (UID 1654) | Único adaptador; S3/MinIO diferido (ADR-012) | `generar_pdf` falla sin registrar la cotización |
 | Nexo: clientes, municipios, catálogos de flete y cubicación | Búsqueda de clientes y prospectos (agente y formulario), origen y destino, tipo de vehículo, carrocería y clase de viaje, cubicación rápida | HTTPS sin token, `X-Portal-Usuario-Id` del comercial; 8 s en total, 3 s por intento, 2 reintentos | Código listo (HU-005.2, HU-005.3, HU-005.4, HU-005.13); se activa con `Nexo__UrlBase` | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (el agente sigue sin NIT, margen de la política), `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `CUBICACION_NO_DISPONIBLE`; todos 400 en `/web/*` |
+| Datos abiertos de la Superintendencia Financiera (`www.datos.gov.co`) | TRM oficial del día para cotizar en USD (HU-012, ADR-014) | HTTPS público sin credenciales (API SODA); 10 s en total, 2 reintentos; caché por día | Código listo; fuente pendiente de confirmar con el equipo | `TRM_NO_DISPONIBLE`: no se cotiza en USD, sí en COP |
 | Nexo: costeo | Costeo de la ruta (reemplaza el tarifario de Drive) | Por definir (HU-005.5 en adelante) | Planeado: `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` | El comercial escribe el costo |
 | Grovity (ClientePro) | Validación y alta de prospectos del formulario | La resuelve `clientepro-frontend` contra el backend de ClientePro, no Cotifly (corrección del 2026-09-27 en ADR-005) | Sin adaptador en este backend; solo haría falta si se aprueba usarla desde el agente (propuesta de ADR-005) | No aplica |
 
@@ -304,6 +321,7 @@ flowchart LR
     api --> relay[Relay SMTP]
     api --> proveedor[Proveedor LLM]
     api --> nexo[Nexo]
+    api --> trm[datos.gov.co<br/>TRM]
 ```
 
 El manifiesto de Swarm para el backend .NET lo define HU-006.6 (#30); las condiciones que debe cumplir están en [3.1](#31-contenedor-e-imagen) ("Para HU-006.6").
