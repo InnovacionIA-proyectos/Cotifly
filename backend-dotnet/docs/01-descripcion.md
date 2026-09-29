@@ -11,7 +11,7 @@ Migrar el backend de Cotifly a C# / .NET 10 (milestone HU-003) con Clean Archite
 | Rol interno | Quién | Qué puede hacer |
 |---|---|---|
 | `comercial` | Comercial de Botero Soto con rol "Comercial" en ClientePro | Cotizar por la consola web o por Google Chat, ver y hacer seguimiento a sus cotizaciones, enviarlas por correo, registrar su teléfono |
-| `gerente_comercial` | Gerente comercial | Todo lo del comercial, más la administración de las líneas de negocio (margen, método, estado; HU-004.9) y las métricas de su regional (HU-010.1, borrador) |
+| `gerente_comercial` | Gerente comercial | Todo lo del comercial, más la administración de las líneas de negocio (margen, método, estado; HU-004.9) y el tablero de métricas de su regional, filtrable por comercial (HU-010.1, [ADR-016](../specs/decisiones/ADR-016-metricas-agregadas-y-regional.md)) |
 
 El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en cada login y se compara con la asignación interna (verificación doble, [ADR-009](../specs/decisiones/ADR-009-autenticacion-sso-clientepro.md)). Cotifly no tiene login propio.
 
@@ -54,7 +54,8 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | Costeo real de rutas (Nexo) | HU-005.5 en adelante; mientras tanto `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` y el comercial escribe el costo |
 | Criterio de coincidencia exacta de la búsqueda de clientes | Pendiente con el equipo de Nexo ([ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)); hasta entonces es exacta solo con un único candidato |
 | Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005; el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
-| Regional del comercial desde `DWCubosEBSSAP` | Pendiente; hasta entonces el gerente solo ve su propia fila de métricas |
+| Regional del comercial desde `DWCubosEBSSAP` | Adaptador listo tras `ConnectionStrings__Regional` (ADR-016); falta que el DBA confirme la tabla y dé acceso. Mientras tanto la fija el DBA en `UsuariosWeb.regional`; sin ella el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` |
+| Score de urgencia y deadline vencido (Nexo) en el tablero | Pendiente del contrato de Nexo (ADR-016 §8) |
 | Conversión a USD con TRM | HU-012 (`trmAplicada` queda en 0) |
 | Sincronización a Google Sheets y PDF en S3/MinIO | Diferidas, [ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md) |
 | Despliegue en Docker Swarm con Dokploy | HU-006 |

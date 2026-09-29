@@ -41,6 +41,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
     private string? _cadenaSolo0001;
+    private string? _cadenaConCiudades;
+    private string? _cadenaDirectorio;
     private string? _cadenaSin0004;
 
     /// <summary>Cadena a <c>dbTarifario_Nexo_Pruebas</c> con el esquema aplicado.</summary>
@@ -177,6 +179,71 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             }
 
             return _cadenaSolo0001;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>
+    /// Base auxiliar con 0001 a 0004 (el 0004 trae <c>origen</c>/<c>destino</c>/<c>deadline</c> de <c>Cotizaciones</c>): para probar la
+    /// concentración por ciudad de HU-010.1 con filas propias, sin ensuciar la base compartida. Se crea una vez por contenedor.
+    /// </summary>
+    public async Task<string> CadenaConCiudadesAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaConCiudades is null)
+            {
+                const string NombreAuxiliar = "dbCiudades_Pruebas";
+                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                var cadena = ConBase(CadenaMaster, NombreAuxiliar);
+                foreach (var nombre in Scripts)
+                {
+                    var script = (await File.ReadAllTextAsync(RutaScript(nombre)))
+                        .Replace($"USE {NombreBase};", $"USE [{NombreAuxiliar}];", StringComparison.OrdinalIgnoreCase);
+                    await EjecutarLotesAsync(cadena, PartirPorGo(script));
+                }
+
+                _cadenaConCiudades = cadena;
+            }
+
+            return _cadenaConCiudades;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>
+    /// <c>DWCubosEBSSAP</c> falsa con <c>dbo.DimEjecutivo</c> (<c>ID</c> y <c>REGIONAL</c> VARCHAR, el cruce que documenta el 0001;
+    /// el esquema real está pendiente del DBA) para el directorio de ejecutivos de HU-010.1. Se crea una vez por contenedor;
+    /// cada prueba inserta sus propias filas con nombres únicos.
+    /// </summary>
+    public async Task<string> CadenaDirectorioEjecutivosAsync()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            if (_cadenaDirectorio is null)
+            {
+                const string NombreAuxiliar = "DWCubosEBSSAP";
+                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                var cadena = ConBase(CadenaMaster, NombreAuxiliar);
+                await EjecutarAsync(cadena, """
+                    CREATE TABLE dbo.DimEjecutivo (
+                        ID          VARCHAR(50)  NULL,
+                        NOMBRE      VARCHAR(200) NULL,
+                        REGIONAL    VARCHAR(100) NULL
+                    );
+                    """);
+                _cadenaDirectorio = cadena;
+            }
+
+            return _cadenaDirectorio;
         }
         finally
         {

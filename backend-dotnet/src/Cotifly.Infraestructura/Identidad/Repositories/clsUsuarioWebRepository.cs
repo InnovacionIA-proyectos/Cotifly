@@ -36,4 +36,19 @@ public sealed class clsUsuarioWebRepository(clsCotiflyDbContext contexto) : ICls
         var encontrados = await contexto.UsuariosWeb.Where(u => u.Email == buscado).Take(2).ToListAsync(cancellationToken);
         return encontrados.Count == 1 ? encontrados[0] : null;
     }
+
+    public async Task<IReadOnlyList<clsUsuarioWeb>> ListarPorRegionalONombresAsync(
+        string regional, IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(regional);
+        ArgumentNullException.ThrowIfNull(nombresUsuario);
+        var buscada = regional.Trim();
+        var nombres = nombresUsuario.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // La collation de ambas columnas no distingue mayúsculas; LTRIM/RTRIM cubre los espacios de un UPDATE manual del DBA.
+        return await contexto.UsuariosWeb
+            .Where(u => (u.Regional != null && u.Regional.Trim() == buscada)
+                        || (u.NombreUsuario != null && nombres.Contains(u.NombreUsuario)))
+            .ToListAsync(cancellationToken);
+    }
 }

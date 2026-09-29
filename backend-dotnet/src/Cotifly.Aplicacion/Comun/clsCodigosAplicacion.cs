@@ -17,4 +17,13 @@ public static class clsCodigosAplicacion
 
     /// <summary>La entrada no cumple el contrato (la Api responde 400 con <c>ErrorWeb</c>).</summary>
     public const string SolicitudInvalida = "SOLICITUD_INVALIDA";
+
+    /// <summary>
+    /// El gerente no tiene regional (ni en <c>DimEjecutivo</c> ni en <c>UsuariosWeb.regional</c>): la Api responde 409 con
+    /// <c>ErrorNegocio</c> (HU-010.1, ADR-016). Nunca se cae a "todas las regionales".
+    /// </summary>
+    public const string RegionalNoAsignada = "REGIONAL_NO_ASIGNADA";
+
+    /// <summary>La fuente de la regional (<c>DimEjecutivo</c>) está configurada pero falla: 503 con <c>ErrorNegocio</c>.</summary>
+    public const string RegionalNoDisponible = "REGIONAL_NO_DISPONIBLE";
 }

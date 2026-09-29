@@ -26,4 +26,11 @@ public interface IClsUsuarioWebRepository
     /// el correo está repetido (no se adivina a cuál comercial pertenece).
     /// </summary>
     Task<clsUsuarioWeb?> ObtenerPorEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Usuarios con <c>regional</c> igual a <paramref name="regional"/> (recortada, sin distinguir mayúsculas) o cuyo
+    /// <c>nombreUsuario</c> está en <paramref name="nombresUsuario"/> (candidatos a miembros de una regional, HU-010.1).
+    /// </summary>
+    Task<IReadOnlyList<clsUsuarioWeb>> ListarPorRegionalONombresAsync(
+        string regional, IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default);
 }
