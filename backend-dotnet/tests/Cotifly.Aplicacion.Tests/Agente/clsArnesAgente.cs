@@ -14,6 +14,8 @@ using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.DTOs;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Municipios.DTOs;
+using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.DTOs;
@@ -36,7 +38,8 @@ namespace Cotifly.Aplicacion.Tests.Agente;
 /// Arnés del agente para pruebas unitarias: runner real, herramientas reales y estado real sobre casos de uso simulados
 /// (NSubstitute), sesiones en memoria y el modelo guionizado. Margen por defecto: <c>Nacional</c> 13,5 % de la política; con el BP
 /// <c>15927</c>, 12 % de SAP TM. <c>buscar_cliente</c> responde el stub (<c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c>) salvo que la prueba
-/// lo cambie.
+/// lo cambie. <c>resolver_municipio</c> responde <c>MUNICIPIOS_NO_DISPONIBLE</c> salvo que la prueba cargue el catálogo con
+/// <see cref="CatalogoMunicipios"/> (HU-005.13).
 /// </summary>
 internal sealed class clsArnesAgente
 {
@@ -54,8 +57,14 @@ internal sealed class clsArnesAgente
 
         Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Fallo(new clsErrorDominio(clsCodigosError.ClienteBusquedaNoDisponible, "Búsqueda no disponible.")));
+        Municipios.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsMunicipio>>.Fallo(new clsErrorDominio(clsCodigosError.MunicipiosNoDisponible, "Catálogo de municipios no disponible.")));
         Tarifas.BuscarAsync(Arg.Any<clsEntradaBuscarTarifa>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<clsSalidaTarifa>.Fallo(new clsErrorDominio(clsCodigosError.TarifaFuenteNoDisponible, "Sin fuente de tarifas.")));
+            .Returns(ci =>
+            {
+                EntradasTarifa.Add(ci.Arg<clsEntradaBuscarTarifa>());
+                return clsResultado<clsSalidaTarifa>.Fallo(new clsErrorDominio(clsCodigosError.TarifaFuenteNoDisponible, "Sin fuente de tarifas."));
+            });
         Margen.ResolverAsync(Arg.Any<clsEntradaMargen>(), Arg.Any<CancellationToken>()).Returns(ci =>
         {
             var entrada = ci.Arg<clsEntradaMargen>();
@@ -113,6 +122,11 @@ internal sealed class clsArnesAgente
 
     public IClsTarifaProvider Tarifas { get; } = Substitute.For<IClsTarifaProvider>();
 
+    public IClsMunicipiosProvider Municipios { get; } = Substitute.For<IClsMunicipiosProvider>();
+
+    /// <summary>Entradas con que se llamó a la fuente de tarifas (para ver qué origen y destino le llegaron).</summary>
+    public List<clsEntradaBuscarTarifa> EntradasTarifa { get; } = [];
+
     public IClsMargenResolverService Margen { get; } = Substitute.For<IClsMargenResolverService>();
 
     public IClsAjusteMargenService Ajuste { get; } = Substitute.For<IClsAjusteMargenService>();
@@ -154,12 +168,27 @@ internal sealed class clsArnesAgente
         Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Exito(new clsResultadoBusquedaClientes(true, [new clsClienteEncontrado(NitLongyin, "LONGYIN S.A.S.", "cliente", BpLongyin)])));
 
+    /// <summary>
+    /// Catálogo de municipios de Nexo con "La Unión" en Antioquia, Nariño y Valle del Cauca (el caso ambiguo de HU-005.13), más
+    /// Bogotá, Yumbo y Buenaventura (únicos).
+    /// </summary>
+    public void CatalogoMunicipios() =>
+        Municipios.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsMunicipio>>.Exito(
+        [
+            new clsMunicipio(1, "05400", "La Unión", "Antioquia", "Colombia"),
+            new clsMunicipio(2, "52399", "La Unión", "Nariño", "Colombia"),
+            new clsMunicipio(3, "76400", "La Unión", "Valle del Cauca", "Colombia"),
+            new clsMunicipio(4, "11001", "Bogotá, D.C.", "Bogotá, D.C.", "Colombia"),
+            new clsMunicipio(5, "76892", "Yumbo", "Valle del Cauca", "Colombia"),
+            new clsMunicipio(6, "76109", "Buenaventura", "Valle del Cauca", "Colombia"),
+        ]));
+
     public clsAgenteRunner Runner()
     {
         Contexto = new clsContextoTurnoAgente();
         var precio = new clsPrecioService(Trm, Calendario);
         var herramientas = new clsHerramientasCotizador(
-            Contexto, Buscador, Tarifas, Margen, precio, Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
+            Contexto, Buscador, Municipios, Tarifas, Margen, precio, Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
         return new clsAgenteRunner(
             Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(),
             Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas, precio,

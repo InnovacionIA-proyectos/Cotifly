@@ -35,6 +35,18 @@ public sealed record clsEstadoConversacion
     public string? TipoCarga { get; init; }
     public decimal? PesoKg { get; init; }
 
+    /// <summary>Municipio del catálogo de Nexo que resolvió <c>resolver_municipio</c> para el origen (HU-005.13); nulo si es texto libre.</summary>
+    public clsMunicipioResuelto? OrigenMunicipio { get; init; }
+
+    /// <summary>Municipio del catálogo de Nexo que resolvió <c>resolver_municipio</c> para el destino (HU-005.13); nulo si es texto libre.</summary>
+    public clsMunicipioResuelto? DestinoMunicipio { get; init; }
+
+    /// <summary>Municipios candidatos para el origen, pendientes de que el comercial elija uno (texto ambiguo, HU-005.13).</summary>
+    public IReadOnlyList<clsMunicipioResuelto> CandidatosOrigen { get; init; } = [];
+
+    /// <summary>Municipios candidatos para el destino, pendientes de que el comercial elija uno (texto ambiguo, HU-005.13).</summary>
+    public IReadOnlyList<clsMunicipioResuelto> CandidatosDestino { get; init; } = [];
+
     // Resultado
     public decimal? Costo { get; init; }
 
@@ -89,7 +101,14 @@ public sealed record clsEstadoConversacion
         && !Precio.clsConversorMoneda.EsPesos(Moneda)
         && (TrmVigenciaHasta is not { } hasta || hoy > hasta || (TrmVigenciaDesde is { } desde && hoy < desde));
 
-    /// <summary>Igualdad por valor, incluida la lista de candidatos (un record compara listas por referencia).</summary>
+    /// <summary>
+    /// True si el origen o el destino quedaron ambiguos en el catálogo de municipios y el comercial todavía no eligió: el orquestador
+    /// no deja buscar la tarifa, calcular el precio ni generar el PDF hasta que elija (HU-005.13). Es un método, no una propiedad,
+    /// para que no viaje en el JSON de <c>Sesiones.estadoAgente</c>.
+    /// </summary>
+    public bool TieneMunicipiosPorConfirmar() => CandidatosOrigen.Count > 0 || CandidatosDestino.Count > 0;
+
+    /// <summary>Igualdad por valor, incluidas las listas de candidatos (un record compara listas por referencia).</summary>
     public bool Equals(clsEstadoConversacion? other) =>
         other is not null
         && NitCliente == other.NitCliente
@@ -105,6 +124,10 @@ public sealed record clsEstadoConversacion
         && TipoVehiculo == other.TipoVehiculo
         && TipoCarga == other.TipoCarga
         && PesoKg == other.PesoKg
+        && OrigenMunicipio == other.OrigenMunicipio
+        && DestinoMunicipio == other.DestinoMunicipio
+        && CandidatosOrigen.SequenceEqual(other.CandidatosOrigen)
+        && CandidatosDestino.SequenceEqual(other.CandidatosDestino)
         && Costo == other.Costo
         && FuenteCosto == other.FuenteCosto
         && CosteoId == other.CosteoId

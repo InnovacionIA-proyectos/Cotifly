@@ -136,6 +136,18 @@ public sealed class clsMunicipiosNexoTests : IDisposable
         (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
     }
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"data":[{"id":1,"municipio":"Bogotá"}]}""")]
+    [InlineData("null")]
+    [InlineData("\"texto\"")]
+    public async Task UnDoscientosQueNoEsUnArregloEsMunicipiosNoDisponible(string json)
+    {
+        _nexo.Responder(HttpStatusCode.OK, json);
+
+        (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+    }
+
     [Fact]
     public async Task UnErrorDeRedEsMunicipiosNoDisponible()
     {

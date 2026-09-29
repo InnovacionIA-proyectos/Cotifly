@@ -12,7 +12,7 @@ Contenido:
 
 - Un solo `Dockerfile` multi-stage y un único servicio expuesto: `Cotifly.Api` (ADR-007, #27). Sin `docker-compose` **para ejecución local** (desviación de lo que pide HU-003.8, #14, registrada en ADR-007).
 - Despliegue: Docker Swarm + Dokploy (HU-006). El manifiesto de Swarm (`infra/stack*.yml`, formato compose para `docker stack deploy`/Dokploy) sí existe y lo adapta al backend .NET HU-006.6 (#30).
-- Nombre lógico de la imagen: **`cotifly-api`**. En local `cotifly-api:dev`; en el registry `${REGISTRY}/cotifly-api:<versión>` (la convención de tags la fija HU-006.4, #28).
+- Nombre lógico de la imagen: **`cotifly-api`**. En local `cotifly-api:dev`; en el registry **`ghcr.io/innovacionia-proyectos/cotifly-backend`** con tags `X.Y.Z` (tag git `vX.Y.Z`), `sha-<corto>` y `qa`/`main`, nunca `latest` (HU-006.4, #28). La publican el job `publicar-imagen` del CI o `scripts/publicar-imagen.sh`/`.ps1`; release paso a paso en [`DEPLOY.md`](../../DEPLOY.md) §4.
 
 **Imagen de contenedor (`Dockerfile`, #27):**
 
@@ -31,7 +31,7 @@ Contenido:
 
 Por qué `chiseled-extra`: la variante `chiseled` sin `-extra` no trae ICU ni tzdata (la app no arrancaría: `America/Bogota` no existiría) y `aspnet:10.0` (Ubuntu completo) sí los trae pero pesa más y agrega shell y `apt`. Medido el 2026-09-24: imagen final **87,6 MB comprimida / ~304 MB en disco** (Docker Desktop), frente a 95,9 MB / 340 MB de la base `aspnet:10.0` sola y 70,7 MB comprimida de la base `chiseled-extra`.
 
-- **Sin `.pdb`:** las trazas de excepción no traen número de línea. Alternativa a evaluar en HU-006.4 (#28): `DebugType=embedded` + `PathMap` (símbolos dentro del `.dll`, sin rutas del equipo de build).
+- **Sin `.pdb`:** las trazas de excepción no traen número de línea. Evaluado en HU-006.4 (#28): se mantiene `DebugType=none`. `DebugType=embedded` + `PathMap` daría números de línea sin rutas del equipo de build, pero suma tamaño a cada `.dll` y las trazas ya traen tipo y método; se reconsidera si un incidente real lo pide.
 - **Formato de moneda:** ICU da `3294798m.ToString("C0", es-CO)` = `$ 3.294.798` (con espacio). #11 usa un formateador propio, `clsFormatoMoneda`, que agrupa con la cultura invariante y cambia la coma por punto: `$3.294.798` exacto como el Python y sin depender de ICU ni de la cultura del proceso (probado con es-CO, en-US, de-DE, fr-FR, ja-JP e invariante). La fecha larga usa meses propios (`clsFormatoFecha`).
 - **Fuentes y recursos del PDF (#11):** chiseled no trae fontconfig ni fuentes del sistema, así que todo va embebido en `Cotifly.Infraestructura.dll` y se carga con `IFontResolver` (`clsResolvedorFuentes`): Liberation Sans 2.1.5 (4 caras TTF, ~1,6 MB, **SIL Open Font License 1.1**, métricas de Arial; la licencia viaja en `/app/licencias/LiberationSans-OFL.txt`), el logo (`logo_botero_soto.png`) y las 7 imágenes por línea de `mcp_server/pdf/assets/imagenes del pdf`, renombradas a ASCII (`nacional.jpg`, `distribucion.jpg`, `almacenamiento.jpg`, `itr.jpg`, `importacion.jpg`, `exportacion.jpg`, `andino.jpg`) y reducidas de PNG de ~2 MB a JPEG de 1200 px de ancho (calidad 88, ~1,2 MB en total; en el PDF se ven a 122 mm, ~250 ppp). La fuente `Stilu` del CSS no tiene licencia disponible (pendiente de negocio, ADR-006). Imagen final medida el 2026-09-24: **94,6 MB comprimida / ~324 MB en disco** (+7 MB por PDFsharp-MigraDoc, MailKit/MimeKit/BouncyCastle, fuentes e imágenes).
 - **Verificación dentro de la imagen (#11):** una sonda desechable (fuera del repo) cargó los ensamblados de `/app` con un `AssemblyLoadContext` sobre `Cotifly.Api.deps.json` y renderizó 3 PDF con `docker run --rm --entrypoint dotnet ... cotifly-api:dev /sonda/Sonda11.dll` como usuario `app`, sin `/etc/fonts` ni `/usr/share/fonts`: 3, 3 y 2 páginas, solo `Liberation Sans` y `Liberation Sans,Bold` embebidas como subconjunto (`/FontFile2`), "Cel" solo con teléfono, bloque aduanero solo en Internacional.
@@ -57,7 +57,7 @@ Medida del 2026-09-25 (#14, `docker build --no-cache` con el código de #16): **
 
 **Variables de entorno:** se documentan en `.env.example` (copiar a `.env`, que no se versiona). Ningún secreto va en `appsettings*.json` ni en el código.
 
-ASP.NET Core traduce `__` (doble guion bajo) a `:`: `Jwt__SigningKey` es la clave `Jwt:SigningKey`, y `Cors__OrigenesPermitidos__0` el primer elemento de `Cors:OrigenesPermitidos`. En QA y producción los valores llegan por Dokploy (HU-006.5).
+ASP.NET Core traduce `__` (doble guion bajo) a `:`: `Jwt__SigningKey` es la clave `Jwt:SigningKey`, y `Cors__OrigenesPermitidos__0` el primer elemento de `Cors:OrigenesPermitidos`. En QA y producción los valores llegan por Dokploy (HU-006.5, #29, ADR-013): variables de entorno del stack para todo, y un secreto de Docker Swarm montado en `/run/secrets/gchat_sa.json` para `GChat__SaJson`. Listado con dónde se carga cada una y la plantilla de la tabla de producción (HU-007.1, #33): [`DEPLOY.md`](../../DEPLOY.md) §2 y §3.
 
 Resumen de todas las variables de [`.env.example`](../.env.example). "Production" indica si la API no arranca sin la variable (o con un valor de ejemplo) en ese entorno; las columnas de detalle enlazan a la tabla de cada área.
 
@@ -215,14 +215,15 @@ SAP TM:
 
 ### Nexo
 
-**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13).** Una sola opción, `Nexo:UrlBase` (`clsOpcionesNexo`, sin validaciones: Nexo todavía no es obligatorio en todos los ambientes). Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
+**Nexo (HU-005.2, HU-005.3, HU-005.4, HU-005.13).** Dos opciones en `clsOpcionesNexo`: `Nexo:UrlBase` (sin validaciones: Nexo todavía no es obligatorio en todos los ambientes) y `Nexo:MinutosCacheMunicipios`. Arquitectura de los adaptadores en [2.14](02-arquitectura.md#214-integración-con-nexo).
 
 | Clave | Por defecto | Uso | Variable |
 |---|---|---|---|
-| `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE` | `Nexo__UrlBase` |
+| `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE`; en el chat, `resolver_municipio` responde `MUNICIPIOS_NO_DISPONIBLE` y el agente sigue con el texto libre del origen y el destino | `Nexo__UrlBase` |
+| `Nexo:MinutosCacheMunicipios` | `60` | Minutos que se reutiliza en memoria el catálogo de municipios (HU-005.13; lo usan `GET /web/municipios` y `resolver_municipio`). Solo guarda respuestas exitosas; `0` desactiva la caché; de 0 a 1440 (fuera de rango no arranca) | `Nexo__MinutosCacheMunicipios` |
 
-- **Sin token ni usuario de servicio.** Cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial; Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro. Un comercial sin `idUsuarioExterno` no puede usar estas funciones (código "no disponible"). El encabezado no se registra en los logs.
-- **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros` y `/api/cubicacion`. El ejemplo de `.env.example` (`https://<host-nexo>/api`) y el de las pruebas (`http://nexo-test.local/api`) terminan en `/api`, lo que daría `/api/api/...`: confirmar con el equipo de Nexo la URL base real antes de configurarla en QA.
+- **Sin token ni usuario de servicio.** Cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial; Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro. Un comercial sin `idUsuarioExterno` no puede usar estas funciones (código "no disponible"), salvo el catálogo de municipios mientras haya una foto vigente en caché (`Nexo:MinutosCacheMunicipios`): esa foto se sirve a cualquier comercial autenticado, y solo la recarga exige su `idUsuarioExterno`. El encabezado no se registra en los logs.
+- **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros` y `/api/cubicacion`. Por eso `Nexo__UrlBase` va **sin** `/api` al final (el host, ej. `https://<host-nexo>`). El ejemplo de `.env.example` se corrigió en HU-005.13 (antes terminaba en `/api`, lo que daba `/api/api/...`); las pruebas usan `http://nexo-test.local`, también sin `/api` (mismo criterio que el costeo, ADR-015). Falta confirmar con el equipo de Nexo el host real antes de configurarlo en QA.
 - **Tiempos:** 8 s en total por consulta, 3 s por intento y 2 reintentos (cliente HTTP `Nexo` compartido por los cuatro adaptadores). No son configurables.
 - **Activar en un ambiente:** fijar `Nexo__UrlBase` en Dokploy; los comerciales deben tener `idUsuarioExterno` (lo llena el login de ClientePro). No hay aviso al arrancar si falta.
 

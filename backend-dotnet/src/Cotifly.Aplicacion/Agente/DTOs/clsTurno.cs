@@ -73,6 +73,7 @@ public static class clsNombresHerramientas
 {
     public const string Plugin = "cotizador";
     public const string BuscarCliente = "buscar_cliente";
+    public const string ResolverMunicipio = "resolver_municipio";
     public const string BuscarTarifa = "buscar_tarifa";
     public const string ObtenerMargen = "obtener_margen";
     public const string CalcularPrecio = "calcular_precio";
