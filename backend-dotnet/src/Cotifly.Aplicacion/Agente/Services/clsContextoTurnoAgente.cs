@@ -38,6 +38,9 @@ public sealed class clsContextoTurnoAgente
     /// </summary>
     public string? MonedaDelFormulario { get; private set; }
 
+    /// <summary>Fecha de negocio del turno (America/Bogota): el filtro no emite un PDF en USD con una TRM que ya no rige (HU-012.2).</summary>
+    public DateOnly? Hoy { get; private set; }
+
     public bool Iniciado => UsuarioId != Guid.Empty;
 
     /// <summary>Estado después de aplicar la salida de una herramienta (lo llama el runner).</summary>
@@ -55,8 +58,10 @@ public sealed class clsContextoTurnoAgente
         clsEstadoConversacion estado,
         bool confirmado,
         IReadOnlyList<string>? mensajesDelComercial = null,
-        string? monedaDelFormulario = null)
+        string? monedaDelFormulario = null,
+        DateOnly? hoy = null)
     {
+        Hoy = hoy;
         MonedaDelFormulario = string.IsNullOrWhiteSpace(monedaDelFormulario) ? null : monedaDelFormulario.Trim().ToUpperInvariant();
         MensajesDelComercial = mensajesDelComercial ?? [mensaje ?? string.Empty];
         ArgumentNullException.ThrowIfNull(estado);

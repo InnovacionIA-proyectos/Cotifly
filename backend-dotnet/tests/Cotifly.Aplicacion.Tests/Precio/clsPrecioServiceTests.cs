@@ -67,6 +67,8 @@ public sealed class clsPrecioServiceTests
         salida.Costo.Should().Be(2_850_000m);
         salida.Utilidad.Should().Be(444_798m);
         salida.Margen.Should().Be(0.135m);
+        salida.TrmVigenciaDesde.Should().Be(new DateOnly(2026, 9, 26));
+        salida.TrmVigenciaHasta.Should().Be(_hoy);
         await _trm.Received(1).ObtenerAsync(_hoy, Arg.Any<CancellationToken>());
     }
 
@@ -114,9 +116,9 @@ public sealed class clsPrecioServiceTests
     [Fact]
     public async Task LaTrmDelDiaEsCeroEnPesosYLaOficialEnDolares()
     {
-        (await _servicio.TrmDelDiaAsync("COP", Ct)).Valor.Should().Be(0m);
-        (await _servicio.TrmDelDiaAsync(null, Ct)).Valor.Should().Be(0m);
-        (await _servicio.TrmDelDiaAsync("USD", Ct)).Valor.Should().Be(3306.86m);
+        (await _servicio.TrmDelDiaAsync("COP", Ct)).Valor.Should().Be(clsTrmDelDia.Pesos);
+        (await _servicio.TrmDelDiaAsync(null, Ct)).Valor.Valor.Should().Be(0m);
+        (await _servicio.TrmDelDiaAsync("USD", Ct)).Valor.Should().Be(new clsTrmDelDia(3306.86m, new DateOnly(2026, 9, 26), _hoy));
     }
 
     [Fact]
@@ -124,11 +126,14 @@ public sealed class clsPrecioServiceTests
     {
         var enPesos = _servicio.Calcular(2_850_000m, 0.11m, "margen").Valor;
 
-        var enDolares = _servicio.EnMoneda(enPesos, "USD", 3306.86m).Valor;
+        var enDolares = _servicio.EnMoneda(enPesos, "USD", new clsTrmDelDia(3306.86m, new DateOnly(2026, 9, 26), _hoy)).Valor;
         enDolares.Precio.Should().Be(968.36m); // 3.202.247 / 3.306,86
         enDolares.PrecioCop.Should().Be(3_202_247m);
 
-        _servicio.EnMoneda(enDolares, "COP", 0m).Valor.Should().Be(enPesos);
-        _servicio.EnMoneda(enPesos, "USD", 0m).Error.Codigo.Should().Be(clsCodigosError.PrecioInvalido);
+        enDolares.TrmVigenciaDesde.Should().Be(new DateOnly(2026, 9, 26));
+        enDolares.TrmVigenciaHasta.Should().Be(_hoy);
+
+        _servicio.EnMoneda(enDolares, "COP", clsTrmDelDia.Pesos).Valor.Should().Be(enPesos);
+        _servicio.EnMoneda(enPesos, "USD", clsTrmDelDia.Pesos).Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible, "en USD nunca se cae en silencio a pesos");
     }
 }

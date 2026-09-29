@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Herramientas;
 using Cotifly.Aplicacion.Agente.Services;
@@ -29,16 +28,16 @@ namespace Cotifly.Aplicacion.Agente.Filtros;
 /// <c>buscar_tarifa</c>. Un costo que escribió el comercial en el chat sí llega del mensaje.</item>
 /// <item><c>registrar_ajuste_margen</c>: margen de referencia (el propuesto por <c>obtener_margen</c>), costo y método del estado.</item>
 /// <item><c>calcular_precio</c> y <c>registrar_ajuste_margen</c>, moneda (HU-012.2): la del selector del formulario web si vino en el turno;
-/// si no, la que pide el modelo solo si el comercial la nombró en su mensaje (dólares/USD, o "en pesos"/COP); si no, la del estado (COP
-/// por defecto). La TRM nunca es un argumento: la consulta el servidor.</item>
+/// si no, la del estado, que reconoce la moneda nombrada en cualquier mensaje del comercial (COP por defecto). La TRM nunca es un
+/// argumento: la consulta el servidor.</item>
 /// <item><c>generar_pdf</c>: exige la confirmación explícita del turno y un cliente sin candidatos pendientes
-/// (<c>CONFIRMACION_REQUERIDA</c>) y un precio calculado; reescribe el payload: línea canónica, método, cliente confirmado, y en
+/// (<c>CONFIRMACION_REQUERIDA</c>), un precio calculado y, en USD, una TRM vigente hoy (si no, <c>CONFIRMACION_REQUERIDA</c>: se recalcula); reescribe el payload: línea canónica, método, cliente confirmado, y en
 /// cada fila tarifa = precio final, costo y margen del estado, moneda de la cotización; quita la <c>referencia</c> (el folio lo
 /// genera el servidor), la trazabilidad y los servicios conexos (sus precios vendrán del costeo de Nexo, HU-005).</item>
 /// <item><c>enviar_correo</c>: exige la confirmación del turno o que el comercial haya escrito los destinatarios en su mensaje.</item>
 /// </list>
 /// </remarks>
-public sealed partial class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, ILogger<clsInyeccionEstadoFilter> logger) : IFunctionInvocationFilter
+public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, ILogger<clsInyeccionEstadoFilter> logger) : IFunctionInvocationFilter
 {
     private static readonly string[] _trazabilidadDelPayload =
         ["referencia", "costo", "margen_politica", "margen_aplicado", "precio_final", "fuente_tarifa", "origen_margen", "cliente_id_sap", "cliente_id", "servicios_conexos"];
@@ -114,7 +113,7 @@ public sealed partial class clsInyeccionEstadoFilter(clsContextoTurnoAgente cont
 
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Margen, margen);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Metodo, estado.MetodoCalculo ?? "margen");
-        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(args, estado));
+        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(estado));
         return null;
     }
 
@@ -123,35 +122,18 @@ public sealed partial class clsInyeccionEstadoFilter(clsContextoTurnoAgente cont
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.MargenPolitica, estado.MargenSugerido ?? estado.MargenPolitica);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Costo, estado.Costo);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Metodo, estado.MetodoCalculo ?? "margen");
-        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(args, estado));
+        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(estado));
         return null;
     }
 
     /// <summary>
-    /// Moneda del precio (HU-012.2): el selector del formulario manda; si no vino, el modelo solo puede cambiarla si el comercial la nombró
-    /// en su mensaje de este turno (así no convierte a dólares por su cuenta); si no, la del estado.
+    /// Moneda del precio (HU-012.2): la del selector del formulario si vino en el turno; si no, la del estado, que ya reconoció la moneda
+    /// nombrada en cualquier mensaje del comercial (<c>clsEstadoConversacionService.ReconocerMensaje</c>, ADR-004). Lo que pida el modelo
+    /// no cuenta: no convierte a dólares por su cuenta.
     /// </summary>
-    private string MonedaDelTurno(KernelArguments args, clsEstadoConversacion estado)
-    {
-        if (contexto.MonedaDelFormulario is { } delFormulario)
-        {
-            return delFormulario;
-        }
-
-        var pedida = clsArgumentosHerramienta.Texto(args, clsArgumentosHerramienta.Moneda)?.Trim().ToUpperInvariant();
-        var mensaje = contexto.MensajeUsuario;
-        if (pedida == clsConversorMoneda.Dolares && ExpresionDolares().IsMatch(mensaje))
-        {
-            return clsConversorMoneda.Dolares;
-        }
-
-        if (pedida == clsConversorMoneda.Pesos && ExpresionPesos().IsMatch(mensaje))
-        {
-            return clsConversorMoneda.Pesos;
-        }
-
-        return string.IsNullOrWhiteSpace(estado.Moneda) ? clsConversorMoneda.Pesos : estado.Moneda.Trim().ToUpperInvariant();
-    }
+    private string MonedaDelTurno(clsEstadoConversacion estado) =>
+        contexto.MonedaDelFormulario
+        ?? (string.IsNullOrWhiteSpace(estado.Moneda) ? clsConversorMoneda.Pesos : estado.Moneda.Trim().ToUpperInvariant());
 
     private clsErrorDominio? InyectarPdf(KernelArguments args, string herramienta, clsEstadoConversacion estado)
     {
@@ -165,6 +147,13 @@ public sealed partial class clsInyeccionEstadoFilter(clsContextoTurnoAgente cont
         if (estado.PrecioFinal is not { } precioFinal)
         {
             return new clsErrorDominio(clsCodigosError.PdfPayloadInvalido, "Falta calcular el precio con calcular_precio antes de generar el PDF.");
+        }
+
+        if (contexto.Hoy is { } hoy && estado.TrmVencidaEn(hoy))
+        {
+            return new clsErrorDominio(
+                clsCodigosError.ConfirmacionRequerida,
+                "La TRM con que se calculó el precio en dólares ya no está vigente: recalcula el precio con calcular_precio y pide una nueva confirmación.");
         }
 
         if (!contexto.ConfirmadoEnEsteTurno)
@@ -306,10 +295,4 @@ public sealed partial class clsInyeccionEstadoFilter(clsContextoTurnoAgente cont
 
         return string.Equals(texto?.Trim(), nuevo?.Trim(), StringComparison.OrdinalIgnoreCase);
     }
-
-    [GeneratedRegex(@"(?<![A-Za-z])(usd|us\$|d[oó]lar(es)?)(?![A-Za-z])", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex ExpresionDolares();
-
-    [GeneratedRegex(@"(?<![A-Za-z])(cop|en pesos|pesos colombianos)(?![A-Za-z])", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex ExpresionPesos();
 }

@@ -35,6 +35,7 @@ public sealed class clsGeneradorPdfMigraDocTests
         tarifa.Should().Contain("TRM de $3.306,86 por dólar");
         tarifa.Should().Contain("se ajusta día a día con la TRM vigente");
         tarifa.Should().Contain("el mínimo a pagar es el valor cotizado originalmente");
+        tarifa.Should().Contain("(equivalente a $3.294.798)");
         tarifa.IndexOf("Cotización en dólares:", StringComparison.Ordinal).Should()
             .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la aclaración va debajo de la tabla");
     }

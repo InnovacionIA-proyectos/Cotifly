@@ -76,15 +76,18 @@ public static class clsTextosEstandar
     /// <summary>
     /// Aclaración de la cotización en USD (HU-012.3, regla de negocio del backlog): el valor en pesos se ajusta día a día con la TRM, pero el
     /// mínimo a pagar es el valor cotizado originalmente, con la TRM aplicada (<c>trmAplicada</c>) como referencia del piso. Texto de
-    /// referencia pendiente de validar con Gerencia Comercial / jurídica (ADR-013).
+    /// referencia pendiente de validar con Gerencia Comercial / jurídica (ADR-014).
     /// </summary>
-    public static string AclaracionDolares(decimal trmAplicada)
+    /// <param name="trmAplicada">TRM de la cotización (&gt; 0).</param>
+    /// <param name="precioCop">Valor original en pesos (el piso); si viene, se imprime como equivalente.</param>
+    public static string AclaracionDolares(decimal trmAplicada, decimal? precioCop = null)
     {
         var trm = clsFormatoMoneda.FormatearTrm(trmAplicada);
+        var piso = precioCop is { } pesos ? $" (equivalente a {clsFormatoMoneda.Formatear(pesos, "COP")})" : string.Empty;
         return "Los valores de esta cotización están expresados en dólares estadounidenses (USD) y se liquidaron con la "
             + $"TRM de {trm} por dólar, vigente el día de la cotización. El valor en pesos colombianos se ajusta día a día "
             + "con la TRM vigente, pero el mínimo a pagar es el valor cotizado originalmente: cada tarifa en USD por la "
-            + $"TRM de referencia de {trm}.";
+            + $"TRM de referencia de {trm}{piso}.";
     }
 
     /// <summary>Frase de cierre (<c>FRASE_FINAL_STD</c>); el enlace va en la línea siguiente.</summary>

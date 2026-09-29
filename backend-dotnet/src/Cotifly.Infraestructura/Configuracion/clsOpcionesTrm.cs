@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Fuente oficial de la TRM (sección <c>Trm</c>, variables <c>Trm__Url</c> y <c>Trm__TiempoEsperaSegundos</c>, HU-012.1, ADR-013):
+/// Fuente oficial de la TRM (sección <c>Trm</c>, variables <c>Trm__Url</c> y <c>Trm__TiempoEsperaSegundos</c>, HU-012.1, ADR-014):
 /// el conjunto "Tasa de Cambio Representativa del Mercado - Histórico" de la Superintendencia Financiera en datos abiertos
 /// (Socrata, <c>datos.gov.co</c>). Es información pública: no lleva credenciales. Reglas en <see cref="clsValidadorOpcionesTrm"/>.
 /// </summary>

@@ -112,7 +112,8 @@ public sealed class clsPasosMonedaTrm(clsContextoEscenario contexto)
             MetodoCalculo: salida.Metodo,
             PrecioFinal: salida.Precio,
             Moneda: salida.Moneda,
-            TrmAplicada: salida.TrmAplicada);
+            TrmAplicada: salida.TrmAplicada,
+            PrecioCop: salida.PrecioCop);
         var entrada = new clsEntradaGenerarPdf(contexto.Usuarios[nombreUsuario], payload, folio, Trazabilidad: traza);
 
         var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsGenerarPdfService>().GenerarAsync(entrada));

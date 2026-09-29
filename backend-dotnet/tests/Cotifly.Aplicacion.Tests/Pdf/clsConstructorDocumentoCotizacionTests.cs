@@ -17,7 +17,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
 
     private static clsDocumentoCotizacion Construir(clsCotizacionPdfPayload payload, clsFirmaDocumento? firma = null)
     {
-        var resultado = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-19032026", firma ?? _firma, _hoy);
+        var resultado = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-19032026", firma ?? _firma, _hoy, "COP", 0m);
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
         return resultado.Valor;
     }
@@ -174,7 +174,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         payload.Tarifa.Filas[0].Costo = 1000m;
         payload.Tarifa.Filas[0].Margen = 1m;
 
-        var resultado = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy);
+        var resultado = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "COP", 0m);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
     }
@@ -354,7 +354,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         var payload = clsEjemploPdf.Payload();
         payload.ServiciosConexos = [new clsServicioConexoPayload { Descripcion = "Levante", Precio = 100m }];
 
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD").Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor;
 
         documento.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000,00");
         documento.Incluye.Should().Contain("Levante: US$100,00");
@@ -373,12 +373,26 @@ public sealed class clsConstructorDocumentoCotizacionTests
             .And.Contain("el mínimo a pagar es el valor cotizado originalmente");
     }
 
+    [Fact]
+    public void EnPesosNoHayAclaracionDeTrm() =>
+        clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "COP", 0m).Valor.NotaMoneda.Should().BeNull();
+
+    // Auditoría de HU-012.3: sin TRM no hay PDF en dólares (antes salía sin aclaración en silencio).
     [Theory]
-    [InlineData(null, 0)]
-    [InlineData("COP", 0)]
-    [InlineData("USD", 0)]
-    public void SinDolaresOSinTrmNoHayAclaracionDeTrm(string? moneda, int trm) =>
-        clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, moneda, trm).Valor.NotaMoneda.Should().BeNull();
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void EnDolaresSinTrmEsPayloadInvalido(int trm)
+    {
+        var resultado = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", trm);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("TRM");
+    }
+
+    [Fact]
+    public void ConElPrecioEnPesosLaAclaracionImprimeElPisoEnCop() =>
+        clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_294_798m).Valor.NotaMoneda
+            .Should().Contain("TRM de referencia de $3.306,86 (equivalente a $3.294.798)");
 
     [Fact]
     public void LaVarianteMultiTambienLlevaLaAclaracion()

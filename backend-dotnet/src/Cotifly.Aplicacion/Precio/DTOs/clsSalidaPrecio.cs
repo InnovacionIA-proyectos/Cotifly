@@ -12,6 +12,8 @@ namespace Cotifly.Aplicacion.Precio.DTOs;
 /// <param name="Moneda"><c>COP</c> o <c>USD</c> (HU-012.2).</param>
 /// <param name="TrmAplicada">TRM con que se convirtió el precio; 0 en COP.</param>
 /// <param name="PrecioCop">Precio en pesos antes de convertir; <c>null</c> en COP (es el mismo <paramref name="Precio"/>).</param>
+/// <param name="TrmVigenciaDesde">Primer día de vigencia de la TRM aplicada; <c>null</c> en COP.</param>
+/// <param name="TrmVigenciaHasta">Último día de vigencia de la TRM aplicada; <c>null</c> en COP. Pasada esa fecha el precio se recalcula.</param>
 public sealed record clsSalidaPrecio(
     decimal Precio,
     decimal Costo,
@@ -20,7 +22,9 @@ public sealed record clsSalidaPrecio(
     decimal Utilidad,
     string Moneda = clsConversorMoneda.Pesos,
     decimal TrmAplicada = 0m,
-    decimal? PrecioCop = null)
+    decimal? PrecioCop = null,
+    DateOnly? TrmVigenciaDesde = null,
+    DateOnly? TrmVigenciaHasta = null)
 {
     /// <summary>Precio en pesos (COP, sin TRM).</summary>
     public static clsSalidaPrecio Desde(clsPrecioCalculado calculado)

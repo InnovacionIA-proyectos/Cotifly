@@ -32,6 +32,7 @@ public sealed record clsEntradaGenerarPdf(
 /// <param name="MetodoCalculo"><c>margen</c> | <c>markup</c>; si no viene, el del payload o el de la política de la línea.</param>
 /// <param name="OrigenCliente"><c>cliente</c> | <c>prospecto</c>.</param>
 /// <param name="Moneda">ISO de 3 letras (por defecto <c>COP</c>); con otra moneda la TRM debe ser mayor que 0.</param>
+/// <param name="PrecioCop">Precio original en pesos de una cotización en USD (piso impreso en la aclaración, HU-012.3); no se persiste.</param>
 public sealed record clsTrazabilidadCotizacion(
     decimal? Costo = null,
     decimal? MargenPolitica = null,
@@ -43,4 +44,5 @@ public sealed record clsTrazabilidadCotizacion(
     string? OrigenCliente = null,
     string? Moneda = null,
     decimal TrmAplicada = 0m,
-    string? CosteoId = null);
+    string? CosteoId = null,
+    decimal? PrecioCop = null);

@@ -13,7 +13,7 @@ using Polly;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// TRM oficial desde los datos abiertos de la Superintendencia Financiera (HU-012.1, ADR-013): conjunto "Tasa de Cambio
+/// TRM oficial desde los datos abiertos de la Superintendencia Financiera (HU-012.1, ADR-014): conjunto "Tasa de Cambio
 /// Representativa del Mercado - Histórico" (<c>Trm:Url</c>, por defecto <c>https://www.datos.gov.co/resource/32sa-8pi3.json</c>),
 /// API SODA de Socrata sin credenciales. Consulta SoQL:
 /// <c>?$select=valor,vigenciadesde,vigenciahasta&amp;$where=vigenciadesde &lt;= 'F' AND vigenciahasta &gt;= 'F'&amp;$order=vigenciadesde DESC&amp;$limit=1</c>
@@ -126,7 +126,8 @@ public sealed class clsProveedorTrmSuperfinanciera(
 
     /// <summary>
     /// Primera fila del arreglo SODA (<c>[{"valor":"3306.86","vigenciadesde":"2026-09-26T00:00:00.000",...}]</c>) si es válida: valor
-    /// positivo (texto o número) y rango de vigencia que cubre la fecha. Cualquier otra cosa → <c>null</c>.
+    /// positivo (texto o número, redondeado a 4 decimales, la escala de <c>trmAplicada</c>) y rango de vigencia que cubre la fecha. Un valor
+    /// cero o negativo, o cualquier otra cosa → <c>null</c> (<c>TRM_NO_DISPONIBLE</c>).
     /// </summary>
     public static clsTrm? Leer(JsonElement raiz, DateOnly fecha)
     {
@@ -136,14 +137,15 @@ public sealed class clsProveedorTrmSuperfinanciera(
         }
 
         var fila = raiz[0];
-        if (Numero(fila, "valor") is not { } valor || valor <= 0m
+        if (Numero(fila, "valor") is not { } valor || Math.Round(valor, 4, MidpointRounding.ToEven) <= 0m
             || Fecha(fila, "vigenciadesde") is not { } desde
             || Fecha(fila, "vigenciahasta") is not { } hasta)
         {
             return null;
         }
 
-        var trm = new clsTrm(valor, desde, hasta, Fuente);
+        // La columna Cotizaciones.trmAplicada es DECIMAL(18,4): se guarda exactamente lo que se usa para convertir.
+        var trm = new clsTrm(Math.Round(valor, 4, MidpointRounding.ToEven), desde, hasta, Fuente);
         return trm.VigenteEn(fecha) ? trm : null;
     }
 

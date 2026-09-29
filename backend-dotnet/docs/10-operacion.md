@@ -128,7 +128,7 @@ Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al c
 - ~~Líneas inactivas en `MargenesPolitica`: hoy se siguen usando~~ Resuelto en #12 (auditoría F4, #41): el comercial no cotiza con una línea inactiva (`obtener_margen` y `generar_pdf` responden `MARGEN_LINEA_DESCONOCIDA` con el detalle `línea inactiva`); la administración sí la lista y la reactiva.
 - Anomalía con `markup`: un margen > 0.6 se marca anómalo aunque con markup sea normal; decidir el umbral por método.
 - Redondeo half-to-even sobre el valor exacto (diferencia máxima 1 peso con el Python): confirmar con negocio.
-- ~~HU-012: convertir a USD después de calcular el precio en COP.~~ Decidido en ADR-013 (#50 a #52): el precio se calcula en COP y se convierte con la TRM oficial del día.
+- ~~HU-012: convertir a USD después de calcular el precio en COP.~~ Decidido en ADR-014 (#50 a #52): el precio se calcula en COP y se convierte con la TRM oficial del día.
 - Riesgo de secuenciación HU-004 vs HU-005: sin Nexo no hay fuente de costeo (`TARIFA_FUENTE_NO_DISPONIBLE`, el comercial ingresa el costo).
 
 Otras decisiones abiertas:
@@ -146,8 +146,9 @@ Otras decisiones abiertas:
 | Destinatarios previos: último envío o unión de todos | Negocio | [02-arquitectura](02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
-| Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-013 |
-| Texto legal de la aclaración del piso mínimo en el PDF en USD (`clsTextosEstandar.AclaracionDolares`) | Gerencia Comercial / jurídica | ADR-013 |
+| Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
+| Nueva versión (v2) de una cotización en USD: hoy se siembra con la TRM de la original (`trmAplicada` copiada) y, al recalcular, toma la TRM del día. ¿La v2 debe conservar la TRM original o usar la del día? | Gerencia Comercial | ADR-014 |
+| Texto legal de la aclaración del piso mínimo en el PDF en USD (`clsTextosEstandar.AclaracionDolares`) | Gerencia Comercial / jurídica | ADR-014 |
 
 ## 10.8 Activación por integración
 

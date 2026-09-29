@@ -12,6 +12,8 @@ using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
+using Cotifly.Aplicacion.Pdf.Services;
+using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Sesiones;
@@ -69,6 +71,7 @@ public sealed class clsAgenteRunner(
     IClsMargenPoliticaRepository politicas,
     clsContextoTurnoAgente contexto,
     clsHerramientasCotizador herramientas,
+    IClsPrecioService precio,
     IOptions<clsOpcionesAgente> opcionesAgente,
     IOptions<clsOpcionesSesiones> opcionesSesiones,
     IOptions<clsOpcionesCorreo> opcionesCorreo,
@@ -119,14 +122,25 @@ public sealed class clsAgenteRunner(
         }
 
         var marcas = new clsMarcasTurno(reloj.AhoraUtc, historial.Count > 0 ? historial[^1].CreatedAt : null);
-        // La moneda del selector del formulario (HU-012.2) entra al estado antes del turno: si cambió, el precio anterior ya no vale.
-        if (!string.IsNullOrWhiteSpace(solicitud.Moneda))
+        // La moneda del selector del formulario (HU-012.2) entra al estado antes del turno: si cambió, el precio anterior ya no vale. Sin
+        // selector, ReconocerMensaje toma la moneda que nombre el comercial en su mensaje (y la conserva para los turnos siguientes).
+        var monedaDelFormulario = !string.IsNullOrWhiteSpace(solicitud.Moneda);
+        if (monedaDelFormulario)
         {
-            estadoInicial = estadoService.ElegirMoneda(estadoInicial, solicitud.Moneda);
+            estadoInicial = estadoService.ElegirMoneda(estadoInicial, solicitud.Moneda!);
         }
 
-        var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje);
+        var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje, monedaDelFormulario);
         var estado = reconocido.Estado;
+        var confirmado = reconocido.Confirmado;
+
+        // TRM vencida al confirmar (HU-012.2): no se emite el PDF con una TRM que ya no rige; se recalcula y se vuelve a previsualizar.
+        string? avisoTrm = null;
+        if (confirmado && estado.TrmVencidaEn(calendario.Hoy))
+        {
+            (estado, avisoTrm) = await RecalcularConTrmVigenteAsync(estado, cancellationToken);
+            confirmado = false;
+        }
 
         // El mensaje del comercial se guarda primero: si el proveedor falla, la conversación no pierde la pregunta (como el Python).
         AgregarEvento(solicitud, clsEventoConversacion.RolUsuario, solicitud.Mensaje, null, usuario.Id, marcas.Siguiente());
@@ -140,11 +154,15 @@ public sealed class clsAgenteRunner(
             .Select(e => e.Contenido!)
             .Append(solicitud.Mensaje)
             .ToList();
-        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado, mensajesDelComercial, solicitud.Moneda);
+        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, confirmado, mensajesDelComercial, solicitud.Moneda, calendario.Hoy);
         var mensajes = new List<ChatMessage>
         {
             new(ChatRole.System, clsPromptSistema.Construir(usuario.NombreCompleto ?? usuario.NombreUsuario, usuario.Email, calendario.Hoy, estado)),
         };
+        if (avisoTrm is not null)
+        {
+            mensajes.Add(new ChatMessage(ChatRole.System, avisoTrm));
+        }
         mensajes.AddRange(Historial(historial, solicitud.Mensaje));
 
         var kernel = ConstruirKernel(out var funciones);
@@ -167,6 +185,40 @@ public sealed class clsAgenteRunner(
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// Recalcula el precio en dólares con la TRM vigente hoy (mismo costo, margen y método del estado) y deja la previsualización pendiente
+    /// de una nueva confirmación. Si la TRM no está disponible, el precio se descarta (no hay precio en USD). Devuelve el aviso para el modelo.
+    /// </summary>
+    private async Task<(clsEstadoConversacion Estado, string Aviso)> RecalcularConTrmVigenteAsync(clsEstadoConversacion estado, CancellationToken cancellationToken)
+    {
+        var sinPrecio = estado with
+        {
+            PrecioFinal = null,
+            TrmAplicada = null,
+            PrecioCop = null,
+            TrmVigenciaDesde = null,
+            TrmVigenciaHasta = null,
+            ConfirmacionPendiente = false,
+        };
+        if (estado.Costo is not { } costo || estado.MargenAplicado is not { } margen)
+        {
+            return (sinPrecio, "La TRM con que se calculó el precio en dólares ya no está vigente: no generes el PDF. Calcula el precio de nuevo con calcular_precio y pide una nueva confirmación.");
+        }
+
+        var recalculado = await precio.CalcularAsync(costo, margen, estado.MetodoCalculo ?? "margen", estado.Moneda, cancellationToken);
+        if (recalculado.EsFallo)
+        {
+            _logger.LogInformation("TRM vencida al confirmar y sin TRM vigente para recalcular ({Codigo}).", recalculado.Error.Codigo);
+            return (sinPrecio, $"La TRM con que se calculó el precio en dólares ya no está vigente y la TRM de hoy no está disponible ({recalculado.Error.Codigo}): no generes el PDF. Explica que puede reintentar en unos minutos o cotizar en pesos.");
+        }
+
+        var nuevo = estadoService.Aplicar(estado, clsResultadoHerramienta.Exito(clsNombresHerramientas.CalcularPrecio, recalculado.Valor), new Dictionary<string, object?>());
+        _logger.LogInformation("TRM vencida al confirmar: el precio en USD se recalculó con la TRM vigente.");
+        return (nuevo, "La TRM con que se calculó el precio en dólares ya no está vigente: el servidor recalculó el precio con la TRM de hoy "
+            + $"({clsFormatoMoneda.FormatearTrm(recalculado.Valor.TrmAplicada)}) y el nuevo precio es {clsFormatoMoneda.Formatear(recalculado.Valor.Precio, recalculado.Valor.Moneda)}. "
+            + "No generes el PDF en este turno: muestra la nueva previsualización y pide que confirme de nuevo.");
     }
 
     private async Task<clsResultado<clsResultadoTurno>> CorrerLoopAsync(

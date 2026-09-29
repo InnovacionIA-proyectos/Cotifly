@@ -16,12 +16,13 @@ public interface IClsPrecioService
     /// </summary>
     Task<clsResultado<clsSalidaPrecio>> CalcularAsync(decimal costo, decimal margen, string? metodo, string? moneda, CancellationToken cancellationToken = default);
 
-    /// <summary>TRM del día de negocio para <paramref name="moneda"/>: 0 en COP; en USD la oficial, o <c>TRM_NO_DISPONIBLE</c>.</summary>
-    Task<clsResultado<decimal>> TrmDelDiaAsync(string? moneda, CancellationToken cancellationToken = default);
+    /// <summary>TRM del día de negocio para <paramref name="moneda"/>: 0 en COP; en USD la oficial con su vigencia, o <c>TRM_NO_DISPONIBLE</c>.</summary>
+    Task<clsResultado<clsTrmDelDia>> TrmDelDiaAsync(string? moneda, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Convierte una salida en pesos a <paramref name="moneda"/> con <paramref name="trm"/> (la de <see cref="TrmDelDiaAsync"/>): en COP la
     /// devuelve igual; en USD, <c>precio = round(precio_cop / trm, 2)</c> con <c>costo</c> y <c>utilidad</c> en COP.
     /// </summary>
-    clsResultado<clsSalidaPrecio> EnMoneda(clsSalidaPrecio enPesos, string? moneda, decimal trm);
+    /// <remarks>En USD con TRM ≤ 0 → <c>TRM_NO_DISPONIBLE</c>: nunca se cae en silencio a pesos.</remarks>
+    clsResultado<clsSalidaPrecio> EnMoneda(clsSalidaPrecio enPesos, string? moneda, clsTrmDelDia trm);
 }

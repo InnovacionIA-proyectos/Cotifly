@@ -209,4 +209,54 @@ public sealed class clsEstadoConversacionServiceTests
         estado.Moneda.Should().Be("USD", "el costo es en pesos; la moneda la elige el comercial");
         estado.Costo.Should().Be(2_000_000m);
     }
+
+    // HU-012.2 (auditoría, c): la moneda nombrada en cualquier mensaje queda en el estado.
+    [Theory]
+    [InlineData("cotiza Nacional en dólares", "USD")]
+    [InlineData("la quiero en USD", "USD")]
+    [InlineData("precio en US$ por favor", "USD")]
+    [InlineData("mejor en pesos", "COP")]
+    [InlineData("en COP", "COP")]
+    [InlineData("el costo es 2.850.000 pesos, la cotización en dólares", "USD")]
+    public void ReconoceLaMonedaNombradaEnElMensaje(string mensaje, string moneda) =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio, mensaje).Estado.Moneda.Should().Be(moneda);
+
+    [Theory]
+    [InlineData("el costo es 2.850.000 pesos")]
+    [InlineData("Confirmo")]
+    public void SinMonedaNombradaNoCambiaLaDelEstado(string mensaje) =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio with { Moneda = "USD" }, mensaje).Estado.Moneda.Should().Be("USD");
+
+    [Fact]
+    public void ConElSelectorDelFormularioElTextoNoCambiaLaMoneda() =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio with { Moneda = "COP" }, "en dólares", monedaDelFormulario: true).Estado.Moneda.Should().Be("COP");
+
+    [Fact]
+    public void NombrarOtraMonedaDescartaElPrecioYNoConfirma()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "COP", PrecioFinal = 3_294_798m, ConfirmacionPendiente = true };
+
+        var reconocido = _servicio.ReconocerMensaje(conPrecio, "sí, pero en dólares");
+
+        reconocido.Estado.Moneda.Should().Be("USD");
+        reconocido.Estado.PrecioFinal.Should().BeNull();
+        reconocido.Confirmado.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("2026-09-24", false)]
+    [InlineData("2026-09-26", false)]
+    [InlineData("2026-09-27", true)]
+    [InlineData("2026-09-23", true)]
+    public void LaTrmVenceFueraDeSuRangoDeVigencia(string hoy, bool vencida)
+    {
+        var estado = clsEstadoConversacion.Vacio with
+        {
+            Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, TrmVigenciaDesde = new DateOnly(2026, 9, 24), TrmVigenciaHasta = new DateOnly(2026, 9, 26),
+        };
+
+        estado.TrmVencidaEn(DateOnly.Parse(hoy, System.Globalization.CultureInfo.InvariantCulture)).Should().Be(vencida);
+        (estado with { Moneda = "COP" }).TrmVencidaEn(new DateOnly(2030, 1, 1)).Should().BeFalse("en pesos no hay TRM");
+        (estado with { TrmVigenciaHasta = null }).TrmVencidaEn(new DateOnly(2026, 9, 24)).Should().BeTrue("sin rango conocido se recalcula");
+    }
 }

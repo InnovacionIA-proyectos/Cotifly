@@ -1,6 +1,6 @@
-# ADR-013 — TRM oficial y cotizaciones en dólares
+# ADR-014 — TRM oficial y cotizaciones en dólares
 
-- **Estado:** Aceptada (la fuente queda pendiente de confirmar con el equipo; ver Pendientes)
+- **Estado:** Propuesta (la fuente oficial queda pendiente de confirmar con el equipo, checkbox 1 de #50; ver Pendientes)
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #50 (HU-012.1), #51 (HU-012.2), #52 (HU-012.3). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-006 (PDF) y HU-010 (métricas en COP con `trmAplicada`).
 
@@ -41,6 +41,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 - Puerto `IClsProveedorTrm` en Aplicación (`Precio/Interfaces`): `ObtenerAsync(fecha)` devuelve `clsTrm` o `TRM_NO_DISPONIBLE`. Nunca lanza por la fuente.
 - Adaptador `clsProveedorTrmSuperfinanciera` en Infraestructura, con cliente HTTP con nombre (`Trm`), la tubería estándar de resiliencia y 2 reintentos ante fallos transitorios.
+- El valor se redondea a 4 decimales (half-to-even), la escala de `Cotizaciones.trmAplicada`: se guarda exactamente la TRM con que se convierte. Un valor cero o negativo (también tras redondear) es `TRM_NO_DISPONIBLE`.
 - Opciones `Trm__Url` (por defecto la del conjunto) y `Trm__TiempoEsperaSegundos` (2 a 60, por defecto 10), validadas al arrancar.
 - Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Los fallos no se guardan, para que el reintento consulte de nuevo.
 - Código de error nuevo `TRM_NO_DISPONIBLE` en el contrato (`ErrorNegocio`).
@@ -49,7 +50,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 - El costo siempre está en COP (Nexo o el comercial). El precio en pesos se calcula como hoy (`clsCalculadoraPrecio`, redondeo a pesos half-to-even).
 - Con `moneda="USD"`: `precio = round(precio_cop / trm, 2)` half-to-even. `costo` y `utilidad` siguen en COP. La salida de `calcular_precio` agrega `moneda`, `trm_aplicada` y `precio_cop`.
-- La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF. El LLM nunca la aporta (ADR-003).
+- La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF, siempre que siga vigente al confirmar: si hoy ya está fuera de su rango de vigencia, el servidor recalcula con la TRM vigente y vuelve a previsualizar. El LLM nunca la aporta (ADR-003).
 - Con `moneda="COP"`: `trm_aplicada = 0`.
 - Si la TRM falla, `calcular_precio` (y el ajuste de margen en USD) devuelve `TRM_NO_DISPONIBLE` y no hay precio en el estado: no se puede generar el PDF en USD.
 - La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4); en Google Chat, cuando lo pide en su mensaje. La detalla #51.
@@ -78,3 +79,4 @@ La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TR
 | Confirmar con el equipo que la fuente oficial es la Superintendencia Financiera por datos abiertos (checkbox 1 de #50) | Duban con Gerencia Comercial |
 | Confirmar el texto legal de la aclaración del piso mínimo en el PDF | Gerencia Comercial / jurídica |
 | Abrir la salida HTTPS a `www.datos.gov.co` en el clúster (HU-006) | Infraestructura |
+| Nueva versión (v2) en USD: hoy se siembra con la TRM de la original y, al recalcular, usa la del día; decidir cuál aplica | Gerencia Comercial |

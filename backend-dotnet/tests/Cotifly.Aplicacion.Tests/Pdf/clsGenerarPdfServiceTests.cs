@@ -203,7 +203,8 @@ public sealed class clsGenerarPdfServiceTests
     [Fact]
     public async Task EnDolaresElPrecioFinalEsElDePesosConvertidoConLaTrm()
     {
-        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+        var traza = new clsTrazabilidadCotizacion(
+            Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m, PrecioCop: 3_294_798m);
 
         var coherente = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
 
@@ -212,7 +213,8 @@ public sealed class clsGenerarPdfServiceTests
         _agregada.TrmAplicada.Should().Be(3306.86m);
         _agregada.Costo.Should().Be(2_850_000m);
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
-        _documento.NotaMoneda.Should().Contain("TRM de $3.306,86", "HU-012.3: la aclaración usa la TRM de la trazabilidad");
+        _documento.NotaMoneda.Should().Contain("TRM de $3.306,86", "HU-012.3: la aclaración usa la TRM de la trazabilidad")
+            .And.Contain("(equivalente a $3.294.798)");
     }
 
     [Fact]
