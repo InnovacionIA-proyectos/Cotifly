@@ -118,6 +118,7 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Efecto de `GET /api/solicitudes/{id}` (pasa `Pendiente` → `EnCosteo` y afecta la bandeja y los KPIs de la Mesa): ¿endpoint de lectura sin efecto para integraciones? | Equipo de Nexo |
 | Confirmar esquemas separados entre staging y producción de Nexo (mientras tanto, staging con `CosteoNexo__Habilitado=false`) | DBA |
 | ¿PDF permitido en `autocosteo` o solo en `entregada`? | Negocio |
+| `margen_aplicado` junto a `precio_final` (en "Mis cotizaciones" y en el costeo) permite al comercial deducir el costo de Nexo; se conserva porque el resumen ya exponía el margen. ¿Ocultarlo? | Negocio |
 | Control optimista (`updatedAt`) entre el polling y `PUT .../servicios-conexos` | Duban |
 | Intervalo de polling que acepta Nexo (por defecto 5 s al inicio, hasta 15 min, 72 h de edad máxima) y límites de rate limiting | Equipo de Nexo |
 | Clave de idempotencia o referencia externa en el alta, para reintentar sin riesgo de duplicar tras un tiempo agotado | Equipo de Nexo |

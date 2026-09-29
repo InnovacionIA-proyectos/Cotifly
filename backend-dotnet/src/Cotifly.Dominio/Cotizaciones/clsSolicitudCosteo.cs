@@ -78,10 +78,18 @@ public sealed record clsSolicitudCosteo
             : p.Validar(i + 1)).FirstOrDefault(e => e is not null);
     }
 
+    /// <summary>Decimales que guardan las columnas del 0004 (<c>DECIMAL(18,2)</c>, <c>(12,2)</c>, <c>(10,2)</c>, <c>(6,2)</c>).</summary>
+    public const int Decimales = 2;
+
+    /// <summary>
+    /// Rango de un número y máximo <see cref="Decimales"/> decimales: SQL Server redondearía en silencio un tercer decimal y lo
+    /// guardado ya no sería lo que se envió a Nexo (ni lo que se reenviaría en un reintento).
+    /// </summary>
     internal static clsErrorDominio? Rango(string campo, decimal? valor, decimal minimo, decimal maximo) =>
-        valor is { } v && (v < minimo || v > maximo)
-            ? new clsErrorDominio(CodigoError, $"El campo '{campo}' debe estar entre {minimo} y {maximo}.")
-            : null;
+        valor is not { } v ? null
+        : v < minimo || v > maximo ? new clsErrorDominio(CodigoError, $"El campo '{campo}' debe estar entre {minimo} y {maximo}.")
+        : v != Math.Round(v, Decimales) ? new clsErrorDominio(CodigoError, $"El campo '{campo}' admite máximo {Decimales} decimales.")
+        : null;
 }
 
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
