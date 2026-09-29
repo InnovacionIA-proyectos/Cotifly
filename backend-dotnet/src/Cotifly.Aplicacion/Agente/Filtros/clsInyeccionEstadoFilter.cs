@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Herramientas;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Comun;
+using Cotifly.Aplicacion.Municipios.Services;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,11 @@ namespace Cotifly.Aplicacion.Agente.Filtros;
 /// <item><b>Identidad</b> en todas las herramientas: <c>usuarioId</c> (del token o del usuario resuelto), <c>spaceId</c>,
 /// <c>threadId</c>, <c>nitCliente</c>, <c>origenCliente</c>, <c>bpCliente</c>, <c>lineaNegocioId</c>, <c>cotizacionId</c> y
 /// <c>folio</c>. Si el LLM mandó otro valor, gana el estado y queda en el log.</item>
+/// <item><c>buscar_tarifa</c>, <c>calcular_precio</c>, <c>registrar_ajuste_margen</c> y <c>generar_pdf</c>: con un origen o destino
+/// ambiguo en el catálogo de municipios (candidatos sin elegir) se rechazan con <c>CONFIRMACION_REQUERIDA</c> hasta que el comercial
+/// elija (HU-005.13). En <c>buscar_tarifa</c>, si el texto del modelo es el municipio ya verificado, se reemplaza por su forma
+/// canónica <c>Municipio, Departamento</c>; en <c>generar_pdf</c>, el origen de la tabla de tarifa y el destino de su única fila también
+/// salen de los municipios verificados.</item>
 /// <item><c>obtener_margen</c>: el cliente de la consulta SAP TM es el BP del estado; sin BP no se consulta SAP (nunca con el NIT ni
 /// con el texto del LLM).</item>
 /// <item><c>calcular_precio</c>: margen y método del estado (sin margen resuelto, <c>PRECIO_INVALIDO</c>); el costo, si vino de
@@ -57,8 +63,9 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.CotizacionId, estado.CotizacionId);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Folio, estado.FolioEnProgreso);
 
-        var rechazo = herramienta switch
+        var rechazo = MunicipioPorConfirmar(herramienta, estado) ?? herramienta switch
         {
+            clsNombresHerramientas.BuscarTarifa => InyectarRuta(args, herramienta, estado),
             clsNombresHerramientas.ObtenerMargen => InyectarMargen(args, herramienta, estado),
             clsNombresHerramientas.CalcularPrecio => InyectarPrecio(args, herramienta, estado),
             clsNombresHerramientas.RegistrarAjusteMargen => InyectarAjuste(args, herramienta, estado),
@@ -75,6 +82,58 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         }
 
         await next(context);
+    }
+
+    /// <summary>
+    /// Origen o destino ambiguo sin elegir (HU-005.13): no se cotiza (tarifa, precio, ajuste ni PDF) hasta que el comercial elija el
+    /// municipio. Mismo patrón que el cliente con candidatos pendientes: nunca se asume.
+    /// </summary>
+    private static clsErrorDominio? MunicipioPorConfirmar(string herramienta, clsEstadoConversacion estado)
+    {
+        if (!estado.TieneMunicipiosPorConfirmar()
+            || herramienta is not (clsNombresHerramientas.BuscarTarifa or clsNombresHerramientas.CalcularPrecio
+                or clsNombresHerramientas.RegistrarAjusteMargen or clsNombresHerramientas.GenerarPdf))
+        {
+            return null;
+        }
+
+        var pendientes = new List<string>();
+        if (estado.CandidatosOrigen.Count > 0)
+        {
+            pendientes.Add($"el origen «{estado.Origen}»");
+        }
+
+        if (estado.CandidatosDestino.Count > 0)
+        {
+            pendientes.Add($"el destino «{estado.Destino}»");
+        }
+
+        return new clsErrorDominio(
+            clsCodigosError.ConfirmacionRequerida,
+            $"Hay más de un municipio para {string.Join(" y ", pendientes)}: muestra los candidatos (municipio y departamento) y pide al comercial que elija uno antes de cotizar.");
+    }
+
+    /// <summary><c>buscar_tarifa</c>: el origen y el destino verificados en el catálogo van en su forma canónica.</summary>
+    private clsErrorDominio? InyectarRuta(KernelArguments args, string herramienta, clsEstadoConversacion estado)
+    {
+        Canonizar(args, herramienta, clsArgumentosHerramienta.Origen, estado.OrigenMunicipio);
+        Canonizar(args, herramienta, clsArgumentosHerramienta.Destino, estado.DestinoMunicipio);
+        return null;
+    }
+
+    private void Canonizar(KernelArguments args, string herramienta, string clave, clsMunicipioResuelto? municipio)
+    {
+        if (municipio is null)
+        {
+            return;
+        }
+
+        var texto = clsResolvedorMunicipios.Clave(clsArgumentosHerramienta.Texto(args, clave));
+        var nombre = clsResolvedorMunicipios.Clave(municipio.Municipio);
+        if (texto.Length == 0 || texto == nombre || texto == clsResolvedorMunicipios.Clave(municipio.Canonico()))
+        {
+            Sobrescribir(args, herramienta, clave, municipio.Canonico());
+        }
     }
 
     private clsErrorDominio? InyectarMargen(KernelArguments args, string herramienta, clsEstadoConversacion estado)
@@ -169,6 +228,17 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         else if (payload["cliente"] is null && estado.ClienteNombre is not null)
         {
             payload["cliente"] = estado.ClienteNombre;
+        }
+
+        // Origen y destino verificados en el catálogo de municipios (HU-005.13): el origen de la tabla y, con una sola fila, su destino.
+        if (estado.OrigenMunicipio is { } municipioOrigen && payload["tarifa"] is JsonObject tablaOrigen)
+        {
+            tablaOrigen["origen"] = municipioOrigen.Canonico();
+        }
+
+        if (estado.DestinoMunicipio is { } municipioDestino && payload["tarifa"]?["filas"] is JsonArray { Count: 1 } unaFila && unaFila[0] is JsonObject filaDestino)
+        {
+            filaDestino["destino"] = municipioDestino.Canonico();
         }
 
         var moneda = estado.Moneda ?? "COP";
