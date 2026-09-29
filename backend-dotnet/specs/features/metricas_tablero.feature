@@ -48,7 +48,7 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | valor_ganado_cop          | 5000000    |
       | ganancias                 | 750000     |
       | cotizaciones_usd          | 1          |
-      | deadline_vencidas         | null       |
+      | deadline_vencidas         | 0          |
     Y los indicadores cumplen cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar
 
   Escenario: Una cotización rehecha cuenta una sola vez, con los valores de su versión vigente y el resultado de la cadena

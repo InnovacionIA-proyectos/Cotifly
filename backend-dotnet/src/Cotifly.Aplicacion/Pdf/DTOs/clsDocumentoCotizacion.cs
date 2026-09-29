@@ -49,6 +49,12 @@ public sealed record clsDocumentoCotizacion
     /// <summary>Nota de decretos (tiempos logísticos); solo tarifa única.</summary>
     public string? NotaDecreto { get; init; }
 
+    /// <summary>
+    /// Aclaración de la cotización en dólares (HU-012.3): TRM aplicada y piso mínimo a pagar. Solo en USD (en ambas variantes); en COP
+    /// es <c>null</c> y el PDF no trae ninguna aclaración de TRM.
+    /// </summary>
+    public string? NotaMoneda { get; init; }
+
     /// <summary>Datos aduaneros, mercancía extradimensionada o refrigerada ("Detalle adicional del servicio").</summary>
     public required IReadOnlyList<clsBloqueDocumento> BloquesAdicionales { get; init; }
 

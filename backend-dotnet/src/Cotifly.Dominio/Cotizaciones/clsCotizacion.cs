@@ -14,6 +14,13 @@ public sealed class clsCotizacion
     public const string CodigoError = "COTIZACION_INVALIDA";
     public const string MonedaPesos = "COP";
     public const int LargoMaximoFolio = 50;
+    public const int LargoMaximoMotivoCosteo = 1000;
+
+    /// <summary>
+    /// Una cotización que quedó en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> solo se puede reenviar pasado este
+    /// tiempo: antes, el envío original puede seguir esperando la respuesta de Nexo (hasta 30 s) y reenviar duplicaría la solicitud.
+    /// </summary>
+    public static readonly TimeSpan EsperaReenvioPendiente = TimeSpan.FromMinutes(2);
 
     private clsCotizacion()
     {
@@ -35,7 +42,7 @@ public sealed class clsCotizacion
     public string? Moneda { get; private set; }
     public decimal TrmAplicada { get; private set; }
     public string? PdfPath { get; private set; }
-    public string? EstadoCosteo { get; private set; }
+    public EstadoCosteo? EstadoCosteo { get; private set; }
     public EstadoEnvio? EstadoEnvio { get; private set; }
     public Guid? UsuarioId { get; private set; }
     public string? SpaceId { get; private set; }
@@ -47,6 +54,47 @@ public sealed class clsCotizacion
     public DateTimeOffset? CosteoListoAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    // Formulario ampliado (script 0004, HU-005.8): encabezado y única línea de la solicitud de Nexo.
+    public TipoSolicitud? TipoSolicitud { get; private set; }
+    public DateTimeOffset? Deadline { get; private set; }
+    public decimal? ValorEstimado { get; private set; }
+    public string? Referencia { get; private set; }
+    public decimal? HorasCargue { get; private set; }
+    public decimal? HorasDescargue { get; private set; }
+    public string? Origen { get; private set; }
+    public string? Destino { get; private set; }
+    public string? TipoVehiculo { get; private set; }
+    public string? Carroceria { get; private set; }
+    public string? Tipologia { get; private set; }
+    public string? ClaseViaje { get; private set; }
+    public string? ClaseContenedor { get; private set; }
+    public bool? Exclusivo { get; private set; }
+    public bool? Consolidado { get; private set; }
+    public bool? RetornaContenedor { get; private set; }
+    public string? CiudadDevolucionContenedor { get; private set; }
+    public bool? LevanteContenedorDiferente { get; private set; }
+    public string? CiudadLevanteContenedor { get; private set; }
+    public decimal? ValorAprovisionamiento { get; private set; }
+    public decimal? PesoKg { get; private set; }
+    public decimal? ValorMercancia { get; private set; }
+
+    // Seguimiento de la integración con Nexo (script 0004, ADR-015).
+
+    /// <summary>Id de la cotización (borrador o entregada) de Nexo; lo exige <c>POST /api/cotizaciones/{id}/resultado</c>.</summary>
+    public string? CotizacionNexoId { get; private set; }
+
+    /// <summary>Motivo legible de <see cref="EstadoCosteo"/> (error al enviar, rechazo de Nexo, costeo vencido...).</summary>
+    public string? MotivoEstadoCosteo { get; private set; }
+    public DateTimeOffset? CosteoEnviadoAt { get; private set; }
+    public DateTimeOffset? CosteoUltimaConsultaAt { get; private set; }
+
+    /// <summary>Agenda del polling (HU-005.6): <c>null</c> = no se consulta más.</summary>
+    public DateTimeOffset? CosteoSiguienteConsultaAt { get; private set; }
+    public int CosteoConsultasFallidas { get; private set; }
+
+    /// <summary>JSON con los servicios conexos del costeo, su precio y si el comercial los incluye (HU-005.7).</summary>
+    public string? ServiciosConexos { get; private set; }
 
     /// <summary>
     /// Crea una cotización validando las invariantes baratas: folio obligatorio (máx. 50),
@@ -91,13 +139,297 @@ public sealed class clsCotizacion
             Moneda = moneda,
             TrmAplicada = datos.TrmAplicada,
             PdfPath = clsValidacion.Normalizar(datos.PdfPath),
-            EstadoCosteo = clsValidacion.Normalizar(datos.EstadoCosteo),
+            EstadoCosteo = datos.EstadoCosteo,
             EstadoEnvio = Cotizaciones.EstadoEnvio.SinEnviar,
             UsuarioId = datos.UsuarioId,
             SpaceId = clsValidacion.Normalizar(datos.SpaceId),
             ThreadId = clsValidacion.Normalizar(datos.ThreadId),
             CosteoListoAt = datos.CosteoListoAt,
         };
+    }
+
+    /// <summary>
+    /// Guarda los datos del formulario ampliado (ya validados con <see cref="clsSolicitudCosteo.Validar"/>) y deja la cotización
+    /// en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>: así nunca se pierde lo que llenó el comercial aunque Nexo no
+    /// responda (HU-005.5). Las posiciones van en <see cref="clsCotizacionPosicion"/>.
+    /// </summary>
+    public void RegistrarSolicitudCosteo(clsSolicitudCosteo solicitud)
+    {
+        ArgumentNullException.ThrowIfNull(solicitud);
+        if (solicitud.Validar() is { } error)
+        {
+            throw new ArgumentException(error.Mensaje, nameof(solicitud));
+        }
+
+        TipoSolicitud = solicitud.Tipo;
+        Deadline = solicitud.Deadline;
+        ValorEstimado = solicitud.ValorEstimado;
+        Referencia = clsValidacion.Normalizar(solicitud.Referencia);
+        HorasCargue = solicitud.HorasCargue;
+        HorasDescargue = solicitud.HorasDescargue;
+        Origen = solicitud.Origen.Trim();
+        Destino = solicitud.Destino.Trim();
+        TipoVehiculo = clsValidacion.Normalizar(solicitud.TipoVehiculo);
+        Carroceria = clsValidacion.Normalizar(solicitud.Carroceria);
+        Tipologia = clsValidacion.Normalizar(solicitud.Tipologia);
+        ClaseViaje = clsValidacion.Normalizar(solicitud.ClaseViaje);
+        ClaseContenedor = clsValidacion.Normalizar(solicitud.ClaseContenedor);
+        Exclusivo = solicitud.Exclusivo;
+        Consolidado = solicitud.Consolidado;
+        RetornaContenedor = solicitud.RetornaContenedor;
+        CiudadDevolucionContenedor = clsValidacion.Normalizar(solicitud.CiudadDevolucionContenedor);
+        LevanteContenedorDiferente = solicitud.LevanteContenedorDiferente;
+        CiudadLevanteContenedor = clsValidacion.Normalizar(solicitud.CiudadLevanteContenedor);
+        ValorAprovisionamiento = solicitud.ValorAprovisionamiento;
+        PesoKg = solicitud.PesoKg;
+        ValorMercancia = solicitud.ValorMercancia;
+        EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteEnvio;
+        MotivoEstadoCosteo = null;
+    }
+
+    /// <summary>
+    /// La solicitud guardada, para reenviarla a Nexo sin volver a llenar el formulario (HU-005.5); <c>null</c> si la cotización
+    /// no nació del formulario ampliado (no tiene tipo, origen o destino).
+    /// </summary>
+    public clsSolicitudCosteo? SolicitudCosteo(IEnumerable<clsCotizacionPosicion> posiciones)
+    {
+        ArgumentNullException.ThrowIfNull(posiciones);
+        if (TipoSolicitud is not { } tipo || Origen is null || Destino is null)
+        {
+            return null;
+        }
+
+        return new clsSolicitudCosteo
+        {
+            Tipo = tipo,
+            Deadline = Deadline,
+            ValorEstimado = ValorEstimado,
+            Referencia = Referencia,
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
+            Origen = Origen,
+            Destino = Destino,
+            TipoVehiculo = TipoVehiculo,
+            Carroceria = Carroceria,
+            Tipologia = Tipologia,
+            ClaseViaje = ClaseViaje,
+            ClaseContenedor = ClaseContenedor,
+            Exclusivo = Exclusivo,
+            Consolidado = Consolidado,
+            RetornaContenedor = RetornaContenedor,
+            CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+            LevanteContenedorDiferente = LevanteContenedorDiferente,
+            CiudadLevanteContenedor = CiudadLevanteContenedor,
+            ValorAprovisionamiento = ValorAprovisionamiento,
+            PesoKg = PesoKg,
+            ValorMercancia = ValorMercancia,
+            Posiciones = [.. posiciones.OrderBy(p => p.Orden).Select(p => p.APosicion())],
+        };
+    }
+
+    /// <summary>
+    /// ¿Se puede (re)enviar la solicitud a Nexo? Sí desde <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/>, y desde
+    /// <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> cuando el último cambio tiene más de
+    /// <see cref="EsperaReenvioPendiente"/> (un envío que se cortó a medias, HU-005.5).
+    /// </summary>
+    public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
+        Ganada is null
+        && ((EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
+            || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
+
+    /// <summary>
+    /// ¿La cotización nació del flujo de costeo en Nexo? (formulario ampliado: <see cref="EstadoCosteo"/> con valor). No se usa
+    /// <see cref="CosteoId"/>: también lo llena el chat (referencia de la tarifa) y lo traen filas del Python.
+    /// </summary>
+    public bool EnFlujoCosteo => EstadoCosteo is not null;
+
+    /// <summary>
+    /// ¿El resultado ganada/perdida se marca solo en Cotifly? Sí fuera del flujo de costeo (chat) y en <c>descartada</c> o
+    /// <c>costeo_vencido</c>, donde Nexo no acepta un resultado (HU-005.14).
+    /// </summary>
+    public bool ResultadoSoloLocal =>
+        EstadoCosteo is null or Cotizaciones.EstadoCosteo.Descartada or Cotizaciones.EstadoCosteo.CosteoVencido;
+
+    /// <summary>Prefijo del motivo de un <c>error_envio</c> definitivo (Nexo rechazó los datos con 400: reenviarlos igual no sirve).</summary>
+    public const string PrefijoRechazoDefinitivo = "Rechazo definitivo de Nexo (corrige el formulario en una versión nueva): ";
+
+    /// <summary>¿El <c>error_envio</c> es definitivo? (400 de validación de Nexo: no se reintenta.)</summary>
+    public bool ErrorEnvioDefinitivo =>
+        EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio
+        && MotivoEstadoCosteo?.StartsWith(PrefijoRechazoDefinitivo, StringComparison.Ordinal) == true;
+
+    /// <summary>Nombre y origen oficiales del catálogo de Nexo (ADR-005 §4: el cliente sale del catálogo, no del formulario).</summary>
+    public void ActualizarClienteDelCatalogo(string nombre, Clientes.OrigenCliente? origen)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nombre);
+        ClienteNombre = nombre.Trim();
+        OrigenCliente = origen ?? OrigenCliente;
+    }
+
+    /// <summary>
+    /// Nexo recibió la solicitud (HU-005.5): guarda su id (<see cref="CosteoId"/>), la deja en
+    /// <see cref="Cotizaciones.EstadoCosteo.Autocosteo"/> si Nexo ya costeó todas las líneas o en
+    /// <see cref="Cotizaciones.EstadoCosteo.PendienteCosteo"/> si no, y agenda la primera consulta del polling (HU-005.6).
+    /// </summary>
+    public void RegistrarEnvioCosteo(string costeoId, bool costeoCompleto, DateTimeOffset enviadoAt, DateTimeOffset primeraConsulta)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(costeoId);
+        CosteoId = costeoId.Trim();
+        EstadoCosteo = costeoCompleto ? Cotizaciones.EstadoCosteo.Autocosteo : Cotizaciones.EstadoCosteo.PendienteCosteo;
+        MotivoEstadoCosteo = null;
+        CosteoEnviadoAt = enviadoAt;
+        CosteoSiguienteConsultaAt = primeraConsulta;
+        CosteoConsultasFallidas = 0;
+    }
+
+    /// <summary>
+    /// Nexo no recibió la solicitud (tiempo agotado, 4xx, 5xx, red, cliente sin BP): queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.ErrorEnvio"/> con el motivo (recortado a <see cref="LargoMaximoMotivoCosteo"/>) y sin
+    /// polling; el comercial la reintenta sin volver a llenar el formulario.
+    /// </summary>
+    public void RegistrarErrorEnvioCosteo(string motivo, bool definitivo = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        EstadoCosteo = Cotizaciones.EstadoCosteo.ErrorEnvio;
+        MotivoEstadoCosteo = Recortar(definitivo ? PrefijoRechazoDefinitivo + motivo.Trim() : motivo);
+        CosteoSiguienteConsultaAt = null;
+    }
+
+    /// <summary>¿El polling debe consultar esta cotización? (tiene <see cref="CosteoId"/> y no está en un estado terminal.)</summary>
+    public bool SeConsultaEnNexo =>
+        CosteoId is not null
+        && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.Autocosteo;
+
+    /// <summary>
+    /// Resultado de una consulta del polling (HU-005.6): el estado derivado, el id de la cotización de Nexo, la última consulta y la
+    /// siguiente (<c>null</c> = no se consulta más). Reinicia los fallos seguidos. Devuelve <c>true</c> si el estado cambió.
+    /// </summary>
+    public bool RegistrarConsultaCosteo(Cotizaciones.EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset consultadaAt, DateTimeOffset? siguiente)
+    {
+        var cambio = EstadoCosteo != estado;
+        EstadoCosteo = estado;
+        CotizacionNexoId = string.IsNullOrWhiteSpace(cotizacionNexoId) ? CotizacionNexoId : cotizacionNexoId.Trim();
+        CosteoUltimaConsultaAt = consultadaAt;
+        CosteoSiguienteConsultaAt = siguiente;
+        CosteoConsultasFallidas = 0;
+        if (cambio)
+        {
+            MotivoEstadoCosteo = null;
+        }
+
+        return cambio;
+    }
+
+    /// <summary>Una consulta del polling falló (Nexo caído, 4xx, 5xx, id no reconocido): suma un fallo y reprograma, sin cambiar el estado.</summary>
+    public void RegistrarFalloConsultaCosteo(DateTimeOffset consultadaAt, DateTimeOffset? siguiente)
+    {
+        CosteoUltimaConsultaAt = consultadaAt;
+        CosteoSiguienteConsultaAt = siguiente;
+        CosteoConsultasFallidas++;
+    }
+
+    /// <summary>
+    /// Se llegó a la edad máxima del polling (HU-005.6): sin costeo queda en <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/>
+    /// con el motivo (visible en "Mis cotizaciones"); con costeo (<c>autocosteo</c>) solo deja de consultarse. Devuelve <c>true</c> si el
+    /// estado cambió.
+    /// </summary>
+    public bool VencerPollingCosteo(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        CosteoSiguienteConsultaAt = null;
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.CosteoVencido;
+        MotivoEstadoCosteo = Recortar(motivo);
+        return true;
+    }
+
+    /// <summary>
+    /// Margen resuelto al enviar la solicitud a Nexo (HU-005.7, ADR-015 §5: con el BP del catálogo): se guarda para aplicarlo cuando
+    /// llegue el costeo. Valida el margen con su método (<see cref="clsReglaMargen"/>).
+    /// </summary>
+    public void RegistrarMargenCosteo(decimal? margenPolitica, decimal margenAplicado, OrigenMargen origen, string metodoCalculo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(metodoCalculo);
+        var metodo = metodoCalculo.Trim().ToLowerInvariant();
+        if (clsValidacion.Primero(
+                clsReglaMargen.Validar(CodigoError, "margenPolitica", margenPolitica, metodo),
+                clsReglaMargen.Validar(CodigoError, "margenAplicado", margenAplicado, metodo)) is { } error)
+        {
+            throw new ArgumentException(error.Mensaje, nameof(margenAplicado));
+        }
+
+        MargenPolitica = margenPolitica;
+        MargenAplicado = margenAplicado;
+        OrigenMargen = origen;
+        MetodoCalculo = metodo;
+    }
+
+    /// <summary>
+    /// Precio sobre el costeo de Nexo (HU-005.7): <paramref name="costo"/> es el costo de Nexo (interno) y
+    /// <paramref name="precioFinal"/> el que salió del módulo de Precio con el margen guardado. <see cref="CosteoListoAt"/> queda en
+    /// la primera vez.
+    /// </summary>
+    public void RegistrarPrecioCosteo(decimal costo, decimal precioFinal, string? serviciosConexos, DateTimeOffset listoAt)
+    {
+        if (costo < 0m || precioFinal < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(costo), "El costo y el precio no pueden ser negativos.");
+        }
+
+        Costo = costo;
+        PrecioFinal = precioFinal;
+        ServiciosConexos = serviciosConexos;
+        CosteoListoAt ??= listoAt;
+    }
+
+    /// <summary>Advertencia sobre el costeo (sin margen, costeo cambiado después del PDF...), visible en "Mis cotizaciones".</summary>
+    public void AdvertirCosteo(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        MotivoEstadoCosteo = Recortar(motivo);
+    }
+
+    /// <summary>Guarda la selección de servicios conexos del comercial (JSON de <c>serviciosConexos</c>).</summary>
+    public void SeleccionarServiciosConexos(string? serviciosConexos) => ServiciosConexos = serviciosConexos;
+
+    /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado, HU-005.14).</summary>
+    public void RegistrarCotizacionNexo(string cotizacionNexoId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
+        CotizacionNexoId = cotizacionNexoId.Trim();
+    }
+
+    /// <summary>
+    /// Nexo ya no reconoce la solicitud (404): se deja de consultar con el motivo; sin costeo queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/>. Devuelve <c>true</c> si el estado cambió.
+    /// </summary>
+    public bool DetenerPorSolicitudDesconocida(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        CosteoSiguienteConsultaAt = null;
+        MotivoEstadoCosteo = Recortar(motivo);
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.CosteoVencido;
+        return true;
+    }
+
+    /// <summary>Deja de consultar a Nexo (estado que ya no se sigue, o datos incompletos).</summary>
+    public void DetenerPollingCosteo() => CosteoSiguienteConsultaAt = null;
+
+    /// <summary>Recorta un motivo a <see cref="LargoMaximoMotivoCosteo"/> caracteres (la columna es <c>NVARCHAR(1000)</c>).</summary>
+    public static string Recortar(string motivo)
+    {
+        ArgumentNullException.ThrowIfNull(motivo);
+        var limpio = motivo.Trim();
+        return limpio.Length <= LargoMaximoMotivoCosteo ? limpio : limpio[..(LargoMaximoMotivoCosteo - 1)] + "…";
     }
 
     /// <summary>¿La cotización pertenece al comercial? (aislamiento por dueño, ADR-009).</summary>

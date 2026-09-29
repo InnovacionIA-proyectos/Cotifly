@@ -59,3 +59,25 @@ Característica: Cotización en dólares con la TRM del día
     Y que la fecha de negocio es "2026-09-27"
     Cuando "trm.comercial" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-27092026"
     Entonces la cotización "PCN-COP-27092026" queda guardada en "COP" con precio final "3294798" y TRM "0"
+
+  # HU-012.3 (#52): PDF en dólares con la aclaración del piso mínimo (texto extraído con PdfPig).
+  Escenario: PDF en dólares con aclaración del piso
+    Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
+    Y que la fecha de negocio es "2026-09-28"
+    Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-28092026"
+    Entonces la cotización "PCN-USD-28092026" queda guardada en "USD" con precio final "996.35" y TRM "3306.86"
+    Y el PDF contiene "US$996,35"
+    Y el PDF contiene "Cotización en dólares:"
+    Y el PDF contiene "TRM de $3.306,86 por dólar"
+    Y el PDF contiene "se ajusta día a día con la TRM vigente"
+    Y el PDF contiene "el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos"
+    Y el PDF no contiene "por la TRM de referencia"
+
+  Escenario: El PDF en pesos no trae ninguna aclaración de TRM
+    Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
+    Y que la fecha de negocio es "2026-09-28"
+    Cuando "trm.comercial" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-28092026"
+    Entonces la cotización "PCN-COP-28092026" queda guardada en "COP" con precio final "3294798" y TRM "0"
+    Y el PDF contiene "$3.294.798"
+    Y el PDF no contiene "TRM"
+    Y el PDF no contiene "US$"

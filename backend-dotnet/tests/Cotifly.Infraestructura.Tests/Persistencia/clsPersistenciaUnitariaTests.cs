@@ -63,7 +63,7 @@ public sealed class clsPersistenciaUnitariaTests
         modelo.GetDefaultSchema().Should().Be("dbo_cotifly");
         modelo.FindEntityType(typeof(clsCotizacion))!.GetTableName().Should().Be("Cotizaciones");
         modelo.FindEntityType(typeof(clsMargenPolitica))!.GetTableName().Should().Be("MargenesPolitica");
-        modelo.GetEntityTypes().Should().HaveCount(14);
+        modelo.GetEntityTypes().Should().HaveCount(15, "14 tablas del 0001-0002 y CotizacionPosiciones del 0004");
     }
 
     [Fact]
@@ -80,5 +80,18 @@ public sealed class clsPersistenciaUnitariaTests
 
         extension!.SqlServerCompatibilityLevel.Should().Be(150);
 #pragma warning restore EF1001
+    }
+
+    [Fact]
+    public void ElCheckDeEstadoCosteoCubreExactamenteLosCodigosDelEnum()
+    {
+        using var proveedor = clsServiciosPruebas.Crear(null, new clsRelojFalso());
+        using var ambito = proveedor.CreateScope();
+        var modelo = ambito.ServiceProvider.GetRequiredService<clsCotiflyDbContext>().GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model;
+
+        var sql = modelo.FindEntityType(typeof(clsCotizacion))!.GetCheckConstraints().Single(c => c.Name == "ck_cotizaciones_estadoCosteo").Sql;
+        var codigos = System.Text.RegularExpressions.Regex.Matches(sql, "'([a-z_]+)'").Select(m => m.Groups[1].Value);
+
+        codigos.Should().BeEquivalentTo(Cotifly.Dominio.Comun.clsCodigoEnum.Codigos<Cotifly.Dominio.Cotizaciones.EstadoCosteo>());
     }
 }

@@ -25,7 +25,7 @@ public sealed record clsDatosCotizacion
     public string Moneda { get; init; } = clsCotizacion.MonedaPesos;
     public decimal TrmAplicada { get; init; }
     public string? PdfPath { get; init; }
-    public string? EstadoCosteo { get; init; }
+    public EstadoCosteo? EstadoCosteo { get; init; }
     public Guid? UsuarioId { get; init; }
     public string? SpaceId { get; init; }
     public string? ThreadId { get; init; }

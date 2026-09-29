@@ -132,11 +132,25 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     [Fact]
     public async Task SinLasColumnasDelScript0004NoHayCiudadesNiDeadline()
     {
-        var ana = await CrearUsuarioAsync();
-        await GuardarAsync(NuevaCotizacion(ana));
+        // La base compartida ya tiene el 0004 (y el modelo EF lo mapea): la fila se inserta con SQL en la base auxiliar sin él.
+        var cadena = await BaseDatos.CadenaSin0004Async();
+        var ana = Guid.NewGuid();
+        var creada = Reloj.AhoraUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+        await clsBaseDatosPruebas.EjecutarAsync(cadena, $"""
+            INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario, regional) VALUES ('{ana}', N'u{ana:N}', N'Antioquia');
+            INSERT INTO dbo_cotifly.Cotizaciones (folio, usuarioId, createdAt) VALUES (N'{FolioUnico()}', '{ana}', '{creada}');
+            """);
+        await using var proveedor = clsServiciosPruebas.Crear(cadena, Reloj);
 
-        var datos = await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1));
-        var sinUsuarios = await ListarAsync([], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1));
+        async Task<clsDatosMetricas> ListarSin0004Async(IReadOnlyCollection<Guid> usuarios)
+        {
+            await using var ambito = proveedor.CreateAsyncScope();
+            return await ambito.ServiceProvider.GetRequiredService<IClsMetricasRepository>()
+                .ListarCotizacionesAsync(usuarios, Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1), Ct);
+        }
+
+        var datos = await ListarSin0004Async([ana]);
+        var sinUsuarios = await ListarSin0004Async([]);
 
         datos.CiudadesDisponibles.Should().BeFalse();
         datos.DeadlineDisponible.Should().BeFalse();

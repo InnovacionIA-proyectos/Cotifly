@@ -26,6 +26,7 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     public const int NivelCompatibilidad = 150;
 
     public DbSet<clsCotizacion> Cotizaciones => Set<clsCotizacion>();
+    public DbSet<clsCotizacionPosicion> CotizacionPosiciones => Set<clsCotizacionPosicion>();
     public DbSet<clsMargenAjuste> MargenAjustes => Set<clsMargenAjuste>();
     public DbSet<clsCorreo> Correos => Set<clsCorreo>();
     public DbSet<clsCorreoDestinatario> CorreoDestinatarios => Set<clsCorreoDestinatario>();

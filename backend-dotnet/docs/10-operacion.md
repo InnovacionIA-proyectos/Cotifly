@@ -19,7 +19,7 @@ Contenido:
 | Sonda | Uso | Respuesta |
 |---|---|---|
 | `GET /health` | Vida. La consulta el `HEALTHCHECK` de la imagen (`dotnet /app/Cotifly.Api.dll --healthcheck`, cada 30 s, timeout 5 s, 3 reintentos, `start-period` 20 s) | `200 {"status":"ok","servicio":"cotifly-api","entorno":"..."}` |
-| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` |
+| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` / `falta 0004` |
 
 - `/health/ready` ejecuta los health checks con etiqueta `ready` (`clsBaseDatosHealthCheck`: conexión a `dbo_cotifly` más la verificación de `Sesiones.estadoAgente` y `TokensRefresco`, con 5 s de límite). `detalle` nunca trae la cadena ni el servidor; la excepción queda en el log.
 - Una base caída no debe reiniciar el contenedor: por eso el `HEALTHCHECK` usa `/health` y no `/health/ready`.
@@ -102,7 +102,7 @@ Riesgos registrados en #12 y #16:
 | `trmAplicada` | Siempre 0 hasta HU-012 (conversión a USD). El tablero de HU-010.1 ya convierte a COP las filas en USD con `precioFinal × trmAplicada` |
 | Coincidencia exacta de clientes en Nexo | Nexo no la distingue: hoy es exacta solo con un único candidato (ADR-005, pendiente con el equipo de Nexo) |
 | Catálogos de Nexo | `GET /web/catalogos-flete` consulta Nexo en cada petición. El de municipios se reutiliza `Nexo__MinutosCacheMunicipios` (60 por defecto, HU-005.13): con Nexo caído se sigue sirviendo la foto vigente, y al vencer responde `MUNICIPIOS_NO_DISPONIBLE` (el chat sigue con el texto libre). Un cambio del catálogo en Nexo tarda hasta ese tiempo en verse. Solo se guarda un catálogo exitoso y no vacío; un 200 que no es un arreglo cuenta como `MUNICIPIOS_NO_DISPONIBLE`. Sin foto vigente, las consultas que llegan mientras hay una en curso esperan esa misma y reciben su mismo resultado (éxito o fallo): con Nexo caído no se encolan una detrás de otra (cada una tardaría hasta 8 s). No hay caché negativa: un fallo no se guarda, porque Nexo da el mismo código cuando el comercial que consulta no tiene `idUsuarioExterno`, y eso no debe dejar sin catálogo a los demás |
-| URL base de Nexo | El código agrega `/api/...` a `Nexo__UrlBase`, así que va sin `/api` (el ejemplo de `.env.example` se corrigió en HU-005.13, [03-infraestructura](03-infraestructura.md#nexo)); confirmar el host real con el equipo de Nexo antes de activar |
+| URL base de Nexo | `Nexo__UrlBase` es la raíz del servicio sin `/api` (el código agrega `/api/...`; `.env.example` corregido, ADR-015 §8); confirmar la URL real de cada ambiente con el equipo de Nexo antes de activar |
 | E2E con el Angular | Pendiente (HU-004.8): el contrato está cubierto por pruebas contra `openapi.yaml`, no contra el frontend real |
 | #45 (tablero de métricas) | `/web/metricas/comercial` y `/regional` listos (ADR-016). El mapa por ciudad responde `disponible: false` y `deadline_vencidas` es `null` hasta aplicar el 0004. Pendiente: definiciones por validar con Gerencia Comercial, score de urgencia de Nexo, servicios conexos (después de #42) y la regional (fila "Regional del comercial"). Seguimiento: la descarga de PDF ajenos, `LoginResponse.ubicacion` y "Mis cotizaciones" del gerente deben reutilizar `IClsRegionalUsuario` |
 | Validador de la respuesta final (#16) | La regla de montos es práctica (ADR-003). Batería de 52 textos del validador: falsos positivos 3 → 0 (NIT, teléfono, NIT con puntos) y falsos negativos 11 de 24 → 2 (montos en palabras, "tres millones y medio"; el folio base de una versión, aceptado a propósito). Sigue rechazando aproximaciones honestas ("3,29 millones", centavos que no existen). Cada reintento cuesta una llamada más (con `IA:Rpm=8`, unos 8 s). Si el proveedor rechaza el JSON Schema (400/422), el proceso sigue sin formato `IA:MinutosSinJsonSchema` (30) y luego re-sonda, también para los proveedores de `IA:Fallbacks`. El respaldo no alerta al space de soporte. Falta medir con el proveedor real la tasa de reintentos, respaldos y rechazos (`cotifly.agente.*`) |
@@ -138,7 +138,8 @@ Otras decisiones abiertas:
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
 | Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
 | Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
-| Aprobación de los scripts 0002 y 0003 | Sara y scalderon-bs | ADR-008 |
+| Precondición de despliegue (`DEPLOY.md`): el 0004 aplicado antes de desplegar esta versión; staging con `CosteoNexo__Habilitado=false` mientras comparta base con producción de Nexo | DBA | ADR-015 |
+| Aprobación de los scripts 0002, 0003 y 0004 (el 0004 con el DBA, coordinado con HU-002) | Sara, scalderon-bs y DBA | ADR-008, ADR-015 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
 | Proveedor y modelo de IA de producción, custodia de la clave | Negocio | ADR-003 |
@@ -148,6 +149,7 @@ Otras decisiones abiertas:
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
 | Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
 | Nueva versión (v2) de una cotización en USD: hoy se siembra con la TRM de la original (`trmAplicada` copiada) y, al recalcular, toma la TRM del día. ¿La v2 debe conservar la TRM original o usar la del día? | Gerencia Comercial | ADR-014 |
+| Texto legal de la aclaración del piso mínimo en el PDF en USD (`clsTextosEstandar.AclaracionDolares`) | Gerencia Comercial / jurídica | ADR-014 |
 
 ## 10.8 Activación por integración
 
@@ -168,7 +170,9 @@ Otras decisiones abiertas:
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
 | El contenedor termina con código 1 al arrancar | Configuración inválida o faltante | `docker logs`: el mensaje nombra la clave. Revisar [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
-| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002` y `0003` con `sqlcmd -I` |
+| `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002`, `0003` y `0004` con `sqlcmd -I` |
+| Una cotización se queda en `pendiente_costeo` y no avanza | Nexo no la ha costeado, Nexo caído (eventos `costeo_nexo_consulta` con `exito = 0` en `EventosHerramienta`), `CosteoNexo__Habilitado=false` o sin `Nexo__UrlBase` (log "Polling del costeo en Nexo desactivado" al arrancar) | Revisar `costeoConsultasFallidas`, `costeoSiguienteConsultaAt` y los eventos de la cotización; pasadas `CosteoNexo__EdadMaximaHoras` queda en `costeo_vencido` |
+| `/health/ready` 503 `esquema incompleto: falta 0004` | El 0004 (costeo en Nexo) no está aplicado y el modelo de `Cotizaciones` ya lo usa | Aplicar `db/migrations_mssql/0004_costeo_nexo.sql` con `sqlcmd -I` (idempotente) |
 | `/health/ready` 503 con la base caída | Red, credenciales o certificado de SQL Server | Revisar la cadena; si el certificado no es de una CA de confianza, instalar la CA (preferido) o `TrustServerCertificate=True` temporal y documentado |
 | Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, o `dbsolucionesti` inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |

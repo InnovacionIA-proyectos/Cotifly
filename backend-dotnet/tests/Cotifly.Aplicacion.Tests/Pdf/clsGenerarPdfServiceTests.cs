@@ -193,7 +193,7 @@ public sealed class clsGenerarPdfServiceTests
         enDolares.Error.Mensaje.Should().Contain("USD").And.Contain("COP");
 
         var coherente = await Servicio().GenerarAsync(
-            Entrada(UnaFila(moneda: "usd"), folio: "PCN-USD", traza: new clsTrazabilidadCotizacion(Moneda: "USD", TrmAplicada: 3900m)), Ct);
+            Entrada(UnaFila(moneda: "usd"), folio: "PCN-USD", traza: new clsTrazabilidadCotizacion(Moneda: "USD", TrmAplicada: 3900m, PrecioCop: 11_700_000_000m)), Ct);
         coherente.EsExitoso.Should().BeTrue(coherente.EsFallo ? coherente.Error.Mensaje : string.Empty);
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000,00");
         _agregada!.Moneda.Should().Be("USD");
@@ -203,7 +203,8 @@ public sealed class clsGenerarPdfServiceTests
     [Fact]
     public async Task EnDolaresElPrecioFinalEsElDePesosConvertidoConLaTrm()
     {
-        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+        var traza = new clsTrazabilidadCotizacion(
+            Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m, PrecioCop: 3_294_798m);
 
         var coherente = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
 
@@ -212,6 +213,32 @@ public sealed class clsGenerarPdfServiceTests
         _agregada.TrmAplicada.Should().Be(3306.86m);
         _agregada.Costo.Should().Be(2_850_000m);
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
+        _documento.NotaMoneda.Should().Contain("TRM de $3.306,86", "HU-012.3: la aclaración usa la TRM de la trazabilidad")
+            .And.Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
+    }
+
+    // Validación de HU-012.3 (11): el valor en pesos de la trazabilidad (el piso) debe salir del costo y el margen.
+    [Fact]
+    public async Task UnPrecioCopQueNoSaleDeCostoYMargenSeRechaza()
+    {
+        var traza = new clsTrazabilidadCotizacion(
+            Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m, PrecioCop: 3_300_000m);
+
+        var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("$3.300.000").And.Contain("$3.294.798");
+        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+    }
+
+    [Fact]
+    public async Task SinPrecioCopElPisoSeRecalculaDelCostoYElMargen()
+    {
+        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+
+        (await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct)).EsExitoso.Should().BeTrue();
+
+        _documento!.NotaMoneda.Should().Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
     }
 
     [Fact]

@@ -16,6 +16,35 @@ public interface IClsCotizacionRepository
     /// <summary>Agrega una cotización nueva (se escribe al guardar la unidad de trabajo).</summary>
     void Agregar(clsCotizacion cotizacion);
 
+    /// <summary>Agrega las posiciones de cubicaje de una cotización (script 0004, HU-005.8); se escriben al guardar.</summary>
+    void AgregarPosiciones(IEnumerable<clsCotizacionPosicion> posiciones);
+
+    /// <summary>Posiciones de cubicaje de la cotización, en el orden del formulario (vacía si no tiene).</summary>
+    Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclamo optimista de un reenvío a Nexo (HU-005.5): si la cotización sigue con el <c>updatedAt</c> leído y en
+    /// <c>error_envio</c> o <c>pendiente_envio</c>, la deja en <c>pendiente_envio</c> con <c>updatedAt = ahora</c> y devuelve
+    /// <c>true</c>; si otro envío la tocó antes, <c>false</c> (dos reintentos simultáneos nunca duplican la solicitud en Nexo).
+    /// Escribe de inmediato, fuera de la unidad de trabajo: el llamador debe recargar la cotización.
+    /// </summary>
+    Task<bool> ReclamarReenvioCosteoAsync(Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Agenda del polling de Nexo (HU-005.6): hasta <paramref name="lote"/> cotizaciones con <c>costeoSiguienteConsultaAt &lt;=
+    /// ahora</c>, de la más atrasada a la más reciente (índice filtrado del 0004).
+    /// </summary>
+    Task<IReadOnlyList<clsConsultaCosteoPendiente>> ListarConsultasCosteoPendientesAsync(DateTimeOffset ahora, int lote, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclama una cotización para consultarla (dos réplicas nunca la procesan a la vez): si <c>costeoSiguienteConsultaAt</c> sigue
+    /// siendo <paramref name="esperada"/> la mueve a <paramref name="reclamoHasta"/> y devuelve <c>true</c>. Escribe de inmediato.
+    /// </summary>
+    Task<bool> ReclamarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
+
+    /// <summary>Cotización por id, sin filtro de dueño (uso interno del polling de Nexo).</summary>
+    Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default);
+
     /// <summary>Cotización por folio, sin filtro de dueño (uso interno de herramientas del agente).</summary>
     Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 
