@@ -16,13 +16,18 @@ public sealed record clsIndicadoresMetricas
     public decimal? ConversionSobreCerradas { get; init; }
     public decimal? MargenPromedio { get; init; }
     public decimal CosteoTotal { get; init; }
+    public decimal CosteoGanadas { get; init; }
     public decimal ValorCotizadoCop { get; init; }
     public decimal ValorGanadoCop { get; init; }
     public decimal Ganancias { get; init; }
     public int CotizacionesUsd { get; init; }
     public decimal? TiempoPromedioCotizacionHoras { get; init; }
     public decimal? DesviacionPromedioMargen { get; init; }
+    public decimal? DesviacionPromedioMargenAbs { get; init; }
     public int AjustesMargen { get; init; }
+
+    /// <summary>Sin resultado y con <c>deadline</c> anterior a ahora; <c>null</c> si el esquema no tiene la columna (script 0004).</summary>
+    public int? DeadlineVencidas { get; init; }
 }
 
 /// <summary>Un mes (fecha de negocio) de la serie del tablero (esquema <c>PuntoSerieMensual</c>).</summary>

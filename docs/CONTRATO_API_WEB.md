@@ -75,42 +75,62 @@ Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints n
 
 Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agregadas-y-regional.md`; esquemas y ejemplos en el tag `metricas` del spec.
 
-**Parámetros.** `desde` y `hasta` opcionales (`AAAA-MM-DD`, fechas de Bogotá, ambas incluidas; por defecto del 1 de enero del año en curso a hoy; máximo 3 años). En `/regional`, `usuario_id` opcional (UUID de un comercial de la regional). Fechas mal formadas, `hasta < desde` o `usuario_id` que no es UUID: 400.
+**Parámetros.** `desde` y `hasta` son opcionales (`AAAA-MM-DD`, fechas de Bogotá, ambas incluidas). Por defecto van del 1 de enero del año en curso a hoy; máximo 3 años. En `/regional`, `usuario_id` es opcional (UUID de un comercial de la regional). Fechas mal formadas, `hasta < desde` o un `usuario_id` que no es UUID: 400.
 
 **Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
 - `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).
-- `/regional`: solo `gerente_comercial` (un comercial recibe 403). Siempre la regional del gerente autenticado; no se puede pedir otra. `comerciales` trae a todos los usuarios de la regional (para el selector); `usuario_id` recalcula `indicadores`, `serie_mensual` y `concentracion_ciudades` para ese comercial. Un `usuario_id` que no es de la regional: 404 `{"error":"Comercial no encontrado en tu regional."}`.
-- Gerente sin regional: 409 `ErrorNegocio` `REGIONAL_NO_ASIGNADA` (el frontend muestra "tu usuario no tiene regional asignada"). Fuente de la regional caída: 503 `REGIONAL_NO_DISPONIBLE` (reintentar más tarde).
+- `/regional`: solo `gerente_comercial` (un comercial recibe 403). Siempre la regional del gerente autenticado; no se puede pedir otra.
+  - `comerciales` trae a todos los usuarios de la regional, **incluido el gerente**, cada uno con su `rol` (`comercial`, `gerente_comercial` o `null`) y sus indicadores, para el selector.
+  - Las cotizaciones del gerente cuentan en el agregado de la regional.
+  - `usuario_id` recalcula `indicadores`, `serie_mensual` y `concentracion_ciudades` para ese comercial. Si no es de la regional: 404 `{"error":"Comercial no encontrado en tu regional."}`.
+- Gerente sin regional: 409 `ErrorNegocio` `REGIONAL_NO_ASIGNADA` (el frontend muestra "tu usuario no tiene regional asignada"). Fuente de la regional caída: 503 `REGIONAL_NO_DISPONIBLE` (reintentar más tarde). La regional resuelta se reutiliza 60 s, así que cambiar el selector no vuelve a consultarla.
 
-**Qué se cuenta.** Solo la **versión vigente** de cada cotización (la de mayor `version` entre las filas del mismo comercial con el mismo folio base, es decir, el folio sin `-vN`), creada dentro del periodo, **en cualquier estado** (lo mismo que lista "Mis cotizaciones"). `versiones` informa cuántas filas hay contando todas las versiones.
+**Qué se cuenta: una fila por cadena de versiones.** La cadena son las filas del mismo comercial con el mismo folio base (el folio sin `-vN`); cuenta una sola vez, en cualquier estado (lo mismo que lista "Mis cotizaciones").
+- Valores (precio, costo, margen, moneda, ciudades, deadline): los de la **versión vigente**, la de mayor `version`.
+- Periodo y mes: la **primera creación** de la cadena. Ejemplo: `PCN-DG-10082026-001` se crea el 10 de agosto por 1.000.000 y se rehace el 3 de septiembre (`-v2`) por 1.100.000. Cuenta una cotización en **agosto** con valor 1.100.000, y septiembre no la ve. Los periodos pasados no cambian al rehacer.
+- Resultado: el **más reciente de toda la cadena** (mayor `marcadoAt`; si no hay fecha, la versión mayor). Una v1 ganada con una v2 sin marcar cuenta como ganada.
+- `versiones` informa cuántas filas tienen esas cadenas.
 
 **Definiciones** (para recalcular a mano sobre `dbo_cotifly`, HU-010.4):
 
 | Campo | Definición |
 |---|---|
-| `cantidad` | Cotizaciones vigentes del periodo |
-| `versiones` | Filas del periodo contando todas las versiones |
-| `ganadas` / `perdidas` / `sin_resultado` | `ganada = 1` / `ganada = 0` / `ganada` nulo |
-| `pendientes_por_cotizar` | `precioFinal` nulo |
+| `cantidad` | Cadenas del periodo |
+| `versiones` | Filas de esas cadenas (todas las versiones) |
+| `ganadas` / `perdidas` | Resultado ganada / perdida de la cadena |
+| `sin_resultado` | Con precio y sin resultado |
+| `pendientes_por_cotizar` | Sin precio y sin resultado |
 | `conversion` | ganadas / cantidad (definición del backlog); `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
 | `margen_promedio` | Promedio simple de `margenAplicado` (0.15 = 15 %) |
-| `costeo_total` | SUM(`costo`), en COP |
-| `valor_cotizado_cop` | SUM(`precio_cop`) |
-| `valor_ganado_cop` | SUM(`precio_cop`) de las ganadas (el "dinero recaudado" del mapa) |
-| `ganancias` | SUM(`precio_cop` − `costo`) de las ganadas con precio y costo |
+| `costeo_total` / `costeo_ganadas` | SUM(`costo`) en COP, de todas / de las ganadas |
+| `valor_cotizado_cop` | SUM(`valor_cop`) |
+| `valor_ganado_cop` | SUM(`valor_cop`) de las ganadas: valor cotizado de lo ganado, **no dinero recaudado**. Rotularlo "Valor ganado (COP)", también en el mapa |
+| `ganancias` | SUM(`valor_cop` − `costo`) de las ganadas con precio y costo |
 | `cotizaciones_usd` | Cotizaciones en moneda distinta de COP |
-| `tiempo_promedio_cotizacion_horas` | Promedio de `costeoListoAt` − `createdAt`, en horas |
-| `desviacion_promedio_margen` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` y cantidad de ajustes de esas cotizaciones |
+| `tiempo_promedio_cotizacion_horas` | Promedio de `costeoListoAt` − `createdAt` (versión vigente), en horas; sin las filas incoherentes (`costeoListoAt` antes de `createdAt`) |
+| `desviacion_promedio_margen` / `desviacion_promedio_margen_abs` / `ajustes_margen` | Promedio de `MargenAjustes.diferencia` con signo / en valor absoluto, y cantidad de ajustes de la versión vigente |
+| `deadline_vencidas` | Sin resultado y con `deadline` ya vencido; `null` hasta que se aplique el script 0004 |
 | `lineas_negocio_activas` (solo `/regional`) | `MargenesPolitica.isActive = 1` |
 
-`precio_cop` = `precioFinal` en COP; en USD, `round(precioFinal × trmAplicada, 2)`. El costo ya está en COP y nunca se convierte. Montos con 2 decimales; fracciones de 0 a 1 con 4 decimales; redondeo half-to-even.
+`valor_cop` es `precioFinal` en COP; en USD, `round(precioFinal × trmAplicada, 2)`. No es el `precio_cop` de la TRM (ADR-014, el piso del PDF), que se recalcula del costo y el margen y puede diferir unos pesos. El costo ya está en COP y nunca se convierte. Montos con 2 decimales; fracciones de 0 a 1 con 4 decimales; redondeo half-to-even.
 
-**Gráficas.** `serie_mensual` trae un punto por mes del periodo (`AAAA-MM`, también los meses vacíos) con cantidad, ganadas, perdidas, valor cotizado y valor ganado. `concentracion_ciudades.por_destino` (municipio de destino, el que usa el mapa) y `por_origen` traen cantidad, ganadas y dinero por municipio, con el texto del catálogo de Nexo; `disponible` es `false` hasta que se aplique el script 0004 (columnas `origen`/`destino`), y las cotizaciones sin ciudad cuentan en `sin_destino`/`sin_origen`.
+Identidades para QA:
+- `cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar`, siempre.
+- `ganancias = valor_ganado_cop − costeo_ganadas`, cuando todas las ganadas tienen precio y costo y ninguna en USD tiene TRM 0.
+
+**Gráficas.**
+- `serie_mensual` trae un punto por mes del periodo (`AAAA-MM`, también los meses vacíos), con cantidad, ganadas, perdidas, valor cotizado y valor ganado.
+- `concentracion_ciudades.por_destino` (municipio de destino, el que usa el mapa) y `por_origen` traen cantidad, ganadas y valor por municipio, con el texto del catálogo de Nexo.
+  - `disponible` es `false` hasta que se aplique el script 0004 (columnas `origen`/`destino`).
+  - Las cotizaciones sin ciudad cuentan en `sin_destino`/`sin_origen`.
+  - Una solicitud de varias líneas cuenta solo la ciudad de la cabecera.
 
 **Estado vacío.** Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios y la serie en 0.
 
-**Pendiente de Nexo, no está en el contrato:** "score de urgencia" y "deadline vencido" por cotización. Se agregarán como campos nuevos de `indicadores` (cambio compatible) cuando Nexo publique su contrato.
+**Todavía no incluido:**
+- Los servicios conexos (ADR-015) no se suman a precio ni costo; se integran después de #42.
+- El "score de urgencia" de Nexo no está en el contrato. Se agregará como campo nuevo de `indicadores` (cambio compatible) cuando Nexo publique su contrato.
 
 ### Reservados para la próxima versión (HU-005)
 

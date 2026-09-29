@@ -40,6 +40,8 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         indicadores.GetProperty("versiones").GetInt32().Should().Be(3);
         indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(5_200_000m, "1.200.000 de la v2 + 1.000 USD × 4.000");
         indicadores.GetProperty("costeo_total").GetDecimal().Should().Be(4_250_000m);
+        indicadores.GetProperty("costeo_ganadas").GetDecimal().Should().Be(4_250_000m);
+        indicadores.GetProperty("deadline_vencidas").ValueKind.Should().Be(JsonValueKind.Null, "sin la columna del 0004");
         indicadores.GetProperty("ganancias").GetDecimal().Should().Be(950_000m);
         indicadores.GetProperty("cotizaciones_usd").GetInt32().Should().Be(1);
         json.GetProperty("serie_mensual").GetArrayLength().Should().Be(12);
@@ -95,6 +97,8 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         regional.GetProperty("concentracion_ciudades").GetProperty("disponible").GetBoolean().Should().BeFalse("el 0004 no está aplicado en QA");
         regional.GetProperty("comerciales").EnumerateArray().Select(c => c.GetProperty("nombre_completo").GetString())
             .Should().Equal("Ana Tablero", "Gloria Tablero", "Luis Tablero");
+        regional.GetProperty("comerciales").EnumerateArray().Select(c => c.GetProperty("rol").GetString())
+            .Should().Equal("comercial", "gerente_comercial", "comercial");
         deLuis.GetProperty("usuario_id").GetString().Should().Be(luis.UsuarioId.ToString());
         deLuis.GetProperty("indicadores").GetProperty("cantidad").GetInt32().Should().Be(1);
         deLuis.GetProperty("comerciales").GetArrayLength().Should().Be(3);

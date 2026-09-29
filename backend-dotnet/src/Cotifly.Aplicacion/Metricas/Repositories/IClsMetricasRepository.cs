@@ -13,9 +13,9 @@ public interface IClsMetricasRepository
     Task<IReadOnlyList<clsAjustesMargenComercial>> ListarAjustesMargenAsync(clsAlcanceMetricas alcance, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cotizaciones de <paramref name="usuarios"/> con <c>createdAt</c> en [<paramref name="desde"/>, <paramref name="hastaExclusivo"/>),
-    /// todas las versiones, cada una marcada si es la vigente de su cadena <c>(usuarioId, folio base)</c> (decidido sobre toda
-    /// la historia, no solo el periodo), con el resumen de sus <c>MargenAjustes</c>.
+    /// Una fila por cadena de versiones <c>(usuarioId, folio base)</c> de <paramref name="usuarios"/> cuya primera creación
+    /// (<c>MIN(createdAt)</c>) cae en [<paramref name="desde"/>, <paramref name="hastaExclusivo"/>): valores de la versión vigente,
+    /// resultado más reciente de la cadena, cantidad de versiones y resumen de los <c>MargenAjustes</c> de la vigente.
     /// </summary>
     Task<clsDatosMetricas> ListarCotizacionesAsync(
         IReadOnlyCollection<Guid> usuarios, DateTimeOffset desde, DateTimeOffset hastaExclusivo, CancellationToken cancellationToken = default);

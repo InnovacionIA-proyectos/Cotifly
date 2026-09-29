@@ -52,7 +52,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             INSERT INTO dbo_cotifly.Cotizaciones (id, folio, lineaNegocioId, usuarioId, costo, margenPolitica, margenAplicado, metodoCalculo,
                 precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
             SELECT NEWID(), CONCAT(folio, N'-v{version}'), lineaNegocioId, usuarioId, {costo}, margenPolitica, margenAplicado, metodoCalculo,
-                {precio}, moneda, trmAplicada, N'sin_enviar', ganada, {version}, DATEADD(DAY, 1, createdAt), SYSDATETIMEOFFSET()
+                {precio}, moneda, trmAplicada, N'sin_enviar', NULL, {version}, DATEADD(DAY, 1, createdAt), SYSDATETIMEOFFSET()
             FROM dbo_cotifly.Cotizaciones WHERE id = '{original.Id}';
             """);
     }
@@ -88,6 +88,23 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
                 valor.GetDecimal().Should().Be(decimal.Parse(fila["valor"], CultureInfo.InvariantCulture), fila["campo"]);
             }
         }
+    }
+
+    [Then("los indicadores cumplen cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar")]
+    public void EntoncesLaParticion()
+    {
+        var i = web.UltimoJson().GetProperty("indicadores");
+        (i.GetProperty("ganadas").GetInt32() + i.GetProperty("perdidas").GetInt32() + i.GetProperty("sin_resultado").GetInt32()
+            + i.GetProperty("pendientes_por_cotizar").GetInt32()).Should().Be(i.GetProperty("cantidad").GetInt32());
+    }
+
+    [Then("en la lista de comerciales {string} tiene el rol {string} y {string} el rol {string}")]
+    public void EntoncesLosRoles(string uno, string rolUno, string otro, string rolOtro)
+    {
+        var comerciales = web.UltimoJson().GetProperty("comerciales").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("usuario_id").GetString()!, c => c.GetProperty("rol").GetString());
+        comerciales[web.Sesion(uno).UsuarioId.ToString()].Should().Be(rolUno);
+        comerciales[web.Sesion(otro).UsuarioId.ToString()].Should().Be(rolOtro);
     }
 
     [Then("la serie mensual tiene el mes {string} con {int} cotizaciones y {int} ganadas")]

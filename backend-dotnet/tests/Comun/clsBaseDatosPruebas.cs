@@ -183,7 +183,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
-    /// Base auxiliar con 0001 a 0003 y además las columnas <c>origen</c>/<c>destino</c> de <c>Cotizaciones</c> con la misma
+    /// Base auxiliar con 0001 a 0003 y además las columnas <c>origen</c>/<c>destino</c>/<c>deadline</c> de <c>Cotizaciones</c> con la misma
     /// definición que el script 0004 (HU-005.8, en otro PR): para probar la concentración por ciudad de HU-010.1 sin alterar la
     /// base compartida (la prueba de deriva del modelo EF la compara con el catálogo). Se crea una vez por contenedor.
     /// </summary>
@@ -207,6 +207,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarAsync(cadena, """
                     ALTER TABLE dbo_cotifly.Cotizaciones ADD origen NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
                     ALTER TABLE dbo_cotifly.Cotizaciones ADD destino NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
+                    ALTER TABLE dbo_cotifly.Cotizaciones ADD deadline DATETIMEOFFSET NULL;
                     """);
                 _cadenaConCiudades = cadena;
             }

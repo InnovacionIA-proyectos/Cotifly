@@ -14,26 +14,31 @@ namespace Cotifly.Infraestructura.Metricas.Repositories;
 /// <see cref="clsCotiflyDbContext"/> a propósito: el modelo EF es Database First de tablas y la prueba de deriva lo compara
 /// con el catálogo en ambos sentidos. Las consultas son SQL parametrizado (interpolación de EF Core → <c>@p0</c>, <c>@p1</c>).
 /// El tablero de HU-010.1 (<see cref="ListarCotizacionesAsync"/>) lee <c>Cotizaciones</c> con SQL propio por la misma razón:
-/// las columnas <c>origen</c>/<c>destino</c> son del script 0004 y pueden no existir todavía.
+/// las columnas <c>origen</c>/<c>destino</c>/<c>deadline</c> son del script 0004 y pueden no existir todavía.
 /// </summary>
 public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMetricasRepository
 {
-    /// <summary>¿El esquema tiene las columnas de ciudad del 0004? (<c>COL_LENGTH</c> es NULL si la columna no existe.)</summary>
-    private const string SqlCiudadesDisponibles = """
+    /// <summary>
+    /// ¿El esquema tiene las columnas opcionales del script 0004? (<c>COL_LENGTH</c> es NULL si la columna no existe.)
+    /// </summary>
+    private const string SqlColumnasOpcionales = """
         SELECT CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'origen') IS NOT NULL
-                          AND COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'destino') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS [Value]
+                          AND COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'destino') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Ciudades,
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline
         """;
 
     /// <summary>
-    /// Filas del tablero (ADR-016 §2). Folio base = folio sin el sufijo <c>-v{version}</c>; la vigente es la de mayor
-    /// <c>version</c> de cada <c>(usuarioId, folio base)</c>, decidida sobre toda la historia y filtrada después por periodo.
-    /// <c>{0}</c>/<c>{1}</c>: columnas de origen/destino o <c>NULL</c> si el 0004 no está aplicado (fragmentos fijos del código,
-    /// nunca datos del usuario).
+    /// Una fila por cadena de versiones (ADR-016 §2). Folio base = folio sin el sufijo <c>-v{version}</c>; cadena =
+    /// <c>(usuarioId, folio base)</c>. Valores de la versión vigente (mayor <c>version</c>); periodo por la primera creación de la
+    /// cadena (<c>MIN(createdAt)</c>); resultado = el último no nulo de la cadena (mayor <c>marcadoAt</c>, sin fecha al final, y
+    /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
+    /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: columnas <c>origen</c>/<c>destino</c>/<c>deadline</c> o <c>NULL</c> si el 0004 no está
+    /// aplicado (fragmentos fijos del código, nunca datos del usuario).
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
             SELECT c.id, c.usuarioId, c.version, c.createdAt, c.costo, c.precioFinal, c.moneda, c.trmAplicada, c.margenAplicado,
-                   c.ganada, c.costeoListoAt, {0} AS origen, {1} AS destino,
+                   c.ganada, c.marcadoAt, c.costeoListoAt, {0} AS origen, {1} AS destino, {2} AS deadline,
                    CASE WHEN c.version > 1
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
                         THEN LEFT(c.folio, LEN(c.folio) - LEN(N'-v' + CAST(c.version AS nvarchar(10))))
@@ -41,42 +46,51 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             FROM dbo_cotifly.Cotizaciones c
             WHERE c.usuarioId IN (SELECT CAST([value] AS uniqueidentifier) FROM OPENJSON(@usuarios))
         ),
-        ordenadas AS (
-            SELECT b.*, ROW_NUMBER() OVER (PARTITION BY b.usuarioId, b.folioBase ORDER BY b.version DESC, b.createdAt DESC, b.id) AS orden
+        cadenas AS (
+            SELECT b.*,
+                   ROW_NUMBER() OVER (PARTITION BY b.usuarioId, b.folioBase ORDER BY b.version DESC, b.createdAt DESC, b.id) AS orden,
+                   MIN(b.createdAt) OVER (PARTITION BY b.usuarioId, b.folioBase) AS primeraCreacion,
+                   COUNT(*) OVER (PARTITION BY b.usuarioId, b.folioBase) AS versiones
             FROM base b
         )
-        SELECT o.usuarioId AS UsuarioId, o.createdAt AS CreatedAt,
-               CAST(CASE WHEN o.orden = 1 THEN 1 ELSE 0 END AS bit) AS EsVigente,
-               o.costo AS Costo, o.precioFinal AS PrecioFinal, o.moneda AS Moneda, o.trmAplicada AS TrmAplicada,
-               o.margenAplicado AS MargenAplicado, o.ganada AS Ganada, o.costeoListoAt AS CosteoListoAt,
-               o.origen AS Origen, o.destino AS Destino,
-               COALESCE(a.numAjustes, 0) AS NumAjustes, COALESCE(a.numDiferencias, 0) AS NumDiferencias,
-               a.sumaDiferencias AS SumaDiferencias
-        FROM ordenadas o
-        LEFT JOIN (
-            SELECT cotizacionId, COUNT(*) AS numAjustes, COUNT(diferencia) AS numDiferencias, SUM(diferencia) AS sumaDiferencias
-            FROM dbo_cotifly.MargenAjustes
-            WHERE cotizacionId IS NOT NULL
-            GROUP BY cotizacionId
-        ) a ON a.cotizacionId = o.id
-        WHERE o.createdAt >= @desde AND o.createdAt < @hasta
+        SELECT v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
+               v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
+               v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
+               v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
+               a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias,
+               a.sumaDiferencias AS SumaDiferencias, a.sumaDiferenciasAbs AS SumaDiferenciasAbsolutas
+        FROM cadenas v
+        OUTER APPLY (
+            SELECT TOP (1) b2.ganada
+            FROM base b2
+            WHERE b2.usuarioId = v.usuarioId AND b2.folioBase = v.folioBase AND b2.ganada IS NOT NULL
+            ORDER BY CASE WHEN b2.marcadoAt IS NULL THEN 1 ELSE 0 END, b2.marcadoAt DESC, b2.version DESC
+        ) r
+        OUTER APPLY (
+            SELECT COUNT(*) AS numAjustes, COUNT(m.diferencia) AS numDiferencias,
+                   SUM(m.diferencia) AS sumaDiferencias, SUM(ABS(m.diferencia)) AS sumaDiferenciasAbs
+            FROM dbo_cotifly.MargenAjustes m
+            WHERE m.cotizacionId = v.id
+        ) a
+        WHERE v.orden = 1 AND v.primeraCreacion >= @desde AND v.primeraCreacion < @hasta
         """;
 
     public async Task<clsDatosMetricas> ListarCotizacionesAsync(
         IReadOnlyCollection<Guid> usuarios, DateTimeOffset desde, DateTimeOffset hastaExclusivo, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(usuarios);
-        var ciudades = (await contexto.Database.SqlQueryRaw<bool>(SqlCiudadesDisponibles).ToListAsync(cancellationToken)).Single();
+        var columnas = (await contexto.Database.SqlQueryRaw<clsColumnasOpcionales>(SqlColumnasOpcionales).ToListAsync(cancellationToken)).Single();
         if (usuarios.Count == 0)
         {
-            return new clsDatosMetricas([], ciudades);
+            return new clsDatosMetricas([], columnas.Ciudades, columnas.Deadline);
         }
 
         var sql = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
             SqlCotizaciones,
-            ciudades ? "c.origen" : "CAST(NULL AS nvarchar(150))",
-            ciudades ? "c.destino" : "CAST(NULL AS nvarchar(150))");
+            columnas.Ciudades ? "c.origen" : "CAST(NULL AS nvarchar(150))",
+            columnas.Ciudades ? "c.destino" : "CAST(NULL AS nvarchar(150))",
+            columnas.Deadline ? "c.deadline" : "CAST(NULL AS datetimeoffset)");
         var filas = await contexto.Database.SqlQueryRaw<clsFilaMetrica>(
                 sql,
                 new SqlParameter("@usuarios", System.Data.SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(usuarios.Distinct()) },
@@ -89,7 +103,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             {
                 UsuarioId = f.UsuarioId,
                 CreatedAt = f.CreatedAt,
-                EsVigente = f.EsVigente,
+                CreatedAtVigente = f.CreatedAtVigente,
+                Versiones = f.Versiones,
                 Costo = f.Costo,
                 PrecioFinal = f.PrecioFinal,
                 Moneda = f.Moneda,
@@ -99,11 +114,14 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 CosteoListoAt = f.CosteoListoAt,
                 Origen = f.Origen,
                 Destino = f.Destino,
+                Deadline = f.Deadline,
                 NumAjustes = f.NumAjustes,
                 NumDiferencias = f.NumDiferencias,
                 SumaDiferencias = f.SumaDiferencias,
+                SumaDiferenciasAbsolutas = f.SumaDiferenciasAbsolutas,
             })],
-            ciudades);
+            columnas.Ciudades,
+            columnas.Deadline);
     }
 
     public Task<int> ContarLineasNegocioActivasAsync(CancellationToken cancellationToken = default) =>
@@ -178,12 +196,20 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public DateTimeOffset? UltimaCotizacion { get; set; }
     }
 
-    /// <summary>Fila cruda del tablero (materializada por nombre de columna).</summary>
+    /// <summary>Columnas opcionales del script 0004 presentes en el esquema.</summary>
+    internal sealed class clsColumnasOpcionales
+    {
+        public bool Ciudades { get; set; }
+        public bool Deadline { get; set; }
+    }
+
+    /// <summary>Fila cruda del tablero, una por cadena (materializada por nombre de columna).</summary>
     internal sealed class clsFilaMetrica
     {
         public Guid UsuarioId { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
-        public bool EsVigente { get; set; }
+        public DateTimeOffset CreatedAtVigente { get; set; }
+        public int Versiones { get; set; }
         public decimal? Costo { get; set; }
         public decimal? PrecioFinal { get; set; }
         public string? Moneda { get; set; }
@@ -193,9 +219,11 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public DateTimeOffset? CosteoListoAt { get; set; }
         public string? Origen { get; set; }
         public string? Destino { get; set; }
+        public DateTimeOffset? Deadline { get; set; }
         public int NumAjustes { get; set; }
         public int NumDiferencias { get; set; }
         public decimal? SumaDiferencias { get; set; }
+        public decimal? SumaDiferenciasAbsolutas { get; set; }
     }
 
     /// <summary>Fila cruda de <c>vAjustesMargenPorComercial</c>.</summary>

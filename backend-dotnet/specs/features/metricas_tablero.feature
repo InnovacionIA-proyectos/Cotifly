@@ -2,7 +2,8 @@
 # HU-010.1 (#45) — Métricas agregadas del tablero (ADR-016). Por HTTP contra la API real en memoria, con sesiones del login
 # SSO (el rol sale del claim `rol` del token) y SQL Server 2019 en Testcontainers. La regional se fija en
 # UsuariosWeb.regional (respaldo del DBA; DimEjecutivo no está configurada en estas pruebas). Los nombres de comerciales,
-# regionales y cotizaciones son alias: cada escenario crea los suyos. Las fechas son de America/Bogota.
+# regionales y cotizaciones son alias: cada escenario crea los suyos. Las fechas son de America/Bogota. Una versión nueva
+# ("rehízo") es una fila con el folio -vN, creada un día después y sin resultado, como la crea la consola.
 @integracion
 Característica: Tablero de métricas del comercial y del gerente comercial
   Como gerente comercial de una regional
@@ -36,18 +37,21 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | cantidad                  | 4          |
       | ganadas                   | 2          |
       | perdidas                  | 1          |
-      | sin_resultado             | 1          |
+      | sin_resultado             | 0          |
       | pendientes_por_cotizar    | 1          |
       | conversion                | 0.5        |
       | conversion_sobre_cerradas | 0.6667     |
       | margen_promedio           | 0.15       |
       | costeo_total              | 5950000    |
+      | costeo_ganadas            | 4250000    |
       | valor_cotizado_cop        | 7000000    |
       | valor_ganado_cop          | 5000000    |
       | ganancias                 | 750000     |
       | cotizaciones_usd          | 1          |
+      | deadline_vencidas         | null       |
+    Y los indicadores cumplen cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar
 
-  Escenario: Una cotización rehecha cuenta una sola vez, con los valores de su versión vigente
+  Escenario: Una cotización rehecha cuenta una sola vez, con los valores de su versión vigente y el resultado de la cadena
     Dado que "ana" rehízo la cotización "A2" como versión 2 con precio 2100000 y costo 1750000
     Cuando "ana" consulta sus métricas del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 200
@@ -57,6 +61,7 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | versiones          | 5       |
       | valor_cotizado_cop | 7100000 |
       | costeo_total       | 6000000 |
+      | perdidas           | 1       |
 
   Escenario: El periodo filtra por la fecha de creación en Bogotá
     Cuando "ana" consulta sus métricas del "2026-04-01" al "2026-04-30"
@@ -76,6 +81,7 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
     Y la regional de las métricas es "Occidente"
     Y los comerciales de las métricas son "ana", "luis" y "gloria"
+    Y en la lista de comerciales "gloria" tiene el rol "gerente_comercial" y "ana" el rol "comercial"
     Y los indicadores son:
       | campo            | valor   |
       | cantidad         | 5       |

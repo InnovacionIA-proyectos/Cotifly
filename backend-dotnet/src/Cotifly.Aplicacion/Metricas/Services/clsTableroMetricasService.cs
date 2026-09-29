@@ -33,6 +33,8 @@ public sealed class clsTableroMetricasService(
     IClsCalendarioNegocio calendario,
     IClsUsuarioWebRepository usuarios,
     IClsRegionalUsuario regionales,
+    IClsRolRepository roles,
+    IClsReloj reloj,
     IClsMetricasRepository metricas) : IClsTableroMetricasService
 {
     /// <summary>Rango máximo del periodo (la serie mensual queda acotada a 37 puntos).</summary>
@@ -59,7 +61,7 @@ public sealed class clsTableroMetricasService(
         return new clsMetricasComercial(
             periodo.Valor,
             usuarioId,
-            clsCalculadoraMetricas.Indicadores(datos.Filas),
+            Indicadores(datos.Filas, datos),
             Serie(datos.Filas, periodo.Valor));
     }
 
@@ -120,10 +122,16 @@ public sealed class clsTableroMetricasService(
         var porUsuario = datos.Filas.ToLookup(f => f.UsuarioId);
         IReadOnlyList<clsCotizacionMetrica> seleccion = filtro is { } uno ? [.. porUsuario[uno]] : datos.Filas;
 
+        var rolesMiembros = await roles.ListarRolesDeUsuariosAsync([.. miembros.Valor.Select(m => m.Id)], cancellationToken);
         var comerciales = miembros.Valor
             .OrderBy(m => m.NombreCompleto ?? m.NombreUsuario ?? string.Empty, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(m => m.Id)
-            .Select(m => new clsComercialRegional(m.Id, m.NombreUsuario, m.NombreCompleto, clsCalculadoraMetricas.Indicadores(porUsuario[m.Id])))
+            .Select(m => new clsComercialRegional(
+                m.Id,
+                m.NombreUsuario,
+                m.NombreCompleto,
+                rolesMiembros.TryGetValue(m.Id, out var rolMiembro) ? clsCodigoEnum.ACodigo(rolMiembro) : null,
+                Indicadores(porUsuario[m.Id], datos)))
             .ToList();
 
         return new clsMetricasRegional(
@@ -131,7 +139,7 @@ public sealed class clsTableroMetricasService(
             regional.Valor.Regional,
             regional.Valor.Fuente,
             filtro,
-            clsCalculadoraMetricas.Indicadores(seleccion),
+            Indicadores(seleccion, datos),
             await metricas.ContarLineasNegocioActivasAsync(cancellationToken),
             comerciales,
             Serie(seleccion, periodo.Valor),
@@ -172,6 +180,9 @@ public sealed class clsTableroMetricasService(
 
     private Task<clsDatosMetricas> ListarAsync(IReadOnlyCollection<Guid> ids, clsPeriodoMetricas periodo, CancellationToken cancellationToken) =>
         metricas.ListarCotizacionesAsync(ids, calendario.InicioDelDia(periodo.Desde), calendario.InicioDelDia(periodo.Hasta.AddDays(1)), cancellationToken);
+
+    private clsIndicadoresMetricas Indicadores(IEnumerable<clsCotizacionMetrica> filas, clsDatosMetricas datos) =>
+        clsCalculadoraMetricas.Indicadores(filas, reloj.AhoraUtc, datos.DeadlineDisponible);
 
     private IReadOnlyList<clsPuntoSerieMensual> Serie(IEnumerable<clsCotizacionMetrica> filas, clsPeriodoMetricas periodo) =>
         clsCalculadoraMetricas.SerieMensual(filas, periodo.Desde, periodo.Hasta, calendario.FechaDe);

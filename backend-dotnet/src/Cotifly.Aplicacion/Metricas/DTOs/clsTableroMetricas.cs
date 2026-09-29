@@ -15,8 +15,9 @@ public sealed record clsMetricasComercial(
     clsIndicadoresMetricas Indicadores,
     IReadOnlyList<clsPuntoSerieMensual> SerieMensual);
 
-/// <summary>Un usuario de la regional con sus indicadores (esquema <c>ComercialRegional</c>).</summary>
-public sealed record clsComercialRegional(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto, clsIndicadoresMetricas Indicadores);
+/// <summary>Un usuario de la regional con su rol y sus indicadores (esquema <c>ComercialRegional</c>).</summary>
+/// <param name="Rol"><c>comercial</c>, <c>gerente_comercial</c> o <c>null</c>: rol interno asignado en <c>UsuariosRoles</c> (ADR-009).</param>
+public sealed record clsComercialRegional(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto, string? Rol, clsIndicadoresMetricas Indicadores);
 
 /// <summary><c>GET /web/metricas/regional</c> (esquema <c>MetricasRegional</c>).</summary>
 public sealed record clsMetricasRegional(
@@ -31,7 +32,7 @@ public sealed record clsMetricasRegional(
     clsConcentracionCiudades ConcentracionCiudades);
 
 /// <summary>
-/// Filas de <c>Cotizaciones</c> de los comerciales pedidos creadas en el periodo (todas las versiones, marcada la vigente) y si
-/// el esquema ya tiene las columnas de ciudad (<c>origen</c>/<c>destino</c> del script 0004).
+/// Cotizaciones (una por cadena de versiones) de los comerciales pedidos cuya primera creación cae en el periodo, y si el esquema
+/// ya tiene las columnas opcionales del script 0004: <c>origen</c>/<c>destino</c> y <c>deadline</c>.
 /// </summary>
-public sealed record clsDatosMetricas(IReadOnlyList<clsCotizacionMetrica> Filas, bool CiudadesDisponibles);
+public sealed record clsDatosMetricas(IReadOnlyList<clsCotizacionMetrica> Filas, bool CiudadesDisponibles, bool DeadlineDisponible = false);

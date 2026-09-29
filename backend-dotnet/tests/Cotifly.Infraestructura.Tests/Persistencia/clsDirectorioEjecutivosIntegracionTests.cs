@@ -45,6 +45,29 @@ public sealed class clsDirectorioEjecutivosIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task LasRespuestasSeReutilizanSesentaSegundos()
+    {
+        var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
+        var (ana, regional) = (Unico("cache"), Unico("REG"));
+        await clsBaseDatosPruebas.EjecutarAsync(cadena, $"INSERT INTO dbo.DimEjecutivo (ID, NOMBRE, REGIONAL) VALUES ('{ana}', 'Ana', '{regional}');");
+        var reloj = new clsRelojFalso();
+        var cache = new clsCacheDirectorioEjecutivos(reloj);
+        var directorio = new clsDirectorioEjecutivosDimEjecutivo(
+            Options.Create(new clsOpcionesConexiones { Regional = cadena }), Options.Create(new clsOpcionesRegional()), cache,
+            NullLogger<clsDirectorioEjecutivosDimEjecutivo>.Instance);
+
+        (await directorio.ObtenerRegionalesAsync([ana], Ct))[ana].Should().Be(regional);
+        (await directorio.ListarNombresUsuarioAsync(regional, Ct)).Should().Equal(ana);
+        await clsBaseDatosPruebas.EjecutarAsync(cadena, $"DELETE FROM dbo.DimEjecutivo WHERE ID = '{ana}';");
+
+        (await directorio.ObtenerRegionalesAsync([ana], Ct)).Should().ContainKey(ana, "sigue en caché");
+        (await directorio.ListarNombresUsuarioAsync(regional, Ct)).Should().Equal(ana);
+        reloj.Avanzar(clsCacheDirectorioEjecutivos.Vigencia + TimeSpan.FromSeconds(1));
+        (await directorio.ObtenerRegionalesAsync([ana], Ct)).Should().BeEmpty("la entrada venció y se volvió a consultar");
+        (await directorio.ListarNombresUsuarioAsync(regional, Ct)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task SinCadenaSeUsaElDirectorioNoDisponible()
     {
         var servicio = await ConsultarAsync(s => Task.FromResult(s.GetRequiredService<IClsDirectorioEjecutivos>()));
@@ -107,5 +130,6 @@ public sealed class clsDirectorioEjecutivosIntegracionTests(clsBaseDatosPruebas 
     private static clsDirectorioEjecutivosDimEjecutivo Directorio(string cadena) => new(
         Options.Create(new clsOpcionesConexiones { Regional = cadena }),
         Options.Create(new clsOpcionesRegional()),
+        new clsCacheDirectorioEjecutivos(new clsRelojFalso()),
         NullLogger<clsDirectorioEjecutivosDimEjecutivo>.Instance);
 }

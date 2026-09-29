@@ -11,11 +11,13 @@ namespace Cotifly.Infraestructura.Identidad.Services;
 /// (<c>ConnectionStrings:Regional</c>, sección <see cref="clsOpcionesRegional"/>; ADR-016 §6). Solo <c>SELECT</c> parametrizado;
 /// esquema, tabla y columnas vienen de la configuración, validados como identificadores y citados con corchetes. Los tipos
 /// reales de las columnas no se conocen: se leen como texto (<c>CAST ... AS nvarchar</c>), recortados y en mayúsculas para
-/// comparar. Los fallos de la base se propagan (quien llama responde 503).
+/// comparar. Los fallos de la base se propagan (quien llama responde 503) y no se guardan; las respuestas exitosas se
+/// reutilizan 60 s (<see cref="clsCacheDirectorioEjecutivos"/>).
 /// </summary>
 public sealed class clsDirectorioEjecutivosDimEjecutivo(
     IOptions<clsOpcionesConexiones> conexiones,
     IOptions<clsOpcionesRegional> opciones,
+    clsCacheDirectorioEjecutivos cache,
     ILogger<clsDirectorioEjecutivosDimEjecutivo> logger) : IClsDirectorioEjecutivos
 {
     /// <summary>Parámetros por consulta (SQL Server admite 2100; se deja margen).</summary>
@@ -27,51 +29,79 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
         IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(nombresUsuario);
-        var nombres = nombresUsuario.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var resultado = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (nombres.Count == 0)
+        var pendientes = new List<string>();
+        foreach (var nombre in nombresUsuario.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (cache.IntentarUsuario(nombre, out var enCache))
+            {
+                if (enCache is not null)
+                {
+                    resultado[nombre] = enCache;
+                }
+            }
+            else
+            {
+                pendientes.Add(nombre);
+            }
+        }
+
+        if (pendientes.Count == 0)
         {
             return resultado;
         }
 
         var filas = new List<(string Usuario, string? Regional)>();
-        await using var conexion = await AbrirAsync(cancellationToken);
-        foreach (var lote in nombres.Chunk(TamanoLote))
+        await using (var conexion = await AbrirAsync(cancellationToken))
         {
-            await using var comando = conexion.CreateCommand();
-            var parametros = new List<string>(lote.Length);
-            for (var i = 0; i < lote.Length; i++)
+            foreach (var lote in pendientes.Chunk(TamanoLote))
             {
-                var nombre = $"@u{i}";
-                parametros.Add(nombre);
-                comando.Parameters.Add(new SqlParameter(nombre, System.Data.SqlDbType.NVarChar, 255) { Value = lote[i].ToUpperInvariant() });
-            }
+                await using var comando = conexion.CreateCommand();
+                var parametros = new List<string>(lote.Length);
+                for (var i = 0; i < lote.Length; i++)
+                {
+                    var nombre = $"@u{i}";
+                    parametros.Add(nombre);
+                    comando.Parameters.Add(new SqlParameter(nombre, System.Data.SqlDbType.NVarChar, 255) { Value = lote[i].ToUpperInvariant() });
+                }
 
-            comando.CommandText = $"""
-                SELECT {Texto(opciones.Value.ColumnaUsuario)} AS usuario, {Texto(opciones.Value.ColumnaRegional)} AS regional
-                FROM {Tabla()}
-                WHERE UPPER({Texto(opciones.Value.ColumnaUsuario)}) IN ({string.Join(", ", parametros)});
-                """;
-            comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
-            await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
-            while (await lector.ReadAsync(cancellationToken))
-            {
-                filas.Add((lector.GetString(0), lector.IsDBNull(1) ? null : lector.GetString(1)));
+                comando.CommandText = $"""
+                    SELECT {Texto(opciones.Value.ColumnaUsuario)} AS usuario, {Texto(opciones.Value.ColumnaRegional)} AS regional
+                    FROM {Tabla()}
+                    WHERE UPPER({Texto(opciones.Value.ColumnaUsuario)}) IN ({string.Join(", ", parametros)});
+                    """;
+                comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
+                await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
+                while (await lector.ReadAsync(cancellationToken))
+                {
+                    filas.Add((lector.GetString(0), lector.IsDBNull(1) ? null : lector.GetString(1)));
+                }
             }
         }
 
+        var encontrados = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var grupo in filas.GroupBy(f => f.Usuario, StringComparer.OrdinalIgnoreCase))
         {
             var regionales = grupo.Select(f => f.Regional).Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r!)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (regionales.Count == 1)
             {
-                resultado[grupo.Key] = regionales[0];
+                encontrados[grupo.Key] = regionales[0];
             }
             else if (regionales.Count > 1)
             {
                 logger.LogWarning("El usuario '{Usuario}' tiene {Cantidad} regionales distintas en la tabla de ejecutivos: se ignora.", grupo.Key, regionales.Count);
+            }
+        }
+
+        // Solo tras una consulta exitosa, también los que no aparecen: el selector del tablero no repite la consulta.
+        foreach (var nombre in pendientes)
+        {
+            var regional = encontrados.GetValueOrDefault(nombre);
+            cache.GuardarUsuario(nombre, regional);
+            if (regional is not null)
+            {
+                resultado[nombre] = regional;
             }
         }
 
@@ -81,6 +111,12 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
     public async Task<IReadOnlyList<string>> ListarNombresUsuarioAsync(string regional, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(regional);
+        var buscada = regional.Trim();
+        if (cache.IntentarRegional(buscada, out var enCache))
+        {
+            return enCache;
+        }
+
         await using var conexion = await AbrirAsync(cancellationToken);
         await using var comando = conexion.CreateCommand();
         comando.CommandText = $"""
@@ -89,7 +125,7 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
             WHERE UPPER({Texto(opciones.Value.ColumnaRegional)}) = @regional
               AND {Texto(opciones.Value.ColumnaUsuario)} IS NOT NULL;
             """;
-        comando.Parameters.Add(new SqlParameter("@regional", System.Data.SqlDbType.NVarChar, 255) { Value = regional.Trim().ToUpperInvariant() });
+        comando.Parameters.Add(new SqlParameter("@regional", System.Data.SqlDbType.NVarChar, 255) { Value = buscada.ToUpperInvariant() });
         comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
 
         var nombres = new List<string>();
@@ -102,6 +138,7 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
             }
         }
 
+        cache.GuardarRegional(buscada, nombres);
         return nombres;
     }
 

@@ -162,6 +162,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddHostedService<clsLimpiezaTokensHostedService>();
 
         // Regional del usuario (HU-010.1, ADR-016): tabla de ejecutivos de DWCubosEBSSAP si hay ConnectionStrings:Regional.
+        servicios.TryAddSingleton<clsCacheDirectorioEjecutivos>();
         servicios.TryAddScoped<clsDirectorioEjecutivosDimEjecutivo>();
         servicios.TryAddSingleton<clsDirectorioEjecutivosNoDisponible>();
         servicios.TryAddScoped<IClsDirectorioEjecutivos>(clsFabricaDirectorioEjecutivos.Crear);

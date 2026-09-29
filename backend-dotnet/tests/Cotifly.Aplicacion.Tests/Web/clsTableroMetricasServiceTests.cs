@@ -22,6 +22,8 @@ public sealed class clsTableroMetricasServiceTests
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
     private readonly IClsRegionalUsuario _regionales = Substitute.For<IClsRegionalUsuario>();
     private readonly IClsMetricasRepository _metricas = Substitute.For<IClsMetricasRepository>();
+    private readonly IClsRolRepository _roles = Substitute.For<IClsRolRepository>();
+    private readonly IClsReloj _reloj = Substitute.For<IClsReloj>();
     private readonly clsCalendarioBogota _calendario = new(new DateOnly(2026, 9, 29));
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -121,7 +123,8 @@ public sealed class clsTableroMetricasServiceTests
         resultado.Indicadores.Cantidad.Should().Be(3);
         resultado.Indicadores.Ganadas.Should().Be(2);
         resultado.LineasNegocioActivas.Should().Be(8);
-        resultado.Comerciales.Select(c => (c.NombreCompleto, c.Indicadores.Cantidad)).Should().Equal(("Ana", 2), ("Gloria", 0), ("Luis", 1));
+        resultado.Comerciales.Select(c => (c.NombreCompleto, c.Rol, c.Indicadores.Cantidad)).Should().Equal(("Ana", "comercial", 2), ("Gloria", "gerente_comercial", 0), ("Luis", (string?)null, 1));
+        resultado.Indicadores.DeadlineVencidas.Should().BeNull();
         resultado.ConcentracionCiudades.Disponible.Should().BeFalse();
         await _metricas.Received(1).ListarCotizacionesAsync(
             Arg.Is<IReadOnlyCollection<Guid>>(u => u.Count == 3 && u.Contains(ana.Id) && u.Contains(luis.Id)),
@@ -173,6 +176,8 @@ public sealed class clsTableroMetricasServiceTests
             .Returns(clsResultado<clsRegionalResuelta>.Exito(new clsRegionalResuelta("Occidente", clsRegionalResuelta.FuenteUsuariosWeb)));
         _regionales.ListarMiembrosAsync("Occidente", Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyList<clsUsuarioWeb>>.Exito([luis, usuarioGerente, ana]));
+        _roles.ListarRolesDeUsuariosAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<Guid, RolInterno> { [ana.Id] = RolInterno.Comercial, [usuarioGerente.Id] = RolInterno.GerenteComercial });
         return (gerente, ana, luis);
     }
 
@@ -194,7 +199,7 @@ public sealed class clsTableroMetricasServiceTests
 
     private static clsUsuarioFalso Usuario(RolInterno rol) => new(Guid.NewGuid(), rol);
 
-    private clsTableroMetricasService Servicio(IClsContextoUsuario usuario) => new(usuario, _calendario, _usuarios, _regionales, _metricas);
+    private clsTableroMetricasService Servicio(IClsContextoUsuario usuario) => new(usuario, _calendario, _usuarios, _regionales, _roles, _reloj, _metricas);
 
     private sealed class clsUsuarioFalso(Guid? usuarioId, RolInterno? rol) : IClsContextoUsuario
     {

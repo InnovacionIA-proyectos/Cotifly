@@ -19,6 +19,25 @@ public sealed class clsRolRepository(clsCotiflyDbContext contexto) : IClsRolRepo
                select rol.Codigo)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyDictionary<Guid, RolInterno>> ListarRolesDeUsuariosAsync(
+        IReadOnlyCollection<Guid> usuarios, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(usuarios);
+        if (usuarios.Count == 0)
+        {
+            return new Dictionary<Guid, RolInterno>();
+        }
+
+        var ids = usuarios.Distinct().ToList();
+        var filas = await (from asignacion in contexto.UsuariosRoles.AsNoTracking()
+                           join rol in contexto.Roles.AsNoTracking() on asignacion.RolId equals rol.Id
+                           where ids.Contains(asignacion.UsuarioId) && asignacion.Activo && rol.Activo
+                           orderby rol.Id
+                           select new { asignacion.UsuarioId, rol.Codigo })
+            .ToListAsync(cancellationToken);
+        return filas.GroupBy(f => f.UsuarioId).ToDictionary(g => g.Key, g => g.First().Codigo);
+    }
+
     public void AgregarAsignacion(clsUsuarioRol asignacion)
     {
         ArgumentNullException.ThrowIfNull(asignacion);

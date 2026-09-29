@@ -3,60 +3,73 @@ using System.Globalization;
 namespace Cotifly.Dominio.Metricas;
 
 /// <summary>
-/// Reglas puras del tablero de métricas (HU-010.1, ADR-016 §4): agrega filas de <see cref="clsCotizacionMetrica"/> en
-/// indicadores, serie mensual y concentración por ciudad. El universo son las filas vigentes (<see cref="clsCotizacionMetrica.EsVigente"/>)
-/// que recibe; el periodo y el alcance ya vienen aplicados por quien consulta. Redondeo siempre half-to-even.
+/// Reglas puras del tablero de métricas (HU-010.1, ADR-016 §4): agrega cotizaciones (<see cref="clsCotizacionMetrica"/>, una por
+/// cadena de versiones) en indicadores, serie mensual y concentración por ciudad. El periodo y el alcance ya vienen aplicados por
+/// quien consulta. Redondeo siempre half-to-even.
 /// </summary>
+/// <remarks>
+/// Partición del universo: <c>cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar</c>. Las ganadas y perdidas
+/// cuentan por su resultado aunque no tengan precio; <c>sin_resultado</c> son las que tienen precio y aún no tienen resultado, y
+/// <c>pendientes_por_cotizar</c> las que no tienen ni precio ni resultado.
+/// </remarks>
 public static class clsCalculadoraMetricas
 {
     public const int DecimalesFraccion = 4;
     public const int DecimalesMonto = 2;
     public const int DecimalesHoras = 2;
 
-    /// <summary>Indicadores de las filas: el universo son las vigentes; <see cref="clsIndicadoresMetricas.Versiones"/> cuenta todas.</summary>
-    public static clsIndicadoresMetricas Indicadores(IEnumerable<clsCotizacionMetrica> filas)
+    /// <summary>
+    /// Indicadores de <paramref name="filas"/>. <paramref name="ahora"/> decide qué deadlines ya vencieron; con
+    /// <paramref name="deadlineDisponible"/> en <c>false</c> (sin la columna del 0004) <see cref="clsIndicadoresMetricas.DeadlineVencidas"/> es <c>null</c>.
+    /// </summary>
+    public static clsIndicadoresMetricas Indicadores(IEnumerable<clsCotizacionMetrica> filas, DateTimeOffset ahora, bool deadlineDisponible)
     {
         ArgumentNullException.ThrowIfNull(filas);
-        var todas = filas.ToList();
-        var universo = todas.Where(f => f.EsVigente).ToList();
+        var universo = filas.ToList();
 
         var ganadas = universo.Where(f => f.Ganada == true).ToList();
         var perdidas = universo.Count(f => f.Ganada == false);
         var margenes = universo.Where(f => f.MargenAplicado.HasValue).Select(f => f.MargenAplicado!.Value).ToList();
         var tiempos = universo
-            .Where(f => f.CosteoListoAt.HasValue)
-            .Select(f => (decimal)(f.CosteoListoAt!.Value - f.CreatedAt).TotalHours)
+            .Where(f => f.CosteoListoAt.HasValue && f.CreatedAtVigente.HasValue && f.CosteoListoAt >= f.CreatedAtVigente)
+            .Select(f => (decimal)(f.CosteoListoAt!.Value - f.CreatedAtVigente!.Value).TotalHours)
             .ToList();
         var numDiferencias = universo.Sum(f => f.NumDiferencias);
-        var sumaDiferencias = universo.Sum(f => f.SumaDiferencias ?? 0m);
 
         return new clsIndicadoresMetricas
         {
             Cantidad = universo.Count,
-            Versiones = todas.Count,
+            Versiones = universo.Sum(f => f.Versiones),
             Ganadas = ganadas.Count,
             Perdidas = perdidas,
-            SinResultado = universo.Count(f => f.Ganada is null),
-            PendientesPorCotizar = universo.Count(f => f.PrecioFinal is null),
+            SinResultado = universo.Count(f => f.Ganada is null && f.PrecioFinal is not null),
+            PendientesPorCotizar = universo.Count(f => f.Ganada is null && f.PrecioFinal is null),
             Conversion = Fraccion(ganadas.Count, universo.Count),
             ConversionSobreCerradas = Fraccion(ganadas.Count, ganadas.Count + perdidas),
             MargenPromedio = margenes.Count == 0 ? null : Redondear(margenes.Average(), DecimalesFraccion),
             CosteoTotal = Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
-            ValorCotizadoCop = Redondear(universo.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto),
-            ValorGanadoCop = Redondear(ganadas.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto),
+            CosteoGanadas = Redondear(ganadas.Sum(f => f.Costo ?? 0m), DecimalesMonto),
+            ValorCotizadoCop = Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
+            ValorGanadoCop = Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
             Ganancias = Redondear(
-                ganadas.Where(f => f.PrecioCop.HasValue && f.Costo.HasValue).Sum(f => f.PrecioCop!.Value - f.Costo!.Value),
+                ganadas.Where(f => f.ValorCop.HasValue && f.Costo.HasValue).Sum(f => f.ValorCop!.Value - f.Costo!.Value),
                 DecimalesMonto),
             CotizacionesUsd = universo.Count(f => !f.EsPesos),
             TiempoPromedioCotizacionHoras = tiempos.Count == 0 ? null : Redondear(tiempos.Average(), DecimalesHoras),
-            DesviacionPromedioMargen = numDiferencias == 0 ? null : Redondear(sumaDiferencias / numDiferencias, DecimalesFraccion),
+            DesviacionPromedioMargen = numDiferencias == 0
+                ? null
+                : Redondear(universo.Sum(f => f.SumaDiferencias ?? 0m) / numDiferencias, DecimalesFraccion),
+            DesviacionPromedioMargenAbs = numDiferencias == 0
+                ? null
+                : Redondear(universo.Sum(f => f.SumaDiferenciasAbsolutas ?? 0m) / numDiferencias, DecimalesFraccion),
             AjustesMargen = universo.Sum(f => f.NumAjustes),
+            DeadlineVencidas = deadlineDisponible ? universo.Count(f => f.Ganada is null && f.Deadline < ahora) : null,
         };
     }
 
     /// <summary>
-    /// Serie por mes de negocio (<paramref name="fechaNegocio"/> convierte <c>createdAt</c> a la fecha de Bogotá) con todos los
-    /// meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos. Solo cuenta las filas vigentes.
+    /// Serie por mes de negocio (<paramref name="fechaNegocio"/> convierte la primera creación de la cadena a la fecha de Bogotá)
+    /// con todos los meses de <paramref name="desde"/> a <paramref name="hasta"/>, también los vacíos.
     /// </summary>
     public static IReadOnlyList<clsPuntoSerieMensual> SerieMensual(
         IEnumerable<clsCotizacionMetrica> filas, DateOnly desde, DateOnly hasta, Func<DateTimeOffset, DateOnly> fechaNegocio)
@@ -69,7 +82,6 @@ public static class clsCalculadoraMetricas
         }
 
         var porMes = filas
-            .Where(f => f.EsVigente)
             .GroupBy(f => Mes(fechaNegocio(f.CreatedAt)))
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
 
@@ -84,8 +96,8 @@ public static class clsCalculadoraMetricas
                 delMes.Count,
                 ganadas.Count,
                 delMes.Count(f => f.Ganada == false),
-                Redondear(delMes.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto),
-                Redondear(ganadas.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto)));
+                Redondear(delMes.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
+                Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto)));
         }
 
         return serie;
@@ -99,7 +111,7 @@ public static class clsCalculadoraMetricas
     public static clsConcentracionCiudades Concentracion(IEnumerable<clsCotizacionMetrica> filas, bool disponible)
     {
         ArgumentNullException.ThrowIfNull(filas);
-        var universo = filas.Where(f => f.EsVigente).ToList();
+        var universo = filas.ToList();
         if (!disponible)
         {
             return new clsConcentracionCiudades(false, [], [], universo.Count, universo.Count);
@@ -127,8 +139,8 @@ public static class clsCalculadoraMetricas
                     g.Key,
                     g.Count(),
                     ganadas.Count,
-                    Redondear(g.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto),
-                    Redondear(ganadas.Sum(f => f.PrecioCop ?? 0m), DecimalesMonto));
+                    Redondear(g.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
+                    Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto));
             })
             .OrderByDescending(c => c.Cantidad)
             .ThenBy(c => c.Ciudad, StringComparer.OrdinalIgnoreCase)];
