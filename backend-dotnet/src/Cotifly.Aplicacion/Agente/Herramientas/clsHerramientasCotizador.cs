@@ -145,6 +145,15 @@ public sealed class clsHerramientasCotizador(
         CancellationToken cancellationToken = default)
     {
         var resultado = await tarifas.BuscarAsync(new clsEntradaBuscarTarifa(lineaNegocio, origen, destino, tipoVehiculo, tipoCarga, pesoKg), cancellationToken);
+        if (resultado is { EsExitoso: true, Valor: { Encontrada: true } tarifa } && !Dominio.Precio.clsConversorMoneda.EsPesos(tarifa.Moneda))
+        {
+            // El costo siempre es en pesos (HU-012.2): la conversión a USD se hace sobre el precio con la TRM oficial, nunca sobre el costo.
+            return clsResultadoHerramienta.Fallo(
+                clsNombresHerramientas.BuscarTarifa,
+                clsCodigosError.TarifaConfigInvalida,
+                $"La tarifa llegó en {tarifa.Moneda.Trim().ToUpperInvariant()} y el costeo debe estar en COP: pide al comercial el costo en pesos.");
+        }
+
         return resultado.Coincidir(
             t => clsResultadoHerramienta.Exito(clsNombresHerramientas.BuscarTarifa, t),
             e => clsResultadoHerramienta.Fallo(clsNombresHerramientas.BuscarTarifa, e));
@@ -165,16 +174,18 @@ public sealed class clsHerramientasCotizador(
     }
 
     [KernelFunction(clsNombresHerramientas.CalcularPrecio)]
-    [Description("Cálculo determinista del precio. margen: precio = costo / (1 - margen); markup: precio = costo * (1 + margen). El margen y el método los pone el servidor desde obtener_margen.")]
-    public Task<clsResultadoHerramienta> CalcularPrecioAsync(
+    [Description("Cálculo determinista del precio. margen: precio = costo / (1 - margen); markup: precio = costo * (1 + margen). El margen y el método los pone el servidor desde obtener_margen. En USD el servidor convierte con la TRM oficial del día (nunca la pongas tú); si responde TRM_NO_DISPONIBLE, no hay precio en dólares.")]
+    public async Task<clsResultadoHerramienta> CalcularPrecioAsync(
         [Description("Costo del flete en pesos (el que dio buscar_tarifa o el comercial).")] decimal costo,
         [Description("Margen como fracción (0.15 = 15 %).")] decimal margen,
-        [Description("margen (por defecto) o markup.")] string metodo = "margen")
+        [Description("margen (por defecto) o markup.")] string metodo = "margen",
+        [Description("Moneda de la cotización: la pone el servidor (selector del formulario o lo que pidió el comercial); no la elijas tú.")] string? moneda = null,
+        CancellationToken cancellationToken = default)
     {
-        var resultado = precio.Calcular(costo, margen, metodo);
-        return Task.FromResult(resultado.Coincidir(
+        var resultado = await precio.CalcularAsync(costo, margen, metodo, moneda, cancellationToken);
+        return resultado.Coincidir(
             p => clsResultadoHerramienta.Exito(clsNombresHerramientas.CalcularPrecio, p),
-            e => clsResultadoHerramienta.Fallo(clsNombresHerramientas.CalcularPrecio, e)));
+            e => clsResultadoHerramienta.Fallo(clsNombresHerramientas.CalcularPrecio, e));
     }
 
     [KernelFunction(clsNombresHerramientas.RegistrarAjusteMargen)]
@@ -192,6 +203,14 @@ public sealed class clsHerramientasCotizador(
             return clsResultadoHerramienta.Fallo(herramienta, clsCodigosError.AjusteMargenInvalido, "Falta el margen propuesto: obtén primero el margen con obtener_margen.");
         }
 
+        // En USD la TRM se consulta antes de registrar (HU-012.2): si la fuente falla, el ajuste no queda a medias.
+        var moneda = clsArgumentosHerramienta.Texto(args, clsArgumentosHerramienta.Moneda);
+        var trm = await precio.TrmDelDiaAsync(moneda, cancellationToken);
+        if (trm.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, trm.Error);
+        }
+
         var entrada = new clsEntradaAjusteMargen(
             referencia,
             margenAplicado,
@@ -204,9 +223,25 @@ public sealed class clsHerramientasCotizador(
             null,
             clsArgumentosHerramienta.Texto(args, clsArgumentosHerramienta.ThreadId));
         var resultado = await ajusteMargen.RegistrarAsync(entrada, cancellationToken);
-        return resultado.Coincidir(
-            a => clsResultadoHerramienta.Exito(herramienta, SalidaAjuste(a), a, auditadoPorCasoDeUso: true),
-            e => clsResultadoHerramienta.Fallo(herramienta, e, auditadoPorCasoDeUso: true));
+        if (resultado.EsFallo)
+        {
+            return clsResultadoHerramienta.Fallo(herramienta, resultado.Error, auditadoPorCasoDeUso: true);
+        }
+
+        var ajuste = resultado.Valor;
+        if (ajuste.Precio is { } enPesos)
+        {
+            // Nunca se cae en silencio a pesos (auditoría de HU-012): si no se puede convertir, no hay precio en USD.
+            var convertido = precio.EnMoneda(enPesos, moneda, trm.Valor);
+            if (convertido.EsFallo)
+            {
+                return clsResultadoHerramienta.Fallo(herramienta, new clsErrorDominio(clsCodigosError.TrmNoDisponible, convertido.Error.Mensaje, convertido.Error.Detalle), auditadoPorCasoDeUso: true);
+            }
+
+            ajuste = ajuste with { Precio = convertido.Valor };
+        }
+
+        return clsResultadoHerramienta.Exito(herramienta, SalidaAjuste(ajuste), ajuste, auditadoPorCasoDeUso: true);
     }
 
     [KernelFunction(clsNombresHerramientas.GenerarPdf)]
@@ -305,7 +340,7 @@ public sealed class clsHerramientasCotizador(
             estado.ClienteConfirmado ? estado.NitCliente : null,
             estado.ClienteConfirmado && estado.OrigenCliente is { } origenCliente ? clsCodigoEnum.ACodigo(origenCliente) : null,
             estado.Moneda,
-            0m,
+            Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda) ? 0m : estado.TrmAplicada ?? 0m,
             estado.CosteoId);
     }
 

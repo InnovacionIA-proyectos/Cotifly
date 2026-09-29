@@ -12,6 +12,8 @@ using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
+using Cotifly.Aplicacion.Pdf.Services;
+using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Sesiones;
@@ -69,6 +71,7 @@ public sealed class clsAgenteRunner(
     IClsMargenPoliticaRepository politicas,
     clsContextoTurnoAgente contexto,
     clsHerramientasCotizador herramientas,
+    IClsPrecioService precio,
     IOptions<clsOpcionesAgente> opcionesAgente,
     IOptions<clsOpcionesSesiones> opcionesSesiones,
     IOptions<clsOpcionesCorreo> opcionesCorreo,
@@ -119,8 +122,28 @@ public sealed class clsAgenteRunner(
         }
 
         var marcas = new clsMarcasTurno(reloj.AhoraUtc, historial.Count > 0 ? historial[^1].CreatedAt : null);
-        var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje);
+        // La moneda del selector del formulario (HU-012.2) entra al estado antes del turno: si cambió, el precio anterior ya no vale. Sin
+        // selector, ReconocerMensaje toma la moneda que nombre el comercial en su mensaje (y la conserva para los turnos siguientes).
+        var monedaDelFormulario = !string.IsNullOrWhiteSpace(solicitud.Moneda);
+        if (monedaDelFormulario)
+        {
+            estadoInicial = estadoService.ElegirMoneda(estadoInicial, solicitud.Moneda!);
+        }
+
+        var reconocido = estadoService.ReconocerMensaje(estadoInicial, solicitud.Mensaje, monedaDelFormulario);
         var estado = reconocido.Estado;
+        var confirmado = reconocido.Confirmado;
+
+        // TRM vencida al confirmar (HU-012.2): no se emite el PDF con una TRM que ya no rige; se recalcula y se vuelve a previsualizar.
+        // El recálculo es una salida de calcular_precio del turno: llega a RespuestaChat (precio o errores) y respalda al validador.
+        string? avisoTrm = null;
+        var salidasDelServidor = new List<clsResultadoHerramienta>();
+        if (confirmado && estado.TrmVencidaEn(calendario.Hoy))
+        {
+            (estado, avisoTrm, var recalculo) = await RecalcularConTrmVigenteAsync(estado, cancellationToken);
+            salidasDelServidor.Add(recalculo);
+            confirmado = false;
+        }
 
         // El mensaje del comercial se guarda primero: si el proveedor falla, la conversación no pierde la pregunta (como el Python).
         AgregarEvento(solicitud, clsEventoConversacion.RolUsuario, solicitud.Mensaje, null, usuario.Id, marcas.Siguiente());
@@ -134,18 +157,22 @@ public sealed class clsAgenteRunner(
             .Select(e => e.Contenido!)
             .Append(solicitud.Mensaje)
             .ToList();
-        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, reconocido.Confirmado, mensajesDelComercial);
+        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, confirmado, mensajesDelComercial, solicitud.Moneda, calendario.Hoy);
         var mensajes = new List<ChatMessage>
         {
             new(ChatRole.System, clsPromptSistema.Construir(usuario.NombreCompleto ?? usuario.NombreUsuario, usuario.Email, calendario.Hoy, estado)),
         };
+        if (avisoTrm is not null)
+        {
+            mensajes.Add(new ChatMessage(ChatRole.System, avisoTrm));
+        }
         mensajes.AddRange(Historial(historial, solicitud.Mensaje));
 
         var kernel = ConstruirKernel(out var funciones);
         var declaraciones = funciones.Values.Select(f => (AITool)AIFunctionFactory.CreateDeclaration(f.Name, f.Description, f.JsonSchema)).ToList();
         try
         {
-            return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, cancellationToken);
+            return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, salidasDelServidor, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -163,6 +190,52 @@ public sealed class clsAgenteRunner(
         }
     }
 
+    /// <summary>
+    /// Recalcula el precio en dólares con la TRM vigente hoy (mismo costo, margen y método del estado) y deja la previsualización pendiente
+    /// de una nueva confirmación. Si la TRM no está disponible, el precio se descarta (no hay precio en USD). Devuelve el aviso para el modelo.
+    /// </summary>
+    private async Task<(clsEstadoConversacion Estado, string Aviso, clsResultadoHerramienta Salida)> RecalcularConTrmVigenteAsync(
+        clsEstadoConversacion estado, CancellationToken cancellationToken)
+    {
+        var herramienta = clsNombresHerramientas.CalcularPrecio;
+        var sinPrecio = estado with
+        {
+            PrecioFinal = null,
+            TrmAplicada = null,
+            PrecioCop = null,
+            TrmVigenciaDesde = null,
+            TrmVigenciaHasta = null,
+            ConfirmacionPendiente = false,
+        };
+        if (estado.Costo is not { } costo || estado.MargenAplicado is not { } margen)
+        {
+            return (
+                sinPrecio,
+                "La TRM con que se calculó el precio en dólares ya no está vigente: no generes el PDF. Calcula el precio de nuevo con calcular_precio y pide una nueva confirmación.",
+                clsResultadoHerramienta.Fallo(herramienta, clsCodigosError.PrecioInvalido, "La TRM ya no está vigente y falta el costo o el margen para recalcular el precio."));
+        }
+
+        var recalculado = await precio.CalcularAsync(costo, margen, estado.MetodoCalculo ?? "margen", estado.Moneda, cancellationToken);
+        if (recalculado.EsFallo)
+        {
+            _logger.LogInformation("TRM vencida al confirmar y sin TRM vigente para recalcular ({Codigo}).", recalculado.Error.Codigo);
+            return (
+                sinPrecio,
+                $"La TRM con que se calculó el precio en dólares ya no está vigente y la TRM de hoy no está disponible ({recalculado.Error.Codigo}): no generes el PDF. Explica que puede reintentar en unos minutos o cotizar en pesos.",
+                clsResultadoHerramienta.Fallo(herramienta, recalculado.Error));
+        }
+
+        var salida = clsResultadoHerramienta.Exito(herramienta, recalculado.Valor);
+        var nuevo = estadoService.Aplicar(estado, salida, new Dictionary<string, object?>());
+        _logger.LogInformation("TRM vencida al confirmar: el precio en USD se recalculó con la TRM vigente.");
+        return (
+            nuevo,
+            "La TRM con que se calculó el precio en dólares ya no está vigente: el servidor recalculó el precio con la TRM de hoy "
+            + $"({clsFormatoMoneda.FormatearTrm(recalculado.Valor.TrmAplicada)}) y el nuevo precio es {clsFormatoMoneda.Formatear(recalculado.Valor.Precio, recalculado.Valor.Moneda)}. "
+            + "No generes el PDF en este turno: muestra la nueva previsualización y pide que confirme de nuevo.",
+            salida);
+    }
+
     private async Task<clsResultado<clsResultadoTurno>> CorrerLoopAsync(
         clsSolicitudTurno solicitud,
         Kernel kernel,
@@ -170,11 +243,12 @@ public sealed class clsAgenteRunner(
         IList<AITool> declaraciones,
         List<ChatMessage> mensajes,
         clsMarcasTurno marcas,
+        IReadOnlyList<clsResultadoHerramienta> salidasDelServidor,
         CancellationToken cancellationToken)
     {
         var maximo = opcionesAgente.Value.MaxIteraciones;
         var invocadas = new List<string>();
-        var salidas = new List<clsResultadoHerramienta>();
+        var salidas = new List<clsResultadoHerramienta>(salidasDelServidor);
         string? detenerPor = null;
         var iteraciones = 0;
 

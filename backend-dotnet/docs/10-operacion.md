@@ -148,6 +148,7 @@ Otras decisiones abiertas:
 | Fuente `Stilu` del PDF (sin licencia disponible) | Negocio | ADR-006 |
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
 | Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
+| Nueva versión (v2) de una cotización en USD: hoy se siembra con la TRM de la original (`trmAplicada` copiada) y, al recalcular, toma la TRM del día. ¿La v2 debe conservar la TRM original o usar la del día? | Gerencia Comercial | ADR-014 |
 
 ## 10.8 Activación por integración
 
@@ -182,5 +183,6 @@ Otras decisiones abiertas:
 | Google Chat no responde | JWT inválido (401 en `/chat/events`), cola llena o sin `GChat__SaJson` | Revisar `GChat__ProjectNumber`, `GChat__CapacidadCola` y el warning de publicación |
 | `/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete` o `/web/cubicacion` responden 400 `*_NO_DISPONIBLE` y el agente no resuelve clientes | `Nexo__UrlBase` vacía, Nexo caído o lento (más de 8 s en total o 3 s por intento), URL base mal armada (404 de Nexo) o el comercial sin `idUsuarioExterno` | Revisar el warning de Nexo y su motivo; con "HTTP 404" revisar la URL base (el código agrega `/api/...`); con "circuito abierto" esperar a que Nexo se recupere; sin `idUsuarioExterno`, que el comercial vuelva a entrar desde ClientePro |
 | `POST /web/cubicacion` responde `CUBICACION_DEMASIADO_GRANDE` | Nexo/Cubicador rechazó los bultos (límite por solicitud o medidas inválidas) | Ver el `detalle` (mensaje de Nexo); dividir la carga o corregir las medidas (centímetros y kilogramos) |
+| El agente cotiza en pesos aunque el comercial pidió dólares | En la consola, el selector del formulario envió `moneda: "COP"` (manda sobre el mensaje); en Google Chat, el mensaje no nombró la moneda (dólares, USD, US$) | Elegir USD en el selector o pedirlo de forma explícita en el mensaje |
 | Las cotizaciones en USD fallan con `TRM_NO_DISPONIBLE` | Sin salida a `www.datos.gov.co`, la fuente caída o lenta (más de `Trm__TiempoEsperaSegundos`), o sin TRM vigente para la fecha | Revisar el warning "Fuente de TRM no disponible" y su motivo; probar la URL desde el nodo; el comercial puede reintentar (los fallos no quedan en caché) o cotizar en COP |
 | Error de permisos al escribir el PDF | `/data/pdfs` no es del UID 1654 | Volumen con nombre, o `chown 1654:1654` en el bind mount |
