@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Dominio.Precio;
 using Cotifly.Dominio.Sesiones;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -24,13 +25,14 @@ public sealed partial class clsChatWebController(
 {
     public const string MensajeSesionInvalida = "sesion_id inválido";
     public const string MensajeCotizacionOrigenInvalida = "cotizacion_origen_id inválido";
+    public const string MensajeMonedaInvalida = "moneda inválida";
     public const int LargoMaximoMensaje = 8000;
 
     /// <summary>
     /// 200 <c>RespuestaChat</c> (o <c>RespuestaChatError</c> con <c>error: true</c> ante un fallo del agente o del proveedor de IA, o
     /// si la respuesta final no pasó la validación ni con el reintento y el turno no produjo PDF, precio ni margen, HU-003.10; si
     /// los produjo, <c>RespuestaChat</c> con ellos y el texto de respaldo);
-    /// 400 <c>sesion_id</c> o cuerpo inválido; 401 sin sesión; 404 si la sesión es de otro comercial; 429 límite de la API.
+    /// 400 <c>sesion_id</c>, <c>moneda</c> o cuerpo inválido; 401 sin sesión; 404 si la sesión es de otro comercial; 429 límite de la API.
     /// </summary>
     [HttpPost("chat")]
     [EnableRateLimiting(clsConfiguracionAutenticacion.PoliticaLimiteChat)]
@@ -61,10 +63,22 @@ public sealed partial class clsChatWebController(
             origen = id;
         }
 
+        string? moneda = null;
+        if (cuerpo.Moneda is not null)
+        {
+            var normalizada = clsConversorMoneda.Normalizar(cuerpo.Moneda);
+            if (string.IsNullOrWhiteSpace(cuerpo.Moneda) || normalizada.EsFallo)
+            {
+                return BadRequest(new clsErrorWeb(MensajeMonedaInvalida));
+            }
+
+            moneda = normalizada.Valor;
+        }
+
         var clave = clsSesion.IdWeb(cuerpo.SesionId);
         try
         {
-            var resultado = await runner.EjecutarTurnoAsync(new clsSolicitudTurno(cuerpo.Mensaje, clave, clave, UsuarioId, origen), cancellationToken);
+            var resultado = await runner.EjecutarTurnoAsync(new clsSolicitudTurno(cuerpo.Mensaje, clave, clave, UsuarioId, origen, moneda), cancellationToken);
             if (resultado.EsFallo)
             {
                 return resultado.Error.Codigo == clsCodigosAplicacion.NoEncontrado

@@ -23,6 +23,9 @@ public static class clsArgumentosHerramienta
     public const string Costo = "costo";
     public const string Margen = "margen";
     public const string Metodo = "metodo";
+
+    /// <summary>Moneda de la cotización (<c>COP</c> | <c>USD</c>, HU-012.2): la pone el filtro desde el formulario, el mensaje o el estado.</summary>
+    public const string Moneda = "moneda";
     public const string Cliente = "cliente";
     public const string Cotizacion = "cotizacion";
     public const string Origen = "origen";
