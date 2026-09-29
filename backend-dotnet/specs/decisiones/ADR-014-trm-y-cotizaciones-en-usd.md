@@ -1,6 +1,6 @@
-# ADR-013 — TRM oficial y cotizaciones en dólares
+# ADR-014 — TRM oficial y cotizaciones en dólares
 
-- **Estado:** Aceptada (la fuente queda pendiente de confirmar con el equipo; ver Pendientes)
+- **Estado:** Propuesta (la fuente oficial queda pendiente de confirmar con el equipo, checkbox 1 de #50; ver Pendientes)
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #50 (HU-012.1), #51 (HU-012.2), #52 (HU-012.3). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-006 (PDF) y HU-010 (métricas en COP con `trmAplicada`).
 
@@ -41,6 +41,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 - Puerto `IClsProveedorTrm` en Aplicación (`Precio/Interfaces`): `ObtenerAsync(fecha)` devuelve `clsTrm` o `TRM_NO_DISPONIBLE`. Nunca lanza por la fuente.
 - Adaptador `clsProveedorTrmSuperfinanciera` en Infraestructura, con cliente HTTP con nombre (`Trm`), la tubería estándar de resiliencia y 2 reintentos ante fallos transitorios.
+- El valor se redondea a 4 decimales (half-to-even), la escala de `Cotizaciones.trmAplicada`: se guarda exactamente la TRM con que se convierte. Un valor cero o negativo (también tras redondear) es `TRM_NO_DISPONIBLE`.
 - Opciones `Trm__Url` (por defecto la del conjunto) y `Trm__TiempoEsperaSegundos` (2 a 60, por defecto 10), validadas al arrancar.
 - Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Los fallos no se guardan, para que el reintento consulte de nuevo.
 - Código de error nuevo `TRM_NO_DISPONIBLE` en el contrato (`ErrorNegocio`).

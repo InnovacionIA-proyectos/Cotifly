@@ -1,5 +1,5 @@
 # language: es
-# HU-012 (#50, #51, #52) — Cotización en dólares con la TRM oficial del día (ADR-013).
+# HU-012 (#50, #51, #52) — Cotización en dólares con la TRM oficial del día (ADR-014).
 # La fuente de la TRM son los datos abiertos de la Superintendencia Financiera (conjunto 32sa-8pi3); aquí la atiende un
 # servidor falso sin red (tests/Comun/clsTrmFalso.cs) con la TRM real de la semana del 2026-09-21: la del viernes 25
 # (3306,86) vale del sábado 26 al lunes 28. Las fechas son de America/Bogota. Registro real de dependencias

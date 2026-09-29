@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Precio.DTOs;
 
 /// <summary>
-/// Tasa Representativa del Mercado (COP por 1 USD) vigente para una fecha (HU-012.1, ADR-013). La publica la Superintendencia
+/// Tasa Representativa del Mercado (COP por 1 USD) vigente para una fecha (HU-012.1, ADR-014). La publica la Superintendencia
 /// Financiera por rangos de vigencia: la de un sábado, domingo o festivo es la del rango que cubre ese día.
 /// </summary>
 /// <param name="Valor">Pesos colombianos por un dólar (&gt; 0), con los decimales que publica la fuente (hasta 4 en la columna <c>trmAplicada</c>).</param>

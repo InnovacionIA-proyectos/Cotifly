@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Precio;
 
 /// <summary>
-/// <see cref="clsProveedorTrmSuperfinanciera"/> (HU-012.1, ADR-013) contra los datos abiertos falsos (<see cref="clsTrmFalso"/>): nunca sale
+/// <see cref="clsProveedorTrmSuperfinanciera"/> (HU-012.1, ADR-014) contra los datos abiertos falsos (<see cref="clsTrmFalso"/>): nunca sale
 /// a la red. Aquí el cliente no lleva la tubería de resiliencia (se prueba en <c>clsRegistroTrmTests</c>).
 /// </summary>
 public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
@@ -58,11 +58,25 @@ public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
         (await Proveedor().ObtenerAsync(new DateOnly(2026, 9, 27), Ct)).Valor.Valor.Should().Be(3306.8612m);
     }
 
+    // La TRM se redondea a 4 decimales (escala de Cotizaciones.trmAplicada, DECIMAL(18,4)): se guarda la misma que convierte.
+    [Theory]
+    [InlineData("3306.861249", "3306.8612")]
+    [InlineData("3306.86125", "3306.8612")]
+    [InlineData("3306.86135", "3306.8614")]
+    public async Task LaTrmSeRedondeaACuatroDecimales(string valor, string esperado)
+    {
+        _fuente.Responder(HttpStatusCode.OK, $$"""[{"valor":"{{valor}}","vigenciadesde":"2026-09-26T00:00:00.000","vigenciahasta":"2026-09-28T00:00:00.000"}]""");
+
+        (await Proveedor().ObtenerAsync(new DateOnly(2026, 9, 27), Ct)).Valor.Valor
+            .Should().Be(decimal.Parse(esperado, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.InternalServerError, "[]", "HTTP 500")]
     [InlineData(HttpStatusCode.OK, "[]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "{\"error\":true}", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"0\",\"vigenciadesde\":\"2026-09-26T00:00:00.000\",\"vigenciahasta\":\"2026-09-28T00:00:00.000\"}]", "sin TRM vigente")]
+    [InlineData(HttpStatusCode.OK, "[{\"valor\":\"0.00001\",\"vigenciadesde\":\"2026-09-26T00:00:00.000\",\"vigenciahasta\":\"2026-09-28T00:00:00.000\"}]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"-1\",\"vigenciadesde\":\"2026-09-26T00:00:00.000\",\"vigenciahasta\":\"2026-09-28T00:00:00.000\"}]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"abc\",\"vigenciadesde\":\"2026-09-26T00:00:00.000\",\"vigenciahasta\":\"2026-09-28T00:00:00.000\"}]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"3306.86\",\"vigenciadesde\":\"2026-09-01T00:00:00.000\",\"vigenciahasta\":\"2026-09-02T00:00:00.000\"}]", "sin TRM vigente")]
