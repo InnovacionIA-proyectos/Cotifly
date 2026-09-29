@@ -20,6 +20,12 @@ public static class clsCodigosError
     public const string PrecioInvalido = "PRECIO_INVALIDO";
 
     /// <summary>
+    /// La fuente oficial de la TRM (Superintendencia Financiera, datos abiertos, ADR-014) no respondió, respondió algo inválido
+    /// o no tiene TRM vigente para la fecha: no se cotiza en USD (HU-012.1/HU-012.2). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TrmNoDisponible = "TRM_NO_DISPONIBLE";
+
+    /// <summary>
     /// El margen negociado está fuera de rango para su método (negativo, o ≥ 1 con <c>margen</c>), el método no es
     /// <c>margen</c>/<c>markup</c> o falta el motivo. Código nuevo del backend .NET (agregado al contrato en #10).
     /// </summary>
@@ -175,11 +181,17 @@ public static class clsCodigosError
     public const string CotizacionNoEntregada = "COTIZACION_NO_ENTREGADA";
 
     /// <summary>
-    /// <c>POST /web/cotizaciones/{folio}/seguimiento</c> sobre una cotización que pasó por Nexo (tiene <c>costeoId</c>): el resultado
+    /// <c>POST /web/cotizaciones/{folio}/seguimiento</c> sobre una cotización del flujo de costeo en Nexo (<c>estadoCosteo</c> con valor, salvo descartada o costeo vencido): el resultado
     /// se marca con <c>POST .../resultado</c>, que escribe primero en Nexo (409, HU-005.14). Código nuevo del backend .NET.
     /// </summary>
     public const string UsarResultadoNexo = "USAR_RESULTADO_NEXO";
 
     /// <summary>Nexo no puede pasar la solicitud a <c>Entregada</c> (está descartada): 409, sin cambio local. Mismo código que usa Nexo.</summary>
     public const string SolicitudNoTransicionable = "SOLICITUD_NO_TRANSICIONABLE";
+
+    /// <summary>
+    /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
+    /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
+    /// </summary>
+    public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
 }

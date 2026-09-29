@@ -233,7 +233,7 @@ Creadas por Alembic vía SQL directo; no tienen modelo ORM propio.
 se recreó: sin consumidor de código, y dependía de `origen`/`destino`/`fuente_tarifa`, ya
 eliminadas. Si Gerencia la necesita, se arma de nuevo contra el esquema vigente.
 
-Uso típico (ver `DEPLOY.md` §7):
+Uso típico (ver `DEPLOY.md` §A.7, stack Python):
 ```sql
 SELECT * FROM v_ajustes_margen_por_comercial ORDER BY num_ajustes DESC;
 ```
@@ -288,4 +288,4 @@ DB_HOST=bot-db BACKUP_DIR=/backups sh scripts/backup_db.sh
 DB_HOST=bot-db sh scripts/restore_db.sh /backups/botcotizador-YYYYmmdd-HHMMSS.dump
 ```
 Formato `pg_dump -Fc` (custom, comprimido, restaurable selectivamente). En producción se
-recomienda programarlo diario (ver `DEPLOY.md` §8).
+recomienda programarlo diario (ver `DEPLOY.md` §A.8, stack Python).
