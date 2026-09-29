@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Cotifly.Aplicacion.Pdf.Interfaces;
+using Cotifly.Infraestructura.Precio.Services;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using Microsoft.AspNetCore.TestHost;
@@ -52,6 +53,56 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         precio.GetProperty("margen").GetDecimal().Should().Be(json.GetProperty("margen").GetProperty("margen").GetDecimal(), "el margen sale de obtener_margen, no del LLM");
         precio.GetProperty("metodo").GetString().Should().Be("margen");
         json.GetProperty("pdf").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    // HU-012.2: con el selector en USD el precio llega convertido con la TRM oficial (datos abiertos falsos, sin red). La moneda se acepta
+    // sin distinguir mayúsculas (" usd ").
+    [Fact]
+    public async Task ConMonedaUsdElPrecioLlegaEnDolaresConLaTrm()
+    {
+        var modelo = new clsChatClientGuionizado()
+            .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
+            .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
+            .Cerrar("Previsualización lista. ¿Confirmas?");
+        using var trm = new clsTrmFalso().Responder(
+            HttpStatusCode.OK, "[" + clsTrmFalso.Fila(3306.86m, new DateOnly(2000, 1, 1), new DateOnly(2100, 12, 31)) + "]");
+        using var api = new clsApiWebPruebas(
+            entorno.BaseDatos,
+            extra: new Dictionary<string, string?> { ["Trm:Url"] = clsTrmFalso.Url },
+            configurar: b => b.ConfigureTestServices(s =>
+            {
+                s.AddSingleton<IChatClient>(modelo);
+                s.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => trm);
+            }));
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarAsync(
+            _post, RutaChat, ana.Access, clsApiWebPruebas.Json(new { mensaje = "Cotiza Nacional, costo 2.850.000", sesion_id = SesionId(), moneda = " usd " }));
+
+        var precio = (await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK)).GetProperty("precio");
+        precio.GetProperty("moneda").GetString().Should().Be("USD");
+        precio.GetProperty("trm_aplicada").GetDecimal().Should().Be(3306.86m);
+        // Política sembrada de Nacional: 15 % → 2.850.000 / 0,85 = 3.352.941 pesos; / 3.306,86 = US$1.013,93.
+        precio.GetProperty("margen").GetDecimal().Should().Be(0.15m);
+        precio.GetProperty("precio_cop").GetDecimal().Should().Be(3_352_941m);
+        precio.GetProperty("precio").GetDecimal().Should().Be(1013.93m);
+        precio.GetProperty("costo").GetDecimal().Should().Be(2_850_000m);
+        trm.Peticiones.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("EUR")]
+    [InlineData("")]
+    [InlineData("dólares")]
+    public async Task UnaMonedaInvalidaEs400(string moneda)
+    {
+        using var api = Api(new clsChatClientGuionizado());
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var respuesta = await api.EnviarAsync(
+            _post, RutaChat, ana.Access, clsApiWebPruebas.Json(new { mensaje = "hola", sesion_id = SesionId(), moneda }));
+
+        (await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.BadRequest)).GetProperty("error").GetString().Should().Be("moneda inválida");
     }
 
     [Theory]

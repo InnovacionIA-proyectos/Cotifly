@@ -160,4 +160,137 @@ public sealed class clsEstadoConversacionServiceTests
         reconocido.Estado.ClienteConfirmado.Should().BeTrue();
         reconocido.Confirmado.Should().BeFalse("elegir el cliente no confirma el PDF");
     }
+
+    // HU-012.2: moneda y TRM en el estado.
+    [Fact]
+    public void UnPrecioEnDolaresGuardaLaMonedaYLaTrm()
+    {
+        var precio = new clsSalidaPrecio(996.35m, 2_850_000m, 0.135m, "margen", 444_798m, "USD", 3306.86m, 3_294_798m);
+
+        var estado = _servicio.Aplicar(clsEstadoConversacion.Vacio, clsResultadoHerramienta.Exito(clsNombresHerramientas.CalcularPrecio, precio), _sinArgumentos);
+
+        estado.PrecioFinal.Should().Be(996.35m);
+        estado.Costo.Should().Be(2_850_000m);
+        estado.Moneda.Should().Be("USD");
+        estado.TrmAplicada.Should().Be(3306.86m);
+    }
+
+    [Fact]
+    public void ElegirOtraMonedaDescartaElPrecioYLaTrm()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true, Costo = 2_850_000m };
+
+        var estado = _servicio.ElegirMoneda(conPrecio, "cop");
+
+        estado.Moneda.Should().Be("COP");
+        estado.PrecioFinal.Should().BeNull();
+        estado.TrmAplicada.Should().BeNull();
+        estado.ConfirmacionPendiente.Should().BeFalse();
+        estado.Costo.Should().Be(2_850_000m, "el costo sigue en pesos: solo se recalcula el precio");
+    }
+
+    [Fact]
+    public void ElegirLaMismaMonedaNoCambiaNada()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true };
+
+        _servicio.ElegirMoneda(conPrecio, "USD").Should().Be(conPrecio);
+        _servicio.ElegirMoneda(clsEstadoConversacion.Vacio with { PrecioFinal = 1m }, "COP").PrecioFinal.Should().Be(1m, "sin moneda el estado ya estaba en COP");
+    }
+
+    [Fact]
+    public void LaTarifaNoCambiaLaMonedaDeLaCotizacion()
+    {
+        var enDolares = clsEstadoConversacion.Vacio with { Moneda = "USD" };
+        var tarifa = new Tarifas.DTOs.clsSalidaTarifa(true, 2_000_000m, "COP", "nexo", "C-1");
+
+        var estado = _servicio.Aplicar(enDolares, clsResultadoHerramienta.Exito(clsNombresHerramientas.BuscarTarifa, tarifa), _sinArgumentos);
+
+        estado.Moneda.Should().Be("USD", "el costo es en pesos; la moneda la elige el comercial");
+        estado.Costo.Should().Be(2_000_000m);
+    }
+
+    // HU-012.2 (auditoría, c): la moneda nombrada en cualquier mensaje queda en el estado.
+    [Theory]
+    [InlineData("cotiza Nacional en dólares", "USD")]
+    [InlineData("la quiero en USD", "USD")]
+    [InlineData("precio en US$ por favor", "USD")]
+    [InlineData("mejor en pesos", "COP")]
+    [InlineData("en COP", "COP")]
+    [InlineData("el costo es 2.850.000 pesos, la cotización en dólares", "USD")]
+    public void ReconoceLaMonedaNombradaEnElMensaje(string mensaje, string moneda) =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio, mensaje).Estado.Moneda.Should().Be(moneda);
+
+    [Theory]
+    [InlineData("el costo es 2.850.000 pesos")]
+    [InlineData("Confirmo")]
+    public void SinMonedaNombradaNoCambiaLaDelEstado(string mensaje) =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio with { Moneda = "USD" }, mensaje).Estado.Moneda.Should().Be("USD");
+
+    [Fact]
+    public void ConElSelectorDelFormularioElTextoNoCambiaLaMoneda() =>
+        _servicio.ReconocerMensaje(clsEstadoConversacion.Vacio with { Moneda = "COP" }, "en dólares", monedaDelFormulario: true).Estado.Moneda.Should().Be("COP");
+
+    [Fact]
+    public void NombrarOtraMonedaDescartaElPrecioYNoConfirma()
+    {
+        var conPrecio = clsEstadoConversacion.Vacio with { Moneda = "COP", PrecioFinal = 3_294_798m, ConfirmacionPendiente = true };
+
+        var reconocido = _servicio.ReconocerMensaje(conPrecio, "sí, pero en dólares");
+
+        reconocido.Estado.Moneda.Should().Be("USD");
+        reconocido.Estado.PrecioFinal.Should().BeNull();
+        reconocido.Confirmado.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("2026-09-24", false)]
+    [InlineData("2026-09-26", false)]
+    [InlineData("2026-09-27", true)]
+    [InlineData("2026-09-23", true)]
+    public void LaTrmVenceFueraDeSuRangoDeVigencia(string hoy, bool vencida)
+    {
+        var estado = clsEstadoConversacion.Vacio with
+        {
+            Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, TrmVigenciaDesde = new DateOnly(2026, 9, 24), TrmVigenciaHasta = new DateOnly(2026, 9, 26),
+        };
+
+        estado.TrmVencidaEn(DateOnly.Parse(hoy, System.Globalization.CultureInfo.InvariantCulture)).Should().Be(vencida);
+        (estado with { Moneda = "COP" }).TrmVencidaEn(new DateOnly(2030, 1, 1)).Should().BeFalse("en pesos no hay TRM");
+        (estado with { TrmVigenciaHasta = null }).TrmVencidaEn(new DateOnly(2026, 9, 24)).Should().BeTrue("sin rango conocido se recalcula");
+    }
+
+    // Validación de HU-012 (4, 5): solo una elección explícita cambia la moneda.
+    [Theory]
+    [InlineData("no en dólares", null)]
+    [InlineData("no la quiero en dólares", null)]
+    [InlineData("mejor en pesos, no en dólares", "COP")]
+    [InlineData("no la quiero en pesos, mejor en dólares", "USD")]
+    [InlineData("en dólares... mejor en pesos", "COP")]
+    [InlineData("¿cuál es la TRM del dólar hoy?", null)]
+    [InlineData("¿se puede cotizar en dólares?", null)]
+    [InlineData("el costo es 2.850.000 COP", null)]
+    [InlineData("costo 2.850.000 COP, en USD por favor", "USD")]
+    [InlineData("el costo en pesos es 2.850.000", null)]
+    [InlineData("la tarifa es de US$1.200", null)]
+    [InlineData("una operación dolarizada, costo 2.850.000", null)]
+    [InlineData("usd", "USD")]
+    [InlineData("Dólares", "USD")]
+    [InlineData("en dólares", "USD")]
+    [InlineData("pásalo a dólares", "USD")]
+    [InlineData("cotízalo en pesos colombianos", "COP")]
+    [InlineData("en USD 1.200 el costo", null)]
+    public void SoloUnaEleccionExplicitaCambiaLaMoneda(string mensaje, string? esperada) =>
+        clsEstadoConversacionService.MonedaNombrada(mensaje).Should().Be(esperada);
+
+    [Fact]
+    public void CopJuntoAUnMontoNoDevuelveAPesosUnaCotizacionEnDolares()
+    {
+        var enDolares = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true };
+
+        var reconocido = _servicio.ReconocerMensaje(enDolares, "el costo real es 2.850.000 COP");
+
+        reconocido.Estado.Moneda.Should().Be("USD");
+        reconocido.Estado.PrecioFinal.Should().Be(996.35m);
+    }
 }

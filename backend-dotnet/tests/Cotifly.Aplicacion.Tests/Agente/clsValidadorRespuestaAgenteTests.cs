@@ -571,4 +571,36 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
                 new clsRespuestaAgenteEstructurada { Tipo = TipoRespuestaAgente.ConfirmacionRequerida, Texto = "¿Genero el PDF?", RequiereConfirmacion = true, AccionesSugeridas = [AccionSugeridaAgente.ConfirmarPdf] },
                 clsReglasRespuestaAgente.OpcionesJson)
             .Should().Be("{\"tipo\":\"confirmacion_requerida\",\"texto\":\"¿Genero el PDF?\",\"requiere_confirmacion\":true,\"acciones_sugeridas\":[\"confirmar_pdf\"]}");
+
+    // ---------- Monedas (HU-012.2, auditoría) ----------
+
+    /// <summary>Estado en USD de un turno anterior (sin salidas en este turno): precio US$996,35, equivalente $3.294.798, TRM $3.306,86.</summary>
+    private static clsContextoValidacionRespuesta EnDolares() =>
+        new(
+            clsEstadoConversacion.Vacio with
+            {
+                Costo = 2_850_000m, MargenAplicado = 0.135m, PrecioFinal = 996.35m, Moneda = "USD", TrmAplicada = 3306.86m,
+                PrecioCop = 3_294_798m, ConfirmacionPendiente = true,
+            },
+            [],
+            ["cotiza en dólares"],
+            _declaradas);
+
+    [Theory]
+    [InlineData("El precio es US$996,35 (equivalente a $3.294.798 con la TRM de $3.306,86).")]
+    [InlineData("La utilidad es de $444.798 sobre un costo de $2.850.000.")]
+    public void EnDolaresRespaldanElEquivalenteYLaUtilidadEnPesos(string texto) =>
+        clsReglasRespuestaAgente.Validar(Json(texto), EnDolares()).Fallos.Should().BeEmpty();
+
+    [Fact]
+    public void EnDolaresLaUtilidadEnPesosSaleDelEquivalenteEnPesosNoDelPrecioEnUsd()
+    {
+        // Sin PrecioCop no hay utilidad en pesos que respaldar: PrecioFinal (USD) − Costo (COP) mezcla monedas y no cuenta.
+        var sinEquivalente = EnDolares() with { Estado = EnDolares().Estado with { PrecioCop = null } };
+
+        Codigos(clsReglasRespuestaAgente.Validar(Json("La utilidad es de $444.798."), sinEquivalente))
+            .Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
+        Codigos(clsReglasRespuestaAgente.Validar(Json("El equivalente es $3.294.798."), sinEquivalente))
+            .Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
+    }
 }

@@ -161,7 +161,7 @@ paths:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
         '400':
-          description: '`sesion_id` o `cotizacion_origen_id` inválido, o cuerpo inválido'
+          description: '`sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido'
           content:
             application/json:
               schema:
@@ -1062,10 +1062,27 @@ components:
             Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
             parte de su cliente, línea y números, y el PDF sale como `{folio base}-vN`. Si no es del
             comercial responde 404 (igual que si no existe); si no es un UUID, 400.
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: |
+            Opcional (HU-012.2, ADR-014). Moneda de la cotización que eligió el comercial en el selector del
+            formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
+            si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
+            con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
+            del día; si la fuente de la TRM falla, el agente responde que no puede cotizar en dólares
+            (`TRM_NO_DISPONIBLE` en la herramienta) y el comercial puede reintentar o cotizar en COP.
+            Se acepta sin distinguir mayúsculas ni espacios al borde (`usd`, ` Usd ` → `USD`). Otro valor, o una cadena
+            vacía, responde 400 (`moneda inválida`).
 
     SalidaPrecio:
       type: object
       required: [precio, costo, margen, metodo, utilidad]
+      description: |
+        `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
+        enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-014).
+        `moneda`, `trm_aplicada` y `precio_cop` son opcionales para compatibilidad: si faltan, la moneda es COP.
       properties:
         precio:
           type: number
@@ -1078,6 +1095,29 @@ components:
           enum: [margen, markup]
         utilidad:
           type: number
+        moneda:
+          type: string
+          enum: [COP, USD]
+          description: Moneda de `precio` (COP por defecto).
+        trm_aplicada:
+          type: number
+          description: TRM oficial del día (COP por USD) con que se convirtió el precio; 0 cuando la moneda es COP.
+        trm_vigencia_desde:
+          type: string
+          format: date
+          nullable: true
+          description: Primer día de vigencia de `trm_aplicada` (Superintendencia Financiera); `null` en COP.
+        trm_vigencia_hasta:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Último día de vigencia de `trm_aplicada`; `null` en COP. Si el comercial confirma después de esta
+            fecha (America/Bogota), el servidor recalcula el precio con la TRM vigente y vuelve a previsualizar.
+        precio_cop:
+          type: number
+          nullable: true
+          description: Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`).
 
     SalidaMargen:
       type: object
@@ -1137,6 +1177,26 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SalidaPdf'
             - $ref: '#/components/schemas/Nulo'
+        errores:
+          type: array
+          description: |
+            Opcional (HU-012.4, aditivo). Errores de negocio que devolvieron las herramientas del turno, en orden,
+            para que el frontend reaccione sin interpretar el texto del agente (por ejemplo `TRM_NO_DISPONIBLE`:
+            no hay precio en dólares, ofrecer reintentar o cotizar en COP). Vacío si ninguna herramienta falló.
+            Los códigos son los de `ErrorNegocio`.
+          items:
+            $ref: '#/components/schemas/ErrorHerramienta'
+
+    ErrorHerramienta:
+      type: object
+      required: [herramienta, codigo]
+      properties:
+        herramienta:
+          type: string
+          description: Nombre de la herramienta (`calcular_precio`, `registrar_ajuste_margen`...).
+        codigo:
+          type: string
+          description: Código de `ErrorNegocio` (ej. `TRM_NO_DISPONIBLE`).
 
     RespuestaChatError:
       type: object
@@ -1189,6 +1249,11 @@ components:
         moneda:
           type: string
           example: COP
+        trm_aplicada:
+          type: number
+          description: |
+            TRM con que se convirtió el precio (HU-012.2); 0 cuando la moneda es COP. En USD es la referencia del
+            piso: el mínimo a pagar es `precio_final × trm_aplicada` en pesos.
         estado_costeo:
           type: string
           nullable: true
