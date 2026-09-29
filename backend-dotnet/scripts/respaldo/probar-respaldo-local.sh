@@ -7,7 +7,8 @@
 #   1. Origen: SQL Server 2019 con 0001-0003 y datos ficticios (probar-respaldo-datos.sql).
 #   2. Login cotifly_respaldo con SOLO CONNECT + SELECT ON SCHEMA::dbo_cotifly (el permiso que se pide al DBA).
 #   3. Exportación como cotifly_respaldo, con retención (9 diarios previos simulados; quedan 7).
-#   4. Controles del restore: sin --destino-pruebas, contra "tbsdatacenter" y con un archivo alterado, se niega.
+#   4. Controles del restore: sin --destino-pruebas, contra "tbsdatacenter", contra un servidor que se identifica
+#      (MachineName) con un nombre prohibido y con un archivo alterado, se niega.
 #   5. Destino: SQL Server 2019 NUEVO y vacío; restore con --aplicar-migraciones.
 #   6. Verificación: SHA-256 del contenido de cada tabla (SELECT * FOR JSON) igual en origen y destino, llaves foráneas
 #      confiables e IDENTITY reajustado.
@@ -96,6 +97,13 @@ if COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY
    sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$TRABAJO/respaldos/alterado.tar.gz" >/dev/null 2>&1; then fallar "aceptó un archivo alterado"; fi
 rm -f "$TRABAJO/respaldos/alterado.tar.gz"
 echo "  archivo alterado: rechazado"
+# Identidad del servidor: el nombre que se pasa (cotifly-prueba-respaldo-destino) no está prohibido, pero lo que el
+# servidor dice de sí mismo (MachineName = hostname del contenedor) sí.
+maquina=$(q "$DESTINO" master "SELECT CAST(SERVERPROPERTY('MachineName') AS nvarchar(256));")
+if COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE="$SA" \
+   COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1 COTIFLY_RESPALDO_RED_DOCKER=$RED COTIFLY_RESPALDO_PROHIBIDOS="$maquina" \
+   sh "$DIR_SCRIPT/restaurar-dbo-cotifly.sh" --destino-pruebas "$archivo" >/dev/null 2>&1; then fallar "no rechazó un servidor que se identifica con un nombre prohibido"; fi
+echo "  servidor que se identifica como prohibido ($maquina): rechazado"
 
 paso "5. Restore en la instancia nueva $DESTINO con --aplicar-migraciones"
 COTIFLY_RESPALDO_USAR_CONTENEDOR=1 COTIFLY_RESPALDO_SERVIDOR=$DESTINO COTIFLY_RESPALDO_USUARIO=sa COTIFLY_RESPALDO_CLAVE="$SA" \

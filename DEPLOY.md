@@ -491,6 +491,12 @@ sirven para el SQL Server en contenedor del desarrollo local del Python. No apli
   daño si se filtra la clave del respaldo. Probado: con solo `CONNECT` + `SELECT ON SCHEMA` exporta las 14 tablas.
 - **Cifrado:** conexión cifrada y certificado validado por defecto; `COTIFLY_RESPALDO_CONFIAR_CERTIFICADO=1` solo si el
   certificado de `tbsdatacenter` no es de una CA de confianza.
+- **Clave en la línea de comandos de `bcp`:** `sqlcmd` recibe la clave por `SQLCMDPASSWORD` (no se ve), pero `bcp`
+  solo la acepta con `-P`, así que mientras corre cada tabla la clave de `cotifly_respaldo` aparece en `ps` (y en
+  `/proc/<pid>/cmdline`) para cualquier usuario del equipo que ejecuta el script; con el contenedor de herramientas,
+  para quien vea los procesos del contenedor desde el worker. Mitigaciones: el login es de solo lectura sobre un solo
+  esquema, el worker solo lo usan administradores y la clave vive en un archivo `600`. Alternativa si se exige más:
+  autenticación de Microsoft Entra o Kerberos (no disponibles hoy para un contenedor Linux contra `tbsdatacenter`).
 - **Consistencia:** `bcp` exporta tabla por tabla, no es una foto transaccional; por eso se programa de madrugada. El
   restore revalida las llaves foráneas y avisa si algo quedó inconsistente.
 - **Contenido sensible:** correos, nombres y NIT de clientes. Archivos `600`, carpetas `700`, dueño root.
@@ -537,8 +543,16 @@ COTIFLY_RESPALDO_CLAVE_ARCHIVO=<archivo> \
    reajusta los `IDENTITY` y vuelve a validar las llaves (`WITH CHECK`).
 5. Compara las filas de cada tabla con las del respaldo.
 
-Protecciones: exige `--destino-pruebas` y se niega si el servidor contiene algún nombre de
-`COTIFLY_RESPALDO_PROHIBIDOS` (por defecto `tbsdatacenter`). Recuperar producción es una decisión del DBA con sus
+Protecciones, antes de tocar nada:
+
+- exige `--destino-pruebas`;
+- se niega si `COTIFLY_RESPALDO_SERVIDOR` contiene algún nombre de `COTIFLY_RESPALDO_PROHIBIDOS` (por defecto
+  `tbsdatacenter`, lista separada por comas, sin distinguir mayúsculas);
+- se conecta y pregunta al servidor quién es (`@@SERVERNAME`, `SERVERPROPERTY('MachineName')` y
+  `SERVERPROPERTY('ServerName')`): si alguno contiene un nombre prohibido, se niega. Cubre un alias DNS, una IP o un
+  puerto reenviado que apunten a `tbsdatacenter` sin nombrarlo.
+
+Recuperar producción es una decisión del DBA con sus
 backups nativos; si hiciera falta cargar un respaldo lógico en producción, se hace con el DBA, a mano y con la app
 detenida.
 
@@ -555,6 +569,9 @@ una vez con la imagen de la API.
 2. Exportación como `cotifly_respaldo` con solo `CONNECT` + `SELECT ON SCHEMA::dbo_cotifly`: 14 tablas, 540 filas,
    31,7 KB. Retención: con 9 diarios previos quedaron los 7 más recientes; la copia semanal se creó el día configurado.
 3. Controles: sin `--destino-pruebas`, con servidor `TBSDATACENTER` y con un `.dat` alterado, el restore se niega.
+   La comprobación por identidad del servidor (`@@SERVERNAME`/`MachineName`) se agregó después, en la revisión del
+   auditor; `probar-respaldo-local.sh` ya tiene su caso, pero **no se volvió a ejecutar** (el candado de Docker estaba
+   ocupado): queda cubierta por revisión y pendiente de la próxima corrida.
 4. Restore en una **instancia nueva y vacía** con `--aplicar-migraciones`: columnas iguales (116), filas iguales en
    las 14 tablas (incluidas las semillas de las migraciones, que se reemplazan) y **SHA-256 del contenido de cada tabla
    idéntico** entre origen y destino (`SELECT * ... FOR JSON`), llaves foráneas confiables, `IDENTITY` reajustado.

@@ -15,8 +15,10 @@
 # No es transaccional: si falla a mitad, la instancia de pruebas queda a medio cargar (volver a correrlo).
 #
 # SEGURIDAD: está pensado solo para una instancia de pruebas. Exige --destino-pruebas y se niega si el servidor
-# contiene alguno de COTIFLY_RESPALDO_PROHIBIDOS (por defecto "tbsdatacenter", separados por coma). Restaurar en
-# producción es una decisión del DBA con sus backups nativos, no de este script.
+# contiene alguno de COTIFLY_RESPALDO_PROHIBIDOS (por defecto "tbsdatacenter", separados por coma), tanto en el
+# nombre que se le pasa (COTIFLY_RESPALDO_SERVIDOR) como en lo que el servidor dice de sí mismo al conectarse
+# (@@SERVERNAME, SERVERPROPERTY('MachineName') y 'ServerName'), antes de tocar nada. Restaurar en producción es una
+# decisión del DBA con sus backups nativos, no de este script.
 #
 # Permisos en la instancia de pruebas: con --aplicar-migraciones, crear base y esquema (p. ej. sa o dbcreator +
 # db_owner); sin él, db_owner de la base (ALTER de las tablas, DELETE, INSERT, DBCC CHECKIDENT).
@@ -76,6 +78,20 @@ else
   DIR_MIGRACIONES=/migraciones
 fi
 cargar_conexion
+
+# Segunda barrera, además del nombre en COTIFLY_RESPALDO_SERVIDOR: un alias DNS, una IP o un puerto reenviado pueden
+# apuntar a tbsdatacenter sin nombrarlo. Se le pregunta al propio servidor quién es (@@SERVERNAME, MachineName y
+# ServerName) y se rechaza si alguno contiene un nombre prohibido, sin distinguir mayúsculas.
+paso "Comprobando la identidad del servidor de destino"
+base_objetivo=$BASE
+BASE=master
+identidad=$(sql "SELECT ISNULL(CAST(@@SERVERNAME AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('MachineName') AS nvarchar(256)), N'') + N'|' + ISNULL(CAST(SERVERPROPERTY('ServerName') AS nvarchar(256)), N'');")
+BASE=$base_objetivo
+identidad_min=$(printf '%s' "$identidad" | tr '[:upper:]' '[:lower:]')
+for p in $prohibidos; do
+  case "$identidad_min" in *"$p"*) fallar "el servidor de destino se identifica como '$identidad' (contiene '$p', COTIFLY_RESPALDO_PROHIBIDOS): no se restaura ahí" ;; esac
+done
+echo "  @@SERVERNAME|MachineName|ServerName = $identidad"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
