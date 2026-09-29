@@ -43,7 +43,8 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 - Adaptador `clsProveedorTrmSuperfinanciera` en Infraestructura, con cliente HTTP con nombre (`Trm`), la tubería estándar de resiliencia y 2 reintentos ante fallos transitorios.
 - El valor se redondea a 4 decimales (half-to-even), la escala de `Cotizaciones.trmAplicada`: se guarda exactamente la TRM con que se convierte. Un valor cero o negativo (también tras redondear) es `TRM_NO_DISPONIBLE`.
 - Opciones `Trm__Url` (por defecto la del conjunto) y `Trm__TiempoEsperaSegundos` (2 a 60, por defecto 10), validadas al arrancar.
-- Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Los fallos no se guardan, para que el reintento consulte de nuevo.
+- Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Las consultas simultáneas de una misma fecha comparten una sola llamada a la fuente (también su fallo), y un fallo se recuerda 20 segundos (caché negativa) para no golpear una fuente caída; después, el reintento consulta de nuevo.
+- Circuito de la tubería: abre con 5 intentos en 60 s si la mitad falla, y corta 30 s (con el valor por defecto de 100 intentos nunca abriría con este volumen). Las fechas de vigencia se leen como fechas de calendario (`AAAA-MM-DD`), sin conversión de zona horaria.
 - Código de error nuevo `TRM_NO_DISPONIBLE` en el contrato (`ErrorNegocio`).
 
 ### 3. Conversión (HU-012.2)

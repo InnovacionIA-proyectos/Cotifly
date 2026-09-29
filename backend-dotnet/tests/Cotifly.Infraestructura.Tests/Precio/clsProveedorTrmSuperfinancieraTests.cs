@@ -50,6 +50,21 @@ public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
         resultado.Valor.VigenciaHasta.Should().Be(new DateOnly(2026, 9, 28));
     }
 
+    // La fecha es de calendario: con zona horaria o sin ella, vale el día escrito (no se convierte a UTC ni a la hora local).
+    [Theory]
+    [InlineData("2026-09-26T00:00:00.000", "2026-09-28T00:00:00.000")]
+    [InlineData("2026-09-26T00:00:00.000-05:00", "2026-09-28T23:00:00.000+14:00")]
+    [InlineData("2026-09-26", "2026-09-28")]
+    public async Task LasFechasDeVigenciaSeLeenSinConvertirZonaHoraria(string desde, string hasta)
+    {
+        _fuente.Responder(HttpStatusCode.OK, $$"""[{"valor":"3306.86","vigenciadesde":"{{desde}}","vigenciahasta":"{{hasta}}"}]""");
+
+        var trm = (await Proveedor().ObtenerAsync(new DateOnly(2026, 9, 28), Ct)).Valor;
+
+        trm.VigenciaDesde.Should().Be(new DateOnly(2026, 9, 26));
+        trm.VigenciaHasta.Should().Be(new DateOnly(2026, 9, 28));
+    }
+
     [Fact]
     public async Task AceptaElValorComoNumeroJson()
     {
@@ -82,6 +97,7 @@ public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"3306.86\",\"vigenciadesde\":\"2026-09-01T00:00:00.000\",\"vigenciahasta\":\"2026-09-02T00:00:00.000\"}]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "[{\"valor\":\"3306.86\"}]", "sin TRM vigente")]
     [InlineData(HttpStatusCode.OK, "no es json", "JSON inválido")]
+    [InlineData(HttpStatusCode.OK, "[{\"valor\":\"3306.86\",\"vigenciadesde\":\"26/09/2026\",\"vigenciahasta\":\"2026-09-28T00:00:00.000\"}]", "sin TRM vigente")]
     public async Task UnaRespuestaInvalidaEsTrmNoDisponible(HttpStatusCode estado, string cuerpo, string motivo)
     {
         _fuente.Responder(estado, cuerpo);
@@ -140,7 +156,8 @@ public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
         resiliencia.TotalRequestTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(60));
         resiliencia.AttemptTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(20));
         resiliencia.Retry.MaxRetryAttempts.Should().Be(clsProveedorTrmSuperfinanciera.Reintentos);
-        resiliencia.CircuitBreaker.SamplingDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(40));
+        resiliencia.CircuitBreaker.SamplingDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(60));
+        resiliencia.CircuitBreaker.MinimumThroughput.Should().Be(clsProveedorTrmSuperfinanciera.UmbralCircuito, "con el valor por defecto (100) nunca abriría");
     }
 
     public void Dispose() => _fuente.Dispose();
