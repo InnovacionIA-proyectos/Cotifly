@@ -49,7 +49,7 @@
 
    Nota para el DBA (deuda consciente, ADR-015): los campos de LÍNEA van en
    Cotizaciones porque hoy una cotización = una solicitud de Nexo con una línea.
-   HU-011 (multi-línea / licitaciones) requiere un 0005 que mueva los campos de
+   HU-011 (multi-línea / licitaciones) requiere un script nuevo (000N; el 0005 es de la TRM) que mueva los campos de
    línea (origen ... valorMercancia) a `CotizacionLineasSolicitud`.
 
    Además: CHECK ck_cotizaciones_estadoCosteo con los 7 códigos de estado del

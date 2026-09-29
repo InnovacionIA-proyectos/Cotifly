@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
@@ -17,4 +19,11 @@ public sealed class clsOpcionesNexo
     /// contrato de Nexo empiezan por <c>/api/...</c> y el código las agrega (ADR-015 §8).
     /// </summary>
     public string? UrlBase { get; set; }
+
+    /// <summary>
+    /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta
+    /// en cada <c>resolver_municipio</c>). Solo se guardan respuestas exitosas; <c>0</c> desactiva la caché. Por defecto 60.
+    /// </summary>
+    [Range(0, 1440)]
+    public int MinutosCacheMunicipios { get; set; } = 60;
 }

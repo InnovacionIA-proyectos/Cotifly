@@ -36,11 +36,48 @@ public sealed class clsRegistroMunicipiosTests
     }
 
     [Fact]
-    public void ConUrlBaseElProveedorEsElDeNexo()
+    public void ConUrlBaseElProveedorEsElDeNexoConCache()
     {
         using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase });
 
+        proveedor.GetRequiredService<IClsMunicipiosProvider>().Should().BeOfType<clsMunicipiosEnCache>("por defecto el catálogo se cachea 60 minutos (HU-005.13)");
+    }
+
+    [Fact]
+    public void ConLaCacheEnCeroElProveedorEsElDeNexoDirecto()
+    {
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase, ["Nexo:MinutosCacheMunicipios"] = "0" });
+
         proveedor.GetRequiredService<IClsMunicipiosProvider>().Should().BeOfType<clsMunicipiosNexo>();
+    }
+
+    [Fact]
+    public async Task ElCatalogoCacheadoSeReutilizaEntreAmbitos()
+    {
+        var nexo = new clsNexoClientesFalso().ResponderCandidatos("""[{"id":1,"municipio":"Bogotá","departamento":"Cundinamarca","pais":"Colombia"}]""");
+        using var proveedor = Proveedor(
+            new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase },
+            configurar: s => UsarNexoFalso(s, nexo));
+
+        for (var i = 0; i < 3; i++)
+        {
+            using var ambito = proveedor.CreateScope();
+            (await ambito.ServiceProvider.GetRequiredService<IClsMunicipiosProvider>().ObtenerAsync(_usuarioId, Ct)).EsExitoso.Should().BeTrue();
+        }
+
+        nexo.Peticiones.Should().ContainSingle("la foto del catálogo es un singleton");
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("1441")]
+    public void MinutosDeCacheFueraDeRangoImpidenArrancar(string minutos)
+    {
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase, ["Nexo:MinutosCacheMunicipios"] = minutos });
+
+        var resolver = () => proveedor.GetRequiredService<Microsoft.Extensions.Options.IOptions<Cotifly.Infraestructura.Configuracion.clsOpcionesNexo>>().Value;
+
+        resolver.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>();
     }
 
     [Fact]

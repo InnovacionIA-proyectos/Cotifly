@@ -35,7 +35,8 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 /// caracteres sin contar espacios al borde; <c>requiere_confirmacion</c> booleano; <c>acciones_sugeridas</c> ausente, null o una
 /// lista de {confirmar_pdf, ajustar_margen}.</item>
 /// <item>Coherencia: <c>requiere_confirmacion</c> es true exactamente con previsualizacion y confirmacion_requerida; una
-/// previsualizacion exige un precio calculado por las herramientas (estado); las acciones exigen una previsualización pendiente y
+/// previsualizacion exige un precio calculado por las herramientas (estado) y ningún origen o destino ambiguo sin elegir en el
+/// catálogo de municipios (HU-005.13); las acciones exigen una previsualización pendiente y
 /// su herramienta declarada en el turno.</item>
 /// <item>Montos (<see cref="Montos"/>): con moneda (<c>$</c>, <c>COP</c>, <c>USD</c>, <c>US$</c>, pesos, dólares), con sufijo de
 /// millones (<c>millones</c>, <c>mill</c>, <c>M</c>, <c>MM</c>), con separadores de miles de 1.000.000 o más, o de 1.000 o más en
@@ -68,6 +69,7 @@ public static partial class clsReglasRespuestaAgente
     public const string AccionNoDisponible = "accion_no_disponible";
     public const string IncoherenciaConfirmacion = "incoherencia_confirmacion";
     public const string PrevisualizacionSinPrecio = "previsualizacion_sin_precio";
+    public const string PrevisualizacionMunicipioPendiente = "previsualizacion_municipio_pendiente";
     public const string MontoNoRespaldado = "monto_no_respaldado";
     public const string FolioNoRespaldado = "folio_no_respaldado";
 
@@ -317,6 +319,12 @@ public static partial class clsReglasRespuestaAgente
         {
             fallos.Add(new(PrevisualizacionSinPrecio,
                 "No hay un precio calculado por calcular_precio: no uses tipo previsualizacion; pide los datos que faltan (tipo conversacional)."));
+        }
+
+        if (respuesta.Tipo == TipoRespuestaAgente.Previsualizacion && contexto.Estado.TieneMunicipiosPorConfirmar())
+        {
+            fallos.Add(new(PrevisualizacionMunicipioPendiente,
+                "El origen o el destino tienen varios municipios posibles sin elegir: no uses tipo previsualizacion; muestra los candidatos y pregunta cuál es (tipo conversacional)."));
         }
 
         foreach (var accion in respuesta.AccionesSugeridas ?? [])
