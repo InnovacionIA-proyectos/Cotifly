@@ -138,6 +138,7 @@ Otras decisiones abiertas:
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
 | Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
 | Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
+| Precondición de despliegue (`DEPLOY.md`): el 0004 aplicado antes de desplegar esta versión; staging con `CosteoNexo__Habilitado=false` mientras comparta base con producción de Nexo | DBA | ADR-015 |
 | Aprobación de los scripts 0002, 0003 y 0004 (el 0004 con el DBA, coordinado con HU-002) | Sara, scalderon-bs y DBA | ADR-008, ADR-015 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
