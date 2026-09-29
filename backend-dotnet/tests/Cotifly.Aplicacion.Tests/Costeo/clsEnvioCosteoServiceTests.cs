@@ -102,6 +102,42 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task SiElClienteSeDesconectaDuranteElAltaLaRespuestaDeNexoSeGuardaIgual()
+    {
+        using var peticion = new CancellationTokenSource();
+        var tokensNexo = new List<CancellationToken>();
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>()).Returns(ci =>
+        {
+            tokensNexo.Add(ci.Arg<CancellationToken>());
+            peticion.Cancel(); // el comercial cierra la pestaña cuando Nexo ya recibió el POST
+            return new clsSolicitudCreadaNexo("sol-9", 1, 0, 1, false);
+        });
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), peticion.Token)).Valor;
+
+        tokensNexo.Should().ContainSingle().Which.CanBeCanceled.Should().BeFalse("el alta no se ata a la conexión del cliente");
+        cotizacion.CosteoId.Should().Be("sol-9");
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "no queda en pendiente_envio sin costeoId (un reintento duplicaría la solicitud)");
+        await _unidad.Received().GuardarCambiosAsync(CancellationToken.None);
+        await _buscador.Received(1).BuscarAsync(_ana, Nit, Arg.Is<CancellationToken>(t => !t.CanBeCanceled));
+    }
+
+    [Fact]
+    public async Task ElReintentoVuelveAValidarLoGuardadoAntesDeReenviar()
+    {
+        var cotizacion = await CotizacionEnErrorAsync();
+        _cotizaciones.ListarPosicionesAsync(cotizacion.Id, Arg.Any<CancellationToken>())
+            .Returns([.. clsCotizacionPosicion.Desde(cotizacion.Id, [new clsPosicionCarga(null, 1, 10m, 10m, 10m, 1m)])]);
+        _nexo.ClearReceivedCalls();
+
+        var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        resultado.Error.Detalle.Should().Be(clsSolicitudCosteo.PesoInconsistente);
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    [Fact]
     public async Task SiNexoYaCosteoLaLineaQuedaEnAutocosteo()
     {
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
