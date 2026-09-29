@@ -1534,7 +1534,7 @@ components:
         ubicacion:
           type: string
           nullable: true
-          description: Regional del usuario (`UsuariosWeb.regional`); null si aún no se ha cruzado con DimEjecutivo.
+          description: Regional del usuario (`UsuariosWeb.regional`), que el login llena y refresca desde DimEjecutivo cuando está conectada (#81). null si el usuario no está en esa tabla y nadie la asignó, o si no hay conexión; una falla de DimEjecutivo nunca hace fallar el login.
 
     LoginResponse:
       type: object

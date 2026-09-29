@@ -84,3 +84,36 @@ Característica: Login SSO desde ClientePro con verificación doble
     Entonces el login responde credenciales inválidas
     Y no existe el usuario "ivan.sso" en Cotifly
     Y el acceso de "ivan.sso" queda auditado como rechazado por "almacen_no_disponible"
+
+  # #81 (ADR-016 §6): la regional sale de DWCubosEBSSAP.DimEjecutivo, cuyo USUARIO trae el dominio pegado
+  # ("boterosoto\usuario"). Se llena en el primer ingreso y se refresca en cada login; quien no aparece conserva la
+  # que tenga (NULL o la del DBA). DimEjecutivo nunca bloquea el login.
+  Escenario: El login llena la regional desde DimEjecutivo y la refresca en el siguiente ingreso
+    Dado la persona "juli.sso" con ID externo 5110 y nombre "Juli SSO" en el almacén corporativo con los roles externos "34"
+    Y en DimEjecutivo "juli.sso" aparece como "BOTEROSOTO\JULI.SSO" en la regional "Occidente"
+    Cuando "juli.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "comercial"
+    Y la sesión trae la ubicación "Occidente"
+    Y el usuario "juli.sso" tiene la regional "Occidente" en Cotifly
+    Cuando en DimEjecutivo "juli.sso" pasa a la regional "Norte"
+    Y "juli.sso" inicia sesión desde ClientePro
+    Entonces la sesión trae la ubicación "Norte"
+    Y el usuario "juli.sso" tiene la regional "Norte" en Cotifly
+
+  Escenario: Quien no aparece en DimEjecutivo entra con la regional vacía
+    Dado la persona "kari.sso" con ID externo 5111 y nombre "Kari SSO" en el almacén corporativo con los roles externos "34"
+    Y DimEjecutivo está conectada pero "kari.sso" no aparece en ella
+    Cuando "kari.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "comercial"
+    Y la sesión trae la ubicación vacía
+    Y el usuario "kari.sso" tiene la regional vacía en Cotifly
+
+  Escenario: Con DimEjecutivo caída el login entra y conserva la regional que tenía
+    Dado la persona "leo.sso" con ID externo 5112 y nombre "Leo SSO" en el almacén corporativo con los roles externos "35"
+    Y "leo.sso" ya inició sesión una vez
+    Y el DBA asignó a "leo.sso" la regional "Antioquia"
+    Y DimEjecutivo no está disponible
+    Cuando "leo.sso" inicia sesión desde ClientePro
+    Entonces la sesión se emite con el rol "gerente_comercial"
+    Y la sesión trae la ubicación "Antioquia"
+    Y el acceso de "leo.sso" queda auditado como exitoso

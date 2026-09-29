@@ -9,10 +9,11 @@ namespace Cotifly.Infraestructura.Identidad.Services;
 /// <summary>
 /// Adaptador de <see cref="IClsDirectorioEjecutivos"/> sobre la tabla de ejecutivos de <c>DWCubosEBSSAP</c>
 /// (<c>ConnectionStrings:Regional</c>, sección <see cref="clsOpcionesRegional"/>; ADR-016 §6). Solo <c>SELECT</c> parametrizado;
-/// esquema, tabla y columnas vienen de la configuración, validados como identificadores y citados con corchetes. Los tipos
-/// reales de las columnas no se conocen: se leen como texto (<c>CAST ... AS nvarchar</c>), recortados y en mayúsculas para
-/// comparar. Los fallos de la base se propagan (quien llama responde 503) y no se guardan; las respuestas exitosas se
-/// reutilizan 60 s (<see cref="clsCacheDirectorioEjecutivos"/>).
+/// esquema, tabla y columnas vienen de la configuración, validados como identificadores y citados con corchetes. Las columnas
+/// se leen como texto (<c>CAST ... AS nvarchar</c>), recortadas y en mayúsculas para comparar; a la de usuario (<c>USUARIO</c>,
+/// <c>boterosoto\usuario</c>) se le quita el prefijo de dominio (#81). Los fallos de la base se propagan (el tablero responde
+/// 503; el login sigue sin refrescar) y no se guardan; las respuestas exitosas se reutilizan 60 s
+/// (<see cref="clsCacheDirectorioEjecutivos"/>).
 /// </summary>
 public sealed class clsDirectorioEjecutivosDimEjecutivo(
     IOptions<clsOpcionesConexiones> conexiones,
@@ -24,6 +25,8 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
     public const int TamanoLote = 500;
 
     public bool Configurado => !string.IsNullOrWhiteSpace(conexiones.Value.Regional);
+
+    public TimeSpan LimiteLogin => opciones.Value.LimiteLogin;
 
     public async Task<IReadOnlyDictionary<string, string>> ObtenerRegionalesAsync(
         IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default)
@@ -66,9 +69,9 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
                 }
 
                 comando.CommandText = $"""
-                    SELECT {Texto(opciones.Value.ColumnaUsuario)} AS usuario, {Texto(opciones.Value.ColumnaRegional)} AS regional
+                    SELECT {SinDominio(opciones.Value.ColumnaUsuario)} AS usuario, {Texto(opciones.Value.ColumnaRegional)} AS regional
                     FROM {Tabla()}
-                    WHERE UPPER({Texto(opciones.Value.ColumnaUsuario)}) IN ({string.Join(", ", parametros)});
+                    WHERE UPPER({SinDominio(opciones.Value.ColumnaUsuario)}) IN ({string.Join(", ", parametros)});
                     """;
                 comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
                 await using var lector = await comando.ExecuteReaderAsync(cancellationToken);
@@ -120,10 +123,10 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
         await using var conexion = await AbrirAsync(cancellationToken);
         await using var comando = conexion.CreateCommand();
         comando.CommandText = $"""
-            SELECT DISTINCT {Texto(opciones.Value.ColumnaUsuario)} AS usuario
+            SELECT DISTINCT {SinDominio(opciones.Value.ColumnaUsuario)} AS usuario
             FROM {Tabla()}
             WHERE UPPER({Texto(opciones.Value.ColumnaRegional)}) = @regional
-              AND {Texto(opciones.Value.ColumnaUsuario)} IS NOT NULL;
+              AND {SinDominio(opciones.Value.ColumnaUsuario)} <> N'';
             """;
         comando.Parameters.Add(new SqlParameter("@regional", System.Data.SqlDbType.NVarChar, 255) { Value = buscada.ToUpperInvariant() });
         comando.CommandTimeout = opciones.Value.TiempoEsperaSegundos;
@@ -168,4 +171,15 @@ public sealed class clsDirectorioEjecutivosDimEjecutivo(
 
     /// <summary>Columna leída como texto recortado.</summary>
     private static string Texto(string columna) => $"LTRIM(RTRIM(CAST([{columna}] AS nvarchar(255))))";
+
+    /// <summary>
+    /// Columna de usuario como texto recortado y sin el prefijo de dominio: <c>boterosoto\apérez</c> → <c>apérez</c> (#81). Solo se
+    /// quita hasta la primera <c>\</c>; un valor sin <c>\</c> queda igual. Se hace en SQL para que el filtro siga parametrizado y
+    /// la base devuelva solo las filas de los usuarios pedidos (la tabla es pequeña: el índice de la columna no hace falta).
+    /// </summary>
+    private static string SinDominio(string columna)
+    {
+        var texto = Texto(columna);
+        return $"LTRIM(RTRIM(CASE WHEN CHARINDEX(N'\\', {texto}) > 0 THEN SUBSTRING({texto}, CHARINDEX(N'\\', {texto}) + 1, 255) ELSE {texto} END))";
+    }
 }

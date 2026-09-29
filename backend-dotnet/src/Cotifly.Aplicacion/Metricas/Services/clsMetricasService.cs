@@ -13,7 +13,7 @@ namespace Cotifly.Aplicacion.Metricas.Services;
 /// <list type="bullet">
 /// <item><c>comercial</c>: solo su propia fila.</item>
 /// <item><c>gerente_comercial</c>: las filas de los comerciales de su regional (<c>UsuariosWeb.regional</c>). Si su regional es
-/// nula (aún no se cruza con DimEjecutivo) solo ve su propia fila: nunca se muestra información de otra regional por no poder
+/// nula (no está en DimEjecutivo, o no hay conexión, y el DBA no la llenó) solo ve su propia fila: nunca se muestra información de otra regional por no poder
 /// comprobarla.</item>
 /// </list>
 /// El alcance se decide con el rol del token, revalidado aquí.

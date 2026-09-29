@@ -22,7 +22,7 @@ Contenido:
 
 - Operaciones con `x-estado: borrador` no están congeladas; hoy son solo `/web/metricas/actividad` y `/ajustes-margen`, además obsoletas (`deprecated: true`) desde que HU-010.1 (#45) agregó `/web/metricas/comercial` y `/regional`.
 - Las rutas de los controllers son explícitas (`[Route("web/...")]`), nunca `[controller]`.
-- `ubicacion` del usuario sale `null` hasta que se cruce la regional con `DimEjecutivo`.
+- `ubicacion` del usuario es `UsuariosWeb.regional`, que el login llena y refresca desde `DimEjecutivo` (#81, ADR-016 §6) cuando `ConnectionStrings__Regional` está configurada. Sale `null` si el usuario no está en esa tabla y el DBA no la llenó, o si no hay conexión. Una falla de `DimEjecutivo` nunca cambia la respuesta del login: se devuelve la regional que ya tenía.
 
 ## 7.2 Autenticación y autorización
 

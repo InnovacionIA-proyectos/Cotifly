@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Identidad;
+using Cotifly.Infraestructura.Identidad.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -27,6 +28,7 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
     private readonly Dictionary<long, long> _ids = [];
     private readonly Dictionary<string, clsSesionEmitida> _sesiones = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _refreshAnterior = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _usuariosDimEjecutivo = new(StringComparer.OrdinalIgnoreCase);
     private clsResultado<clsSesionEmitida>? _login;
     private clsResultado<clsSesionEmitida>? _renovacion;
     private IReadOnlyList<clsResultado<clsSesionEmitida>> _renovacionesSimultaneas = [];
@@ -68,6 +70,47 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
         {
             ["ConnectionStrings:Identidad"] = "Server=tcp:127.0.0.1,1;Database=dbsolucionesti;User Id=x;Password=NoImporta.123;Encrypt=False;Connect Timeout=2",
         });
+
+    [Given("en DimEjecutivo {string} aparece como {string} en la regional {string}")]
+    public async Task DadoEnDimEjecutivo(string nombreUsuario, string usuarioDimEjecutivo, string regional)
+    {
+        // "BOTEROSOTO\JULI.SSO" → "BOTEROSOTO\JULI.SSO-<sufijo>": se conserva el dominio y la caja del nombre lógico.
+        var cadena = await ConectarDimEjecutivoAsync();
+        var separador = usuarioDimEjecutivo.IndexOf('\\', StringComparison.Ordinal) + 1;
+        var logico = usuarioDimEjecutivo[separador..];
+        var real = Real(nombreUsuario);
+        var valor = usuarioDimEjecutivo[..separador] + (logico == logico.ToUpperInvariant() ? real.ToUpperInvariant() : real);
+        _usuariosDimEjecutivo[nombreUsuario] = valor;
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo.DimEjecutivo (NOMBRE, REGIONAL, USUARIO) VALUES ('{nombreUsuario}', '{regional}', '{valor}');");
+    }
+
+    [Given("DimEjecutivo está conectada pero {string} no aparece en ella")]
+    public Task DadoDimEjecutivoSinElUsuario(string nombreUsuario) => ConectarDimEjecutivoAsync();
+
+    [Given("DimEjecutivo no está disponible")]
+    public void DadoDimEjecutivoNoDisponible() =>
+        contexto.Reconfigurar(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Regional"] = "Server=tcp:127.0.0.1,1;Database=DWCubosEBSSAP;User Id=x;Password=NoImporta.123;Encrypt=False;Connect Timeout=2",
+            ["Regional:TiempoEsperaLoginSegundos"] = "1",
+        });
+
+    [Given("el DBA asignó a {string} la regional {string}")]
+    public Task DadoElDbaAsignoLaRegional(string nombreUsuario, string regional) =>
+        clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.UsuariosWeb SET regional = N'{regional}' WHERE nombreUsuario = '{Real(nombreUsuario)}';");
+
+    [When("en DimEjecutivo {string} pasa a la regional {string}")]
+    public async Task CuandoCambiaLaRegionalEnDimEjecutivo(string nombreUsuario, string regional)
+    {
+        var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"UPDATE dbo.DimEjecutivo SET REGIONAL = '{regional}' WHERE USUARIO = '{_usuariosDimEjecutivo[nombreUsuario]}';");
+
+        // La caché de DimEjecutivo dura 60 s por proceso: el siguiente login ya ve el cambio.
+        contexto.Reloj.Avanzar(clsCacheDirectorioEjecutivos.Vigencia + TimeSpan.FromSeconds(1));
+    }
 
     [Given("{string} renovó su sesión hace {int} minuto")]
     public async Task DadoRenovoSuSesion(string nombreUsuario, int minutos)
@@ -137,6 +180,31 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
         _login.Valor.Usuario.Rol.Should().Be(rol);
         _login.Valor.Access.Should().NotBeNullOrEmpty();
         _login.Valor.Refresh.Should().HaveLength(43);
+    }
+
+    [Then("la sesión trae la ubicación {string}")]
+    public void EntoncesLaSesionTraeLaUbicacion(string ubicacion)
+    {
+        _login!.EsExitoso.Should().BeTrue(_login.EsFallo ? _login.Error.Mensaje : null);
+        _login.Valor.Usuario.Ubicacion.Should().Be(ubicacion);
+    }
+
+    [Then("la sesión trae la ubicación vacía")]
+    public void EntoncesLaSesionTraeLaUbicacionVacia()
+    {
+        _login!.EsExitoso.Should().BeTrue(_login.EsFallo ? _login.Error.Mensaje : null);
+        _login.Valor.Usuario.Ubicacion.Should().BeNull();
+    }
+
+    [Then("el usuario {string} tiene la regional {string} en Cotifly")]
+    public async Task EntoncesTieneLaRegional(string nombreUsuario, string regional) =>
+        (await RegionalGuardadaAsync(nombreUsuario)).Should().Be(regional);
+
+    [Then("el usuario {string} tiene la regional vacía en Cotifly")]
+    public async Task EntoncesTieneLaRegionalVacia(string nombreUsuario)
+    {
+        (await ContarUsuariosAsync(nombreUsuario)).Should().Be(1);
+        (await RegionalGuardadaAsync(nombreUsuario)).Should().BeNull();
     }
 
     [Then("el login responde credenciales inválidas")]
@@ -268,6 +336,18 @@ public sealed class clsPasosIdentidad(clsContextoEscenario contexto)
 
     private Task<clsUsuarioWeb?> UsuarioAsync(string nombreUsuario) =>
         ContextoConsultaAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ObtenerPorNombreUsuarioAsync(Real(nombreUsuario)));
+
+    /// <summary>Conecta la <c>DimEjecutivo</c> falsa (<c>ConnectionStrings:Regional</c>) al proveedor del escenario.</summary>
+    private async Task<string> ConectarDimEjecutivoAsync()
+    {
+        var cadena = await BaseDatos.CadenaDirectorioEjecutivosAsync();
+        contexto.Reconfigurar(new Dictionary<string, string?> { ["ConnectionStrings:Regional"] = cadena });
+        return cadena;
+    }
+
+    private Task<string?> RegionalGuardadaAsync(string nombreUsuario) =>
+        clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+            $"SELECT regional FROM dbo_cotifly.UsuariosWeb WHERE nombreUsuario = '{Real(nombreUsuario)}'");
 
     private Task<int> ContarUsuariosAsync(string nombreUsuario) =>
         clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,

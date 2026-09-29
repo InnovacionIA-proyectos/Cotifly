@@ -19,7 +19,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 | [ADR-013](ADR-013-despliegue-dokploy.md) | Despliegue del backend .NET en Dokploy: secretos, registry y pipeline | Propuesta (mecanismo de secretos y cuenta del registry pendientes de confirmar con infraestructura) | #29 (HU-006.5), #28 (HU-006.4), #33 (HU-007.1) |
 | [ADR-014](ADR-014-trm-y-cotizaciones-en-usd.md) | TRM oficial y cotizaciones en dólares | Propuesta (fuente pendiente de confirmar con el equipo) | #50, #51, #52 · HU-012 |
 | [ADR-015](ADR-015-costeo-nexo.md) | Costeo en Nexo: persistencia, envío, polling, margen y resultado | Aceptada (0004 y varios puntos con Nexo pendientes) | #24, #21, #22, #23, #42 · HU-005.5 a HU-005.8, HU-005.14 |
-| [ADR-016](ADR-016-metricas-agregadas-y-regional.md) | Métricas agregadas del tablero y regional del usuario | Propuesta (definiciones por validar con Gerencia Comercial; fuente de la regional pendiente del DBA) | #45 (HU-010.1) · clientepro-frontend #50, #51, #52 |
+| [ADR-016](ADR-016-metricas-agregadas-y-regional.md) | Métricas agregadas del tablero y regional del usuario | Propuesta (definiciones por validar con Gerencia Comercial; tabla de la regional verificada en #81, falta la credencial en Dokploy) | #45 (HU-010.1), #81 (HU-003.6, regional en el login) · clientepro-frontend #50, #51, #52 |
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 

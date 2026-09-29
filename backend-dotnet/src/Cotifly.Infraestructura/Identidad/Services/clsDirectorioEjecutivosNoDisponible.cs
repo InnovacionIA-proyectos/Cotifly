@@ -13,6 +13,9 @@ public sealed class clsDirectorioEjecutivosNoDisponible : IClsDirectorioEjecutiv
 {
     public bool Configurado => false;
 
+    /// <summary>Sin fuente no hay consulta que limitar.</summary>
+    public TimeSpan LimiteLogin => TimeSpan.Zero;
+
     public Task<IReadOnlyDictionary<string, string>> ObtenerRegionalesAsync(
         IReadOnlyCollection<string> nombresUsuario, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));

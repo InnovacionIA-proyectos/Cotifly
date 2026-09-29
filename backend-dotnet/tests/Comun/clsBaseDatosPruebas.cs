@@ -219,9 +219,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
-    /// <c>DWCubosEBSSAP</c> falsa con <c>dbo.DimEjecutivo</c> (<c>ID</c> y <c>REGIONAL</c> VARCHAR, el cruce que documenta el 0001;
-    /// el esquema real está pendiente del DBA) para el directorio de ejecutivos de HU-010.1. Se crea una vez por contenedor;
-    /// cada prueba inserta sus propias filas con nombres únicos.
+    /// <c>DWCubosEBSSAP</c> falsa con <c>dbo.DimEjecutivo</c> y las columnas reales que verificó #81 (<c>ID, NOMBRE, REGIONAL, CORREO,
+    /// USUARIO, FECHACREACION, FECHAMODIFICACION</c>; <c>USUARIO</c> trae el dominio pegado, <c>boterosoto\usuario</c>). Los tipos
+    /// reales no se conocen: texto VARCHAR, como en un cubo. Se crea una vez por contenedor; cada prueba inserta sus propias filas
+    /// con nombres únicos.
     /// </summary>
     public async Task<string> CadenaDirectorioEjecutivosAsync()
     {
@@ -235,9 +236,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 await EjecutarAsync(cadena, """
                     CREATE TABLE dbo.DimEjecutivo (
-                        ID          VARCHAR(50)  NULL,
-                        NOMBRE      VARCHAR(200) NULL,
-                        REGIONAL    VARCHAR(100) NULL
+                        ID                  INT IDENTITY(1, 1) NOT NULL PRIMARY KEY,
+                        NOMBRE              VARCHAR(200) NULL,
+                        REGIONAL            VARCHAR(100) NULL,
+                        CORREO              VARCHAR(200) NULL,
+                        USUARIO             VARCHAR(100) NULL,
+                        FECHACREACION       DATETIME     NULL DEFAULT GETDATE(),
+                        FECHAMODIFICACION   DATETIME     NULL
                     );
                     """);
                 _cadenaDirectorio = cadena;

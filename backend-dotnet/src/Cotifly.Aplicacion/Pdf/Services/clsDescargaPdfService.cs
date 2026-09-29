@@ -32,8 +32,9 @@ public interface IClsDescargaPdfService
 /// <list type="bullet">
 /// <item>El archivo debe cumplir <c>^[A-Za-z0-9_-]+\.pdf$</c> y ser el PDF guardado de la cotización con ese folio.</item>
 /// <item>Dueño: siempre.</item>
-/// <item><c>gerente_comercial</c>: solo PDF de comerciales de su misma regional (<c>UsuariosWeb.regional</c>). Si la regional del
-/// gerente es nula (aún no se cruza con DimEjecutivo), no se puede comprobar el alcance y se niega (fail-closed): solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
+/// <item><c>gerente_comercial</c>: solo PDF de comerciales de su misma regional (<c>UsuariosWeb.regional</c>, que el login refresca desde
+/// <c>DimEjecutivo</c>, #81). Si la regional del
+/// gerente es nula (no está en DimEjecutivo, o no hay conexión, y el DBA no la llenó), no se puede comprobar el alcance y se niega (fail-closed): solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
 /// (<c>descargar_pdf</c>).</item>
 /// </list>
 /// </summary>
