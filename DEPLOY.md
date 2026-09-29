@@ -96,16 +96,16 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `SapTm__Pass` | **sí** (≥ 8) | con `odata` | vacío | Dokploy | no definirla si no se usa `odata` |
 | `Nexo__UrlBase` | no | no | vacío | Dokploy | sin ella la búsqueda de clientes responde `*_NO_DISPONIBLE` |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
-| `Pdf__BaseUrl` | no | no (sí para Google Chat) | vacío | Dokploy | URL pública de la API |
+| `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web, pero la tarjeta de Google Chat no lo puede abrir; configurarla si Google Chat está activo |
 | `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | con Google Chat configurado | vacío | Dokploy | `openssl rand -base64 48` |
 | `Pdf__MinutosUrlFirmada` | no | no | `15` | manifiesto | |
 | `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
 | `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
 | `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
 | `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003 |
-| `IA__ApiKey` | **sí** | según el proveedor | vacío | Dokploy | |
+| `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | |
 | `IA__Fallbacks__N__Proveedor`, `__Modelo`, `__Endpoint` | no | no | vacío | Dokploy | respaldos |
-| `IA__Fallbacks__N__ApiKey` | **sí** | según el proveedor | vacío | Dokploy | |
+| `IA__Fallbacks__N__ApiKey` | **sí** (≥ 16) | igual que `IA__ApiKey`, por respaldo | vacío | Dokploy | |
 | `IA__MaxTokens`, `IA__MaxIteraciones`, `IA__SoportaJsonSchema`, `IA__MinutosSinJsonSchema`, `IA__JsonSchemaEstricto`, `IA__Rpm`, `IA__TimeoutSeg` | no | no | `4096`, `12`, `true`, `30`, `false`, `8`, `60` | manifiesto | |
 | `LimiteChat__PeticionesPorVentana`, `LimiteChat__VentanaSegundos` | no | no | `20`, `60` | manifiesto | |
 | `Sesiones__LimiteTokens`, `Sesiones__TtlHoras`, `Sesiones__BarridoMinutos`, `Sesiones__EsperaTurnoSegundos` | no | no | `6000`, `24`, `60`, `3` | manifiesto | |
@@ -113,6 +113,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `GChat__VerificarJwt` | no | `false` no arranca | `true` | manifiesto | siempre `true` en QA y producción |
 | `GChat__SaJson` | **sí** | no | vacío | **secreto de Swarm** | `/run/secrets/gchat_sa.json` |
 | `GChat__SupportSpace`, `GChat__CapacidadCola` | no | no | vacío, `200` | Dokploy / manifiesto | |
+| `GChat__UrlCertificados`, `GChat__ApiBase` | no | no | certificados de `chat@system.gserviceaccount.com`, `https://chat.googleapis.com/v1` | — | solo pruebas: no se cargan en QA ni producción (no están en los manifiestos) |
 | `Grovity__BaseUrl`, `Grovity__Usuario` / `Grovity__Clave` | no / **sí** | no (el código no las lee) | — | — | solo si se aprueba Grovity desde el agente (ADR-005) |
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
