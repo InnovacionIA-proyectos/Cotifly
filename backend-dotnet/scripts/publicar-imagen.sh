@@ -10,7 +10,8 @@
 # Tags (nunca "latest"; sha-<corto> y X.Y.Z son inmutables: nunca se reemplazan con otros bytes):
 #   sha-<commit corto>    siempre; si ya existe en el registry se conserva
 #   X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con --version X.Y.Z, que exige ese tag en HEAD); se crea
-#                         sobre el digest de sha-<corto> con "docker buildx imagetools create", sin reconstruir.
+#                         sobre el digest de sha-<corto> con "docker buildx imagetools create --prefer-index=false"
+#                         (sin reconstruir; mismo digest).
 #                         Final solo desde un commit de origin/main; X.Y.Z-rc.N puede salir de otra rama (QA).
 #   qa | main             con --canal qa | --canal main, desde esa rama y con HEAD subido a origin
 #
@@ -29,7 +30,7 @@
 #
 # Variables:
 #   COTIFLY_IMAGEN   repositorio de la imagen (por defecto ghcr.io/innovacionia-proyectos/cotifly-backend)
-#   COTIFLY_TRIVY_VERSION   versión de aquasec/trivy para el escaneo (por defecto 0.74.0, la misma del CI)
+#   COTIFLY_TRIVY_IMAGEN    imagen de Trivy para el escaneo (por defecto aquasec/trivy:0.74.0 fijada por digest, la del CI)
 #   GHCR_USUARIO, GHCR_TOKEN   si están, se hace "docker login ghcr.io" con ellas (token: PAT clásico con write:packages).
 #                    Si no, se usa la sesión que ya tenga "docker login ghcr.io".
 #
@@ -46,7 +47,8 @@ DIR_BACKEND=$(ruta_absoluta "$DIR_SCRIPTS/..")
 IMAGEN=${COTIFLY_IMAGEN:-ghcr.io/innovacionia-proyectos/cotifly-backend}
 IMAGEN_LOCAL=cotifly-api:publicar
 CONTENEDOR="cotifly-publicar-$$"
-TRIVY=${COTIFLY_TRIVY_VERSION:-0.74.0}
+# Trivy fijado por digest (misma imagen que el CI). COTIFLY_TRIVY_IMAGEN permite cambiarlo.
+TRIVY_IMAGEN=${COTIFLY_TRIVY_IMAGEN:-aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969}
 
 canal=""
 version=""
@@ -63,7 +65,7 @@ while [ "$#" -gt 0 ]; do
     --sin-prueba) prueba=0 ;;
     --sin-escaneo) escaneo=0 ;;
     --permitir-sucio) permitir_sucio=1 ;;
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1 (ver --help)" >&2; exit 2 ;;
   esac
   shift
@@ -89,33 +91,43 @@ if [ -n "$(git status --porcelain -- .)" ]; then
   fi
 fi
 
-tag_git=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' | head -n 1 || true)
+SEMVER='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+tag_git=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' | head -n 1 || true)
 if [ -n "$version" ]; then
-  echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || fallar "--version debe ser semver (X.Y.Z o X.Y.Z-rc.N)"
+  echo "$version" | grep -Eq "$SEMVER" || fallar "--version debe ser semver (X.Y.Z o X.Y.Z-rc.N)"
   git tag --points-at HEAD | grep -qx "v$version" || fallar "HEAD no tiene el tag v$version (crearlo con: git tag -a v$version -m ... && git push origin v$version)"
 elif [ -n "$tag_git" ]; then
   version=${tag_git#v}
 fi
 
 # Trazabilidad antes de publicar (no aplica con --sin-push):
+#   siempre           hace falta --canal o una versión, y HEAD debe estar en alguna rama de origin: un build de un
+#                     commit local no puede ocupar el sha-<corto> inmutable.
 #   --canal qa|main   se corre desde esa rama (QA o main) y con HEAD ya subido a origin.
-#   X.Y.Z (final)     el commit está en origin/main y el tag vX.Y.Z está subido.
-#   X.Y.Z-rc.N        puede salir de otra rama (p. ej. QA, para probar en staging la candidata exacta), con el tag subido.
+#   X.Y.Z (final)     el commit está en origin/main y el tag vX.Y.Z de origin apunta a HEAD.
+#   X.Y.Z-rc.N        puede salir de otra rama (p. ej. QA, para probar en staging la candidata exacta), con el tag de
+#                     origin apuntando a HEAD.
 if [ "$push" -eq 1 ]; then
+  [ -n "$canal" ] || [ -n "$version" ] || fallar "para publicar hace falta --canal qa|main o una versión (tag vX.Y.Z en HEAD o --version)"
+  git fetch -q origin || fallar "git fetch origin falló"
+  [ -n "$(git branch -r --contains HEAD | grep -v -- '->' | grep '^ *origin/' || true)" ] \
+    || fallar "HEAD ($commit) no está en ninguna rama de origin: hacer push antes de publicar"
   if [ -n "$canal" ]; then
     rama_canal=QA
     [ "$canal" = main ] && rama_canal=main
     rama_actual=$(git rev-parse --abbrev-ref HEAD)
     [ "$rama_actual" = "$rama_canal" ] || fallar "--canal $canal se publica desde la rama $rama_canal (rama actual: $rama_actual)"
-    git fetch -q origin "$rama_canal"
     git merge-base --is-ancestor HEAD "origin/$rama_canal" || fallar "HEAD no está en origin/$rama_canal: hacer push antes de publicar"
   fi
   if [ -n "$version" ]; then
-    git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || fallar "el tag v$version no está en origin (git push origin v$version)"
+    # Tag anotado: "^{}" da el commit al que apunta; tag liviano: la propia referencia.
+    remoto=$(git ls-remote origin "refs/tags/v$version^{}" | cut -f1)
+    [ -n "$remoto" ] || remoto=$(git ls-remote origin "refs/tags/v$version" | cut -f1)
+    [ -n "$remoto" ] || fallar "el tag v$version no está en origin (git push origin v$version)"
+    [ "$remoto" = "$(git rev-parse HEAD)" ] || fallar "el tag v$version de origin apunta a $remoto, no a HEAD"
     case "$version" in
       *-*) ;;
-      *) git fetch -q origin main
-         git merge-base --is-ancestor HEAD origin/main || fallar "una versión final (v$version) sale de un commit de origin/main; para probar fuera de main usar vX.Y.Z-rc.N" ;;
+      *) git merge-base --is-ancestor HEAD origin/main || fallar "una versión final (v$version) sale de un commit de origin/main; para probar fuera de main usar vX.Y.Z-rc.N" ;;
     esac
   fi
 fi
@@ -175,8 +187,8 @@ fi
 
 # ----------------------------------------------------------------------------- escaneo de vulnerabilidades
 if [ "$escaneo" -eq 1 ]; then
-  paso "Escaneo de vulnerabilidades (Trivy $TRIVY: HIGH/CRITICAL con parche disponible fallan)"
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "aquasec/trivy:$TRIVY" \
+  paso "Escaneo de vulnerabilidades ($TRIVY_IMAGEN: HIGH/CRITICAL con parche disponible fallan)"
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGEN" \
     image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGEN_LOCAL" \
     || fallar "la imagen tiene vulnerabilidades HIGH/CRITICAL con parche (actualizar ASPNET_VERSION/SDK_VERSION o el paquete)"
 fi
@@ -196,10 +208,16 @@ fi
 
 # Tags inmutables (igual que el job publicar-imagen del CI):
 #   sha-<corto>  se sube solo si no existe; si ya existe se conserva (no se reemplaza con un build nuevo).
-#   X.Y.Z        error si ya existe; si no, se crea sobre el digest de sha-<corto> (docker buildx imagetools create).
+#   X.Y.Z        error si ya existe; si no, se crea sobre el digest de sha-<corto> (imagetools create --prefer-index=false,
+#                que conserva el mismo manifiesto y por lo tanto el mismo digest).
 #   qa | main    canal móvil: se mueve al digest de sha-<corto>.
 paso "Etiquetar y subir"
-existe() { docker buildx imagetools inspect "$IMAGEN:$1" >/dev/null 2>&1; }
+# "not found" o MANIFEST_UNKNOWN = no existe; cualquier otro error (red, credenciales) detiene el script.
+existe() {
+  if salida=$(docker buildx imagetools inspect "$IMAGEN:$1" 2>&1); then return 0; fi
+  if printf "%s" "$salida" | grep -Eqi "not found|manifest_unknown|manifest unknown"; then return 1; fi
+  fallar "no se pudo consultar $IMAGEN:$1: $salida"
+}
 for etiqueta in $etiquetas; do
   if [ "$etiqueta" = "sha-$commit" ]; then
     if existe "$etiqueta"; then
@@ -214,7 +232,7 @@ for etiqueta in $etiquetas; do
     qa|main) ;;
     *) existe "$etiqueta" && fallar "$IMAGEN:$etiqueta ya existe; una versión publicada no se sobrescribe" ;;
   esac
-  docker buildx imagetools create -t "$IMAGEN:$etiqueta" "$IMAGEN:sha-$commit"
+  docker buildx imagetools create --prefer-index=false -t "$IMAGEN:$etiqueta" "$IMAGEN:sha-$commit"
 done
 digest=$(docker buildx imagetools inspect "$IMAGEN:sha-$commit" | sed -n 's/^Digest: *//p' | head -n 1)
 
