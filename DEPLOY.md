@@ -196,9 +196,14 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 - **Inmutables:** `sha-<corto>` y `X.Y.Z` nunca se reemplazan con otros bytes.
   - `sha-<corto>` se sube una sola vez; si ya existe (otro push del mismo commit, una re-ejecución), se conserva.
   - `X.Y.Z` **no se reconstruye**: se crea sobre el digest que ya tiene `sha-<corto>` con
-    `docker buildx imagetools create -t ...:X.Y.Z ...:sha-<corto>`. Producción corre exactamente los bytes que se
-    probaron en staging. Solo si ese commit nunca se publicó por rama, se sube la imagen construida y probada en esa
-    corrida, únicamente como `X.Y.Z`.
+    `docker buildx imagetools create --prefer-index=false -t ...:X.Y.Z ...:sha-<corto>`. `--prefer-index=false`
+    evita que buildx envuelva el manifiesto en un índice OCI nuevo: `X.Y.Z` tiene **el mismo digest** que
+    `sha-<corto>`, y producción corre exactamente los bytes que se probaron en staging.
+  - Versión final sin `sha-<corto>` publicado: el CI **falla** ("espera a que termine la corrida de main") y nunca
+    sube un build propio. Solo una candidata `X.Y.Z-rc.N` de un commit que nunca se publicó por rama sube la imagen
+    construida y probada en su corrida.
+  - En el CI un solo publicador por commit (`concurrency: publicar-imagen-<sha>`, sin cancelar): el push de `main` y
+    el tag del mismo commit no compiten.
   - Una `X.Y.Z` que ya existe no se sobrescribe (el job o el script fallan).
   - `qa` y `main` son canales móviles (apuntan al último `sha-<corto>` del canal).
 - **Dokploy despliega siempre un tag inmutable:** `sha-<corto>` o `X.Y.Z-rc.N` en staging y `X.Y.Z` en producción.
@@ -216,8 +221,9 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 `.github/workflows/backend-dotnet.yml` (el mismo CI de #14, extendido):
 
 1. `imagen-docker` construye la imagen con la versión del evento, corre la prueba de humo (`HEALTHCHECK` *healthy*,
-   `/health` 200, `/health/ready` 503 sin base), la escanea con Trivy 0.74.0 (falla con vulnerabilidades HIGH o
-   CRITICAL que tengan parche) y, solo en push, guarda esa misma imagen como artefacto.
+   `/health` 200, `/health/ready` 503 sin base), la escanea con Trivy 0.74.0 fijado por digest (falla con
+   vulnerabilidades HIGH o CRITICAL que tengan parche) y, solo en push, guarda esa misma imagen como artefacto. El
+   nombre del tag git se valida como semver y nunca se interpola con `${{ }}` dentro de un `run` (llega por `env:`).
 2. `publicar-imagen` corre solo en push a `QA`/`main` o en un tag `v*`, **después de que pasen** unitarias,
    integración, cobertura, auditoría NuGet, imagen y contrato. Carga la imagen probada (mismos bytes, no la reconstruye)
    y la sube a GHCR con `GITHUB_TOKEN` (permiso `packages: write` solo en ese job), con las reglas de inmutabilidad
@@ -237,10 +243,12 @@ humo en un puerto libre de `127.0.0.1`, escaneo con Trivy y push con las mismas 
 Antes de publicar se niegan si:
 
 - hay cambios sin commit en `backend-dotnet/`;
+- no se pasó `--canal` ni hay versión (tag `vX.Y.Z` en HEAD o `--version`), o HEAD no está en ninguna rama de
+  `origin` (un build de un commit local no puede ocupar el `sha-<corto>` inmutable);
 - `--canal qa|main` no se corre desde la rama `QA`/`main`, o HEAD no está subido a `origin/<rama>`;
-- la versión (`--version` o el tag `vX.Y.Z` de HEAD) no tiene su tag subido a `origin`, o es final (`X.Y.Z`) y el
-  commit no está en `origin/main`;
-- el tag `X.Y.Z` ya existe en el registry.
+- el tag `vX.Y.Z` de `origin` no existe o no apunta a HEAD, o la versión es final (`X.Y.Z`) y el commit no está en
+  `origin/main`;
+- el tag `X.Y.Z` ya existe en el registry, o el registry responde con un error que no sea "no existe".
 
 ```bash
 # Una vez: PAT clásico de GitHub con write:packages (de quien publica), o la sesión de "docker login ghcr.io".
@@ -276,6 +284,11 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
   (`No such image` o `unauthorized` en `docker service ps --no-trunc`), hacer también `docker login ghcr.io` en el
   worker. Esto se verifica en el primer despliegue a staging (HU-006.6).
 - El PAT nunca va en el manifiesto ni en el repositorio.
+- **Primer push y permisos del paquete:** si el paquete `cotifly-backend` lo crea el script con un PAT personal
+  (mientras Actions siga bloqueado), queda sin acceso para el repositorio y el primer push del CI con `GITHUB_TOKEN`
+  recibe `403`. Una vez creado: *GitHub → paquete `cotifly-backend` → Package settings → Manage Actions access* →
+  agregar el repositorio `Cotifly` con rol **Write** (y, si se quiere, enlazarlo al repositorio en *Connect
+  repository*).
 
 ### 4.5 Release paso a paso
 
@@ -283,8 +296,10 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).
 2. **Release.** Merge `QA` → `main` (el push a `main` publica `sha-<corto>` del commit de `main`); desplegar ese
-   `sha-<corto>` en staging si el merge creó un commit nuevo. Luego crear y subir el tag `vX.Y.Z` sobre ese mismo
-   commit → `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging.
+   `sha-<corto>` en staging si el merge creó un commit nuevo. **Esperar a que termine la corrida del push a `main`**
+   (que `sha-<corto>` esté publicado) y recién entonces crear y subir el tag `vX.Y.Z` sobre ese mismo commit →
+   `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging. Si el tag llega
+   antes, su corrida falla con "espera a que termine la corrida de main"; se vuelve a ejecutar cuando termine.
 3. **Producción.** En Dokploy, stack de producción: `COTIFLY_TAG=X.Y.Z` → *Deploy*. Swarm actualiza con `start-first`
    y vuelve atrás solo si el healthcheck falla (manifiesto, HU-006.6).
 4. **Verificar** qué imagen corre: `docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
