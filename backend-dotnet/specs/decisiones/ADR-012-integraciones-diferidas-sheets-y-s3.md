@@ -66,5 +66,5 @@ HU-003.7 pide confirmar con el equipo si Sheets y S3 siguen vigentes antes de mi
 |---|---|
 | Confirmar si Gerencia sigue usando el tablero de Looker Studio y elegir A, B o C | Duban + Gerencia Comercial |
 | Si A: confirmar si Google puede llegar a `tbsdatacenter` y crear el login de solo lectura | DBA / infraestructura |
-| Definir número de réplicas y tipo de volumen en Swarm/Dokploy; de eso depende volumen o S3 | Duban + infraestructura (HU-006.6, #30) |
+| Definir número de réplicas y tipo de volumen en Swarm/Dokploy; de eso depende volumen o S3 (HU-006.6 propone 1 réplica y volumen local, ADR-013 §3) | Duban + infraestructura (HU-006.6, #30) |
 | Si S3: bucket, credenciales y política de retención de los PDF | Infraestructura |
