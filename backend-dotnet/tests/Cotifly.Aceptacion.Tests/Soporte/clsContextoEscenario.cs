@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Margen.Services;
+using Cotifly.Infraestructura.Precio.Services;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,7 +22,13 @@ public sealed class clsContextoEscenario : IDisposable
     public clsContextoEscenario()
     {
         // Carpeta de PDFs fija durante el escenario: sobrevive a Reconfigurar (#11).
-        _configuracion = new Dictionary<string, string?> { ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal() };
+        _configuracion = new Dictionary<string, string?>
+        {
+            ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
+
+            // La TRM (HU-012.1) nunca sale a la red: el adaptador real consulta los datos abiertos falsos del escenario.
+            ["Trm:Url"] = clsTrmFalso.Url,
+        };
         _proveedor = CrearProveedor();
     }
 
@@ -32,6 +39,9 @@ public sealed class clsContextoEscenario : IDisposable
 
     /// <summary>SAP TM falso (sin red) que atiende al adaptador OData cuando el escenario usa <see cref="UsarFuenteSapReal"/>.</summary>
     public clsSapTmFalso SapFalso { get; } = new();
+
+    /// <summary>Datos abiertos de la Superintendencia Financiera falsos (TRM, HU-012.1) que atienden al adaptador real.</summary>
+    public clsTrmFalso TrmFalso { get; } = new();
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +90,11 @@ public sealed class clsContextoEscenario : IDisposable
             Reloj,
             clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
-            configurar: s => s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso));
+            configurar: s =>
+            {
+                s.AddHttpClient(clsFuenteMargenOData.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => SapFalso);
+                UsarTrmFalsa(s);
+            });
     }
 
     /// <summary>Rehace el proveedor con claves de configuración adicionales (ej. <c>Correo:Habilitado</c>), conservando las anteriores.</summary>
@@ -102,7 +116,14 @@ public sealed class clsContextoEscenario : IDisposable
             Reloj,
             clsEntornoAceptacion.BaseDatos.CadenaIdentidad,
             configuracionExtra: _configuracion,
-            configurar: s => s.AddSingleton<IClsFuenteMargen>(FuenteSap));
+            configurar: s =>
+            {
+                s.AddSingleton<IClsFuenteMargen>(FuenteSap);
+                UsarTrmFalsa(s);
+            });
+
+    private void UsarTrmFalsa(IServiceCollection servicios) =>
+        servicios.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => TrmFalso);
 
     /// <summary>Ejecuta <paramref name="accion"/> en un ámbito nuevo (como una petición) y guarda los cambios.</summary>
     public async Task EnAmbitoAsync(Func<IServiceProvider, Task> accion)
@@ -125,6 +146,7 @@ public sealed class clsContextoEscenario : IDisposable
     {
         _proveedor.Dispose();
         SapFalso.Dispose();
+        TrmFalso.Dispose();
         _relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

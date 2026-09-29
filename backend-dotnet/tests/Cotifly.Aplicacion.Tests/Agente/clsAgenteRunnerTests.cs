@@ -19,7 +19,7 @@ namespace Cotifly.Aplicacion.Tests.Agente;
 public sealed class clsAgenteRunnerTests
 {
     private static readonly string[] _herramientasSinCorreo =
-        ["buscar_cliente", "buscar_tarifa", "obtener_margen", "calcular_precio", "registrar_ajuste_margen", "generar_pdf", "consultar_cotizacion"];
+        ["buscar_cliente", "resolver_municipio", "buscar_tarifa", "obtener_margen", "calcular_precio", "registrar_ajuste_margen", "generar_pdf", "consultar_cotizacion"];
 
     private readonly clsArnesAgente _arnes = new();
 
@@ -198,7 +198,7 @@ public sealed class clsAgenteRunnerTests
 
         await _arnes.TurnoAsync("hola");
 
-        _arnes.Modelo.Llamadas[0].Herramientas.Should().Contain("enviar_correo").And.HaveCount(8);
+        _arnes.Modelo.Llamadas[0].Herramientas.Should().Contain("enviar_correo").And.HaveCount(9);
     }
 
     // IClsValidadorRespuestaAgente (#16): el runner delega la llamada final con el contexto del turno y usa la respuesta validada.
