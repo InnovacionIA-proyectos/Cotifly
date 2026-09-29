@@ -58,7 +58,9 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 ### 4. PDF (HU-012.3)
 
-La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TRM aplicada: el valor se ajusta día a día con la TRM vigente, pero el mínimo a pagar es el valor cotizado originalmente. La detalla #52.
+La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TRM aplicada: el valor en pesos se ajusta día a día con la TRM vigente (la aplicada es la referencia), pero "el mínimo a pagar es $X, el valor cotizado originalmente en pesos".
+
+**Definición única del piso:** X es `precio_cop`, el precio en pesos que salió del costo y el margen aplicado antes de convertir (half-to-even a pesos, `clsCalculadoraPrecio`). No se usa `precio_final × trm_aplicada`: con el precio en USD redondeado a centavos esa multiplicación difiere hasta unos ±16 pesos del valor cotizado. `precio_cop` no tiene columna propia: se recalcula de `Cotizaciones.costo`, `margenAplicado` y `metodoCalculo` (persistidos), y el servidor verifica que el de la trazabilidad coincida. La misma definición está en `SalidaPrecio.precio_cop` y `CotizacionResumen.trm_aplicada` del contrato y en `clsTextosEstandar.AclaracionDolares`.
 
 ## Alternativas consideradas
 

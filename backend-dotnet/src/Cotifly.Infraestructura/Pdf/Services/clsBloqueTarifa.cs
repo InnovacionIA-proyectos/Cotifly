@@ -9,7 +9,7 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// <summary>
 /// Bloque "NUESTRA TARIFA PARA SU SOLICITUD ES:": subtítulo, tabla(s) de tarifa (<c>table.tar</c>: franja verde con el
 /// título, franja azul con el origen, encabezados en mayúscula y filas con la tarifa en azul), nota general, nota de decretos
-/// (<c>.nota-decreto</c>), detalle adicional (aduana, extradimensionada, refrigerada) y las dos columnas incluye / no incluye.
+/// (<c>.nota-decreto</c>), aclaración de la cotización en dólares (HU-012.3, mismo recuadro), detalle adicional (aduana, extradimensionada, refrigerada) y las dos columnas incluye / no incluye.
 /// </summary>
 internal static class clsBloqueTarifa
 {
@@ -43,7 +43,13 @@ internal static class clsBloqueTarifa
 
         if (documento.NotaDecreto is { } decreto)
         {
-            NotaDecreto(seccion, decreto, diseno);
+            NotaResaltada(seccion, clsTextosEstandar.EtiquetaTiemposLogisticos, decreto, diseno);
+        }
+
+        // HU-012.3: en USD, la TRM aplicada y el piso mínimo, con el mismo recuadro de la nota de decretos (ambas variantes).
+        if (documento.NotaMoneda is { } moneda)
+        {
+            NotaResaltada(seccion, clsTextosEstandar.EtiquetaMoneda, moneda, diseno);
         }
 
         if (documento.BloquesAdicionales.Count > 0)
@@ -136,8 +142,11 @@ internal static class clsBloqueTarifa
         AgregarTexto(parrafo, nota);
     }
 
-    /// <summary>Nota de decretos: fondo gris claro con borde izquierdo azul de 3 px (<c>.nota-decreto</c>).</summary>
-    private static void NotaDecreto(Section seccion, string nota, clsDisenoPdf diseno)
+    /// <summary>
+    /// Nota resaltada (<c>.nota-decreto</c>): fondo gris claro con borde izquierdo azul de 3 px y la etiqueta en negrita azul. La usan la
+    /// nota de decretos y la aclaración de la cotización en dólares.
+    /// </summary>
+    private static void NotaResaltada(Section seccion, string etiqueta, string nota, clsDisenoPdf diseno)
     {
         Espacio(seccion, 12);
         var tabla = seccion.AddTable();
@@ -153,7 +162,7 @@ internal static class clsBloqueTarifa
         celda.Borders.Left.Width = Px(3);
         celda.Borders.Left.Color = Primario;
         var parrafo = Parrafo(celda.AddParagraph(), 10, diseno.Alto);
-        parrafo.AddFormattedText(clsTextosEstandar.EtiquetaTiemposLogisticos, TextFormat.Bold).Color = Primario;
+        parrafo.AddFormattedText(etiqueta, TextFormat.Bold).Color = Primario;
         parrafo.AddText(" ");
         AgregarTexto(parrafo, nota);
         Espacio(seccion, 12);

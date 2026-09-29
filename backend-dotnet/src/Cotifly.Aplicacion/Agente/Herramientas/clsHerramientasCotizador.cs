@@ -341,7 +341,8 @@ public sealed class clsHerramientasCotizador(
             estado.ClienteConfirmado && estado.OrigenCliente is { } origenCliente ? clsCodigoEnum.ACodigo(origenCliente) : null,
             estado.Moneda,
             Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda) ? 0m : estado.TrmAplicada ?? 0m,
-            estado.CosteoId);
+            estado.CosteoId,
+            Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda) ? null : estado.PrecioCop);
     }
 
     private static object ParaModelo(Dominio.Agente.clsMunicipioResuelto municipio) =>

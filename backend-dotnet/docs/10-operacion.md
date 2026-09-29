@@ -149,6 +149,7 @@ Otras decisiones abiertas:
 | Sincronización a Google Sheets y S3/MinIO | Duban con Gerencia Comercial e infraestructura | ADR-012 |
 | Fuente oficial de la TRM (datos abiertos de la Superintendencia Financiera) y salida a `www.datos.gov.co` | Duban con el equipo; infraestructura | ADR-014 |
 | Nueva versión (v2) de una cotización en USD: hoy se siembra con la TRM de la original (`trmAplicada` copiada) y, al recalcular, toma la TRM del día. ¿La v2 debe conservar la TRM original o usar la del día? | Gerencia Comercial | ADR-014 |
+| Texto legal de la aclaración del piso mínimo en el PDF en USD (`clsTextosEstandar.AclaracionDolares`) | Gerencia Comercial / jurídica | ADR-014 |
 
 ## 10.8 Activación por integración
 
