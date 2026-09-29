@@ -183,7 +183,8 @@ public sealed partial class clsGenerarPdfService(
     /// sobrescribe costo, margen y tarifa de las filas y los precios de los servicios desde el estado):
     /// <list type="bullet">
     /// <item>Cada fila y cada servicio conexo con moneda explícita debe estar en la moneda de la cotización (HU-012.3).</item>
-    /// <item>Con <c>PrecioFinal</c> y costo + margen aplicado, el precio calculado con el método debe ser <c>PrecioFinal</c>.</item>
+    /// <item>Con <c>PrecioFinal</c> y costo + margen aplicado, el precio calculado con el método debe ser <c>PrecioFinal</c> (en USD, el precio en
+    /// pesos convertido con la TRM de la trazabilidad, HU-012.2).</item>
     /// <item>Con <c>PrecioFinal</c>, la tarifa impresa de cada fila (dada o calculada) debe ser <c>PrecioFinal</c>. La tabla
     /// Cotizaciones guarda un solo precio: una cotización con varias tarifas distintas no puede traer <c>PrecioFinal</c>
     /// (pendiente de modelo si negocio necesita guardar un precio por fila).</item>
@@ -218,10 +219,14 @@ public sealed partial class clsGenerarPdfService(
 
         if (traza.Costo is { } costo && traza.MargenAplicado is { } margenAplicado)
         {
-            var calculado = clsCalculadoraPrecio.Calcular(costo, margenAplicado, metodo);
-            if (calculado.EsFallo || calculado.Valor.Precio != precioFinal)
+            // El costo está en COP; en otra moneda el precio esperado es el de pesos convertido con la TRM de la trazabilidad (HU-012.2).
+            var calculado = clsCalculadoraPrecio.Calcular(costo, margenAplicado, metodo)
+                .Coincidir(
+                    p => clsConversorMoneda.EsPesos(moneda) ? p.Precio : clsConversorMoneda.PesosADolares(p.Precio, traza.TrmAplicada),
+                    e => (clsResultado<decimal>)e);
+            if (calculado.EsFallo || calculado.Valor != precioFinal)
             {
-                var obtenido = calculado.EsExitoso ? clsFormatoMoneda.Formatear(calculado.Valor.Precio, moneda) : calculado.Error.Mensaje;
+                var obtenido = calculado.EsExitoso ? clsFormatoMoneda.Formatear(calculado.Valor, moneda) : calculado.Error.Mensaje;
                 return Invalido($"El precio final de la trazabilidad ({clsFormatoMoneda.Formatear(precioFinal, moneda)}) no corresponde al costo y margen aplicado con el método '{metodo}' ({obtenido}).");
             }
         }
@@ -234,7 +239,7 @@ public sealed partial class clsGenerarPdfService(
                 return error;
             }
 
-            if (tarifa is { } impresa && Math.Round(impresa, 0, MidpointRounding.ToEven) != Math.Round(precioFinal, 0, MidpointRounding.ToEven))
+            if (tarifa is { } impresa && clsConversorMoneda.Redondear(impresa, moneda) != clsConversorMoneda.Redondear(precioFinal, moneda))
             {
                 return Invalido(
                     $"La tarifa impresa de la fila '{clsTextoSeguro.LimpiarLinea(fila.Destino)}' ({clsFormatoMoneda.Formatear(impresa, moneda)}) no coincide con el precio final de la cotización "

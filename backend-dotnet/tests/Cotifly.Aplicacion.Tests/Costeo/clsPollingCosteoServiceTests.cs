@@ -228,5 +228,5 @@ public sealed class clsPollingCosteoServiceTests
 
     private clsPollingCosteoService Servicio() => new(
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance,
-        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService()));
+        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>())));
 }

@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Municipios.Services;
 using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Precio;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 
@@ -32,8 +33,11 @@ namespace Cotifly.Aplicacion.Agente.Filtros;
 /// <item><c>calcular_precio</c>: margen y método del estado (sin margen resuelto, <c>PRECIO_INVALIDO</c>); el costo, si vino de
 /// <c>buscar_tarifa</c>. Un costo que escribió el comercial en el chat sí llega del mensaje.</item>
 /// <item><c>registrar_ajuste_margen</c>: margen de referencia (el propuesto por <c>obtener_margen</c>), costo y método del estado.</item>
+/// <item><c>calcular_precio</c> y <c>registrar_ajuste_margen</c>, moneda (HU-012.2): la del selector del formulario web si vino en el turno;
+/// si no, la del estado, que reconoce la moneda nombrada en cualquier mensaje del comercial (COP por defecto). La TRM nunca es un
+/// argumento: la consulta el servidor.</item>
 /// <item><c>generar_pdf</c>: exige la confirmación explícita del turno y un cliente sin candidatos pendientes
-/// (<c>CONFIRMACION_REQUERIDA</c>) y un precio calculado; reescribe el payload: línea canónica, método, cliente confirmado, y en
+/// (<c>CONFIRMACION_REQUERIDA</c>), un precio calculado y, en USD, una TRM vigente hoy (si no, <c>CONFIRMACION_REQUERIDA</c>: se recalcula); reescribe el payload: línea canónica, método, cliente confirmado, y en
 /// cada fila tarifa = precio final, costo y margen del estado, moneda de la cotización; quita la <c>referencia</c> (el folio lo
 /// genera el servidor), la trazabilidad y los servicios conexos (sus precios vendrán del costeo de Nexo, HU-005).</item>
 /// <item><c>enviar_correo</c>: exige la confirmación del turno o que el comercial haya escrito los destinatarios en su mensaje.</item>
@@ -168,6 +172,7 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
 
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Margen, margen);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Metodo, estado.MetodoCalculo ?? "margen");
+        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(estado));
         return null;
     }
 
@@ -176,8 +181,18 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.MargenPolitica, estado.MargenSugerido ?? estado.MargenPolitica);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Costo, estado.Costo);
         Sobrescribir(args, herramienta, clsArgumentosHerramienta.Metodo, estado.MetodoCalculo ?? "margen");
+        Sobrescribir(args, herramienta, clsArgumentosHerramienta.Moneda, MonedaDelTurno(estado));
         return null;
     }
+
+    /// <summary>
+    /// Moneda del precio (HU-012.2): la del selector del formulario si vino en el turno; si no, la del estado, que ya reconoció la moneda
+    /// nombrada en cualquier mensaje del comercial (<c>clsEstadoConversacionService.ReconocerMensaje</c>, ADR-004). Lo que pida el modelo
+    /// no cuenta: no convierte a dólares por su cuenta.
+    /// </summary>
+    private string MonedaDelTurno(clsEstadoConversacion estado) =>
+        contexto.MonedaDelFormulario
+        ?? (string.IsNullOrWhiteSpace(estado.Moneda) ? clsConversorMoneda.Pesos : estado.Moneda.Trim().ToUpperInvariant());
 
     private clsErrorDominio? InyectarPdf(KernelArguments args, string herramienta, clsEstadoConversacion estado)
     {
@@ -191,6 +206,13 @@ public sealed class clsInyeccionEstadoFilter(clsContextoTurnoAgente contexto, IL
         if (estado.PrecioFinal is not { } precioFinal)
         {
             return new clsErrorDominio(clsCodigosError.PdfPayloadInvalido, "Falta calcular el precio con calcular_precio antes de generar el PDF.");
+        }
+
+        if (contexto.Hoy is { } hoy && estado.TrmVencidaEn(hoy))
+        {
+            return new clsErrorDominio(
+                clsCodigosError.ConfirmacionRequerida,
+                "La TRM con que se calculó el precio en dólares ya no está vigente: recalcula el precio con calcular_precio y pide una nueva confirmación.");
         }
 
         if (!contexto.ConfirmadoEnEsteTurno)

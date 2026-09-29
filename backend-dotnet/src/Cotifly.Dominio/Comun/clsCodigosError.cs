@@ -10,6 +10,12 @@ public static class clsCodigosError
     /// <summary>No hay fuente de costeo disponible (el tarifario de Drive se retiró; Nexo llega con HU-005).</summary>
     public const string TarifaFuenteNoDisponible = "TARIFA_FUENTE_NO_DISPONIBLE";
 
+    /// <summary>
+    /// La fuente de costeo devolvió una tarifa inválida para cotizar (ej. en una moneda distinta de COP: el costo siempre es en pesos,
+    /// HU-012.2). Mismo código que el Python para la configuración inválida del tarifario.
+    /// </summary>
+    public const string TarifaConfigInvalida = "TARIFA_CONFIG_INVALIDA";
+
     /// <summary>La fuente de margen (SAP TM) no respondió o no está configurada.</summary>
     public const string MargenFuenteNoDisponible = "MARGEN_FUENTE_NO_DISPONIBLE";
 
