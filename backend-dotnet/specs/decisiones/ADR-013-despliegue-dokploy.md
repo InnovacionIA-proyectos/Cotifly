@@ -31,9 +31,14 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 ### 2. Registry y pipeline (HU-006.4, #28)
 
 1. **Registry: GHCR**, `ghcr.io/innovacionia-proyectos/cotifly-backend`, paquete privado de la organización.
-2. **Tags:** `X.Y.Z` desde un tag git `vX.Y.Z` sobre `main`, `sha-<corto>` siempre, y `qa`/`main` como canal móvil.
-   Nunca `latest`. Dokploy despliega un tag inmutable (`sha-<corto>` en staging, `X.Y.Z` en producción) en la variable
-   `COTIFLY_TAG` del stack.
+2. **Tags:** `sha-<corto>` en cada push de rama, `qa`/`main` como canal móvil, y `X.Y.Z` desde un tag git `vX.Y.Z`
+   sobre `main` (o `X.Y.Z-rc.N` desde otra rama, para candidatas en staging). Nunca `latest`. Dokploy despliega un
+   tag inmutable en la variable `COTIFLY_TAG` del stack.
+   - **Inmutabilidad:** `sha-<corto>` se sube una vez y no se reemplaza; `X.Y.Z` no se reconstruye, se crea sobre el
+     digest de `sha-<corto>` con `docker buildx imagetools create` (producción corre los bytes probados en staging), y
+     una `X.Y.Z` existente no se sobrescribe. En un evento de tag solo se publica `X.Y.Z`.
+   - Los scripts manuales exigen además que `--canal qa|main` corra desde esa rama con HEAD subido, y que el tag de
+     versión esté en `origin`.
 3. **Pipeline:** el mismo workflow `backend-dotnet.yml`. `imagen-docker` construye, prueba (humo) y escanea (Trivy
    0.74.0) la imagen; `publicar-imagen` sube esos mismos bytes a GHCR con `GITHUB_TOKEN` (`packages: write` solo en ese
    job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs.
@@ -57,6 +62,8 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   permisos del repositorio.
 - **Que Dokploy construya desde git en el nodo** (como hoy): es lo que HU-006 pide eliminar (sin versión, disco del
   nodo, sin pruebas antes de desplegar).
+- **Reconstruir y volver a subir `sha-<corto>` en el evento de tag**: la primera versión de #28 lo hacía; daba otros
+  bytes (fecha de build, etiquetas) bajo un tag que debía ser inmutable. Se reemplazó por `imagetools create`.
 - **Reconstruir en el job de publicación** (`docker/build-push-action`): publicaría bytes distintos a los probados; se
   prefirió pasar la imagen probada como artefacto.
 
