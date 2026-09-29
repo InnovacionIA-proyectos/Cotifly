@@ -127,6 +127,54 @@ public static class clsCodigosError
     public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
 
     /// <summary>
+    /// El formulario ampliado del costeo (<c>POST /web/solicitudes-costeo</c>) no cumple los límites de Nexo (ADR-015). Mismo
+    /// valor que <c>clsSolicitudCosteo.CodigoError</c>. Código nuevo del backend .NET.
+    /// </summary>
+    public const string SolicitudCosteoInvalida = "SOLICITUD_COSTEO_INVALIDA";
+
+    /// <summary>
+    /// El costeo de Nexo no está disponible: Nexo sin configurar, 5xx, red, circuito abierto o el comercial sin
+    /// <c>idUsuarioExterno</c> (ADR-015). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoNoDisponible = "COSTEO_NEXO_NO_DISPONIBLE";
+
+    /// <summary>
+    /// Nexo no respondió a tiempo. En un alta la solicitud pudo quedar creada (Nexo no ofrece clave de idempotencia, ADR-015).
+    /// Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoTiempoAgotado = "COSTEO_NEXO_TIEMPO_AGOTADO";
+
+    /// <summary>Nexo respondió 4xx; el código y el mensaje de Nexo van en el detalle (ADR-015). Código nuevo del backend .NET.</summary>
+    public const string CosteoNexoRechazada = "COSTEO_NEXO_RECHAZADA";
+
+    /// <summary>
+    /// Nexo respondió 400 al alta (validación de los datos: <c>PESO_INCONSISTENTE</c>, <c>LINEA_INCOMPLETA</c>...): reenviar los mismos
+    /// datos no puede funcionar, así que el <c>error_envio</c> es definitivo (ADR-015 §3). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudInvalida = "COSTEO_NEXO_SOLICITUD_INVALIDA";
+
+    /// <summary>
+    /// Nexo ya no reconoce la solicitud (404 <c>SOLICITUD_NO_ENCONTRADA</c> al consultarla): el polling la deja de consultar con el
+    /// motivo, en vez de reintentar hasta la edad máxima (ADR-015 §4). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudNoEncontrada = "COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA";
+
+    /// <summary>
+    /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
+    /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNoReintentable = "COSTEO_NO_REINTENTABLE";
+
+    /// <summary>
+    /// La cotización todavía no tiene el costeo de Nexo con margen aplicado (precio): no se pueden elegir servicios conexos ni
+    /// generar el PDF del costeo (409, ADR-015 §5). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNoListo = "COSTEO_NO_LISTO";
+
+    /// <summary>La cotización ya tiene PDF: para cambiar precios o servicios se genera una versión nueva (409). Código nuevo del backend .NET.</summary>
+    public const string PdfYaGenerado = "PDF_YA_GENERADO";
+
+    /// <summary>
     /// La herramienta <c>resolver_municipio</c> (HU-005.13) recibió un <c>campo</c> que no es <c>origen</c> ni <c>destino</c>, o un
     /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
     /// </summary>

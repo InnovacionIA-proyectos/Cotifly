@@ -16,6 +16,7 @@ using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -82,6 +83,27 @@ public sealed class clsApiWebPruebas : IDisposable
     }
 
     public WebApplicationFactory<Program> Factory { get; }
+
+    /// <summary>
+    /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
+    /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red.
+    /// </summary>
+    public static clsApiWebPruebas ConNexo(clsBaseDatosPruebas baseDatos, clsNexoFalso nexo, IDictionary<string, string?>? extra = null)
+    {
+        ArgumentNullException.ThrowIfNull(nexo);
+        // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
+        var valores = new Dictionary<string, string?> { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase, ["CosteoNexo:Habilitado"] = "false" };
+        foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
+        {
+            valores[clave] = valor;
+        }
+
+        return new clsApiWebPruebas(baseDatos, extra: valores, configurar: b => b.ConfigureTestServices(s =>
+        {
+            s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+        }));
+    }
 
     public HttpClient Cliente { get; }
 
@@ -165,6 +187,23 @@ public sealed class clsApiWebPruebas : IDisposable
 
         var creada = resultado.Valor;
         return new clsCotizacionPrueba(creada.Id, creada.Folio, conPdf ? $"{creada.Folio}.pdf" : null, nit);
+    }
+
+    /// <summary>
+    /// Una vuelta del polling de Nexo (HU-005.6) como la haría el worker, después de adelantar la agenda de la cotización
+    /// <paramref name="folio"/> al año 2000 (queda primera en la agenda compartida) y, si se pide, su envío a Nexo
+    /// <paramref name="enviadaHace"/> atrás. Devuelve cuántas procesó (puede incluir cotizaciones vencidas de otras pruebas).
+    /// </summary>
+    public async Task<int> ProcesarPollingAsync(string folio, TimeSpan? enviadaHace = null)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        var envio = enviadaHace is { } hace
+            ? $", costeoEnviadoAt = DATEADD(SECOND, -{(long)hace.TotalSeconds}, SYSDATETIMEOFFSET())"
+            : string.Empty;
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+        return await Infraestructura.Costeo.Services.clsWorkerCosteoNexo.ProcesarLoteAsync(
+            Factory.Services.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
     }
 
     /// <summary>Registra en <c>Correos</c> un envío exitoso de la cotización (para los destinatarios previos).</summary>

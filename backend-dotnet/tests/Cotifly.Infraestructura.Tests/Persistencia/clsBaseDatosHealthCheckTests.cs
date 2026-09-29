@@ -79,6 +79,15 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task ConUnaBaseSinEl0004EsUnhealthyPorEsquemaIncompleto()
+    {
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0004Async());
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0004", "el modelo EF de Cotizaciones ya mapea las columnas del 0004");
+    }
+
+    [Fact]
     public async Task ElHealthServiceEjecutaElCheckEtiquetadoReady()
     {
         await using var proveedor = clsServiciosPruebas.Crear(baseDatos.CadenaCotifly, new clsRelojFalso());

@@ -25,6 +25,7 @@ public sealed record clsCotizacionResumen(
     decimal? MargenAplicado,
     string Moneda,
     string? EstadoCosteo,
+    string? MotivoEstadoCosteo,
     string EstadoEnvio,
     bool? Ganada,
     string? MotivoRechazo,
@@ -48,7 +49,8 @@ public sealed record clsCotizacionResumen(
             cotizacion.PrecioFinal,
             cotizacion.MargenAplicado,
             cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
-            cotizacion.EstadoCosteo,
+            cotizacion.EstadoCosteo is { } estadoCosteo ? clsCodigoEnum.ACodigo(estadoCosteo) : null,
+            cotizacion.MotivoEstadoCosteo,
             clsCodigoEnum.ACodigo(cotizacion.EstadoEnvio ?? Dominio.Cotizaciones.EstadoEnvio.SinEnviar),
             cotizacion.Ganada,
             cotizacion.MotivoRechazo,
@@ -85,3 +87,6 @@ public sealed record clsDatosNuevaVersion(
     string? OrigenMargen,
     string? MetodoCalculo,
     string? Moneda);
+
+/// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
+public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);

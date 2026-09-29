@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Correo.Services;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Services;
@@ -68,6 +69,11 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
         servicios.AddScoped<IClsMetricasService, clsMetricasService>();
 
+        // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
+        servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
+        servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
+        servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
+        servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         servicios.AddScoped<IClsTableroMetricasService, clsTableroMetricasService>();

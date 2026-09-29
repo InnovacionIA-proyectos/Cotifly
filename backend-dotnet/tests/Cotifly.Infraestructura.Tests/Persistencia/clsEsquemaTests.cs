@@ -17,13 +17,13 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 {
     private static readonly string[] _tablasEsperadas =
     [
-        "CorreoDestinatarios", "Correos", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
+        "CorreoDestinatarios", "Correos", "CotizacionPosiciones", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
     ];
 
     [Fact]
-    public async Task LosScripts0001Y0002CreanLasCatorceTablas()
+    public async Task LosScripts0001A0004CreanLasQuinceTablas()
     {
         var tablas = await LeerAsync(
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'",
@@ -44,6 +44,65 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         await reaplicar.Should().NotThrowAsync();
         (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0002 no debe cambiar columnas, claves, índices, CHECK ni defaults");
         (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0002 no debe tocar datos");
+    }
+
+    [Fact]
+    public async Task ElScript0004EsIdempotente()
+    {
+        var antes = await FotoEsquemaAsync();
+        var filasAntes = await ContarFilasAsync();
+
+        var reaplicar = () => clsBaseDatosPruebas.EjecutarScriptAsync(
+            BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0004_costeo_nexo.sql"));
+
+        await reaplicar.Should().NotThrowAsync();
+        (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0004 no debe cambiar columnas, claves, índices, CHECK ni defaults");
+        (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0004 no debe tocar datos");
+    }
+
+    [Fact]
+    public async Task ElScript0004AgregaVeintinueveColumnasNullablesACotizacionesSalvoLasConsultasFallidas()
+    {
+        var columnas = await LeerColumnasAsync();
+        string[] nuevas =
+        [
+            "tipoSolicitud", "deadline", "valorEstimado", "referencia", "horasCargue", "horasDescargue", "origen", "destino",
+            "tipoVehiculo", "carroceria", "tipologia", "claseViaje", "claseContenedor", "exclusivo", "consolidado", "retornaContenedor",
+            "ciudadDevolucionContenedor", "levanteContenedorDiferente", "ciudadLevanteContenedor", "valorAprovisionamiento", "pesoKg",
+            "valorMercancia", "cotizacionNexoId", "motivoEstadoCosteo", "costeoEnviadoAt", "costeoUltimaConsultaAt",
+            "costeoSiguienteConsultaAt", "costeoConsultasFallidas", "serviciosConexos",
+        ];
+
+        nuevas.Where(c => !columnas.ContainsKey(("Cotizaciones", c))).Should().BeEmpty();
+        nuevas.Where(c => c != "costeoConsultasFallidas" && !columnas[("Cotizaciones", c)].Nula).Should().BeEmpty(
+            "las cotizaciones existentes (chat con costo manual) no traen estos datos");
+        columnas[("Cotizaciones", "costeoConsultasFallidas")].Nula.Should().BeFalse();
+        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length, "0001 crea 28 columnas y el 0004 agrega 29");
+    }
+
+    [Fact]
+    public async Task LosCheckDel0004RechazanTipoDeSolicitudJsonYMedidasInvalidas()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+
+        var tipo = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET tipoSolicitud = 'urgente' WHERE id = '{id}'");
+        var estado = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'costeado' WHERE id = '{id}'");
+        var json = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET serviciosConexos = 'no es json' WHERE id = '{id}'");
+        var cantidad = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionPosiciones (cotizacionId, orden, cantidad, largoCm, anchoCm, altoCm) VALUES ('{id}', 1, 0, 10, 10, 10)");
+        var medidas = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionPosiciones (cotizacionId, orden, cantidad, largoCm, anchoCm, altoCm) VALUES ('{id}', 1, 1, 0, 10, 10)");
+
+        (await tipo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_tipoSolicitud");
+        (await estado.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_estadoCosteo");
+        (await json.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_serviciosConexos_json");
+        (await cantidad.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionPosiciones_cantidad");
+        (await medidas.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionPosiciones_medidas");
     }
 
     [Fact]
@@ -121,7 +180,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(10, "el 0002 crea 10 índices ix_");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(11, "el 0002 crea 10 índices ix_ y el 0004 uno más");
+        bd.Should().Contain(x => x.StartsWith("Cotizaciones:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
+            && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosRoles:uq_usuariosRoles_usuarioId_activo unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=activo=1", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("Roles:uq_roles_idRolExterno unico=True", StringComparison.Ordinal) && x.EndsWith("filtro=idrolexternoisnotnull", StringComparison.Ordinal));
@@ -248,6 +309,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         {
             var c = Contexto(s);
             await c.Cotizaciones.Take(1).ToListAsync(Ct);
+            await c.CotizacionPosiciones.Take(1).ToListAsync(Ct);
             await c.MargenAjustes.Take(1).ToListAsync(Ct);
             await c.Correos.Include(x => x.Destinatarios).Take(1).ToListAsync(Ct);
             await c.CorreoDestinatarios.Take(1).ToListAsync(Ct);

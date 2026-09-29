@@ -49,6 +49,14 @@ public static class clsRespuestasWeb
         clsSeguimientoService.CodigoSeguimientoInvalido,
     };
 
+    /// <summary>Códigos que responden 409 con <c>ErrorNegocio</c> (el estado de la cotización no permite la operación, ADR-015).</summary>
+    private static readonly HashSet<string> _conflicto = new(StringComparer.Ordinal)
+    {
+        clsCodigosError.CosteoNoReintentable,
+        clsCodigosError.CosteoNoListo,
+        clsCodigosError.PdfYaGenerado,
+    };
+
     public static IActionResult Error(clsErrorDominio error)
     {
         ArgumentNullException.ThrowIfNull(error);
@@ -62,6 +70,7 @@ public static class clsRespuestasWeb
             clsCodigosError.CorreoDeshabilitado or clsCodigosAplicacion.RegionalNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
+            _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             _ when _validacion.Contains(error.Codigo) => new BadRequestObjectResult(new clsErrorWeb(error.Mensaje)),
             _ => new BadRequestObjectResult(clsErrorNegocioWeb.Desde(error)),
         };
