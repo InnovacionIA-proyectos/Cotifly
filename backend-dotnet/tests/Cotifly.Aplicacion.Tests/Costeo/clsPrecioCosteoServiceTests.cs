@@ -14,7 +14,7 @@ namespace Cotifly.Aplicacion.Tests.Costeo;
 public sealed class clsPrecioCosteoServiceTests
 {
     private static readonly DateTimeOffset _ahora = new(2026, 9, 28, 16, 0, 0, TimeSpan.Zero);
-    private readonly clsPrecioCosteoService _servicio = new(new clsPrecioService());
+    private readonly clsPrecioCosteoService _servicio = new(new clsPrecioService(NSubstitute.Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), NSubstitute.Substitute.For<Cotifly.Aplicacion.Comun.Interfaces.IClsCalendarioNegocio>()));
 
     [Fact]
     public void ConCosteoCompletoElPrecioSaleDelMargenYNoEsElCostoDeNexo()
