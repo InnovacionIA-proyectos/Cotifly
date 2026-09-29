@@ -57,6 +57,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 - **Cliente HTTP propio `NexoCosteo`** (no el `Nexo` de las búsquedas): 30 s en total y por intento (el alta auto-costea en línea), **sin reintentos en POST** (el alta no es idempotente: un reintento automático podría duplicar la solicitud en Nexo) y 2 reintentos en GET. Es la única desviación del patrón de PR #65 y se justifica por eso; comparte `Nexo:UrlBase`, `X-Portal-Usuario-Id` y la fábrica `clsFabrica*` (`*Nexo` / `*NoDisponible`).
 - **Validación de Nexo replicada antes de guardar** (`CapturarSolicitudValidador`): peso de la línea > 0 o posiciones con peso (`PESO_REQUERIDO`) y peso a no más del 1 % de `sum(cantidad × pesoKg)` (`PESO_INCONSISTENTE`); responde `SOLICITUD_COSTEO_INVALIDA` con el código de Nexo en el detalle.
 - **Un 400 de Nexo en el alta es definitivo** (`COSTEO_NEXO_SOLICITUD_INVALIDA`): la cotización queda en `error_envio` con el motivo "Rechazo definitivo de Nexo..." y el reintento responde `COSTEO_NO_REINTENTABLE` (los mismos datos volverían a fallar; se corrige en una versión nueva). Tiempo agotado, 5xx, red y 401/403 siguen siendo reintentables.
+- **Sin el token de la petición después de confirmar:** la búsqueda del BP, el alta en Nexo y el guardado del resultado usan `CancellationToken.None` (los limita el cliente `NexoCosteo`, 30 s). Si el comercial se desconecta cuando Nexo ya recibió el POST, el `costeoId` se guarda igual y un reintento no duplica la solicitud. El reintento vuelve a validar lo guardado antes de reenviar.
 - Tiempo agotado: Nexo pudo haber creado la solicitud. El motivo lo advierte ("verifica en Nexo antes de reintentar"); Nexo no ofrece clave de idempotencia (pendiente).
 
 ### 4. Polling (#22)
@@ -122,6 +123,7 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Efecto de `GET /api/solicitudes/{id}` (pasa `Pendiente` → `EnCosteo` y afecta la bandeja y los KPIs de la Mesa): ¿endpoint de lectura sin efecto para integraciones? | Equipo de Nexo |
 | Confirmar esquemas separados entre staging y producción de Nexo (mientras tanto, staging con `CosteoNexo__Habilitado=false`) | DBA |
 | ¿PDF permitido en `autocosteo` o solo en `entregada`? | Negocio |
+| `margen_aplicado` junto a `precio_final` (en "Mis cotizaciones" y en el costeo) permite al comercial deducir el costo de Nexo; se conserva porque el resumen ya exponía el margen. ¿Ocultarlo? | Negocio |
 | Control optimista (`updatedAt`) entre el polling y `PUT .../servicios-conexos` | Duban |
 | Intervalo de polling que acepta Nexo (por defecto 5 s al inicio, hasta 15 min, 72 h de edad máxima) y límites de rate limiting | Equipo de Nexo |
 | Clave de idempotencia o referencia externa en el alta, para reintentar sin riesgo de duplicar tras un tiempo agotado | Equipo de Nexo |
