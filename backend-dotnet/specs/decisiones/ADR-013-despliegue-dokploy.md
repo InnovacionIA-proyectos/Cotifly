@@ -2,7 +2,7 @@
 
 - **Estado:** Propuesta (pendiente de confirmar con el equipo de infraestructura los puntos marcados en Pendientes)
 - **Fecha:** 2026-09-28
-- **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
+- **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #31 (HU-006.7). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
 
 ## Contexto
 
@@ -77,6 +77,21 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    `dokploy-network`; otro contenedor de esa red podría falsear `X-Forwarded-For` y saltarse el límite por IP de
    `/api/auth/*`. Propuesta: acotar a la IP o rango de Traefik cuando se conozca.
 
+### 4. Backups y webhook de Google Chat (HU-006.7, #31)
+
+1. **Backups:** el respaldo principal son los backups nativos del DBA de la base compartida (pendiente de confirmar
+   frecuencia, retención y recuperación de un esquema). Como complemento opcional, exportación lógica diaria solo de
+   `dbo_cotifly` con `bcp` nativo (`scripts/respaldo/exportar-dbo-cotifly.sh`), desde cron en el worker, con un login
+   de solo lectura `cotifly_respaldo` (`GRANT SELECT ON SCHEMA::dbo_cotifly`). Retención 7 diarios + 4 semanales en
+   `/var/backups/cotifly` (una copia semanal por semana ISO; parámetros validados antes de exportar). Restore solo en
+   instancias de pruebas (`restaurar-dbo-cotifly.sh --destino-pruebas`), verificado de punta a punta con SQL Server
+   2019 local. Se niega con `tbsdatacenter` (siempre; `COTIFLY_RESPALDO_PROHIBIDOS` solo agrega nombres), por el
+   nombre dado o por la identidad que reporta el servidor, y encima del servidor de origen registrado en el respaldo.
+   Límite: un CNAME o listener de AG que resuelva a un nodo no listado.
+2. **JWT del webhook:** la verificación queda activada (`GChat__VerificarJwt=true`, obligatoria en `Production`), con
+   audiencia `GChat__ProjectNumber` (*Authentication Audience* = Project Number en la app de Chat). Apagarla permitiría
+   suplantar a cualquier comercial con un evento falso.
+
 ## Alternativas consideradas
 
 - **Todo como secreto de Swarm** con el proveedor *key-per-file* de ASP.NET Core: más aislado (no aparece en
@@ -94,6 +109,12 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   obligaría a revertir commits. Se descartó mientras el Python siga vigente.
 - **SQL Server como servicio del stack**: descartado por HU-002.4 (la base es corporativa y compartida).
 - **Puerto en modo host también en producción**: expondría la API sin TLS; producción espera a HU-006.2.
+- **BACPAC con `sqlpackage`** para el respaldo lógico: exporta la base completa (esquemas de otras aplicaciones) y
+  pide permisos sobre toda la base. **`BACKUP DATABASE`** desde Cotifly: la base es del DBA y compartida.
+- **Tarea programada de Dokploy** para el respaldo: la imagen del backend no tiene shell ni herramientas; el cron del
+  worker con un contenedor de mssql-tools18 es más simple.
+- **Mantener el JWT apagado con una lista de IPs permitidas**: Google Chat no publica rangos fijos para los webhooks y
+  la firma ya resuelve la autenticidad.
 - **Reconstruir y volver a subir `sha-<corto>` en el evento de tag**: la primera versión de #28 lo hacía; daba otros
   bytes (fecha de build, etiquetas) bajo un tag que debía ser inmutable. Se reemplazó por `imagetools create`.
 - **Reconstruir en el job de publicación** (`docker/build-push-action`): publicaría bytes distintos a los probados; se
@@ -118,5 +139,9 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 | Verificar en el primer despliegue a staging que el worker baja la imagen privada | Duban (HU-006.6) |
 | Probar el despliegue completo en staging (Dokploy, secreto, conectividad del worker a `tbsdatacenter:1433`, Traefik) | Duban, con acceso al clúster y aprobación |
 | Quitar el puerto en modo host y el anclaje al worker cuando se resuelva el overlay | HU-006.2 |
+| Confirmar los backups nativos de `dbTarifario_Nexo_Pruebas` (frecuencia, retención, recuperación de un esquema) y crear el login `cotifly_respaldo` | DBA |
+| Copia de los respaldos fuera del worker y alerta cuando el cron falle | Infraestructura |
+| Repetir la prueba de restore con un respaldo real en una instancia de pruebas corporativa | Duban con el DBA |
+| Confirmar por qué `GCHAT_VERIFICAR_JWT` estaba en `false` en el Python | Equipo (Duban) |
 | ¿Staging y producción comparten `dbTarifario_Nexo_Pruebas`/`dbo_cotifly`? | HU-007.1 (#33) con el DBA |
 | Acotar `ForwardedHeaders` a la IP o rango de Traefik | Duban con infraestructura (staging) |

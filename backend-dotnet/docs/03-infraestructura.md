@@ -300,6 +300,7 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 
 - Para abrir el PDF desde Chat, `Pdf:BaseUrl` debe ser la URL pública de la API (el enlace de la tarjeta es `{Pdf:BaseUrl}/pdfs/{folio}.pdf?t=...`).
 - La cola y el worker viven en el proceso (como el Python): con varias réplicas cada una atiende los eventos que recibe; un reinicio pierde los eventos encolados sin procesar (el comercial los reenvía).
+- **Verificación del JWT (HU-006.7, #31):** queda activada en el despliegue (`GChat__VerificarJwt=true` fija en los manifiestos); el Python la tenía apagada. Riesgo de apagarla y motivo: [`DEPLOY.md`](../../DEPLOY.md) §7. En la app de Chat, *Authentication Audience* = **Project Number**.
 - **Activar Google Chat (HU-006):** crear la app de Chat (endpoint HTTP `https://<api>/chat/events`), la cuenta de servicio con el alcance `chat.bot`, y fijar `GChat__ProjectNumber`, `GChat__SaJson` (secreto), `Pdf__BaseUrl` y `Pdf__ClaveFirmaUrl`. Cada comercial debe haber entrado una vez desde ClientePro y su correo de Google debe coincidir con `UsuariosWeb.email`.
 
 ## 3.5 Servicios externos
