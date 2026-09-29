@@ -21,6 +21,7 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 | Issue | Tema | Sección |
 |---|---|---|
 | #29 (HU-006.5) | Secretos fuera del repositorio | [§2](#2-secretos-y-variables-hu-0065-29), [§3](#3-tabla-de-variables-de-producción-plantilla-para-hu-0071-33) |
+| #28 (HU-006.4) | Registry, imagen versionada y release | [§4](#4-registry-imagen-versionada-y-release-hu-0064-28) |
 
 ## 2. Secretos y variables (HU-006.5, #29)
 
@@ -175,6 +176,135 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`) | `Pass` sí | SAP / infraestructura (HU-009) | no | SAP / Backend | `SAP_TM_*` |
 | `Correo__Habilitado` / `Correo__SmtpRelay__Host` | no | TI (relay y transporte real, D3) | no | TI | `CORREO_*`, `SMTP_RELAY_HOST` |
 | `MCP_AUTH_TOKEN`, `INTERNAL_API_TOKEN`, `S3_*`, `DRIVE_*`, `SHEETS_*` | — | se retiran (§2.2) | no aplica | Backend | sí |
+
+## 4. Registry, imagen versionada y release (HU-006.4, #28)
+
+### 4.1 Registry y tags
+
+- **Registry:** GitHub Container Registry, `ghcr.io/innovacionia-proyectos/cotifly-backend` (paquete privado de la
+  organización, enlazado al repositorio por la etiqueta OCI `org.opencontainers.image.source` del `Dockerfile`).
+  Reemplaza a `${REGISTRY}` de los manifiestos del Python. En local la imagen se sigue llamando `cotifly-api:dev`.
+- **Tags** (nunca solo `latest`; de hecho no se publica `latest`):
+
+  | Evento | Tags | Uso |
+  |---|---|---|
+  | Push a `QA` | `sha-<corto>`, `qa` | staging |
+  | Push a `main` | `sha-<corto>`, `main` | referencia |
+  | Tag git `vX.Y.Z` sobre un commit de `main` | solo `X.Y.Z` | producción |
+  | Tag git `vX.Y.Z-rc.N` (puede ser de `QA` u otra rama) | solo `X.Y.Z-rc.N` | candidata en staging |
+
+- **Inmutables:** `sha-<corto>` y `X.Y.Z` nunca se reemplazan con otros bytes.
+  - `sha-<corto>` se sube una sola vez; si ya existe (otro push del mismo commit, una re-ejecución), se conserva.
+  - `X.Y.Z` **no se reconstruye**: se crea sobre el digest que ya tiene `sha-<corto>` con
+    `docker buildx imagetools create --prefer-index=false -t ...:X.Y.Z ...:sha-<corto>`. `--prefer-index=false`
+    evita que buildx envuelva el manifiesto en un índice OCI nuevo: `X.Y.Z` tiene **el mismo digest** que
+    `sha-<corto>`, y producción corre exactamente los bytes que se probaron en staging.
+  - Versión final sin `sha-<corto>` publicado: el CI **falla** ("espera a que termine la corrida de main") y nunca
+    sube un build propio. Solo una candidata `X.Y.Z-rc.N` de un commit que nunca se publicó por rama sube la imagen
+    construida y probada en su corrida.
+  - En el CI un solo publicador por commit (`concurrency: publicar-imagen-<sha>`, sin cancelar): el push de `main` y
+    el tag del mismo commit no compiten.
+  - Una `X.Y.Z` que ya existe no se sobrescribe (el job o el script fallan).
+  - `qa` y `main` son canales móviles (apuntan al último `sha-<corto>` del canal).
+- **Dokploy despliega siempre un tag inmutable:** `sha-<corto>` o `X.Y.Z-rc.N` en staging y `X.Y.Z` en producción.
+  Así el rollback es volver al tag anterior y cualquier réplica nueva baja exactamente la misma imagen.
+- **Por qué se permiten candidatas fuera de `main`:** `vX.Y.Z-rc.N` sirve para probar en staging, con número de
+  versión, un commit de `QA` antes de pasarlo a `main`. Las versiones finales exigen un commit de `main`.
+- **Etiquetas OCI:** la versión del build (`qa-<corto>`, `main-<corto>`, `ci-<corto>`, o `X.Y.Z` si el commit nunca se
+  publicó por rama) va en `org.opencontainers.image.version` y en la `InformationalVersion` del `.dll`. Como `X.Y.Z`
+  reutiliza el digest de `sha-<corto>`, esa etiqueta suele decir `main-<corto>`: la versión de release la da el tag,
+  y el commit `org.opencontainers.image.revision`. Para ver qué corre:
+  `docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' <imagen>`.
+
+### 4.2 Pipeline (GitHub Actions)
+
+`.github/workflows/backend-dotnet.yml` (el mismo CI de #14, extendido):
+
+1. `imagen-docker` construye la imagen con la versión del evento, corre la prueba de humo (`HEALTHCHECK` *healthy*,
+   `/health` 200, `/health/ready` 503 sin base), la escanea con Trivy 0.74.0 fijado por digest (falla con
+   vulnerabilidades HIGH o CRITICAL que tengan parche) y, solo en push, guarda esa misma imagen como artefacto. El
+   nombre del tag git se valida como semver y nunca se interpola con `${{ }}` dentro de un `run` (llega por `env:`).
+2. `publicar-imagen` corre solo en push a `QA`/`main` o en un tag `v*`, **después de que pasen** unitarias,
+   integración, cobertura, auditoría NuGet, imagen y contrato. Carga la imagen probada (mismos bytes, no la reconstruye)
+   y la sube a GHCR con `GITHUB_TOKEN` (permiso `packages: write` solo en ese job), con las reglas de inmutabilidad
+   del §4.1 (en un tag, `imagetools create` sobre el digest de `sha-<corto>`). Un tag final que no apunte a un commit de
+   `main` falla.
+3. Los pull requests nunca publican.
+
+**Bloqueo actual (2026-09-28): GitHub Actions no corre en la organización por un problema de facturación.** Mientras
+tanto la imagen se publica a mano con el script del §4.3, con los mismos tags. Cuando se resuelva, no hay que cambiar
+nada: el job empieza a publicar solo.
+
+### 4.3 Publicación manual (reemplaza a `deploy/rebuild-on-worker.sh`)
+
+`backend-dotnet/scripts/publicar-imagen.sh` (Git Bash, Linux, macOS) y `publicar-imagen.ps1` (PowerShell) hacen lo
+mismo que el pipeline desde cualquier equipo con Docker, **no desde el worker**: build con versión y commit, prueba de
+humo en un puerto libre de `127.0.0.1`, escaneo con Trivy y push con las mismas reglas de inmutabilidad del §4.1.
+Antes de publicar se niegan si:
+
+- hay cambios sin commit en `backend-dotnet/`;
+- no se pasó `--canal` ni hay versión (tag `vX.Y.Z` en HEAD o `--version`), o HEAD no está en ninguna rama de
+  `origin` (un build de un commit local no puede ocupar el `sha-<corto>` inmutable);
+- `--canal qa|main` no se corre desde la rama `QA`/`main`, o HEAD no está subido a `origin/<rama>`;
+- el tag `vX.Y.Z` de `origin` no existe o no apunta a HEAD, o la versión es final (`X.Y.Z`) y el commit no está en
+  `origin/main`;
+- el tag `X.Y.Z` ya existe en el registry, o el registry responde con un error que no sea "no existe".
+
+```bash
+# Una vez: PAT clásico de GitHub con write:packages (de quien publica), o la sesión de "docker login ghcr.io".
+export GHCR_USUARIO=<usuario-github> GHCR_TOKEN=<pat>        # no guardarlo en archivos del repo
+
+# Staging: desde QA actualizado
+git switch QA && git pull
+sh backend-dotnet/scripts/publicar-imagen.sh --canal qa      # publica sha-<corto> y qa
+
+# Producción: desde main con el tag de release
+git switch main && git pull && git tag -a v1.0.0 -m "Cotifly 1.0.0" && git push origin v1.0.0
+sh backend-dotnet/scripts/publicar-imagen.sh --canal main    # sha-<corto> (si no existía), 1.0.0 y main sobre su digest
+
+# Candidata en staging desde QA (sin pasar por main):
+git switch QA && git pull && git tag -a v1.0.0-rc.1 -m "Cotifly 1.0.0-rc.1" && git push origin v1.0.0-rc.1
+sh backend-dotnet/scripts/publicar-imagen.sh --canal qa      # sha-<corto>, 1.0.0-rc.1 y qa
+
+# Solo validar el Dockerfile y la sonda, sin subir nada:
+sh backend-dotnet/scripts/publicar-imagen.sh --sin-push
+```
+
+`deploy/rebuild-on-worker.sh` queda solo para el stack Python (rollback).
+
+### 4.4 Credenciales del registry en el clúster
+
+El paquete es privado: los nodos necesitan una credencial de **solo lectura** para bajar la imagen.
+
+- Crear un PAT clásico con **solo `read:packages`** (de una cuenta de servicio de la organización, no personal; con
+  fecha de vencimiento y dueño que lo renueve). **Pendiente de confirmar con el equipo:** qué cuenta de GitHub lo emite.
+- Registrarlo en Dokploy (*Settings → Registry*, `ghcr.io`, usuario y PAT) y, para el despliegue de tipo *stack*, hacer
+  además `docker login ghcr.io` en el **manager** como el usuario con el que corre Dokploy (root): `docker stack deploy
+  --with-registry-auth` reenvía esa credencial a las tareas del worker. Si el worker no logra bajar la imagen
+  (`No such image` o `unauthorized` en `docker service ps --no-trunc`), hacer también `docker login ghcr.io` en el
+  worker. Esto se verifica en el primer despliegue a staging (HU-006.6).
+- El PAT nunca va en el manifiesto ni en el repositorio.
+- **Primer push y permisos del paquete:** si el paquete `cotifly-backend` lo crea el script con un PAT personal
+  (mientras Actions siga bloqueado), queda sin acceso para el repositorio y el primer push del CI con `GITHUB_TOKEN`
+  recibe `403`. Una vez creado: *GitHub → paquete `cotifly-backend` → Package settings → Manage Actions access* →
+  agregar el repositorio `Cotifly` con rol **Write** (y, si se quiere, enlazarlo al repositorio en *Connect
+  repository*).
+
+### 4.5 Release paso a paso
+
+1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
+   de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
+   (HU-006.8).
+2. **Release.** Merge `QA` → `main` (el push a `main` publica `sha-<corto>` del commit de `main`); desplegar ese
+   `sha-<corto>` en staging si el merge creó un commit nuevo. **Esperar a que termine la corrida del push a `main`**
+   (que `sha-<corto>` esté publicado) y recién entonces crear y subir el tag `vX.Y.Z` sobre ese mismo commit →
+   `X.Y.Z` se crea sobre el digest de `sha-<corto>`: producción corre los bytes probados en staging. Si el tag llega
+   antes, su corrida falla con "espera a que termine la corrida de main"; se vuelve a ejecutar cuando termine.
+3. **Producción.** En Dokploy, stack de producción: `COTIFLY_TAG=X.Y.Z` → *Deploy*. Swarm actualiza con `start-first`
+   y vuelve atrás solo si el healthcheck falla (manifiesto, HU-006.6).
+4. **Verificar** qué imagen corre: `docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+   <stack>_cotifly-api` (muestra tag y digest).
+5. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
 
 ## Anexo A. Stack Python (solo rollback)
 

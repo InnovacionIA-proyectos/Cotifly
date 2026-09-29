@@ -116,7 +116,7 @@ Otros puntos de operación (de #11 y #12):
 | Datos personales en `EventosHerramienta` | Entradas con correos de clientes, nombres y NIT: definir retención y purga con datos y seguridad |
 | SPF/DMARC del correo | El `From` es el correo del comercial aunque sale por el relay: TI debe autorizar el relay en SPF/DMARC para no caer en spam |
 | `/data/pdfs` | Debe ser escribible por el UID 1654 (un volumen con nombre copia el dueño de la imagen; con bind mount, `chown 1654:1654`) |
-| Sin `.pdb` en la imagen | Las trazas no traen número de línea; alternativa en HU-006.4: `DebugType=embedded` + `PathMap` |
+| Sin `.pdb` en la imagen | Las trazas no traen número de línea; HU-006.4 (#28) mantuvo `DebugType=none` (alternativa: `DebugType=embedded` + `PathMap`, ver 03-infraestructura §3.1) |
 
 ## 10.7 Decisiones pendientes
 
