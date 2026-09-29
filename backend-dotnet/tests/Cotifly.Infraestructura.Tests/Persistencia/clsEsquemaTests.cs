@@ -89,6 +89,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         var tipo = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.Cotizaciones SET tipoSolicitud = 'urgente' WHERE id = '{id}'");
+        var estado = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'costeado' WHERE id = '{id}'");
         var json = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.Cotizaciones SET serviciosConexos = 'no es json' WHERE id = '{id}'");
         var cantidad = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
@@ -97,6 +99,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             $"INSERT INTO dbo_cotifly.CotizacionPosiciones (cotizacionId, orden, cantidad, largoCm, anchoCm, altoCm) VALUES ('{id}', 1, 1, 0, 10, 10)");
 
         (await tipo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_tipoSolicitud");
+        (await estado.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_estadoCosteo");
         (await json.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_serviciosConexos_json");
         (await cantidad.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionPosiciones_cantidad");
         (await medidas.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionPosiciones_medidas");

@@ -44,6 +44,7 @@ public sealed class clsCosteoNexo(
     public const string MensajeTiempoAgotado =
         "Nexo no respondió a tiempo: la solicitud pudo quedar creada en Nexo; verifica en Nexo antes de reintentar.";
     public const string MensajeRechazada = "Nexo rechazó la solicitud.";
+    public const string MensajeSolicitudInvalida = "Nexo rechazó los datos de la solicitud.";
 
     /// <summary>Límite de toda la operación y de cada intento (el alta de Nexo auto-costea en línea).</summary>
     public static readonly TimeSpan TiempoTotal = TimeSpan.FromSeconds(30);
@@ -67,7 +68,10 @@ public sealed class clsCosteoNexo(
         var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud), cancellationToken);
         if (respuesta.EsFallo)
         {
-            return respuesta.Error;
+            // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo.
+            return respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true
+                ? new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, respuesta.Error.Detalle)
+                : respuesta.Error;
         }
 
         using var documento = respuesta.Valor;

@@ -134,7 +134,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         peso_kg = 28500,
         posiciones = new object[]
         {
-            new { descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 850 },
+            new { descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
             new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
         },
     });

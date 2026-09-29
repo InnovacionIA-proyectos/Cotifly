@@ -136,6 +136,12 @@ public static class clsCodigosError
     public const string CosteoNexoRechazada = "COSTEO_NEXO_RECHAZADA";
 
     /// <summary>
+    /// Nexo respondió 400 al alta (validación de los datos: <c>PESO_INCONSISTENTE</c>, <c>LINEA_INCOMPLETA</c>...): reenviar los mismos
+    /// datos no puede funcionar, así que el <c>error_envio</c> es definitivo (ADR-015 §3). Código nuevo del backend .NET.
+    /// </summary>
+    public const string CosteoNexoSolicitudInvalida = "COSTEO_NEXO_SOLICITUD_INVALIDA";
+
+    /// <summary>
     /// <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c> sobre una cotización que no está en <c>error_envio</c> ni en
     /// <c>pendiente_envio</c> (o no nació del formulario ampliado): 409. Código nuevo del backend .NET.
     /// </summary>
