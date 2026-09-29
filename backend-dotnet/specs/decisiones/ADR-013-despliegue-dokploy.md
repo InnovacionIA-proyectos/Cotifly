@@ -31,9 +31,14 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 ### 2. Registry y pipeline (HU-006.4, #28)
 
 1. **Registry: GHCR**, `ghcr.io/innovacionia-proyectos/cotifly-backend`, paquete privado de la organización.
-2. **Tags:** `X.Y.Z` desde un tag git `vX.Y.Z` sobre `main`, `sha-<corto>` siempre, y `qa`/`main` como canal móvil.
-   Nunca `latest`. Dokploy despliega un tag inmutable (`sha-<corto>` en staging, `X.Y.Z` en producción) en la variable
-   `COTIFLY_TAG` del stack.
+2. **Tags:** `sha-<corto>` en cada push de rama, `qa`/`main` como canal móvil, y `X.Y.Z` desde un tag git `vX.Y.Z`
+   sobre `main` (o `X.Y.Z-rc.N` desde otra rama, para candidatas en staging). Nunca `latest`. Dokploy despliega un
+   tag inmutable en la variable `COTIFLY_TAG` del stack.
+   - **Inmutabilidad:** `sha-<corto>` se sube una vez y no se reemplaza; `X.Y.Z` no se reconstruye, se crea sobre el
+     digest de `sha-<corto>` con `docker buildx imagetools create` (producción corre los bytes probados en staging), y
+     una `X.Y.Z` existente no se sobrescribe. En un evento de tag solo se publica `X.Y.Z`.
+   - Los scripts manuales exigen además que `--canal qa|main` corra desde esa rama con HEAD subido, y que el tag de
+     versión esté en `origin`.
 3. **Pipeline:** el mismo workflow `backend-dotnet.yml`. `imagen-docker` construye, prueba (humo) y escanea (Trivy
    0.74.0) la imagen; `publicar-imagen` sube esos mismos bytes a GHCR con `GITHUB_TOKEN` (`packages: write` solo en ese
    job), solo en push a `QA`/`main` o tag, y solo si pasaron todos los demás jobs.
@@ -58,7 +63,15 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
    Traefik, `start-first`).
 6. **Healthcheck** exec de vida (`/health`) en Swarm y de disponibilidad (`/health/ready`) en Traefik;
    `update_config` con `failure_action: rollback`; límites 1 CPU / 1024 MB.
-7. **Variables** con `${VAR}` (obligatorias con `${VAR:?}`); `GChat__VerificarJwt=true` fijo en el manifiesto.
+7. **Variables** con `${VAR}` (obligatorias con `${VAR:?}`); `GChat__VerificarJwt=true` fijo en el manifiesto. Las
+   de otros frentes llevan valor por defecto (`Trm__Url` vacía impide arrancar; `Trm__TiempoEsperaSegundos`,
+   `Nexo__MinutosCacheMunicipios`); la TRM exige salida a `www.datos.gov.co`.
+8. **Verificación manual de disponibilidad:** el rollback automático solo mira `/health` (vida); tras cada despliegue se
+   comprueba `/health/ready` y, si falla, `docker service rollback`. Rollback al Python documentado (reapuntar la app
+   de Google Chat; los datos escritos en SQL Server no son visibles para el Python).
+9. **Riesgo bajo aceptado:** `ForwardedHeaders__RedesConocidas` confía en toda la subred compartida de
+   `dokploy-network`; otro contenedor de esa red podría falsear `X-Forwarded-For` y saltarse el límite por IP de
+   `/api/auth/*`. Propuesta: acotar a la IP o rango de Traefik cuando se conozca.
 
 ### 4. Backups y webhook de Google Chat (HU-006.7, #31)
 
@@ -95,6 +108,8 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   worker con un contenedor de mssql-tools18 es más simple.
 - **Mantener el JWT apagado con una lista de IPs permitidas**: Google Chat no publica rangos fijos para los webhooks y
   la firma ya resuelve la autenticidad.
+- **Reconstruir y volver a subir `sha-<corto>` en el evento de tag**: la primera versión de #28 lo hacía; daba otros
+  bytes (fecha de build, etiquetas) bajo un tag que debía ser inmutable. Se reemplazó por `imagetools create`.
 - **Reconstruir en el job de publicación** (`docker/build-push-action`): publicaría bytes distintos a los probados; se
   prefirió pasar la imagen probada como artefacto.
 
@@ -121,3 +136,5 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 | Copia de los respaldos fuera del worker y alerta cuando el cron falle | Infraestructura |
 | Repetir la prueba de restore con un respaldo real en una instancia de pruebas corporativa | Duban con el DBA |
 | Confirmar por qué `GCHAT_VERIFICAR_JWT` estaba en `false` en el Python | Equipo (Duban) |
+| ¿Staging y producción comparten `dbTarifario_Nexo_Pruebas`/`dbo_cotifly`? | HU-007.1 (#33) con el DBA |
+| Acotar `ForwardedHeaders` a la IP o rango de Traefik | Duban con infraestructura (staging) |

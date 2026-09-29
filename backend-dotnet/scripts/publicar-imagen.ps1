@@ -8,10 +8,12 @@
     HEALTHCHECK healthy, GET /health 200, GET /health/ready 503), la escanea con Trivy (HIGH/CRITICAL con parche fallan;
     COTIFLY_TRIVY_VERSION, por defecto 0.74.0) y la sube a GHCR con tags inmutables. Nunca "latest".
 
-    Tags:
-      sha-<commit corto>    siempre
-      X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con -Version X.Y.Z, que exige ese tag en HEAD)
-      qa | main             con -Canal qa | -Canal main
+    Tags (sha-<corto> y X.Y.Z son inmutables):
+      sha-<commit corto>    siempre; si ya existe en el registry se conserva
+      X.Y.Z                 si HEAD tiene un tag git vX.Y.Z (o con -Version X.Y.Z, que exige ese tag en HEAD); se crea
+                            sobre el digest de sha-<corto> (docker buildx imagetools create). Final solo desde
+                            origin/main; X.Y.Z-rc.N puede salir de otra rama
+      qa | main             con -Canal qa | -Canal main, desde esa rama y con HEAD subido a origin
 
     Variables de entorno: COTIFLY_IMAGEN (por defecto ghcr.io/innovacionia-proyectos/cotifly-backend); GHCR_USUARIO y
     GHCR_TOKEN (PAT clásico con write:packages) para "docker login"; si faltan se usa la sesión existente.
@@ -84,9 +86,31 @@ try {
         if ($TagGit) { $Version = $TagGit.Substring(1) }
     }
 
-    $Etiquetas = @()
+    # Trazabilidad antes de publicar (igual que publicar-imagen.sh): -Canal desde su rama con HEAD en origin; versión
+    # final X.Y.Z desde un commit de origin/main; X.Y.Z-rc.N puede salir de otra rama; el tag debe estar en origin.
+    if (-not $SinPush) {
+        if ($Canal) {
+            $RamaCanal = if ($Canal -eq 'main') { 'main' } else { 'QA' }
+            $RamaActual = (& git rev-parse --abbrev-ref HEAD).Trim()
+            if ($RamaActual -cne $RamaCanal) { Fallar "-Canal $Canal se publica desde la rama $RamaCanal (rama actual: $RamaActual)" }
+            & git fetch -q origin $RamaCanal
+            & git merge-base --is-ancestor HEAD "origin/$RamaCanal"
+            if ($LASTEXITCODE -ne 0) { Fallar "HEAD no está en origin/${RamaCanal}: hacer push antes de publicar" }
+        }
+        if ($Version) {
+            & git ls-remote --exit-code --tags origin "refs/tags/v$Version" | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fallar "el tag v$Version no está en origin (git push origin v$Version)" }
+            if ($Version -notmatch '-') {
+                & git fetch -q origin main
+                & git merge-base --is-ancestor HEAD origin/main
+                if ($LASTEXITCODE -ne 0) { Fallar "una versión final (v$Version) sale de un commit de origin/main; para probar fuera de main usar vX.Y.Z-rc.N" }
+            }
+        }
+    }
+
+    # sha-<corto> va primero: los demás tags se crean sobre su digest (mismos bytes).
+    $Etiquetas = @("sha-$Commit")
     if ($Version) { $Etiquetas += $Version }
-    $Etiquetas += "sha-$Commit"
     if ($Canal) { $Etiquetas += $Canal }
     if ($Version) { $VersionBuild = $Version } elseif ($Canal) { $VersionBuild = "$Canal-$Commit" } else { $VersionBuild = "manual-$Commit" }
 
@@ -158,11 +182,29 @@ try {
     }
 
     Paso 'Etiquetar y subir'
-    foreach ($Etiqueta in $Etiquetas) {
-        DockerOk tag $ImagenLocal "${Imagen}:$Etiqueta"
-        DockerOk push "${Imagen}:$Etiqueta"
+    # Tags inmutables: sha-<corto> se sube solo si no existe; X.Y.Z falla si ya existe y se crea sobre el digest de
+    # sha-<corto>; qa/main se mueven a ese digest. Nada se reconstruye ni se sobrescribe.
+    function Existe([string]$Etiqueta) {
+        $ErrorActionPreference = 'Continue'
+        & docker buildx imagetools inspect "${Imagen}:$Etiqueta" 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0)
     }
-    $Digest = (& docker inspect --format '{{index .RepoDigests 0}}' "${Imagen}:sha-$Commit")
+    foreach ($Etiqueta in $Etiquetas) {
+        if ($Etiqueta -eq "sha-$Commit") {
+            if (Existe $Etiqueta) {
+                Write-Host "${Imagen}:$Etiqueta ya existe: se conserva (los demás tags apuntan a ese digest, no a este build)"
+            } else {
+                DockerOk tag $ImagenLocal "${Imagen}:$Etiqueta"
+                DockerOk push "${Imagen}:$Etiqueta"
+            }
+            continue
+        }
+        if ($Etiqueta -ne 'qa' -and $Etiqueta -ne 'main' -and (Existe $Etiqueta)) {
+            Fallar "${Imagen}:$Etiqueta ya existe; una versión publicada no se sobrescribe"
+        }
+        DockerOk buildx imagetools create -t "${Imagen}:$Etiqueta" "${Imagen}:sha-$Commit"
+    }
+    $Digest = ((& docker buildx imagetools inspect "${Imagen}:sha-$Commit") | Where-Object { $_ -match '^Digest:' } | Select-Object -First 1) -replace '^Digest:\s*', ''
     Write-Host ''
     Write-Host 'Imagen publicada.'
     foreach ($Etiqueta in $Etiquetas) { Write-Host "  ${Imagen}:$Etiqueta" }

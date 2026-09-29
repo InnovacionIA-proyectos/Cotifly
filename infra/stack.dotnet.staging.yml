@@ -15,8 +15,8 @@
 #
 # Redes (equivalentes a bot-edge / bot-back del Python):
 #   - edge    = dokploy-network (externa, la de Traefik). Solo entrada desde Traefik; ningún otro servicio del stack.
-#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Google, Nexo,
-#               SAP, relay). Equivale a bot-edge.
+#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Google, Nexo, TRM en
+#               www.datos.gov.co, SAP, relay). Equivale a bot-edge.
 #   - bot-back (interna, sin salida) no hace falta: no hay servicios internos. Si vuelve alguno (p. ej. MinIO,
 #     ADR-012), va en una overlay con internal: true y sin labels de Traefik.
 #
@@ -114,6 +114,12 @@ services:
 
       # Nexo (HU-005): sin token; URL del ambiente de pruebas de Nexo en staging.
       Nexo__UrlBase: ${Nexo__UrlBase:-}
+      Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+
+      # TRM del día (frente C): datos abiertos de la Superintendencia Financiera. Salida a www.datos.gov.co:443.
+      # Trm__Url vacía impide arrancar: por eso lleva valor por defecto.
+      Trm__Url: ${Trm__Url:-https://www.datos.gov.co/resource/32sa-8pi3.json}
+      Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
 
       # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto, obligatorio con Google Chat configurado.
       Pdf__StorageModo: volumen
