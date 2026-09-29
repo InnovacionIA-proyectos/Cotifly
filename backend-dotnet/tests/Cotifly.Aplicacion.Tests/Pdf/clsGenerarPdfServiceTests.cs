@@ -195,8 +195,57 @@ public sealed class clsGenerarPdfServiceTests
         var coherente = await Servicio().GenerarAsync(
             Entrada(UnaFila(moneda: "usd"), folio: "PCN-USD", traza: new clsTrazabilidadCotizacion(Moneda: "USD", TrmAplicada: 3900m)), Ct);
         coherente.EsExitoso.Should().BeTrue(coherente.EsFallo ? coherente.Error.Mensaje : string.Empty);
-        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000");
+        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000,00");
         _agregada!.Moneda.Should().Be("USD");
+    }
+
+    // HU-012.2: en USD el precio final es el de pesos (costo y margen) convertido con la TRM de la trazabilidad, a 2 decimales.
+    [Fact]
+    public async Task EnDolaresElPrecioFinalEsElDePesosConvertidoConLaTrm()
+    {
+        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+
+        var coherente = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
+
+        coherente.EsExitoso.Should().BeTrue(coherente.EsFallo ? coherente.Error.Mensaje : string.Empty);
+        _agregada!.PrecioFinal.Should().Be(996.35m);
+        _agregada.TrmAplicada.Should().Be(3306.86m);
+        _agregada.Costo.Should().Be(2_850_000m);
+        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
+    }
+
+    [Fact]
+    public async Task EnDolaresUnPrecioQueNoSaleDeLaTrmSeRechaza()
+    {
+        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.36m, Moneda: "USD", TrmAplicada: 3306.86m);
+
+        var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(996.36m, "USD"), traza: traza), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("no corresponde al costo y margen").And.Contain("US$996,35");
+    }
+
+    [Fact]
+    public async Task EnDolaresLaTarifaImpresaSeComparaConCentavos()
+    {
+        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+
+        var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(996.30m, "USD"), traza: traza), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("US$996,30");
+    }
+
+    [Fact]
+    public async Task EnDolaresSinTrmLaCotizacionSeRechaza()
+    {
+        var traza = new clsTrazabilidadCotizacion(PrecioFinal: 996.35m, Moneda: "USD");
+
+        var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("TRM");
+        _generador.DidNotReceiveWithAnyArgs().Generar(default!);
     }
 
     [Fact]

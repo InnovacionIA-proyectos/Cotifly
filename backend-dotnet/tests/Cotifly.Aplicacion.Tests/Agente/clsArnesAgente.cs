@@ -18,6 +18,8 @@ using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
+using Cotifly.Aplicacion.Precio.DTOs;
+using Cotifly.Aplicacion.Precio.Interfaces;
 using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Aplicacion.Tarifas.DTOs;
 using Cotifly.Aplicacion.Tarifas.Interfaces;
@@ -50,6 +52,8 @@ internal sealed class clsArnesAgente
         Usuario = clsUsuarioWeb.Crear("nvargas", "Nathaly Vargas Garcia", "nvargas@boterosoto.com.co", null, Reloj.AhoraUtc).Valor;
         Usuarios.ObtenerPorIdAsync(Usuario.Id, Arg.Any<CancellationToken>()).Returns(Usuario);
         Calendario.Hoy.Returns(new DateOnly(2026, 9, 24));
+        Trm.ObtenerAsync(Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsResultado<clsTrm>.Exito(new clsTrm(TrmDelDia, ci.Arg<DateOnly>(), ci.Arg<DateOnly>(), "prueba")));
 
         Buscador.BuscarAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsResultadoBusquedaClientes>.Fallo(new clsErrorDominio(clsCodigosError.ClienteBusquedaNoDisponible, "Búsqueda no disponible.")));
@@ -106,6 +110,11 @@ internal sealed class clsArnesAgente
     public clsRelojFalso Reloj { get; } = new();
 
     public IClsCalendarioNegocio Calendario { get; } = Substitute.For<IClsCalendarioNegocio>();
+
+    /// <summary>TRM oficial falsa (HU-012.2): <see cref="TrmDelDia"/> para cualquier fecha salvo que la prueba la cambie.</summary>
+    public IClsProveedorTrm Trm { get; } = Substitute.For<IClsProveedorTrm>();
+
+    public const decimal TrmDelDia = 3306.86m;
 
     public IClsAuditoriaService Auditoria { get; } = Substitute.For<IClsAuditoriaService>();
 
@@ -177,16 +186,17 @@ internal sealed class clsArnesAgente
     public clsAgenteRunner Runner()
     {
         Contexto = new clsContextoTurnoAgente();
+        var precio = new clsPrecioService(Trm, Calendario);
         var herramientas = new clsHerramientasCotizador(
-            Contexto, Buscador, Municipios, Tarifas, Margen, new clsPrecioService(), Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
+            Contexto, Buscador, Municipios, Tarifas, Margen, precio, Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
         return new clsAgenteRunner(
             Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(),
-            Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas,
+            Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas, precio,
             Options.Create(OpcionesAgente), Options.Create(OpcionesSesiones), Options.Create(OpcionesCorreo), NullLoggerFactory.Instance);
     }
 
-    public Task<clsResultado<clsResultadoTurno>> TurnoAsync(string mensaje, string hilo = Hilo, Guid? usuarioId = null, Guid? cotizacionOrigen = null) =>
-        Runner().EjecutarTurnoAsync(new clsSolicitudTurno(mensaje, hilo, hilo, usuarioId ?? Usuario.Id, cotizacionOrigen), TestContext.Current.CancellationToken);
+    public Task<clsResultado<clsResultadoTurno>> TurnoAsync(string mensaje, string hilo = Hilo, Guid? usuarioId = null, Guid? cotizacionOrigen = null, string? moneda = null) =>
+        Runner().EjecutarTurnoAsync(new clsSolicitudTurno(mensaje, hilo, hilo, usuarioId ?? Usuario.Id, cotizacionOrigen, moneda), TestContext.Current.CancellationToken);
 
     /// <summary>Estado guardado de la sesión.</summary>
     public Dominio.Agente.clsEstadoConversacion Estado(string hilo = Hilo) =>

@@ -32,6 +32,15 @@ public sealed class clsContextoTurnoAgente
     /// </summary>
     public IReadOnlyList<string> MensajesDelComercial { get; private set; } = [];
 
+    /// <summary>
+    /// Moneda del selector del formulario web en este turno (<c>COP</c> | <c>USD</c>, HU-012.2), o <c>null</c> si no vino (Google Chat, o la
+    /// consola sin selector). Manda sobre la que pida el modelo.
+    /// </summary>
+    public string? MonedaDelFormulario { get; private set; }
+
+    /// <summary>Fecha de negocio del turno (America/Bogota): el filtro no emite un PDF en USD con una TRM que ya no rige (HU-012.2).</summary>
+    public DateOnly? Hoy { get; private set; }
+
     public bool Iniciado => UsuarioId != Guid.Empty;
 
     /// <summary>Estado después de aplicar la salida de una herramienta (lo llama el runner).</summary>
@@ -42,8 +51,18 @@ public sealed class clsContextoTurnoAgente
     }
 
     public void Iniciar(
-        Guid usuarioId, string spaceId, string threadId, string mensaje, clsEstadoConversacion estado, bool confirmado, IReadOnlyList<string>? mensajesDelComercial = null)
+        Guid usuarioId,
+        string spaceId,
+        string threadId,
+        string mensaje,
+        clsEstadoConversacion estado,
+        bool confirmado,
+        IReadOnlyList<string>? mensajesDelComercial = null,
+        string? monedaDelFormulario = null,
+        DateOnly? hoy = null)
     {
+        Hoy = hoy;
+        MonedaDelFormulario = string.IsNullOrWhiteSpace(monedaDelFormulario) ? null : monedaDelFormulario.Trim().ToUpperInvariant();
         MensajesDelComercial = mensajesDelComercial ?? [mensaje ?? string.Empty];
         ArgumentNullException.ThrowIfNull(estado);
         UsuarioId = usuarioId;

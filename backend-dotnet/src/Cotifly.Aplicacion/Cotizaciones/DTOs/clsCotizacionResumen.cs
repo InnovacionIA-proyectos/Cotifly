@@ -11,6 +11,7 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <param name="Cliente">Nombre del cliente (<c>clienteNombre</c>).</param>
 /// <param name="LineaNegocio">Nombre de la línea (JOIN con <c>MargenesPolitica</c> por <c>lineaNegocioId</c>).</param>
 /// <param name="PdfUrl"><c>{Pdf:BaseUrl}/pdfs/{archivo}</c>, o <c>null</c> si la cotización no tiene PDF.</param>
+/// <param name="TrmAplicada">TRM con que se convirtió el precio a USD (HU-012.2); 0 en COP.</param>
 public sealed record clsCotizacionResumen(
     Guid Id,
     string Folio,
@@ -29,7 +30,8 @@ public sealed record clsCotizacionResumen(
     bool? Ganada,
     string? MotivoRechazo,
     string? PdfUrl,
-    DateTimeOffset? CreatedAt)
+    DateTimeOffset? CreatedAt,
+    decimal TrmAplicada = 0m)
 {
     /// <summary>Resumen de una cotización con el nombre de su línea y la base pública de los PDF.</summary>
     public static clsCotizacionResumen Desde(clsCotizacion cotizacion, string? lineaNegocio, string? baseUrlPdf)
@@ -53,7 +55,8 @@ public sealed record clsCotizacionResumen(
             cotizacion.Ganada,
             cotizacion.MotivoRechazo,
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
-            cotizacion.CreatedAt == default ? null : cotizacion.CreatedAt);
+            cotizacion.CreatedAt == default ? null : cotizacion.CreatedAt,
+            cotizacion.TrmAplicada);
     }
 }
 

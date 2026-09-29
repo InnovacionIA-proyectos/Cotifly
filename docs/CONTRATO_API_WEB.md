@@ -87,19 +87,29 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 
 ```json
 // request
-{ "mensaje": "Cotiza Nacional Bogotá a Medellín tractomula 10000 kg", "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c" }
+{ "mensaje": "Cotiza Nacional Bogotá a Medellín tractomula 10000 kg", "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c", "moneda": "USD" }
 
 // 200 normal
 { "texto": "...", "herramientas": ["obtener_margen", "calcular_precio"],
-  "precio": { "precio": 3294798, "costo": 2850000, "margen": 0.135, "metodo": "margen", "utilidad": 444798 },
+  "precio": { "precio": 996.35, "costo": 2850000, "margen": 0.135, "metodo": "margen", "utilidad": 444798,
+              "moneda": "USD", "trm_aplicada": 3306.86, "precio_cop": 3294798,
+              "trm_vigencia_desde": "2026-09-26", "trm_vigencia_hasta": "2026-09-28" },
   "margen": { "margen": 0.135, "origen": "sap_tm", "trq_type": "OPTN", "anomalo": false, "detalle": "Margen SAP TM del cliente para OPTN" },
-  "pdf": null }
+  "pdf": null,
+  "errores": [] }
+
+// 200 con la TRM caída (moneda USD): sin precio y con el error de la herramienta
+{ "texto": "...", "herramientas": ["obtener_margen", "calcular_precio"], "precio": null, "margen": { "...": "..." }, "pdf": null,
+  "errores": [{ "herramienta": "calcular_precio", "codigo": "TRM_NO_DISPONIBLE" }] }
 
 // 200 con fallo interno controlado
 { "texto": "Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.", "error": true }
 ```
 
 - `precio`, `margen` y `pdf` son `null` si la herramienta no se usó en el turno o terminó en error.
+- **Moneda (HU-012):** `moneda` (opcional, `COP` o `USD`, sin distinguir mayúsculas) es el selector del formulario. Manda sobre el texto del mensaje y queda en la conversación; si cambia, el precio ya calculado se descarta y se recalcula. Otro valor: 400 `{"error":"moneda inválida"}`. Sin el campo sigue la moneda que ya tenía la conversación (COP por defecto).
+- En USD, `precio` viene en dólares a 2 decimales; `costo` y `utilidad` siguen en pesos. `trm_aplicada` es la TRM oficial del día con que se convirtió, `precio_cop` el valor en pesos antes de convertir (en USD es el mínimo a pagar) y `trm_vigencia_desde`/`trm_vigencia_hasta` el rango de vigencia de esa TRM. En COP: `trm_aplicada` 0 y los demás `null`. Si el comercial confirma cuando la TRM ya no rige, el servidor recalcula y vuelve a previsualizar: `precio` trae el nuevo valor y no se genera el PDF en ese turno.
+- `errores` (opcional, `[{herramienta, codigo}]`): errores de negocio de las herramientas del turno, con los códigos de `ErrorNegocio`. Con `TRM_NO_DISPONIBLE` no hay precio en dólares: mostrar que se puede reintentar en unos minutos o cotizar en pesos, sin dejar el formulario en carga (HU-012.4). `TARIFA_CONFIG_INVALIDA`: la tarifa de la fuente no está en pesos.
 - El formulario de "Nueva cotización" también usa este endpoint, igual que `chat.html`: arma un mensaje con los datos del formulario y lo envía. El progreso de pasos se deriva de `herramientas` y de qué bloques (`margen`, `precio`, `pdf`) vienen con valor. Con el tarifario de Drive retirado, el costo lo aporta el comercial o Nexo (HU-005).
 - Un fallo interno responde **200** con `error: true` (igual que Python). El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA ("Espera unos segundos y reenvía el mismo mensaje").
 - 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
@@ -122,7 +132,7 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 | Forma | Cuándo |
 |---|---|
 | `{"error": "texto"}` | Autenticación, validación, permisos, recurso inexistente. En Python este formato solo lo usaban el 401, el 400 de `sesion_id` y el 404 de cotización; ver §7 para los que cambian. |
-| `{"error": {"codigo", "mensaje", "detalle?"}}` | Error de negocio de una herramienta. Por ejemplo, `/enviar` con `CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO` o `CORREO_ENVIO_FALLIDO`. La lista de códigos está en `ErrorNegocio` del spec. |
+| `{"error": {"codigo", "mensaje", "detalle?"}}` | Error de negocio de una herramienta. Por ejemplo, `/enviar` con `CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO` o `CORREO_ENVIO_FALLIDO`. La lista de códigos está en `ErrorNegocio` del spec. En `/web/chat` los errores de las herramientas no son un HTTP de error: llegan en `errores` de la respuesta 200 (ej. `TRM_NO_DISPONIBLE`, la fuente oficial de la TRM no respondió). |
 
 | Código | Significado para el frontend |
 |---|---|

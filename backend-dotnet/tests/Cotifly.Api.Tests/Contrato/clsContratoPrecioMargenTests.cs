@@ -41,6 +41,33 @@ public sealed class clsContratoPrecioMargenTests
         Verificar(new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "markup", 444_798m), esquemas["SalidaPrecio"], "metodo");
     }
 
+    // HU-012.4 (auditoría): los errores de las herramientas van en RespuestaChat.errores con el esquema ErrorHerramienta.
+    [Fact]
+    public async Task LosErroresDeHerramientaDeRespuestaChatCumplenElEsquema()
+    {
+        var esquemas = await EsquemasAsync();
+        var respuesta = esquemas["RespuestaChat"];
+        respuesta.Required.Should().NotContain("errores", "el campo es aditivo y opcional");
+        var error = esquemas["ErrorHerramienta"];
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(
+            new Cotifly.Aplicacion.Agente.DTOs.clsErrorHerramienta("calcular_precio", clsCodigosError.TrmNoDisponible), _snakeCase));
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(error.Properties!.Keys).And.Contain(error.Required!);
+        respuesta.Properties!.Should().ContainKey("errores");
+    }
+
+    // HU-012.2: el precio en dólares trae moneda, TRM y precio en pesos, todos declarados en el contrato.
+    [Fact]
+    public async Task SalidaPrecioEnDolaresCumpleElEsquema()
+    {
+        var esquemas = await EsquemasAsync();
+        var enDolares = new clsSalidaPrecio(
+            996.35m, 2_850_000m, 0.135m, "margen", 444_798m, "USD", 3306.86m, 3_294_798m, new DateOnly(2026, 9, 26), new DateOnly(2026, 9, 28));
+
+        Verificar(enDolares, esquemas["SalidaPrecio"], "metodo");
+        Verificar(enDolares, esquemas["SalidaPrecio"], "moneda");
+    }
+
     [Theory]
     [InlineData(OrigenMargen.SapTm, "OPTN")]
     [InlineData(OrigenMargen.PoliticaLinea, null)]
