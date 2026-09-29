@@ -69,8 +69,9 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
         servicios.AddScoped<IClsMetricasService, clsMetricasService>();
 
-        // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud. El adaptador de Nexo lo registra Infraestructura.
+        // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
+        servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
 
         // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
         // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.

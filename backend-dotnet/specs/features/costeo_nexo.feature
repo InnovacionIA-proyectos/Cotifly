@@ -33,3 +33,38 @@ Característica: Costeo de la cotización en Nexo
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y "ana" reintenta el envío a costeo de "C1"
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_REINTENTABLE"
+
+  # HU-005.6 — Polling del costeo
+  Escenario: El polling detecta el costeo de Nexo y deja el cambio de estado en la auditoría
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "autocosteo"
+    Y el cambio de estado de "C1" queda en la auditoría
+    Cuando Nexo entrega la cotización de "C1"
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "entregada"
+    Y la cotización "C1" ya no se consulta en Nexo
+
+  Escenario: Con Nexo caído el polling registra el error y sigue consultando
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo deja de responder
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+    Y el error de consulta de "C1" queda en la auditoría
+    Cuando Nexo vuelve a responder
+    Y Nexo costea la solicitud de "C1" con un flete de 1000000
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "autocosteo"
+
+  Escenario: Una solicitud descartada en Nexo queda descartada y se deja de consultar
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo descarta la solicitud de "C1"
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda en el estado de costeo "descartada"
+    Y la cotización "C1" ya no se consulta en Nexo
+
+  Escenario: Una solicitud que nunca se costea queda vencida y visible
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y el polling consulta a Nexo 73 horas después del envío
+    Entonces la cotización "C1" queda en el estado de costeo "costeo_vencido" con un motivo que menciona "72 h"

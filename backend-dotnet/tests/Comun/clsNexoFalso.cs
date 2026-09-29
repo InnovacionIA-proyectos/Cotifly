@@ -200,6 +200,17 @@ public sealed class clsNexoFalso : HttpMessageHandler
             return Error(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", "Solicitud no encontrada.");
         }
 
+        // Como ObtenerCosteoQuery de Nexo: una descartada responde 409, y abrirla pasa Pendiente -> EnCosteo.
+        if (s.Estado == "Descartada")
+        {
+            return Error(HttpStatusCode.Conflict, "SOLICITUD_DESCARTADA", "La solicitud está descartada y no puede costearse.");
+        }
+
+        if (s.Estado == "Pendiente")
+        {
+            s.Estado = "EnCosteo";
+        }
+
         return Json(HttpStatusCode.OK, new
         {
             solicitud = new

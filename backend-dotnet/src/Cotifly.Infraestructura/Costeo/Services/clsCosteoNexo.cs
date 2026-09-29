@@ -19,7 +19,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 
 /// <summary>
 /// Costeo contra Nexo en vivo (ADR-015). Rutas de <c>CONTRATO.md</c> de Nexo bajo <c>{Nexo:UrlBase}</c> (la raíz del servicio, sin
-/// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5). Igual que el resto de adaptadores de Nexo, identifica al comercial
+/// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5), <c>GET /api/solicitudes/{id}</c> y
+/// <c>POST /api/cotizaciones</c> (HU-005.6). Igual que el resto de adaptadores de Nexo, identifica al comercial
 /// con <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
 /// <c>clsFabricaCosteoNexo</c> (sin <c>Nexo:UrlBase</c> → <see cref="clsCosteoNexoNoDisponible"/>).
 /// </summary>
@@ -43,6 +44,12 @@ public sealed class clsCosteoNexo(
     public const string MensajeTiempoAgotado =
         "Nexo no respondió a tiempo: la solicitud pudo quedar creada en Nexo; verifica en Nexo antes de reintentar.";
     public const string MensajeRechazada = "Nexo rechazó la solicitud.";
+
+    /// <summary>Código de Nexo de <c>GET /api/solicitudes/{id}</c> sobre una solicitud descartada (409).</summary>
+    public const string CodigoNexoDescartada = "SOLICITUD_DESCARTADA";
+
+    /// <summary>Código de Nexo de <c>GET /api/solicitudes/{id}</c> con un id inexistente (404).</summary>
+    public const string CodigoNexoNoEncontrada = "SOLICITUD_NO_ENCONTRADA";
     public const string MensajeSolicitudInvalida = "Nexo rechazó los datos de la solicitud.";
 
     /// <summary>Límite de toda la operación y de cada intento (el alta de Nexo auto-costea en línea).</summary>
@@ -87,6 +94,102 @@ public sealed class clsCosteoNexo(
             Entero(raiz, "fletesCalculados") ?? 0,
             Entero(raiz, "lineasPorCostear") ?? 1,
             raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True);
+    }
+
+    public async Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(
+        Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudId);
+        var id = solicitudId.Trim();
+        var solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, $"/api/solicitudes/{Uri.EscapeDataString(id)}", null, cancellationToken);
+        if (solicitud.EsFallo)
+        {
+            // ObtenerCosteoQuery de Nexo responde 409 SOLICITUD_DESCARTADA (nunca 200 con "Descartada") y 404
+            // SOLICITUD_NO_ENCONTRADA si el id ya no existe: ambos terminan el polling.
+            var detalle = solicitud.Error.Detalle ?? string.Empty;
+            if (detalle.StartsWith("HTTP 409 " + CodigoNexoDescartada, StringComparison.Ordinal))
+            {
+                return new clsCosteoConsultadoNexo(clsCosteoConsultadoNexo.SolicitudDescartada, [], null);
+            }
+
+            if (detalle.StartsWith("HTTP 404 " + CodigoNexoNoEncontrada, StringComparison.Ordinal))
+            {
+                return new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudNoEncontrada,
+                    $"Nexo ya no reconoce la solicitud {id}.", detalle);
+            }
+
+            return solicitud.Error;
+        }
+
+        string estado;
+        List<string> lineas;
+        using (var documento = solicitud.Valor)
+        {
+            var cabecera = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("solicitud", out var s)
+                ? s
+                : default;
+            estado = Texto(cabecera, "estado") ?? string.Empty;
+            lineas = cabecera.ValueKind == JsonValueKind.Object && cabecera.TryGetProperty("lineas", out var l) && l.ValueKind == JsonValueKind.Array
+                ? [.. l.EnumerateArray().Select(x => Texto(x, "id")).OfType<string>()]
+                : [];
+        }
+
+        if (estado.Length == 0)
+        {
+            return NoDisponible("respuesta de la solicitud sin estado");
+        }
+
+        if (string.Equals(estado, clsCosteoConsultadoNexo.SolicitudDescartada, StringComparison.OrdinalIgnoreCase))
+        {
+            return new clsCosteoConsultadoNexo(estado, lineas, null);
+        }
+
+        // "Crear o recuperar" (Nexo no tiene GET de la cotización por solicitud): devuelve la entregada, el borrador existente o uno
+        // vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la solicitud). Pendiente de confirmar con el equipo de Nexo.
+        var cotizacion = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/cotizaciones", new { solicitudId = id }, cancellationToken);
+        if (cotizacion.EsFallo)
+        {
+            return cotizacion.Error;
+        }
+
+        using var cuerpo = cotizacion.Valor;
+        var leida = LeerCotizacion(cuerpo.RootElement);
+        return leida is null ? NoDisponible("respuesta de la cotización sin id") : new clsCosteoConsultadoNexo(estado, lineas, leida);
+    }
+
+    /// <summary><c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan.</summary>
+    internal static clsCotizacionNexo? LeerCotizacion(JsonElement raiz)
+    {
+        if (Texto(raiz, "id") is not { } id)
+        {
+            return null;
+        }
+
+        var lineas = new List<clsLineaCosteoNexo>();
+        if (raiz.TryGetProperty("lineas", out var l) && l.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var linea in l.EnumerateArray())
+            {
+                if (Decimal(linea, "valorFlete") is { } flete)
+                {
+                    lineas.Add(new clsLineaCosteoNexo(Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor")));
+                }
+            }
+        }
+
+        var conexos = new List<clsConexoNexo>();
+        if (raiz.TryGetProperty("conexos", out var c) && c.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var conexo in c.EnumerateArray())
+            {
+                if (Texto(conexo, "id") is { } conexoId && Decimal(conexo, "valorAplicado") is { } valor)
+                {
+                    conexos.Add(new clsConexoNexo(conexoId, Texto(conexo, "nombre"), Texto(conexo, "categoria") ?? "logistico", Decimal(conexo, "cantidad") ?? 1m, valor));
+                }
+            }
+        }
+
+        return new clsCotizacionNexo(id, Texto(raiz, "estado") ?? clsCotizacionNexo.EstadoBorrador, Texto(raiz, "resultado") ?? "SinDefinir", lineas, conexos);
     }
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c> (la base no lleva <c>/api</c>).</summary>

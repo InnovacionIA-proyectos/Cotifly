@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Costeo.Interfaces;
 
@@ -20,4 +21,11 @@ public interface IClsCosteoNexo
     /// idempotente. <paramref name="usuarioId"/> es el <c>UsuariosWeb.id</c> del comercial dueño de la cotización.
     /// </summary>
     Task<clsResultado<clsSolicitudCreadaNexo>> EnviarSolicitudAsync(Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Estado y costeo de una solicitud (HU-005.6): <c>GET /api/solicitudes/{id}</c> (estado y líneas) y, salvo que esté
+    /// <c>Descartada</c>, <c>POST /api/cotizaciones {solicitudId}</c> ("crear o recuperar" la cotización de Nexo con sus fletes y
+    /// servicios conexos). Un id que Nexo ya no reconoce responde <c>COSTEO_NEXO_RECHAZADA</c> con <c>HTTP 404</c> en el detalle.
+    /// </summary>
+    Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
 }

@@ -530,6 +530,17 @@ Comportamiento común (`clsDependenciasInfraestructura.AgregarBuscadorClientes`,
 
 - **Cliente HTTP propio `NexoCosteo`** (`clsCosteoNexo.ConfigurarResiliencia`): 30 s en total y por intento (el alta auto-costea en línea), 2 reintentos **solo en GET** (`DisableForUnsafeHttpMethods`: un POST no idempotente nunca se reintenta) y muestreo del cortocircuito de 60 s. Es la única desviación del patrón `Nexo` y se registra aparte en `AgregarCosteo`.
 
+**Polling del costeo (ADR-015 §4, HU-005.6).** `clsWorkerCosteoNexo` (`BackgroundService`, Infraestructura) revisa cada `CosteoNexo:IntervaloTickSegundos` la agenda (`Cotizaciones.costeoSiguienteConsultaAt <= ahora`, índice filtrado del 0004, hasta `CosteoNexo:Lote`) en un ámbito de DI y procesa cada cotización en **su propio ámbito** con `clsPollingCosteoService.ProcesarAsync` (Aplicacion); una excepción de una cotización se registra y el lote sigue. Por cotización:
+
+1. **Reclamo** con un `UPDATE` condicional sobre `costeoSiguienteConsultaAt` (lo mueve a `ahora + CosteoNexo:ReclamoSegundos`): dos réplicas nunca la consultan a la vez y, si el proceso muere, se retoma pasado el reclamo.
+2. **Edad máxima** (`CosteoNexo:EdadMaximaHoras`, 72 h): sin costeo pasa a `costeo_vencido` con el motivo (visible en "Mis cotizaciones"); en `autocosteo` solo deja de consultarse.
+3. **Consulta** `IClsCosteoNexo.ConsultarCosteoAsync`: `GET /api/solicitudes/{costeoId}` (estado y líneas) y, salvo `Descartada`, `POST /api/cotizaciones {solicitudId}` ("crear o recuperar": Nexo no tiene GET de la cotización por solicitud; pendiente de confirmar con su equipo). Guarda `cotizacionNexoId`.
+4. **Derivación** en el dominio (`clsDerivacionEstadoCosteo`, la regla de la bandeja de Nexo): `Descartada` → `descartada`; cotización o solicitud `Entregada` → `entregada`; todas las líneas con flete → `autocosteo`; si no, `pendiente_costeo`. `entregada` y `descartada` son terminales (sin siguiente consulta).
+5. **Espaciado** (`clsAgendaPollingCosteo`): `clamp(edad × CosteoNexo:FactorEdad, IntervaloInicial, IntervaloMaximo)`, por defecto de 5 s a 15 min; tras fallos seguidos, `× 2^min(fallos, 5)` sin pasar del máximo.
+6. **Errores de Nexo** (tiempo agotado, 4xx, 5xx, 404 "id no reconocido", JSON inválido): no cambian el estado, suman `costeoConsultasFallidas`, reprograman y dejan un evento `costeo_nexo_consulta` con `exito = false`. **Cada cambio de estado** deja un evento `costeo_nexo_estado` (estado anterior y nuevo) en `EventosHerramienta`.
+
+Idempotente: la misma foto de Nexo no cambia nada ni audita dos veces. Sin `Nexo:UrlBase` o con `CosteoNexo:Habilitado=false` el worker no corre (una línea de log al arrancar). Las pruebas lo apagan y procesan la agenda con `clsWorkerCosteoNexo.ProcesarLoteAsync`.
+
 Decisiones de las respuestas:
 
 - **Coincidencia exacta:** Nexo no distingue exacta de aproximada; hasta definirlo con su equipo (pendiente de ADR-005), `exacta=true` solo cuando hay un único candidato. Las filas sin `nitCliente`, `nombre` u `origen` se descartan.

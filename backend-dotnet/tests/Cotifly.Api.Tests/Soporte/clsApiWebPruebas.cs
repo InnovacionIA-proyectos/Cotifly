@@ -91,7 +91,13 @@ public sealed class clsApiWebPruebas : IDisposable
     public static clsApiWebPruebas ConNexo(clsBaseDatosPruebas baseDatos, clsNexoFalso nexo, IDictionary<string, string?>? extra = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
-        var valores = new Dictionary<string, string?>(extra ?? new Dictionary<string, string?>()) { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase };
+        // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
+        var valores = new Dictionary<string, string?> { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase, ["CosteoNexo:Habilitado"] = "false" };
+        foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
+        {
+            valores[clave] = valor;
+        }
+
         return new clsApiWebPruebas(baseDatos, extra: valores, configurar: b => b.ConfigureTestServices(s =>
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
@@ -181,6 +187,23 @@ public sealed class clsApiWebPruebas : IDisposable
 
         var creada = resultado.Valor;
         return new clsCotizacionPrueba(creada.Id, creada.Folio, conPdf ? $"{creada.Folio}.pdf" : null, nit);
+    }
+
+    /// <summary>
+    /// Una vuelta del polling de Nexo (HU-005.6) como la haría el worker, después de adelantar la agenda de la cotización
+    /// <paramref name="folio"/> al año 2000 (queda primera en la agenda compartida) y, si se pide, su envío a Nexo
+    /// <paramref name="enviadaHace"/> atrás. Devuelve cuántas procesó (puede incluir cotizaciones vencidas de otras pruebas).
+    /// </summary>
+    public async Task<int> ProcesarPollingAsync(string folio, TimeSpan? enviadaHace = null)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        var envio = enviadaHace is { } hace
+            ? $", costeoEnviadoAt = DATEADD(SECOND, -{(long)hace.TotalSeconds}, SYSDATETIMEOFFSET())"
+            : string.Empty;
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+        return await Infraestructura.Costeo.Services.clsWorkerCosteoNexo.ProcesarLoteAsync(
+            Factory.Services.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
     }
 
     /// <summary>Registra en <c>Correos</c> un envío exitoso de la cotización (para los destinatarios previos).</summary>

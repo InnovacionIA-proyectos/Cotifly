@@ -40,6 +40,30 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
         return filas == 1;
     }
 
+    public async Task<IReadOnlyList<clsConsultaCosteoPendiente>> ListarConsultasCosteoPendientesAsync(
+        DateTimeOffset ahora, int lote, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(lote, 1);
+        return await contexto.Cotizaciones.AsNoTracking()
+            .Where(c => c.CosteoSiguienteConsultaAt != null && c.CosteoSiguienteConsultaAt <= ahora)
+            .OrderBy(c => c.CosteoSiguienteConsultaAt)
+            .Take(lote)
+            .Select(c => new clsConsultaCosteoPendiente(c.Id, c.CosteoSiguienteConsultaAt!.Value))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> ReclamarConsultaCosteoAsync(
+        Guid cotizacionId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.Cotizaciones
+            .Where(c => c.Id == cotizacionId && c.CosteoSiguienteConsultaAt == esperada)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.CosteoSiguienteConsultaAt, (DateTimeOffset?)reclamoHasta), cancellationToken);
+        return filas == 1;
+    }
+
+    public Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        contexto.Cotizaciones.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+
     public Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);

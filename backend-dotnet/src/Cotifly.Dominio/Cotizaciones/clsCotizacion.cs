@@ -281,6 +281,79 @@ public sealed class clsCotizacion
         CosteoSiguienteConsultaAt = null;
     }
 
+    /// <summary>¿El polling debe consultar esta cotización? (tiene <see cref="CosteoId"/> y no está en un estado terminal.)</summary>
+    public bool SeConsultaEnNexo =>
+        CosteoId is not null
+        && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.Autocosteo;
+
+    /// <summary>
+    /// Resultado de una consulta del polling (HU-005.6): el estado derivado, el id de la cotización de Nexo, la última consulta y la
+    /// siguiente (<c>null</c> = no se consulta más). Reinicia los fallos seguidos. Devuelve <c>true</c> si el estado cambió.
+    /// </summary>
+    public bool RegistrarConsultaCosteo(Cotizaciones.EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset consultadaAt, DateTimeOffset? siguiente)
+    {
+        var cambio = EstadoCosteo != estado;
+        EstadoCosteo = estado;
+        CotizacionNexoId = string.IsNullOrWhiteSpace(cotizacionNexoId) ? CotizacionNexoId : cotizacionNexoId.Trim();
+        CosteoUltimaConsultaAt = consultadaAt;
+        CosteoSiguienteConsultaAt = siguiente;
+        CosteoConsultasFallidas = 0;
+        if (cambio)
+        {
+            MotivoEstadoCosteo = null;
+        }
+
+        return cambio;
+    }
+
+    /// <summary>Una consulta del polling falló (Nexo caído, 4xx, 5xx, id no reconocido): suma un fallo y reprograma, sin cambiar el estado.</summary>
+    public void RegistrarFalloConsultaCosteo(DateTimeOffset consultadaAt, DateTimeOffset? siguiente)
+    {
+        CosteoUltimaConsultaAt = consultadaAt;
+        CosteoSiguienteConsultaAt = siguiente;
+        CosteoConsultasFallidas++;
+    }
+
+    /// <summary>
+    /// Se llegó a la edad máxima del polling (HU-005.6): sin costeo queda en <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/>
+    /// con el motivo (visible en "Mis cotizaciones"); con costeo (<c>autocosteo</c>) solo deja de consultarse. Devuelve <c>true</c> si el
+    /// estado cambió.
+    /// </summary>
+    public bool VencerPollingCosteo(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        CosteoSiguienteConsultaAt = null;
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.CosteoVencido;
+        MotivoEstadoCosteo = Recortar(motivo);
+        return true;
+    }
+
+    /// <summary>
+    /// Nexo ya no reconoce la solicitud (404): se deja de consultar con el motivo; sin costeo queda en
+    /// <see cref="Cotizaciones.EstadoCosteo.CosteoVencido"/>. Devuelve <c>true</c> si el estado cambió.
+    /// </summary>
+    public bool DetenerPorSolicitudDesconocida(string motivo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        CosteoSiguienteConsultaAt = null;
+        MotivoEstadoCosteo = Recortar(motivo);
+        if (EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return false;
+        }
+
+        EstadoCosteo = Cotizaciones.EstadoCosteo.CosteoVencido;
+        return true;
+    }
+
+    /// <summary>Deja de consultar a Nexo (estado que ya no se sigue, o datos incompletos).</summary>
+    public void DetenerPollingCosteo() => CosteoSiguienteConsultaAt = null;
+
     /// <summary>Recorta un motivo a <see cref="LargoMaximoMotivoCosteo"/> caracteres (la columna es <c>NVARCHAR(1000)</c>).</summary>
     public static string Recortar(string motivo)
     {
