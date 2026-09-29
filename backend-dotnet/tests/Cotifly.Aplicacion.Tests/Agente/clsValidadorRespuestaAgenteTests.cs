@@ -24,7 +24,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     private const string Folio = "PCN-900123456-24092026-001";
 
     private static readonly string[] _declaradas =
-        ["buscar_cliente", "buscar_tarifa", "obtener_margen", "calcular_precio", "registrar_ajuste_margen", "generar_pdf", "consultar_cotizacion"];
+        ["buscar_cliente", "resolver_municipio", "buscar_tarifa", "obtener_margen", "calcular_precio", "registrar_ajuste_margen", "generar_pdf", "consultar_cotizacion"];
 
     private readonly clsChatClientGuionizado _modelo = new();
     private readonly clsLoggerFalso<clsValidadorRespuestaAgente> _logger = new();
