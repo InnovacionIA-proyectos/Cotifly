@@ -160,19 +160,63 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     }
 
     /// <summary>
-    /// Moneda que nombra el mensaje (normalizado): dólares gana si aparecen ambas (el costo suele darse en pesos y la cotización pedirse en
-    /// dólares); "pesos" suelto no cuenta (es la unidad del costo), sí "en pesos", "pesos colombianos" o "COP".
+    /// Moneda que el comercial elige de forma explícita en su mensaje (HU-012.2), o <c>null</c>. Cuenta solo una frase de elección:
+    /// "en dólares/USD/US$", "a dólares" ("pásalo a dólares"), "en pesos/COP", o un mensaje que es solo la moneda ("USD", "dólares",
+    /// "pesos"). No cuentan:
+    /// <list type="bullet">
+    /// <item>una moneda junto a un monto o como unidad ("US$1.200", "2.850.000 COP", "2.850.000 pesos", "dolarizado");</item>
+    /// <item>una elección negada en la misma frase ("no en dólares", "no la quiero en pesos");</item>
+    /// <item>la unidad del costo ("el costo en pesos es...");</item>
+    /// <item>una pregunta ("¿cuál es la TRM del dólar hoy?", "¿se puede en dólares?": la resuelve el comercial con una elección).</item>
+    /// </list>
+    /// Con elecciones de ambas monedas gana la que va tras "mejor"/"prefiero"/"ahora"; si no, la última.
     /// </summary>
     public static string? MonedaNombrada(string? mensaje)
     {
         var texto = Normalizar(mensaje);
-        if (ExpresionDolares().IsMatch(texto))
+        if (texto.Length == 0)
         {
-            return clsConversorMoneda.Dolares;
+            return null;
         }
 
-        return ExpresionPesos().IsMatch(texto) ? clsConversorMoneda.Pesos : null;
+        if (ExpresionSoloMoneda().Match(texto) is { Success: true } sola)
+        {
+            return MonedaDe(sola.Groups["m"].Value);
+        }
+
+        string? elegida = null;
+        var preferida = false;
+        foreach (var frase in ExpresionFrases().Split(texto))
+        {
+            if (frase.Contains('?', StringComparison.Ordinal) || frase.TrimStart().StartsWith('¿'))
+            {
+                continue;
+            }
+
+            foreach (Match eleccion in ExpresionEleccion().Matches(frase))
+            {
+                var antes = frase[..eleccion.Index];
+                if (ExpresionNegacionMoneda().IsMatch(antes) || ExpresionUnidadCosto().IsMatch(antes))
+                {
+                    continue;
+                }
+
+                var esPreferida = ExpresionPreferencia().IsMatch(antes);
+                if (elegida is null || esPreferida || !preferida)
+                {
+                    elegida = MonedaDe(eleccion.Groups["m"].Value);
+                    preferida |= esPreferida;
+                }
+            }
+        }
+
+        return elegida;
     }
+
+    private static string MonedaDe(string palabra) =>
+        palabra.StartsWith("usd", StringComparison.Ordinal) || palabra.StartsWith("us$", StringComparison.Ordinal) || palabra.StartsWith("dolar", StringComparison.Ordinal)
+            ? clsConversorMoneda.Dolares
+            : clsConversorMoneda.Pesos;
 
     /// <summary>¿El mensaje (normalizado) es una confirmación explícita? ("Confirmo", "sí", "dale", "genera el PDF"...).</summary>
     public static bool EsConfirmacion(string? mensaje)
@@ -373,11 +417,25 @@ public sealed partial class clsEstadoConversacionService : IClsEstadoConversacio
     [GeneratedRegex(@"^\W*(opcion |el |la |numero )?(?<n>[1-9])\W*$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionPosicion();
 
-    [GeneratedRegex(@"(?<![a-z])(usd|us\$|dolar(es)?)(?![a-z])", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex ExpresionDolares();
+    // Elección: "en" o "a" y la moneda, sin monto después ("en USD 1.200" es un monto, no una elección) ni letras pegadas ("dolarizado").
+    [GeneratedRegex(@"\b(en|a)\s+(?<m>usd|us\$|dolares|dolar|pesos colombianos|pesos|cop)(?![a-z0-9$])(?!\s*\d)", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionEleccion();
 
-    [GeneratedRegex(@"(?<![a-z])(cop|en pesos|pesos colombianos)(?![a-z])", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex ExpresionPesos();
+    [GeneratedRegex(@"^\W*(en\s+)?(?<m>usd|us\$|dolares|dolar|pesos colombianos|pesos|cop)\W*$", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionSoloMoneda();
+
+    // Frases: se corta en comas, puntos, punto y coma y "pero"/"mejor" para que "no en X, mejor en Y" niegue solo X.
+    [GeneratedRegex(@"[,.;:!\n]|\bpero\b|(?=\bmejor\b)", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionFrases();
+
+    [GeneratedRegex(@"\b(no|nunca|sin)\b", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionNegacionMoneda();
+
+    [GeneratedRegex(@"\b(costo|costos|tarifa|tarifas|flete|fletes)\s*(es\s*)?$", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionUnidadCosto();
+
+    [GeneratedRegex(@"\b(mejor|prefiero|ahora|cambia(la|lo)?|pasa(la|lo)?|cotiza(la|lo)?)\b", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionPreferencia();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacios();

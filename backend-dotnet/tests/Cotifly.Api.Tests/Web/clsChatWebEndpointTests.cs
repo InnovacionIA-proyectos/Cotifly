@@ -55,7 +55,8 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         json.GetProperty("pdf").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
-    // HU-012.2: con el selector en USD el precio llega convertido con la TRM oficial (datos abiertos falsos, sin red).
+    // HU-012.2: con el selector en USD el precio llega convertido con la TRM oficial (datos abiertos falsos, sin red). La moneda se acepta
+    // sin distinguir mayúsculas (" usd ").
     [Fact]
     public async Task ConMonedaUsdElPrecioLlegaEnDolaresConLaTrm()
     {
@@ -76,7 +77,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var respuesta = await api.EnviarAsync(
-            _post, RutaChat, ana.Access, clsApiWebPruebas.Json(new { mensaje = "Cotiza Nacional, costo 2.850.000", sesion_id = SesionId(), moneda = "USD" }));
+            _post, RutaChat, ana.Access, clsApiWebPruebas.Json(new { mensaje = "Cotiza Nacional, costo 2.850.000", sesion_id = SesionId(), moneda = " usd " }));
 
         var precio = (await VerificarContratoAsync(respuesta, RutaChat, _post, HttpStatusCode.OK)).GetProperty("precio");
         precio.GetProperty("moneda").GetString().Should().Be("USD");

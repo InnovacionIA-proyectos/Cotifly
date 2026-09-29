@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Precio.DTOs;
 using Cotifly.Aplicacion.Precio.Interfaces;
@@ -12,72 +13,72 @@ namespace Cotifly.Infraestructura.Precio.Services;
 /// <remarks>
 /// <list type="bullet">
 /// <item>La clave es la fecha que pide el caso de uso (el "hoy" de America/Bogota, <c>IClsCalendarioNegocio</c>), nunca la fecha UTC.</item>
-/// <item>Una entrada vive <see cref="Duracion"/> según <see cref="IClsReloj"/>: si la Superintendencia corrige un valor, se toma en la
-/// siguiente consulta tras el vencimiento. Al guardar se descartan las vencidas (a lo sumo unas pocas fechas en memoria).</item>
-/// <item>Los fallos no se guardan: el comercial puede reintentar enseguida (HU-012, "puede reintentar").</item>
-/// <item>Una sola consulta a la vez hacia la fuente: varias cotizaciones simultáneas sin caché esperan la misma respuesta.</item>
+/// <item>Una TRM vive <see cref="Duracion"/> según <see cref="IClsReloj"/>: si la Superintendencia corrige un valor, se toma en la siguiente
+/// consulta tras el vencimiento. Al guardar se descartan las entradas vencidas.</item>
+/// <item>Consulta compartida por fecha: las llamadas simultáneas sin caché esperan la misma consulta a la fuente y reciben el mismo
+/// resultado, también si falla (una fuente caída no encola N consultas de N comerciales). La consulta compartida no usa el token de
+/// ningún llamador (el adaptador tiene su propio límite de tiempo); cada llamador puede dejar de esperar con el suyo.</item>
+/// <item>Un fallo se recuerda solo <see cref="DuracionFallo"/> (caché negativa): durante ese lapso los reintentos responden el mismo
+/// <c>TRM_NO_DISPONIBLE</c> sin golpear la fuente; después, el comercial puede reintentar. La TRM es pública e igual para todos los
+/// comerciales: compartir el fallo no filtra nada.</item>
 /// </list>
 /// </remarks>
-public sealed class clsProveedorTrmEnCache(IClsProveedorTrm fuente, IClsReloj reloj) : IClsProveedorTrm, IDisposable
+public sealed class clsProveedorTrmEnCache(IClsProveedorTrm fuente, IClsReloj reloj) : IClsProveedorTrm
 {
     /// <summary>Vida de una TRM en la caché.</summary>
     public static readonly TimeSpan Duracion = TimeSpan.FromHours(6);
 
-    private readonly Dictionary<DateOnly, (clsTrm Trm, DateTimeOffset Vence)> _entradas = [];
-    private readonly SemaphoreSlim _consulta = new(1, 1);
-    private readonly Lock _candado = new();
+    /// <summary>Vida de un fallo en la caché negativa.</summary>
+    public static readonly TimeSpan DuracionFallo = TimeSpan.FromSeconds(20);
 
-    public async Task<clsResultado<clsTrm>> ObtenerAsync(DateOnly fecha, CancellationToken cancellationToken = default)
+    private readonly ConcurrentDictionary<DateOnly, clsEntrada> _entradas = new();
+    private readonly ConcurrentDictionary<DateOnly, Lazy<Task<clsResultado<clsTrm>>>> _enCurso = new();
+
+    public Task<clsResultado<clsTrm>> ObtenerAsync(DateOnly fecha, CancellationToken cancellationToken = default)
     {
-        if (Vigente(fecha) is { } enCache)
+        if (_entradas.TryGetValue(fecha, out var entrada) && reloj.AhoraUtc < entrada.Vence)
         {
-            return enCache;
+            return Task.FromResult(entrada.Resultado);
         }
 
-        await _consulta.WaitAsync(cancellationToken);
+        var compartida = _enCurso.GetOrAdd(fecha, f => new Lazy<Task<clsResultado<clsTrm>>>(() => ConsultarAsync(f)));
+        return compartida.Value.WaitAsync(cancellationToken);
+    }
+
+    private async Task<clsResultado<clsTrm>> ConsultarAsync(DateOnly fecha)
+    {
         try
         {
-            // Otra consulta pudo llenarla mientras se esperaba el turno.
-            if (Vigente(fecha) is { } recienLlegada)
+            clsResultado<clsTrm> resultado;
+            try
             {
-                return recienLlegada;
+                resultado = await fuente.ObtenerAsync(fecha, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // El adaptador no lanza por la fuente; si algo inesperado lanza, los que esperan reciben un fallo controlado.
+                resultado = new clsErrorDominio(clsCodigosError.TrmNoDisponible, "No se pudo obtener la TRM oficial del día.", ex.GetType().Name);
             }
 
-            var resultado = await fuente.ObtenerAsync(fecha, cancellationToken);
-            if (resultado.EsExitoso)
-            {
-                Guardar(fecha, resultado.Valor);
-            }
-
+            Guardar(fecha, resultado);
             return resultado;
         }
         finally
         {
-            _consulta.Release();
+            _enCurso.TryRemove(fecha, out _);
         }
     }
 
-    public void Dispose() => _consulta.Dispose();
-
-    private clsTrm? Vigente(DateOnly fecha)
-    {
-        lock (_candado)
-        {
-            return _entradas.TryGetValue(fecha, out var entrada) && reloj.AhoraUtc < entrada.Vence ? entrada.Trm : null;
-        }
-    }
-
-    private void Guardar(DateOnly fecha, clsTrm trm)
+    private void Guardar(DateOnly fecha, clsResultado<clsTrm> resultado)
     {
         var ahora = reloj.AhoraUtc;
-        lock (_candado)
+        foreach (var vencida in _entradas.Where(e => ahora >= e.Value.Vence).Select(e => e.Key).ToList())
         {
-            foreach (var vencida in _entradas.Where(e => ahora >= e.Value.Vence).Select(e => e.Key).ToList())
-            {
-                _entradas.Remove(vencida);
-            }
-
-            _entradas[fecha] = (trm, ahora + Duracion);
+            _entradas.TryRemove(vencida, out _);
         }
+
+        _entradas[fecha] = new clsEntrada(resultado, ahora + (resultado.EsExitoso ? Duracion : DuracionFallo));
     }
+
+    private sealed record clsEntrada(clsResultado<clsTrm> Resultado, DateTimeOffset Vence);
 }

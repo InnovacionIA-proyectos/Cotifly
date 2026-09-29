@@ -34,8 +34,7 @@ public sealed class clsGeneradorPdfMigraDocTests
         tarifa.Should().Contain("Cotización en dólares:");
         tarifa.Should().Contain("TRM de $3.306,86 por dólar");
         tarifa.Should().Contain("se ajusta día a día con la TRM vigente");
-        tarifa.Should().Contain("el mínimo a pagar es el valor cotizado originalmente");
-        tarifa.Should().Contain("(equivalente a $3.294.798)");
+        tarifa.Should().Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
         tarifa.IndexOf("Cotización en dólares:", StringComparison.Ordinal).Should()
             .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la aclaración va debajo de la tabla");
     }
@@ -54,7 +53,7 @@ public sealed class clsGeneradorPdfMigraDocTests
         var payload = clsDocumentosPrueba.Payload();
         payload.Secciones = [payload.Tarifa!];
         payload.Tarifa = null;
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-2", clsDocumentosPrueba.Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-2", clsDocumentosPrueba.Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m, 3_294_798m).Valor;
 
         var (_, lector) = Generar(documento);
 

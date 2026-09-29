@@ -37,8 +37,16 @@ public static class clsFormatoMoneda
         return PrefijoPesos + entero.ToString("#,0", CultureInfo.InvariantCulture).Replace(',', '.');
     }
 
-    /// <summary>TRM (pesos por dólar) con 2 decimales: <c>3306.86</c> → <c>$3.306,86</c> (HU-012.3).</summary>
-    public static string FormatearTrm(decimal trm) => PrefijoPesos + ConDecimales(trm);
+    /// <summary>
+    /// TRM (pesos por dólar) con su escala real, sin rellenar ni recortar (hasta 4 decimales, la de <c>trmAplicada</c>): <c>3306.86</c> →
+    /// <c>$3.306,86</c>, <c>3306.8612</c> → <c>$3.306,8612</c>, <c>950</c> → <c>$950</c> (HU-012.3).
+    /// </summary>
+    public static string FormatearTrm(decimal trm)
+    {
+        var texto = trm.ToString("#,0.####", CultureInfo.InvariantCulture);
+        var punto = texto.LastIndexOf('.');
+        return PrefijoPesos + (punto < 0 ? texto.Replace(',', '.') : texto[..punto].Replace(',', '.') + ',' + texto[(punto + 1)..]);
+    }
 
     /// <summary>Miles con <c>.</c> y 2 decimales con <c>,</c> (half-to-even), sin depender de la cultura del proceso.</summary>
     private static string ConDecimales(decimal monto)

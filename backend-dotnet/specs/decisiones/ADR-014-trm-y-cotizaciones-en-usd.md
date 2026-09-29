@@ -43,7 +43,8 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 - Adaptador `clsProveedorTrmSuperfinanciera` en Infraestructura, con cliente HTTP con nombre (`Trm`), la tubería estándar de resiliencia y 2 reintentos ante fallos transitorios.
 - El valor se redondea a 4 decimales (half-to-even), la escala de `Cotizaciones.trmAplicada`: se guarda exactamente la TRM con que se convierte. Un valor cero o negativo (también tras redondear) es `TRM_NO_DISPONIBLE`.
 - Opciones `Trm__Url` (por defecto la del conjunto) y `Trm__TiempoEsperaSegundos` (2 a 60, por defecto 10), validadas al arrancar.
-- Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Los fallos no se guardan, para que el reintento consulte de nuevo.
+- Caché `clsProveedorTrmEnCache` por fecha de negocio de America/Bogota (`IClsCalendarioNegocio`): la TRM no cambia intradía. Cada entrada vive 6 horas. Las consultas simultáneas de una misma fecha comparten una sola llamada a la fuente (también su fallo), y un fallo se recuerda 20 segundos (caché negativa) para no golpear una fuente caída; después, el reintento consulta de nuevo.
+- Circuito de la tubería: abre con 5 intentos en 60 s si la mitad falla, y corta 30 s (con el valor por defecto de 100 intentos nunca abriría con este volumen). Las fechas de vigencia se leen como fechas de calendario (`AAAA-MM-DD`), sin conversión de zona horaria.
 - Código de error nuevo `TRM_NO_DISPONIBLE` en el contrato (`ErrorNegocio`).
 
 ### 3. Conversión (HU-012.2)
@@ -57,7 +58,9 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 
 ### 4. PDF (HU-012.3)
 
-La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TRM aplicada: el valor se ajusta día a día con la TRM vigente, pero el mínimo a pagar es el valor cotizado originalmente. La detalla #52.
+La tabla muestra `US$` con 2 decimales. Debajo de la tabla va una nota con la TRM aplicada: el valor en pesos se ajusta día a día con la TRM vigente (la aplicada es la referencia), pero "el mínimo a pagar es $X, el valor cotizado originalmente en pesos".
+
+**Definición única del piso:** X es `precio_cop`, el precio en pesos que salió del costo y el margen aplicado antes de convertir (half-to-even a pesos, `clsCalculadoraPrecio`). No se usa `precio_final × trm_aplicada`: con el precio en USD redondeado a centavos esa multiplicación difiere hasta unos ±16 pesos del valor cotizado. `precio_cop` no tiene columna propia: se recalcula de `Cotizaciones.costo`, `margenAplicado` y `metodoCalculo` (persistidos), y el servidor verifica que el de la trazabilidad coincida. La misma definición está en `SalidaPrecio.precio_cop` y `CotizacionResumen.trm_aplicada` del contrato y en `clsTextosEstandar.AclaracionDolares`.
 
 ## Alternativas consideradas
 

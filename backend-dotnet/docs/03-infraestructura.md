@@ -237,7 +237,8 @@ SAP TM:
 
 - **Fuente pública:** sin credenciales ni datos personales. El contenedor necesita salida HTTPS a `www.datos.gov.co`. Sin esa salida, las cotizaciones en COP siguen igual y las de USD responden `TRM_NO_DISPONIBLE`.
 - **Consulta:** `GET {Trm__Url}?$select=valor,vigenciadesde,vigenciahasta&$where=vigenciadesde <= 'AAAA-MM-DDT00:00:00' AND vigenciahasta >= 'AAAA-MM-DDT00:00:00'&$order=vigenciadesde DESC&$limit=1`, con la fecha de negocio de America/Bogota. La TRM de un sábado, domingo o festivo es la del rango que lo cubre.
-- **Caché:** una consulta por fecha cada 6 horas como máximo, en memoria de cada réplica. Un fallo no se guarda: el siguiente intento vuelve a consultar.
+- **Caché:** una consulta por fecha cada 6 horas como máximo, en memoria de cada réplica. Las consultas simultáneas comparten una sola llamada (y su resultado, también un fallo). Un fallo se recuerda 20 s: pasado ese lapso, el siguiente intento vuelve a consultar.
+- **Circuito:** abre con 5 intentos en 60 s si la mitad falla, y corta 30 s.
 - **Logs:** un fallo deja una sola línea de warning con el motivo (`HTTP 503`, `tiempo agotado`, `JSON inválido`, `sin TRM vigente para la fecha`) y la fecha; los eventos de Polly de la tubería `Trm-standard` bajan a Debug.
 - **Límite de Socrata:** sin token de aplicación, Socrata limita las peticiones por IP. Con la caché el volumen es mínimo. Si hiciera falta, se agregaría un `X-App-Token` como secreto (ADR-014).
 

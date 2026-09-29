@@ -354,7 +354,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         var payload = clsEjemploPdf.Payload();
         payload.ServiciosConexos = [new clsServicioConexoPayload { Descripcion = "Levante", Precio = 100m }];
 
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_294_798m).Valor;
 
         documento.Secciones[0].Filas[0].Tarifa.Should().Be("US$3.000.000,00");
         documento.Incluye.Should().Contain("Levante: US$100,00");
@@ -364,13 +364,13 @@ public sealed class clsConstructorDocumentoCotizacionTests
     [Fact]
     public void EnDolaresElDocumentoAclaraLaTrmYElPisoMinimo()
     {
-        var documento = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_294_798m).Valor;
 
         documento.NotaMoneda.Should().NotBeNull();
         documento.NotaMoneda.Should().Contain("dólares estadounidenses (USD)")
             .And.Contain("TRM de $3.306,86")
             .And.Contain("se ajusta día a día con la TRM vigente")
-            .And.Contain("el mínimo a pagar es el valor cotizado originalmente");
+            .And.Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
     }
 
     [Fact]
@@ -389,10 +389,27 @@ public sealed class clsConstructorDocumentoCotizacionTests
         resultado.Error.Mensaje.Should().Contain("TRM");
     }
 
+    // Validación de HU-012.3: el piso es exactamente el valor cotizado en pesos (3.529.395), no "USD × TRM" (1.067,29 × 3.306,86 = 3.529.393,6).
     [Fact]
-    public void ConElPrecioEnPesosLaAclaracionImprimeElPisoEnCop() =>
-        clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_294_798m).Valor.NotaMoneda
-            .Should().Contain("TRM de referencia de $3.306,86 (equivalente a $3.294.798)");
+    public void ElPisoEsExactamenteElValorCotizadoEnPesos()
+    {
+        var nota = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_529_395m).Valor.NotaMoneda;
+
+        nota.Should().Contain("el mínimo a pagar es $3.529.395, el valor cotizado originalmente en pesos")
+            .And.Contain("TRM de referencia: $3.306,86")
+            .And.NotContain("por la TRM").And.NotContain("equivalente");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    public void EnDolaresSinValorEnPesosEsPayloadInvalido(int? precioCop)
+    {
+        var resultado = clsConstructorDocumentoCotizacion.Construir(clsEjemploPdf.Payload(), "PCN-1", _firma, _hoy, "USD", 3306.86m, precioCop);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        resultado.Error.Mensaje.Should().Contain("pesos");
+    }
 
     [Fact]
     public void LaVarianteMultiTambienLlevaLaAclaracion()
@@ -401,7 +418,7 @@ public sealed class clsConstructorDocumentoCotizacionTests
         payload.Secciones = [payload.Tarifa!];
         payload.Tarifa = null;
 
-        clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m).Valor.NotaMoneda.Should().Contain("$3.306,86");
+        clsConstructorDocumentoCotizacion.Construir(payload, "PCN-1", _firma, _hoy, "USD", 3306.86m, 3_294_798m).Valor.NotaMoneda.Should().Contain("$3.306,86");
     }
 
     [Fact]

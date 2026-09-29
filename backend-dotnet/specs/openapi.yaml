@@ -1070,7 +1070,8 @@ components:
             con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
             del día; si la fuente de la TRM falla, el agente responde que no puede cotizar en dólares
             (`TRM_NO_DISPONIBLE` en la herramienta) y el comercial puede reintentar o cotizar en COP.
-            Otro valor responde 400 (`moneda inválida`).
+            Se acepta sin distinguir mayúsculas ni espacios al borde (`usd`, ` Usd ` → `USD`). Otro valor, o una cadena
+            vacía, responde 400 (`moneda inválida`).
 
     SalidaPrecio:
       type: object
@@ -1113,7 +1114,9 @@ components:
         precio_cop:
           type: number
           nullable: true
-          description: Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`).
+          description: |
+            Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`). En USD es el
+            mínimo a pagar (piso, HU-012.3): el valor cotizado originalmente en pesos que imprime el PDF.
 
     SalidaMargen:
       type: object
@@ -1249,7 +1252,8 @@ components:
           type: number
           description: |
             TRM con que se convirtió el precio (HU-012.2); 0 cuando la moneda es COP. En USD es la referencia del
-            piso: el mínimo a pagar es `precio_final × trm_aplicada` en pesos.
+            ajuste diario en pesos. El mínimo a pagar (piso, HU-012.3) no es `precio_final × trm_aplicada`: es el valor
+            cotizado originalmente en pesos, el precio en pesos del costo y el margen aplicado (`precio_cop` de `SalidaPrecio`).
         estado_costeo:
           type: string
           nullable: true

@@ -259,4 +259,38 @@ public sealed class clsEstadoConversacionServiceTests
         (estado with { Moneda = "COP" }).TrmVencidaEn(new DateOnly(2030, 1, 1)).Should().BeFalse("en pesos no hay TRM");
         (estado with { TrmVigenciaHasta = null }).TrmVencidaEn(new DateOnly(2026, 9, 24)).Should().BeTrue("sin rango conocido se recalcula");
     }
+
+    // Validación de HU-012 (4, 5): solo una elección explícita cambia la moneda.
+    [Theory]
+    [InlineData("no en dólares", null)]
+    [InlineData("no la quiero en dólares", null)]
+    [InlineData("mejor en pesos, no en dólares", "COP")]
+    [InlineData("no la quiero en pesos, mejor en dólares", "USD")]
+    [InlineData("en dólares... mejor en pesos", "COP")]
+    [InlineData("¿cuál es la TRM del dólar hoy?", null)]
+    [InlineData("¿se puede cotizar en dólares?", null)]
+    [InlineData("el costo es 2.850.000 COP", null)]
+    [InlineData("costo 2.850.000 COP, en USD por favor", "USD")]
+    [InlineData("el costo en pesos es 2.850.000", null)]
+    [InlineData("la tarifa es de US$1.200", null)]
+    [InlineData("una operación dolarizada, costo 2.850.000", null)]
+    [InlineData("usd", "USD")]
+    [InlineData("Dólares", "USD")]
+    [InlineData("en dólares", "USD")]
+    [InlineData("pásalo a dólares", "USD")]
+    [InlineData("cotízalo en pesos colombianos", "COP")]
+    [InlineData("en USD 1.200 el costo", null)]
+    public void SoloUnaEleccionExplicitaCambiaLaMoneda(string mensaje, string? esperada) =>
+        clsEstadoConversacionService.MonedaNombrada(mensaje).Should().Be(esperada);
+
+    [Fact]
+    public void CopJuntoAUnMontoNoDevuelveAPesosUnaCotizacionEnDolares()
+    {
+        var enDolares = clsEstadoConversacion.Vacio with { Moneda = "USD", PrecioFinal = 996.35m, TrmAplicada = 3306.86m, ConfirmacionPendiente = true };
+
+        var reconocido = _servicio.ReconocerMensaje(enDolares, "el costo real es 2.850.000 COP");
+
+        reconocido.Estado.Moneda.Should().Be("USD");
+        reconocido.Estado.PrecioFinal.Should().Be(996.35m);
+    }
 }

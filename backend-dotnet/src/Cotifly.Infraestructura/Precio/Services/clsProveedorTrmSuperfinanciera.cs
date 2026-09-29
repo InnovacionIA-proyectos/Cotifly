@@ -41,6 +41,9 @@ public sealed class clsProveedorTrmSuperfinanciera(
     /// <summary>Reintentos ante fallos transitorios (además del primer intento).</summary>
     public const int Reintentos = 2;
 
+    /// <summary>Intentos mínimos en la ventana del circuito para que pueda abrir.</summary>
+    public const int UmbralCircuito = 5;
+
     public const string Mensaje = "No se pudo obtener la TRM oficial del día (Superintendencia Financiera): la cotización en dólares no está disponible en este momento. Intenta de nuevo en unos minutos o cotiza en pesos.";
 
     private static readonly TimeSpan _esperaEntreIntentos = TimeSpan.FromMilliseconds(200);
@@ -119,8 +122,12 @@ public sealed class clsProveedorTrmSuperfinanciera(
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
 
-        // El circuito exige una ventana de muestreo de al menos el doble del tiempo por intento.
-        var ventana = TimeSpan.FromSeconds(30);
+        // Circuito: con el valor por defecto (100 peticiones) nunca abriría con el volumen de la TRM (una consulta por día y réplica, más
+        // los reintentos). Abre con 5 intentos en 60 s si la mitad falla y corta 30 s. La ventana debe ser al menos el doble del intento.
+        var ventana = TimeSpan.FromSeconds(60);
+        resiliencia.CircuitBreaker.MinimumThroughput = UmbralCircuito;
+        resiliencia.CircuitBreaker.FailureRatio = 0.5;
+        resiliencia.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
         resiliencia.CircuitBreaker.SamplingDuration = ventana >= porIntento * 2 ? ventana : porIntento * 2;
     }
 
@@ -164,11 +171,16 @@ public sealed class clsProveedorTrmSuperfinanciera(
         };
     }
 
+    /// <summary>
+    /// Fecha de vigencia: los 10 primeros caracteres (<c>AAAA-MM-DD</c>) como <see cref="DateOnly"/>, sin conversión de zona horaria (la
+    /// fuente publica fechas de calendario, <c>2026-09-26T00:00:00.000</c>; un parseo como instante podría correr el día).
+    /// </summary>
     private static DateOnly? Fecha(JsonElement fila, string campo) =>
         fila.TryGetProperty(campo, out var valor)
         && valor.ValueKind == JsonValueKind.String
-        && DateTime.TryParse(valor.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha)
-            ? DateOnly.FromDateTime(fecha)
+        && valor.GetString() is { Length: >= 10 } texto
+        && DateOnly.TryParseExact(texto[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha)
+            ? fecha
             : null;
 
     private static string Literal(string valor) => $"'{valor.Replace("'", "''", StringComparison.Ordinal)}'";
