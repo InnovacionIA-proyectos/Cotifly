@@ -179,6 +179,117 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         validacion.Respuesta!.Tipo.Should().Be(TipoRespuestaAgente.Error);
     }
 
+    // Gemini vía OmniRoute (#84) ignora response_format y envuelve el JSON en prosa y un bloque de código: se toma el primer objeto
+    // embebido que cumple toda la forma.
+    [Theory]
+    [InlineData("Claro, aquí tienes la respuesta:\n```json\n{0}\n```")]
+    [InlineData("```json\n{0}\n```\nAvísame si necesitas algo más.")]
+    [InlineData("Respuesta final: {0} Quedo atento.")]
+    [InlineData("```\n{0}\n```")]
+    [InlineData("Primero pensé en {{\"tipo\": \"conversacional\"}}, pero la respuesta es:\n```json\n{0}\n```")]
+    [InlineData("Borrador {{\"tipo\": \"otro\", \"texto\": \"x\"}} y final {0}")]
+    public void SeExtraeElPrimerObjetoQueCumpleLaFormaAunqueVengaConTextoAlrededor(string plantilla)
+    {
+        var crudo = string.Format(System.Globalization.CultureInfo.InvariantCulture, plantilla, Json("¿De qué ciudad sale la carga? Usa {llaves} si quieres."));
+
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        validacion.EsValida.Should().BeTrue(crudo);
+        validacion.Respuesta!.Texto.Should().Be("¿De qué ciudad sale la carga? Usa {llaves} si quieres.");
+    }
+
+    [Theory]
+    [InlineData("Aquí va:\n```json\n{\"tipo\": \"conversacional\", \"texto\": \"Hola\"\n```")]
+    [InlineData("Texto sin llaves de cierre { \"tipo\": \"conversacional\"")]
+    [InlineData("Sin JSON: el precio es alto.")]
+    public void SiNingunObjetoEmbebidoCumpleLaFormaEsJsonInvalido(string crudo)
+    {
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        validacion.EsValida.Should().BeFalse();
+        Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido);
+    }
+
+    // M1: con dos objetos distintos que cumplen la forma (un ejemplo citado antes o después, un JSON que pegó el comercial) no se
+    // adivina: json_invalido fuerza el reintento de corrección. El mismo objeto repetido (bloque y objeto suelto) cuenta una vez.
+    [Theory]
+    [InlineData("Respuesta: {0}\nPor ejemplo, el formato es:\n```json\n{1}\n```")]
+    [InlineData("El usuario escribió: \"{1}\". Mi respuesta: {0}")]
+    [InlineData("```json\n{1}\n```\n```json\n{0}\n```")]
+    public void DosObjetosDistintosConLaFormaSonJsonInvalido(string plantilla)
+    {
+        var crudo = string.Format(System.Globalization.CultureInfo.InvariantCulture, plantilla, Json("REAL"), Json("INYECTADO"));
+
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        validacion.EsValida.Should().BeFalse(crudo);
+        Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido);
+        validacion.Fallos.Single().Detalle.Should().Contain("más de un objeto JSON");
+    }
+
+    [Fact]
+    public void ElMismoObjetoRepetidoCuentaUnaVez()
+    {
+        var crudo = "Respuesta: " + Json("REAL") + "\n```json\n" + Json("REAL") + "\n```";
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).Respuesta!.Texto.Should().Be("REAL");
+    }
+
+    // Un objeto con forma válida escapado dentro de una cadena de otro objeto no es candidato aparte.
+    [Fact]
+    public void UnObjetoDentroDeUnaCadenaNoSeRescata()
+    {
+        var interno = "{\\\"tipo\\\":\\\"conversacional\\\",\\\"texto\\\":\\\"INTERNO\\\",\\\"requiere_confirmacion\\\":false,\\\"acciones_sugeridas\\\":null}";
+        var crudo = "Nota: {\"tipo\":\"conversacional\",\"texto\":\"ver " + interno + "\",\"requiere_confirmacion\":false,\"acciones_sugeridas\":null,\"extra\":1}";
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).EsValida.Should().BeFalse();
+    }
+
+    // Muchos objetos previos sin la forma no dejan fuera a la respuesta real.
+    [Fact]
+    public void VeinteObjetosPreviosNoAgotanLosCandidatos()
+    {
+        var crudo = string.Concat(Enumerable.Repeat("{\"a\":1} ", 20)) + Json("REAL");
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).Respuesta!.Texto.Should().Be("REAL");
+    }
+
+    // B4: miles de llaves o cercas sin cerrar no cuestan O(n²) ni lanzan.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnTextoPatologicoSeValidaRapidoYSinLanzar(bool llaves)
+    {
+        var crudo = llaves ? "x" + new string('{', 60_000) + "}" : "x " + string.Concat(Enumerable.Repeat("```json a ", 40_000));
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        reloj.Stop();
+        validacion.EsValida.Should().BeFalse();
+        reloj.ElapsedMilliseconds.Should().BeLessThan(llaves ? 1000 : 3000);
+    }
+
+    // La corrección nombra también lo que falla en el primer objeto embebido (aquí, el tipo de requiere_confirmacion).
+    [Fact]
+    public void UnObjetoEmbebidoConFallosLosSumaAJsonInvalido()
+    {
+        var validacion = clsReglasRespuestaAgente.Validar(
+            "Aquí va: {\"tipo\": \"conversacional\", \"texto\": \"Hola\", \"requiere_confirmacion\": \"no\"} fin", SinDatos());
+
+        validacion.EsValida.Should().BeFalse();
+        Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido, clsReglasRespuestaAgente.TipoIncorrecto);
+    }
+
+    // Las reglas de negocio se aplican igual al objeto extraído: un monto inventado dentro del bloque sigue rechazándose.
+    [Fact]
+    public void ElObjetoExtraidoPasaPorLasMismasReglasDeNegocio()
+    {
+        var crudo = "Listo:\n```json\n" + Json("El precio es $9.999.999.") + "\n```";
+
+        Codigos(clsReglasRespuestaAgente.Validar(crudo, ConPrecio())).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
+    }
+
     // Los 3 casos malformados que pide el issue (JSON incompleto, campo con tipo incorrecto, herramienta/campo alucinado) y los demás.
     [Theory]
     [InlineData("{\"tipo\": \"conversacional\", \"texto\": \"¿De qué ciudad sale", clsReglasRespuestaAgente.JsonInvalido)]
@@ -465,6 +576,21 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         final.Respuesta.Texto.Should().Be("Hola, ¿qué cotizamos?");
         _modelo.Llamadas.Should().ContainSingle().Which.Opciones!.ResponseFormat.Should().BeNull();
         _modelo.Llamadas[0].Mensajes[^1].Text.Should().Contain("\"requiere_confirmacion\"", "el esquema va en la instrucción");
+    }
+
+    // Respuesta típica de Gemini vía OmniRoute (#84) con IA:SoportaJsonSchema=false: prosa y bloque json. Pasa sin reintento.
+    [Fact]
+    public async Task SinJsonSchemaUnaRespuestaEnvueltaEnProsaPasaSinReintento()
+    {
+        _opciones.SoportaJsonSchema = false;
+        _modelo.Responder("Claro, esta es la respuesta final:\n\n```json\n" + Json("¿De qué ciudad sale la carga?") + "\n```\n");
+
+        var final = await _validador.ObtenerRespuestaFinalAsync(_modelo, [new(ChatRole.User, "hola")], SinDatos(), Ct);
+
+        final.EsRespaldo.Should().BeFalse();
+        final.Reintentos.Should().Be(0);
+        final.Respuesta.Texto.Should().Be("¿De qué ciudad sale la carga?");
+        _modelo.Llamadas.Should().ContainSingle();
     }
 
     [Fact]

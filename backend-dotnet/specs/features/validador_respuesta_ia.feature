@@ -27,6 +27,20 @@ Característica: Validación estructurada de la respuesta final del agente
     Y el texto del chat es "¿De qué ciudad sale la carga?"
     Y la llamada final al modelo pidió el esquema JSON "respuesta_agente" sin herramientas
 
+  # HU-003.6 (#84): Gemini vía OmniRoute ignora response_format y envuelve el JSON en prosa y un bloque de código.
+  Escenario: Una respuesta final envuelta en prosa y un bloque json llega al comercial
+    Dado que el modelo cierra el loop sin herramientas
+    Y que la respuesta final del modelo es:
+      """
+      Claro, esta es la respuesta final:
+      ```json
+      {"tipo": "conversacional", "texto": "¿De qué ciudad sale la carga?", "requiere_confirmacion": false, "acciones_sugeridas": null}
+      ```
+      """
+    Cuando "ana" escribe en el chat "Hola, necesito cotizar"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
+    Y el texto del chat es "¿De qué ciudad sale la carga?"
+
   Escenario: Un JSON incompleto se corrige con un reintento
     Dado que el modelo cierra el loop sin herramientas
     Y que la respuesta final del modelo es:

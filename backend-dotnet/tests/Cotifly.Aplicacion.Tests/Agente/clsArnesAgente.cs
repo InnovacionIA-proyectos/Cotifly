@@ -183,12 +183,15 @@ internal sealed class clsArnesAgente
             new clsMunicipio(6, "76109", "Buenaventura", "Valle del Cauca", "Colombia"),
         ]));
 
+    /// <summary>Plugin de herramientas sobre los dobles del arnés y el <see cref="Contexto"/> actual.</summary>
+    public clsHerramientasCotizador Herramientas() =>
+        new(Contexto, Buscador, Municipios, Tarifas, Margen, new clsPrecioService(Trm, Calendario), Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
+
     public clsAgenteRunner Runner()
     {
         Contexto = new clsContextoTurnoAgente();
         var precio = new clsPrecioService(Trm, Calendario);
-        var herramientas = new clsHerramientasCotizador(
-            Contexto, Buscador, Municipios, Tarifas, Margen, precio, Ajuste, Pdf, Folios, Correo, Cotizaciones, Options.Create(new clsOpcionesPdf()));
+        var herramientas = Herramientas();
         return new clsAgenteRunner(
             Modelo, Sesiones, Usuarios, Unidad, Reloj, Calendario, new clsEstadoConversacionService(),
             Validador ?? new clsValidadorRespuestaAgente(Options.Create(OpcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), Reloj), Auditoria, Candado, Cotizaciones, Politicas, Contexto, herramientas, precio,

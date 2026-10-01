@@ -30,7 +30,10 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 /// <remarks>
 /// Reglas, en orden (las de negocio solo se evalúan si la forma es correcta):
 /// <list type="number">
-/// <item>Forma: JSON completo (se toleran las cercas <c>```json</c>), un objeto, sin campos desconocidos ni repetidos.</item>
+/// <item>Forma: JSON completo (se toleran las cercas <c>```json</c>), un objeto, sin campos desconocidos ni repetidos. Si la
+/// respuesta trae texto alrededor del JSON (prosa y un bloque de código, como Gemini vía OmniRoute, #84), se toma el primer objeto
+/// embebido que cumple toda la forma, solo si es el único distinto; con dos o más (un ejemplo citado, un JSON pegado por el
+/// comercial) o con ninguno, el fallo es <c>json_invalido</c>.</item>
 /// <item>Campos: <c>tipo</c> ∈ {conversacional, previsualizacion, confirmacion_requerida, error}; <c>texto</c> string de 1 a 4000
 /// caracteres sin contar espacios al borde; <c>requiere_confirmacion</c> booleano; <c>acciones_sugeridas</c> ausente, null o una
 /// lista de {confirmar_pdf, ajustar_margen}.</item>
@@ -78,6 +81,12 @@ public static partial class clsReglasRespuestaAgente
     private const string CampoRequiere = "requiere_confirmacion";
     private const string CampoAcciones = "acciones_sugeridas";
     private static readonly string[] _campos = [CampoTipo, CampoTexto, CampoRequiere, CampoAcciones];
+
+    /// <summary>Objetos embebidos que se prueban, como máximo, en una respuesta con texto alrededor del JSON (#84).</summary>
+    private const int MaximoCandidatos = 100;
+
+    /// <summary>Reinicios de la búsqueda tras una llave sin cerrar (acota el costo con texto patológico).</summary>
+    private const int MaximoReinicios = 20;
 
     /// <summary>Herramienta del plugin que respalda cada acción sugerida.</summary>
     public static readonly IReadOnlyDictionary<AccionSugeridaAgente, string> HerramientaDeAccion = new Dictionary<AccionSugeridaAgente, string>
@@ -151,10 +160,156 @@ public static partial class clsReglasRespuestaAgente
             return null;
         }
 
+        var directos = new List<clsFalloValidacion>();
+        var directa = LeerJson(SinCercas(crudo), directos);
+        if (directa is not null || directos.TrueForAll(f => f.Codigo != JsonInvalido))
+        {
+            fallos.AddRange(directos);
+            return directa;
+        }
+
+        // Texto alrededor del JSON (#84): Gemini vía OmniRoute ignora response_format y responde prosa con un bloque ```json. Se acepta
+        // el objeto embebido que cumple toda la forma solo si es el ÚNICO distinto: con dos (un ejemplo citado, un JSON que pegó el
+        // comercial) no se adivina cuál es la respuesta y el fallo es json_invalido, que fuerza el reintento de corrección.
+        clsRespuestaAgenteEstructurada? unica = null;
+        string? claveUnica = null;
+        List<clsFalloValidacion>? delPrimerObjeto = null;
+        foreach (var candidato in ObjetosEmbebidos(crudo))
+        {
+            var fallosCandidato = new List<clsFalloValidacion>();
+            if (LeerJson(candidato, fallosCandidato) is { } embebida && fallosCandidato.Count == 0)
+            {
+                var clave = Clave(embebida);
+                if (claveUnica is null)
+                {
+                    (unica, claveUnica) = (embebida, clave);
+                }
+                else if (!string.Equals(claveUnica, clave, StringComparison.Ordinal))
+                {
+                    fallos.Add(new(JsonInvalido, "La respuesta trae más de un objeto JSON con la forma de la respuesta final: responde con uno solo, sin ejemplos ni texto citado."));
+                    return null;
+                }
+
+                continue;
+            }
+
+            // El primer objeto JSON embebido que no cumple la forma aporta sus fallos a la corrección (además de json_invalido).
+            if (delPrimerObjeto is null && fallosCandidato.TrueForAll(f => f.Codigo != JsonInvalido))
+            {
+                delPrimerObjeto = fallosCandidato;
+            }
+        }
+
+        if (unica is not null)
+        {
+            return unica;
+        }
+
+        fallos.AddRange(directos);
+        fallos.AddRange(delPrimerObjeto ?? []);
+        return null;
+    }
+
+    /// <summary>Identidad de una respuesta (un mismo objeto puede aparecer como bloque de código y como objeto balanceado).</summary>
+    private static string Clave(clsRespuestaAgenteEstructurada respuesta) =>
+        string.Join('\u0001', respuesta.Tipo.ToString(), respuesta.Texto, respuesta.RequiereConfirmacion.ToString(),
+            string.Join(',', respuesta.AccionesSugeridas ?? []));
+
+    /// <summary>
+    /// Candidatos a objeto JSON dentro de un texto, en orden de aparición: el contenido de cada bloque de código y cada objeto
+    /// <c>{...}</c> de primer nivel balanceado (respetando cadenas y escapes; un objeto dentro de otro, o dentro de una cadena, no es
+    /// candidato aparte). Una pasada lineal por el texto; una llave sin cerrar reinicia la búsqueda justo después de ella como máximo
+    /// <see cref="MaximoReinicios"/> veces y solo si queda una <c>}</c> más adelante, así miles de llaves sin cerrar no cuestan O(n²).
+    /// </summary>
+    private static List<string> ObjetosEmbebidos(string texto)
+    {
+        var candidatos = new List<(int Posicion, string Texto)>();
+        try
+        {
+            foreach (Match bloque in ExpresionBloqueCodigo().Matches(texto))
+            {
+                candidatos.Add((bloque.Groups["json"].Index, bloque.Groups["json"].Value));
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Texto patológico: se sigue solo con los objetos balanceados.
+        }
+
+        var ultimoCierre = texto.LastIndexOf('}');
+        var desde = 0;
+        for (var reinicios = 0; reinicios <= MaximoReinicios; reinicios++)
+        {
+            if (ObjetosDePrimerNivel(texto, desde, candidatos) is not { } abierta || abierta >= ultimoCierre)
+            {
+                break;
+            }
+
+            desde = abierta + 1;
+        }
+
+        return candidatos.OrderBy(c => c.Posicion).Take(MaximoCandidatos).Select(c => c.Texto).ToList();
+    }
+
+    /// <summary>
+    /// Agrega los objetos de primer nivel desde <paramref name="desde"/>. Devuelve la posición de la llave de primer nivel que quedó
+    /// sin cerrar al final del texto, o null si todas cerraron.
+    /// </summary>
+    private static int? ObjetosDePrimerNivel(string texto, int desde, List<(int Posicion, string Texto)> candidatos)
+    {
+        var profundidad = 0;
+        var enCadena = false;
+        var inicio = -1;
+        for (var i = desde; i < texto.Length; i++)
+        {
+            var c = texto[i];
+            if (profundidad == 0)
+            {
+                if (c == '{')
+                {
+                    (profundidad, inicio, enCadena) = (1, i, false);
+                }
+
+                continue;
+            }
+
+            if (enCadena)
+            {
+                if (c == '\\')
+                {
+                    i++;
+                }
+                else if (c == '"')
+                {
+                    enCadena = false;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    enCadena = true;
+                    break;
+                case '{':
+                    profundidad++;
+                    break;
+                case '}' when --profundidad == 0:
+                    candidatos.Add((inicio, texto[inicio..(i + 1)]));
+                    break;
+            }
+        }
+
+        return profundidad > 0 ? inicio : null;
+    }
+
+    private static clsRespuestaAgenteEstructurada? LeerJson(string json, List<clsFalloValidacion> fallos)
+    {
         JsonDocument documento;
         try
         {
-            documento = JsonDocument.Parse(SinCercas(crudo), new JsonDocumentOptions { MaxDepth = 16 });
+            documento = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16 });
         }
         catch (JsonException)
         {
@@ -533,8 +688,15 @@ public static partial class clsReglasRespuestaAgente
 
     private static string SinCercas(string crudo)
     {
-        var coincidencia = ExpresionCercas().Match(crudo);
-        return coincidencia.Success ? coincidencia.Groups["json"].Value : crudo.Trim();
+        try
+        {
+            var coincidencia = ExpresionCercas().Match(crudo);
+            return coincidencia.Success ? coincidencia.Groups["json"].Value : crudo.Trim();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return crudo.Trim();
+        }
     }
 
     private static string Recortar(string valor) => valor.Length > 40 ? valor[..40] + "…" : valor;
@@ -611,4 +773,7 @@ public static partial class clsReglasRespuestaAgente
 
     [GeneratedRegex(@"\A\s*```(?:json)?\s*(?<json>.*?)\s*```\s*\z", RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionCercas();
+
+    [GeneratedRegex(@"```(?:json)?\s*(?<json>.*?)\s*```", RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionBloqueCodigo();
 }
