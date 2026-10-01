@@ -1605,6 +1605,12 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
+### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). PR de #49
+
+- Sin endpoint nuevo: con dos o más líneas el PDF sale con el **layout de pliego** (resumen de todas las rutas con su tarifa y el total, luego las tablas por origen). Con una línea, el PDF de siempre.
+- Solo cuando **todas** las líneas tienen precio (`precio_final` de la licitación con valor). Antes responde 409 `COSTEO_NO_LISTO`: deshabilitar el botón mientras `lineas_pendientes > 0`.
+- Una sola vez por licitación (`PDF_YA_GENERADO`). Los servicios conexos excluidos con `PUT .../costeo/servicios-conexos` no aparecen.
+
 ### 5.26 Exportar el Excel con resultados (`GET /web/licitaciones/{folio}/excel`). PR de #48
 
 - 200 binario `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` con `Content-Disposition: attachment; filename={folio}.xlsx`. Descargarlo como blob con el `Authorization` (no abrir la URL en una pestaña: no lleva token).

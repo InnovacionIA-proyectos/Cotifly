@@ -1106,6 +1106,10 @@ paths:
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
         destino, vehículo y `precio_final`, y solo los servicios conexos incluidos, cada uno con su precio. Una sola
         vez por cotización (para cambiarla, versión nueva). Solo el dueño.
+
+        HU-011.5 (ADR-017 §6): con dos o más líneas (licitación) el PDF sale con el layout de pliego: resumen con una fila
+        por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego, y luego una tabla por origen. Solo cuando
+        todas las líneas tienen precio (si no, `COSTEO_NO_LISTO`). Nunca imprime costos de Nexo.
       security:
         - bearer: []
       parameters:

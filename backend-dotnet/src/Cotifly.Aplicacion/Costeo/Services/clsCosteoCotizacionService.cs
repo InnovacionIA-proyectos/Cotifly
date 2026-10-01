@@ -139,18 +139,28 @@ public sealed class clsCosteoCotizacionService(
 
         var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
         var moneda = cotizacion.Moneda ?? clsCotizacion.MonedaPesos;
-        var payload = Payload(cotizacion, linea?.LineaNegocio, moneda);
+
+        // HU-011.5 (ADR-017 §6): una cotización de varias líneas (licitación) sale con el layout de pliego.
+        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+        var esPliego = lineas.Count > 1;
+        var payload = esPliego ? PayloadPliego(cotizacion, lineas, linea?.LineaNegocio, moneda) : Payload(cotizacion, linea?.LineaNegocio, moneda);
         if (clsValidadorCotizacionPdfPayload.Validar(payload) is { } invalido)
         {
             return invalido;
         }
 
+        // En el pliego cada fila tiene su propio precio: la coherencia se verifica línea por línea (CoherenciaPliego) y aquí solo la moneda.
         var traza = new clsTrazabilidadCotizacion(
-            cotizacion.Costo, cotizacion.MargenPolitica, cotizacion.MargenAplicado, null, cotizacion.MetodoCalculo, cotizacion.PrecioFinal,
-            cotizacion.NitCliente, null, moneda, cotizacion.TrmAplicada, cotizacion.CosteoId);
+            esPliego ? null : cotizacion.Costo, cotizacion.MargenPolitica, cotizacion.MargenAplicado, null, cotizacion.MetodoCalculo,
+            esPliego ? null : cotizacion.PrecioFinal, cotizacion.NitCliente, null, moneda, cotizacion.TrmAplicada, cotizacion.CosteoId);
         if (clsGenerarPdfService.ValidarCoherencia(payload, traza, cotizacion.MetodoCalculo ?? "margen", moneda) is { } incoherente)
         {
             return incoherente;
+        }
+
+        if (esPliego && CoherenciaPliego(cotizacion, lineas) is { } pliegoIncoherente)
+        {
+            return pliegoIncoherente;
         }
 
         var firma = new clsFirmaDocumento(usuario.NombreCompleto ?? usuario.NombreUsuario ?? string.Empty, null, usuario.Email, clsTextoSeguro.LimpiarLinea(usuario.Telefono));
@@ -160,10 +170,14 @@ public sealed class clsCosteoCotizacionService(
             return documento.Error;
         }
 
+        var aRenderizar = esPliego
+            ? documento.Valor with { Variante = VarianteDocumento.Pliego, Pliego = ResumenPliego(cotizacion, lineas, moneda) }
+            : documento.Valor;
+
         clsPdfGenerado pdf;
         try
         {
-            pdf = generador.Generar(documento.Valor);
+            pdf = generador.Generar(aRenderizar);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -229,6 +243,91 @@ public sealed class clsCosteoCotizacionService(
                 ? null
                 : [.. incluidos.Select(s => new clsServicioConexoPayload { Descripcion = s.Nombre ?? s.Categoria, Precio = s.Precio, Moneda = moneda })],
         };
+    }
+
+    /// <summary>
+    /// Payload del PDF de un pliego (HU-011.5): una tabla por origen (en el orden del pliego) con una fila por destino, su vehículo y
+    /// peso y el precio final de la línea; solo los servicios conexos incluidos, con su precio (mismo criterio de "solo lo realmente
+    /// incluido" de HU-003.5). Nada del LLM ni del cliente.
+    /// </summary>
+    public static clsCotizacionPdfPayload PayloadPliego(
+        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string? lineaNegocio, string moneda)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        var titulo = lineaNegocio is null ? "PLIEGO DE TRANSPORTE" : $"PLIEGO DE TRANSPORTE {lineaNegocio.ToUpperInvariant()}";
+        var incluidos = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Where(s => s.Incluido).ToList();
+        var secciones = lineas.OrderBy(l => l.Orden)
+            .GroupBy(l => l.Origen, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new clsTarifaPayload
+            {
+                Titulo = titulo,
+                Origen = g.First().Origen,
+                Filas = [.. g.Select(l => new clsFilaTarifaPayload
+                {
+                    Destino = $"{l.Orden}. {l.Destino}",
+                    VehiculoPeso = VehiculoPeso(l.TipoVehiculo, l.Carroceria, l.PesoKg),
+                    Tarifa = l.PrecioFinal,
+                    Moneda = moneda,
+                })],
+            })
+            .ToList();
+        return new clsCotizacionPdfPayload
+        {
+            Cliente = cotizacion.ClienteNombre,
+            LineaNegocio = lineaNegocio,
+            MetodoCalculo = cotizacion.MetodoCalculo,
+            Asunto = cotizacion.Referencia is null
+                ? $"presentación oferta de servicios de Transporte para su licitación ({lineas.Count} rutas)"
+                : $"presentación oferta de servicios de Transporte para la licitación {cotizacion.Referencia} ({lineas.Count} rutas)",
+            Secciones = secciones,
+            ServiciosConexos = incluidos.Count == 0
+                ? null
+                : [.. incluidos.Select(s => new clsServicioConexoPayload { Descripcion = s.Nombre ?? s.Categoria, Precio = s.Precio, Moneda = moneda })],
+        };
+    }
+
+    /// <summary>Resumen del pliego: una fila por línea, en orden, y el total (la suma de los precios de las líneas).</summary>
+    public static clsResumenPliegoDocumento ResumenPliego(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string moneda)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        var filas = lineas.OrderBy(l => l.Orden).Select(l => new clsFilaPliegoDocumento(
+            l.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            clsTextoSeguro.LimpiarLinea($"{l.Origen} → {l.Destino}") ?? string.Empty,
+            VehiculoPeso(l.TipoVehiculo, l.Carroceria, l.PesoKg) ?? "—",
+            l.PrecioFinal is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
+        return new clsResumenPliegoDocumento(
+            cotizacion.Referencia is null ? "RESUMEN DEL PLIEGO" : $"RESUMEN DEL PLIEGO {cotizacion.Referencia.ToUpperInvariant()}",
+            filas,
+            $"TOTAL DEL PLIEGO ({filas.Count} RUTAS)",
+            clsFormatoMoneda.Formatear(cotizacion.PrecioFinal ?? 0m, moneda),
+            "Tarifas por viaje de cada ruta; el total es la suma de un viaje por ruta y es solo de referencia.");
+    }
+
+    /// <summary>Cada línea del pliego tiene precio y el total de la cotización es la suma de esos precios (nada se inventa en el PDF).</summary>
+    private static clsErrorDominio? CoherenciaPliego(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas)
+    {
+        if (lineas.FirstOrDefault(l => l.PrecioFinal is null) is { } sinPrecio)
+        {
+            return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La línea {sinPrecio.Orden} del pliego {cotizacion.Folio} todavía no tiene precio.");
+        }
+
+        var suma = lineas.Sum(l => l.PrecioFinal!.Value);
+        return suma == cotizacion.PrecioFinal
+            ? null
+            : new clsErrorDominio(clsCodigosError.PdfPayloadInvalido,
+                $"El total del pliego ({cotizacion.PrecioFinal}) no es la suma de sus líneas ({suma}): espera la siguiente consulta del costeo.");
+    }
+
+    private static string? VehiculoPeso(string? tipoVehiculo, string? carroceria, decimal? pesoKg)
+    {
+        var texto = string.Join(" - ", new[]
+        {
+            tipoVehiculo, carroceria,
+            pesoKg is { } peso ? $"{peso.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} KG" : null,
+        }.Where(t => !string.IsNullOrWhiteSpace(t)));
+        return texto.Length == 0 ? null : texto;
     }
 
     private async Task<clsCotizacion?> PropiaAsync(Guid usuarioId, string folio, CancellationToken cancellationToken) =>

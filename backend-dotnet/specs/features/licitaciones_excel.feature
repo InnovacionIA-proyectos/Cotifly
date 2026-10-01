@@ -50,6 +50,16 @@ Característica: Licitaciones desde Excel
     Y el Excel trae el precio final de las líneas 1 y 2 y marca la línea 3 como "SIN COSTEO"
     Y el Excel no contiene el costo 1000000 de Nexo
 
+  # HU-011.5 — PDF de pliego
+  Escenario: Con todas las líneas costeadas el PDF sale con el resumen del pliego y sin costos de Nexo
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Y Nexo costea las líneas 1 y 2 de "L1" con un flete de 1000000
+    Y Nexo costea las líneas 3 de "L1" con un flete de 1000000
+    Y el polling consulta a Nexo por "L1"
+    Y "ana" genera el PDF de la licitación "L1"
+    Entonces el PDF del pliego trae el resumen de 3 rutas con su total
+    Y el PDF del pliego no contiene el costo 1000000 de Nexo
+
   Escenario: Si Nexo no responde la licitación no se pierde y se reintenta con todas sus líneas
     Dado que Nexo responde 503 al alta de solicitudes
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas

@@ -55,6 +55,14 @@
 - **El costo de Nexo no entra al exportador:** el objeto que recibe (`clsExportacionLicitacion`) solo trae precios y estados; una prueba de punta a punta verifica que ningún número del archivo sea un flete o un conexo de Nexo.
 - Siempre `.xlsx` (`{folio}.xlsx`): ClosedXML no conserva las macros de un `.xlsm`. Solo el dueño (404 si no es suya o no tiene líneas). Se puede exportar en cualquier momento.
 
+### 6. PDF de pliego (HU-011.5, #49)
+
+- **Sin endpoint nuevo:** `POST /web/cotizaciones/{folio}/costeo/pdf` elige el layout por el número de líneas: una línea, el PDF de HU-005.7 sin cambios; dos o más, la variante nueva `Pliego` (`VarianteDocumento.Pliego`). Mismas reglas de bloqueo: solo con el costeo completo y con precio (`COSTEO_NO_LISTO` mientras falte una línea) y una sola vez por cotización (`PDF_YA_GENERADO`).
+- **Layout:** el diseño multi-sección existente (`armar_multi.py`: portada, condiciones en la hoja 1, tarifas, firma y cierre web) con un bloque nuevo `clsBloquePliego` al abrir las tarifas: "RESUMEN DEL PLIEGO {referencia}" con una fila por ruta (número, origen → destino, vehículo y peso, tarifa), el encabezado repetido en cada página y el total del pliego (suma de un viaje por ruta, marcado como referencia). Después, las tablas por origen del layout multi (una franja de origen por ciudad de cargue, una fila por destino con su tarifa). Reutiliza estilos, colores, fuentes y bloques (`clsBloqueTarifa`, `clsBloqueCondiciones`, `clsBloqueFirma`).
+- **"Solo mostrar lo realmente incluido" (HU-003.5):** los servicios conexos que el comercial excluyó no aparecen; los incluidos se listan con su precio en "Estas tarifas incluyen". Ningún costo de Nexo llega al documento: cada tarifa es el `precioFinal` de su línea y el total es la suma de esas tarifas; si no cuadra con el `precioFinal` de la cotización, `PDF_PAYLOAD_INVALIDO` (nada se inventa en el PDF).
+- **USD (ADR-014):** la aclaración de la TRM y el piso mínimo se imprime igual que en el layout multi. Hoy el costeo es solo COP (ADR-015 §5), así que en la práctica sale en pesos.
+- **Validación con un caso real:** pendiente con Kevin (checkbox de #49); las pruebas usan un pliego de 12 rutas.
+
 ## Alternativas consideradas
 
 - **Plantilla fija de Cotifly:** obliga al comercial a copiar el pliego a mano en otra plantilla, que es lo que HU-011 busca evitar. Descartada.
@@ -82,3 +90,5 @@
 | Confirmar que `GET /api/solicitudes/{id}` devuelve `lineas[]` en el orden de captura, o una referencia externa por línea en el alta | Equipo de Nexo |
 | Confirmar que `analizar-excel` acepta el rol del comercial cuando lo llama Cotifly (hoy `Comercial`, `Admin`) | Equipo de Nexo |
 | Licitaciones en USD (el costeo de ADR-015 sigue solo en COP) | Duban (integración con HU-012) |
+| Validar el PDF de pliego con al menos un caso real de varias líneas (legibilidad y diseño corporativo, HU-003.1, RN-03) | Kevin |
+| Si el total del pliego debe imprimirse (hoy: suma de un viaje por ruta, marcado como referencia) | Gerencia Comercial |
