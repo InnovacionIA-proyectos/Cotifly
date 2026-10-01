@@ -55,6 +55,20 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task UnSinPermisoDeNexoEsNexoSinPermisoNoUnaCaida()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AnalisisFalla = HttpStatusCode.Forbidden;
+        _nexo.CodigoAnalisisFalla = "SIN_PERMISO_CABINA_FLETES";
+
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", sesion.Access,
+            clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel()));
+
+        var json = await VerificarContratoAsync(respuesta, "/web/licitaciones/analizar-excel", HttpMethod.Post, HttpStatusCode.Forbidden);
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_SIN_PERMISO");
+    }
+
+    [Fact]
     public async Task LaLicitacionConArchivoGuardaSusLineasYElOriginalYViajaComoUnaSolicitudDeNLineas()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

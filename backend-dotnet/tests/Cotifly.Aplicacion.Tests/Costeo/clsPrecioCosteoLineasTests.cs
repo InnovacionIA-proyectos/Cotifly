@@ -36,6 +36,26 @@ public sealed class clsPrecioCosteoLineasTests
         _servicio.Aplicar(conLineas, lineas, foto, _ahora.AddMinutes(1)).Should().Be(_servicio.Aplicar(legado, foto, _ahora.AddMinutes(1)), "la misma foto no cambia nada en ninguno de los dos");
     }
 
+    [Theory]
+    [InlineData(-1_000)]
+    [InlineData(0)]
+    public void ConUnaLineaUnCostoInvalidoDeNexoDaElMismoResultadoQueHu0057SinLanzar(int costo)
+    {
+        var legado = Cotizacion();
+        var conLineas = Cotizacion();
+        var lineas = Lineas(conLineas, 1);
+        var foto = Foto("EnCosteo", [("L1", costo)], [], ["L1"]);
+
+        var a = _servicio.Aplicar(legado, foto, _ahora);
+        var aplicar = () => _servicio.Aplicar(conLineas, lineas, foto, _ahora);
+
+        aplicar.Should().NotThrow("un costo inválido de Nexo nunca debe envenenar el polling");
+        _servicio.Aplicar(Cotizacion(), Lineas(Cotizacion(), 1), foto, _ahora).Should().Be(a);
+        conLineas.PrecioFinal.Should().Be(legado.PrecioFinal).And.BeNull();
+        conLineas.MotivoEstadoCosteo.Should().Be(legado.MotivoEstadoCosteo);
+        lineas[0].PrecioFinal.Should().BeNull();
+    }
+
     [Fact]
     public void LasLineasCosteadasTienenPrecioAunqueLaLicitacionSigaPendiente()
     {
@@ -66,15 +86,70 @@ public sealed class clsPrecioCosteoLineasTests
     }
 
     [Fact]
-    public void LosIdsDeNexoNoSeAdivinanSiElNumeroDeLineasNoCuadra()
+    public void LasLineasSeAsocianPorContenidoAunqueNexoLasDevuelvaEnOtroOrden()
+    {
+        var cotizacion = Cotizacion();
+        var lineas = Lineas(cotizacion, 3);
+        var foto = Foto("EnCosteo", [("L3", 850_000m), ("L1", 1_000_000m), ("L2", 2_000_000m)], [], ["L3", "L1", "L2"]);
+
+        _servicio.Aplicar(cotizacion, lineas, foto, _ahora).Should().BeTrue();
+
+        // Cada precio va con SU ruta, no con la que ocupa la misma posición en la respuesta de Nexo.
+        lineas.Select(l => (l.LineaSolicitudNexoId, l.PrecioFinal)).Should().Equal(("L1", (decimal?)1_176_471m), ("L2", 2_352_941m), ("L3", 1_000_000m));
+        cotizacion.PrecioFinal.Should().Be(1_176_471m + 2_352_941m + 1_000_000m);
+    }
+
+    [Fact]
+    public void DosLineasIdenticasNoSeAsocianYLaLicitacionQuedaSinTotal()
+    {
+        var cotizacion = Cotizacion();
+        var lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Id,
+            [new clsLineaSolicitudCosteo { Origen = "Origen 1", Destino = "Destino", PesoKg = 1m }, new clsLineaSolicitudCosteo { Origen = "Origen 1", Destino = "Destino", PesoKg = 1m },
+             new clsLineaSolicitudCosteo { Origen = "Origen 3", Destino = "Destino", PesoKg = 1m }]);
+        var foto = Foto("EnCosteo", [("L1", 1_000_000m), ("L2", 2_000_000m), ("L3", 850_000m)], [], ["L1", "L3"]) with { };
+        foto = foto with
+        {
+            LineasSolicitud = ["L1", "L2", "L3"],
+            Detalle = [new clsLineaSolicitudNexo("L1", "ORIGEN 1 → DESTINO", null, 1m, null, null), new clsLineaSolicitudNexo("L2", "ORIGEN 1 → DESTINO", null, 1m, null, null),
+                       new clsLineaSolicitudNexo("L3", "ORIGEN 3 → DESTINO", null, 1m, null, null)],
+        };
+
+        _servicio.Aplicar(cotizacion, lineas, foto, _ahora);
+
+        lineas[0].LineaSolicitudNexoId.Should().BeNull("dos rutas idénticas con fletes distintos: no se adivina cuál es cuál");
+        lineas[1].LineaSolicitudNexoId.Should().BeNull();
+        lineas[2].LineaSolicitudNexoId.Should().Be("L3");
+        lineas[2].PrecioFinal.Should().Be(1_000_000m, "la línea inequívoca sí lleva su precio");
+        cotizacion.PrecioFinal.Should().BeNull("el total solo existe con todas las líneas asociadas y con precio");
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsPrecioCosteoService.MotivoSinAsociar(2, 3));
+    }
+
+    [Fact]
+    public void SiNexoTraeOtroNumeroDeLineasSoloSeAsocianLasQueCoinciden()
     {
         var cotizacion = Cotizacion();
         var lineas = Lineas(cotizacion, 3);
 
-        _servicio.Aplicar(cotizacion, lineas, Foto("EnCosteo", [("L1", 1m)], [], ["L1", "L2"]), _ahora).Should().BeFalse();
+        _servicio.Aplicar(cotizacion, lineas, Foto("EnCosteo", [("L1", 1_000_000m), ("L2", 1_000_000m)], [], ["L2", "L1"]), _ahora);
 
-        lineas.Should().OnlyContain(l => l.LineaSolicitudNexoId == null && l.PrecioFinal == null);
-        cotizacion.MotivoEstadoCosteo.Should().Be(clsPrecioCosteoService.MotivoLineasDescuadradas);
+        lineas.Select(l => l.LineaSolicitudNexoId).Should().Equal("L1", "L2", null);
+        cotizacion.PrecioFinal.Should().BeNull();
+        cotizacion.MotivoEstadoCosteo.Should().Be(clsPrecioCosteoService.MotivoSinAsociar(1, 3));
+    }
+
+    [Fact]
+    public void UnCostoNegativoDeNexoNoRompeElPollingYSeAdvierte()
+    {
+        var cotizacion = Cotizacion();
+        var lineas = Lineas(cotizacion, 2);
+
+        var aplicar = () => _servicio.Aplicar(cotizacion, lineas, Foto("EnCosteo", [("L1", -5m), ("L2", 1_000_000m)], [], ["L1", "L2"]), _ahora);
+
+        aplicar.Should().NotThrow();
+        lineas[0].PrecioFinal.Should().BeNull();
+        lineas[1].PrecioFinal.Should().Be(1_176_471m);
+        cotizacion.PrecioFinal.Should().BeNull();
+        cotizacion.MotivoEstadoCosteo.Should().Contain("costo negativo");
     }
 
     [Fact]
@@ -119,12 +194,20 @@ public sealed class clsPrecioCosteoLineasTests
         return cotizacion;
     }
 
+    /// <summary>Líneas con rutas distintas: la línea k va de <c>Origen k</c> a <c>Destino</c> (en Nexo, la <c>Lk</c>).</summary>
     private static IReadOnlyList<clsCotizacionLineaSolicitud> Lineas(clsCotizacion cotizacion, int numero) =>
         clsCotizacionLineaSolicitud.Desde(cotizacion.Id,
-            [.. Enumerable.Range(0, numero).Select(_ => new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m })]);
+            [.. Enumerable.Range(1, numero).Select(k => new clsLineaSolicitudCosteo { Origen = $"Origen {k}", Destino = "Destino", PesoKg = 1m })]);
 
+    /// <summary>
+    /// Foto de Nexo: <paramref name="ids"/> en el orden en que Nexo los devuelve (cualquiera) y, por cada <c>Lk</c>, su contenido
+    /// (<c>ORIGEN K → DESTINO</c>, como lo normaliza Nexo, en mayúsculas y sin tildes).
+    /// </summary>
     private static clsCosteoConsultadoNexo Foto(
         string estadoSolicitud, IReadOnlyList<(string Id, decimal Flete)> fletes, IReadOnlyList<clsConexoNexo> conexos, IReadOnlyList<string> ids) =>
         new(estadoSolicitud, ids, new clsCotizacionNexo("COT-1", estadoSolicitud == "Entregada" ? "Entregada" : "Borrador", "SinDefinir",
-            [.. fletes.Select(f => new clsLineaCosteoNexo(f.Id, f.Flete, null, null))], conexos));
+            [.. fletes.Select(f => new clsLineaCosteoNexo(f.Id, f.Flete, null, null))], conexos))
+        {
+            Detalle = [.. ids.Select(id => new clsLineaSolicitudNexo(id, $"ORIGEN {id[1..]} → DESTINO", null, 1m, null, null))],
+        };
 }

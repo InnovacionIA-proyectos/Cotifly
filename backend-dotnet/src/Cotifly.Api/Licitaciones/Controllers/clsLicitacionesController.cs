@@ -79,7 +79,7 @@ public sealed class clsLicitacionesController(
 
         if (archivo is { Contenido.Length: > clsArchivoLicitacion.TamanoMaximoBytes })
         {
-            return Error(new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "El archivo supera 10 MB."));
+            return Error(new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "El archivo supera el máximo de 9,9 MB (10 MB con el envío)."));
         }
 
         var resultado = await licitaciones.CrearAsync(UsuarioId, cuerpo.AEntrada(archivo), cancellationToken);

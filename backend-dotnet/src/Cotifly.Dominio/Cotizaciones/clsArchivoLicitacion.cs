@@ -10,8 +10,11 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// </summary>
 public sealed class clsArchivoLicitacion
 {
-    /// <summary>Límite del archivo (el mismo de Nexo para <c>analizar-excel</c>).</summary>
-    public const int TamanoMaximoBytes = 10 * 1024 * 1024;
+    /// <summary>
+    /// Límite del archivo: 10 MB menos 64 KB. Nexo limita a 10 MB el CUERPO completo de <c>analizar-excel</c> (archivo más el sobre
+    /// multipart); con este margen un archivo aceptado por Cotifly nunca recibe un 413 de Nexo.
+    /// </summary>
+    public const int TamanoMaximoBytes = (10 * 1024 * 1024) - (64 * 1024);
 
     public const int LargoNombreArchivo = 255;
 
@@ -85,7 +88,7 @@ public sealed class clsArchivoLicitacion
 
         if (contenido.Length > TamanoMaximoBytes)
         {
-            return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, $"El archivo supera {TamanoMaximoBytes / (1024 * 1024)} MB.");
+            return new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "El archivo supera el máximo de 9,9 MB (10 MB con el envío).");
         }
 
         return Path.GetExtension(NombreLimpio(nombreArchivo)).ToLowerInvariant() is ".xlsx" or ".xlsm"

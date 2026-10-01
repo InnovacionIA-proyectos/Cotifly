@@ -28,5 +28,5 @@ public interface IClsLectorExcelLicitacion
     /// es la fila <c>i</c> de <c>hojas[h].filas</c>. <c>EXCEL_INVALIDO</c> si no se puede leer; <c>EXCEL_SIN_DATOS</c> si la hoja
     /// no existe o no tiene encabezado.
     /// </summary>
-    clsResultado<IReadOnlyList<int>> FilasDeDatos(byte[] contenido, string hoja);
+    clsResultado<IReadOnlyList<int>> FilasDeDatos(byte[] contenido, string hoja, CancellationToken cancellationToken = default);
 }

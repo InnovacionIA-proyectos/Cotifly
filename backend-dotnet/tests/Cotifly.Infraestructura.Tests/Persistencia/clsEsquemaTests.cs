@@ -261,7 +261,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(11, "el 0002 crea 10 índices ix_ y el 0004 uno más");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(12, "el 0002 crea 10 índices ix_, el 0004 uno y el 0005 uno (posiciones por línea)");
         bd.Should().Contain(x => x.StartsWith("Cotizaciones:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
             && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));

@@ -85,7 +85,7 @@ public sealed class clsLicitacionService(
 
             if (!string.IsNullOrWhiteSpace(entrada.Hoja) && entrada.Hoja.Trim().Length <= clsArchivoLicitacion.LargoHoja)
             {
-                var filas = lector.FilasDeDatos(archivo.Contenido, entrada.Hoja.Trim());
+                var filas = lector.FilasDeDatos(archivo.Contenido, entrada.Hoja.Trim(), cancellationToken);
                 if (filas.EsFallo)
                 {
                     return clsResultadoLicitacion.Fallo(filas.Error);
@@ -182,12 +182,12 @@ public sealed class clsLicitacionService(
         }
 
         var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var archivo = await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
+        var archivo = await cotizaciones.ObtenerResumenArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
         return Vista(cotizacion, lineas, archivo);
     }
 
     /// <summary>Vista de la licitación (solo precios: el costo de Nexo de cada línea nunca sale).</summary>
-    public static clsLicitacion Vista(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsArchivoLicitacion? archivo)
+    public static clsLicitacion Vista(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsArchivoLicitacionResumen? archivo)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);

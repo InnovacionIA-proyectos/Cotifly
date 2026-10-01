@@ -40,7 +40,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [Fact]
     public void LasFilasDeDatosSaltanLaPortadaElEncabezadoYLasFilasVacias()
     {
-        var filas = _lector.FilasDeDatos(clsPliegoMuestra.Excel(4), clsPliegoMuestra.Hoja);
+        var filas = _lector.FilasDeDatos(clsPliegoMuestra.Excel(4), clsPliegoMuestra.Hoja, TestContext.Current.CancellationToken);
 
         filas.EsExitoso.Should().BeTrue();
         filas.Valor.Should().Equal(Enumerable.Range(0, 4).Select(clsPliegoMuestra.FilaExcel), "la fila 6 está vacía y no cuenta, como en Nexo");
@@ -63,14 +63,14 @@ public sealed class clsExcelLicitacionTests : IDisposable
         using var memoria = new MemoryStream();
         libro.SaveAs(memoria);
 
-        _lector.FilasDeDatos(memoria.ToArray(), "H").Valor.Should().Equal(3);
+        _lector.FilasDeDatos(memoria.ToArray(), "H", TestContext.Current.CancellationToken).Valor.Should().Equal(3);
     }
 
     [Fact]
     public void UnArchivoIlegibleOUnaHojaInexistenteSonErroresDeNegocio()
     {
-        _lector.FilasDeDatos([1, 2, 3], "Pliego").Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
-        _lector.FilasDeDatos(clsPliegoMuestra.Excel(), "Otra").Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
+        _lector.FilasDeDatos([1, 2, 3], "Pliego", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        _lector.FilasDeDatos(clsPliegoMuestra.Excel(), "Otra", TestContext.Current.CancellationToken).Error.Codigo.Should().Be(clsCodigosError.ExcelSinDatos);
     }
 
     [Fact]
@@ -91,7 +91,9 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, "EXCEL_SIN_DATOS", "EXCEL_SIN_DATOS")]
     [InlineData(HttpStatusCode.BadRequest, "OTRO_CODIGO", clsCodigosError.CosteoNexoRechazada)]
-    [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", clsCodigosError.NexoSinPermiso)]
+    [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "PAYLOAD_TOO_LARGE", clsCodigosError.ArchivoDemasiadoGrande)]
     [InlineData(HttpStatusCode.InternalServerError, "X", clsCodigosError.CosteoNexoNoDisponible)]
     public async Task LosErroresDeNexoSeTraducen(HttpStatusCode estado, string codigoNexo, string esperado)
     {

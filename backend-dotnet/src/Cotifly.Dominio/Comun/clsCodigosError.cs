@@ -224,4 +224,10 @@ public static class clsCodigosError
     /// código). Nada queda guardado. Código nuevo del backend .NET.
     /// </summary>
     public const string LicitacionInvalida = "LICITACION_INVALIDA";
+
+    /// <summary>
+    /// Nexo respondió 403 al alta de la solicitud o al análisis del Excel: el comercial no tiene el rol que pide Cabina de Fletes
+    /// (<c>SIN_PERMISO_CABINA_FLETES</c>). Es configuración del usuario en Nexo, no una caída (ADR-017 §4). Código nuevo del backend .NET.
+    /// </summary>
+    public const string NexoSinPermiso = "NEXO_SIN_PERMISO";
 }
