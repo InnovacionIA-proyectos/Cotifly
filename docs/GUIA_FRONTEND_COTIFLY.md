@@ -42,6 +42,9 @@ Estado verificado con `gh pr list --repo InnovacionIA-proyectos/Cotifly --state 
 | B5 | #77 | HU-005.14 | `POST /web/cotizaciones/{folio}/resultado`. `/seguimiento` pasa a obsoleto y responde 409 `USAR_RESULTADO_NEXO` en el flujo de costeo | Abierto |
 | C1 | PR de #45 (por abrir) | HU-010.1 | `GET /web/metricas/comercial` y `GET /web/metricas/regional`; `/actividad` y `/ajustes-margen` pasan a obsoletos | Por abrir |
 | — | #78, #79 | HU-006.6, HU-006.7 | Infraestructura (Swarm, respaldos, JWT de Google Chat). No afectan al frontend | Abierto |
+| D1 | PR de #47 (por abrir) | HU-011.2 | `POST /web/licitaciones/analizar-excel`, `POST /web/licitaciones` y `GET /web/licitaciones/{folio}` (licitaciones desde Excel, ADR-017); script `0005` | Por abrir |
+| D2 | PR de #48 (por abrir) | HU-011.3 | `GET /web/licitaciones/{folio}/excel` (exportación con precios) | Por abrir |
+| D3 | PR de #49 (por abrir) | HU-011.5 | El PDF del costeo de una licitación sale con el layout de pliego (sin endpoint nuevo) | Por abrir |
 
 Notas sobre la fusión:
 
@@ -183,6 +186,7 @@ Reglas de serialización de `/web/*` (`clsJsonWeb`):
 | Límite | Valor | Respuesta |
 |---|---|---|
 | Cuerpo de cualquier petición a `/web/*` | 64 KB (`SeguridadHttp:LimiteCuerpoWebBytes`) | 413 `{"error":"El cuerpo de la petición es demasiado grande."}` |
+| Cuerpo de `/web/licitaciones*` (Excel + JSON) | 12 MB (`SeguridadHttp:LimiteCuerpoLicitacionBytes`); el archivo, 10 MB | 413 `ErrorWeb`; un archivo de más de 10 MB dentro del límite: 400 `ARCHIVO_DEMASIADO_GRANDE` |
 | `mensaje` de `POST /web/chat` | 1 a 8000 caracteres | 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` |
 | Cuerpo de refresh y logout | 4096 bytes (si pasa, se trata como sin cuerpo) | refresh 401; logout 204 |
 | Posiciones del formulario de costeo | Máximo 200 | 400 `SOLICITUD_COSTEO_INVALIDA` |
@@ -577,6 +581,9 @@ Resumen:
 | `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | En PR #76 |
 | `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | En PR #76 |
 | `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | En PR #76 |
+| `POST /web/licitaciones/analizar-excel` | Ambos | PR de #47 |
+| `POST /web/licitaciones` | Ambos | PR de #47 |
+| `GET /web/licitaciones/{folio}` | Ambos (dueño) | PR de #47 |
 | `GET /web/admin/lineas-negocio` | `gerente_comercial` | En QA |
 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | En QA |
 | `GET /web/metricas/comercial` | Ambos (lo propio) | PR de #45 (por abrir) |
@@ -597,7 +604,7 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 
 - Anónimos. No los necesita la UI, salvo para una página de diagnóstico.
 - `GET /health` → 200 `{"status":"ok","servicio":"cotifly-api","entorno":"Production"}`.
-- `GET /health/ready` → 200 `{"status":"ready"}` o 503 `{"status":"unavailable","detalle":"esquema incompleto: falta 0004"}` (base caída, sin cadena, falta el 0002 o, con la pila B, el 0004).
+- `GET /health/ready` → 200 `{"status":"ready"}` o 503 `{"status":"unavailable","detalle":"esquema incompleto: falta 0004"}` (base caída, sin cadena, falta el 0002 o, con la pila B, el 0004; con HU-011, `falta 0005`).
 
 ### 5.3 `POST /web/chat`. En QA
 
@@ -1528,6 +1535,75 @@ Mientras el `0004` no esté aplicado (hoy en QA), `concentracion_ciudades` llega
 
 Se retirarán cuando el frontend use los nuevos. Si algún componente ya los consume, migrarlo.
 
+### 5.23 Analizar el Excel del pliego (`POST /web/licitaciones/analizar-excel`). PR de #47
+
+Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone plantilla**: reenvía el archivo al análisis de Nexo, que detecta el encabezado de cada hoja y devuelve las filas como texto. No se guarda nada.
+
+- Request: `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, máximo 10 MB). No poner `Content-Type` a mano (el navegador pone el `boundary`).
+- 200 `AnalisisExcel`:
+
+```json
+{
+  "archivo": "pliego.xlsx",
+  "hojas": [
+    {
+      "nombre": "Pliego 2026",
+      "fila_encabezado": 3,
+      "encabezados": ["ITEM", "CIUDAD ORIGEN", "CIUDAD DESTINO", "TIPO VEHÍCULO", "TON", "OBSERVACIONES"],
+      "filas": [["1", "Buenaventura", "Bogotá", "Tractomula", "32", "Carga seca"], ["2", "Cali", "Cartagena", "Tractomula", "28", ""]],
+      "total_filas": 2
+    }
+  ]
+}
+```
+
+- `filas` trae hasta 1000 filas por hoja (`total_filas` es el total real). **El índice de cada fila en `filas` es la `fila` que se envía en cada línea** de `POST /web/licitaciones`.
+- 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`. 413 si el cuerpo pasa de 12 MB.
+
+### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
+
+Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
+
+- Request recomendado: `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y la parte `archivo` (el mismo Excel que se analizó; se guarda para la exportación de la sección 5.26). Sin archivo se puede enviar `application/json` con el `LicitacionWeb`.
+- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo) y `lineas` (1 a 1000). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos) y `fila` (obligatoria con archivo, única). El `tipo` lo pone el servidor (`licitacion`).
+
+```json
+{
+  "nit_cliente": "9000472281",
+  "linea_negocio": "Nacional",
+  "deadline": "2026-10-20T17:00:00-05:00",
+  "referencia": "Pliego 2026-04",
+  "hoja": "Pliego 2026",
+  "lineas": [
+    { "fila": 0, "origen": "BUENAVENTURA", "destino": "BOGOTA, D.C.", "tipo_vehiculo": "3S3", "peso_kg": 32000 },
+    { "fila": 1, "origen": "CALI", "destino": "CARTAGENA", "tipo_vehiculo": "3S3", "peso_kg": 28000 }
+  ]
+}
+```
+
+- 201 `Licitacion` (ver 5.25), con `estado_costeo` = `pendiente_costeo` (o `error_envio` si Nexo falló; reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar`, que reenvía todas las líneas).
+- 400 `ReporteLicitacionInvalida`: **todas** las filas con error, para pintarlas en la tabla del mapeo:
+
+```json
+{
+  "error": { "codigo": "LICITACION_INVALIDA", "mensaje": "La licitación tiene 2 error(es): corrige las filas indicadas y vuelve a enviarla." },
+  "errores": [
+    { "indice": 0, "fila": 0, "campo": "destino", "codigo": "LINEA_INCOMPLETA", "mensaje": "El campo 'destino' es obligatorio." },
+    { "indice": 2, "fila": 2, "campo": "peso_kg", "codigo": "PESO_REQUERIDO", "mensaje": "La línea debe traer el peso total en kg (o posiciones con peso)." }
+  ]
+}
+```
+
+  `indice` es la posición en `lineas[]` (`null` = error del encabezado). Códigos: `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`, `LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`, `VALOR_FUERA_DE_RANGO`, `DEMASIADAS_POSICIONES`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `FILA_INVALIDA`.
+- 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO`. 400 `ErrorWeb` si el JSON es inválido.
+- La petición puede tardar hasta unos 30 s (alta en Nexo). Con más de 10 líneas Nexo costea en segundo plano: la licitación nace en `pendiente_costeo` y el polling la avanza.
+
+### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). PR de #47
+
+200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `referencia`, `deadline`, `estado_costeo`, `motivo_estado_costeo`, `moneda`, `precio_final` (suma de las líneas, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
+
+Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
+
 ## 6. Flujos
 
 ### 6.1 Login y renovación de sesión
@@ -1894,6 +1970,56 @@ Responsabilidades del frontend:
 #### 6.8.3 QA de cálculos (clientepro-frontend #52, HU-010.4)
 
 Las definiciones de la sección 5.22.2 son recalculables a mano sobre `dbo_cotifly`. El escenario del `.feature` (sección 5.22.2, "Comprobación") sirve como caso de referencia. El frontend no recalcula nada: muestra lo que devuelve la API.
+
+### 6.9 Licitación desde Excel. PR de #47 a #49
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Comercial
+    participant F as Frontend
+    participant A as Cotifly API
+    participant W as Worker de polling
+    participant N as Nexo
+    U->>F: Sube el Excel del cliente
+    F->>A: POST /web/licitaciones/analizar-excel (archivo)
+    A->>N: analizar-excel (no guarda nada)
+    N-->>A: hojas, encabezados y filas
+    A-->>F: 200 AnalisisExcel
+    U->>F: Elige la hoja y mapea columnas a campos destino
+    F->>F: Traduce textos a códigos de catálogo y unidades (ton a kg)
+    F->>A: POST /web/licitaciones (licitacion + archivo)
+    alt Filas inválidas
+        A-->>F: 400 ReporteLicitacionInvalida (todas las filas)
+        F->>U: Marca las filas y los campos con error
+    else Válida
+        A->>A: Guarda cotización, N líneas y el Excel original y confirma
+        A->>N: Alta con N líneas (tipo licitacion)
+        A-->>F: 201 Licitacion
+    end
+    loop Mientras haya líneas sin precio
+        W->>N: Consulta la solicitud y la cotización
+        W->>A: Estado y precio por línea
+        F->>A: GET /web/licitaciones/folio (cada 15 a 30 s)
+        A-->>F: Licitacion con precio por línea
+    end
+    U->>F: Exportar Excel
+    F->>A: GET /web/licitaciones/folio/excel
+    A-->>F: xlsx original con columnas de precio
+    U->>F: Generar PDF
+    F->>A: POST /web/cotizaciones/folio/costeo/pdf
+    A-->>F: 201 pdf_url (layout de pliego)
+```
+
+Responsabilidades del frontend:
+
+1. **Analizar** (5.23) y mostrar las hojas; el comercial elige una y asigna columnas a los campos destino (`docs/HU-011-formato-excel-licitacion.md` §3). Las columnas sin asignar se ignoran y se conservan en la exportación.
+2. **Traducir** cada celda al código del catálogo (municipios de `GET /web/municipios`, vehículos de `GET /web/catalogos-flete`) y las unidades (toneladas × 1000, metros × 100). Cargar los catálogos una sola vez, no por fila.
+3. **Validar en el cliente** con las reglas de 5.15 y marcar las filas antes de enviar; el servidor vuelve a validar todo y devuelve el reporte por fila.
+4. **Enviar** con el archivo (5.24); spinner de hasta 30 s y bloqueo del doble envío (un segundo POST crea otra licitación).
+5. **Seguimiento**: `GET /web/licitaciones/{folio}` cada 15 a 30 s mientras haya líneas sin precio y el estado sea `pendiente_costeo` o `autocosteo`; detener en `entregada`, `descartada`, `costeo_vencido` o `error_envio`.
+6. **Reintento** con `error_envio`: `POST /web/cotizaciones/{folio}/costeo/reintentar` (todas las líneas).
+7. **Exportar** (5.26, PR de #48) y **PDF** (5.19 con layout de pliego, PR de #49).
 
 ## 7. Estados y reglas de UI
 

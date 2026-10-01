@@ -98,7 +98,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     public async Task SinPosicionesNoMandaElArreglo()
     {
         _nexo.Responder(HttpStatusCode.Created, Creada);
-        var solicitud = Solicitud() with { Solicitud = clsSolicitudCosteoMuestra.Crear() with { Posiciones = [] } };
+        var solicitud = new clsSolicitudNexo("15927", clsSolicitudCosteoMuestra.Crear() with { Posiciones = [] }, "PuertoAInterior");
 
         await Adaptador().EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 

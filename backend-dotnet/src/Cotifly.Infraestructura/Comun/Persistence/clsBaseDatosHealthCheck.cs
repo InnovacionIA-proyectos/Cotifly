@@ -22,18 +22,23 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
 
     /// <summary>El 0002 está, pero no el 0004 (costeo en Nexo, HU-005.8): el modelo EF de <c>Cotizaciones</c> ya lo exige.</summary>
     public const string DescripcionEsquemaSin0004 = "esquema incompleto: falta 0004";
+
+    /// <summary>Está el 0004, pero no el 0005 (líneas de la solicitud y Excel de licitaciones, ADR-017): el modelo EF ya lo exige.</summary>
+    public const string DescripcionEsquemaSin0005 = "esquema incompleto: falta 0005";
     public const string DescripcionDisponible = "La base de datos de Cotifly responde.";
 
     /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
     public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
 
-    /// <summary>1 si las piezas del 0002 que usa el modelo EF existen; 0 si no.</summary>
-    /// <summary>0 = falta el 0002; 1 = falta el 0004; 2 = esquema completo.</summary>
+    /// <summary>0 = falta el 0002; 1 = falta el 0004; 2 = falta el 0005; 3 = esquema completo.</summary>
     private const string ConsultaEsquema =
         "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.Sesiones', N'estadoAgente') IS NULL " +
         "OR OBJECT_ID(N'dbo_cotifly.TokensRefresco', N'U') IS NULL THEN 0 " +
         "WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'serviciosConexos') IS NULL " +
-        "OR OBJECT_ID(N'dbo_cotifly.CotizacionPosiciones', N'U') IS NULL THEN 1 ELSE 2 END AS [Value]";
+        "OR OBJECT_ID(N'dbo_cotifly.CotizacionPosiciones', N'U') IS NULL THEN 1 " +
+        "WHEN OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud', N'U') IS NULL " +
+        "OR OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion', N'U') IS NULL " +
+        "OR COL_LENGTH(N'dbo_cotifly.CotizacionPosiciones', N'lineaSolicitudId') IS NULL THEN 2 ELSE 3 END AS [Value]";
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
@@ -58,7 +63,8 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
 
             return esquema switch
             {
-                2 => HealthCheckResult.Healthy(DescripcionDisponible),
+                3 => HealthCheckResult.Healthy(DescripcionDisponible),
+                2 => HealthCheckResult.Unhealthy(DescripcionEsquemaSin0005),
                 1 => HealthCheckResult.Unhealthy(DescripcionEsquemaSin0004),
                 _ => HealthCheckResult.Unhealthy(DescripcionEsquemaIncompleto),
             };

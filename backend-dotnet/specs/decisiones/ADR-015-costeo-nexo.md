@@ -135,4 +135,4 @@ No se agrega una herramienta `enviar_a_costeo` en esta iteración. La HU-005.5 e
 | Si los servicios conexos llevan el mismo margen que el flete | Negocio (Gerencia Comercial) |
 | Precio en USD sobre el costeo: `IClsPrecioService.CalcularAsync` con la moneda, TRM fijada al llegar el costeo y `trmAplicada` en el PDF (hoy solo COP) | Duban (integración con HU-012, #50 a #52) |
 | Probar contra Nexo real que marcar "ganada" alimenta la Biblioteca de Tarifas Ganadas (`TarifaHistorica`) | Duban + equipo de Nexo |
-| Licitaciones de varias líneas (HU-011): un script 000N (el 0005 es de la TRM) que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA |
+| Licitaciones de varias líneas (HU-011): un script 000N (el 0005 es de la TRM) que mueva los campos de línea a `CotizacionLineasSolicitud` | Negocio + Duban + DBA. **Atendido en ADR-017** (script `0005_lineas_solicitud.sql`; la TRM no necesitó script): §1 "una línea" queda ampliado a N líneas |

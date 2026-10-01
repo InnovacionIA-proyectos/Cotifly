@@ -17,13 +17,13 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 {
     private static readonly string[] _tablasEsperadas =
     [
-        "CorreoDestinatarios", "Correos", "CotizacionPosiciones", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
+        "CorreoDestinatarios", "Correos", "CotizacionArchivosLicitacion", "CotizacionLineasSolicitud", "CotizacionPosiciones", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
     ];
 
     [Fact]
-    public async Task LosScripts0001A0004CreanLasQuinceTablas()
+    public async Task LosScripts0001A0005CreanLasDiecisieteTablas()
     {
         var tablas = await LeerAsync(
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'",
@@ -58,6 +58,87 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         await reaplicar.Should().NotThrowAsync();
         (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0004 no debe cambiar columnas, claves, índices, CHECK ni defaults");
         (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0004 no debe tocar datos");
+    }
+
+    [Fact]
+    public async Task ElScript0005EsIdempotente()
+    {
+        var antes = await FotoEsquemaAsync();
+        var filasAntes = await ContarFilasAsync();
+
+        var reaplicar = () => clsBaseDatosPruebas.EjecutarScriptAsync(
+            BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0005_lineas_solicitud.sql"));
+
+        await reaplicar.Should().NotThrowAsync();
+        (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0005 no debe cambiar columnas, claves, índices, CHECK ni defaults");
+        (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0005 no duplica el backfill");
+    }
+
+    [Fact]
+    public async Task ElScript0005NoBorraLasColumnasDeLineaDeCotizacionesYEnlazaLasPosiciones()
+    {
+        var columnas = await LeerColumnasAsync();
+
+        foreach (var obsoleta in new[] { "origen", "destino", "tipoVehiculo", "pesoKg", "valorMercancia" })
+        {
+            columnas.Should().ContainKey(("Cotizaciones", obsoleta), "el 0005 no es destructivo: las columnas de línea quedan obsoletas, no se borran");
+        }
+
+        columnas[("CotizacionPosiciones", "lineaSolicitudId")].Nula.Should().BeTrue("las posiciones anteriores siguen válidas");
+        columnas[("CotizacionLineasSolicitud", "origen")].Nula.Should().BeFalse();
+        columnas[("CotizacionArchivosLicitacion", "contenido")].Tipo.Should().Be("varbinary(max)");
+    }
+
+    [Fact]
+    public async Task LosCheckDel0005RechazanOrdenEstadoMontosYArchivoInvalidos()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+        string Linea(string columnas, string valores) =>
+            $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, origen, destino, {columnas}) VALUES ('{id}', 'A', 'B', {valores})";
+
+        var orden = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, Linea("orden", "0"));
+        var estado = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, Linea("orden, estadoCosteo", "1, 'costeado'"));
+        var montos = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, Linea("orden, precioFinal", "1, -1"));
+        var fila = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, Linea("orden, filaOrigen", "1, -1"));
+        var archivo = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionArchivosLicitacion (cotizacionId, nombreArchivo, tipoContenido, tamanoBytes, sha256, hoja, contenido) VALUES ('{id}', 'a.xlsx', 'x', 5, 'h', 'Hoja', 0x01)");
+
+        (await orden.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_orden");
+        (await estado.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_estadoCosteo");
+        (await montos.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_montos");
+        (await fila.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_filaOrigen");
+        (await archivo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionArchivosLicitacion_tamano");
+    }
+
+    [Fact]
+    public async Task ElBackfillDel0005CreaUnaLineaPorCotizacionDelFormularioYEnlazaSusPosiciones()
+    {
+        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
+        Guid conCosteo = Guid.NewGuid(), pendiente = Guid.NewGuid(), chat = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, origen, destino, tipoVehiculo, pesoKg, estadoCosteo, costo, precioFinal) VALUES "
+            + $"('{conCosteo}', 'PCN-BF-01', 'spot', 'YUMBO', 'BOGOTA, D.C.', '3S3', 9000, 'autocosteo', 1000000, 1176471), "
+            + $"('{pendiente}', 'PCN-BF-02', 'licitacion', 'CALI', 'CARTAGENA', NULL, 500, 'pendiente_costeo', NULL, NULL); "
+            + $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, costo, precioFinal) VALUES ('{chat}', 'PCN-BF-03', 2000000, 2352941); "
+            + "INSERT INTO dbo_cotifly.CotizacionPosiciones (cotizacionId, orden, cantidad, largoCm, anchoCm, altoCm, pesoKg) "
+            + $"VALUES ('{conCosteo}', 1, 20, 120, 100, 150, 450);");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0005_lineas_solicitud.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0005_lineas_solicitud.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, "SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud"))
+            .Should().Be(2, "una línea por cotización del formulario; el chat no tiene línea y re-aplicar no duplica");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionId = '{conCosteo}' AND orden = 1 AND origen = 'YUMBO' AND tipoVehiculo = '3S3' AND pesoKg = 9000 AND estadoCosteo = 'autocosteo' AND costo = 1000000 AND precioFinal = 1176471"))
+            .Should().Be(1);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionId = '{pendiente}' AND estadoCosteo = 'pendiente_costeo' AND costo IS NULL AND precioFinal IS NULL"))
+            .Should().Be(1, "sin costeo completo la línea no hereda costo ni precio");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = p.lineaSolicitudId AND l.cotizacionId = p.cotizacionId"))
+            .Should().Be(1, "la posición queda enlazada a la línea 1 de su cotización");
     }
 
     [Fact]
@@ -310,6 +391,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             var c = Contexto(s);
             await c.Cotizaciones.Take(1).ToListAsync(Ct);
             await c.CotizacionPosiciones.Take(1).ToListAsync(Ct);
+            await c.CotizacionLineasSolicitud.Take(1).ToListAsync(Ct);
+            await c.ArchivosLicitacion.Take(1).ToListAsync(Ct);
             await c.MargenAjustes.Take(1).ToListAsync(Ct);
             await c.Correos.Include(x => x.Destinatarios).Take(1).ToListAsync(Ct);
             await c.CorreoDestinatarios.Take(1).ToListAsync(Ct);
@@ -442,7 +525,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                 int? largo = r.IsDBNull(3) ? null : r.GetInt32(3);
                 var tipoCompleto = tipo switch
                 {
-                    "nvarchar" or "varchar" or "nchar" or "char" => $"{tipo}({(largo == -1 ? "max" : largo)})",
+                    "nvarchar" or "varchar" or "nchar" or "char" or "varbinary" => $"{tipo}({(largo == -1 ? "max" : largo)})",
                     "decimal" or "numeric" => $"{tipo}({r.GetByte(4)},{r.GetInt32(5)})",
                     _ => tipo,
                 };

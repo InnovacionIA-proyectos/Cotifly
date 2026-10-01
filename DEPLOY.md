@@ -96,6 +96,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `ForwardedHeaders__Habilitado` | no | no | `false` | manifiesto | `true` detrás de Traefik |
 | `ForwardedHeaders__RedesConocidas__0`, `ForwardedHeaders__ProxiesConocidos__0`, `ForwardedHeaders__LimiteSaltos` | no | con `Habilitado=true`, una red o un proxy | vacío, vacío, `1` | Dokploy | subred de `dokploy-network` |
 | `SeguridadHttp__LimiteCuerpoWebBytes` | no | no | `65536` | manifiesto | |
+| `SeguridadHttp__LimiteCuerpoLicitacionBytes` | no | no | `12582912` | manifiesto | HU-011: Excel de licitación (10 MB) + JSON. Traefik no debe cortar antes (sin límite de cuerpo propio en el router) |
 | `SapTm__SalesOrgDefault` | no | no | `50000005` | manifiesto | |
 | `SapTm__Modo` | no | no (aviso) | vacío | Dokploy | vacío, `export_json` u `odata` (HU-009) |
 | `SapTm__ExportPath` | no | con `export_json` | vacío | Dokploy | archivo montado de solo lectura |
@@ -306,7 +307,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0004` aplicados** en la base del ambiente (con un usuario
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0005` aplicados** (el `0005`, líneas de la solicitud y Excel de licitaciones de HU-011, ADR-017, va antes de la versión que lo incluye: sin él `/health/ready` responde `503 falta 0005`) en la base del ambiente (con un usuario
    administrador y `sqlcmd -I`; la app no aplica migraciones). **El `0004` (costeo en Nexo, HU-005.8) va ANTES de
    desplegar la versión que lo incluye:** sin él, `/health/ready` responde `503` con `falta 0004`, Traefik no manda
    tráfico a la tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5). Cada script nuevo

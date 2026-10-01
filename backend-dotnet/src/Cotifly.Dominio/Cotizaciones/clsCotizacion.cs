@@ -188,6 +188,42 @@ public sealed class clsCotizacion
     }
 
     /// <summary>
+    /// Guarda el encabezado de una licitación (HU-011.2, ADR-017; las N líneas van en <see cref="clsCotizacionLineaSolicitud"/>) y la
+    /// deja en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/>. Las columnas de línea de <c>Cotizaciones</c> (obsoletas desde
+    /// el 0005) quedan en <c>null</c>: una licitación no tiene "la" línea.
+    /// </summary>
+    public void RegistrarSolicitudLicitacion(clsEncabezadoSolicitudCosteo encabezado)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        if (encabezado.Errores() is { Count: > 0 } errores)
+        {
+            throw new ArgumentException(errores[0].Mensaje, nameof(encabezado));
+        }
+
+        TipoSolicitud = encabezado.Tipo;
+        Deadline = encabezado.Deadline;
+        ValorEstimado = encabezado.ValorEstimado;
+        Referencia = clsValidacion.Normalizar(encabezado.Referencia);
+        HorasCargue = encabezado.HorasCargue;
+        HorasDescargue = encabezado.HorasDescargue;
+        EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteEnvio;
+        MotivoEstadoCosteo = null;
+    }
+
+    /// <summary>Encabezado de la solicitud guardada, o <c>null</c> si la cotización no pasó por el costeo en Nexo.</summary>
+    public clsEncabezadoSolicitudCosteo? EncabezadoSolicitud => TipoSolicitud is { } tipo
+        ? new clsEncabezadoSolicitudCosteo
+        {
+            Tipo = tipo,
+            Deadline = Deadline,
+            ValorEstimado = ValorEstimado,
+            Referencia = Referencia,
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
+        }
+        : null;
+
+    /// <summary>
     /// La solicitud guardada, para reenviarla a Nexo sin volver a llenar el formulario (HU-005.5); <c>null</c> si la cotización
     /// no nació del formulario ampliado (no tiene tipo, origen o destino).
     /// </summary>

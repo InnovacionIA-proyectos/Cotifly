@@ -76,6 +76,7 @@ Resumen de todas las variables de [`.env.example`](../.env.example). "Production
 | `Cors__OrigenesPermitidos__N` | vacío | no | **sí** (al menos uno) | [Seguridad HTTP](#seguridad-http) |
 | `ForwardedHeaders__Habilitado`, `ForwardedHeaders__ProxiesConocidos__N`, `ForwardedHeaders__RedesConocidas__N`, `ForwardedHeaders__LimiteSaltos` | `false`, vacío, vacío, `1` | no | no (con `Habilitado=true`, al menos un proxy o red) | [Seguridad HTTP](#seguridad-http) |
 | `SeguridadHttp__LimiteCuerpoWebBytes` | `65536` | no | no | [Seguridad HTTP](#seguridad-http) |
+| `SeguridadHttp__LimiteCuerpoLicitacionBytes` | `12582912` | no | no | [Seguridad HTTP](#seguridad-http) |
 | `SapTm__SalesOrgDefault` | `50000005` | no | no | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__Modo` | vacío (política de la línea) | no | no (aviso al arrancar) | [SAP TM](#integraciones-externas-y-sap-tm) |
 | `SapTm__ExportPath` | vacío | no | con `export_json` | [SAP TM](#integraciones-externas-y-sap-tm) |
@@ -193,6 +194,7 @@ Para desarrollo local, `scripts/levantar-local.ps1` y `scripts/levantar-local.sh
 | `ForwardedHeaders:ProxiesConocidos[]` / `RedesConocidas[]` | vacío | IPs de Traefik o redes CIDR (la overlay de Swarm, p. ej. `10.0.0.0/8`). Con `Habilitado=true` al menos una es obligatoria; una IP o CIDR inválido no arranca | `ForwardedHeaders__ProxiesConocidos__0`, `ForwardedHeaders__RedesConocidas__0` |
 | `ForwardedHeaders:LimiteSaltos` | `1` | Saltos de proxy aceptados en `X-Forwarded-For` (1–10) | `ForwardedHeaders__LimiteSaltos` |
 | `SeguridadHttp:LimiteCuerpoWebBytes` | `65536` | Tamaño máximo del cuerpo en `/web/*` (1 KB–10 MB); más grande → 413 `ErrorWeb` | `SeguridadHttp__LimiteCuerpoWebBytes` |
+| `SeguridadHttp:LimiteCuerpoLicitacionBytes` | `12582912` | Tamaño máximo del cuerpo en `/web/licitaciones*` (HU-011, ADR-017): Excel de hasta 10 MB más el JSON de las líneas (1 KB–64 MB) | `SeguridadHttp__LimiteCuerpoLicitacionBytes` |
 
 - Todas las respuestas llevan `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` y `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `/web/*` y `/pdfs/*` además `Cache-Control: no-store`. Kestrel no envía `Server`. HSTS lo pone Traefik (TLS termina ahí).
 - Para HU-006.6: en Dokploy fijar `Cors__OrigenesPermitidos__0` con el dominio real de `clientepro-frontend` (pendiente, lo confirma frontend) y `ForwardedHeaders__Habilitado=true` con la red overlay de Traefik en `ForwardedHeaders__RedesConocidas__0`.
@@ -243,6 +245,13 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 - **Rutas:** el código arma `{Nexo__UrlBase}/api/captura-solicitudes/clientes?q=`, `/api/captura-solicitudes/municipios`, `/api/biblioteca-sap-historico/filtros`, `/api/cubicacion` y las del costeo (`/api/captura-solicitudes`, `/api/solicitudes/{id}`, `/api/cotizaciones`). Por eso `Nexo__UrlBase` va **sin** `/api` al final (el host, ej. `https://<host-nexo>`). El ejemplo de `.env.example` se corrigió en HU-005.13 (antes terminaba en `/api`, lo que daba `/api/api/...`); las pruebas usan `http://nexo-test.local`, también sin `/api` (mismo criterio que el costeo, ADR-015). Falta confirmar con el equipo de Nexo el host real antes de configurarlo en QA.
 - **Tiempos:** consultas (clientes, municipios, catálogos, cubicación): 8 s en total, 3 s por intento y 2 reintentos (cliente HTTP `Nexo`). Costeo: 30 s en total y por intento, reintentos solo en GET (cliente HTTP `NexoCosteo`; el alta no se reintenta porque no es idempotente). No son configurables.
 - **Activar en un ambiente:** fijar `Nexo__UrlBase` en Dokploy; los comerciales deben tener `idUsuarioExterno` (lo llena el login de ClientePro). No hay aviso al arrancar si falta.
+
+### Licitaciones desde Excel (HU-011, ADR-017)
+
+- **Análisis del pliego:** `POST /web/licitaciones/analizar-excel` reenvía el archivo a `POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel` por el cliente HTTP `NexoCosteo` (30 s, un POST nunca se reintenta) con `X-Portal-Usuario-Id` del comercial. Sin `Nexo:UrlBase` responde `COSTEO_NEXO_NO_DISPONIBLE` (`clsAnalizadorExcelNoDisponible`). Ni Nexo ni Cotifly guardan el archivo en ese paso.
+- **Excel original:** se guarda con la licitación en `dbo_cotifly.CotizacionArchivosLicitacion` (`VARBINARY(MAX)`, máximo 10 MB, SHA-256, script 0005). Solo lo lee el dueño de la cotización (mismo aislamiento que `/web/cotizaciones`). No va a disco ni a un volumen: los respaldos de la base lo cubren.
+- **Lectura local:** ClosedXML (MIT, ver `Directory.Packages.props`) con la misma regla de detección de encabezado y filas de Nexo (`clsLectorExcelLicitacionClosedXml`, puerto 1:1 de `ExcelSolicitudesAdapter`). `SixLabors.Fonts` queda fijado en 1.0.0 (Apache-2.0): la 2.x cambió de licencia.
+- **Límite del cuerpo:** `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB) para `/web/licitaciones*`; el resto de `/web/*` sigue en 64 KB.
 
 ### TRM (cotizaciones en USD)
 

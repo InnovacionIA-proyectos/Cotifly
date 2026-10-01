@@ -63,16 +63,61 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Cuerpo JSON del último alta recibido.</summary>
     public JsonNode? UltimaAlta { get; private set; }
 
-    /// <summary>La Mesa de Nexo agrega el flete (y opcionalmente aprovisionamiento/retorno) a la línea de la solicitud.</summary>
+    /// <summary>La Mesa de Nexo agrega el flete (y opcionalmente aprovisionamiento/retorno) a TODAS las líneas de la solicitud.</summary>
     public void Costear(string solicitudId, decimal flete, decimal? aprovisionamiento = null, decimal? retorno = null) =>
         Con(solicitudId, s =>
         {
             s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
-            s.Cotizacion.Flete = flete;
-            s.Cotizacion.Aprovisionamiento = aprovisionamiento;
-            s.Cotizacion.Retorno = retorno;
+            for (var i = 0; i < s.LineaIds.Count; i++)
+            {
+                s.Cotizacion.Fletes[i] = (flete, aprovisionamiento, retorno);
+            }
+
             s.Estado = "EnCosteo";
         });
+
+    /// <summary>La Mesa de Nexo costea solo la línea <paramref name="indice"/> (base 0) de una solicitud de varias líneas (HU-011).</summary>
+    public void CostearLinea(string solicitudId, int indice, decimal flete) =>
+        Con(solicitudId, s =>
+        {
+            s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
+            s.Cotizacion.Fletes[indice] = (flete, null, null);
+            s.Estado = "EnCosteo";
+        });
+
+    /// <summary>Ids de las líneas de la solicitud en Nexo, en el orden de captura.</summary>
+    public IReadOnlyList<string> LineasDe(string solicitudId)
+    {
+        lock (_candado)
+        {
+            return _solicitudes.TryGetValue(solicitudId, out var s) ? [.. s.LineaIds] : [];
+        }
+    }
+
+    /// <summary>Si tiene valor, <c>analizar-excel</c> responde este estado con <see cref="CodigoAnalisisFalla"/>.</summary>
+    public HttpStatusCode? AnalisisFalla { get; set; }
+
+    public string CodigoAnalisisFalla { get; set; } = "EXCEL_INVALIDO";
+
+    /// <summary>Respuesta de <c>analizar-excel</c> (un <c>AnalisisExcelDto</c>); por defecto una hoja "Pliego" con 3 filas.</summary>
+    public object Analisis { get; set; } = new
+    {
+        archivo = "pliego.xlsx",
+        hojas = new[]
+        {
+            new
+            {
+                nombre = "Pliego",
+                filaEncabezado = 1,
+                encabezados = new[] { "ITEM", "ORIGEN", "DESTINO", "TON" },
+                filas = new[] { new[] { "1", "Buenaventura", "Bogotá", "32" }, new[] { "2", "Cali", "Cartagena", "28" }, new[] { "3", "Cúcuta", "Bogotá", "8" } },
+                totalFilas = 3,
+            },
+        },
+    };
+
+    /// <summary>Tamaño en bytes del último archivo recibido por <c>analizar-excel</c> (multipart <c>archivo</c>), o <c>null</c>.</summary>
+    public long? UltimoArchivoAnalizado { get; private set; }
 
     /// <summary>Agrega un servicio conexo a la cotización de Nexo.</summary>
     public void AgregarConexo(string solicitudId, string nombre, decimal valorAplicado, string categoria = "logistico", decimal cantidad = 1m) =>
@@ -124,7 +169,13 @@ public sealed class clsNexoFalso : HttpMessageHandler
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        var cuerpo = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        var esMultipart = request.Content?.Headers.ContentType?.MediaType == "multipart/form-data";
+        var cuerpo = request.Content is null || esMultipart ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        if (esMultipart)
+        {
+            var bytes = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            UltimoArchivoAnalizado = bytes.LongLength;
+        }
         _peticiones.Enqueue(new clsPeticionNexo(
             request.Method,
             request.RequestUri!,
@@ -143,6 +194,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
             return (request.Method.Method, ruta) switch
             {
                 ("GET", "/api/captura-solicitudes/clientes") => Clientes(request.RequestUri),
+                ("POST", "/api/captura-solicitudes/analizar-excel") => AnalisisFalla is { } fallaAnalisis
+                    ? Error(fallaAnalisis, CodigoAnalisisFalla, "No se pudo leer el archivo Excel (prueba).")
+                    : Json(HttpStatusCode.OK, Analisis),
                 ("POST", "/api/captura-solicitudes") => Alta(cuerpo),
                 ("GET", var r) when r.StartsWith("/api/solicitudes/", StringComparison.Ordinal) => Solicitud(r["/api/solicitudes/".Length..]),
                 ("POST", "/api/cotizaciones") => CrearORecuperar(cuerpo),
@@ -173,23 +227,30 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");
-        var solicitud = new clsSolicitudFalsa(Guid.NewGuid().ToString(), _solicitudes.Count, Guid.NewGuid().ToString());
+        var numero = Math.Max(1, UltimaAlta?["lineas"] is JsonArray arreglo ? arreglo.Count : 1);
+        var solicitud = new clsSolicitudFalsa(Guid.NewGuid().ToString(), _solicitudes.Count, [.. Enumerable.Range(0, numero).Select(_ => Guid.NewGuid().ToString())]);
         if (AutoCostear)
         {
-            solicitud.Cotizacion = new clsCotizacionFalsa(Guid.NewGuid().ToString()) { Flete = FleteAutocosteo };
+            solicitud.Cotizacion = new clsCotizacionFalsa(Guid.NewGuid().ToString());
+            for (var i = 0; i < numero; i++)
+            {
+                solicitud.Cotizacion.Fletes[i] = (FleteAutocosteo, null, null);
+            }
         }
 
+        // Como Nexo: con más de 10 líneas el auto-costeo va en segundo plano (costeoEnProceso).
+        var enProceso = numero > 10;
         _solicitudes[solicitud.Id] = solicitud;
         return Json(HttpStatusCode.Created, new
         {
             id = solicitud.Id,
-            lineas = 1,
+            lineas = numero,
             rutasCreadas = 0,
             vehiculosCreados = 0,
             scorePrioridad = 0.5m,
-            fletesCalculados = AutoCostear ? 1 : 0,
-            lineasPorCostear = AutoCostear ? 0 : 1,
-            costeoEnProceso = false,
+            fletesCalculados = AutoCostear && !enProceso ? numero : 0,
+            lineasPorCostear = AutoCostear && !enProceso ? 0 : numero,
+            costeoEnProceso = enProceso,
         });
     }
 
@@ -221,7 +282,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 estado = s.Estado,
                 scorePrioridad = 0.5m,
                 createdAt = DateTimeOffset.UtcNow,
-                lineas = new[] { new { id = s.LineaId, estadoLinea = s.Cotizacion?.Flete is null ? "PorCostear" : "AutoResuelta" } },
+                lineas = s.LineaIds.Select((id, i) => new { id, estadoLinea = s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear" }).ToArray(),
             },
             tiempos = new { horasCargue = 4m, horasDescargue = 4m },
             lineas = Array.Empty<object>(),
@@ -284,16 +345,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private static object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
-        var lineas = c.Flete is { } flete
-            ? new[]
-            {
-                new
-                {
-                    id = c.LineaId, lineaSolicitudId = (string?)s.LineaId, valorFlete = flete, fuente = "Sicetac",
-                    valorAprovisionamiento = c.Aprovisionamiento, valorRetornoContenedor = c.Retorno,
-                },
-            }
-            : [];
+        var lineas = c.Fletes.OrderBy(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
+        {
+            id = Guid.NewGuid().ToString(), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
+            valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno,
+        }).ToArray();
         var conexos = c.Conexos.Select(x => new { id = x.Id, servicioConexoId = (string?)null, nombre = x.Nombre, categoria = x.Categoria, cantidad = x.Cantidad, valorAplicado = x.Valor }).ToList();
         return new
         {
@@ -322,11 +378,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private static HttpResponseMessage Error(HttpStatusCode estado, string codigo, string mensaje) =>
         Json(estado, new { code = codigo, message = mensaje, timestamp = DateTimeOffset.UtcNow });
 
-    private sealed class clsSolicitudFalsa(string id, int orden, string lineaId)
+    private sealed class clsSolicitudFalsa(string id, int orden, IReadOnlyList<string> lineaIds)
     {
         public string Id { get; } = id;
         public int Orden { get; } = orden;
-        public string LineaId { get; } = lineaId;
+        public IReadOnlyList<string> LineaIds { get; } = lineaIds;
         public string Estado { get; set; } = "Pendiente";
         public clsCotizacionFalsa? Cotizacion { get; set; }
     }
@@ -334,14 +390,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private sealed class clsCotizacionFalsa(string id)
     {
         public string Id { get; } = id;
-        public string LineaId { get; } = Guid.NewGuid().ToString();
         public string Estado { get; set; } = "Borrador";
         public string Resultado { get; set; } = "SinDefinir";
         public string? Motivo { get; set; }
         public string? Comentario { get; set; }
-        public decimal? Flete { get; set; }
-        public decimal? Aprovisionamiento { get; set; }
-        public decimal? Retorno { get; set; }
+        /// <summary>Fletes por índice de línea de la solicitud (base 0).</summary>
+        public Dictionary<int, (decimal Flete, decimal? Aprovisionamiento, decimal? Retorno)> Fletes { get; } = [];
         public List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor)> Conexos { get; } = [];
     }
 }

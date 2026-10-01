@@ -321,6 +321,16 @@ public static class clsDependenciasInfraestructura
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
+
+        // Licitaciones (HU-011, ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
+        // sin Nexo:UrlBase responde COSTEO_NEXO_NO_DISPONIBLE. La lectura del original es local (ClosedXML).
+        servicios.TryAddScoped<Licitaciones.Services.clsAnalizadorExcelNoDisponible>();
+        servicios.AddHttpClient<Licitaciones.Services.clsAnalizadorExcelNexo>(clsCosteoNexo.NombreCliente);
+        servicios.TryAddScoped<Aplicacion.Licitaciones.Interfaces.IClsAnalizadorExcelNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+                ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
+                : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
+        servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

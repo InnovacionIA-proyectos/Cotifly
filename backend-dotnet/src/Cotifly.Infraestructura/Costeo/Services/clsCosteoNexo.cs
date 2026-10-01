@@ -90,9 +90,9 @@ public sealed class clsCosteoNexo(
 
         return new clsSolicitudCreadaNexo(
             id,
-            Entero(raiz, "lineas") ?? 1,
+            Entero(raiz, "lineas") ?? solicitud.Lineas.Count,
             Entero(raiz, "fletesCalculados") ?? 0,
-            Entero(raiz, "lineasPorCostear") ?? 1,
+            Entero(raiz, "lineasPorCostear") ?? solicitud.Lineas.Count,
             raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True);
     }
 
@@ -245,29 +245,28 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con una sola línea (ADR-015): <c>tipo</c> en minúscula (<c>spot</c> |
-    /// <c>licitacion</c>, como lo valida Nexo), el cliente por BP y los catálogos con el código de Nexo tal cual. Los nulos no viajan.
+    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una en HU-005.5, N en una licitación, ADR-017):
+    /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP, la línea de negocio de Nexo
+    /// en cada línea y los catálogos con el código de Nexo tal cual. Los nulos no viajan.
     /// </summary>
     internal static object CuerpoCaptura(clsSolicitudNexo solicitud)
     {
-        var s = solicitud.Solicitud;
+        var e = solicitud.Encabezado;
         return new clsCapturaSolicitudWire(
             solicitud.ClienteBp,
-            clsCodigoEnum.ACodigo(s.Tipo),
-            s.Deadline,
-            s.ValorEstimado,
-            s.Referencia,
-            s.HorasCargue,
-            s.HorasDescargue,
-            [
-                new clsCapturaLineaWire(
-                    s.Origen, s.Destino, s.TipoVehiculo, s.Carroceria, s.Tipologia, solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
-                    s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
-                    s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.PesoKg, s.ValorMercancia,
-                    s.Posiciones.Count == 0
-                        ? null
-                        : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))]),
-            ]);
+            clsCodigoEnum.ACodigo(e.Tipo),
+            e.Deadline,
+            e.ValorEstimado,
+            e.Referencia,
+            e.HorasCargue,
+            e.HorasDescargue,
+            [.. solicitud.Lineas.Select(s => new clsCapturaLineaWire(
+                s.Origen, s.Destino, s.TipoVehiculo, s.Carroceria, s.Tipologia, solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
+                s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
+                s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.PesoKg, s.ValorMercancia,
+                s.Posiciones.Count == 0
+                    ? null
+                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))]))]);
     }
 
     /// <summary>

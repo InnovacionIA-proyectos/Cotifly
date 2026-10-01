@@ -118,6 +118,7 @@ internal sealed class clsCotizacionPosicionConfiguracion : IEntityTypeConfigurat
         builder.HasKey(p => p.Id).HasName("pk_cotizacionPosiciones");
         builder.Property(p => p.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(p => p.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
+        builder.Property(p => p.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(p => p.Orden).Columna("orden", "int");
         builder.Property(p => p.Descripcion).Columna("descripcion", "nvarchar(200)").HasMaxLength(clsPosicionCarga.LargoDescripcion);
         builder.Property(p => p.Cantidad).Columna("cantidad", "int");
@@ -130,5 +131,83 @@ internal sealed class clsCotizacionPosicionConfiguracion : IEntityTypeConfigurat
         builder.HasIndex(p => new { p.CotizacionId, p.Orden }).IsUnique().HasDatabaseName("uq_cotizacionPosiciones_cotizacionId_orden");
         builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(p => p.CotizacionId)
             .HasConstraintName("fk_cotizacionPosiciones_cotizacionId").OnDelete(DeleteBehavior.NoAction);
+
+        // Script 0005 (ADR-017): cada bulto pertenece a una línea de la solicitud (nullable en filas anteriores al backfill).
+        builder.HasOne<clsCotizacionLineaSolicitud>().WithMany().HasForeignKey(p => p.LineaSolicitudId)
+            .HasConstraintName("fk_cotizacionPosiciones_lineaSolicitudId").OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+/// <summary><c>dbo_cotifly.CotizacionLineasSolicitud</c> (script 0005 §1, HU-011.2, ADR-017).</summary>
+internal sealed class clsCotizacionLineaSolicitudConfiguracion : IEntityTypeConfiguration<clsCotizacionLineaSolicitud>
+{
+    public void Configure(EntityTypeBuilder<clsCotizacionLineaSolicitud> builder)
+    {
+        builder.ToTable("CotizacionLineasSolicitud", t =>
+        {
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_orden", "orden >= 1");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_filaOrigen", "filaOrigen IS NULL OR filaOrigen >= 0");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_montos", "(costo IS NULL OR costo >= 0) AND (precioFinal IS NULL OR precioFinal >= 0)");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCosteo",
+                "estadoCosteo IS NULL OR estadoCosteo IN ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido')");
+        });
+
+        builder.HasKey(l => l.Id).HasName("pk_cotizacionLineasSolicitud");
+        builder.Property(l => l.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
+        builder.Property(l => l.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
+        builder.Property(l => l.Orden).Columna("orden", "int");
+        builder.Property(l => l.FilaOrigen).Columna("filaOrigen", "int");
+        builder.Property(l => l.Origen).Columna("origen", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad).IsRequired();
+        builder.Property(l => l.Destino).Columna("destino", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad).IsRequired();
+        builder.Property(l => l.TipoVehiculo).Columna("tipoVehiculo", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
+        builder.Property(l => l.Carroceria).Columna("carroceria", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
+        builder.Property(l => l.Tipologia).Columna("tipologia", "nvarchar(50)").HasMaxLength(clsSolicitudCosteo.LargoCorto);
+        builder.Property(l => l.ClaseViaje).Columna("claseViaje", "nvarchar(50)").HasMaxLength(clsSolicitudCosteo.LargoCorto);
+        builder.Property(l => l.ClaseContenedor).Columna("claseContenedor", "nvarchar(20)").HasMaxLength(clsSolicitudCosteo.LargoClaseContenedor);
+        builder.Property(l => l.Exclusivo).Columna("exclusivo", "bit");
+        builder.Property(l => l.Consolidado).Columna("consolidado", "bit");
+        builder.Property(l => l.RetornaContenedor).Columna("retornaContenedor", "bit");
+        builder.Property(l => l.CiudadDevolucionContenedor).Columna("ciudadDevolucionContenedor", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(l => l.LevanteContenedorDiferente).Columna("levanteContenedorDiferente", "bit");
+        builder.Property(l => l.CiudadLevanteContenedor).Columna("ciudadLevanteContenedor", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
+        builder.Property(l => l.ValorAprovisionamiento).Columna("valorAprovisionamiento", "decimal(18,2)");
+        builder.Property(l => l.PesoKg).Columna("pesoKg", "decimal(12,2)");
+        builder.Property(l => l.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
+        builder.Property(l => l.LineaSolicitudNexoId).Columna("lineaSolicitudNexoId", "nvarchar(64)").HasMaxLength(64);
+        builder.Property(l => l.EstadoCosteo).Columna("estadoCosteo", "nvarchar(30)").HasMaxLength(30)
+            .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());
+        builder.Property(l => l.Costo).Columna("costo", "decimal(18,2)");
+        builder.Property(l => l.PrecioFinal).Columna("precioFinal", "decimal(18,2)");
+        builder.Property(l => l.ServiciosConexos).Columna("serviciosConexos", TipoTexto);
+        builder.Property(l => l.CreatedAt).Fecha("createdAt");
+        builder.Property(l => l.UpdatedAt).Fecha("updatedAt");
+
+        builder.HasIndex(l => new { l.CotizacionId, l.Orden }).IsUnique().HasDatabaseName("uq_cotizacionLineasSolicitud_cotizacionId_orden");
+        builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(l => l.CotizacionId)
+            .HasConstraintName("fk_cotizacionLineasSolicitud_cotizacionId").OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+/// <summary><c>dbo_cotifly.CotizacionArchivosLicitacion</c> (script 0005 §3, HU-011.2/HU-011.3, ADR-017).</summary>
+internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfiguration<clsArchivoLicitacion>
+{
+    public void Configure(EntityTypeBuilder<clsArchivoLicitacion> builder)
+    {
+        builder.ToTable("CotizacionArchivosLicitacion", t => t.HasCheckConstraint(
+            "ck_cotizacionArchivosLicitacion_tamano", "tamanoBytes BETWEEN 1 AND 10485760 AND DATALENGTH(contenido) = tamanoBytes"));
+
+        builder.HasKey(a => a.CotizacionId).HasName("pk_cotizacionArchivosLicitacion");
+        builder.Property(a => a.CotizacionId).Columna("cotizacionId", "uniqueidentifier").ValueGeneratedNever();
+        builder.Property(a => a.NombreArchivo).Columna("nombreArchivo", "nvarchar(255)").HasMaxLength(clsArchivoLicitacion.LargoNombreArchivo).IsRequired();
+        builder.Property(a => a.TipoContenido).Columna("tipoContenido", "nvarchar(100)").HasMaxLength(100).IsRequired();
+        builder.Property(a => a.TamanoBytes).Columna("tamanoBytes", "int");
+        builder.Property(a => a.Sha256).Columna("sha256", "nvarchar(64)").HasMaxLength(64).IsRequired();
+        builder.Property(a => a.Hoja).Columna("hoja", "nvarchar(31)").HasMaxLength(clsArchivoLicitacion.LargoHoja).IsRequired();
+        builder.Property(a => a.Contenido).Columna("contenido", "varbinary(max)").IsRequired();
+        builder.Property(a => a.CreatedAt).Fecha("createdAt");
+
+        builder.HasOne<clsCotizacion>().WithOne().HasForeignKey<clsArchivoLicitacion>(a => a.CotizacionId)
+            .HasConstraintName("fk_cotizacionArchivosLicitacion_cotizacionId").OnDelete(DeleteBehavior.NoAction);
     }
 }

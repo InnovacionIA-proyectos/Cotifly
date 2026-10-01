@@ -62,6 +62,40 @@ public static class clsDerivacionEstadoCosteo
             : EstadoCosteo.PendienteCosteo;
     }
 
+    /// <summary>
+    /// Estado de UNA línea (HU-011.2, ADR-017), con la misma regla: <c>Descartada</c> → <see cref="EstadoCosteo.Descartada"/>;
+    /// cotización (o solicitud) <c>Entregada</c> → <see cref="EstadoCosteo.Entregada"/>; la línea con flete →
+    /// <see cref="EstadoCosteo.Autocosteo"/>; si no, <see cref="EstadoCosteo.PendienteCosteo"/>. Una entregada sin flete para la
+    /// línea queda <c>entregada</c> sin costo (Nexo la entregó sin esa línea): <see cref="CostoLinea"/> lo distingue.
+    /// </summary>
+    public static EstadoCosteo DerivarLinea(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId)
+    {
+        ArgumentNullException.ThrowIfNull(foto);
+        var cotizacion = Derivar(foto);
+        if (cotizacion is EstadoCosteo.Descartada or EstadoCosteo.Entregada)
+        {
+            return cotizacion;
+        }
+
+        return CostoLinea(foto, lineaSolicitudNexoId) is null ? EstadoCosteo.PendienteCosteo : EstadoCosteo.Autocosteo;
+    }
+
+    /// <summary>
+    /// Costo de Nexo de una línea (suma de las líneas de la cotización de Nexo con ese <c>lineaSolicitudId</c>: flete +
+    /// aprovisionamiento + retorno), o <c>null</c> si la línea no tiene flete.
+    /// </summary>
+    public static decimal? CostoLinea(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId)
+    {
+        ArgumentNullException.ThrowIfNull(foto);
+        if (string.IsNullOrWhiteSpace(lineaSolicitudNexoId) || foto.Cotizacion is not { } cotizacion)
+        {
+            return null;
+        }
+
+        var lineas = cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, lineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase)).ToList();
+        return lineas.Count == 0 ? null : lineas.Sum(l => l.Costo);
+    }
+
     /// <summary>¿El polling deja de consultar en este estado? (<c>entregada</c> y <c>descartada</c> son terminales.)</summary>
     public static bool EsTerminal(EstadoCosteo estado) => estado is EstadoCosteo.Entregada or EstadoCosteo.Descartada or EstadoCosteo.CosteoVencido;
 

@@ -22,6 +22,21 @@ public interface IClsCotizacionRepository
     /// <summary>Posiciones de cubicaje de la cotización, en el orden del formulario (vacía si no tiene).</summary>
     Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
 
+    /// <summary>Agrega las líneas de la solicitud de Nexo de una cotización (script 0005, ADR-017); se escriben al guardar.</summary>
+    void AgregarLineas(IEnumerable<clsCotizacionLineaSolicitud> lineas);
+
+    /// <summary>
+    /// Líneas de la solicitud de la cotización, en orden (vacía si la cotización es anterior al 0005 o no pasó por Nexo). Quedan
+    /// en la unidad de trabajo: el polling las actualiza y guarda con la cotización.
+    /// </summary>
+    Task<IReadOnlyList<clsCotizacionLineaSolicitud>> ListarLineasAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Agrega el Excel original de una licitación (script 0005, HU-011.3); se escribe al guardar.</summary>
+    void AgregarArchivoLicitacion(clsArchivoLicitacion archivo);
+
+    /// <summary>Excel original de la licitación, o <c>null</c> si se armó sin archivo. Sin filtro de dueño: lo aplica el llamador.</summary>
+    Task<clsArchivoLicitacion?> ObtenerArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Reclamo optimista de un reenvío a Nexo (HU-005.5): si la cotización sigue con el <c>updatedAt</c> leído y en
     /// <c>error_envio</c> o <c>pendiente_envio</c>, la deja en <c>pendiente_envio</c> con <c>updatedAt = ahora</c> y devuelve

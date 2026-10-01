@@ -27,6 +27,8 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
 
     public DbSet<clsCotizacion> Cotizaciones => Set<clsCotizacion>();
     public DbSet<clsCotizacionPosicion> CotizacionPosiciones => Set<clsCotizacionPosicion>();
+    public DbSet<clsCotizacionLineaSolicitud> CotizacionLineasSolicitud => Set<clsCotizacionLineaSolicitud>();
+    public DbSet<clsArchivoLicitacion> ArchivosLicitacion => Set<clsArchivoLicitacion>();
     public DbSet<clsMargenAjuste> MargenAjustes => Set<clsMargenAjuste>();
     public DbSet<clsCorreo> Correos => Set<clsCorreo>();
     public DbSet<clsCorreoDestinatario> CorreoDestinatarios => Set<clsCorreoDestinatario>();

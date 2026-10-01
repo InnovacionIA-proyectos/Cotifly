@@ -89,6 +89,72 @@ public sealed record clsSolicitudCosteo
             ?? ValidarPeso();
     }
 
+    /// <summary>El encabezado de la solicitud (lo común a todas sus líneas, ADR-017).</summary>
+    public clsEncabezadoSolicitudCosteo Encabezado => new()
+    {
+        Tipo = Tipo,
+        Deadline = Deadline,
+        ValorEstimado = ValorEstimado,
+        Referencia = Referencia,
+        HorasCargue = HorasCargue,
+        HorasDescargue = HorasDescargue,
+    };
+
+    /// <summary>La única línea del formulario como línea de solicitud (ADR-017: una cotización de una línea es el caso N = 1).</summary>
+    public clsLineaSolicitudCosteo ALinea() => new()
+    {
+        Origen = Origen,
+        Destino = Destino,
+        TipoVehiculo = TipoVehiculo,
+        Carroceria = Carroceria,
+        Tipologia = Tipologia,
+        ClaseViaje = ClaseViaje,
+        ClaseContenedor = ClaseContenedor,
+        Exclusivo = Exclusivo,
+        Consolidado = Consolidado,
+        RetornaContenedor = RetornaContenedor,
+        CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+        LevanteContenedorDiferente = LevanteContenedorDiferente,
+        CiudadLevanteContenedor = CiudadLevanteContenedor,
+        ValorAprovisionamiento = ValorAprovisionamiento,
+        PesoKg = PesoKg,
+        ValorMercancia = ValorMercancia,
+        Posiciones = Posiciones,
+    };
+
+    /// <summary>Formulario de una línea a partir del encabezado y una línea (inverso de <see cref="Encabezado"/> y <see cref="ALinea"/>).</summary>
+    public static clsSolicitudCosteo Desde(clsEncabezadoSolicitudCosteo encabezado, clsLineaSolicitudCosteo linea)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        ArgumentNullException.ThrowIfNull(linea);
+        return new clsSolicitudCosteo
+        {
+            Tipo = encabezado.Tipo,
+            Deadline = encabezado.Deadline,
+            ValorEstimado = encabezado.ValorEstimado,
+            Referencia = encabezado.Referencia,
+            HorasCargue = encabezado.HorasCargue,
+            HorasDescargue = encabezado.HorasDescargue,
+            Origen = linea.Origen,
+            Destino = linea.Destino,
+            TipoVehiculo = linea.TipoVehiculo,
+            Carroceria = linea.Carroceria,
+            Tipologia = linea.Tipologia,
+            ClaseViaje = linea.ClaseViaje,
+            ClaseContenedor = linea.ClaseContenedor,
+            Exclusivo = linea.Exclusivo,
+            Consolidado = linea.Consolidado,
+            RetornaContenedor = linea.RetornaContenedor,
+            CiudadDevolucionContenedor = linea.CiudadDevolucionContenedor,
+            LevanteContenedorDiferente = linea.LevanteContenedorDiferente,
+            CiudadLevanteContenedor = linea.CiudadLevanteContenedor,
+            ValorAprovisionamiento = linea.ValorAprovisionamiento,
+            PesoKg = linea.PesoKg,
+            ValorMercancia = linea.ValorMercancia,
+            Posiciones = linea.Posiciones,
+        };
+    }
+
     /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 
