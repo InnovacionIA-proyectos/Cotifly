@@ -30,7 +30,9 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 /// <remarks>
 /// Reglas, en orden (las de negocio solo se evalúan si la forma es correcta):
 /// <list type="number">
-/// <item>Forma: JSON completo (se toleran las cercas <c>```json</c>), un objeto, sin campos desconocidos ni repetidos.</item>
+/// <item>Forma: JSON completo (se toleran las cercas <c>```json</c>), un objeto, sin campos desconocidos ni repetidos. Si la
+/// respuesta trae texto alrededor del JSON (prosa y un bloque de código, como Gemini vía OmniRoute, #84), se toma el primer objeto
+/// embebido que cumple toda la forma; si ninguno la cumple, el fallo es <c>json_invalido</c>.</item>
 /// <item>Campos: <c>tipo</c> ∈ {conversacional, previsualizacion, confirmacion_requerida, error}; <c>texto</c> string de 1 a 4000
 /// caracteres sin contar espacios al borde; <c>requiere_confirmacion</c> booleano; <c>acciones_sugeridas</c> ausente, null o una
 /// lista de {confirmar_pdf, ajustar_margen}.</item>
@@ -78,6 +80,9 @@ public static partial class clsReglasRespuestaAgente
     private const string CampoRequiere = "requiere_confirmacion";
     private const string CampoAcciones = "acciones_sugeridas";
     private static readonly string[] _campos = [CampoTipo, CampoTexto, CampoRequiere, CampoAcciones];
+
+    /// <summary>Objetos embebidos que se prueban, como máximo, en una respuesta con texto alrededor del JSON (#84).</summary>
+    private const int MaximoCandidatos = 20;
 
     /// <summary>Herramienta del plugin que respalda cada acción sugerida.</summary>
     public static readonly IReadOnlyDictionary<AccionSugeridaAgente, string> HerramientaDeAccion = new Dictionary<AccionSugeridaAgente, string>
@@ -151,10 +156,114 @@ public static partial class clsReglasRespuestaAgente
             return null;
         }
 
+        var directos = new List<clsFalloValidacion>();
+        var directa = LeerJson(SinCercas(crudo), directos);
+        if (directa is not null || directos.TrueForAll(f => f.Codigo != JsonInvalido))
+        {
+            fallos.AddRange(directos);
+            return directa;
+        }
+
+        // Texto alrededor del JSON (#84): Gemini vía OmniRoute ignora response_format y responde prosa con un bloque ```json. Se toma
+        // el primer objeto embebido que cumple toda la forma; si ninguno la cumple, el fallo sigue siendo json_invalido.
+        List<clsFalloValidacion>? delPrimerObjeto = null;
+        foreach (var candidato in ObjetosEmbebidos(crudo))
+        {
+            var fallosCandidato = new List<clsFalloValidacion>();
+            if (LeerJson(candidato, fallosCandidato) is { } embebida && fallosCandidato.Count == 0)
+            {
+                return embebida;
+            }
+
+            // El primer objeto JSON embebido que no cumple la forma aporta sus fallos a la corrección (además de json_invalido).
+            if (delPrimerObjeto is null && fallosCandidato.TrueForAll(f => f.Codigo != JsonInvalido))
+            {
+                delPrimerObjeto = fallosCandidato;
+            }
+        }
+
+        fallos.AddRange(directos);
+        fallos.AddRange(delPrimerObjeto ?? []);
+        return null;
+    }
+
+    /// <summary>
+    /// Candidatos a objeto JSON dentro de un texto: primero el contenido de cada bloque de código, después cada objeto <c>{...}</c>
+    /// balanceado (respetando cadenas y escapes), en orden de aparición. Como máximo <see cref="MaximoCandidatos"/>.
+    /// </summary>
+    private static IEnumerable<string> ObjetosEmbebidos(string texto)
+    {
+        var entregados = 0;
+        foreach (Match bloque in ExpresionBloqueCodigo().Matches(texto))
+        {
+            if (entregados++ >= MaximoCandidatos)
+            {
+                yield break;
+            }
+
+            yield return bloque.Groups["json"].Value;
+        }
+
+        for (var inicio = texto.IndexOf('{', StringComparison.Ordinal); inicio >= 0; inicio = texto.IndexOf('{', inicio + 1))
+        {
+            if (FinDelObjeto(texto, inicio) is not { } fin)
+            {
+                continue;
+            }
+
+            if (entregados++ >= MaximoCandidatos)
+            {
+                yield break;
+            }
+
+            yield return texto[inicio..(fin + 1)];
+        }
+    }
+
+    /// <summary>Índice de la llave que cierra el objeto que abre en <paramref name="inicio"/>, o null si no cierra.</summary>
+    private static int? FinDelObjeto(string texto, int inicio)
+    {
+        var profundidad = 0;
+        var enCadena = false;
+        for (var i = inicio; i < texto.Length; i++)
+        {
+            var c = texto[i];
+            if (enCadena)
+            {
+                if (c == '\\')
+                {
+                    i++;
+                }
+                else if (c == '"')
+                {
+                    enCadena = false;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    enCadena = true;
+                    break;
+                case '{':
+                    profundidad++;
+                    break;
+                case '}' when --profundidad == 0:
+                    return i;
+            }
+        }
+
+        return null;
+    }
+
+    private static clsRespuestaAgenteEstructurada? LeerJson(string json, List<clsFalloValidacion> fallos)
+    {
         JsonDocument documento;
         try
         {
-            documento = JsonDocument.Parse(SinCercas(crudo), new JsonDocumentOptions { MaxDepth = 16 });
+            documento = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16 });
         }
         catch (JsonException)
         {
@@ -611,4 +720,7 @@ public static partial class clsReglasRespuestaAgente
 
     [GeneratedRegex(@"\A\s*```(?:json)?\s*(?<json>.*?)\s*```\s*\z", RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionCercas();
+
+    [GeneratedRegex(@"```(?:json)?\s*(?<json>.*?)\s*```", RegexOptions.CultureInvariant | RegexOptions.Singleline | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionBloqueCodigo();
 }

@@ -137,6 +137,33 @@ public sealed class clsProveedoresIATests
         }
     }
 
+    // OmniRoute (#84) responde 400 "No credentials for provider: gemini" cuando todas sus credenciales del proveedor están en
+    // enfriamiento: es indisponibilidad, pasa al respaldo. Cualquier otro 400 no.
+    [Theory]
+    [InlineData("No credentials for provider: gemini", true)]
+    [InlineData("Invalid JSON payload received. Unknown name \"condition\"", false)]
+    public async Task UnGatewaySinCredencialesPasaAlRespaldo(string mensaje, bool usaRespaldo)
+    {
+        var principal = Substitute.For<IChatClient>();
+        var respaldo = Substitute.For<IChatClient>();
+        principal.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("HTTP 400", new HttpRequestException(mensaje, null, HttpStatusCode.BadRequest)));
+        respaldo.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "respuesta del respaldo")));
+        using var cliente = new clsChatClientConRespaldo([principal, respaldo], NullLogger<clsChatClientConRespaldo>.Instance);
+
+        var llamar = async () => await cliente.GetResponseAsync("hola", cancellationToken: Ct);
+
+        if (usaRespaldo)
+        {
+            (await llamar()).Text.Should().Be("respuesta del respaldo");
+        }
+        else
+        {
+            await llamar.Should().ThrowAsync<InvalidOperationException>();
+        }
+    }
+
     [Fact]
     public async Task SiTodosLosProveedoresFallanSePropagaElUltimoError()
     {

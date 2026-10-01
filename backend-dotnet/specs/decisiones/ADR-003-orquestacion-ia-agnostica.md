@@ -127,10 +127,42 @@ No hay campo "herramienta a invocar". El tipo "invocación de herramienta" del �
 
 **Riesgo con Anthropic (a probar si se usa ese proveedor):** la llamada final va sin herramientas pero la conversación trae los bloques `tool_use`/`tool_result` del loop. La API de Anthropic exige las definiciones de herramientas cuando hay esos bloques en algunos casos; si falla, habría que declarar las herramientas con `ToolMode = None` en la llamada final o resumir los resultados como texto. Sin prueba automática (las pruebas no consumen tokens).
 
+## Implementación (#84, HU-003.6): OmniRoute y esquemas portables
+
+**Esquemas portables de las herramientas.** Las declaraciones que ve el modelo ya no usan el JSON Schema de Semantic Kernel tal cual. `KernelFunction.JsonSchema` (Semantic Kernel 1.80.1, `KernelFunctionFromMethod`) tiene dos problemas:
+
+- pone la descripción de la función en una clave no estándar `condition` en la raíz del esquema;
+- expresa los parámetros anulables como un arreglo de tipos (`"type": ["number", "null"]`, por ejemplo `pesoKg`).
+
+`AIFunctionFactory.CreateDeclaration` y el adaptador de OpenAI de Microsoft.Extensions.AI pasan las claves desconocidas sin tocarlas. Por eso Gemini, también detrás de OmniRoute, respondía `400 Invalid JSON payload received. Unknown name "condition" at 'tools[0].function_declarations[0].parameters'`.
+
+`clsEsquemaPortableHerramientas` (Aplicación) reconstruye el esquema con una lista blanca:
+
+- las palabras permitidas son `type`, `properties`, `required`, `description`, `enum`, `items` y `format`, este último solo con `date-time`, `int32`, `int64`, `float` o `double`;
+- un campo anulable (arreglo con `null`, `nullable: true`, `anyOf`/`oneOf` con `null` o un `enum` con `null`) queda con su único tipo no nulo y sale de `required`;
+- la descripción va a nivel de función, nunca en el esquema.
+
+Nombres, descripciones, tipos y obligatorios no cambian, así que los demás proveedores ven lo mismo que antes. Al serializar, el adaptador de OpenAI agrega `"additionalProperties": false` en la raíz. Es parte del contrato de OpenAI y Gemini vía OmniRoute lo acepta (probado el 2026-10-01, igual que los tipos en arreglo). El problema era solo `condition`.
+
+**Payload de `generar_pdf` tipado.** `cotizacion` es un `JsonElement` libre y Semantic Kernel lo declara sin tipo. Con un parámetro sin tipo, Gemini vía OmniRoute arma los objetos anidados como texto (`"textos": "{\"intro\": ...}"`, `"tarifa": "COTIZACIÓN..."`) y el PDF falla con `PDF_PAYLOAD_INVALIDO` hasta agotar `IA:MaxIteraciones`. `clsEsquemaPayloadPdf` declara ese parámetro con el esquema anidado del prompt (paso 5): ciudad, fecha, cliente, contactos, línea, modalidad, `textos.intro`, `comercial.cargo`, `tarifa{titulo, origen, filas[{destino, vehiculo_peso, nota}]}`, aduana, extradimensionada y refrigerada. No incluye `referencia` ni los números, que pone el servidor. La descripción original del parámetro se conserva. En la sonda del 2026-10-01 con `gemini/gemini-3.5-flash-lite`, sin tipo el modelo mandó `tarifa` y `comercial` como texto; con el esquema anidado, como objetos. La lectura del payload no cambia.
+
+El contrato lo cubren estas pruebas:
+
+- `clsEsquemaPortableHerramientasTests` recorre las 9 herramientas que recibe el modelo, verifica que se conserve el contenido del esquema de Semantic Kernel y avisa si Semantic Kernel deja de emitir `condition`;
+- `clsOpenAiCompatibleTests` revisa el cuerpo HTTP real que sale hacia el proveedor.
+
+**`"stream": false` explícito con `openai_compatible`.** El SDK de OpenAI no envía `stream` en el modo sin streaming, porque la API de OpenAI asume `false`. OmniRoute asume `true` y responde SSE (`text/event-stream`), que el SDK no puede leer como un `chat.completion`. `clsPoliticaSinStreaming` es una `PipelinePolicy` por llamada que solo se registra con `openai_compatible`. Agrega `"stream": false` al cuerpo de `POST .../chat/completions` cuando no lo trae. Una petición en streaming (que ya trae `stream: true`) o un cuerpo que no es un objeto JSON pasan sin cambios. `openai`, `azure_openai`, `gemini` y `ollama` no cambian.
+
+**Respuesta final con texto alrededor.** Gemini vía OmniRoute ignora `response_format: json_schema` y responde prosa con un bloque de código `json`. `clsReglasRespuestaAgente` sigue aceptando primero el JSON completo, con o sin cercas. Si no lo es, prueba en orden los bloques de código y los objetos `{...}` balanceados que hay en el texto, hasta 20, y toma el primero que cumple toda la forma. Las reglas de negocio (montos, folios, coherencia) se aplican igual a ese objeto. Si ningún objeto cumple la forma, el fallo sigue siendo `json_invalido`, más los fallos del primer objeto embebido para que la corrección los nombre. Con `IA__SoportaJsonSchema=false` es el camino normal para Gemini vía OmniRoute.
+
+**`IA:MaxTokens`.** El valor por defecto sigue en 4096. Con OpenRouter, 4096 provocó un `402 payment_required`: OpenRouter reserva crédito por el máximo de tokens pedido, aunque la respuesta use muchos menos. Para OmniRoute y OpenRouter se recomienda **1500**, que cubre la respuesta final (`texto` ≤ 4000 caracteres, unos 1000 tokens) y las llamadas a herramientas, incluido el payload de `generar_pdf`. La matriz de proveedores probada está en `docs/03-infraestructura.md` (OmniRoute).
+
 ## Pendientes
 
 | Pendiente | Dueño |
 |---|---|
+| Cuota de OmniRoute: las credenciales de Gemini que expone OmniRoute entran en enfriamiento de unas 9 horas tras 4 a 8 llamadas por modelo (2026-10-01). Antes de producción hace falta una credencial con cuota de pago, o varios modelos en `IA__Fallbacks` | Duban + dueño de OmniRoute |
+| Rotar la clave de OmniRoute usada en las pruebas del 2026-10-01 (se compartió por chat) | Duban |
 | Proveedor y modelo de producción; custodia de la API key (secreto en Dokploy, HU-006.5) | Duban + scalderon-bs |
 | Registrar el mecanismo en la HU de Notion | Duban |
 | Validar el loop con el proveedor real elegido (sin prueba automática: las pruebas no consumen tokens) | Duban |

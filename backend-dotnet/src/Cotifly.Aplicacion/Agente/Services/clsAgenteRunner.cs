@@ -169,7 +169,9 @@ public sealed class clsAgenteRunner(
         mensajes.AddRange(Historial(historial, solicitud.Mensaje));
 
         var kernel = ConstruirKernel(out var funciones);
-        var declaraciones = funciones.Values.Select(f => (AITool)AIFunctionFactory.CreateDeclaration(f.Name, f.Description, f.JsonSchema)).ToList();
+        // Solo JSON Schema portable (#84): el esquema de Semantic Kernel trae claves que Gemini rechaza (condition, tipos en arreglo),
+        // y el payload de generar_pdf se declara tipado para que el modelo no arme los objetos anidados como texto.
+        var declaraciones = clsEsquemaPortableHerramientas.Declarar(funciones.Values, clsEsquemaPayloadPdf.PorHerramienta);
         try
         {
             return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, salidasDelServidor, cancellationToken);

@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using Anthropic;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Extensions.AI;
@@ -55,8 +56,12 @@ public static class clsChatClientFactory
         return new ChatClientBuilder(cliente).UseLogging(registros).Build();
     }
 
-    /// <summary>Cliente de un proveedor (sin respaldo ni limitador).</summary>
-    public static IChatClient CrearProveedor(clsOpcionesProveedorIA proveedor, int timeoutSeg = 60)
+    /// <summary>
+    /// Cliente de un proveedor (sin respaldo ni limitador). <paramref name="http"/> reemplaza el transporte HTTP del SDK (pruebas con
+    /// un manejador falso); null usa el del SDK. Con <c>openai_compatible</c> cada petición lleva <c>"stream": false</c> explícito
+    /// (<see cref="clsPoliticaSinStreaming"/>, #84).
+    /// </summary>
+    public static IChatClient CrearProveedor(clsOpcionesProveedorIA proveedor, int timeoutSeg = 60, HttpClient? http = null)
     {
         ArgumentNullException.ThrowIfNull(proveedor);
         var nombre = proveedor.Proveedor?.Trim().ToLowerInvariant();
@@ -65,11 +70,11 @@ public static class clsChatClientFactory
 
         return nombre switch
         {
-            clsOpcionesIA.OpenAi => OpenAiCompatible(proveedor.ApiKey, proveedor.Endpoint, modelo, timeout),
-            clsOpcionesIA.AzureOpenAi => OpenAiCompatible(proveedor.ApiKey, EndpointAzure(proveedor.Endpoint), modelo, timeout),
-            clsOpcionesIA.OpenAiCompatible => OpenAiCompatible(proveedor.ApiKey, proveedor.Endpoint, modelo, timeout),
-            clsOpcionesIA.Gemini => OpenAiCompatible(proveedor.ApiKey, Vacio(proveedor.Endpoint) ?? EndpointGemini, modelo, timeout),
-            clsOpcionesIA.Ollama => OpenAiCompatible(proveedor.ApiKey, Vacio(proveedor.Endpoint) ?? EndpointOllama, modelo, timeout),
+            clsOpcionesIA.OpenAi => OpenAiCompatible(proveedor.ApiKey, proveedor.Endpoint, modelo, timeout, http),
+            clsOpcionesIA.AzureOpenAi => OpenAiCompatible(proveedor.ApiKey, EndpointAzure(proveedor.Endpoint), modelo, timeout, http),
+            clsOpcionesIA.OpenAiCompatible => OpenAiCompatible(proveedor.ApiKey, proveedor.Endpoint, modelo, timeout, http, sinStreamingExplicito: true),
+            clsOpcionesIA.Gemini => OpenAiCompatible(proveedor.ApiKey, Vacio(proveedor.Endpoint) ?? EndpointGemini, modelo, timeout, http),
+            clsOpcionesIA.Ollama => OpenAiCompatible(proveedor.ApiKey, Vacio(proveedor.Endpoint) ?? EndpointOllama, modelo, timeout, http),
             clsOpcionesIA.Anthropic => AnthropicCliente(proveedor.ApiKey, proveedor.Endpoint, modelo),
             _ => throw new InvalidOperationException($"IA:Proveedor '{proveedor.Proveedor}' no es válido."),
         };
@@ -83,12 +88,24 @@ public static class clsChatClientFactory
         return raiz.EndsWith("/openai/v1", StringComparison.OrdinalIgnoreCase) ? raiz + "/" : raiz + "/openai/v1/";
     }
 
-    private static IChatClient OpenAiCompatible(string? clave, string? endpoint, string modelo, TimeSpan timeout)
+    private static IChatClient OpenAiCompatible(
+        string? clave, string? endpoint, string modelo, TimeSpan timeout, HttpClient? http, bool sinStreamingExplicito = false)
     {
         var opciones = new OpenAIClientOptions { NetworkTimeout = timeout };
         if (Vacio(endpoint) is { } url)
         {
             opciones.Endpoint = new Uri(url.EndsWith('/') ? url : url + "/");
+        }
+
+        if (http is not null)
+        {
+            opciones.Transport = new HttpClientPipelineTransport(http);
+        }
+
+        if (sinStreamingExplicito)
+        {
+            // Gateways OpenAI-compatible como OmniRoute responden SSE si la petición no trae "stream": false (el SDK no lo envía).
+            opciones.AddPolicy(new clsPoliticaSinStreaming(), PipelinePosition.PerCall);
         }
 
         return new OpenAIClient(new ApiKeyCredential(Vacio(clave) ?? ClaveVacia), opciones).GetChatClient(modelo).AsIChatClient();
