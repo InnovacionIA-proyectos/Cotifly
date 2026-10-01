@@ -46,6 +46,15 @@
 - `GET /web/licitaciones/{folio}`: estado y precio por línea (nunca costos).
 - Los cuerpos se leen a mano (no `[FromForm]`) para que la sesión se valide antes que el tipo de contenido; límite de cuerpo propio de 12 MB (`SeguridadHttp:LimiteCuerpoLicitacionBytes`). Mismos roles y aislamiento por dueño que el resto de `/web/*`.
 
+### 5. Exportación del Excel con resultados (HU-011.3, #48)
+
+- `GET /web/licitaciones/{folio}/excel` **reconstruye desde el archivo original** guardado en `CotizacionArchivosLicitacion` (§2). No se usa `GET /api/cotizaciones/{id}/exportar-excel` de Nexo: genera una plantilla propia de Nexo (no el pliego del cliente) y escribe el flete y los conexos con su valor de Nexo, es decir el costo bruto, que nunca debe llegar al cliente.
+- Con el original: se ubica la hoja mapeada y sus filas con la misma regla de Nexo (§4) y se agregan tres columnas a la derecha de la última usada, en la fila del encabezado: `Precio final Cotifly ({moneda})` (precio con margen; COP sin decimales, USD con dos, ADR-014), `Estado costeo Cotifly` y `Servicios conexos Cotifly`. Ninguna celda del cliente se modifica. Las líneas sin costeo llevan `SIN COSTEO` con fondo amarillo; las filas del pliego que el comercial no envió, `Sin enviar`. Con subencabezado, las columnas nuevas combinan las dos filas del encabezado.
+- Hoja nueva `Resumen Cotifly`: folio, cliente, NIT, referencia, moneda (y TRM si es USD), líneas costeadas y pendientes, total (solo si todas tienen precio; si no, "Pendiente: N línea(s) sin costeo") y los servicios conexos incluidos con su precio con margen. Como Nexo guarda los conexos por cotización, la columna de conexos de cada línea remite al resumen ("Aplican a toda la licitación"); si negocio decide conexos por línea, se llenan desde `CotizacionLineasSolicitud.serviciosConexos` sin cambiar el contrato.
+- Sin original (licitación creada con JSON): una hoja `Licitación` con los campos mapeados y las mismas columnas.
+- **El costo de Nexo no entra al exportador:** el objeto que recibe (`clsExportacionLicitacion`) solo trae precios y estados; una prueba de punta a punta verifica que ningún número del archivo sea un flete o un conexo de Nexo.
+- Siempre `.xlsx` (`{folio}.xlsx`): ClosedXML no conserva las macros de un `.xlsm`. Solo el dueño (404 si no es suya o no tiene líneas). Se puede exportar en cualquier momento.
+
 ## Alternativas consideradas
 
 - **Plantilla fija de Cotifly:** obliga al comercial a copiar el pliego a mano en otra plantilla, que es lo que HU-011 busca evitar. Descartada.
@@ -53,6 +62,7 @@
 - **Mover los campos de línea y borrar las columnas de `Cotizaciones` en el 0005:** rompía métricas, "Mis cotizaciones" y el PDF de una línea en el mismo despliegue y no es reversible. Se dejan como espejo obsoleto.
 - **Analizar el Excel en Cotifly en vez de en Nexo:** duplicaría el analizador; se reutiliza el de Nexo y Cotifly solo porta la detección de filas para ubicar la fila al exportar.
 - **Guardar el Excel original en disco o en el almacén de PDF:** otro volumen que respaldar y otro control de acceso; en la base queda con la cotización, con el mismo aislamiento por dueño y los mismos respaldos.
+- **Usar `exportar-excel` de Nexo y agregarle columnas:** no es el archivo del cliente y trae los costos de Nexo; descartada.
 - **Endpoint `lineas:bulk` de Nexo (cabecera + carga masiva):** es de `CoordinadorFletes` y `Admin`, no del comercial, y no resuelve rutas por texto libre; `captura-solicitudes` con `lineas[]` sí.
 
 ## Consecuencias

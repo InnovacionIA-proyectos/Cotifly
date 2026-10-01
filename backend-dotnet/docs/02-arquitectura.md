@@ -571,6 +571,7 @@ Una cotización de Cotifly es **una solicitud de Nexo con N líneas** (`dbo_coti
 | `clsPrecioCosteoService.Aplicar(cotizacion, lineas, foto, ahora)` | Aplicacion | Ids de Nexo por orden, estado, costo y precio por línea; total de la cotización solo con todas costeadas; N = 1 delega en la regla de HU-005.7 |
 | `clsAnalizadorExcelNexo` / `clsAnalizadorExcelNoDisponible` | Infraestructura | `POST /api/captura-solicitudes/analizar-excel` (multipart) por el cliente `NexoCosteo` |
 | `clsLectorExcelLicitacionClosedXml` | Infraestructura | Puerto 1:1 de la detección de filas de Nexo (`ExcelSolicitudesAdapter`) para ubicar la `fila` en el archivo |
-| `clsLicitacionesController` | Api | `/web/licitaciones/analizar-excel`, `/web/licitaciones` (multipart o JSON) y `/web/licitaciones/{folio}` |
+| `clsExportadorExcelLicitacionClosedXml` | Infraestructura | Exportación (HU-011.3): el original con tres columnas de Cotifly a la derecha y la hoja `Resumen Cotifly`; recibe solo precios y estados (`clsExportacionLicitacion`), nunca costos |
+| `clsLicitacionesController` | Api | `/web/licitaciones/analizar-excel`, `/web/licitaciones` (multipart o JSON), `/web/licitaciones/{folio}` y `/web/licitaciones/{folio}/excel` |
 
 Flujo: subir → Nexo analiza → el frontend mapea → `POST /web/licitaciones` valida todo → guarda y confirma → envía a Nexo (N líneas) → el polling (`clsWorkerCosteoNexo`, sin cambios de agenda) deriva estado y precio de cada línea.

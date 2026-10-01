@@ -331,6 +331,7 @@ public static class clsDependenciasInfraestructura
                 ? sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNoDisponible>()
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
+        servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

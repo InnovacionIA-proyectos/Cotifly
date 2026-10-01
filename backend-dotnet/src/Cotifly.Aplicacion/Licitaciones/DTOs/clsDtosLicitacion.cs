@@ -72,6 +72,34 @@ public sealed record clsLicitacion(
     string? Hoja,
     IReadOnlyList<clsLineaLicitacion> Lineas);
 
+/// <summary>
+/// Datos de la exportación del Excel de una licitación (HU-011.3, ADR-017 §5): solo precios con margen y estados, nunca el costo de
+/// Nexo. <see cref="Original"/> es el Excel del cliente (o <c>null</c> si la licitación se armó sin archivo).
+/// </summary>
+public sealed record clsExportacionLicitacion(
+    string Folio,
+    string? Cliente,
+    string? NitCliente,
+    string? Referencia,
+    string Moneda,
+    decimal TrmAplicada,
+    decimal? PrecioTotal,
+    string? Hoja,
+    byte[]? Original,
+    IReadOnlyList<clsLineaExportacion> Lineas,
+    IReadOnlyList<clsConexoExportacion> ServiciosConexos,
+    DateTimeOffset GeneradoEn);
+
+/// <summary>Una línea exportada: dónde va (fila del análisis), qué es, su estado legible y su precio (<c>null</c> = sin costeo).</summary>
+public sealed record clsLineaExportacion(
+    int Orden, int? Fila, string Origen, string Destino, string? TipoVehiculo, decimal? PesoKg, string Estado, decimal? PrecioFinal);
+
+/// <summary>Servicio conexo incluido, con su precio con margen.</summary>
+public sealed record clsConexoExportacion(string Nombre, string Categoria, decimal Cantidad, decimal Precio);
+
+/// <summary>Archivo para descargar.</summary>
+public sealed record clsArchivoExportado(string Nombre, byte[] Contenido, string TipoContenido);
+
 /// <summary><c>LineaLicitacion</c>: una línea con su estado y su precio con margen (<c>null</c> mientras no tiene flete).</summary>
 public sealed record clsLineaLicitacion(
     int Orden,

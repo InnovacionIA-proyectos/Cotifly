@@ -194,6 +194,46 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
             .Should().Be("0", "las posiciones quedan enlazadas a su línea");
     }
 
+    [Fact]
+    public async Task LaExportacionDevuelveElOriginalConLosPreciosMarcaLasPendientesYNuncaTraeElCostoDeNexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.AgregarConexo(solicitud, "Cargue", 170_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        respuesta.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        respuesta.Content.Headers.ContentDisposition!.FileNameStar.Should().Be($"{folio}.xlsx");
+        using var libro = new ClosedXML.Excel.XLWorkbook(new MemoryStream(await respuesta.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)));
+        var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
+        hoja.Cell(clsPliegoMuestra.FilaExcel(0), 2).GetString().Should().Be("BUENAVENTURA", "las columnas del cliente no cambian");
+        hoja.Cell(clsPliegoMuestra.FilaExcel(0), 7).GetValue<decimal>().Should().Be(1_176_471m);
+        hoja.Cell(clsPliegoMuestra.FilaExcel(1), 7).GetString().Should().Be("SIN COSTEO");
+        hoja.Cell(clsPliegoMuestra.FilaExcel(1), 8).GetString().Should().Be("Pendiente de costeo");
+        var numeros = libro.Worksheets.SelectMany(h => h.CellsUsed()).Where(c => c.DataType == ClosedXML.Excel.XLDataType.Number).Select(c => c.GetValue<decimal>()).ToList();
+        numeros.Should().NotContain(1_000_000m, "el flete de Nexo nunca sale").And.NotContain(170_000m, "el costo del conexo tampoco");
+    }
+
+    [Fact]
+    public async Task LaExportacionEsSoloDelDuenoYSoloDeCotizacionesConLineas()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(ana, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var delChat = await _api.CrearCotizacionAsync(ana.UsuarioId, conPdf: false);
+
+        using var ajena = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", luis.Access);
+        using var sinLineas = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{delChat.Folio}/excel", ana.Access);
+
+        ajena.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        sinLineas.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private async Task<JsonElement> CrearAsync(clsSesionPrueba sesion, object[] lineas, byte[] excel, HttpStatusCode esperado)
     {
         using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,

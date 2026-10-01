@@ -120,7 +120,7 @@ La validación de catálogos (que `tipo_vehiculo` exista en el catálogo, que el
 |---|---|---|
 | `Precio final Cotifly ({moneda})` | Precio de la línea con el margen aplicado (nunca el costo de Nexo) | Número; COP sin decimales, USD con 2 decimales (ADR-014) |
 | `Estado costeo Cotifly` | `Costeada`, `Pendiente de costeo`, `Descartada` o `Sin enviar` | Texto; las pendientes con fondo amarillo |
-| `Servicios conexos Cotifly` | Servicios conexos incluidos que aplican a la línea, con su precio | Texto |
+| `Servicios conexos Cotifly` | Servicios conexos de la línea. Hoy Nexo los guarda por cotización: la celda remite a la hoja `Resumen Cotifly`, que los lista con su precio | Texto |
 
 Y una hoja nueva `Resumen Cotifly` con el folio, el cliente, la moneda (y la TRM si es USD), el total de las líneas costeadas, cuántas líneas faltan por costear y los servicios conexos incluidos con su precio. Las líneas sin costeo se marcan explícitamente (`SIN COSTEO` en la columna de precio). Si la licitación no trae archivo original (se armó sin Excel), la exportación genera una hoja con los campos mapeados y las mismas columnas agregadas.
 

@@ -30,3 +30,14 @@ public interface IClsLectorExcelLicitacion
     /// </summary>
     clsResultado<IReadOnlyList<int>> FilasDeDatos(byte[] contenido, string hoja);
 }
+
+/// <summary>
+/// Exportación del Excel de una licitación con los resultados (HU-011.3): con el original, lo regenera SIN tocar sus columnas y agrega
+/// a la derecha el precio final, el estado del costeo y los servicios conexos de cada línea, más una hoja de resumen; sin original,
+/// arma una hoja con los campos mapeados y las mismas columnas. Nunca escribe costos de Nexo. <c>EXCEL_INVALIDO</c> o
+/// <c>EXCEL_SIN_DATOS</c> si el original ya no se puede leer.
+/// </summary>
+public interface IClsExportadorExcelLicitacion
+{
+    clsResultado<byte[]> Generar(clsExportacionLicitacion datos);
+}

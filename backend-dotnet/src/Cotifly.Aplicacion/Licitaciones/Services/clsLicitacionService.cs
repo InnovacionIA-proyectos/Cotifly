@@ -32,6 +32,13 @@ public interface IClsLicitacionService
 
     /// <summary>La licitación con el estado y el precio de cada línea (nunca el costo de Nexo).</summary>
     Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Excel de la licitación con los resultados (HU-011.3): el original del cliente con las columnas de Cotifly agregadas (o una hoja
+    /// nueva si no hay original). Se puede exportar en cualquier momento: las líneas sin costeo quedan marcadas. <c>COTIZACION_NO_ENCONTRADA</c>
+    /// si no es suya o no tiene líneas.
+    /// </summary>
+    Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsLicitacionService"/>.</summary>
@@ -42,8 +49,82 @@ public sealed class clsLicitacionService(
     IClsUnitOfWork unidadTrabajo,
     IClsEnvioCosteoService envio,
     IClsAnalizadorExcelNexo analizador,
-    IClsLectorExcelLicitacion lector) : IClsLicitacionService
+    IClsLectorExcelLicitacion lector,
+    IClsExportadorExcelLicitacion exportador,
+    IClsReloj reloj) : IClsLicitacionService
 {
+    public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
+
+    public async Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
+    {
+        var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
+            ? null
+            : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas = cotizacion is null ? [] : await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+        if (cotizacion is null || lineas.Count == 0)
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
+        }
+
+        var archivo = await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
+        var datos = DatosExportacion(cotizacion, lineas, archivo, reloj.AhoraUtc);
+        var generado = exportador.Generar(datos);
+        if (generado.EsFallo)
+        {
+            return generado.Error;
+        }
+
+        return new clsArchivoExportado(cotizacion.Folio + ".xlsx", generado.Valor, TipoXlsx);
+    }
+
+    /// <summary>
+    /// Datos de la exportación: precios con margen, estado legible por línea y los servicios conexos incluidos (por cotización, como
+    /// los guarda Nexo). El costo de Nexo no entra a este objeto: el exportador no lo puede escribir.
+    /// </summary>
+    public static clsExportacionLicitacion DatosExportacion(
+        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsArchivoLicitacion? archivo, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        var conexos = Costeo.DTOs.clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
+            .Where(s => s.Incluido)
+            .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
+            .ToList();
+        return new clsExportacionLicitacion(
+            cotizacion.Folio,
+            cotizacion.ClienteNombre,
+            cotizacion.NitCliente,
+            cotizacion.Referencia,
+            cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
+            cotizacion.TrmAplicada,
+            cotizacion.PrecioFinal,
+            archivo?.Hoja,
+            archivo?.Contenido,
+            [.. lineas.OrderBy(l => l.Orden).Select(l => new clsLineaExportacion(
+                l.Orden, l.FilaOrigen, l.Origen, l.Destino, l.TipoVehiculo, l.PesoKg, EstadoLegible(l), l.PrecioFinal))],
+            conexos,
+            ahora);
+    }
+
+    /// <summary>Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen.</summary>
+    public static string EstadoLegible(clsCotizacionLineaSolicitud linea)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        if (linea.PrecioFinal is not null)
+        {
+            return "Costeada";
+        }
+
+        return linea.EstadoCosteo switch
+        {
+            EstadoCosteo.Descartada => "Descartada en Nexo",
+            EstadoCosteo.CosteoVencido => "Costeo vencido",
+            EstadoCosteo.ErrorEnvio => "No llegó a Nexo",
+            EstadoCosteo.Entregada => "Entregada sin flete",
+            _ => "Pendiente de costeo",
+        };
+    }
+
     public async Task<clsResultado<clsAnalisisExcel>> AnalizarAsync(Guid usuarioId, clsArchivoSubido archivo, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(archivo);
