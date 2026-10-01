@@ -1,4 +1,6 @@
+using System.ClientModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Cotifly.Aplicacion.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -91,17 +93,64 @@ public sealed class clsChatClientConRespaldo : IChatClient
                || error.InnerException is HttpRequestException or TimeoutException or IOException;
     }
 
+    /// <summary>
+    /// ¿El <c>error.message</c> del gateway EMPIEZA con <c>No credentials for provider:</c>? Se lee del cuerpo de la respuesta cruda de
+    /// <see cref="ClientResultException"/> si está disponible; si no, del mensaje de la excepción (un cuerpo JSON o una de sus líneas,
+    /// como arma el SDK de OpenAI: <c>HTTP 400 (...)</c>, línea vacía y el mensaje). Un 400 que solo cita la frase no cuenta.
+    /// </summary>
     private static bool SinCredenciales(Exception error)
     {
         for (var actual = error; actual is not null; actual = actual.InnerException)
         {
-            if (actual.Message.Contains(SinCredencialesDelGateway, StringComparison.OrdinalIgnoreCase))
+            if (actual is ClientResultException resultado && MensajeDelCuerpo(CuerpoCrudo(resultado)) is { } delCuerpo)
+            {
+                return EmpiezaSinCredenciales(delCuerpo);
+            }
+
+            var mensaje = MensajeDelCuerpo(actual.Message) ?? actual.Message;
+            if (mensaje.Split('\n').Any(linea => EmpiezaSinCredenciales(linea.Trim())))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static bool EmpiezaSinCredenciales(string texto) => texto.StartsWith(SinCredencialesDelGateway + ":", StringComparison.Ordinal);
+
+    private static string? CuerpoCrudo(ClientResultException error)
+    {
+        try
+        {
+            return error.GetRawResponse()?.Content?.ToString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary><c>error.message</c> de un cuerpo de error estilo OpenAI, o null si el texto no lo es.</summary>
+    private static string? MensajeDelCuerpo(string? cuerpo)
+    {
+        if (string.IsNullOrWhiteSpace(cuerpo) || cuerpo.TrimStart()[0] != '{')
+        {
+            return null;
+        }
+
+        try
+        {
+            using var documento = JsonDocument.Parse(cuerpo);
+            return documento.RootElement.TryGetProperty("error", out var detalle) && detalle.ValueKind == JsonValueKind.Object
+                   && detalle.TryGetProperty("message", out var mensaje) && mensaje.ValueKind == JsonValueKind.String
+                ? mensaje.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

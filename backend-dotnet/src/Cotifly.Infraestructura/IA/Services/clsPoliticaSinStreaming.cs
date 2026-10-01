@@ -17,6 +17,9 @@ public sealed class clsPoliticaSinStreaming : PipelinePolicy
     public const string RutaChat = "/chat/completions";
     public const string CampoStream = "stream";
 
+    /// <summary>Escritura sin el tope de profundidad por defecto (64), igual que la lectura: el cuerpo no se trunca.</summary>
+    private static readonly JsonSerializerOptions _escritura = new() { MaxDepth = 256 };
+
     public override void Process(PipelineMessage message, IReadOnlyList<PipelinePolicy> pipeline, int currentIndex)
     {
         ArgumentNullException.ThrowIfNull(message);
@@ -48,19 +51,20 @@ public sealed class clsPoliticaSinStreaming : PipelinePolicy
         JsonNode? cuerpo;
         try
         {
-            cuerpo = JsonNode.Parse(copia.ToArray());
+            cuerpo = JsonNode.Parse(copia.ToArray(), documentOptions: new JsonDocumentOptions { MaxDepth = 256 });
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
         {
             return;
         }
 
-        if (cuerpo is not JsonObject objeto || objeto.ContainsKey(CampoStream))
+        // "stream": null cuenta como ausente (un gateway puede tomarlo como true).
+        if (cuerpo is not JsonObject objeto || objeto[CampoStream] is not null)
         {
             return;
         }
 
         objeto[CampoStream] = false;
-        peticion.Content = BinaryContent.Create(BinaryData.FromString(objeto.ToJsonString()));
+        peticion.Content = BinaryContent.Create(BinaryData.FromString(objeto.ToJsonString(_escritura)));
     }
 }

@@ -45,7 +45,7 @@ public static class clsChatClientFactory
         }
 
         var cadena = new List<IChatClient> { CrearProveedor(opciones.Principal(), opciones.TimeoutSeg) };
-        cadena.AddRange(opciones.Fallbacks.Select(f => CrearProveedor(f, opciones.TimeoutSeg)));
+        cadena.AddRange(opciones.FallbacksConfigurados().Select(f => CrearProveedor(f, opciones.TimeoutSeg)));
 
         IChatClient cliente = cadena.Count == 1 ? cadena[0] : new clsChatClientConRespaldo(cadena, registros.CreateLogger<clsChatClientConRespaldo>());
         if (opciones.Rpm > 0)
@@ -106,6 +106,9 @@ public static class clsChatClientFactory
         {
             // Gateways OpenAI-compatible como OmniRoute responden SSE si la petición no trae "stream": false (el SDK no lo envía).
             opciones.AddPolicy(new clsPoliticaSinStreaming(), PipelinePosition.PerCall);
+
+            // Un 429 de enfriamiento del gateway (model_cooldown, horas) no se reintenta: pasa de inmediato al respaldo.
+            opciones.RetryPolicy = new clsPoliticaReintentoGateway((int)timeout.TotalSeconds);
         }
 
         return new OpenAIClient(new ApiKeyCredential(Vacio(clave) ?? ClaveVacia), opciones).GetChatClient(modelo).AsIChatClient();

@@ -296,24 +296,32 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 ```
 IA__Proveedor=openai_compatible
 IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1
-IA__Modelo=gemini/gemini-3.5-flash
+IA__Modelo=gemini/gemini-3.5-flash-lite
 IA__ApiKey=<secreto de Dokploy>
 IA__SoportaJsonSchema=false
 IA__MaxTokens=1500
 IA__Fallbacks__0__Proveedor=openai_compatible
 IA__Fallbacks__0__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1
-IA__Fallbacks__0__Modelo=gemini/gemini-3-flash-preview
+IA__Fallbacks__0__Modelo=gemini/gemini-3.5-flash
 IA__Fallbacks__0__ApiKey=<secreto de Dokploy>
+IA__Fallbacks__1__Proveedor=openai_compatible
+IA__Fallbacks__1__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1
+IA__Fallbacks__1__Modelo=gemini/gemini-3-flash-preview
+IA__Fallbacks__1__ApiKey=<secreto de Dokploy>
 ```
+
+> **Riesgo de seguridad.** OmniRoute va por HTTP sin cifrar: los nombres y NIT de los clientes, los precios, el correo del comercial y la clave `Bearer` viajan en claro por la red interna. Recomendado: publicarlo por HTTPS (Traefik con TLS, en la línea de #25/#26) o, como mínimo, aislar el tráfico worker → manager. La rotación de la clave y el detalle están en [DEPLOY.md](../../DEPLOY.md) §2.2.
 
 Qué hace el backend para OmniRoute (ADR-003, "Implementación (#84)"):
 
 - **`"stream": false` explícito.** Con `openai_compatible`, `clsPoliticaSinStreaming` lo agrega a cada `POST .../chat/completions`. Sin él, OmniRoute responde SSE (`text/event-stream`) y el SDK de OpenAI no lo puede leer.
 - **Esquemas portables.** Las 9 herramientas se declaran solo con `type`, `properties`, `required`, `description`, `enum`, `items` y `format` seguro (`clsEsquemaPortableHerramientas`). El esquema de Semantic Kernel traía `condition` y Gemini respondía `400 Unknown name "condition"`.
 - **Payload de `generar_pdf` tipado** (`clsEsquemaPayloadPdf`). Sin tipo, Gemini armaba `textos` y `tarifa` como texto y el PDF fallaba con `PDF_PAYLOAD_INVALIDO`.
-- **Respuesta final.** Gemini vía OmniRoute ignora `response_format: json_schema` y responde prosa con un bloque `json`. Con `IA__SoportaJsonSchema=false` el validador toma el primer objeto embebido que cumple la forma y le aplica las mismas reglas.
+- **Respuesta final.** Gemini vía OmniRoute ignora `response_format: json_schema` y responde prosa con un bloque `json`. Con `IA__SoportaJsonSchema=false` el validador toma el objeto embebido que cumple la forma y le aplica las mismas reglas. Solo lo toma si es el único distinto: con dos (un ejemplo citado, un JSON que pegó el comercial) responde `json_invalido` y fuerza el reintento de corrección.
 - **`IA__MaxTokens=1500`.** Con 4096, OpenRouter respondió `402 payment_required`, porque reserva crédito por el máximo pedido. 1500 alcanza para la respuesta final y para el payload de `generar_pdf`.
-- **Respaldo.** OmniRoute responde `400 No credentials for provider: <proveedor>` cuando no tiene credenciales utilizables (sin configurar o todas en enfriamiento). `clsChatClientConRespaldo` lo trata como indisponibilidad y pasa a `IA__Fallbacks`, igual que un 429 o un 5xx.
+- **Respaldo.** OmniRoute responde `400 No credentials for provider: <proveedor>` cuando no tiene credenciales utilizables (sin configurar o todas en enfriamiento). `clsChatClientConRespaldo` lo trata como indisponibilidad y pasa a `IA__Fallbacks`, igual que un 429 o un 5xx. Solo cuenta si el `error.message` del cuerpo **empieza** con `No credentials for provider:`; un 400 que solo cita la frase se propaga.
+- **429 de enfriamiento sin reintentos.** Con `openai_compatible`, `clsPoliticaReintentoGateway` no reintenta un 429 con `code: model_cooldown`, o con `reset_seconds` mayor que `IA__TimeoutSeg`: pasa de inmediato al respaldo. Antes, los 3 reintentos del SDK sobre un enfriamiento de horas alargaban el turno 100 a 160 s. Un 429 corriente sigue con los reintentos del SDK.
+- **Latencia.** `IA__TimeoutSeg` (60 s) limita cada llamada al modelo, no el turno. Un turno encadena hasta `IA__MaxIteraciones` (12) llamadas con herramientas, más la respuesta final y su reintento: en las pruebas, de 20 a 75 s por turno, y hasta 160 s con respaldos antes del arreglo del 429. El frontend de ClientePro debe esperar **al menos 120 s** a `POST /web/chat` (confirmar con frontend, [GUIA_FRONTEND_COTIFLY.md](../../docs/GUIA_FRONTEND_COTIFLY.md) §2 y §6). Traefik no corta las respuestas largas con sus valores por defecto: `responseHeaderTimeout` de los *serversTransport* vale 0 y los `respondingTimeouts` de los *entryPoints* limitan la lectura de la petición, no la respuesta. Pendiente: verificar en la configuración estática de Traefik de Dokploy que nadie los cambió.
 
 **Matriz de proveedores (2026-10-01, entorno local, datos ficticios).** Cada modelo se probó con tres llamadas: texto, una herramienta (`calcular_precio`) y `response_format` con JSON Schema. Después, los que respondían corrieron la conversación de `/web/chat` de punta a punta.
 
@@ -339,13 +347,19 @@ Qué hace el backend para OmniRoute (ADR-003, "Implementación (#84)"):
 | `gemini/gemini-3-flash-preview` | turnos 1 y 2: `resolver_municipio` ×2 y más llamadas del loop | no llegó | no | 58 s y 29 s | `429 model_cooldown` desde la octava llamada |
 | `gemini/gemini-3.5-flash-lite` (esquema de `generar_pdf` sin tipo) | `buscar_cliente`, `resolver_municipio` ×2, `buscar_tarifa`, `obtener_margen`, `calcular_precio`; `generar_pdf` | sí, 3.352.941 | no: `PDF_PAYLOAD_INVALIDO` ×8 y tope de 12 iteraciones | 28 s, 16 s, 62–75 s | payload armado como texto |
 | `gemini/gemini-3.5-flash-lite` (con `clsEsquemaPayloadPdf`) | `buscar_cliente`, `resolver_municipio` ×2, `obtener_margen`, `calcular_precio`; `generar_pdf` (pide confirmación); `generar_pdf` | sí, 3.352.941 | **sí**, folio `PCN-AP-01102026-001`, registrado en BD | 21 s, 19 s, 20 s | ninguno |
+| `gemini/gemini-3.5-flash-lite` (corrida del validador, misma imagen) | el mismo flujo | sí, 3.352.941 | **sí**, folio `PCN-AP-01102026-002` | — | ninguno |
 | `gemini/gemini-3.8-flash` con respaldos `3.7-flash` y `3.1-flash-lite` | turno 3 (respaldo `3.1-flash-lite`): `buscar_cliente`, `resolver_municipio` ×2, `obtener_margen`, `calcular_precio` | no: `PRECIO_INVALIDO` | no | 100–160 s | 429 y 503 del principal y el primer respaldo; 400 `No credentials for provider: gemini` antes del arreglo del respaldo |
 
-Las dos primeras filas confirman que el esquema portable y `"stream": false` funcionan con los modelos principales (llamadas a herramientas con 200). No se completaron por la cuota de OmniRoute, no por el backend.
+**Criterio 4 de #84 ("conversación de punta a punta con al menos 2 modelos reales"): PARCIAL.**
+
+- Solo `gemini/gemini-3.5-flash-lite` completó la cotización con PDF, dos veces (`-001` y `-002`).
+- `gemini-3.5-flash` y `gemini-3-flash-preview` validaron las llamadas a herramientas (200 con el esquema portable y `"stream": false`), pero entraron en el enfriamiento de OmniRoute antes de llegar al precio. El corte fue por la cuota del gateway, no por el backend.
+- Queda pendiente repetir la prueba con esos dos modelos cuando haya cuota.
 
 - **No usar** los gateways web no oficiales que también lista OmniRoute (`duckduckgo-web`/`ddgw`, `theoldllm`/`tllm`, `veoaifree-web`/`veo-free`, `chipotle`): son un riesgo de confidencialidad para los datos del cliente.
-- **Cuota.** Las credenciales de Gemini detrás de OmniRoute son de cuota limitada: tras 4 a 8 llamadas por modelo, OmniRoute responde `429 model_cooldown` con `reset_seconds` de unas 9 horas. Una cotización completa hace entre 6 y 15 llamadas, así que un solo modelo no alcanza para una jornada. Antes de producción hace falta una credencial con cuota de pago, o varios modelos en `IA__Fallbacks`. Cada modelo tiene su propia cuota, y el SDK de OpenAI reintenta cada 429 hasta 3 veces antes de pasar al respaldo.
-- **Recomendación** (pendiente de confirmar con el dueño de OmniRoute y negocio): principal `gemini/gemini-3.5-flash`, respaldos `gemini/gemini-3-flash-preview` y `gemini/gemini-3.5-flash-lite`, con `IA__SoportaJsonSchema=false` e `IA__MaxTokens=1500`.
+- **Cuota.** Las credenciales de Gemini detrás de OmniRoute son de cuota limitada: tras 4 a 8 llamadas por modelo, OmniRoute responde `429 model_cooldown` con `reset_seconds` de unas 9 horas. Una cotización completa hace entre 6 y 15 llamadas, así que un solo modelo no alcanza para una jornada. Antes de producción hace falta una credencial con cuota de pago, o varios modelos en `IA__Fallbacks`, porque cada modelo tiene su propia cuota.
+- **Recomendación** (pendiente de confirmar con el dueño de OmniRoute y negocio): principal `gemini/gemini-3.5-flash-lite`, respaldos `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview`, con `IA__SoportaJsonSchema=false` e `IA__MaxTokens=1500`. flash-lite va de principal porque es el único que completó la cotización con PDF, el único que respeta `json_schema` y el más rápido (1 a 2 s por llamada). Los otros dos validaron las herramientas, pero su cuota se agotó primero.
+- **Datos y términos** (pendiente con negocio y legal). OmniRoute reenvía cada petición a Google, OpenRouter o Groq bajo los términos de la credencial que tenga cargada; con una clave gratuita de AI Studio, Google puede usar los datos para mejorar sus productos. Hay que confirmar qué credencial es, la residencia de los datos y si OmniRoute registra los prompts.
 
 ### Google Chat
 
@@ -375,7 +389,7 @@ Las dos primeras filas confirman que el esquema portable y `"stream": false` fun
 | `dbsolucionesti` (misma instancia) | Usuarios y roles de ClientePro para el login (solo lectura) | TDS, `cotifly_app` con `SELECT` por columna | Permisos pendientes con el DBA; IDROLES reales pendientes | Login y refresh responden 401 (fail-closed) |
 | `DWCubosEBSSAP` | Regional del comercial (`DimEjecutivo`, ADR-016): login (#81) y tablero del gerente | TDS, solo lectura, `SELECT` parametrizado | Adaptador y login listos; tabla verificada en #81. Faltan la credencial en Dokploy y la salida de red del clúster (puerto 1433) | Sin cadena: `UsuariosWeb.regional` (sin ella, 409 `REGIONAL_NO_ASIGNADA` en el tablero del gerente). Con cadena y caída: el login entra sin refrescar la regional (warning) y el tablero responde 503 `REGIONAL_NO_DISPONIBLE` |
 | SAP TM | Margen propuesto por cliente (`RentabClienteSet`) | Export JSON montado, u OData v2 con Basic auth y 10 s de límite | Código listo; activación en HU-009 (ruta de red y usuario de servicio) | Política de la línea con el motivo en `detalle` |
-| Proveedor LLM (OpenAI, Azure OpenAI, compatible con OpenAI, Gemini, Ollama o Anthropic) | Redacción y elección de herramientas del agente | HTTPS con API key; respaldos configurables | Proveedor de producción pendiente de negocio (ADR-003) | `/web/chat` 200 `{texto, error: true}`; Google Chat publica el aviso |
+| Proveedor LLM (OpenAI, Azure OpenAI, compatible con OpenAI, Gemini, Ollama o Anthropic) | Redacción y elección de herramientas del agente | HTTPS con API key; OmniRoute (#84) por **HTTP** dentro de la red interna, con API key `Bearer` en claro (riesgo; ver [OmniRoute](#omniroute)); respaldos configurables | Proveedor de producción pendiente de negocio (ADR-003) | `/web/chat` 200 `{texto, error: true}`; Google Chat publica el aviso |
 | Google Chat | Canal conversacional alterno | Webhook con JWT RS256 de Google; publicación con cuenta de servicio (JWT-bearer) | Código listo; app de Chat por crear (HU-006) | El webhook responde 401; sin `GChat:SaJson` no se publica (warning) |
 | Relay SMTP interno (en el Python `10.10.40.62`) | Envío de la cotización | SMTP 25 sin AUTH ni STARTTLS, control por IP | Deshabilitado por defecto; transporte real por confirmar (D3) | `CORREO_DESHABILITADO` (503) o `CORREO_ENVIO_FALLIDO` con la fila `fallido` |
 | Volumen `/data/pdfs` | Almacén de los PDF | Sistema de archivos del contenedor (UID 1654) | Único adaptador; S3/MinIO diferido (ADR-012) | `generar_pdf` falla sin registrar la cotización |

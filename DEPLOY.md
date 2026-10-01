@@ -115,10 +115,10 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
 | `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
 | `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
-| `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003. Con OmniRoute (gateway LLM interno, #84): `IA__Proveedor=openai_compatible`, `IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1` (HTTP dentro de la red interna, sin TLS; exige salida del worker hacia `10.10.40.17:80`) y `IA__Modelo=gemini/<modelo>`. Matriz de modelos en [docs/03](backend-dotnet/docs/03-infraestructura.md#omniroute) |
+| `IA__Proveedor`, `IA__Modelo`, `IA__Endpoint` | no | no (sin proveedor el agente no responde) | vacío | Dokploy | ADR-003. Con OmniRoute (gateway LLM interno, #84): `IA__Proveedor=openai_compatible`, `IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1` (HTTP dentro de la red interna, sin TLS; exige salida del worker hacia `10.10.40.17:80`) y `IA__Modelo=gemini/gemini-3.5-flash-lite`. Matriz de modelos en [docs/03](backend-dotnet/docs/03-infraestructura.md#omniroute). **Nunca** un gateway web no oficial de los que lista OmniRoute (`duckduckgo-web`, `theoldllm`, `veoaifree-web`, `chipotle`): riesgo de confidencialidad |
 | `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | **secreto de Dokploy**, nunca en el repositorio ni en el manifiesto. Con OmniRoute es la clave del gateway (`Authorization: Bearer`); como el tráfico va por HTTP, solo debe viajar dentro de la red interna. La clave usada en las pruebas del 2026-10-01 se compartió por chat: **rotarla** antes de cargarla en staging |
-| `IA__Fallbacks__N__Proveedor`, `__Modelo`, `__Endpoint` | no | no | vacío | Dokploy | respaldos |
-| `IA__Fallbacks__N__ApiKey` | **sí** (≥ 16) | igual que `IA__ApiKey`, por respaldo | vacío | Dokploy | |
+| `IA__Fallbacks__N__Proveedor`, `__Modelo`, `__Endpoint` | no | no | vacío | Dokploy | respaldos ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute. Los manifiestos declaran `__0__` y `__1__` con `${...:-}`: un respaldo con `Proveedor` vacío no existe (si tiene modelo, endpoint o clave sin proveedor, la API no arranca). Con OmniRoute: `__0__` `gemini/gemini-3.5-flash`, `__1__` `gemini/gemini-3-flash-preview`, mismo endpoint y clave |
+| `IA__Fallbacks__N__ApiKey` | **sí** (≥ 16) | igual que `IA__ApiKey`, por respaldo | vacío | Dokploy | secreto de Dokploy; con OmniRoute, la misma clave del gateway |
 | `IA__MaxTokens`, `IA__MaxIteraciones`, `IA__SoportaJsonSchema`, `IA__MinutosSinJsonSchema`, `IA__JsonSchemaEstricto`, `IA__Rpm`, `IA__TimeoutSeg` | no | no | `4096`, `12`, `true`, `30`, `false`, `8`, `60` | manifiesto | con OmniRoute y Gemini: `IA__SoportaJsonSchema=false` (Gemini vía OmniRoute ignora `json_schema`) e `IA__MaxTokens=1500` (con 4096 OpenRouter respondió 402 porque reserva crédito por el máximo pedido) |
 | `LimiteChat__PeticionesPorVentana`, `LimiteChat__VentanaSegundos` | no | no | `20`, `60` | manifiesto | |
 | `Sesiones__LimiteTokens`, `Sesiones__TtlHoras`, `Sesiones__BarridoMinutos`, `Sesiones__EsperaTurnoSegundos` | no | no | `6000`, `24`, `60`, `3` | manifiesto | |
@@ -128,6 +128,15 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `GChat__SupportSpace`, `GChat__CapacidadCola` | no | no | vacío, `200` | Dokploy / manifiesto | |
 | `GChat__UrlCertificados`, `GChat__ApiBase` | no | no | certificados de `chat@system.gserviceaccount.com`, `https://chat.googleapis.com/v1` | — | solo pruebas: no se cargan en QA ni producción (no están en los manifiestos) |
 | `Grovity__BaseUrl`, `Grovity__Usuario` / `Grovity__Clave` | no / **sí** | no (el código no las lee) | — | — | solo si se aprueba Grovity desde el agente (ADR-005) |
+
+**OmniRoute: riesgo de transporte y de datos (#84).**
+
+- **Riesgo, HTTP sin cifrar.** OmniRoute se expone como `http://llm-services-omniroute.10-10-40-17.sslip.io` (puerto 80 del manager `10.10.40.17`). Cada turno del agente viaja en claro por la red interna: nombres y NIT de clientes, costos, márgenes y precios, el correo del comercial y la clave `Authorization: Bearer`. Cualquier equipo con acceso a ese segmento puede leerlos o reutilizar la clave.
+- **Recomendado antes de producción:** publicar OmniRoute por HTTPS (router de Traefik con TLS en el clúster, en la línea de #25/#26) y cambiar `IA__Endpoint` a `https://...`. Como mínimo, aislar el tráfico worker → manager (overlay o reglas de firewall que solo permitan al worker del API).
+- **Rotación de la clave de OmniRoute:**
+  - **cuándo:** antes de cargarla en staging (la de las pruebas del 2026-10-01 se compartió por chat); después, cada 6 meses o de inmediato ante cualquier exposición (chat, log, captura, repositorio, salida de alguien con acceso);
+  - **cómo:** (1) el dueño de OmniRoute emite una clave nueva; (2) actualizar `IA__ApiKey` e `IA__Fallbacks__N__ApiKey` en Dokploy (staging y producción); (3) redesplegar el stack (*Deploy* en Dokploy) y probar un turno de `/web/chat`; (4) revocar la anterior en OmniRoute; (5) anotar la fecha en la bitácora de operaciones.
+- **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
@@ -180,8 +189,10 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `PUBLIC_HOST` (Traefik) | no | infraestructura (DNS y TLS, HU-006.2) | no | Infraestructura | `PUBLIC_HOST` |
 | `Pdf__BaseUrl` | no | `https://<PUBLIC_HOST>` | no | Backend | `PDF_BASE_URL` |
 | `Pdf__ClaveFirmaUrl` | sí | generada por el equipo de despliegue | no | Backend | — |
-| `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003) | no | Negocio / Backend | `LLM_MODEL` |
-| `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM | no | Negocio | `LLM_API_KEY` |
+| `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003). Propuesta con OmniRoute: `openai_compatible`, `gemini/gemini-3.5-flash-lite`, endpoint interno (por HTTPS si se publica, §2.2) | no | Negocio / Backend | `LLM_MODEL` |
+| `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM (con OmniRoute, su administrador; rotar antes de staging, §2.2) | no | Negocio | `LLM_API_KEY` |
+| `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
+| `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
 | `GChat__ProjectNumber` | no | Google Cloud (proyecto de la app de Chat) | no | Backend | `GCHAT_PROJECT_NUMBER` |
 | `GChat__VerificarJwt` | no | fijo: `true` (§7) | no | Backend | `GCHAT_VERIFICAR_JWT` (hoy `false`) |
 | `GChat__SaJson` (secreto de Swarm) | sí | Google Cloud (cuenta de servicio `chat.bot`) | no | Backend | `GOOGLE_SA_JSON` |
@@ -473,9 +484,11 @@ en #81), hay que cambiarlo también en los manifiestos. `Regional__TiempoEsperaL
 cuánto espera el login por `DimEjecutivo` antes de seguir sin bloquear.
 
 **Una variable que no está en el manifiesto no llega al contenedor**, aunque se cargue en Dokploy (Dokploy solo la usa
-para sustituir `${...}`). Para usar, por ejemplo, un proveedor LLM de respaldo (`IA__Fallbacks__0__*`) hay que agregar
-esas líneas al manifiesto (con `${...}`, sin valores) en un commit. No se dejaron con valor vacío porque un elemento de
-lista vacío no pasa la validación de arranque.
+para sustituir `${...}`). Los respaldos `IA__Fallbacks__0__*` e
+`IA__Fallbacks__1__*` ya están en los manifiestos con `${...:-}`: vacíos = sin respaldo (#84, `clsOpcionesIA.FallbacksConfigurados`
+ignora un respaldo sin `Proveedor`). Un tercer respaldo exige agregar `IA__Fallbacks__2__*` al manifiesto en un commit.
+Con OmniRoute, cargar en Dokploy `IA__SoportaJsonSchema=false` e `IA__MaxTokens=1500`: el manifiesto trae `true` y `4096`
+por defecto.
 
 ### 5.5 Desplegar en Dokploy (pasos; staging pendiente de aprobación)
 

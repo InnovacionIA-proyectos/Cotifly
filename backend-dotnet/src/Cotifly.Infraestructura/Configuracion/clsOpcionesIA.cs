@@ -61,6 +61,13 @@ public sealed class clsOpcionesIA
     /// <summary>Proveedores de respaldo, en orden: se prueban ante un 429, un 5xx o un fallo de red del anterior.</summary>
     public List<clsOpcionesProveedorIA> Fallbacks { get; set; } = [];
 
+    /// <summary>
+    /// Respaldos con proveedor (#84): un respaldo con <c>Proveedor</c> vacío no existe. Así los manifiestos pueden declarar
+    /// <c>IA__Fallbacks__0__*</c> con <c>${...:-}</c> y dejarlos vacíos cuando no hay respaldo.
+    /// </summary>
+    public IReadOnlyList<clsOpcionesProveedorIA> FallbacksConfigurados() =>
+        Fallbacks.Where(f => !string.IsNullOrWhiteSpace(f.Proveedor)).ToList();
+
     /// <summary>El proveedor principal como <see cref="clsOpcionesProveedorIA"/>.</summary>
     public clsOpcionesProveedorIA Principal() => new() { Proveedor = Proveedor, Modelo = Modelo, ApiKey = ApiKey, Endpoint = Endpoint };
 }
@@ -89,7 +96,7 @@ public sealed class clsValidadorOpcionesIA(IHostEnvironment entorno) : IValidate
         var errores = new List<string>();
         if (string.IsNullOrWhiteSpace(options.Proveedor))
         {
-            if (options.Fallbacks.Count > 0)
+            if (options.FallbacksConfigurados().Count > 0)
             {
                 errores.Add("IA:Fallbacks exige IA:Proveedor.");
             }
@@ -100,6 +107,18 @@ public sealed class clsValidadorOpcionesIA(IHostEnvironment entorno) : IValidate
         Validar("IA", options.Principal(), errores, validarSecreto: false);
         for (var i = 0; i < options.Fallbacks.Count; i++)
         {
+            var respaldo = options.Fallbacks[i];
+            if (string.IsNullOrWhiteSpace(respaldo.Proveedor))
+            {
+                // Vacío del todo = sin respaldo; con modelo, endpoint o clave pero sin proveedor es un error de configuración.
+                if (!string.IsNullOrWhiteSpace(respaldo.Modelo) || !string.IsNullOrWhiteSpace(respaldo.Endpoint) || !string.IsNullOrWhiteSpace(respaldo.ApiKey))
+                {
+                    errores.Add($"IA:Fallbacks:{i}:Proveedor es obligatorio si el respaldo tiene modelo, endpoint o clave.");
+                }
+
+                continue;
+            }
+
             Validar($"IA:Fallbacks:{i}", options.Fallbacks[i], errores, validarSecreto: true);
         }
 

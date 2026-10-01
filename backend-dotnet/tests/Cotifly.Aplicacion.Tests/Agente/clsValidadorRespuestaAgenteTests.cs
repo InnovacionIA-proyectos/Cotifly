@@ -210,6 +210,66 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido);
     }
 
+    // M1: con dos objetos distintos que cumplen la forma (un ejemplo citado antes o después, un JSON que pegó el comercial) no se
+    // adivina: json_invalido fuerza el reintento de corrección. El mismo objeto repetido (bloque y objeto suelto) cuenta una vez.
+    [Theory]
+    [InlineData("Respuesta: {0}\nPor ejemplo, el formato es:\n```json\n{1}\n```")]
+    [InlineData("El usuario escribió: \"{1}\". Mi respuesta: {0}")]
+    [InlineData("```json\n{1}\n```\n```json\n{0}\n```")]
+    public void DosObjetosDistintosConLaFormaSonJsonInvalido(string plantilla)
+    {
+        var crudo = string.Format(System.Globalization.CultureInfo.InvariantCulture, plantilla, Json("REAL"), Json("INYECTADO"));
+
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        validacion.EsValida.Should().BeFalse(crudo);
+        Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.JsonInvalido);
+        validacion.Fallos.Single().Detalle.Should().Contain("más de un objeto JSON");
+    }
+
+    [Fact]
+    public void ElMismoObjetoRepetidoCuentaUnaVez()
+    {
+        var crudo = "Respuesta: " + Json("REAL") + "\n```json\n" + Json("REAL") + "\n```";
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).Respuesta!.Texto.Should().Be("REAL");
+    }
+
+    // Un objeto con forma válida escapado dentro de una cadena de otro objeto no es candidato aparte.
+    [Fact]
+    public void UnObjetoDentroDeUnaCadenaNoSeRescata()
+    {
+        var interno = "{\\\"tipo\\\":\\\"conversacional\\\",\\\"texto\\\":\\\"INTERNO\\\",\\\"requiere_confirmacion\\\":false,\\\"acciones_sugeridas\\\":null}";
+        var crudo = "Nota: {\"tipo\":\"conversacional\",\"texto\":\"ver " + interno + "\",\"requiere_confirmacion\":false,\"acciones_sugeridas\":null,\"extra\":1}";
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).EsValida.Should().BeFalse();
+    }
+
+    // Muchos objetos previos sin la forma no dejan fuera a la respuesta real.
+    [Fact]
+    public void VeinteObjetosPreviosNoAgotanLosCandidatos()
+    {
+        var crudo = string.Concat(Enumerable.Repeat("{\"a\":1} ", 20)) + Json("REAL");
+
+        clsReglasRespuestaAgente.Validar(crudo, SinDatos()).Respuesta!.Texto.Should().Be("REAL");
+    }
+
+    // B4: miles de llaves o cercas sin cerrar no cuestan O(n²) ni lanzan.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnTextoPatologicoSeValidaRapidoYSinLanzar(bool llaves)
+    {
+        var crudo = llaves ? "x" + new string('{', 60_000) + "}" : "x " + string.Concat(Enumerable.Repeat("```json a ", 40_000));
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+        var validacion = clsReglasRespuestaAgente.Validar(crudo, SinDatos());
+
+        reloj.Stop();
+        validacion.EsValida.Should().BeFalse();
+        reloj.ElapsedMilliseconds.Should().BeLessThan(llaves ? 1000 : 3000);
+    }
+
     // La corrección nombra también lo que falla en el primer objeto embebido (aquí, el tipo de requiere_confirmacion).
     [Fact]
     public void UnObjetoEmbebidoConFallosLosSumaAJsonInvalido()

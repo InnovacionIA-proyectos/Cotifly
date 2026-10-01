@@ -16,6 +16,9 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 /// Aquí se reconstruye el esquema con una lista blanca: <see cref="PalabrasPermitidas"/> y los formatos de
 /// <see cref="FormatosPermitidos"/>. Un campo anulable queda con su único tipo no nulo y fuera de <c>required</c>; la descripción va
 /// a nivel de función. Los nombres, tipos, descripciones y obligatorios no cambian: los demás proveedores ven lo mismo de antes.
+/// Lo que no tiene forma portable (un campo sin tipo, un objeto sin propiedades, un arreglo sin <c>items</c>, uniones, tuplas,
+/// diccionarios o <c>$ref</c>) no se degrada en silencio: <see cref="Declarar(KernelFunction, IReadOnlyDictionary{string, JsonElement}?)"/>
+/// lanza <see cref="InvalidOperationException"/> con la ruta del campo, y la prueba de contrato lo detecta antes de desplegar.
 /// </summary>
 /// <remarks>
 /// El adaptador de OpenAI de Microsoft.Extensions.AI agrega <c>"additionalProperties": false</c> a la raíz de cada declaración al
@@ -89,7 +92,7 @@ public static class clsEsquemaPortableHerramientas
     public static JsonElement Portable(JsonElement esquema)
     {
         var raiz = esquema.ValueKind == JsonValueKind.Object ? JsonNode.Parse(esquema.GetRawText())!.AsObject() : [];
-        var portable = Nodo(raiz, out _);
+        var portable = Nodo(raiz, "parameters", esRaiz: true, out _);
         portable.Remove("description");
         portable["type"] = "object";
         portable["properties"] ??= new JsonObject();
@@ -114,10 +117,25 @@ public static class clsEsquemaPortableHerramientas
         return null;
     }
 
-    private static JsonObject Nodo(JsonObject origen, out bool anulable)
+    /// <summary>
+    /// Convierte un nodo. Lanza <see cref="InvalidOperationException"/> con la ruta del campo ante lo que no tiene forma portable
+    /// (falla al declarar, no en el proveedor): <c>$ref</c>, <c>anyOf</c>/<c>oneOf</c> con más de una alternativa no nula o los dos
+    /// juntos, varios tipos no nulos, tuplas (<c>items</c> en arreglo), diccionarios (<c>additionalProperties</c> con esquema), un
+    /// campo sin tipo, un objeto sin propiedades o un arreglo sin <c>items</c>. La raíz puede no tener propiedades.
+    /// </summary>
+    private static JsonObject Nodo(JsonObject origen, string ruta, bool esRaiz, out bool anulable)
     {
         anulable = origen["nullable"] is JsonValue marca && marca.TryGetValue<bool>(out var esNulable) && esNulable;
         var destino = new JsonObject();
+        if (origen.ContainsKey("$ref"))
+        {
+            throw NoPortable(ruta, "usa $ref; declara el tipo en línea");
+        }
+
+        if (origen.ContainsKey("anyOf") && origen.ContainsKey("oneOf"))
+        {
+            throw NoPortable(ruta, "combina anyOf y oneOf");
+        }
 
         // anyOf/oneOf con una sola alternativa no nula (patrón de nulabilidad de algunos generadores): se aplana a esa alternativa.
         foreach (var compuesta in (string[])["anyOf", "oneOf"])
@@ -125,21 +143,33 @@ public static class clsEsquemaPortableHerramientas
             if (origen[compuesta] is JsonArray alternativas)
             {
                 var noNulas = alternativas.OfType<JsonObject>().Where(a => !EsSoloNulo(a)).ToList();
-                anulable |= noNulas.Count < alternativas.Count;
-                if (noNulas.Count == 1)
+                if (noNulas.Count != 1)
                 {
-                    var alternativa = Nodo(noNulas[0], out var internoAnulable);
-                    foreach (var (clave, valor) in alternativa)
-                    {
-                        destino[clave] = valor?.DeepClone();
-                    }
-
-                    anulable |= internoAnulable;
+                    throw NoPortable(ruta, $"{compuesta} con {noNulas.Count} alternativas no nulas (solo se admite T o T|null)");
                 }
+
+                anulable |= noNulas.Count < alternativas.Count;
+                var alternativa = Nodo(noNulas[0], ruta, esRaiz: false, out var internoAnulable);
+                foreach (var (clave, valor) in alternativa)
+                {
+                    destino[clave] = valor?.DeepClone();
+                }
+
+                anulable |= internoAnulable;
             }
         }
 
-        if (origen["type"] is { } tipo && Tipo(tipo, ref anulable) is { } unico)
+        if (origen["items"] is JsonArray)
+        {
+            throw NoPortable(ruta, "es una tupla (items en arreglo)");
+        }
+
+        if (origen["additionalProperties"] is JsonObject)
+        {
+            throw NoPortable(ruta, "es un diccionario (additionalProperties con esquema)");
+        }
+
+        if (origen["type"] is { } tipo && Tipo(tipo, ruta, ref anulable) is { } unico)
         {
             destino["type"] = unico;
         }
@@ -166,7 +196,7 @@ public static class clsEsquemaPortableHerramientas
 
         if (origen["items"] is JsonObject elementos)
         {
-            destino["items"] = Nodo(elementos, out _);
+            destino["items"] = Nodo(elementos, ruta + "[]", esRaiz: false, out _);
         }
 
         if (origen["properties"] is JsonObject propiedades)
@@ -176,7 +206,9 @@ public static class clsEsquemaPortableHerramientas
             foreach (var (nombre, valor) in propiedades)
             {
                 var propiedadAnulable = false;
-                var propiedad = valor is JsonObject objeto ? Nodo(objeto, out propiedadAnulable) : [];
+                var propiedad = valor is JsonObject objeto
+                    ? Nodo(objeto, $"{ruta}.{nombre}", esRaiz: false, out propiedadAnulable)
+                    : throw NoPortable($"{ruta}.{nombre}", "no es un esquema (objeto JSON)");
                 if (propiedadAnulable)
                 {
                     anulables.Add(nombre);
@@ -201,11 +233,33 @@ public static class clsEsquemaPortableHerramientas
             }
         }
 
+        if (!esRaiz)
+        {
+            var tipoFinal = destino["type"]?.GetValue<string>();
+            if (tipoFinal is null)
+            {
+                throw NoPortable(ruta, "no declara type (Gemini lo exige en cada campo)");
+            }
+
+            if (tipoFinal == "object" && destino["properties"] is not JsonObject { Count: > 0 })
+            {
+                throw NoPortable(ruta, "es un objeto sin properties (Gemini rechaza OBJECT vacío)");
+            }
+
+            if (tipoFinal == "array" && destino["items"] is null)
+            {
+                throw NoPortable(ruta, "es un arreglo sin items");
+            }
+        }
+
         return destino;
     }
 
-    /// <summary>Un solo tipo no nulo: <c>"T"</c> o <c>["T","null"]</c>. Con varios tipos no nulos no se declara tipo (cualquiera).</summary>
-    private static string? Tipo(JsonNode tipo, ref bool anulable)
+    private static InvalidOperationException NoPortable(string ruta, string motivo) =>
+        new($"El esquema de la herramienta no es portable: '{ruta}' {motivo}.");
+
+    /// <summary>Un solo tipo no nulo: <c>"T"</c> o <c>["T","null"]</c>. Varios tipos no nulos no son portables.</summary>
+    private static string? Tipo(JsonNode tipo, string ruta, ref bool anulable)
     {
         if (tipo is JsonValue valor && valor.TryGetValue<string>(out var texto))
         {
@@ -226,7 +280,12 @@ public static class clsEsquemaPortableHerramientas
         var nombres = tipos.Select(t => t is JsonValue v && v.TryGetValue<string>(out var n) ? n : null).Where(n => n is not null).ToList();
         anulable |= nombres.Contains(Nulo);
         var noNulos = nombres.Where(n => n != Nulo).Distinct(StringComparer.Ordinal).ToList();
-        return noNulos.Count == 1 ? noNulos[0] : null;
+        return noNulos.Count switch
+        {
+            1 => noNulos[0],
+            0 => null,
+            _ => throw NoPortable(ruta, $"admite varios tipos ({string.Join(", ", noNulos)})"),
+        };
     }
 
     private static bool EsSoloNulo(JsonObject alternativa) =>

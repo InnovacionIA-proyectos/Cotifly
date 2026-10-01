@@ -29,7 +29,7 @@
 #
 # Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Las
 # obligatorias usan ${VAR:?}: sin ellas "docker stack deploy" falla antes de tocar el servicio. Una variable que no
-# aparece en este archivo NO llega al contenedor aunque esté en Dokploy (p. ej. IA__Fallbacks__0__*: agregarla aquí).
+# aparece en este archivo NO llega al contenedor aunque esté en Dokploy (p. ej. un tercer respaldo IA__Fallbacks__2__*: agregarlo aquí).
 #
 # Validar sin desplegar:
 #   docker stack config -c infra/stack.dotnet.staging.yml      (con las variables obligatorias en el entorno)
@@ -169,6 +169,10 @@ services:
       Correo__SmtpRelay__TimeoutSeg: ${Correo__SmtpRelay__TimeoutSeg:-20}
 
       # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
+      # Con OmniRoute (#84; docs/03 "OmniRoute"): IA__Proveedor=openai_compatible,
+      # IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1 (HTTP interno: ver el riesgo en DEPLOY.md §2.2),
+      # IA__Modelo=gemini/gemini-3.5-flash-lite, IA__SoportaJsonSchema=false e IA__MaxTokens=1500 (con 4096 OpenRouter da 402).
+      # Nunca un gateway web no oficial (duckduckgo-web, theoldllm, veoaifree-web, chipotle): riesgo de confidencialidad.
       IA__Proveedor: ${IA__Proveedor:-}
       IA__Modelo: ${IA__Modelo:-}
       IA__ApiKey: ${IA__ApiKey:-}
@@ -180,6 +184,16 @@ services:
       IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}
       IA__Rpm: ${IA__Rpm:-8}
       IA__TimeoutSeg: ${IA__TimeoutSeg:-60}
+      # Respaldos (ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute). Vacíos = sin respaldo.
+      # Con OmniRoute: 0 = gemini/gemini-3.5-flash, 1 = gemini/gemini-3-flash-preview (mismo endpoint y clave). ApiKey: secreto.
+      IA__Fallbacks__0__Proveedor: ${IA__Fallbacks__0__Proveedor:-}
+      IA__Fallbacks__0__Modelo: ${IA__Fallbacks__0__Modelo:-}
+      IA__Fallbacks__0__Endpoint: ${IA__Fallbacks__0__Endpoint:-}
+      IA__Fallbacks__0__ApiKey: ${IA__Fallbacks__0__ApiKey:-}
+      IA__Fallbacks__1__Proveedor: ${IA__Fallbacks__1__Proveedor:-}
+      IA__Fallbacks__1__Modelo: ${IA__Fallbacks__1__Modelo:-}
+      IA__Fallbacks__1__Endpoint: ${IA__Fallbacks__1__Endpoint:-}
+      IA__Fallbacks__1__ApiKey: ${IA__Fallbacks__1__ApiKey:-}
       LimiteChat__PeticionesPorVentana: ${LimiteChat__PeticionesPorVentana:-20}
       LimiteChat__VentanaSegundos: ${LimiteChat__VentanaSegundos:-60}
       Sesiones__LimiteTokens: ${Sesiones__LimiteTokens:-6000}

@@ -178,6 +178,13 @@ Reglas de serialización de `/web/*` (`clsJsonWeb`):
 - Son límites por proceso: con N réplicas el efectivo es N veces mayor.
 - Diferencia importante en el chat: el 429 es el límite de **la API**. El límite del **proveedor de IA** llega como `200 {"texto": "...", "error": true}`.
 
+### 2.8.1 Tiempo de un turno de chat (#84)
+
+- **Timeout de cliente para `POST /web/chat`: al menos 120 s.** Un turno encadena hasta 12 llamadas al modelo con herramientas, más la respuesta final y su reintento (`IA:MaxIteraciones`); `IA:TimeoutSeg` (60 s) es por llamada, no por turno.
+- **Tiempos medidos con OmniRoute** (2026-10-01): de 20 a 75 s por turno, y hasta 160 s cuando el modelo principal estaba en enfriamiento, antes del arreglo que pasa de inmediato al respaldo.
+- **Mientras el turno está en curso:** mostrar el indicador "escribiendo..." y no reenviar. Si el cliente corta antes, el backend termina el turno igual y la respuesta queda en el historial de la sesión.
+- **Estado:** el valor de 120 s está **pendiente de confirmar** con el desarrollador de frontend (Sara). En Traefik, los valores por defecto no cortan respuestas largas; falta verificarlo en la configuración del clúster (03-infraestructura, "OmniRoute").
+
 ### 2.9 Tamaño de los cuerpos
 
 | Límite | Valor | Respuesta |
@@ -699,7 +706,7 @@ Ejemplo del turno de confirmación:
 Notas para la UI:
 
 - Ciclo de vida de `sesion_id`: una por conversación ("Nueva conversación" crea otra). Queda ligada al usuario del token. Se archiva a las 24 h de inactividad; un mensaje con una sesión archivada inicia una conversación nueva con el mismo id.
-- **Un turno a la vez por sesión**: deshabilitar el envío mientras hay un turno en vuelo. Un turno puede tardar decenas de segundos (IA, SAP, Nexo, TRM). Poner un timeout de cliente generoso (90 a 120 s, **a confirmar** con el backend).
+- **Un turno a la vez por sesión**: deshabilitar el envío mientras hay un turno en vuelo. Un turno puede tardar decenas de segundos (IA, SAP, Nexo, TRM). Poner un timeout de cliente de **al menos 120 s** (sección 2.8.1; pendiente de confirmar con frontend).
 - Progreso de pasos (Tarifa → Margen → Precio → PDF): derivarlo de `herramientas` y de qué bloques traen valor. `buscar_tarifa` hoy siempre falla con `TARIFA_FUENTE_NO_DISPONIBLE` y el costo lo escribe el comercial: el paso "Tarifa" se da por cumplido cuando hay `precio`.
 - **Ajuste de margen:** el precio con el margen negociado lo calcula `registrar_ajuste_margen`, pero `RespuestaChat.precio` solo expone `calcular_precio`. En un turno de ajuste `precio` puede venir `null` aunque `texto` muestre el nuevo precio (**a confirmar** con el backend si se expone esa salida). No borrar el último precio mostrado cuando llega `null`; conservar el último `precio` no nulo de la conversación.
 - `acciones_sugeridas` y `requiere_confirmacion` (mencionados en `04-flujo-del-sistema.md`) son internos del agente y **no llegan** al frontend. Para confirmar, enviar el mensaje "Confirmo". Para ajustar, "Ajusta el margen a 18 %".
@@ -1568,6 +1575,8 @@ Responsabilidades del frontend:
 
 El formulario "Nueva cotización" en modo simple y la vista "Asistente" usan el mismo endpoint: el formulario arma un mensaje con sus datos y lo envía a `POST /web/chat`.
 
+Cada turno puede tardar hasta 2 minutos (sección 2.8.1): el `HttpClient` de este flujo usa un timeout de al menos 120 s y la UI mantiene el input deshabilitado mientras espera.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -1963,7 +1972,7 @@ UI por estado:
 | Login SSO en curso | Pantalla de carga del módulo |
 | 401 del login | "No tienes acceso a Cotifly" (sin reintento automático) |
 | Lista vacía | "No tienes cotizaciones registradas" |
-| Turno de chat en curso | Indicador "escribiendo...", input deshabilitado, timeout de 90 a 120 s |
+| Turno de chat en curso | Indicador "escribiendo...", input deshabilitado, timeout de al menos 120 s (sección 2.8.1) |
 | `error: true` en el chat | Burbuja de aviso con `texto` e input reactivado |
 | Catálogos no disponibles | Selects deshabilitados y "Reintentar" |
 | Buscador sin resultados | "Sin coincidencias" (no es un error) |
@@ -2058,4 +2067,4 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | DBA: `0004` | Aplicar el script `0004` (PR #73) | DBA | Mapa de ciudades (`disponible = false` hasta entonces) |
 | Negocio: validar las definiciones de métricas (ADR-016, Propuesta) | Una fila por cadena de versiones con el periodo por la primera creación y el resultado más reciente de la cadena (frente a contar cada versión, como decía el backlog); `conversion` sobre el total (y no sobre las cerradas); `costeo_total` sobre todo el universo; `ganancias` solo de ganadas; periodo por defecto (año en curso); que las cotizaciones del gerente cuenten en el agregado de su regional; que `valor_ganado_cop` sea valor cotizado y no dinero recaudado | Gerencia Comercial (Sara / scalderon-bs) | Etiquetas y tarjetas del tablero; posible cambio de definiciones |
 | Negocio: tablero propio del gerente | ¿El gerente ve también `/web/metricas/comercial` en su menú? | Negocio + Sara | Menú |
-| Tiempo de un turno de chat | Timeout recomendado del cliente | Duban | Configuración de `HttpClient` |
+| Tiempo de un turno de chat | Propuesta del backend (#84): timeout de cliente ≥ 120 s (sección 2.8.1). Confirmar con frontend y verificar los timeouts de Traefik | Duban + Sara | Configuración de `HttpClient` |

@@ -150,8 +150,7 @@ public sealed class clsEsquemaPortableHerramientasTests
                 "metodo": { "type": "string", "enum": ["margen", "markup", null], "default": "margen", "title": "Método" },
                 "fecha": { "type": "string", "format": "date-time" },
                 "sitio": { "type": "string", "format": "uri", "minLength": 3 },
-                "destinos": { "type": "array", "items": { "type": "object", "properties": { "ciudad": { "type": ["string", "null"] } }, "required": ["ciudad"], "additionalProperties": false } },
-                "libre": { "type": ["string", "number"] }
+                "destinos": { "type": "array", "items": { "type": "object", "properties": { "ciudad": { "type": ["string", "null"] } }, "required": ["ciudad"], "additionalProperties": false } }
               },
               "required": ["peso", "tipo", "moneda", "metodo", "fecha", "inexistente"]
             }
@@ -170,8 +169,49 @@ public sealed class clsEsquemaPortableHerramientasTests
         propiedades.GetProperty("sitio").GetRawText().Should().Be("""{"type":"string"}""", "format uri y minLength no son portables");
         propiedades.GetProperty("destinos").GetProperty("items").GetRawText()
             .Should().Be("""{"type":"object","properties":{"ciudad":{"type":"string"}}}""");
-        propiedades.GetProperty("libre").TryGetProperty("type", out _).Should().BeFalse("con varios tipos no nulos el campo queda sin tipo");
         Requeridos(portable).Should().Equal("fecha");
+    }
+
+    // Lo que no tiene forma portable falla al declarar (con la ruta del campo), nunca se degrada en silencio (#84, B2).
+    [Theory]
+    [InlineData("""{"x":{"anyOf":[{"type":"string"},{"type":"number"}],"description":"d"}}""", "x", "anyOf con 2")]
+    [InlineData("""{"x":{"anyOf":[{"type":"string"},{"type":"null"}],"oneOf":[{"type":"number"},{"type":"null"}]}}""", "x", "anyOf y oneOf")]
+    [InlineData("""{"x":{"type":["string","number"]}}""", "x", "varios tipos")]
+    [InlineData("""{"x":{"type":"object","additionalProperties":{"type":"string"}}}""", "x", "diccionario")]
+    [InlineData("""{"x":{"type":"array","items":[{"type":"string"}]}}""", "x", "tupla")]
+    [InlineData("""{"x":{"$ref":"#/$defs/T"}}""", "x", "$ref")]
+    [InlineData("""{"x":{"description":"sin tipo"}}""", "x", "no declara type")]
+    [InlineData("""{"x":{"type":"object"}}""", "x", "objeto sin properties")]
+    [InlineData("""{"x":{"type":"array","description":"sin items"}}""", "x", "arreglo sin items")]
+    [InlineData("""{"x":{"type":"object","properties":{"y":{"type":"array","items":{"type":"object"}}}}}""", "x.y[]", "objeto sin properties")]
+    public void UnEsquemaNoPortableFallaConLaRutaDelCampo(string propiedades, string ruta, string motivo)
+    {
+        var esquema = Esquema($$"""{"type":"object","properties":{{propiedades}}}""");
+
+        var portar = () => clsEsquemaPortableHerramientas.Portable(esquema);
+
+        portar.Should().Throw<InvalidOperationException>().WithMessage($"*'parameters.{ruta}'*{motivo}*");
+    }
+
+    // B3: el esquema tipado del PDF no puede desviarse del tipo que lo lee (mismos nombres en snake_case y tipos compatibles).
+    [Fact]
+    public void CadaCampoDelEsquemaDelPdfExisteEnElPayloadConUnTipoCompatible()
+    {
+        var desvios = new List<string>();
+
+        CompararConTipo(clsEsquemaPayloadPdf.Esquema, typeof(Cotifly.Aplicacion.Pdf.DTOs.clsCotizacionPdfPayload), "cotizacion", desvios);
+
+        desvios.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void UnPayloadMinimoQueCumpleElEsquemaPasaElValidadorDelPdf()
+    {
+        var payload = Cotifly.Aplicacion.Pdf.DTOs.clsCotizacionPdfPayload.DesdeJson(
+            """{"cliente":"Ficticia SAS","linea_negocio":"Nacional","tarifa":{"filas":[{"destino":"Medellín"}]}}""");
+
+        payload.EsExitoso.Should().BeTrue();
+        Cotifly.Aplicacion.Pdf.Validators.clsValidadorCotizacionPdfPayload.Validar(payload.Valor).Should().BeNull();
     }
 
     [Fact]
@@ -205,6 +245,23 @@ public sealed class clsEsquemaPortableHerramientasTests
     private static void RecorrerSoloPortable(JsonElement nodo, string ruta)
     {
         nodo.ValueKind.Should().Be(JsonValueKind.Object, ruta);
+        var esRaiz = !ruta.Contains('.', StringComparison.Ordinal) && !ruta.EndsWith("[]", StringComparison.Ordinal);
+        if (!esRaiz)
+        {
+            // Garantías del sanitizador (B2): todo campo con tipo, objetos con propiedades y arreglos con items.
+            nodo.TryGetProperty("type", out var tipoNodo).Should().BeTrue($"{ruta}: todo campo declara type");
+            if (tipoNodo.GetString() == "object")
+            {
+                nodo.TryGetProperty("properties", out var hijas).Should().BeTrue($"{ruta}: un objeto declara properties");
+                hijas.EnumerateObject().Should().NotBeEmpty($"{ruta}: un objeto declara al menos una propiedad");
+            }
+
+            if (tipoNodo.GetString() == "array")
+            {
+                nodo.TryGetProperty("items", out _).Should().BeTrue($"{ruta}: un arreglo declara items");
+            }
+        }
+
         foreach (var propiedad in nodo.EnumerateObject())
         {
             clsEsquemaPortableHerramientas.PalabrasPermitidas.Should().Contain(propiedad.Name, $"{ruta}: '{propiedad.Name}' no es portable");
@@ -231,6 +288,45 @@ public sealed class clsEsquemaPortableHerramientasTests
                     propiedad.Value.EnumerateArray().Should().NotContain(v => v.ValueKind == JsonValueKind.Null, ruta);
                     break;
             }
+        }
+    }
+
+    private static void CompararConTipo(JsonElement nodo, Type tipo, string ruta, List<string> desvios)
+    {
+        if (nodo.TryGetProperty("items", out var elementos))
+        {
+            CompararConTipo(elementos, tipo.IsGenericType ? tipo.GetGenericArguments()[0] : tipo, ruta + "[]", desvios);
+            return;
+        }
+
+        if (!nodo.TryGetProperty("properties", out var propiedades))
+        {
+            return;
+        }
+
+        foreach (var propiedad in propiedades.EnumerateObject())
+        {
+            var clr = tipo.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                .FirstOrDefault(p => JsonNamingPolicy.SnakeCaseLower.ConvertName(p.Name) == propiedad.Name);
+            if (clr is null)
+            {
+                desvios.Add($"{ruta}.{propiedad.Name}: no existe en {tipo.Name}");
+                continue;
+            }
+
+            var t = Nullable.GetUnderlyingType(clr.PropertyType) ?? clr.PropertyType;
+            var real = t == typeof(string) ? "string"
+                : t == typeof(decimal) || t == typeof(int) ? "number"
+                : t == typeof(bool) ? "boolean"
+                : t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>) ? "array"
+                : "object";
+            var declarado = propiedad.Value.GetProperty("type").GetString();
+            if (declarado != real)
+            {
+                desvios.Add($"{ruta}.{propiedad.Name}: el esquema dice {declarado} y el payload es {real}");
+            }
+
+            CompararConTipo(propiedad.Value, t, $"{ruta}.{propiedad.Name}", desvios);
         }
     }
 
