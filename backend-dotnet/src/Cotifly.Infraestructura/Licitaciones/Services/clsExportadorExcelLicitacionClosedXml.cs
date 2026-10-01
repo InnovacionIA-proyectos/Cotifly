@@ -29,6 +29,9 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
     public const string ColumnaConexos = "Servicios conexos Cotifly";
     public const string ConexosDeLaLicitacion = "Aplican a toda la licitación (ver hoja Resumen Cotifly)";
 
+    /// <summary>El total es la suma de los precios ya redondeados de las líneas, sin servicios conexos (ADR-017 §3).</summary>
+    public const string EtiquetaTotal = "Total de la licitación (sin servicios conexos)";
+
     private static readonly XLColor _pendiente = XLColor.FromHtml("#FFF2CC");
     private static readonly XLColor _encabezado = XLColor.FromHtml("#E8EEF7");
 
@@ -53,28 +56,64 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
 
         using (libro)
         {
-            var escrito = datos.Original is { Length: > 0 } ? EscribirEnOriginal(libro, datos) : EscribirSinOriginal(libro, datos);
+            List<clsLineaExportacion> sinUbicar = [];
+            var escrito = datos.Original is { Length: > 0 } ? EscribirEnOriginal(libro, datos, sinUbicar) : EscribirSinOriginal(libro, datos);
             if (escrito is not null)
             {
                 return escrito;
             }
 
-            EscribirResumen(libro, datos);
+            EscribirResumen(libro, datos, sinUbicar);
             using var memoria = new MemoryStream();
             libro.SaveAs(memoria);
-            return memoria.ToArray();
+            return ComoXlsx(memoria);
         }
     }
 
-    private static clsErrorDominio? EscribirEnOriginal(XLWorkbook libro, clsExportacionLicitacion datos)
+    /// <summary>
+    /// Deja el paquete como un <c>.xlsx</c> de verdad: si el original era <c>.xlsm</c>, ClosedXML conserva el tipo de libro con
+    /// macros y el <c>vbaProject.bin</c>, y Excel no abre un archivo así con extensión <c>.xlsx</c>. Se cambia el tipo de documento y
+    /// se quita la parte VBA (las macros del cliente no se exportan).
+    /// </summary>
+    private static byte[] ComoXlsx(MemoryStream memoria)
     {
-        if (datos.Hoja is null || !libro.TryGetWorksheet(datos.Hoja, out var hoja)
-            || clsLectorExcelLicitacionClosedXml.Detectar(hoja) is not { } detectado)
+        using (var documento = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Open(memoria, true))
+        {
+            if (documento.DocumentType != DocumentFormat.OpenXml.SpreadsheetDocumentType.Workbook)
+            {
+                documento.ChangeDocumentType(DocumentFormat.OpenXml.SpreadsheetDocumentType.Workbook);
+            }
+
+            if (documento.WorkbookPart?.VbaProjectPart is { } vba)
+            {
+                documento.WorkbookPart.DeletePart(vba);
+            }
+        }
+
+        return memoria.ToArray();
+    }
+
+    private static clsErrorDominio? EscribirEnOriginal(XLWorkbook libro, clsExportacionLicitacion datos, List<clsLineaExportacion> sinUbicar)
+    {
+        IXLWorksheet? hoja = null;
+        clsHojaDetectada? detectado = null;
+        if (datos.Hoja is not null && libro.TryGetWorksheet(datos.Hoja, out var encontrada))
+        {
+            hoja = encontrada;
+            detectado = clsLectorExcelLicitacionClosedXml.Detectar(encontrada, out _);
+        }
+
+        if (detectado is null || hoja is null)
         {
             return new clsErrorDominio(clsCodigosError.ExcelSinDatos, $"El Excel original ya no tiene la hoja '{datos.Hoja}' con datos.");
         }
 
-        var columna = detectado.UltimaColumna + 1;
+        // A la derecha de la última columna usada de VERDAD (el lector solo lee 200): nunca se pisa una celda del cliente.
+        var columna = detectado.UltimaColumnaReal + 1;
+        if (columna + 2 > clsLectorExcelLicitacionClosedXml.UltimaColumnaExcel)
+        {
+            return new clsErrorDominio(clsCodigosError.ExcelInvalido, $"La hoja '{datos.Hoja}' no tiene columnas libres a la derecha para los precios.");
+        }
         Encabezados(hoja, detectado.Encabezado, columna, datos.Moneda);
         if (detectado.FinEncabezado > detectado.Encabezado)
         {
@@ -85,8 +124,14 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
             }
         }
 
-        var porFila = datos.Lineas.Where(l => l.Fila is not null).ToDictionary(l => l.Fila!.Value);
-        for (var i = 0; i < detectado.Datos.Count; i++)
+        var porFila = datos.Lineas.Where(l => l.Fila is { } f && f < detectado.Datos.Count).ToDictionary(l => l.Fila!.Value);
+        sinUbicar.AddRange(datos.Lineas.Where(l => l.Fila is not { } f || f >= detectado.Datos.Count));
+
+        // "Sin enviar" solo entre la primera y la última fila enviada: una fila de totales o de notas del cliente al final (o al
+        // principio) no es una ruta que el comercial dejó por fuera.
+        var primera = porFila.Count == 0 ? 0 : porFila.Keys.Min();
+        var ultima = porFila.Count == 0 ? -1 : porFila.Keys.Max();
+        for (var i = primera; i <= ultima; i++)
         {
             var fila = detectado.Datos[i];
             if (porFila.TryGetValue(i, out var linea))
@@ -164,7 +209,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         hoja.Cell(fila, columna + 2).Value = datos.ServiciosConexos.Count == 0 ? string.Empty : ConexosDeLaLicitacion;
     }
 
-    private static void EscribirResumen(XLWorkbook libro, clsExportacionLicitacion datos)
+    private static void EscribirResumen(XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> sinUbicar)
     {
         var nombre = HojaResumen;
         for (var n = 2; libro.Worksheets.Contains(nombre); n++)
@@ -209,11 +254,11 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         Dato("Líneas sin costeo", pendientes);
         if (pendientes == 0 && datos.PrecioTotal is { } total)
         {
-            Dato("Total de la licitación", total, formato);
+            Dato(EtiquetaTotal, total, formato);
         }
         else
         {
-            Dato("Total de la licitación", $"Pendiente: {pendientes} línea(s) sin costeo");
+            Dato(EtiquetaTotal, $"Pendiente: {pendientes} línea(s) sin costeo");
             hoja.Cell(f - 1, 2).Style.Fill.SetBackgroundColor(_pendiente);
         }
 
@@ -240,6 +285,38 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
             hoja.Cell(f, 3).Value = conexo.Precio;
             hoja.Cell(f, 3).Style.NumberFormat.Format = formato;
             f++;
+        }
+
+        // Líneas cuya fila ya no está en el pliego (o sin fila): no se pierden en silencio.
+        if (sinUbicar.Count > 0)
+        {
+            f++;
+            hoja.Cell(f, 1).Value = $"Líneas sin fila en el pliego original ({sinUbicar.Count})";
+            hoja.Cell(f, 1).Style.Font.SetBold();
+            f++;
+            hoja.Cell(f, 1).Value = "Línea";
+            hoja.Cell(f, 2).Value = "Ruta";
+            hoja.Cell(f, 3).Value = ColumnaPrecio(datos.Moneda);
+            hoja.Cell(f, 4).Value = ColumnaEstado;
+            hoja.Range(f, 1, f, 4).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+            f++;
+            foreach (var linea in sinUbicar)
+            {
+                hoja.Cell(f, 1).Value = linea.Orden;
+                hoja.Cell(f, 2).Value = $"{linea.Origen} → {linea.Destino}";
+                if (linea.PrecioFinal is { } precio)
+                {
+                    hoja.Cell(f, 3).Value = precio;
+                    hoja.Cell(f, 3).Style.NumberFormat.Format = formato;
+                }
+                else
+                {
+                    hoja.Cell(f, 3).Value = SinCosteo;
+                }
+
+                hoja.Cell(f, 4).Value = linea.Estado;
+                f++;
+            }
         }
 
         hoja.Columns().AdjustToContents();

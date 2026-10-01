@@ -8,6 +8,9 @@ namespace Cotifly.Aplicacion.Cotizaciones.Repositories;
 /// aislamiento por comercial (ADR-009): si la cotización no es del usuario, devuelven <c>null</c>
 /// igual que si no existiera (el endpoint responde 404).
 /// </summary>
+/// <summary>Datos del Excel original de una licitación sin su contenido.</summary>
+public sealed record clsArchivoLicitacionResumen(string NombreArchivo, string Hoja, int TamanoBytes);
+
 public interface IClsCotizacionRepository
 {
     /// <summary>Límite de <see cref="ListarPorUsuarioAsync"/> (contrato: máximo 100).</summary>
@@ -33,6 +36,12 @@ public interface IClsCotizacionRepository
 
     /// <summary>Agrega el Excel original de una licitación (script 0005, HU-011.3); se escribe al guardar.</summary>
     void AgregarArchivoLicitacion(clsArchivoLicitacion archivo);
+
+    /// <summary>
+    /// Nombre y hoja del Excel original de la licitación, sin leer el contenido (hasta 10 MB), o <c>null</c> si se armó sin archivo.
+    /// Para las vistas; el contenido solo se lee al exportar.
+    /// </summary>
+    Task<clsArchivoLicitacionResumen?> ObtenerResumenArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
 
     /// <summary>Excel original de la licitación, o <c>null</c> si se armó sin archivo. Sin filtro de dueño: lo aplica el llamador.</summary>
     Task<clsArchivoLicitacion?> ObtenerArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default);

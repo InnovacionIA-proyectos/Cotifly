@@ -13,6 +13,7 @@ Nexo (Cabina de Fletes) ya resolvió esto con un flujo de **analizar y mapear**,
 1. **Analizar.** El comercial sube el `.xlsx` del cliente. Cotifly lo reenvía a `POST /api/captura-solicitudes/analizar-excel` de Nexo, que no guarda nada: detecta en cada hoja la fila de encabezado (la primera, dentro de las 15 primeras filas usadas, con al menos 3 valores distintos), une un subencabezado si los rótulos se repiten, propaga las celdas combinadas y devuelve las filas con datos como texto (`AnalisisExcelDto`).
 2. **Mapear.** El frontend muestra los encabezados y el comercial asigna cada columna del pliego a un campo destino de la sección 3 (por ejemplo, "CIUDAD ORIGEN" → `origen`). Las columnas sin asignar se ignoran para el costeo, pero **se conservan intactas** en la exportación (#48).
 3. **Validar.** El frontend arma las líneas y las envía a Cotifly. Cotifly valida **todas** las filas antes de guardar o enviar nada y devuelve un reporte por fila (sección 5).
+   La `fila` de cada línea es su índice en `hojas[h].filas`; Cotifly la verifica contra el total de filas con datos de la hoja del archivo adjunto (`totalFilas`) con la misma regla de detección de Nexo.
 4. **Enviar.** Si todo es válido, Cotifly guarda la cotización con sus N líneas y la envía a Nexo como **una sola solicitud con N líneas** (`tipo = licitacion`), con el mismo mecanismo de la HU-005.5.
 
 Así cualquier plantilla de cliente sirve sin cambios de código. El mapeo vive en el frontend; el contrato con el backend es el conjunto de campos destino.
@@ -74,7 +75,7 @@ Además, cada línea lleva dos datos de trazabilidad que **no viajan a Nexo**:
 
 | Campo | Tipo | Obligatorio | Uso |
 |---|---|---|---|
-| `fila` | entero, 0 o más | Sí si se adjunta el archivo | Índice (base 0) de la fila dentro de `hojas[h].filas` del análisis. La exportación (#48) escribe el precio en esa fila del archivo original |
+| `fila` | entero, 0 o más | Sí si se adjunta el archivo | Índice (base 0) de la fila dentro de `hojas[h].filas` del análisis. Se valida contra el total de filas con datos de la hoja (`totalFilas`), recalculado sobre el archivo adjunto. La exportación (#48) escribe el precio en esa fila del archivo original |
 | (encabezado) `hoja` | string | Sí si se adjunta el archivo | Nombre de la hoja analizada (`hojas[h].nombre`) |
 
 Unidades: si el pliego trae toneladas, el frontend multiplica por 1000 antes de enviar `peso_kg`; si trae metros, multiplica por 100 para `largo_cm`, `ancho_cm` y `alto_cm`. Cotifly no adivina unidades.
@@ -83,7 +84,7 @@ Unidades: si el pliego trae toneladas, el frontend multiplica por 1000 antes de 
 
 | Catálogo | Endpoint de Cotifly | Origen en Nexo |
 |---|---|---|
-| Municipios (origen, destino, devolución y levante) | `GET /web/municipios?q=` | `GET /api/captura-solicitudes/municipios` |
+| Municipios (origen, destino, devolución y levante) | `GET /web/municipios` (catálogo completo, sin filtro ni paginación: el autocompletado filtra en el cliente) | `GET /api/captura-solicitudes/municipios` |
 | Tipo de vehículo, carrocería y clase de viaje | `GET /web/catalogos-flete` | Biblioteca SAP TM histórico de Nexo |
 | Cubicación de las posiciones | `POST /web/cubicacion` | `POST /api/cubicacion` |
 | Tipología y clase de contenedor | Fijos en el frontend (deuda técnica del mapeo HU-005.1) | Sin endpoint en Nexo |
@@ -106,7 +107,7 @@ Cotifly valida todas las filas **antes de guardar nada** y responde 400 `LICITAC
 | Sin `peso_kg` > 0 y sin posiciones con peso | `PESO_REQUERIDO` | `CapturarSolicitudValidador.ValidarLinea` |
 | `peso_kg` difiere más del 1 % de `sum(cantidad × peso_kg)` de las posiciones | `PESO_INCONSISTENTE` | `CapturarSolicitudValidador.ValidarLinea` |
 | `fila` repetida o negativa | `FILA_INVALIDA` | Cotifly (la exportación escribe una fila por línea) |
-| `fila` mayor o igual que las filas con datos de la hoja del archivo adjunto | `FILA_INVALIDA` | Cotifly |
+| `fila` mayor o igual que el **total** de filas con datos de la hoja del archivo adjunto (el `totalFilas` del análisis, que Cotifly recalcula sobre el archivo con la misma regla de Nexo; no las 1000 que trae `filas`) | `FILA_INVALIDA` | Cotifly |
 
 Las reglas condicionales de Nexo (mostrar u ocultar `clase_contenedor`, ciudades del contenedor) **no las valida Nexo en el servidor** y Cotifly tampoco: el frontend las aplica al mapear, igual que en el formulario ampliado (HU-005.3).
 
@@ -119,10 +120,10 @@ La validación de catálogos (que `tipo_vehiculo` exista en el catálogo, que el
 | Columna agregada | Contenido | Formato |
 |---|---|---|
 | `Precio final Cotifly ({moneda})` | Precio de la línea con el margen aplicado (nunca el costo de Nexo) | Número; COP sin decimales, USD con 2 decimales (ADR-014) |
-| `Estado costeo Cotifly` | `Costeada`, `Pendiente de costeo`, `Descartada` o `Sin enviar` | Texto; las pendientes con fondo amarillo |
+| `Estado costeo Cotifly` | Uno de los 7 estados de la línea: `Costeada`, `Pendiente de costeo`, `Entregada sin flete`, `Descartada en Nexo`, `Costeo vencido`, `No llegó a Nexo` o `Sin enviar` (fila del pliego entre la primera y la última línea enviada que el comercial no mandó) | Texto; las líneas sin precio con fondo amarillo |
 | `Servicios conexos Cotifly` | Servicios conexos de la línea. Hoy Nexo los guarda por cotización: la celda remite a la hoja `Resumen Cotifly`, que los lista con su precio | Texto |
 
-Y una hoja nueva `Resumen Cotifly` con el folio, el cliente, la moneda (y la TRM si es USD), el total de las líneas costeadas, cuántas líneas faltan por costear y los servicios conexos incluidos con su precio. Las líneas sin costeo se marcan explícitamente (`SIN COSTEO` en la columna de precio). Si la licitación no trae archivo original (se armó sin Excel), la exportación genera una hoja con los campos mapeados y las mismas columnas agregadas.
+Y una hoja nueva `Resumen Cotifly` con el folio, el cliente, la moneda (y la TRM si es USD), el total de la licitación **sin servicios conexos** (la suma de los precios ya redondeados de cada línea, solo cuando todas tienen precio), cuántas líneas faltan por costear y los servicios conexos incluidos con su precio. Las líneas sin costeo se marcan explícitamente (`SIN COSTEO` en la columna de precio). Si la licitación no trae archivo original (se armó sin Excel), la exportación genera una hoja con los campos mapeados y las mismas columnas agregadas.
 
 ## 7. Ejemplo de mapeo
 
@@ -176,11 +177,13 @@ Lo que Cotifly envía a Nexo (`POST /api/captura-solicitudes`): `{ clienteBp, ti
 | 4 | ¿Se cotiza en USD alguna licitación? | Solo COP en esta iteración, igual que el costeo de HU-005 (ADR-015 §5). La exportación y el PDF ya muestran la moneda y la TRM de la cotización |
 | 5 | ¿Qué se hace con las filas del pliego que el comercial no quiere cotizar (por ejemplo, rutas que Botero Soto no atiende)? | El comercial no las envía; en la exportación quedan con estado `Sin enviar` |
 | 6 | Validar el formato con un pliego real del cliente | **Pendiente con negocio** (primer checkbox de #46) |
+| 7 | ¿Qué línea de negocio viaja a Nexo en una licitación? Nexo tiene `LineaNegocio=Licitaciones` además de las de ruta (`PuertoAInterior`, `Nacional`...) | Hoy viaja el `mapeoLineasNexo` de la línea de negocio de Cotifly elegida por el comercial. **Pendiente de negocio y del equipo de Nexo** si debe ser `Licitaciones` |
+| 8 | ¿Qué se hace con las líneas que Nexo nunca costea? En una prueba real de Nexo (HU-13.4) 3 de 15 líneas quedaron sin flete | Hoy la licitación no tiene total ni PDF hasta que todas tengan precio. Opciones: permitir excluir una línea de la cotización, o un PDF parcial que la marque como "no cotizada" |
 
 ## 9. Estado de los checkboxes de #46
 
 | Checkbox | Estado |
 |---|---|
-| Conseguir un ejemplo real de un Excel de licitación | **Pendiente con negocio.** Mientras tanto se usa el pliego de prueba de Nexo (`docs/ejemplo_licitacion.xlsx`, 15 líneas, HU-13.4 de Nexo) como referencia |
+| Conseguir un ejemplo real de un Excel de licitación | **Pendiente con negocio.** Mientras tanto se usa como referencia el pliego de prueba del repo `NEXO` (`docs/ejemplo_licitacion.xlsx`, 15 líneas, HU-13.4 de Nexo; no está en este repo) |
 | Definir el mapeo exacto (columnas → campos y columnas nuevas de la exportación) | **Hecho** en este documento: el mapeo lo elige el comercial contra los campos destino de la sección 3; las columnas nuevas, en la sección 6 |
 | Documentar y aprobar el formato final antes del parser | **Documentado.** La aprobación de las preguntas de la sección 8 queda con Gerencia Comercial |

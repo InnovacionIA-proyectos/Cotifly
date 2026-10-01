@@ -128,6 +128,44 @@ public sealed class clsLineasSolicitudTests
     }
 
     [Fact]
+    public void ElEmparejadorAsociaPorRutaNormalizadaYDatosCompatiblesSinImportarElOrden()
+    {
+        var lineas = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(),
+        [
+            new clsLineaSolicitudCosteo { Origen = "Bogotá, D.C.", Destino = "Medellín", PesoKg = 1000m, TipoVehiculo = "3S3" },
+            new clsLineaSolicitudCosteo { Origen = "Bogotá, D.C.", Destino = "Medellín", PesoKg = 2000m, TipoVehiculo = "3S3" },
+            new clsLineaSolicitudCosteo { Origen = "Cali", Destino = "Yumbo", PesoKg = 5m },
+        ]);
+        clsLineaSolicitudNexo[] nexo =
+        [
+            new("N3", "CALI -> YUMBO", "CargaSeca", 5m, "2", "FURGON"),
+            new("N2", "BOGOTA,  D.C. → MEDELLIN", null, 2000m, "3s3", null),
+            new("N1", "bogota, d.c. → medellin", null, 1000.00m, null, null),
+        ];
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(lineas, nexo);
+
+        pares.Should().HaveCount(3);
+        pares[lineas[0].Id].Should().Be("N1", "misma ruta: decide el peso");
+        pares[lineas[1].Id].Should().Be("N2");
+        pares[lineas[2].Id].Should().Be("N3", "lo que Cotifly no envió (tipología, carrocería) no contradice");
+    }
+
+    [Fact]
+    public void ElEmparejadorNoAsociaLineasIdenticasNiDatosQueSeContradicen()
+    {
+        var lineas = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(),
+        [
+            new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m },
+            new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m },
+            new clsLineaSolicitudCosteo { Origen = "C", Destino = "D", PesoKg = 1m, TipoVehiculo = "3S3" },
+        ]);
+        clsLineaSolicitudNexo[] nexo = [new("N1", "A → B", null, 1m, null, null), new("N2", "A → B", null, 1m, null, null), new("N3", "C → D", null, 1m, "2", null)];
+
+        clsEmparejadorLineasNexo.Emparejar(lineas, nexo).Should().BeEmpty("dos idénticas son ambiguas y la tercera contradice el vehículo");
+    }
+
+    [Fact]
     public void LasPosicionesDeVariasLineasSiguenElOrdenDeLaCotizacion()
     {
         var cotizacion = Guid.NewGuid();

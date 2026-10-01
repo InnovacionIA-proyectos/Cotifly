@@ -133,6 +133,8 @@ internal sealed class clsCotizacionPosicionConfiguracion : IEntityTypeConfigurat
             .HasConstraintName("fk_cotizacionPosiciones_cotizacionId").OnDelete(DeleteBehavior.NoAction);
 
         // Script 0005 (ADR-017): cada bulto pertenece a una línea de la solicitud (nullable en filas anteriores al backfill).
+        builder.HasIndex(p => p.LineaSolicitudId).HasDatabaseName("ix_cotizacionPosiciones_lineaSolicitudId")
+            .HasFilter("[lineaSolicitudId] IS NOT NULL");
         builder.HasOne<clsCotizacionLineaSolicitud>().WithMany().HasForeignKey(p => p.LineaSolicitudId)
             .HasConstraintName("fk_cotizacionPosiciones_lineaSolicitudId").OnDelete(DeleteBehavior.NoAction);
     }

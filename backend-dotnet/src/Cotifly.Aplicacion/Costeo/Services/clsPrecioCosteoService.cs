@@ -33,8 +33,41 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
     public const string MotivoSinMargen =
         "Nexo ya costeó la solicitud, pero la cotización no tiene margen resuelto: no se calcula el precio. Reenvíala o revisa la línea de negocio.";
 
-    public const string MotivoLineasDescuadradas =
-        "Nexo devolvió un número de líneas distinto al de la cotización: no se pueden asociar las líneas para ponerles precio. Revísala con el equipo de Nexo.";
+    /// <summary>Motivo cuando hay líneas que no se pudieron asociar con certeza a las de Nexo (quedan sin precio y sin total).</summary>
+    public static string MotivoSinAsociar(int sinAsociar, int total) =>
+        $"{sinAsociar} de {total} líneas no se pudieron asociar con certeza a las de Nexo (ruta, peso o vehículo distintos, o líneas idénticas): "
+        + "quedan sin precio y la licitación sin total. Revísalas con el equipo de Nexo.";
+
+    /// <summary>
+    /// Asigna a cada línea sin id su línea de Nexo por CONTENIDO (<see cref="clsEmparejadorLineasNexo"/>; ADR-017 §3: Nexo no garantiza
+    /// el orden de <c>solicitud.lineas[]</c>). Con una línea en cada lado se asocian directamente, como en HU-005.5. Devuelve cuántas
+    /// líneas siguen sin asociar.
+    /// </summary>
+    public static int AsociarLineasNexo(IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsCosteoConsultadoNexo foto)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(foto);
+        var pendientes = lineas.Where(l => l.LineaSolicitudNexoId is null).ToList();
+        if (pendientes.Count == 0 || foto.LineasSolicitud.Count == 0)
+        {
+            return pendientes.Count;
+        }
+
+        if (lineas.Count == 1 && foto.LineasSolicitud.Count == 1)
+        {
+            lineas[0].AsignarLineaNexo(foto.LineasSolicitud[0]);
+            return 0;
+        }
+
+        var asignados = lineas.Select(l => l.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var (lineaId, nexoId) in clsEmparejadorLineasNexo.Emparejar(pendientes, detalle, asignados))
+        {
+            pendientes.Single(l => l.Id == lineaId).AsignarLineaNexo(nexoId);
+        }
+
+        return lineas.Count(l => l.LineaSolicitudNexoId is null);
+    }
 
     public bool Aplicar(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)
     {
@@ -46,34 +79,34 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         }
 
         var ordenadas = lineas.OrderBy(l => l.Orden).ToList();
-
-        // Ids de Nexo por orden: CapturaResultDto no devuelve los ids y GET /api/solicitudes/{id} los trae en el orden de captura
-        // (pendiente de confirmar con Nexo, ADR-017). Sin el mismo número de líneas no se adivina.
-        if (ordenadas.Any(l => l.LineaSolicitudNexoId is null))
-        {
-            if (foto.LineasSolicitud.Count == ordenadas.Count)
-            {
-                for (var i = 0; i < ordenadas.Count; i++)
-                {
-                    ordenadas[i].AsignarLineaNexo(foto.LineasSolicitud[i]);
-                }
-            }
-            else if (foto.LineasSolicitud.Count > 0)
-            {
-                cotizacion.AdvertirCosteo(MotivoLineasDescuadradas);
-                return false;
-            }
-        }
+        var sinAsociar = AsociarLineasNexo(ordenadas, foto);
 
         // Con PDF el precio de la versión se conserva: las líneas solo actualizan su estado (ADR-015 §5).
         var conPdf = cotizacion.PdfPath is not null;
         var cambio = false;
+        string? costoInvalido = null;
         foreach (var linea in ordenadas)
         {
             var estadoLinea = clsDerivacionEstadoCosteo.DerivarLinea(foto, linea.LineaSolicitudNexoId);
-            cambio |= conPdf
-                ? linea.RegistrarEstado(estadoLinea)
-                : linea.RegistrarCosteo(estadoLinea, clsDerivacionEstadoCosteo.CostoLinea(foto, linea.LineaSolicitudNexoId));
+            var costoLinea = clsDerivacionEstadoCosteo.CostoLinea(foto, linea.LineaSolicitudNexoId);
+            if (costoLinea is < 0m)
+            {
+                // Un costo negativo de Nexo no se usa (ni rompe el polling): la línea queda sin precio y se advierte, como en HU-005.7.
+                costoInvalido ??= $"Nexo devolvió un costo negativo para la línea {linea.Orden}: no se calcula su precio. Revísala con el equipo de Nexo.";
+                costoLinea = null;
+            }
+
+            cambio |= conPdf ? linea.RegistrarEstado(estadoLinea) : linea.RegistrarCosteo(estadoLinea, costoLinea);
+        }
+
+        if (costoInvalido is not null && ordenadas.Count > 1)
+        {
+            cotizacion.AdvertirCosteo(costoInvalido);
+        }
+
+        if (sinAsociar > 0 && ordenadas.Count > 1 && foto.LineasSolicitud.Count > 0)
+        {
+            cotizacion.AdvertirCosteo(MotivoSinAsociar(sinAsociar, ordenadas.Count));
         }
 
         var margen = cotizacion.MargenAplicado;
@@ -90,6 +123,11 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
                 var precioLinea = precios.Calcular(costoLinea, m, metodo);
                 if (precioLinea.EsFallo)
                 {
+                    if (ordenadas.Count == 1)
+                    {
+                        continue; // una línea: el mensaje y el resultado los decide la regla de HU-005.7 (abajo)
+                    }
+
                     cotizacion.AdvertirCosteo($"No se pudo calcular el precio de la línea {linea.Orden} sobre el costeo de Nexo: {precioLinea.Error.Mensaje}");
                     return false;
                 }
@@ -105,6 +143,18 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         }
 
         if (cotizacion.EstadoCosteo is not { } estado || !clsDerivacionEstadoCosteo.TieneCosteo(estado) || foto.Cotizacion is not { } nexo)
+        {
+            return cambio;
+        }
+
+        // Total solo con TODAS las líneas asociadas a Nexo y con precio.
+        if (sinAsociar > 0)
+        {
+            cotizacion.AdvertirCosteo(MotivoSinAsociar(sinAsociar, ordenadas.Count));
+            return cambio;
+        }
+
+        if (costoInvalido is not null)
         {
             return cambio;
         }

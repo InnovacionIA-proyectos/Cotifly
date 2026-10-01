@@ -140,6 +140,13 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_cotizacionPosici
             REFERENCES dbo_cotifly.CotizacionLineasSolicitud (id);
 GO
 
+-- Posiciones de una línea (reenvío y PDF): índice filtrado sobre la FK nueva.
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'ix_cotizacionPosiciones_lineaSolicitudId'
+               AND object_id = OBJECT_ID(N'dbo_cotifly.CotizacionPosiciones'))
+    CREATE INDEX ix_cotizacionPosiciones_lineaSolicitudId ON dbo_cotifly.CotizacionPosiciones (lineaSolicitudId)
+        WHERE lineaSolicitudId IS NOT NULL;
+GO
+
 -- =============================================================================
 -- 3. dbo_cotifly.CotizacionArchivosLicitacion — Excel original del pliego
 -- =============================================================================

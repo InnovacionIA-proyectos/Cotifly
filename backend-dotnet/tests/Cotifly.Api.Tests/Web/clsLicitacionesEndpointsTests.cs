@@ -55,6 +55,20 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task UnSinPermisoDeNexoEsNexoSinPermisoNoUnaCaida()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AnalisisFalla = HttpStatusCode.Forbidden;
+        _nexo.CodigoAnalisisFalla = "SIN_PERMISO_CABINA_FLETES";
+
+        using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones/analizar-excel", sesion.Access,
+            clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel()));
+
+        var json = await VerificarContratoAsync(respuesta, "/web/licitaciones/analizar-excel", HttpMethod.Post, HttpStatusCode.Forbidden);
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("NEXO_SIN_PERMISO");
+    }
+
+    [Fact]
     public async Task LaLicitacionConArchivoGuardaSusLineasYElOriginalYViajaComoUnaSolicitudDeNLineas()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -227,11 +241,43 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var folio = (await CrearAsync(ana, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         var delChat = await _api.CrearCotizacionAsync(ana.UsuarioId, conPdf: false);
 
+        using var formulario = await _api.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var spot = (await VerificarContratoAsync(formulario, "/web/solicitudes-costeo", HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
         using var ajena = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", luis.Access);
         using var sinLineas = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{delChat.Folio}/excel", ana.Access);
+        using var noLicitacion = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{spot}/excel", ana.Access);
 
         ajena.StatusCode.Should().Be(HttpStatusCode.NotFound);
         sinLineas.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        noLicitacion.StatusCode.Should().Be(HttpStatusCode.NotFound, "una cotización spot de una línea no es una licitación");
+    }
+
+    [Fact]
+    public async Task NingunaParteDelExcelExportadoTraeCostosDeNexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_003m);
+        _nexo.CostearLinea(solicitud, 1, 2_000_003m);
+        _nexo.CostearLinea(solicitud, 2, 850_003m);
+        _nexo.AgregarConexo(solicitud, "Cargue", 170_003m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}/excel", sesion.Access);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(await respuesta.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)));
+        foreach (var entrada in zip.Entries)
+        {
+            using var lector = new StreamReader(entrada.Open());
+            var texto = await lector.ReadToEndAsync(TestContext.Current.CancellationToken);
+            foreach (var costo in new[] { "1000003", "2000003", "850003", "170003" })
+            {
+                texto.Should().NotContain(costo, entrada.FullName);
+            }
+        }
     }
 
     private async Task<JsonElement> CrearAsync(clsSesionPrueba sesion, object[] lineas, byte[] excel, HttpStatusCode esperado)

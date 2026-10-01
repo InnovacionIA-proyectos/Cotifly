@@ -1540,7 +1540,7 @@ Se retirarán cuando el frontend use los nuevos. Si algún componente ya los con
 
 Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone plantilla**: reenvía el archivo al análisis de Nexo, que detecta el encabezado de cada hoja y devuelve las filas como texto. No se guarda nada.
 
-- Request: `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, máximo 10 MB). No poner `Content-Type` a mano (el navegador pone el `boundary`).
+- Request: `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, máximo **10 MB menos 64 KB**: Nexo limita a 10 MB el cuerpo completo). No poner `Content-Type` a mano (el navegador pone el `boundary`).
 - 200 `AnalisisExcel`:
 
 ```json
@@ -1559,7 +1559,7 @@ Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone 
 ```
 
 - `filas` trae hasta 1000 filas por hoja (`total_filas` es el total real). **El índice de cada fila en `filas` es la `fila` que se envía en cada línea** de `POST /web/licitaciones`.
-- 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`. 413 si el cuerpo pasa de 12 MB.
+- 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 403 `ErrorNegocio` `NEXO_SIN_PERMISO`: el comercial no tiene el rol de Cabina de Fletes en Nexo ("Pide a soporte el rol Comercial en Nexo"; no cerrar la sesión de Cotifly). 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`. 413 `ErrorWeb` si el cuerpo pasa de 12 MB.
 
 ### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
 
@@ -1596,8 +1596,10 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 ```
 
   `indice` es la posición en `lineas[]` (`null` = error del encabezado). Códigos: `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`, `LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`, `VALOR_FUERA_DE_RANGO`, `DEMASIADAS_POSICIONES`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `FILA_INVALIDA`.
-- 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO`. 400 `ErrorWeb` si el JSON es inválido.
+- 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA` (la línea no existe **o está inactiva**: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`. 400 `ErrorWeb` si el JSON es inválido. 413 `ErrorWeb` si el cuerpo (Excel + JSON) pasa de 12 MB.
+- Si Nexo responde 403 al alta (rol del comercial en Nexo), la licitación se crea igual (201) en `error_envio` con `motivo_estado_costeo` que lo explica; se reintenta cuando le den el rol.
 - La petición puede tardar hasta unos 30 s (alta en Nexo). Con más de 10 líneas Nexo costea en segundo plano: la licitación nace en `pendiente_costeo` y el polling la avanza.
+- **Doble envío (responsabilidad del frontend):** el servidor no tiene clave de idempotencia; dos POST iguales crean **dos** licitaciones y dos solicitudes en Nexo. Deshabilitar el botón desde el clic hasta la respuesta (hasta unos 30 s), no reintentar automáticamente un POST que se cortó (consultar "Mis cotizaciones" antes) y no reenviar en un refresco de la página.
 
 ### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). PR de #47
 
@@ -1605,13 +1607,19 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
+- **Total:** `precio_final` es la suma de los precios ya redondeados de las líneas, **sin servicios conexos**. Rotularlo "Total (sin servicios conexos)" y mostrar los conexos aparte (`GET /web/cotizaciones/{folio}/costeo`).
+- Si una línea no se pudo asociar con certeza a su línea en Nexo (dos rutas idénticas, o Nexo devolvió otra cosa), queda sin precio y `motivo_estado_costeo` lo explica: mostrar el motivo; la licitación no tendrá total hasta que se resuelva con el equipo de Nexo.
+- Las licitaciones no aparecen en la concentración por ciudad del tablero de métricas (sus rutas viven por línea).
+
 ### 5.26 Exportar el Excel con resultados (`GET /web/licitaciones/{folio}/excel`). PR de #48
 
 - 200 binario `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` con `Content-Disposition: attachment; filename={folio}.xlsx`. Descargarlo como blob con el `Authorization` (no abrir la URL en una pestaña: no lleva token).
 - Contenido: el Excel **original** del cliente sin cambios en sus columnas, con tres columnas nuevas a la derecha de la hoja mapeada: `Precio final Cotifly (COP)` (o `USD`), `Estado costeo Cotifly` (`Costeada`, `Pendiente de costeo`, `Entregada sin flete`, `Descartada en Nexo`, `Costeo vencido`, `No llegó a Nexo`, o `Sin enviar` para filas que no se mandaron) y `Servicios conexos Cotifly`; y una hoja `Resumen Cotifly` con el total y los servicios conexos incluidos con su precio. Las líneas sin costeo dicen `SIN COSTEO` con fondo amarillo.
 - Se puede exportar en cualquier momento (no hace falta esperar a que todas las líneas tengan costeo). Nunca trae costos de Nexo.
 - Sin archivo original (licitación creada con JSON) genera una hoja `Licitación` con los campos mapeados.
-- 404 si no es suya o no es una cotización con líneas. 400 `EXCEL_INVALIDO`/`EXCEL_SIN_DATOS` si el original guardado ya no se puede leer.
+- El total de la hoja `Resumen Cotifly` dice "Total de la licitación (sin servicios conexos)". `Sin enviar` solo aparece entre la primera y la última fila enviada; las líneas cuya fila ya no está en el pliego se listan en el resumen.
+- Siempre se descarga como `.xlsx`: si el original era `.xlsm` se quitan las macros, y gráficos, imágenes o tablas dinámicas del original pueden no conservarse. Avisarlo al comercial ("copia de trabajo con los precios").
+- 404 si no es suya o no es una licitación (una cotización spot o del chat). 400 `EXCEL_INVALIDO`/`EXCEL_SIN_DATOS` si el original guardado ya no se puede leer.
 
 ## 6. Flujos
 

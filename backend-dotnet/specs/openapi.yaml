@@ -1170,13 +1170,26 @@ paths:
           description: |
             `ARCHIVO_REQUERIDO` (falta o vacío), `FORMATO_NO_SOPORTADO` (otra extensión), `ARCHIVO_DEMASIADO_GRANDE` (más de
             10 MB), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
-            `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo.
+            `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo. Un 413 de Nexo también es `ARCHIVO_DEMASIADO_GRANDE`: Cotifly acepta
+            hasta 10 MB menos 64 KB para que el archivo con el sobre multipart quepa en el límite de 10 MB de Nexo.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 (el comercial no tiene el rol de Cabina de Fletes que pide el análisis)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '503':
           description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`'
           content:
@@ -1231,8 +1244,10 @@ paths:
           description: |
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
-            `EXCEL_SIN_DATOS` si la hoja no existe, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO`). `ErrorWeb` si el
-            cuerpo no es JSON válido.
+            `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
+            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`). `ErrorWeb` si el cuerpo no
+            es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
+            `NEXO_SIN_PERMISO` (201).
           content:
             application/json:
               schema:
@@ -1242,6 +1257,12 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '413':
+          description: El cuerpo (Excel + JSON) supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
 
   /web/licitaciones/{folio}:
     get:
@@ -1279,7 +1300,9 @@ paths:
         costeo llevan `SIN COSTEO` con fondo amarillo; las filas del pliego que no se enviaron, `Sin enviar`. Agrega la hoja
         `Resumen Cotifly` (folio, cliente, moneda y TRM si es USD, total, líneas sin costeo y servicios conexos incluidos con su
         precio). Sin archivo original genera una hoja `Licitación` con los campos mapeados. **Nunca incluye el costo de Nexo.**
-        Se puede exportar en cualquier momento. Siempre `.xlsx` (las macros de un `.xlsm` no se conservan). Solo el dueño.
+        Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
+        imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
+        solo marca filas entre la primera y la última línea enviada. Solo el dueño y solo licitaciones (404 si no).
       security:
         - bearer: []
       parameters:
@@ -1677,7 +1700,8 @@ components:
                 conexión a `DimEjecutivo` está configurada pero falla).
                 Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
                 (mismos códigos que Nexo en `analizar-excel`), `ARCHIVO_DEMASIADO_GRANDE` (más de 10 MB) y
-                `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`).
+                `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`) y `NEXO_SIN_PERMISO`
+                (403 de Nexo al alta o al análisis: el comercial no tiene el rol de Cabina de Fletes; en `/web/*` responde 403).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -1728,6 +1752,7 @@ components:
                 - EXCEL_INVALIDO
                 - EXCEL_SIN_DATOS
                 - LICITACION_INVALIDA
+                - NEXO_SIN_PERMISO
                 - ERROR_INTERNO
             mensaje:
               type: string
