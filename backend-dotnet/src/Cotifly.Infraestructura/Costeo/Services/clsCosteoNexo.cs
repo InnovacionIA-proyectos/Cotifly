@@ -52,6 +52,13 @@ public sealed class clsCosteoNexo(
     public const string CodigoNexoNoEncontrada = "SOLICITUD_NO_ENCONTRADA";
     public const string MensajeSolicitudInvalida = "Nexo rechazó los datos de la solicitud.";
 
+    public const string MensajeSinPermiso =
+        "Tu usuario no tiene permiso en Nexo (Cabina de Fletes) para esta operación: pide al administrador de Nexo el rol Comercial.";
+
+    /// <summary>¿Nexo respondió 403 (identidad válida sin el rol que pide la operación)?</summary>
+    public static bool EsSinPermiso(clsErrorDominio error) =>
+        error.Codigo == clsCodigosError.CosteoNexoNoDisponible && error.Detalle?.StartsWith("HTTP 403", StringComparison.Ordinal) == true;
+
     /// <summary>Límite de toda la operación y de cada intento (el alta de Nexo auto-costea en línea).</summary>
     public static readonly TimeSpan TiempoTotal = TimeSpan.FromSeconds(30);
 
@@ -75,8 +82,14 @@ public sealed class clsCosteoNexo(
         if (respuesta.EsFallo)
         {
             // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo.
-            return respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true
-                ? new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, respuesta.Error.Detalle)
+            if (respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true)
+            {
+                return new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, respuesta.Error.Detalle);
+            }
+
+            // Un 403 del alta: el comercial no tiene rol en Cabina de Fletes (no es una caída de Nexo; ADR-017 §4).
+            return EsSinPermiso(respuesta.Error)
+                ? new clsErrorDominio(clsCodigosError.NexoSinPermiso, MensajeSinPermiso, respuesta.Error.Detalle)
                 : respuesta.Error;
         }
 
@@ -123,8 +136,17 @@ public sealed class clsCosteoNexo(
 
         string estado;
         List<string> lineas;
+        List<clsLineaSolicitudNexo> contenidoLineas;
         using (var documento = solicitud.Valor)
         {
+            // lineas[] de primer nivel (LineaCosteoDto): el contenido de cada línea para asociarla por contenido (ADR-017 §3).
+            contenidoLineas = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("lineas", out var d)
+                      && d.ValueKind == JsonValueKind.Array
+                ? [.. d.EnumerateArray()
+                    .Where(x => Texto(x, "lineaId") is not null)
+                    .Select(x => new clsLineaSolicitudNexo(Texto(x, "lineaId")!, Texto(x, "ruta"), Texto(x, "tipologia"), Decimal(x, "peso"),
+                        Texto(x, "tipoVehiculo"), Texto(x, "carroceria")))]
+                : [];
             var cabecera = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("solicitud", out var s)
                 ? s
                 : default;
@@ -141,11 +163,11 @@ public sealed class clsCosteoNexo(
 
         if (string.Equals(estado, clsCosteoConsultadoNexo.SolicitudDescartada, StringComparison.OrdinalIgnoreCase))
         {
-            return new clsCosteoConsultadoNexo(estado, lineas, null);
+            return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas };
         }
 
         var cotizacion = await ObtenerCotizacionAsync(usuarioId, id, cancellationToken);
-        return cotizacion.EsFallo ? cotizacion.Error : new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor);
+        return cotizacion.EsFallo ? cotizacion.Error : new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor) { Detalle = contenidoLineas };
     }
 
     /// <summary>

@@ -75,9 +75,14 @@ public sealed class clsAnalizadorExcelNexo(
                     return new clsErrorDominio(codigo, mensaje ?? "Nexo no pudo leer el archivo.");
                 }
 
-                return respuesta.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                    ? new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, detalle)
-                    : new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", detalle);
+                return respuesta.StatusCode switch
+                {
+                    HttpStatusCode.Forbidden => new clsErrorDominio(clsCodigosError.NexoSinPermiso, clsCosteoNexo.MensajeSinPermiso, detalle),
+                    HttpStatusCode.Unauthorized => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, detalle),
+                    HttpStatusCode.RequestEntityTooLarge => new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
+                        "Nexo rechazó el archivo por tamaño (máximo 10 MB con el envío).", detalle),
+                    _ => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", detalle),
+                };
             }
 
             if (!respuesta.IsSuccessStatusCode)

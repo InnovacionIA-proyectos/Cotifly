@@ -23,7 +23,13 @@ public static class clsValidadorCotizacionPdfPayload
     public const int MaxFilas = 60;
 
     /// <summary>Primer problema del payload, o <c>null</c> si es válido.</summary>
-    public static clsErrorDominio? Validar(clsCotizacionPdfPayload? payload)
+    public static clsErrorDominio? Validar(clsCotizacionPdfPayload? payload) => Validar(payload, MaxSecciones, MaxFilas);
+
+    /// <summary>
+    /// Igual que <see cref="Validar(clsCotizacionPdfPayload?)"/> con otros topes de tablas y filas: el PDF de pliego (HU-011.5) admite
+    /// tantas filas como líneas tiene una licitación (1000).
+    /// </summary>
+    public static clsErrorDominio? Validar(clsCotizacionPdfPayload? payload, int maxSecciones, int maxFilas)
     {
         if (payload is null)
         {
@@ -42,9 +48,9 @@ public static class clsValidadorCotizacionPdfPayload
         }
 
         var secciones = SeccionesDe(payload);
-        if (secciones.Count > MaxSecciones)
+        if (secciones.Count > maxSecciones)
         {
-            return Error($"'secciones' admite máximo {MaxSecciones} tablas.");
+            return Error($"'secciones' admite máximo {maxSecciones} tablas.");
         }
 
         var filas = secciones.Sum(s => s.Filas?.Count ?? 0);
@@ -53,9 +59,9 @@ public static class clsValidadorCotizacionPdfPayload
             return Error("La cotización no tiene filas de tarifa ('tarifa.filas' o 'secciones[].filas').");
         }
 
-        if (filas > MaxFilas)
+        if (filas > maxFilas)
         {
-            return Error($"La cotización admite máximo {MaxFilas} filas de tarifa.");
+            return Error($"La cotización admite máximo {maxFilas} filas de tarifa.");
         }
 
         return clsValidacionTextos.Primero(

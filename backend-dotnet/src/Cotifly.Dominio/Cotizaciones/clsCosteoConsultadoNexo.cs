@@ -8,6 +8,97 @@ public sealed record clsCosteoConsultadoNexo(string EstadoSolicitud, IReadOnlyLi
 {
     public const string SolicitudEntregada = "Entregada";
     public const string SolicitudDescartada = "Descartada";
+
+    /// <summary>
+    /// Contenido de cada línea en Nexo (<c>lineas[]</c> de primer nivel de <c>SolicitudCosteoDto</c>: ruta, tipología, peso, vehículo y
+    /// carrocería). Sirve para asociar las líneas de Cotifly con las de Nexo por contenido: Nexo no garantiza el orden de
+    /// <c>solicitud.lineas[]</c> (ADR-017 §3). Vacío si Nexo no lo trae.
+    /// </summary>
+    public IReadOnlyList<clsLineaSolicitudNexo> Detalle { get; init; } = [];
+}
+
+/// <summary>Una línea de la solicitud en Nexo (<c>LineaCosteoDto</c>): <paramref name="Ruta"/> es <c>"Origen → Destino"</c>.</summary>
+public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria);
+
+/// <summary>
+/// Asocia las líneas de Cotifly con las de Nexo por CONTENIDO (ADR-017 §3), no por orden: Nexo carga las líneas sin <c>OrderBy</c> y
+/// sus ids son GUID aleatorios, así que <c>lineas[]</c> llega en cualquier orden. Clave: la ruta <c>"Origen → Destino"</c> normalizada
+/// (mayúsculas, sin tildes ni espacios repetidos) y, cuando ambos lados lo traen, el peso, la tipología, el tipo de vehículo y la
+/// carrocería. Solo se asocia un par cuando es único en ambos sentidos; dos líneas idénticas, o una sin candidato, quedan sin asociar
+/// (sin precio, con motivo). Con una sola línea en cada lado se asocian directamente (HU-005.5, siempre fue así).
+/// </summary>
+public static class clsEmparejadorLineasNexo
+{
+    /// <summary>
+    /// Ids de Nexo por id de línea de Cotifly, solo para las que se asocian con certeza. <paramref name="yaAsignados"/> son los ids de
+    /// Nexo que ya tienen dueño (no se reasignan).
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, string> Emparejar(
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(nexo);
+        var libres = nexo.Where(n => yaAsignados is null || !yaAsignados.Contains(n.Id)).ToList();
+        var pendientes = lineas.ToList();
+        var resultado = new Dictionary<Guid, string>();
+        bool avanzo;
+        do
+        {
+            avanzo = false;
+            foreach (var linea in pendientes.ToList())
+            {
+                var candidatos = libres.Where(n => Coincide(linea, n)).ToList();
+                if (candidatos.Count != 1)
+                {
+                    continue;
+                }
+
+                var candidato = candidatos[0];
+                if (pendientes.Count(l => Coincide(l, candidato)) != 1)
+                {
+                    continue;
+                }
+
+                resultado[linea.Id] = candidato.Id;
+                pendientes.Remove(linea);
+                libres.Remove(candidato);
+                avanzo = true;
+            }
+        }
+        while (avanzo && pendientes.Count > 0);
+
+        return resultado;
+    }
+
+    /// <summary>¿La línea de Nexo puede ser esta línea de Cotifly? Misma ruta y sin contradicción en los datos que traen ambos.</summary>
+    public static bool Coincide(clsCotizacionLineaSolicitud linea, clsLineaSolicitudNexo nexo)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        ArgumentNullException.ThrowIfNull(nexo);
+        if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{linea.Origen} → {linea.Destino}"))
+        {
+            return false;
+        }
+
+        return Compatible(linea.Tipologia, nexo.Tipologia)
+               && Compatible(linea.TipoVehiculo, nexo.TipoVehiculo)
+               && Compatible(linea.Carroceria, nexo.Carroceria)
+               && (linea.PesoKg is not { } peso || nexo.Peso is not { } pesoNexo || Math.Round(peso, 2) == Math.Round(pesoNexo, 2));
+    }
+
+    private static bool Compatible(string? cotifly, string? nexo) =>
+        string.IsNullOrWhiteSpace(cotifly) || string.IsNullOrWhiteSpace(nexo) || Normalizar(cotifly) == Normalizar(nexo);
+
+    /// <summary>Mayúsculas, sin tildes, la flecha y los espacios normalizados.</summary>
+    public static string Normalizar(string texto)
+    {
+        ArgumentNullException.ThrowIfNull(texto);
+        var sinTildes = new string(texto.Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
+        return string.Join(' ', sinTildes.Replace("->", "→", StringComparison.Ordinal).ToUpperInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
 }
 
 /// <summary><c>CotizacionDto</c> de Nexo reducido a lo que usa Cotifly.</summary>

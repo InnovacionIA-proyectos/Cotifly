@@ -229,6 +229,21 @@ public sealed class clsNexoFalso : HttpMessageHandler
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");
         var numero = Math.Max(1, UltimaAlta?["lineas"] is JsonArray arreglo ? arreglo.Count : 1);
         var solicitud = new clsSolicitudFalsa(Guid.NewGuid().ToString(), _solicitudes.Count, [.. Enumerable.Range(0, numero).Select(_ => Guid.NewGuid().ToString())]);
+        if (UltimaAlta?["lineas"] is JsonArray recibidas)
+        {
+            solicitud.Lineas.AddRange(recibidas.Select(l => new clsLineaFalsa(
+                l?["origen"]?.GetValue<string>() ?? string.Empty,
+                l?["destino"]?.GetValue<string>() ?? string.Empty,
+                l?["tipologia"]?.GetValue<string>(),
+                l?["peso"]?.GetValue<decimal>(),
+                l?["tipoVehiculo"]?.GetValue<string>(),
+                l?["carroceria"]?.GetValue<string>())));
+        }
+
+        while (solicitud.Lineas.Count < numero)
+        {
+            solicitud.Lineas.Add(new clsLineaFalsa(string.Empty, string.Empty, null, null, null, null));
+        }
         if (AutoCostear)
         {
             solicitud.Cotizacion = new clsCotizacionFalsa(Guid.NewGuid().ToString());
@@ -282,10 +297,20 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 estado = s.Estado,
                 scorePrioridad = 0.5m,
                 createdAt = DateTimeOffset.UtcNow,
-                lineas = s.LineaIds.Select((id, i) => new { id, estadoLinea = s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear" }).ToArray(),
+                // Como Nexo (Include(Lineas) sin OrderBy, ids GUID): el orden NO es el de captura. El falso las devuelve al revés.
+                lineas = Indices(s).Select(i => new { id = s.LineaIds[i], estadoLinea = s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear" }).ToArray(),
             },
             tiempos = new { horasCargue = 4m, horasDescargue = 4m },
-            lineas = Array.Empty<object>(),
+            // LineaCosteoDto: el contenido de cada línea, con la ruta "Origen → Destino" (ObtenerCosteoQuery de Nexo).
+            lineas = Indices(s).Select(i => new
+            {
+                lineaId = s.LineaIds[i],
+                ruta = $"{s.Lineas[i].Origen} → {s.Lineas[i].Destino}",
+                tipologia = s.Lineas[i].Tipologia,
+                peso = s.Lineas[i].Peso,
+                tipoVehiculo = s.Lineas[i].TipoVehiculo,
+                carroceria = s.Lineas[i].Carroceria,
+            }).ToArray(),
         });
     }
 
@@ -345,7 +370,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private static object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
-        var lineas = c.Fletes.OrderBy(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
+        var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
         {
             id = Guid.NewGuid().ToString(), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
             valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno,
@@ -378,11 +403,17 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private static HttpResponseMessage Error(HttpStatusCode estado, string codigo, string mensaje) =>
         Json(estado, new { code = codigo, message = mensaje, timestamp = DateTimeOffset.UtcNow });
 
+    /// <summary>Índices de las líneas en el orden en que las devuelve el falso: al revés del de captura.</summary>
+    private static IEnumerable<int> Indices(clsSolicitudFalsa s) => Enumerable.Range(0, s.LineaIds.Count).Reverse();
+
+    private sealed record clsLineaFalsa(string Origen, string Destino, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria);
+
     private sealed class clsSolicitudFalsa(string id, int orden, IReadOnlyList<string> lineaIds)
     {
         public string Id { get; } = id;
         public int Orden { get; } = orden;
         public IReadOnlyList<string> LineaIds { get; } = lineaIds;
+        public List<clsLineaFalsa> Lineas { get; } = [];
         public string Estado { get; set; } = "Pendiente";
         public clsCotizacionFalsa? Cotizacion { get; set; }
     }
