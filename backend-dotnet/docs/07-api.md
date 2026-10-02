@@ -41,7 +41,7 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | Método | Ruta | Respuesta |
 |---|---|---|
 | GET | `/health` | `200 {"status":"ok","servicio":"cotifly-api","entorno":"<ASPNETCORE_ENVIRONMENT>"}` |
-| GET | `/health/ready` | `200 {"status":"ready"}` si `dbo_cotifly` acepta conexiones y tiene el 0002 aplicado; `503 {"status":"unavailable","detalle":"..."}` si no (sin cadena configurada, base caída, `esquema incompleto: falta 0002` o `esquema incompleto: falta 0004`) |
+| GET | `/health/ready` | `200 {"status":"ready"}` si `dbo_cotifly` acepta conexiones y tiene el 0002 aplicado; `503 {"status":"unavailable","detalle":"..."}` si no (sin cadena configurada, base caída, `esquema incompleto: falta 0002`, `falta 0004` o `falta 0005`) |
 | POST | `/api/auth/login-clientepro` | `200 LoginResponse` (`access`, `refresh`, `user{id, username, email, nombre_completo, rol, ubicacion}`, `debeCambiarPassword=false`); `400 ErrorWeb` (cuerpo inválido); `401 {"error":"Credenciales inválidas"}` (cualquier rechazo); `429 ErrorWeb` |
 | POST | `/api/auth/refresh` | `200 LoginResponse` con el par rotado; `401 {"error":"Inicia sesión de nuevo."}` (incluye cuerpo inválido, reuso y rotación perdida); `429` |
 | POST | `/api/auth/logout` | Siempre `204` (con o sin `Authorization: Bearer`, con o sin `{"refresh": ...}`); `429` |
@@ -60,6 +60,9 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | GET | `/web/cotizaciones/{folio}/costeo` | `200 CosteoCotizacion` `{folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos: [{id, nombre, categoria, cantidad, precio, incluido}], pdf_url}`: solo precios con margen, nunca el costo de Nexo (HU-005.7); `404` si no es suya |
 | PUT | `/web/cotizaciones/{folio}/costeo/servicios-conexos` | Cuerpo `{incluidos: [id]}`. `200 CosteoCotizacion`; `400` id desconocido; `404`; `409 ErrorNegocio` `COSTEO_NO_LISTO` o `PDF_YA_GENERADO` |
 | POST | `/web/cotizaciones/{folio}/costeo/pdf` | `201 SalidaPdf`: PDF con el flete a `precio_final` y solo los conexos incluidos; `404`; `409` `COSTEO_NO_LISTO` o `PDF_YA_GENERADO`; `400` errores del PDF |
+| POST | `/web/licitaciones/analizar-excel` | HU-011.2 (ADR-017). Multipart `archivo` (`.xlsx`/`.xlsm`, máx. 10 MB) reenviado a `POST /api/captura-solicitudes/analizar-excel` de Nexo; no guarda nada. `200 AnalisisExcel`; `400` `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`; `503` Nexo no disponible |
+| POST | `/web/licitaciones` | HU-011.2. Multipart (`licitacion` JSON + `archivo` opcional) o JSON `LicitacionWeb`. Valida todas las filas antes de guardar: `400 ReporteLicitacionInvalida` (`LICITACION_INVALIDA` + `errores[]` con `indice`, `fila`, `campo`, `codigo`); si son válidas crea la cotización `licitacion` con N líneas y el Excel original, la confirma y la envía a Nexo como una solicitud con N líneas: `201 Licitacion` aunque Nexo falle (`error_envio`, se reintenta con `.../costeo/reintentar`) |
+| GET | `/web/licitaciones/{folio}` | `200 Licitacion` (estado y precio por línea, nunca el costo de Nexo); `404` si no es suya |
 | POST | `/web/cubicacion` | Cuerpo `CubicacionRequest` `{items: [{descripcion?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}], clase_viaje?}` (centímetros y kilogramos). `200 ResultadoCubicacion` `{sugerencia, sugerencia_flota, advertencias, extradimension}`, sin persistir nada (HU-005.4); `400 ErrorNegocio` `ITEMS_REQUERIDOS` (falta `items` o viene vacío), `CUBICACION_DEMASIADO_GRANDE` (Nexo/Cubicador respondió 400: típicamente el límite de bultos por solicitud, también medidas inválidas) o `CUBICACION_NO_DISPONIBLE` |
 | GET / PUT | `/web/usuario/telefono` | `200 TelefonoComercial`; PUT `400` fuera del patrón; `401` si el comercial ya no existe |
 | GET | `/web/admin/lineas-negocio` | `200 [LineaNegocio]` (todas); `403` salvo `gerente_comercial` |
@@ -183,6 +186,7 @@ Ante un fallo del agente o del proveedor: `200 {"texto": "...", "error": true}` 
 | Límite de `/api/auth/*` | 30 peticiones por minuto por IP (429 `ErrorWeb`) | `LimiteAuth:*` |
 | Límite de `POST /web/chat` | 20 peticiones por minuto por comercial (429) | `LimiteChat:*` |
 | Cuerpo de `/web/*` | 64 KB (413 `ErrorWeb`) | `SeguridadHttp:LimiteCuerpoWebBytes` |
+| Cuerpo de `/web/licitaciones*` (Excel + JSON de hasta 1000 líneas) | 12 MB (413 `ErrorWeb`) | `SeguridadHttp:LimiteCuerpoLicitacionBytes` |
 | Mensaje de chat | 1 a 8000 caracteres; `sesion_id` `^[A-Za-z0-9_-]{8,64}$` | Contrato |
 | CORS | Orígenes exactos; GET, POST y PUT; encabezados `Authorization` y `Content-Type`; sin credenciales; preflight cacheado 10 minutos | `Cors:OrigenesPermitidos` (obligatorio en Production) |
 | Encabezados de seguridad | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` en `/web/*` y `/pdfs/*`; sin `Server` | Fijo; HSTS lo pone Traefik |

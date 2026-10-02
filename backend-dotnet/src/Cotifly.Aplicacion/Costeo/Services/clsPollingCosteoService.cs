@@ -94,6 +94,7 @@ public sealed class clsPollingCosteoService(
         {
             var vencio = cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
+            await VencerLineasAsync(cotizacion, cancellationToken);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             if (vencio)
             {
@@ -110,6 +111,7 @@ public sealed class clsPollingCosteoService(
             var cambioDesconocida = cotizacion.DetenerPorSolicitudDesconocida(
                 $"Nexo ya no reconoce la solicitud {cotizacion.CosteoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
             cotizacion.RegistrarFalloConsultaCosteo(ahora, siguiente: null);
+            await VencerLineasAsync(cotizacion, cancellationToken);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             await auditoria.RegistrarAsync(
                 HerramientaErrorConsulta,
@@ -147,7 +149,10 @@ public sealed class clsPollingCosteoService(
         var estado = clsDerivacionEstadoCosteo.Derivar(foto);
         var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado) ? null : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, 0, config);
         var cambio = cotizacion.RegistrarConsultaCosteo(estado, foto.Cotizacion?.Id, ahora, siguiente);
-        var precio = precioCosteo.Aplicar(cotizacion, foto, ahora);
+
+        // ADR-017: el estado, el costo y el precio se derivan también por línea (una licitación tiene N; HU-005.5, una).
+        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+        var precio = precioCosteo.Aplicar(cotizacion, lineas, foto, ahora);
         cambio |= precio;
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         if (cambio)
@@ -156,6 +161,26 @@ public sealed class clsPollingCosteoService(
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;
+    }
+
+    /// <summary>
+    /// La cotización quedó en <c>costeo_vencido</c> (edad máxima o id que Nexo no reconoce): sus líneas sin flete también (ADR-017).
+    /// Las que ya tenían flete conservan su estado y su precio.
+    /// </summary>
+    private async Task VencerLineasAsync(clsCotizacion cotizacion, CancellationToken cancellationToken)
+    {
+        if (cotizacion.EstadoCosteo != EstadoCosteo.CosteoVencido)
+        {
+            return;
+        }
+
+        foreach (var linea in await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [])
+        {
+            if (linea.EstadoCosteo is EstadoCosteo.PendienteCosteo or null)
+            {
+                linea.RegistrarEstado(EstadoCosteo.CosteoVencido);
+            }
+        }
     }
 
     private Task AuditarCambioAsync(clsCotizacion cotizacion, EstadoCosteo? anterior, int duracionMs) =>

@@ -27,6 +27,13 @@
     <!-- Transporte SMTP del correo (#11, relay interno). MIT; trae MimeKit (MIT) y BouncyCastle.Cryptography (MIT). -->
     <PackageVersion Include="MailKit" Version="4.18.0" />
     <!--
+      Excel de licitaciones (HU-011, ADR-017): ClosedXML en la MISMA versión que Nexo (0.104.2, sin vulnerabilidades conocidas en OSV al 2026-10-01) para que la detección de filas coincida. MIT; trae
+      DocumentFormat.OpenXml, ClosedXML.Parser, ExcelNumberFormat y RBush (MIT) y SixLabors.Fonts (Apache-2.0). SixLabors.Fonts
+      se fija en 1.0.0: desde la 2.x cambió a la "Six Labors Split License", que no cumple el criterio de ADR-010 §7.
+    -->
+    <PackageVersion Include="ClosedXML" Version="0.104.2" />
+    <PackageVersion Include="SixLabors.Fonts" Version="1.0.0" />
+    <!--
       Login SSO (#12, ADR-009). MIT. JwtBearer valida el access en la Api; JsonWebTokens lo emite en Infraestructura.
       JsonWebTokens se fija en la versión que trae JwtBearer 10.0.12 (Microsoft.IdentityModel.* 8.19.2).
     -->

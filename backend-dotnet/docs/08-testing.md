@@ -294,3 +294,20 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 |---|---|---|
 | [qa/regresion-manual.md](qa/regresion-manual.md) | Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaciones, envío de correo) contra el backend .NET desplegado en pruebas (HU-003.8) | Pendiente: la ejecuta Kevin (QA) |
 | [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md) | Al menos 10 casos reales comparados entre el Python y el .NET, y prueba de los endpoints `/web/*` con Postman (HU-003.9, #15) | Plantilla lista; la define y ejecuta Kevin (QA) |
+
+## 8.10 Licitaciones desde Excel (HU-011, ADR-017)
+
+| Prueba | Proyecto | Qué cubre |
+|---|---|---|
+| `clsLineasSolicitudTests` | Dominio | Errores por campo de una línea (todos, no el primero), regla de peso de Nexo, encabezado, entidad de línea, derivación por línea, posiciones de varias líneas y validación del archivo |
+| `clsValidadorLicitacionTests` | Aplicacion | Reporte por fila: índice, fila, campo y código; hoja y fila con archivo; tope de 1000 líneas |
+| `clsPrecioCosteoLineasTests` | Aplicacion | Precio por línea, total solo con todas costeadas, ids por orden, entrega sin flete, PDF ya generado y **equivalencia con la regla de una línea** de HU-005.7 |
+| `clsExcelLicitacionTests` | Infraestructura | Detección de filas con la regla de Nexo (portada combinada, fila vacía, subencabezado), análisis multipart contra el Nexo falso y traducción de errores, alta con N líneas |
+| `clsLectorExcelAcotadoTests` | Infraestructura | Archivos maliciosos (celda en `XFD3000`, combinadas `A2:XFD400` y `A2:XFD1048576`) terminan en menos de 10 s y con menos de 400 MB, cancelación, y **paridad con Nexo**: las filas ubicadas son las de `hojas[h].filas` de un oráculo copiado del `ExcelSolicitudesAdapter` de Nexo, con su pliego de 300 líneas (`tests/fixtures/licitaciones/pliego-300-lineas.xlsx`), uno sintético y uno con subencabezado |
+| `clsLineasSolicitudTests` (emparejador) y `clsPrecioCosteoLineasTests` (asociación) | Dominio, Aplicacion | Asociación por contenido con Nexo devolviendo las líneas en otro orden y con fletes distintos, líneas idénticas sin asociar, otro número de líneas, costo negativo sin lanzar (también en la equivalencia de una línea) |
+| `clsEsquemaTests` (0005) | Infraestructura (Testcontainers) | Idempotencia, CHECK, columnas obsoletas conservadas y **backfill** sobre una base auxiliar con 0001 a 0004 y filas del esquema anterior |
+| `clsBaseDatosHealthCheckTests` | Infraestructura (Testcontainers) | `/health/ready` con `falta 0005` |
+| `clsLicitacionesEndpointsTests` | Api (Testcontainers) | Análisis, alta multipart y JSON, reporte por fila sin nada guardado, hoja inexistente, polling línea por línea, más de 10 líneas (costeo en segundo plano), aislamiento por dueño y la línea del formulario de una línea |
+| `licitaciones_excel.feature` | Aceptacion | Los mismos flujos en Gherkin, con reintento tras un 503 de Nexo |
+
+El pliego de prueba es `tests/Comun/clsPliegoMuestra.cs`: un Excel generado con ClosedXML con plantilla "de cliente" (portada combinada, encabezado en la fila 3, una fila vacía en medio y una columna sin mapear). El Nexo falso (`clsNexoFalso`) ahora maneja solicitudes de N líneas (`CostearLinea`, `LineasDe`) y `analizar-excel`.

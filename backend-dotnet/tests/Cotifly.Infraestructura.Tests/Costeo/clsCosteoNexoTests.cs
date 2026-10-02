@@ -98,7 +98,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     public async Task SinPosicionesNoMandaElArreglo()
     {
         _nexo.Responder(HttpStatusCode.Created, Creada);
-        var solicitud = Solicitud() with { Solicitud = clsSolicitudCosteoMuestra.Crear() with { Posiciones = [] } };
+        var solicitud = new clsSolicitudNexo("15927", clsSolicitudCosteoMuestra.Crear() with { Posiciones = [] }, "PuertoAInterior");
 
         await Adaptador().EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
@@ -140,16 +140,16 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "Identidad no válida.")]
-    [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", "Sin permiso.")]
-    public async Task Un401O403EsConfiguracionNoDisponibleConUnaLineaDeError(HttpStatusCode estado, string codigo, string mensaje)
+    [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "Identidad no válida.", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES", "Sin permiso.", clsCodigosError.NexoSinPermiso)]
+    public async Task Un401EsConfiguracionNoDisponibleYUn403EsSinPermisoConUnaLineaDeError(HttpStatusCode estado, string codigo, string mensaje, string esperado)
     {
         var logger = new clsLoggerFalso<clsCosteoNexo>();
         _nexo.Responder(estado, JsonSerializer.Serialize(new { code = codigo, message = mensaje, timestamp = "2026-09-28T15:00:00Z" }));
 
         var resultado = await Adaptador(logger: logger).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
+        resultado.Error.Codigo.Should().Be(esperado, "un 403 del alta es el rol del comercial en Nexo, no una caída (ADR-017 §4)");
         resultado.Error.Detalle.Should().Be($"HTTP {(int)estado} {codigo}: {mensaje}");
         logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Error && r.Mensaje.Contains("X-Portal-Usuario-Id"));
     }

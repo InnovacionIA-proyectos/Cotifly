@@ -79,6 +79,15 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task ConUnaBaseSinEl0005EsUnhealthyPorEsquemaIncompleto()
+    {
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0005Async());
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0005", "el modelo EF ya mapea CotizacionLineasSolicitud y el Excel de licitaciones");
+    }
+
+    [Fact]
     public async Task ConUnaBaseSinEl0004EsUnhealthyPorEsquemaIncompleto()
     {
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0004Async());

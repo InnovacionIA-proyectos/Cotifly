@@ -202,8 +202,21 @@ public sealed class clsApiWebPruebas : IDisposable
             : string.Empty;
         await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.Cotizaciones SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
-        return await Infraestructura.Costeo.Services.clsWorkerCosteoNexo.ProcesarLoteAsync(
-            Factory.Services.GetRequiredService<IServiceScopeFactory>(), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
+
+        // Solo la cotización de ESTA prueba (como lo haría el worker con ella): la agenda es compartida entre pruebas que corren en
+        // paralelo, y procesar el lote completo consultaba cotizaciones de otra prueba contra este Nexo falso (que no las conoce:
+        // 404 → costeo_vencido en la otra prueba).
+        var id = await clsBaseDatosPruebas.EscalarAsync<Guid?>(_baseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.Cotizaciones WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+        if (id is not { } cotizacionId)
+        {
+            return 0;
+        }
+
+        await using var ambito = Factory.Services.CreateAsyncScope();
+        var resultado = await ambito.ServiceProvider.GetRequiredService<Aplicacion.Costeo.Services.IClsPollingCosteoService>().ProcesarAsync(
+            new Aplicacion.Cotizaciones.DTOs.clsConsultaCosteoPendiente(cotizacionId, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)), CancellationToken.None);
+        return resultado == Aplicacion.Costeo.Services.ResultadoConsultaCosteo.NoReclamada ? 0 : 1;
     }
 
     /// <summary>Registra en <c>Correos</c> un envío exitoso de la cotización (para los destinatarios previos).</summary>
@@ -234,6 +247,36 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>Serializa un objeto anónimo tal cual (sin política de nombres): las pruebas escriben el snake_case a mano.</summary>
     public static string Json(object valor) => JsonSerializer.Serialize(valor);
+
+    /// <summary>Petición con un cuerpo cualquiera (multipart de licitaciones, HU-011).</summary>
+    public async Task<HttpResponseMessage> EnviarContenidoAsync(HttpMethod metodo, string ruta, string? token, HttpContent contenido)
+    {
+        using var peticion = new HttpRequestMessage(metodo, ruta) { Content = contenido };
+        if (token is not null)
+        {
+            peticion.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        return await Cliente.SendAsync(peticion);
+    }
+
+    /// <summary>
+    /// Multipart de <c>POST /web/licitaciones</c> (HU-011.2): la parte <c>licitacion</c> con el JSON y, si viene, la parte <c>archivo</c>.
+    /// </summary>
+    public static MultipartFormDataContent Licitacion(string json, byte[]? archivo, string nombreArchivo = "pliego.xlsx")
+    {
+        var multipart = new MultipartFormDataContent { { new StringContent(json, Encoding.UTF8), "licitacion" } };
+        if (archivo is not null)
+        {
+            multipart.Add(new ByteArrayContent(archivo), "archivo", nombreArchivo);
+        }
+
+        return multipart;
+    }
+
+    /// <summary>Multipart con solo la parte <c>archivo</c> (<c>POST /web/licitaciones/analizar-excel</c>).</summary>
+    public static MultipartFormDataContent Archivo(byte[] archivo, string nombreArchivo = "pliego.xlsx") =>
+        new() { { new ByteArrayContent(archivo), "archivo", nombreArchivo } };
 
     /// <summary>Número con punto decimal (independiente de la cultura).</summary>
     public static string Numero(decimal valor) => valor.ToString(CultureInfo.InvariantCulture);

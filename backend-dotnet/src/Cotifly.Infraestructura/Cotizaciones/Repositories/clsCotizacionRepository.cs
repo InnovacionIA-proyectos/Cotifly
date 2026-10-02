@@ -28,6 +28,33 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
             .OrderBy(p => p.Orden)
             .ToListAsync(cancellationToken);
 
+    public void AgregarLineas(IEnumerable<clsCotizacionLineaSolicitud> lineas)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        contexto.CotizacionLineasSolicitud.AddRange(lineas);
+    }
+
+    public async Task<IReadOnlyList<clsCotizacionLineaSolicitud>> ListarLineasAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
+        await contexto.CotizacionLineasSolicitud
+            .Where(l => l.CotizacionId == cotizacionId)
+            .OrderBy(l => l.Orden)
+            .ToListAsync(cancellationToken);
+
+    public void AgregarArchivoLicitacion(clsArchivoLicitacion archivo)
+    {
+        ArgumentNullException.ThrowIfNull(archivo);
+        contexto.ArchivosLicitacion.Add(archivo);
+    }
+
+    public Task<clsArchivoLicitacionResumen?> ObtenerResumenArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
+        contexto.ArchivosLicitacion.AsNoTracking()
+            .Where(a => a.CotizacionId == cotizacionId)
+            .Select(a => new clsArchivoLicitacionResumen(a.NombreArchivo, a.Hoja, a.TamanoBytes))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public Task<clsArchivoLicitacion?> ObtenerArchivoLicitacionAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
+        contexto.ArchivosLicitacion.AsNoTracking().FirstOrDefaultAsync(a => a.CotizacionId == cotizacionId, cancellationToken);
+
     public async Task<bool> ReclamarReenvioCosteoAsync(
         Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default)
     {

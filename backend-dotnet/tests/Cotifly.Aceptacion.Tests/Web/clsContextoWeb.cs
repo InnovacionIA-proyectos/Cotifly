@@ -69,6 +69,18 @@ public sealed class clsContextoWeb : IDisposable
         UltimoCuerpo = UltimoTipo == "application/pdf" ? string.Empty : System.Text.Encoding.UTF8.GetString(UltimoContenido);
     }
 
+    /// <summary>Igual que <see cref="EnviarAsync(HttpMethod, string, string?, string?)"/>, con un cuerpo cualquiera (multipart).</summary>
+    public async Task EnviarAsync(HttpMethod metodo, string ruta, string? token, HttpContent contenido)
+    {
+        using var respuesta = await Api.EnviarContenidoAsync(metodo, ruta, token, contenido);
+        UltimoEstado = respuesta.StatusCode;
+        UltimoContenido = await respuesta.Content.ReadAsByteArrayAsync();
+        UltimoTipo = respuesta.Content.Headers.ContentType?.MediaType;
+        UltimoCuerpo = UltimoTipo is "application/pdf" or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ? string.Empty
+            : System.Text.Encoding.UTF8.GetString(UltimoContenido);
+    }
+
     public JsonElement UltimoJson()
     {
         using var documento = JsonDocument.Parse(UltimoCuerpo);

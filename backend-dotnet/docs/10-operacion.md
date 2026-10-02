@@ -19,7 +19,7 @@ Contenido:
 | Sonda | Uso | Respuesta |
 |---|---|---|
 | `GET /health` | Vida. La consulta el `HEALTHCHECK` de la imagen (`dotnet /app/Cotifly.Api.dll --healthcheck`, cada 30 s, timeout 5 s, 3 reintentos, `start-period` 20 s) | `200 {"status":"ok","servicio":"cotifly-api","entorno":"..."}` |
-| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` / `falta 0004` |
+| `GET /health/ready` | Disponibilidad. Para el balanceador (healthcheck de Traefik): saca la tarea del balanceo sin reiniciarla | `200 {"status":"ready"}`; `503 {"status":"unavailable","detalle":"..."}` sin cadena, base caída o `esquema incompleto: falta 0002` / `falta 0004` / `falta 0005` |
 
 - `/health/ready` ejecuta los health checks con etiqueta `ready` (`clsBaseDatosHealthCheck`: conexión a `dbo_cotifly` más la verificación de `Sesiones.estadoAgente` y `TokensRefresco`, con 5 s de límite). `detalle` nunca trae la cadena ni el servidor; la excepción queda en el log.
 - Una base caída no debe reiniciar el contenedor: por eso el `HEALTHCHECK` usa `/health` y no `/health/ready`.
@@ -143,6 +143,8 @@ Otras decisiones abiertas:
 | Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
 | Precondición de despliegue (`DEPLOY.md`): el 0004 aplicado antes de desplegar esta versión; staging con `CosteoNexo__Habilitado=false` mientras comparta base con producción de Nexo | DBA | ADR-015 |
 | Aprobación de los scripts 0002, 0003 y 0004 (el 0004 con el DBA, coordinado con HU-002) | Sara, scalderon-bs y DBA | ADR-008, ADR-015 |
+| Aprobación del 0005 (`CotizacionLineasSolicitud`, `CotizacionArchivosLicitacion`, FK de posiciones con su índice y backfill) y precondición de despliegue: aplicarlo antes de la versión de HU-011. Guarda el Excel original de cada licitación en `VARBINARY(MAX)` (hasta 10 MB por licitación): el DBA debe contemplar el crecimiento de la base | scalderon-bs y DBA | ADR-017 |
+| **Retención del Excel original (propuesta):** los pliegos son documentos confidenciales del cliente y pueden traer datos personales (Ley 1581 de 2012). Purgar `CotizacionArchivosLicitacion.contenido` N meses después del cierre de la licitación (propuesta: 12; conservar nombre, hoja, tamaño y SHA-256, que es solo trazabilidad) con un trabajo programado o un script del DBA; tener en cuenta que los respaldos conservan el contenido hasta su propia caducidad, y vaciar o anonimizar la tabla en cualquier copia de producción a pruebas. Una licitación purgada se exporta sin el original (hoja con los campos mapeados) | Gerencia Comercial y DBA | ADR-017 §2 |
 | Mitigación de la frontera de confianza del login (aserción firmada de ClientePro) | Duban con ClientePro | ADR-009, "Riesgo abierto" |
 | Transporte real del correo (`smtp_relay`, `wscorreos` o `smtp`) | Equipo (D3) | [03-infraestructura](03-infraestructura.md#pdf-y-correo) |
 | Proveedor y modelo de IA de producción, custodia de la clave | Negocio | ADR-003 |
@@ -180,6 +182,8 @@ Otras decisiones abiertas:
 | `/health/ready` 503 `esquema incompleto: falta 0002` | El 0002 no está aplicado | Aplicar `db/migrations_mssql/0002`, `0003` y `0004` con `sqlcmd -I` |
 | Una cotización se queda en `pendiente_costeo` y no avanza | Nexo no la ha costeado, Nexo caído (eventos `costeo_nexo_consulta` con `exito = 0` en `EventosHerramienta`), `CosteoNexo__Habilitado=false` o sin `Nexo__UrlBase` (log "Polling del costeo en Nexo desactivado" al arrancar) | Revisar `costeoConsultasFallidas`, `costeoSiguienteConsultaAt` y los eventos de la cotización; pasadas `CosteoNexo__EdadMaximaHoras` queda en `costeo_vencido` |
 | `/health/ready` 503 `esquema incompleto: falta 0004` | El 0004 (costeo en Nexo) no está aplicado y el modelo de `Cotizaciones` ya lo usa | Aplicar `db/migrations_mssql/0004_costeo_nexo.sql` con `sqlcmd -I` (idempotente) |
+| `/health/ready` 503 `esquema incompleto: falta 0005` | El 0005 (líneas de la solicitud y Excel de licitaciones, ADR-017) no está aplicado | Aplicar `db/migrations_mssql/0005_lineas_solicitud.sql` con `sqlcmd -I` (idempotente; hace el backfill de una línea por cotización del formulario) |
+| `POST /web/licitaciones` responde 413 | El Excel más el JSON superan `SeguridadHttp__LimiteCuerpoLicitacionBytes` (12 MB por defecto) | El archivo admite 10 MB (límite de Nexo); revisar el tamaño del pliego o subir el límite con cuidado |
 | `/health/ready` 503 con la base caída | Red, credenciales o certificado de SQL Server | Revisar la cadena; si el certificado no es de una CA de confianza, instalar la CA (preferido) o `TrustServerCertificate=True` temporal y documentado |
 | Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, o `dbsolucionesti` inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |

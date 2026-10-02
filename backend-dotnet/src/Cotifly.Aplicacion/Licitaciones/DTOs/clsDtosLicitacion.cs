@@ -1,0 +1,84 @@
+using Cotifly.Dominio.Cotizaciones;
+
+namespace Cotifly.Aplicacion.Licitaciones.DTOs;
+
+/// <summary>
+/// <c>AnalisisExcelDto</c> de Nexo (<c>POST /api/captura-solicitudes/analizar-excel</c>, HU-011.1): las hojas del Excel del cliente
+/// con su fila de encabezado, los encabezados y las filas con datos como texto, para que el comercial mapee las columnas. No se guarda.
+/// </summary>
+public sealed record clsAnalisisExcel(string Archivo, IReadOnlyList<clsHojaExcel> Hojas);
+
+/// <summary>Una hoja analizada. <paramref name="Filas"/> trae hasta 1000 filas; <paramref name="TotalFilas"/>, el total real.</summary>
+public sealed record clsHojaExcel(string Nombre, int FilaEncabezado, IReadOnlyList<string> Encabezados, IReadOnlyList<IReadOnlyList<string>> Filas, int TotalFilas);
+
+/// <summary>Archivo subido por el comercial (multipart): nombre y bytes.</summary>
+public sealed record clsArchivoSubido(string? Nombre, byte[] Contenido);
+
+/// <summary>Una línea mapeada por el frontend: los campos de <c>CapturaLineaRequest</c> y la fila del Excel de donde salió.</summary>
+public sealed record clsLineaLicitacionEntrada(int? Fila, clsLineaSolicitudCosteo Linea);
+
+/// <summary>
+/// Entrada de <c>POST /web/licitaciones</c> (HU-011.2, ADR-017): el cliente (NIT del buscador), la línea de negocio de Cotifly, el
+/// encabezado (siempre <c>licitacion</c>), la hoja mapeada, las líneas ya mapeadas y, opcionalmente, el Excel original.
+/// </summary>
+public sealed record clsEntradaLicitacion(
+    string? NitCliente,
+    string? ClienteNombre,
+    string? LineaNegocio,
+    clsEncabezadoSolicitudCosteo Encabezado,
+    string? Hoja,
+    IReadOnlyList<clsLineaLicitacionEntrada> Lineas,
+    clsArchivoSubido? Archivo);
+
+/// <summary>
+/// Un error del reporte de validación (<c>ErrorFilaLicitacion</c>): <paramref name="Indice"/> es la posición en <c>lineas[]</c>
+/// (base 0; <c>null</c> si el error es del encabezado), <paramref name="Fila"/> la fila del análisis que mandó el frontend.
+/// </summary>
+public sealed record clsErrorFilaLicitacion(int? Indice, int? Fila, string Campo, string Codigo, string Mensaje);
+
+/// <summary>
+/// Resultado de crear una licitación: la cotización creada, o un error de negocio (<see cref="Error"/>), o el reporte por fila
+/// (<see cref="Errores"/>, con <see cref="Error"/> = <c>LICITACION_INVALIDA</c>). Nada queda guardado si hay error.
+/// </summary>
+public sealed record clsResultadoLicitacion(clsCotizacion? Cotizacion, Dominio.Comun.clsErrorDominio? Error, IReadOnlyList<clsErrorFilaLicitacion> Errores)
+{
+    public static clsResultadoLicitacion Exito(clsCotizacion cotizacion) => new(cotizacion, null, []);
+
+    public static clsResultadoLicitacion Fallo(Dominio.Comun.clsErrorDominio error) => new(null, error, []);
+
+    public static clsResultadoLicitacion Invalida(IReadOnlyList<clsErrorFilaLicitacion> errores) => new(
+        null,
+        new Dominio.Comun.clsErrorDominio(Dominio.Comun.clsCodigosError.LicitacionInvalida,
+            $"La licitación tiene {errores.Count} error(es): corrige las filas indicadas y vuelve a enviarla."),
+        errores);
+}
+
+/// <summary>
+/// <c>Licitacion</c>: la vista del comercial de una cotización de varias líneas (estado y precios; nunca el costo de Nexo).
+/// </summary>
+public sealed record clsLicitacion(
+    string Folio,
+    string? ClienteNombre,
+    string? NitCliente,
+    string? Referencia,
+    DateTimeOffset? Deadline,
+    string? EstadoCosteo,
+    string? MotivoEstadoCosteo,
+    string Moneda,
+    decimal? PrecioFinal,
+    int LineasCosteadas,
+    int LineasPendientes,
+    string? ArchivoNombre,
+    string? Hoja,
+    IReadOnlyList<clsLineaLicitacion> Lineas);
+
+/// <summary><c>LineaLicitacion</c>: una línea con su estado y su precio con margen (<c>null</c> mientras no tiene flete).</summary>
+public sealed record clsLineaLicitacion(
+    int Orden,
+    int? Fila,
+    string Origen,
+    string Destino,
+    string? TipoVehiculo,
+    decimal? PesoKg,
+    string? EstadoCosteo,
+    decimal? PrecioFinal);

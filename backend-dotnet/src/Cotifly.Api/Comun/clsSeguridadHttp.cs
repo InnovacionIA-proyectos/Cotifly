@@ -51,6 +51,16 @@ public sealed class clsOpcionesSeguridadHttp
     /// <summary>Tamaño máximo del cuerpo de una petición a <c>/web/*</c> (por defecto 64 KB; 413 al pasarlo).</summary>
     [Range(1024, 10 * 1024 * 1024)]
     public long LimiteCuerpoWebBytes { get; set; } = 64 * 1024;
+
+    /// <summary>
+    /// Tamaño máximo del cuerpo en <c>/web/licitaciones*</c> (HU-011, ADR-017): el Excel (hasta 10 MB) más el JSON de hasta 1000
+    /// líneas. Por defecto 12 MB; 413 al pasarlo.
+    /// </summary>
+    [Range(1024, 64 * 1024 * 1024)]
+    public long LimiteCuerpoLicitacionBytes { get; set; } = 12 * 1024 * 1024;
+
+    /// <summary>Prefijo de las rutas con el límite de <see cref="LimiteCuerpoLicitacionBytes"/>.</summary>
+    public const string PrefijoLicitaciones = "/web/licitaciones";
 }
 
 /// <summary>Valida <see cref="clsOpcionesCors"/>: orígenes bien formados y, en Production, al menos uno.</summary>
@@ -232,7 +242,10 @@ public static class clsSeguridadHttp
     /// </summary>
     private static async Task LimitarCuerpoAsync(HttpContext contexto, RequestDelegate siguiente)
     {
-        var limite = contexto.RequestServices.GetRequiredService<IOptions<clsOpcionesSeguridadHttp>>().Value.LimiteCuerpoWebBytes;
+        var opciones = contexto.RequestServices.GetRequiredService<IOptions<clsOpcionesSeguridadHttp>>().Value;
+        var limite = contexto.Request.Path.StartsWithSegments(clsOpcionesSeguridadHttp.PrefijoLicitaciones, StringComparison.OrdinalIgnoreCase)
+            ? opciones.LimiteCuerpoLicitacionBytes
+            : opciones.LimiteCuerpoWebBytes;
         if (contexto.Request.ContentLength > limite)
         {
             contexto.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;

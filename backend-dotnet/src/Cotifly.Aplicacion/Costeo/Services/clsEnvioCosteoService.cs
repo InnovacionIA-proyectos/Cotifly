@@ -35,6 +35,17 @@ public interface IClsEnvioCosteoService
     /// <c>COSTEO_NO_REINTENTABLE</c> si no está en <c>error_envio</c> ni en un <c>pendiente_envio</c> abandonado.
     /// </summary>
     Task<clsResultado<clsCotizacion>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Envía a Nexo una cotización ya guardada y confirmada con sus líneas (licitación, HU-011.2, ADR-017) y guarda el resultado
+    /// (<c>pendiente_costeo</c>/<c>autocosteo</c> o <c>error_envio</c>), igual que el envío de HU-005.5. Sin el token de la petición.
+    /// </summary>
+    Task EnviarGuardadaAsync(
+        clsCotizacion cotizacion,
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
+        IReadOnlyList<clsCotizacionPosicion> posiciones,
+        clsMargenPolitica? politica,
+        Guid usuarioId);
 }
 
 /// <summary>Implementación de <see cref="IClsEnvioCosteoService"/>.</summary>
@@ -99,6 +110,7 @@ public sealed class clsEnvioCosteoService(
             return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
         }
 
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
         var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
         {
             var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
@@ -115,9 +127,13 @@ public sealed class clsEnvioCosteoService(
                 return cotizacion.Error;
             }
 
+            // ADR-017: la única línea también va en CotizacionLineasSolicitud (las columnas de línea de Cotizaciones quedan como
+            // espejo de la línea 1 para métricas, "Mis cotizaciones" y el PDF de una línea).
             cotizacion.Valor.RegistrarSolicitudCosteo(entrada.Solicitud);
+            lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Valor.Id, [entrada.Solicitud.ALinea()]);
             cotizaciones.Agregar(cotizacion.Valor);
-            cotizaciones.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones));
+            cotizaciones.AgregarLineas(lineas);
+            cotizaciones.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1));
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return cotizacion.Valor;
         }, cancellationToken);
@@ -127,8 +143,35 @@ public sealed class clsEnvioCosteoService(
         }
 
         // Desde aquí, sin el token de la petición (ver EnviarANexoAsync).
-        await EnviarANexoAsync(creada.Valor, entrada.Solicitud, politica, usuarioId, reintento: false);
+        await EnviarANexoAsync(creada.Valor, entrada.Solicitud.Encabezado, [entrada.Solicitud.ALinea()], lineas, politica, usuarioId, reintento: false);
         return creada.Valor;
+    }
+
+    public Task EnviarGuardadaAsync(
+        clsCotizacion cotizacion,
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
+        IReadOnlyList<clsCotizacionPosicion> posiciones,
+        clsMargenPolitica? politica,
+        Guid usuarioId)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(posiciones);
+        var encabezado = cotizacion.EncabezadoSolicitud
+            ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion));
+        return EnviarANexoAsync(cotizacion, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
+    }
+
+    /// <summary>
+    /// Líneas guardadas como datos de la solicitud, cada una con sus posiciones. Las posiciones sin línea (filas anteriores al
+    /// backfill del 0005) se asignan a la línea 1.
+    /// </summary>
+    public static IReadOnlyList<clsLineaSolicitudCosteo> LineasConPosiciones(
+        IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsCotizacionPosicion> posiciones)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(posiciones);
+        return [.. lineas.OrderBy(l => l.Orden).Select(l => l.ALinea(posiciones.Where(p => p.LineaSolicitudId == l.Id || (p.LineaSolicitudId is null && l.Orden == 1))))];
     }
 
     public async Task<clsResultado<clsCotizacion>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
@@ -142,14 +185,20 @@ public sealed class clsEnvioCosteoService(
         }
 
         var ahora = reloj.AhoraUtc;
-        var solicitud = cotizacion.SolicitudCosteo(await cotizaciones.ListarPosicionesAsync(cotizacion.Id, cancellationToken));
-        if (solicitud is null || !cotizacion.PuedeReenviarCosteo(ahora))
+        var posiciones = await cotizaciones.ListarPosicionesAsync(cotizacion.Id, cancellationToken);
+        var guardadas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+        var encabezado = cotizacion.EncabezadoSolicitud;
+        IReadOnlyList<clsLineaSolicitudCosteo>? lineas = guardadas.Count > 0 && encabezado is not null
+            ? LineasConPosiciones(guardadas, posiciones)
+            : cotizacion.SolicitudCosteo(posiciones) is { } legado ? [legado.ALinea()] : null;
+        if (lineas is null || encabezado is null || !cotizacion.PuedeReenviarCosteo(ahora))
         {
             return NoReintentable(cotizacion);
         }
 
-        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría.
-        if (solicitud.Validar() is { } invalida)
+        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una línea
+        // usa la validación del formulario (mismos mensajes que HU-005.5); varias, la de la licitación.
+        if (Revalidar(encabezado, lineas) is { } invalida)
         {
             return invalida;
         }
@@ -163,8 +212,24 @@ public sealed class clsEnvioCosteoService(
         // Reclamada: desde aquí, sin el token de la petición (ver EnviarANexoAsync).
         await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
         var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
-        await EnviarANexoAsync(cotizacion, solicitud, politica, usuarioId, reintento: true);
+        await EnviarANexoAsync(cotizacion, encabezado, lineas, guardadas, politica, usuarioId, reintento: true);
         return cotizacion;
+    }
+
+    private static clsErrorDominio? Revalidar(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas)
+    {
+        if (lineas.Count == 1)
+        {
+            return clsSolicitudCosteo.Desde(encabezado, lineas[0]).Validar();
+        }
+
+        var primero = encabezado.Errores().Select(e => (Linea: (int?)null, Error: e))
+            .Concat(lineas.SelectMany((l, i) => l.Errores().Select(e => (Linea: (int?)(i + 1), Error: e))))
+            .FirstOrDefault();
+        return primero.Error is null
+            ? null
+            : new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
+                primero.Linea is { } numero ? $"Línea {numero}: {primero.Error.Mensaje}" : primero.Error.Mensaje, primero.Error.Codigo);
     }
 
     /// <summary>
@@ -172,15 +237,28 @@ public sealed class clsEnvioCosteoService(
     /// desconecta cuando Nexo ya recibió el alta, la respuesta (el <c>costeoId</c>) no se pierde y un reintento no duplica la solicitud
     /// en Nexo. El límite lo pone el cliente <c>NexoCosteo</c> (30 s).
     /// </summary>
-    private async Task EnviarANexoAsync(clsCotizacion cotizacion, clsSolicitudCosteo solicitud, clsMargenPolitica? politica, Guid usuarioId, bool reintento)
+    private async Task EnviarANexoAsync(
+        clsCotizacion cotizacion,
+        clsEncabezadoSolicitudCosteo encabezado,
+        IReadOnlyList<clsLineaSolicitudCosteo> lineas,
+        IReadOnlyList<clsCotizacionLineaSolicitud> entidades,
+        clsMargenPolitica? politica,
+        Guid usuarioId,
+        bool reintento)
     {
         var cronometro = Stopwatch.StartNew();
-        var resultado = await ResolverClienteYEnviarAsync(cotizacion, solicitud, politica, usuarioId, CancellationToken.None);
+        var resultado = await ResolverClienteYEnviarAsync(cotizacion, encabezado, lineas, politica, usuarioId, CancellationToken.None);
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {
             var creada = resultado.Valor;
             cotizacion.RegistrarEnvioCosteo(creada.Id, creada.CosteoCompleto, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+
+            // Cada línea arranca con el estado de la cotización; el polling deriva después el de cada una (ADR-017).
+            foreach (var linea in entidades)
+            {
+                linea.RegistrarEnvio(cotizacion.EstadoCosteo!.Value);
+            }
         }
         else
         {
@@ -195,7 +273,7 @@ public sealed class clsEnvioCosteoService(
 
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio = cotizacion.Folio, reintento, linea_negocio_nexo = politica?.MapeoLineasNexo },
+            new { folio = cotizacion.Folio, reintento, linea_negocio_nexo = politica?.MapeoLineasNexo, lineas = lineas.Count },
             new
             {
                 estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
@@ -209,7 +287,12 @@ public sealed class clsEnvioCosteoService(
     }
 
     private async Task<clsResultado<clsSolicitudCreadaNexo>> ResolverClienteYEnviarAsync(
-        clsCotizacion cotizacion, clsSolicitudCosteo solicitud, clsMargenPolitica? politica, Guid usuarioId, CancellationToken cancellationToken)
+        clsCotizacion cotizacion,
+        clsEncabezadoSolicitudCosteo encabezado,
+        IReadOnlyList<clsLineaSolicitudCosteo> lineas,
+        clsMargenPolitica? politica,
+        Guid usuarioId,
+        CancellationToken cancellationToken)
     {
         var nit = cotizacion.NitCliente;
         if (nit is null)
@@ -241,7 +324,7 @@ public sealed class clsEnvioCosteoService(
         }
 
         await ResolverMargenAsync(cotizacion, politica, candidato.Bp.Trim(), cancellationToken);
-        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(candidato.Bp.Trim(), solicitud, politica?.MapeoLineasNexo), cancellationToken);
+        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(candidato.Bp.Trim(), encabezado, lineas, politica?.MapeoLineasNexo), cancellationToken);
     }
 
     /// <summary>

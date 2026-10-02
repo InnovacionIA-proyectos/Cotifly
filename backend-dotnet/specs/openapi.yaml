@@ -1134,6 +1134,160 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
 
+  /web/licitaciones/analizar-excel:
+    post:
+      operationId: analizarExcelLicitacion
+      tags: [web]
+      summary: Analiza el Excel del pliego en Nexo para mapear sus columnas (no guarda nada)
+      description: |
+        HU-011.2 (ADR-017, `docs/HU-011-formato-excel-licitacion.md`). Cotifly no impone plantilla: reenvía el archivo a
+        `POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel` con la identidad del comercial y devuelve las hojas con
+        su fila de encabezado, los encabezados y hasta 1000 filas como texto, para que el frontend mapee las columnas a los
+        campos destino. Ni Nexo ni Cotifly guardan el archivo en este paso. `multipart/form-data` con el campo `archivo`
+        (`.xlsx` o `.xlsm`, máximo 10 MB). El cuerpo completo de `/web/licitaciones*` admite hasta
+        `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto; 413 al pasarlo).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Hojas analizadas por Nexo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalisisExcel'
+        '400':
+          description: |
+            `ARCHIVO_REQUERIDO` (falta o vacío), `FORMATO_NO_SOPORTADO` (otra extensión), `ARCHIVO_DEMASIADO_GRANDE` (más de
+            10 MB), y de Nexo `EXCEL_INVALIDO` (no se pudo leer) o `EXCEL_SIN_DATOS` (ninguna hoja con tabla).
+            `COSTEO_NEXO_RECHAZADA` para otro 4xx de Nexo. Un 413 de Nexo también es `ARCHIVO_DEMASIADO_GRANDE`: Cotifly acepta
+            hasta 10 MB menos 64 KB para que el archivo con el sobre multipart quepa en el límite de 10 MB de Nexo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 (el comercial no tiene el rol de Cabina de Fletes que pide el análisis)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '413':
+          description: El cuerpo supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '503':
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/licitaciones:
+    post:
+      operationId: crearLicitacion
+      tags: [web]
+      summary: Crea la licitación con sus líneas mapeadas y la envía a Nexo como una sola solicitud
+      description: |
+        HU-011.2 (ADR-017). Valida **todas** las filas antes de guardar nada (reporte por fila). Si son válidas, crea la
+        cotización `licitacion` (folio del servidor con el NIT, ADR-011) con sus N líneas, sus posiciones y el Excel original
+        en `pendiente_envio`, la confirma y la envía a Nexo (`POST /api/captura-solicitudes`) como una sola solicitud con N
+        líneas, con el mismo mecanismo de `POST /web/solicitudes-costeo`: responde **201 aunque Nexo falle** (queda en
+        `error_envio` y se reintenta con `POST /web/cotizaciones/{folio}/costeo/reintentar`). El polling (HU-005.6) deriva el
+        estado y el precio de cada línea.
+
+        Dos formas de cuerpo: `multipart/form-data` con la parte `licitacion` (JSON `LicitacionWeb`) y, opcional, la parte
+        `archivo` (el Excel original, para exportarlo después con los precios, HU-011.3); o `application/json` con el
+        `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
+        archivo con la misma regla de detección de Nexo.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [licitacion]
+              properties:
+                licitacion:
+                  type: string
+                  description: JSON `LicitacionWeb`.
+                archivo:
+                  type: string
+                  format: binary
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LicitacionWeb'
+      responses:
+        '201':
+          description: Licitación creada; `estado_costeo` dice si Nexo recibió la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licitacion'
+        '400':
+          description: |
+            `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
+            `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
+            `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
+            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`). `ErrorWeb` si el cuerpo no
+            es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
+            `NEXO_SIN_PERMISO` (201).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ReporteLicitacionInvalida'
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '413':
+          description: El cuerpo (Excel + JSON) supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+
+  /web/licitaciones/{folio}:
+    get:
+      operationId: obtenerLicitacion
+      tags: [web]
+      summary: Estado y precio de cada línea de la licitación
+      description: |
+        HU-011.2. Solo precios con margen (nunca el costo de Nexo). Sirve para el polling de la pantalla: una línea sin flete
+        tiene `precio_final = null`. Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: La licitación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licitacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios
@@ -1506,6 +1660,10 @@ components:
                 Solo en `GET /web/metricas/regional` (HU-010.1, ADR-016): `REGIONAL_NO_ASIGNADA` (409: el gerente no
                 tiene regional en `DimEjecutivo` ni en `UsuariosWeb.regional`) y `REGIONAL_NO_DISPONIBLE` (503: la
                 conexión a `DimEjecutivo` está configurada pero falla).
+                Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
+                (mismos códigos que Nexo en `analizar-excel`), `ARCHIVO_DEMASIADO_GRANDE` (más de 10 MB) y
+                `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`) y `NEXO_SIN_PERMISO`
+                (403 de Nexo al alta o al análisis: el comercial no tiene el rol de Cabina de Fletes; en `/web/*` responde 403).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -1550,6 +1708,13 @@ components:
                 - MUNICIPIO_ARGUMENTO_INVALIDO
                 - REGIONAL_NO_ASIGNADA
                 - REGIONAL_NO_DISPONIBLE
+                - ARCHIVO_REQUERIDO
+                - FORMATO_NO_SOPORTADO
+                - ARCHIVO_DEMASIADO_GRANDE
+                - EXCEL_INVALIDO
+                - EXCEL_SIN_DATOS
+                - LICITACION_INVALIDA
+                - NEXO_SIN_PERMISO
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -2586,6 +2751,291 @@ components:
           default: []
           items:
             $ref: '#/components/schemas/PosicionCargaWeb'
+
+    HojaExcel:
+      type: object
+      required: [nombre, fila_encabezado, encabezados, filas, total_filas]
+      description: Hoja del Excel analizada por Nexo (`HojaExcelDto`).
+      properties:
+        nombre:
+          type: string
+        fila_encabezado:
+          type: integer
+          description: Fila (base 1) del encabezado detectado.
+        encabezados:
+          type: array
+          items:
+            type: string
+        filas:
+          type: array
+          description: Hasta 1000 filas con datos, como texto; el índice de cada una es la `fila` de `LineaLicitacionWeb`.
+          items:
+            type: array
+            items:
+              type: string
+        total_filas:
+          type: integer
+
+    AnalisisExcel:
+      type: object
+      required: [archivo, hojas]
+      description: '`AnalisisExcelDto` de Nexo (HU-011.2).'
+      properties:
+        archivo:
+          type: string
+        hojas:
+          type: array
+          items:
+            $ref: '#/components/schemas/HojaExcel'
+
+    LineaLicitacionWeb:
+      type: object
+      required: [origen, destino]
+      description: |
+        Una línea mapeada por el frontend: los campos destino de `docs/HU-011-formato-excel-licitacion.md` §3 (los de
+        `CapturaLineaRequest` de Nexo, con los límites de `SolicitudCosteoWeb`) y la `fila` del análisis.
+      properties:
+        fila:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Índice (base 0) en `hojas[h].filas`. Obligatorio si se adjunta el archivo; único por licitación.
+        origen:
+          type: string
+          maxLength: 150
+        destino:
+          type: string
+          maxLength: 150
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          maxLength: 100
+        carroceria:
+          type: string
+          nullable: true
+          maxLength: 100
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        valor_aprovisionamiento:
+          type: number
+          nullable: true
+          minimum: 0
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+        posiciones:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
+
+    LicitacionWeb:
+      type: object
+      required: [nit_cliente, linea_negocio, lineas]
+      description: Encabezado de la licitación (el `tipo` es siempre `licitacion`) y sus líneas ya mapeadas, hasta 1000.
+      properties:
+        nit_cliente:
+          type: string
+          maxLength: 20
+        cliente_nombre:
+          type: string
+          nullable: true
+          maxLength: 300
+        linea_negocio:
+          type: string
+          description: Línea de Cotifly; da el margen de toda la licitación y su `mapeoLineasNexo` viaja en cada línea.
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        valor_estimado:
+          type: number
+          nullable: true
+          minimum: 0
+        referencia:
+          type: string
+          nullable: true
+          maxLength: 200
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        hoja:
+          type: string
+          nullable: true
+          maxLength: 31
+          description: Hoja mapeada (`hojas[h].nombre`). Obligatoria con el archivo.
+        lineas:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/LineaLicitacionWeb'
+
+    ErrorFilaLicitacion:
+      type: object
+      required: [indice, fila, campo, codigo, mensaje]
+      properties:
+        indice:
+          type: integer
+          nullable: true
+          description: Posición en `lineas[]` (base 0); `null` si el error es del encabezado.
+        fila:
+          type: integer
+          nullable: true
+          description: La `fila` que mandó el frontend para esa línea.
+        campo:
+          type: string
+        codigo:
+          type: string
+          enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
+                 DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA]
+        mensaje:
+          type: string
+
+    ReporteLicitacionInvalida:
+      type: object
+      required: [error, errores]
+      description: 400 de `POST /web/licitaciones` con todas las filas que fallaron (`error.codigo = LICITACION_INVALIDA`).
+      properties:
+        error:
+          type: object
+          required: [codigo, mensaje]
+          properties:
+            codigo:
+              type: string
+              enum: [LICITACION_INVALIDA]
+            mensaje:
+              type: string
+            detalle:
+              type: object
+              additionalProperties: true
+        errores:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorFilaLicitacion'
+
+    LineaLicitacion:
+      type: object
+      required: [orden, fila, origen, destino, tipo_vehiculo, peso_kg, estado_costeo, precio_final]
+      properties:
+        orden:
+          type: integer
+          description: 1 para la primera línea (el orden en que viajó a Nexo).
+        fila:
+          type: integer
+          nullable: true
+        origen:
+          type: string
+        destino:
+          type: string
+        tipo_vehiculo:
+          type: string
+          nullable: true
+        peso_kg:
+          type: number
+          nullable: true
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+        precio_final:
+          type: number
+          nullable: true
+          description: Precio con margen de la línea; `null` mientras no tiene flete. Nunca el costo de Nexo.
+
+    Licitacion:
+      type: object
+      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, precio_final,
+                 lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
+      description: Licitación vista por el comercial (HU-011.2). Solo precios.
+      properties:
+        folio:
+          type: string
+        cliente_nombre:
+          type: string
+          nullable: true
+        nit_cliente:
+          type: string
+          nullable: true
+        referencia:
+          type: string
+          nullable: true
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+        motivo_estado_costeo:
+          type: string
+          nullable: true
+        moneda:
+          type: string
+        precio_final:
+          type: number
+          nullable: true
+          description: Suma de los precios de las líneas; solo cuando todas tienen flete (`autocosteo` o `entregada`).
+        lineas_costeadas:
+          type: integer
+        lineas_pendientes:
+          type: integer
+        archivo_nombre:
+          type: string
+          nullable: true
+          description: Nombre del Excel original guardado (`null` si se armó sin archivo).
+        hoja:
+          type: string
+          nullable: true
+        lineas:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineaLicitacion'
 
     ItemCubicacion:
       type: object

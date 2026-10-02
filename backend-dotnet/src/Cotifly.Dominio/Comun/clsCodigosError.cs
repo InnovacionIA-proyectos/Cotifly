@@ -200,4 +200,34 @@ public static class clsCodigosError
     /// <c>texto</c> vacío: el modelo debe corregir la llamada. Se responde sin consultar Nexo. Código nuevo del backend .NET.
     /// </summary>
     public const string MunicipioArgumentoInvalido = "MUNICIPIO_ARGUMENTO_INVALIDO";
+
+    /// <summary>
+    /// Licitaciones desde Excel (HU-011.2, ADR-017): falta el archivo o viene vacío. Mismo código que usa Nexo en
+    /// <c>analizar-excel</c>.
+    /// </summary>
+    public const string ArchivoRequerido = "ARCHIVO_REQUERIDO";
+
+    /// <summary>El archivo no es <c>.xlsx</c> ni <c>.xlsm</c>. Mismo código que usa Nexo.</summary>
+    public const string FormatoNoSoportado = "FORMATO_NO_SOPORTADO";
+
+    /// <summary>El archivo supera 10 MB (el límite de Nexo). Código nuevo del backend .NET.</summary>
+    public const string ArchivoDemasiadoGrande = "ARCHIVO_DEMASIADO_GRANDE";
+
+    /// <summary>Nexo (o Cotifly al releer el original) no pudo leer el Excel. Mismo código que usa Nexo.</summary>
+    public const string ExcelInvalido = "EXCEL_INVALIDO";
+
+    /// <summary>El Excel no tiene ninguna hoja con datos tabulares (o no tiene la hoja mapeada). Mismo código que usa Nexo.</summary>
+    public const string ExcelSinDatos = "EXCEL_SIN_DATOS";
+
+    /// <summary>
+    /// <c>POST /web/licitaciones</c> con filas inválidas: 400 con el reporte por fila (<c>errores[]</c>: índice, fila, campo y
+    /// código). Nada queda guardado. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LicitacionInvalida = "LICITACION_INVALIDA";
+
+    /// <summary>
+    /// Nexo respondió 403 al alta de la solicitud o al análisis del Excel: el comercial no tiene el rol que pide Cabina de Fletes
+    /// (<c>SIN_PERMISO_CABINA_FLETES</c>). Es configuración del usuario en Nexo, no una caída (ADR-017 §4). Código nuevo del backend .NET.
+    /// </summary>
+    public const string NexoSinPermiso = "NEXO_SIN_PERMISO";
 }
