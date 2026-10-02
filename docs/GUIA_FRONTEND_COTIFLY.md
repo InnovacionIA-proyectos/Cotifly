@@ -591,6 +591,7 @@ Resumen:
 | `POST /web/licitaciones/analizar-excel` | Ambos | PR de #47 |
 | `POST /web/licitaciones` | Ambos | PR de #47 |
 | `GET /web/licitaciones/{folio}` | Ambos (dueño) | PR de #47 |
+| `GET /web/licitaciones/{folio}/excel` | Ambos (dueño) | PR de #48 |
 | `GET /web/admin/lineas-negocio` | `gerente_comercial` | En QA |
 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | En QA |
 | `GET /web/metricas/comercial` | Ambos (lo propio) | PR de #45 (por abrir) |
@@ -1616,6 +1617,16 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - **Total:** `precio_final` es la suma de los precios ya redondeados de las líneas, **sin servicios conexos**. Rotularlo "Total (sin servicios conexos)" y mostrar los conexos aparte (`GET /web/cotizaciones/{folio}/costeo`).
 - Si una línea no se pudo asociar con certeza a su línea en Nexo (dos rutas idénticas, o Nexo devolvió otra cosa), queda sin precio y `motivo_estado_costeo` lo explica: mostrar el motivo; la licitación no tendrá total hasta que se resuelva con el equipo de Nexo.
 - Las licitaciones no aparecen en la concentración por ciudad del tablero de métricas (sus rutas viven por línea).
+
+### 5.26 Exportar el Excel con resultados (`GET /web/licitaciones/{folio}/excel`). PR de #48
+
+- 200 binario `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` con `Content-Disposition: attachment; filename={folio}.xlsx`. Descargarlo como blob con el `Authorization` (no abrir la URL en una pestaña: no lleva token).
+- Contenido: el Excel **original** del cliente sin cambios en sus columnas, con tres columnas nuevas a la derecha de la hoja mapeada: `Precio final Cotifly (COP)` (o `USD`), `Estado costeo Cotifly` (`Costeada`, `Pendiente de costeo`, `Entregada sin flete`, `Descartada en Nexo`, `Costeo vencido`, `No llegó a Nexo`, o `Sin enviar` para filas que no se mandaron) y `Servicios conexos Cotifly`; y una hoja `Resumen Cotifly` con el total y los servicios conexos incluidos con su precio. Las líneas sin costeo dicen `SIN COSTEO` con fondo amarillo.
+- Se puede exportar en cualquier momento (no hace falta esperar a que todas las líneas tengan costeo). Nunca trae costos de Nexo.
+- Sin archivo original (licitación creada con JSON) genera una hoja `Licitación` con los campos mapeados.
+- El total de la hoja `Resumen Cotifly` dice "Total de la licitación (sin servicios conexos)". `Sin enviar` solo aparece entre la primera y la última fila enviada; las líneas cuya fila ya no está en el pliego se listan en el resumen.
+- Siempre se descarga como `.xlsx`: si el original era `.xlsm` se quitan las macros, y gráficos, imágenes o tablas dinámicas del original pueden no conservarse. Avisarlo al comercial ("copia de trabajo con los precios").
+- 404 si no es suya o no es una licitación (una cotización spot o del chat). 400 `EXCEL_INVALIDO`/`EXCEL_SIN_DATOS` si el original guardado ya no se puede leer.
 
 ## 6. Flujos
 

@@ -104,6 +104,20 @@ public sealed class clsLicitacionesController(
     public async Task<IActionResult> Obtener(string folio, CancellationToken cancellationToken) =>
         (await licitaciones.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(l => Ok(l), Error);
 
+    /// <summary>
+    /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado y servicios conexos (HU-011.3), más la hoja
+    /// "Resumen Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. 404 si no es suya o no es licitación.
+    /// </summary>
+    [HttpGet("licitaciones/{folio}/excel")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Exportar(string folio, CancellationToken cancellationToken)
+    {
+        var resultado = await licitaciones.ExportarAsync(UsuarioId, folio, cancellationToken);
+        return resultado.Coincidir<IActionResult>(a => File(a.Contenido, a.TipoContenido, a.Nombre), Error);
+    }
+
     private async Task<clsArchivoSubido?> LeerArchivoAsync(CancellationToken cancellationToken)
     {
         try

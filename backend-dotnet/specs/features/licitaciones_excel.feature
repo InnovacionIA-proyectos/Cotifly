@@ -40,6 +40,16 @@ Característica: Licitaciones desde Excel
     Entonces la licitación "L1" queda en el estado de costeo "autocosteo" con 3 líneas con precio
     Y el precio final de "L1" es la suma de sus líneas
 
+  # HU-011.3 — Exportación del Excel con resultados
+  Escenario: El Excel exportado conserva el pliego del cliente, agrega los precios y marca las líneas sin costeo
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Y Nexo costea las líneas 1 y 2 de "L1" con un flete de 1000000
+    Y el polling consulta a Nexo por "L1"
+    Y "ana" exporta el Excel de la licitación "L1"
+    Entonces el Excel conserva las columnas originales del pliego
+    Y el Excel trae el precio final de las líneas 1 y 2 y marca la línea 3 como "SIN COSTEO"
+    Y el Excel no contiene el costo 1000000 de Nexo
+
   Escenario: Si Nexo no responde la licitación no se pierde y se reintenta con todas sus líneas
     Dado que Nexo responde 503 al alta de solicitudes
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas

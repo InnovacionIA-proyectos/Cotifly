@@ -124,6 +124,47 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
     }
 
+    [When("{string} exporta el Excel de la licitación {string}")]
+    public async Task CuandoExporta(string alias, string licitacion)
+    {
+        await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}/excel", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+    }
+
+    [Then("el Excel conserva las columnas originales del pliego")]
+    public void EntoncesConservaElPliego()
+    {
+        using var original = new ClosedXML.Excel.XLWorkbook(new MemoryStream(clsPliegoMuestra.Excel(3)));
+        using var exportado = Libro();
+        foreach (var celda in original.Worksheet(clsPliegoMuestra.Hoja).RangeUsed()!.Cells())
+        {
+            exportado.Worksheet(clsPliegoMuestra.Hoja).Cell(celda.Address.RowNumber, celda.Address.ColumnNumber).GetFormattedString()
+                .Should().Be(celda.GetFormattedString());
+        }
+    }
+
+    [Then("el Excel trae el precio final de las líneas {int} y {int} y marca la línea {int} como {string}")]
+    public void EntoncesPrecios(int a, int b, int c, string marca)
+    {
+        using var libro = Libro();
+        var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
+        hoja.Cell(clsPliegoMuestra.FilaExcel(a - 1), 7).GetValue<decimal>().Should().BePositive();
+        hoja.Cell(clsPliegoMuestra.FilaExcel(b - 1), 7).GetValue<decimal>().Should().BePositive();
+        hoja.Cell(clsPliegoMuestra.FilaExcel(c - 1), 7).GetString().Should().Be(marca);
+    }
+
+    [Then("el Excel no contiene el costo {int} de Nexo")]
+    public void EntoncesSinCosto(int costo)
+    {
+        using var libro = Libro();
+        libro.Worksheets.SelectMany(h => h.CellsUsed())
+            .Where(c => c.DataType == ClosedXML.Excel.XLDataType.Number)
+            .Select(c => c.GetValue<decimal>())
+            .Should().NotContain(costo);
+    }
+
+    private ClosedXML.Excel.XLWorkbook Libro() => new(new MemoryStream(web.UltimoContenido));
+
     private async Task CrearAsync(string alias, string licitacion, string json, byte[] archivo)
     {
         await web.EnviarAsync(HttpMethod.Post, "/web/licitaciones", web.Sesion(alias).Access, clsApiWebPruebas.Licitacion(json, archivo));

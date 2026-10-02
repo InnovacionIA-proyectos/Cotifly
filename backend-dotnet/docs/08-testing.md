@@ -308,6 +308,9 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 | `clsEsquemaTests` (0005) | Infraestructura (Testcontainers) | Idempotencia, CHECK, columnas obsoletas conservadas y **backfill** sobre una base auxiliar con 0001 a 0004 y filas del esquema anterior |
 | `clsBaseDatosHealthCheckTests` | Infraestructura (Testcontainers) | `/health/ready` con `falta 0005` |
 | `clsLicitacionesEndpointsTests` | Api (Testcontainers) | Análisis, alta multipart y JSON, reporte por fila sin nada guardado, hoja inexistente, polling línea por línea, más de 10 líneas (costeo en segundo plano), aislamiento por dueño y la línea del formulario de una línea |
-| `licitaciones_excel.feature` | Aceptacion | Los mismos flujos en Gherkin, con reintento tras un 503 de Nexo |
+| `clsExportadorExcelLicitacionTests` | Infraestructura | Exportación (HU-011.3): celdas del cliente intactas, columnas nuevas, `SIN COSTEO` en amarillo, `Sin enviar`, resumen con total y conexos, USD con TRM, sin original |
+| `clsExportadorExcelFidelidadTests` | Infraestructura | Originales difíciles: `.xlsm` convertido a `.xlsx` real sin macros, textos con `=` que no se vuelven fórmulas, fidelidad (fórmulas, formatos, validaciones, comentarios, nombres, tablas, hojas ocultas), datos a la derecha intactos, fila de totales sin "Sin enviar", 1000 líneas, línea sin fila en el resumen y ningún costo en todo el paquete |
+| `clsLicitacionesEndpointsTests` (exportación) | Api (Testcontainers) | `GET .../excel` de punta a punta: precios, pendientes, ningún número del archivo es un costo de Nexo, solo el dueño |
+| `licitaciones_excel.feature` | Aceptacion | Los mismos flujos en Gherkin, con reintento tras un 503 de Nexo y la exportación |
 
 El pliego de prueba es `tests/Comun/clsPliegoMuestra.cs`: un Excel generado con ClosedXML con plantilla "de cliente" (portada combinada, encabezado en la fila 3, una fila vacía en medio y una columna sin mapear). El Nexo falso (`clsNexoFalso`) ahora maneja solicitudes de N líneas (`CostearLinea`, `LineasDe`) y `analizar-excel`.

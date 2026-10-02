@@ -1288,6 +1288,44 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
 
+  /web/licitaciones/{folio}/excel:
+    get:
+      operationId: exportarExcelLicitacion
+      tags: [web]
+      summary: Descarga el Excel de la licitación con los precios de Cotifly
+      description: |
+        HU-011.3 (ADR-017 §5). Regenera el Excel original del cliente **sin modificar sus columnas** y agrega, a la derecha de
+        la última columna usada de la hoja mapeada, `Precio final Cotifly ({moneda})` (precio con margen; COP sin decimales,
+        USD con dos, ADR-014), `Estado costeo Cotifly` y `Servicios conexos Cotifly` en la fila de cada línea. Las líneas sin
+        costeo llevan `SIN COSTEO` con fondo amarillo; las filas del pliego que no se enviaron, `Sin enviar`. Agrega la hoja
+        `Resumen Cotifly` (folio, cliente, moneda y TRM si es USD, total, líneas sin costeo y servicios conexos incluidos con su
+        precio). Sin archivo original genera una hoja `Licitación` con los campos mapeados. **Nunca incluye el costo de Nexo.**
+        Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
+        imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
+        solo marca filas entre la primera y la última línea enviada. Solo el dueño y solo licitaciones (404 si no).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: 'El Excel con los resultados (`Content-Disposition` attachment, nombre `{folio}.xlsx`)'
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: '`EXCEL_INVALIDO` o `EXCEL_SIN_DATOS` si el original guardado ya no se puede leer'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+
   /web/clientes/{nit}/destinatarios-previos:
     get:
       operationId: obtenerDestinatariosPrevios

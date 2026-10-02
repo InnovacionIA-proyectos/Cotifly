@@ -253,6 +253,7 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 - **Lectura acotada:** el lector local solo lee celdas con contenido de las primeras 200 columnas, no expande combinadas (más de 10.000 es `EXCEL_INVALIDO`) y ubica como máximo 1000 filas: un archivo malicioso (celda en `XFD3000`, combinada `A2:XFD1048576`) no consume segundos ni GB. ClosedXML 0.104.2, la versión de Nexo.
 - **403 de Nexo** al analizar o al dar de alta: `NEXO_SIN_PERMISO` (rol del comercial en Cabina de Fletes), no `COSTEO_NEXO_NO_DISPONIBLE`.
 - **Lectura local:** ClosedXML (MIT, ver `Directory.Packages.props`) con la misma regla de detección de encabezado y filas de Nexo (`clsLectorExcelLicitacionClosedXml`, puerto 1:1 de `ExcelSolicitudesAdapter`). `SixLabors.Fonts` queda fijado en 1.0.0 (Apache-2.0): la 2.x cambió de licencia.
+- **Exportación (HU-011.3):** `GET /web/licitaciones/{folio}/excel` regenera el original en memoria con ClosedXML (`clsExportadorExcelLicitacionClosedXml`); no escribe a disco. Un pliego de 10 MB puede ocupar varias veces ese tamaño en memoria mientras se genera: vigilar el límite de memoria del contenedor si hay muchas exportaciones simultáneas.
 - **Límite del cuerpo:** `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB) para `/web/licitaciones*`; el resto de `/web/*` sigue en 64 KB.
 
 ### TRM (cotizaciones en USD)
