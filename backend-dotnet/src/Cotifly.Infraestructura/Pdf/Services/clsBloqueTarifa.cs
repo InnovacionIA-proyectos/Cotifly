@@ -18,7 +18,7 @@ internal static class clsBloqueTarifa
 
     public static void Agregar(Section seccion, clsDocumentoCotizacion documento, clsDisenoPdf diseno)
     {
-        var esMulti = documento.Variante == VarianteDocumento.MultiSeccion;
+        var esMulti = documento.Variante != VarianteDocumento.TarifaUnica;
         Titulo(seccion, clsTextosEstandar.TituloTarifa, diseno.H1, diseno.MargenH1, diseno);
         if (documento.Subtitulo is { } subtitulo)
         {

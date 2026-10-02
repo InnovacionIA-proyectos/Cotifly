@@ -280,6 +280,53 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ElPdfDeUnaLicitacionCosteadaSaleConElLayoutDePliegoYSinCostosDeNexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(), clsPliegoMuestra.Excel(), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+
+        using (var temprano = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access))
+        {
+            temprano.StatusCode.Should().Be(HttpStatusCode.Conflict, "sin todas las líneas costeadas no hay PDF del pliego");
+        }
+
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.CostearLinea(solicitud, 1, 2_000_000m);
+        _nexo.CostearLinea(solicitud, 2, 850_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
+        var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
+        using var descarga = await _api.EnviarAsync(HttpMethod.Get, ruta, sesion.Access);
+        descarga.StatusCode.Should().Be(HttpStatusCode.OK);
+        var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
+
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)").And.Contain("$4.529.412");
+        texto.Should().Contain("CARTAGENA").And.Contain("$1.176.471").And.Contain("$2.352.941").And.Contain("$1.000.000");
+        texto.Should().NotContain("$850.000").And.NotContain("$2.000.000", "los fletes de Nexo nunca van al PDF");
+    }
+
+    [Fact]
+    public async Task UnaLicitacionDeUnaLineaTraeLaRutaEnElPdf()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var folio = (await CrearAsync(sesion, clsPliegoMuestra.Lineas(1), clsPliegoMuestra.Excel(1), HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.CostearLinea(_nexo.SolicitudesCreadas[^1], 0, 1_000_003m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/pdf", HttpMethod.Post, HttpStatusCode.Created);
+        var ruta = new Uri(new Uri("http://localhost"), json.GetProperty("pdf_url").GetString()!).AbsolutePath;
+        using var descarga = await _api.EnviarAsync(HttpMethod.Get, ruta, sesion.Access);
+        var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
+
+        texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.Contain("$1.176.474", "la licitación de una línea sale como pliego con su ruta");
+        texto.Should().NotContain("$1.000.003", "el flete de Nexo nunca va al PDF");
+    }
+
     private async Task<JsonElement> CrearAsync(clsSesionPrueba sesion, object[] lineas, byte[] excel, HttpStatusCode esperado)
     {
         using var respuesta = await _api.EnviarContenidoAsync(HttpMethod.Post, "/web/licitaciones", sesion.Access,

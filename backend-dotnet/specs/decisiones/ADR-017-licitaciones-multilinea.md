@@ -64,6 +64,16 @@
 - Las columnas nuevas van a la derecha de la última columna usada de verdad (aunque el lector solo lea 200); "Sin enviar" solo marca las filas entre la primera y la última línea enviada (una fila de totales o notas del cliente al final no es una ruta). Una línea cuya fila ya no está en el pliego aparece en el resumen ("Líneas sin fila en el pliego original"), no se pierde en silencio. El total se rotula "Total de la licitación (sin servicios conexos)".
 - Solo para licitaciones (`tipoSolicitud = licitacion` con líneas): una cotización spot o del chat responde 404, como cualquier recurso que no es del comercial. Solo el dueño. Se puede exportar en cualquier momento.
 
+### 6. PDF de pliego (HU-011.5, #49)
+
+- **Sin endpoint nuevo:** `POST /web/cotizaciones/{folio}/costeo/pdf` usa la variante nueva `Pliego` (`VarianteDocumento.Pliego`) para **toda licitación** (`tipoSolicitud = licitacion` con líneas, aunque tenga una sola: sus columnas de línea en `Cotizaciones` son nulas y el PDF de una línea saldría sin ruta) y para cualquier cotización de dos o más líneas; el formulario spot de una línea sigue con el PDF de HU-005.7 sin cambios. Mismas reglas de bloqueo: solo con todas las líneas con precio y un total que es su suma (`COSTEO_NO_LISTO`, 409, mientras no) y una sola vez por cotización (`PDF_YA_GENERADO`).
+- **Tamaño:** el pliego tiene sus propios topes (hasta 1000 filas, las líneas de una licitación) en vez de los 60 filas y 20 tablas del PDF del chat. Con más de 60 rutas o más de 20 orígenes sale **compacto**: solo el resumen (que ya trae todas las rutas con su tarifa; el encabezado se repite en cada página), sin las tablas por origen que repetirían las mismas filas. Las pruebas generan pliegos de 61, 300 y 1000 rutas (todos en una corrida de unos 5 s, con menos de una página por cada 10 rutas).
+- **Solo COP:** el pliego en USD se rechaza explícitamente (`PDF_PAYLOAD_INVALIDO`) hasta que el costeo integre la TRM (HU-012): hoy los precios de las líneas están en pesos y no se rotulan como dólares.
+- **Layout:** el diseño multi-sección existente (`armar_multi.py`: portada, condiciones en la hoja 1, tarifas, firma y cierre web) con un bloque nuevo `clsBloquePliego` al abrir las tarifas: "RESUMEN DEL PLIEGO {referencia}" con una fila por ruta (número, origen → destino, vehículo y peso, tarifa), el encabezado repetido en cada página y el total del pliego (suma de un viaje por ruta, marcado como referencia). Después, las tablas por origen del layout multi (una franja de origen por ciudad de cargue, una fila por destino con su tarifa). Reutiliza estilos, colores, fuentes y bloques (`clsBloqueTarifa`, `clsBloqueCondiciones`, `clsBloqueFirma`).
+- **"Solo mostrar lo realmente incluido" (HU-003.5):** los servicios conexos que el comercial excluyó no aparecen; los incluidos se listan con su precio en "Estas tarifas incluyen". Ningún costo de Nexo llega al documento: cada tarifa es el `precioFinal` de su línea y el total es la suma de esas tarifas; si no cuadra con el `precioFinal` de la cotización, `PDF_PAYLOAD_INVALIDO` (nada se inventa en el PDF).
+- **Total:** "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)": la suma de los precios ya redondeados de las rutas; los conexos incluidos se listan aparte.
+- **Validación con un caso real:** pendiente con Kevin (checkbox de #49); las pruebas usan un pliego de 12 rutas.
+
 ### 7. Seguimiento: retirar las columnas de línea obsoletas de `Cotizaciones`
 
 `origen`, `destino`, `tipoVehiculo`, `carroceria`, `tipologia`, `claseViaje`, `claseContenedor`, `exclusivo`, `consolidado`, `retornaContenedor`, `ciudadDevolucionContenedor`, `levanteContenedorDiferente`, `ciudadLevanteContenedor`, `valorAprovisionamiento`, `pesoKg` y `valorMercancia` se retiran con un script futuro cuando estos consumidores lean de `CotizacionLineasSolicitud`:
@@ -107,3 +117,5 @@
 | Retención y purga del Excel original (propuesta: purgar el contenido 12 meses después del cierre; anonimizar copias a pruebas) | Gerencia Comercial + DBA |
 | Confirmar que `analizar-excel` acepta el rol del comercial cuando lo llama Cotifly (hoy `Comercial`, `Admin`) | Equipo de Nexo |
 | Licitaciones en USD (el costeo de ADR-015 sigue solo en COP) | Duban (integración con HU-012) |
+| Validar el PDF de pliego con al menos un caso real de varias líneas (legibilidad y diseño corporativo, HU-003.1, RN-03) | Kevin |
+| Si el total del pliego debe imprimirse (hoy: suma de un viaje por ruta, marcado como referencia) | Gerencia Comercial |

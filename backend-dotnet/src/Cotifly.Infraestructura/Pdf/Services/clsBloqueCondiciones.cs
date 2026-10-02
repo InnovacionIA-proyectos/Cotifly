@@ -14,7 +14,7 @@ internal static class clsBloqueCondiciones
 {
     public static void Agregar(Section seccion, clsDocumentoCotizacion documento, clsDisenoPdf diseno)
     {
-        var compacto = documento.Variante == VarianteDocumento.MultiSeccion;
+        var compacto = documento.Variante != VarianteDocumento.TarifaUnica;
         Condicion(seccion, clsTextosEstandar.TituloFacturacion, [documento.Facturacion], diseno, compacto);
         Condicion(seccion, clsTextosEstandar.TituloSeguro, documento.Seguro, diseno, compacto);
         if (documento.DiasLibres is { } diasLibres)

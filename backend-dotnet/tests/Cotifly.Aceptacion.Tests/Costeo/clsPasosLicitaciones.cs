@@ -163,6 +163,25 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
             .Should().NotContain(costo);
     }
 
+    [When("{string} genera el PDF de la licitación {string}")]
+    public async Task CuandoGeneraPdf(string alias, string licitacion)
+    {
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(licitacion)}/costeo/pdf", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
+        var ruta = new Uri(new Uri("http://localhost"), web.UltimoJson().GetProperty("pdf_url").GetString()!).AbsolutePath;
+        await web.EnviarAsync(HttpMethod.Get, ruta, web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Then("el PDF del pliego trae el resumen de {int} rutas con su total")]
+    public void EntoncesResumenPdf(int rutas) =>
+        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain($"TOTAL DEL PLIEGO ({rutas} RUTAS, SIN SERVICIOS CONEXOS)");
+
+    [Then("el PDF del pliego no contiene el costo {int} de Nexo")]
+    public void EntoncesPdfSinCosto(int costo) =>
+        clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().NotContain(
+            "$" + costo.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".", StringComparison.Ordinal));
+
     private ClosedXML.Excel.XLWorkbook Libro() => new(new MemoryStream(web.UltimoContenido));
 
     private async Task CrearAsync(string alias, string licitacion, string json, byte[] archivo)

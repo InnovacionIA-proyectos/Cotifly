@@ -1628,6 +1628,14 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - Siempre se descarga como `.xlsx`: si el original era `.xlsm` se quitan las macros, y gráficos, imágenes o tablas dinámicas del original pueden no conservarse. Avisarlo al comercial ("copia de trabajo con los precios").
 - 404 si no es suya o no es una licitación (una cotización spot o del chat). 400 `EXCEL_INVALIDO`/`EXCEL_SIN_DATOS` si el original guardado ya no se puede leer.
 
+### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). PR de #49
+
+- Sin endpoint nuevo: una **licitación** (aunque tenga una sola línea) sale con el **layout de pliego**: resumen de todas las rutas con su tarifa y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)", y luego las tablas por origen. El formulario spot de una línea sigue con el PDF de siempre.
+- **Tamaño:** con más de 60 rutas o más de 20 orígenes el PDF trae **solo el resumen** (todas las rutas siguen ahí; las tablas por origen se omiten). Admite hasta 1000 rutas; un pliego grande puede tener decenas de páginas: mostrar un spinner y descargar el blob.
+- **409 `COSTEO_NO_LISTO`** mientras alguna línea no tenga precio (`lineas_pendientes > 0`, o una línea sin asociar en Nexo) o el total todavía no sea la suma de las líneas (esperar la siguiente consulta del costeo): deshabilitar el botón hasta que `precio_final` de la licitación tenga valor.
+- **409 `PDF_YA_GENERADO`**: una sola vez por licitación. Los servicios conexos excluidos con `PUT .../costeo/servicios-conexos` no aparecen.
+- 400 `PDF_PAYLOAD_INVALIDO` si la licitación estuviera en USD (no disponible hasta integrar la TRM al costeo).
+
 ## 6. Flujos
 
 ### 6.1 Login y renovación de sesión

@@ -5,7 +5,19 @@ public enum VarianteDocumento
 {
     TarifaUnica,
     MultiSeccion,
+
+    /// <summary>
+    /// Pliego de licitación (HU-011.5, ADR-017 §6): el diseño multi-sección (tablas por origen) con un resumen de todas las líneas y
+    /// el total antes de las tablas.
+    /// </summary>
+    Pliego,
 }
+
+/// <summary>Resumen del pliego (HU-011.5): una fila por línea con su tarifa ya formateada y el total del pliego.</summary>
+public sealed record clsResumenPliegoDocumento(string Titulo, IReadOnlyList<clsFilaPliegoDocumento> Filas, string EtiquetaTotal, string Total, string Nota);
+
+/// <summary>Fila del resumen del pliego: número de línea, ruta, vehículo y peso, y tarifa formateada.</summary>
+public sealed record clsFilaPliegoDocumento(string Numero, string Ruta, string VehiculoPeso, string Tarifa);
 
 /// <summary>
 /// Documento listo para maquetar: textos ya resueltos (reemplazo del payload o estándar), montos ya formateados, bloques
@@ -42,6 +54,9 @@ public sealed record clsDocumentoCotizacion
     public string? Subtitulo { get; init; }
 
     public required IReadOnlyList<clsSeccionDocumento> Secciones { get; init; }
+
+    /// <summary>Resumen de las líneas del pliego (solo en <see cref="VarianteDocumento.Pliego"/>).</summary>
+    public clsResumenPliegoDocumento? Pliego { get; init; }
 
     /// <summary>Nota general bajo la tabla (tarifa única). En multi cada sección lleva la suya.</summary>
     public string? NotaGeneral { get; init; }

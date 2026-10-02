@@ -44,7 +44,7 @@ public sealed class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
     /// <summary>Modelo MigraDoc del documento (separado del render para poder inspeccionarlo en pruebas).</summary>
     internal static Document Construir(clsDocumentoCotizacion documento)
     {
-        var esMulti = documento.Variante == VarianteDocumento.MultiSeccion;
+        var esMulti = documento.Variante != VarianteDocumento.TarifaUnica;
         var diseno = esMulti ? clsDisenoPdf.MultiSeccion : clsDisenoPdf.TarifaUnica;
 
         var modelo = new Document();
@@ -64,6 +64,13 @@ public sealed class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
             // armar_multi.py: condiciones en la hoja 1; tarifas, listas, firma y cierre web en la hoja 2.
             clsBloqueCondiciones.Agregar(seccion, documento, diseno);
             seccion.AddPageBreak();
+
+            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego las tablas por origen.
+            if (documento.Variante == VarianteDocumento.Pliego && documento.Pliego is { } pliego)
+            {
+                clsBloquePliego.Agregar(seccion, pliego, diseno);
+            }
+
             clsBloqueTarifa.Agregar(seccion, documento, diseno);
             clsBloqueFirma.AgregarFirma(seccion, documento.Firma, diseno);
             clsBloqueFirma.AgregarCierreWeb(seccion, documento.FraseFinal);
