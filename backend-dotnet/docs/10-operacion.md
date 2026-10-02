@@ -121,6 +121,12 @@ Otros puntos de operación (de #11 y #12):
 | `/data/pdfs` | Debe ser escribible por el UID 1654 (un volumen con nombre copia el dueño de la imagen; con bind mount, `chown 1654:1654`) |
 | Sin `.pdb` en la imagen | Las trazas no traen número de línea; HU-006.4 (#28) mantuvo `DebugType=none` (alternativa: `DebugType=embedded` + `PathMap`, ver 03-infraestructura §3.1) |
 
+Excepciones temporales del escaneo de vulnerabilidades de la imagen (`backend-dotnet/.trivyignore.yaml`, procedimiento en [03-infraestructura §3.1](03-infraestructura.md#31-contenedor-e-imagen)). Cada una vence sola: desde `expired_at` Trivy vuelve a reportar el CVE y el job `imagen-docker` falla hasta que se resuelva o se prorrogue en un PR revisado.
+
+| CVE | Componente | Por qué no es explotable hoy | Dueño | Vence | Seguimiento |
+|---|---|---|---|---|---|
+| CVE-2026-84782 (HIGH) | `libssl3t64` y `openssl` `3.0.13-0ubuntu3.15` de `aspnet:10.0.12-noble-chiseled-extra` (digest `sha256:6385dc0e…`); parche en Ubuntu: `3.0.13-0ubuntu3.16` | Divulgación de información en la retransmisión del handshake **DTLS** (TLS sobre UDP). Cotifly solo usa TLS sobre TCP: Kestrel en HTTP 8080 detrás de Traefik (sin HTTP/3), `HttpClient` hacia Nexo, SAP, datos.gov.co y el LLM, `SqlClient` hacia SQL Server y MailKit hacia el relay SMTP. Ningún código abre sockets UDP ni usa DTLS (revisado en #86) | Duban Guerra (`dguerraBSSL`) | 2026-10-23 | #86. Cuando Microsoft republique el tag con digest nuevo o publique `10.0.13`: subir `SDK_VERSION`/`ASPNET_VERSION` juntos (o reconstruir con `--pull` si solo cambió el digest), borrar la excepción y esta fila, y repetir la verificación de [06-ejecucion-local](06-ejecucion-local.md) |
+
 ## 10.7 Decisiones pendientes
 
 Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al cierre de #14:

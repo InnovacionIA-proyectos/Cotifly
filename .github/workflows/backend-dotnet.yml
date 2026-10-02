@@ -340,11 +340,15 @@ jobs:
 
       # Vulnerabilidades de la imagen final (paquetes de Ubuntu chiseled y runtime/dependencias .NET): HIGH o CRITICAL con
       # parche disponible falla el job, y por lo tanto la publicación. Versión fija de Trivy (la misma de publicar-imagen.sh).
+      # .trivyignore.yaml: solo excepciones temporales por CVE, con versión exacta del paquete, fecha de vencimiento
+      # (expired_at) y justificación (#86, docs/03-infraestructura.md §3.1 y 10-operacion.md §10.6). Vencida, vuelve a fallar.
       - name: Escaneo de vulnerabilidades (Trivy)
         run: >
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          -v "$PWD/.trivyignore.yaml:/trivyignore.yaml:ro"
           aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
-          image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 cotifly-api:ci
+          image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+          --ignorefile /trivyignore.yaml --exit-code 1 cotifly-api:ci
 
       # Solo en push: la imagen probada pasa tal cual (mismos bytes) al job publicar-imagen, que espera a los demás jobs.
       - name: Guardar la imagen probada

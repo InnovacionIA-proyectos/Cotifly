@@ -1,0 +1,32 @@
+# =============================================================================
+# Excepciones TEMPORALES del escaneo de vulnerabilidades (Trivy) de la imagen del backend (#86).
+#
+# Lo usan, con el mismo efecto, el paso "Escaneo de vulnerabilidades (Trivy)" del job imagen-docker de
+# .github/workflows/backend-dotnet.yml y scripts/publicar-imagen.sh / publicar-imagen.ps1 (--ignorefile).
+#
+# Reglas (docs/03-infraestructura.md §3.1 y docs/10-operacion.md §10.6):
+#   - Una entrada por CVE, nunca comodines ni severidades completas: cualquier otro HIGH/CRITICAL con parche sigue fallando.
+#   - Cada entrada lleva purls con la versión exacta instalada (si la imagen base cambia de versión, la excepción deja de
+#     aplicar sola), un expired_at (Trivy la ignora desde esa fecha y el escaneo vuelve a fallar) y su justificación.
+#   - Agregar o prorrogar una excepción es una decisión revisada en PR, con dueño y fecha en docs/10-operacion.md.
+# =============================================================================
+vulnerabilities:
+  # CVE-2026-84782 (HIGH): OpenSSL, divulgación de información en la retransmisión del handshake DTLS.
+  #   Afecta a libssl3t64 y openssl 3.0.13-0ubuntu3.15 de mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra
+  #   (digest sha256:6385dc0e..., construida el 2026-09-04). Ubuntu ya publicó 3.0.13-0ubuntu3.16, pero Microsoft no ha
+  #   republicado la imagen y la chiseled no tiene gestor de paquetes: no se puede parchar en el Dockerfile.
+  #   No explotable en Cotifly: DTLS es TLS sobre UDP y la API solo usa TLS sobre TCP (Kestrel detrás de Traefik; HttpClient
+  #   hacia Nexo, SAP, datos.gov.co y el LLM; SqlClient hacia SQL Server; MailKit hacia el relay SMTP). Kestrel sirve HTTP
+  #   plano en 8080 (TLS lo termina Traefik) y sin HTTP/3. Ningún código del backend abre sockets UDP ni usa DTLS
+  #   (verificado en #86: sin UdpClient, SocketType.Dgram, Quic, Http3 ni Dtls en src/).
+  #   Dueño: Duban Guerra (dguerraBSSL). Seguimiento: issue #86. Vence: 2026-10-23 (fecha de corte + 21 días).
+  #   Al salir la imagen corregida: subir SDK_VERSION/ASPNET_VERSION juntos (Dockerfile), BORRAR esta entrada y repetir la
+  #   verificación de docs/06-ejecucion-local.md.
+  - id: CVE-2026-84782
+    purls:
+      - "pkg:deb/ubuntu/libssl3t64@3.0.13-0ubuntu3.15"
+      - "pkg:deb/ubuntu/openssl@3.0.13-0ubuntu3.15"
+    expired_at: 2026-10-23
+    statement: >-
+      Temporal (#86, vence 2026-10-23): DTLS (TLS sobre UDP) no se usa en Cotifly; la API solo usa TLS sobre TCP.
+      Sin imagen base corregida de Microsoft todavia. Quitar al actualizar ASPNET_VERSION/SDK_VERSION.

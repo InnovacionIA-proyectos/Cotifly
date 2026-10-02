@@ -188,8 +188,12 @@ fi
 # ----------------------------------------------------------------------------- escaneo de vulnerabilidades
 if [ "$escaneo" -eq 1 ]; then
   paso "Escaneo de vulnerabilidades ($TRIVY_IMAGEN: HIGH/CRITICAL con parche disponible fallan)"
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGEN" \
-    image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGEN_LOCAL" \
+  # Excepciones temporales por CVE con vencimiento (las mismas del CI, #86): ver el encabezado de .trivyignore.yaml.
+  [ -f "$DIR_BACKEND/.trivyignore.yaml" ] || fallar "no existe $DIR_BACKEND/.trivyignore.yaml (lo usa también el CI)"
+  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$DIR_BACKEND/.trivyignore.yaml:/trivyignore.yaml:ro" "$TRIVY_IMAGEN" \
+    image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+    --ignorefile /trivyignore.yaml --exit-code 1 "$IMAGEN_LOCAL" \
     || fallar "la imagen tiene vulnerabilidades HIGH/CRITICAL con parche (actualizar ASPNET_VERSION/SDK_VERSION o el paquete)"
 fi
 
