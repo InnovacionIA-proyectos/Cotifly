@@ -40,15 +40,30 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript0002EsIdempotente()
     {
-        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0002", clsBaseDatosPruebas.Scripts.Length);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0002", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
 
         await ReaplicarYVerificarIdempotenciaAsync(cadena, "0002_identidad_estado_agente.sql");
     }
 
     [Fact]
+    public async Task LaBaseAisladaSeBorraAlTerminarAunqueQuedenConexionesAbiertas()
+    {
+        var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBorrar", 1);
+        await using var abierta = new SqlConnection(baseAislada.Cadena);
+        await abierta.OpenAsync(Ct);
+
+        await baseAislada.DisposeAsync();
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaMaster, $"SELECT COUNT(*) FROM sys.databases WHERE name = N'{baseAislada.Nombre}'"))
+            .Should().Be(0, "la base auxiliar no debe quedar en el SQL Server compartido");
+    }
+
+    [Fact]
     public async Task ElScript0004EsIdempotente()
     {
-        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0004", clsBaseDatosPruebas.Scripts.Length);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0004", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
 
         await ReaplicarYVerificarIdempotenciaAsync(cadena, "0004_costeo_nexo.sql");
     }
@@ -56,7 +71,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript0005EsIdempotente()
     {
-        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0005", clsBaseDatosPruebas.Scripts.Length);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0005", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
         Guid spot = Guid.NewGuid(), licitacion = Guid.NewGuid(), chat = Guid.NewGuid();
         var propias = $"'{spot}', '{licitacion}', '{chat}'";
         var marca = Guid.NewGuid().ToString("N")[..12];
@@ -132,7 +148,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElBackfillDel0005CreaUnaLineaPorCotizacionDelFormularioYEnlazaSusPosiciones()
     {
-        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
+        var cadena = baseAislada.Cadena;
         Guid conCosteo = Guid.NewGuid(), pendiente = Guid.NewGuid(), chat = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(cadena,
             "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, origen, destino, tipoVehiculo, pesoKg, estadoCosteo, costo, precioFinal) VALUES "
