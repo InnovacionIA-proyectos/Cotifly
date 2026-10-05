@@ -22,30 +22,36 @@ public sealed class clsGeneradorPdfMigraDocTests
         return (pdf, clsLectorPdf.Leer(pdf.Contenido));
     }
 
-    // HU-012.3: PDF en dólares con la aclaración del piso mínimo bajo la tabla; en pesos, sin ninguna aclaración de TRM.
+    /// <summary>Texto exacto de la nota de negocio (2026-10-05) con la TRM aplicada de los documentos de prueba.</summary>
+    private const string NotaTrm3306 =
+        "Esta cotización está bajo una TRM mínima de $3.306,86 y es de resaltar que la tarifa puede variar de acuerdo al "
+        + "comportamiento de la misma a la fecha de elaboración de la CPI.";
+
+    // HU-012.3: PDF en dólares con la nota de TRM mínima bajo la tabla (texto exacto, espacios normalizados); en pesos, sin nota.
     [Fact]
-    public void EnDolaresLaTarifaVaEnUsdConLaAclaracionDelPisoMinimo()
+    public void EnDolaresLaTarifaVaEnUsdConLaNotaDeTrmMinima()
     {
         var (pdf, lector) = Generar(clsDocumentosPrueba.Dolares());
 
-        pdf.Paginas.Should().Be(3, "la aclaración cabe en la página de la tarifa");
-        var tarifa = lector.Paginas[1];
+        pdf.Paginas.Should().Be(3, "la nota cabe en la página de la tarifa");
+        var tarifa = Normalizar(lector.Paginas[1]);
         tarifa.Should().Contain("US$996,35");
-        tarifa.Should().Contain("Cotización en dólares:");
-        tarifa.Should().Contain("TRM de $3.306,86 por dólar");
-        tarifa.Should().Contain("se ajusta día a día con la TRM vigente");
-        tarifa.Should().Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
+        tarifa.Should().Contain("Cotización en dólares: " + NotaTrm3306);
+        tarifa.Should().NotContain("mínimo a pagar").And.NotContain("día a día");
         tarifa.IndexOf("Cotización en dólares:", StringComparison.Ordinal).Should()
-            .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la aclaración va debajo de la tabla");
+            .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la nota va debajo de la tabla");
     }
 
     [Fact]
-    public void EnPesosElPdfNoTraeAclaracionDeTrm()
+    public void EnPesosElPdfNoTraeNotaDeTrm()
     {
         var (_, lector) = Generar(clsDocumentosPrueba.Nacional());
 
-        lector.Texto.Should().NotContain("TRM").And.NotContain("Cotización en dólares").And.NotContain("US$");
+        Normalizar(lector.Texto).Should().NotContain("TRM").And.NotContain("Cotización en dólares").And.NotContain("US$")
+            .And.NotContain("elaboración de la CPI");
     }
+
+    private static string Normalizar(string texto) => System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ").Trim();
 
     [Fact]
     public void LaVarianteMultiEnDolaresTambienTraeLaAclaracion()
@@ -53,11 +59,11 @@ public sealed class clsGeneradorPdfMigraDocTests
         var payload = clsDocumentosPrueba.Payload();
         payload.Secciones = [payload.Tarifa!];
         payload.Tarifa = null;
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-2", clsDocumentosPrueba.Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m, 3_294_798m).Valor;
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, "PCN-USD-2", clsDocumentosPrueba.Firma, new DateOnly(2026, 9, 27), "USD", 3306.86m).Valor;
 
         var (_, lector) = Generar(documento);
 
-        lector.Texto.Should().Contain("Cotización en dólares:").And.Contain("TRM de $3.306,86");
+        Normalizar(lector.Texto).Should().Contain("Cotización en dólares: " + NotaTrm3306);
     }
 
     // test_render_pdf_genera_archivo_y_paginas

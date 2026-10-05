@@ -111,7 +111,7 @@ public sealed partial class clsGenerarPdfService(
             clsTextoSeguro.LimpiarLinea(payload.Comercial?.Cargo),
             usuario.Email,
             clsTextoSeguro.LimpiarLinea(usuario.Telefono));
-        var documento = clsConstructorDocumentoCotizacion.Construir(payload, folio!, firma, calendario.Hoy, moneda, traza.TrmAplicada, PisoEnPesos(traza, metodo, moneda));
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, folio!, firma, calendario.Hoy, moneda, traza.TrmAplicada);
         if (documento.EsFallo)
         {
             return documento.Error;
@@ -183,7 +183,7 @@ public sealed partial class clsGenerarPdfService(
     /// sobrescribe costo, margen y tarifa de las filas y los precios de los servicios desde el estado):
     /// <list type="bullet">
     /// <item>Cada fila y cada servicio conexo con moneda explícita debe estar en la moneda de la cotización (HU-012.3).</item>
-    /// <item>Con <c>PrecioCop</c> y costo + margen aplicado, <c>PrecioCop</c> debe ser el precio en pesos calculado (es el piso del PDF en USD).</item>
+    /// <item>Con <c>PrecioCop</c> y costo + margen aplicado, <c>PrecioCop</c> debe ser el precio en pesos calculado (coherencia de la conversión).</item>
     /// <item>Con <c>PrecioFinal</c> y costo + margen aplicado, el precio calculado con el método debe ser <c>PrecioFinal</c> (en USD, el precio en
     /// pesos convertido con la TRM de la trazabilidad, HU-012.2).</item>
     /// <item>Con <c>PrecioFinal</c>, la tarifa impresa de cada fila (dada o calculada) debe ser <c>PrecioFinal</c>. La tabla
@@ -223,7 +223,7 @@ public sealed partial class clsGenerarPdfService(
         {
             return Invalido(
                 $"El valor en pesos de la trazabilidad ({clsFormatoMoneda.Formatear(precioCop, "COP")}) no corresponde al costo y margen aplicado con el método '{metodo}' "
-                + $"({clsFormatoMoneda.Formatear(enPesos.Valor.Precio, "COP")}): es el mínimo a pagar que imprime el PDF en USD (HU-012.3).");
+                + $"({clsFormatoMoneda.Formatear(enPesos.Valor.Precio, "COP")}): el precio en USD se convierte desde ese valor (HU-012.2).");
         }
 
         if (traza.Costo is { } costo && traza.MargenAplicado is { } margenAplicado)
@@ -257,27 +257,6 @@ public sealed partial class clsGenerarPdfService(
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Piso de una cotización en USD (HU-012.3, ADR-014): el valor cotizado en pesos de la trazabilidad (<c>PrecioCop</c>, ya verificado
-    /// contra costo y margen) o, si no viene, el precio en pesos recalculado con el costo y el margen aplicado persistidos. En COP, nulo.
-    /// </summary>
-    private static decimal? PisoEnPesos(clsTrazabilidadCotizacion traza, string metodo, string moneda)
-    {
-        if (clsConversorMoneda.EsPesos(moneda))
-        {
-            return null;
-        }
-
-        if (traza.PrecioCop is { } precioCop)
-        {
-            return precioCop;
-        }
-
-        return traza.Costo is { } costo && traza.MargenAplicado is { } margen && clsCalculadoraPrecio.Calcular(costo, margen, metodo) is { EsExitoso: true } calculado
-            ? calculado.Valor.Precio
-            : null;
     }
 
     private static clsResultado<clsCotizacion> CrearCotizacion(

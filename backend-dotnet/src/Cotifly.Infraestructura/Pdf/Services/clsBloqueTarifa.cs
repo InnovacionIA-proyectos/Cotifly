@@ -46,7 +46,7 @@ internal static class clsBloqueTarifa
             NotaResaltada(seccion, clsTextosEstandar.EtiquetaTiemposLogisticos, decreto, diseno);
         }
 
-        // HU-012.3: en USD, la TRM aplicada y el piso mínimo, con el mismo recuadro de la nota de decretos (ambas variantes).
+        // HU-012.3: en USD, la nota de TRM mínima con la TRM aplicada, con el mismo recuadro de la nota de decretos (ambas variantes).
         if (documento.NotaMoneda is { } moneda)
         {
             NotaResaltada(seccion, clsTextosEstandar.EtiquetaMoneda, moneda, diseno);
