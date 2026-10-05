@@ -154,6 +154,7 @@ services:
       Trm__UrlDolarApi: ${Trm__UrlDolarApi:-https://co.dolarapi.com/v1/trm}
       Trm__Url: ${Trm__Url:-https://www.datos.gov.co/resource/32sa-8pi3.json}
       Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
+      Trm__TiempoEsperaDolarApiSegundos: ${Trm__TiempoEsperaDolarApiSegundos:-4}
 
       # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto, obligatorio con Google Chat configurado.
       Pdf__StorageModo: volumen

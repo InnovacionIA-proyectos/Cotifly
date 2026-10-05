@@ -34,7 +34,7 @@ Estado verificado con `gh pr list --repo InnovacionIA-proyectos/Cotifly --state 
 | 0 | #69 | HU-005.13 | El agente del chat resuelve origen y destino contra el catálogo de Nexo y desambigua. No cambia el contrato HTTP | Fusionado (En QA) |
 | 0 | #70 | HU-012.1 | Código `TRM_NO_DISPONIBLE` (fuente oficial de TRM con caché) | Fusionado (En QA) |
 | 0 | #71 | HU-012.2 | `moneda` en `POST /web/chat`, `precio` en USD (`moneda`, `trm_aplicada`, `precio_cop`, `trm_vigencia_desde`/`hasta`), `errores` en `RespuestaChat` y `trm_aplicada` en `CotizacionResumen` | Fusionado (En QA) |
-| A1 | #72 | HU-012.3 | PDF en dólares con la aclaración del piso mínimo. No cambia el contrato HTTP | Reemplazado por la rama de #50: la nota de TRM mínima |
+| A1 | #72 | HU-012.3 | PDF en dólares (su aclaración del piso mínimo la reemplaza la nota de TRM mínima de la rama de #50). No cambia el contrato HTTP | Fusionado (En QA) |
 | A2 | Rama de #50 (por abrir) | HU-012.1 | TRM desde DolarApi con respaldo (`trm_fuente` en `SalidaPrecio`), nota de TRM mínima en el PDF en USD, `moneda` en `POST /web/licitaciones` y `trm_aplicada` en `Licitacion` | Por abrir |
 | B1 | #73 | HU-005.8 | Script `0004` (persistencia del costeo). Sin endpoints nuevos. **También llena el mapa de métricas** (columnas `origen`/`destino`) | Abierto |
 | B2 | #74 | HU-005.5 | `POST /web/solicitudes-costeo`, `POST /web/cotizaciones/{folio}/costeo/reintentar`, enum de `estado_costeo` y `motivo_estado_costeo` | Abierto |
