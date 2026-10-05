@@ -64,7 +64,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
                 ["origen_margen"] = "#98 (HU-013.2)",
                 ["trm_aplicada"] = "#103 (HU-013.7)",
                 ["textos"] = "#101 (HU-013.5)",
-                ["row_version"] = "#101 (HU-013.5)",
+                ["pdf_desactualizado"] = "#98 (HU-013.2)",
+                ["row_version"] = "#98 (HU-013.2, script 0006)",
             },
         };
 

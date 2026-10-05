@@ -22,12 +22,18 @@ info:
     - Las operaciones marcadas con `x-estado: pendiente` tienen el contrato acordado y todavía no
       están implementadas; `x-issue` dice qué issue las implementa. Mientras tanto la prueba de
       contrato las lista en `clsContratoRutasTests.PendientesDeImplementar` (HU-013, ADR-018).
-    - Concurrencia optimista (HU-013, ADR-018): `GET /web/cotizaciones/{folio}/costeo` devuelve el
-      encabezado `ETag` (y `row_version` en el cuerpo). Las mutaciones del costeo aceptan
-      `If-Match` con ese valor; si la cotización cambió entretanto responden 409
-      `CONFLICTO_CONCURRENCIA` y no cambian nada. `If-Match` es opcional: sin él no hay control.
-      El control empieza a regir cuando el script `0006` (columna `rowVersion`, HU-013.5) esté
-      aplicado; antes el encabezado se acepta y se ignora.
+    - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
+      encabezado `ETag` (y `row_version` en el cuerpo), y toda respuesta 200 o 201 de una mutación del
+      costeo trae el `ETag` nuevo. Las mutaciones de la etapa final (margen, conexos POST y PUT,
+      re-solicitar, textos y redactar) EXIGEN `If-Match` con ese valor: sin él responden 428
+      `PRECONDICION_REQUERIDA`; si la cotización cambió entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin
+      cambios. `POST .../costeo/pdf` lo acepta opcional. `POST .../costeo/servicios-conexos` y
+      `POST .../costeo/re-solicitar` aceptan además `Idempotency-Key` (doble clic). Rige desde el
+      script `0006` (columna `rowVersion`), que entrega #98 (HU-013.2).
+    - Regla del PDF (ADR-018 §11): mientras la cotización no se haya enviado al cliente ni tenga
+      resultado, ajustar el margen, agregar o seleccionar conexos, redactar o editar los textos y
+      re-solicitar en el mismo folio invalidan el PDF (`pdf_url = null`, `pdf_desactualizado = true`)
+      y el comercial lo regenera. Ya enviada o con resultado: 409 `PDF_YA_ENVIADO` (versión `-vN`).
     - Pipeline determinista (ADR-018): el costo sale de Nexo, el margen sugerido de SAP TM (o de la
       política de la línea) y el precio y el PDF los calcula el código. La IA solo redacta el asunto
       y la introducción del PDF y PROPONE acciones (`accion_propuesta`) que el frontend ejecuta con
@@ -194,7 +200,10 @@ paths:
         404 (`Cotización no encontrada o no es tuya.`). Las cotizaciones ya no se crean por chat (flag
         `Chat:CreacionHabilitada=false`; después se borra el código): `cotizacion_origen_id` y `moneda` quedan obsoletos.
         Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`,
-        `proponer_re_solicitud` y `buscar_servicio_conexo`. La respuesta es `{texto, accion_propuesta?}`: la acción
+        `proponer_re_solicitud` y `buscar_servicio_conexo`. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
+        costo, ni totales, ni valores de conexos): `consultar_cotizacion` da solo estado, ruta, línea, moneda, nombres de
+        conexos y los porcentajes de margen actual y sugerido (ADR-018 §2b). El `resumen` con montos de la acción
+        propuesta lo arma el servidor después del LLM. La respuesta es `{texto, accion_propuesta?}`: la acción
         propuesta trae el método, el endpoint, el cuerpo exacto y un resumen; el frontend la ejecuta solo si el comercial
         pulsa Confirmar, llamando a ese endpoint con ese cuerpo (y `If-Match` = `row_version`). **La IA nunca ejecuta
         cambios.** `precio`, `margen` y `pdf` de `RespuestaChat` quedan siempre en `null` desde HU-013.6.
@@ -1111,7 +1120,8 @@ paths:
         mientras no haya costeo. Solo el dueño.
 
         HU-013 (ADR-018): trae además `margen_sugerido` y `origen_margen` (botón de ajuste de margen, HU-013.2),
-        `trm_aplicada` (HU-013.7), `textos` (asunto e introducción del PDF, HU-013.5) y `row_version`, que también va en
+        `trm_aplicada` (HU-013.7), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
+        y `row_version` (#98), que también va en
         el encabezado `ETag`. Son opcionales en el esquema hasta que cada issue los implemente.
       security:
         - bearer: []
@@ -1138,28 +1148,32 @@ paths:
       tags: [web]
       summary: Ajusta el margen de la cotización y recalcula el precio del flete y de los conexos
       x-estado: pendiente
-      x-issue: '#98 (HU-013.2)'
+      x-issue: '#98 (HU-013.2; entrega el script 0006)'
       description: |
-        HU-013.2 (ADR-018). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
+        HU-013.2 (ADR-018 §3). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
         propuesta `ajustar_margen` del asistente.
 
         - `margen` es libre entre 0 y 0,99 (fracción: 0.18 = 18 %). Fuera de rango: 400 `AJUSTE_MARGEN_INVALIDO`.
         - `justificacion` es **obligatoria** si `margen` queda por debajo del margen sugerido (`margen_sugerido` del
           costeo: SAP TM con el BP o la política de la línea). Sin ella: 400 `JUSTIFICACION_REQUERIDA`.
-        - Solo con costo disponible (`autocosteo` o `entregada` con `precio_final`; si no, 409 `COSTEO_NO_LISTO`), sin
-          resultado registrado (ni ganada ni perdida; si no, 409 `ESTADO_NO_PERMITE`) y sin PDF (409 `PDF_YA_GENERADO`).
+        - Solo con costo disponible (`autocosteo` o `entregada` con `precio_final`; si no, 409 `COSTEO_NO_LISTO`).
+        - **Regla del PDF (ADR-018 §11):** si la cotización ya se envió al cliente (`estado_envio` distinto de
+          `sin_enviar`) o tiene resultado, 409 `PDF_YA_ENVIADO` (la `detalle` indica crear la versión `-vN`). Si no, se
+          permite aunque haya PDF: el PDF actual queda invalidado (`pdf_url = null`, `pdf_desactualizado = true`, el
+          anterior queda en el historial) y se regenera con `POST .../costeo/pdf`.
         - Recalcula con `IClsPrecioService` el `precio_final` y el precio de cada servicio conexo, con el método de
           cálculo de la cotización, respetando la moneda y la TRM ya fijada (`trm_aplicada`, nunca una TRM nueva).
         - Registra el ajuste en `MargenAjustes` (margen sugerido = `margenPolitica`, nuevo margen = `margenAplicado`,
           `diferencia`, usuario y justificación en `motivo`). `origen_margen` pasa a `negociado`. Las métricas de ajustes
           marcan los que quedan por debajo del sugerido.
-        - Ajustar al mismo margen vigente responde 200 sin registrar un ajuste nuevo (idempotente).
-        - `If-Match` opcional (409 `CONFLICTO_CONCURRENCIA`). Solo el dueño.
+        - Ajustar al mismo margen vigente responde 200 sin registrar un ajuste nuevo ni invalidar el PDF (idempotente).
+        - `If-Match` **obligatorio** (428 `PRECONDICION_REQUERIDA` sin él; 409 `CONFLICTO_CONCURRENCIA` si no coincide).
+          Solo el dueño.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
       requestBody:
         required: true
         content:
@@ -1198,41 +1212,63 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `ESTADO_NO_PERMITE` (con resultado registrado), `PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: PDF_YA_ENVIADO
+                  mensaje: "La cotización ya se envió al cliente: crea una versión nueva para cambiarla."
+                  detalle:
+                    accion: nueva_version
+                    metodo: POST
+                    endpoint: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/re-solicitar
+                    cuerpo:
+                      motivo: "Ajuste de margen después del envío"
+                      nueva_version: true
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/cotizaciones/{folio}/costeo/re-solicitar:
     post:
       operationId: reSolicitarCosteo
       tags: [web]
-      summary: Vuelve a pedir el costeo a Nexo ("Cotizar costo"), con o sin cambios de carga
+      summary: Vuelve a pedir el costeo a Nexo ("Cotizar costo"), en el mismo folio o en una versión nueva
       x-estado: pendiente
       x-issue: '#100 (HU-013.4)'
       description: |
-        HU-013.4 (ADR-018). Amplía `POST .../costeo/reintentar`. Es el endpoint del botón "Cotizar costo" y del
-        Confirmar de la acción propuesta `re_solicitar_costeo`.
+        HU-013.4 (ADR-018 §5). Amplía `POST .../costeo/reintentar`. Es el endpoint del botón "Cotizar costo", del
+        Confirmar de la acción propuesta `re_solicitar_costeo` y de la "versión nueva" que pide `PDF_YA_ENVIADO`.
 
-        - Permitido si `estado_costeo` es `costeo_vencido`, `entregada` o `error_envio` (falló el envío), y la cotización
-          no tiene resultado registrado. En otro estado: 409 `ESTADO_NO_PERMITE`.
-        - **Sin `datos_carga`:** se reenvía la misma cotización a Nexo (mismo folio). Responde **200** con la cotización
-          en `pendiente_costeo` (o `autocosteo` si Nexo costea en la misma petición) y el polling se reanuda. Desde
-          `error_envio` equivale a `reintentar`.
-        - **Con `datos_carga`:** se crea una versión nueva (`{folio base}-vN`, ADR-011) con el formulario de la vigente
-          y los cambios de carga, y se envía a Nexo como solicitud nueva; la versión anterior se conserva sin cambios.
-          Responde **201** con la versión nueva y el encabezado `Location` a su costeo.
+        **Mismo folio** (sin `datos_carga` y sin `nueva_version`):
+        - Permitido si `estado_costeo` es `costeo_vencido`, `entregada` o `error_envio`; en otro estado, 409
+          `ESTADO_NO_PERMITE`. Si la cotización ya se envió al cliente o tiene resultado, 409 `PDF_YA_ENVIADO` (con
+          `detalle.cuerpo.nueva_version = true`).
+        - Se reenvía la misma cotización a Nexo. Responde **200** con la cotización en `pendiente_costeo` (o
+          `autocosteo` si Nexo costea en la misma petición) y el polling se reanuda. Invalida el PDF actual
+          (`pdf_desactualizado`). Desde `error_envio` equivale a `reintentar`.
+
+        **Versión nueva** (con `datos_carga`, o con `nueva_version: true` sin cambios de carga):
+        - Permitida en cualquier estado salvo con un costeo en curso (`pendiente_envio` o `pendiente_costeo`: 409
+          `ESTADO_NO_PERMITE`), también si la cotización ya se envió o tiene resultado.
+        - Crea `{folio base}-vN` (ADR-011) con el formulario de la vigente y los cambios de carga, si los hay, y la envía a
+          Nexo como solicitud nueva; la versión anterior se conserva sin cambios. Responde **201** con la versión nueva y
+          `Location` a su costeo.
+
+        Comunes:
         - Si Nexo falla, igual que el alta: la cotización (o la versión nueva) queda en `error_envio` con el motivo.
         - Queda auditado (`EventosHerramienta`, `costeo_nexo_re_solicitud`) con el motivo y el usuario.
-        - El mecanismo en Nexo para "reenviar la misma" (captura nueva o reabrir la solicitud) está pendiente de
-          confirmar con el equipo de Nexo (`docs/HU-013-preguntas-nexo.md`).
-        - `If-Match` opcional (409 `CONFLICTO_CONCURRENCIA`). Solo el dueño.
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
+          respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
+        - El mecanismo en Nexo para "reenviar la misma" está pendiente (`docs/HU-013-preguntas-nexo.md`). Solo el dueño.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1247,6 +1283,9 @@ paths:
       responses:
         '200':
           description: Reenviada a Nexo con el mismo folio; `estado_costeo` dice si Nexo la recibió
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1254,6 +1293,8 @@ paths:
         '201':
           description: Versión nueva creada (`folio` con `-vN`) y enviada a Nexo; la anterior se conserva
           headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
             Location:
               description: '`/web/cotizaciones/{folio nuevo}/costeo`'
               schema:
@@ -1263,7 +1304,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío o fuera de los límites de Nexo, reglas de peso) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
           content:
             application/json:
               schema:
@@ -1275,11 +1316,13 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`ESTADO_NO_PERMITE` (estado del costeo o resultado registrado) o `CONFLICTO_CONCURRENCIA`; sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
+          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/servicios-conexos:
     get:
@@ -1289,7 +1332,7 @@ paths:
       x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
-        HU-013.3 (ADR-018). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
+        HU-013.3 (ADR-018 §4). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
         con la identidad del comercial y devuelve solo servicios activos, **sin `costoUnitario`** (Nexo es la fuente de
         verdad del costo; Cotifly solo expone precios con margen, y solo de los conexos ya agregados a una cotización).
         Lo usan el buscador del detalle de la cotización y la herramienta `buscar_servicio_conexo` del asistente.
@@ -1358,7 +1401,7 @@ paths:
       x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
-        HU-013.3 (ADR-018). Es el endpoint del botón "Agregar conexo" y del Confirmar de la acción propuesta
+        HU-013.3 (ADR-018 §4). Es el endpoint del botón "Agregar conexo" y del Confirmar de la acción propuesta
         `agregar_servicios_conexos`. Los conexos se agregan **en Nexo**, que es la fuente de verdad del costo:
 
         1. `POST {Nexo:UrlBase}/api/cotizaciones/{cotizacionNexoId}/conexos` con
@@ -1371,23 +1414,29 @@ paths:
         2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
            conexo con `IClsPrecioService` y los deja `incluido = true`.
 
-        - `items` de 1 a 20, cada uno con `linea_orden`, `servicio_id` del catálogo (`GET /web/servicios-conexos`) y
-          `cantidad` de 0,01 a 999.999,99. Una `linea_orden` que no existe en la cotización: 400 `CONEXO_INVALIDO` sin
-          llamar a Nexo.
-        - Solo con costeo disponible (409 `COSTEO_NO_LISTO`), sin resultado (409 `ESTADO_NO_PERMITE`) y sin PDF (409
-          `PDF_YA_GENERADO`). Una licitación responde 409 `ESTADO_NO_PERMITE` en esta iteración (su PDF de pliego no
-          imprime conexos, ADR-017 §6).
+        - `items` de 1 a 20 (vacío o más de 20: 400 `ErrorWeb` por el esquema, sin llamar a Nexo), cada uno con
+          `linea_orden`, `servicio_id` del catálogo (`GET /web/servicios-conexos`) y `cantidad` de 0,01 a 999.999,99. Una
+          `linea_orden` que no existe en la cotización: 400 `CONEXO_INVALIDO` sin llamar a Nexo.
+        - Una línea que existe pero todavía no tiene línea en la cotización de Nexo (sin flete, o sin el id de la línea de
+          la cotización de Nexo guardado): 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. #99 debe guardar ese id
+          (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo`
+          (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`) al leer la cotización.
+        - Solo con costeo disponible (409 `COSTEO_NO_LISTO`). Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409
+          `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación responde 409
+          `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
           `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos nada cambia en Cotifly.
-        - Si Nexo lo agregó pero la relectura falla, responde 503 `NEXO_NO_DISPONIBLE` y el polling recoge el conexo en
-          la siguiente consulta.
+        - Si Nexo lo agregó pero la relectura falla, responde 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
+          true`; Cotifly no reintenta el POST y el polling recoge el conexo en la siguiente consulta.
         - Si el conexo queda costeado de inmediato o pasa por Servicios Logísticos está pendiente de confirmar con Nexo.
-        - `If-Match` opcional (409 `CONFLICTO_CONCURRENCIA`). Solo el dueño.
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
+          respuesta de la primera petición sin volver a llamar a Nexo (el POST de Nexo no es idempotente). Solo el dueño.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1410,7 +1459,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CosteoCotizacion'
         '400':
-          description: '`CONEXO_INVALIDO` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido o no cumple el esquema'
+          description: '`CONEXO_INVALIDO` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido o no cumple el esquema (`items` vacío o con más de 20)'
           content:
             application/json:
               schema:
@@ -1428,13 +1477,15 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `ESTADO_NO_PERMITE`, `PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE`'
+          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si solo falló la relectura)'
           content:
             application/json:
               schema:
@@ -1445,12 +1496,17 @@ paths:
       summary: Elige qué servicios conexos del costeo se incluyen en el precio y en el PDF
       description: |
         HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
-        mientras la cotización tenga precio y no tenga PDF. Solo el dueño. Acepta `If-Match` (HU-013.5).
+        mientras la cotización tenga precio. Solo el dueño.
+
+        Cambia con HU-013 (ADR-018 §11, lo implementa #98 junto con el `0006`): con PDF ya generado se permite e invalida
+        el PDF (`pdf_desactualizado`) en lugar de responder `PDF_YA_GENERADO`; ya enviada o con resultado responde 409
+        `PDF_YA_ENVIADO`. `If-Match` pasa a ser obligatorio (428 `PRECONDICION_REQUERIDA`) y la respuesta trae `ETag`.
+        Excluir un conexo no lo borra en Nexo (no hay DELETE de conexos, pregunta abierta con Nexo).
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
       requestBody:
         required: true
         content:
@@ -1460,6 +1516,9 @@ paths:
       responses:
         '200':
           description: Selección guardada
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1477,11 +1536,13 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA` (HU-013.5)'
+          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_GENERADO` (comportamiento actual, hasta #98), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/cotizaciones/{folio}/costeo/textos/redactar:
     post:
@@ -1489,25 +1550,32 @@ paths:
       tags: [web]
       summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
       x-estado: pendiente
-      x-issue: '#101 (HU-013.5)'
+      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
       description: |
-        HU-013.5 (ADR-018). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
+        HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
         negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
         **Nunca recibe** costos, margen ni precios.
 
         - Tiempo máximo de 15 s. Si la IA tarda, falla, o su salida trae montos, URL o correos, o pasa de 120 caracteres
           (asunto) o 900 (introducción), se descarta y se usan los textos de `clsTextosEstandar`: responde igual **200**
           con `fuente = estandar`. Nunca responde error por la IA.
-        - Guarda el resultado en `Cotizaciones.textosCotizacion` (reemplaza los textos anteriores, también los editados:
-          el frontend debe confirmarlo si `editado = true`) y lo audita (proveedor, modelo, duración y si se usó el
-          respaldo). `POST .../costeo/pdf` imprime los textos guardados (o los estándar si no hay).
-        - Solo sin PDF (409 `PDF_YA_GENERADO`). `If-Match` opcional (409 `CONFLICTO_CONCURRENCIA`). Solo el dueño.
-        - Requiere el script `0006` (`textosCotizacion` y `rowVersion`).
+        - Guarda el resultado en `Cotizaciones.textosCotizacion` y lo audita (proveedor, modelo, duración y si se usó el
+          respaldo). Si los textos guardados fueron editados por el comercial (`editado = true`), responde 409
+          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true`.
+        - Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si no, invalida el PDF actual.
+        - `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - name: sobrescribir
+          in: query
+          required: false
+          description: '`true` reemplaza textos editados por el comercial (el frontend lo pide tras confirmar con él).'
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Textos redactados (o estándar) y guardados
@@ -1523,11 +1591,13 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`TEXTOS_EDITADOS`, `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/cotizaciones/{folio}/costeo/textos:
     put:
@@ -1535,17 +1605,18 @@ paths:
       tags: [web]
       summary: El comercial edita el asunto y la introducción del PDF
       x-estado: pendiente
-      x-issue: '#101 (HU-013.5)'
+      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
       description: |
-        HU-013.5 (ADR-018). Guarda los textos que escribió el comercial (`editado = true`; `fuente` conserva el origen del
-        texto que editó, o `estandar` si no había). Mismos límites que el redactor: asunto de 1 a 120 caracteres e
+        HU-013.5 (ADR-018 §2a). Guarda los textos que escribió el comercial (`editado = true`; `fuente` conserva el origen
+        del texto que editó, o `estandar` si no había). Mismos límites que el redactor: asunto de 1 a 120 caracteres e
         introducción de 1 a 900, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
-        escribe el comercial, no la IA. Solo sin PDF (409 `PDF_YA_GENERADO`). `If-Match` opcional. Solo el dueño.
+        escribe el comercial, no la IA. Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si
+        no, invalida el PDF actual. `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
-        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
       requestBody:
         required: true
         content:
@@ -1575,11 +1646,13 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -1589,7 +1662,9 @@ paths:
       description: |
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
         destino, vehículo y `precio_final`, y solo los servicios conexos incluidos, cada uno con su precio. Una sola
-        vez por cotización (para cambiarla, versión nueva). Solo el dueño.
+        vez por cotización (para cambiarla, versión nueva). Solo el dueño. Desde HU-013 (ADR-018 §11, #98) se puede
+        regenerar cuando `pdf_desactualizado = true` (el anterior queda en el historial); con el PDF vigente sigue
+        respondiendo `PDF_YA_GENERADO` y, ya enviada o con resultado, `PDF_YA_ENVIADO`.
 
         HU-011.5 (ADR-017 §6): una licitación (aunque tenga una sola línea) o una cotización de dos o más líneas sale con el
         layout de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin
@@ -1600,7 +1675,7 @@ paths:
         HU-013 (ADR-018): es el único generador de PDF (el chat ya no arma payloads). Desde HU-013.5 imprime el asunto y
         la introducción guardados en `textos` (o los de `clsTextosEstandar` si no hay); nunca llama a la IA, así que el
         PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD imprime las tarifas en `US$` y la nota de
-        TRM mínima con su `trm_aplicada`. Acepta `If-Match` (HU-013.5).
+        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (rige con el `0006` de #98).
       security:
         - bearer: []
       parameters:
@@ -1609,6 +1684,9 @@ paths:
       responses:
         '201':
           description: PDF generado y registrado
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1624,7 +1702,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `PDF_YA_GENERADO` o `CONFLICTO_CONCURRENCIA` (HU-013.5)'
+          description: '`COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -2093,11 +2171,39 @@ components:
         `GET /web/cotizaciones/{folio}/costeo`, o el `row_version` de la `accion_propuesta` que confirma. Con comillas o
         sin ellas. Si la cotización cambió entretanto responde 409 `CONFLICTO_CONCURRENCIA` sin cambiar nada (el frontend
         recarga el costeo y vuelve a pedir la confirmación). Sin el encabezado no hay control. Rige desde que el script
-        `0006` (`rowVersion`, HU-013.5) esté aplicado; antes se acepta y se ignora.
+        `0006` (`rowVersion`, que entrega #98) esté aplicado; antes se acepta y se ignora. Opcional solo en
+        `POST .../costeo/pdf`; las mutaciones de la etapa final usan `IfMatchObligatorio`.
       schema:
         type: string
         maxLength: 64
       example: '"AAAAAAAAB9E="'
+    IfMatchObligatorio:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        Obligatorio en las mutaciones de la etapa final (ADR-018 §8): el `ETag`/`row_version` leído en
+        `GET .../costeo` o el `row_version` de la `accion_propuesta`. Sin él responde 428 `PRECONDICION_REQUERIDA`; si no
+        coincide, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. Rige desde el script `0006` de #98; antes de aplicarlo el
+        servidor no lo exige.
+      schema:
+        type: string
+        maxLength: 64
+      example: '"AAAAAAAAB9E="'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Opcional (ADR-018 §8). Clave única por intención del usuario (UUID generado al pulsar Confirmar o el botón). Una
+        repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada de la primera petición sin
+        volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
+        cuerpo responde 400 `ErrorWeb`.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+      example: 5f0c1e2a-9b8d-4c7e-a6f5-3d2c1b0a9f8e
 
   headers:
     ETag:
@@ -2109,6 +2215,16 @@ components:
       example: '"AAAAAAAAB9E="'
 
   responses:
+    PrecondicionRequerida:
+      description: '`PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final (ADR-018 §8)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorNegocio'
+          example:
+            error:
+              codigo: PRECONDICION_REQUERIDA
+              mensaje: "Recarga la cotización y vuelve a intentarlo (falta If-Match)."
     Validacion:
       description: Cuerpo inválido
       content:
@@ -2235,7 +2351,11 @@ components:
                 `detalle.motivo`), `NEXO_NO_DISPONIBLE` (503: Nexo caído, sin configurar o sin respuesta al consultar o
                 agregar servicios conexos) y `TEXTOS_COTIZACION_INVALIDOS` (400: asunto o introducción vacíos, largos o con
                 URL o correos). `AJUSTE_MARGEN_INVALIDO` también es el margen fuera de 0 a 0,99 en
-                `PUT .../costeo/margen`.
+                `PUT .../costeo/margen`. `PDF_YA_ENVIADO` (409: la cotización ya se envió al cliente o tiene resultado;
+                `detalle` trae `accion = nueva_version` con el método, el endpoint y el cuerpo para crear `-vN`),
+                `PRECONDICION_REQUERIDA` (428: falta `If-Match`), `LINEA_SIN_COTIZACION_NEXO` (409: la línea no tiene
+                todavía línea en la cotización de Nexo) y `TEXTOS_EDITADOS` (409: redactar sobre textos editados por el
+                comercial sin `?sobrescribir=true`).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -2294,6 +2414,10 @@ components:
                 - CONEXO_INVALIDO
                 - NEXO_NO_DISPONIBLE
                 - TEXTOS_COTIZACION_INVALIDOS
+                - PDF_YA_ENVIADO
+                - PRECONDICION_REQUERIDA
+                - LINEA_SIN_COTIZACION_NEXO
+                - TEXTOS_EDITADOS
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -2421,8 +2545,11 @@ components:
 
     SalidaPrecio:
       type: object
+      deprecated: true
       required: [precio, costo, margen, metodo, utilidad]
       description: |
+        **Obsoleto (ADR-018 §2):** solo lo usa `RespuestaChat.precio`, que desde HU-013.6 siempre es `null`; ninguna
+        respuesta del chat vuelve a exponer `costo` ni `utilidad`. No se usa en endpoints nuevos.
         `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
         enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-014).
         `moneda`, `trm_aplicada` y `precio_cop` son opcionales para compatibilidad: si faltan, la moneda es COP.
@@ -2512,17 +2639,20 @@ components:
             type: string
           description: Nombres de las herramientas invocadas en el turno, en orden.
         precio:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaPrecio'
             - $ref: '#/components/schemas/Nulo'
         margen:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaMargen'
             - $ref: '#/components/schemas/Nulo'
         pdf:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaPdf'
             - $ref: '#/components/schemas/Nulo'
@@ -2580,15 +2710,16 @@ components:
           type: string
           maxLength: 300
           description: |
-            Texto legible para el botón de confirmación ("Ajustar el margen de 15 % a 18 % (precio estimado 3.109.756
-            COP)"). Lo arma el servidor con los valores calculados por código, no el LLM.
+            Texto legible para el botón de confirmación ("Ajustar el margen de 15 % a 18 %: el precio pasa de 3.000.000
+            a 3.109.756 COP"). Lo arma el SERVIDOR con plantilla y valores calculados por código (`IClsPrecioService`) al
+            recibir la propuesta; el LLM nunca lo escribe ni ve esos montos (ADR-018 §2b).
         row_version:
           type: string
           nullable: true
           description: |
             Versión de la cotización que vio el asistente al proponer; va en `If-Match` al confirmar. Si la cotización
             cambió, el endpoint responde 409 `CONFLICTO_CONCURRENCIA` y la propuesta se descarta. `null` mientras el
-            script `0006` no esté aplicado.
+            script `0006` (#98) no esté aplicado.
 
     ErrorHerramienta:
       type: object
@@ -3266,10 +3397,15 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TextosCotizacion'
             - $ref: '#/components/schemas/Nulo'
+        pdf_desactualizado:
+          type: boolean
+          description: |
+            ADR-018 §11. `true` si una acción posterior (margen, conexos, textos, re-solicitud) invalidó el PDF: `pdf_url`
+            queda en `null` y el comercial lo regenera con `POST .../costeo/pdf`. El PDF anterior queda en el historial.
         row_version:
           type: string
           nullable: true
-          description: HU-013.5. Mismo valor que el encabezado `ETag`; va en `If-Match`. `null` sin el script `0006`.
+          description: '#98 (script 0006). Mismo valor que el encabezado `ETag`; va en `If-Match`. `null` sin el `0006`.'
 
     SeleccionServiciosConexos:
       type: object
@@ -3304,7 +3440,11 @@ components:
       description: |
         HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
         `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
-        Si trae `posiciones`, reemplaza todas las anteriores.
+        Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
+        valida igual que en la captura, con las condiciones de G3 (`docs/HU-013-preguntas-nexo.md`): `clase_contenedor`
+        solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
+        `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
+        distinto del origen, y la regla de peso.
       properties:
         tipo_vehiculo:
           type: string
@@ -3318,6 +3458,10 @@ components:
           type: string
           nullable: true
           maxLength: 50
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
         clase_contenedor:
           type: string
           nullable: true
@@ -3328,6 +3472,35 @@ components:
         consolidado:
           type: boolean
           nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+        valor_aprovisionamiento:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
         peso_kg:
           type: number
           nullable: true
@@ -3337,6 +3510,7 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
         posiciones:
           type: array
           nullable: true
@@ -3355,10 +3529,16 @@ components:
           maxLength: 300
           description: Por qué se vuelve a pedir el costeo; queda en la auditoría.
         datos_carga:
-          description: Cambios de carga. Ausente o `null` = se reenvía la misma cotización; con datos = versión nueva.
+          description: Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva.
           oneOf:
             - $ref: '#/components/schemas/DatosCargaWeb'
             - $ref: '#/components/schemas/Nulo'
+        nueva_version:
+          type: boolean
+          default: false
+          description: |
+            `true` crea la versión `-vN` aunque no haya cambios de carga (la salida de `PDF_YA_ENVIADO`: cotización ya
+            enviada o con resultado). Con `datos_carga` siempre se crea versión nueva, con o sin este campo.
 
     ConexoAgregarWeb:
       type: object

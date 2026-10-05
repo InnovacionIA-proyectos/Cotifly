@@ -56,7 +56,21 @@ La IA tiene dos funciones, y solo esas:
 
 - `/web/chat` exige `folio` (400 `FOLIO_REQUERIDO`): el asistente trabaja sobre una cotización ya creada, del comercial.
 - Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud` y `buscar_servicio_conexo`. Se retiran `generar_pdf` (payload armado por el LLM), `calcular_precio`, `obtener_margen`, `buscar_tarifa` y las herramientas de creación.
-- La respuesta es `{texto, accion_propuesta?}`. `accion_propuesta` trae `tipo`, `metodo`, `endpoint`, el `cuerpo` exacto (validado contra el esquema del endpoint destino), un `resumen` legible armado por el servidor con valores calculados por código y el `row_version` que vio el asistente.
+- **Ninguna herramienta entrega montos de dinero al LLM.** Con el margen y un precio, el LLM podría deducir el costo de Nexo. Salida exacta de `consultar_cotizacion`:
+
+  | Campo | Ejemplo |
+  |---|---|
+  | `folio`, `version` | `PCN-900555111-DG-05102026-001`, 1 |
+  | `estado_costeo`, `estado_envio`, `tiene_resultado`, `pdf_desactualizado` | `autocosteo`, `sin_enviar`, `false`, `false` |
+  | `cliente` (nombre), `linea_negocio` | `Cliente SAS`, `Nacional` |
+  | `origen`, `destino`, `tipo_vehiculo` | `Buenaventura`, `Bogotá D.C.`, `3S3` |
+  | `moneda` | `COP` |
+  | `margen_actual`, `margen_sugerido`, `origen_margen` (porcentajes) | `0.15`, `0.15`, `politica_linea` |
+  | `conexos` (solo nombre, cantidad e incluido) | `[{"nombre": "Cargue", "cantidad": 1, "incluido": true}]` |
+
+  Nunca trae `precio_final`, `costo`, totales, valores de conexos, `costoUnitario` ni la TRM aplicada a montos. `buscar_servicio_conexo` devuelve id, nombre, categoría y unidad, sin `costoUnitario`. Las propuestas reciben del LLM solo el margen, el motivo, los cambios de carga o el id del servicio y la cantidad.
+- La respuesta es `{texto, accion_propuesta?}`. `accion_propuesta` trae `tipo`, `metodo`, `endpoint`, el `cuerpo` exacto (validado contra el esquema del endpoint destino), un `resumen` legible y el `row_version` que vio el asistente. **El `resumen` lo arma el SERVIDOR después del LLM**, con plantilla y valores de `IClsPrecioService` (por ejemplo, "Ajustar el margen de 15 % a 18 %: el precio pasa de 3.000.000 a 3.109.756 COP"). El LLM no lo escribe ni ve esos montos. El `texto` del LLM se valida contra cifras de dinero (ADR-003, HU-003.10).
+- `RespuestaChat.precio`, `margen` y `pdf` quedan `deprecated` y siempre en `null`, y `SalidaPrecio` (que trae `costo`) deja de aparecer en cualquier respuesta del chat.
 - **Patrón propuesta → Confirmar:** el frontend muestra el resumen con un botón Confirmar. Solo al pulsarlo llama a `metodo endpoint` con `cuerpo` y `If-Match: row_version`. Ese endpoint es el mismo del botón de la pantalla, con las mismas validaciones. **La IA nunca ejecuta cambios ni escribe datos de negocio.**
 
 Guardar los textos que redactó la IA (a) no contradice esta regla: son textos de presentación, el comercial los puede editar y no tocan costos, margen ni precios.
@@ -65,7 +79,7 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
 
 - `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}`. El margen es libre entre 0 y 0,99 (400 `AJUSTE_MARGEN_INVALIDO`).
 - La justificación es obligatoria si el margen queda por debajo del sugerido (400 `JUSTIFICACION_REQUERIDA`).
-- Solo con costo disponible (409 `COSTEO_NO_LISTO`), sin resultado registrado (409 `ESTADO_NO_PERMITE`) y sin PDF (409 `PDF_YA_GENERADO`).
+- Solo con costo disponible (409 `COSTEO_NO_LISTO`). Con PDF se aplica la regla de §11: si la cotización no se ha enviado ni tiene resultado, se ajusta y el PDF queda desactualizado; si no, 409 `PDF_YA_ENVIADO`.
 - Recalcula el flete y los conexos incluidos con `IClsPrecioService`, respetando la moneda y la TRM ya fijada.
 - Registra el ajuste en `MargenAjustes` (`margenPolitica` = sugerido, `margenAplicado`, `diferencia`, `usuarioId`, `motivo` = justificación). `origen_margen` pasa a `negociado`. Ajustar al mismo margen no registra un ajuste nuevo.
 
@@ -75,16 +89,25 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
 - `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}`:
   1. Cotifly traduce `linea_orden` a la línea de la cotización de Nexo (`lineaId`).
   2. Llama a `POST /api/cotizaciones/{id}/conexos` con `{items: [{lineaId, servicioConexoId, cantidad}]}`, **sin `valorAplicado`**: Nexo lo calcula y es la fuente de verdad del costo.
-  3. Lee de nuevo la cotización, aplica el margen y deja el conexo incluido.
+  3. Lee de nuevo la cotización, aplica el margen y deja el conexo incluido. Si Nexo lo agregó pero la relectura falla: 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo = true`, sin reintentar el POST. El polling lo recoge.
+- **Línea sin cotización en Nexo:** si la línea existe en Cotifly pero no hay línea de la cotización de Nexo asociada (sin flete, o sin su id guardado), 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. **#99 debe guardar el id de la línea de la cotización de Nexo** (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo` (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`). Hoy solo se guarda el `lineaSolicitudId`.
+- `items` de 1 a 20; vacío o con más de 20, 400 por esquema y sin llamar a Nexo. La regla de §11 aplica igual que en el margen.
 - Roles de Nexo para agregar: `Comercial`, `CoordinadorFletes` y `Admin` (confirmado en el código de Nexo según `docs/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara). 403 → `NEXO_SIN_PERMISO`; 400/404 → `CONEXO_INVALIDO`; caído → `NEXO_NO_DISPONIBLE`.
-- Las licitaciones no admiten conexos en esta iteración: su PDF de pliego no los imprime (ADR-017 §6).
+- Las licitaciones no admiten conexos en esta iteración (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): su PDF de pliego no los imprime (ADR-017 §6).
+- Excluir un conexo (`PUT .../servicios-conexos`) no lo borra en Nexo: el swagger no tiene DELETE de conexos y el total de Nexo puede diferir del PDF (pregunta abierta).
 
 ### 5. Re-solicitar el costeo (HU-013.4)
 
-- "Cotizar costo" significa volver a pedir el costeo a Nexo: `POST .../costeo/re-solicitar` `{motivo, datos_carga?}`. Amplía `reintentar`, que se conserva por compatibilidad.
-- Permitido con `estado_costeo` en `costeo_vencido`, `entregada` o `error_envio`, y sin resultado. En otro caso, 409 `ESTADO_NO_PERMITE`.
-- **Sin cambios de carga:** se reenvía la misma cotización (mismo folio) y responde 200.
-- **Con cambios de carga:** se crea la versión `{folio base}-vN` (ADR-011) con el formulario de la vigente más los cambios. La versión anterior se conserva sin tocar, y la respuesta es 201 con `Location`.
+- "Cotizar costo" significa volver a pedir el costeo a Nexo: `POST .../costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}`. Amplía `reintentar`, que se conserva por compatibilidad.
+- **Mismo folio** (sin cambios de carga y sin `nueva_version`):
+  - permitido con `estado_costeo` en `costeo_vencido`, `entregada` o `error_envio` (si no, 409 `ESTADO_NO_PERMITE`);
+  - solo si la cotización no se ha enviado ni tiene resultado (si no, 409 `PDF_YA_ENVIADO`);
+  - se reenvía la misma cotización, responde 200 y el PDF queda desactualizado (§11).
+- **Versión nueva** (con `datos_carga`, o con `nueva_version: true` sin cambios de carga):
+  - se crea `{folio base}-vN` (ADR-011) con el formulario de la vigente más los cambios, si los hay, y la versión anterior se conserva sin tocar;
+  - responde 201 con `Location`;
+  - permitida también si ya se envió o tiene resultado; no lo está con un costeo en curso (`pendiente_envio`, `pendiente_costeo`: 409 `ESTADO_NO_PERMITE`).
+- `datos_carga` acepta los mismos campos de línea que la captura (vehículo, carrocería, tipología, clase de viaje y de contenedor, exclusivo, consolidado, retorno y levante con sus ciudades, aprovisionamiento, horas, peso, valor de mercancía y posiciones), con las mismas condiciones (gap G3).
 - Origen, destino, cliente y línea no se cambian por esta vía: eso es otra cotización.
 - Se audita con el motivo y el usuario. El mecanismo de Nexo para "reenviar la misma" (captura nueva o reabrir) está pendiente de confirmar.
 
@@ -105,10 +128,10 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
 
 ### 8. Concurrencia optimista
 
-- El script `db/migrations_mssql/0006_textos_y_concurrencia.sql` (HU-013.5, lo aplica el DBA) agrega `Cotizaciones.rowVersion` (`ROWVERSION`) y `Cotizaciones.textosCotizacion` (JSON).
-- `GET .../costeo` devuelve `ETag` y `row_version`.
-- Las mutaciones del costeo (`margen`, `servicios-conexos` PUT y POST, `re-solicitar`, `textos`, `textos/redactar` y `pdf`) aceptan `If-Match`. Si no coincide, responden 409 `CONFLICTO_CONCURRENCIA` y no cambian nada.
-- `If-Match` es opcional: sin él no hay control. Antes del `0006` el encabezado se acepta y se ignora. El polling también actualiza `rowVersion`, así que una acción propuesta queda invalidada si el costeo cambió después de proponerla.
+- **El script `db/migrations_mssql/0006_textos_y_concurrencia.sql` es prerrequisito de #98 (HU-013.2) y lo entrega #98** (lo aplica el DBA). Agrega `Cotizaciones.rowVersion` (`ROWVERSION`), `Cotizaciones.textosCotizacion` (JSON, lo usa #101) y lo que necesita la regla del PDF de §11 (marca de PDF desactualizado e historial de PDF). #99, #100 y #101 dependen de él.
+- `GET .../costeo` devuelve `ETag` y `row_version`. **Toda respuesta 200 o 201 de una mutación del costeo devuelve el `ETag` nuevo**, incluidos `PUT .../servicios-conexos`, `re-solicitar` (200 y 201) y `pdf`.
+- **`If-Match` es OBLIGATORIO en las mutaciones de la etapa final:** `margen`, `servicios-conexos` PUT y POST, `re-solicitar`, `textos` y `textos/redactar`. Sin él, 428 `PRECONDICION_REQUERIDA`; si no coincide, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. En `POST .../costeo/pdf` sigue opcional. Antes del `0006` el servidor no lo exige. El polling también actualiza `rowVersion`, así que una acción propuesta queda invalidada si el costeo cambió después de proponerla.
+- **`Idempotency-Key`** (opcional) en `POST .../servicios-conexos` y `POST .../re-solicitar`: una repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada sin volver a ejecutarla. Un doble clic no duplica el conexo en Nexo (cuyo POST no es idempotente) ni crea `-v2` y `-v3`. La misma clave con otro cuerpo responde 400. El frontend genera un UUID por intención (al pulsar Confirmar o el botón).
 
 ### 9. Estados de Nexo ↔ `estado_costeo` (vigente, ADR-015 §2 y §4)
 
@@ -136,12 +159,32 @@ Lo que el contrato fija como regla:
 
 Los gaps entre el mapeo, el DTO actual y el swagger de Nexo están en `docs/HU-013-preguntas-nexo.md` §Gaps. Se implementan en una issue aparte.
 
+### 11. Regla del PDF (cerrada)
+
+El PDF es la foto de lo que se entrega al cliente. La regla depende de si ya se entregó:
+
+- **No enviada y sin resultado** (`estado_envio = sin_enviar` y `ganada` nulo). Se permiten en el mismo folio:
+  - ajustar el margen;
+  - agregar o seleccionar conexos;
+  - redactar o editar los textos;
+  - re-solicitar sin cambios de carga.
+
+  Cada una **invalida el PDF actual**: `pdf_url = null` y `pdf_desactualizado = true` en `CosteoCotizacion`. El PDF anterior queda en el historial, con su archivo y su fila de auditoría. El comercial lo regenera con `POST .../costeo/pdf`, que con un PDF vigente sigue respondiendo `PDF_YA_GENERADO`.
+- **Ya enviada** (`/enviar`, `estado_envio` `enviada` o `reenviada`) **o con resultado:** esas acciones responden 409 `PDF_YA_ENVIADO`. La `detalle` dice cómo crear la versión: `{accion: "nueva_version", metodo: "POST", endpoint: ".../costeo/re-solicitar", cuerpo: {motivo, nueva_version: true}}`.
+  - La versión `-vN` sin cambios de carga se crea con `re-solicitar` y `nueva_version: true`.
+  - Con cambios de carga, con `datos_carga`.
+  - La versión nueva pasa otra vez por Nexo, porque el costeo de la anterior pudo vencer. Sobre ella se ajusta el margen, los conexos y los textos, y se genera su PDF.
+- La regla la implementa #98 junto con el `0006` para el margen y la selección de conexos. Cambia el comportamiento actual de `PUT .../servicios-conexos`, que hoy responde `PDF_YA_GENERADO`. #99, #100 y #101 la aplican en sus endpoints.
+
+Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
+
 ## Alternativas consideradas
 
 - **Mantener el chat como cotizador con más validaciones:** el LLM seguiría decidiendo cuándo calcular y generar el PDF, y el chat no recoge el formulario ampliado de Nexo. Se descarta: la fuente de verdad es el formulario.
 - **Que la IA ejecute las acciones con confirmación textual ("¿confirmas?" → "sí"):** la confirmación quedaría en manos del modelo, que interpreta el "sí". Con el botón Confirmar, la ejecución es del frontend sobre un endpoint determinista, auditable igual que un clic normal.
 - **Guardar los conexos solo en Cotifly con un costo del catálogo:** duplicaría la fuente de verdad del costo. Nexo puede tener tarifas por ruta o revisión de Servicios Logísticos. Se agregan en Nexo y Cotifly solo aplica el margen.
-- **`If-Match` obligatorio (428 sin él):** rompería al frontend actual y a las pruebas antes del `0006`. Se deja opcional y se recomienda siempre.
+- **`If-Match` opcional en todas las mutaciones:** dejaba sin protección el Confirmar de una propuesta vieja y el doble clic. Se exige en las mutaciones de la etapa final desde el `0006` (antes el servidor no lo puede verificar) y se complementa con `Idempotency-Key`. En `POST .../costeo/pdf` sigue opcional, porque regenerar el PDF no cambia datos.
+- **Bloquear todo cambio después del primer PDF (`PDF_YA_GENERADO`, el borrador de esta ADR):** obligaba a crear `-vN` por cualquier retoque antes de enviar. Se reemplaza por la regla de §11.
 - **412 Precondition Failed para el conflicto:** es el código HTTP estándar, pero el frontend ya maneja los errores de negocio como 409 `ErrorNegocio`. Se usa 409 `CONFLICTO_CONCURRENCIA` (decisión del usuario).
 
 ## Consecuencias
@@ -153,7 +196,7 @@ Los gaps entre el mapeo, el DTO actual y el swagger de Nexo están en `docs/HU-0
   - el detalle lleva botones de margen, conexos, "Cotizar costo" y textos;
   - el asistente se abre desde una cotización y muestra la acción propuesta con Confirmar;
   - se retira la vista "Asistente" para crear (HU-013.8).
-- `RespuestaChat.precio`, `margen` y `pdf` quedan en `null` desde HU-013.6. Se conservan en el esquema por compatibilidad.
+- `RespuestaChat.precio`, `margen` y `pdf` quedan `deprecated` y en `null` desde HU-013.6. Se conservan en el esquema por compatibilidad.
 - El contrato ya declara los endpoints nuevos (`x-estado: pendiente`). La prueba de contrato los lista con su issue en `clsContratoRutasTests.PendientesDeImplementar` y `PropiedadesPendientes`; cada issue quita su entrada al implementar. Los `.feature` nuevos van con `@pendiente @ignore` hasta que su issue enlace los pasos.
 - Las métricas de ajustes de margen (ADR-016) ganan los ajustes hechos desde el costeo.
 
@@ -165,8 +208,8 @@ Los gaps entre el mapeo, el DTO actual y el swagger de Nexo están en `docs/HU-0
 | Mecanismo para re-solicitar sin cambios de carga (captura nueva, reabrir la solicitud o recalcular) | Equipo de Nexo |
 | Autenticación de servicio para Cotifly (hoy `X-Portal-Usuario-Id` del comercial, sin token) | Duban + equipo de Nexo |
 | Orden de las líneas de la cotización de Nexo frente a las de la solicitud (para traducir `linea_orden` → `lineaId`) | Equipo de Nexo |
-| Script `0006_textos_y_concurrencia.sql` (rowVersion y textosCotizacion) | Duban + DBA |
+| Script `0006_textos_y_concurrencia.sql` (rowVersion, textosCotizacion, PDF desactualizado e historial): lo entrega #98 | Duban + DBA |
+| ¿Existe DELETE de conexos en Nexo? ¿Agregar un conexo cambia el estado o `entregadaAt` de la cotización? | Equipo de Nexo |
 | Integrar #50 (PR #96) antes de HU-013.7 | Duban |
-| ¿Permitir regenerar el PDF tras ajustar el margen o los textos? (hoy, versión nueva) | Negocio |
 | Issue de gaps del formulario y migración de catálogos (`docs/HU-013-preguntas-nexo.md` §Gaps) | Coordinador + Duban |
 | Compartir el contrato con el desarrollador del frontend | Duban |
