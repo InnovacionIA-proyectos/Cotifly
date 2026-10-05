@@ -58,6 +58,10 @@ public sealed class clsApiWebPruebas : IDisposable
             ["Jwt:SigningKey"] = ClaveJwt,
             ["LimiteAuth:PeticionesPorVentana"] = "100000",
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
+
+            // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
+            ["Trm:Url"] = clsTrmFalso.Url,
+            ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };
         if (correoHabilitado)
         {

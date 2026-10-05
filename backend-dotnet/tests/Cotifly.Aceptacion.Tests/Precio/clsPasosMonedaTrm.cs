@@ -36,6 +36,28 @@ public sealed class clsPasosMonedaTrm(clsContextoEscenario contexto)
     [Given("que la fuente de la TRM no responde")]
     public void DadoQueLaFuenteNoResponde() => contexto.TrmFalso.Caida(10);
 
+    [Given("que la TRM se consulta con el proveedor {string}")]
+    public void DadoElProveedorDeTrm(string proveedor) => contexto.Reconfigurar(new Dictionary<string, string?> { ["Trm:Proveedor"] = proveedor });
+
+    [Given("que DolarApi publica la TRM {string} el {string}")]
+    public void DadoQueDolarApiPublica(string valor, string fechaActualizacion)
+    {
+        contexto.DolarApiFalso.Valor = clsPasosPrecio.Fraccion(valor);
+        contexto.DolarApiFalso.FechaActualizacion = DateTimeOffset.Parse(fechaActualizacion, CultureInfo.InvariantCulture);
+    }
+
+    [Given("que DolarApi no responde")]
+    public void DadoQueDolarApiNoResponde() => contexto.DolarApiFalso.Caida(10);
+
+    [Then("la TRM es {string} de la fuente {string}")]
+    public void EntoncesLaTrmEsDeLaFuente(string valor, string fuente)
+    {
+        _trm.Should().NotBeNull();
+        _trm!.EsExitoso.Should().BeTrue(_trm.EsFallo ? _trm.Error.Detalle ?? _trm.Error.Mensaje : string.Empty);
+        _trm.Valor.Valor.Should().Be(clsPasosPrecio.Fraccion(valor));
+        _trm.Valor.Fuente.Should().Be(fuente);
+    }
+
     [When("consulto la TRM del día")]
     public Task CuandoConsultoLaTrm() => ConsultarAsync(1);
 
