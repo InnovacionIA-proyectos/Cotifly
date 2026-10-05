@@ -121,6 +121,7 @@ public sealed class clsEnvioCosteoService(
         catalogos.RevisarMapeoLineaNexo(politica);
 
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
+        IReadOnlyList<clsCotizacionPosicion> posiciones = [];
         var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
         {
             var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
@@ -143,7 +144,8 @@ public sealed class clsEnvioCosteoService(
             lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Valor.Id, [entrada.Solicitud.ALinea()]);
             cotizaciones.Agregar(cotizacion.Valor);
             cotizaciones.AgregarLineas(lineas);
-            cotizaciones.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1));
+            posiciones = [.. clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1)];
+            cotizaciones.AgregarPosiciones(posiciones);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return cotizacion.Valor;
         }, cancellationToken);
@@ -152,8 +154,10 @@ public sealed class clsEnvioCosteoService(
             return creada.Error;
         }
 
-        // Desde aquí, sin el token de la petición (ver EnviarANexoAsync).
-        await EnviarANexoAsync(creada.Valor, entrada.Solicitud.Encabezado, [entrada.Solicitud.ALinea()], lineas, politica, usuarioId, reintento: false);
+        // Desde aquí, sin el token de la petición (ver EnviarANexoAsync). Se envía lo GUARDADO (normalizado: textos recortados), no la
+        // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo (G2: " 3S3 " nunca llega con espacios).
+        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Solicitud.Encabezado;
+        await EnviarANexoAsync(creada.Valor, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
         return creada.Valor;
     }
 
@@ -368,7 +372,8 @@ public sealed class clsEnvioCosteoService(
     /// <summary>
     /// ¿Nexo rechazó los datos del alta (400)? Con los mismos datos Nexo no cambia de opinión: el reintento queda bloqueado. Los
     /// códigos de captura de Nexo se traducen en <c>clsCosteoNexo</c> (G16): catálogo, línea o peso → <c>SOLICITUD_COSTEO_INVALIDA</c>;
-    /// cliente y el resto → <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>.
+    /// otros 400 → <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. Los de cliente (<c>CLIENTE_*</c>) llegan como <c>COSTEO_NEXO_RECHAZADA</c> y
+    /// se pueden reintentar: el reintento vuelve a resolver el BP en el catálogo de Nexo.
     /// </summary>
     public static bool EsRechazoDefinitivo(clsErrorDominio error)
     {

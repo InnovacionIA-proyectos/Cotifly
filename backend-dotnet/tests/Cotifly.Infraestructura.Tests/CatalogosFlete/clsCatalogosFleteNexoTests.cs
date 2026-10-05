@@ -71,6 +71,53 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
         resultado.Valor.TiposVehiculo.Should().ContainSingle().Which.Should().Be(new clsOpcionCatalogo("2S3", "Tracto"));
     }
 
+    [Theory]
+    [InlineData("tipos-vehiculo")]
+    [InlineData("clases-viaje")]
+    public async Task SiFallaUnCatalogoObligatorioNoHayCatalogos(string catalogo)
+    {
+        _nexo.CatalogosFallidos.Add(catalogo);
+
+        (await Maestros().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+    }
+
+    [Fact]
+    public async Task SiFallanLosCatalogosOpcionalesQuedanVaciosConUnWarning()
+    {
+        _nexo.CatalogosFallidos.UnionWith(["clases-contenedor", "lineas-negocio"]);
+        var logger = new clsLoggerFalso<clsCatalogosMaestrosNexo>();
+
+        var resultado = await new clsCatalogosMaestrosNexo(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoFalso.UrlBase }), _usuarios, logger)
+            .ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.TiposVehiculo.Should().NotBeEmpty();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.LineasNegocio.Should().BeEmpty();
+        logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && r.Mensaje.Contains("opcional", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LosTiposDeVehiculoNoOficialesNoSeOfrecenYSinOficialesNoHayCatalogo()
+    {
+        _nexo.TiposVehiculo.Add(("ESP", "Especial no oficial", false));
+        (await Maestros().ObtenerAsync(_usuarioId, Ct)).Valor.TiposVehiculo.Select(t => t.Valor).Should().NotContain("ESP");
+
+        _nexo.TiposVehiculo.Clear();
+        _nexo.TiposVehiculo.Add(("ESP", "Especial no oficial", false));
+        (await Maestros().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+    }
+
+    [Fact]
+    public async Task UnaRespuestaDeMasDeCincoMilFilasODeMasDeUnMegaEsNoDisponible()
+    {
+        _nexo.CuerpoTiposVehiculo = "[" + string.Join(",", Enumerable.Range(0, clsCatalogosMaestrosNexo.MaximoFilas + 1).Select(i => $$"""{"codigo":"C{{i}}","descripcion":"D"}""")) + "]";
+        (await Maestros().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+
+        _nexo.CuerpoTiposVehiculo = $$"""[{"codigo":"2S3","descripcion":"{{new string('x', clsCatalogosMaestrosNexo.MaximoBytes)}}"}]""";
+        (await Maestros().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+    }
+
     [Fact]
     public async Task SiUnCatalogoFallaElResultadoEsCatalogosFleteNoDisponible()
     {

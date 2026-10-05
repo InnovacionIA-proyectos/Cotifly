@@ -211,7 +211,10 @@ public sealed class clsCosteoNexo(
     public static readonly IReadOnlySet<string> CodigosCapturaDatos =
         new HashSet<string>(StringComparer.Ordinal) { "ENUM_INVALIDO", "LINEA_INCOMPLETA", "PESO_REQUERIDO", "PESO_INCONSISTENTE" };
 
-    /// <summary>Códigos 400 de la captura sobre el cliente (G16): BP o id que Nexo no reconoce.</summary>
+    /// <summary>
+    /// Códigos 400 de la captura sobre el cliente (G16): BP o id que Nexo no reconoce. Reintentables: el reintento vuelve a resolver el
+    /// cliente en el catálogo de Nexo, así que una corrección en SAP o Nexo lo destraba.
+    /// </summary>
     public static readonly IReadOnlySet<string> CodigosCapturaCliente =
         new HashSet<string>(StringComparer.Ordinal) { "CLIENTE_REQUERIDO", "CLIENTE_INVALIDO", "CLIENTE_BP_INVALIDO" };
 
@@ -222,15 +225,15 @@ public sealed class clsCosteoNexo(
         "Nexo rechazó los datos de la solicitud (catálogo, línea o peso): corrige el formulario y crea la cotización de nuevo.";
 
     public const string MensajeCapturaCliente =
-        "Nexo no reconoce el cliente de la solicitud: revisa el BP del cliente en SAP/Nexo.";
+        "Nexo no reconoce el cliente de la solicitud: revisa el BP del cliente en SAP/Nexo y reintenta el envío.";
 
     public const string MensajeDwCubos =
         "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
 
     /// <summary>
     /// Traduce un 400 del alta (G16, <c>docs/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
-    /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c>; <c>CLIENTE_REQUERIDO</c>,
-    /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c> con un motivo de cliente;
+    /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c> (definitivo); <c>CLIENTE_REQUERIDO</c>,
+    /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_RECHAZADA</c> con un motivo de cliente (reintentable);
     /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); cualquier otro (<c>VALIDATION_ERROR</c>...) →
     /// <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. El detalle conserva <c>HTTP 400 {code}: {message}</c> de Nexo.
     /// </summary>
@@ -241,7 +244,7 @@ public sealed class clsCosteoNexo(
         return codigo switch
         {
             not null when CodigosCapturaDatos.Contains(codigo) => new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, MensajeCapturaDatos, detalle),
-            not null when CodigosCapturaCliente.Contains(codigo) => new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeCapturaCliente, detalle),
+            not null when CodigosCapturaCliente.Contains(codigo) => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeCapturaCliente, detalle),
             CodigoDwCubosNoConfigurado => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, MensajeDwCubos, detalle),
             _ => new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, detalle),
         };

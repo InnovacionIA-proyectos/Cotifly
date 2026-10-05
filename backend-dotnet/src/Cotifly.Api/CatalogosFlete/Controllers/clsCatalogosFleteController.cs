@@ -11,12 +11,12 @@ namespace Cotifly.Api.CatalogosFlete.Controllers;
 public sealed class clsCatalogosFleteController(IClsContextoUsuario usuario, IClsCatalogosFleteProvider catalogos) : clsControladorWebBase(usuario)
 {
     /// <summary>
-    /// 200 los tres catálogos completos; 400 si los catálogos de Nexo no están disponibles
+    /// 200 los tres catálogos completos; 503 si los catálogos maestros de Nexo no están disponibles y no hay copia utilizable
     /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>).
     /// </summary>
     [HttpGet]
     [ProducesResponseType<clsCatalogosFlete>(StatusCodes.Status200OK)]
-    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Obtener(CancellationToken cancellationToken)
     {
         var resultado = await catalogos.ObtenerAsync(UsuarioId, cancellationToken);

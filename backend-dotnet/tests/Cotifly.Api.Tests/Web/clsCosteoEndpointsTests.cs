@@ -188,7 +188,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
 
         using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
 
-        envio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(envio, "CATALOGOS_FLETE_NO_DISPONIBLE");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
@@ -236,6 +236,28 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task ElPrimerEnvioYElReintentoMandanLaMismaSolicitudNormalizada()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        var cuerpo = Formulario().Replace("\"3S3\"", "\" 3S3 \"", StringComparison.Ordinal).Replace("\"OC-7788\"", "\"  OC-7788 \"", StringComparison.Ordinal);
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.AltaFalla = null;
+        using var reintento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/reintentar", ana.Access);
+        reintento.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var altas = _nexo.Peticiones.Where(p => p.Metodo == _post && p.Url.AbsolutePath == "/api/captura-solicitudes").Select(p => p.Cuerpo!).ToList();
+        altas.Should().HaveCount(2);
+        // Mismo contenido; solo puede cambiar la escala de los decimales (12000000 en memoria, 12000000.00 al releer DECIMAL(18,2)).
+        Canonico(altas[0]).Should().Be(Canonico(altas[1]), "el primer envío y el reintento mandan lo guardado");
+        using var primero = JsonDocument.Parse(altas[0]);
+        primero.RootElement.GetProperty("lineas")[0].GetProperty("tipoVehiculo").GetString().Should().Be("3S3");
+        primero.RootElement.GetProperty("referencia").GetString().Should().Be("OC-7788");
+    }
+
+    [Fact]
     public async Task UnRechazoDeCatalogoDeNexoQuedaComoErrorDefinitivoConElCodigoDeNexo()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -247,6 +269,22 @@ public sealed class clsCosteoEndpointsTests : IDisposable
 
         json.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
         json.GetProperty("motivo_estado_costeo").GetString().Should().StartWith("Rechazo definitivo de Nexo").And.Contain("ENUM_INVALIDO");
+    }
+
+    /// <summary>JSON con los números sin ceros decimales a la derecha, para comparar contenido y no la escala de un decimal.</summary>
+    private static string Canonico(string json)
+    {
+        static System.Text.Json.Nodes.JsonNode? Normalizar(System.Text.Json.Nodes.JsonNode? nodo) => nodo switch
+        {
+            System.Text.Json.Nodes.JsonObject o => new System.Text.Json.Nodes.JsonObject(o.Select(p =>
+                new KeyValuePair<string, System.Text.Json.Nodes.JsonNode?>(p.Key, Normalizar(p.Value)))),
+            System.Text.Json.Nodes.JsonArray a => new System.Text.Json.Nodes.JsonArray([.. a.Select(Normalizar)]),
+            System.Text.Json.Nodes.JsonValue v when v.GetValueKind() == JsonValueKind.Number =>
+                System.Text.Json.Nodes.JsonValue.Create(v.GetValue<decimal>() / 1.000000000000000000000000000000000m),
+            _ => nodo?.DeepClone(),
+        };
+
+        return Normalizar(System.Text.Json.Nodes.JsonNode.Parse(json))!.ToJsonString();
     }
 
     public void Dispose()

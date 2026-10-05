@@ -4,8 +4,9 @@
    HU-013.10 (#106), gaps G6 y G7 de docs/HU-013-preguntas-nexo.md §3. Patrón de
    scripts: backend-dotnet/specs/decisiones/ADR-008 (EF Core Database First: el
    esquema SOLO cambia con scripts `db/migrations_mssql/000N_*.sql`; no hay
-   migraciones EF). El número 0006 lo usa HU-013.2 (#98, ajuste de margen); este
-   script no depende de él.
+   migraciones EF). El 0006 es `0006_textos_y_concurrencia.sql` (HU-013.2, #98).
+   Este script no depende de él, pero el DBA los aplica juntos y en orden:
+   0006 y luego 0007.
 
    *** PENDIENTE DE APROBACIÓN — igual que el 0002 a 0005, no ejecutar en
        tbsdatacenter sin el visto bueno de scalderon-bs y del DBA ***
@@ -30,8 +31,8 @@
    correr varias veces sin cambiar nada. No hay backfill (las filas existentes no
    tienen esos datos).
 
-   Precondición: 0001, 0002, 0004 y 0005 aplicados (el 0003 y el 0006 no son
-   requisito).
+   Precondición: 0001, 0002, 0004 y 0005 aplicados (el 0003 no es requisito; el
+   0006 se aplica antes por orden de despliegue, no por dependencia).
 
    Cómo ejecutarlo:
      sqlcmd -S tbsdatacenter -d dbTarifario_Nexo_Pruebas -E -C -I -i 0007_captura_nexo_campos.sql

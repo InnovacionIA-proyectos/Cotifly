@@ -148,14 +148,27 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElScript0007EsIdempotenteYAgregaNotasYMunicipios()
     {
+        // Mismo patrón que #91: base AISLADA, filas propias antes de re-aplicar y verificación de que siguen iguales.
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0007", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var id = Guid.NewGuid();
+        var propias = $"'{id}'";
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, notas) VALUES ('{id}', 'PCN-ID7-{Guid.NewGuid().ToString("N")[..12]}', 'spot', N'Cita previa'); "
+            + "INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, origenMunicipioId, destinoMunicipioId) "
+            + $"VALUES ('{id}', 1, 'YUMBO', 'BOGOTA', 76892, 11001);");
+        var huella = await HuellaFilasPropiasAsync(cadena, propias);
 
-        await ReaplicarYVerificarIdempotenciaAsync(baseAislada.Cadena, "0007_captura_nexo_campos.sql");
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0007_captura_nexo_campos.sql");
 
-        var columnas = await LeerColumnasAsync();
-        columnas[("Cotizaciones", "notas")].Nula.Should().BeTrue();
-        columnas[("CotizacionLineasSolicitud", "origenMunicipioId")].Tipo.Should().Be("int");
-        columnas[("CotizacionLineasSolicitud", "destinoMunicipioId")].Nula.Should().BeTrue();
+        (await HuellaFilasPropiasAsync(cadena, propias)).Should().Equal(huella, "re-aplicar el 0007 no cambia las filas existentes");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            $"SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.Cotizaciones c JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id WHERE c.id = '{id}'"))
+            .Should().Be("Cita previa|76892|11001");
+        var columnas = await LeerColumnasAsync(cadena);
+        columnas[("Cotizaciones", "notas")].Should().Be(("nvarchar(2000)", true));
+        columnas[("CotizacionLineasSolicitud", "origenMunicipioId")].Should().Be(("int", true));
+        columnas[("CotizacionLineasSolicitud", "destinoMunicipioId")].Should().Be(("int", true));
     }
 
     [Fact]
@@ -607,7 +620,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             r => r.GetString(0),
             cadena);
 
-    private async Task<Dictionary<(string Tabla, string Columna), (string Tipo, bool Nula)>> LeerColumnasAsync()
+    private async Task<Dictionary<(string Tabla, string Columna), (string Tipo, bool Nula)>> LeerColumnasAsync(string? cadena = null)
     {
         var filas = await LeerAsync(
             """
@@ -627,7 +640,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                     _ => tipo,
                 };
                 return (Tabla: r.GetString(0), Columna: r.GetString(1), Tipo: tipoCompleto, Nula: r.GetString(6) == "YES");
-            });
+            },
+            cadena);
 
         return filas.ToDictionary(f => (f.Tabla, f.Columna), f => (f.Tipo, f.Nula));
     }

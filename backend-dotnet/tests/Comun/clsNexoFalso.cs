@@ -59,6 +59,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Si es mayor que cero, las siguientes N peticiones a <c>/api/catalogos/*</c> responden 503 (fallo transitorio).</summary>
     public int FallasCatalogos { get; set; }
 
+    /// <summary>Catálogos (<c>tipos-vehiculo</c>, <c>clases-contenedor</c>...) que responden 500 aunque los demás respondan.</summary>
+    public HashSet<string> CatalogosFallidos { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Si tiene valor, el catálogo <c>tipos-vehiculo</c> responde este cuerpo crudo (pruebas de límites).</summary>
+    public string? CuerpoTiposVehiculo { get; set; }
+
     /// <summary>Si tiene valor, solo <c>/api/catalogos/*</c> responde este estado.</summary>
     public HttpStatusCode? CatalogosCaidos { get; set; }
 
@@ -247,6 +253,16 @@ public sealed class clsNexoFalso : HttpMessageHandler
         {
             FallasCatalogos--;
             return Error(HttpStatusCode.ServiceUnavailable, "NEXO_CAIDO", "Fallo transitorio (prueba).");
+        }
+
+        if (CatalogosFallidos.Contains(nombre))
+        {
+            return Error(HttpStatusCode.InternalServerError, "ERROR_INTERNO", "Catálogo caído (prueba).");
+        }
+
+        if (nombre == "tipos-vehiculo" && CuerpoTiposVehiculo is { } crudo)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(crudo, Encoding.UTF8, "application/json") };
         }
 
         return nombre switch

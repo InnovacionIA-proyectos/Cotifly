@@ -133,9 +133,9 @@ public sealed class clsCosteoNexoTests : IDisposable
     [InlineData("LINEA_INCOMPLETA", clsCodigosError.SolicitudCosteoInvalida)]
     [InlineData("PESO_REQUERIDO", clsCodigosError.SolicitudCosteoInvalida)]
     [InlineData("PESO_INCONSISTENTE", clsCodigosError.SolicitudCosteoInvalida)]
-    [InlineData("CLIENTE_REQUERIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
-    [InlineData("CLIENTE_INVALIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
-    [InlineData("CLIENTE_BP_INVALIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    [InlineData("CLIENTE_REQUERIDO", clsCodigosError.CosteoNexoRechazada)]
+    [InlineData("CLIENTE_INVALIDO", clsCodigosError.CosteoNexoRechazada)]
+    [InlineData("CLIENTE_BP_INVALIDO", clsCodigosError.CosteoNexoRechazada)]
     [InlineData("DWCUBOS_NO_CONFIGURADO", clsCodigosError.CosteoNexoNoDisponible)]
     [InlineData("VALIDATION_ERROR", clsCodigosError.CosteoNexoSolicitudInvalida)]
     public async Task Un400DelAltaSeTraduceAlCodigoDeCotiflyConservandoElDeNexo(string codigoNexo, string esperado)

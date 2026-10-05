@@ -88,6 +88,17 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task ConUnaBaseSinEl0007EsUnhealthyPorEsquemaIncompleto()
+    {
+        await using var sin0007 = await baseDatos.CrearBaseConScriptsAsync("dbSin0007", 5);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0007.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0007", "el modelo EF ya mapea notas y los ids de municipio");
+    }
+
+    [Fact]
     public async Task ConUnaBaseSinEl0004EsUnhealthyPorEsquemaIncompleto()
     {
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0004Async());
