@@ -16,25 +16,8 @@
 #   - .github/workflows/vigilancia-imagen-base.yml revisa cada lunes si ya se puede quitar (digest nuevo, parche siguiente,
 #     Trivy sin excepciones) y falla si una excepción vence en 7 días o menos.
 # =============================================================================
-vulnerabilities:
-  # CVE-2026-84782 (HIGH): OpenSSL, divulgación de información en la retransmisión del handshake DTLS.
-  #   Afecta a libssl3t64 y openssl 3.0.13-0ubuntu3.15 de mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra
-  #   (digest sha256:6385dc0e..., construida el 2026-09-04). Ubuntu ya publicó 3.0.13-0ubuntu3.16, pero Microsoft no ha
-  #   republicado la imagen y la chiseled no tiene gestor de paquetes: no se puede parchar en el Dockerfile.
-  #   No explotable en Cotifly: DTLS es TLS sobre UDP y la API solo usa TLS sobre TCP (Kestrel detrás de Traefik; HttpClient
-  #   hacia Nexo, SAP, datos.gov.co y el LLM; SqlClient hacia SQL Server; MailKit hacia el relay SMTP). Kestrel sirve HTTP
-  #   plano en 8080 (TLS lo termina Traefik) y sin HTTP/3. Sin DTLS: el único UDP del proceso es DNS (y SSRP/SQL Browser
-  #   si se usara una instancia con nombre de SQL Server), ninguno pasa por OpenSSL (revisado en #86: sin UdpClient,
-  #   SocketType.Dgram, Quic, Http3 ni Dtls en src/).
-  #   Dueño: Duban Guerra (dguerraBSSL). Seguimiento: issue #86. Vence: 2026-10-23 00:00 UTC (2026-10-22 19:00 en Colombia).
-  #   Recordatorio del dueño: 2026-10-16. Renovar (PR revisado) o quitar a más tardar el 2026-10-21.
-  #   Al salir la imagen corregida: subir SDK_VERSION/ASPNET_VERSION juntos (Dockerfile), BORRAR esta entrada y repetir la
-  #   verificación de docs/06-ejecucion-local.md.
-  - id: CVE-2026-84782
-    purls:
-      - "pkg:deb/ubuntu/libssl3t64@3.0.13-0ubuntu3.15"
-      - "pkg:deb/ubuntu/openssl@3.0.13-0ubuntu3.15"
-    expired_at: 2026-10-23
-    statement: >-
-      Temporal (#86, vence 2026-10-23): DTLS (TLS sobre UDP) no se usa en Cotifly; la API solo usa TLS sobre TCP.
-      Sin imagen base corregida de Microsoft todavía. Quitar al actualizar ASPNET_VERSION/SDK_VERSION.
+# CVE-2026-84782 (#86) NO necesitó esta excepción: verificado en QA el 2026-10-05 que Microsoft ya había republicado
+# mcr.microsoft.com/dotnet/aspnet:10.0.12-noble-chiseled-extra (mismo tag, digest nuevo, construida 2026-10-02) con
+# openssl/libssl3t64 ya parchados. `docker build` + Trivy sin ignorefile dieron 0 hallazgos contra la imagen real de
+# Cotifly. No se agrega la entrada: basta con reconstruir (sin --no-cache si el digest ya cambió; con --pull si no).
+vulnerabilities: []
