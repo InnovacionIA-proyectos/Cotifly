@@ -32,46 +32,79 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         tablas.Should().BeEquivalentTo(_tablasEsperadas);
     }
 
+    // Idempotencia (#91): cada prueba re-aplica el script en una base AISLADA (nombre único, 0001 a 0005 aplicados) y no en la
+    // compartida. En la compartida, otras pruebas de la colección dejan cotizaciones del formulario ampliado sin línea (columnas de
+    // línea en Cotizaciones) y el backfill del 0005 les agrega su línea legítimamente al re-aplicarlo: el conteo global "crecía" sin
+    // que el script duplicara nada. En la base aislada nadie más escribe, así que se compara el esquema y el conteo de filas de
+    // CADA tabla, y además las filas propias de la prueba.
     [Fact]
     public async Task ElScript0002EsIdempotente()
     {
-        var antes = await FotoEsquemaAsync();
-        var filasAntes = await ContarFilasAsync();
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0002", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
 
-        var reaplicar = () => clsBaseDatosPruebas.EjecutarScriptAsync(
-            BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0002_identidad_estado_agente.sql"));
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0002_identidad_estado_agente.sql");
+    }
 
-        await reaplicar.Should().NotThrowAsync();
-        (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0002 no debe cambiar columnas, claves, índices, CHECK ni defaults");
-        (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0002 no debe tocar datos");
+    [Fact]
+    public async Task LaBaseAisladaSeBorraAlTerminarAunqueQuedenConexionesAbiertas()
+    {
+        var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBorrar", 1);
+        await using var abierta = new SqlConnection(baseAislada.Cadena);
+        await abierta.OpenAsync(Ct);
+
+        await baseAislada.DisposeAsync();
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaMaster, $"SELECT COUNT(*) FROM sys.databases WHERE name = N'{baseAislada.Nombre}'"))
+            .Should().Be(0, "la base auxiliar no debe quedar en el SQL Server compartido");
     }
 
     [Fact]
     public async Task ElScript0004EsIdempotente()
     {
-        var antes = await FotoEsquemaAsync();
-        var filasAntes = await ContarFilasAsync();
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0004", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
 
-        var reaplicar = () => clsBaseDatosPruebas.EjecutarScriptAsync(
-            BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0004_costeo_nexo.sql"));
-
-        await reaplicar.Should().NotThrowAsync();
-        (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0004 no debe cambiar columnas, claves, índices, CHECK ni defaults");
-        (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0004 no debe tocar datos");
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0004_costeo_nexo.sql");
     }
 
     [Fact]
     public async Task ElScript0005EsIdempotente()
     {
-        var antes = await FotoEsquemaAsync();
-        var filasAntes = await ContarFilasAsync();
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0005", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        Guid spot = Guid.NewGuid(), licitacion = Guid.NewGuid(), chat = Guid.NewGuid();
+        var propias = $"'{spot}', '{licitacion}', '{chat}'";
+        var marca = Guid.NewGuid().ToString("N")[..12];
 
-        var reaplicar = () => clsBaseDatosPruebas.EjecutarScriptAsync(
-            BaseDatos.CadenaCotifly, clsBaseDatosPruebas.RutaScript("0005_lineas_solicitud.sql"));
+        // Cotizaciones con el esquema anterior (línea en las columnas de Cotizaciones, sin CotizacionLineasSolicitud): las que el
+        // backfill debe convertir. La del chat no cumple el criterio (sin tipoSolicitud/origen/destino) y no recibe línea.
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, origen, destino, tipoVehiculo, pesoKg, estadoCosteo, costo, precioFinal) VALUES "
+            + $"('{spot}', 'PCN-ID-{marca}-1', 'spot', 'YUMBO', 'BOGOTA, D.C.', '3S3', 9000, 'autocosteo', 1000000, 1176471), "
+            + $"('{licitacion}', 'PCN-ID-{marca}-2', 'licitacion', 'CALI', 'CARTAGENA', NULL, 500, 'pendiente_costeo', NULL, NULL); "
+            + $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, costo, precioFinal) VALUES ('{chat}', 'PCN-ID-{marca}-3', 2000000, 2352941); "
+            + "INSERT INTO dbo_cotifly.CotizacionPosiciones (cotizacionId, orden, cantidad, largoCm, anchoCm, altoCm, pesoKg) VALUES "
+            + $"('{spot}', 1, 20, 120, 100, 150, 450), ('{spot}', 2, 5, 80, 60, 40, 30), ('{licitacion}', 1, 1, 100, 100, 100, 500);");
 
-        await reaplicar.Should().NotThrowAsync();
-        (await FotoEsquemaAsync()).Should().Equal(antes, "re-aplicar el 0005 no debe cambiar columnas, claves, índices, CHECK ni defaults");
-        (await ContarFilasAsync()).Should().Be(filasAntes, "re-aplicar el 0005 no duplica el backfill");
+        // Primera aplicación: hace el backfill de las filas propias.
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0005_lineas_solicitud.sql");
+        var lineasPropias = $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionId IN ({propias})";
+        var posicionesPropias = $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones WHERE cotizacionId IN ({propias})";
+        var posicionesEnlazadas =
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = p.lineaSolicitudId AND l.cotizacionId = p.cotizacionId AND l.orden = 1 WHERE p.cotizacionId IN ({propias})";
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, lineasPropias)).Should().Be(2, "una línea por cotización del formulario; el chat no tiene");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, posicionesEnlazadas)).Should().Be(3, "las tres posiciones quedan en la línea 1 de su cotización");
+        var huellaPropia = await HuellaFilasPropiasAsync(cadena, propias);
+
+        // Segunda aplicación: esquema, filas por tabla y filas propias (con sus enlaces) quedan iguales.
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0005_lineas_solicitud.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, lineasPropias)).Should().Be(2, "re-aplicar el 0005 no duplica el backfill");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, posicionesPropias)).Should().Be(3, "re-aplicar el 0005 no agrega ni quita posiciones");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, posicionesEnlazadas)).Should().Be(3, "re-aplicar no desenlaza las posiciones");
+        (await HuellaFilasPropiasAsync(cadena, propias)).Should().Equal(huellaPropia, "re-aplicar el 0005 no modifica las líneas ni los enlaces ya creados");
     }
 
     [Fact]
@@ -115,7 +148,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     [Fact]
     public async Task ElBackfillDel0005CreaUnaLineaPorCotizacionDelFormularioYEnlazaSusPosiciones()
     {
-        var cadena = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
+        var cadena = baseAislada.Cadena;
         Guid conCosteo = Guid.NewGuid(), pendiente = Guid.NewGuid(), chat = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(cadena,
             "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, origen, destino, tipoVehiculo, pesoKg, estadoCosteo, costo, precioFinal) VALUES "
@@ -457,8 +491,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     private static string NormalizarFiltro(string? filtro) =>
         new string((filtro ?? string.Empty).Where(c => c is not ('(' or ')' or '[' or ']' or ' ')).ToArray()).ToLowerInvariant();
 
-    /// <summary>Índices y restricciones UNIQUE (no las PK) de dbo_cotifly.</summary>
-    private Task<List<string>> LeerIndicesAsync() =>
+    /// <summary>Índices y restricciones UNIQUE (no las PK) de dbo_cotifly (en la base compartida o en <paramref name="cadena"/>).</summary>
+    private Task<List<string>> LeerIndicesAsync(string? cadena = null) =>
         LeerAsync(
             """
             SELECT t.name, i.name, i.is_unique, i.filter_definition,
@@ -473,13 +507,14 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             GROUP BY t.name, i.name, i.is_unique, i.filter_definition
             """,
             r => Indice(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.GetString(4),
-                r.IsDBNull(5) ? string.Empty : r.GetString(5), r.IsDBNull(3) ? null : r.GetString(3)));
+                r.IsDBNull(5) ? string.Empty : r.GetString(5), r.IsDBNull(3) ? null : r.GetString(3)),
+            cadena);
 
     /// <summary>
     /// Descripción ordenada de todo el esquema (columnas con tipo/nulabilidad/collation/default,
     /// claves, FK, índices y CHECK), para comparar antes y después de re-aplicar un script.
     /// </summary>
-    private async Task<List<string>> FotoEsquemaAsync()
+    private async Task<List<string>> FotoEsquemaAsync(string cadena)
     {
         var columnas = await LeerAsync(
             """
@@ -488,7 +523,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                           COLLATION_NAME COLLATE DATABASE_DEFAULT, ' ', COLUMN_DEFAULT COLLATE DATABASE_DEFAULT)
             FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo_cotifly'
             """,
-            r => r.GetString(0));
+            r => r.GetString(0),
+            cadena);
         var restricciones = await LeerAsync(
             """
             SELECT CONCAT(OBJECT_NAME(o.parent_object_id) COLLATE DATABASE_DEFAULT, ':', o.name COLLATE DATABASE_DEFAULT, ' ',
@@ -496,19 +532,54 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             FROM sys.objects o
             WHERE SCHEMA_NAME(o.schema_id) = 'dbo_cotifly' AND o.type IN ('PK', 'UQ', 'F', 'C', 'D')
             """,
-            r => r.GetString(0));
-        var indices = await LeerIndicesAsync();
+            r => r.GetString(0),
+            cadena);
+        var indices = await LeerIndicesAsync(cadena);
 
         return [.. columnas.Concat(restricciones).Concat(indices).Order(StringComparer.Ordinal)];
     }
 
-    private Task<int> ContarFilasAsync() =>
-        clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-            """
-            SELECT CAST(SUM(p.rows) AS INT) FROM sys.partitions p
-            JOIN sys.tables t ON t.object_id = p.object_id
-            WHERE SCHEMA_NAME(t.schema_id) = 'dbo_cotifly' AND p.index_id IN (0, 1)
-            """);
+    /// <summary>
+    /// Re-aplica <paramref name="script"/> sobre una base aislada y verifica que no cambie el esquema ni el número de filas de
+    /// ninguna tabla de dbo_cotifly (la base es de la prueba: nadie más escribe en ella).
+    /// </summary>
+    private async Task ReaplicarYVerificarIdempotenciaAsync(string cadena, string script)
+    {
+        var esquemaAntes = await FotoEsquemaAsync(cadena);
+        var filasAntes = await FilasPorTablaAsync(cadena);
+
+        var reaplicar = () => clsBaseDatosPruebas.AplicarScriptAsync(cadena, script);
+
+        await reaplicar.Should().NotThrowAsync();
+        (await FotoEsquemaAsync(cadena)).Should().Equal(esquemaAntes, $"re-aplicar el {script} no debe cambiar columnas, claves, índices, CHECK ni defaults");
+        (await FilasPorTablaAsync(cadena)).Should().Equal(filasAntes, $"re-aplicar el {script} no debe agregar ni quitar filas en ninguna tabla");
+    }
+
+    /// <summary>"Tabla=filas" de cada tabla de dbo_cotifly, ordenado (COUNT exacto, no la estimación de sys.partitions).</summary>
+    private async Task<List<string>> FilasPorTablaAsync(string cadena)
+    {
+        var tablas = await LeerAsync(
+            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'",
+            r => r.GetString(0),
+            cadena);
+        var conteo = string.Join(" UNION ALL ", tablas.Select(t => $"SELECT CONCAT('{t}', '=', COUNT_BIG(*)) FROM dbo_cotifly.[{t}]"));
+
+        return [.. (await LeerAsync(conteo, r => r.GetString(0), cadena)).Order(StringComparer.Ordinal)];
+    }
+
+    /// <summary>Huella de las líneas y posiciones de las cotizaciones <paramref name="propias"/>: ids, enlaces y datos copiados.</summary>
+    private Task<List<string>> HuellaFilasPropiasAsync(string cadena, string propias) =>
+        LeerAsync(
+            $"""
+            SELECT CONCAT('L|', l.cotizacionId, '|', l.id, '|', l.orden, '|', l.origen, '|', l.destino, '|', l.estadoCosteo, '|', l.costo, '|', l.precioFinal)
+            FROM dbo_cotifly.CotizacionLineasSolicitud l WHERE l.cotizacionId IN ({propias})
+            UNION ALL
+            SELECT CONCAT('P|', p.cotizacionId, '|', p.id, '|', p.orden, '|', p.lineaSolicitudId)
+            FROM dbo_cotifly.CotizacionPosiciones p WHERE p.cotizacionId IN ({propias})
+            ORDER BY 1
+            """,
+            r => r.GetString(0),
+            cadena);
 
     private async Task<Dictionary<(string Tabla, string Columna), (string Tipo, bool Nula)>> LeerColumnasAsync()
     {
@@ -535,9 +606,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         return filas.ToDictionary(f => (f.Tabla, f.Columna), f => (f.Tipo, f.Nula));
     }
 
-    private async Task<List<T>> LeerAsync<T>(string sql, Func<SqlDataReader, T> mapear)
+    private async Task<List<T>> LeerAsync<T>(string sql, Func<SqlDataReader, T> mapear, string? cadena = null)
     {
-        await using var conexion = new SqlConnection(BaseDatos.CadenaCotifly);
+        await using var conexion = new SqlConnection(cadena ?? BaseDatos.CadenaCotifly);
         await conexion.OpenAsync(Ct);
         await using var comando = new SqlCommand(sql, conexion);
         await using var lector = await comando.ExecuteReaderAsync(Ct);
