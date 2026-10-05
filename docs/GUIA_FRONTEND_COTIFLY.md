@@ -2219,3 +2219,52 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Negocio: validar las definiciones de métricas (ADR-016, Propuesta) | Una fila por cadena de versiones con el periodo por la primera creación y el resultado más reciente de la cadena (frente a contar cada versión, como decía el backlog); `conversion` sobre el total (y no sobre las cerradas); `costeo_total` sobre todo el universo; `ganancias` solo de ganadas; periodo por defecto (año en curso); que las cotizaciones del gerente cuenten en el agregado de su regional; que `valor_ganado_cop` sea valor cotizado y no dinero recaudado | Gerencia Comercial (Sara / scalderon-bs) | Etiquetas y tarjetas del tablero; posible cambio de definiciones |
 | Negocio: tablero propio del gerente | ¿El gerente ve también `/web/metricas/comercial` en su menú? | Negocio + Sara | Menú |
 | Tiempo de un turno de chat | Propuesta del backend (#84): timeout de cliente ≥ 120 s (sección 2.8.1). Confirmar con frontend y verificar los timeouts de Traefik | Duban + Sara | Configuración de `HttpClient` |
+
+## 10. Próximo contrato HU-013 (en construcción)
+
+**Estado: Pendiente.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+
+**Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
+
+- el costo lo da Nexo;
+- el margen sugerido, SAP TM o la política de la línea;
+- el precio y el PDF, el código.
+
+La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones. El chat ya no crea cotizaciones, y Google Chat se retira.
+
+| Endpoint | Para qué | Issue |
+|---|---|---|
+| `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | Formulario en dólares; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada | #103 (HU-013.7) |
+| `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | Ajuste de margen de 0 a 0,99. La justificación es obligatoria por debajo de `margen_sugerido` | #98 (HU-013.2) |
+| `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | Buscador del catálogo de Nexo (sin costos) | #99 (HU-013.3) |
+| `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | Agregar conexos en Nexo; vuelven con precio e incluidos | #99 (HU-013.3) |
+| `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?}` | Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` si cambia la carga | #100 (HU-013.4) |
+| `POST /web/cotizaciones/{folio}/costeo/textos/redactar` | La IA redacta el asunto y la introducción (`fuente`: `ia` o `estandar`; siempre 200) | #101 (HU-013.5) |
+| `PUT /web/cotizaciones/{folio}/costeo/textos` `{asunto, introduccion}` | El comercial edita los textos | #101 (HU-013.5) |
+| `POST /web/chat` con `folio` obligatorio | Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`. Responde `{texto, accion_propuesta?}` | #102 (HU-013.6) |
+| `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
+
+**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `trm_aplicada`, `textos` y `row_version`, y el encabezado `ETag`. Todos son opcionales hasta que cada issue los implemente.
+
+**Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta`:
+
+1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
+2. Solo al pulsar Confirmar, llamar a `accion_propuesta.metodo` sobre `accion_propuesta.endpoint`, con `accion_propuesta.cuerpo` como cuerpo JSON (tal cual) y el encabezado `If-Match: <accion_propuesta.row_version>`.
+3. La respuesta es la del endpoint normal (por ejemplo `CosteoCotizacion`), con sus mismos errores. Ante 409 `CONFLICTO_CONCURRENCIA`: la cotización cambió después de la propuesta. Recargar el costeo y pedirle al asistente una propuesta nueva.
+4. Cancelar no llama a nada. La IA nunca ejecuta cambios por su cuenta.
+
+**Concurrencia.** Guardar el `ETag` de `GET .../costeo` y enviarlo en `If-Match` en todas las mutaciones del costeo (margen, conexos, re-solicitar, textos, PDF). El encabezado es opcional, pero se recomienda siempre.
+
+**Códigos nuevos de `ErrorNegocio`:**
+
+- `CONFLICTO_CONCURRENCIA` (409)
+- `FOLIO_REQUERIDO` (400)
+- `ESTADO_NO_PERMITE` (409)
+- `JUSTIFICACION_REQUERIDA` (400, con `detalle.margen_sugerido`)
+- `CONEXO_INVALIDO` (400)
+- `NEXO_NO_DISPONIBLE` (503)
+- `TEXTOS_COTIZACION_INVALIDOS` (400)
+
+**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/HU-005.1-mapeo-campos-nexo.md` y `docs/HU-013-preguntas-nexo.md`.
+
+La guía completa de estos flujos llega con HU-013.8 (#104).
