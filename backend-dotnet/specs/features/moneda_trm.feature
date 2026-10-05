@@ -1,8 +1,10 @@
 # language: es
-# HU-012 (#50, #51, #52) — Cotización en dólares con la TRM oficial del día (ADR-014).
-# La fuente de la TRM son los datos abiertos de la Superintendencia Financiera (conjunto 32sa-8pi3); aquí la atiende un
-# servidor falso sin red (tests/Comun/clsTrmFalso.cs) con la TRM real de la semana del 2026-09-21: la del viernes 25
-# (3306,86) vale del sábado 26 al lunes 28. Las fechas son de America/Bogota. Registro real de dependencias
+# HU-012 (#50, #51, #52) — Cotización en dólares con la TRM del día (ADR-014).
+# Fuentes de la TRM (Trm:Proveedor): por defecto DolarApi (co.dolarapi.com/v1/trm) con respaldo en los datos abiertos de la
+# Superintendencia Financiera (conjunto 32sa-8pi3). Aquí las atienden servidores falsos sin red (tests/Comun/clsDolarApiFalso.cs y
+# tests/Comun/clsTrmFalso.cs). La Superintendencia falsa tiene la TRM real de la semana del 2026-09-21: la del viernes 25 (3306,86)
+# vale del sábado 26 al lunes 28. Los escenarios que no nombran el proveedor usan solo la Superintendencia ("superfinanciera"); los de
+# DolarApi lo eligen con "que la TRM se consulta con el proveedor". Las fechas son de America/Bogota. Registro real de dependencias
 # (AddAplicacion + AddInfraestructura) sobre SQL Server 2019 en Testcontainers. Las características corren en paralelo sobre la
 # misma base: este archivo usa su propio comercial ("trm.comercial"), nunca el de pdf.feature.
 @integracion @trm
@@ -25,6 +27,38 @@ Característica: Cotización en dólares con la TRM del día
 
   Escenario: Fuente de TRM no disponible
     Dado que la fecha de negocio es "2026-09-29"
+    Y que la fuente de la TRM no responde
+    Cuando consulto la TRM del día
+    Entonces la consulta falla con el código "TRM_NO_DISPONIBLE"
+
+  # HU-012.1 (requisito de negocio del 2026-10-05, ADR-014 §1): DolarApi como fuente principal y la Superintendencia como respaldo.
+  Escenario: DolarApi responde la TRM del día
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-10-05"
+    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T19:01:18.476Z"
+    Cuando consulto la TRM del día
+    Entonces la TRM es "3273.49" de la fuente "dolarapi"
+    Y la fuente de la TRM recibió 0 consultas
+
+  Escenario: DolarApi caído, la TRM sale del respaldo
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-09-29"
+    Y que DolarApi no responde
+    Cuando consulto la TRM del día
+    Entonces la TRM es "3312.50" de la fuente "superfinanciera"
+    Y la fuente de la TRM recibió 1 consulta
+
+  Escenario: DolarApi con una TRM desactualizada, la TRM sale del respaldo
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-09-29"
+    Y que DolarApi publica la TRM "3273.49" el "2026-09-20T19:01:18.476Z"
+    Cuando consulto la TRM del día
+    Entonces la TRM es "3312.50" de la fuente "superfinanciera"
+
+  Escenario: DolarApi y el respaldo caídos
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-09-29"
+    Y que DolarApi no responde
     Y que la fuente de la TRM no responde
     Cuando consulto la TRM del día
     Entonces la consulta falla con el código "TRM_NO_DISPONIBLE"
@@ -60,20 +94,30 @@ Característica: Cotización en dólares con la TRM del día
     Cuando "trm.comercial" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-27092026"
     Entonces la cotización "PCN-COP-27092026" queda guardada en "COP" con precio final "3294798" y TRM "0"
 
-  # HU-012.3 (#52): PDF en dólares con la aclaración del piso mínimo (texto extraído con PdfPig).
-  Escenario: PDF en dólares con aclaración del piso
+  # HU-012.3 (#52): PDF en dólares con la nota de TRM mínima (texto de negocio del 2026-10-05, extraído con PdfPig). La TRM es la
+  # aplicada en la cotización, con 2 decimales.
+  Escenario: PDF en dólares con la nota de TRM mínima
     Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
     Y que la fecha de negocio es "2026-09-28"
     Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-28092026"
     Entonces la cotización "PCN-USD-28092026" queda guardada en "USD" con precio final "996.35" y TRM "3306.86"
     Y el PDF contiene "US$996,35"
     Y el PDF contiene "Cotización en dólares:"
-    Y el PDF contiene "TRM de $3.306,86 por dólar"
-    Y el PDF contiene "se ajusta día a día con la TRM vigente"
-    Y el PDF contiene "el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos"
-    Y el PDF no contiene "por la TRM de referencia"
+    Y el PDF contiene "Esta cotización está bajo una TRM mínima de $3.306,86 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI."
+    Y el PDF no contiene "mínimo a pagar"
+    Y el PDF no contiene "se ajusta día a día"
 
-  Escenario: El PDF en pesos no trae ninguna aclaración de TRM
+  Escenario: PDF en dólares con la TRM de DolarApi
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
+    Y que la fecha de negocio es "2026-10-05"
+    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T19:01:18.476Z"
+    Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-05102026"
+    Entonces la cotización "PCN-USD-05102026" queda guardada en "USD" con precio final "1006.51" y TRM "3273.49"
+    Y el PDF contiene "US$1.006,51"
+    Y el PDF contiene "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI."
+
+  Escenario: El PDF en pesos no trae la nota de TRM
     Dado el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
     Y que la fecha de negocio es "2026-09-28"
     Cuando "trm.comercial" cotiza en "COP" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-COP-28092026"
@@ -81,3 +125,4 @@ Característica: Cotización en dólares con la TRM del día
     Y el PDF contiene "$3.294.798"
     Y el PDF no contiene "TRM"
     Y el PDF no contiene "US$"
+    Y el PDF no contiene "elaboración de la CPI"
