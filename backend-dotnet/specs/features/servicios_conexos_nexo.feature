@@ -39,8 +39,8 @@ Característica: Servicios conexos del catálogo de Nexo
     Y la página trae 0 servicios con el total 0
 
   Escenario: Con Nexo caído el catálogo no está disponible
-    Dado que Nexo deja de responder
-    Cuando "ana" busca servicios conexos con el texto "a"
+    Cuando Nexo deja de responder
+    Y "ana" busca servicios conexos con el texto "a"
     Entonces la respuesta tiene el estado 503 con el código de negocio "NEXO_NO_DISPONIBLE"
 
   Escenario: Si Nexo niega el permiso al comercial
@@ -114,8 +114,8 @@ Característica: Servicios conexos del catálogo de Nexo
   Escenario: Con Nexo caído al agregar no cambia nada
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
-    Y que Nexo deja de responder
-    Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
+    Cuando Nexo deja de responder
+    Y "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 503 con el código de negocio "NEXO_NO_DISPONIBLE"
     Y "C1" tiene 0 servicios conexos incluidos
 
@@ -124,9 +124,78 @@ Característica: Servicios conexos del catálogo de Nexo
     Cuando "ana" agrega a "C2" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
-  Escenario: Con el PDF ya generado no se agregan conexos
+  # Regla del PDF (ADR-018 §11)
+  Escenario: Con el PDF generado y sin enviar agregar un conexo invalida el PDF
     Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
     Y que "ana" generó el PDF del costeo de "C1"
     Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
-    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_GENERADO"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
+
+  Escenario: Ya enviada al cliente no se agregan conexos y se indica crear una versión
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Y que "ana" generó el PDF del costeo de "C1" y lo envió al cliente
+    Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
+    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
+    Y Nexo no recibió conexos para la cotización de "C1"
+
+  Escenario: Excluir un conexo con el PDF generado y sin enviar también invalida el PDF
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el conexo "Cargue" de 85000 y el polling lo registró
+    Y que "ana" generó el PDF del costeo de "C1"
+    Cuando "ana" deja incluidos en "C1" solo los servicios conexos ""
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
+
+  # Bordes
+  Escenario: Una línea sin línea en la cotización de Nexo no llega a Nexo
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Y que Cotifly no tiene guardado el id de la línea de la cotización de Nexo para la línea 1 de "C1"
+    Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
+    Entonces la respuesta tiene el estado 409 con el código de negocio "LINEA_SIN_COTIZACION_NEXO"
+    Y Nexo no recibió conexos para la cotización de "C1"
+
+  Esquema del escenario: Sin items o con más de 20 se rechaza por el esquema sin llamar a Nexo
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Cuando "ana" agrega a "C1" <cantidad_items> items del servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d"
+    Entonces la respuesta tiene el estado 400
+    Y Nexo no recibió conexos para la cotización de "C1"
+
+    Ejemplos:
+      | cantidad_items |
+      | 0              |
+      | 21             |
+
+  Escenario: Si Nexo agrega el conexo pero la relectura falla no se reintenta el POST
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Y que Nexo agrega el conexo pero falla al leer de nuevo la cotización de "C1"
+    Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
+    Entonces la respuesta tiene el estado 503 con el código de negocio "NEXO_NO_DISPONIBLE"
+    Y el detalle del error tiene agregado_en_nexo "true"
+    Y Nexo recibió 1 petición de conexos para la cotización de "C1"
+    Cuando el polling consulta a Nexo
+    Entonces "C1" tiene 1 servicio conexo incluido
+
+  Escenario: Un doble clic con la misma Idempotency-Key no duplica el conexo en Nexo
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Cuando "ana" agrega dos veces a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1 y la misma Idempotency-Key
+    Entonces las dos respuestas tienen el estado 200 y el mismo cuerpo
+    Y Nexo recibió 1 petición de conexos para la cotización de "C1"
+
+  Escenario: Sin If-Match se exige la precondición
+    Dado que "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
+    Cuando "ana" agrega a "C1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1 sin If-Match
+    Entonces la respuesta tiene el estado 428 con el código de negocio "PRECONDICION_REQUERIDA"
+
+  Escenario: Una licitación no admite conexos en esta iteración
+    Dado que "ana" creó la licitación "L1" del cliente "900555111" y Nexo costeó todas sus líneas
+    Cuando "ana" agrega a "L1" en la línea 1 el servicio conexo "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 1
+    Entonces la respuesta tiene el estado 409 con el código de negocio "ESTADO_NO_PERMITE"
+    Y el detalle del error tiene el motivo "LICITACION"

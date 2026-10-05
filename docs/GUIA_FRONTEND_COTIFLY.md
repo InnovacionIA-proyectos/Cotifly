@@ -2238,13 +2238,13 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | Ajuste de margen de 0 a 0,99. La justificación es obligatoria por debajo de `margen_sugerido` | #98 (HU-013.2) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | Buscador del catálogo de Nexo (sin costos) | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | Agregar conexos en Nexo; vuelven con precio e incluidos | #99 (HU-013.3) |
-| `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?}` | Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` si cambia la carga | #100 (HU-013.4) |
-| `POST /web/cotizaciones/{folio}/costeo/textos/redactar` | La IA redacta el asunto y la introducción (`fuente`: `ia` o `estandar`; siempre 200) | #101 (HU-013.5) |
+| `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}` | Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` si cambia la carga o con `nueva_version: true` | #100 (HU-013.4) |
+| `POST /web/cotizaciones/{folio}/costeo/textos/redactar[?sobrescribir=true]` | La IA redacta el asunto y la introducción (`fuente`: `ia` o `estandar`). Sobre textos editados responde 409 `TEXTOS_EDITADOS` salvo con `sobrescribir` | #101 (HU-013.5) |
 | `PUT /web/cotizaciones/{folio}/costeo/textos` `{asunto, introduccion}` | El comercial edita los textos | #101 (HU-013.5) |
 | `POST /web/chat` con `folio` obligatorio | Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`. Responde `{texto, accion_propuesta?}` | #102 (HU-013.6) |
 | `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
 
-**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `trm_aplicada`, `textos` y `row_version`, y el encabezado `ETag`. Todos son opcionales hasta que cada issue los implemente.
+**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `trm_aplicada`, `textos`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag`. Todos son opcionales hasta que cada issue los implemente.
 
 **Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta`:
 
@@ -2253,7 +2253,11 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 3. La respuesta es la del endpoint normal (por ejemplo `CosteoCotizacion`), con sus mismos errores. Ante 409 `CONFLICTO_CONCURRENCIA`: la cotización cambió después de la propuesta. Recargar el costeo y pedirle al asistente una propuesta nueva.
 4. Cancelar no llama a nada. La IA nunca ejecuta cambios por su cuenta.
 
-**Concurrencia.** Guardar el `ETag` de `GET .../costeo` y enviarlo en `If-Match` en todas las mutaciones del costeo (margen, conexos, re-solicitar, textos, PDF). El encabezado es opcional, pero se recomienda siempre.
+**Concurrencia.** Guardar el `ETag` de `GET .../costeo` (y el de cada respuesta de una mutación, que trae el nuevo) y enviarlo en `If-Match`. Es **obligatorio** en margen, conexos (POST y PUT), re-solicitar, textos y redactar: sin él la respuesta es 428 `PRECONDICION_REQUERIDA`. En el PDF es opcional. En `POST .../servicios-conexos` y en `re-solicitar`, enviar además `Idempotency-Key` con un UUID nuevo por cada clic de Confirmar o del botón: un doble clic no duplica el conexo ni crea dos versiones.
+
+**Regla del PDF.** Mientras la cotización no se haya enviado al cliente ni tenga resultado, el margen, los conexos, los textos y la re-solicitud se pueden cambiar en el mismo folio. Cada cambio deja `pdf_url = null` y `pdf_desactualizado = true`: mostrar "PDF desactualizado" y el botón para regenerarlo (`POST .../costeo/pdf`). Ya enviada o con resultado, la respuesta es 409 `PDF_YA_ENVIADO` y `detalle` trae la llamada para crear la versión `-vN` (`re-solicitar` con `nueva_version: true`); ofrecerla con un Confirmar.
+
+**Montos y la IA.** El asistente nunca ve montos de dinero (solo porcentajes de margen). El `resumen` con precios de la acción propuesta lo arma el servidor. `precio`, `margen` y `pdf` de la respuesta del chat están obsoletos y siempre llegan en `null`.
 
 **Códigos nuevos de `ErrorNegocio`:**
 
@@ -2264,6 +2268,10 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - `CONEXO_INVALIDO` (400)
 - `NEXO_NO_DISPONIBLE` (503)
 - `TEXTOS_COTIZACION_INVALIDOS` (400)
+- `PDF_YA_ENVIADO` (409, con `detalle` para crear la versión)
+- `PRECONDICION_REQUERIDA` (428)
+- `LINEA_SIN_COTIZACION_NEXO` (409)
+- `TEXTOS_EDITADOS` (409)
 
 **Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/HU-005.1-mapeo-campos-nexo.md` y `docs/HU-013-preguntas-nexo.md`.
 

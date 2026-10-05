@@ -46,14 +46,14 @@ Característica: Re-solicitar el costeo a Nexo
 
   Escenario: Desde un error de envío equivale a reintentar
     Dado que Nexo respondió 503 al alta de "C1" y quedó en "error_envio"
-    Y Nexo vuelve a responder
-    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nexo estaba caído"
+    Cuando Nexo vuelve a responder
+    Y "ana" re-solicita el costeo de "C1" con el motivo "Nexo estaba caído"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
 
   Escenario: Si Nexo falla en la re-solicitud la cotización queda en error de envío
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
-    Y Nexo responde 503 al alta de solicitudes
+    Y que Nexo responde 503 al alta de solicitudes
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El costeo venció"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "error_envio" con un motivo que menciona "HTTP 503"
@@ -70,11 +70,27 @@ Característica: Re-solicitar el costeo a Nexo
       | autocosteo       |
       | descartada       |
 
-  Escenario: Con resultado registrado no se permite
+  Escenario: Con resultado registrado no se re-solicita en el mismo folio
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
     Y "ana" marcó el resultado de "C1" como "perdida" con el motivo "Precio alto"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Reintentar con otro precio"
-    Entonces la respuesta tiene el estado 409 con el código de negocio "ESTADO_NO_PERMITE"
+    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
+    Y el detalle del error indica la acción "nueva_version" con "POST" al endpoint de re-solicitud de "C1" y nueva_version "true"
+
+  Escenario: Ya enviada al cliente, nueva_version crea la versión sin cambios de carga
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que "ana" generó el PDF del costeo de "C1" y lo envió al cliente
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Ajustar después del envío" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la cotización "C1" conserva su PDF enviado sin cambios
+
+  Escenario: En el mismo folio sin enviar, la re-solicitud invalida el PDF
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que "ana" generó el PDF del costeo de "C1"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Actualizar el costo"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
 
   Escenario: Sin motivo se rechaza
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
@@ -93,3 +109,29 @@ Característica: Re-solicitar el costeo a Nexo
     Dado el comercial "beto" con sesión en la regional "Occidente"
     Cuando "beto" re-solicita el costeo de "C1" con el motivo "No es mía"
     Entonces la respuesta tiene el estado 404
+
+  Escenario: Cambios de carga incoherentes con la captura se rechazan sin crear versión
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Cambio de contenedor" y estos datos de carga:
+      | campo            | valor        |
+      | clase_viaje      | Carga Suelta |
+      | clase_contenedor | CNT40.HC     |
+    Entonces la respuesta tiene el estado 400 con el código de negocio "SOLICITUD_COSTEO_INVALIDA"
+    Y "ana" tiene 1 cotización con el folio base de "C1"
+
+  Escenario: Un doble clic con la misma Idempotency-Key no crea dos versiones
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Cuando "ana" re-solicita dos veces el costeo de "C1" con el motivo "Cambio de peso", el peso 28000 y la misma Idempotency-Key
+    Entonces las dos respuestas tienen el estado 201 y el mismo cuerpo
+    Y "ana" tiene 2 cotizaciones con el folio base de "C1"
+    Y Nexo recibió una sola solicitud nueva para el folio base de "C1"
+
+  Escenario: Sin If-Match se exige la precondición
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "El costeo venció" sin If-Match
+    Entonces la respuesta tiene el estado 428 con el código de negocio "PRECONDICION_REQUERIDA"
+
+  Escenario: Las respuestas 200 y 201 traen el ETag nuevo
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "El costeo venció"
+    Entonces la respuesta trae un ETag

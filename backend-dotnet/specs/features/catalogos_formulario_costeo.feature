@@ -60,6 +60,18 @@ Característica: Solo códigos de catálogo en el formulario de costeo
     Y Nexo no recibió solicitudes
 
   Escenario: Con el catálogo maestro caído el formulario no ofrece texto libre
-    Dado que Nexo deja de responder
-    Cuando "ana" pide los catálogos de flete
+    Cuando Nexo deja de responder
+    Y "ana" pide los catálogos de flete
     Entonces la respuesta tiene el estado 400 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+
+  Esquema del escenario: Las clases de contenedor provisionales de Nexo no se rechazan
+    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor" y la clase de contenedor "<clase>"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió la solicitud de "C1" con el claseContenedor "<clase>"
+
+    Ejemplos:
+      | clase    |
+      | CNT20.FT |
+      | CNT20.OP |
+      | CNT40.FT |
+      | CNT40.OP |

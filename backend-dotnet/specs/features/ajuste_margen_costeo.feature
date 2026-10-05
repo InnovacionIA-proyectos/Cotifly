@@ -2,7 +2,8 @@
 # HU-013.2 (#98, ADR-018) — Ajuste de margen en el flujo de costeo: PUT /web/cotizaciones/{folio}/costeo/margen.
 # Contrato en specs/openapi.yaml (AjusteMargenWeb, CosteoCotizacion). Por HTTP contra la API real en memoria, SQL Server 2019
 # en Testcontainers y un Nexo falso. Margen sugerido de la cotización: 15 % (política de la línea), método "margen":
-# precio = costo / (1 - margen), a pesos enteros.
+# precio = costo / (1 - margen), a pesos enteros. Los pasos de mutación envían If-Match con el ETag vigente salvo que el
+# escenario diga otra cosa (ADR-018 §8). Regla del PDF: ADR-018 §11.
 # @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #98 enlace los pasos y
 # quite las dos etiquetas.
 @integracion @pendiente @ignore
@@ -85,15 +86,37 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Cuando "ana" ajusta el margen de "C2" a "0.18" sin justificación
     Entonces la respuesta tiene el estado 409 con el código de negocio "COSTEO_NO_LISTO"
 
-  Escenario: Con resultado registrado no se puede ajustar
-    Dado que Nexo entregó la cotización de "C1" y "ana" la marcó como "ganada"
-    Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
-    Entonces la respuesta tiene el estado 409 con el código de negocio "ESTADO_NO_PERMITE"
-
-  Escenario: Con el PDF ya generado no se puede ajustar
+  Escenario: Con el PDF generado y sin enviar el ajuste invalida el PDF y se regenera en el mismo folio
     Dado que "ana" generó el PDF del costeo de "C1"
     Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
-    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_GENERADO"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
+    Y el PDF anterior de "C1" queda en el historial de auditoría
+    Cuando "ana" genera el PDF del costeo de "C1"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "SalidaPdf" del contrato
+    Y el costeo de "C1" tiene pdf_url y ya no está marcado con pdf_desactualizado
+
+  Escenario: Ya enviada al cliente no se ajusta y se indica crear una versión
+    Dado que "ana" generó el PDF del costeo de "C1" y lo envió al cliente
+    Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
+    Y el detalle del error indica la acción "nueva_version" con "POST" al endpoint de re-solicitud de "C1" y nueva_version "true"
+    Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
+
+  Escenario: Con resultado registrado no se ajusta y se indica crear una versión
+    Dado que Nexo entregó la cotización de "C1" y "ana" la marcó como "ganada"
+    Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
+
+  Escenario: Sin If-Match se exige la precondición
+    Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación y sin If-Match
+    Entonces la respuesta tiene el estado 428 con el código de negocio "PRECONDICION_REQUERIDA"
+    Y no hay ajustes de margen de "C1"
+
+  Escenario: La respuesta del ajuste trae el ETag nuevo
+    Dado que "ana" leyó el costeo de "C1" y guardó su ETag
+    Cuando "ana" ajusta el margen de "C1" a "0.18" sin justificación con el ETag guardado
+    Entonces la respuesta trae un ETag distinto del guardado
 
   Escenario: Otro comercial no ve la cotización
     Dado el comercial "beto" con sesión en la regional "Occidente"

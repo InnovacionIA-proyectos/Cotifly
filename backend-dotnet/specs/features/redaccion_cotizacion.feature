@@ -90,10 +90,35 @@ Característica: Redacción del asunto y la introducción de la cotización
     Y el modelo no fue llamado
     Y el PDF de "C1" contiene la introducción estándar
 
-  Escenario: Con el PDF ya generado no se cambian los textos
+  Escenario: Con el PDF generado y sin enviar, editar los textos invalida el PDF
     Dado que "ana" generó el PDF del costeo de "C1"
+    Cuando "ana" guarda en "C1" el asunto "Propuesta revisada" y una introducción válida
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "TextosCotizacion" del contrato
+    Y el costeo de "C1" no tiene pdf_url y está marcado con pdf_desactualizado
+
+  Escenario: Ya enviada al cliente no se cambian los textos
+    Dado que "ana" generó el PDF del costeo de "C1" y lo envió al cliente
     Cuando "ana" pide redactar los textos de "C1"
-    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_GENERADO"
+    Entonces la respuesta tiene el estado 409 con el código de negocio "PDF_YA_ENVIADO"
+    Y el modelo no fue llamado
+
+  Escenario: Redactar sobre textos editados por el comercial exige confirmación
+    Dado que "ana" guardó en "C1" el asunto "Mi asunto" y una introducción válida
+    Cuando "ana" pide redactar los textos de "C1"
+    Entonces la respuesta tiene el estado 409 con el código de negocio "TEXTOS_EDITADOS"
+    Y el modelo no fue llamado
+    Y el asunto de "C1" es "Mi asunto"
+
+  Escenario: Con sobrescribir la IA reemplaza los textos editados
+    Dado que "ana" guardó en "C1" el asunto "Mi asunto" y una introducción válida
+    Y que el modelo responde el asunto "Cotización transporte Buenaventura - Bogotá" y una introducción válida
+    Cuando "ana" pide redactar los textos de "C1" con sobrescribir
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "TextosCotizacion" del contrato
+    Y los textos de "C1" tienen la fuente "ia" y no están editados
+
+  Escenario: Sin If-Match se exige la precondición
+    Cuando "ana" guarda en "C1" el asunto "Propuesta" y una introducción válida sin If-Match
+    Entonces la respuesta tiene el estado 428 con el código de negocio "PRECONDICION_REQUERIDA"
 
   Escenario: Un If-Match desactualizado al editar responde conflicto
     Dado que "ana" leyó el costeo de "C1" y guardó su ETag
