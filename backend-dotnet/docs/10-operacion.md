@@ -121,6 +121,10 @@ Otros puntos de operación (de #11 y #12):
 | `/data/pdfs` | Debe ser escribible por el UID 1654 (un volumen con nombre copia el dueño de la imagen; con bind mount, `chown 1654:1654`) |
 | Sin `.pdb` en la imagen | Las trazas no traen número de línea; HU-006.4 (#28) mantuvo `DebugType=none` (alternativa: `DebugType=embedded` + `PathMap`, ver 03-infraestructura §3.1) |
 
+Mecanismo de excepciones temporales del escaneo de vulnerabilidades de la imagen (`backend-dotnet/.trivyignore.yaml`, vacío hoy — `vulnerabilities: []`; procedimiento en [03-infraestructura §3.1](03-infraestructura.md#31-contenedor-e-imagen)). Cada una vencería sola: desde `expired_at` (00:00 UTC, 19:00 del día anterior en Colombia) Trivy vuelve a reportar el CVE y el job `imagen-docker` falla hasta que se resuelva o se prorrogue. Agregar o prorrogar una excepción exige la aprobación explícita en el PR de un revisor humano distinto del autor (líder técnico o seguridad); hoy no hay `CODEOWNERS` que lo obligue (se sugiere agregar `backend-dotnet/.trivyignore.yaml` a uno). Mientras está vigente, una excepción aplica en todas las ramas, también en `main` y en los tags de release. El workflow semanal `vigilancia-imagen-base.yml` (lunes 12:00 UTC) avisa cuándo se puede quitar y falla si vence en 7 días o menos (ver 03-infraestructura §3.1).
+
+**CVE-2026-84782 (HIGH), resuelto sin excepción (#86, cerrada el 2026-10-05):** `libssl3t64`/`openssl` `3.0.13-0ubuntu3.15` de `aspnet:10.0.12-noble-chiseled-extra` (digest `sha256:6385dc0e…`, construida el 2026-09-04). Antes de mergear la excepción propuesta, QA verificó que Microsoft ya había republicado el mismo tag (digest `sha256:00e0ad6a…`, construida el 2026-10-02) con el parche de Ubuntu (`3.0.13-0ubuntu3.16`) ya aplicado: `docker pull` + Trivy sin `--ignorefile` dan 0 hallazgos contra la imagen real de Cotifly. No hizo falta aceptar el riesgo ni tocar `SDK_VERSION`/`ASPNET_VERSION` (mismo tag, digest nuevo); bastó con reconstruir sin caché de la imagen base.
+
 ## 10.7 Decisiones pendientes
 
 Notas abiertas desde el PR de #10 (Precio, Margen y Tarifas), con su estado al cierre de #14:

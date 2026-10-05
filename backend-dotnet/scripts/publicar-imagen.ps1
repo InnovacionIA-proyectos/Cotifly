@@ -186,8 +186,14 @@ try {
     # ------------------------------------------------------------------------- escaneo de vulnerabilidades
     if (-not $SinEscaneo) {
         Paso "Escaneo de vulnerabilidades (${TrivyImagen}: HIGH/CRITICAL con parche disponible fallan)"
-        DockerOk run --rm -v //var/run/docker.sock:/var/run/docker.sock $TrivyImagen `
-            image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 $ImagenLocal
+        # Excepciones temporales por CVE con vencimiento (las mismas del CI, #86): ver el encabezado de .trivyignore.yaml.
+        # 'HIGH,CRITICAL' entre comillas: sin ellas PowerShell lo convierte en un arreglo de dos argumentos y Trivy falla con
+        # "multiple targets cannot be specified" (#86).
+        $IgnoreTrivy = Join-Path $DirBackend '.trivyignore.yaml'
+        if (-not (Test-Path -LiteralPath $IgnoreTrivy)) { Fallar "no existe $IgnoreTrivy (lo usa también el CI)" }
+        DockerOk run --rm -v //var/run/docker.sock:/var/run/docker.sock -v "${IgnoreTrivy}:/trivyignore.yaml:ro" $TrivyImagen `
+            image --quiet --scanners vuln --severity 'HIGH,CRITICAL' --ignore-unfixed `
+            --ignorefile /trivyignore.yaml --exit-code 1 $ImagenLocal
     }
 
     # ------------------------------------------------------------------------- push
