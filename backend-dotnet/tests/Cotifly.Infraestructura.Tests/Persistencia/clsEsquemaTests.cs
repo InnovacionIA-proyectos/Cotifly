@@ -146,6 +146,32 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript0007EsIdempotenteYAgregaNotasYMunicipios()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0007", clsBaseDatosPruebas.Scripts.Length);
+
+        await ReaplicarYVerificarIdempotenciaAsync(baseAislada.Cadena, "0007_captura_nexo_campos.sql");
+
+        var columnas = await LeerColumnasAsync();
+        columnas[("Cotizaciones", "notas")].Nula.Should().BeTrue();
+        columnas[("CotizacionLineasSolicitud", "origenMunicipioId")].Tipo.Should().Be("int");
+        columnas[("CotizacionLineasSolicitud", "destinoMunicipioId")].Nula.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ElCheckDel0007RechazaIdsDeMunicipioNoPositivos()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+
+        var cero = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, origenMunicipioId) VALUES ('{id}', 1, 'A', 'B', 0)");
+
+        (await cero.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_municipios");
+    }
+
+    [Fact]
     public async Task ElBackfillDel0005CreaUnaLineaPorCotizacionDelFormularioYEnlazaSusPosiciones()
     {
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
@@ -192,7 +218,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         nuevas.Where(c => c != "costeoConsultasFallidas" && !columnas[("Cotizaciones", c)].Nula).Should().BeEmpty(
             "las cotizaciones existentes (chat con costo manual) no traen estos datos");
         columnas[("Cotizaciones", "costeoConsultasFallidas")].Nula.Should().BeFalse();
-        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length, "0001 crea 28 columnas y el 0004 agrega 29");
+        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 1, "0001 crea 28 columnas, el 0004 agrega 29 y el 0007 agrega notas");
     }
 
     [Fact]

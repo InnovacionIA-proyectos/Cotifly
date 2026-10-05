@@ -22,7 +22,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private readonly object _candado = new();
     private readonly ConcurrentQueue<clsPeticionNexo> _peticiones = new();
     private readonly Dictionary<string, clsSolicitudFalsa> _solicitudes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<(string Nit, string Nombre, string Origen, string? Bp)> _clientes = [];
+    private readonly List<(string Nit, string Nombre, string Origen, string? Bp, string? ClienteId)> _clientes = [];
 
     /// <summary>Si tiene valor, TODAS las peticiones responden este estado (Nexo caído o rechazando).</summary>
     public HttpStatusCode? Caido { get; set; }
@@ -37,12 +37,40 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     public IReadOnlyList<clsPeticionNexo> Peticiones => [.. _peticiones];
 
+    /// <summary>Peticiones que no son de los catálogos maestros (<c>/api/catalogos/*</c>): las del costeo y la búsqueda.</summary>
+    public IReadOnlyList<clsPeticionNexo> PeticionesSinCatalogos =>
+        [.. _peticiones.Where(p => !p.Url.AbsolutePath.StartsWith("/api/catalogos/", StringComparison.Ordinal))];
+
+    /// <summary>Catálogo de <c>GET /api/catalogos/tipos-vehiculo</c> (HU-013.10): <c>codigo</c>, <c>descripcion</c>, <c>esCatalogoOficial</c>.</summary>
+    public List<(string? Codigo, string? Descripcion, bool Oficial)> TiposVehiculo { get; } =
+    [
+        ("2", "Camión 2 ejes", true), ("2S3", "Tractocamión 2 ejes, semi 3", true), ("3S3", "Tractocamión 3 ejes, semi 3", true),
+    ];
+
+    /// <summary>Descripciones de <c>GET /api/catalogos/clases-viaje</c>.</summary>
+    public List<string> ClasesViaje { get; } = ["Contenedor", "Cupo", "Carga Suelta", "Extradimensionado"];
+
+    /// <summary>Descripciones de <c>GET /api/catalogos/clases-contenedor</c>.</summary>
+    public List<string> ClasesContenedor { get; } = ["CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE"];
+
+    /// <summary>Descripciones de <c>GET /api/catalogos/lineas-negocio</c>.</summary>
+    public List<string> LineasNegocio { get; } = ["PuertoAInterior", "InteriorAPuerto", "Nacional", "DevolucionContenedor", "Andino", "Licitaciones"];
+
+    /// <summary>Si es mayor que cero, las siguientes N peticiones a <c>/api/catalogos/*</c> responden 503 (fallo transitorio).</summary>
+    public int FallasCatalogos { get; set; }
+
+    /// <summary>Si tiene valor, solo <c>/api/catalogos/*</c> responde este estado.</summary>
+    public HttpStatusCode? CatalogosCaidos { get; set; }
+
+    /// <summary>Código de Nexo con el que responde el alta cuando <see cref="AltaFalla"/> tiene valor (por defecto <c>VALIDATION_ERROR</c>).</summary>
+    public string CodigoAltaFalla { get; set; } = "VALIDATION_ERROR";
+
     /// <summary>Agrega un cliente (o prospecto sin BP) al catálogo de <c>GET /api/captura-solicitudes/clientes</c>.</summary>
-    public clsNexoFalso ConCliente(string nit, string nombre, string origen = "cliente", string? bp = "15927")
+    public clsNexoFalso ConCliente(string nit, string nombre, string origen = "cliente", string? bp = "15927", string? clienteId = null)
     {
         lock (_candado)
         {
-            _clientes.Add((nit, nombre, origen, bp));
+            _clientes.Add((nit, nombre, origen, bp, clienteId));
         }
 
         return this;
@@ -193,6 +221,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         {
             return (request.Method.Method, ruta) switch
             {
+                ("GET", var r) when r.StartsWith("/api/catalogos/", StringComparison.Ordinal) => Catalogo(r["/api/catalogos/".Length..]),
                 ("GET", "/api/captura-solicitudes/clientes") => Clientes(request.RequestUri),
                 ("POST", "/api/captura-solicitudes/analizar-excel") => AnalisisFalla is { } fallaAnalisis
                     ? Error(fallaAnalisis, CodigoAnalisisFalla, "No se pudo leer el archivo Excel (prueba).")
@@ -207,6 +236,29 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
     }
 
+    private HttpResponseMessage Catalogo(string nombre)
+    {
+        if (CatalogosCaidos is { } caidos)
+        {
+            return Error(caidos, "NEXO_CAIDO", "Catálogos no disponibles (prueba).");
+        }
+
+        if (FallasCatalogos > 0)
+        {
+            FallasCatalogos--;
+            return Error(HttpStatusCode.ServiceUnavailable, "NEXO_CAIDO", "Fallo transitorio (prueba).");
+        }
+
+        return nombre switch
+        {
+            "tipos-vehiculo" => Json(HttpStatusCode.OK, TiposVehiculo.Select(t => new { codigo = t.Codigo, descripcion = t.Descripcion, esCatalogoOficial = t.Oficial }).ToList()),
+            "clases-viaje" => Json(HttpStatusCode.OK, ClasesViaje.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
+            "clases-contenedor" => Json(HttpStatusCode.OK, ClasesContenedor.Select((d, i) => new { id = i + 1, descripcion = d, tamanoContenedor = (int?)null }).ToList()),
+            "lineas-negocio" => Json(HttpStatusCode.OK, LineasNegocio.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
+            _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"GET /api/catalogos/{nombre}"),
+        };
+    }
+
     private HttpResponseMessage Clientes(Uri url)
     {
         var q = Uri.UnescapeDataString(url.Query.TrimStart('?').Split('&').FirstOrDefault(p => p.StartsWith("q=", StringComparison.Ordinal))?[2..] ?? string.Empty);
@@ -214,7 +266,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
         var filas = _clientes
             .Where(c => (digitos.Length > 0 && new string(c.Nit.Where(char.IsAsciiDigit).ToArray()).Contains(digitos, StringComparison.Ordinal))
                         || c.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase))
-            .Select(c => new { clienteId = (string?)null, bp = c.Bp, nit = c.Nit, nombre = c.Nombre, origen = c.Origen })
+            .Select(c => new { clienteId = c.ClienteId, bp = c.Bp, nit = c.Nit, nombre = c.Nombre, origen = c.Origen })
             .ToList();
         return Json(HttpStatusCode.OK, filas);
     }
@@ -223,7 +275,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
     {
         if (AltaFalla is { } falla)
         {
-            return Error(falla, "VALIDATION_ERROR", "Rechazada por el Nexo falso.");
+            return Error(falla, CodigoAltaFalla, "Rechazada por el Nexo falso.");
         }
 
         UltimaAlta = JsonNode.Parse(cuerpo ?? "{}");

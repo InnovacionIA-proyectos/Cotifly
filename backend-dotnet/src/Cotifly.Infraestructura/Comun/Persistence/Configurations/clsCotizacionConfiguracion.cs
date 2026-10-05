@@ -64,6 +64,7 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
         builder.Property(c => c.Referencia).Columna("referencia", "nvarchar(200)").HasMaxLength(clsSolicitudCosteo.LargoReferencia);
         builder.Property(c => c.HorasCargue).Columna("horasCargue", "decimal(6,2)");
         builder.Property(c => c.HorasDescargue).Columna("horasDescargue", "decimal(6,2)");
+        builder.Property(c => c.Notas).Columna("notas", "nvarchar(2000)").HasMaxLength(clsSolicitudCosteo.LargoNotas);
         builder.Property(c => c.Origen).Columna("origen", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
         builder.Property(c => c.Destino).Columna("destino", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad);
         builder.Property(c => c.TipoVehiculo).Columna("tipoVehiculo", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
@@ -149,6 +150,8 @@ internal sealed class clsCotizacionLineaSolicitudConfiguracion : IEntityTypeConf
         {
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_orden", "orden >= 1");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_filaOrigen", "filaOrigen IS NULL OR filaOrigen >= 0");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_municipios",
+                "(origenMunicipioId IS NULL OR origenMunicipioId > 0) AND (destinoMunicipioId IS NULL OR destinoMunicipioId > 0)");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_montos", "(costo IS NULL OR costo >= 0) AND (precioFinal IS NULL OR precioFinal >= 0)");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCosteo",
@@ -162,6 +165,8 @@ internal sealed class clsCotizacionLineaSolicitudConfiguracion : IEntityTypeConf
         builder.Property(l => l.FilaOrigen).Columna("filaOrigen", "int");
         builder.Property(l => l.Origen).Columna("origen", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad).IsRequired();
         builder.Property(l => l.Destino).Columna("destino", "nvarchar(150)").HasMaxLength(clsSolicitudCosteo.LargoCiudad).IsRequired();
+        builder.Property(l => l.OrigenMunicipioId).Columna("origenMunicipioId", "int");
+        builder.Property(l => l.DestinoMunicipioId).Columna("destinoMunicipioId", "int");
         builder.Property(l => l.TipoVehiculo).Columna("tipoVehiculo", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(l => l.Carroceria).Columna("carroceria", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(l => l.Tipologia).Columna("tipologia", "nvarchar(50)").HasMaxLength(clsSolicitudCosteo.LargoCorto);

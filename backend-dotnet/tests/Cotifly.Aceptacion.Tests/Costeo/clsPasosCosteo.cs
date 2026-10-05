@@ -163,6 +163,9 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 
+    /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos, HU-013.10).</summary>
+    public void Registrar(string cotizacion, string folio) => _folios[cotizacion] = folio;
+
     public string Folio(string cotizacion) =>
         _folios.TryGetValue(cotizacion, out var folio) ? folio : throw new InvalidOperationException($"No se envió la cotización '{cotizacion}'.");
 

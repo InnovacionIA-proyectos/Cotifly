@@ -81,10 +81,11 @@ public sealed class clsCosteoNexo(
         var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud), cancellationToken);
         if (respuesta.EsFallo)
         {
-            // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo.
+            // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo, salvo la
+            // configuración de Nexo (DWCUBOS_NO_CONFIGURADO). Los códigos de captura de Nexo se traducen a los de Cotifly (G16).
             if (respuesta.Error.Codigo == clsCodigosError.CosteoNexoRechazada && respuesta.Error.Detalle?.StartsWith("HTTP 400", StringComparison.Ordinal) == true)
             {
-                return new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, respuesta.Error.Detalle);
+                return TraducirRechazoCaptura(respuesta.Error.Detalle);
             }
 
             // Un 403 del alta: el comercial no tiene rol en Cabina de Fletes (no es una caída de Nexo; ADR-017 §4).
@@ -206,6 +207,59 @@ public sealed class clsCosteoNexo(
         return leida is null ? NoDisponible("respuesta del resultado sin id") : leida;
     }
 
+    /// <summary>Códigos 400 de <c>POST /api/captura-solicitudes</c> de catálogo, línea o peso (G16): los datos de la solicitud.</summary>
+    public static readonly IReadOnlySet<string> CodigosCapturaDatos =
+        new HashSet<string>(StringComparer.Ordinal) { "ENUM_INVALIDO", "LINEA_INCOMPLETA", "PESO_REQUERIDO", "PESO_INCONSISTENTE" };
+
+    /// <summary>Códigos 400 de la captura sobre el cliente (G16): BP o id que Nexo no reconoce.</summary>
+    public static readonly IReadOnlySet<string> CodigosCapturaCliente =
+        new HashSet<string>(StringComparer.Ordinal) { "CLIENTE_REQUERIDO", "CLIENTE_INVALIDO", "CLIENTE_BP_INVALIDO" };
+
+    /// <summary>Código 400 de la captura cuando Nexo no tiene configurado DWCubos: es configuración de Nexo, reintentable.</summary>
+    public const string CodigoDwCubosNoConfigurado = "DWCUBOS_NO_CONFIGURADO";
+
+    public const string MensajeCapturaDatos =
+        "Nexo rechazó los datos de la solicitud (catálogo, línea o peso): corrige el formulario y crea la cotización de nuevo.";
+
+    public const string MensajeCapturaCliente =
+        "Nexo no reconoce el cliente de la solicitud: revisa el BP del cliente en SAP/Nexo.";
+
+    public const string MensajeDwCubos =
+        "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
+
+    /// <summary>
+    /// Traduce un 400 del alta (G16, <c>docs/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
+    /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c>; <c>CLIENTE_REQUERIDO</c>,
+    /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c> con un motivo de cliente;
+    /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); cualquier otro (<c>VALIDATION_ERROR</c>...) →
+    /// <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. El detalle conserva <c>HTTP 400 {code}: {message}</c> de Nexo.
+    /// </summary>
+    public static clsErrorDominio TraducirRechazoCaptura(string detalle)
+    {
+        ArgumentNullException.ThrowIfNull(detalle);
+        var codigo = CodigoNexo(detalle);
+        return codigo switch
+        {
+            not null when CodigosCapturaDatos.Contains(codigo) => new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, MensajeCapturaDatos, detalle),
+            not null when CodigosCapturaCliente.Contains(codigo) => new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeCapturaCliente, detalle),
+            CodigoDwCubosNoConfigurado => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, MensajeDwCubos, detalle),
+            _ => new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, MensajeSolicitudInvalida, detalle),
+        };
+    }
+
+    /// <summary>El <c>code</c> de Nexo de un detalle <c>HTTP {estado} {code}: {message}</c>, o <c>null</c> si no trae.</summary>
+    internal static string? CodigoNexo(string detalle)
+    {
+        var partes = detalle.Split(' ', 3);
+        if (partes.Length < 3 || partes[1].EndsWith(':'))
+        {
+            return null;
+        }
+
+        var codigo = partes[2].Split(':', 2)[0].Trim();
+        return codigo.Length == 0 || codigo.Contains(' ', StringComparison.Ordinal) ? null : codigo;
+    }
+
     /// <summary><c>CotizacionDto</c> de Nexo, o <c>null</c> si no trae <c>id</c>. Líneas sin <c>valorFlete</c> se descartan.</summary>
     internal static clsCotizacionNexo? LeerCotizacion(JsonElement raiz)
     {
@@ -268,24 +322,30 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una en HU-005.5, N en una licitación, ADR-017):
-    /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP, la línea de negocio de Nexo
-    /// en cada línea y los catálogos con el código de Nexo tal cual. Los nulos no viajan.
+    /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
+    /// negocio de Nexo en cada línea y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
+    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y las horas de cargue y descargue del encabezado repetidas en
+    /// cada línea (G5: sin ellas Nexo aplica a la línea su valor por defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
+    /// desplazamiento (G4). Los nulos no viajan.
     /// </summary>
     internal static object CuerpoCaptura(clsSolicitudNexo solicitud)
     {
         var e = solicitud.Encabezado;
         return new clsCapturaSolicitudWire(
-            solicitud.ClienteBp,
+            solicitud.Cliente.Bp,
+            solicitud.Cliente.Id,
             clsCodigoEnum.ACodigo(e.Tipo),
             e.Deadline,
             e.ValorEstimado,
             e.Referencia,
             e.HorasCargue,
             e.HorasDescargue,
+            string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s => new clsCapturaLineaWire(
-                s.Origen, s.Destino, s.TipoVehiculo, s.Carroceria, s.Tipologia, solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
+                s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId, s.TipoVehiculo, s.Carroceria, s.Tipologia,
+                solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
-                s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.PesoKg, s.ValorMercancia,
+                s.CiudadLevanteContenedor, s.ValorAprovisionamiento, e.HorasCargue, e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0
                     ? null
                     : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))]))]);
@@ -442,14 +502,15 @@ public sealed class clsCosteoNexo(
     // --- Forma exacta de CapturaSolicitudRequest / CapturaLineaRequest / CapturaPosicionRequest de Nexo (camelCase) ---
 
     private sealed record clsCapturaSolicitudWire(
-        string ClienteBp, string Tipo, DateTimeOffset? Deadline, decimal? ValorEstimado, string? Referencia,
-        decimal? HorasCargue, decimal? HorasDescargue, IReadOnlyList<clsCapturaLineaWire> Lineas);
+        string? ClienteBp, Guid? ClienteId, string Tipo, DateTimeOffset? Deadline, decimal? ValorEstimado, string? Referencia,
+        decimal? HorasCargue, decimal? HorasDescargue, string? Notas, IReadOnlyList<clsCapturaLineaWire> Lineas);
 
     private sealed record clsCapturaLineaWire(
-        string Origen, string Destino, string? TipoVehiculo, string? Carroceria, string? Tipologia, string? LineaNegocio,
-        string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado, bool? RetornaContenedor,
-        string? CiudadDevolucionContenedor, bool? LevanteContenedorDiferente, string? CiudadLevanteContenedor,
-        decimal? ValorAprovisionamiento, decimal? Peso, decimal? ValorMercancia, IReadOnlyList<clsCapturaPosicionWire>? Posiciones);
+        string Origen, string Destino, int? OrigenMunicipioId, int? DestinoMunicipioId, string? TipoVehiculo, string? Carroceria,
+        string? Tipologia, string? LineaNegocio, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
+        bool? RetornaContenedor, string? CiudadDevolucionContenedor, bool? LevanteContenedorDiferente, string? CiudadLevanteContenedor,
+        decimal? ValorAprovisionamiento, decimal? HorasCargue, decimal? HorasDescargue, decimal? Peso, decimal? ValorMercancia,
+        IReadOnlyList<clsCapturaPosicionWire>? Posiciones);
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 

@@ -279,16 +279,23 @@ public static class clsDependenciasInfraestructura
 
     /// <summary>
     /// Catálogos de tipo de vehículo/carrocería/clase de viaje elegidos por <c>Nexo:UrlBase</c> al resolver
-    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/>; vacía →
-    /// <see cref="clsCatalogosFleteNoDisponible"/>. Mismo cliente HTTP tipado (nombre
-    /// <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el mismo servicio Nexo.
+    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/> sobre los catálogos maestros
+    /// (<see cref="clsFabricaCatalogosMaestros.Crear"/>, HU-013.10); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Los
+    /// catálogos maestros usan el mismo cliente HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la
+    /// búsqueda de clientes: es el mismo servicio Nexo.
     /// No repite la configuración de resiliencia/redacción por la misma razón que <see cref="AgregarMunicipios"/>.
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarCatalogosFlete(IServiceCollection servicios)
     {
+        // Catálogos maestros de Nexo (HU-013.10, G1/G2): GET /api/catalogos/*, con caché en memoria y copia de respaldo.
+        servicios.TryAddScoped<clsCatalogosMaestrosNoDisponible>();
+        servicios.TryAddSingleton<clsCacheCatalogosMaestros>();
+        servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
+
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
-        servicios.AddHttpClient<clsCatalogosFleteNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<clsCatalogosFleteNexo>();
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
     }
 

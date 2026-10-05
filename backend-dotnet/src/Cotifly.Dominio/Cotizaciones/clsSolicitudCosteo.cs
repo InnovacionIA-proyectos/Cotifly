@@ -17,6 +17,7 @@ public sealed record clsSolicitudCosteo
     public const int LargoCorto = 50;
     public const int LargoClaseContenedor = 20;
     public const int LargoReferencia = 200;
+    public const int LargoNotas = 2000;
     public const int MaximoPosiciones = 200;
     public const decimal MaximoHoras = 240m;
     public const decimal MaximoPeso = 999_999.99m;
@@ -38,8 +39,17 @@ public sealed record clsSolicitudCosteo
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
+    /// <summary>Encabezado (<c>notas</c> de Nexo, máx. 2000): nota para la Mesa de Nexo, distinta de la personalización del PDF.</summary>
+    public string? Notas { get; init; }
+
     public required string Origen { get; init; }
     public required string Destino { get; init; }
+
+    /// <summary>Línea (<c>origenMunicipioId</c>): id de <c>tbl_municipios</c> de Nexo elegido en <c>GET /web/municipios</c>.</summary>
+    public int? OrigenMunicipioId { get; init; }
+
+    /// <summary>Línea (<c>destinoMunicipioId</c>): igual que <see cref="OrigenMunicipioId"/>.</summary>
+    public int? DestinoMunicipioId { get; init; }
     public string? TipoVehiculo { get; init; }
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
@@ -65,6 +75,9 @@ public sealed record clsSolicitudCosteo
             clsValidacion.Requerido(CodigoError, "origen", Origen, LargoCiudad),
             clsValidacion.Requerido(CodigoError, "destino", Destino, LargoCiudad),
             clsValidacion.LargoMaximo(CodigoError, "referencia", Referencia, LargoReferencia),
+            clsValidacion.LargoMaximo(CodigoError, "notas", Notas, LargoNotas),
+            IdMunicipio("origen_municipio_id", OrigenMunicipioId),
+            IdMunicipio("destino_municipio_id", DestinoMunicipioId),
             clsValidacion.LargoMaximo(CodigoError, "tipo_vehiculo", TipoVehiculo, LargoCatalogo),
             clsValidacion.LargoMaximo(CodigoError, "carroceria", Carroceria, LargoCatalogo),
             clsValidacion.LargoMaximo(CodigoError, "tipologia", Tipologia, LargoCorto),
@@ -83,11 +96,45 @@ public sealed record clsSolicitudCosteo
                 : null);
 
         return error
+            ?? ValidarCondicionales()
             ?? Posiciones.Select((p, i) => p is null
                 ? new clsErrorDominio(CodigoError, $"La posición {i + 1} está vacía.")
                 : p.Validar(i + 1)).FirstOrDefault(e => e is not null)
             ?? ValidarPeso();
     }
+
+    /// <summary>
+    /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c>
+    /// y obligatoria con ella, y <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen
+    /// (Nexo lo descarta en otro caso).
+    /// </summary>
+    private clsErrorDominio? ValidarCondicionales()
+    {
+        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+        var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
+        if (conClase && !esContenedor)
+        {
+            return new clsErrorDominio(CodigoError,
+                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
+        }
+
+        if (esContenedor && !conClase)
+        {
+            return new clsErrorDominio(CodigoError,
+                $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
+        }
+
+        var levanteDistinto = !string.IsNullOrWhiteSpace(CiudadLevanteContenedor)
+            && !string.Equals(CiudadLevanteContenedor.Trim(), Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
+        return ValorAprovisionamiento is not null && !levanteDistinto
+            ? new clsErrorDominio(CodigoError,
+                "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen.")
+            : null;
+    }
+
+    /// <summary>Id de municipio de Nexo: entero positivo si viene.</summary>
+    internal static clsErrorDominio? IdMunicipio(string campo, int? valor) =>
+        valor is <= 0 ? new clsErrorDominio(CodigoError, $"El campo '{campo}' debe ser un id de municipio de Nexo (entero positivo).") : null;
 
     /// <summary>El encabezado de la solicitud (lo común a todas sus líneas, ADR-017).</summary>
     public clsEncabezadoSolicitudCosteo Encabezado => new()
@@ -98,6 +145,7 @@ public sealed record clsSolicitudCosteo
         Referencia = Referencia,
         HorasCargue = HorasCargue,
         HorasDescargue = HorasDescargue,
+        Notas = Notas,
     };
 
     /// <summary>La única línea del formulario como línea de solicitud (ADR-017: una cotización de una línea es el caso N = 1).</summary>
@@ -105,6 +153,8 @@ public sealed record clsSolicitudCosteo
     {
         Origen = Origen,
         Destino = Destino,
+        OrigenMunicipioId = OrigenMunicipioId,
+        DestinoMunicipioId = DestinoMunicipioId,
         TipoVehiculo = TipoVehiculo,
         Carroceria = Carroceria,
         Tipologia = Tipologia,
@@ -135,8 +185,11 @@ public sealed record clsSolicitudCosteo
             Referencia = encabezado.Referencia,
             HorasCargue = encabezado.HorasCargue,
             HorasDescargue = encabezado.HorasDescargue,
+            Notas = encabezado.Notas,
             Origen = linea.Origen,
             Destino = linea.Destino,
+            OrigenMunicipioId = linea.OrigenMunicipioId,
+            DestinoMunicipioId = linea.DestinoMunicipioId,
             TipoVehiculo = linea.TipoVehiculo,
             Carroceria = linea.Carroceria,
             Tipologia = linea.Tipologia,

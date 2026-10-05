@@ -128,15 +128,66 @@ public sealed class clsCosteoNexoTests : IDisposable
         (await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct)).Valor.CosteoCompleto.Should().BeFalse();
     }
 
-    [Fact]
-    public async Task Un400DelAltaEsSolicitudInvalidaDefinitivaConElCodigoDeNexo()
+    [Theory]
+    [InlineData("ENUM_INVALIDO", clsCodigosError.SolicitudCosteoInvalida)]
+    [InlineData("LINEA_INCOMPLETA", clsCodigosError.SolicitudCosteoInvalida)]
+    [InlineData("PESO_REQUERIDO", clsCodigosError.SolicitudCosteoInvalida)]
+    [InlineData("PESO_INCONSISTENTE", clsCodigosError.SolicitudCosteoInvalida)]
+    [InlineData("CLIENTE_REQUERIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    [InlineData("CLIENTE_INVALIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    [InlineData("CLIENTE_BP_INVALIDO", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    [InlineData("DWCUBOS_NO_CONFIGURADO", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData("VALIDATION_ERROR", clsCodigosError.CosteoNexoSolicitudInvalida)]
+    public async Task Un400DelAltaSeTraduceAlCodigoDeCotiflyConservandoElDeNexo(string codigoNexo, string esperado)
     {
-        _nexo.Responder(HttpStatusCode.BadRequest, """{"code":"PESO_INCONSISTENTE","message":"No coincide."}""");
+        _nexo.Responder(HttpStatusCode.BadRequest, $$"""{"code":"{{codigoNexo}}","message":"No coincide."}""");
 
         var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoSolicitudInvalida);
-        resultado.Error.Detalle.Should().Be("HTTP 400 PESO_INCONSISTENTE: No coincide.");
+        resultado.Error.Codigo.Should().Be(esperado);
+        resultado.Error.Detalle.Should().Be($"HTTP 400 {codigoNexo}: No coincide.");
+    }
+
+    [Theory]
+    [InlineData("HTTP 400 ENUM_INVALIDO: x", "ENUM_INVALIDO")]
+    [InlineData("HTTP 400 CLIENTE_BP_INVALIDO", "CLIENTE_BP_INVALIDO")]
+    [InlineData("HTTP 400: texto libre", null)]
+    [InlineData("HTTP 400", null)]
+    public void ElCodigoDeNexoSaleDelDetalle(string detalle, string? codigo) =>
+        clsCosteoNexo.CodigoNexo(detalle).Should().Be(codigo);
+
+    [Fact]
+    public async Task ElCuerpoLlevaNotasMunicipiosYHorasPorLinea()
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var formulario = clsSolicitudCosteoMuestra.Crear() with { Notas = "  Cliente pide cita previa  ", OrigenMunicipioId = 76109, DestinoMunicipioId = 11001 };
+
+        await Adaptador().EnviarSolicitudAsync(_usuarioId, new clsSolicitudNexo("15927", formulario, "PuertoAInterior"), Ct);
+
+        using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        var raiz = cuerpo.RootElement;
+        raiz.GetProperty("notas").GetString().Should().Be("Cliente pide cita previa");
+        raiz.GetProperty("horasCargue").GetDecimal().Should().Be(4m);
+        var linea = raiz.GetProperty("lineas")[0];
+        linea.GetProperty("origenMunicipioId").GetInt32().Should().Be(76109);
+        linea.GetProperty("destinoMunicipioId").GetInt32().Should().Be(11001);
+        linea.GetProperty("horasCargue").GetDecimal().Should().Be(4m, "sin ellas Nexo aplica a la línea su valor por defecto");
+        linea.GetProperty("horasDescargue").GetDecimal().Should().Be(6.5m);
+        raiz.GetProperty("deadline").GetString().Should().Be("2026-10-15T17:00:00-05:00", "ISO 8601 con el desplazamiento de Bogotá");
+    }
+
+    [Fact]
+    public async Task UnProspectoViajaPorClienteIdSinClienteBp()
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var id = Guid.NewGuid();
+        var formulario = clsSolicitudCosteoMuestra.Crear();
+
+        await Adaptador().EnviarSolicitudAsync(_usuarioId, new clsSolicitudNexo(clsClienteNexo.PorId(id), formulario.Encabezado, [formulario.ALinea()], null), Ct);
+
+        using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        cuerpo.RootElement.GetProperty("clienteId").GetGuid().Should().Be(id);
+        cuerpo.RootElement.TryGetProperty("clienteBp", out _).Should().BeFalse();
     }
 
     [Theory]

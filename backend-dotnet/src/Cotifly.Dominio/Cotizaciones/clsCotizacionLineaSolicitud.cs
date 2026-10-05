@@ -23,6 +23,12 @@ public sealed class clsCotizacionLineaSolicitud
 
     public string Origen { get; private set; } = string.Empty;
     public string Destino { get; private set; } = string.Empty;
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del origen (script 0007, G6 de HU-013.10).</summary>
+    public int? OrigenMunicipioId { get; private set; }
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del destino (script 0007).</summary>
+    public int? DestinoMunicipioId { get; private set; }
     public string? TipoVehiculo { get; private set; }
     public string? Carroceria { get; private set; }
     public string? Tipologia { get; private set; }
@@ -80,6 +86,8 @@ public sealed class clsCotizacionLineaSolicitud
             FilaOrigen = filas?[i],
             Origen = l.Origen.Trim(),
             Destino = l.Destino.Trim(),
+            OrigenMunicipioId = l.OrigenMunicipioId,
+            DestinoMunicipioId = l.DestinoMunicipioId,
             TipoVehiculo = Normalizar(l.TipoVehiculo),
             Carroceria = Normalizar(l.Carroceria),
             Tipologia = Normalizar(l.Tipologia),
@@ -105,6 +113,8 @@ public sealed class clsCotizacionLineaSolicitud
         {
             Origen = Origen,
             Destino = Destino,
+            OrigenMunicipioId = OrigenMunicipioId,
+            DestinoMunicipioId = DestinoMunicipioId,
             TipoVehiculo = TipoVehiculo,
             Carroceria = Carroceria,
             Tipologia = Tipologia,

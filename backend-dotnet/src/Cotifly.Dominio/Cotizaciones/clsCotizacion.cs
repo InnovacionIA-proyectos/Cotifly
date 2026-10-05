@@ -62,6 +62,10 @@ public sealed class clsCotizacion
     public string? Referencia { get; private set; }
     public decimal? HorasCargue { get; private set; }
     public decimal? HorasDescargue { get; private set; }
+
+    /// <summary>Encabezado: <c>notas</c> para la Mesa de Nexo (script 0007, G7 de HU-013.10).</summary>
+    public string? Notas { get; private set; }
+
     public string? Origen { get; private set; }
     public string? Destino { get; private set; }
     public string? TipoVehiculo { get; private set; }
@@ -167,6 +171,7 @@ public sealed class clsCotizacion
         Referencia = clsValidacion.Normalizar(solicitud.Referencia);
         HorasCargue = solicitud.HorasCargue;
         HorasDescargue = solicitud.HorasDescargue;
+        Notas = clsValidacion.Normalizar(solicitud.Notas);
         Origen = solicitud.Origen.Trim();
         Destino = solicitud.Destino.Trim();
         TipoVehiculo = clsValidacion.Normalizar(solicitud.TipoVehiculo);
@@ -206,6 +211,7 @@ public sealed class clsCotizacion
         Referencia = clsValidacion.Normalizar(encabezado.Referencia);
         HorasCargue = encabezado.HorasCargue;
         HorasDescargue = encabezado.HorasDescargue;
+        Notas = clsValidacion.Normalizar(encabezado.Notas);
         EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteEnvio;
         MotivoEstadoCosteo = null;
     }
@@ -220,6 +226,7 @@ public sealed class clsCotizacion
             Referencia = Referencia,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
+            Notas = Notas,
         }
         : null;
 
@@ -243,6 +250,7 @@ public sealed class clsCotizacion
             Referencia = Referencia,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
+            Notas = Notas,
             Origen = Origen,
             Destino = Destino,
             TipoVehiculo = TipoVehiculo,

@@ -38,11 +38,15 @@ public sealed record clsEncabezadoSolicitudCosteo
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
+    /// <summary><c>notas</c> de Nexo (máx. 2000): nota para la Mesa, distinta de la personalización del PDF (G7, HU-013.10).</summary>
+    public string? Notas { get; init; }
+
     /// <summary>Todos los errores del encabezado (vacía si Nexo lo aceptaría).</summary>
     public IReadOnlyList<clsErrorCampo> Errores()
     {
         var errores = new List<clsErrorCampo>();
         clsLineaSolicitudCosteo.Largo(errores, "referencia", Referencia, clsSolicitudCosteo.LargoReferencia);
+        clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
         clsLineaSolicitudCosteo.Rango(errores, "valor_estimado", ValorEstimado, 0m, clsSolicitudCosteo.MaximoValor);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
@@ -58,6 +62,13 @@ public sealed record clsLineaSolicitudCosteo
 {
     public required string Origen { get; init; }
     public required string Destino { get; init; }
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del origen (<c>origenMunicipioId</c>, G6); <c>null</c> si vino como texto.</summary>
+    public int? OrigenMunicipioId { get; init; }
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo del destino (<c>destinoMunicipioId</c>, G6).</summary>
+    public int? DestinoMunicipioId { get; init; }
+
     public string? TipoVehiculo { get; init; }
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
@@ -89,6 +100,8 @@ public sealed record clsLineaSolicitudCosteo
         var errores = new List<clsErrorCampo>();
         Obligatorio(errores, "origen", Origen, clsSolicitudCosteo.LargoCiudad);
         Obligatorio(errores, "destino", Destino, clsSolicitudCosteo.LargoCiudad);
+        IdMunicipio(errores, "origen_municipio_id", OrigenMunicipioId);
+        IdMunicipio(errores, "destino_municipio_id", DestinoMunicipioId);
         Largo(errores, "tipo_vehiculo", TipoVehiculo, clsSolicitudCosteo.LargoCatalogo);
         Largo(errores, "carroceria", Carroceria, clsSolicitudCosteo.LargoCatalogo);
         Largo(errores, "tipologia", Tipologia, clsSolicitudCosteo.LargoCorto);
@@ -150,6 +163,14 @@ public sealed record clsLineaSolicitudCosteo
         if (valor is not null && valor.Length > maximo)
         {
             errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.CampoDemasiadoLargo, $"El campo '{campo}' supera {maximo} caracteres."));
+        }
+    }
+
+    private static void IdMunicipio(List<clsErrorCampo> errores, string campo, int? valor)
+    {
+        if (clsSolicitudCosteo.IdMunicipio(campo, valor) is { } error)
+        {
+            errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.ValorFueraDeRango, error.Mensaje));
         }
     }
 

@@ -6,9 +6,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// Elige el proveedor de catálogos de flete según <c>Nexo:UrlBase</c>: configurada → <see cref="clsCatalogosFleteNexo"/>
-/// (cliente tipado, transitorio); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Mismo patrón que
-/// <c>clsFabricaBuscadorClientes</c>.
+/// Elige el proveedor de catálogos de flete según <c>Nexo:UrlBase</c>: configurada → <see cref="clsCatalogosFleteNexo"/> (sobre los
+/// catálogos maestros); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Mismo patrón que <c>clsFabricaBuscadorClientes</c>.
 /// </summary>
 internal static class clsFabricaCatalogosFlete
 {
