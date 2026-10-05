@@ -178,6 +178,15 @@ El PDF es la foto de lo que se entrega al cliente. La regla depende de si ya se 
 
 Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 
+### 12. Decisiones de implementación (#98)
+
+- **`rowVersion` no es token de concurrencia global de EF.** Se mapea como valor generado por la base (EF la relee tras cada escritura), pero el `UPDATE` de los demás flujos (polling, correo, resultado) no la compara. El `If-Match` lo verifica `IClsUnitOfWork.GuardarCambiosSiVersionAsync`: en una transacción lee la fila con `UPDLOCK`, compara la versión y solo entonces guarda. Así los flujos existentes no empiezan a fallar por concurrencia, y las mutaciones de la etapa final (#99, #100, #101) reutilizan el mismo método más el filtro `[clsRequiereIfMatch]` (428) y el filtro global que publica el `ETag` de toda respuesta `IClsConVersionFila`.
+- **El polling cambia la `rowVersion`** en cada consulta (agenda, reclamo), aunque el costeo no cambie. Un `ETag` leído antes de una consulta del polling responde 409 `CONFLICTO_CONCURRENCIA`: el frontend recarga y reintenta. Es el comportamiento que pide §8 ("el polling también actualiza `rowVersion`"); si molesta en la práctica, la alternativa es una versión de negocio propia en lugar de `ROWVERSION` (pendiente de evaluar con el uso real).
+- **Margen sugerido.** Mientras el comercial no ajusta, es `margenAplicado` (SAP TM o la política de la línea, resuelto al enviar). En el primer ajuste se copia a `Cotizaciones.margenPolitica` y cada fila de `MargenAjustes` lo guarda como `margenPolitica`. Con SAP TM, `Cotizaciones.margenPolitica` deja de ser el de la política de la línea y pasa a ser el sugerido.
+- **Historial del PDF.** `CotizacionPdfsHistorial` guarda la referencia del PDF invalidado, la acción, el comercial y la fecha; la acción queda además en `EventosHerramienta` (`ajustar_margen_costeo`, sin montos). Al regenerar, el archivo anterior se copia en el almacén como `{folio}-hN.pdf` (no se borra; no se descarga por `/pdfs`) y el nuevo conserva el nombre `{folio}.pdf`.
+- **Métricas.** `vAjustesMargenPorComercial` gana `numAjustesBajoSugerido` (`diferencia < 0`) y `GET /web/metricas/ajustes-margen` lo expone como `num_ajustes_bajo_sugerido`.
+- **No se reutiliza `IClsAjusteMargenService`** (chat, HU-003.4): guarda por su cuenta y pone un motivo por defecto. El ajuste del costeo confirma el ajuste, los precios, la invalidación del PDF y la versión en una sola transacción, y deja la justificación nula por encima del sugerido.
+
 ## Alternativas consideradas
 
 - **Mantener el chat como cotizador con más validaciones:** el LLM seguiría decidiendo cuándo calcular y generar el PDF, y el chat no recoge el formulario ampliado de Nexo. Se descarta: la fuente de verdad es el formulario.
@@ -208,7 +217,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 | Mecanismo para re-solicitar sin cambios de carga (captura nueva, reabrir la solicitud o recalcular) | Equipo de Nexo |
 | Autenticación de servicio para Cotifly (hoy `X-Portal-Usuario-Id` del comercial, sin token) | Duban + equipo de Nexo |
 | Orden de las líneas de la cotización de Nexo frente a las de la solicitud (para traducir `linea_orden` → `lineaId`) | Equipo de Nexo |
-| Script `0006_textos_y_concurrencia.sql` (rowVersion, textosCotizacion, PDF desactualizado e historial): lo entrega #98 | Duban + DBA |
+| Script `0006_textos_y_concurrencia.sql` (rowVersion, textosCotizacion, `pdfDesactualizado`, `CotizacionPdfsHistorial` y `numAjustesBajoSugerido`): entregado en #98, pendiente de aprobación y de aplicarse una vez por ambiente | Duban + DBA |
 | ¿Existe DELETE de conexos en Nexo? ¿Agregar un conexo cambia el estado o `entregadaAt` de la cotización? | Equipo de Nexo |
 | Integrar #50 (PR #96) antes de HU-013.7 | Duban |
 | Issue de gaps del formulario y migración de catálogos (`docs/HU-013-preguntas-nexo.md` §Gaps) | Coordinador + Duban |

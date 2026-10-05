@@ -74,6 +74,7 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
+        servicios.AddScoped<IClsAjusteMargenCosteoService, clsAjusteMargenCosteoService>();
         servicios.AddScoped<IClsResultadoCotizacionService, clsResultadoCotizacionService>();
 
         // Licitaciones desde Excel (HU-011, ADR-017).

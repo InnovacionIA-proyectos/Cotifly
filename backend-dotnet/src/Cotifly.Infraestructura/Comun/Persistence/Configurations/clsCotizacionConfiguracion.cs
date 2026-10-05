@@ -18,6 +18,7 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
             t.HasCheckConstraint("ck_cotizaciones_origenCliente", "origenCliente IS NULL OR origenCliente IN ('cliente', 'prospecto')");
             t.HasCheckConstraint("ck_cotizaciones_tipoSolicitud", "tipoSolicitud IS NULL OR tipoSolicitud IN ('spot', 'licitacion')");
             t.HasCheckConstraint("ck_cotizaciones_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
+            t.HasCheckConstraint("ck_cotizaciones_textosCotizacion_json", "textosCotizacion IS NULL OR ISJSON(textosCotizacion) = 1");
             t.HasCheckConstraint("ck_cotizaciones_estadoCosteo",
                 "estadoCosteo IS NULL OR estadoCosteo IN ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido')");
         });
@@ -89,6 +90,12 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
         builder.Property(c => c.CosteoSiguienteConsultaAt).Fecha("costeoSiguienteConsultaAt");
         builder.Property(c => c.CosteoConsultasFallidas).Columna("costeoConsultasFallidas", "int");
         builder.Property(c => c.ServiciosConexos).Columna("serviciosConexos", TipoTexto);
+
+        // Script 0006 (ADR-018 §8 y §11). rowVersion: la escribe SQL Server y EF la relee tras cada INSERT/UPDATE; NO es token de
+        // concurrencia global (el polling y los demás flujos siguen igual): el If-Match lo verifica IClsUnitOfWork.GuardarCambiosSiVersionAsync.
+        builder.Property(c => c.RowVersion).Columna("rowVersion", "rowversion").ValueGeneratedOnAddOrUpdate().IsRequired();
+        builder.Property(c => c.TextosCotizacion).Columna("textosCotizacion", TipoTexto);
+        builder.Property(c => c.PdfDesactualizado).Columna("pdfDesactualizado", "bit");
 
         builder.HasIndex(c => c.Folio).IsUnique().HasDatabaseName("uq_cotizaciones_folio");
         // Script 0002: (usuarioId, createdAt DESC) para "mis cotizaciones" (más recientes primero).
@@ -211,5 +218,30 @@ internal sealed class clsArchivoLicitacionConfiguracion : IEntityTypeConfigurati
 
         builder.HasOne<clsCotizacion>().WithOne().HasForeignKey<clsArchivoLicitacion>(a => a.CotizacionId)
             .HasConstraintName("fk_cotizacionArchivosLicitacion_cotizacionId").OnDelete(DeleteBehavior.NoAction);
+    }
+}
+
+/// <summary><c>dbo_cotifly.CotizacionPdfsHistorial</c> (script 0006 §4, ADR-018 §11).</summary>
+internal sealed class clsCotizacionPdfHistorialConfiguracion : IEntityTypeConfiguration<clsCotizacionPdfHistorial>
+{
+    public void Configure(EntityTypeBuilder<clsCotizacionPdfHistorial> builder)
+    {
+        builder.ToTable("CotizacionPdfsHistorial", t => t.HasCheckConstraint(
+            "ck_cotizacionPdfsHistorial_motivo", "motivo IN ('ajuste_margen', 'servicios_conexos', 'textos', 're_solicitud')"));
+
+        builder.HasKey(h => h.Id).HasName("pk_cotizacionPdfsHistorial");
+        builder.Property(h => h.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
+        builder.Property(h => h.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
+        builder.Property(h => h.PdfPath).Columna("pdfPath", "nvarchar(400)").HasMaxLength(clsCotizacionPdfHistorial.LargoPdfPath).IsRequired();
+        builder.Property(h => h.Motivo).Columna("motivo", "nvarchar(30)").HasMaxLength(30)
+            .HasConversion(new clsConvertidorCodigoEnum<MotivoInvalidacionPdf>());
+        builder.Property(h => h.UsuarioId).Columna("usuarioId", "uniqueidentifier");
+        builder.Property(h => h.CreatedAt).Fecha("createdAt");
+
+        builder.HasIndex(h => h.CotizacionId).HasDatabaseName("ix_cotizacionPdfsHistorial_cotizacionId");
+        builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(h => h.CotizacionId)
+            .HasConstraintName("fk_cotizacionPdfsHistorial_cotizacionId").OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(h => h.UsuarioId)
+            .HasConstraintName("fk_cotizacionPdfsHistorial_usuarioId").OnDelete(DeleteBehavior.NoAction);
     }
 }

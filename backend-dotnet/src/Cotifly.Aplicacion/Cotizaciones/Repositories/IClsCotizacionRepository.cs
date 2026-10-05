@@ -34,6 +34,15 @@ public interface IClsCotizacionRepository
     /// </summary>
     Task<IReadOnlyList<clsCotizacionLineaSolicitud>> ListarLineasAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
 
+    /// <summary>Agrega un PDF invalidado al historial (script 0006, ADR-018 §11); se escribe al guardar.</summary>
+    void AgregarHistorialPdf(clsCotizacionPdfHistorial historial);
+
+    /// <summary>
+    /// PDF invalidados de la cotización, del más antiguo al más reciente (vacía si no hay). Quedan en la unidad de trabajo: al
+    /// regenerar el PDF se actualiza la referencia del archivo archivado.
+    /// </summary>
+    Task<IReadOnlyList<clsCotizacionPdfHistorial>> ListarHistorialPdfAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+
     /// <summary>Agrega el Excel original de una licitación (script 0005, HU-011.3); se escribe al guardar.</summary>
     void AgregarArchivoLicitacion(clsArchivoLicitacion archivo);
 

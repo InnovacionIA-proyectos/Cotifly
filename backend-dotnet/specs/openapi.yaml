@@ -1147,7 +1147,6 @@ paths:
       operationId: ajustarMargenCosteo
       tags: [web]
       summary: Ajusta el margen de la cotización y recalcula el precio del flete y de los conexos
-      x-estado: pendiente
       x-issue: '#98 (HU-013.2; entrega el script 0006)'
       description: |
         HU-013.2 (ADR-018 §3). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
@@ -1498,9 +1497,11 @@ paths:
         HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
         mientras la cotización tenga precio. Solo el dueño.
 
-        Cambia con HU-013 (ADR-018 §11, lo implementa #98 junto con el `0006`): con PDF ya generado se permite e invalida
-        el PDF (`pdf_desactualizado`) en lugar de responder `PDF_YA_GENERADO`; ya enviada o con resultado responde 409
-        `PDF_YA_ENVIADO`. `If-Match` pasa a ser obligatorio (428 `PRECONDICION_REQUERIDA`) y la respuesta trae `ETag`.
+        Desde HU-013.2 (ADR-018 §11, #98, script `0006`): con PDF ya generado se permite e invalida el PDF
+        (`pdf_url = null`, `pdf_desactualizado = true`, el anterior queda en el historial) en lugar de responder
+        `PDF_YA_GENERADO`; ya enviada o con resultado responde 409 `PDF_YA_ENVIADO` (con la `detalle` para crear `-vN`).
+        La misma selección vigente responde 200 sin invalidar nada. `If-Match` es obligatorio (428
+        `PRECONDICION_REQUERIDA`; 409 `CONFLICTO_CONCURRENCIA` si no coincide) y la respuesta trae `ETag`.
         Excluir un conexo no lo borra en Nexo (no hay DELETE de conexos, pregunta abierta con Nexo).
       security:
         - bearer: []
@@ -1536,7 +1537,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_GENERADO` (comportamiento actual, hasta #98), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -1675,7 +1676,9 @@ paths:
         HU-013 (ADR-018): es el único generador de PDF (el chat ya no arma payloads). Desde HU-013.5 imprime el asunto y
         la introducción guardados en `textos` (o los de `clsTextosEstandar` si no hay); nunca llama a la IA, así que el
         PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD imprime las tarifas en `US$` y la nota de
-        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (rige con el `0006` de #98).
+        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409
+        `CONFLICTO_CONCURRENCIA`). Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como
+        `{folio}-hN.pdf` (queda en el historial) y el nuevo conserva el nombre `{folio}.pdf`.
       security:
         - bearer: []
       parameters:
@@ -3204,6 +3207,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        num_ajustes_bajo_sugerido:
+          type: integer
+          description: |
+            HU-013.2 (script 0006). Ajustes que quedaron por debajo del margen sugerido (`diferencia` negativa: margen
+            aplicado menor que el sugerido, que es `MargenAjustes.margenPolitica`). Esos ajustes exigen justificación.
 
     TelefonoComercial:
       type: object
@@ -3383,7 +3391,8 @@ components:
           nullable: true
           description: |
             HU-013.2. Margen sugerido de la cotización (fracción): SAP TM con el BP o la política de la línea, resuelto al
-            enviarla (`margenPolitica`). Por debajo de él, el ajuste exige justificación.
+            enviarla. Tras el primer ajuste del comercial queda guardado en `margenPolitica` (y en cada fila de
+            `MargenAjustes`). Por debajo de él, el ajuste exige justificación.
         origen_margen:
           type: string
           nullable: true

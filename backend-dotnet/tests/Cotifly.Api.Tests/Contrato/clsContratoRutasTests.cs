@@ -38,7 +38,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["PUT /web/cotizaciones/{folio}/costeo/margen"] = "#98 (HU-013.2)",
         ["GET /web/servicios-conexos"] = "#99 (HU-013.3)",
         ["POST /web/cotizaciones/{folio}/costeo/servicios-conexos"] = "#99 (HU-013.3)",
         ["POST /web/cotizaciones/{folio}/costeo/re-solicitar"] = "#100 (HU-013.4)",
@@ -60,12 +59,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
             ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
             ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["margen_sugerido"] = "#98 (HU-013.2)",
-                ["origen_margen"] = "#98 (HU-013.2)",
                 ["trm_aplicada"] = "#103 (HU-013.7)",
                 ["textos"] = "#101 (HU-013.5)",
-                ["pdf_desactualizado"] = "#98 (HU-013.2)",
-                ["row_version"] = "#98 (HU-013.2, script 0006)",
             },
         };
 
@@ -197,6 +192,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Aplicacion.Costeo.Services.clsServicioConexoPrecio), "ServicioConexoCosteo" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida" },

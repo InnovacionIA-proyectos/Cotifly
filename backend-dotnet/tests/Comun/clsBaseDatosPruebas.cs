@@ -25,7 +25,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public static readonly string[] Scripts =
     [
         "0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql", "0004_costeo_nexo.sql",
-        "0005_lineas_solicitud.sql",
+        "0005_lineas_solicitud.sql", "0006_textos_y_concurrencia.sql",
     ];
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
@@ -46,6 +46,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private string? _cadenaDirectorio;
     private string? _cadenaSin0004;
     private string? _cadenaSin0005;
+    private string? _cadenaSin0006;
 
     /// <summary>Cadena a <c>dbTarifario_Nexo_Pruebas</c> con el esquema aplicado.</summary>
     public string CadenaCotifly { get; private set; } = string.Empty;
@@ -298,6 +299,21 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         {
             _cadenaSin0005 ??= await CrearBaseSinCandadoAsync("dbSin0005_Pruebas", 4);
             return _cadenaSin0005;
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
+    /// <summary>Base auxiliar con 0001 a 0005 pero SIN el 0006 (concurrencia y regla del PDF, ADR-018), para la readiness. Una vez por contenedor.</summary>
+    public async Task<string> CadenaSin0006Async()
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            _cadenaSin0006 ??= await CrearBaseSinCandadoAsync("dbSin0006_Pruebas", 5);
+            return _cadenaSin0006;
         }
         finally
         {

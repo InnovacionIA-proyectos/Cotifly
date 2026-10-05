@@ -70,4 +70,45 @@ public sealed class clsMargenAjuste
             UsuarioId = usuarioId,
         };
     }
+
+    /// <summary>
+    /// Ajuste del comercial sobre el costeo de Nexo (HU-013.2, ADR-018 §3): <paramref name="margenSugerido"/> queda en
+    /// <c>margenPolitica</c> y la justificación en <c>motivo</c>. La justificación es obligatoria solo si el margen queda por debajo del
+    /// sugerido (<c>JUSTIFICACION_REQUERIDA</c>); por encima puede faltar (<c>motivo</c> nulo). Mismo redondeo y validación por método
+    /// que <see cref="Registrar"/>.
+    /// </summary>
+    public static clsResultado<clsMargenAjuste> RegistrarNegociacionCosteo(
+        decimal margenSugerido,
+        decimal margenAplicado,
+        string? justificacion,
+        Guid usuarioId,
+        Guid cotizacionId,
+        string folio,
+        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+    {
+        var sugerido = RedondearMargen(margenSugerido);
+        var aplicado = RedondearMargen(margenAplicado);
+        var error = clsValidacion.Primero(
+            clsReglaMargen.Validar(CodigoError, "margenPolitica", sugerido, metodoCalculo),
+            clsReglaMargen.Validar(CodigoError, "margenAplicado", aplicado, metodoCalculo),
+            aplicado < sugerido && string.IsNullOrWhiteSpace(justificacion)
+                ? new clsErrorDominio(clsCodigosError.JustificacionRequerida, "El margen queda por debajo del sugerido: la justificación es obligatoria.")
+                : null);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return new clsMargenAjuste
+        {
+            Id = Guid.NewGuid(),
+            CotizacionId = cotizacionId,
+            Folio = clsValidacion.Normalizar(folio),
+            MargenPolitica = sugerido,
+            MargenAplicado = aplicado,
+            Diferencia = aplicado - sugerido,
+            Motivo = clsValidacion.Normalizar(justificacion),
+            UsuarioId = usuarioId,
+        };
+    }
 }

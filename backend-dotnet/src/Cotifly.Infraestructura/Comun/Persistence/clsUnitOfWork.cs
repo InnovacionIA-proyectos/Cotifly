@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.RegularExpressions;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -46,6 +47,32 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
                 : new clsErrorDominio(clsViolacionUnicidadException.CodigoRegistroDuplicado, "El registro ya existe.", restriccion);
             throw new clsViolacionUnicidadException(restriccion, error, ex);
         }
+    }
+
+    public async Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, byte[] versionEsperada, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(versionEsperada);
+        if (contexto.Database.CurrentTransaction is not null)
+        {
+            throw new InvalidOperationException("Ya hay una transacción abierta en esta unidad de trabajo: el control de versión no se anida.");
+        }
+
+        await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+
+        // UPDLOCK retiene la fila hasta confirmar: entre la comparación y el UPDATE nadie más (polling, otra petición) la escribe.
+        var actual = await contexto.Database
+            .SqlQuery<byte[]>($"SELECT rowVersion AS [Value] FROM dbo_cotifly.Cotizaciones WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+            .FirstOrDefaultAsync(cancellationToken);
+        if (actual is null || !actual.AsSpan().SequenceEqual(versionEsperada))
+        {
+            await transaccion.RollbackAsync(CancellationToken.None);
+            contexto.ChangeTracker.Clear();
+            return false;
+        }
+
+        await GuardarCambiosAsync(cancellationToken);
+        await transaccion.CommitAsync(cancellationToken);
+        return true;
     }
 
     /// <summary>

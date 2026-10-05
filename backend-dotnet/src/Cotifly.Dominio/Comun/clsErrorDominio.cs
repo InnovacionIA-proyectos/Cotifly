@@ -25,4 +25,11 @@ public sealed record clsErrorDominio
 
     /// <summary>Contexto técnico opcional (ej. el motivo de una caída a política de línea).</summary>
     public string? Detalle { get; }
+
+    /// <summary>
+    /// Datos estructurados del error para <c>ErrorNegocio.detalle</c> (claves en snake_case tal como las publica el contrato), por
+    /// ejemplo <c>margen_sugerido</c> de <c>JUSTIFICACION_REQUERIDA</c> o la llamada para crear la versión de <c>PDF_YA_ENVIADO</c>.
+    /// Los valores son números, textos, booleanos u otros diccionarios del mismo tipo.
+    /// </summary>
+    public IReadOnlyDictionary<string, object?>? Datos { get; init; }
 }
