@@ -72,6 +72,21 @@ public sealed class clsMargenAjuste
     }
 
     /// <summary>
+    /// Justificación lista para guardar (en <c>MargenAjustes.motivo</c> y en la auditoría): sin caracteres de control (saltos de línea,
+    /// tabuladores, nulos), que se reemplazan por un espacio, y sin espacios en los extremos; <c>null</c> si queda vacía.
+    /// </summary>
+    public static string? LimpiarJustificacion(string? justificacion)
+    {
+        if (justificacion is null)
+        {
+            return null;
+        }
+
+        var limpia = new string([.. justificacion.Select(c => char.IsControl(c) ? ' ' : c)]).Trim();
+        return limpia.Length == 0 ? null : limpia;
+    }
+
+    /// <summary>
     /// Ajuste del comercial sobre el costeo de Nexo (HU-013.2, ADR-018 §3): <paramref name="margenSugerido"/> queda en
     /// <c>margenPolitica</c> y la justificación en <c>motivo</c>. La justificación es obligatoria solo si el margen queda por debajo del
     /// sugerido (<c>JUSTIFICACION_REQUERIDA</c>); por encima puede faltar (<c>motivo</c> nulo). Mismo redondeo y validación por método
@@ -88,6 +103,7 @@ public sealed class clsMargenAjuste
     {
         var sugerido = RedondearMargen(margenSugerido);
         var aplicado = RedondearMargen(margenAplicado);
+        justificacion = LimpiarJustificacion(justificacion);
         var error = clsValidacion.Primero(
             clsReglaMargen.Validar(CodigoError, "margenPolitica", sugerido, metodoCalculo),
             clsReglaMargen.Validar(CodigoError, "margenAplicado", aplicado, metodoCalculo),

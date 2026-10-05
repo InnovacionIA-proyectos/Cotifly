@@ -21,7 +21,7 @@ namespace Cotifly.Aplicacion.Tests.Costeo;
 /// </summary>
 public sealed class clsAjusteMargenCosteoServiceTests
 {
-    private static readonly byte[] _version = [0, 0, 0, 0, 0, 0, 7, 209];
+    private const int Version = 7;
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsMargenAjusteRepository _ajustes = Substitute.For<IClsMargenAjusteRepository>();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
@@ -35,7 +35,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         _cotizacion = Costeada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
-        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, _version, Arg.Any<CancellationToken>()).Returns(true);
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -43,7 +43,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task SubirElMargenRecalculaElPrecioYLosConexosComoElModuloDePrecioYRegistraElAjuste()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         var vista = resultado.Valor;
@@ -57,7 +57,8 @@ public sealed class clsAjusteMargenCosteoServiceTests
         _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a =>
             a.MargenPolitica == 0.15m && a.MargenAplicado == 0.18m && a.Diferencia == 0.03m && a.Motivo == null
             && a.UsuarioId == _ana && a.CotizacionId == _cotizacion.Id && a.Folio == _cotizacion.Folio));
-        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, _version, Arg.Any<CancellationToken>());
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>());
+        vista.RowVersion.Should().Be("8", "el ajuste sube la versión de negocio");
         await _auditoria.Received(1).RegistrarAsync(clsAjusteMargenCosteoService.HerramientaAuditoria,
             Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
     }
@@ -65,7 +66,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task BajarDelSugeridoConJustificacionLaGuardaComoMotivo()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.12m, " Cliente estratégico ", _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.12m, " Cliente estratégico ", Version, Ct);
 
         resultado.Valor.PrecioFinal.Should().Be(2_897_727m);
         _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a => a.Diferencia == -0.03m && a.Motivo == "Cliente estratégico"));
@@ -74,14 +75,14 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task BajarDelSugeridoSinJustificacionNoCambiaNadaYTraeElSugeridoEnElDetalle()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.10m, "  ", _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.10m, "  ", Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
         resultado.Error.Datos.Should().ContainKey("margen_sugerido").WhoseValue.Should().Be(0.15m);
         _cotizacion.PrecioFinal.Should().Be(3_000_000m);
         _cotizacion.MargenAplicado.Should().Be(0.15m);
         _ajustes.DidNotReceiveWithAnyArgs().Agregar(default!);
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default!, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
         await _auditoria.Received(1).RegistrarAsync(clsAjusteMargenCosteoService.HerramientaAuditoria,
             Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
     }
@@ -91,12 +92,12 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         _cotizacion.AsignarPdf("PCN-1.pdf");
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.15m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.15m, null, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         _cotizacion.PdfPath.Should().Be("PCN-1.pdf");
         _ajustes.DidNotReceiveWithAnyArgs().Agregar(default!);
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default!, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
     }
 
     [Fact]
@@ -104,7 +105,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         _cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
 
         resultado.Valor.PdfUrl.Should().BeNull();
         resultado.Valor.PdfDesactualizado.Should().BeTrue();
@@ -118,7 +119,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         _cotizacion.AsignarPdf("PCN-1.pdf");
         _cotizacion.RegistrarEnvio();
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
         var datos = resultado.Error.Datos!;
@@ -132,7 +133,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task ConOtraVersionRespondeConflictoSinTocarNada()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, [1, 2, 3, 4, 5, 6, 7, 8], Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, 6, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         _cotizacion.MargenAplicado.Should().Be(0.15m);
@@ -141,9 +142,9 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task SiLaVersionCambiaAlGuardarRespondeConflicto()
     {
-        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, _version, Arg.Any<CancellationToken>()).Returns(false);
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
     }
@@ -151,7 +152,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task UnaAjenaOInexistenteEsNoEncontradaYNoSeAudita()
     {
-        var resultado = await Servicio().AjustarAsync(Guid.NewGuid(), _cotizacion.Folio, 0.18m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(Guid.NewGuid(), _cotizacion.Folio, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
@@ -165,7 +166,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         lineas[1].RegistrarCosteo(EstadoCosteo.Autocosteo, 1_550_000m);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.20m, null, _version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.20m, null, Version, Ct);
 
         lineas.Select(l => l.PrecioFinal).Should().Equal(1_250_000m, 1_937_500m);
         resultado.Valor.PrecioFinal.Should().Be(3_187_500m, "la suma de las líneas");
@@ -206,7 +207,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
             EstadoCosteo = EstadoCosteo.Autocosteo,
         }).Valor;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, false)]));
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.RowVersion))!.SetValue(cotizacion, _version.ToArray());
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, Version);
         return cotizacion;
     }
 }

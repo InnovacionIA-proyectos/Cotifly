@@ -6,6 +6,6 @@ namespace Cotifly.Aplicacion.Comun.Interfaces;
 /// </summary>
 public interface IClsConVersionFila
 {
-    /// <summary><c>Cotizaciones.rowVersion</c> en base64, o <c>null</c> si la cotización todavía no tiene versión.</summary>
+    /// <summary>Versión de negocio de la cotización (<c>Cotizaciones.versionNegocio</c>, valor opaco para el cliente), o <c>null</c>.</summary>
     string? RowVersion { get; }
 }

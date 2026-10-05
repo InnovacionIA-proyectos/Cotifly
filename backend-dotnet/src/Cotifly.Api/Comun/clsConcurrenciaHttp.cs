@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Cotifly.Api.Comun;
 
 /// <summary>
-/// Concurrencia optimista por HTTP (ADR-018 §8): <c>ETag</c> = <c>Cotizaciones.rowVersion</c> en base64 entre comillas, y
-/// <c>If-Match</c> con ese valor (con o sin comillas, también débil <c>W/"..."</c>). La comparación real la hace el caso de uso con
+/// Concurrencia optimista por HTTP (ADR-018 §8 y §12): <c>ETag</c> = la versión de negocio de la cotización
+/// (<c>Cotizaciones.versionNegocio</c>) entre comillas, opaca para el cliente, e <c>If-Match</c> con ese valor (con o sin comillas,
+/// también débil <c>W/"..."</c>). La comparación real la hace el caso de uso con
 /// la fila bloqueada (<c>IClsUnitOfWork.GuardarCambiosSiVersionAsync</c>); aquí solo se lee y se escribe el encabezado.
 /// </summary>
 public static class clsConcurrenciaHttp
@@ -20,11 +21,15 @@ public static class clsConcurrenciaHttp
 
     public const string MensajeSinIfMatch = "Recarga la cotización y vuelve a intentarlo (falta If-Match).";
 
+    /// <summary>Versión que nunca coincide (un <c>If-Match</c> que no es una versión).</summary>
+    public const int VersionInvalida = -1;
+
     /// <summary>
-    /// Versión del <c>If-Match</c>: <c>null</c> si el encabezado no viene o está vacío; un arreglo vacío si viene pero no es una versión
-    /// (no es base64, es <c>*</c> o trae varias): nunca coincide con la fila y el caso de uso responde <c>CONFLICTO_CONCURRENCIA</c>.
+    /// Versión del <c>If-Match</c>: <c>null</c> si el encabezado no viene o está vacío; <see cref="VersionInvalida"/> si viene pero no
+    /// es una versión (no es un entero no negativo, es <c>*</c> o trae varias): nunca coincide y el caso de uso responde
+    /// <c>CONFLICTO_CONCURRENCIA</c>.
     /// </summary>
-    public static byte[]? LeerIfMatch(HttpRequest peticion)
+    public static int? LeerIfMatch(HttpRequest peticion)
     {
         ArgumentNullException.ThrowIfNull(peticion);
         var valor = peticion.Headers[EncabezadoIfMatch].ToString().Trim();
@@ -39,37 +44,34 @@ public static class clsConcurrenciaHttp
         }
 
         valor = valor.Trim('"').Trim();
-        if (valor.Length == 0 || valor.Length > 64 || valor.Contains(',', StringComparison.Ordinal))
-        {
-            return [];
-        }
-
-        var bytes = new byte[valor.Length];
-        return Convert.TryFromBase64String(valor, bytes, out var escritos) ? bytes[..escritos] : [];
+        return valor.Length is > 0 and <= 10
+               && int.TryParse(valor, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var version)
+            ? version
+            : VersionInvalida;
     }
 
-    /// <summary>Valor del encabezado <c>ETag</c> para una versión en base64: entre comillas (ETag fuerte).</summary>
-    public static string Etag(string rowVersion)
+    /// <summary>Valor del encabezado <c>ETag</c> para una versión: entre comillas (ETag fuerte).</summary>
+    public static string Etag(string version)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(rowVersion);
-        return $"\"{rowVersion}\"";
+        ArgumentException.ThrowIfNullOrWhiteSpace(version);
+        return $"\"{version}\"";
     }
 
     /// <summary>Escribe el <c>ETag</c> de la respuesta si hay versión.</summary>
-    public static void EscribirEtag(HttpResponse respuesta, string? rowVersion)
+    public static void EscribirEtag(HttpResponse respuesta, string? version)
     {
         ArgumentNullException.ThrowIfNull(respuesta);
-        if (!string.IsNullOrWhiteSpace(rowVersion))
+        if (!string.IsNullOrWhiteSpace(version))
         {
-            respuesta.Headers[EncabezadoEtag] = Etag(rowVersion);
+            respuesta.Headers[EncabezadoEtag] = Etag(version);
         }
     }
 
     /// <summary>Versión que dejó <see cref="clsRequiereIfMatchAttribute"/> para la acción (siempre presente en una acción con el filtro).</summary>
-    public static byte[] VersionDe(HttpContext contexto)
+    public static int VersionDe(HttpContext contexto)
     {
         ArgumentNullException.ThrowIfNull(contexto);
-        return contexto.Items.TryGetValue(ClaveVersion, out var valor) && valor is byte[] version
+        return contexto.Items.TryGetValue(ClaveVersion, out var valor) && valor is int version
             ? version
             : throw new InvalidOperationException($"La acción no tiene [{nameof(clsRequiereIfMatchAttribute)}].");
     }

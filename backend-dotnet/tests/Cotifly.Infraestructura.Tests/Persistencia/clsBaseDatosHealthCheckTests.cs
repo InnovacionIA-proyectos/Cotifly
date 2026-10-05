@@ -93,7 +93,7 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0006Async());
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0006", "el modelo EF ya mapea rowVersion, pdfDesactualizado y el historial de PDF");
+        resultado.Description.Should().Be("esquema incompleto: falta 0006", "el modelo EF ya mapea versionNegocio, el margen sugerido, pdfDesactualizado y el historial de PDF");
     }
 
     [Fact]

@@ -83,11 +83,13 @@ public sealed class clsAjusteMargenCotizacionTests
 
         cotizacion.MargenAplicado.Should().Be(0.25m);
         cotizacion.OrigenMargen.Should().Be(OrigenMargen.Negociado);
-        cotizacion.MargenSugerido.Should().Be(0.20m, "el sugerido (SAP TM) queda en margenPolitica después del primer ajuste");
-        cotizacion.MargenPolitica.Should().Be(0.20m);
+        cotizacion.MargenSugerido.Should().Be(0.20m, "el sugerido (SAP TM) se conserva");
+        cotizacion.OrigenMargenSugerido.Should().Be(OrigenMargen.SapTm, "el ajuste no pierde la fuente del sugerido");
+        cotizacion.MargenPolitica.Should().Be(0.15m, "el ajuste no sobrescribe margenPolitica");
 
         cotizacion.AplicarMargenNegociado(0.22m).Should().BeTrue();
         cotizacion.MargenSugerido.Should().Be(0.20m, "un segundo ajuste no pisa el sugerido");
+        cotizacion.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.JustificacionRequerida, "la regla usa el sugerido de SAP TM");
     }
 
     [Fact]
@@ -127,10 +129,34 @@ public sealed class clsAjusteMargenCotizacionTests
     }
 
     [Fact]
-    public void SinVersionCargadaNingunIfMatchCoincide()
+    public void LaVersionDeNegocioEmpiezaEnCeroYSoloCoincideConLaVigente()
     {
-        Costeada().TieneVersion([1, 2, 3]).Should().BeFalse();
-        Costeada().TieneVersion(null).Should().BeFalse();
+        var cotizacion = Costeada();
+
+        cotizacion.TieneVersion(0).Should().BeTrue();
+        cotizacion.IncrementarVersionNegocio();
+        cotizacion.TieneVersion(0).Should().BeFalse();
+        cotizacion.TieneVersion(1).Should().BeTrue();
+        cotizacion.TieneVersion(-1).Should().BeFalse("un If-Match inválido nunca coincide");
+    }
+
+    [Fact]
+    public void ElSugeridoYSuOrigenSeFijanAlRegistrarElMargenDelCosteo()
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-3" }).Valor;
+
+        cotizacion.RegistrarMargenCosteo(0.15m, 0.21m, OrigenMargen.SapTm, "margen");
+
+        (cotizacion.MargenSugerido, cotizacion.OrigenMargenSugerido, cotizacion.MargenPolitica).Should().Be((0.21m, OrigenMargen.SapTm, 0.15m));
+    }
+
+    [Fact]
+    public void LaJustificacionSeGuardaSinCaracteresDeControl()
+    {
+        clsMargenAjuste.LimpiarJustificacion(" Cliente\r\nestratégico\t\0 ").Should().Be("Cliente  estratégico");
+        clsMargenAjuste.LimpiarJustificacion("\n\t").Should().BeNull();
+        clsMargenAjuste.RegistrarNegociacionCosteo(0.15m, 0.12m, "\r\n", Guid.NewGuid(), Guid.NewGuid(), "PCN-1").Error.Codigo
+            .Should().Be(clsCodigosError.JustificacionRequerida, "una justificación de solo caracteres de control cuenta como ausente");
     }
 
     [Fact]

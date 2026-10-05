@@ -33,16 +33,16 @@ public interface IClsCosteoCotizacionService
     /// vigente queda invalidado (ADR-018 §11).
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> SeleccionarServiciosConexosAsync(
-        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, byte[] versionEsperada, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, int versionEsperada, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// PDF de la cotización con el flete a <c>precioFinal</c> y solo los servicios conexos incluidos, cada uno con su precio.
-    /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_GENERADO</c> (PDF vigente), <c>PDF_YA_ENVIADO</c> y <c>CONFLICTO_CONCURRENCIA</c> (409, solo si
-    /// viene <paramref name="versionEsperada"/>), y los errores del módulo PDF. Con el PDF desactualizado, el anterior se archiva y se
-    /// genera uno nuevo en el mismo folio.
+    /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_GENERADO</c> (PDF vigente), <c>PDF_YA_ENVIADO</c> y <c>CONFLICTO_CONCURRENCIA</c> (409: si viene
+    /// <paramref name="versionEsperada"/> y no es la vigente, o si la cotización cambió mientras se generaba, aunque no venga), y los
+    /// errores del módulo PDF. Con el PDF desactualizado, el anterior se archiva y se genera uno nuevo en el mismo folio.
     /// </summary>
     Task<clsResultado<clsPdfCosteoGenerado>> GenerarPdfAsync(
-        Guid usuarioId, string folio, byte[]? versionEsperada = null, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, int? versionEsperada = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -98,10 +98,9 @@ public sealed class clsCosteoCotizacionService(
     }
 
     public async Task<clsResultado<clsCosteoCotizacion>> SeleccionarServiciosConexosAsync(
-        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, byte[] versionEsperada, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, int versionEsperada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(incluidos);
-        ArgumentNullException.ThrowIfNull(versionEsperada);
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
         if (cotizacion is null)
         {
@@ -141,13 +140,14 @@ public sealed class clsCosteoCotizacionService(
 
         cotizacion.SeleccionarServiciosConexos(json);
         clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
+        cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
             ? Vista(cotizacion, opcionesPdf.Value.BaseUrl)
             : clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
     }
 
     public async Task<clsResultado<clsPdfCosteoGenerado>> GenerarPdfAsync(
-        Guid usuarioId, string folio, byte[]? versionEsperada = null, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, int? versionEsperada = null, CancellationToken cancellationToken = default)
     {
         var cronometro = Stopwatch.StartNew();
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
@@ -168,9 +168,12 @@ public sealed class clsCosteoCotizacionService(
     }
 
     private async Task<clsResultado<clsPdfCosteoGenerado>> GenerarAsync(
-        clsCotizacion cotizacion, Guid usuarioId, byte[]? versionEsperada, CancellationToken cancellationToken)
+        clsCotizacion cotizacion, Guid usuarioId, int? versionEsperada, CancellationToken cancellationToken)
     {
-        if (versionEsperada is not null && !cotizacion.TieneVersion(versionEsperada))
+        // ADR-018 §8: aunque el cliente no envíe If-Match, el PDF se confirma solo sobre la versión que se cargó (no queda vigente
+        // un PDF con un precio que otro flujo cambió mientras se generaba).
+        var versionCargada = cotizacion.VersionNegocio;
+        if (versionEsperada is { } esperada && !cotizacion.TieneVersion(esperada))
         {
             return clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
         }
@@ -250,12 +253,11 @@ public sealed class clsCosteoCotizacionService(
         }
 
         cotizacion.AsignarPdf(ruta);
+        cotizacion.IncrementarVersionNegocio();
         bool guardado;
         try
         {
-            guardado = versionEsperada is null
-                ? await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None) >= 0
-                : await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None);
+            guardado = await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionCargada, CancellationToken.None);
         }
         catch
         {
@@ -271,7 +273,7 @@ public sealed class clsCosteoCotizacionService(
 
         return new clsPdfCosteoGenerado(
             new clsSalidaPdf(cotizacion.Id, cotizacion.Folio, clsUrlPdf.Construir(opcionesPdf.Value.BaseUrl, nombre), RegistradaEnBd: true),
-            VersionBase64(cotizacion));
+            VersionEtag(cotizacion));
     }
 
     /// <summary>
@@ -304,11 +306,11 @@ public sealed class clsCosteoCotizacionService(
         await almacen.EliminarAsync(nombre, cancellationToken);
     }
 
-    /// <summary><c>Cotizaciones.rowVersion</c> en base64 (el valor del <c>ETag</c> y de <c>row_version</c>), o <c>null</c>.</summary>
-    public static string? VersionBase64(clsCotizacion cotizacion)
+    /// <summary>Versión de negocio como texto (el valor opaco del <c>ETag</c> y de <c>row_version</c>).</summary>
+    public static string VersionEtag(clsCotizacion cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        return cotizacion.RowVersion is { Length: > 0 } version ? Convert.ToBase64String(version) : null;
+        return cotizacion.VersionNegocio.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -540,7 +542,7 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.MargenSugerido,
             cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.PdfDesactualizado,
-            VersionBase64(cotizacion));
+            VersionEtag(cotizacion));
     }
 
     private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");

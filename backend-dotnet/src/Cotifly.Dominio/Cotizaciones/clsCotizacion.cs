@@ -99,10 +99,20 @@ public sealed class clsCotizacion
     // Script 0006 (ADR-018 §8 y §11): concurrencia optimista, textos del PDF y regla del PDF.
 
     /// <summary>
-    /// Versión de la fila (<c>Cotizaciones.rowVersion</c>, <c>ROWVERSION</c>): la asigna SQL Server en cada escritura, también la del
-    /// polling. Viaja como <c>ETag</c> y vuelve en <c>If-Match</c>. <c>null</c> en una cotización que todavía no se guardó.
+    /// Versión de negocio (<c>Cotizaciones.versionNegocio</c>, ADR-018 §12): sube solo con los cambios que ve el comercial (margen,
+    /// conexos, textos, re-solicitud, PDF y el polling cuando cambia el estado, el costo o el precio), nunca con el reclamo ni la
+    /// agenda del polling. Viaja como <c>ETag</c> y vuelve en <c>If-Match</c>.
     /// </summary>
-    public byte[]? RowVersion { get; private set; }
+    public int VersionNegocio { get; private set; }
+
+    /// <summary>
+    /// Margen sugerido (<c>Cotizaciones.margenSugerido</c>): el que se resolvió al enviar o crear la cotización (SAP TM con el BP o la
+    /// política de la línea). El ajuste del comercial no lo cambia.
+    /// </summary>
+    public decimal? MargenSugerido { get; private set; }
+
+    /// <summary>Fuente de <see cref="MargenSugerido"/>: <c>sap_tm</c> o <c>politica_linea</c> (nunca <c>negociado</c>).</summary>
+    public OrigenMargen? OrigenMargenSugerido { get; private set; }
 
     /// <summary>Asunto e introducción del PDF guardados (JSON, HU-013.5, #101); <c>null</c> si todavía no hay.</summary>
     public string? TextosCotizacion { get; private set; }
@@ -131,10 +141,11 @@ public sealed class clsCotizacion
         EstadoEnvio is Cotizaciones.EstadoEnvio.Enviada or Cotizaciones.EstadoEnvio.Reenviada || Ganada is not null;
 
     /// <summary>
-    /// Margen sugerido de la cotización (ADR-018 §3): el que se resolvió al enviarla (SAP TM con el BP o la política de la línea).
-    /// Mientras el comercial no lo ajusta es <see cref="MargenAplicado"/>; después del primer ajuste queda en <see cref="MargenPolitica"/>.
+    /// Margen sugerido vigente para la regla de la justificación: <see cref="MargenSugerido"/>; en filas anteriores al 0006 sin él,
+    /// el margen aplicado si nadie lo ajustó o la política de la línea si ya se negoció.
     /// </summary>
-    public decimal? MargenSugerido => OrigenMargen == Margen.OrigenMargen.Negociado ? MargenPolitica : MargenAplicado;
+    public decimal? SugeridoVigente => MargenSugerido
+        ?? (OrigenMargen == Margen.OrigenMargen.Negociado ? MargenPolitica : MargenAplicado);
 
     /// <summary>
     /// Invariantes del ajuste de margen sobre el costeo (ADR-018 §3 y §11), en este orden:
@@ -170,7 +181,7 @@ public sealed class clsCotizacion
         }
 
         var redondeado = clsMargenAjuste.RedondearMargen(margen);
-        return MargenSugerido is { } sugerido && redondeado < sugerido && string.IsNullOrWhiteSpace(justificacion)
+        return SugeridoVigente is { } sugerido && redondeado < sugerido && clsMargenAjuste.LimpiarJustificacion(justificacion) is null
             ? new clsErrorDominio(clsCodigosError.JustificacionRequerida,
                 $"El margen {clsReglasMargen.Texto(redondeado)} queda por debajo del sugerido ({clsReglasMargen.Texto(sugerido)}): escribe la justificación.")
             : null;
@@ -190,8 +201,8 @@ public sealed class clsCotizacion
 
     /// <summary>
     /// Aplica el margen negociado (ya validado con <see cref="ValidarAjusteMargen"/>, redondeado a 4 decimales como
-    /// <c>margenAplicado</c>). El sugerido queda en <see cref="MargenPolitica"/> y el origen pasa a <c>negociado</c>. Devuelve
-    /// <c>false</c> (sin cambios) si es el margen vigente.
+    /// <c>margenAplicado</c>) y el origen pasa a <c>negociado</c>. No toca <see cref="MargenPolitica"/> ni el sugerido (en una fila sin
+    /// sugerido lo fija con el vigente, para no perderlo). Devuelve <c>false</c> (sin cambios) si es el margen vigente.
     /// </summary>
     public bool AplicarMargenNegociado(decimal margen)
     {
@@ -206,7 +217,12 @@ public sealed class clsCotizacion
             return false;
         }
 
-        MargenPolitica = MargenSugerido;
+        if (MargenSugerido is null && SugeridoVigente is { } vigente)
+        {
+            MargenSugerido = vigente;
+            OrigenMargenSugerido = OrigenMargen is Margen.OrigenMargen.SapTm ? Margen.OrigenMargen.SapTm : Margen.OrigenMargen.PoliticaLinea;
+        }
+
         MargenAplicado = redondeado;
         OrigenMargen = Margen.OrigenMargen.Negociado;
         return true;
@@ -275,6 +291,15 @@ public sealed class clsCotizacion
             MargenPolitica = datos.MargenPolitica,
             MargenAplicado = datos.MargenAplicado,
             OrigenMargen = datos.OrigenMargen,
+            MargenSugerido = datos.OrigenMargen is Margen.OrigenMargen.Negociado ? datos.MargenPolitica
+                : datos.OrigenMargen is null ? null : datos.MargenAplicado,
+            OrigenMargenSugerido = datos.OrigenMargen switch
+            {
+                Margen.OrigenMargen.SapTm when datos.MargenAplicado is not null => Margen.OrigenMargen.SapTm,
+                Margen.OrigenMargen.PoliticaLinea when datos.MargenAplicado is not null => Margen.OrigenMargen.PoliticaLinea,
+                Margen.OrigenMargen.Negociado when datos.MargenPolitica is not null => Margen.OrigenMargen.PoliticaLinea,
+                _ => null,
+            },
             MetodoCalculo = clsValidacion.Normalizar(datos.MetodoCalculo),
             PrecioFinal = datos.PrecioFinal,
             Moneda = moneda,
@@ -540,6 +565,9 @@ public sealed class clsCotizacion
         }
 
         MargenPolitica = margenPolitica;
+        MargenSugerido = origen == Margen.OrigenMargen.Negociado ? margenPolitica : margenAplicado;
+        OrigenMargenSugerido = origen == Margen.OrigenMargen.SapTm ? Margen.OrigenMargen.SapTm
+            : origen == Margen.OrigenMargen.Negociado && margenPolitica is null ? null : Margen.OrigenMargen.PoliticaLinea;
         MargenAplicado = margenAplicado;
         OrigenMargen = origen;
         MetodoCalculo = metodo;
@@ -634,9 +662,11 @@ public sealed class clsCotizacion
         PdfDesactualizado = false;
     }
 
-    /// <summary>¿La versión leída por el cliente (<c>If-Match</c>) es la de la fila? Sin versión cargada nunca coincide.</summary>
-    public bool TieneVersion(byte[]? version) =>
-        RowVersion is { Length: > 0 } actual && version is { Length: > 0 } && actual.AsSpan().SequenceEqual(version);
+    /// <summary>¿La versión leída por el cliente (<c>If-Match</c>) es la versión de negocio vigente? Una negativa (inválida) nunca coincide.</summary>
+    public bool TieneVersion(int version) => version >= 0 && VersionNegocio == version;
+
+    /// <summary>Sube la versión de negocio: lo llaman los casos de uso al confirmar un cambio que ve el comercial (ADR-018 §12).</summary>
+    public void IncrementarVersionNegocio() => VersionNegocio = checked(VersionNegocio + 1);
 
     private static clsErrorDominio? ValidarTrm(string moneda, decimal trm)
     {

@@ -42,7 +42,8 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
         "WHEN OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud', N'U') IS NULL " +
         "OR OBJECT_ID(N'dbo_cotifly.CotizacionArchivosLicitacion', N'U') IS NULL " +
         "OR COL_LENGTH(N'dbo_cotifly.CotizacionPosiciones', N'lineaSolicitudId') IS NULL THEN 2 " +
-        "WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'rowVersion') IS NULL " +
+        "WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'versionNegocio') IS NULL " +
+        "OR COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'margenSugerido') IS NULL " +
         "OR COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'pdfDesactualizado') IS NULL " +
         "OR OBJECT_ID(N'dbo_cotifly.CotizacionPdfsHistorial', N'U') IS NULL THEN 3 ELSE 4 END AS [Value]";
 

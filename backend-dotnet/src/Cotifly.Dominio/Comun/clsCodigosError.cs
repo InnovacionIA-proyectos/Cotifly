@@ -245,7 +245,7 @@ public static class clsCodigosError
 
     /// <summary>
     /// Concurrencia optimista (ADR-018 §8): el <c>If-Match</c> no coincide con la versión actual de la cotización
-    /// (<c>Cotizaciones.rowVersion</c>); nada cambió (409). Código nuevo del backend .NET.
+    /// (<c>Cotizaciones.versionNegocio</c>); nada cambió (409). Código nuevo del backend .NET.
     /// </summary>
     public const string ConflictoConcurrencia = "CONFLICTO_CONCURRENCIA";
 

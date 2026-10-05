@@ -224,12 +224,12 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
             justificacion ?? "<null>"));
     }
 
-    /// <summary><c>If-Match</c> con la versión vigente de la fila (base64 de <c>rowVersion</c>, entre comillas).</summary>
+    /// <summary><c>If-Match</c> con la versión de negocio vigente (<c>versionNegocio</c>, entre comillas).</summary>
     private async Task<string> VersionVigenteAsync(string cotizacion)
     {
-        var version = await clsBaseDatosPruebas.EscalarAsync<byte[]>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT rowVersion FROM dbo_cotifly.Cotizaciones WHERE folio = '{costeo.Folio(cotizacion)}'");
-        return $"\"{Convert.ToBase64String(version!)}\"";
+        var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{costeo.Folio(cotizacion)}'");
+        return $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
     }
 
     private string Ruta(string cotizacion) => $"/web/cotizaciones/{costeo.Folio(cotizacion)}/costeo";

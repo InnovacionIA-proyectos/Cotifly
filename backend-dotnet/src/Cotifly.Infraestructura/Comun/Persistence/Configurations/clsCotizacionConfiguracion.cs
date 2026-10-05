@@ -19,6 +19,8 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
             t.HasCheckConstraint("ck_cotizaciones_tipoSolicitud", "tipoSolicitud IS NULL OR tipoSolicitud IN ('spot', 'licitacion')");
             t.HasCheckConstraint("ck_cotizaciones_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
             t.HasCheckConstraint("ck_cotizaciones_textosCotizacion_json", "textosCotizacion IS NULL OR ISJSON(textosCotizacion) = 1");
+            t.HasCheckConstraint("ck_cotizaciones_versionNegocio", "versionNegocio >= 0");
+            t.HasCheckConstraint("ck_cotizaciones_origenMargenSugerido", "origenMargenSugerido IS NULL OR origenMargenSugerido IN ('sap_tm', 'politica_linea')");
             t.HasCheckConstraint("ck_cotizaciones_estadoCosteo",
                 "estadoCosteo IS NULL OR estadoCosteo IN ('pendiente_envio', 'error_envio', 'pendiente_costeo', 'autocosteo', 'entregada', 'descartada', 'costeo_vencido')");
         });
@@ -91,9 +93,12 @@ internal sealed class clsCotizacionConfiguracion : IEntityTypeConfiguration<clsC
         builder.Property(c => c.CosteoConsultasFallidas).Columna("costeoConsultasFallidas", "int");
         builder.Property(c => c.ServiciosConexos).Columna("serviciosConexos", TipoTexto);
 
-        // Script 0006 (ADR-018 §8 y §11). rowVersion: la escribe SQL Server y EF la relee tras cada INSERT/UPDATE; NO es token de
-        // concurrencia global (el polling y los demás flujos siguen igual): el If-Match lo verifica IClsUnitOfWork.GuardarCambiosSiVersionAsync.
-        builder.Property(c => c.RowVersion).Columna("rowVersion", "rowversion").ValueGeneratedOnAddOrUpdate().IsRequired();
+        // Script 0006 (ADR-018 §8, §11 y §12). versionNegocio: la sube la aplicación en los cambios de negocio; NO es token de concurrencia
+        // global de EF: el If-Match (y la versión leída por el polling) lo verifica IClsUnitOfWork.GuardarCambiosSiVersionAsync.
+        builder.Property(c => c.VersionNegocio).Columna("versionNegocio", "int");
+        builder.Property(c => c.MargenSugerido).Columna("margenSugerido", "decimal(9,4)");
+        builder.Property(c => c.OrigenMargenSugerido).Columna("origenMargenSugerido", "nvarchar(20)").HasMaxLength(20)
+            .HasConversion(new clsConvertidorCodigoEnum<OrigenMargen>());
         builder.Property(c => c.TextosCotizacion).Columna("textosCotizacion", TipoTexto);
         builder.Property(c => c.PdfDesactualizado).Columna("pdfDesactualizado", "bit");
 

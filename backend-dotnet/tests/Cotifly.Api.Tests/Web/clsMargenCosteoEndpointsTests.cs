@@ -195,6 +195,26 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         json.GetProperty("pdf_url").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    [Fact]
+    public async Task VariasConsultasDelPollingSinCambiosNoInvalidanElEtag()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await _api.ProcesarPollingAsync(folio);
+        }
+
+        (await EtagAsync(sesion, folio)).Should().Be(etag, "el reclamo y la agenda del polling no cambian la versión de negocio");
+        using var ajuste = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.18}""", etag);
+        ajuste.StatusCode.Should().Be(HttpStatusCode.OK, "el ETag leído antes de las consultas sigue vigente");
+
+        _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_600_000m);
+        await _api.ProcesarPollingAsync(folio);
+        (await EtagAsync(sesion, folio)).Should().NotBe(ajuste.Headers.ETag!.Tag, "un costo nuevo de Nexo sí es un cambio de negocio");
+    }
+
     /// <summary>Cotización enviada y costeada por Nexo: flete 2.550.000 y un conexo de 170.000 (precio 3.000.000 con el 15 %).</summary>
     private async Task<(clsSesionPrueba Sesion, string Folio)> CosteadaAsync()
     {

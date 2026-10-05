@@ -5,7 +5,6 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.Services;
-using Cotifly.Aplicacion.Precio.DTOs;
 using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
@@ -28,7 +27,7 @@ public interface IClsAjusteMargenCosteoService
     /// igual sin registrar nada.
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> AjustarAsync(
-        Guid usuarioId, string folio, decimal margen, string? justificacion, byte[] versionEsperada, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, decimal margen, string? justificacion, int versionEsperada, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -61,9 +60,8 @@ public sealed class clsAjusteMargenCosteoService(
     public const string MotivoVersion = "Ajuste de margen después del envío";
 
     public async Task<clsResultado<clsCosteoCotizacion>> AjustarAsync(
-        Guid usuarioId, string folio, decimal margen, string? justificacion, byte[] versionEsperada, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, decimal margen, string? justificacion, int versionEsperada, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(versionEsperada);
         var cronometro = Stopwatch.StartNew();
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
@@ -74,11 +72,11 @@ public sealed class clsAjusteMargenCosteoService(
         }
 
         var margenAnterior = cotizacion.MargenAplicado;
-        var sugerido = cotizacion.MargenSugerido;
+        var sugerido = cotizacion.SugeridoVigente;
         var (resultado, registrado, pdfInvalidado) = await AjustarAsync(cotizacion, usuarioId, margen, justificacion, versionEsperada, cancellationToken);
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio = cotizacion.Folio, margen, justificacion },
+            new { folio = cotizacion.Folio, margen, justificacion = clsMargenAjuste.LimpiarJustificacion(justificacion) },
             resultado.EsExitoso
                 ? (object)new { margen_anterior = margenAnterior, margen_aplicado = cotizacion.MargenAplicado, margen_sugerido = sugerido, registrado, pdf_invalidado = pdfInvalidado }
                 : new { error = new { codigo = resultado.Error.Codigo, mensaje = resultado.Error.Mensaje } },
@@ -89,7 +87,7 @@ public sealed class clsAjusteMargenCosteoService(
     }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, bool Registrado, bool PdfInvalidado)> AjustarAsync(
-        clsCotizacion cotizacion, Guid usuarioId, decimal margen, string? justificacion, byte[] versionEsperada, CancellationToken cancellationToken)
+        clsCotizacion cotizacion, Guid usuarioId, decimal margen, string? justificacion, int versionEsperada, CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
         {
@@ -101,7 +99,7 @@ public sealed class clsAjusteMargenCosteoService(
             return (Detallar(invalido, cotizacion), false, false);
         }
 
-        var sugerido = cotizacion.MargenSugerido;
+        var sugerido = cotizacion.SugeridoVigente;
         var anterior = cotizacion.MargenAplicado;
         var redondeado = clsMargenAjuste.RedondearMargen(margen);
         if (anterior == redondeado)
@@ -133,6 +131,7 @@ public sealed class clsAjusteMargenCosteoService(
         cotizacion.RegistrarPrecioAjustado(recalculo.Valor.PrecioFinal, recalculo.Valor.ServiciosConexos);
         ajustes.Agregar(registro.Valor);
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.AjusteMargen, usuarioId, cotizaciones);
+        cotizacion.IncrementarVersionNegocio();
         if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken))
         {
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false, false);
@@ -151,20 +150,7 @@ public sealed class clsAjusteMargenCosteoService(
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         var metodo = cotizacion.MetodoCalculo ?? clsReglaMargen.MetodoMargen;
-        var moneda = cotizacion.Moneda ?? clsCotizacion.MonedaPesos;
-        var trm = new clsTrmDelDia(cotizacion.TrmAplicada, null, null);
-
-        clsResultado<decimal> Precio(decimal costo)
-        {
-            var enPesos = precios.Calcular(costo, margen, metodo);
-            if (enPesos.EsFallo)
-            {
-                return enPesos.Error;
-            }
-
-            var enMoneda = precios.EnMoneda(enPesos.Valor, moneda, trm);
-            return enMoneda.EsFallo ? enMoneda.Error : enMoneda.Valor.Precio;
-        }
+        clsResultado<decimal> Precio(decimal costo) => clsPrecioMonedaCosteo.Calcular(precios, cotizacion, costo, margen, metodo);
 
         var preciosLineas = new List<(clsCotizacionLineaSolicitud, decimal)>();
         foreach (var linea in lineas.Where(l => l.Costo is not null).OrderBy(l => l.Orden))
@@ -226,7 +212,7 @@ public sealed class clsAjusteMargenCosteoService(
         clsCodigosError.PdfYaEnviado => clsReglaPdfCosteo.ConVersionNueva(error, cotizacion.Folio, MotivoVersion),
         clsCodigosError.JustificacionRequerida => error with
         {
-            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["margen_sugerido"] = cotizacion.MargenSugerido },
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["margen_sugerido"] = cotizacion.SugeridoVigente },
         },
         _ => error,
     };

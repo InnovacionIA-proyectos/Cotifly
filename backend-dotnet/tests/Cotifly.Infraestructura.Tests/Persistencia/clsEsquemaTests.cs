@@ -153,35 +153,73 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         var id = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(cadena,
             $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, pdfPath) VALUES ('{id}', '{FolioUnico()}', 'PCN-X.pdf')");
-        var huella = $"SELECT CONCAT(CONVERT(nvarchar(30), CONVERT(varbinary(8), rowVersion), 1), '|', pdfDesactualizado, '|', pdfPath) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
+        var huella = $"SELECT CONCAT(versionNegocio, '|', pdfDesactualizado, '|', pdfPath, '|', ISNULL(origenMargenSugerido, '-')) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
         var antes = await clsBaseDatosPruebas.EscalarAsync<string>(cadena, huella);
 
         await ReaplicarYVerificarIdempotenciaAsync(cadena, "0006_textos_y_concurrencia.sql");
 
-        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, huella)).Should().Be(antes, "re-aplicar el 0006 no escribe en Cotizaciones (rowVersion intacta)");
-        antes.Should().EndWith("|0|PCN-X.pdf", "una fila existente queda con su PDF vigente");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, huella)).Should().Be(antes, "re-aplicar el 0006 no cambia las filas");
+        antes.Should().Be("0|0|PCN-X.pdf|-", "una fila existente queda en la versión 0 y con su PDF vigente");
     }
 
     [Fact]
-    public async Task El0006AgregaRowVersionQueCambiaEnCadaEscrituraYLosCheckRechazanTextosYMotivosInvalidos()
+    public async Task ElBackfillDel0006CopiaElMargenSugeridoQueHaya()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0006", 5);
+        var cadena = baseAislada.Cadena;
+        Guid sap = Guid.NewGuid(), negociada = Guid.NewGuid(), chat = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, margenPolitica, margenAplicado, origenMargen) VALUES "
+            + $"('{sap}', '{FolioUnico()}', 0.15, 0.21, 'sap_tm'), ('{negociada}', '{FolioUnico()}', 0.15, 0.12, 'negociado'), "
+            + $"('{chat}', '{FolioUnico()}', NULL, NULL, NULL)");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+
+        string Fila(Guid id) => $"SELECT CONCAT(ISNULL(CAST(margenSugerido AS nvarchar(20)), '-'), '|', ISNULL(origenMargenSugerido, '-'), '|', margenPolitica) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(sap))).Should().Be("0.2100|sap_tm|0.1500");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(negociada))).Should().Be("0.1500|politica_linea|0.1500", "negociada: el sugerido era la política");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(chat))).Should().Be("-|-|");
+    }
+
+    [Fact]
+    public async Task LaReversaDel0006DejaElEsquemaDel0005YSePuedeVolverAAplicar()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbReversa0006", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var con0006 = await FotoEsquemaAsync(cadena);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "rollback/0006_textos_y_concurrencia_reversa.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "rollback/0006_textos_y_concurrencia_reversa.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo_cotifly.Cotizaciones') AND name IN "
+                + "(N'versionNegocio', N'textosCotizacion', N'pdfDesactualizado', N'margenSugerido', N'origenMargenSugerido')"))
+            .Should().Be(0);
+        (await clsBaseDatosPruebas.EscalarAsync<int?>(cadena, "SELECT OBJECT_ID(N'dbo_cotifly.CotizacionPdfsHistorial', N'U')")).Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<int?>(cadena, "SELECT COL_LENGTH(N'dbo_cotifly.vAjustesMargenPorComercial', N'numAjustesBajoSugerido')")).Should().BeNull();
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+        (await FotoEsquemaAsync(cadena)).Should().Equal(con0006, "re-aplicar el 0006 después de la reversa deja el mismo esquema");
+    }
+
+    [Fact]
+    public async Task LosCheckDel0006RechazanTextosVersionOrigenYMotivosInvalidos()
     {
         var id = Guid.NewGuid();
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
             $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
-        var version = $"SELECT CONVERT(nvarchar(30), CONVERT(varbinary(8), rowVersion), 1) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
-        var antes = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, version);
-        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"UPDATE dbo_cotifly.Cotizaciones SET costeoConsultasFallidas = 1 WHERE id = '{id}'");
+        Func<Task> Sql(string sql) => () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, sql);
 
-        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, version)).Should().NotBe(antes, "SQL Server cambia la rowVersion en cada UPDATE");
-
-        var textos = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET textosCotizacion = N'no es json' WHERE id = '{id}'");
-        var motivo = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 'otro')");
-        (await textos.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizaciones_textosCotizacion_json");
-        (await motivo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionPdfsHistorial_motivo");
-        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 're_solicitud')");
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET textosCotizacion = N'no es json' WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_textosCotizacion_json");
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET versionNegocio = -1 WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_versionNegocio");
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET origenMargenSugerido = 'negociado' WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_origenMargenSugerido");
+        (await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 'otro')").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizacionPdfsHistorial_motivo");
+        await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 're_solicitud')")();
     }
 
     [Fact]
@@ -245,7 +283,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         nuevas.Where(c => c != "costeoConsultasFallidas" && !columnas[("Cotizaciones", c)].Nula).Should().BeEmpty(
             "las cotizaciones existentes (chat con costo manual) no traen estos datos");
         columnas[("Cotizaciones", "costeoConsultasFallidas")].Nula.Should().BeFalse();
-        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 3, "0001 crea 28 columnas, el 0004 agrega 29 y el 0006 tres (rowVersion, textosCotizacion, pdfDesactualizado)");
+        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 5, "0001 crea 28 columnas, el 0004 agrega 29 y el 0006 cinco (versionNegocio, textosCotizacion, pdfDesactualizado, margenSugerido y origenMargenSugerido)");
     }
 
     [Fact]
@@ -651,7 +689,6 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                 {
                     "nvarchar" or "varchar" or "nchar" or "char" or "varbinary" => $"{tipo}({(largo == -1 ? "max" : largo)})",
                     "decimal" or "numeric" => $"{tipo}({r.GetByte(4)},{r.GetInt32(5)})",
-                    "timestamp" => "rowversion", // INFORMATION_SCHEMA llama timestamp a ROWVERSION (script 0006)
                     _ => tipo,
                 };
                 return (Tabla: r.GetString(0), Columna: r.GetString(1), Tipo: tipoCompleto, Nula: r.GetString(6) == "YES");
