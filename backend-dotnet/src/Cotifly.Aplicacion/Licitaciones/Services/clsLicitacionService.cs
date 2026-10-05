@@ -6,10 +6,8 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Validators;
 using Cotifly.Aplicacion.Margen.Services;
-using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
-using Cotifly.Dominio.Precio;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -55,7 +53,7 @@ public sealed class clsLicitacionService(
     IClsLectorExcelLicitacion lector,
     IClsExportadorExcelLicitacion exportador,
     IClsReloj reloj,
-    IClsPrecioService precios) : IClsLicitacionService
+    IClsFijacionMonedaService monedas) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -199,11 +197,10 @@ public sealed class clsLicitacionService(
         }
 
         // ADR-014 §5: en USD la TRM del día de creación queda fija en la licitación; el polling convierte cada precio con ella.
-        var moneda = clsConversorMoneda.Normalizar(entrada.Moneda).Valor;
-        var trm = await precios.TrmDelDiaAsync(moneda, cancellationToken);
-        if (trm.EsFallo)
+        var fijada = await monedas.FijarAsync(entrada.Moneda, cancellationToken);
+        if (fijada.EsFallo)
         {
-            return clsResultadoLicitacion.Fallo(trm.Error);
+            return clsResultadoLicitacion.Fallo(fijada.Error);
         }
 
         var nit = entrada.NitCliente!.Trim();
@@ -219,8 +216,8 @@ public sealed class clsLicitacionService(
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
-                Moneda = moneda,
-                TrmAplicada = trm.Valor.Valor,
+                Moneda = fijada.Valor.Moneda,
+                TrmAplicada = fijada.Valor.TrmAplicada,
             });
             if (cotizacion.EsFallo)
             {
