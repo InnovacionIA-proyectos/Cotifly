@@ -77,6 +77,14 @@ Las respuestas de las preguntas 1 y 2 salen del código de Nexo (`docs/HU-005.1-
 
 ## 3. Gaps del contrato de captura (mapeo ↔ DTO de Cotifly ↔ swagger de Nexo)
 
+**Estado (2026-10-05, HU-013.10, #106):** resueltos en el backend G1, G2, G3, G4, G5 (formulario de una línea; en licitaciones
+viajan por línea las horas del encabezado), G6 (formulario), G7, G11 (advertencia en el log), G12, G14 (`clienteId` para
+prospectos con id en el catálogo), G15 y G16. G13 y G17 no requieren cambio de captura en el backend (G13 es diseño coherente
+con ADR-015; G17 lo implementa #99). Quedan para el frontend y negocio G8 y G9, y G10 es de #99. Pendiente: horas, municipios
+y validación por código en las líneas de una licitación (vienen del Excel como texto), y confirmar con Nexo si
+`clases-contenedor` devuelve los códigos `CNT..` en `descripcion` (Cotifly acepta los códigos en código y, además, las
+descripciones de ese catálogo).
+
 Comparación de `docs/HU-005.1-mapeo-campos-nexo.md` (Parte 2) con `clsSolicitudCosteoWebRequest`, `clsPosicionCargaWebRequest`, el envío `clsCosteoNexo.CuerpoCaptura` y `clsCapturaSolicitudRequest`, `clsCapturaLineaRequest` y `clsCapturaPosicionRequest` del swagger. **Ningún campo de la Parte 2 falta en el DTO ni en el spec.** Todos están, con los mismos límites de Nexo. Los gaps son de comportamiento y de catálogos: **17 en total (G1 a G17)**. No se implementan en #97, que es solo SDD; van a una issue nueva.
 
 | # | Gap | Dónde | Propuesta |

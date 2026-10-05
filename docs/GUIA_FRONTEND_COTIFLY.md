@@ -530,7 +530,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 en `/web/clientes`; chat | Nexo sin configurar, caído, o el comercial sin `idUsuarioExterno`. **No** significa "sin resultados" (eso es 200 con `candidatos: []`) | En el autocompletado: "Buscador de clientes no disponible" con reintento | En QA |
 | `HERRAMIENTA_DESCONOCIDA` | chat (interno) | El modelo pidió una herramienta inexistente | Ignorar | En QA |
 | `MUNICIPIOS_NO_DISPONIBLE` | 400 en `/web/municipios`; chat | Catálogo de Nexo no disponible | Deshabilitar el autocompletado de origen y destino y mostrar reintento. El chat sigue con texto libre | En QA |
-| `CATALOGOS_FLETE_NO_DISPONIBLE` | 400 en `/web/catalogos-flete` | Catálogos de Nexo no disponibles | Selects vacíos con reintento. **A confirmar** si se permite un catálogo local de respaldo | En QA |
+| `CATALOGOS_FLETE_NO_DISPONIBLE` | 400 en `/web/catalogos-flete` y en `/web/solicitudes-costeo` | Catálogos maestros de Nexo no disponibles y sin copia de respaldo en el servidor (menos de 24 h, HU-013.10) | Selects vacíos con reintento; no enviar texto libre | En QA |
 | `ITEMS_REQUERIDOS` | 400 en `/web/cubicacion` | Falta `items` o viene vacío | Deshabilitar "Cubicar" sin bultos | En QA |
 | `CUBICACION_NO_DISPONIBLE` | 400 en `/web/cubicacion` | Nexo o el Cubicador no responden | "Cubicación no disponible" | En QA |
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion` | Nexo rechazó la solicitud (típicamente demasiados bultos; también medidas inválidas) | "Reduce el número de bultos o revisa las medidas" | En QA |
@@ -2191,7 +2191,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 |---|---|---|---|
 | Nexo: formato de origen y destino | ¿Nexo acepta `"MUNICIPIO (DEPARTAMENTO)"` o solo el `municipio` exacto (o `id`/`codigo_dane`)? El backend reenvía el texto tal cual | Duban + equipo Nexo | Qué se envía en `origen`, `destino` y las ciudades del contenedor |
 | Nexo: prospectos | Nexo exige `clienteId` o `clienteBp`; un prospecto sin BP queda en `error_envio` | Duban + equipo Nexo | Advertir o bloquear prospectos en el formulario ampliado |
-| Nexo: códigos de catálogo | ¿Los `valor` de `catalogos-flete` (biblioteca SAP histórico) son los que acepta el alta? | Duban + equipo Nexo | Riesgo de rechazo 400 definitivo |
+| Nexo: códigos de catálogo | Resuelto en HU-013.10 (#106): `catalogos-flete` sale de los catálogos maestros (`GET /api/catalogos/*`) y el backend rechaza lo que no es código | Duban + equipo Nexo | Confirmar si `clases-contenedor` trae los códigos `CNT..` |
 | Nexo: urgencia | Score de urgencia mayor a 75: **no implementado** (ADR-016). No hay contrato de Nexo. Llegará como campo nuevo de `indicadores` (cambio compatible). El "deadline vencido" sí está (`deadline_vencidas`, calculado por Cotifly; `null` sin el `0004`) | Duban + equipo Nexo | Tablero del gerente (HU-010.3): no mostrar la tarjeta de urgencia todavía |
 | Métricas: servicios conexos | Los montos del tablero no suman conexos todavía; se integran después de #42 | Duban | Aviso "valores sin servicios conexos" si hace falta |
 | Nexo: idempotencia del alta | Sin clave de idempotencia: un reintento tras tiempo agotado puede duplicar | Equipo Nexo | Advertencia en Reintentar |

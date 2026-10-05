@@ -159,6 +159,8 @@ Lo que el contrato fija como regla:
 
 Los gaps entre el mapeo, el DTO actual y el swagger de Nexo están en `docs/HU-013-preguntas-nexo.md` §Gaps. Se implementan en una issue aparte.
 
+**Implementación (HU-013.10, #106).** Cotifly valida por código antes de guardar: `tipo_vehiculo` y `clase_viaje` contra los catálogos maestros de Nexo, y `carroceria`, `tipologia` y `clase_contenedor` contra listas en código (con la lista provisional de extradimensionado). Los catálogos maestros se guardan en memoria (`Nexo:MinutosCacheCatalogos`, 30 min) y, **si Nexo no responde**, se usa la última copia mientras tenga menos de `Nexo:HorasCatalogosVencidos` (24 h): los catálogos cambian poco y un código válido hace unas horas lo sigue siendo. Sin copia utilizable, `GET /web/catalogos-flete` y `POST /web/solicitudes-costeo` responden 400 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada: se descartó aceptar el texto sin validar (crearía vehículos duplicados en Nexo) y guardar la cotización para validarla después (un reintento enviaría lo no validado). `MargenesPolitica.mapeoLineasNexo` se revisa contra `GET /api/catalogos/lineas-negocio` como advertencia en el log al enviar, con la copia en memoria: no hay identidad de servicio para hacerlo al arrancar ni en `/health/ready` (Nexo exige `X-Portal-Usuario-Id`), y Nexo resuelve la línea por coincidencia aproximada, así que no se bloquea el envío.
+
 ### 11. Regla del PDF (cerrada)
 
 El PDF es la foto de lo que se entrega al cliente. La regla depende de si ya se entregó:
