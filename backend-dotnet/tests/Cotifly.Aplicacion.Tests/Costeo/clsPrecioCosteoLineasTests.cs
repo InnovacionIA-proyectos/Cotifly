@@ -85,6 +85,37 @@ public sealed class clsPrecioCosteoLineasTests
         _servicio.Aplicar(cotizacion, lineas, foto, _ahora.AddMinutes(1)).Should().BeFalse("la misma foto no cambia nada");
     }
 
+    // ADR-014 §5: en una licitación en USD cada precio se calcula en pesos y se convierte con la trmAplicada; el costo sigue en pesos.
+    [Fact]
+    public void EnDolaresLasLineasElTotalYLosConexosSeConviertenConLaTrmDeLaLicitacion()
+    {
+        var cotizacion = Cotizacion(moneda: "USD", trm: 3273.49m);
+        var lineas = Lineas(cotizacion, 3);
+        var foto = Foto("EnCosteo", [("L1", 1_000_000m), ("L2", 2_000_000m), ("L3", 850_000m)],
+            [new clsConexoNexo("CX", "Cargue", "logistico", 1m, 170_000m)], ["L1", "L2", "L3"]);
+
+        _servicio.Aplicar(cotizacion, lineas, foto, _ahora).Should().BeTrue();
+
+        lineas.Select(l => l.PrecioFinal).Should().Equal(359.39m, 718.79m, 305.48m);
+        cotizacion.PrecioFinal.Should().Be(359.39m + 718.79m + 305.48m, "el total es la suma de las líneas en USD");
+        cotizacion.Costo.Should().Be(3_850_000m, "el costo de Nexo se guarda en pesos");
+        clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Should().ContainSingle().Which.Precio.Should().Be(61.10m);
+        clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, "USD").Should().BeNull("el pliego en USD ya no se rechaza");
+    }
+
+    [Fact]
+    public void EnDolaresConUnaLineaElPrecioTambienSeConvierte()
+    {
+        var cotizacion = Cotizacion(moneda: "USD", trm: 3273.49m);
+        var lineas = Lineas(cotizacion, 1);
+        var foto = Foto("EnCosteo", [("L1", 1_000_000m)], [], ["L1"]);
+
+        _servicio.Aplicar(cotizacion, lineas, foto, _ahora).Should().BeTrue();
+
+        cotizacion.PrecioFinal.Should().Be(359.39m);
+        lineas[0].PrecioFinal.Should().Be(359.39m);
+    }
+
     [Fact]
     public void LasLineasSeAsocianPorContenidoAunqueNexoLasDevuelvaEnOtroOrden()
     {
@@ -184,9 +215,9 @@ public sealed class clsPrecioCosteoLineasTests
         cotizacion.MotivoEstadoCosteo.Should().Contain("versión nueva");
     }
 
-    private static clsCotizacion Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo)
+    private static clsCotizacion Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo, string moneda = clsCotizacion.MonedaPesos, decimal trm = 0m)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-01102026-001" }).Valor;
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-01102026-001", Moneda = moneda, TrmAplicada = trm }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
         cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");

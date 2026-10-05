@@ -126,3 +126,31 @@ Característica: Cotización en dólares con la TRM del día
     Y el PDF no contiene "TRM"
     Y el PDF no contiene "US$"
     Y el PDF no contiene "elaboración de la CPI"
+
+  # Licitaciones en USD (ADR-014 §5): la TRM del día de creación queda fija en la licitación; el polling calcula cada precio en pesos
+  # y lo convierte con ella. Por HTTP contra la API real en memoria con el Nexo falso y DolarApi falso (publica "hoy").
+  # Nacional al 15 %: flete 1.000.000 → 1.176.471 pesos → / 3.273,49 = US$359,39.
+  Escenario: Licitación en USD con la TRM de DolarApi y la nota en el PDF del pliego
+    Dado la API web de Cotifly conectada a Nexo con el cliente "900555111" de BP "15927"
+    Y el comercial "ana" con sesión en la regional "Occidente"
+    Y que DolarApi publica hoy la TRM "3273.49"
+    Cuando "ana" crea la licitación "LUSD" en "USD" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
+    Y la licitación "LUSD" está en "USD" con la TRM "3273.49"
+    Cuando Nexo costea las líneas 1 y 2 de "LUSD" con un flete de 1000000
+    Y Nexo costea las líneas 3 de "LUSD" con un flete de 1000000
+    Y el polling consulta a Nexo por "LUSD"
+    Entonces la licitación "LUSD" queda en el estado de costeo "autocosteo" con 3 líneas con precio
+    Y el precio final de "LUSD" es la suma de sus líneas
+    Y cada línea con precio de "LUSD" vale "359.39"
+    Cuando "ana" genera el PDF de la licitación "LUSD"
+    Entonces el PDF del pliego contiene "US$359,39"
+    Y el PDF del pliego contiene "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI."
+
+  Escenario: Una licitación en USD sin TRM no se crea ni llega a Nexo
+    Dado la API web de Cotifly conectada a Nexo con el cliente "900555111" de BP "15927"
+    Y el comercial "ana" con sesión en la regional "Occidente"
+    Y que las fuentes de la TRM no responden
+    Cuando "ana" crea la licitación "LUSD" en "USD" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Entonces la respuesta tiene el estado 400 con el código de negocio "TRM_NO_DISPONIBLE"
+    Y Nexo no recibió ninguna solicitud

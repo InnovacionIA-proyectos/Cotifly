@@ -1223,6 +1223,12 @@ paths:
         `archivo` (el Excel original, para exportarlo después con los precios, HU-011.3); o `application/json` con el
         `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
         archivo con la misma regla de detección de Nexo.
+
+        Moneda (ADR-014 §5): `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día (DolarApi con respaldo en la
+        Superintendencia Financiera) se consulta antes de guardar y queda en `trm_aplicada`; el polling calcula cada precio en
+        pesos y lo convierte con ella (`round(precio_cop / trm, 2)`), también el total y los servicios conexos. Sin TRM responde
+        400 `TRM_NO_DISPONIBLE` y no guarda nada. Otro valor de `moneda` es un error del reporte (campo `moneda`,
+        `VALOR_FUERA_DE_RANGO`).
       security:
         - bearer: []
       requestBody:
@@ -1254,7 +1260,8 @@ paths:
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
             `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
-            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`). `ErrorWeb` si el cuerpo no
+            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
+            `moneda = USD`). `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
             `NEXO_SIN_PERMISO` (201).
           content:
@@ -2965,6 +2972,14 @@ components:
           nullable: true
           maxLength: 31
           description: Hoja mapeada (`hojas[h].nombre`). Obligatoria con el archivo.
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: |
+            Opcional (ADR-014 §5). Moneda de la licitación: `COP` por defecto. Con `USD` los precios se convierten con la TRM
+            del día de creación (`trm_aplicada` de `Licitacion`) y el PDF de pliego lleva la nota de TRM mínima. Se acepta
+            sin distinguir mayúsculas ni espacios al borde.
         lineas:
           type: array
           minItems: 1
@@ -3046,8 +3061,8 @@ components:
 
     Licitacion:
       type: object
-      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, precio_final,
-                 lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
+      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
       description: Licitación vista por el comercial (HU-011.2). Solo precios.
       properties:
         folio:
@@ -3074,10 +3089,14 @@ components:
           nullable: true
         moneda:
           type: string
+          enum: [COP, USD]
+        trm_aplicada:
+          type: number
+          description: TRM del día de creación con que se convierten los precios en USD (ADR-014 §5); 0 en COP.
         precio_final:
           type: number
           nullable: true
-          description: Suma de los precios de las líneas; solo cuando todas tienen flete (`autocosteo` o `entregada`).
+          description: Suma de los precios de las líneas, en `moneda`; solo cuando todas tienen flete (`autocosteo` o `entregada`).
         lineas_costeadas:
           type: integer
         lineas_pendientes:
