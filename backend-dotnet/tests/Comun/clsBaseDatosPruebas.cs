@@ -307,14 +307,25 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     /// <summary>
     /// Base auxiliar nueva (nombre único) con los primeros <paramref name="scripts"/> scripts aplicados: para probar el backfill del
-    /// 0005 sobre filas creadas con el esquema anterior sin tocar la base compartida.
+    /// 0005 sobre filas creadas con el esquema anterior sin tocar la base compartida. Usarla con <c>await using</c>: al salir la
+    /// prueba (pase o falle) la base se borra (#91).
     /// </summary>
-    public async Task<string> CrearBaseConScriptsAsync(string prefijo, int scripts)
+    public async Task<clsBaseAuxiliarPruebas> CrearBaseConScriptsAsync(string prefijo, int scripts)
     {
         await _candado.WaitAsync();
         try
         {
-            return await CrearBaseSinCandadoAsync($"{prefijo}_{Guid.NewGuid():N}"[..40], scripts);
+            var nombre = $"{prefijo}_{Guid.NewGuid():N}"[..40];
+            try
+            {
+                return new clsBaseAuxiliarPruebas(CadenaMaster, nombre, await CrearBaseSinCandadoAsync(nombre, scripts));
+            }
+            catch
+            {
+                // Si un script falla a medias, la base no debe quedar huérfana.
+                await new clsBaseAuxiliarPruebas(CadenaMaster, nombre, ConBase(CadenaMaster, nombre)).DisposeAsync();
+                throw;
+            }
         }
         finally
         {
