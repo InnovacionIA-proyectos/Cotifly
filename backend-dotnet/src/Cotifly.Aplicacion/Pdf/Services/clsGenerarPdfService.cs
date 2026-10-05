@@ -218,8 +218,8 @@ public sealed partial class clsGenerarPdfService(
             return null;
         }
 
-        if (traza.PrecioCop is { } precioCop && traza.Costo is { } costoPiso && traza.MargenAplicado is { } margenPiso
-            && clsCalculadoraPrecio.Calcular(costoPiso, margenPiso, metodo) is { EsExitoso: true } enPesos && enPesos.Valor.Precio != precioCop)
+        if (traza.PrecioCop is { } precioCop && traza.Costo is { } costoPesos && traza.MargenAplicado is { } margenPesos
+            && clsCalculadoraPrecio.Calcular(costoPesos, margenPesos, metodo) is { EsExitoso: true } enPesos && enPesos.Valor.Precio != precioCop)
         {
             return Invalido(
                 $"El valor en pesos de la trazabilidad ({clsFormatoMoneda.Formatear(precioCop, "COP")}) no corresponde al costo y margen aplicado con el método '{metodo}' "

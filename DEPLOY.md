@@ -107,8 +107,10 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
 | `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
 | `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
-| `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos; exige salida a `www.datos.gov.co:443` |
-| `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta de la TRM |
+| `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
+| `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
+| `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos de la Superintendencia, respaldo; exige salida a `www.datos.gov.co:443` |
+| `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta a cada fuente de la TRM |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web, pero la tarjeta de Google Chat no lo puede abrir; configurarla si Google Chat está activo |
 | `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | con Google Chat configurado | vacío | Dokploy | `openssl rand -base64 48` |
@@ -385,7 +387,7 @@ Internet / red corporativa
         ├── secreto de Swarm → /run/secrets/gchat_sa.json
         └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
                                               → proveedor LLM, Google Chat, Nexo, SAP TM, relay SMTP,
-                                                TRM en www.datos.gov.co:443
+                                                TRM en co.dolarapi.com:443 y www.datos.gov.co:443
 ```
 
 - **SQL Server es externo.** HU-002.4 lo decidió: la instancia corporativa `tbsdatacenter` (base
@@ -402,7 +404,7 @@ Internet / red corporativa
   | Python | .NET | Para qué |
   |---|---|---|
   | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
-  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, TRM (`www.datos.gov.co`), relay, SQL Server |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
   | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
 
 - **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,

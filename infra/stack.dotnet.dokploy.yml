@@ -143,8 +143,10 @@ services:
       CosteoNexo__Lote: ${CosteoNexo__Lote:-20}
       CosteoNexo__ReclamoSegundos: ${CosteoNexo__ReclamoSegundos:-120}
 
-      # TRM del día (frente C): datos abiertos de la Superintendencia Financiera. Salida a www.datos.gov.co:443.
-      # Trm__Url vacía impide arrancar: por eso lleva valor por defecto.
+      # TRM del día (frente C, ADR-014): DolarApi con respaldo en los datos abiertos de la Superintendencia Financiera.
+      # Salida a co.dolarapi.com:443 y www.datos.gov.co:443. Las URL vacías impiden arrancar: por eso llevan valor por defecto.
+      Trm__Proveedor: ${Trm__Proveedor:-dolarapi_con_respaldo}
+      Trm__UrlDolarApi: ${Trm__UrlDolarApi:-https://co.dolarapi.com/v1/trm}
       Trm__Url: ${Trm__Url:-https://www.datos.gov.co/resource/32sa-8pi3.json}
       Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
 
