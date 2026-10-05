@@ -60,12 +60,12 @@ Característica: Solo códigos de catálogo en el formulario de costeo
   Escenario: Con el catálogo maestro caído el formulario no ofrece texto libre
     Cuando Nexo deja de responder
     Y "ana" pide los catálogos de flete
-    Entonces la respuesta tiene el estado 400 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+    Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
 
   Escenario: Con el catálogo maestro caído y sin copia en memoria la solicitud no se guarda ni llega a Nexo
     Cuando Nexo deja de responder
     Y "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "3S3"
-    Entonces la respuesta tiene el estado 400 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+    Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 
   Esquema del escenario: Las clases de contenedor provisionales de Nexo no se rechazan

@@ -146,13 +146,15 @@ Reglas para el frontend (HU-013.10, #106):
   nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (`CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`,
   `CNT40.RE` y la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`). Otro texto es 400
   `SOLICITUD_COSTEO_INVALIDA` con el campo en el mensaje. Si los catálogos de Nexo no están disponibles (ni su copia en
-  memoria), 400 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada.
+  memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
+  `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
 - **Condicionales:** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` y no se admite con otra clase;
   `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del origen.
-- **`deadline`:** ISO 8601. Sin zona (`2026-10-10`) se toma en hora de Bogotá.
+- **`deadline`:** ISO 8601. Sin zona se toma en hora de Bogotá; una fecha sola (`2026-10-10`) es el inicio de ese día en
+  Bogotá (`2026-10-10T00:00:00-05:00`). Para otra hora, enviarla con `-05:00`.
 - **Campos nuevos opcionales:** `notas` (nota para la Mesa de Nexo, máx. 2000), `origen_municipio_id` y
   `destino_municipio_id` (el `id` de `GET /web/municipios`).
-- `GET /web/catalogos-flete` responde 400 `CATALOGOS_FLETE_NO_DISPONIBLE` solo si Nexo no responde y no hay una copia de los
+- `GET /web/catalogos-flete` responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE` solo si Nexo no responde y no hay una copia de los
   catálogos de menos de 24 horas: en ese caso, deshabilitar los selects y ofrecer reintento (no hay texto libre).
 
 ### Reservados para la próxima versión (HU-005)

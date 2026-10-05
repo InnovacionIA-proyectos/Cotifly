@@ -893,7 +893,12 @@ paths:
         **Caché y Nexo caído.** Los cuatro catálogos se piden juntos (todo o nada) con el `X-Portal-Usuario-Id` del
         comercial y se reutilizan `Nexo:MinutosCacheCatalogos` (30 por defecto). Si Nexo no responde al renovarlos, se usa la
         última copia mientras tenga menos de `Nexo:HorasCatalogosVencidos` (24 por defecto). Sin copia utilizable responde
-        400 `CATALOGOS_FLETE_NO_DISPONIBLE`: el formulario nunca ofrece texto libre.
+        503 `CATALOGOS_FLETE_NO_DISPONIBLE`: el formulario nunca ofrece texto libre.
+
+        **Catálogos opcionales.** `tipos-vehiculo` y `clases-viaje` son obligatorios (si fallan o quedan vacíos no hay
+        catálogos). Si fallan `clases-contenedor` o `lineas-negocio`, quedan vacíos con un warning y `clase_contenedor` se valida
+        contra la lista fija. Solo se ofrecen los tipos de vehículo con `esCatalogoOficial = true`. Cada respuesta de Nexo se lee
+        hasta 1 MB y 5.000 filas; pasarse es "no disponible".
         El valor que el frontend envía a `POST /web/solicitudes-costeo` es siempre `valor` (el código), nunca la etiqueta.
       security:
         - bearer: []
@@ -904,8 +909,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CatalogosFlete'
-        '400':
-          description: Los catálogos maestros de Nexo no están disponibles y no hay una copia utilizable (`CATALOGOS_FLETE_NO_DISPONIBLE`)
+        '503':
+          description: |
+            `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
+            comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`.
           content:
             application/json:
               schema:
@@ -968,13 +975,14 @@ paths:
         `carroceria`, `tipologia`, `clase_viaje`, `clase_contenedor`) van con el código de Nexo tal cual y **se validan
         antes de guardar** (HU-013.10, G2): un valor que no es código de catálogo es 400 `SOLICITUD_COSTEO_INVALIDA` y no
         llega a Nexo. `tipo_vehiculo` y `clase_viaje` se validan contra los catálogos maestros de Nexo (con la misma caché de
-        `GET /web/catalogos-flete`); si no hay copia utilizable, 400 `CATALOGOS_FLETE_NO_DISPONIBLE` y nada se guarda.
+        `GET /web/catalogos-flete`); si no hay copia utilizable, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y nada se guarda. Sin
+        `Nexo:UrlBase` configurada, un formulario con `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
 
         **Rechazos 400 de Nexo al alta (G16).** La cotización queda en `error_envio` con el código de Nexo en el motivo:
         `ENUM_INVALIDO`, `LINEA_INCOMPLETA`, `PESO_REQUERIDO` y `PESO_INCONSISTENTE` se tratan como
         `SOLICITUD_COSTEO_INVALIDA` (definitivo: se corrige en una versión nueva); `CLIENTE_REQUERIDO`, `CLIENTE_INVALIDO` y
-        `CLIENTE_BP_INVALIDO` como `COSTEO_NEXO_SOLICITUD_INVALIDA` con un motivo de cliente (definitivo: revisar el BP en
-        SAP/Nexo); `DWCUBOS_NO_CONFIGURADO` como `COSTEO_NEXO_NO_DISPONIBLE` (configuración de Nexo, se puede reintentar);
+        `CLIENTE_BP_INVALIDO` como `COSTEO_NEXO_RECHAZADA` con un motivo de cliente (reintentable: el reintento vuelve a
+        resolver el BP en el catálogo de Nexo, así que se destraba al corregirlo en SAP/Nexo); `DWCUBOS_NO_CONFIGURADO` como `COSTEO_NEXO_NO_DISPONIBLE` (configuración de Nexo, se puede reintentar);
         cualquier otro 400 como `COSTEO_NEXO_SOLICITUD_INVALIDA` (definitivo).
 
         Responde **201 aunque Nexo falle**: la cotización queda en `error_envio` con `motivo_estado_costeo`
@@ -1013,8 +1021,7 @@ paths:
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
             un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
             `Contenedor`, `valor_aprovisionamiento` sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
-            el campo), `CATALOGOS_FLETE_NO_DISPONIBLE` (no se pudo validar `tipo_vehiculo`/`clase_viaje` contra los
-            catálogos maestros de Nexo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
@@ -1024,6 +1031,14 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+        '503':
+          description: |
+            `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
+            comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
@@ -2330,7 +2345,7 @@ components:
                 `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
                 `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo), `CATALOGOS_FLETE_NO_DISPONIBLE`
-                (`GET /web/catalogos-flete`: idem, catálogos maestros de Nexo sin copia utilizable; también en
+                (503 en `GET /web/catalogos-flete`: catálogos maestros de Nexo sin copia utilizable; también 503 en
                 `POST /web/solicitudes-costeo` si no se puede validar `tipo_vehiculo`/`clase_viaje`, HU-013.10),
                 `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío, mismo código que usa Nexo),
                 `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
@@ -3777,7 +3792,8 @@ components:
             Encabezado (`deadline`, `date-time` en Nexo). ISO 8601; Cotifly lo reenvía a Nexo con desplazamiento
             (`2026-10-10T17:00:00-05:00`). Con zona (`Z` o `-05:00`) se respeta; una fecha sola o sin zona (`2026-10-10`,
             `2026-10-10T17:00:00`) se interpreta en hora de Bogotá (America/Bogota, UTC-05:00): `2026-10-10` es
-            `2026-10-10T00:00:00-05:00` (HU-013.10, G4). Un texto que no es ISO 8601 es un cuerpo inválido (`ErrorWeb`).
+            `2026-10-10T00:00:00-05:00`, es decir, el **inicio del día en hora de Bogotá** (HU-013.10, G4; pendiente de
+            confirmar con negocio si debería ser el fin del día, 23:59:59). Un texto que no es ISO 8601 es un cuerpo inválido (`ErrorWeb`).
         valor_estimado:
           type: number
           nullable: true
