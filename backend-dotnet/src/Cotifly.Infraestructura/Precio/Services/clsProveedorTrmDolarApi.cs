@@ -14,25 +14,28 @@ namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
 /// TRM desde DolarApi (HU-012.1, ADR-014 §1, requisito de negocio del 2026-10-05): <c>GET Trm:UrlDolarApi</c> (por defecto
-/// <c>https://co.dolarapi.com/v1/trm</c>), sin credenciales, responde la última TRM publicada:
-/// <c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}</c>.
+/// <c>https://co.dolarapi.com/v1/trm</c>), sin credenciales, responde la última TRM certificada que publicó la Superintendencia:
+/// <c>{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T20:02:00.074Z"}</c>.
 /// </summary>
 /// <remarks>
-/// <para><b>Validación.</b> <c>unidad</c> debe ser <c>COP</c>; <c>valor</c> (número o texto) redondeado a 4 decimales half-to-even (la escala de
-/// <c>trmAplicada</c>) debe estar en [<see cref="ValorMinimo"/>, <see cref="ValorMaximo"/>]; <c>fechaActualizacion</c> (instante ISO 8601),
-/// llevada a la fecha de negocio de America/Bogota, no puede ser anterior en más de <see cref="DiasAntiguedadMaxima"/> días a la fecha pedida
-/// ni posterior en más de <see cref="DiasFuturoMaximo"/> (DolarApi publica en la tarde la TRM del día siguiente).</para>
-/// <para><b>Vigencia.</b> DolarApi no publica rangos de vigencia: la TRM se toma como vigente solo el día pedido (desde = hasta = fecha). Así la
-/// caché por día y la regla de "TRM vencida" del estado de la conversación vuelven a consultar al día siguiente.</para>
+/// <para><b>Semántica (verificada el 2026-10-05, ADR-014 §1).</b> <c>fechaActualizacion</c> es la hora en que DolarApi refrescó el dato, no
+/// la vigencia de la TRM: el valor es la última TRM publicada, que en la tarde puede ser ya la del día siguiente. Por eso solo se acepta
+/// para la fecha pedida si DolarApi la refrescó ESE día en Bogotá antes de <see cref="HoraCorte"/>, cuando la TRM del día siguiente todavía
+/// no se ha publicado; si no, es <c>TRM_NO_DISPONIBLE</c> y la cadena usa la Superintendencia, que consulta la vigencia exacta.</para>
+/// <para><b>Validación.</b> <c>unidad</c> = <c>COP</c>, <c>nombre</c> = <c>TRM</c>; <c>valor</c> (número o texto) redondeado a 4 decimales
+/// half-to-even en [<see cref="ValorMinimo"/>, <see cref="ValorMaximo"/>] y a no más de <see cref="DesviacionMaxima"/> de la última TRM
+/// válida conocida (<see cref="clsMemoriaTrm"/>), si hay; cuerpo de máximo <see cref="TamanoMaximoCuerpo"/> bytes.</para>
+/// <para><b>Vigencia.</b> DolarApi no publica rangos: la TRM se toma como vigente solo el día pedido (desde = hasta = fecha).</para>
 /// <para><b>Nunca lanza</b> por la fuente: HTTP, red, tiempo agotado, circuito abierto, JSON inválido o una validación que falla devuelven
 /// <c>TRM_NO_DISPONIBLE</c> con una línea de warning. Es un agregador no oficial: por eso la cadena por defecto tiene respaldo
 /// (<see cref="clsProveedorTrmConRespaldo"/>).</para>
-/// <para><b>Resiliencia</b>: la misma tubería que <see cref="clsProveedorTrmSuperfinanciera"/> (cliente con nombre <see cref="NombreCliente"/>).</para>
+/// <para><b>Resiliencia</b>: <see cref="clsResilienciaTrm"/> con <c>Trm:TiempoEsperaDolarApiSegundos</c> (cliente <see cref="NombreCliente"/>).</para>
 /// </remarks>
 public sealed class clsProveedorTrmDolarApi(
     IHttpClientFactory fabrica,
     IOptions<clsOpcionesTrm> opciones,
     IClsCalendarioNegocio calendario,
+    clsMemoriaTrm memoria,
     ILogger<clsProveedorTrmDolarApi> logger) : IClsProveedorTrm
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> (las pruebas le cambian el manejador primario).</summary>
@@ -47,11 +50,17 @@ public sealed class clsProveedorTrmDolarApi(
     /// <summary>TRM máxima creíble (COP por USD).</summary>
     public const decimal ValorMaximo = 20000m;
 
-    /// <summary>Días que puede tener de antigüedad la publicación respecto a la fecha pedida (cubre fines de semana con festivo).</summary>
-    public const int DiasAntiguedadMaxima = 4;
+    /// <summary>Desviación máxima (fracción) frente a la última TRM válida conocida.</summary>
+    public const decimal DesviacionMaxima = 0.10m;
 
-    /// <summary>Días que puede adelantarse la publicación respecto a la fecha pedida.</summary>
-    public const int DiasFuturoMaximo = 1;
+    /// <summary>Tamaño máximo del cuerpo de la respuesta (bytes).</summary>
+    public const int TamanoMaximoCuerpo = 16 * 1024;
+
+    /// <summary>
+    /// Hora de Bogotá hasta la que un dato refrescado ese día es con seguridad la TRM vigente ese día (la del día siguiente se publica en la
+    /// tarde, después del cierre del mercado).
+    /// </summary>
+    public static readonly TimeSpan HoraCorte = TimeSpan.FromHours(12);
 
     public const string Mensaje = "No se pudo obtener la TRM del día (DolarApi): la cotización en dólares no está disponible en este momento. Intenta de nuevo en unos minutos o cotiza en pesos.";
 
@@ -71,9 +80,20 @@ public sealed class clsProveedorTrmDolarApi(
                 return NoDisponible(fecha, $"HTTP {(int)respuesta.StatusCode} ({respuesta.StatusCode})");
             }
 
-            await using var cuerpo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
-            using var documento = await JsonDocument.ParseAsync(cuerpo, cancellationToken: cancellationToken);
-            var leida = Leer(documento.RootElement, fecha, calendario.FechaDe, out var motivo);
+            if (respuesta.Content.Headers.ContentLength is > TamanoMaximoCuerpo)
+            {
+                return NoDisponible(fecha, "respuesta demasiado grande");
+            }
+
+            var bytes = await LeerAcotadoAsync(respuesta.Content, cancellationToken);
+            if (bytes is null)
+            {
+                return NoDisponible(fecha, "respuesta demasiado grande");
+            }
+
+            using var documento = JsonDocument.Parse(bytes);
+            var inicio = calendario.InicioDelDia(fecha);
+            var leida = Leer(documento.RootElement, fecha, inicio, memoria.Ultima?.Valor, out var motivo);
             return leida is null ? NoDisponible(fecha, motivo) : leida;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -99,21 +119,26 @@ public sealed class clsProveedorTrmDolarApi(
     /// </summary>
     /// <param name="raiz">Cuerpo de la respuesta.</param>
     /// <param name="fecha">Fecha de negocio pedida (America/Bogota).</param>
-    /// <param name="fechaNegocio">Fecha de negocio de un instante (<see cref="IClsCalendarioNegocio.FechaDe"/>).</param>
+    /// <param name="inicioDelDia">00:00 de <paramref name="fecha"/> en Bogotá (<see cref="IClsCalendarioNegocio.InicioDelDia"/>).</param>
+    /// <param name="referencia">Última TRM válida conocida, o <c>null</c> si no hay.</param>
     /// <param name="motivo">Por qué se rechazó (vacío si se aceptó).</param>
-    public static clsTrm? Leer(JsonElement raiz, DateOnly fecha, Func<DateTimeOffset, DateOnly> fechaNegocio, out string motivo)
+    public static clsTrm? Leer(JsonElement raiz, DateOnly fecha, DateTimeOffset inicioDelDia, decimal? referencia, out string motivo)
     {
-        ArgumentNullException.ThrowIfNull(fechaNegocio);
         if (raiz.ValueKind != JsonValueKind.Object)
         {
             motivo = "la respuesta no es un objeto JSON";
             return null;
         }
 
-        if (!raiz.TryGetProperty("unidad", out var unidad) || unidad.ValueKind != JsonValueKind.String
-            || !string.Equals(unidad.GetString()?.Trim(), "COP", StringComparison.Ordinal))
+        if (!Texto(raiz, "unidad", "COP"))
         {
             motivo = "la unidad no es COP";
+            return null;
+        }
+
+        if (!Texto(raiz, "nombre", "TRM"))
+        {
+            motivo = "el nombre no es TRM";
             return null;
         }
 
@@ -130,6 +155,12 @@ public sealed class clsProveedorTrmDolarApi(
             return null;
         }
 
+        if (referencia is > 0m and var anterior && Math.Abs(valor - anterior) / anterior > DesviacionMaxima)
+        {
+            motivo = $"valor {valor.ToString(CultureInfo.InvariantCulture)} se desvía más del 10 % de la última TRM conocida ({anterior.ToString(CultureInfo.InvariantCulture)})";
+            return null;
+        }
+
         if (!raiz.TryGetProperty("fechaActualizacion", out var texto) || texto.ValueKind != JsonValueKind.String
             || !DateTimeOffset.TryParse(texto.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var actualizada))
         {
@@ -137,22 +168,19 @@ public sealed class clsProveedorTrmDolarApi(
             return null;
         }
 
-        var publicada = fechaNegocio(actualizada);
-        if (publicada < fecha.AddDays(-DiasAntiguedadMaxima))
+        if (actualizada < inicioDelDia || actualizada >= inicioDelDia + HoraCorte)
         {
-            motivo = $"TRM desactualizada (publicada el {Dia(publicada)})";
-            return null;
-        }
-
-        if (publicada > fecha.AddDays(DiasFuturoMaximo))
-        {
-            motivo = $"fecha de publicación futura ({Dia(publicada)})";
+            motivo = $"actualizada fuera de la ventana segura del {fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} (antes de las 12:00 en Bogotá): puede ser la TRM de otra vigencia";
             return null;
         }
 
         motivo = string.Empty;
         return new clsTrm(valor, fecha, fecha, Fuente);
     }
+
+    private static bool Texto(JsonElement objeto, string campo, string esperado) =>
+        objeto.TryGetProperty(campo, out var valor) && valor.ValueKind == JsonValueKind.String
+        && string.Equals(valor.GetString()?.Trim(), esperado, StringComparison.Ordinal);
 
     private static decimal? Numero(JsonElement objeto, string campo)
     {
@@ -169,11 +197,24 @@ public sealed class clsProveedorTrmDolarApi(
         };
     }
 
-    private static string Dia(DateOnly fecha) => fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    /// <summary>Cuerpo completo si cabe en <see cref="TamanoMaximoCuerpo"/>; <c>null</c> si lo supera.</summary>
+    private static async Task<byte[]?> LeerAcotadoAsync(HttpContent contenido, CancellationToken cancellationToken)
+    {
+        await using var cuerpo = await contenido.ReadAsStreamAsync(cancellationToken);
+        var bufer = new byte[TamanoMaximoCuerpo + 1];
+        var leidos = 0;
+        int n;
+        while (leidos < bufer.Length && (n = await cuerpo.ReadAsync(bufer.AsMemory(leidos), cancellationToken)) > 0)
+        {
+            leidos += n;
+        }
+
+        return leidos > TamanoMaximoCuerpo ? null : bufer[..leidos];
+    }
 
     private clsErrorDominio NoDisponible(DateOnly fecha, string motivo)
     {
-        logger.LogWarning("DolarApi no entregó una TRM válida ({Motivo}) consultando {Fecha}.", motivo, Dia(fecha));
+        logger.LogWarning("DolarApi no entregó una TRM válida ({Motivo}) consultando {Fecha}.", motivo, fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         return new clsErrorDominio(clsCodigosError.TrmNoDisponible, Mensaje, motivo);
     }
 }

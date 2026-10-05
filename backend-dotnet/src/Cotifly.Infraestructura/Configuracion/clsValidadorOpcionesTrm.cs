@@ -4,7 +4,7 @@ namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
 /// Reglas de <see cref="clsOpcionesTrm"/> que DataAnnotations no cubre (HU-012.1): <c>Trm:Proveedor</c> debe ser uno de
-/// <see cref="clsOpcionesTrm.Proveedores"/>, y <c>Trm:Url</c> y <c>Trm:UrlDolarApi</c> deben ser URLs http o https absolutas, sin usuario,
+/// <see cref="clsOpcionesTrm.Proveedores"/>, y <c>Trm:Url</c> y <c>Trm:UrlDolarApi</c> deben ser URLs https absolutas, sin usuario,
 /// consulta ni fragmento (a la de la Superintendencia el adaptador le agrega <c>?$where=...</c>). Con una opción inválida la API no
 /// arranca: cada cotización en USD fallaría.
 /// </summary>
@@ -33,10 +33,9 @@ public sealed class clsValidadorOpcionesTrm : IValidateOptions<clsOpcionesTrm>
             return ValidateOptionsResult.Fail($"'{clave}' es obligatoria (por defecto {porDefecto}).");
         }
 
-        if (!Uri.TryCreate(valor.Trim(), UriKind.Absolute, out var url)
-            || (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps))
+        if (!Uri.TryCreate(valor.Trim(), UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps)
         {
-            return ValidateOptionsResult.Fail($"'{clave}' debe ser una URL http o https absoluta.");
+            return ValidateOptionsResult.Fail($"'{clave}' debe ser una URL https absoluta.");
         }
 
         if (url.UserInfo.Length > 0)

@@ -22,8 +22,18 @@ public sealed class clsDolarApiFalso : HttpMessageHandler
     /// <summary>TRM que responde por defecto.</summary>
     public decimal Valor { get; set; } = 3273.49m;
 
-    /// <summary>Instante de publicación que responde por defecto (14:01 del 2026-10-05 en Bogotá).</summary>
-    public DateTimeOffset FechaActualizacion { get; set; } = new(2026, 10, 5, 19, 1, 18, 476, TimeSpan.Zero);
+    /// <summary>
+    /// Instante de refresco que responde por defecto: 08:01 del 2026-10-05 en Bogotá, antes del corte de las 12:00 (ADR-014 §1), así la TRM
+    /// se acepta para ese día.
+    /// </summary>
+    public DateTimeOffset FechaActualizacion { get; set; } = new(2026, 10, 5, 13, 1, 18, 476, TimeSpan.Zero);
+
+    /// <summary>08:00 de hoy en Bogotá (UTC-5) según el reloj real: para las pruebas por HTTP contra la API con el reloj del sistema.</summary>
+    public static DateTimeOffset HoyALasOchoEnBogota()
+    {
+        var bogota = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(-5));
+        return new DateTimeOffset(bogota.Year, bogota.Month, bogota.Day, 8, 0, 0, TimeSpan.FromHours(-5));
+    }
 
     /// <summary>URLs recibidas, en orden.</summary>
     public IReadOnlyList<Uri> Peticiones => [.. _peticiones];

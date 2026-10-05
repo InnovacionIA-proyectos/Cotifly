@@ -16,8 +16,8 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
 {
     private readonly clsNexoFalso _nexo = new();
 
-    // Fuentes de la TRM falsas (ADR-014): la API real nunca sale a la red. DolarApi publica "hoy" (reloj real de la API).
-    private readonly clsDolarApiFalso _dolarApi = new() { FechaActualizacion = DateTimeOffset.UtcNow };
+    // Fuentes de la TRM falsas (ADR-014): la API real nunca sale a la red. DolarApi refrescó "hoy" a las 08:00 en Bogotá (reloj real).
+    private readonly clsDolarApiFalso _dolarApi = new() { FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota() };
     private readonly clsTrmFalso _superfinanciera = new();
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
@@ -32,7 +32,7 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public void DadoQueDolarApiPublicaHoy(string valor)
     {
         _dolarApi.Valor = decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture);
-        _dolarApi.FechaActualizacion = DateTimeOffset.UtcNow;
+        _dolarApi.FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota();
     }
 
     [Given("que las fuentes de la TRM no responden")]

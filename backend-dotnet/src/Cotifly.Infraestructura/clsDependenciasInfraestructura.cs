@@ -224,27 +224,37 @@ public static class clsDependenciasInfraestructura
     /// </summary>
     private static void AgregarTrm(IServiceCollection servicios)
     {
-        string[] clientes = [clsProveedorTrmSuperfinanciera.NombreCliente, clsProveedorTrmDolarApi.NombreCliente];
-        foreach (var cliente in clientes)
+        (string Cliente, Func<clsOpcionesTrm, int> Segundos)[] clientes =
+        [
+            (clsProveedorTrmSuperfinanciera.NombreCliente, o => o.TiempoEsperaSegundos),
+            (clsProveedorTrmDolarApi.NombreCliente, o => o.TiempoEsperaDolarApiSegundos),
+        ];
+        foreach (var (cliente, segundos) in clientes)
         {
             var tuberia = servicios.AddHttpClient(cliente)
                 .RedactLoggedHeaders(_ => true)
                 .AddStandardResilienceHandler();
 
-            // Las opciones de la tubería son opciones con nombre (el de la tubería): así toman Trm:TiempoEsperaSegundos ya validado.
+            // Las opciones de la tubería son opciones con nombre (el de la tubería): así toman el tiempo de Trm ya validado.
             servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
-                .Configure<IOptions<clsOpcionesTrm>>((resiliencia, opciones) => clsProveedorTrmSuperfinanciera.ConfigurarResiliencia(resiliencia, opciones.Value));
+                .Configure<IOptions<clsOpcionesTrm>>((resiliencia, opciones) =>
+                    clsResilienciaTrm.Configurar(resiliencia, TimeSpan.FromSeconds(segundos(opciones.Value))));
         }
 
+        servicios.TryAddSingleton<clsMemoriaTrm>();
         servicios.TryAddSingleton<clsProveedorTrmSuperfinanciera>();
         servicios.TryAddSingleton<clsProveedorTrmDolarApi>();
-        servicios.TryAddSingleton<IClsProveedorTrm>(proveedor => new clsProveedorTrmEnCache(ProveedorTrm(proveedor), proveedor.GetRequiredService<IClsReloj>()));
+        servicios.TryAddSingleton<IClsProveedorTrm>(proveedor => new clsProveedorTrmEnCache(
+            ProveedorTrm(proveedor),
+            proveedor.GetRequiredService<IClsReloj>(),
+            proveedor.GetRequiredService<IClsCalendarioNegocio>(),
+            proveedor.GetRequiredService<clsMemoriaTrm>()));
 
         servicios.Configure<TelemetryOptions>(telemetria =>
         {
             var anterior = telemetria.SeverityProvider;
             telemetria.SeverityProvider = argumentos =>
-                argumentos.Source.PipelineName is { } nombre && clientes.Any(c => nombre.StartsWith(c + "-", StringComparison.Ordinal))
+                argumentos.Source.PipelineName is { } nombre && clientes.Any(c => nombre.StartsWith(c.Cliente + "-", StringComparison.Ordinal))
                     ? ResilienceEventSeverity.Debug
                     : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
         });

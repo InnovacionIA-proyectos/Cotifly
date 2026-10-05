@@ -46,6 +46,13 @@ public sealed class clsPasosMonedaTrm(clsContextoEscenario contexto)
         contexto.DolarApiFalso.FechaActualizacion = DateTimeOffset.Parse(fechaActualizacion, CultureInfo.InvariantCulture);
     }
 
+    [When("pasan {int} horas y DolarApi publica la TRM {string} el {string}")]
+    public void CuandoPasanHorasYDolarApiPublica(int horas, string valor, string fechaActualizacion)
+    {
+        contexto.Reloj.AhoraUtc = contexto.Reloj.AhoraUtc.AddHours(horas);
+        DadoQueDolarApiPublica(valor, fechaActualizacion);
+    }
+
     [Given("que DolarApi no responde")]
     public void DadoQueDolarApiNoResponde() => contexto.DolarApiFalso.Caida(10);
 

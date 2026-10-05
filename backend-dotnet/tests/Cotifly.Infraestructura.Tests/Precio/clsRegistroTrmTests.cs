@@ -48,10 +48,15 @@ public sealed class clsRegistroTrmTests : IDisposable
         opciones.UrlDolarApi.Should().Be("https://co.dolarapi.com/v1/trm");
         opciones.Url.Should().Be("https://www.datos.gov.co/resource/32sa-8pi3.json");
         opciones.TiempoEsperaSegundos.Should().Be(10);
+        opciones.TiempoEsperaDolarApiSegundos.Should().Be(4, "DolarApi tiene su propio tiempo, corto, para no demorar el respaldo");
     }
 
     [Theory]
     [InlineData("Trm:Url", "ftp://datos.gov.co/x.json", "Trm:Url")]
+    [InlineData("Trm:Url", "http://www.datos.gov.co/resource/32sa-8pi3.json", "https")]
+    [InlineData("Trm:UrlDolarApi", "http://co.dolarapi.com/v1/trm", "https")]
+    [InlineData("Trm:TiempoEsperaDolarApiSegundos", "1", "TiempoEsperaDolarApiSegundos")]
+    [InlineData("Trm:TiempoEsperaDolarApiSegundos", "61", "TiempoEsperaDolarApiSegundos")]
     [InlineData("Trm:Url", "https://datos.gov.co/x.json?$limit=1", "Trm:Url")]
     [InlineData("Trm:Url", "no-es-url", "Trm:Url")]
     [InlineData("Trm:UrlDolarApi", "ftp://co.dolarapi.com/v1/trm", "Trm:UrlDolarApi")]
@@ -97,7 +102,7 @@ public sealed class clsRegistroTrmTests : IDisposable
     [Fact]
     public async Task ConDolarApiCaidoLaTrmSaleDelRespaldo()
     {
-        _dolarApi.Caida(1 + clsProveedorTrmSuperfinanciera.Reintentos);
+        _dolarApi.Caida(1 + clsResilienciaTrm.Reintentos);
         _superfinanciera.Responder(HttpStatusCode.OK, "[" + clsTrmFalso.Fila(3280.10m, _lunes, _lunes) + "]");
         using var proveedor = Proveedor([]);
 
@@ -105,14 +110,14 @@ public sealed class clsRegistroTrmTests : IDisposable
 
         trm.Valor.Valor.Should().Be(3280.10m);
         trm.Valor.Fuente.Should().Be(clsProveedorTrmSuperfinanciera.Fuente);
-        _dolarApi.Peticiones.Should().HaveCount(1 + clsProveedorTrmSuperfinanciera.Reintentos, "DolarApi también reintenta los transitorios");
+        _dolarApi.Peticiones.Should().HaveCount(1 + clsResilienciaTrm.Reintentos, "DolarApi también reintenta los transitorios");
     }
 
     [Fact]
     public async Task ConAmbasFuentesCaidasEsTrmNoDisponible()
     {
-        _dolarApi.Caida(1 + clsProveedorTrmSuperfinanciera.Reintentos);
-        _superfinanciera.Caida(1 + clsProveedorTrmSuperfinanciera.Reintentos);
+        _dolarApi.Caida(1 + clsResilienciaTrm.Reintentos);
+        _superfinanciera.Caida(1 + clsResilienciaTrm.Reintentos);
         using var proveedor = Proveedor([]);
 
         var resultado = await proveedor.GetRequiredService<IClsProveedorTrm>().ObtenerAsync(_lunes, Ct);
@@ -124,7 +129,7 @@ public sealed class clsRegistroTrmTests : IDisposable
     [Fact]
     public async Task ConSoloDolarApiNoHayRespaldo()
     {
-        _dolarApi.Caida(1 + clsProveedorTrmSuperfinanciera.Reintentos);
+        _dolarApi.Caida(1 + clsResilienciaTrm.Reintentos);
         using var proveedor = Proveedor(new() { ["Trm:Proveedor"] = "dolarapi" });
 
         var resultado = await proveedor.GetRequiredService<IClsProveedorTrm>().ObtenerAsync(_lunes, Ct);
@@ -158,7 +163,36 @@ public sealed class clsRegistroTrmTests : IDisposable
         var resultado = await proveedor.GetRequiredService<IClsProveedorTrm>().ObtenerAsync(new DateOnly(2026, 9, 27), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible);
-        _superfinanciera.Peticiones.Should().HaveCount(1 + clsProveedorTrmSuperfinanciera.Reintentos);
+        _superfinanciera.Peticiones.Should().HaveCount(1 + clsResilienciaTrm.Reintentos);
+    }
+
+    [Fact]
+    public void CadaFuenteTieneSuPropioTiempoDeEspera()
+    {
+        using var proveedor = Proveedor(new() { ["Trm:TiempoEsperaSegundos"] = "12", ["Trm:TiempoEsperaDolarApiSegundos"] = "3" });
+        var monitor = proveedor.GetRequiredService<IOptionsMonitor<Microsoft.Extensions.Http.Resilience.HttpStandardResilienceOptions>>();
+
+        monitor.Get(clsProveedorTrmSuperfinanciera.NombreCliente + "-standard").TotalRequestTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(12));
+        monitor.Get(clsProveedorTrmDolarApi.NombreCliente + "-standard").TotalRequestTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(3));
+    }
+
+    // ADR-014 §2: la primera TRM válida del día queda fija hasta el fin del día en Bogotá (mañana y tarde cotizan igual).
+    [Fact]
+    public async Task LaPrimeraTrmDelDiaQuedaFijaAunqueDolarApiCambieEnLaTarde()
+    {
+        using var proveedor = Proveedor([]);
+        var trm = proveedor.GetRequiredService<IClsProveedorTrm>();
+        var reloj = (clsRelojFalso)proveedor.GetRequiredService<IClsReloj>();
+
+        var manana = await trm.ObtenerAsync(_lunes, Ct);
+        reloj.AhoraUtc = new DateTimeOffset(2026, 10, 6, 4, 59, 0, TimeSpan.Zero); // 23:59 del lunes en Bogotá
+        _dolarApi.Valor = 3300m;
+        _dolarApi.FechaActualizacion = new DateTimeOffset(2026, 10, 5, 22, 0, 0, TimeSpan.Zero);
+        var noche = await trm.ObtenerAsync(_lunes, Ct);
+
+        noche.Valor.Should().Be(manana.Valor);
+        noche.Valor.Valor.Should().Be(3273.49m);
+        _dolarApi.Peticiones.Should().ContainSingle();
     }
 
     public void Dispose()

@@ -9,7 +9,8 @@ namespace Cotifly.Infraestructura.Configuracion;
 /// <item><c>dolarapi</c>: solo DolarApi.</item>
 /// <item><c>superfinanciera</c>: solo los datos abiertos de la Superintendencia Financiera (<c>Trm__Url</c>).</item>
 /// </list>
-/// Las dos fuentes son públicas: no llevan credenciales. <c>Trm__TiempoEsperaSegundos</c> limita la consulta a cada fuente. Reglas en
+/// Las dos fuentes son públicas y solo por https: no llevan credenciales. <c>Trm__TiempoEsperaSegundos</c> limita la consulta a la
+/// Superintendencia y <c>Trm__TiempoEsperaDolarApiSegundos</c> la de DolarApi. Reglas en
 /// <see cref="clsValidadorOpcionesTrm"/>.
 /// </summary>
 public sealed class clsOpcionesTrm
@@ -49,9 +50,16 @@ public sealed class clsOpcionesTrm
     [Required(AllowEmptyStrings = false)]
     public string UrlDolarApi { get; set; } = UrlDolarApiPorDefecto;
 
-    /// <summary>Límite de toda la consulta a una fuente, reintentos incluidos (segundos). Por defecto 10.</summary>
+    /// <summary>Límite de toda la consulta a la Superintendencia, reintentos incluidos (segundos). Por defecto 10.</summary>
     [Range(2, 60)]
     public int TiempoEsperaSegundos { get; set; } = 10;
+
+    /// <summary>
+    /// Límite de toda la consulta a DolarApi, reintentos incluidos (segundos). Por defecto 4: corto para que, si DolarApi no responde, el
+    /// respaldo llegue pronto.
+    /// </summary>
+    [Range(2, 60)]
+    public int TiempoEsperaDolarApiSegundos { get; set; } = 4;
 
     /// <summary><see cref="Proveedor"/> sin espacios y en minúsculas.</summary>
     public string ProveedorNormalizado => (Proveedor ?? string.Empty).Trim().ToLowerInvariant();

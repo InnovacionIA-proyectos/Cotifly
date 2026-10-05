@@ -65,7 +65,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
             .Cerrar("Previsualización lista. ¿Confirmas?");
         using var trm = new clsTrmFalso().Caida(10);
-        using var dolarApi = new clsDolarApiFalso { Valor = 3306.86m, FechaActualizacion = DateTimeOffset.UtcNow };
+        using var dolarApi = new clsDolarApiFalso { Valor = 3306.86m, FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota() };
         using var api = new clsApiWebPruebas(
             entorno.BaseDatos,
             configurar: b => b.ConfigureTestServices(s =>

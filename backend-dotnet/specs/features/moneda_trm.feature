@@ -35,10 +35,28 @@ Característica: Cotización en dólares con la TRM del día
   Escenario: DolarApi responde la TRM del día
     Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
     Y que la fecha de negocio es "2026-10-05"
-    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T19:01:18.476Z"
+    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T13:01:18.476Z"
     Cuando consulto la TRM del día
     Entonces la TRM es "3273.49" de la fuente "dolarapi"
     Y la fuente de la TRM recibió 0 consultas
+
+  # Verificado el 2026-10-05: fechaActualizacion es la hora en que DolarApi refrescó el dato, no la vigencia. Pasadas las 12:00 en Bogotá
+  # el valor puede ser ya la TRM de mañana: se usa el respaldo con la vigencia exacta del día pedido.
+  Escenario: DolarApi refrescado en la tarde no se usa: puede traer la TRM de mañana
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-09-29"
+    Y que DolarApi publica la TRM "3320.00" el "2026-09-29T20:00:00.000Z"
+    Cuando consulto la TRM del día
+    Entonces la TRM es "3312.50" de la fuente "superfinanciera"
+
+  Escenario: La primera TRM del día queda fija hasta el fin del día
+    Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
+    Y que la fecha de negocio es "2026-10-05"
+    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T13:01:18.476Z"
+    Cuando consulto la TRM del día
+    Y pasan 9 horas y DolarApi publica la TRM "3300.00" el "2026-10-05T22:00:00.000Z"
+    Y consulto la TRM del día
+    Entonces la TRM es "3273.49" de la fuente "dolarapi"
 
   Escenario: DolarApi caído, la TRM sale del respaldo
     Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
@@ -102,7 +120,7 @@ Característica: Cotización en dólares con la TRM del día
     Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-28092026"
     Entonces la cotización "PCN-USD-28092026" queda guardada en "USD" con precio final "996.35" y TRM "3306.86"
     Y el PDF contiene "US$996,35"
-    Y el PDF contiene "Cotización en dólares:"
+    Y el PDF no contiene "Cotización en dólares"
     Y el PDF contiene "Esta cotización está bajo una TRM mínima de $3.306,86 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI."
     Y el PDF no contiene "mínimo a pagar"
     Y el PDF no contiene "se ajusta día a día"
@@ -111,7 +129,7 @@ Característica: Cotización en dólares con la TRM del día
     Dado que la TRM se consulta con el proveedor "dolarapi_con_respaldo"
     Y el comercial "trm.comercial" con nombre "Tatiana Restrepo Mejía" y correo "trm.comercial@boterosoto.com.co"
     Y que la fecha de negocio es "2026-10-05"
-    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T19:01:18.476Z"
+    Y que DolarApi publica la TRM "3273.49" el "2026-10-05T13:01:18.476Z"
     Cuando "trm.comercial" cotiza en "USD" la solicitud de ejemplo con un costo de 2850000 y margen "0.135" con el folio "PCN-USD-05102026"
     Entonces la cotización "PCN-USD-05102026" queda guardada en "USD" con precio final "1006.51" y TRM "3273.49"
     Y el PDF contiene "US$1.006,51"

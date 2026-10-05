@@ -18,6 +18,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
 {
     private static readonly DateOnly _lunes = new(2026, 10, 5);
     private readonly clsDolarApiFalso _fuente = new();
+    private readonly clsMemoriaTrm _memoria = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -37,7 +38,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
     [Fact]
     public async Task AceptaElCuerpoRealDeDolarApi()
     {
-        _fuente.Responder(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}""");
+        _fuente.Responder(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T16:30:00.074Z"}""");
 
         (await Proveedor().ObtenerAsync(_lunes, Ct)).Valor.Valor.Should().Be(3273.49m);
     }
@@ -45,7 +46,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
     [Fact]
     public async Task AceptaElValorComoTexto()
     {
-        _fuente.Responder(HttpStatusCode.OK, """{"unidad":"COP","valor":"3273.49","fechaActualizacion":"2026-10-05T19:01:18.476Z"}""");
+        _fuente.Responder(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":"3273.49","fechaActualizacion":"2026-10-05T13:01:18.476Z"}""");
 
         (await Proveedor().ObtenerAsync(_lunes, Ct)).Valor.Valor.Should().Be(3273.49m);
     }
@@ -57,7 +58,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
     [InlineData("3273.49135", "3273.4914")]
     public async Task LaTrmSeRedondeaACuatroDecimalesHalfToEven(string valor, string esperado)
     {
-        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","valor":{{valor}},"fechaActualizacion":"2026-10-05T19:01:18.476Z"}""");
+        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","nombre":"TRM","valor":{{valor}},"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""");
 
         (await Proveedor().ObtenerAsync(_lunes, Ct)).Valor.Valor.Should().Be(decimal.Parse(esperado, CultureInfo.InvariantCulture));
     }
@@ -72,7 +73,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
     [InlineData("-3273.49", false)]
     public async Task ElValorDebeEstarEnElRangoCreible(string valor, bool aceptado)
     {
-        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","valor":{{valor}},"fechaActualizacion":"2026-10-05T19:01:18.476Z"}""");
+        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","nombre":"TRM","valor":{{valor}},"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""");
 
         var resultado = await Proveedor().ObtenerAsync(_lunes, Ct);
 
@@ -83,22 +84,65 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
         }
     }
 
-    // fechaActualizacion se lleva a la fecha de Bogotá: hasta 4 días antes de la pedida y hasta 1 después (publicación de la tarde).
+    // ADR-014 §1 (verificado el 2026-10-05): fechaActualizacion es la hora del refresco de DolarApi, no la vigencia. Solo vale para la
+    // fecha pedida si DolarApi refrescó ese día en Bogotá antes de las 12:00; pasado el corte puede traer ya la TRM de mañana.
     [Theory]
-    [InlineData("2026-10-01T15:00:00Z", true)]    // jueves 1, 4 días antes
-    [InlineData("2026-10-01T04:59:59Z", false)]   // 23:59 del miércoles 30 en Bogotá: 5 días antes
-    [InlineData("2026-10-06T04:59:59Z", true)]    // 23:59 del lunes 5 en Bogotá
-    [InlineData("2026-10-06T21:00:00Z", true)]    // martes 6: la del día siguiente
-    [InlineData("2026-10-07T05:00:00Z", false)]   // 00:00 del miércoles 7 en Bogotá: futura
-    [InlineData("2027-01-01T00:00:00Z", false)]
-    [InlineData("2026-10-05T14:01:18-05:00", true)]
-    public async Task LaFechaDePublicacionDebeSerRecienteYNoFutura(string fecha, bool aceptada)
+    [InlineData("2026-10-05T05:00:00Z", true)]    // 00:00 del lunes en Bogotá
+    [InlineData("2026-10-05T16:59:59Z", true)]    // 11:59:59 en Bogotá
+    [InlineData("2026-10-05T17:00:00Z", false)]   // 12:00 en Bogotá: corte
+    [InlineData("2026-10-05T20:02:00.074Z", false)] // 15:02 en Bogotá (la respuesta real del 2026-10-05): puede ser la de mañana
+    [InlineData("2026-10-05T04:59:59Z", false)]   // 23:59 del domingo en Bogotá: otro día
+    [InlineData("2026-10-02T15:00:00Z", false)]   // viernes: puede ser otra vigencia
+    [InlineData("2026-10-06T13:00:00Z", false)]   // martes: futura
+    [InlineData("2026-10-05T09:00:00-05:00", true)]
+    public async Task SoloSeAceptaSiSeRefrescoElDiaPedidoAntesDelCorte(string fecha, bool aceptada)
     {
-        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","valor":3273.49,"fechaActualizacion":"{{fecha}}"}""");
+        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"{{fecha}}"}""");
 
         var resultado = await Proveedor().ObtenerAsync(_lunes, Ct);
 
         resultado.EsExitoso.Should().Be(aceptada, resultado.EsFallo ? resultado.Error.Detalle : "aceptada");
+        if (!aceptada)
+        {
+            resultado.Error.Detalle.Should().Contain("ventana segura");
+        }
+    }
+
+    // Desviación de ±10 % frente a la última TRM válida conocida (en caché o del respaldo).
+    [Theory]
+    [InlineData("3000", "3273.49", true)]     // -8,35 %
+    [InlineData("3000", "3300.00", true)]     // 10 % exacto
+    [InlineData("3000", "3300.01", false)]
+    [InlineData("3000", "2699.99", false)]
+    [InlineData(null, "19000", true)]         // sin referencia no se compara
+    public async Task UnValorQueSeDesviaMasDelDiezPorCientoSeRechaza(string? anterior, string valor, bool aceptado)
+    {
+        if (anterior is not null)
+        {
+            _memoria.Registrar(new Cotifly.Aplicacion.Precio.DTOs.clsTrm(decimal.Parse(anterior, CultureInfo.InvariantCulture), _lunes.AddDays(-1), _lunes.AddDays(-1), "superfinanciera"));
+        }
+
+        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","nombre":"TRM","valor":{{valor}},"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""");
+
+        var resultado = await Proveedor().ObtenerAsync(_lunes, Ct);
+
+        resultado.EsExitoso.Should().Be(aceptado, resultado.EsFallo ? resultado.Error.Detalle : "aceptado");
+        if (!aceptado)
+        {
+            resultado.Error.Detalle.Should().Contain("10 %");
+        }
+    }
+
+    [Fact]
+    public async Task UnCuerpoDeMasDeDieciseisKbSeRechaza()
+    {
+        var relleno = new string('x', clsProveedorTrmDolarApi.TamanoMaximoCuerpo);
+        _fuente.Responder(HttpStatusCode.OK, $$"""{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T13:01:18.476Z","x":"{{relleno}}"}""");
+
+        var resultado = await Proveedor().ObtenerAsync(_lunes, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible);
+        resultado.Error.Detalle.Should().Be("respuesta demasiado grande");
     }
 
     [Theory]
@@ -106,14 +150,16 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
     [InlineData(HttpStatusCode.NotFound, "{}", "HTTP 404")]
     [InlineData(HttpStatusCode.OK, "no es json", "JSON inválido")]
     [InlineData(HttpStatusCode.OK, "[]", "no es un objeto")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"USD","valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}""", "unidad")]
-    [InlineData(HttpStatusCode.OK, """{"valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}""", "unidad")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","fechaActualizacion":"2026-10-05T19:01:18.476Z"}""", "sin valor")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":"abc","fechaActualizacion":"2026-10-05T19:01:18.476Z"}""", "sin valor")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":3273.49}""", "fechaActualizacion")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":3273.49,"fechaActualizacion":"ayer"}""", "fechaActualizacion")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":3273.49,"fechaActualizacion":20261005}""", "fechaActualizacion")]
-    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":3273.49,"fechaActualizacion":"2026-09-20T19:01:18.476Z"}""", "desactualizada")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"USD","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "unidad")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"Dólar blue","valor":3273.49,"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "nombre")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","valor":3273.49,"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "nombre")]
+    [InlineData(HttpStatusCode.OK, """{"valor":3273.49,"fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "unidad")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "sin valor")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":"abc","fechaActualizacion":"2026-10-05T13:01:18.476Z"}""", "sin valor")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49}""", "fechaActualizacion")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"ayer"}""", "fechaActualizacion")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":20261005}""", "fechaActualizacion")]
+    [InlineData(HttpStatusCode.OK, """{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-09-20T19:01:18.476Z"}""", "ventana segura")]
     public async Task UnaRespuestaInvalidaEsTrmNoDisponible(HttpStatusCode estado, string cuerpo, string motivo)
     {
         _fuente.Responder(estado, cuerpo);
@@ -167,6 +213,7 @@ public sealed class clsProveedorTrmDolarApiTests : IDisposable
         new clsFabricaHttpFalsa(_fuente),
         Options.Create(new clsOpcionesTrm { UrlDolarApi = clsDolarApiFalso.Url }),
         new clsCalendarioNegocio(new clsRelojFalso(), Options.Create(new clsOpcionesZona())),
+        _memoria,
         (Microsoft.Extensions.Logging.ILogger<clsProveedorTrmDolarApi>?)logger ?? NullLogger<clsProveedorTrmDolarApi>.Instance);
 
     /// <summary>Fábrica que siempre entrega un cliente sobre el manejador falso (sin tubería de resiliencia).</summary>
