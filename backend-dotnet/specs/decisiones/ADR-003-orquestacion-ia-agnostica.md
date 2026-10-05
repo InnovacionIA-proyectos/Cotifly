@@ -1,6 +1,6 @@
 # ADR-003 — Orquestación de IA agnóstica al proveedor y principio "el LLM solo redacta"
 
-- **Estado:** Aceptada
+- **Estado:** Aceptada. Principio ampliado por ADR-018 (2026-10-05): la IA solo redacta el asunto y la introducción del PDF y propone acciones que el comercial confirma (ver "Actualización 2026-10-05").
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6) y #16 (HU-003.10).
 
@@ -167,6 +167,15 @@ El contrato lo cubren estas pruebas:
 - **Respaldos:** `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview`. Validaron las herramientas, pero entraron en enfriamiento antes de llegar al precio.
 
 **`IA:MaxTokens`.** El valor por defecto sigue en 4096. Con OpenRouter, 4096 provocó un `402 payment_required`: OpenRouter reserva crédito por el máximo de tokens pedido, aunque la respuesta use muchos menos. Para OmniRoute y OpenRouter se recomienda **1500**, que cubre la respuesta final (`texto` ≤ 4000 caracteres, unos 1000 tokens) y las llamadas a herramientas, incluido el payload de `generar_pdf`. La matriz de proveedores probada está en `docs/03-infraestructura.md` (OmniRoute).
+
+## Actualización 2026-10-05 (ADR-018): la IA solo redacta y propone
+
+ADR-018 (HU-013) mantiene la orquestación de esta ADR (`IChatClient`, Semantic Kernel, loop manual, filtros, proveedor por configuración, validación de la salida estructurada) y **estrecha el principio de diseño**:
+
+- **Ya no cotiza.** Las cotizaciones se crean solo por formulario (`POST /web/solicitudes-costeo`). El costo sale de Nexo, el margen sugerido de SAP TM o de la política de la línea, y el precio y el PDF del código (ADR-015). Se retiran del agente `generar_pdf`, `calcular_precio`, `obtener_margen`, `buscar_tarifa` y las herramientas de creación (HU-013.6, detrás de `Chat:CreacionHabilitada=false`).
+- **Redacta** solo el asunto y la introducción del PDF (`IClsRedactorCotizacion`, HU-013.5). Tiene 15 s como máximo, su salida se valida con un esquema y, si algo falla, se usa `clsTextosEstandar` de respaldo. Nunca recibe costos, margen ni precios.
+- **Propone** acciones finales desde `/web/chat`, que exige `folio`: ajustar el margen, re-solicitar el costeo o agregar servicios conexos. Lo hace con herramientas de solo lectura o propuesta (`consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud`, `buscar_servicio_conexo`). La respuesta trae `accion_propuesta` con el endpoint, el método, el cuerpo exacto y un resumen. El frontend la ejecuta con el botón Confirmar llamando al endpoint determinista: **la IA nunca escribe datos de negocio**.
+- La regla 5 de la Decisión ("las acciones con efecto externo exigen confirmación") pasa de una confirmación textual interpretada por el modelo a un clic del comercial sobre un endpoint determinista.
 
 ## Pendientes
 

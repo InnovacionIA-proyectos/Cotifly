@@ -6,7 +6,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 |---|---|---|---|
 | [ADR-001](ADR-001-estrategia-de-corte.md) | Estrategia de corte: big-bang | Aceptada | #7 · HU-004, HU-006 |
 | [ADR-002](ADR-002-arquitectura-clean-monolito-modular.md) | Clean Architecture de 4 capas y monolito modular | Aceptada | #7 · #8 (HU-003.2) |
-| [ADR-003](ADR-003-orquestacion-ia-agnostica.md) | Orquestación de IA agnóstica al proveedor y principio "el LLM solo redacta" | Aceptada | #7 · #12 (HU-003.6), #16 (HU-003.10) |
+| [ADR-003](ADR-003-orquestacion-ia-agnostica.md) | Orquestación de IA agnóstica al proveedor y principio "el LLM solo redacta" | Aceptada (principio ampliado por ADR-018: la IA solo redacta los textos del PDF y propone acciones) | #7 · #12 (HU-003.6), #16 (HU-003.10), #97 (HU-013.1) |
 | [ADR-004](ADR-004-estado-conversacion-slot-filling.md) | Estado de conversación estructurado (slot-filling) | Aceptada (script 0002 pendiente) | #7 · #12 (HU-003.6) |
 | [ADR-005](ADR-005-busqueda-clientes-desde-chat.md) | Búsqueda real de clientes desde el chat | Aceptada (depende de HU-005.2; uso de Grovity para validar: Propuesta) | #7 · #12 (HU-003.6), HU-005.2 |
 | [ADR-006](ADR-006-libreria-pdf.md) | Librería de PDF: PDFsharp-MigraDoc | Aceptada | #7 · #11 (HU-003.5) |
@@ -14,13 +14,14 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 | [ADR-008](ADR-008-persistencia-ef-core-database-first.md) | Persistencia: EF Core Database First sobre `dbo_cotifly` | Aceptada (desviación del Gherkin de HU-003; login `cotifly_app` pendiente) | #7 · #9 (HU-003.3), #5, #44 |
 | [ADR-009](ADR-009-autenticacion-sso-clientepro.md) | Autenticación: patrón "Login SSO — Cliente Pro" con verificación doble | Aceptada (D8 resuelto el 2026-09-25; IDROLES reales y revisión del 0002 pendientes) | #7 · #12 (HU-003.6), #17 |
 | [ADR-010](ADR-010-metodologia-sdd-tdd-bdd.md) | Metodología: SDD, TDD y BDD | Aceptada | #7 · HU-003.2 a HU-003.10 |
-| [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Aceptada (folio con iniciales del comercial, 2026-09-25; identidad y PDF en Google Chat implementados en #12 parte C) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
+| [ADR-011](ADR-011-folio-e-identidad-google-chat.md) | Folio e identidad en Google Chat | Reemplazada por ADR-018 (2026-10-05: Google Chat sale del alcance; el formato del folio sigue vigente en ADR-018 §7) | #7 · #12 (HU-003.6), HU-005.2, HU-010 |
 | [ADR-012](ADR-012-integraciones-diferidas-sheets-y-s3.md) | Integraciones diferidas: Google Sheets y almacenamiento S3 | Pendiente | #13 (HU-003.7), HU-006.6 |
 | [ADR-013](ADR-013-despliegue-dokploy.md) | Despliegue del backend .NET en Dokploy: secretos, registry, pipeline, manifiestos, backups y JWT de Google Chat | Propuesta (secretos, cuenta del registry y backups nativos pendientes de confirmar con infraestructura y el DBA; staging sin probar) | #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #31 (HU-006.7), #33 (HU-007.1) |
 | [ADR-014](ADR-014-trm-y-cotizaciones-en-usd.md) | TRM oficial y cotizaciones en dólares | Propuesta (fuente pendiente de confirmar con el equipo) | #50, #51, #52 · HU-012 |
 | [ADR-015](ADR-015-costeo-nexo.md) | Costeo en Nexo: persistencia, envío, polling, margen y resultado | Aceptada (0004 y varios puntos con Nexo pendientes) | #24, #21, #22, #23, #42 · HU-005.5 a HU-005.8, HU-005.14 |
 | [ADR-016](ADR-016-metricas-agregadas-y-regional.md) | Métricas agregadas del tablero y regional del usuario | Propuesta (definiciones por validar con Gerencia Comercial; tabla de la regional verificada en #81, falta la credencial en Dokploy) | #45 (HU-010.1), #81 (HU-003.6, regional en el login) · clientepro-frontend #50, #51, #52 |
 | [ADR-017](ADR-017-licitaciones-multilinea.md) | Licitaciones desde Excel y cotizaciones de varias líneas | Propuesta (formato y preguntas pendientes de Gerencia Comercial; 0005 pendiente de scalderon-bs y del DBA) | #46, #47, #48, #49 · HU-011 |
+| [ADR-018](ADR-018-pipeline-determinista-ia-etapa-final.md) | Pipeline determinista de cotización e IA en la etapa final (la IA redacta y propone; propuesta → Confirmar) | Aceptada (decisión del usuario del 2026-10-05; preguntas a Nexo y script 0006 pendientes) | #97 (HU-013.1) · #98 a #105 (HU-013.2 a HU-013.9) |
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 

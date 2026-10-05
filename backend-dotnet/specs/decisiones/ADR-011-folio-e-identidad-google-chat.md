@@ -1,6 +1,6 @@
 # ADR-011 — Folio e identidad en Google Chat
 
-- **Estado:** Aceptada (folio: aprobado por Duban el 2026-09-25 e implementado en #12 parte B; iniciales del comercial en el folio: decisión de Duban del 2026-09-25, implementada en #12; identidad y PDF en Google Chat: implementados en #12 parte C según esta decisión).
+- **Estado:** Reemplazada por ADR-018 (2026-10-05). Google Chat sale del alcance de Cotifly: la identidad y la entrega del PDF por Google Chat se retiran en HU-013.9 (#105). El formato del folio de esta ADR sigue vigente sin cambios y ADR-018 §7 lo retoma. Estado anterior: Aceptada (folio: aprobado por Duban el 2026-09-25 e implementado en #12 parte B; iniciales del comercial en el folio: decisión de Duban del 2026-09-25, implementada en #12; identidad y PDF en Google Chat: implementados en #12 parte C según esta decisión).
 - **Fecha:** 2026-09-24 (aceptación del folio y de las iniciales: 2026-09-25)
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6). Relacionada con HU-004.4/HU-004.5, HU-005.2 y HU-010.
 
