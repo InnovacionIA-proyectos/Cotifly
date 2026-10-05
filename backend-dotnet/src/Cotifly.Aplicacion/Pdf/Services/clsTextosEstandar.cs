@@ -38,7 +38,6 @@ public static class clsTextosEstandar
     public const string EtiquetaAsunto = "Asunto:";
     public const string EtiquetaNota = "Nota:";
     public const string EtiquetaTiemposLogisticos = "Tiempos logísticos:";
-    public const string EtiquetaMoneda = "Cotización en dólares:";
     public const string EtiquetaCelular = "Cel";
 
     /// <summary>Encabezados de columna de la tabla de tarifa (tarifa única).</summary>

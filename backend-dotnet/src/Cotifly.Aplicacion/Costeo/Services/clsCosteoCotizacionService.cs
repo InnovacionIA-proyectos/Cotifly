@@ -344,7 +344,11 @@ public sealed class clsCosteoCotizacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
-        ArgumentException.ThrowIfNullOrWhiteSpace(moneda);
+        if (string.IsNullOrWhiteSpace(moneda))
+        {
+            return new clsErrorDominio(clsCodigosError.PdfPayloadInvalido, $"El pliego {cotizacion.Folio} no trae la moneda de la cotización.");
+        }
+
         if (lineas.FirstOrDefault(l => l.PrecioFinal is null) is { } sinPrecio)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La línea {sinPrecio.Orden} del pliego {cotizacion.Folio} todavía no tiene precio.");

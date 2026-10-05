@@ -36,9 +36,10 @@ public sealed class clsGeneradorPdfMigraDocTests
         pdf.Paginas.Should().Be(3, "la nota cabe en la página de la tarifa");
         var tarifa = Normalizar(lector.Paginas[1]);
         tarifa.Should().Contain("US$996,35");
-        tarifa.Should().Contain("Cotización en dólares: " + NotaTrm3306);
+        tarifa.Should().Contain(NotaTrm3306);
+        tarifa.Should().NotContain("Cotización en dólares", "el PDF muestra solo el texto exacto, sin etiqueta");
         tarifa.Should().NotContain("mínimo a pagar").And.NotContain("día a día");
-        tarifa.IndexOf("Cotización en dólares:", StringComparison.Ordinal).Should()
+        tarifa.IndexOf(NotaTrm3306, StringComparison.Ordinal).Should()
             .BeGreaterThan(tarifa.IndexOf("US$996,35", StringComparison.Ordinal), "la nota va debajo de la tabla");
     }
 
@@ -63,7 +64,7 @@ public sealed class clsGeneradorPdfMigraDocTests
 
         var (_, lector) = Generar(documento);
 
-        Normalizar(lector.Texto).Should().Contain("Cotización en dólares: " + NotaTrm3306);
+        Normalizar(lector.Texto).Should().Contain(NotaTrm3306).And.NotContain("Cotización en dólares");
     }
 
     // test_render_pdf_genera_archivo_y_paginas

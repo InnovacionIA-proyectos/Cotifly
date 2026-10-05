@@ -101,6 +101,8 @@ public sealed class clsPrecioCosteoLineasTests
         cotizacion.Costo.Should().Be(3_850_000m, "el costo de Nexo se guarda en pesos");
         clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Should().ContainSingle().Which.Precio.Should().Be(61.10m);
         clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, "USD").Should().BeNull("el pliego en USD ya no se rechaza");
+        clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, " ")!.Codigo.Should().Be(Cotifly.Dominio.Comun.clsCodigosError.PdfPayloadInvalido,
+            "sin moneda es un error de dominio, no una excepción");
     }
 
     [Fact]
