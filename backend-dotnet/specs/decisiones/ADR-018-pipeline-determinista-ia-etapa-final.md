@@ -198,6 +198,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **Métricas.** `vAjustesMargenPorComercial` gana `numAjustesBajoSugerido` (`diferencia < 0`) y `GET /web/metricas/ajustes-margen` lo expone como `num_ajustes_bajo_sugerido`.
 - **No se reutiliza `IClsAjusteMargenService`** (chat, HU-003.4): guarda por su cuenta y pone un motivo por defecto. El ajuste del costeo confirma el ajuste, los precios, la invalidación del PDF y la versión en una sola transacción, y deja la justificación nula por encima del sugerido.
 - **Reversa del 0006:** `db/migrations_mssql/rollback/0006_textos_y_concurrencia_reversa.sql` (destructiva para esas columnas y el historial; primero se vuelve a la versión anterior de la aplicación).
+- **Idempotencia (#100, adoptada por #99).** `IClsAlmacenIdempotencia.EjecutarUnaVezAsync<T>(ambito, clave, huella, accion, seGuarda, ct)` es la única abstracción de `Idempotency-Key` del proyecto: `ambito = "{operacion}:{usuarioId}"`, `huella` = SHA-256 del folio y el cuerpo, semáforo por clave, 24 h de vigencia, purga de claves vencidas y fallidas, y `seGuarda` (por defecto, solo los éxitos) decide qué resultados consumen la clave. La implementación vigente es en memoria (`clsAlmacenIdempotenciaEnMemoria`) y vale mientras la API corre con `replicas: 1` (`infra/stack.dotnet.dokploy.yml`). Al escalar se crea la tabla de idempotencia con un script `0008` y una implementación SQL de la misma interfaz.
 
 ## Alternativas consideradas
 

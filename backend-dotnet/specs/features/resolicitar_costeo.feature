@@ -36,11 +36,11 @@ Característica: Re-solicitar el costeo a Nexo
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente cambió el peso" y estos datos de carga:
       | campo         | valor |
       | peso_kg       | 28400 |
-      | tipo_vehiculo | 3S2   |
+      | tipo_vehiculo | 2S3   |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y el encabezado Location apunta al costeo de la versión nueva
-    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "3S2"
+    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "2S3"
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
     Y Nexo recibió la solicitud de la versión nueva con el peso 28400
 

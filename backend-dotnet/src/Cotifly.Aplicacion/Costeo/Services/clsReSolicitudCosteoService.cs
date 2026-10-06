@@ -88,11 +88,23 @@ public sealed class clsReSolicitudCosteoService(
         return claveIdempotencia is null
             ? EjecutarAsync(usuarioId, folio, entrada, versionEsperada, cancellationToken)
             : idempotencia.EjecutarUnaVezAsync(
-                $"{OperacionIdempotencia}:{usuarioId:N}",
+                $"{OperacionIdempotencia}:{usuarioId}",
                 claveIdempotencia,
                 Huella(folio, entrada),
                 ct => EjecutarAsync(usuarioId, folio, entrada, versionEsperada, ct),
+                SeGuarda,
                 cancellationToken);
+    }
+
+    /// <summary>
+    /// Qué consume la <c>Idempotency-Key</c>: los éxitos con Nexo. Un 200 con <c>error_envio</c> (Nexo falló) no la consume: repetir
+    /// con la misma clave vuelve a ejecutar (y, como la versión ya subió, responde <c>CONFLICTO_CONCURRENCIA</c> si el <c>If-Match</c>
+    /// es el de antes; el comercial recarga y reintenta). Contrato: <c>IdempotencyKey</c>.
+    /// </summary>
+    public static bool SeGuarda(clsResultado<clsReSolicitudCosteo> resultado)
+    {
+        ArgumentNullException.ThrowIfNull(resultado);
+        return resultado.EsExitoso && resultado.Valor.Cotizacion.EstadoCosteo != "error_envio";
     }
 
     private async Task<clsResultado<clsReSolicitudCosteo>> EjecutarAsync(

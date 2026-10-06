@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Dominio.Comun;
@@ -6,28 +5,40 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Comun;
 
 /// <summary>
-/// <see cref="IClsAlmacenIdempotencia"/> en la memoria del proceso (singleton): un candado por clave serializa las repeticiones
-/// simultáneas y el resultado exitoso queda guardado <see cref="IClsAlmacenIdempotencia.Vigencia"/>.
+/// <see cref="IClsAlmacenIdempotencia"/> en la memoria del proceso (singleton): un semáforo POR CLAVE serializa las repeticiones
+/// simultáneas y el resultado que se guarda queda <see cref="IClsAlmacenIdempotencia.Vigencia"/>.
 /// </summary>
 /// <remarks>
-/// Suficiente con una sola réplica de la API (<c>infra/stack.dotnet.dokploy.yml</c>, <c>replicas: 1</c>). Un reinicio olvida las claves,
-/// y entonces la defensa que queda es el <c>If-Match</c> obligatorio (en el mismo folio la segunda petición responde
-/// <c>CONFLICTO_CONCURRENCIA</c>). Con varias réplicas hay que pasar a una tabla (pendiente reportado en #100).
+/// Válido mientras la API corre con una sola réplica (<c>infra/stack.dotnet.dokploy.yml</c>, <c>replicas: 1</c>). Un reinicio olvida
+/// las claves; la defensa que queda es el <c>If-Match</c> obligatorio (la segunda petición responde <c>CONFLICTO_CONCURRENCIA</c>). Con
+/// varias réplicas se pasa a una tabla con un script <c>0008</c> (ADR-018 §12).
+/// <para>Cada entrada cuenta cuántas peticiones la están usando (bajo <see cref="_candado"/>): la purga solo quita una entrada sin
+/// usuarios, así dos peticiones con la misma clave nunca obtienen semáforos distintos.</para>
 /// </remarks>
 public sealed class clsAlmacenIdempotenciaEnMemoria(IClsReloj reloj) : IClsAlmacenIdempotencia
 {
-    private readonly ConcurrentDictionary<string, clsEntrada> _entradas = new(StringComparer.Ordinal);
+    private readonly object _candado = new();
+    private readonly Dictionary<string, clsEntrada> _entradas = new(StringComparer.Ordinal);
 
     /// <summary>Claves recordadas (para pruebas y diagnóstico).</summary>
-    public int Cantidad => _entradas.Count;
+    public int Cantidad
+    {
+        get
+        {
+            lock (_candado)
+            {
+                return _entradas.Count;
+            }
+        }
+    }
 
-    public async Task<clsResultado<TValor>> EjecutarUnaVezAsync<TValor>(
+    public async Task<clsResultado<T>> EjecutarUnaVezAsync<T>(
         string ambito,
         string clave,
         string huella,
-        Func<CancellationToken, Task<clsResultado<TValor>>> accion,
-        CancellationToken cancellationToken = default)
-        where TValor : class
+        Func<CancellationToken, Task<clsResultado<T>>> accion,
+        Func<clsResultado<T>, bool>? seGuarda,
+        CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ambito);
         ArgumentException.ThrowIfNullOrWhiteSpace(huella);
@@ -39,53 +50,88 @@ public sealed class clsAlmacenIdempotenciaEnMemoria(IClsReloj reloj) : IClsAlmac
                 $"Idempotency-Key debe tener entre {IClsAlmacenIdempotencia.LargoMinimoClave} y {IClsAlmacenIdempotencia.LargoMaximoClave} caracteres.");
         }
 
-        Purgar();
-        var entrada = _entradas.GetOrAdd($"{ambito}\n{clave}", _ => new clsEntrada());
-        await entrada.Candado.WaitAsync(cancellationToken);
+        var llave = $"{ambito}\n{clave}";
+        var entrada = Tomar(llave);
         try
         {
-            if (entrada.Valor is not null && entrada.Expira > reloj.AhoraUtc)
+            await entrada.Semaforo.WaitAsync(ct);
+            try
             {
-                return entrada.Huella == huella
-                    ? (TValor)entrada.Valor
-                    : new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
-                        "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
-            }
+                if (entrada.Guardado is { } guardado && entrada.Expira > reloj.AhoraUtc)
+                {
+                    return entrada.Huella == huella
+                        ? (clsResultado<T>)guardado
+                        : new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
+                            "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
+                }
 
-            var resultado = await accion(cancellationToken);
-            if (resultado.EsExitoso)
+                var resultado = await accion(ct);
+                if (seGuarda?.Invoke(resultado) ?? resultado.EsExitoso)
+                {
+                    entrada.Huella = huella;
+                    entrada.Guardado = resultado;
+                    entrada.Expira = reloj.AhoraUtc.Add(IClsAlmacenIdempotencia.Vigencia);
+                }
+                else
+                {
+                    entrada.Guardado = null;
+                }
+
+                return resultado;
+            }
+            finally
             {
-                entrada.Huella = huella;
-                entrada.Valor = resultado.Valor;
-                entrada.Expira = reloj.AhoraUtc.Add(IClsAlmacenIdempotencia.Vigencia);
+                entrada.Semaforo.Release();
             }
-
-            return resultado;
         }
         finally
         {
-            entrada.Candado.Release();
+            Soltar(llave, entrada);
         }
     }
 
-    /// <summary>Olvida las claves vencidas que nadie está usando.</summary>
-    private void Purgar()
+    /// <summary>Entrada de la clave (la crea si no existe) con un usuario más; purga de paso las vencidas y fallidas sin usuarios.</summary>
+    private clsEntrada Tomar(string llave)
     {
-        var ahora = reloj.AhoraUtc;
-        foreach (var (llave, entrada) in _entradas)
+        lock (_candado)
         {
-            if (entrada.Valor is not null && entrada.Expira <= ahora && entrada.Candado.CurrentCount == 1)
+            var ahora = reloj.AhoraUtc;
+            foreach (var (otra, vieja) in _entradas.Where(e => e.Value.Usuarios == 0 && (e.Value.Guardado is null || e.Value.Expira <= ahora)).ToList())
             {
-                _entradas.TryRemove(new KeyValuePair<string, clsEntrada>(llave, entrada));
+                _entradas.Remove(otra);
+                vieja.Semaforo.Dispose();
+            }
+
+            if (!_entradas.TryGetValue(llave, out var entrada))
+            {
+                entrada = new clsEntrada();
+                _entradas[llave] = entrada;
+            }
+
+            entrada.Usuarios++;
+            return entrada;
+        }
+    }
+
+    /// <summary>Un usuario menos; una clave sin resultado guardado y sin usuarios se olvida enseguida.</summary>
+    private void Soltar(string llave, clsEntrada entrada)
+    {
+        lock (_candado)
+        {
+            entrada.Usuarios--;
+            if (entrada.Usuarios == 0 && entrada.Guardado is null && _entradas.Remove(llave))
+            {
+                entrada.Semaforo.Dispose();
             }
         }
     }
 
     private sealed class clsEntrada
     {
-        public SemaphoreSlim Candado { get; } = new(1, 1);
+        public SemaphoreSlim Semaforo { get; } = new(1, 1);
+        public int Usuarios { get; set; }
         public string? Huella { get; set; }
-        public object? Valor { get; set; }
+        public object? Guardado { get; set; }
         public DateTimeOffset Expira { get; set; }
     }
 }

@@ -24,8 +24,8 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
 
-        var primero = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), Ct);
-        var segundo = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v2"), Ct);
+        var primero = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
+        var segundo = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v2"), null, Ct);
 
         primero.Valor.Should().Be("v1");
         segundo.Valor.Should().BeSameAs(primero.Valor);
@@ -44,8 +44,8 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
             return "unico";
         }
 
-        var a = almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Lenta, Ct);
-        var b = almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Lenta, Ct);
+        var a = almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Lenta, null, Ct);
+        var b = almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Lenta, null, Ct);
         liberar.SetResult();
         var resultados = await Task.WhenAll(a, b);
 
@@ -57,9 +57,9 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     public async Task LaMismaClaveConOtraHuellaEsSolicitudInvalida()
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
-        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), Ct);
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
 
-        var otra = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h2", Accion("v2"), Ct);
+        var otra = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h2", Accion("v2"), null, Ct);
 
         otra.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
         _ejecuciones.Should().Be(1);
@@ -70,9 +70,9 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
 
-        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("a"), Ct);
-        await almacen.EjecutarUnaVezAsync("re_solicitar_costeo:luis", Clave, "h1", Accion("b"), Ct);
-        await almacen.EjecutarUnaVezAsync(Ambito, Clave + "-2", "h1", Accion("c"), Ct);
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("a"), null, Ct);
+        await almacen.EjecutarUnaVezAsync("re_solicitar_costeo:luis", Clave, "h1", Accion("b"), null, Ct);
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave + "-2", "h1", Accion("c"), null, Ct);
 
         _ejecuciones.Should().Be(3);
     }
@@ -83,8 +83,8 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
 
         var fallo = await almacen.EjecutarUnaVezAsync<string>(Ambito, Clave, "h1",
-            _ => { _ejecuciones++; return Task.FromResult<clsResultado<string>>(new clsErrorDominio("CONFLICTO_CONCURRENCIA", "x")); }, Ct);
-        var exito = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), Ct);
+            _ => { _ejecuciones++; return Task.FromResult<clsResultado<string>>(new clsErrorDominio("CONFLICTO_CONCURRENCIA", "x")); }, null, Ct);
+        var exito = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
 
         fallo.EsFallo.Should().BeTrue();
         exito.Valor.Should().Be("v1");
@@ -95,10 +95,10 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     public async Task PasadasVeinticuatroHorasLaClaveSeOlvida()
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
-        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), Ct);
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
 
         _reloj.Avanzar(IClsAlmacenIdempotencia.Vigencia + TimeSpan.FromSeconds(1));
-        var despues = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v2"), Ct);
+        var despues = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v2"), null, Ct);
 
         despues.Valor.Should().Be("v2");
         _ejecuciones.Should().Be(2);
@@ -112,10 +112,37 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
 
-        var resultado = await almacen.EjecutarUnaVezAsync(Ambito, clave, "h1", Accion("v1"), Ct);
+        var resultado = await almacen.EjecutarUnaVezAsync(Ambito, clave, "h1", Accion("v1"), null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
         _ejecuciones.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SeGuardaDecideQueConsumeLaClaveYLasFallidasSePurgan()
+    {
+        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
+
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("error_envio"), r => r.Valor != "error_envio", Ct);
+        almacen.Cantidad.Should().Be(0, "una clave que no se guardó se olvida enseguida");
+        var guardado = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("ok"), r => r.Valor != "error_envio", Ct);
+        var repetido = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("otra"), r => r.Valor != "error_envio", Ct);
+
+        guardado.Valor.Should().Be("ok");
+        repetido.Valor.Should().Be("ok");
+        _ejecuciones.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task LasClavesVencidasSePurganAlUsarOtra()
+    {
+        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
+        await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
+
+        _reloj.Avanzar(IClsAlmacenIdempotencia.Vigencia + TimeSpan.FromSeconds(1));
+        await almacen.EjecutarUnaVezAsync(Ambito, "otra-clave-123", "h1", Accion("v2"), null, Ct);
+
+        almacen.Cantidad.Should().Be(1, "la clave vencida se purgó");
     }
 
     private Func<CancellationToken, Task<clsResultado<string>>> Accion(string valor) => _ =>

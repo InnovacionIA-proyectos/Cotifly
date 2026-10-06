@@ -172,7 +172,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         {
             Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg, clsCambiosCarga.CampoTipoVehiculo },
             PesoKg = 28_400m,
-            TipoVehiculo = "3S2",
+            TipoVehiculo = "2S3",
         };
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
@@ -185,7 +185,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         nueva.NitCliente.Should().Be(_cotizacion.NitCliente);
         nueva.UsuarioId.Should().Be(_ana);
         nueva.PesoKg.Should().Be(28_400m);
-        nueva.TipoVehiculo.Should().Be("3S2");
+        nueva.TipoVehiculo.Should().Be("2S3");
         nueva.Carroceria.Should().Be("PORTACONTENEDORES");
         nueva.CosteoId.Should().Be("sol-nueva");
         _lineasAgregadas.Should().ContainSingle().Which.PesoKg.Should().Be(28_400m);
@@ -240,23 +240,25 @@ public sealed class clsReSolicitudCosteoServiceTests
     public async Task ConIdempotencyKeyEjecutaUnaSolaVezPorComercialYHuella()
     {
         _idempotencia.EjecutarUnaVezAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-                Arg.Any<Func<CancellationToken, Task<clsResultado<clsReSolicitudCosteo>>>>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<CancellationToken, Task<clsResultado<clsReSolicitudCosteo>>>>(), Arg.Any<Func<clsResultado<clsReSolicitudCosteo>, bool>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<Func<CancellationToken, Task<clsResultado<clsReSolicitudCosteo>>>>()(CancellationToken.None));
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada(), Version, "clave-12345", Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         await _idempotencia.Received(1).EjecutarUnaVezAsync(
-            $"{clsReSolicitudCosteoService.OperacionIdempotencia}:{_ana:N}", "clave-12345",
+            $"{clsReSolicitudCosteoService.OperacionIdempotencia}:{_ana}", "clave-12345",
             clsReSolicitudCosteoService.Huella(_cotizacion.Folio, Entrada()),
-            Arg.Any<Func<CancellationToken, Task<clsResultado<clsReSolicitudCosteo>>>>(), Arg.Any<CancellationToken>());
+            Arg.Any<Func<CancellationToken, Task<clsResultado<clsReSolicitudCosteo>>>>(), Arg.Any<Func<clsResultado<clsReSolicitudCosteo>, bool>?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public void LaHuellaCambiaConElCuerpoYNoConElOrdenDeLosCampos()
     {
-        var a = new clsCambiosCarga { Presentes = new HashSet<string> { "peso_kg", "tipo_vehiculo" }, PesoKg = 1m, TipoVehiculo = "3S2" };
-        var b = new clsCambiosCarga { Presentes = new HashSet<string> { "tipo_vehiculo", "peso_kg" }, PesoKg = 1m, TipoVehiculo = "3S2" };
+        var a = new clsCambiosCarga { Presentes = new HashSet<string> { "peso_kg", "tipo_vehiculo" }, PesoKg = 1m, TipoVehiculo = "2S3" };
+        var b = new clsCambiosCarga { Presentes = new HashSet<string> { "tipo_vehiculo", "peso_kg" }, PesoKg = 1m, TipoVehiculo = "2S3" };
 
         clsReSolicitudCosteoService.Huella("F", Entrada() with { DatosCarga = a })
             .Should().Be(clsReSolicitudCosteoService.Huella("F", Entrada() with { DatosCarga = b }));

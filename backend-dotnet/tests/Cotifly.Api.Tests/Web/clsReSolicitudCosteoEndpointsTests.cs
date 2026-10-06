@@ -99,7 +99,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         var etag = await EtagAsync(sesion, folio);
 
         using var respuesta = await ReSolicitarAsync(sesion, folio,
-            """{"motivo":"El cliente cambió el peso","datos_carga":{"peso_kg":28400,"tipo_vehiculo":"3S2"}}""", etag);
+            """{"motivo":"El cliente cambió el peso","datos_carga":{"peso_kg":28400,"tipo_vehiculo":"2S3"}}""", etag);
 
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.Created);
         var folioNuevo = json.GetProperty("folio").GetString()!;
@@ -109,7 +109,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         respuesta.Headers.Location!.ToString().Should().Be($"/web/cotizaciones/{folioNuevo}/costeo");
         respuesta.Headers.ETag.Should().NotBeNull();
         (await ColumnaAsync(folioNuevo, "pesoKg")).Should().StartWith("28400");
-        (await ColumnaAsync(folioNuevo, "tipoVehiculo")).Should().Be("3S2");
+        (await ColumnaAsync(folioNuevo, "tipoVehiculo")).Should().Be("2S3");
         (await ColumnaAsync(folioNuevo, "carroceria")).Should().Be("PORTACONTENEDORES", "lo que no cambia se copia de la original");
         (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.Cotizaciones c ON c.id = p.cotizacionId WHERE c.folio = '{folioNuevo}'"))
             .Should().Be(2);
