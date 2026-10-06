@@ -259,6 +259,39 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         (await ColumnaFolioAsync(FolioNuevo, "origenMargen")).Should().Be(origen);
     }
 
+    [Given("que la cotización {string} está en {string} con la TRM {string}")]
+    public async Task DadoEnMoneda(string cotizacion, string moneda, string trm)
+    {
+        // El formulario en USD llega con #103: aquí se deja la cotización como la deja un alta en dólares.
+        await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET moneda = '{moneda}', trmAplicada = {trm} WHERE folio = '{costeo.Folio(cotizacion)}'");
+    }
+
+    [Then("la versión nueva está en {string} con la TRM {string}")]
+    public async Task EntoncesMonedaDeLaVersion(string moneda, string trm)
+    {
+        (await ColumnaFolioAsync(FolioNuevo, "moneda")).Should().Be(moneda);
+        decimal.Parse((await ColumnaFolioAsync(FolioNuevo, "trmAplicada"))!, CultureInfo.InvariantCulture)
+            .Should().Be(decimal.Parse(trm, CultureInfo.InvariantCulture));
+    }
+
+    [Then("la cotización {string} sigue en {string} con la TRM {string} y su versión de negocio")]
+    public async Task EntoncesOriginalIntacta(string cotizacion, string moneda, string trm)
+    {
+        (await costeo.Columna(cotizacion, "moneda")).Should().Be(moneda);
+        decimal.Parse((await costeo.Columna(cotizacion, "trmAplicada"))!, CultureInfo.InvariantCulture)
+            .Should().Be(decimal.Parse(trm, CultureInfo.InvariantCulture));
+        (await costeo.Columna(cotizacion, "versionNegocio")).Should().Be(_versionLeida, "sin TRM no se reserva la original");
+    }
+
+    [Then("la cotización {string} sigue en {string} con la TRM {string}")]
+    public async Task EntoncesOriginalConTrm(string cotizacion, string moneda, string trm)
+    {
+        (await costeo.Columna(cotizacion, "moneda")).Should().Be(moneda);
+        decimal.Parse((await costeo.Columna(cotizacion, "trmAplicada"))!, CultureInfo.InvariantCulture)
+            .Should().Be(decimal.Parse(trm, CultureInfo.InvariantCulture));
+    }
+
     [Then("Nexo recibió en las notas la re-solicitud de {string} que reemplaza su solicitud anterior")]
     public void EntoncesNotas(string cotizacion) =>
         costeo.Nexo.UltimaAlta!["notas"]!.GetValue<string>().Should()

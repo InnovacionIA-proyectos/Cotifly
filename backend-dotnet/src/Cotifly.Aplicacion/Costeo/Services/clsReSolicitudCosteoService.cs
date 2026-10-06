@@ -67,6 +67,7 @@ public sealed class clsReSolicitudCosteoService(
     IClsGeneradorFolioService folios,
     IClsEnvioCosteoService envio,
     IClsValidadorCatalogosCaptura catalogos,
+    IClsFijacionMonedaService monedas,
     IClsMisCotizacionesService misCotizaciones,
     IClsAlmacenIdempotencia idempotencia,
     IClsUnitOfWork unidadTrabajo,
@@ -291,6 +292,14 @@ public sealed class clsReSolicitudCosteoService(
             return (invalida, null, false);
         }
 
+        // La versión nueva es una cotización nueva (decisión del 2026-10-06): misma moneda, TRM del día. Sin TRM no se crea nada (ni
+        // la reserva de la original, ni la versión, ni la captura en Nexo), igual que el formulario y las licitaciones.
+        var moneda = await monedas.FijarAsync(original.Moneda, cancellationToken);
+        if (moneda.EsFallo)
+        {
+            return (moneda.Error, null, false);
+        }
+
         if (!await ReservarAsync(original, versionEsperada, reserva, cancellationToken))
         {
             return (clsReglaPdfCosteo.Conflicto(original.Folio), null, false);
@@ -300,7 +309,7 @@ public sealed class clsReSolicitudCosteoService(
         List<clsCotizacionPosicion> nuevasPosiciones = [];
         var creada = await folios.CrearNuevaVersionAsync<clsCotizacion>(usuarioId, original.Id, async (folio, ct) =>
         {
-            var version = original.CrearVersion(folio);
+            var version = original.CrearVersion(folio, moneda.Valor.TrmAplicada);
             if (version.EsFallo)
             {
                 return version.Error;

@@ -748,10 +748,12 @@ public sealed class clsCotizacion
 
     /// <summary>
     /// Cotización de la versión <paramref name="folio"/> (<c>-vN</c>, ADR-011) con la identidad de esta: cliente, línea de negocio,
-    /// comercial, moneda y TRM fijada. El formulario, las líneas y las posiciones los registra el caso de uso; el costeo, el margen, el
-    /// PDF, los textos y el resultado empiezan de cero (la versión nueva pasa otra vez por Nexo, ADR-018 §11).
+    /// comercial y moneda. La TRM NO se copia (decisión del 2026-10-06, ADR-014 §5 y ADR-018 §5): la versión nueva es una cotización
+    /// nueva y el caso de uso fija la TRM del día (<paramref name="trmDelDia"/>, 0 en COP) antes de crearla. El formulario, las líneas y
+    /// las posiciones los registra el caso de uso; el costeo, el PDF, los textos y el resultado empiezan de cero (la versión nueva pasa
+    /// otra vez por Nexo, ADR-018 §11).
     /// </summary>
-    public clsResultado<clsCotizacion> CrearVersion(clsFolio folio)
+    public clsResultado<clsCotizacion> CrearVersion(clsFolio folio, decimal trmDelDia)
     {
         ArgumentNullException.ThrowIfNull(folio);
         if (folio.Version <= Version)
@@ -771,7 +773,7 @@ public sealed class clsCotizacion
             OrigenCliente = OrigenCliente,
             UsuarioId = UsuarioId,
             Moneda = Moneda ?? MonedaPesos,
-            TrmAplicada = TrmAplicada,
+            TrmAplicada = trmDelDia,
             MargenPolitica = negociado ? MargenPolitica : null,
             MargenAplicado = negociado ? MargenAplicado : null,
             OrigenMargen = negociado ? Margen.OrigenMargen.Negociado : null,

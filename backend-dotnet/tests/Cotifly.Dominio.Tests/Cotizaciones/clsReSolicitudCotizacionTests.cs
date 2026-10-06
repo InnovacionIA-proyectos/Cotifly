@@ -119,7 +119,7 @@ public sealed class clsReSolicitudCotizacionTests
         original.AsignarPdf("PCN.pdf");
         original.RegistrarEnvio();
 
-        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor).Valor;
+        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor, 0m).Valor;
 
         nueva.Folio.Should().Be($"{original.Folio}-v2");
         nueva.Version.Should().Be(2);
@@ -146,7 +146,7 @@ public sealed class clsReSolicitudCotizacionTests
             MetodoCalculo = "margen",
         }).Valor;
 
-        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor).Valor;
+        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor, 0m).Valor;
         nueva.RefrescarMargenSugerido(0.15m, 0.18m, Cotifly.Dominio.Margen.OrigenMargen.SapTm);
 
         nueva.TieneMargenNegociado.Should().BeTrue();
@@ -154,8 +154,25 @@ public sealed class clsReSolicitudCotizacionTests
         nueva.OrigenMargen.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.Negociado);
         nueva.MargenSugerido.Should().Be(0.18m);
         nueva.OrigenMargenSugerido.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.SapTm);
-        Enviada().CrearVersion(clsFolio.Desde("PCN-900555111-AP-05102026-001").Valor.ConVersion(2).Valor).Valor.MargenAplicado
+        Enviada().CrearVersion(clsFolio.Desde("PCN-900555111-AP-05102026-001").Valor.ConVersion(2).Valor, 0m).Valor.MargenAplicado
             .Should().BeNull("sin margen negociado, la versión resuelve el suyo al enviar");
+    }
+
+    [Fact]
+    public void LaVersionNuevaEnUsdCopiaLaMonedaYTomaLaTrmDelDiaSinTocarLaOriginal()
+    {
+        var original = clsCotizacion.Crear(new clsDatosCotizacion
+        {
+            Folio = "PCN-900555111-AP-05102026-001",
+            Moneda = "USD",
+            TrmAplicada = 3_900m,
+        }).Valor;
+
+        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor, 4_012.35m).Valor;
+
+        nueva.Moneda.Should().Be("USD");
+        nueva.TrmAplicada.Should().Be(4_012.35m);
+        original.TrmAplicada.Should().Be(3_900m);
     }
 
     [Fact]

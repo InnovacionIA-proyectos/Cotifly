@@ -63,6 +63,27 @@ Característica: Re-solicitar el costeo a Nexo
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y la versión nueva tiene el margen aplicado "0.18" con el origen "negociado"
 
+  # Decisión del usuario (2026-10-06): la versión nueva es una cotización nueva; copia la moneda y fija la TRM del día.
+  Escenario: La versión nueva en USD fija la TRM del día y la original conserva la suya
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Y que la cotización "C1" está en "USD" con la TRM "3900.00"
+    Y que DolarApi publica hoy la TRM "4012.35"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión en dólares" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la versión nueva está en "USD" con la TRM "4012.35"
+    Y la cotización "C1" sigue en "USD" con la TRM "3900.00"
+
+  Escenario: Sin TRM la versión nueva en USD no se crea ni llega a Nexo
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Y que la cotización "C1" está en "USD" con la TRM "3900.00"
+    Y que las fuentes de la TRM no responden
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión en dólares" y nueva_version "true"
+    Entonces la respuesta tiene el estado 400 con el código de negocio "TRM_NO_DISPONIBLE"
+    Y "ana" tiene 1 cotización con el folio base de "C1"
+    Y Nexo no recibió otra solicitud para "C1"
+    Y la cotización "C1" sigue en "USD" con la TRM "3900.00" y su versión de negocio
+
   Escenario: Desde un error de envío equivale a reintentar
     Dado que Nexo respondió 503 al alta de "C1" y quedó en "error_envio"
     Cuando Nexo vuelve a responder
