@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
@@ -72,9 +74,10 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         servicios.Should().OnlyContain(s => s.GetProperty("incluido").GetBoolean(), "por defecto se incluyen");
         var cargue = servicios.Single(s => s.GetProperty("nombre").GetString() == "Cargue en puerto").GetProperty("id").GetString()!;
 
-        using var seleccion = await _api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
-            clsApiWebPruebas.Json(new { incluidos = new[] { cargue } }));
+        using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { incluidos = new[] { cargue } }), antes.Headers.ETag?.Tag);
         var elegida = await VerificarContratoAsync(seleccion, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        seleccion.Headers.ETag.Should().NotBeNull().And.NotBe(antes.Headers.ETag, "la selección cambia la fila y trae el ETag nuevo");
         elegida.GetProperty("servicios_conexos").EnumerateArray().Count(s => s.GetProperty("incluido").GetBoolean()).Should().Be(1);
 
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
@@ -99,13 +102,153 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var luis = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
-        using var seleccion = await _api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access, """{"incluidos":[]}""");
+        using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access, """{"incluidos":[]}""",
+            await EtagAsync(sesion, folio));
         using var ajena = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", luis.Access);
 
         pdf.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(pdf, "COSTEO_NO_LISTO");
         seleccion.StatusCode.Should().Be(HttpStatusCode.Conflict);
         ajena.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ElAjusteDeMargenExigeIfMatchRecalculaDevuelveElEtagNuevoYDetectaElConflicto()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        var ruta = $"/web/cotizaciones/{folio}/costeo/margen";
+        var etag = await EtagAsync(sesion, folio);
+        etag.Should().NotBeNullOrEmpty("GET .../costeo trae el ETag");
+
+        using var sinIfMatch = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.18}""", null);
+        sinIfMatch.StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+        await VerificarErrorNegocioAsync(sinIfMatch, "PRECONDICION_REQUERIDA");
+
+        using var ajuste = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.18}""", etag);
+        var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_109_756m, "2.550.000 / (1 - 0,18)");
+        json.GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
+        json.GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
+        json.GetProperty("origen_margen").GetString().Should().Be("negociado");
+        json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(207_317m, "170.000 / (1 - 0,18)");
+        var nuevo = ajuste.Headers.ETag!.Tag;
+        nuevo.Should().NotBe(etag).And.Be("\"" + json.GetProperty("row_version").GetString() + "\"");
+
+        using var vencido = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.20}""", etag);
+        vencido.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(vencido, "CONFLICTO_CONCURRENCIA");
+
+        using var bajo = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.10}""", nuevo);
+        bajo.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var documento = JsonDocument.Parse(await bajo.Content.ReadAsStringAsync(Ct));
+        var error = documento.RootElement.GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("JUSTIFICACION_REQUERIDA");
+        error.GetProperty("detalle").GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
+
+        using var fuera = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":1}""", nuevo);
+        fuera.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(fuera, "AJUSTE_MARGEN_INVALIDO");
+
+        var ajustes = await clsBaseDatosPruebas.EscalarAsync<string>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT CONCAT(COUNT(*), '|', MIN(margenPolitica), '|', MIN(margenAplicado)) FROM dbo_cotifly.MargenAjustes WHERE folio = '{folio}'");
+        ajustes.Should().Be("1|0.1500|0.1800");
+    }
+
+    [Fact]
+    public async Task AjustarConElPdfSinEnviarLoInvalidaYAlRegenerarloElAnteriorQuedaArchivado()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        pdf.StatusCode.Should().Be(HttpStatusCode.Created);
+        var etagPdf = pdf.Headers.ETag?.Tag;
+        etagPdf.Should().NotBeNullOrEmpty("el PDF también devuelve el ETag nuevo");
+
+        using var ajuste = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.18}""", etagPdf);
+        var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        json.GetProperty("pdf_url").ValueKind.Should().Be(JsonValueKind.Null);
+        json.GetProperty("pdf_desactualizado").GetBoolean().Should().BeTrue();
+
+        using var vencido = await EnviarConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access, null, etagPdf);
+        vencido.StatusCode.Should().Be(HttpStatusCode.Conflict, "el If-Match opcional del PDF también se verifica");
+        using var nuevo = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        await VerificarContratoAsync(nuevo, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
+
+        using var descarga = await _api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", sesion.Access);
+        clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto.Should().Contain("3.109.756", "el PDF nuevo lleva el precio ajustado");
+        File.Exists(Path.Combine(Configuracion("Pdf:StorageDir"), $"{folio}-h1.pdf")).Should().BeTrue("el PDF invalidado se conserva archivado");
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("pdf_desactualizado").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ElegirConexosConElPdfGeneradoLoInvalidaEnLugarDeRechazar()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+
+        using var seleccion = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            """{"incluidos":[]}""", pdf.Headers.ETag?.Tag);
+
+        var json = await VerificarContratoAsync(seleccion, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        json.GetProperty("pdf_desactualizado").GetBoolean().Should().BeTrue();
+        json.GetProperty("pdf_url").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task VariasConsultasDelPollingSinCambiosNoInvalidanElEtag()
+    {
+        var (sesion, folio) = await CosteadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await _api.ProcesarPollingAsync(folio);
+        }
+
+        (await EtagAsync(sesion, folio)).Should().Be(etag, "el reclamo y la agenda del polling no cambian la versión de negocio");
+        using var ajuste = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access, """{"margen":0.18}""", etag);
+        ajuste.StatusCode.Should().Be(HttpStatusCode.OK, "el ETag leído antes de las consultas sigue vigente");
+
+        _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_600_000m);
+        await _api.ProcesarPollingAsync(folio);
+        (await EtagAsync(sesion, folio)).Should().NotBe(ajuste.Headers.ETag!.Tag, "un costo nuevo de Nexo sí es un cambio de negocio");
+    }
+
+    /// <summary>Cotización enviada y costeada por Nexo: flete 2.550.000 y un conexo de 170.000 (precio 3.000.000 con el 15 %).</summary>
+    private async Task<(clsSesionPrueba Sesion, string Folio)> CosteadaAsync()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
+        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue", 170_000m);
+        await _api.ProcesarPollingAsync(folio);
+        return (sesion, folio);
+    }
+
+    private async Task<string?> EtagAsync(clsSesionPrueba sesion, string folio)
+    {
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        return costeo.Headers.ETag?.Tag;
+    }
+
+    private string Configuracion(string clave) => _api.Factory.Services.GetRequiredService<IConfiguration>()[clave]!;
+
+    /// <summary>Petición con <c>If-Match</c> (si viene) y cuerpo JSON (si viene).</summary>
+    private async Task<HttpResponseMessage> EnviarConVersionAsync(HttpMethod metodo, string ruta, string token, string? cuerpo, string? ifMatch)
+    {
+        using var peticion = new HttpRequestMessage(metodo, ruta);
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        if (ifMatch is not null)
+        {
+            peticion.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        if (cuerpo is not null)
+        {
+            peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        return await _api.Cliente.SendAsync(peticion, Ct);
     }
 
     private async Task<(clsSesionPrueba Sesion, string Folio)> EnviarAsync()

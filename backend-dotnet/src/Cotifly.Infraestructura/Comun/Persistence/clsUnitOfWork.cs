@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.RegularExpressions;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -18,6 +19,9 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
 
     /// <summary>Cannot insert duplicate key row ... with unique index.</summary>
     private const int ErrorIndiceUnico = 2601;
+
+    /// <summary>Transaction ... was deadlocked ... and has been chosen as the deadlock victim.</summary>
+    private const int ErrorInterbloqueo = 1205;
 
     private static readonly Dictionary<string, clsErrorDominio> _erroresPorRestriccion = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -46,6 +50,61 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
                 : new clsErrorDominio(clsViolacionUnicidadException.CodigoRegistroDuplicado, "El registro ya existe.", restriccion);
             throw new clsViolacionUnicidadException(restriccion, error, ex);
         }
+    }
+
+    public async Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default)
+    {
+        if (contexto.Database.CurrentTransaction is not null)
+        {
+            throw new InvalidOperationException("Ya hay una transacción abierta en esta unidad de trabajo: el control de versión no se anida.");
+        }
+
+        await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        try
+        {
+            // UPDLOCK retiene la fila hasta confirmar: entre la comparación y el UPDATE nadie más (polling, otra petición) la escribe. Todos
+            // los flujos bloquean primero la cotización y después escriben sus líneas: el mismo orden evita interbloqueos.
+            var actual = await contexto.Database
+                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.Cotizaciones WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+                .FirstOrDefaultAsync(cancellationToken);
+            if (actual != versionEsperada)
+            {
+                await DeshacerAsync(transaccion);
+                return false;
+            }
+
+            await GuardarCambiosAsync(cancellationToken);
+            await transaccion.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch (Exception ex) when (EsInterbloqueo(ex))
+        {
+            // Víctima de un interbloqueo (1205): nada quedó escrito; para el llamador es un CONFLICTO_CONCURRENCIA.
+            await DeshacerAsync(transaccion);
+            return false;
+        }
+    }
+
+    /// <summary>¿SQL Server eligió esta transacción como víctima de un interbloqueo? (error 1205, directo o dentro de un <c>DbUpdateException</c>).</summary>
+    internal static bool EsInterbloqueo(Exception ex) =>
+        ex is SqlException { Number: ErrorInterbloqueo } || ex.InnerException is SqlException { Number: ErrorInterbloqueo };
+
+    private async Task DeshacerAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaccion)
+    {
+        try
+        {
+            await transaccion.RollbackAsync(CancellationToken.None);
+        }
+        catch (InvalidOperationException)
+        {
+            // La transacción ya no está activa (SQL Server la terminó al elegirla como víctima).
+        }
+        catch (SqlException)
+        {
+            // Idem.
+        }
+
+        contexto.ChangeTracker.Clear();
     }
 
     /// <summary>

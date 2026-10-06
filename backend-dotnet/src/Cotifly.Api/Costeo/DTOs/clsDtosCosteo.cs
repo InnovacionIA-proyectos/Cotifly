@@ -101,6 +101,12 @@ public sealed class clsPosicionCargaWebRequest
 /// <summary><c>SeleccionServiciosConexos</c>: ids de los servicios conexos del costeo que van en el PDF (los demás se excluyen).</summary>
 public sealed record clsSeleccionServiciosConexosWebRequest(IReadOnlyList<string>? Incluidos);
 
+/// <summary>
+/// <c>AjusteMargenWeb</c> (HU-013.2): <c>margen</c> (fracción de 0 a 0,99) y <c>justificacion</c> (obligatoria por debajo del margen
+/// sugerido). Los límites los valida el dominio para responder <c>AJUSTE_MARGEN_INVALIDO</c> o <c>JUSTIFICACION_REQUERIDA</c>.
+/// </summary>
+public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justificacion);
+
 /// <summary><c>ResultadoWeb</c>: <c>resultado</c> (<c>ganada</c> | <c>perdida</c>), <c>motivo</c> (se guarda en <c>motivo_rechazo</c>) y
 /// <c>comentario</c> (solo se reenvía a Nexo).</summary>
 public sealed record clsResultadoWebRequest(string? Resultado, string? Motivo, string? Comentario);

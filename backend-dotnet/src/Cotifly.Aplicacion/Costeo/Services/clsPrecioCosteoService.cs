@@ -120,7 +120,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
                     continue;
                 }
 
-                var precioLinea = precios.Calcular(costoLinea, m, metodo);
+                var precioLinea = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, costoLinea, m, metodo);
                 if (precioLinea.EsFallo)
                 {
                     if (ordenadas.Count == 1)
@@ -132,7 +132,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
                     return false;
                 }
 
-                cambio |= linea.RegistrarPrecio(precioLinea.Valor.Precio);
+                cambio |= linea.RegistrarPrecio(precioLinea.Valor);
             }
         }
 
@@ -202,11 +202,11 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         var conexos = new List<clsServicioConexoCosteo>();
         foreach (var conexo in nexo.Conexos)
         {
-            var precioConexo = precios.Calcular(conexo.ValorAplicado, margen, metodo);
+            var precioConexo = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, conexo.ValorAplicado, margen, metodo);
             if (precioConexo.EsExitoso)
             {
                 conexos.Add(new clsServicioConexoCosteo(
-                    conexo.Id, conexo.Nombre, conexo.Categoria, conexo.Cantidad, conexo.ValorAplicado, precioConexo.Valor.Precio,
+                    conexo.Id, conexo.Nombre, conexo.Categoria, conexo.Cantidad, conexo.ValorAplicado, precioConexo.Valor,
                     anteriores.TryGetValue(conexo.Id, out var anterior) ? anterior.Incluido : true));
             }
         }
@@ -231,7 +231,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
             return false;
         }
 
-        var precio = precios.Calcular(costo, margen, metodo);
+        var precio = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, costo, margen, metodo);
         if (precio.EsFallo)
         {
             cotizacion.AdvertirCosteo($"No se pudo calcular el precio sobre el costeo de Nexo: {precio.Error.Mensaje}");
@@ -253,22 +253,22 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         var conexos = new List<clsServicioConexoCosteo>();
         foreach (var conexo in nexo.Conexos)
         {
-            var precioConexo = precios.Calcular(conexo.ValorAplicado, margen, metodo);
+            var precioConexo = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, conexo.ValorAplicado, margen, metodo);
             if (precioConexo.EsExitoso)
             {
                 conexos.Add(new clsServicioConexoCosteo(
-                    conexo.Id, conexo.Nombre, conexo.Categoria, conexo.Cantidad, conexo.ValorAplicado, precioConexo.Valor.Precio,
+                    conexo.Id, conexo.Nombre, conexo.Categoria, conexo.Cantidad, conexo.ValorAplicado, precioConexo.Valor,
                     anteriores.TryGetValue(conexo.Id, out var anterior) ? anterior.Incluido : true));
             }
         }
 
         var json = clsServiciosConexosJson.Escribir(conexos);
-        if (cotizacion.Costo == costo && cotizacion.PrecioFinal == precio.Valor.Precio && cotizacion.ServiciosConexos == json)
+        if (cotizacion.Costo == costo && cotizacion.PrecioFinal == precio.Valor && cotizacion.ServiciosConexos == json)
         {
             return false;
         }
 
-        cotizacion.RegistrarPrecioCosteo(costo, precio.Valor.Precio, json, ahora);
+        cotizacion.RegistrarPrecioCosteo(costo, precio.Valor, json, ahora);
         return true;
     }
 }

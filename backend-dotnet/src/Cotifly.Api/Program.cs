@@ -39,7 +39,8 @@ try
 
     // Errores de validación automática como ErrorWeb ({"error": "..."}, contrato #17), no ProblemDetails.
     // JSON por grupo (#12, ADR-002): /web/* en snake_case (clsJsonSnakeCaseAttribute); /api/auth/* y /health sin cambios.
-    builder.Services.AddControllers()
+    // ETag de la versión de la cotización en las respuestas 2xx que la traen (ADR-018 §8).
+    builder.Services.AddControllers(o => o.Filters.Add<clsEtagVersionFilter>())
         .ConfigureApiBehaviorOptions(o => o.InvalidModelStateResponseFactory = clsErrorWeb.RespuestaValidacion)
         .AddConvencionJsonWeb();
     clsFabricaErroresCliente.Registrar(builder.Services);

@@ -88,19 +88,11 @@ public sealed class clsResultadoCotizacionService(
         }
 
         var cronometro = Stopwatch.StartNew();
+        var versionLeida = cotizacion.VersionNegocio;
         var marcada = await MarcarEnNexoAsync(cotizacion, usuarioId, ganada.Value, motivo, comentario, cancellationToken);
         if (marcada.EsExitoso)
         {
-            var ahora = reloj.AhoraUtc;
-            cotizacion.MarcarSeguimiento(ganada, motivo, ahora);
-            if (string.Equals(marcada.Valor.Estado, clsCotizacionNexo.EstadoEntregada, StringComparison.OrdinalIgnoreCase)
-                && cotizacion.EstadoCosteo != EstadoCosteo.Entregada)
-            {
-                // Entrega implícita (o entrega que el polling aún no vio): válida, no una inconsistencia.
-                cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, marcada.Valor.Id, ahora, siguiente: null);
-            }
-
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            await RegistrarResultadoAsync(cotizacion, versionLeida, ganada.Value, motivo, marcada.Valor);
         }
 
         await auditoria.RegistrarAsync(
@@ -113,6 +105,41 @@ public sealed class clsResultadoCotizacionService(
             (int)cronometro.ElapsedMilliseconds,
             cotizacion.ThreadId);
         return marcada.EsExitoso ? cotizacion : marcada.Error;
+    }
+
+    /// <summary>
+    /// Guarda el resultado que Nexo ya aceptó subiendo la versión de negocio, con <c>GuardarCambiosSiVersionAsync</c> sobre la versión
+    /// leída (ADR-018 §12: bloquea primero la cotización, como los demás flujos). Nexo ya lo tiene, así que si otra escritura ganó se
+    /// recarga y se vuelve a aplicar (hasta 3 veces); desde ese momento un ajuste responde <c>PDF_YA_ENVIADO</c>.
+    /// </summary>
+    private async Task RegistrarResultadoAsync(clsCotizacion cotizacion, int versionLeida, bool ganada, string? motivo, clsCotizacionNexo nexoMarcada)
+    {
+        var version = versionLeida;
+        for (var intento = 0; intento < 3; intento++)
+        {
+            if (intento > 0)
+            {
+                await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
+                version = cotizacion.VersionNegocio;
+            }
+
+            var ahora = reloj.AhoraUtc;
+            cotizacion.MarcarSeguimiento(ganada, motivo, ahora);
+            if (string.Equals(nexoMarcada.Estado, clsCotizacionNexo.EstadoEntregada, StringComparison.OrdinalIgnoreCase)
+                && cotizacion.EstadoCosteo != EstadoCosteo.Entregada)
+            {
+                // Entrega implícita (o entrega que el polling aún no vio): válida, no una inconsistencia.
+                cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, nexoMarcada.Id, ahora, siguiente: null);
+            }
+
+            cotizacion.IncrementarVersionNegocio();
+            if (await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None))
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException($"No se pudo registrar el resultado de la cotización {cotizacion.Folio} después de 3 intentos (Nexo ya lo tiene).");
     }
 
     private async Task<clsResultado<clsCotizacionNexo>> MarcarEnNexoAsync(

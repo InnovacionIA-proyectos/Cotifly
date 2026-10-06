@@ -29,7 +29,9 @@ info:
       `PRECONDICION_REQUERIDA`; si la cotización cambió entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin
       cambios. `POST .../costeo/pdf` lo acepta opcional. `POST .../costeo/servicios-conexos` y
       `POST .../costeo/re-solicitar` aceptan además `Idempotency-Key` (doble clic). Rige desde el
-      script `0006` (columna `rowVersion`), que entrega #98 (HU-013.2).
+      script `0006` (columna `versionNegocio`), que entrega #98 (HU-013.2). El valor es opaco: el cliente
+      lo guarda y lo reenvía tal cual. Solo cambia con cambios de negocio (margen, conexos, textos,
+      re-solicitud, PDF, o el polling cuando cambia el estado, el costo o el precio), no con cada consulta.
     - Regla del PDF (ADR-018 §11): mientras la cotización no se haya enviado al cliente ni tenga
       resultado, ajustar el margen, agregar o seleccionar conexos, redactar o editar los textos y
       re-solicitar en el mismo folio invalidan el PDF (`pdf_url = null`, `pdf_desactualizado = true`)
@@ -250,7 +252,7 @@ paths:
                     margen: 0.18
                     justificacion: null
                   resumen: "Ajustar el margen de 15 % a 18 % (precio estimado 3.109.756 COP)."
-                  row_version: "AAAAAAAAB9E="
+                  row_version: "7"
         '400':
           description: |
             `ErrorWeb`: `sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido. `ErrorNegocio`
@@ -305,6 +307,10 @@ paths:
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
         (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
         mismos destinatarios en los últimos 5 minutos se rechaza como duplicado.
+
+        Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
+        con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
+        responde 409 `CONFLICTO_CONCURRENCIA` sin enviar nada. Si el transporte falla, la marca se deshace.
       security:
         - bearer: []
       parameters:
@@ -334,6 +340,12 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`CONFLICTO_CONCURRENCIA`: la cotización cambió mientras se preparaba el envío o su PDF quedó desactualizado; no se envió nada'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
           content:
@@ -1178,7 +1190,6 @@ paths:
       operationId: ajustarMargenCosteo
       tags: [web]
       summary: Ajusta el margen de la cotización y recalcula el precio del flete y de los conexos
-      x-estado: pendiente
       x-issue: '#98 (HU-013.2; entrega el script 0006)'
       description: |
         HU-013.2 (ADR-018 §3). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
@@ -1529,9 +1540,11 @@ paths:
         HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
         mientras la cotización tenga precio. Solo el dueño.
 
-        Cambia con HU-013 (ADR-018 §11, lo implementa #98 junto con el `0006`): con PDF ya generado se permite e invalida
-        el PDF (`pdf_desactualizado`) en lugar de responder `PDF_YA_GENERADO`; ya enviada o con resultado responde 409
-        `PDF_YA_ENVIADO`. `If-Match` pasa a ser obligatorio (428 `PRECONDICION_REQUERIDA`) y la respuesta trae `ETag`.
+        Desde HU-013.2 (ADR-018 §11, #98, script `0006`): con PDF ya generado se permite e invalida el PDF
+        (`pdf_url = null`, `pdf_desactualizado = true`, el anterior queda en el historial) en lugar de responder
+        `PDF_YA_GENERADO`; ya enviada o con resultado responde 409 `PDF_YA_ENVIADO` (con la `detalle` para crear `-vN`).
+        La misma selección vigente responde 200 sin invalidar nada. `If-Match` es obligatorio (428
+        `PRECONDICION_REQUERIDA`; 409 `CONFLICTO_CONCURRENCIA` si no coincide) y la respuesta trae `ETag`.
         Excluir un conexo no lo borra en Nexo (no hay DELETE de conexos, pregunta abierta con Nexo).
       security:
         - bearer: []
@@ -1567,7 +1580,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_GENERADO` (comportamiento actual, hasta #98), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -1706,7 +1719,9 @@ paths:
         HU-013 (ADR-018): es el único generador de PDF (el chat ya no arma payloads). Desde HU-013.5 imprime el asunto y
         la introducción guardados en `textos` (o los de `clsTextosEstandar` si no hay); nunca llama a la IA, así que el
         PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD imprime las tarifas en `US$` y la nota de
-        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (rige con el `0006` de #98).
+        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409
+        `CONFLICTO_CONCURRENCIA`). Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como
+        `{folio}-hN.pdf` (queda en el historial) y el nuevo conserva el nombre `{folio}.pdf`.
       security:
         - bearer: []
       parameters:
@@ -2201,13 +2216,14 @@ components:
         Concurrencia optimista (HU-013, ADR-018). El `ETag` (o `row_version`) que el frontend leyó en
         `GET /web/cotizaciones/{folio}/costeo`, o el `row_version` de la `accion_propuesta` que confirma. Con comillas o
         sin ellas. Si la cotización cambió entretanto responde 409 `CONFLICTO_CONCURRENCIA` sin cambiar nada (el frontend
-        recarga el costeo y vuelve a pedir la confirmación). Sin el encabezado no hay control. Rige desde que el script
-        `0006` (`rowVersion`, que entrega #98) esté aplicado; antes se acepta y se ignora. Opcional solo en
-        `POST .../costeo/pdf`; las mutaciones de la etapa final usan `IfMatchObligatorio`.
+        recarga el costeo y vuelve a pedir la confirmación). Sin el encabezado, el servidor igual confirma contra la
+        versión que cargó (un PDF nunca queda vigente con un precio que cambió mientras se generaba). Rige desde el script
+        `0006` (`versionNegocio`, #98). Opcional solo en `POST .../costeo/pdf`; las mutaciones de la etapa final usan
+        `IfMatchObligatorio`.
       schema:
         type: string
         maxLength: 64
-      example: '"AAAAAAAAB9E="'
+      example: '"7"'
     IfMatchObligatorio:
       name: If-Match
       in: header
@@ -2220,7 +2236,7 @@ components:
       schema:
         type: string
         maxLength: 64
-      example: '"AAAAAAAAB9E="'
+      example: '"7"'
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2239,11 +2255,11 @@ components:
   headers:
     ETag:
       description: |
-        Versión de la fila de la cotización (`Cotizaciones.rowVersion` en base64, entre comillas). Mismo valor que
-        `row_version` del cuerpo. Ausente mientras el script `0006` no esté aplicado.
+        Versión de negocio de la cotización (`Cotizaciones.versionNegocio`, script 0006), entre comillas. Valor opaco: el
+        cliente no lo interpreta, lo reenvía en `If-Match`. Mismo valor que `row_version` del cuerpo.
       schema:
         type: string
-      example: '"AAAAAAAAB9E="'
+      example: '"7"'
 
   responses:
     PrecondicionRequerida:
@@ -3236,6 +3252,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        num_ajustes_bajo_sugerido:
+          type: integer
+          description: |
+            HU-013.2 (script 0006). Ajustes que quedaron por debajo del margen sugerido (`diferencia` negativa: margen
+            aplicado menor que el sugerido, que es `MargenAjustes.margenPolitica`). Esos ajustes exigen justificación.
 
     TelefonoComercial:
       type: object
@@ -3415,7 +3436,9 @@ components:
           nullable: true
           description: |
             HU-013.2. Margen sugerido de la cotización (fracción): SAP TM con el BP o la política de la línea, resuelto al
-            enviarla (`margenPolitica`). Por debajo de él, el ajuste exige justificación.
+            enviarla, y guardado en `Cotizaciones.margenSugerido` con su origen (script 0006); el ajuste del comercial no lo
+            cambia (cada fila de `MargenAjustes` lo copia en `margenPolitica`). Por debajo de él, el ajuste exige
+            justificación.
         origen_margen:
           type: string
           nullable: true
@@ -3437,7 +3460,7 @@ components:
         row_version:
           type: string
           nullable: true
-          description: '#98 (script 0006). Mismo valor que el encabezado `ETag`; va en `If-Match`. `null` sin el `0006`.'
+          description: '#98 (script 0006). Versión de negocio (opaca), mismo valor que el encabezado `ETag`; va en `If-Match`.'
 
     SeleccionServiciosConexos:
       type: object

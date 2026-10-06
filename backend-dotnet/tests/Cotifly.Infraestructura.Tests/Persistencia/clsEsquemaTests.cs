@@ -17,13 +17,13 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 {
     private static readonly string[] _tablasEsperadas =
     [
-        "CorreoDestinatarios", "Correos", "CotizacionArchivosLicitacion", "CotizacionLineasSolicitud", "CotizacionPosiciones", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
+        "CorreoDestinatarios", "Correos", "CotizacionArchivosLicitacion", "CotizacionLineasSolicitud", "CotizacionPdfsHistorial", "CotizacionPosiciones", "Cotizaciones", "EventosConversacion", "EventosHerramienta",
         "MargenAjustes", "MargenesPolitica", "Roles", "SapMapeoTrqType", "Sesiones",
         "TokensRefresco", "TokensRevocados", "UsuariosRoles", "UsuariosWeb",
     ];
 
     [Fact]
-    public async Task LosScripts0001A0005CreanLasDiecisieteTablas()
+    public async Task LosScripts0001A0006CreanLasDieciochoTablas()
     {
         var tablas = await LeerAsync(
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'",
@@ -146,6 +146,97 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript0006EsIdempotenteYNoTocaLosDatos()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0006", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, pdfPath) VALUES ('{id}', '{FolioUnico()}', 'PCN-X.pdf')");
+        var huella = $"SELECT CONCAT(versionNegocio, '|', pdfDesactualizado, '|', pdfPath, '|', ISNULL(origenMargenSugerido, '-')) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
+        var antes = await clsBaseDatosPruebas.EscalarAsync<string>(cadena, huella);
+
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0006_textos_y_concurrencia.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, huella)).Should().Be(antes, "re-aplicar el 0006 no cambia las filas");
+        antes.Should().Be("0|0|PCN-X.pdf|-", "una fila existente queda en la versión 0 y con su PDF vigente");
+    }
+
+    [Fact]
+    public async Task ElBackfillDel0006CopiaElMargenSugeridoQueHaya()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0006", 5);
+        var cadena = baseAislada.Cadena;
+        Guid sap = Guid.NewGuid(), negociada = Guid.NewGuid(), chat = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, margenPolitica, margenAplicado, origenMargen) VALUES "
+            + $"('{sap}', '{FolioUnico()}', 0.15, 0.21, 'sap_tm'), ('{negociada}', '{FolioUnico()}', 0.15, 0.12, 'negociado'), "
+            + $"('{chat}', '{FolioUnico()}', NULL, NULL, NULL)");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+
+        string Fila(Guid id) => $"SELECT CONCAT(ISNULL(CAST(margenSugerido AS nvarchar(20)), '-'), '|', ISNULL(origenMargenSugerido, '-'), '|', margenPolitica) FROM dbo_cotifly.Cotizaciones WHERE id = '{id}'";
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(sap))).Should().Be("0.2100|sap_tm|0.1500");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(negociada))).Should().Be("0.1500|politica_linea|0.1500", "negociada: el sugerido era la política");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Fila(chat))).Should().Be("-|-|");
+    }
+
+    [Fact]
+    public async Task LaReversaDel0006DejaElEsquemaDel0005YSePuedeVolverAAplicar()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbReversa0006", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var con0006 = await FotoEsquemaAsync(cadena);
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "rollback/0006_textos_y_concurrencia_reversa.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "rollback/0006_textos_y_concurrencia_reversa.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo_cotifly.Cotizaciones') AND name IN "
+                + "(N'versionNegocio', N'textosCotizacion', N'pdfDesactualizado', N'margenSugerido', N'origenMargenSugerido')"))
+            .Should().Be(0);
+        (await clsBaseDatosPruebas.EscalarAsync<int?>(cadena, "SELECT OBJECT_ID(N'dbo_cotifly.CotizacionPdfsHistorial', N'U')")).Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<int?>(cadena, "SELECT COL_LENGTH(N'dbo_cotifly.vAjustesMargenPorComercial', N'numAjustesBajoSugerido')")).Should().BeNull();
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0006_textos_y_concurrencia.sql");
+        (await FotoEsquemaAsync(cadena)).Should().Equal(con0006, "re-aplicar el 0006 después de la reversa deja el mismo esquema");
+    }
+
+    [Fact]
+    public async Task LosCheckDel0006RechazanTextosVersionOrigenYMotivosInvalidos()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+        Func<Task> Sql(string sql) => () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, sql);
+
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET textosCotizacion = N'no es json' WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_textosCotizacion_json");
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET versionNegocio = -1 WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_versionNegocio");
+        (await Sql($"UPDATE dbo_cotifly.Cotizaciones SET origenMargenSugerido = 'negociado' WHERE id = '{id}'").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizaciones_origenMargenSugerido");
+        (await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 'otro')").Should().ThrowAsync<SqlException>())
+            .Which.Message.Should().Contain("ck_cotizacionPdfsHistorial_motivo");
+        await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 're_solicitud')")();
+    }
+
+    [Fact]
+    public async Task LaVistaDeAjustesCuentaLosQueQuedanPorDebajoDelSugerido()
+    {
+        var usuario = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario) VALUES ('{usuario}', 'v{Guid.NewGuid():N}'); "
+            + "INSERT INTO dbo_cotifly.MargenAjustes (margenPolitica, margenAplicado, diferencia, usuarioId) VALUES "
+            + $"(0.15, 0.12, -0.03, '{usuario}'), (0.15, 0.18, 0.03, '{usuario}'), (0.15, 0.10, -0.05, '{usuario}');");
+
+        (await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+                $"SELECT numAjustesBajoSugerido FROM dbo_cotifly.vAjustesMargenPorComercial WHERE usuarioId = '{usuario}'"))
+            .Should().Be(2);
+    }
+
+    [Fact]
     public async Task ElScript0007EsIdempotenteYAgregaNotasYMunicipios()
     {
         // Mismo patrón que #91: base AISLADA, filas propias antes de re-aplicar y verificación de que siguen iguales.
@@ -231,7 +322,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         nuevas.Where(c => c != "costeoConsultasFallidas" && !columnas[("Cotizaciones", c)].Nula).Should().BeEmpty(
             "las cotizaciones existentes (chat con costo manual) no traen estos datos");
         columnas[("Cotizaciones", "costeoConsultasFallidas")].Nula.Should().BeFalse();
-        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 1, "0001 crea 28 columnas, el 0004 agrega 29 y el 0007 agrega notas");
+        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 5 + 1,
+            "0001 crea 28 columnas, el 0004 agrega 29, el 0006 cinco (versionNegocio, textosCotizacion, pdfDesactualizado, margenSugerido y origenMargenSugerido) y el 0007 agrega notas");
     }
 
     [Fact]
@@ -334,7 +426,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(12, "el 0002 crea 10 índices ix_, el 0004 uno y el 0005 uno (posiciones por línea)");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(13, "el 0002 crea 10 índices ix_, el 0004 uno, el 0005 uno (posiciones por línea) y el 0006 uno (historial de PDF)");
         bd.Should().Contain(x => x.StartsWith("Cotizaciones:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
             && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));

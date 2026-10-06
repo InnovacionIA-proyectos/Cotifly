@@ -100,7 +100,164 @@ public sealed class clsCotizacion
     /// <summary>JSON con los servicios conexos del costeo, su precio y si el comercial los incluye (HU-005.7).</summary>
     public string? ServiciosConexos { get; private set; }
 
+    // Script 0006 (ADR-018 §8 y §11): concurrencia optimista, textos del PDF y regla del PDF.
+
     /// <summary>
+    /// Versión de negocio (<c>Cotizaciones.versionNegocio</c>, ADR-018 §12): sube solo con los cambios que ve el comercial (margen,
+    /// conexos, textos, re-solicitud, PDF y el polling cuando cambia el estado, el costo o el precio), nunca con el reclamo ni la
+    /// agenda del polling. Viaja como <c>ETag</c> y vuelve en <c>If-Match</c>.
+    /// </summary>
+    public int VersionNegocio { get; private set; }
+
+    /// <summary>
+    /// Margen sugerido (<c>Cotizaciones.margenSugerido</c>): el que se resolvió al enviar o crear la cotización (SAP TM con el BP o la
+    /// política de la línea). El ajuste del comercial no lo cambia.
+    /// </summary>
+    public decimal? MargenSugerido { get; private set; }
+
+    /// <summary>Fuente de <see cref="MargenSugerido"/>: <c>sap_tm</c> o <c>politica_linea</c> (nunca <c>negociado</c>).</summary>
+    public OrigenMargen? OrigenMargenSugerido { get; private set; }
+
+    /// <summary>Asunto e introducción del PDF guardados (JSON, HU-013.5, #101); <c>null</c> si todavía no hay.</summary>
+    public string? TextosCotizacion { get; private set; }
+
+    /// <summary>
+    /// Una acción posterior al PDF (margen, conexos, textos, re-solicitud) lo invalidó: <see cref="PdfPath"/> quedó en <c>null</c> y el
+    /// comercial lo regenera (ADR-018 §11). Generar el PDF lo apaga.
+    /// </summary>
+    public bool PdfDesactualizado { get; private set; }
+
+    /// <summary>Margen máximo del ajuste del comercial sobre el costeo (ADR-018 §3): 0,99.</summary>
+    public const decimal MargenMaximoAjuste = 0.99m;
+
+    /// <summary>Largo máximo de la justificación de un ajuste de margen (contrato <c>AjusteMargenWeb</c>).</summary>
+    public const int LargoMaximoJustificacion = 500;
+
+    /// <summary>¿Tiene el costeo de Nexo con precio? (<c>autocosteo</c> o <c>entregada</c> y <see cref="PrecioFinal"/>.)</summary>
+    public bool TieneCostoDisponible =>
+        PrecioFinal is not null && EstadoCosteo is { } estado && clsDerivacionEstadoCosteo.TieneCosteo(estado);
+
+    /// <summary>
+    /// ¿Ya se entregó al cliente? (enviada o reenviada por correo, o con resultado ganada/perdida.) Entonces el PDF es la foto de lo
+    /// entregado y la cotización solo cambia con una versión nueva (ADR-018 §11).
+    /// </summary>
+    public bool EntregadaAlCliente =>
+        EstadoEnvio is Cotizaciones.EstadoEnvio.Enviada or Cotizaciones.EstadoEnvio.Reenviada || Ganada is not null;
+
+    /// <summary>
+    /// Margen sugerido vigente para la regla de la justificación: <see cref="MargenSugerido"/>; en filas anteriores al 0006 sin él,
+    /// el margen aplicado si nadie lo ajustó o la política de la línea si ya se negoció.
+    /// </summary>
+    public decimal? SugeridoVigente => MargenSugerido
+        ?? (OrigenMargen == Margen.OrigenMargen.Negociado ? MargenPolitica : MargenAplicado);
+
+    /// <summary>
+    /// Invariantes del ajuste de margen sobre el costeo (ADR-018 §3 y §11), en este orden:
+    /// <list type="number">
+    /// <item><paramref name="margen"/> entre 0 y <see cref="MargenMaximoAjuste"/> y justificación de hasta
+    /// <see cref="LargoMaximoJustificacion"/> caracteres (<c>AJUSTE_MARGEN_INVALIDO</c>);</item>
+    /// <item>costo disponible (<c>COSTEO_NO_LISTO</c>);</item>
+    /// <item>sin envío al cliente ni resultado (<c>PDF_YA_ENVIADO</c>);</item>
+    /// <item>justificación no vacía si el margen queda por debajo del sugerido (<c>JUSTIFICACION_REQUERIDA</c>).</item>
+    /// </list>
+    /// </summary>
+    public clsErrorDominio? ValidarAjusteMargen(decimal margen, string? justificacion)
+    {
+        if (margen < 0m || margen > MargenMaximoAjuste)
+        {
+            return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido,
+                $"El margen debe estar entre 0 y {MargenMaximoAjuste.ToString(System.Globalization.CultureInfo.InvariantCulture)} (fracción: 0.18 = 18 %).");
+        }
+
+        if (justificacion is { Length: > LargoMaximoJustificacion })
+        {
+            return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido, $"La justificación admite hasta {LargoMaximoJustificacion} caracteres.");
+        }
+
+        if (!TieneCostoDisponible || MetodoCalculo is null)
+        {
+            return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
+        }
+
+        if (ValidarCambioEtapaFinal() is { } entregada)
+        {
+            return entregada;
+        }
+
+        var redondeado = clsMargenAjuste.RedondearMargen(margen);
+        return SugeridoVigente is { } sugerido && redondeado < sugerido && clsMargenAjuste.LimpiarJustificacion(justificacion) is null
+            ? new clsErrorDominio(clsCodigosError.JustificacionRequerida,
+                $"El margen {clsReglasMargen.Texto(redondeado)} queda por debajo del sugerido ({clsReglasMargen.Texto(sugerido)}): escribe la justificación.")
+            : null;
+    }
+
+    /// <summary>
+    /// Regla del PDF (ADR-018 §11) para toda acción de la etapa final (margen, conexos, textos, re-solicitud en el mismo folio): ya
+    /// entregada al cliente (<see cref="EntregadaAlCliente"/>) responde <c>PDF_YA_ENVIADO</c>; si no, <c>null</c> (se permite e invalida
+    /// el PDF con <see cref="InvalidarPdf"/>).
+    /// </summary>
+    public clsErrorDominio? ValidarCambioEtapaFinal() => EntregadaAlCliente
+        ? new clsErrorDominio(clsCodigosError.PdfYaEnviado,
+            Ganada is null
+                ? "La cotización ya se envió al cliente: crea una versión nueva para cambiarla."
+                : "La cotización ya tiene resultado registrado: crea una versión nueva para cambiarla.")
+        : null;
+
+    /// <summary>
+    /// Aplica el margen negociado (ya validado con <see cref="ValidarAjusteMargen"/>, redondeado a 4 decimales como
+    /// <c>margenAplicado</c>) y el origen pasa a <c>negociado</c>. No toca <see cref="MargenPolitica"/> ni el sugerido (en una fila sin
+    /// sugerido lo fija con el vigente, para no perderlo). Devuelve <c>false</c> (sin cambios) si es el margen vigente.
+    /// </summary>
+    public bool AplicarMargenNegociado(decimal margen)
+    {
+        var redondeado = clsMargenAjuste.RedondearMargen(margen);
+        if (redondeado < 0m || redondeado > MargenMaximoAjuste)
+        {
+            throw new ArgumentOutOfRangeException(nameof(margen), margen, "El margen negociado debe estar entre 0 y 0,99.");
+        }
+
+        if (MargenAplicado == redondeado)
+        {
+            return false;
+        }
+
+        if (MargenSugerido is null && SugeridoVigente is { } vigente)
+        {
+            MargenSugerido = vigente;
+            OrigenMargenSugerido = OrigenMargen is Margen.OrigenMargen.SapTm ? Margen.OrigenMargen.SapTm : Margen.OrigenMargen.PoliticaLinea;
+        }
+
+        MargenAplicado = redondeado;
+        OrigenMargen = Margen.OrigenMargen.Negociado;
+        return true;
+    }
+
+    /// <summary>Precio recalculado por un ajuste del comercial (el costo de Nexo no cambia).</summary>
+    public void RegistrarPrecioAjustado(decimal precioFinal, string? serviciosConexos)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(precioFinal);
+        PrecioFinal = precioFinal;
+        ServiciosConexos = serviciosConexos;
+    }
+
+    /// <summary>
+    /// Invalida el PDF actual (ADR-018 §11): <see cref="PdfPath"/> pasa a <c>null</c> y <see cref="PdfDesactualizado"/> a <c>true</c>.
+    /// Devuelve la referencia del PDF anterior para el historial, o <c>null</c> si no había PDF (nada cambia).
+    /// </summary>
+    public string? InvalidarPdf()
+    {
+        if (PdfPath is not { } anterior)
+        {
+            return null;
+        }
+
+        PdfPath = null;
+        PdfDesactualizado = true;
+        return anterior;
+    }
+
+    /// <summary>
+    ///
     /// Crea una cotización validando las invariantes baratas: folio obligatorio (máx. 50),
     /// versión ≥ 1, montos no negativos, márgenes ≥ 0 (y &lt; 1 con el método <c>margen</c>, ver <see cref="clsReglaMargen"/>) y TRM 0 en pesos (&gt; 0 en otra moneda).
     /// </summary>
@@ -138,6 +295,15 @@ public sealed class clsCotizacion
             MargenPolitica = datos.MargenPolitica,
             MargenAplicado = datos.MargenAplicado,
             OrigenMargen = datos.OrigenMargen,
+            MargenSugerido = datos.OrigenMargen is Margen.OrigenMargen.Negociado ? datos.MargenPolitica
+                : datos.OrigenMargen is null ? null : datos.MargenAplicado,
+            OrigenMargenSugerido = datos.OrigenMargen switch
+            {
+                Margen.OrigenMargen.SapTm when datos.MargenAplicado is not null => Margen.OrigenMargen.SapTm,
+                Margen.OrigenMargen.PoliticaLinea when datos.MargenAplicado is not null => Margen.OrigenMargen.PoliticaLinea,
+                Margen.OrigenMargen.Negociado when datos.MargenPolitica is not null => Margen.OrigenMargen.PoliticaLinea,
+                _ => null,
+            },
             MetodoCalculo = clsValidacion.Normalizar(datos.MetodoCalculo),
             PrecioFinal = datos.PrecioFinal,
             Moneda = moneda,
@@ -407,6 +573,9 @@ public sealed class clsCotizacion
         }
 
         MargenPolitica = margenPolitica;
+        MargenSugerido = origen == Margen.OrigenMargen.Negociado ? margenPolitica : margenAplicado;
+        OrigenMargenSugerido = origen == Margen.OrigenMargen.SapTm ? Margen.OrigenMargen.SapTm
+            : origen == Margen.OrigenMargen.Negociado && margenPolitica is null ? null : Margen.OrigenMargen.PoliticaLinea;
         MargenAplicado = margenAplicado;
         OrigenMargen = origen;
         MetodoCalculo = metodo;
@@ -493,12 +662,25 @@ public sealed class clsCotizacion
             ? Cotizaciones.EstadoEnvio.Enviada
             : Cotizaciones.EstadoEnvio.Reenviada;
 
-    /// <summary>Asocia la ruta del PDF generado.</summary>
+    /// <summary>
+    /// Deshace la reserva de un envío que no salió (el transporte falló): vuelve al estado de envío anterior (ADR-018 §12: el correo
+    /// marca la cotización como enviada ANTES de enviar, para que ningún ajuste invalide el PDF mientras sale).
+    /// </summary>
+    public void RestaurarEstadoEnvio(EstadoEnvio? anterior) => EstadoEnvio = anterior ?? Cotizaciones.EstadoEnvio.SinEnviar;
+
+    /// <summary>Asocia la ruta del PDF generado (el PDF vuelve a estar vigente: <see cref="PdfDesactualizado"/> pasa a <c>false</c>).</summary>
     public void AsignarPdf(string pdfPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pdfPath);
         PdfPath = pdfPath.Trim();
+        PdfDesactualizado = false;
     }
+
+    /// <summary>¿La versión leída por el cliente (<c>If-Match</c>) es la versión de negocio vigente? Una negativa (inválida) nunca coincide.</summary>
+    public bool TieneVersion(int version) => version >= 0 && VersionNegocio == version;
+
+    /// <summary>Sube la versión de negocio: lo llaman los casos de uso al confirmar un cambio que ve el comercial (ADR-018 §12).</summary>
+    public void IncrementarVersionNegocio() => VersionNegocio = checked(VersionNegocio + 1);
 
     private static clsErrorDominio? ValidarTrm(string moneda, decimal trm)
     {

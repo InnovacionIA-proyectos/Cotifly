@@ -15,21 +15,28 @@ namespace Cotifly.Api.Comun;
 
 /// <summary>
 /// <c>ErrorNegocio</c> del contrato: <c>{"error": {"codigo", "mensaje", "detalle?"}}</c>. <c>detalle</c> es un objeto en el
-/// contrato; el texto de <see cref="clsErrorDominio.Detalle"/> viaja como <c>{"motivo": "..."}</c> y se omite si no hay.
+/// contrato: los datos estructurados del error (<see cref="clsErrorDominio.Datos"/>, ej. <c>margen_sugerido</c>) y el texto de
+/// <see cref="clsErrorDominio.Detalle"/> como <c>motivo</c>; se omite si no hay ninguno.
 /// </summary>
 public sealed record clsErrorNegocioWeb([property: JsonPropertyName("error")] clsErrorNegocioWeb.clsCuerpo Error)
 {
     public static clsErrorNegocioWeb Desde(clsErrorDominio error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        var detalle = string.IsNullOrWhiteSpace(error.Detalle) ? null : new Dictionary<string, string> { ["motivo"] = error.Detalle };
+        Dictionary<string, object?>? detalle = error.Datos is { Count: > 0 } datos ? new(datos, StringComparer.Ordinal) : null;
+        if (!string.IsNullOrWhiteSpace(error.Detalle))
+        {
+            detalle ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+            detalle["motivo"] = error.Detalle;
+        }
+
         return new clsErrorNegocioWeb(new clsCuerpo(error.Codigo, error.Mensaje, detalle));
     }
 
     public sealed record clsCuerpo(
         [property: JsonPropertyName("codigo")] string Codigo,
         [property: JsonPropertyName("mensaje")] string Mensaje,
-        [property: JsonPropertyName("detalle"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? Detalle);
+        [property: JsonPropertyName("detalle"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, object?>? Detalle);
 }
 
 /// <summary>
@@ -59,6 +66,8 @@ public static class clsRespuestasWeb
         clsCodigosError.CotizacionNoEntregada,
         clsCodigosError.UsarResultadoNexo,
         clsCodigosError.SolicitudNoTransicionable,
+        clsCodigosError.ConflictoConcurrencia,
+        clsCodigosError.PdfYaEnviado,
     };
 
     public static IActionResult Error(clsErrorDominio error)
@@ -76,6 +85,8 @@ public static class clsRespuestasWeb
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
+            clsCodigosError.PrecondicionRequerida =>
+                new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status428PreconditionRequired },
             _ when _conflicto.Contains(error.Codigo) => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             _ when _validacion.Contains(error.Codigo) => new BadRequestObjectResult(new clsErrorWeb(error.Mensaje)),
             _ => new BadRequestObjectResult(clsErrorNegocioWeb.Desde(error)),

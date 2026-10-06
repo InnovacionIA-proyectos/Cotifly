@@ -40,6 +40,19 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
             .OrderBy(l => l.Orden)
             .ToListAsync(cancellationToken);
 
+    public void AgregarHistorialPdf(clsCotizacionPdfHistorial historial)
+    {
+        ArgumentNullException.ThrowIfNull(historial);
+        contexto.CotizacionPdfsHistorial.Add(historial);
+    }
+
+    public async Task<IReadOnlyList<clsCotizacionPdfHistorial>> ListarHistorialPdfAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
+        await contexto.CotizacionPdfsHistorial
+            .Where(h => h.CotizacionId == cotizacionId)
+            .OrderBy(h => h.CreatedAt)
+            .ThenBy(h => h.Id)
+            .ToListAsync(cancellationToken);
+
     public void AgregarArchivoLicitacion(clsArchivoLicitacion archivo)
     {
         ArgumentNullException.ThrowIfNull(archivo);
