@@ -1457,7 +1457,7 @@ Entonces el sistema le indica claramente cuáles líneas siguen pendientes, sin 
 
 ### Contexto técnico
 - `cotizaciones.moneda` ya existe (default `"COP"`); `cotizaciones.trm_aplicada` se agrega en HU-002.4 Fase 2 (decimal, default `0` cuando `moneda="COP"`).
-- Regla de negocio confirmada: si `moneda="USD"`, se convierte usando el TRM del día de la cotización; el PDF debe indicar que el valor se ajusta día a día con el dólar, pero que el **mínimo a pagar es el valor originalmente cotizado** (el TRM guardado en `trm_aplicada` actúa como piso).
+- Regla de negocio confirmada: si `moneda="USD"`, se convierte usando el TRM del día de la cotización; el PDF debe llevar la nota definida por negocio el 2026-10-05: "**Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.**", con `{TRM}` = la `trm_aplicada` de la cotización en formato `$3.273,49` (reemplaza la aclaración anterior del mínimo a pagar, ADR-014 §4).
 - Requiere una integración nueva: consulta al TRM oficial del día — fuente exacta por confirmar con el equipo (ej. Banco de la República o Superintendencia Financiera).
 
 ### Criterios de aceptación (Gherkin)
@@ -1467,10 +1467,10 @@ Dado un comercial llenando el formulario de "Nueva cotización"
 Cuando selecciona moneda "USD"
 Entonces el precio final se calcula usando el TRM del día, y ese TRM queda guardado en la cotización
 
-Escenario: PDF en dólares con aclaración del piso
+Escenario: PDF en dólares con la nota de TRM mínima
 Dado una cotización generada en USD
 Cuando se genera el PDF
-Entonces el precio aparece en USD, con un texto que aclara que el valor se ajusta día a día con el dólar, pero que el mínimo a pagar es el valor cotizado originalmente
+Entonces el precio aparece en USD, con la nota "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI." usando la TRM aplicada
 
 Escenario: Cotización en COP no usa TRM
 Dado una cotización con moneda "COP"
@@ -1502,13 +1502,13 @@ Entonces recibe un error claro (no un 500 genérico) y puede reintentar, sin que
 - [ ] Cuando `moneda="COP"`, dejar `trm_aplicada=0` (nunca `null`).
 - [ ] Si la fuente de TRM falla, no generar la cotización en USD — devolver error claro para que el front lo muestre (ver HU-012.4).
 
-### [HU-012.3] PDF en dólares con aclaración de piso mínimo
+### [HU-012.3] PDF en dólares con la nota de TRM mínima
 **Labels:** `cotifly`, `backend`, `tarea-tecnica`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
 **Parte de HU-012 (milestone). Depende de HU-012.2 y del módulo PDF de HU-003.5.**
 - [ ] Cuando la cotización es en USD, generar el PDF con el precio en dólares.
-- [ ] Agregar el texto de aclaración: el valor se ajusta día a día con el TRM, pero el mínimo a pagar es el valor cotizado originalmente (usando `trm_aplicada` como referencia del piso).
+- [ ] Agregar la nota de negocio (2026-10-05): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = `trm_aplicada` en formato `$3.273,49`.
 
 ### [HU-012.4] Selector de moneda en el formulario (frontend)
 **Labels:** `frontend`, `tarea-tecnica`
@@ -1525,7 +1525,7 @@ Entonces recibe un error claro (no un 500 genérico) y puede reintentar, sin que
 **Asignado a:** Sara (Frontend) + Kevin (QA)
 **Parte de HU-012 (milestone). Depende de HU-012.3 y HU-012.4.**
 - [ ] Validar con un caso real que el precio en USD coincide con el cálculo manual usando el TRM del día.
-- [ ] Confirmar que el texto de aclaración del piso mínimo aparece correctamente en el PDF generado en USD, y no aparece en los generados en COP.
+- [ ] Confirmar que la nota de TRM mínima aparece correctamente en el PDF generado en USD, y no aparece en los generados en COP.
 
 ---
 
@@ -1544,7 +1544,7 @@ Entonces recibe un error claro (no un 500 genérico) y puede reintentar, sin que
 | HU-009 | Activar la conexión real a SAP TM para que la extracción de márgenes por cliente sea efectiva | Conectividad, credenciales y validación real — el código OData ya existe y está probado | `Cotifly` |
 | HU-010 | Rol Gerente Comercial y tablero de métricas comerciales | Endpoints de métricas agregadas por regional/comercial, tablero Comercial y tablero Gerente Comercial | `Cotifly`, `clientepro-frontend` |
 | HU-011 | Cotización de licitaciones vía Excel (carga y exportación) | Definir formato de Excel, cargar/parsear pliego, exportar con precios y servicios conexos, PDF de pliego estandarizado | `Cotifly`, `clientepro-frontend` |
-| HU-012 | Conversión de moneda COP/USD con TRM del día | Integración con fuente de TRM, conversión de precio, PDF en USD con aclaración de piso mínimo, selector de moneda | `Cotifly`, `clientepro-frontend` |
+| HU-012 | Conversión de moneda COP/USD con TRM del día | Integración con fuente de TRM, conversión de precio, PDF en USD con la nota de TRM mínima, selector de moneda | `Cotifly`, `clientepro-frontend` |
 
 **Antes de crear esto en GitHub:**
 - [ ] Crear la HU-001 a HU-012 en Notion y reemplazar los links placeholder.

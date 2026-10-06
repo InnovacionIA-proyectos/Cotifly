@@ -48,6 +48,12 @@ public static class clsFormatoMoneda
         return PrefijoPesos + (punto < 0 ? texto.Replace(',', '.') : texto[..punto].Replace(',', '.') + ',' + texto[(punto + 1)..]);
     }
 
+    /// <summary>
+    /// TRM de la nota del PDF en USD (HU-012.3, requisito de negocio del 2026-10-05): siempre 2 decimales (half-to-even), miles con <c>.</c> y
+    /// decimales con <c>,</c>: <c>3273.49</c> → <c>$3.273,49</c>, <c>3306.8612</c> → <c>$3.306,86</c>, <c>950</c> → <c>$950,00</c>.
+    /// </summary>
+    public static string FormatearTrmNota(decimal trm) => PrefijoPesos + ConDecimales(trm);
+
     /// <summary>Miles con <c>.</c> y 2 decimales con <c>,</c> (half-to-even), sin depender de la cultura del proceso.</summary>
     private static string ConDecimales(decimal monto)
     {

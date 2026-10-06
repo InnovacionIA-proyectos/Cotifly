@@ -151,13 +151,13 @@ public sealed class clsProveedorTrmSuperfinancieraTests : IDisposable
     {
         var resiliencia = new Microsoft.Extensions.Http.Resilience.HttpStandardResilienceOptions();
 
-        clsProveedorTrmSuperfinanciera.ConfigurarResiliencia(resiliencia, new clsOpcionesTrm { TiempoEsperaSegundos = 60 });
+        clsResilienciaTrm.Configurar(resiliencia, TimeSpan.FromSeconds(60));
 
         resiliencia.TotalRequestTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(60));
         resiliencia.AttemptTimeout.Timeout.Should().Be(TimeSpan.FromSeconds(20));
-        resiliencia.Retry.MaxRetryAttempts.Should().Be(clsProveedorTrmSuperfinanciera.Reintentos);
+        resiliencia.Retry.MaxRetryAttempts.Should().Be(clsResilienciaTrm.Reintentos);
         resiliencia.CircuitBreaker.SamplingDuration.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(60));
-        resiliencia.CircuitBreaker.MinimumThroughput.Should().Be(clsProveedorTrmSuperfinanciera.UmbralCircuito, "con el valor por defecto (100) nunca abriría");
+        resiliencia.CircuitBreaker.MinimumThroughput.Should().Be(clsResilienciaTrm.UmbralCircuito, "con el valor por defecto (100) nunca abriría");
     }
 
     public void Dispose() => _fuente.Dispose();

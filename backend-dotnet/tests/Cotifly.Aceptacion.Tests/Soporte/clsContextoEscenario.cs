@@ -26,8 +26,11 @@ public sealed class clsContextoEscenario : IDisposable
         {
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
 
-            // La TRM (HU-012.1) nunca sale a la red: el adaptador real consulta los datos abiertos falsos del escenario.
+            // La TRM (HU-012.1) nunca sale a la red: los adaptadores reales consultan las fuentes falsas del escenario. Por defecto solo la
+            // Superintendencia; los escenarios de DolarApi eligen el proveedor con UsarProveedorTrm.
             ["Trm:Url"] = clsTrmFalso.Url,
+            ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
+            ["Trm:Proveedor"] = "superfinanciera",
         };
         _proveedor = CrearProveedor();
     }
@@ -42,6 +45,9 @@ public sealed class clsContextoEscenario : IDisposable
 
     /// <summary>Datos abiertos de la Superintendencia Financiera falsos (TRM, HU-012.1) que atienden al adaptador real.</summary>
     public clsTrmFalso TrmFalso { get; } = new();
+
+    /// <summary>DolarApi falso (TRM, HU-012.1, ADR-014) que atiende al adaptador real.</summary>
+    public clsDolarApiFalso DolarApiFalso { get; } = new();
 
     /// <summary>Comerciales del escenario por nombre de usuario.</summary>
     public Dictionary<string, Guid> Usuarios { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -122,8 +128,11 @@ public sealed class clsContextoEscenario : IDisposable
                 UsarTrmFalsa(s);
             });
 
-    private void UsarTrmFalsa(IServiceCollection servicios) =>
+    private void UsarTrmFalsa(IServiceCollection servicios)
+    {
         servicios.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => TrmFalso);
+        servicios.AddHttpClient(clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => DolarApiFalso);
+    }
 
     /// <summary>Ejecuta <paramref name="accion"/> en un ámbito nuevo (como una petición) y guarda los cambios.</summary>
     public async Task EnAmbitoAsync(Func<IServiceProvider, Task> accion)
@@ -147,6 +156,7 @@ public sealed class clsContextoEscenario : IDisposable
         _proveedor.Dispose();
         SapFalso.Dispose();
         TrmFalso.Dispose();
+        DolarApiFalso.Dispose();
         _relay?.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
