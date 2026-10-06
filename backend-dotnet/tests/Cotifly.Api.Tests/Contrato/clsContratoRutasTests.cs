@@ -38,9 +38,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["GET /web/servicios-conexos"] = "#99 (HU-013.3)",
-        ["POST /web/cotizaciones/{folio}/costeo/servicios-conexos"] = "#99 (HU-013.3)",
-        ["POST /web/cotizaciones/{folio}/costeo/re-solicitar"] = "#100 (HU-013.4)",
     };
 
     /// <summary>
@@ -52,13 +49,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> PropiedadesPendientes =
         new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
         {
-            ["SolicitudCosteoWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["moneda"] = "#103 (HU-013.7)" },
             ["MensajeWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["folio"] = "#102 (HU-013.6)" },
             ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
-            ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["trm_aplicada"] = "#103 (HU-013.7)",
-            },
         };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -192,6 +184,12 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
         { typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb" },
+        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos" },
+        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsServicioConexoCatalogo), "ServicioConexoCatalogo" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsReSolicitudCosteoWebRequest), "ReSolicitudCosteoWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsDatosCargaWebRequest), "DatosCargaWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida" },

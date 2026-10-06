@@ -263,4 +263,28 @@ public static class clsCodigosError
 
     /// <summary>Falta <c>If-Match</c> en una mutación de la etapa final del costeo (428, ADR-018 §8). Código nuevo del backend .NET.</summary>
     public const string PrecondicionRequerida = "PRECONDICION_REQUERIDA";
+
+    /// <summary>
+    /// HU-013.3 (ADR-018 §4): Nexo no responde a la consulta del catálogo de servicios conexos o a agregarlos (sin configurar, caído, sin
+    /// respuesta a tiempo o el comercial sin <c>idUsuarioExterno</c>); 503. Código nuevo del backend .NET.
+    /// </summary>
+    public const string NexoNoDisponible = "NEXO_NO_DISPONIBLE";
+
+    /// <summary>
+    /// HU-013.3: el conexo no se puede agregar (la <c>linea_orden</c> no existe en la cotización, o Nexo respondió 400/404 al agregarlo,
+    /// con su código en <c>detalle.motivo</c>); 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string ConexoInvalido = "CONEXO_INVALIDO";
+
+    /// <summary>
+    /// HU-013.3: la línea existe en Cotifly pero no tiene línea en la cotización de Nexo (sin flete, o sin el id de la línea de Nexo
+    /// guardado); 409, sin llamar a Nexo. Código nuevo del backend .NET.
+    /// </summary>
+    public const string LineaSinCotizacionNexo = "LINEA_SIN_COTIZACION_NEXO";
+
+    /// <summary>
+    /// HU-013 (ADR-018 §4 y §5): el estado o el tipo de la cotización no permite la acción (una licitación no admite conexos, con
+    /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409. Código nuevo del backend .NET.
+    /// </summary>
+    public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
 }

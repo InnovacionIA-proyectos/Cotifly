@@ -278,7 +278,9 @@ public sealed class clsCosteoNexo(
             {
                 if (Decimal(linea, "valorFlete") is { } flete)
                 {
-                    lineas.Add(new clsLineaCosteoNexo(Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor")));
+                    // id = la línea de la COTIZACIÓN de Nexo (clsCotizacionLineaDto.id): el lineaId de los conexos (HU-013.3).
+                    lineas.Add(new clsLineaCosteoNexo(
+                        Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor"), Texto(linea, "id")));
                 }
             }
         }
@@ -356,10 +358,11 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// Envía la petición con la identidad del comercial y traduce los fallos. Devuelve el JSON de una respuesta 2xx (el llamador lo
-    /// libera) o el error de negocio.
+    /// libera) o el error de negocio. Con <paramref name="limiteBytes"/>, una respuesta 2xx más grande se descarta sin leerla entera
+    /// (<c>COSTEO_NEXO_NO_DISPONIBLE</c>, "respuesta demasiado grande"); lo usan los servicios conexos (HU-013.3).
     /// </summary>
     internal async Task<clsResultado<JsonDocument>> EnviarAsync(
-        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
+        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, long? limiteBytes = null)
     {
         if (_urlBase is null)
         {
@@ -419,7 +422,20 @@ public sealed class clsCosteoNexo(
             }
 
             await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
-            return await JsonDocument.ParseAsync(flujo, cancellationToken: cancellationToken);
+            if (limiteBytes is not { } limite)
+            {
+                return await JsonDocument.ParseAsync(flujo, cancellationToken: cancellationToken);
+            }
+
+            if (respuesta.Content.Headers.ContentLength is { } largo && largo > limite)
+            {
+                return NoDisponible($"respuesta demasiado grande ({largo.ToString(CultureInfo.InvariantCulture)} bytes)");
+            }
+
+            using var acotado = await LeerAcotadoAsync(flujo, limite, cancellationToken);
+            return acotado is null
+                ? NoDisponible($"respuesta de más de {limite.ToString(CultureInfo.InvariantCulture)} bytes")
+                : await JsonDocument.ParseAsync(acotado, cancellationToken: cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -439,6 +455,112 @@ public sealed class clsCosteoNexo(
         {
             return NoDisponible("JSON inválido", ex);
         }
+    }
+
+    /// <summary>
+    /// POST con efecto en Nexo (agregar conexos, HU-013.3) que distingue si el efecto pudo ocurrir: nunca se cancela a mitad (sin
+    /// token del llamador) y nunca se reintenta. <see cref="FasePostNexo.NoEnviado"/> (sin configurar, comercial sin
+    /// <c>idUsuarioExterno</c>, circuito abierto): sin efecto. <see cref="FasePostNexo.Rechazado"/> (4xx): sin efecto, con el detalle
+    /// <c>HTTP {estado} {código}: {mensaje}</c>. <see cref="FasePostNexo.Exito"/> (cualquier 2xx): CON efecto, con el JSON solo si es un
+    /// objeto válido de hasta <paramref name="limiteBytes"/> (204, vacío, inválido o más grande: <c>null</c>).
+    /// <see cref="FasePostNexo.Incierto"/> (tiempo agotado, error de red, 5xx): el efecto no se puede descartar.
+    /// </summary>
+    internal async Task<clsRespuestaPostNexo> EnviarPostConEfectoAsync(Guid usuarioId, string ruta, object cuerpo, long limiteBytes)
+    {
+        if (_urlBase is null)
+        {
+            return new clsRespuestaPostNexo(FasePostNexo.NoEnviado, null, "Nexo sin configurar (Nexo:UrlBase)");
+        }
+
+        var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, CancellationToken.None);
+        if (usuario?.IdUsuarioExterno is not { } idUsuarioExterno)
+        {
+            return new clsRespuestaPostNexo(FasePostNexo.NoEnviado, null, usuario is null ? "el comercial no existe" : "el comercial no tiene idUsuarioExterno");
+        }
+
+        using var peticion = new HttpRequestMessage(HttpMethod.Post, ConstruirUrl(_urlBase, ruta))
+        {
+            Content = JsonContent.Create(cuerpo, cuerpo.GetType(), options: _json),
+        };
+        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        HttpResponseMessage respuesta;
+        try
+        {
+            respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
+        }
+        catch (Polly.CircuitBreaker.BrokenCircuitException)
+        {
+            return new clsRespuestaPostNexo(FasePostNexo.NoEnviado, null, "circuito abierto tras fallos repetidos");
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException or ExecutionRejectedException)
+        {
+            logger.LogWarning("POST {Ruta} a Nexo sin respuesta ({Tipo}): el efecto es incierto.", ruta, ex.GetType().Name);
+            return new clsRespuestaPostNexo(FasePostNexo.Incierto, null, ex is HttpRequestException ? "error de red" : "Nexo no respondió a tiempo");
+        }
+
+        using (respuesta)
+        {
+            var estado = (int)respuesta.StatusCode;
+            if (estado is >= 400 and < 500)
+            {
+                var (_, _, detalle) = await LeerErrorNexoAsync(respuesta, CancellationToken.None);
+                logger.LogWarning("Nexo rechazó POST {Ruta}: {Detalle}", ruta, detalle);
+                return new clsRespuestaPostNexo(FasePostNexo.Rechazado, null, detalle);
+            }
+
+            if (estado is < 200 or >= 300)
+            {
+                logger.LogWarning("Nexo respondió {Estado} a POST {Ruta}: el efecto es incierto.", estado, ruta);
+                return new clsRespuestaPostNexo(FasePostNexo.Incierto, null, $"HTTP {estado.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            try
+            {
+                if (respuesta.Content.Headers.ContentLength is { } largo && largo > limiteBytes)
+                {
+                    return new clsRespuestaPostNexo(FasePostNexo.Exito, null, "respuesta demasiado grande");
+                }
+
+                await using var flujo = await respuesta.Content.ReadAsStreamAsync(CancellationToken.None);
+                using var acotado = await LeerAcotadoAsync(flujo, limiteBytes, CancellationToken.None);
+                if (acotado is null || acotado.Length == 0)
+                {
+                    return new clsRespuestaPostNexo(FasePostNexo.Exito, null, acotado is null ? "respuesta demasiado grande" : "respuesta vacía");
+                }
+
+                var documento = await JsonDocument.ParseAsync(acotado, cancellationToken: CancellationToken.None);
+                return new clsRespuestaPostNexo(FasePostNexo.Exito, documento, null);
+            }
+            catch (Exception ex) when (ex is JsonException or IOException or HttpRequestException or OperationCanceledException)
+            {
+                // El 2xx ya llegó: el efecto ocurrió aunque el cuerpo no se pueda leer.
+                logger.LogWarning("Nexo respondió {Estado} a POST {Ruta} con un cuerpo ilegible ({Tipo}).", estado, ruta, ex.GetType().Name);
+                return new clsRespuestaPostNexo(FasePostNexo.Exito, null, "respuesta ilegible");
+            }
+        }
+    }
+
+    /// <summary>Lee hasta <paramref name="limite"/> bytes en memoria; <c>null</c> si el flujo trae más.</summary>
+    private static async Task<MemoryStream?> LeerAcotadoAsync(Stream flujo, long limite, CancellationToken cancellationToken)
+    {
+        var memoria = new MemoryStream();
+        var bufer = new byte[16 * 1024];
+        int leidos;
+        while ((leidos = await flujo.ReadAsync(bufer, cancellationToken)) > 0)
+        {
+            if (memoria.Length + leidos > limite)
+            {
+                await memoria.DisposeAsync();
+                return null;
+            }
+
+            memoria.Write(bufer, 0, leidos);
+        }
+
+        memoria.Position = 0;
+        return memoria;
     }
 
     /// <summary>Error de Nexo (<c>{code, message, timestamp, details?}</c>) como <c>HTTP {estado} {code}: {message}</c> (máx. 400 caracteres).</summary>
@@ -519,3 +641,22 @@ public sealed class clsCosteoNexo(
 
     private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 }
+
+/// <summary>Qué se sabe del efecto de un POST a Nexo (ver <see cref="clsCosteoNexo.EnviarPostConEfectoAsync"/>).</summary>
+internal enum FasePostNexo
+{
+    /// <summary>No salió de Cotifly: sin efecto.</summary>
+    NoEnviado,
+
+    /// <summary>Nexo respondió 4xx: sin efecto.</summary>
+    Rechazado,
+
+    /// <summary>Nexo respondió 2xx: con efecto (el cuerpo puede faltar).</summary>
+    Exito,
+
+    /// <summary>Tiempo agotado, error de red o 5xx: el efecto no se puede descartar.</summary>
+    Incierto,
+}
+
+/// <summary>Resultado de un POST con efecto: la fase, el JSON de un 2xx legible (lo libera quien llama) y el detalle técnico.</summary>
+internal sealed record clsRespuestaPostNexo(FasePostNexo Fase, JsonDocument? Json, string? Detalle);

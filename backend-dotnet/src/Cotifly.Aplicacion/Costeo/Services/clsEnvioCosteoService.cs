@@ -12,6 +12,7 @@ using Cotifly.Dominio.Clientes;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Cotifly.Dominio.Precio;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -25,7 +26,8 @@ public interface IClsEnvioCosteoService
 {
     /// <summary>
     /// Crea la cotización con el formulario ampliado (confirmada antes de llamar a Nexo) y la envía. Errores (nada queda guardado):
-    /// <c>SOLICITUD_COSTEO_INVALIDA</c>, <c>MARGEN_LINEA_DESCONOCIDA</c>, <c>FOLIO_CONSECUTIVO_AGOTADO</c> y <c>ERROR_INTERNO</c>.
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> (también una <c>moneda</c> que no es COP ni USD), <c>MARGEN_LINEA_DESCONOCIDA</c>,
+    /// <c>TRM_NO_DISPONIBLE</c> (en USD sin TRM del día, HU-013.7), <c>FOLIO_CONSECUTIVO_AGOTADO</c> y <c>ERROR_INTERNO</c>.
     /// Si Nexo falla la cotización se devuelve igual, en <c>error_envio</c> con el motivo.
     /// </summary>
     Task<clsResultado<clsCotizacion>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default);
@@ -39,19 +41,24 @@ public interface IClsEnvioCosteoService
     /// <summary>
     /// Envía a Nexo una cotización ya guardada y confirmada con sus líneas (licitación, HU-011.2, ADR-017) y guarda el resultado
     /// (<c>pendiente_costeo</c>/<c>autocosteo</c> o <c>error_envio</c>), igual que el envío de HU-005.5. Sin el token de la petición.
+    /// <paramref name="notaTrazabilidad"/> (re-solicitud, HU-013.4) se agrega a las <c>notas</c> que viajan a Nexo, sin guardarse en la
+    /// cotización ni sobrepasar el límite de Nexo (<see cref="ConNota"/>).
     /// </summary>
     Task EnviarGuardadaAsync(
         clsCotizacion cotizacion,
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
         IReadOnlyList<clsCotizacionPosicion> posiciones,
         clsMargenPolitica? politica,
-        Guid usuarioId);
+        Guid usuarioId,
+        string? notaTrazabilidad = null);
 }
 
 /// <summary>Implementación de <see cref="IClsEnvioCosteoService"/>.</summary>
 /// <remarks>
 /// <list type="number">
 /// <item>Valida el formulario (mismos límites que Nexo), exige el NIT y resuelve la línea en <c>MargenesPolitica</c>.</item>
+/// <item>Fija la moneda y, en USD, la TRM del día (HU-013.7, ADR-014 §5, <see cref="IClsFijacionMonedaService"/>): sin TRM no se guarda
+/// nada ni se llama a Nexo. El polling, el ajuste de margen y el PDF convierten con esa TRM fijada; el reintento la conserva.</item>
 /// <item>Crea la cotización con folio del servidor (ADR-011, con el NIT), el formulario y sus posiciones en <c>pendiente_envio</c>, y
 /// confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
@@ -67,6 +74,7 @@ public sealed class clsEnvioCosteoService(
     IClsBuscadorClientes buscadorClientes,
     IClsCosteoNexo nexo,
     IClsValidadorCatalogosCaptura catalogos,
+    IClsFijacionMonedaService monedas,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
@@ -94,7 +102,7 @@ public sealed class clsEnvioCosteoService(
                     ? Invalida($"El campo 'cliente_nombre' supera {clsEntradaSolicitudCosteo.LargoMaximoNombre} caracteres.")
                     : string.IsNullOrWhiteSpace(entrada.LineaNegocio)
                         ? Invalida("El campo 'linea_negocio' es obligatorio.")
-                        : entrada.Solicitud.Validar();
+                        : ValidarMoneda(entrada.Moneda) ?? entrada.Solicitud.Validar();
         if (error is not null)
         {
             return error;
@@ -120,6 +128,13 @@ public sealed class clsEnvioCosteoService(
         // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
         catalogos.RevisarMapeoLineaNexo(politica);
 
+        // HU-013.7 (ADR-014 §5): en USD la TRM del día de creación queda fija ANTES de guardar; sin TRM no se guarda ni se envía nada.
+        var fijada = await monedas.FijarAsync(entrada.Moneda, cancellationToken);
+        if (fijada.EsFallo)
+        {
+            return fijada.Error;
+        }
+
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
         IReadOnlyList<clsCotizacionPosicion> posiciones = [];
         var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
@@ -132,6 +147,8 @@ public sealed class clsEnvioCosteoService(
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
+                Moneda = fijada.Valor.Moneda,
+                TrmAplicada = fijada.Valor.TrmAplicada,
             });
             if (cotizacion.EsFallo)
             {
@@ -166,14 +183,48 @@ public sealed class clsEnvioCosteoService(
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
         IReadOnlyList<clsCotizacionPosicion> posiciones,
         clsMargenPolitica? politica,
-        Guid usuarioId)
+        Guid usuarioId,
+        string? notaTrazabilidad = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(posiciones);
-        var encabezado = cotizacion.EncabezadoSolicitud
-            ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion));
+        var encabezado = ConNota(cotizacion.EncabezadoSolicitud
+            ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion)), notaTrazabilidad);
         return EnviarANexoAsync(cotizacion, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
+    }
+
+    /// <summary>
+    /// Encabezado con <paramref name="nota"/> agregada a las <c>notas</c> (en una línea nueva). Si juntas superan
+    /// <see cref="clsSolicitudCosteo.LargoNotas"/>, se recortan las notas existentes y la nota de trazabilidad se conserva completa.
+    /// </summary>
+    public static clsEncabezadoSolicitudCosteo ConNota(clsEncabezadoSolicitudCosteo encabezado, string? nota)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        if (string.IsNullOrWhiteSpace(nota))
+        {
+            return encabezado;
+        }
+
+        var agregada = nota.Trim();
+        if (agregada.Length >= clsSolicitudCosteo.LargoNotas)
+        {
+            return encabezado with { Notas = agregada[..clsSolicitudCosteo.LargoNotas] };
+        }
+
+        var existentes = encabezado.Notas?.Trim();
+        if (string.IsNullOrEmpty(existentes))
+        {
+            return encabezado with { Notas = agregada };
+        }
+
+        var disponible = clsSolicitudCosteo.LargoNotas - agregada.Length - 1;
+        if (existentes.Length > disponible)
+        {
+            existentes = disponible <= 1 ? string.Empty : existentes[..(disponible - 1)] + "…";
+        }
+
+        return encabezado with { Notas = existentes.Length == 0 ? agregada : existentes + "\n" + agregada };
     }
 
     /// <summary>
@@ -230,8 +281,15 @@ public sealed class clsEnvioCosteoService(
         return cotizacion;
     }
 
-    private static clsErrorDominio? Revalidar(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas)
+    /// <summary>
+    /// Valida lo que se va a (re)enviar a Nexo con las reglas de la captura (<c>SOLICITUD_COSTEO_INVALIDA</c>): una línea con la del
+    /// formulario (<see cref="clsSolicitudCosteo.Validar"/>), varias con la de la licitación. Lo usan el reintento y la re-solicitud
+    /// (HU-013.4), también sobre los cambios de carga de una versión nueva.
+    /// </summary>
+    public static clsErrorDominio? Revalidar(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas)
     {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        ArgumentNullException.ThrowIfNull(lineas);
         if (lineas.Count == 1)
         {
             return clsSolicitudCosteo.Desde(encabezado, lineas[0]).Validar();
@@ -350,7 +408,8 @@ public sealed class clsEnvioCosteoService(
     /// <summary>
     /// Margen de la cotización al enviar (HU-005.7, ADR-015 §5): SAP TM con el BP del catálogo o la política de la línea
     /// (<see cref="IClsMargenResolverService"/>). Se guarda para aplicarlo cuando llegue el costeo; si no se puede resolver, el
-    /// polling lo advierte y nunca muestra el costo sin margen.
+    /// polling lo advierte y nunca muestra el costo sin margen. Un margen negociado (re-solicitud, HU-013.4) no se pisa, falle o no la
+    /// resolución.
     /// </summary>
     private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
     {
@@ -363,6 +422,14 @@ public sealed class clsEnvioCosteoService(
         if (resuelto.EsFallo || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Valor.Salida.Origen, out var origen))
         {
             logger.LogWarning("No se resolvió el margen de la cotización {Folio} al enviarla a Nexo.", cotizacion.Folio);
+            return;
+        }
+
+        // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
+        // sugerido se refresca con SAP TM o la política, como referencia.
+        if (cotizacion.TieneMargenNegociado)
+        {
+            cotizacion.RefrescarMargenSugerido(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen);
             return;
         }
 
@@ -391,6 +458,15 @@ public sealed class clsEnvioCosteoService(
     private static string SoloDigitos(string? valor) => new((valor ?? string.Empty).Where(char.IsAsciiDigit).ToArray());
 
     private static clsErrorDominio Invalida(string mensaje) => new(clsCodigosError.SolicitudCosteoInvalida, mensaje);
+
+    /// <summary>
+    /// <c>moneda</c> del formulario (HU-013.7, mismo contrato que <c>LicitacionWeb.moneda</c>): ausente es COP; si viene, <c>COP</c> o
+    /// <c>USD</c> sin distinguir mayúsculas ni espacios al borde. Una cadena vacía u otra moneda es <c>SOLICITUD_COSTEO_INVALIDA</c>.
+    /// </summary>
+    private static clsErrorDominio? ValidarMoneda(string? moneda) =>
+        moneda is not null && (string.IsNullOrWhiteSpace(moneda) || clsConversorMoneda.Normalizar(moneda).EsFallo)
+            ? Invalida($"El campo 'moneda' debe ser {string.Join(" o ", clsConversorMoneda.Soportadas)} (llegó '{moneda.Trim()}').")
+            : null;
 
     private static clsErrorDominio NoReintentable(clsCotizacion cotizacion, string? detalle = null) =>
         new(clsCodigosError.CosteoNoReintentable,

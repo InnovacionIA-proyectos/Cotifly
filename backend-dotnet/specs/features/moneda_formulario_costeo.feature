@@ -2,11 +2,11 @@
 # HU-013.7 (#103, ADR-018, ADR-014 §5) — Cotizaciones en USD en el formulario de costeo: `moneda` en
 # POST /web/solicitudes-costeo, con el mismo contrato que POST /web/licitaciones. La TRM se fija al crear con
 # clsFijacionMonedaService; sin TRM no se guarda ni se envía nada a Nexo. El costo sigue en COP; el precio del flete y de los
-# conexos se convierte con la TRM fijada y el PDF lleva la nota de TRM mínima. Depende de #50 (PR #96). Con fuentes de TRM
-# falsas, un Nexo falso, la API real en memoria y SQL Server 2019 en Testcontainers. Margen de la línea: 15 %.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #103 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @trm @pendiente @ignore
+# conexos se convierte con la TRM fijada y el PDF lleva la nota de TRM mínima. Con fuentes de TRM falsas (DolarApi principal,
+# Superfinanciera de respaldo), un Nexo falso, la API real en memoria y SQL Server 2019 en Testcontainers. Margen de la línea: 15 %.
+# Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosMonedaCosteo.cs (#103). La tarifa en USD se imprime como en HU-012.3
+# (prefijo "US$" pegado al número, 2 decimales con coma).
+@integracion @trm
 Característica: Moneda en el formulario de costeo
   Como comercial de Botero Soto
   Quiero cotizar en dólares desde el formulario de costeo
@@ -86,7 +86,7 @@ Característica: Moneda en el formulario de costeo
     Y Nexo costeó la solicitud de "U1" con un flete de 2550000 y el polling lo registró
     Cuando "ana" genera el PDF del costeo de "U1"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "SalidaPdf" del contrato
-    Y el PDF de "U1" muestra la tarifa "US$ 750,00"
+    Y el PDF de "U1" muestra la tarifa "US$750,00"
     Y el PDF de "U1" contiene "Esta cotización está bajo una TRM mínima de $4.000,00"
 
   Escenario: El PDF en COP no lleva la nota de TRM

@@ -48,8 +48,9 @@ public interface IClsCosteoCotizacionService
 
 /// <summary>
 /// <c>CosteoCotizacion</c>: estado del costeo y precios (sin costos de Nexo), el margen sugerido y su origen (HU-013.2), si el PDF
-/// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>) y el asunto y la
-/// introducción guardados para el PDF (<c>textos</c>, HU-013.5; <c>null</c> si todavía no hay).
+/// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>), la TRM fijada al crear
+/// (<see cref="TrmAplicada"/>, HU-013.7; en USD los precios ya vienen convertidos con esa TRM) y el asunto y la introducción guardados
+/// para el PDF (<c>textos</c>, HU-013.5; <c>null</c> si todavía no hay).
 /// </summary>
 public sealed record clsCosteoCotizacion(
     string Folio,
@@ -65,7 +66,11 @@ public sealed record clsCosteoCotizacion(
     string? OrigenMargen,
     bool PdfDesactualizado,
     string? RowVersion,
-    clsTextosCotizacion? Textos = null) : IClsConVersionFila;
+    clsTextosCotizacion? Textos = null) : IClsConVersionFila
+{
+    /// <summary>HU-013.7: TRM fijada al crear la cotización (COP por USD) con que se convierten sus precios; 0 en COP.</summary>
+    public decimal TrmAplicada { get; init; }
+}
 
 /// <summary>Servicio conexo tal como lo ve el comercial: precio con margen y si va en el PDF.</summary>
 public sealed record clsServicioConexoPrecio(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal Precio, bool Incluido);
@@ -579,7 +584,10 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.PdfDesactualizado,
             VersionEtag(cotizacion),
-            clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion));
+            clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
+        {
+            TrmAplicada = cotizacion.TrmAplicada,
+        };
     }
 
     private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");

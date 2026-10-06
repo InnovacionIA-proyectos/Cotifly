@@ -77,6 +77,8 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();
         servicios.AddScoped<IClsCosteoCotizacionService, clsCosteoCotizacionService>();
         servicios.AddScoped<IClsAjusteMargenCosteoService, clsAjusteMargenCosteoService>();
+        servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
+        servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
 
         // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
         // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.

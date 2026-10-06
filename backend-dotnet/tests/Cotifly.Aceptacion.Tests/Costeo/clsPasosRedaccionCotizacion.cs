@@ -152,9 +152,7 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     [Then("el modelo no fue llamado")]
     public void EntoncesElModeloNoFueLlamado() => Modelo.Llamadas.Should().BeEmpty();
 
-    [Then("el PDF de {string} contiene {string}")]
-    public async Task EntoncesElPdfContiene(string cotizacion, string texto) =>
-        Normalizar(await TextoPdfAsync(cotizacion)).Should().Contain(Normalizar(texto));
+    // "el PDF de {string} contiene {string}" es de clsPasosMonedaCosteo (#103): una sola definición para las dos features.
 
     [Then("el PDF de {string} contiene la introducción estándar")]
     public async Task EntoncesElPdfContieneLaIntroduccionEstandar(string cotizacion)

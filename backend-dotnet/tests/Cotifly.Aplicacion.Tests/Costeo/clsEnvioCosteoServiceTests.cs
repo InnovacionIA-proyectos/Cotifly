@@ -37,6 +37,7 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
+    private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
     private readonly clsRelojFalso _reloj = new();
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m, mapeoLineasNexo: "PuertoAInterior").Valor;
@@ -71,6 +72,7 @@ public sealed class clsEnvioCosteoServiceTests
             return new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false);
         });
         ClienteEnCatalogo(new clsClienteEncontrado("900.123.456", "LONGYIN S.A.S.", "cliente", "15927"));
+        _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsMonedaFijada(clsCotizacion.MonedaPesos, 0m));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -410,6 +412,80 @@ public sealed class clsEnvioCosteoServiceTests
         motivo.Length.Should().Be(clsCotizacion.LargoMaximoMotivoCosteo);
     }
 
+    [Fact]
+    public async Task SinMonedaLaCotizacionQuedaEnPesosConTrmCero()
+    {
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.Moneda.Should().Be(clsCotizacion.MonedaPesos);
+        cotizacion.TrmAplicada.Should().Be(0m);
+        await _monedas.Received(1).FijarAsync(null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EnDolaresLaTrmSeFijaAntesDeGuardarYQuedaEnLaCotizacion()
+    {
+        _monedas.FijarAsync("USD", Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            _eventos.Add("trm");
+            return new clsMonedaFijada("USD", 4000m);
+        });
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada() with { Moneda = "USD" }, Ct)).Valor;
+
+        _eventos.Should().Equal("trm", "guardar:pendiente_envio", "nexo", "guardar:pendiente_costeo");
+        cotizacion.Moneda.Should().Be("USD");
+        cotizacion.TrmAplicada.Should().Be(4000m, "la TRM del día de creación queda fija en la cotización (ADR-014 §5)");
+    }
+
+    [Fact]
+    public async Task SinTrmNoSeGuardaNadaNiSeEnviaANexo()
+    {
+        _monedas.FijarAsync("USD", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.TrmNoDisponible, "No se pudo obtener la TRM oficial del día."));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Moneda = "USD" }, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible);
+        _eventos.Should().BeEmpty();
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacion>(default, default, default!, Ct);
+        await _buscador.DidNotReceiveWithAnyArgs().BuscarAsync(default, default!, Ct);
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    [Theory]
+    [InlineData("EUR")]
+    [InlineData("dólar")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task OtraMonedaSeRechazaComoSolicitudInvalidaSinConsultarLaTrm(string moneda)
+    {
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Moneda = moneda }, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        resultado.Error.Mensaje.Should().Contain("'moneda'");
+        _eventos.Should().BeEmpty();
+        await _monedas.DidNotReceiveWithAnyArgs().FijarAsync(default, Ct);
+    }
+
+    [Fact]
+    public async Task ElReintentoConservaLaMonedaYLaTrmFijadasAlCrear()
+    {
+        _monedas.FijarAsync("USD", Arg.Any<CancellationToken>()).Returns(new clsMonedaFijada("USD", 4000m));
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"), new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false));
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada() with { Moneda = "USD" }, Ct)).Valor;
+        Registrada(cotizacion);
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+
+        var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        resultado.Valor.Moneda.Should().Be("USD");
+        resultado.Valor.TrmAplicada.Should().Be(4000m, "el reintento nunca vuelve a fijar la TRM");
+        await _monedas.Received(1).FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
     private async Task<clsCotizacion> CotizacionEnErrorAsync()
     {
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
@@ -431,7 +507,65 @@ public sealed class clsEnvioCosteoServiceTests
 
     private static clsEntradaSolicitudCosteo Entrada() => new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.Crear());
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnMargenNegociadoSeConservaAlReenviarYElSugeridoSeRefrescaFalleONoLaResolucion(bool resolucionFalla)
+    {
+        // HU-013.4 (decisión del 2026-10-06): re-solicitar no pisa el margen ajustado por el comercial.
+        var cotizacion = Negociada(0.22m);
+        if (resolucionFalla)
+        {
+            _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>())
+                .Returns(new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, "SAP TM caído"));
+        }
+
+        await Servicio().EnviarGuardadaAsync(cotizacion, _lineasNegociada, [], _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");
+
+        cotizacion.MargenAplicado.Should().Be(0.22m);
+        cotizacion.OrigenMargen.Should().Be(OrigenMargen.Negociado);
+        cotizacion.MargenSugerido.Should().Be(resolucionFalla ? 0.15m : 0.18m, "el sugerido se refresca con SAP TM como referencia");
+        cotizacion.OrigenMargenSugerido.Should().Be(resolucionFalla ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm);
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana,
+            Arg.Is<clsSolicitudNexo>(s => s.Encabezado.Notas!.EndsWith("Re-solicitud de F; reemplaza la solicitud sol-1.", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void LaNotaDeTrazabilidadSeAgregaALasNotasSinSobrepasarElLimite()
+    {
+        var encabezado = clsSolicitudCosteoMuestra.Crear().Encabezado;
+        const string Nota = "Re-solicitud de F; reemplaza la solicitud sol-1.";
+
+        clsEnvioCosteoService.ConNota(encabezado with { Notas = null }, Nota).Notas.Should().Be(Nota);
+        clsEnvioCosteoService.ConNota(encabezado with { Notas = "Llamar antes" }, Nota).Notas.Should().Be("Llamar antes\n" + Nota);
+        var larga = clsEnvioCosteoService.ConNota(encabezado with { Notas = new string('x', 2000) }, Nota).Notas!;
+        larga.Length.Should().Be(clsSolicitudCosteo.LargoNotas);
+        larga.Should().EndWith("…\n" + Nota, "se recortan las notas existentes y la de trazabilidad queda completa");
+        clsEnvioCosteoService.ConNota(encabezado, null).Should().Be(encabezado);
+    }
+
+    private IReadOnlyList<clsCotizacionLineaSolicitud> _lineasNegociada = [];
+
+    private clsCotizacion Negociada(decimal margen)
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        {
+            Folio = "PCN-900123456-AP-28092026-001",
+            UsuarioId = _ana,
+            NitCliente = Nit,
+            MargenPolitica = 0.15m,
+            MargenAplicado = margen,
+            OrigenMargen = OrigenMargen.Negociado,
+            MetodoCalculo = "margen",
+        }).Valor;
+        var solicitud = clsSolicitudCosteoMuestra.Crear();
+        cotizacion.RegistrarSolicitudCosteo(solicitud);
+        _lineasNegociada = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
+        return cotizacion;
+    }
+
     private clsEnvioCosteoService Servicio() => new(
-        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _unidad, _auditoria, _reloj,
+        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _monedas, _unidad, _auditoria, _reloj,
         Options.Create(new clsOpcionesCosteoNexo()), NullLogger<clsEnvioCosteoService>.Instance);
 }

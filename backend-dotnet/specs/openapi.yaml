@@ -1005,12 +1005,12 @@ paths:
 
         Es el ÚNICO camino para crear una cotización (ADR-018): el chat ya no crea cotizaciones.
 
-        **Moneda (HU-013.7, #103, pendiente de implementar; mismo contrato que `POST /web/licitaciones`, ADR-014 §5):**
+        **Moneda (HU-013.7, #103; mismo contrato que `POST /web/licitaciones`, ADR-014 §5):**
         `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día se fija **antes de guardar** con
         `clsFijacionMonedaService` y queda en `trm_aplicada`; sin TRM responde 400 `TRM_NO_DISPONIBLE`, no guarda nada y
         no envía nada a Nexo. El polling calcula el precio del flete y de los conexos en pesos y lo convierte con esa TRM
-        (`round(precio_cop / trm, 2)`); el costo sigue en COP. El PDF lleva la nota de TRM mínima con la `trm_aplicada`.
-        Depende de #50 (PR #96, `clsFijacionMonedaService` y la nota del PDF), que todavía no está en `QA`.
+        (`round(precio_cop / trm, 2)`); el costo sigue en COP. El ajuste de margen usa la misma TRM fijada (nunca la del
+        día), el reintento la conserva y el PDF lleva la nota de TRM mínima con la `trm_aplicada`.
       security:
         - bearer: []
       requestBody:
@@ -1163,7 +1163,7 @@ paths:
         mientras no haya costeo. Solo el dueño.
 
         HU-013 (ADR-018): trae además `margen_sugerido` y `origen_margen` (botón de ajuste de margen, HU-013.2),
-        `trm_aplicada` (HU-013.7), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
+        `trm_aplicada` (HU-013.7, TRM fijada al crear; 0 en COP), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
         y `row_version` (#98), que también va en
         el encabezado `ETag`. Son opcionales en el esquema hasta que cada issue los implemente.
       security:
@@ -1278,7 +1278,6 @@ paths:
       operationId: reSolicitarCosteo
       tags: [web]
       summary: Vuelve a pedir el costeo a Nexo ("Cotizar costo"), en el mismo folio o en una versión nueva
-      x-estado: pendiente
       x-issue: '#100 (HU-013.4)'
       description: |
         HU-013.4 (ADR-018 §5). Amplía `POST .../costeo/reintentar`. Es el endpoint del botón "Cotizar costo", del
@@ -1291,20 +1290,33 @@ paths:
         - Se reenvía la misma cotización a Nexo. Responde **200** con la cotización en `pendiente_costeo` (o
           `autocosteo` si Nexo costea en la misma petición) y el polling se reanuda. Invalida el PDF actual
           (`pdf_desactualizado`). Desde `error_envio` equivale a `reintentar`.
+        - Si el comercial había ajustado el margen (`origen_margen = negociado`), se CONSERVA sobre el costo nuevo; el
+          `margen_sugerido` se refresca con SAP TM o la política como referencia (decisión del 2026-10-06).
 
         **Versión nueva** (con `datos_carga`, o con `nueva_version: true` sin cambios de carga):
         - Permitida en cualquier estado salvo con un costeo en curso (`pendiente_envio` o `pendiente_costeo`: 409
           `ESTADO_NO_PERMITE`), también si la cotización ya se envió o tiene resultado.
         - Crea `{folio base}-vN` (ADR-011) con el formulario de la vigente y los cambios de carga, si los hay, y la envía a
-          Nexo como solicitud nueva; la versión anterior se conserva sin cambios. Responde **201** con la versión nueva y
-          `Location` a su costeo.
+          Nexo como solicitud nueva; la versión anterior conserva su costeo (solo sube su versión de negocio: la reserva que
+          impide crear dos versiones con el mismo `If-Match`). Responde **201** con la versión nueva y `Location` a su costeo.
+          El margen negociado de la original se copia. Los cambios de carga se validan por catálogo (G2) y con las reglas de
+          la captura (G3 y peso).
+        - La captura nueva lleva en `notas` "Re-solicitud de {folio}; reemplaza la solicitud {id anterior}".
 
         Comunes:
         - Si Nexo falla, igual que el alta: la cotización (o la versión nueva) queda en `error_envio` con el motivo.
         - Queda auditado (`EventosHerramienta`, `costeo_nexo_re_solicitud`) con el motivo y el usuario.
         - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
           respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
-        - El mecanismo en Nexo para "reenviar la misma" está pendiente (`docs/HU-013-preguntas-nexo.md`). Solo el dueño.
+        - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/HU-013-preguntas-nexo.md`,
+          pregunta 4): en los dos casos Cotifly hace una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, y
+          guarda el id de la solicitud nueva. En el mismo folio el costo, el precio y los conexos anteriores se limpian (quedan en
+          la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva. Un `error_envio` por un rechazo
+          definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
+          Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
+          (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
+          mismo folio se conservan la moneda y la TRM fijadas; la versión nueva copia la moneda y fija la TRM del día antes de
+          reservar la original y de llamar a Nexo (sin TRM: 400 `TRM_NO_DISPONIBLE` y no se crea nada). Solo el dueño.
       security:
         - bearer: []
       parameters:
@@ -1320,8 +1332,8 @@ paths:
             example:
               motivo: "El cliente cambió el peso de la carga"
               datos_carga:
-                peso_kg: 28000
-                tipo_vehiculo: "3S3"
+                peso_kg: 28400
+                tipo_vehiculo: "2S3"
       responses:
         '200':
           description: Reenviada a Nexo con el mismo folio; `estado_costeo` dice si Nexo la recibió
@@ -1346,7 +1358,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) o `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
           content:
             application/json:
               schema:
@@ -1371,7 +1383,6 @@ paths:
       operationId: buscarServiciosConexos
       tags: [web]
       summary: Catálogo de servicios conexos de Nexo (sin costos)
-      x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
         HU-013.3 (ADR-018 §4). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
@@ -1440,7 +1451,6 @@ paths:
       operationId: agregarServiciosConexos
       tags: [web]
       summary: Agrega servicios conexos del catálogo a la cotización en Nexo
-      x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
         HU-013.3 (ADR-018 §4). Es el endpoint del botón "Agregar conexo" y del Confirmar de la acción propuesta
@@ -1468,8 +1478,17 @@ paths:
           `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
           `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos nada cambia en Cotifly.
-        - Si Nexo lo agregó pero la relectura falla, responde 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
-          true`; Cotifly no reintenta el POST y el polling recoge el conexo en la siguiente consulta.
+        - La versión se RESERVA en la base antes del POST a Nexo (ADR-018 §13): de varias peticiones con el mismo `If-Match` solo una
+          llega a Nexo; las demás reciben 409 `CONFLICTO_CONCURRENCIA` sin tocar Nexo. Por eso un fallo de Nexo después de la reserva
+          deja la versión (y el `ETag`) cambiada aunque nada más cambie: recargar el costeo antes de reintentar.
+        - Todo 2xx de Nexo es efecto: Cotifly usa la cotización que devuelve el POST y solo relee (`GET /api/cotizaciones/{id}`)
+          si el cuerpo falta o no se puede leer. Si no se puede releer, 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
+          true`.
+        - Si Nexo no responde al POST (tiempo agotado, red o 5xx), Cotifly relee la cotización: si muestra el conexo nuevo, termina
+          normal (200); si no se puede determinar, 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo = "desconocido"`.
+          Nunca reintenta el POST; el polling recoge el conexo en la siguiente consulta. Con `agregado_en_nexo` (true o
+          "desconocido") el frontend NO debe volver a agregar sin recargar el costeo; la respuesta queda guardada para la misma
+          `Idempotency-Key`.
         - Si el conexo queda costeado de inmediato o pasa por Servicios Logísticos está pendiente de confirmar con Nexo.
         - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
           respuesta de la primera petición sin volver a llamar a Nexo (el POST de Nexo no es idempotente). Solo el dueño.
@@ -1527,7 +1546,7 @@ paths:
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si solo falló la relectura)'
+          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si Nexo lo agregó pero no se pudo releer, o `"desconocido"` si Nexo no respondió al POST y no se pudo confirmar)'
           content:
             application/json:
               schema:
@@ -2253,7 +2272,9 @@ components:
         Opcional (ADR-018 §8). Clave única por intención del usuario (UUID generado al pulsar Confirmar o el botón). Una
         repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada de la primera petición sin
         volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
-        cuerpo responde 400 `ErrorWeb`.
+        cuerpo responde 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
+        falló) tampoco la consume, y repetirla vuelve a ejecutar (con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA`:
+        recargar y reintentar).
       schema:
         type: string
         minLength: 8
@@ -3990,7 +4011,8 @@ components:
             Opcional (HU-013.7, #103; mismo contrato que `LicitacionWeb.moneda`, ADR-014 §5). Moneda de la cotización: `COP`
             por defecto. Con `USD` la TRM del día se fija al crear (`trm_aplicada`), los precios del flete y de los
             conexos se convierten con ella y el PDF lleva la nota de TRM mínima. Sin TRM, 400 `TRM_NO_DISPONIBLE` y nada
-            se guarda ni se envía a Nexo. Se acepta sin distinguir mayúsculas ni espacios al borde. Depende de #50 (PR #96).
+            se guarda ni se envía a Nexo. Se acepta sin distinguir mayúsculas ni espacios al borde; una cadena vacía u otro
+            valor es 400 `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
 
     HojaExcel:
       type: object
