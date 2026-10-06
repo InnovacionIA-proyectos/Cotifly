@@ -1,0 +1,38 @@
+namespace Cotifly.Dominio.Cotizaciones;
+
+/// <summary>
+/// Catálogos de la captura hacia Nexo que Nexo no publica en <c>GET /api/catalogos/*</c> (HU-013.10, #106,
+/// <c>docs/HU-005.1-mapeo-campos-nexo.md</c>): carrocería, tipología y las clases de contenedor que resuelve
+/// <c>POST /api/captura-solicitudes</c>. Los códigos van tal cual a Nexo y se comparan exactos, distinguiendo mayúsculas (Nexo
+/// resuelve el texto por coincidencia aproximada y crea un vehículo duplicado si no coincide). Los tipos de vehículo y las clases de viaje salen del catálogo
+/// maestro de Nexo, no de aquí.
+/// </summary>
+public static class clsCatalogosCaptura
+{
+    /// <summary>Clase de viaje que exige <c>clase_contenedor</c> (y la única que la admite).</summary>
+    public const string ClaseViajeContenedor = "Contenedor";
+
+    /// <summary>Carrocerías de Nexo, en código hasta que Nexo publique su catálogo (pregunta 12 de <c>HU-013-preguntas-nexo.md</c>).</summary>
+    public static readonly IReadOnlyList<string> Carrocerias =
+        ["ESTACAS", "ESTIBAS", "FURGON", "FURGON REFRIGERADO", "PLATAFORMA", "PORTACONTENEDORES", "TANQUE", "TRAYLER", "VOLCO"];
+
+    /// <summary>Enum <c>Tipologia</c> de Nexo (7 valores, solo a nivel de línea).</summary>
+    public static readonly IReadOnlyList<string> Tipologias =
+        ["Contenedor", "CargaSuelta", "GranelSolido", "GranelLiquido", "Alimentos", "Refrigerados", "CargaSeca"];
+
+    /// <summary>Clases de contenedor que resuelve la captura de Nexo.</summary>
+    public static readonly IReadOnlyList<string> ClasesContenedor = ["CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE"];
+
+    /// <summary>
+    /// Lista provisional de Nexo para extradimensionado nacional (G15), marcada como provisional en el código de Nexo y fuera del
+    /// catálogo maestro: se acepta hasta que Nexo la formalice.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ClasesContenedorProvisionales = ["CNT20.FT", "CNT20.OP", "CNT40.FT", "CNT40.OP"];
+
+    /// <summary>¿<paramref name="valor"/> es exactamente uno de <paramref name="catalogo"/>? (comparación ordinal).</summary>
+    public static bool Contiene(IEnumerable<string> catalogo, string valor)
+    {
+        ArgumentNullException.ThrowIfNull(catalogo);
+        return catalogo.Contains(valor, StringComparer.Ordinal);
+    }
+}

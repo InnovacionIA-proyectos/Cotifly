@@ -890,21 +890,27 @@ paths:
       tags: [web]
       summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
       description: |
-        Catálogos de la biblioteca SAP TM histórico de Nexo para el formulario de captura. Se omite
-        `lineasNegocio` de la respuesta de Nexo: Cotifly ya tiene su propio catálogo de línea de negocio.
+        Opciones del formulario de captura a partir de los **catálogos maestros de Nexo** (HU-013.10, #106, gap G1; ADR-018;
+        `docs/HU-005.1-mapeo-campos-nexo.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
+        tarifas). La forma de la respuesta no cambió:
+        - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
+          cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten;
+        - `clases_viaje`: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`); `valor` = `etiqueta` = `descripcion`
+          (`Carga Suelta`, con espacio);
+        - `tipos_carroceria`: en código (`ESTACAS` ... `VOLCO`) hasta que Nexo publique su catálogo;
+        - tipología: enum de Nexo de 7 valores, en código (ver `SolicitudCosteoWeb.tipologia`);
+        - Cotifly también lee `GET /api/catalogos/clases-contenedor` (acepta sus `descripcion` en `clase_contenedor`) y
+          `GET /api/catalogos/lineas-negocio` (advierte en el log si un `MargenesPolitica.mapeoLineasNexo` no aparece, G11).
 
-        **Migración pendiente (HU-013, ADR-018; `docs/HU-005.1-mapeo-campos-nexo.md`):** la fuente actual,
-        `GET /api/biblioteca-sap-historico/filtros`, es el histórico de tarifas, no el catálogo maestro. La respuesta de
-        este endpoint no cambia, pero sus opciones deben salir de los catálogos maestros de Nexo:
-        - tipos de vehículo: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
-          cortos como `2S3`; `valor` = `codigo`, `etiqueta` = `descripcion`);
-        - clases de viaje: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`);
-        - clases de contenedor: `GET /api/catalogos/clases-contenedor` (`{id, descripcion, tamanoContenedor, pesoInfCnt,
-          pesoSupCnt}`), hoy en código;
-        - líneas de negocio: `GET /api/catalogos/lineas-negocio` (`{id, descripcion}`), solo para validar
-          `MargenesPolitica.mapeoLineasNexo` (Cotifly conserva su catálogo propio);
-        - carrocería: sigue en código hasta que Nexo publique su catálogo;
-        - tipología: enum de Nexo de 7 valores, en código.
+        **Caché y Nexo caído.** Los cuatro catálogos se piden juntos (todo o nada) con el `X-Portal-Usuario-Id` del
+        comercial y se reutilizan `Nexo:MinutosCacheCatalogos` (30 por defecto). Si Nexo no responde al renovarlos, se usa la
+        última copia mientras tenga menos de `Nexo:HorasCatalogosVencidos` (24 por defecto). Sin copia utilizable responde
+        503 `CATALOGOS_FLETE_NO_DISPONIBLE`: el formulario nunca ofrece texto libre.
+
+        **Catálogos opcionales.** `tipos-vehiculo` y `clases-viaje` son obligatorios (si fallan o quedan vacíos no hay
+        catálogos). Si fallan `clases-contenedor` o `lineas-negocio`, quedan vacíos con un warning y `clase_contenedor` se valida
+        contra la lista fija. Solo se ofrecen los tipos de vehículo con `esCatalogoOficial = true`. Cada respuesta de Nexo se lee
+        hasta 1 MB y 5.000 filas; pasarse es "no disponible".
         El valor que el frontend envía a `POST /web/solicitudes-costeo` es siempre `valor` (el código), nunca la etiqueta.
       security:
         - bearer: []
@@ -915,8 +921,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CatalogosFlete'
-        '400':
-          description: Los catálogos de flete en Nexo no están disponibles (`CATALOGOS_FLETE_NO_DISPONIBLE`)
+        '503':
+          description: |
+            `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
+            comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`.
           content:
             application/json:
               schema:
@@ -974,8 +982,20 @@ paths:
         HU-005.5 (ADR-015). Crea la cotización del comercial (folio del servidor, ADR-011, con el NIT) con el
         formulario ampliado y sus posiciones en `estado_costeo = pendiente_envio`, la **confirma antes de llamar a
         Nexo** y luego envía `POST {Nexo:UrlBase}/api/captura-solicitudes` con una sola línea. El BP del cliente sale
-        del catálogo de Nexo (búsqueda por `nit_cliente`), nunca del cuerpo. Los catálogos cerrados (`tipo_vehiculo`,
-        `carroceria`, `tipologia`, `clase_viaje`, `clase_contenedor`) van con el código de Nexo tal cual.
+        del catálogo de Nexo (búsqueda por `nit_cliente`), nunca del cuerpo; si el cliente no tiene BP (prospecto) y el
+        catálogo trae su `clienteId`, viaja `clienteId` (HU-013.10, G14). Los catálogos cerrados (`tipo_vehiculo`,
+        `carroceria`, `tipologia`, `clase_viaje`, `clase_contenedor`) van con el código de Nexo tal cual y **se validan
+        antes de guardar** (HU-013.10, G2): un valor que no es código de catálogo es 400 `SOLICITUD_COSTEO_INVALIDA` y no
+        llega a Nexo. `tipo_vehiculo` y `clase_viaje` se validan contra los catálogos maestros de Nexo (con la misma caché de
+        `GET /web/catalogos-flete`); si no hay copia utilizable, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y nada se guarda. Sin
+        `Nexo:UrlBase` configurada, un formulario con `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
+
+        **Rechazos 400 de Nexo al alta (G16).** La cotización queda en `error_envio` con el código de Nexo en el motivo:
+        `ENUM_INVALIDO`, `LINEA_INCOMPLETA`, `PESO_REQUERIDO` y `PESO_INCONSISTENTE` se tratan como
+        `SOLICITUD_COSTEO_INVALIDA` (definitivo: se corrige en una versión nueva); `CLIENTE_REQUERIDO`, `CLIENTE_INVALIDO` y
+        `CLIENTE_BP_INVALIDO` como `COSTEO_NEXO_RECHAZADA` con un motivo de cliente (reintentable: el reintento vuelve a
+        resolver el BP en el catálogo de Nexo, así que se destraba al corregirlo en SAP/Nexo); `DWCUBOS_NO_CONFIGURADO` como `COSTEO_NEXO_NO_DISPONIBLE` (configuración de Nexo, se puede reintentar);
+        cualquier otro 400 como `COSTEO_NEXO_SOLICITUD_INVALIDA` (definitivo).
 
         Responde **201 aunque Nexo falle**: la cotización queda en `error_envio` con `motivo_estado_costeo`
         (tiempo agotado, rechazo 4xx con el código de Nexo, 5xx, red, cliente sin BP) y el comercial puede
@@ -1010,7 +1030,10 @@ paths:
           description: |
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
-            posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`; HU-013.10:
+            un catálogo que no es código de catálogo, `clase_contenedor` sin `clase_viaje = Contenedor` o sin ella con
+            `Contenedor`, `valor_aprovisionamiento` sin una `ciudad_levante_contenedor` distinta del origen; el mensaje nombra
+            el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
@@ -1020,6 +1043,14 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+        '503':
+          description: |
+            `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
+            comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
@@ -2340,7 +2371,8 @@ components:
                 `enviar_correo`, y en `POST /web/cotizaciones/{folio}/enviar` va como `ErrorWeb` 400),
                 `MUNICIPIOS_NO_DISPONIBLE` (`GET /web/municipios`: mismas causas que
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo), `CATALOGOS_FLETE_NO_DISPONIBLE`
-                (`GET /web/catalogos-flete`: idem, catálogos de tipo de vehículo/carrocería/clase de viaje),
+                (503 en `GET /web/catalogos-flete`: catálogos maestros de Nexo sin copia utilizable; también 503 en
+                `POST /web/solicitudes-costeo` si no se puede validar `tipo_vehiculo`/`clase_viaje`, HU-013.10),
                 `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío, mismo código que usa Nexo),
                 `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
                 rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
@@ -3767,12 +3799,12 @@ components:
         Catálogos (HU-013, ADR-018): `POST /api/captura-solicitudes` de Nexo NO valida contra sus catálogos: resuelve el
         texto por coincidencia aproximada y, si no encuentra el tipo de vehículo, **crea una fila nueva de catálogo**
         (duplicados). Por eso el frontend envía SOLO códigos de catálogo (los de `GET /web/catalogos-flete`) en
-        `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre; la validación
-        del lado de Cotifly contra el catálogo es un gap documentado en `docs/HU-013-preguntas-nexo.md`.
+        `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre. Cotifly lo valida
+        antes de guardar (HU-013.10, G2): comparación exacta, distinguiendo mayúsculas (`3s3` no es `3S3`).
 
-        No se envían (decisión de HU-005.1 o gap documentado): `modalidad` (la cubre la línea de negocio), `notas` (la
-        personalización es del PDF), `clienteId` (Cotifly envía `clienteBp`), `origenMunicipioId`/`destinoMunicipioId`
-        y las horas de cargue y descargue por línea (gaps).
+        HU-013.10 (#106): `notas` viaja a Nexo (G7), `origen_municipio_id`/`destino_municipio_id` viajan por línea (G6), las
+        horas de cargue y descargue del encabezado se repiten en la línea (G5) y `deadline` sin zona es hora de Bogotá (G4).
+        No se envía `modalidad` (la cubre la línea de negocio). `clienteId` solo viaja para un cliente sin BP (G14).
       properties:
         tipo:
           type: string
@@ -3800,10 +3832,11 @@ components:
           format: date-time
           nullable: true
           description: |
-            Encabezado (`deadline`, `date-time` en Nexo). Cotifly lo lee como fecha y hora con zona y lo reenvía a Nexo en
-            ISO 8601 con desplazamiento (`2026-10-10T17:00:00-05:00`). El frontend debe enviar fecha y hora con
-            `-05:00`: una fecha sola o sin zona (`2026-10-10`) toma la zona del servidor (UTC en el contenedor), es decir
-            las 19:00 del día anterior en Bogotá; gap documentado.
+            Encabezado (`deadline`, `date-time` en Nexo). ISO 8601; Cotifly lo reenvía a Nexo con desplazamiento
+            (`2026-10-10T17:00:00-05:00`). Con zona (`Z` o `-05:00`) se respeta; una fecha sola o sin zona (`2026-10-10`,
+            `2026-10-10T17:00:00`) se interpreta en hora de Bogotá (America/Bogota, UTC-05:00): `2026-10-10` es
+            `2026-10-10T00:00:00-05:00`, es decir, el **inicio del día en hora de Bogotá** (HU-013.10, G4; pendiente de
+            confirmar con negocio si debería ser el fin del día, 23:59:59). Un texto que no es ISO 8601 es un cuerpo inválido (`ErrorWeb`).
         valor_estimado:
           type: number
           nullable: true
@@ -3815,14 +3848,21 @@ components:
           nullable: true
           maxLength: 200
           description: Encabezado (`referencia`), la referencia u orden de compra del cliente (distinta de `notas`).
+        notas:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: |
+            Encabezado (`notas`, máx. 2000 en Nexo; HU-013.10, G7): nota u observación para la Mesa de Nexo. Distinta de
+            `referencia` y de la personalización del PDF (que no viaja a Nexo). Se guarda y se reenvía en el reintento.
         horas_cargue:
           type: number
           nullable: true
           minimum: 0
           maximum: 240
           description: |
-            Encabezado (`horasCargue`). Nexo también lo acepta por línea (sobreescribe el valor por defecto de la línea);
-            Cotifly solo lo envía en el encabezado (gap no bloqueante).
+            Encabezado (`horasCargue`). Cotifly lo envía en el encabezado y también en la línea (HU-013.10, G5): sin el valor
+            de línea Nexo aplica el suyo por defecto (4 h + 4 h, o 2 h si retorna contenedor).
         horas_descargue:
           type: number
           nullable: true
@@ -3837,13 +3877,26 @@ components:
           type: string
           maxLength: 150
           description: Línea (`destino`). Municipio de `GET /web/municipios`.
+        origen_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Línea (`origenMunicipioId`; HU-013.10, G6). `id` del municipio de origen en `GET /web/municipios` (id de
+            `tbl_municipios` de Nexo): evita que Nexo resuelva la ruta por texto aproximado. Opcional; se guarda y se reenvía.
+        destino_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Línea (`destinoMunicipioId`). Igual que `origen_municipio_id`, para el destino.
         tipo_vehiculo:
           type: string
           nullable: true
           maxLength: 100
           description: |
-            Línea (`tipoVehiculo`). Código SICE-TAC/SAP de Nexo (`2`, `2S3`, `3S3`...), SOLO del catálogo: un texto que no
-            coincide crea un tipo de vehículo nuevo en Nexo.
+            Línea (`tipoVehiculo`). Código SAP de Nexo (`2`, `2S3`, `3S3`...), SOLO del catálogo maestro
+            (`GET /api/catalogos/tipos-vehiculo`, el `valor` de `tipos_vehiculo` en `GET /web/catalogos-flete`). Otro texto es
+            400 `SOLICITUD_COSTEO_INVALIDA` (en Nexo crearía un tipo de vehículo duplicado).
         carroceria:
           type: string
           nullable: true
@@ -3862,14 +3915,18 @@ components:
           type: string
           nullable: true
           maxLength: 50
-          description: Línea (`claseViaje`). Catálogo de Nexo (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`).
+          description: |
+            Línea (`claseViaje`). `descripcion` del catálogo maestro de Nexo (`GET /api/catalogos/clases-viaje`: `Contenedor`,
+            `Cupo`, `Carga Suelta`, `Extradimensionado`). Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
         clase_contenedor:
           type: string
           nullable: true
           maxLength: 20
           description: |
-            Línea (`claseContenedor`), condicional a `clase_viaje = Contenedor`. Catálogo de Nexo (`CNT20.IT`, `CNT20.RE`,
-            `CNT20.ST`, `CNT40.HC`, `CNT40.RE`).
+            Línea (`claseContenedor`). Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella (G3). Códigos de
+            Nexo `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`, la lista provisional de extradimensionado
+            nacional (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, G15) o una `descripcion` de
+            `GET /api/catalogos/clases-contenedor`. Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
         exclusivo:
           type: boolean
           nullable: true
@@ -3902,7 +3959,8 @@ components:
           minimum: 0
           maximum: 9999999999999.99
           description: |
-            Línea (`valorAprovisionamiento`), condicional a un levante distinto del origen: Nexo solo lo guarda en ese caso.
+            Línea (`valorAprovisionamiento`). Solo con una `ciudad_levante_contenedor` distinta del origen (G3; Nexo lo
+            descarta en otro caso): sin ella es 400 `SOLICITUD_COSTEO_INVALIDA`.
         peso_kg:
           type: number
           nullable: true

@@ -23,6 +23,38 @@ public sealed class clsSolicitudCosteoTests
     }
 
     [Fact]
+    public void ClaseContenedorSoloConClaseDeViajeContenedorYObligatoriaConElla()
+    {
+        var contenedor = Valida() with { ClaseViaje = "Contenedor", ClaseContenedor = "CNT40.HC" };
+        contenedor.Validar().Should().BeNull();
+        (contenedor with { ClaseViaje = "Carga Suelta" }).Validar()!.Mensaje.Should().Contain("clase_contenedor").And.Contain("solo aplica");
+        (contenedor with { ClaseViaje = null }).Validar()!.Mensaje.Should().Contain("clase_contenedor");
+        (contenedor with { ClaseContenedor = null }).Validar()!.Mensaje.Should().Contain("clase_contenedor").And.Contain("obligatorio");
+        (Valida() with { ClaseViaje = "Cupo" }).Validar().Should().BeNull();
+    }
+
+    [Fact]
+    public void ValorAprovisionamientoSoloConUnLevanteDistintoDelOrigen()
+    {
+        (Valida() with { ValorAprovisionamiento = 100m }).Validar()!.Mensaje.Should().Contain("valor_aprovisionamiento");
+        (Valida() with { ValorAprovisionamiento = 100m, CiudadLevanteContenedor = " cali " }).Validar()!.Mensaje.Should().Contain("valor_aprovisionamiento");
+        (Valida() with { ValorAprovisionamiento = 100m, CiudadLevanteContenedor = "Buenaventura", LevanteContenedorDiferente = true }).Validar().Should().BeNull();
+    }
+
+    [Fact]
+    public void NotasYMunicipiosRespetanLosLimitesDeNexo()
+    {
+        (Valida() with { Notas = new string('n', 2001) }).Validar()!.Mensaje.Should().Contain("notas");
+        (Valida() with { OrigenMunicipioId = 0 }).Validar()!.Mensaje.Should().Contain("origen_municipio_id");
+        (Valida() with { DestinoMunicipioId = -3 }).Validar()!.Mensaje.Should().Contain("destino_municipio_id");
+        var completa = Valida() with { Notas = new string('n', 2000), OrigenMunicipioId = 1, DestinoMunicipioId = 2 };
+        completa.Validar().Should().BeNull();
+        completa.Encabezado.Notas.Should().HaveLength(2000);
+        completa.ALinea().OrigenMunicipioId.Should().Be(1);
+        clsSolicitudCosteo.Desde(completa.Encabezado, completa.ALinea()).Should().BeEquivalentTo(completa);
+    }
+
+    [Fact]
     public void LasHorasYLosValoresRespetanLosRangosDeNexo()
     {
         (Valida() with { HorasCargue = 241m }).Validar()!.Mensaje.Should().Contain("horas_cargue");

@@ -34,6 +34,7 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly IClsGeneradorFolioService _folios = Substitute.For<IClsGeneradorFolioService>();
     private readonly IClsBuscadorClientes _buscador = Substitute.For<IClsBuscadorClientes>();
     private readonly IClsCosteoNexo _nexo = Substitute.For<IClsCosteoNexo>();
+    private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly clsRelojFalso _reloj = new();
@@ -239,6 +240,81 @@ public sealed class clsEnvioCosteoServiceTests
         await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
     }
 
+    [Fact]
+    public async Task UnValorQueNoEsCodigoDeCatalogoNoSeGuardaNiLlegaANexo()
+    {
+        _catalogos.ValidarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "El campo 'tipo_vehiculo' debe ser un código del catálogo"));
+
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        resultado.Error.Mensaje.Should().Contain("tipo_vehiculo");
+        _eventos.Should().BeEmpty();
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task SinCatalogoMaestroDisponibleNoSeGuardaNada()
+    {
+        _catalogos.ValidarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "sin catálogo"));
+
+        (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ElServicioRevisaElMapeoDeLaLineaContraElCatalogoDeNexo()
+    {
+        await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        _catalogos.Received(1).RevisarMapeoLineaNexo(_politica);
+    }
+
+    [Fact]
+    public async Task UnProspectoSinBpConIdDelCatalogoViajaPorClienteId()
+    {
+        var id = Guid.NewGuid();
+        ClienteEnCatalogo(new clsClienteEncontrado(Nit, "PROSPECTO S.A.S.", "prospecto", null, id.ToString()));
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Cliente.Id == id && s.Cliente.Bp == null), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConBpYClienteIdViajaElBp()
+    {
+        ClienteEnCatalogo(new clsClienteEncontrado(Nit, "LONGYIN S.A.S.", "cliente", " 15927 ", Guid.NewGuid().ToString()));
+
+        await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Cliente.Bp == "15927" && s.Cliente.Id == null), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UnRechazoDeCatalogoTraducidoPorNexoTambienEsDefinitivo()
+    {
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "Nexo rechazó los datos", "HTTP 400 ENUM_INVALIDO: tipologia"));
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        cotizacion.ErrorEnvioDefinitivo.Should().BeTrue();
+        cotizacion.MotivoEstadoCosteo.Should().Contain("ENUM_INVALIDO");
+    }
+
+    [Fact]
+    public void SoloLosRechazosDeDatosSonDefinitivos()
+    {
+        clsEnvioCosteoService.EsRechazoDefinitivo(new clsErrorDominio(clsCodigosError.CosteoNexoSolicitudInvalida, "x")).Should().BeTrue();
+        clsEnvioCosteoService.EsRechazoDefinitivo(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "x")).Should().BeTrue();
+        clsEnvioCosteoService.EsRechazoDefinitivo(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "x")).Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(null, "nit_cliente")]
     [InlineData("  ", "nit_cliente")]
@@ -356,6 +432,6 @@ public sealed class clsEnvioCosteoServiceTests
     private static clsEntradaSolicitudCosteo Entrada() => new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.Crear());
 
     private clsEnvioCosteoService Servicio() => new(
-        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _unidad, _auditoria, _reloj,
+        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _unidad, _auditoria, _reloj,
         Options.Create(new clsOpcionesCosteoNexo()), NullLogger<clsEnvioCosteoService>.Instance);
 }

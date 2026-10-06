@@ -1,13 +1,11 @@
 # language: es
-# HU-013.1 (#97, ADR-018) y docs/HU-005.1-mapeo-campos-nexo.md — Catálogos del formulario de costeo. POST
+# HU-013.1 (#97, ADR-018), HU-013.10 (#106) y docs/HU-005.1-mapeo-campos-nexo.md — Catálogos del formulario de costeo. POST
 # /api/captura-solicitudes de Nexo no valida contra sus catálogos: resuelve el texto por coincidencia aproximada y, si no
-# encuentra el tipo de vehículo, crea una fila nueva de catálogo (duplicados). Cotifly debe ofrecer las opciones de los
-# catálogos maestros de Nexo (GET /api/catalogos/*) en lugar del histórico de tarifas (biblioteca-sap-historico/filtros) y
-# enviar a Nexo solo códigos de catálogo. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un
-# Nexo falso. Lo implementa la issue de gaps de catálogos que se abre a partir de HU-013.1.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que su issue enlace los pasos
-# y quite las dos etiquetas.
-@integracion @pendiente @ignore
+# encuentra el tipo de vehículo, crea una fila nueva de catálogo (duplicados). Cotifly ofrece las opciones de los catálogos
+# maestros de Nexo (GET /api/catalogos/*, con caché) en lugar del histórico de tarifas (biblioteca-sap-historico/filtros) y
+# envía a Nexo solo códigos de catálogo. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un
+# Nexo falso. Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosCatalogosCosteo.cs.
+@integracion
 Característica: Solo códigos de catálogo en el formulario de costeo
   Como comercial de Botero Soto
   Quiero elegir el vehículo y la clase de viaje de los catálogos maestros de Nexo
@@ -62,7 +60,13 @@ Característica: Solo códigos de catálogo en el formulario de costeo
   Escenario: Con el catálogo maestro caído el formulario no ofrece texto libre
     Cuando Nexo deja de responder
     Y "ana" pide los catálogos de flete
-    Entonces la respuesta tiene el estado 400 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+    Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+
+  Escenario: Con el catálogo maestro caído y sin copia en memoria la solicitud no se guarda ni llega a Nexo
+    Cuando Nexo deja de responder
+    Y "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "3S3"
+    Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
+    Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 
   Esquema del escenario: Las clases de contenedor provisionales de Nexo no se rechazan
     Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor" y la clase de contenedor "<clase>"

@@ -66,6 +66,7 @@ public sealed class clsEnvioCosteoService(
     IClsGeneradorFolioService folios,
     IClsBuscadorClientes buscadorClientes,
     IClsCosteoNexo nexo,
+    IClsValidadorCatalogosCaptura catalogos,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
@@ -99,6 +100,12 @@ public sealed class clsEnvioCosteoService(
             return error;
         }
 
+        // G2 (HU-013.10): solo códigos de catálogo; sin catálogo maestro utilizable se rechaza antes de guardar (nunca texto libre).
+        if (await catalogos.ValidarAsync(usuarioId, entrada.Solicitud.ALinea(), cancellationToken) is { } noCatalogo)
+        {
+            return noCatalogo;
+        }
+
         var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
         if (politica is null)
         {
@@ -110,7 +117,11 @@ public sealed class clsEnvioCosteoService(
             return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
         }
 
+        // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
+        catalogos.RevisarMapeoLineaNexo(politica);
+
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
+        IReadOnlyList<clsCotizacionPosicion> posiciones = [];
         var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
         {
             var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
@@ -133,7 +144,8 @@ public sealed class clsEnvioCosteoService(
             lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Valor.Id, [entrada.Solicitud.ALinea()]);
             cotizaciones.Agregar(cotizacion.Valor);
             cotizaciones.AgregarLineas(lineas);
-            cotizaciones.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1));
+            posiciones = [.. clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1)];
+            cotizaciones.AgregarPosiciones(posiciones);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return cotizacion.Valor;
         }, cancellationToken);
@@ -142,8 +154,10 @@ public sealed class clsEnvioCosteoService(
             return creada.Error;
         }
 
-        // Desde aquí, sin el token de la petición (ver EnviarANexoAsync).
-        await EnviarANexoAsync(creada.Valor, entrada.Solicitud.Encabezado, [entrada.Solicitud.ALinea()], lineas, politica, usuarioId, reintento: false);
+        // Desde aquí, sin el token de la petición (ver EnviarANexoAsync). Se envía lo GUARDADO (normalizado: textos recortados), no la
+        // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo (G2: " 3S3 " nunca llega con espacios).
+        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Solicitud.Encabezado;
+        await EnviarANexoAsync(creada.Valor, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
         return creada.Valor;
     }
 
@@ -262,7 +276,7 @@ public sealed class clsEnvioCosteoService(
         }
         else
         {
-            cotizacion.RegistrarErrorEnvioCosteo(Motivo(resultado.Error), definitivo: resultado.Error.Codigo == clsCodigosError.CosteoNexoSolicitudInvalida);
+            cotizacion.RegistrarErrorEnvioCosteo(Motivo(resultado.Error), definitivo: EsRechazoDefinitivo(resultado.Error));
         }
 
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
@@ -316,15 +330,21 @@ public sealed class clsEnvioCosteoService(
 
         cotizacion.ActualizarClienteDelCatalogo(
             candidato.Nombre, clsCodigoEnum.TryDesdeCodigo<OrigenCliente>(candidato.OrigenCliente, out var origen) ? origen : null);
-        if (string.IsNullOrWhiteSpace(candidato.Bp))
+        // G14 (HU-013.10): Nexo exige clienteBp o clienteId, nunca el NIT. Con BP (cliente de SAP) viaja el BP; sin BP (prospecto)
+        // viaja el clienteId del catálogo de Nexo si lo trae. Sin ninguno de los dos no se puede crear la solicitud.
+        var bp = string.IsNullOrWhiteSpace(candidato.Bp) ? null : candidato.Bp.Trim();
+        var clienteId = bp is null && Guid.TryParse(candidato.ClienteId, out var id) && id != Guid.Empty ? id : (Guid?)null;
+        if (bp is null && clienteId is null)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNexoRechazada,
-                $"El cliente {candidato.Nombre} no tiene BP en Nexo (prospecto): Nexo exige clienteBp o clienteId para crear la solicitud. "
-                + "Pendiente de confirmar con el equipo de Nexo cómo enviar prospectos.");
+                $"El cliente {candidato.Nombre} no tiene BP ni id en el catálogo de Nexo (prospecto): Nexo exige clienteBp o clienteId para "
+                + "crear la solicitud. Pendiente de confirmar con el equipo de Nexo cómo enviar prospectos.");
         }
 
-        await ResolverMargenAsync(cotizacion, politica, candidato.Bp.Trim(), cancellationToken);
-        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(candidato.Bp.Trim(), encabezado, lineas, politica?.MapeoLineasNexo), cancellationToken);
+        await ResolverMargenAsync(cotizacion, politica, bp, cancellationToken);
+
+        var cliente = bp is not null ? clsClienteNexo.PorBp(bp) : clsClienteNexo.PorId(clienteId!.Value);
+        return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(cliente, encabezado, lineas, politica?.MapeoLineasNexo), cancellationToken);
     }
 
     /// <summary>
@@ -332,7 +352,7 @@ public sealed class clsEnvioCosteoService(
     /// (<see cref="IClsMargenResolverService"/>). Se guarda para aplicarlo cuando llegue el costeo; si no se puede resolver, el
     /// polling lo advierte y nunca muestra el costo sin margen.
     /// </summary>
-    private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string bp, CancellationToken cancellationToken)
+    private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
     {
         if (politica is null)
         {
@@ -347,6 +367,18 @@ public sealed class clsEnvioCosteoService(
         }
 
         cotizacion.RegistrarMargenCosteo(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen, resuelto.Valor.MetodoCalculo);
+    }
+
+    /// <summary>
+    /// ¿Nexo rechazó los datos del alta (400)? Con los mismos datos Nexo no cambia de opinión: el reintento queda bloqueado. Los
+    /// códigos de captura de Nexo se traducen en <c>clsCosteoNexo</c> (G16): catálogo, línea o peso → <c>SOLICITUD_COSTEO_INVALIDA</c>;
+    /// otros 400 → <c>COSTEO_NEXO_SOLICITUD_INVALIDA</c>. Los de cliente (<c>CLIENTE_*</c>) llegan como <c>COSTEO_NEXO_RECHAZADA</c> y
+    /// se pueden reintentar: el reintento vuelve a resolver el BP en el catálogo de Nexo.
+    /// </summary>
+    public static bool EsRechazoDefinitivo(clsErrorDominio error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return error.Codigo is clsCodigosError.CosteoNexoSolicitudInvalida or clsCodigosError.SolicitudCosteoInvalida;
     }
 
     /// <summary>Motivo legible para <c>motivoEstadoCosteo</c>: el mensaje y, si hay, el detalle (código y mensaje de Nexo).</summary>

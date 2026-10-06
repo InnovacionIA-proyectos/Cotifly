@@ -49,7 +49,9 @@ ClientePro (ya autenticado)
 | `POST /api/auth/login-clientepro` | público | Emite la sesión |
 | `POST /api/auth/refresh` | público | Rota el refresh token (429 si se pasa el límite de `/api/auth/*`) |
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
-| `POST /web/chat` | ambos | Turno del agente cotizador |
+| `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |
+| `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una línea): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
+| `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías y clases de viaje del formulario (catálogos maestros de Nexo). Ver §3.2 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar |
@@ -131,6 +133,29 @@ Identidades para QA:
 **Todavía no incluido:**
 - Los servicios conexos (ADR-015) no se suman a precio ni costo; se integran después de #42.
 - El "score de urgencia" de Nexo no está en el contrato. Se agregará como campo nuevo de `indicadores` (cambio compatible) cuando Nexo publique su contrato.
+
+### 3.2 Crear una cotización: `POST /web/solicitudes-costeo` (HU-005.5, HU-013.10)
+
+Desde ADR-018 es el único camino para crear una cotización: el wizard del frontend hace una llamada por línea (para varias
+líneas está `POST /web/licitaciones`). El cuerpo es `SolicitudCosteoWeb` del spec; responde `201 CotizacionResumen` aunque
+Nexo falle (la cotización queda en `error_envio` con el motivo y se reintenta con `POST /web/cotizaciones/{folio}/costeo/reintentar`).
+
+Reglas para el frontend (HU-013.10, #106):
+
+- **Solo códigos de catálogo** en `tipo_vehiculo`, `carroceria` y `clase_viaje` (el `valor` de `GET /web/catalogos-flete`,
+  nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (`CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`,
+  `CNT40.RE` y la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`). Otro texto es 400
+  `SOLICITUD_COSTEO_INVALIDA` con el campo en el mensaje. Si los catálogos de Nexo no están disponibles (ni su copia en
+  memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
+  `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
+- **Condicionales:** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` y no se admite con otra clase;
+  `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del origen.
+- **`deadline`:** ISO 8601. Sin zona se toma en hora de Bogotá; una fecha sola (`2026-10-10`) es el inicio de ese día en
+  Bogotá (`2026-10-10T00:00:00-05:00`). Para otra hora, enviarla con `-05:00`.
+- **Campos nuevos opcionales:** `notas` (nota para la Mesa de Nexo, máx. 2000), `origen_municipio_id` y
+  `destino_municipio_id` (el `id` de `GET /web/municipios`).
+- `GET /web/catalogos-flete` responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE` solo si Nexo no responde y no hay una copia de los
+  catálogos de menos de 24 horas: en ese caso, deshabilitar los selects y ofrecer reintento (no hay texto libre).
 
 ### Reservados para la próxima versión (HU-005)
 

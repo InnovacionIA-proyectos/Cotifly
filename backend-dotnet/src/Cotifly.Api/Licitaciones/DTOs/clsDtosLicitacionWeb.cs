@@ -15,6 +15,9 @@ public sealed class clsLicitacionWebRequest
     public string? NitCliente { get; init; }
     public string? ClienteNombre { get; init; }
     public string? LineaNegocio { get; init; }
+
+    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
+    [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
     public decimal? ValorEstimado { get; init; }
     public string? Referencia { get; init; }
