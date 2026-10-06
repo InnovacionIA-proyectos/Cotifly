@@ -12,6 +12,7 @@ using Cotifly.Dominio.Clientes;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Cotifly.Dominio.Precio;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -25,7 +26,8 @@ public interface IClsEnvioCosteoService
 {
     /// <summary>
     /// Crea la cotización con el formulario ampliado (confirmada antes de llamar a Nexo) y la envía. Errores (nada queda guardado):
-    /// <c>SOLICITUD_COSTEO_INVALIDA</c>, <c>MARGEN_LINEA_DESCONOCIDA</c>, <c>FOLIO_CONSECUTIVO_AGOTADO</c> y <c>ERROR_INTERNO</c>.
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> (también una <c>moneda</c> que no es COP ni USD), <c>MARGEN_LINEA_DESCONOCIDA</c>,
+    /// <c>TRM_NO_DISPONIBLE</c> (en USD sin TRM del día, HU-013.7), <c>FOLIO_CONSECUTIVO_AGOTADO</c> y <c>ERROR_INTERNO</c>.
     /// Si Nexo falla la cotización se devuelve igual, en <c>error_envio</c> con el motivo.
     /// </summary>
     Task<clsResultado<clsCotizacion>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default);
@@ -52,6 +54,8 @@ public interface IClsEnvioCosteoService
 /// <remarks>
 /// <list type="number">
 /// <item>Valida el formulario (mismos límites que Nexo), exige el NIT y resuelve la línea en <c>MargenesPolitica</c>.</item>
+/// <item>Fija la moneda y, en USD, la TRM del día (HU-013.7, ADR-014 §5, <see cref="IClsFijacionMonedaService"/>): sin TRM no se guarda
+/// nada ni se llama a Nexo. El polling, el ajuste de margen y el PDF convierten con esa TRM fijada; el reintento la conserva.</item>
 /// <item>Crea la cotización con folio del servidor (ADR-011, con el NIT), el formulario y sus posiciones en <c>pendiente_envio</c>, y
 /// confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
@@ -67,6 +71,7 @@ public sealed class clsEnvioCosteoService(
     IClsBuscadorClientes buscadorClientes,
     IClsCosteoNexo nexo,
     IClsValidadorCatalogosCaptura catalogos,
+    IClsFijacionMonedaService monedas,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
@@ -94,7 +99,7 @@ public sealed class clsEnvioCosteoService(
                     ? Invalida($"El campo 'cliente_nombre' supera {clsEntradaSolicitudCosteo.LargoMaximoNombre} caracteres.")
                     : string.IsNullOrWhiteSpace(entrada.LineaNegocio)
                         ? Invalida("El campo 'linea_negocio' es obligatorio.")
-                        : entrada.Solicitud.Validar();
+                        : ValidarMoneda(entrada.Moneda) ?? entrada.Solicitud.Validar();
         if (error is not null)
         {
             return error;
@@ -120,6 +125,13 @@ public sealed class clsEnvioCosteoService(
         // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
         catalogos.RevisarMapeoLineaNexo(politica);
 
+        // HU-013.7 (ADR-014 §5): en USD la TRM del día de creación queda fija ANTES de guardar; sin TRM no se guarda ni se envía nada.
+        var fijada = await monedas.FijarAsync(entrada.Moneda, cancellationToken);
+        if (fijada.EsFallo)
+        {
+            return fijada.Error;
+        }
+
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
         IReadOnlyList<clsCotizacionPosicion> posiciones = [];
         var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
@@ -132,6 +144,8 @@ public sealed class clsEnvioCosteoService(
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
+                Moneda = fijada.Valor.Moneda,
+                TrmAplicada = fijada.Valor.TrmAplicada,
             });
             if (cotizacion.EsFallo)
             {
@@ -391,6 +405,15 @@ public sealed class clsEnvioCosteoService(
     private static string SoloDigitos(string? valor) => new((valor ?? string.Empty).Where(char.IsAsciiDigit).ToArray());
 
     private static clsErrorDominio Invalida(string mensaje) => new(clsCodigosError.SolicitudCosteoInvalida, mensaje);
+
+    /// <summary>
+    /// <c>moneda</c> del formulario (HU-013.7, mismo contrato que <c>LicitacionWeb.moneda</c>): ausente es COP; si viene, <c>COP</c> o
+    /// <c>USD</c> sin distinguir mayúsculas ni espacios al borde. Una cadena vacía u otra moneda es <c>SOLICITUD_COSTEO_INVALIDA</c>.
+    /// </summary>
+    private static clsErrorDominio? ValidarMoneda(string? moneda) =>
+        moneda is not null && (string.IsNullOrWhiteSpace(moneda) || clsConversorMoneda.Normalizar(moneda).EsFallo)
+            ? Invalida($"El campo 'moneda' debe ser {string.Join(" o ", clsConversorMoneda.Soportadas)} (llegó '{moneda.Trim()}').")
+            : null;
 
     private static clsErrorDominio NoReintentable(clsCotizacion cotizacion, string? detalle = null) =>
         new(clsCodigosError.CosteoNoReintentable,

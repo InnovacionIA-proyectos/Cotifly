@@ -54,14 +54,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> PropiedadesPendientes =
         new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
         {
-            ["SolicitudCosteoWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["moneda"] = "#103 (HU-013.7)" },
             ["MensajeWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["folio"] = "#102 (HU-013.6)" },
             ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
-            ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["trm_aplicada"] = "#103 (HU-013.7)",
-                ["textos"] = "#101 (HU-013.5)",
-            },
+            ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["textos"] = "#101 (HU-013.5)" },
         };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -1005,12 +1005,12 @@ paths:
 
         Es el ÚNICO camino para crear una cotización (ADR-018): el chat ya no crea cotizaciones.
 
-        **Moneda (HU-013.7, #103, pendiente de implementar; mismo contrato que `POST /web/licitaciones`, ADR-014 §5):**
+        **Moneda (HU-013.7, #103; mismo contrato que `POST /web/licitaciones`, ADR-014 §5):**
         `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día se fija **antes de guardar** con
         `clsFijacionMonedaService` y queda en `trm_aplicada`; sin TRM responde 400 `TRM_NO_DISPONIBLE`, no guarda nada y
         no envía nada a Nexo. El polling calcula el precio del flete y de los conexos en pesos y lo convierte con esa TRM
-        (`round(precio_cop / trm, 2)`); el costo sigue en COP. El PDF lleva la nota de TRM mínima con la `trm_aplicada`.
-        Depende de #50 (PR #96, `clsFijacionMonedaService` y la nota del PDF), que todavía no está en `QA`.
+        (`round(precio_cop / trm, 2)`); el costo sigue en COP. El ajuste de margen usa la misma TRM fijada (nunca la del
+        día), el reintento la conserva y el PDF lleva la nota de TRM mínima con la `trm_aplicada`.
       security:
         - bearer: []
       requestBody:
@@ -1163,7 +1163,7 @@ paths:
         mientras no haya costeo. Solo el dueño.
 
         HU-013 (ADR-018): trae además `margen_sugerido` y `origen_margen` (botón de ajuste de margen, HU-013.2),
-        `trm_aplicada` (HU-013.7), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
+        `trm_aplicada` (HU-013.7, TRM fijada al crear; 0 en COP), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
         y `row_version` (#98), que también va en
         el encabezado `ETag`. Son opcionales en el esquema hasta que cada issue los implemente.
       security:
@@ -3989,7 +3989,8 @@ components:
             Opcional (HU-013.7, #103; mismo contrato que `LicitacionWeb.moneda`, ADR-014 §5). Moneda de la cotización: `COP`
             por defecto. Con `USD` la TRM del día se fija al crear (`trm_aplicada`), los precios del flete y de los
             conexos se convierten con ella y el PDF lleva la nota de TRM mínima. Sin TRM, 400 `TRM_NO_DISPONIBLE` y nada
-            se guarda ni se envía a Nexo. Se acepta sin distinguir mayúsculas ni espacios al borde. Depende de #50 (PR #96).
+            se guarda ni se envía a Nexo. Se acepta sin distinguir mayúsculas ni espacios al borde; una cadena vacía u otro
+            valor es 400 `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
 
     HojaExcel:
       type: object
