@@ -2,9 +2,9 @@
 # HU-013.4 (#100, ADR-018) — "Cotizar costo": POST /web/cotizaciones/{folio}/costeo/re-solicitar con {motivo, datos_carga?}.
 # Sin cambios de carga se reenvía la misma cotización (mismo folio); con cambios de carga se crea la versión {folio}-vN y la
 # anterior se conserva. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un Nexo falso.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #100 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# Nexo no tiene "reabrir" ni "re-solicitar": en los dos casos Cotifly hace una captura nueva (POST /api/captura-solicitudes).
+# El peso nuevo de los ejemplos es 28400: la regla de peso de Nexo (1 %) se aplica contra las posiciones guardadas (28500 kg).
+@integracion
 Característica: Re-solicitar el costeo a Nexo
   Como comercial de Botero Soto
   Quiero volver a pedir el costo a Nexo cuando el costeo venció, ya se entregó o falló el envío
@@ -35,14 +35,14 @@ Característica: Re-solicitar el costeo a Nexo
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente cambió el peso" y estos datos de carga:
       | campo         | valor |
-      | peso_kg       | 28000 |
-      | tipo_vehiculo | 3S3   |
+      | peso_kg       | 28400 |
+      | tipo_vehiculo | 3S2   |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y el encabezado Location apunta al costeo de la versión nueva
-    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28000 y el vehículo "3S3"
+    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "3S2"
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
-    Y Nexo recibió la solicitud de la versión nueva con el peso 28000
+    Y Nexo recibió la solicitud de la versión nueva con el peso 28400
 
   Escenario: Desde un error de envío equivale a reintentar
     Dado que Nexo respondió 503 al alta de "C1" y quedó en "error_envio"
@@ -110,6 +110,9 @@ Característica: Re-solicitar el costeo a Nexo
     Cuando "beto" re-solicita el costeo de "C1" con el motivo "No es mía"
     Entonces la respuesta tiene el estado 404
 
+  # La regla condicional de la captura (G3: clase_contenedor solo con clase_viaje = Contenedor) la entrega #106 (HU-013.10) en
+  # clsSolicitudCosteo.Validar, que la re-solicitud ya usa. Se activa al integrar #106: quitar estas dos etiquetas.
+  @pendiente @ignore
   Escenario: Cambios de carga incoherentes con la captura se rechazan sin crear versión
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Cambio de contenedor" y estos datos de carga:
@@ -121,7 +124,7 @@ Característica: Re-solicitar el costeo a Nexo
 
   Escenario: Un doble clic con la misma Idempotency-Key no crea dos versiones
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
-    Cuando "ana" re-solicita dos veces el costeo de "C1" con el motivo "Cambio de peso", el peso 28000 y la misma Idempotency-Key
+    Cuando "ana" re-solicita dos veces el costeo de "C1" con el motivo "Cambio de peso", el peso 28400 y la misma Idempotency-Key
     Entonces las dos respuestas tienen el estado 201 y el mismo cuerpo
     Y "ana" tiene 2 cotizaciones con el folio base de "C1"
     Y Nexo recibió una sola solicitud nueva para el folio base de "C1"

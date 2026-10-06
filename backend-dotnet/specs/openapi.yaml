@@ -1237,7 +1237,6 @@ paths:
       operationId: reSolicitarCosteo
       tags: [web]
       summary: Vuelve a pedir el costeo a Nexo ("Cotizar costo"), en el mismo folio o en una versión nueva
-      x-estado: pendiente
       x-issue: '#100 (HU-013.4)'
       description: |
         HU-013.4 (ADR-018 §5). Amplía `POST .../costeo/reintentar`. Es el endpoint del botón "Cotizar costo", del
@@ -1263,7 +1262,14 @@ paths:
         - Queda auditado (`EventosHerramienta`, `costeo_nexo_re_solicitud`) con el motivo y el usuario.
         - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
           respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
-        - El mecanismo en Nexo para "reenviar la misma" está pendiente (`docs/HU-013-preguntas-nexo.md`). Solo el dueño.
+        - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/HU-013-preguntas-nexo.md`,
+          pregunta 4): en los dos casos Cotifly hace una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, y
+          guarda el id de la solicitud nueva. En el mismo folio el costo, el precio y los conexos anteriores se limpian (quedan en
+          la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva. Un `error_envio` por un rechazo
+          definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
+          Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
+          (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). La versión nueva copia la moneda y la TRM
+          fijada de la original. Solo el dueño.
       security:
         - bearer: []
       parameters:

@@ -216,8 +216,15 @@ public sealed class clsEnvioCosteoService(
         return cotizacion;
     }
 
-    private static clsErrorDominio? Revalidar(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas)
+    /// <summary>
+    /// Valida lo que se va a (re)enviar a Nexo con las reglas de la captura (<c>SOLICITUD_COSTEO_INVALIDA</c>): una línea con la del
+    /// formulario (<see cref="clsSolicitudCosteo.Validar"/>), varias con la de la licitación. Lo usan el reintento y la re-solicitud
+    /// (HU-013.4), también sobre los cambios de carga de una versión nueva.
+    /// </summary>
+    public static clsErrorDominio? Revalidar(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas)
     {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        ArgumentNullException.ThrowIfNull(lineas);
         if (lineas.Count == 1)
         {
             return clsSolicitudCosteo.Desde(encabezado, lineas[0]).Validar();

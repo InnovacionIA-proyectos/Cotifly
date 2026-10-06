@@ -251,4 +251,11 @@ public static class clsCodigosError
 
     /// <summary>Falta <c>If-Match</c> en una mutación de la etapa final del costeo (428, ADR-018 §8). Código nuevo del backend .NET.</summary>
     public const string PrecondicionRequerida = "PRECONDICION_REQUERIDA";
+
+    /// <summary>
+    /// El estado del costeo de la cotización no permite la operación (409, ADR-018 §5): re-solicitar en el mismo folio fuera de
+    /// <c>costeo_vencido</c>, <c>entregada</c> o <c>error_envio</c>, o una versión nueva con un costeo en curso. Código nuevo del
+    /// backend .NET (HU-013.4, #100; también lo usan los conexos de #99).
+    /// </summary>
+    public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
 }

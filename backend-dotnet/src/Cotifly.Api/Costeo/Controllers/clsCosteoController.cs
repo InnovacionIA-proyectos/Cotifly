@@ -20,7 +20,8 @@ public sealed class clsCosteoController(
     IClsMisCotizacionesService misCotizaciones,
     IClsCosteoCotizacionService costeo,
     IClsAjusteMargenCosteoService ajusteMargen,
-    IClsResultadoCotizacionService resultadoCotizacion) : clsControladorWebBase(usuario)
+    IClsResultadoCotizacionService resultadoCotizacion,
+    IClsReSolicitudCosteoService reSolicitud) : clsControladorWebBase(usuario)
 {
     /// <summary>
     /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
@@ -126,7 +127,51 @@ public sealed class clsCosteoController(
             : StatusCode(StatusCodes.Status201Created, await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
     }
 
-    /// <summary>200 <c>CotizacionResumen</c> tras el reenvío; 404 si no es suya; 409 <c>COSTEO_NO_REINTENTABLE</c>.</summary>
+    /// <summary>Encabezado de la clave de idempotencia (ADR-018 §8).</summary>
+    public const string EncabezadoIdempotencia = "Idempotency-Key";
+
+    /// <summary>
+    /// HU-013.4 (ADR-018 §5), "Cotizar costo": 200 <c>CotizacionResumen</c> si se reenvió en el mismo folio o 201 con <c>Location</c> si
+    /// se creó la versión <c>-vN</c> (los dos con el <c>ETag</c> de la cotización resultante); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> o
+    /// <c>ErrorWeb</c> (<c>Idempotency-Key</c> reutilizada con otro cuerpo); 404; 409 <c>ESTADO_NO_PERMITE</c>, <c>PDF_YA_ENVIADO</c> o
+    /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
+    /// </summary>
+    [HttpPost("cotizaciones/{folio}/costeo/re-solicitar")]
+    [clsRequiereIfMatch]
+    [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status201Created)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> ReSolicitar(string folio, [FromBody] clsReSolicitudCosteoWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        var entrada = cuerpo.AEntrada();
+        if (entrada.EsFallo)
+        {
+            return Error(entrada.Error);
+        }
+
+        var clave = Request.Headers[EncabezadoIdempotencia].ToString();
+        var resultado = await reSolicitud.ReSolicitarAsync(
+            UsuarioId, folio, entrada.Valor, clsConcurrenciaHttp.VersionDe(HttpContext), clave.Length == 0 ? null : clave, cancellationToken);
+        if (resultado.EsFallo)
+        {
+            return Error(resultado.Error);
+        }
+
+        var valor = resultado.Valor;
+        clsConcurrenciaHttp.EscribirEtag(Response, valor.RowVersion);
+        return valor.VersionNueva
+            ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", valor.Cotizacion)
+            : Ok(valor.Cotizacion);
+    }
+
+    /// <summary>
+    /// 200 <c>CotizacionResumen</c> tras el reenvío; 404 si no es suya; 409 <c>COSTEO_NO_REINTENTABLE</c>. Se conserva por compatibilidad:
+    /// <c>POST .../costeo/re-solicitar</c> lo amplía (HU-013.4).
+    /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/reintentar")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]

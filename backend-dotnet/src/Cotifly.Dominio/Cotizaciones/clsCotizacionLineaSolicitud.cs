@@ -123,6 +123,18 @@ public sealed class clsCotizacionLineaSolicitud
         };
     }
 
+    /// <summary>
+    /// Re-solicitud en el mismo folio (HU-013.4): la línea vuelve a viajar a Nexo como una solicitud nueva, con líneas nuevas. Se
+    /// olvidan el id de la línea anterior en Nexo, su estado, su costo y su precio.
+    /// </summary>
+    public void ReiniciarCosteo()
+    {
+        LineaSolicitudNexoId = null;
+        EstadoCosteo = null;
+        Costo = null;
+        PrecioFinal = null;
+    }
+
     /// <summary>Nexo recibió la solicitud: la línea queda con el mismo estado inicial que la cotización.</summary>
     public void RegistrarEnvio(EstadoCosteo estado) => EstadoCosteo = estado;
 

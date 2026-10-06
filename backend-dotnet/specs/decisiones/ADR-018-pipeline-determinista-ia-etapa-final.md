@@ -110,6 +110,10 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
 - `datos_carga` acepta los mismos campos de línea que la captura (vehículo, carrocería, tipología, clase de viaje y de contenedor, exclusivo, consolidado, retorno y levante con sus ciudades, aprovisionamiento, horas, peso, valor de mercancía y posiciones), con las mismas condiciones (gap G3).
 - Origen, destino, cliente y línea no se cambian por esta vía: eso es otra cotización.
 - Se audita con el motivo y el usuario. El mecanismo de Nexo para "reenviar la misma" (captura nueva o reabrir) está pendiente de confirmar.
+- **Implementación (#100).** Mientras Nexo no ofrezca "reabrir", re-solicitar es una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, por `IClsEnvioCosteoService.EnviarGuardadaAsync` (el mismo envío del alta y de las licitaciones):
+  - mismo folio: el `If-Match` se comprueba con `GuardarCambiosSiVersionAsync` al reclamar (estado `pendiente_envio`, costeo anterior olvidado, PDF invalidado con `MotivoInvalidacionPdf.ReSolicitud`, versión de negocio + 1) y solo después se llama a Nexo; el costo, el precio y los ids anteriores quedan en `EventosHerramienta` (`costeo_nexo_re_solicitud`). Un `error_envio` por rechazo definitivo de Nexo no se reenvía igual (`ESTADO_NO_PERMITE`);
+  - versión nueva: `IClsGeneradorFolioService.CrearNuevaVersionAsync` con la identidad de la original (cliente, línea, comercial, moneda y TRM fijada), su formulario, líneas y posiciones, y los cambios de carga validados con `clsSolicitudCosteo.Validar` (las reglas de la captura, incluidas las condicionales de G3 cuando llegue #106). Con cambios de carga, una licitación responde `ESTADO_NO_PERMITE` (`LICITACION`);
+  - `Idempotency-Key`: `IClsAlmacenIdempotencia` (en memoria, una réplica de la API; con varias réplicas hay que pasarlo a una tabla). La repetición con la misma clave, comercial y huella devuelve la respuesta guardada; las simultáneas se serializan; los errores no consumen la clave.
 
 ### 6. Moneda en el formulario (HU-013.7)
 
