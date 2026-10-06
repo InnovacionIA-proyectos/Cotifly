@@ -2,9 +2,9 @@
 # HU-013.4 (#100, ADR-018) — "Cotizar costo": POST /web/cotizaciones/{folio}/costeo/re-solicitar con {motivo, datos_carga?}.
 # Sin cambios de carga se reenvía la misma cotización (mismo folio); con cambios de carga se crea la versión {folio}-vN y la
 # anterior se conserva. Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un Nexo falso.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #100 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# Nexo no tiene "reabrir" ni "re-solicitar": en los dos casos Cotifly hace una captura nueva (POST /api/captura-solicitudes).
+# El peso nuevo de los ejemplos es 28400: la regla de peso de Nexo (1 %) se aplica contra las posiciones guardadas (28500 kg).
+@integracion
 Característica: Re-solicitar el costeo a Nexo
   Como comercial de Botero Soto
   Quiero volver a pedir el costo a Nexo cuando el costeo venció, ya se entregó o falló el envío
@@ -23,6 +23,7 @@ Característica: Re-solicitar el costeo a Nexo
     Y la cotización "C1" conserva su folio y su versión 1
     Y Nexo recibió una segunda solicitud de "Buenaventura" a "Bogotá D.C." con el BP "15927" y 2 posiciones
     Y la re-solicitud de "C1" queda en la auditoría con el motivo "El costeo venció" y el usuario "ana"
+    Y Nexo recibió en las notas la re-solicitud de "C1" que reemplaza su solicitud anterior
     Y la cotización "C1" vuelve a consultarse en Nexo
 
   Escenario: Una cotización entregada se re-solicita sin cambios de carga
@@ -35,14 +36,53 @@ Característica: Re-solicitar el costeo a Nexo
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente cambió el peso" y estos datos de carga:
       | campo         | valor |
-      | peso_kg       | 28000 |
-      | tipo_vehiculo | 3S3   |
+      | peso_kg       | 28400 |
+      | tipo_vehiculo | 2S3   |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y el encabezado Location apunta al costeo de la versión nueva
-    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28000 y el vehículo "3S3"
+    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "2S3"
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
-    Y Nexo recibió la solicitud de la versión nueva con el peso 28000
+    Y Nexo recibió la solicitud de la versión nueva con el peso 28400
+
+  # Decisión del usuario (2026-10-06): el margen que ajustó el comercial se conserva sobre el costo nuevo; el sugerido se refresca.
+  Escenario: En el mismo folio se conserva el margen ajustado sobre el costo nuevo
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Actualizar el costo"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Dado Nexo costeó la solicitud de "C1" con un flete de 2600000 y el polling lo registró
+    Entonces el costeo de "C1" tiene el precio final 3170732 con el margen aplicado "0.18" y el origen "negociado"
+    Y el margen sugerido de "C1" sigue en "0.15"
+
+  Escenario: La versión nueva copia el margen ajustado de la original
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la versión nueva tiene el margen aplicado "0.18" con el origen "negociado"
+
+  # Decisión del usuario (2026-10-06): la versión nueva es una cotización nueva; copia la moneda y fija la TRM del día.
+  Escenario: La versión nueva en USD fija la TRM del día y la original conserva la suya
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Y que la cotización "C1" está en "USD" con la TRM "3900.00"
+    Y que DolarApi publica hoy la TRM "4012.35"
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión en dólares" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la versión nueva está en "USD" con la TRM "4012.35"
+    Y la cotización "C1" sigue en "USD" con la TRM "3900.00"
+
+  Escenario: Sin TRM la versión nueva en USD no se crea ni llega a Nexo
+    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Y que la cotización "C1" está en "USD" con la TRM "3900.00"
+    Y que las fuentes de la TRM no responden
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión en dólares" y nueva_version "true"
+    Entonces la respuesta tiene el estado 400 con el código de negocio "TRM_NO_DISPONIBLE"
+    Y "ana" tiene 1 cotización con el folio base de "C1"
+    Y Nexo no recibió otra solicitud para "C1"
+    Y la cotización "C1" sigue en "USD" con la TRM "3900.00" y su versión de negocio
 
   Escenario: Desde un error de envío equivale a reintentar
     Dado que Nexo respondió 503 al alta de "C1" y quedó en "error_envio"
@@ -110,6 +150,7 @@ Característica: Re-solicitar el costeo a Nexo
     Cuando "beto" re-solicita el costeo de "C1" con el motivo "No es mía"
     Entonces la respuesta tiene el estado 404
 
+  # Regla condicional de la captura (G3, #106): clase_contenedor solo con clase_viaje = Contenedor.
   Escenario: Cambios de carga incoherentes con la captura se rechazan sin crear versión
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Cambio de contenedor" y estos datos de carga:
@@ -121,7 +162,7 @@ Característica: Re-solicitar el costeo a Nexo
 
   Escenario: Un doble clic con la misma Idempotency-Key no crea dos versiones
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
-    Cuando "ana" re-solicita dos veces el costeo de "C1" con el motivo "Cambio de peso", el peso 28000 y la misma Idempotency-Key
+    Cuando "ana" re-solicita dos veces el costeo de "C1" con el motivo "Cambio de peso", el peso 28400 y la misma Idempotency-Key
     Entonces las dos respuestas tienen el estado 201 y el mismo cuerpo
     Y "ana" tiene 2 cotizaciones con el folio base de "C1"
     Y Nexo recibió una sola solicitud nueva para el folio base de "C1"

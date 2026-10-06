@@ -431,6 +431,64 @@ public sealed class clsEnvioCosteoServiceTests
 
     private static clsEntradaSolicitudCosteo Entrada() => new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.Crear());
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnMargenNegociadoSeConservaAlReenviarYElSugeridoSeRefrescaFalleONoLaResolucion(bool resolucionFalla)
+    {
+        // HU-013.4 (decisión del 2026-10-06): re-solicitar no pisa el margen ajustado por el comercial.
+        var cotizacion = Negociada(0.22m);
+        if (resolucionFalla)
+        {
+            _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>())
+                .Returns(new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, "SAP TM caído"));
+        }
+
+        await Servicio().EnviarGuardadaAsync(cotizacion, _lineasNegociada, [], _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");
+
+        cotizacion.MargenAplicado.Should().Be(0.22m);
+        cotizacion.OrigenMargen.Should().Be(OrigenMargen.Negociado);
+        cotizacion.MargenSugerido.Should().Be(resolucionFalla ? 0.15m : 0.18m, "el sugerido se refresca con SAP TM como referencia");
+        cotizacion.OrigenMargenSugerido.Should().Be(resolucionFalla ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm);
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana,
+            Arg.Is<clsSolicitudNexo>(s => s.Encabezado.Notas!.EndsWith("Re-solicitud de F; reemplaza la solicitud sol-1.", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void LaNotaDeTrazabilidadSeAgregaALasNotasSinSobrepasarElLimite()
+    {
+        var encabezado = clsSolicitudCosteoMuestra.Crear().Encabezado;
+        const string Nota = "Re-solicitud de F; reemplaza la solicitud sol-1.";
+
+        clsEnvioCosteoService.ConNota(encabezado with { Notas = null }, Nota).Notas.Should().Be(Nota);
+        clsEnvioCosteoService.ConNota(encabezado with { Notas = "Llamar antes" }, Nota).Notas.Should().Be("Llamar antes\n" + Nota);
+        var larga = clsEnvioCosteoService.ConNota(encabezado with { Notas = new string('x', 2000) }, Nota).Notas!;
+        larga.Length.Should().Be(clsSolicitudCosteo.LargoNotas);
+        larga.Should().EndWith("…\n" + Nota, "se recortan las notas existentes y la de trazabilidad queda completa");
+        clsEnvioCosteoService.ConNota(encabezado, null).Should().Be(encabezado);
+    }
+
+    private IReadOnlyList<clsCotizacionLineaSolicitud> _lineasNegociada = [];
+
+    private clsCotizacion Negociada(decimal margen)
+    {
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        {
+            Folio = "PCN-900123456-AP-28092026-001",
+            UsuarioId = _ana,
+            NitCliente = Nit,
+            MargenPolitica = 0.15m,
+            MargenAplicado = margen,
+            OrigenMargen = OrigenMargen.Negociado,
+            MetodoCalculo = "margen",
+        }).Valor;
+        var solicitud = clsSolicitudCosteoMuestra.Crear();
+        cotizacion.RegistrarSolicitudCosteo(solicitud);
+        _lineasNegociada = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
+        return cotizacion;
+    }
+
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _unidad, _auditoria, _reloj,
         Options.Create(new clsOpcionesCosteoNexo()), NullLogger<clsEnvioCosteoService>.Instance);

@@ -68,6 +68,7 @@ public static class clsRespuestasWeb
         clsCodigosError.SolicitudNoTransicionable,
         clsCodigosError.ConflictoConcurrencia,
         clsCodigosError.PdfYaEnviado,
+        clsCodigosError.EstadoNoPermite,
     };
 
     public static IActionResult Error(clsErrorDominio error)
