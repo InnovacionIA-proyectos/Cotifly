@@ -69,6 +69,7 @@ Convención: **Confirmado** = está en el swagger o en el código de Nexo citado
 | 11 | ¿Hay un endpoint de lectura del estado de la solicitud sin efecto? | `GET /api/solicitudes/{id}` la pasa de `Pendiente` a `EnCosteo` (ADR-015) | Abierto (heredado de ADR-015) |
 | 12 | Catálogo de carrocería | No hay `/api/catalogos/carrocerias`. ¿Lo van a publicar? | Abierto |
 | 13 | ¿Existe DELETE de conexos? | El swagger no tiene `DELETE /api/cotizaciones/{id}/conexos/{conexoId}`. Sin eso, excluir un conexo en Cotifly (`PUT .../servicios-conexos`) deja el total de Nexo distinto del PDF de Cotifly | Abierto |
+| 15 | (Negocio) Un `deadline` con fecha sola (`2026-10-10`): ¿es el inicio del día (00:00 de Bogotá, lo que hace Cotifly hoy) o el fin del día (23:59:59)? | HU-013.10 (G4) lo toma como 00:00 de Bogotá y lo documenta en el contrato | Abierto (negocio) |
 | 14 | ¿Agregar un conexo cambia el estado de la cotización (`Borrador`/`Entregada`) o su `entregadaAt`? | El swagger no lo dice. Si la devuelve a `Borrador`, el polling de Cotifly pasaría de `entregada` a `autocosteo` | Abierto |
 
 Las respuestas de las preguntas 1 y 2 salen del código de Nexo (`docs/HU-005.1-mapeo-campos-nexo.md`) y del swagger. Falta que el equipo de Nexo las confirme.
@@ -76,6 +77,15 @@ Las respuestas de las preguntas 1 y 2 salen del código de Nexo (`docs/HU-005.1-
 **Nota sobre el mapeo:** la sección de servicios conexos de `docs/HU-005.1-mapeo-campos-nexo.md` (línea 114) describe el cuerpo de `POST /api/cotizaciones/{id}/conexos` como `{ items: [{ servicioConexoId, cantidad?, valorAplicado? }] }`. Omite `lineaId`, que el swagger exige en `clsConexoItemRequest` (obligatorio, junto con `servicioConexoId`). El documento copiado no se cambia, y el contrato de Cotifly sigue al swagger.
 
 ## 3. Gaps del contrato de captura (mapeo ↔ DTO de Cotifly ↔ swagger de Nexo)
+
+**Estado (2026-10-05, HU-013.10, #106):** resueltos en el backend G1, G2, G3, G4, G5 (formulario de una línea; en licitaciones
+viajan por línea las horas del encabezado), G6 (formulario), G7, G11 (advertencia en el log), G12, G14 (`clienteId` para
+prospectos con id en el catálogo), G15 y G16 (los `CLIENTE_*` quedan reintentables: el reintento vuelve a resolver el BP).
+G4 deja la fecha sola como inicio del día en Bogotá (pregunta 15 para negocio). G13 y G17 no requieren cambio de captura en el backend (G13 es diseño coherente
+con ADR-015; G17 lo implementa #99). Quedan para el frontend y negocio G8 y G9, y G10 es de #99. Pendiente: horas, municipios
+y validación por código en las líneas de una licitación (vienen del Excel como texto), y confirmar con Nexo si
+`clases-contenedor` devuelve los códigos `CNT..` en `descripcion` (Cotifly acepta los códigos en código y, además, las
+descripciones de ese catálogo).
 
 Comparación de `docs/HU-005.1-mapeo-campos-nexo.md` (Parte 2) con `clsSolicitudCosteoWebRequest`, `clsPosicionCargaWebRequest`, el envío `clsCosteoNexo.CuerpoCaptura` y `clsCapturaSolicitudRequest`, `clsCapturaLineaRequest` y `clsCapturaPosicionRequest` del swagger. **Ningún campo de la Parte 2 falta en el DTO ni en el spec.** Todos están, con los mismos límites de Nexo. Los gaps son de comportamiento y de catálogos: **17 en total (G1 a G17)**. No se implementan en #97, que es solo SDD; van a una issue nueva.
 

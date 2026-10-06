@@ -49,6 +49,30 @@ public sealed class clsValidadorLicitacionTests
         errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.FilaInvalida).Select(e => e.Indice).Should().Equal(0, 2, 3, 4);
     }
 
+    // ADR-014 §5: moneda opcional (COP por defecto), COP o USD sin distinguir mayúsculas; otro valor o vacía es error del encabezado.
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("COP", true)]
+    [InlineData("USD", true)]
+    [InlineData(" usd ", true)]
+    [InlineData("EUR", false)]
+    [InlineData("", false)]
+    [InlineData("  ", false)]
+    public void LaMonedaEsCopOUsd(string? moneda, bool valida)
+    {
+        var errores = clsValidadorLicitacion.Validar(Entrada([Linea(null)], hoja: null) with { Moneda = moneda }, filasEnHoja: null);
+
+        if (valida)
+        {
+            errores.Should().BeEmpty();
+        }
+        else
+        {
+            errores.Should().ContainSingle().Which.Should().Match<clsErrorFilaLicitacion>(e =>
+                e.Indice == null && e.Campo == "moneda" && e.Codigo == clsCodigosLineaSolicitud.ValorFueraDeRango);
+        }
+    }
+
     [Fact]
     public void SinArchivoLaFilaEsOpcional() =>
         clsValidadorLicitacion.Validar(Entrada([Linea(null), Linea(null)], hoja: null), filasEnHoja: null).Should().BeEmpty();

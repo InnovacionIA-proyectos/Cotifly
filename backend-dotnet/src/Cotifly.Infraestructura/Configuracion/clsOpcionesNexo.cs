@@ -26,4 +26,19 @@ public sealed class clsOpcionesNexo
     /// </summary>
     [Range(0, 1440)]
     public int MinutosCacheMunicipios { get; set; } = 60;
+
+    /// <summary>
+    /// Minutos que se reutilizan en memoria los catálogos maestros de Nexo (<c>GET /api/catalogos/*</c>, HU-013.10) sin volver a
+    /// consultarlos. <c>0</c> desactiva la caché (y la copia de respaldo). Por defecto 30.
+    /// </summary>
+    [Range(0, 1440)]
+    public int MinutosCacheCatalogos { get; set; } = 30;
+
+    /// <summary>
+    /// Horas que la última copia de los catálogos maestros sirve de respaldo si Nexo no responde al renovarla (HU-013.10, G2). Pasado
+    /// ese límite, sin Nexo, <c>GET /web/catalogos-flete</c> y <c>POST /web/solicitudes-costeo</c> responden
+    /// <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>. <c>0</c> desactiva el respaldo. Por defecto 24.
+    /// </summary>
+    [Range(0, 168)]
+    public int HorasCatalogosVencidos { get; set; } = 24;
 }

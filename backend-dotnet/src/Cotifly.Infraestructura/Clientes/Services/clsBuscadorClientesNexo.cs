@@ -146,7 +146,7 @@ public sealed class clsBuscadorClientesNexo(
                 continue;
             }
 
-            candidatos.Add(new clsClienteEncontrado(nitCliente, nombre, origen, Texto(fila, "bp")));
+            candidatos.Add(new clsClienteEncontrado(nitCliente, nombre, origen, Texto(fila, "bp"), Texto(fila, "clienteId")));
         }
 
         return candidatos;

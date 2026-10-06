@@ -65,7 +65,7 @@ public sealed record clsDocumentoCotizacion
     public string? NotaDecreto { get; init; }
 
     /// <summary>
-    /// Aclaración de la cotización en dólares (HU-012.3): TRM aplicada y piso mínimo a pagar. Solo en USD (en ambas variantes); en COP
+    /// Nota de la cotización en dólares (HU-012.3): TRM mínima, la aplicada en la cotización (<c>clsTextosEstandar.NotaTrmMinima</c>). Solo en USD (en ambas variantes); en COP
     /// es <c>null</c> y el PDF no trae ninguna aclaración de TRM.
     /// </summary>
     public string? NotaMoneda { get; init; }

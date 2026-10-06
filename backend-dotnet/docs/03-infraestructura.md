@@ -241,6 +241,8 @@ SAP TM:
 | Clave | Por defecto | Uso | Variable |
 |---|---|---|---|
 | `Nexo:UrlBase` | vacío | URL base de Nexo, sin barra final. Vacía: `GET /web/clientes?q=` y `buscar_cliente` responden `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `GET /web/municipios` `MUNICIPIOS_NO_DISPONIBLE`, `GET /web/catalogos-flete` `CATALOGOS_FLETE_NO_DISPONIBLE` y `POST /web/cubicacion` `CUBICACION_NO_DISPONIBLE`; en el chat, `resolver_municipio` responde `MUNICIPIOS_NO_DISPONIBLE` y el agente sigue con el texto libre del origen y el destino; el envío a costeo deja la cotización en `error_envio` | `Nexo__UrlBase` |
+| `Nexo:MinutosCacheCatalogos` | `30` | Minutos que se reutilizan en memoria los catálogos maestros de Nexo (`GET /api/catalogos/*`, HU-013.10; los usan `GET /web/catalogos-flete` y la validación de `POST /web/solicitudes-costeo`). Solo guarda los cuatro catálogos completos; `0` desactiva la caché y el respaldo; de 0 a 1440 | `Nexo__MinutosCacheCatalogos` |
+| `Nexo:HorasCatalogosVencidos` | `24` | Horas que la última copia de los catálogos maestros sirve de respaldo si Nexo no responde al renovarla (warning en el log). Pasado ese límite, o sin copia, responde `CATALOGOS_FLETE_NO_DISPONIBLE`; `0` desactiva el respaldo; de 0 a 168 | `Nexo__HorasCatalogosVencidos` |
 | `Nexo:MinutosCacheMunicipios` | `60` | Minutos que se reutiliza en memoria el catálogo de municipios (HU-005.13; lo usan `GET /web/municipios` y `resolver_municipio`). Solo guarda respuestas exitosas; `0` desactiva la caché; de 0 a 1440 (fuera de rango no arranca) | `Nexo__MinutosCacheMunicipios` |
 | `CosteoNexo:IntervaloInicialSegundos` | 5 | Primera consulta del polling tras el envío y espera mínima entre consultas (1 a 3600 s) | `CosteoNexo__IntervaloInicialSegundos` |
 | `CosteoNexo:IntervaloMaximoMinutos` | 15 | Espera máxima entre consultas de una cotización (1 a 1440; no menor que el inicial) | `CosteoNexo__IntervaloMaximoMinutos` |
@@ -270,18 +272,23 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 
 ### TRM (cotizaciones en USD)
 
-**TRM oficial (HU-012.1, ADR-014).** Sección `Trm` (`clsOpcionesTrm` + `clsValidadorOpcionesTrm`), validada al arrancar. Arquitectura en [2.6](02-arquitectura.md#26-precio-margen-y-tarifas).
+**TRM del día (HU-012.1, ADR-014).** Sección `Trm` (`clsOpcionesTrm` + `clsValidadorOpcionesTrm`), validada al arrancar. Arquitectura en [2.6](02-arquitectura.md#26-precio-margen-y-tarifas).
 
 | Clave | Por defecto | Uso | Variable |
 |---|---|---|---|
-| `Trm:Url` | `https://www.datos.gov.co/resource/32sa-8pi3.json` | Recurso SODA del conjunto "Tasa de Cambio Representativa del Mercado - Histórico" de la Superintendencia Financiera. http o https absoluta, sin usuario, consulta ni fragmento | `Trm__Url` |
-| `Trm:TiempoEsperaSegundos` | `10` | Límite de toda la consulta, reintentos incluidos (2 a 60). Cada intento tiene un tercio; 2 reintentos ante fallos transitorios | `Trm__TiempoEsperaSegundos` |
+| `Trm:Proveedor` | `dolarapi_con_respaldo` | Cadena de fuentes: `dolarapi_con_respaldo` (DolarApi y, si falla, la Superintendencia), `dolarapi` o `superfinanciera`. Sin distinguir mayúsculas; otro valor no arranca | `Trm__Proveedor` |
+| `Trm:UrlDolarApi` | `https://co.dolarapi.com/v1/trm` | TRM de DolarApi (fuente principal, agregador no oficial). https absoluta, sin usuario, consulta ni fragmento | `Trm__UrlDolarApi` |
+| `Trm:Url` | `https://www.datos.gov.co/resource/32sa-8pi3.json` | Recurso SODA del conjunto "Tasa de Cambio Representativa del Mercado - Histórico" de la Superintendencia Financiera (respaldo). https absoluta, sin usuario, consulta ni fragmento | `Trm__Url` |
+| `Trm:TiempoEsperaSegundos` | `10` | Límite de la consulta a la Superintendencia, reintentos incluidos (2 a 60). Cada intento tiene un tercio; 2 reintentos ante fallos transitorios (`clsResilienciaTrm`) | `Trm__TiempoEsperaSegundos` |
+| `Trm:TiempoEsperaDolarApiSegundos` | `4` | Límite de la consulta a DolarApi, reintentos incluidos (2 a 60). Corto: con DolarApi caído el respaldo responde en unos 4 s más su propio tiempo | `Trm__TiempoEsperaDolarApiSegundos` |
 
-- **Fuente pública:** sin credenciales ni datos personales. El contenedor necesita salida HTTPS a `www.datos.gov.co`. Sin esa salida, las cotizaciones en COP siguen igual y las de USD responden `TRM_NO_DISPONIBLE`.
-- **Consulta:** `GET {Trm__Url}?$select=valor,vigenciadesde,vigenciahasta&$where=vigenciadesde <= 'AAAA-MM-DDT00:00:00' AND vigenciahasta >= 'AAAA-MM-DDT00:00:00'&$order=vigenciadesde DESC&$limit=1`, con la fecha de negocio de America/Bogota. La TRM de un sábado, domingo o festivo es la del rango que lo cubre.
-- **Caché:** una consulta por fecha cada 6 horas como máximo, en memoria de cada réplica. Las consultas simultáneas comparten una sola llamada (y su resultado, también un fallo). Un fallo se recuerda 20 s: pasado ese lapso, el siguiente intento vuelve a consultar.
+- **Fuentes públicas:** sin credenciales ni datos personales. El contenedor necesita salida HTTPS a `co.dolarapi.com` y a `www.datos.gov.co`. Sin ninguna de las dos, las cotizaciones en COP siguen igual y las de USD responden `TRM_NO_DISPONIBLE`.
+- **DolarApi:** `GET {Trm__UrlDolarApi}` → `{"unidad":"COP","nombre":"TRM","valor":3273.49,"fechaActualizacion":"2026-10-05T19:01:18.476Z"}`. Se exige `unidad = COP`, `nombre = TRM`, `valor` entre 500 y 20.000 (4 decimales, half-to-even) y a no más de ±10 % de la última TRM válida conocida, cuerpo de máximo 16 KB y `fechaActualizacion` del mismo día de negocio **antes de las 12:00 en Bogotá**: `fechaActualizacion` es la hora del refresco de DolarApi, no la vigencia, y en la tarde el valor puede ser ya la TRM de mañana (verificado el 2026-10-05, ADR-014 §1). Cualquier otra respuesta es un fallo y pasa al respaldo, que consulta la vigencia exacta.
+- **Respaldo:** si DolarApi falla y la Superintendencia responde, queda un warning "TRM del ... tomada de la fuente de respaldo superfinanciera" con el motivo. La fuente usada viaja en `trm_fuente` de la salida de `calcular_precio` (auditoría).
+- **Consulta a la Superintendencia:** `GET {Trm__Url}?$select=valor,vigenciadesde,vigenciahasta&$where=vigenciadesde <= 'AAAA-MM-DDT00:00:00' AND vigenciahasta >= 'AAAA-MM-DDT00:00:00'&$order=vigenciadesde DESC&$limit=1`, con la fecha de negocio de America/Bogota. La TRM de un sábado, domingo o festivo es la del rango que lo cubre.
+- **Caché:** la primera TRM válida de un día queda fija hasta las 00:00 del día siguiente en Bogotá (mañana y tarde cotizan con la misma TRM), en memoria de cada réplica; una fecha ya pasada vive 6 horas. Las consultas simultáneas comparten una sola llamada (y su resultado, también un fallo). Un fallo se recuerda 20 s: pasado ese lapso, el siguiente intento vuelve a consultar.
 - **Circuito:** abre con 5 intentos en 60 s si la mitad falla, y corta 30 s.
-- **Logs:** un fallo deja una sola línea de warning con el motivo (`HTTP 503`, `tiempo agotado`, `JSON inválido`, `sin TRM vigente para la fecha`) y la fecha; los eventos de Polly de la tubería `Trm-standard` bajan a Debug.
+- **Logs:** un fallo de cada fuente deja una sola línea de warning con el motivo (`HTTP 503`, `tiempo agotado`, `JSON inválido`, `sin TRM vigente para la fecha`, `TRM desactualizada`, `valor fuera de rango`) y la fecha; los eventos de Polly de las tuberías `Trm-standard` y `TrmDolarApi-standard` bajan a Debug.
 - **Límite de Socrata:** sin token de aplicación, Socrata limita las peticiones por IP. Con la caché el volumen es mínimo. Si hiciera falta, se agregaría un `X-App-Token` como secreto (ADR-014).
 
 ### Agente de IA
@@ -418,7 +425,8 @@ Qué hace el backend para OmniRoute (ADR-003, "Implementación (#84)"):
 | Relay SMTP interno (en el Python `10.10.40.62`) | Envío de la cotización | SMTP 25 sin AUTH ni STARTTLS, control por IP | Deshabilitado por defecto; transporte real por confirmar (D3) | `CORREO_DESHABILITADO` (503) o `CORREO_ENVIO_FALLIDO` con la fila `fallido` |
 | Volumen `/data/pdfs` | Almacén de los PDF | Sistema de archivos del contenedor (UID 1654) | Único adaptador; S3/MinIO diferido (ADR-012) | `generar_pdf` falla sin registrar la cotización |
 | Nexo: clientes, municipios, catálogos de flete y cubicación | Búsqueda de clientes y prospectos (agente y formulario), origen y destino, tipo de vehículo, carrocería y clase de viaje, cubicación rápida | HTTPS sin token, `X-Portal-Usuario-Id` del comercial; 8 s en total, 3 s por intento, 2 reintentos | Código listo (HU-005.2, HU-005.3, HU-005.4, HU-005.13); se activa con `Nexo__UrlBase` | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (el agente sigue sin NIT, margen de la política), `MUNICIPIOS_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `CUBICACION_NO_DISPONIBLE`; todos 400 en `/web/*` |
-| Datos abiertos de la Superintendencia Financiera (`www.datos.gov.co`) | TRM oficial del día para cotizar en USD (HU-012, ADR-014) | HTTPS público sin credenciales (API SODA); 10 s en total, 2 reintentos; caché por día | Código listo; fuente pendiente de confirmar con el equipo | `TRM_NO_DISPONIBLE`: no se cotiza en USD, sí en COP |
+| DolarApi (`co.dolarapi.com`) | TRM del día para cotizar en USD, fuente principal (HU-012, ADR-014, requisito de negocio del 2026-10-05) | HTTPS público sin credenciales; 10 s en total, 2 reintentos; caché por día | Código listo; agregador no oficial | Pasa al respaldo de la Superintendencia |
+| Datos abiertos de la Superintendencia Financiera (`www.datos.gov.co`) | TRM oficial del día, respaldo de DolarApi (HU-012, ADR-014) | HTTPS público sin credenciales (API SODA); 10 s en total, 2 reintentos; caché por día | Código listo | Con las dos fuentes caídas, `TRM_NO_DISPONIBLE`: no se cotiza en USD, sí en COP |
 | Nexo: costeo | Costeo de la ruta (reemplaza el tarifario de Drive) | Por definir (HU-005.5 en adelante) | Planeado: `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` | El comercial escribe el costo |
 | Grovity (ClientePro) | Validación y alta de prospectos del formulario | La resuelve `clientepro-frontend` contra el backend de ClientePro, no Cotifly (corrección del 2026-09-27 en ADR-005) | Sin adaptador en este backend; solo haría falta si se aprueba usarla desde el agente (propuesta de ADR-005) | No aplica |
 
@@ -436,7 +444,8 @@ flowchart LR
     api --> relay[Relay SMTP]
     api --> proveedor[Proveedor LLM]
     api --> nexo[Nexo]
-    api --> trm[datos.gov.co<br/>TRM]
+    api --> trm[co.dolarapi.com<br/>TRM]
+    api --> trm2[datos.gov.co<br/>TRM respaldo]
 ```
 
 Manifiestos de Swarm del backend .NET (HU-006.6, #30): `infra/stack.dotnet.staging.yml` e `infra/stack.dotnet.dokploy.yml`. Una réplica anclada al worker mientras el overlay entre nodos siga caído (HU-006.1), red `dokploy-network` solo para la entrada desde Traefik y una overlay propia con egreso para SQL Server y los servicios externos; SQL Server es externo, no un servicio del stack. Detalle y validación en [`DEPLOY.md`](../../DEPLOY.md) §5.

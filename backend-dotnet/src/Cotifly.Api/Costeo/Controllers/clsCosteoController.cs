@@ -106,11 +106,13 @@ public sealed class clsCosteoController(
 
     /// <summary>
     /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>,
-    /// <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c> (nada queda guardado).
+    /// <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503 <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> si no se pudo validar
+    /// contra los catálogos maestros de Nexo (nada queda guardado).
     /// </summary>
     [HttpPost("solicitudes-costeo")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status201Created)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Enviar([FromBody] clsSolicitudCosteoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);

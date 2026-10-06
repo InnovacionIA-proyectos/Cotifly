@@ -15,13 +15,31 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
 {
     private readonly clsNexoFalso _nexo = new();
+
+    // Fuentes de la TRM falsas (ADR-014): la API real nunca sale a la red. DolarApi refrescó "hoy" a las 08:00 en Bogotá (reloj real).
+    private readonly clsDolarApiFalso _dolarApi = new() { FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota() };
+    private readonly clsTrmFalso _superfinanciera = new();
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
     [Given("la API web de Cotifly conectada a Nexo con el cliente {string} de BP {string}")]
     public void DadoLaApiConNexo(string nit, string bp)
     {
         _nexo.ConCliente(nit, $"CLIENTE {nit} S.A.S.", "cliente", bp);
-        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo));
+        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera));
+    }
+
+    [Given("que DolarApi publica hoy la TRM {string}")]
+    public void DadoQueDolarApiPublicaHoy(string valor)
+    {
+        _dolarApi.Valor = decimal.Parse(valor, System.Globalization.CultureInfo.InvariantCulture);
+        _dolarApi.FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota();
+    }
+
+    [Given("que las fuentes de la TRM no responden")]
+    public void DadoQueLasFuentesDeLaTrmNoResponden()
+    {
+        _dolarApi.Caida(10);
+        _superfinanciera.Caida(10);
     }
 
     [Given("que Nexo responde {int} al alta de solicitudes")]
@@ -163,6 +181,9 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 
+    /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos, HU-013.10).</summary>
+    public void Registrar(string cotizacion, string folio) => _folios[cotizacion] = folio;
+
     public string Folio(string cotizacion) =>
         _folios.TryGetValue(cotizacion, out var folio) ? folio : throw new InvalidOperationException($"No se envió la cotización '{cotizacion}'.");
 
@@ -190,5 +211,10 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         },
     });
 
-    public void Dispose() => _nexo.Dispose();
+    public void Dispose()
+    {
+        _nexo.Dispose();
+        _dolarApi.Dispose();
+        _superfinanciera.Dispose();
+    }
 }

@@ -441,17 +441,17 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// Condiciones del PDF de pliego (409 <c>COSTEO_NO_LISTO</c> si no se cumplen): cada línea tiene precio y el total de la cotización
-    /// es la suma de esos precios (nada se inventa en el PDF). En USD se rechaza (<c>PDF_PAYLOAD_INVALIDO</c>) hasta que el costeo
-    /// integre la TRM (HU-012): hoy los precios de las líneas están en pesos.
+    /// es la suma de esos precios (nada se inventa en el PDF). En USD (ADR-014 §5) los precios de las líneas ya vienen convertidos con la
+    /// <c>trmAplicada</c> de la licitación y el PDF lleva la nota de TRM mínima; una cotización en USD sin TRM la rechaza el constructor
+    /// (<c>PDF_PAYLOAD_INVALIDO</c>).
     /// </summary>
     public static clsErrorDominio? ValidarPliego(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string moneda)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
-        if (!string.Equals(moneda, clsCotizacion.MonedaPesos, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(moneda))
         {
-            return new clsErrorDominio(clsCodigosError.PdfPayloadInvalido,
-                $"El PDF de pliego en {moneda} no está disponible: el costeo de las licitaciones es solo en COP hasta integrar la TRM (HU-012).");
+            return new clsErrorDominio(clsCodigosError.PdfPayloadInvalido, $"El pliego {cotizacion.Folio} no trae la moneda de la cotización.");
         }
 
         if (lineas.FirstOrDefault(l => l.PrecioFinal is null) is { } sinPrecio)

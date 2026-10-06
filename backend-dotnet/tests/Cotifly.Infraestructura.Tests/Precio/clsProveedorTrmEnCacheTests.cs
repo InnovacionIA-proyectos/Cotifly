@@ -3,6 +3,9 @@ using Cotifly.Aplicacion.Precio.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Precio.Services;
 using Cotifly.Pruebas.Comun;
+using Cotifly.Infraestructura.Comun;
+using Cotifly.Infraestructura.Configuracion;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Precio;
@@ -15,13 +18,14 @@ public sealed class clsProveedorTrmEnCacheTests
 
     private readonly IClsProveedorTrm _fuente = Substitute.For<IClsProveedorTrm>();
     private readonly clsRelojFalso _reloj = new(new DateTimeOffset(2026, 9, 28, 13, 0, 0, TimeSpan.Zero));
+    private readonly clsMemoriaTrm _memoria = new();
     private readonly clsProveedorTrmEnCache _cache;
 
     public clsProveedorTrmEnCacheTests()
     {
         _fuente.ObtenerAsync(_lunes, Arg.Any<CancellationToken>()).Returns(Trm(3306.86m, _lunes));
         _fuente.ObtenerAsync(_martes, Arg.Any<CancellationToken>()).Returns(Trm(3312.50m, _martes));
-        _cache = new clsProveedorTrmEnCache(_fuente, _reloj);
+        _cache = new clsProveedorTrmEnCache(_fuente, _reloj, new clsCalendarioNegocio(_reloj, Options.Create(new clsOpcionesZona())), _memoria);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -48,15 +52,47 @@ public sealed class clsProveedorTrmEnCacheTests
         await _fuente.Received(1).ObtenerAsync(_martes, Arg.Any<CancellationToken>());
     }
 
+    // ADR-014 §2: la TRM del día vive hasta las 00:00 del día siguiente en Bogotá (el reloj arranca a las 08:00 del lunes en Bogotá).
     [Fact]
-    public async Task VencidaLaEntradaSeVuelveAConsultar()
+    public async Task LaTrmDelDiaQuedaFijaHastaElFinDelDiaEnBogota()
     {
         await _cache.ObtenerAsync(_lunes, Ct);
-        _reloj.Avanzar(clsProveedorTrmEnCache.Duracion);
+        _reloj.AhoraUtc = new DateTimeOffset(2026, 9, 29, 4, 59, 59, TimeSpan.Zero); // 23:59:59 del lunes en Bogotá
+        await _cache.ObtenerAsync(_lunes, Ct);
+        await _fuente.Received(1).ObtenerAsync(_lunes, Arg.Any<CancellationToken>());
 
+        _reloj.AhoraUtc = new DateTimeOffset(2026, 9, 29, 5, 0, 0, TimeSpan.Zero); // 00:00 del martes
         await _cache.ObtenerAsync(_lunes, Ct);
 
         await _fuente.Received(2).ObtenerAsync(_lunes, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UnaFechaYaPasadaViveSeisHoras()
+    {
+        var pasada = new DateOnly(2026, 9, 20);
+        _fuente.ObtenerAsync(pasada, Arg.Any<CancellationToken>()).Returns(Trm(3200m, pasada));
+
+        await _cache.ObtenerAsync(pasada, Ct);
+        _reloj.Avanzar(clsProveedorTrmEnCache.Duracion - TimeSpan.FromSeconds(1));
+        await _cache.ObtenerAsync(pasada, Ct);
+        _reloj.Avanzar(TimeSpan.FromSeconds(1));
+        await _cache.ObtenerAsync(pasada, Ct);
+
+        await _fuente.Received(2).ObtenerAsync(pasada, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CadaTrmEntregadaQuedaEnLaMemoriaYUnFalloNo()
+    {
+        var fecha = new DateOnly(2026, 9, 30);
+        _fuente.ObtenerAsync(fecha, Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.TrmNoDisponible, "caída"));
+
+        await _cache.ObtenerAsync(fecha, Ct);
+        _memoria.Ultima.Should().BeNull();
+
+        await _cache.ObtenerAsync(_lunes, Ct);
+        _memoria.Ultima!.Valor.Should().Be(3306.86m);
     }
 
     [Fact]

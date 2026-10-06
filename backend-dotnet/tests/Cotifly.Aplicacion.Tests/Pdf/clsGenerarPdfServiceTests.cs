@@ -213,11 +213,11 @@ public sealed class clsGenerarPdfServiceTests
         _agregada.TrmAplicada.Should().Be(3306.86m);
         _agregada.Costo.Should().Be(2_850_000m);
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
-        _documento.NotaMoneda.Should().Contain("TRM de $3.306,86", "HU-012.3: la aclaración usa la TRM de la trazabilidad")
-            .And.Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
+        _documento.NotaMoneda.Should().Contain("TRM mínima de $3.306,86", "HU-012.3: la nota usa la TRM aplicada de la trazabilidad")
+            .And.NotContain("mínimo a pagar");
     }
 
-    // Validación de HU-012.3 (11): el valor en pesos de la trazabilidad (el piso) debe salir del costo y el margen.
+    // Coherencia de la conversión (HU-012.2): el valor en pesos de la trazabilidad debe salir del costo y el margen.
     [Fact]
     public async Task UnPrecioCopQueNoSaleDeCostoYMargenSeRechaza()
     {
@@ -231,14 +231,16 @@ public sealed class clsGenerarPdfServiceTests
         _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
     }
 
+    // HU-012.3 (2026-10-05): la nota ya no necesita el valor en pesos; sin PrecioCop ni costo el PDF en USD sale con la TRM aplicada.
     [Fact]
-    public async Task SinPrecioCopElPisoSeRecalculaDelCostoYElMargen()
+    public async Task SinPrecioCopNiCostoElPdfEnDolaresLlevaLaNotaConLaTrmAplicada()
     {
-        var traza = new clsTrazabilidadCotizacion(Costo: 2_850_000m, MargenAplicado: 0.135m, PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3306.86m);
+        var traza = new clsTrazabilidadCotizacion(PrecioFinal: 996.35m, Moneda: "USD", TrmAplicada: 3273.49m);
 
-        (await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct)).EsExitoso.Should().BeTrue();
+        var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(996.35m, "USD"), traza: traza), Ct);
 
-        _documento!.NotaMoneda.Should().Contain("el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos");
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _documento!.NotaMoneda.Should().Be(clsTextosEstandar.NotaTrmMinima(3273.49m));
     }
 
     [Fact]

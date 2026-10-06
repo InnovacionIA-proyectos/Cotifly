@@ -55,8 +55,8 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         json.GetProperty("pdf").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
-    // HU-012.2: con el selector en USD el precio llega convertido con la TRM oficial (datos abiertos falsos, sin red). La moneda se acepta
-    // sin distinguir mayúsculas (" usd ").
+    // HU-012.2: con el selector en USD el precio llega convertido con la TRM del día (DolarApi falso, sin red; la cadena por defecto). La
+    // moneda se acepta sin distinguir mayúsculas (" usd ").
     [Fact]
     public async Task ConMonedaUsdElPrecioLlegaEnDolaresConLaTrm()
     {
@@ -64,15 +64,15 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
             .Llamar("obtener_margen", new { lineaNegocio = "Nacional" })
             .Llamar("calcular_precio", new { costo = 2_850_000, margen = 0.135, metodo = "margen" })
             .Cerrar("Previsualización lista. ¿Confirmas?");
-        using var trm = new clsTrmFalso().Responder(
-            HttpStatusCode.OK, "[" + clsTrmFalso.Fila(3306.86m, new DateOnly(2000, 1, 1), new DateOnly(2100, 12, 31)) + "]");
+        using var trm = new clsTrmFalso().Caida(10);
+        using var dolarApi = new clsDolarApiFalso { Valor = 3306.86m, FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota() };
         using var api = new clsApiWebPruebas(
             entorno.BaseDatos,
-            extra: new Dictionary<string, string?> { ["Trm:Url"] = clsTrmFalso.Url },
             configurar: b => b.ConfigureTestServices(s =>
             {
                 s.AddSingleton<IChatClient>(modelo);
                 s.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => trm);
+                s.AddHttpClient(clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => dolarApi);
             }));
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -87,7 +87,9 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         precio.GetProperty("precio_cop").GetDecimal().Should().Be(3_352_941m);
         precio.GetProperty("precio").GetDecimal().Should().Be(1013.93m);
         precio.GetProperty("costo").GetDecimal().Should().Be(2_850_000m);
-        trm.Peticiones.Should().ContainSingle();
+        precio.GetProperty("trm_fuente").GetString().Should().Be("dolarapi");
+        dolarApi.Peticiones.Should().ContainSingle();
+        trm.Peticiones.Should().BeEmpty("con DolarApi bien no se consulta el respaldo");
     }
 
     [Theory]

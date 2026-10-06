@@ -28,6 +28,34 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     public Task CuandoCrea(string alias, string licitacion, string nit, int filas) =>
         CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)), clsPliegoMuestra.Excel(filas));
 
+    [When("{string} crea la licitación {string} en {string} del cliente {string} con el pliego de {int} filas mapeadas")]
+    public Task CuandoCreaEnMoneda(string alias, string licitacion, string moneda, string nit, int filas) =>
+        CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas), moneda: moneda), clsPliegoMuestra.Excel(filas));
+
+    [Then("la licitación {string} está en {string} con la TRM {string}")]
+    public async Task EntoncesMonedaYTrm(string licitacion, string moneda, string trm)
+    {
+        await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}", web.Sesion("ana").Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var vista = web.UltimoJson();
+        vista.GetProperty("moneda").GetString().Should().Be(moneda);
+        vista.GetProperty("trm_aplicada").GetDecimal().Should().Be(decimal.Parse(trm, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Then("cada línea con precio de {string} vale {string}")]
+    public async Task EntoncesCadaLineaVale(string licitacion, string precio)
+    {
+        await web.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{Folio(licitacion)}", web.Sesion("ana").Access);
+        var lineas = web.UltimoJson().GetProperty("lineas").EnumerateArray()
+            .Where(l => l.GetProperty("precio_final").ValueKind != JsonValueKind.Null)
+            .Select(l => l.GetProperty("precio_final").GetDecimal())
+            .ToList();
+        lineas.Should().NotBeEmpty().And.OnlyContain(p => p == decimal.Parse(precio, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Then("el PDF del pliego contiene {string}")]
+    public void EntoncesPdfContiene(string texto) => clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().Contain(texto);
+
     [When("{string} crea la licitación {string} del cliente {string} con una fila sin destino y otra sin peso")]
     public Task CuandoCreaInvalida(string alias, string licitacion, string nit)
     {
