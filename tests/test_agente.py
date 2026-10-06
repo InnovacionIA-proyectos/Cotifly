@@ -177,7 +177,10 @@ async def test_registra_cada_turno_en_conversacion(db_session: Session) -> None:
     assert [t.rol for t in turnos] == ["user", "assistant", "herramienta", "assistant"]
     # user: mensaje original con su autor.
     assert turnos[0].contenido == "Cotiza YUMBO→BUN."
-    assert turnos[0].usuario_email == "ana@boterosoto.com.co"
+    # HU-002.2: `usuario_email` ya no se persiste (columna real es `usuario_id`, entero,
+    # sin fuente hasta ClientePro/HU-004) — el parámetro se sigue aceptando para el
+    # contexto del prompt, pero el turno queda sin identidad en BD.
+    assert turnos[0].usuario_id is None
     # assistant que pide la tool: queda trazado qué invocó.
     assert turnos[1].herramientas["invocaciones"][0]["nombre"] == "calcular_precio"
     # turno de herramienta: queda trazada la salida real.

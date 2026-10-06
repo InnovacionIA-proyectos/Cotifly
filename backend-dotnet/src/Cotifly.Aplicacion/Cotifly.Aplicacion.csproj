@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de aplicación: casos de uso, puertos ICls*, DTOs y validadores. Depende solo de Dominio (ADR-002). -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Aplicacion</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Dominio\Cotifly.Dominio.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- IOptions<T> para las opciones que consumen los casos de uso (ej. SapTm:SalesOrgDefault). -->
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <!-- ILogger<T> para los casos de uso que registran avisos (ej. SAP TM caído → política, #13). -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- IMeterFactory/AddMetrics para las métricas del validador de la respuesta final del agente (#16). -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+    <!--
+      Agente (#12, ADR-003): Kernel de Semantic Kernel (herramientas como KernelFunction, filtros IFunctionInvocationFilter) e
+      IChatClient de Microsoft.Extensions.AI (lo trae Semantic Kernel). MIT. Los proveedores concretos viven en Infraestructura/IA.
+    -->
+    <PackageReference Include="Microsoft.SemanticKernel.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Prompt de sistema del agente (port de SYSTEM_COTIZADOR, orquestador/prompt.py), embebido con un nombre lógico fijo. -->
+    <EmbeddedResource Include="Agente\Recursos\prompt_cotizador.md" LogicalName="Cotifly.Agente.PromptCotizador.md" />
+  </ItemGroup>
+</Project>

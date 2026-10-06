@@ -64,7 +64,7 @@ def _alembic_config():
     from alembic.config import Config
 
     cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    cfg.set_main_option("script_location", str(REPO_ROOT / "db" / "migrations"))
     cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
     os.environ["DATABASE_URL"] = DATABASE_URL
     return cfg

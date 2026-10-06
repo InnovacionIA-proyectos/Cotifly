@@ -1,0 +1,76 @@
+<Project>
+  <!--
+    Central Package Management (ADR-002): toda versión de NuGet se fija aquí.
+    Los .csproj referencian paquetes sin atributo Version.
+    Solo se agregan paquetes que ya se usan; cada HU suma los suyos.
+    Criterio de licencias (ADR-010 §7): solo MIT, Apache-2.0, BSD o similares.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup Label="Producción">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <!-- Cliente HTTP tipado (IHttpClientFactory) y tubería de resiliencia para SAP TM OData (#13). MIT; trae Polly (BSD-3-Clause). -->
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
+    <!-- PDF de la cotización (#11, ADR-006). MIT; build multiplataforma (sin GDI ni WPF), fuentes vía IFontResolver. -->
+    <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />
+    <!-- Transporte SMTP del correo (#11, relay interno). MIT; trae MimeKit (MIT) y BouncyCastle.Cryptography (MIT). -->
+    <PackageVersion Include="MailKit" Version="4.18.0" />
+    <!--
+      Excel de licitaciones (HU-011, ADR-017): ClosedXML en la MISMA versión que Nexo (0.104.2, sin vulnerabilidades conocidas en OSV al 2026-10-01) para que la detección de filas coincida. MIT; trae
+      DocumentFormat.OpenXml, ClosedXML.Parser, ExcelNumberFormat y RBush (MIT) y SixLabors.Fonts (Apache-2.0). SixLabors.Fonts
+      se fija en 1.0.0: desde la 2.x cambió a la "Six Labors Split License", que no cumple el criterio de ADR-010 §7.
+    -->
+    <PackageVersion Include="ClosedXML" Version="0.104.2" />
+    <PackageVersion Include="SixLabors.Fonts" Version="1.0.0" />
+    <!--
+      Login SSO (#12, ADR-009). MIT. JwtBearer valida el access en la Api; JsonWebTokens lo emite en Infraestructura.
+      JsonWebTokens se fija en la versión que trae JwtBearer 10.0.12 (Microsoft.IdentityModel.* 8.19.2).
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.2" />
+    <!--
+      Agente IA (#12 parte C, ADR-003). Todo MIT. Semantic Kernel (Kernel, KernelFunction, IFunctionInvocationFilter) en Aplicacion;
+      Microsoft.Extensions.AI (IChatClient, ChatClientBuilder/UseLogging) y los proveedores en Infraestructura/IA:
+      OpenAI (openai, azure_openai por su API v1, openai_compatible, gemini y ollama por su endpoint compatible) y el SDK oficial
+      de Anthropic, que trae su IChatClient. Microsoft.Extensions.AI.Abstractions se fija en la versión que pide el adaptador de OpenAI.
+    -->
+    <PackageVersion Include="Microsoft.SemanticKernel.Core" Version="1.80.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+    <PackageVersion Include="Anthropic" Version="12.50.0" />
+  </ItemGroup>
+  <ItemGroup Label="Pruebas">
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
+    <PackageVersion Include="TngTech.ArchUnitNET" Version="0.13.4" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
+    <PackageVersion Include="Microsoft.OpenApi.YamlReader" Version="2.12.2" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
+    <PackageVersion Include="Reqnroll.xunit.v3" Version="3.3.4" />
+    <!-- Dobles de prueba de los puertos (ADR-010). Licencia BSD-3-Clause. -->
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <!-- Extracción de texto de los PDF generados, solo en pruebas (#11). Licencia Apache-2.0. -->
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <!--
+      Reportes de CI (#14, ADR-010): TRX y cobertura sobre Microsoft.Testing.Platform, en la misma línea 2.4.x de MTP que trae xunit.v3.
+      TrxReport: MIT. CodeCoverage: licencia gratuita de Microsoft (Microsoft Software License Terms); solo se usa en las pruebas y no
+      se distribuye en la imagen. Es una excepción acotada al criterio de ADR-010 §7, que ya la preveía para CI.
+    -->
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.4.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
+  </ItemGroup>
+</Project>

@@ -15,7 +15,9 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     Numeric,
     String,
@@ -45,29 +47,34 @@ class Cotizacion(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     folio: Mapped[str] = mapped_column(Text, unique=True)  # PCN-DDMMAAAA(-v2)
-    linea_negocio: Mapped[str | None] = mapped_column(Text)
+    linea_negocio: Mapped[str | None] = mapped_column(Text, ForeignKey("margenes_politica.linea_negocio"))
+    linea_negocio_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("margenes_politica.id")
+    )  # Poblada por generar_pdf (busca en margenes_politica, local) + backfill 0008.
+    # No depende de Nexo/HU-005 -- eso era una confusión de la propuesta original.
     cliente_nombre: Mapped[str | None] = mapped_column(Text)
     cliente_id_sap: Mapped[str | None] = mapped_column(Text)
-    origen: Mapped[str | None] = mapped_column(Text)
-    destino: Mapped[str | None] = mapped_column(Text)
+    costeo_id: Mapped[str | None] = mapped_column(Text)  # HU-005: id del costeo en Nexo
+    bd_cliente: Mapped[str | None] = mapped_column(Text)  # HU-005: cliente resuelto vía Nexo
     costo: Mapped[float | None] = mapped_column(Numeric)
     margen_politica: Mapped[float | None] = mapped_column(Numeric)
     margen_aplicado: Mapped[float | None] = mapped_column(Numeric)
     metodo_calculo: Mapped[str | None] = mapped_column(Text)
     precio_final: Mapped[float | None] = mapped_column(Numeric)
     moneda: Mapped[str | None] = mapped_column(Text, default="COP")
-    fuente_tarifa: Mapped[str | None] = mapped_column(Text)  # drive_flat_files|api_fletes|manual
     origen_margen: Mapped[str | None] = mapped_column(Text)  # sap_tm|politica_linea
-    payload: Mapped[dict | None] = mapped_column(JSONB)
     pdf_path: Mapped[str | None] = mapped_column(Text)
-    estado: Mapped[str | None] = mapped_column(Text)  # generada|enviada|reenviada
-    comercial_email: Mapped[str | None] = mapped_column(Text)
+    estado_costeo: Mapped[str | None] = mapped_column(Text)  # HU-005: autocosteo|pendiente_costeo|entregada
+    estado_envio: Mapped[str | None] = mapped_column(Text)  # sin_enviar|enviada|reenviada
+    usuario_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("usuarios_web.id"))
     space_id: Mapped[str | None] = mapped_column(Text)
     thread_id: Mapped[str | None] = mapped_column(Text)
-    # Seguimiento comercial (front web): ¿la cotización fue efectiva? + nota.
-    efectiva: Mapped[bool | None] = mapped_column(Boolean)  # None=sin marcar
-    seguimiento_nota: Mapped[str | None] = mapped_column(Text)
-    seguimiento_actualizado: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    # Resultado comercial (HU-002.2/§2.8): True=ganada, False=perdida, None=sin definir.
+    # El botón que lo marca y la sincronización con el `Resultado` de Nexo son de HU-005;
+    # aquí solo vive el esquema.
+    ganada: Mapped[bool | None] = mapped_column(Boolean)
+    motivo_rechazo: Mapped[str | None] = mapped_column(Text)
+    marcado_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -88,7 +95,7 @@ class AjusteMargen(Base):
     margen_aplicado: Mapped[float | None] = mapped_column(Numeric)
     diferencia: Mapped[float | None] = mapped_column(Numeric)
     motivo: Mapped[str | None] = mapped_column(Text)
-    comercial_email: Mapped[str | None] = mapped_column(Text)
+    usuario_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("usuarios_web.id"))
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -105,7 +112,7 @@ class CorreoEnviado(Base):
     cc: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     asunto: Mapped[str | None] = mapped_column(Text)
     message_id: Mapped[str | None] = mapped_column(Text)
-    confirmado_por: Mapped[str | None] = mapped_column(Text)
+    confirmado_por: Mapped[int | None] = mapped_column(Integer, ForeignKey("usuarios_web.id"))
     estado: Mapped[str | None] = mapped_column(Text)  # enviado|fallido
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -115,11 +122,18 @@ class CorreoEnviado(Base):
 
 class EventoConversacion(Base):
     __tablename__ = "eventos_conversacion"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["space_id", "thread_id"],
+            ["sesiones.space_id", "sesiones.thread_id"],
+            name="fk_eventos_conv_sesion",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     space_id: Mapped[str | None] = mapped_column(Text)
     thread_id: Mapped[str | None] = mapped_column(Text)
-    usuario_email: Mapped[str | None] = mapped_column(Text)
+    usuario_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("usuarios_web.id"))
     rol: Mapped[str] = mapped_column(Text)  # user|assistant
     contenido: Mapped[str | None] = mapped_column(Text)
     herramientas: Mapped[dict | None] = mapped_column(JSONB)
@@ -145,23 +159,36 @@ class EventoHerramienta(Base):
 
 class Sesion(Base):
     __tablename__ = "sesiones"
+    __table_args__ = (
+        CheckConstraint("estado IN ('activa','archivada')", name="ck_sesiones_estado"),
+    )
 
     space_id: Mapped[str] = mapped_column(Text, primary_key=True)
     thread_id: Mapped[str] = mapped_column(Text, primary_key=True)
     estado: Mapped[str | None] = mapped_column(Text)  # activa|archivada
-    contexto: Mapped[dict | None] = mapped_column(JSONB)
     ultima_actividad: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
 
 
 class UsuarioWeb(Base):
-    """Comercial que usa el front web. Identifica sesiones y cotizaciones por correo."""
+    """Comercial identificado por su id de SAP (vía ClientePro, HU-004).
+
+    Rediseñada en HU-002.2: la PK deja de ser el correo (login propio, retirado)
+    y pasa a ser el mismo id entero de `tblSAPUsuariosApp`, entregado por
+    ClientePro. `nombre_usuario`/`nombre_completo`/`email` (migración `0009`) son
+    el mapeo de `tblSAPUsuariosApp.NOMBREUSUARIO`/`DESCRIPCIONUSUARIO`/`EMAIL` del
+    diseño original (§2.6) -- se construyen ya, sin poblar hasta HU-004, siguiendo
+    el mismo criterio que `costeo_id`/`bd_cliente`/`linea_negocio_id`.
+    """
 
     __tablename__ = "usuarios_web"
 
-    email: Mapped[str] = mapped_column(Text, primary_key=True)
-    nombre: Mapped[str | None] = mapped_column(Text)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    nombre_usuario: Mapped[str | None] = mapped_column(Text)
+    nombre_completo: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    telefono: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -173,9 +200,11 @@ class MargenPolitica(Base):
 
     __tablename__ = "margenes_politica"
 
-    linea_negocio: Mapped[str] = mapped_column(String(40), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    linea_negocio: Mapped[str] = mapped_column(String(40), unique=True)
     margen: Mapped[float] = mapped_column(Numeric)  # decimal (0.135 = 13,5%)
     metodo_calculo: Mapped[str] = mapped_column(Text, default="margen")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now()
     )

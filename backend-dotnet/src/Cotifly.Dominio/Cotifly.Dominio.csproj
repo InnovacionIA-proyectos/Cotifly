@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de dominio: entidades, value objects y reglas puras. No depende de nada (ADR-002). -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Dominio</RootNamespace>
+  </PropertyGroup>
+</Project>

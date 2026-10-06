@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Integración con SQL Server 2019 en Testcontainers (ver tests/Directory.Build.props). -->
+    <UsaSqlServerPruebas>true</UsaSqlServerPruebas>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <!-- Dobles de los puertos en las pruebas del agente (#12 parte C). BSD-3-Clause. -->
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+</Project>

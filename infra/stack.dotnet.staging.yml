@@ -1,0 +1,270 @@
+# =============================================================================
+# Stack de STAGING para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
+#
+# Equivale, para el backend .NET, a infra/stack.staging.yml (Python, documentado pero nunca desplegado). El stack Python
+# que corre hoy es deploy/docker-compose.swarm.yml (destino del rollback, DEPLOY.md §4.5 paso 7); ambos se conservan
+# sin cambios hasta validar producción (corte único, ADR-001). Decisiones: ADR-013.
+# Runbook: DEPLOY.md §5. NO desplegar sin aprobación: la prueba en staging está pendiente (HU-006.6).
+#
+# Topología:
+#   Internet/red corporativa ──> Traefik (dokploy-network) ──> cotifly-api:8080 ──> tbsdatacenter:1433 (SQL Server 2019)
+#                                  (TLS: HU-006.2)                      │         ──> LLM, Google Chat, Nexo, SAP TM, relay SMTP
+#                                                                       └── volumen cotifly_staging_pdfs (/data/pdfs)
+#   - Un solo servicio (ADR-002): no hay MCP, ni base de datos, ni MinIO en el stack.
+#   - SQL Server es la instancia corporativa EXTERNA (HU-002.4, ADR-008): se llega por la cadena de conexión, no por
+#     un servicio del stack.
+#
+# Redes (equivalentes a bot-edge / bot-back del Python):
+#   - edge    = dokploy-network (externa, la de Traefik). Solo entrada desde Traefik; ningún otro servicio del stack.
+#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Google, Nexo, TRM en
+#               www.datos.gov.co, SAP, relay). Equivale a bot-edge.
+#   - bot-back (interna, sin salida) no hace falta: no hay servicios internos. Si vuelve alguno (p. ej. MinIO,
+#     ADR-012), va en una overlay con internal: true y sin labels de Traefik.
+#
+# ANCLADO AL WORKER mientras el overlay VXLAN entre nodos esté caído (HU-006.1): la tarea corre en TBSNODO1-DKP
+# (10.10.40.31), donde hay disco y donde vive el volumen local de PDFs. Por la misma causa, Traefik (manager) no
+# alcanza hoy a la tarea del worker por la overlay: mientras HU-006.2 no lo resuelva, staging se prueba por el puerto
+# publicado en modo host (abajo, HTTP sin TLS, solo red corporativa). Al resolverse: quitar "ports", usar
+# COTIFLY_ORDEN_UPDATE=start-first y, si se quiere, quitar la restricción de nodo (con un volumen compartido).
+#
+# Variables: todas llegan del entorno del stack en Dokploy (DEPLOY.md §2); ninguna tiene valor real aquí. Las
+# obligatorias usan ${VAR:?}: sin ellas "docker stack deploy" falla antes de tocar el servicio. Una variable que no
+# aparece en este archivo NO llega al contenedor aunque esté en Dokploy (p. ej. un tercer respaldo IA__Fallbacks__2__*: agregarlo aquí).
+#
+# Validar sin desplegar:
+#   docker stack config -c infra/stack.dotnet.staging.yml      (con las variables obligatorias en el entorno)
+# =============================================================================
+
+networks:
+  edge:
+    external: true
+    name: dokploy-network
+  salida:
+    driver: overlay
+    # internal: false (por defecto): la API necesita salida.
+
+volumes:
+  pdfs:
+    name: cotifly_staging_pdfs
+
+secrets:
+  # Cuenta de servicio de Google Chat (DEPLOY.md §2.1). Debe existir antes del deploy:
+  #   docker secret create cotifly_staging_gchat_sa_v1 ./cuenta-servicio.json
+  # Mientras no haya app de Chat puede crearse con "{}": la app solo lo lee si GChat__SaJson apunta a él.
+  gchat_sa:
+    external: true
+    name: ${GCHAT_SA_SECRETO:-cotifly_staging_gchat_sa_v1}
+
+services:
+  cotifly-api:
+    image: ghcr.io/innovacionia-proyectos/cotifly-backend:${COTIFLY_TAG:?falta COTIFLY_TAG}
+    networks: [edge, salida]
+    volumes:
+      - pdfs:/data/pdfs
+    secrets:
+      - source: gchat_sa
+        target: gchat_sa.json
+        uid: "1654"
+        gid: "1654"
+        mode: 0400
+    # Acceso temporal mientras el overlay esté caído (HU-006.1/HU-006.2): bind directo en el worker, HTTP sin TLS.
+    # 8092 para no chocar con el Python (8091). Quitar cuando Traefik llegue a la tarea.
+    ports:
+      - target: 8080
+        published: ${COTIFLY_PUERTO_HOST:-8092}
+        protocol: tcp
+        mode: host
+    environment:
+      # Staging corre como Production a propósito y fijo (no se lee del entorno): mismas validaciones de arranque
+      # que producción (secretos, CORS, JWT de Chat).
+      ASPNETCORE_ENVIRONMENT: Production
+      Zona__ZonaHoraria: America/Bogota
+
+      # Persistencia (ADR-008): SQL login cotifly_app contra tbsdatacenter. Secretos.
+      ConnectionStrings__Cotifly: ${ConnectionStrings__Cotifly:?falta ConnectionStrings__Cotifly}
+      ConnectionStrings__Identidad: ${ConnectionStrings__Identidad:?falta ConnectionStrings__Identidad}
+      Identidad__Esquema: ${Identidad__Esquema:-dbo}
+      Identidad__TablaUsuarios: ${Identidad__TablaUsuarios:-tblSAPUsuariosApp}
+      Identidad__TablaUsuarioRoles: ${Identidad__TablaUsuarioRoles:-tblSAPUsuarioRoles}
+      Identidad__TablaRoles: ${Identidad__TablaRoles:-tblSAPRoles}
+
+      # Regional del comercial (ADR-016, ADR-008): OPCIONAL, solo lectura de DWCubosEBSSAP (dbo.DimEjecutivo). El login la
+      # llena y la refresca en UsuariosWeb.regional (#81) y el tablero del gerente la lee en vivo (#45).
+      # Vacía = no configurada: se usa lo que ya haya en UsuariosWeb.regional. Con valor es SECRETO (se valida en Production)
+      # y exige salida desde el worker a 10.10.40.24:1433 y un usuario SQL de solo lectura con SELECT únicamente sobre
+      # dbo.DimEjecutivo (pendiente con el DBA).
+      ConnectionStrings__Regional: ${ConnectionStrings__Regional:-}
+      # Obligatorias con valor (identificadores SQL): los defaults son los de clsOpcionesRegional; no dejarlas vacías.
+      Regional__Esquema: ${Regional__Esquema:-dbo}
+      Regional__Tabla: ${Regional__Tabla:-DimEjecutivo}
+      # USUARIO guarda "boterosoto\usuario" (dominio\usuario); el código quita el dominio antes de comparar con UsuariosWeb.nombreUsuario (#81).
+      Regional__ColumnaUsuario: ${Regional__ColumnaUsuario:-USUARIO}
+      Regional__ColumnaRegional: ${Regional__ColumnaRegional:-REGIONAL}
+      Regional__TiempoEsperaSegundos: ${Regional__TiempoEsperaSegundos:-10}
+      # Espera máxima del login por DimEjecutivo (1 a 10 s): pasado ese tiempo el login sigue sin bloquearse (#81).
+      Regional__TiempoEsperaLoginSegundos: ${Regional__TiempoEsperaLoginSegundos:-3}
+      # Dominio aceptado en USUARIO (vacío = cualquiera); una fila de otro dominio no cuenta y deja un warning (#81).
+      Regional__Dominio: ${Regional__Dominio:-boterosoto}
+
+      # Autenticación (ADR-009). Jwt__SigningKey: secreto, >= 32 bytes, distinto al de producción.
+      Jwt__Issuer: ${Jwt__Issuer:-cotifly-api}
+      Jwt__Audience: ${Jwt__Audience:-clientepro}
+      Jwt__SigningKey: ${Jwt__SigningKey:?falta Jwt__SigningKey}
+      Jwt__AccessMinutes: ${Jwt__AccessMinutes:-60}
+      Jwt__RefreshDays: ${Jwt__RefreshDays:-30}
+      LimiteAuth__PeticionesPorVentana: ${LimiteAuth__PeticionesPorVentana:-30}
+      LimiteAuth__VentanaSegundos: ${LimiteAuth__VentanaSegundos:-60}
+
+      # Seguridad HTTP. CORS: dominio del frontend de ClientePro. Encabezados reenviados: solo desde la subred de
+      # dokploy-network (docker network inspect dokploy-network --format '{{(index .IPAM.Config 0).Subnet}}').
+      Cors__OrigenesPermitidos__0: ${Cors__OrigenesPermitidos__0:?falta Cors__OrigenesPermitidos__0}
+      ForwardedHeaders__Habilitado: "true"
+      ForwardedHeaders__RedesConocidas__0: ${ForwardedHeaders__RedesConocidas__0:?falta ForwardedHeaders__RedesConocidas__0}
+      ForwardedHeaders__LimiteSaltos: ${ForwardedHeaders__LimiteSaltos:-1}
+      SeguridadHttp__LimiteCuerpoWebBytes: ${SeguridadHttp__LimiteCuerpoWebBytes:-65536}
+
+      # SAP TM (HU-009). Vacío = política de la línea. SapTm__Pass: secreto, solo con odata.
+      SapTm__SalesOrgDefault: ${SapTm__SalesOrgDefault:-50000005}
+      SapTm__Modo: ${SapTm__Modo:-}
+      SapTm__ExportPath: ${SapTm__ExportPath:-}
+      SapTm__Url: ${SapTm__Url:-}
+      SapTm__User: ${SapTm__User:-}
+      SapTm__SapClient: ${SapTm__SapClient:-}
+      SapTm__Pass: ${SapTm__Pass:-}
+
+      # Nexo (HU-005): sin token; URL del ambiente de pruebas de Nexo en staging.
+      # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
+      Nexo__UrlBase: ${Nexo__UrlBase:-}
+      Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
+      # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). APAGADO por defecto en staging hasta que el
+      # DBA confirme que staging y producción NO comparten dbo_cotifly: si la comparten, los workers de los dos stacks
+      # consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo (pruebas y producción).
+      CosteoNexo__Habilitado: ${CosteoNexo__Habilitado:-false}
+      CosteoNexo__IntervaloInicialSegundos: ${CosteoNexo__IntervaloInicialSegundos:-5}
+      CosteoNexo__IntervaloMaximoMinutos: ${CosteoNexo__IntervaloMaximoMinutos:-15}
+      CosteoNexo__FactorEdad: ${CosteoNexo__FactorEdad:-0.25}
+      CosteoNexo__EdadMaximaHoras: ${CosteoNexo__EdadMaximaHoras:-72}
+      CosteoNexo__IntervaloTickSegundos: ${CosteoNexo__IntervaloTickSegundos:-5}
+      CosteoNexo__Lote: ${CosteoNexo__Lote:-20}
+      CosteoNexo__ReclamoSegundos: ${CosteoNexo__ReclamoSegundos:-120}
+
+      # TRM del día (frente C, ADR-014): DolarApi con respaldo en los datos abiertos de la Superintendencia Financiera.
+      # Salida a co.dolarapi.com:443 y www.datos.gov.co:443. Las URL vacías impiden arrancar: por eso llevan valor por defecto.
+      Trm__Proveedor: ${Trm__Proveedor:-dolarapi_con_respaldo}
+      Trm__UrlDolarApi: ${Trm__UrlDolarApi:-https://co.dolarapi.com/v1/trm}
+      Trm__Url: ${Trm__Url:-https://www.datos.gov.co/resource/32sa-8pi3.json}
+      Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
+      Trm__TiempoEsperaDolarApiSegundos: ${Trm__TiempoEsperaDolarApiSegundos:-4}
+
+      # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto, obligatorio con Google Chat configurado.
+      Pdf__StorageModo: volumen
+      Pdf__StorageDir: /data/pdfs
+      Pdf__BaseUrl: ${Pdf__BaseUrl:-}
+      Pdf__ClaveFirmaUrl: ${Pdf__ClaveFirmaUrl:-}
+      Pdf__MinutosUrlFirmada: ${Pdf__MinutosUrlFirmada:-15}
+
+      # Correo (D3): deshabilitado por defecto; relay interno sin AUTH.
+      Correo__Habilitado: ${Correo__Habilitado:-false}
+      Correo__Modo: ${Correo__Modo:-smtp_relay}
+      Correo__SmtpRelay__Host: ${Correo__SmtpRelay__Host:-}
+      Correo__SmtpRelay__Port: ${Correo__SmtpRelay__Port:-25}
+      Correo__SmtpRelay__FromFallback: ${Correo__SmtpRelay__FromFallback:-notificaciones@boterosoto.com.co}
+      Correo__SmtpRelay__TimeoutSeg: ${Correo__SmtpRelay__TimeoutSeg:-20}
+
+      # Agente de IA (ADR-003). Sin proveedor el agente no responde. IA__ApiKey: secreto.
+      # Con OmniRoute (#84; docs/03 "OmniRoute"): IA__Proveedor=openai_compatible,
+      # IA__Endpoint=http://llm-services-omniroute.10-10-40-17.sslip.io/v1 (HTTP interno: ver el riesgo en DEPLOY.md §2.2),
+      # IA__Modelo=gemini/gemini-3.5-flash-lite, IA__SoportaJsonSchema=false e IA__MaxTokens=1500 (con 4096 OpenRouter da 402).
+      # Nunca un gateway web no oficial (duckduckgo-web, theoldllm, veoaifree-web, chipotle): riesgo de confidencialidad.
+      IA__Proveedor: ${IA__Proveedor:-}
+      IA__Modelo: ${IA__Modelo:-}
+      IA__ApiKey: ${IA__ApiKey:-}
+      IA__Endpoint: ${IA__Endpoint:-}
+      IA__MaxTokens: ${IA__MaxTokens:-4096}
+      IA__MaxIteraciones: ${IA__MaxIteraciones:-12}
+      IA__SoportaJsonSchema: ${IA__SoportaJsonSchema:-true}
+      IA__MinutosSinJsonSchema: ${IA__MinutosSinJsonSchema:-30}
+      IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}
+      IA__Rpm: ${IA__Rpm:-8}
+      IA__TimeoutSeg: ${IA__TimeoutSeg:-60}
+      # Respaldos (ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute). Vacíos = sin respaldo.
+      # Con OmniRoute: 0 = gemini/gemini-3.5-flash, 1 = gemini/gemini-3-flash-preview (mismo endpoint y clave). ApiKey: secreto.
+      IA__Fallbacks__0__Proveedor: ${IA__Fallbacks__0__Proveedor:-}
+      IA__Fallbacks__0__Modelo: ${IA__Fallbacks__0__Modelo:-}
+      IA__Fallbacks__0__Endpoint: ${IA__Fallbacks__0__Endpoint:-}
+      IA__Fallbacks__0__ApiKey: ${IA__Fallbacks__0__ApiKey:-}
+      IA__Fallbacks__1__Proveedor: ${IA__Fallbacks__1__Proveedor:-}
+      IA__Fallbacks__1__Modelo: ${IA__Fallbacks__1__Modelo:-}
+      IA__Fallbacks__1__Endpoint: ${IA__Fallbacks__1__Endpoint:-}
+      IA__Fallbacks__1__ApiKey: ${IA__Fallbacks__1__ApiKey:-}
+      LimiteChat__PeticionesPorVentana: ${LimiteChat__PeticionesPorVentana:-20}
+      LimiteChat__VentanaSegundos: ${LimiteChat__VentanaSegundos:-60}
+      Sesiones__LimiteTokens: ${Sesiones__LimiteTokens:-6000}
+      Sesiones__TtlHoras: ${Sesiones__TtlHoras:-24}
+      Sesiones__BarridoMinutos: ${Sesiones__BarridoMinutos:-60}
+      Sesiones__EsperaTurnoSegundos: ${Sesiones__EsperaTurnoSegundos:-3}
+
+      # Google Chat (ADR-011, HU-006.7): el JWT se verifica SIEMPRE (fijo, no se lee del entorno).
+      # GChat__SaJson: vacío o /run/secrets/gchat_sa.json (el secreto montado arriba).
+      GChat__VerificarJwt: "true"
+      GChat__ProjectNumber: ${GChat__ProjectNumber:-}
+      GChat__SaJson: ${GChat__SaJson:-}
+      GChat__SupportSpace: ${GChat__SupportSpace:-}
+      GChat__CapacidadCola: ${GChat__CapacidadCola:-200}
+    # Igual al HEALTHCHECK de la imagen (vida, /health), en forma exec: la imagen no tiene shell. La disponibilidad
+    # (/health/ready, base de datos) la mira Traefik, así una base caída no reinicia la tarea.
+    healthcheck:
+      test: ["CMD", "dotnet", "/app/Cotifly.Api.dll", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      # Una réplica: cola de Google Chat y barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
+      replicas: 1
+      placement:
+        # Overlay entre nodos caído (HU-006.1): anclado al worker.
+        constraints: [node.hostname == TBSNODO1-DKP]
+      update_config:
+        parallelism: 1
+        # Con el puerto en modo host la tarea nueva no puede arrancar junto a la vieja en el mismo nodo: stop-first.
+        # Sin "ports" (Traefik por overlay, HU-006.2): start-first, sin corte.
+        order: ${COTIFLY_ORDEN_UPDATE:-stop-first}
+        delay: 10s
+        monitor: 60s
+        failure_action: rollback
+        max_failure_ratio: 0
+      rollback_config:
+        parallelism: 1
+        order: ${COTIFLY_ORDEN_UPDATE:-stop-first}
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        window: 60s
+      resources:
+        # Cada sonda de salud levanta otro proceso dotnet (~40-70 MB cada 30 s): incluido en el límite.
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 384M
+      labels:
+        # Traefik (Dokploy). Escritas para cuando la overlay funcione; TLS real depende de HU-006.2.
+        # traefik.docker.network es la etiqueta de Traefik v2. En Traefik v3 el proveedor Swarm usa traefik.swarm.network:
+        # confirmar la versión de Traefik de Dokploy (docker service inspect dokploy-traefik) y ajustar si es v3.
+        - traefik.enable=true
+        - traefik.docker.network=dokploy-network
+        - traefik.http.routers.cotifly-api-staging.rule=Host(`${PUBLIC_HOST:?falta PUBLIC_HOST}`)
+        - traefik.http.routers.cotifly-api-staging.entrypoints=websecure
+        - traefik.http.routers.cotifly-api-staging.tls=true
+        - traefik.http.routers.cotifly-api-staging.tls.certresolver=letsencrypt
+        - traefik.http.routers.cotifly-api-staging.middlewares=cotifly-api-staging-hsts
+        - traefik.http.middlewares.cotifly-api-staging-hsts.headers.stsSeconds=31536000
+        - traefik.http.middlewares.cotifly-api-staging-hsts.headers.stsIncludeSubdomains=true
+        - traefik.http.services.cotifly-api-staging.loadbalancer.server.port=8080
+        # Readiness: saca la tarea del balanceo mientras /health/ready no responda 200 (sin reiniciarla).
+        - traefik.http.services.cotifly-api-staging.loadbalancer.healthcheck.path=/health/ready
+        - traefik.http.services.cotifly-api-staging.loadbalancer.healthcheck.interval=10s
+        - traefik.http.services.cotifly-api-staging.loadbalancer.healthcheck.timeout=3s

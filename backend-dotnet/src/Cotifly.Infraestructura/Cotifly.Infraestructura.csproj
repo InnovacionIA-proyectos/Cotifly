@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de infraestructura: implementa los puertos de Aplicación (EF Core, HTTP, PDF, correo, IA). ADR-002. -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Infraestructura</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+    <ProjectReference Include="..\Cotifly.Dominio\Cotifly.Dominio.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="PDFsharp-MigraDoc" />
+    <PackageReference Include="MailKit" />
+    <!-- Excel de licitaciones (HU-011, ADR-017): lectura del original y exportación con los precios. MIT. -->
+    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <!-- Proveedores del agente (#12 parte C, ADR-003): solo Infraestructura/IA conoce las implementaciones concretas. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="Anthropic" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      Recursos del PDF (#11, ADR-006) embebidos en el ensamblado: la imagen runtime (chiseled) no trae fontconfig ni
+      fuentes del sistema. Nombres lógicos fijos, independientes de la carpeta (ver clsRecursosPdf).
+    -->
+    <EmbeddedResource Include="Pdf\Recursos\Fuentes\*.ttf" LogicalName="Cotifly.Pdf.Fuentes.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Pdf\Recursos\Imagenes\*.jpg;Pdf\Recursos\Imagenes\*.png" LogicalName="Cotifly.Pdf.Imagenes.%(Filename)%(Extension)" />
+    <!-- Licencia SIL OFL 1.1 de Liberation Sans: viaja con la aplicación publicada (licencias/ en la imagen). -->
+    <None Include="Pdf\Recursos\Fuentes\LiberationSans-OFL.txt" Link="licencias\LiberationSans-OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Las pruebas de integración ejercitan las configuraciones EF y utilidades internas. -->
+    <InternalsVisibleTo Include="Cotifly.Infraestructura.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Muestra de SAP TM compartida con las pruebas de integración (sin el resto de tests/Comun, que exige SQL Server). -->
+    <Compile Include="..\Comun\clsFuenteMargenMuestra.cs" Link="Comun\clsFuenteMargenMuestra.cs" />
+    <Compile Include="..\Comun\clsLoggerFalso.cs" Link="Comun\clsLoggerFalso.cs" />
+    <Compile Include="..\Comun\clsRelojFalso.cs" Link="Comun\clsRelojFalso.cs" />
+    <!-- Formulario ampliado de muestra del costeo en Nexo (ADR-015). -->
+    <Compile Include="..\Comun\clsSolicitudCosteoMuestra.cs" Link="Comun\clsSolicitudCosteoMuestra.cs" />
+    <!-- Modelo guionizado del agente (#12 parte C): IChatClient sin red. -->
+    <Compile Include="..\Comun\clsChatClientGuionizado.cs" Link="Comun\clsChatClientGuionizado.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Payload de ejemplo del PDF portado del Python (#11). -->
+    <None Include="..\fixtures\cotizacion\*.json" Link="fixtures\cotizacion\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Evento real de Google Chat portado del Python (#12 parte C). -->
+    <None Include="..\fixtures\chat\*.json" Link="fixtures\chat\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Reglas de dependencia entre capas y de nombres (ADR-002). Carga los ensamblados de las 4 capas. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cotifly.Dominio\Cotifly.Dominio.csproj" />
+    <ProjectReference Include="..\..\src\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+    <ProjectReference Include="..\..\src\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+    <ProjectReference Include="..\..\src\Cotifly.Api\Cotifly.Api.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="TngTech.ArchUnitNET" />
+  </ItemGroup>
+</Project>

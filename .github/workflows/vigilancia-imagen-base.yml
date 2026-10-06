@@ -1,0 +1,120 @@
+# =============================================================================
+# Vigilancia semanal de la imagen base del backend .NET (#86). Documentación: backend-dotnet/docs/03-infraestructura.md §3.1
+# y 10-operacion.md §10.6.
+#
+# Mientras haya excepciones temporales en backend-dotnet/.trivyignore.yaml, avisa cuándo ya se pueden quitar:
+#   - descarga mcr.microsoft.com/dotnet/aspnet:<ASPNET_VERSION del Dockerfile> y compara su digest con el fijado abajo;
+#   - revisa si existe el parche siguiente (10.0.<N+1>-noble-chiseled-extra);
+#   - escanea la imagen base con Trivy SIN --ignorefile (lo que se vería sin excepciones);
+#   - revisa cuántos días faltan para el expired_at más próximo.
+# Falla (y GitHub avisa por la corrida programada fallida) si Microsoft republicó la imagen, si salió el parche siguiente,
+# si la imagen base ya no tiene HIGH/CRITICAL con parche o si una excepción vence en 7 días o menos: en todos esos casos hay
+# que actuar. Si nada cambió, termina bien con un aviso en el resumen.
+#
+# Solo lectura: no construye, no publica y no modifica el repositorio.
+# Al actualizar la imagen base (Dockerfile), actualizar DIGEST_FIJADO con el digest nuevo.
+# =============================================================================
+name: vigilancia-imagen-base
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'   # lunes 12:00 UTC (07:00 en Colombia)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vigilancia-imagen-base
+  cancel-in-progress: true
+
+env:
+  # Digest de aspnet:10.0.12-noble-chiseled-extra en uso (construida el 2026-09-04) cuando se creó la excepción de #86.
+  DIGEST_FIJADO: sha256:6385dc0eaef704fad88d3f65c334e791a371bbe448f52ca39d83d2df49251e28
+  TRIVY_IMAGEN: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+  DIAS_AVISO_VENCIMIENTO: '7'
+
+jobs:
+  vigilar:
+    name: Imagen base y excepciones de Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Revisar imagen base, parche siguiente, Trivy sin excepciones y vencimientos
+        run: |
+          set -u
+          resumen="$GITHUB_STEP_SUMMARY"
+          actuar=0
+
+          aspnet=$(sed -n 's/^ARG ASPNET_VERSION=//p' backend-dotnet/Dockerfile)
+          [ -n "$aspnet" ] || { echo "::error::No se encontró ARG ASPNET_VERSION en backend-dotnet/Dockerfile"; exit 1; }
+          imagen="mcr.microsoft.com/dotnet/aspnet:$aspnet"
+          {
+            echo "## Vigilancia de la imagen base (#86)"
+            echo
+            echo "- Imagen: \`$imagen\`"
+          } >> "$resumen"
+
+          # 1) Digest actual del tag frente al fijado.
+          docker pull -q "$imagen" > /dev/null
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$imagen" | sed 's/^.*@//')
+          echo "- Digest actual: \`$digest\` (fijado: \`$DIGEST_FIJADO\`)" >> "$resumen"
+          if [ "$digest" != "$DIGEST_FIJADO" ]; then
+            actuar=1
+            echo "::error::Microsoft republicó $imagen (digest nuevo $digest): reconstruir, actualizar DIGEST_FIJADO y quitar la excepción de #86 si ya no aplica"
+            echo "- **Microsoft republicó la imagen: actualizar y quitar la excepción de #86.**" >> "$resumen"
+          fi
+
+          # 2) ¿Existe el parche siguiente? (10.0.N -> 10.0.N+1, mismo sufijo).
+          base=${aspnet%%-*}; sufijo=${aspnet#*-}
+          siguiente="${base%.*}.$(( ${base##*.} + 1 ))-$sufijo"
+          if docker manifest inspect "mcr.microsoft.com/dotnet/aspnet:$siguiente" > /dev/null 2>&1; then
+            actuar=1
+            echo "::error::Existe mcr.microsoft.com/dotnet/aspnet:$siguiente: subir SDK_VERSION/ASPNET_VERSION juntos y quitar la excepción de #86"
+            echo "- **Salió \`aspnet:$siguiente\`: actualizar SDK_VERSION/ASPNET_VERSION juntos y quitar la excepción de #86.**" >> "$resumen"
+          else
+            echo "- Parche siguiente \`aspnet:$siguiente\`: todavía no publicado" >> "$resumen"
+          fi
+
+          # 3) Trivy SIN --ignorefile sobre la imagen base: lo que fallaría sin excepciones. --exit-code 2 para hallazgos:
+          #    Trivy sale con 1 ante un error propio (por ejemplo, sin acceso a la base de vulnerabilidades) y no debe
+          #    confundirse con "sigue vulnerable".
+          set +e
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGEN" \
+            image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 2 "$imagen" > trivy.txt 2>&1
+          trivy=$?
+          set -e
+          cat trivy.txt
+          if [ "$trivy" -eq 0 ]; then
+            actuar=1
+            echo "::error::La imagen base ya no tiene HIGH/CRITICAL con parche: quitar las excepciones de backend-dotnet/.trivyignore.yaml"
+            echo "- **Trivy sin excepciones: limpio. Quitar la excepción de #86.**" >> "$resumen"
+          elif [ "$trivy" -eq 2 ]; then
+            echo "::warning::La imagen base sigue con HIGH/CRITICAL con parche (ver resumen): la excepción de #86 sigue siendo necesaria"
+            echo "- Trivy sin excepciones: sigue con HIGH/CRITICAL con parche (la excepción sigue siendo necesaria)" >> "$resumen"
+          else
+            echo "::error::Trivy terminó con código $trivy (error del escaneo, no un resultado): ver el log"
+            echo "- **Trivy falló (código $trivy): el escaneo no se completó, revisar el log.**" >> "$resumen"
+            exit 1
+          fi
+          { echo; echo '```'; grep -E 'Total:|CVE-' trivy.txt || true; echo '```'; echo; } >> "$resumen"
+
+          # 4) Días hasta el expired_at más próximo (vence a las 00:00 UTC de esa fecha).
+          proxima=$(sed -n 's/^ *expired_at: *//p' backend-dotnet/.trivyignore.yaml | sort | head -n 1)
+          if [ -n "$proxima" ]; then
+            dias=$(( ( $(date -u -d "$proxima" +%s) - $(date -u +%s) ) / 86400 ))
+            echo "- Excepción más próxima a vencer: \`$proxima\` (00:00 UTC; faltan $dias días)" >> "$resumen"
+            if [ "$dias" -le "$DIAS_AVISO_VENCIMIENTO" ]; then
+              actuar=1
+              echo "::error::Una excepción de Trivy vence el $proxima (faltan $dias días): renovarla en un PR revisado o resolverla"
+            fi
+          else
+            echo "- Sin excepciones en backend-dotnet/.trivyignore.yaml" >> "$resumen"
+          fi
+
+          exit "$actuar"

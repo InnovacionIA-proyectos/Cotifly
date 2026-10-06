@@ -13,10 +13,10 @@ from decimal import Decimal
 from shared import sheets_sync
 from shared.sheets_sync import (
     SheetsServicio,
-    _efectividad,
     _lista,
     _num,
     _pct,
+    _resultado,
     construir_tablas,
     sincronizar,
 )
@@ -49,10 +49,10 @@ def test_pct_pasa_decimal_a_porcentaje():
     assert _pct(None) == ""
 
 
-def test_efectividad_etiquetas():
-    assert _efectividad(True, "enviada") == "Efectiva"
-    assert _efectividad(False, "generada") == "No efectiva"
-    assert _efectividad(None, "generada") == "Sin marcar"
+def test_resultado_etiquetas():
+    assert _resultado(True) == "Ganada"
+    assert _resultado(False) == "Perdida"
+    assert _resultado(None) == "Sin definir"
 
 
 def test_lista_array_a_cadena():
@@ -65,22 +65,25 @@ def test_lista_array_a_cadena():
 
 @requiere_pg
 def test_sincronizar_vuelca_todas_las_hojas(db_session):
-    from shared.models import AjusteMargen, CorreoEnviado, Cotizacion
+    from shared.models import AjusteMargen, CorreoEnviado, Cotizacion, UsuarioWeb
+
+    # HU-002.2: `usuario_id` es una FK real a `usuarios_web.id` — hace falta una
+    # fila real para poder asignarlo (antes era texto libre, `comercial_email`).
+    db_session.add(UsuarioWeb(id=701))
+    db_session.flush()
 
     cot = Cotizacion(
         folio="PCN-TEST01",
         linea_negocio="Nacional",
         cliente_nombre="ACME S.A.",
-        origen="Bogotá",
-        destino="Medellín",
         costo=Decimal("1800000"),
         margen_politica=Decimal("0.15"),
         margen_aplicado=Decimal("0.18"),
         precio_final=Decimal("2117647.06"),
         moneda="COP",
-        estado="enviada",
-        efectiva=True,
-        comercial_email="dguerra@boterosoto.com.co",
+        estado_envio="enviada",
+        ganada=True,
+        usuario_id=701,
     )
     db_session.add(cot)
     db_session.flush()
@@ -92,7 +95,7 @@ def test_sincronizar_vuelca_todas_las_hojas(db_session):
             margen_aplicado=Decimal("0.18"),
             diferencia=Decimal("0.03"),
             motivo="Cliente estratégico",
-            comercial_email=cot.comercial_email,
+            usuario_id=cot.usuario_id,
         )
     )
     db_session.add(
@@ -102,7 +105,7 @@ def test_sincronizar_vuelca_todas_las_hojas(db_session):
             cc=[],
             asunto="Cotización PCN-TEST01",
             estado="enviado",
-            confirmado_por=cot.comercial_email,
+            confirmado_por=cot.usuario_id,
         )
     )
     db_session.flush()
@@ -127,8 +130,8 @@ def test_sincronizar_vuelca_todas_las_hojas(db_session):
     fila = next(f for f in filas if f[0] == "PCN-TEST01")
     reg = dict(zip(encabezados, fila, strict=True))
     assert reg["Cliente"] == "ACME S.A."
-    assert reg["Ruta"] == "Bogotá → Medellín"
-    assert reg["Efectividad"] == "Efectiva"
+    # HU-002.2: `Origen`/`Destino`/`Ruta` se eliminaron (Nexo los reemplaza, HU-005).
+    assert reg["Resultado"] == "Ganada"
     assert reg["Margen Aplicado %"] == 18.0
     assert reg["Precio Final"] == 2117647.06
     assert reg["Utilidad"] == 317647.06  # 2117647.06 - 1800000

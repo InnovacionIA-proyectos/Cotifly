@@ -1,0 +1,46 @@
+# Artefactos de compilación .NET
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+out/
+publish/
+artifacts/
+
+# Resultados de pruebas y cobertura
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+*.trx
+
+# IDE y archivos de usuario
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+
+# Temporales
+*.tmp
+*.log
+*.swp
+*~
+
+# Variables de entorno y secretos (solo se versiona .env.example)
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets/
+
+# Identificador anónimo de telemetría de Reqnroll (se crea si no hay APPDATA, p. ej. en el contenedor del SDK)
+**/Reqnroll/userid
+
+# PDFs de muestra que generan las pruebas para la comparación visual (#11); no se versionan.
+tests/artefactos/

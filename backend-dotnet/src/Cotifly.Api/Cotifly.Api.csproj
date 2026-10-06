@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Capa de presentación y composition root (ADR-002).
+    Referencia Infraestructura solo para registrar dependencias (AddInfraestructura);
+    Cotifly.Arquitectura.Tests verifica que no se use para nada más.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Cotifly.Api</RootNamespace>
+    <!--
+      Globalización completa (ICU): formato es-CO de dinero y fechas en PDF y correo.
+      La imagen runtime (aspnet chiseled-extra, ver Dockerfile) trae ICU y tzdata (#27).
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Validación del access token de /api/auth/login-clientepro (#12, ADR-009). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Cotifly.Aplicacion\Cotifly.Aplicacion.csproj" />
+    <ProjectReference Include="..\Cotifly.Infraestructura\Cotifly.Infraestructura.csproj" />
+  </ItemGroup>
+</Project>
