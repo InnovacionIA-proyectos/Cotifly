@@ -238,6 +238,18 @@ public static class clsCodigosError
     public const string JustificacionRequerida = "JUSTIFICACION_REQUERIDA";
 
     /// <summary>
+    /// HU-013.5 (ADR-018 §2a): el asunto o la introducción del PDF que escribió el comercial están vacíos, son muy largos (120 y 900
+    /// caracteres) o traen URL o correos (400). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TextosCotizacionInvalidos = "TEXTOS_COTIZACION_INVALIDOS";
+
+    /// <summary>
+    /// HU-013.5: se pidió a la IA redactar sobre textos que el comercial ya editó; el frontend confirma con él y repite con
+    /// <c>?sobrescribir=true</c> (409). Código nuevo del backend .NET.
+    /// </summary>
+    public const string TextosEditados = "TEXTOS_EDITADOS";
+
+    /// <summary>
     /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado; para cambiarla se crea la versión
     /// <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código nuevo del backend .NET.
     /// </summary>

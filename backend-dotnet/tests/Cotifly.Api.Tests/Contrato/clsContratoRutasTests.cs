@@ -41,8 +41,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         ["GET /web/servicios-conexos"] = "#99 (HU-013.3)",
         ["POST /web/cotizaciones/{folio}/costeo/servicios-conexos"] = "#99 (HU-013.3)",
         ["POST /web/cotizaciones/{folio}/costeo/re-solicitar"] = "#100 (HU-013.4)",
-        ["POST /web/cotizaciones/{folio}/costeo/textos/redactar"] = "#101 (HU-013.5)",
-        ["PUT /web/cotizaciones/{folio}/costeo/textos"] = "#101 (HU-013.5)",
     };
 
     /// <summary>
@@ -60,7 +58,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
             ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["trm_aplicada"] = "#103 (HU-013.7)",
-                ["textos"] = "#101 (HU-013.5)",
             },
         };
 
@@ -193,6 +190,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
+        { typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida" },

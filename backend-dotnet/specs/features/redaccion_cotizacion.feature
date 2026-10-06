@@ -3,10 +3,10 @@
 # POST /web/cotizaciones/{folio}/costeo/textos/redactar y PUT /web/cotizaciones/{folio}/costeo/textos. La IA nunca recibe
 # costos, margen ni precios; su salida se valida (sin montos, URL ni correos; asunto <= 120 y introducción <= 900
 # caracteres) y, si falla o tarda más de 15 s, se usa clsTextosEstandar. El PDF siempre sale. Con un IChatClient guionizado
-# (nunca un proveedor real), la API real en memoria y SQL Server 2019 en Testcontainers.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #101 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# (nunca un proveedor real), la API real en memoria y SQL Server 2019 en Testcontainers. Pasos en
+# tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosRedaccionCotizacion.cs. El formulario de los antecedentes es el de la línea
+# "Importacion" (política del 15 %: el flete de 2550000 queda en un precio de 3000000).
+@integracion
 Característica: Redacción del asunto y la introducción de la cotización
   Como comercial de Botero Soto
   Quiero que la IA me proponga el asunto y la introducción del PDF y poder editarlos
@@ -29,7 +29,7 @@ Característica: Redacción del asunto y la introducción de la cotización
   Escenario: La IA nunca recibe costos, margen ni precios
     Dado que el modelo responde el asunto "Cotización transporte Buenaventura - Bogotá" y una introducción válida
     Cuando "ana" pide redactar los textos de "C1"
-    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Nacional", "Buenaventura", "Bogotá D.C." y la moneda "COP"
+    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Importacion", "Buenaventura", "Bogotá D.C." y la moneda "COP"
     Y el mensaje enviado al modelo no contiene "2550000", "3000000" ni "0.15"
 
   Escenario: Si la IA tarda más de 15 segundos se usa el texto estándar

@@ -11,7 +11,13 @@ namespace Cotifly.Pruebas.Comun;
 /// </summary>
 public sealed class clsChatClientGuionizado : IChatClient
 {
+    /// <summary>Proveedor y modelo que informa el guion (<see cref="ChatClientMetadata"/>, como los proveedores reales).</summary>
+    public const string Proveedor = "guion";
+
+    public const string Modelo = "modelo-guionizado";
+
     private readonly ConcurrentQueue<Func<ChatResponse>> _guion = new();
+    private readonly ConcurrentQueue<TimeSpan> _demoras = new();
     private Func<ChatResponse>? _repetir;
     private Exception? _rechazoEsquema;
     private int _secuencia;
@@ -75,6 +81,16 @@ public sealed class clsChatClientGuionizado : IChatClient
         return this;
     }
 
+    /// <summary>
+    /// La siguiente llamada tarda <paramref name="demora"/> antes de seguir el guion (o hasta que la cancelen: entonces lanza
+    /// <see cref="OperationCanceledException"/>, como un proveedor real). Para probar el tiempo máximo del redactor (HU-013.5).
+    /// </summary>
+    public clsChatClientGuionizado Demorar(TimeSpan demora)
+    {
+        _demoras.Enqueue(demora);
+        return this;
+    }
+
     /// <summary>Cuando el guion se agota, repite siempre esta llamada a herramienta (para forzar el tope de iteraciones).</summary>
     public clsChatClientGuionizado RepetirSiempre(string herramienta, object argumentos)
     {
@@ -88,6 +104,22 @@ public sealed class clsChatClientGuionizado : IChatClient
     public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
         Llamadas.Add(new clsLlamadaModelo([.. messages.Select(m => m.Clone())], options?.Clone()));
+        if (_demoras.TryDequeue(out var demora))
+        {
+            return DemorarAsync(demora, options, cancellationToken);
+        }
+
+        return Siguiente(options);
+    }
+
+    private async Task<ChatResponse> DemorarAsync(TimeSpan demora, ChatOptions? options, CancellationToken cancellationToken)
+    {
+        await Task.Delay(demora, cancellationToken);
+        return await Siguiente(options);
+    }
+
+    private Task<ChatResponse> Siguiente(ChatOptions? options)
+    {
         if (_rechazoEsquema is not null && options?.ResponseFormat is ChatResponseFormatJson { Schema: not null })
         {
             return Task.FromException<ChatResponse>(_rechazoEsquema);
@@ -106,7 +138,8 @@ public sealed class clsChatClientGuionizado : IChatClient
     public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("El agente no usa streaming.");
 
-    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+    public object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceType == typeof(ChatClientMetadata) ? new ChatClientMetadata(Proveedor, null, Modelo) : null;
 
     public void Dispose()
     {

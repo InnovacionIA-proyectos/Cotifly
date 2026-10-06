@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Pdf.Validators;
+using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
@@ -47,7 +48,8 @@ public interface IClsCosteoCotizacionService
 
 /// <summary>
 /// <c>CosteoCotizacion</c>: estado del costeo y precios (sin costos de Nexo), el margen sugerido y su origen (HU-013.2), si el PDF
-/// quedó desactualizado (ADR-018 §11) y la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>).
+/// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>) y el asunto y la
+/// introducción guardados para el PDF (<c>textos</c>, HU-013.5; <c>null</c> si todavía no hay).
 /// </summary>
 public sealed record clsCosteoCotizacion(
     string Folio,
@@ -62,7 +64,8 @@ public sealed record clsCosteoCotizacion(
     decimal? MargenSugerido,
     string? OrigenMargen,
     bool PdfDesactualizado,
-    string? RowVersion) : IClsConVersionFila;
+    string? RowVersion,
+    clsTextosCotizacion? Textos = null) : IClsConVersionFila;
 
 /// <summary>Servicio conexo tal como lo ve el comercial: precio con margen y si va en el PDF.</summary>
 public sealed record clsServicioConexoPrecio(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal Precio, bool Incluido);
@@ -202,6 +205,7 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var payload = esPliego ? PayloadPliego(cotizacion, lineas, linea?.LineaNegocio, moneda) : Payload(cotizacion, linea?.LineaNegocio, moneda);
+        AplicarTextos(payload, cotizacion);
         var invalido = esPliego
             ? clsValidadorCotizacionPdfPayload.Validar(payload, MaximoLineasPliego, MaximoLineasPliego)
             : clsValidadorCotizacionPdfPayload.Validar(payload);
@@ -311,6 +315,25 @@ public sealed class clsCosteoCotizacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return cotizacion.VersionNegocio.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// HU-013.5 (ADR-018 §2a): el asunto y la introducción guardados (de la IA ya validados, o del comercial) reemplazan los del PDF.
+    /// Sin textos, o con los estándar sin editar, el PDF usa los suyos (los de <see cref="clsTextosEstandar"/> de su variante). Nunca
+    /// llama a la IA: el PDF siempre sale. Las condiciones, las notas legales y la nota de TRM no cambian.
+    /// </summary>
+    public static void AplicarTextos(clsCotizacionPdfPayload payload, clsCotizacion cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if (clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion) is not { } textos || !textos.ReemplazanLosDelPdf())
+        {
+            return;
+        }
+
+        payload.Asunto = textos.Asunto;
+        payload.Textos ??= new clsTextosPayload();
+        payload.Textos.Intro = [.. textos.Parrafos()];
     }
 
     /// <summary>
@@ -542,7 +565,8 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.MargenSugerido,
             cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.PdfDesactualizado,
-            VersionEtag(cotizacion));
+            VersionEtag(cotizacion),
+            clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion));
     }
 
     private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");

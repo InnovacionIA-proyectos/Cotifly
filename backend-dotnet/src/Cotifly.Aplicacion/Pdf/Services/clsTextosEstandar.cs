@@ -164,6 +164,19 @@ public static class clsTextosEstandar
         Vigencia: VigenciaComun,
         Facturacion: FacturacionComun);
 
+    /// <summary>
+    /// Asunto estándar del PDF (el que imprime <c>clsConstructorDocumentoCotizacion</c> si la cotización no trae uno): respaldo del
+    /// redactor de la IA (HU-013.5).
+    /// </summary>
+    public static string AsuntoEstandar(string? lineaNegocio) =>
+        $"presentación oferta de servicios de Transporte {clsTextoSeguro.LimpiarLinea(lineaNegocio) ?? string.Empty}".TrimEnd();
+
+    /// <summary>
+    /// Introducción estándar (la de <see cref="TarifaUnica"/>, párrafos separados por una línea en blanco): respaldo del redactor de la IA
+    /// (HU-013.5). El PDF de pliego, sin textos de la IA ni del comercial, sigue usando la de <see cref="MultiSeccion"/>.
+    /// </summary>
+    public static string IntroduccionEstandar => string.Join("\n\n", TarifaUnica.Intro);
+
     /// <summary>Textos de <c>armar_multi.py</c> (<c>TEXTOS</c>): otra introducción (con viñetas), otro seguro y otro stand by.</summary>
     public static readonly clsJuegoTextos MultiSeccion = new(
         Intro:

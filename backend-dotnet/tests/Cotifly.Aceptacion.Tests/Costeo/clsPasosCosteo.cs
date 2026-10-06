@@ -21,11 +21,14 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     private readonly clsTrmFalso _superfinanciera = new();
     private readonly Dictionary<string, string> _folios = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Modelo guionizado del escenario (HU-013.5): la API nunca llama a un proveedor de IA real.</summary>
+    public clsChatClientGuionizado Modelo { get; } = new();
+
     [Given("la API web de Cotifly conectada a Nexo con el cliente {string} de BP {string}")]
     public void DadoLaApiConNexo(string nit, string bp)
     {
         _nexo.ConCliente(nit, $"CLIENTE {nit} S.A.S.", "cliente", bp);
-        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera));
+        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera, modelo: Modelo));
     }
 
     [Given("que DolarApi publica hoy la TRM {string}")]
