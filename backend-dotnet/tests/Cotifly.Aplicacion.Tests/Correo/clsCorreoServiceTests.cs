@@ -54,6 +54,7 @@ public sealed class clsCorreoServiceTests : IDisposable
         _usuarios.ObtenerPorIdAsync(_comercial.Id, Arg.Any<CancellationToken>()).Returns(_comercial);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C1", _comercial.Id, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ObtenerPorIdDelUsuarioAsync(_cotizacion.Id, _comercial.Id, Arg.Any<CancellationToken>()).Returns(_cotizacion);
+        _unidadTrabajo.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
         _correos.ListarEnviadosDesdeAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([]);
         _almacen.LeerPorReferenciaAsync("/data/pdfs/PCN-C1.pdf", Arg.Any<CancellationToken>()).Returns("%PDF-1.4 prueba"u8.ToArray());
         _transporte.Modo.Returns("smtp_relay");
@@ -222,6 +223,30 @@ public sealed class clsCorreoServiceTests : IDisposable
         fila.MessageId.Should().BeNull();
         _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
         await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElEnvioReservaElEstadoConLaVersionLeidaAntesDeQueSalgaElCorreo()
+    {
+        var versiones = new List<int>();
+        _unidadTrabajo.GuardarCambiosSiVersionAsync(_cotizacion.Id, Arg.Do<int>(versiones.Add), Arg.Any<CancellationToken>()).Returns(true);
+
+        (await Servicio().EnviarAsync(Entrada(), Ct)).Valor.Enviado.Should().BeTrue();
+
+        versiones.Should().Equal(0);
+        _cotizacion.VersionNegocio.Should().Be(1, "el envío es un cambio de negocio");
+        _cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.Enviada);
+    }
+
+    [Fact]
+    public async Task SiOtroFlujoCambioLaCotizacionElCorreoNoSaleYRespondeConflicto()
+    {
+        _unidadTrabajo.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        var resultado = await Servicio().EnviarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
+        await _transporte.DidNotReceiveWithAnyArgs().EnviarAsync(default!, Ct);
     }
 
     [Fact]
