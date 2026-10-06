@@ -23,6 +23,7 @@ Característica: Re-solicitar el costeo a Nexo
     Y la cotización "C1" conserva su folio y su versión 1
     Y Nexo recibió una segunda solicitud de "Buenaventura" a "Bogotá D.C." con el BP "15927" y 2 posiciones
     Y la re-solicitud de "C1" queda en la auditoría con el motivo "El costeo venció" y el usuario "ana"
+    Y Nexo recibió en las notas la re-solicitud de "C1" que reemplaza su solicitud anterior
     Y la cotización "C1" vuelve a consultarse en Nexo
 
   Escenario: Una cotización entregada se re-solicita sin cambios de carga
@@ -43,6 +44,24 @@ Característica: Re-solicitar el costeo a Nexo
     Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "2S3"
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
     Y Nexo recibió la solicitud de la versión nueva con el peso 28400
+
+  # Decisión del usuario (2026-10-06): el margen que ajustó el comercial se conserva sobre el costo nuevo; el sugerido se refresca.
+  Escenario: En el mismo folio se conserva el margen ajustado sobre el costo nuevo
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Actualizar el costo"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Dado Nexo costeó la solicitud de "C1" con un flete de 2600000 y el polling lo registró
+    Entonces el costeo de "C1" tiene el precio final 3170732 con el margen aplicado "0.18" y el origen "negociado"
+    Y el margen sugerido de "C1" sigue en "0.15"
+
+  Escenario: La versión nueva copia el margen ajustado de la original
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y "ana" ajusta el margen de "C1" a "0.18" sin justificación
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la versión nueva tiene el margen aplicado "0.18" con el origen "negociado"
 
   Escenario: Desde un error de envío equivale a reintentar
     Dado que Nexo respondió 503 al alta de "C1" y quedó en "error_envio"
@@ -110,9 +129,7 @@ Característica: Re-solicitar el costeo a Nexo
     Cuando "beto" re-solicita el costeo de "C1" con el motivo "No es mía"
     Entonces la respuesta tiene el estado 404
 
-  # La regla condicional de la captura (G3: clase_contenedor solo con clase_viaje = Contenedor) la entrega #106 (HU-013.10) en
-  # clsSolicitudCosteo.Validar, que la re-solicitud ya usa. Se activa al integrar #106: quitar estas dos etiquetas.
-  @pendiente @ignore
+  # Regla condicional de la captura (G3, #106): clase_contenedor solo con clase_viaje = Contenedor.
   Escenario: Cambios de carga incoherentes con la captura se rechazan sin crear versión
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "Cambio de contenedor" y estos datos de carga:

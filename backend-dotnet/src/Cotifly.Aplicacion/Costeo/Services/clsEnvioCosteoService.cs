@@ -39,13 +39,16 @@ public interface IClsEnvioCosteoService
     /// <summary>
     /// Envía a Nexo una cotización ya guardada y confirmada con sus líneas (licitación, HU-011.2, ADR-017) y guarda el resultado
     /// (<c>pendiente_costeo</c>/<c>autocosteo</c> o <c>error_envio</c>), igual que el envío de HU-005.5. Sin el token de la petición.
+    /// <paramref name="notaTrazabilidad"/> (re-solicitud, HU-013.4) se agrega a las <c>notas</c> que viajan a Nexo, sin guardarse en la
+    /// cotización ni sobrepasar el límite de Nexo (<see cref="ConNota"/>).
     /// </summary>
     Task EnviarGuardadaAsync(
         clsCotizacion cotizacion,
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
         IReadOnlyList<clsCotizacionPosicion> posiciones,
         clsMargenPolitica? politica,
-        Guid usuarioId);
+        Guid usuarioId,
+        string? notaTrazabilidad = null);
 }
 
 /// <summary>Implementación de <see cref="IClsEnvioCosteoService"/>.</summary>
@@ -166,14 +169,48 @@ public sealed class clsEnvioCosteoService(
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
         IReadOnlyList<clsCotizacionPosicion> posiciones,
         clsMargenPolitica? politica,
-        Guid usuarioId)
+        Guid usuarioId,
+        string? notaTrazabilidad = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(posiciones);
-        var encabezado = cotizacion.EncabezadoSolicitud
-            ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion));
+        var encabezado = ConNota(cotizacion.EncabezadoSolicitud
+            ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion)), notaTrazabilidad);
         return EnviarANexoAsync(cotizacion, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
+    }
+
+    /// <summary>
+    /// Encabezado con <paramref name="nota"/> agregada a las <c>notas</c> (en una línea nueva). Si juntas superan
+    /// <see cref="clsSolicitudCosteo.LargoNotas"/>, se recortan las notas existentes y la nota de trazabilidad se conserva completa.
+    /// </summary>
+    public static clsEncabezadoSolicitudCosteo ConNota(clsEncabezadoSolicitudCosteo encabezado, string? nota)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        if (string.IsNullOrWhiteSpace(nota))
+        {
+            return encabezado;
+        }
+
+        var agregada = nota.Trim();
+        if (agregada.Length >= clsSolicitudCosteo.LargoNotas)
+        {
+            return encabezado with { Notas = agregada[..clsSolicitudCosteo.LargoNotas] };
+        }
+
+        var existentes = encabezado.Notas?.Trim();
+        if (string.IsNullOrEmpty(existentes))
+        {
+            return encabezado with { Notas = agregada };
+        }
+
+        var disponible = clsSolicitudCosteo.LargoNotas - agregada.Length - 1;
+        if (existentes.Length > disponible)
+        {
+            existentes = disponible <= 1 ? string.Empty : existentes[..(disponible - 1)] + "…";
+        }
+
+        return encabezado with { Notas = existentes.Length == 0 ? agregada : existentes + "\n" + agregada };
     }
 
     /// <summary>
@@ -357,7 +394,8 @@ public sealed class clsEnvioCosteoService(
     /// <summary>
     /// Margen de la cotización al enviar (HU-005.7, ADR-015 §5): SAP TM con el BP del catálogo o la política de la línea
     /// (<see cref="IClsMargenResolverService"/>). Se guarda para aplicarlo cuando llegue el costeo; si no se puede resolver, el
-    /// polling lo advierte y nunca muestra el costo sin margen.
+    /// polling lo advierte y nunca muestra el costo sin margen. Un margen negociado (re-solicitud, HU-013.4) no se pisa, falle o no la
+    /// resolución.
     /// </summary>
     private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
     {
@@ -370,6 +408,14 @@ public sealed class clsEnvioCosteoService(
         if (resuelto.EsFallo || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Valor.Salida.Origen, out var origen))
         {
             logger.LogWarning("No se resolvió el margen de la cotización {Folio} al enviarla a Nexo.", cotizacion.Folio);
+            return;
+        }
+
+        // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
+        // sugerido se refresca con SAP TM o la política, como referencia.
+        if (cotizacion.TieneMargenNegociado)
+        {
+            cotizacion.RefrescarMargenSugerido(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen);
             return;
         }
 

@@ -759,6 +759,8 @@ public sealed class clsCotizacion
             throw new ArgumentException($"La versión nueva debe ser mayor que {Version}.", nameof(folio));
         }
 
+        // Un margen ajustado por el comercial se copia (decisión del 2026-10-06): el envío lo conserva y solo refresca el sugerido.
+        var negociado = TieneMargenNegociado;
         return Crear(new clsDatosCotizacion
         {
             Folio = folio.Valor,
@@ -770,7 +772,31 @@ public sealed class clsCotizacion
             UsuarioId = UsuarioId,
             Moneda = Moneda ?? MonedaPesos,
             TrmAplicada = TrmAplicada,
+            MargenPolitica = negociado ? MargenPolitica : null,
+            MargenAplicado = negociado ? MargenAplicado : null,
+            OrigenMargen = negociado ? Margen.OrigenMargen.Negociado : null,
+            MetodoCalculo = negociado ? MetodoCalculo : null,
         });
+    }
+
+    /// <summary>¿El comercial ajustó el margen? (<c>origen_margen = negociado</c> con margen y método de cálculo.)</summary>
+    public bool TieneMargenNegociado =>
+        OrigenMargen == Margen.OrigenMargen.Negociado && MargenAplicado is not null && MetodoCalculo is not null;
+
+    /// <summary>
+    /// Re-solicitud con margen negociado (HU-013.4, decisión del 2026-10-06): conserva <see cref="MargenAplicado"/> y el origen
+    /// <c>negociado</c>, y refresca el margen sugerido y su fuente (SAP TM o la política de la línea) como referencia.
+    /// </summary>
+    public void RefrescarMargenSugerido(decimal? margenPolitica, decimal sugerido, OrigenMargen origen)
+    {
+        if (sugerido < 0m || origen == Margen.OrigenMargen.Negociado)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sugerido), "El sugerido es no negativo y sale de SAP TM o de la política.");
+        }
+
+        MargenPolitica = margenPolitica ?? MargenPolitica;
+        MargenSugerido = sugerido;
+        OrigenMargenSugerido = origen;
     }
 
     private clsErrorDominio NoPermite(string motivo) => new(clsCodigosError.EstadoNoPermite,

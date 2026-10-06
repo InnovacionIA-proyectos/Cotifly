@@ -217,7 +217,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     public async Task EntoncesSinCambios(string cotizacion, string estado)
     {
         (await costeo.Columna(cotizacion, "estadoCosteo")).Should().Be(estado);
-        (await costeo.Columna(cotizacion, "versionNegocio")).Should().Be(_versionLeida, "la original no se toca");
+        (await costeo.Columna(cotizacion, "costeoId")).Should().Be(_costeoIdLeido, "la original conserva su solicitud de Nexo");
     }
 
     [Then("Nexo recibió la solicitud de la versión nueva con el peso {int}")]
@@ -249,6 +249,20 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     }
 
     private string? _versionLeida;
+    private string? _costeoIdLeido;
+
+    [Then("la versión nueva tiene el margen aplicado {string} con el origen {string}")]
+    public async Task EntoncesMargenDeLaVersion(string margen, string origen)
+    {
+        decimal.Parse((await ColumnaFolioAsync(FolioNuevo, "margenAplicado"))!, CultureInfo.InvariantCulture)
+            .Should().Be(decimal.Parse(margen, CultureInfo.InvariantCulture));
+        (await ColumnaFolioAsync(FolioNuevo, "origenMargen")).Should().Be(origen);
+    }
+
+    [Then("Nexo recibió en las notas la re-solicitud de {string} que reemplaza su solicitud anterior")]
+    public void EntoncesNotas(string cotizacion) =>
+        costeo.Nexo.UltimaAlta!["notas"]!.GetValue<string>().Should()
+            .EndWith($"Re-solicitud de {costeo.Folio(cotizacion)}; reemplaza la solicitud {_costeoIdLeido}.");
 
     private string FolioNuevo => _folioNuevo ?? throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
 
@@ -261,6 +275,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     private async Task<string> VersionVigenteAsync(string cotizacion)
     {
         _versionLeida = await costeo.Columna(cotizacion, "versionNegocio");
+        _costeoIdLeido = await costeo.Columna(cotizacion, "costeoId");
         if (_altasAntes == 0)
         {
             _altasAntes = costeo.Nexo.SolicitudesCreadas.Count;

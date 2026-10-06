@@ -55,6 +55,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         (await ColumnaAsync(folio, "costeoSiguienteConsultaAt")).Should().NotBeNull("el polling se reanuda");
         var alta = _nexo.UltimaAlta!;
         alta["clienteBp"]!.GetValue<string>().Should().Be("15927");
+        alta["notas"]!.GetValue<string>().Should().EndWith($"Re-solicitud de {folio}; reemplaza la solicitud {anterior}.", "trazabilidad en Nexo");
         alta["lineas"]![0]!["origen"]!.GetValue<string>().Should().Be("Buenaventura");
         alta["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
 
@@ -114,8 +115,8 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.Cotizaciones c ON c.id = p.cotizacionId WHERE c.folio = '{folioNuevo}'"))
             .Should().Be(2);
         _nexo.UltimaAlta!["lineas"]![0]!["peso"]!.GetValue<decimal>().Should().Be(28400m);
-        (await ColumnaAsync(folio, "estadoCosteo")).Should().Be("costeo_vencido", "la original se conserva sin cambios");
-        (await EtagAsync(sesion, folio)).Should().Be(etag);
+        (await ColumnaAsync(folio, "estadoCosteo")).Should().Be("costeo_vencido", "la original conserva su costeo");
+        (await EtagAsync(sesion, folio)).Should().NotBe(etag, "la versión de la original se reserva: un If-Match viejo ya no crea otra versión");
     }
 
     [Fact]
@@ -175,6 +176,29 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         using var otroCuerpo = await ReSolicitarAsync(sesion, folio, """{"motivo":"Otro","datos_carga":{"peso_kg":28450}}""", etag, clave);
         otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo es un error del cliente");
         (await otroCuerpo.Content.ReadAsStringAsync(Ct)).Should().Contain("Idempotency-Key");
+    }
+
+    [Fact]
+    public async Task VariasPeticionesSimultaneasSinClaveConElMismoIfMatchCreanUnaSolaVersion()
+    {
+        var (sesion, folio) = await EnviarAsync();
+        await _api.ProcesarPollingAsync(folio, TimeSpan.FromHours(73));
+        var etag = await EtagAsync(sesion, folio);
+        var altas = _nexo.SolicitudesCreadas.Count;
+
+        var respuestas = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+            ReSolicitarAsync(sesion, folio, """{"motivo":"Doble clic","nueva_version":true}""", etag)));
+
+        var estados = respuestas.Select(r => r.StatusCode).ToList();
+        foreach (var respuesta in respuestas)
+        {
+            respuesta.Dispose();
+        }
+
+        estados.Count(e => e == HttpStatusCode.Created).Should().Be(1, string.Join(",", estados));
+        estados.Count(e => e == HttpStatusCode.Conflict).Should().Be(3, "las demás pierden la reserva de la versión de la original");
+        _nexo.SolicitudesCreadas.Should().HaveCount(altas + 1, "un solo POST a Nexo");
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE folio LIKE '{folio}-v%'")).Should().Be(1);
     }
 
     [Fact]

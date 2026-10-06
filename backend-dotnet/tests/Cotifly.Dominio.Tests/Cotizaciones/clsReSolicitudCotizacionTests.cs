@@ -135,6 +135,30 @@ public sealed class clsReSolicitudCotizacionTests
     }
 
     [Fact]
+    public void LaVersionNuevaCopiaElMargenNegociadoYRefrescarSoloCambiaElSugerido()
+    {
+        var original = clsCotizacion.Crear(new clsDatosCotizacion
+        {
+            Folio = "PCN-900555111-AP-05102026-001",
+            MargenPolitica = 0.15m,
+            MargenAplicado = 0.22m,
+            OrigenMargen = Cotifly.Dominio.Margen.OrigenMargen.Negociado,
+            MetodoCalculo = "margen",
+        }).Valor;
+
+        var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor).Valor;
+        nueva.RefrescarMargenSugerido(0.15m, 0.18m, Cotifly.Dominio.Margen.OrigenMargen.SapTm);
+
+        nueva.TieneMargenNegociado.Should().BeTrue();
+        nueva.MargenAplicado.Should().Be(0.22m);
+        nueva.OrigenMargen.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.Negociado);
+        nueva.MargenSugerido.Should().Be(0.18m);
+        nueva.OrigenMargenSugerido.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.SapTm);
+        Enviada().CrearVersion(clsFolio.Desde("PCN-900555111-AP-05102026-001").Valor.ConVersion(2).Valor).Valor.MargenAplicado
+            .Should().BeNull("sin margen negociado, la versión resuelve el suyo al enviar");
+    }
+
+    [Fact]
     public void LosCambiosDeCargaSoloTocanLosCamposPresentesYUnNuloBorra()
     {
         var linea = Solicitud().ALinea();
