@@ -79,6 +79,11 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsAjusteMargenCosteoService, clsAjusteMargenCosteoService>();
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
         servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
+
+        // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
+        // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.
+        servicios.AddScoped<Redaccion.Services.IClsRedaccionCotizacionService, Redaccion.Services.clsRedaccionCotizacionService>();
+        servicios.AddScoped<IClsTextosCosteoService, clsTextosCosteoService>();
         servicios.AddScoped<IClsResultadoCotizacionService, clsResultadoCotizacionService>();
 
         // Licitaciones desde Excel (HU-011, ADR-017).
@@ -96,6 +101,7 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<clsHerramientasCotizador>();
         servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
         servicios.AddMetrics(); // IMeterFactory del medidor "Cotifly.Agente" (idempotente; el host web ya lo registra).
+        servicios.TryAddSingleton<clsInterruptorJsonSchema>();
         servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaAgente>();
         servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
         servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();

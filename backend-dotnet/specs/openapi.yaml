@@ -1612,8 +1612,7 @@ paths:
       operationId: redactarTextosCosteo
       tags: [web]
       summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
-      x-estado: pendiente
-      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
+      x-issue: '#101 (HU-013.5)'
       description: |
         HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
         negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
@@ -1667,12 +1666,11 @@ paths:
       operationId: editarTextosCosteo
       tags: [web]
       summary: El comercial edita el asunto y la introducción del PDF
-      x-estado: pendiente
-      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
+      x-issue: '#101 (HU-013.5)'
       description: |
         HU-013.5 (ADR-018 §2a). Guarda los textos que escribió el comercial (`editado = true`; `fuente` conserva el origen
         del texto que editó, o `estandar` si no había). Mismos límites que el redactor: asunto de 1 a 120 caracteres e
-        introducción de 1 a 900, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
+        introducción de 1 a 1100 (la IA, hasta 900), sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
         escribe el comercial, no la IA. Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si
         no, invalida el PDF actual. `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
@@ -3744,8 +3742,11 @@ components:
           maxLength: 120
         introduccion:
           type: string
-          maxLength: 900
-          description: Uno o más párrafos separados por una línea en blanco.
+          maxLength: 1100
+          description: |
+            Uno o más párrafos separados por una línea en blanco. La IA redacta hasta 900 caracteres y el comercial escribe
+            hasta 1100 (`TextosCotizacionWeb`); con `fuente = estandar` en un pliego llega la introducción estándar del PDF de
+            pliego (1026 caracteres, con viñetas `·`), la misma que imprime el PDF, y el comercial la puede guardar sin recortarla.
         fuente:
           type: string
           enum: [ia, estandar]
@@ -3771,7 +3772,8 @@ components:
         introduccion:
           type: string
           minLength: 1
-          maxLength: 900
+          maxLength: 1100
+          description: Hasta 1100 caracteres, como la respuesta (la introducción estándar del pliego mide 1026); la IA redacta hasta 900.
 
     PosicionCargaWeb:
       type: object

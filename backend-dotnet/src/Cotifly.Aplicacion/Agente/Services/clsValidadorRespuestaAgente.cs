@@ -49,15 +49,18 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
     private readonly Counter<long> _reintentos;
     private readonly Counter<long> _respaldos;
     private readonly Counter<long> _esquemaRechazado;
-    private long _sinEsquemaHastaTicks;
+    private readonly clsInterruptorJsonSchema _interruptor;
 
+    /// <param name="interruptor">Apagado del esquema compartido con el redactor de textos (HU-013.5); sin él, uno propio.</param>
     public clsValidadorRespuestaAgente(
-        IOptions<clsOpcionesAgente> opciones, ILogger<clsValidadorRespuestaAgente> logger, IMeterFactory medidores, IClsReloj reloj)
+        IOptions<clsOpcionesAgente> opciones, ILogger<clsValidadorRespuestaAgente> logger, IMeterFactory medidores, IClsReloj reloj,
+        clsInterruptorJsonSchema? interruptor = null)
     {
         ArgumentNullException.ThrowIfNull(medidores);
         _opciones = opciones;
         _logger = logger;
         _reloj = reloj;
+        _interruptor = interruptor ?? new clsInterruptorJsonSchema();
         Medidor = medidores.Create(NombreMedidor);
         _invalidas = Medidor.CreateCounter<long>(MetricaInvalidas, description: "Respuestas finales del modelo que no pasaron la validación (etiqueta motivo).");
         _reintentos = Medidor.CreateCounter<long>(MetricaReintentos, description: "Reintentos de la respuesta final por validación fallida.");
@@ -120,7 +123,7 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
     private async Task<(string? Texto, int Llamadas)> PedirAsync(
         IChatClient chat, IReadOnlyList<ChatMessage> mensajes, List<ChatMessage> correccion, CancellationToken cancellationToken)
     {
-        var conEsquema = _opciones.Value.SoportaJsonSchema && _reloj.AhoraUtc.UtcTicks >= Interlocked.Read(ref _sinEsquemaHastaTicks);
+        var conEsquema = _opciones.Value.SoportaJsonSchema && _interruptor.Habilitado(_reloj.AhoraUtc);
         try
         {
             var respuesta = await chat.GetResponseAsync(Conversacion(mensajes, correccion, conEsquema), Opciones(conEsquema), cancellationToken);
@@ -129,7 +132,7 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         catch (Exception ex) when (conEsquema && !cancellationToken.IsCancellationRequested && EsEsquemaNoSoportado(ex))
         {
             var minutos = _opciones.Value.MinutosSinJsonSchema;
-            Interlocked.Exchange(ref _sinEsquemaHastaTicks, _reloj.AhoraUtc.AddMinutes(minutos).UtcTicks);
+            _interruptor.Apagar(_reloj.AhoraUtc.AddMinutes(minutos));
             _esquemaRechazado.Add(1);
             _logger.LogWarning(
                 "El proveedor de IA rechazó response_format con JSON Schema ({Tipo}, estado {Estado}); la respuesta final se pide sin formato durante {Minutos} min y se valida igual.",

@@ -91,14 +91,16 @@ public sealed class clsApiWebPruebas : IDisposable
     /// <summary>
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
     /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red. Con <paramref name="dolarApi"/> y
-    /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas.
+    /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
+    /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real.
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
         clsNexoFalso nexo,
         IDictionary<string, string?>? extra = null,
         HttpMessageHandler? dolarApi = null,
-        HttpMessageHandler? superfinanciera = null)
+        HttpMessageHandler? superfinanciera = null,
+        Microsoft.Extensions.AI.IChatClient? modelo = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
@@ -115,6 +117,11 @@ public sealed class clsApiWebPruebas : IDisposable
             if (dolarApi is not null)
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => dolarApi);
+            }
+
+            if (modelo is not null)
+            {
+                s.AddSingleton(modelo);
             }
 
             if (superfinanciera is not null)

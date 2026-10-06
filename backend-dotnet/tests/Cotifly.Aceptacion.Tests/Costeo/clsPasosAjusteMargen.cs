@@ -20,6 +20,9 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private readonly Dictionary<string, string> _duenos = new(StringComparer.OrdinalIgnoreCase);
     private string? _etagGuardado;
 
+    /// <summary>ETag que guardó el paso "leyó el costeo de ... y guardó su ETag" (lo reutilizan los pasos de los textos, HU-013.5).</summary>
+    public string? EtagGuardado => _etagGuardado;
+
     [Given("{string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
     [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
     [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string} y Nexo no lo ha costeado")]

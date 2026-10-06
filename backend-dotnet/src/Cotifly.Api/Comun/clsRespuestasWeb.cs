@@ -62,6 +62,7 @@ public static class clsRespuestasWeb
         clsCodigosError.CosteoNoReintentable,
         clsCodigosError.CosteoNoListo,
         clsCodigosError.PdfYaGenerado,
+        clsCodigosError.TextosEditados,
         clsCodigosError.ResultadoYaDefinido,
         clsCodigosError.CotizacionNoEntregada,
         clsCodigosError.UsarResultadoNexo,

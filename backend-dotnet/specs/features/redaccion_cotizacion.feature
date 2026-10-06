@@ -3,10 +3,11 @@
 # POST /web/cotizaciones/{folio}/costeo/textos/redactar y PUT /web/cotizaciones/{folio}/costeo/textos. La IA nunca recibe
 # costos, margen ni precios; su salida se valida (sin montos, URL ni correos; asunto <= 120 y introducción <= 900
 # caracteres) y, si falla o tarda más de 15 s, se usa clsTextosEstandar. El PDF siempre sale. Con un IChatClient guionizado
-# (nunca un proveedor real), la API real en memoria y SQL Server 2019 en Testcontainers.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #101 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# (nunca un proveedor real), la API real en memoria y SQL Server 2019 en Testcontainers. Pasos en
+# tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosRedaccionCotizacion.cs. El formulario de los antecedentes es el de la línea
+# "Importacion" (política del 15 %: el flete de 2550000 queda en un precio de 3000000). La API de estos escenarios corre con
+# IA__TiempoRedaccionSegundos=1 (en producción, 15) para no esperar el tiempo máximo real.
+@integracion
 Característica: Redacción del asunto y la introducción de la cotización
   Como comercial de Botero Soto
   Quiero que la IA me proponga el asunto y la introducción del PDF y poder editarlos
@@ -29,11 +30,11 @@ Característica: Redacción del asunto y la introducción de la cotización
   Escenario: La IA nunca recibe costos, margen ni precios
     Dado que el modelo responde el asunto "Cotización transporte Buenaventura - Bogotá" y una introducción válida
     Cuando "ana" pide redactar los textos de "C1"
-    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Nacional", "Buenaventura", "Bogotá D.C." y la moneda "COP"
+    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Importacion", "Buenaventura", "Bogotá D.C." y la moneda "COP"
     Y el mensaje enviado al modelo no contiene "2550000", "3000000" ni "0.15"
 
   Escenario: Si la IA tarda más de 15 segundos se usa el texto estándar
-    Dado que el modelo tarda 16 segundos en responder
+    Dado que el modelo tarda más que el tiempo máximo de redacción
     Cuando "ana" pide redactar los textos de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "TextosCotizacion" del contrato
     Y los textos de "C1" tienen la fuente "estandar" y no están editados
@@ -53,6 +54,16 @@ Característica: Redacción del asunto y la introducción de la cotización
     Ejemplos:
       | salida                                                         |
       | una introducción que menciona "$ 3.000.000"                    |
+      | una introducción que menciona "2550000"                        |
+      | una introducción que menciona "una TRM de 3.987,65"            |
+      | una introducción que menciona "un margen del 15 %"             |
+      | una introducción que menciona "tres millones de pesos"         |
+      | una introducción que menciona "500 euros"                      |
+      | una introducción con el teléfono "300 123 4567"                |
+      | una introducción con la URL "botero[.]com"                     |
+      | una introducción con el correo "ventas (arroba) boterosoto"    |
+      | una introducción que promete "pago a 30 días"                  |
+      | una introducción que promete "una póliza de mercancías"        |
       | una introducción con la URL "https://ejemplo.com"              |
       | una introducción con el correo "alguien@ejemplo.com"           |
       | un asunto de 121 caracteres                                    |
@@ -76,6 +87,15 @@ Característica: Redacción del asunto y la introducción de la cotización
       | Asunto válido           |                                               |
       | Asunto válido           | Visite https://ejemplo.com para más detalles  |
       | Escriba a a@ejemplo.com | Introducción válida                           |
+
+  Esquema del escenario: El comercial escribe una introducción de hasta 1100 caracteres
+    Cuando "ana" guarda en "C1" el asunto "Propuesta de transporte" y una introducción de <caracteres> caracteres
+    Entonces la respuesta tiene el estado <estado>
+
+    Ejemplos:
+      | caracteres | estado |
+      | 1100       | 200    |
+      | 1101       | 400    |
 
   Escenario: El PDF imprime los textos guardados
     Dado que "ana" guardó en "C1" el asunto "Propuesta de transporte para Cliente SAS" y una introducción válida

@@ -38,8 +38,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["POST /web/cotizaciones/{folio}/costeo/textos/redactar"] = "#101 (HU-013.5)",
-        ["PUT /web/cotizaciones/{folio}/costeo/textos"] = "#101 (HU-013.5)",
     };
 
     /// <summary>
@@ -53,7 +51,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         {
             ["MensajeWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["folio"] = "#102 (HU-013.6)" },
             ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
-            ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["textos"] = "#101 (HU-013.5)" },
         };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -185,6 +182,8 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
+        { typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb" },
         { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos" },

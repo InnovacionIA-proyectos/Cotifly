@@ -182,6 +182,7 @@ services:
       IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}
       IA__Rpm: ${IA__Rpm:-8}
       IA__TimeoutSeg: ${IA__TimeoutSeg:-60}
+      IA__TiempoRedaccionSegundos: ${IA__TiempoRedaccionSegundos:-15}
       # Respaldos (ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute). Vacíos = sin respaldo.
       # Con OmniRoute: 0 = gemini/gemini-3.5-flash, 1 = gemini/gemini-3-flash-preview (mismo endpoint y clave). ApiKey: secreto.
       IA__Fallbacks__0__Proveedor: ${IA__Fallbacks__0__Proveedor:-}

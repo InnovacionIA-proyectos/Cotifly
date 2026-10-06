@@ -33,6 +33,8 @@
     -->
     <EmbeddedResource Include="Pdf\Recursos\Fuentes\*.ttf" LogicalName="Cotifly.Pdf.Fuentes.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Pdf\Recursos\Imagenes\*.jpg;Pdf\Recursos\Imagenes\*.png" LogicalName="Cotifly.Pdf.Imagenes.%(Filename)%(Extension)" />
+    <!-- Prompt de sistema del redactor del asunto y la introducción del PDF (HU-013.5, ADR-018 §2a). -->
+    <EmbeddedResource Include="Redaccion\Recursos\prompt_redactor_cotizacion.md" LogicalName="Cotifly.Redaccion.PromptRedactorCotizacion.md" />
     <!-- Licencia SIL OFL 1.1 de Liberation Sans: viaja con la aplicación publicada (licencias/ en la imagen). -->
     <None Include="Pdf\Recursos\Fuentes\LiberationSans-OFL.txt" Link="licencias\LiberationSans-OFL.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

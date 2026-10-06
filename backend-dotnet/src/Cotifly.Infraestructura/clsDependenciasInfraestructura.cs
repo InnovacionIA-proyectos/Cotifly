@@ -94,6 +94,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
         servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
+        servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
         servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
@@ -145,6 +146,9 @@ public static class clsDependenciasInfraestructura
     private static void AgregarAgente(IServiceCollection servicios)
     {
         servicios.TryAddSingleton<IChatClient>(clsChatClientFactory.Crear);
+
+        // Redactor del asunto y la introducción del PDF (HU-013.5) sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
+        servicios.TryAddScoped<Aplicacion.Redaccion.Interfaces.IClsRedactorCotizacion, Redaccion.Services.clsRedactorCotizacionLlm>();
         AgregarBuscadorClientes(servicios);
         servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 

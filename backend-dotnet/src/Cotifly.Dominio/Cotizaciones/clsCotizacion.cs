@@ -609,6 +609,16 @@ public sealed class clsCotizacion
     /// <summary>Guarda la selección de servicios conexos del comercial (JSON de <c>serviciosConexos</c>).</summary>
     public void SeleccionarServiciosConexos(string? serviciosConexos) => ServiciosConexos = serviciosConexos;
 
+    /// <summary>
+    /// Guarda el asunto y la introducción del PDF (JSON de <c>textosCotizacion</c>, HU-013.5, #101). Los valida Aplicación (longitud,
+    /// sin URL ni correos y, si los redactó la IA, sin montos); aquí solo se exige que no venga vacío.
+    /// </summary>
+    public void RegistrarTextos(string textosJson)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(textosJson);
+        TextosCotizacion = textosJson;
+    }
+
     /// <summary>Id de la cotización de Nexo recuperado fuera del polling (al marcar el resultado, HU-005.14).</summary>
     public void RegistrarCotizacionNexo(string cotizacionNexoId)
     {

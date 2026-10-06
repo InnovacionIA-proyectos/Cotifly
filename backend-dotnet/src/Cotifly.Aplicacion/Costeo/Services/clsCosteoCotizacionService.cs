@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Pdf.Validators;
+using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
@@ -47,8 +48,9 @@ public interface IClsCosteoCotizacionService
 
 /// <summary>
 /// <c>CosteoCotizacion</c>: estado del costeo y precios (sin costos de Nexo), el margen sugerido y su origen (HU-013.2), si el PDF
-/// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>) y la TRM fijada al crear
-/// (<see cref="TrmAplicada"/>, HU-013.7). En USD los precios ya vienen convertidos con esa TRM.
+/// quedó desactualizado (ADR-018 §11), la versión de la fila (<c>row_version</c>, también en el <c>ETag</c>), la TRM fijada al crear
+/// (<see cref="TrmAplicada"/>, HU-013.7; en USD los precios ya vienen convertidos con esa TRM) y el asunto y la introducción guardados
+/// para el PDF (<c>textos</c>, HU-013.5; <c>null</c> si todavía no hay).
 /// </summary>
 public sealed record clsCosteoCotizacion(
     string Folio,
@@ -63,7 +65,8 @@ public sealed record clsCosteoCotizacion(
     decimal? MargenSugerido,
     string? OrigenMargen,
     bool PdfDesactualizado,
-    string? RowVersion) : IClsConVersionFila
+    string? RowVersion,
+    clsTextosCotizacion? Textos = null) : IClsConVersionFila
 {
     /// <summary>HU-013.7: TRM fijada al crear la cotización (COP por USD) con que se convierten sus precios; 0 en COP.</summary>
     public decimal TrmAplicada { get; init; }
@@ -207,6 +210,7 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var payload = esPliego ? PayloadPliego(cotizacion, lineas, linea?.LineaNegocio, moneda) : Payload(cotizacion, linea?.LineaNegocio, moneda);
+        AplicarTextos(payload, cotizacion);
         var invalido = esPliego
             ? clsValidadorCotizacionPdfPayload.Validar(payload, MaximoLineasPliego, MaximoLineasPliego)
             : clsValidadorCotizacionPdfPayload.Validar(payload);
@@ -319,6 +323,40 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
+    /// Asunto e introducción que imprime el PDF de la cotización sin textos de la IA ni del comercial: los de tarifa única (con la
+    /// línea) o, en un pliego (<see cref="EsPliego"/>), el asunto de licitación y la introducción de <c>MultiSeccion</c>. Son el
+    /// respaldo del redactor (HU-013.5): lo que ve el comercial es exactamente lo que sale en el PDF.
+    /// </summary>
+    public static clsTextosBase TextosEstandar(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string? lineaNegocio)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        var esPliego = EsPliego(cotizacion, lineas);
+        return new clsTextosBase(
+            esPliego ? clsTextosEstandar.AsuntoLicitacion(cotizacion.Referencia, lineas.Count) : clsTextosEstandar.AsuntoEstandar(lineaNegocio),
+            clsTextosEstandar.IntroduccionEstandar(esPliego));
+    }
+
+    /// <summary>
+    /// HU-013.5 (ADR-018 §2a): el asunto y la introducción guardados (de la IA ya validados, o del comercial) reemplazan los del PDF.
+    /// Sin textos, o con los estándar sin editar, el PDF usa los suyos (los de <see cref="clsTextosEstandar"/> de su variante). Nunca
+    /// llama a la IA: el PDF siempre sale. Las condiciones, las notas legales y la nota de TRM no cambian.
+    /// </summary>
+    public static void AplicarTextos(clsCotizacionPdfPayload payload, clsCotizacion cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if (clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion) is not { } textos || !textos.ReemplazanLosDelPdf())
+        {
+            return;
+        }
+
+        payload.Asunto = textos.Asunto;
+        payload.Textos ??= new clsTextosPayload();
+        payload.Textos.Intro = [.. textos.Parrafos()];
+    }
+
+    /// <summary>
     /// Payload del PDF armado desde la cotización (nada del LLM ni del cliente): una fila con el origen, el destino, el vehículo y el
     /// precio final; los servicios conexos incluidos, cada uno con su precio (el PDF solo lista esos).
     /// </summary>
@@ -389,9 +427,7 @@ public sealed class clsCosteoCotizacionService(
             Cliente = cotizacion.ClienteNombre,
             LineaNegocio = lineaNegocio,
             MetodoCalculo = cotizacion.MetodoCalculo,
-            Asunto = cotizacion.Referencia is null
-                ? $"presentación oferta de servicios de Transporte para su licitación ({lineas.Count} rutas)"
-                : $"presentación oferta de servicios de Transporte para la licitación {cotizacion.Referencia} ({lineas.Count} rutas)",
+            Asunto = clsTextosEstandar.AsuntoLicitacion(cotizacion.Referencia, lineas.Count),
             Secciones = secciones,
             ServiciosConexos = incluidos.Count == 0
                 ? null
@@ -547,7 +583,8 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.MargenSugerido,
             cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.PdfDesactualizado,
-            VersionEtag(cotizacion))
+            VersionEtag(cotizacion),
+            clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
         {
             TrmAplicada = cotizacion.TrmAplicada,
         };
