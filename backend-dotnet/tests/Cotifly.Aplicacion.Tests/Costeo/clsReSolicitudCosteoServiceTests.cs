@@ -35,6 +35,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     private readonly IClsAuditoriaRepository _registro = Substitute.For<IClsAuditoriaRepository>();
     private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
     private readonly List<clsEventoHerramienta> _instantaneas = [];
+    private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m).Valor;
     private readonly List<string> _eventos = [];
@@ -57,6 +58,8 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizaciones.When(r => r.AgregarPosiciones(Arg.Any<IEnumerable<clsCotizacionPosicion>>()))
             .Do(ci => _posicionesAgregadas = [.. ci.Arg<IEnumerable<clsCotizacionPosicion>>()]);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
+        _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new clsMonedaFijada(ci.Arg<string?>() ?? "COP", ci.Arg<string?>() == "USD" ? 4_012.35m : 0m));
         _registro.When(r => r.Registrar(Arg.Any<clsEventoHerramienta>())).Do(ci =>
         {
             _eventos.Add("instantanea");
@@ -217,6 +220,55 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     [Fact]
+    public async Task LaVersionNuevaEnUsdFijaLaTrmDelDiaYLaOriginalConservaLaSuya()
+    {
+        EnDolares(_cotizacion, 3_900m);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _agregada!.Moneda.Should().Be("USD");
+        _agregada.TrmAplicada.Should().Be(4_012.35m, "la versión nueva es una cotización nueva: TRM del día");
+        _cotizacion.TrmAplicada.Should().Be(3_900m, "la original queda intacta");
+        await _monedas.Received(1).FijarAsync("USD", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SinTrmLaVersionNuevaEnUsdNoReservaNiCreaNadaNiLlamaANexo()
+    {
+        EnDolares(_cotizacion, 3_900m);
+        _monedas.FijarAsync("USD", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.TrmNoDisponible, "Ninguna fuente de la TRM respondió."));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible);
+        _cotizacion.VersionNegocio.Should().Be(Version, "sin TRM no se reserva la original");
+        _agregada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacion>(default, default, default!, Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default!, default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task EnElMismoFolioLaMonedaYLaTrmSeConservanSinConsultarLaTrm()
+    {
+        EnDolares(_cotizacion, 3_900m);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada(), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _cotizacion.TrmAplicada.Should().Be(3_900m);
+        await _monedas.DidNotReceiveWithAnyArgs().FijarAsync(default, Ct);
+    }
+
+    private static void EnDolares(clsCotizacion cotizacion, decimal trm)
+    {
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.Moneda))!.SetValue(cotizacion, "USD");
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.TrmAplicada))!.SetValue(cotizacion, trm);
+    }
+
+    [Fact]
     public async Task SiOtraPeticionGanaLaReservaDeLaOriginalNoSeCreaVersionNiSeLlamaANexo()
     {
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
@@ -334,7 +386,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     private clsReSolicitudCosteoService Servicio() =>
-        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _mis, _idempotencia, _unidad, _registro, _auditoria);
+        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria);
 
     private static clsEntradaReSolicitudCosteo Entrada() => new("El costeo venció", null, false);
 

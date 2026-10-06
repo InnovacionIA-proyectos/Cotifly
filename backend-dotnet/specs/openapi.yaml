@@ -1314,8 +1314,9 @@ paths:
           la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva. Un `error_envio` por un rechazo
           definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
           Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
-          (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). La versión nueva copia la moneda y la TRM
-          fijada de la original. Solo el dueño.
+          (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
+          mismo folio se conservan la moneda y la TRM fijadas; la versión nueva copia la moneda y fija la TRM del día antes de
+          reservar la original y de llamar a Nexo (sin TRM: 400 `TRM_NO_DISPONIBLE` y no se crea nada). Solo el dueño.
       security:
         - bearer: []
       parameters:
@@ -1357,7 +1358,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) o `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
           content:
             application/json:
               schema:

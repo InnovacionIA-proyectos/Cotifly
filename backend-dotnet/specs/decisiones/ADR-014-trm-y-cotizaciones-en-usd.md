@@ -114,6 +114,8 @@ La tabla muestra `US$` con 2 decimales. Debajo de la tabla, en un recuadro y **s
 - el PDF de pliego en USD sale con la misma nota del §4 (ya no se rechaza);
 - el Excel exportado indica la moneda en la columna del precio (`Precio final Cotifly (USD)`) y la TRM en el resumen.
 
+**Re-solicitud y versiones (HU-013.4, #100; decisión del usuario del 2026-10-06).** La TRM fijada de una cotización no cambia mientras siga siendo la misma cotización: re-solicitar el costeo en el mismo folio y `.../costeo/reintentar` conservan la moneda y la `trmAplicada`. En cambio, la versión nueva `-vN` es una cotización nueva: copia la moneda pero **vuelve a fijar la TRM del día** (`IClsFijacionMonedaService.FijarAsync`) antes de reservar la versión de la original y antes de llamar a Nexo; sin TRM, `TRM_NO_DISPONIBLE` (400, igual que el formulario y las licitaciones) y no se crea nada (ni la reserva, ni la `-vN`, ni la captura). Re-solicitar en el mismo folio y reintentar conservan la moneda y la TRM fijadas.
+
 ## Alternativas consideradas
 
 - **Solo la Superintendencia Financiera** (la decisión del 2026-09-28): fuente oficial, pero negocio pidió el 2026-10-05 usar DolarApi como principal. Queda como respaldo y como proveedor configurable.
