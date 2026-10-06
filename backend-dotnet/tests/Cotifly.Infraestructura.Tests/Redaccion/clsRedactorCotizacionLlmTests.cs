@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Cotifly.Aplicacion.Agente.Services;
-using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -17,14 +16,13 @@ using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Cotifly.Infraestructura.Tests.Redaccion;
 
 /// <summary>
 /// Redactor del asunto y la introducción del PDF (HU-013.5, ADR-018 §2a) de punta a punta sin red: <see cref="clsRedaccionCotizacionService"/>
 /// sobre <see cref="clsRedactorCotizacionLlm"/> y un <see cref="IChatClient"/> guionizado. La IA nunca recibe montos y, si tarda, falla
-/// o su salida no pasa la validación, salen los textos estándar.
+/// o su salida no pasa la validación, salen los textos estándar de la variante (exactamente los del PDF).
 /// </summary>
 public sealed class clsRedactorCotizacionLlmTests
 {
@@ -33,20 +31,24 @@ public sealed class clsRedactorCotizacionLlmTests
     private const string IntroIa = "Apreciado cliente: agradecemos la oportunidad de presentarle nuestra propuesta de transporte nacional.\n\n"
                                    + "Con gusto atenderemos su ruta en tractocamión 3S3, con el servicio de cargue incluido.";
 
+    private static readonly clsTextosBase _estandar = new("presentación oferta de servicios de Transporte Nacional", clsTextosEstandar.IntroduccionEstandar(false));
+
     private readonly clsChatClientGuionizado _modelo = new();
-    private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly clsOpcionesAgente _agente = new();
     private readonly clsOpcionesIA _ia = new() { Proveedor = "openai_compatible", Modelo = "gemini/gemini-3.5-flash-lite" };
     private readonly clsOpcionesRedaccion _redaccion = new();
+    private readonly clsInterruptorJsonSchema _interruptor = new();
+    private readonly clsRelojFalso _reloj = new();
+    private TimeProvider _tiempo = TimeProvider.System;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task UnaRespuestaValidaQuedaConFuenteIaSinRespaldoYSeAuditaSinLosTextos()
+    public async Task UnaRespuestaValidaQuedaConFuenteIaSinRespaldoConProveedorModeloYVersionDelPrompt()
     {
         _modelo.Responder(Json(AsuntoIa, IntroIa));
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
         resultado.Asunto.Should().Be(AsuntoIa);
@@ -54,62 +56,80 @@ public sealed class clsRedactorCotizacionLlmTests
         resultado.Respaldo.Should().BeFalse();
         resultado.Proveedor.Should().Be("openai_compatible");
         resultado.Modelo.Should().Be("gemini/gemini-3.5-flash-lite");
+        resultado.VersionPrompt.Should().Be(clsRedactorCotizacionLlm.VersionPrompt).And.HaveLength(16);
         var llamada = _modelo.Llamadas.Single();
         llamada.Opciones!.ResponseFormat.Should().BeOfType<ChatResponseFormatJson>()
             .Which.SchemaName.Should().Be(clsReglasTextosCotizacion.NombreEsquema, "con IA:SoportaJsonSchema la salida va con el esquema");
         llamada.Herramientas.Should().BeEmpty("el redactor no usa herramientas");
         llamada.Sistema.Should().Contain("Nunca escribas montos").And.Contain("No inventes condiciones");
-        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria,
-            Arg.Is<object?>(e => Json(e).Contains(Folio)),
-            Arg.Is<object?>(s => Json(s).Contains("\"respaldo\":false") && Json(s).Contains("openai_compatible")
-                                 && Json(s).Contains("duracion_ms") && !Json(s).Contains("Apreciado")),
-            true, Arg.Any<int>(), null);
     }
 
     [Fact]
-    public async Task LaIaNuncaRecibeCostosMargenPreciosNiLaTrm()
+    public async Task LaIaNuncaRecibeCostosMargenPreciosTrmNiElComercial()
     {
         _modelo.Responder(Json(AsuntoIa, IntroIa));
         var cotizacion = CotizacionCosteada();
 
-        await Servicio().RedactarAsync(Folio, clsTextosCosteoService.Contexto(cotizacion, "Nacional", [], "Ana Pérez"), Ct);
+        await Servicio().RedactarAsync(clsTextosCosteoService.Contexto(cotizacion, "Nacional", []), _estandar, Ct);
 
         var enviado = string.Join("\n", _modelo.Llamadas.Single().Mensajes.Select(m => m.Text));
         var usuario = _modelo.Llamadas.Single().Mensajes.Single(m => m.Role == ChatRole.User).Text;
         usuario.Should().Contain("CLIENTE SAS").And.Contain("Nacional").And.Contain("Buenaventura").And.Contain("Bogotá D.C.")
-            .And.Contain("3S3").And.Contain("Cargue").And.Contain("USD").And.Contain("Ana Pérez");
+            .And.Contain("3S3").And.Contain("Cargue").And.Contain("USD");
         foreach (var prohibido in new[] { "2550000", "2.550.000", "2550", "3000000", "3.000.000", "746", "0.15", "0,15", "4000", "4.000", "1500", "85000", "100000" })
         {
             enviado.Should().NotContain(prohibido, "la IA nunca recibe costos, margen, precios ni la TRM (ADR-018 §2a)");
         }
 
-        foreach (var campo in new[] { "costo", "precio", "margen", "trm", "folio", "nit" })
+        foreach (var campo in new[] { "costo", "precio", "margen", "trm", "folio", "nit", "comercial" })
         {
-            usuario.Should().NotContainEquivalentOf($"\"{campo}", "el contexto no tiene campos de dinero ni identificadores");
+            usuario.Should().NotContainEquivalentOf($"\"{campo}", "el contexto no tiene campos de dinero, identificadores ni el comercial");
         }
 
         using var json = JsonDocument.Parse(usuario[usuario.IndexOf('{', StringComparison.Ordinal)..]);
         json.RootElement.EnumerateObject().Select(p => p.Name).Should()
-            .BeEquivalentTo(["cliente", "linea_negocio", "rutas", "tipo_vehiculo", "conexos", "moneda", "comercial"]);
+            .BeEquivalentTo(["cliente", "linea_negocio", "rutas", "tipo_vehiculo", "conexos", "moneda"]);
     }
 
     [Fact]
-    public async Task SiLaIaTardaMasDelTiempoMaximoSeUsanLosTextosEstandar()
+    public void CadaTextoDelContextoLlegaRecortadoA150Caracteres()
     {
-        _redaccion.TiempoRedaccionSegundos = 1;
-        _modelo.Demorar(TimeSpan.FromSeconds(16)).Responder(Json(AsuntoIa, IntroIa));
+        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = Folio, ClienteNombre = new string('C', 300) }).Valor;
+        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
+            [new clsServicioConexoCosteo("CX-1", new string('X', 400), "logistico", 1m, 1m, 1m, true)]));
+
+        var contexto = clsTextosCosteoService.Contexto(cotizacion, new string('L', 200), []);
+
+        contexto.Cliente.Should().HaveLength(clsContextoRedaccion.LargoMaximoCampo);
+        contexto.LineaNegocio.Should().HaveLength(clsContextoRedaccion.LargoMaximoCampo);
+        contexto.Conexos.Single().Should().HaveLength(clsContextoRedaccion.LargoMaximoCampo);
+    }
+
+    [Fact]
+    public async Task SiLaIaTardaMasDelTiempoMaximoSeUsanLosEstandarSinEsperarLos15SegundosReales()
+    {
+        var tiempo = new clsTiempoManual();
+        _tiempo = tiempo;
+        _modelo.Demorar(TimeSpan.FromMinutes(5)).Responder(Json(AsuntoIa, IntroIa));
         var cronometro = Stopwatch.StartNew();
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var tarea = Servicio().RedactarAsync(Contexto(), _estandar, Ct);
+        while (tiempo.Pendientes < 2 && cronometro.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            await Task.Delay(10, Ct);
+        }
 
-        cronometro.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "no espera los 16 s del modelo");
+        tiempo.Avanzar(TimeSpan.FromSeconds(14));
+        tarea.IsCompleted.Should().BeFalse("a los 14 s todavía espera al modelo");
+        tiempo.Avanzar(TimeSpan.FromSeconds(1));
+        var resultado = await tarea.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        cronometro.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "el tiempo máximo corre sobre el TimeProvider inyectado");
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteEstandar);
         resultado.Respaldo.Should().BeTrue();
         resultado.MotivoRespaldo.Should().Be(clsRedaccionCotizacionService.MotivoTiempoAgotado);
-        resultado.Asunto.Should().Be(clsTextosEstandar.AsuntoEstandar("Nacional"));
-        resultado.Introduccion.Should().Be(clsTextosEstandar.IntroduccionEstandar);
-        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria, Arg.Any<object?>(),
-            Arg.Is<object?>(s => Json(s).Contains("\"respaldo\":true") && Json(s).Contains("tiempo_agotado")), true, Arg.Any<int>(), null);
+        resultado.Asunto.Should().Be(_estandar.Asunto);
+        resultado.Introduccion.Should().Be(_estandar.Introduccion);
     }
 
     [Fact]
@@ -117,19 +137,20 @@ public sealed class clsRedactorCotizacionLlmTests
     {
         _modelo.Fallar(new HttpRequestException("Service Unavailable", null, HttpStatusCode.ServiceUnavailable));
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteEstandar);
         resultado.MotivoRespaldo.Should().Be(clsRedaccionCotizacionService.MotivoIaNoDisponible);
     }
 
     [Fact]
-    public async Task SinIaConfiguradaSeUsanLosTextosEstandarYSeAuditaNoConfigurado()
+    public async Task SinIaConfiguradaSeUsanLosTextosEstandarYSeInformaNoConfigurado()
     {
         using var sinIa = clsChatClientFactory.Crear(new clsOpcionesIA(), NullLoggerFactory.Instance, TimeProvider.System);
-        var redactor = new clsRedactorCotizacionLlm(sinIa, Options.Create(_agente), Options.Create(new clsOpcionesIA()), NullLogger<clsRedactorCotizacionLlm>.Instance);
+        var redactor = new clsRedactorCotizacionLlm(sinIa, Options.Create(_agente), Options.Create(new clsOpcionesIA()), _interruptor, _reloj,
+            NullLogger<clsRedactorCotizacionLlm>.Instance);
 
-        var resultado = await Servicio(redactor).RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio(redactor).RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteEstandar);
         resultado.Proveedor.Should().Be(clsRedactorCotizacionLlm.NoConfigurado);
@@ -139,9 +160,27 @@ public sealed class clsRedactorCotizacionLlmTests
     {
         { Json(AsuntoIa, "Nuestra tarifa es de $ 3.000.000 por viaje."), clsReglasTextosCotizacion.Monto },
         { Json(AsuntoIa, "El valor del flete es 3.000.000 COP."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "El flete queda en 2550000 para su ruta."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "Cotizamos con una TRM de 3.987,65 para su operación."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "Aplicamos un margen del 15 % en esta ruta."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "Tiene un 10% de beneficio en esta ruta."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "La propuesta asciende a tres millones de pesos."), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "El servicio vale 500 euros por viaje."), clsReglasTextosCotizacion.Monto },
+        { Json("Cotización en dólares", IntroIa), clsReglasTextosCotizacion.Monto },
+        { Json(AsuntoIa, "Comuníquese al 300 123 4567 para coordinar."), clsReglasTextosCotizacion.Telefono },
+        { Json(AsuntoIa, "Llámenos a nuestro celular para coordinar."), clsReglasTextosCotizacion.Telefono },
         { Json(AsuntoIa, "Conozca más en https://ejemplo.com sobre nosotros."), clsReglasTextosCotizacion.Url },
         { Json(AsuntoIa, "Visite www.ejemplo.com.co para más información."), clsReglasTextosCotizacion.Url },
+        { Json(AsuntoIa, "Visite botero[.]com para más información."), clsReglasTextosCotizacion.Url },
+        { Json(AsuntoIa, "Visite boterosoto punto com para más información."), clsReglasTextosCotizacion.Url },
         { Json(AsuntoIa, "Escríbanos a alguien@ejemplo.com con sus dudas."), clsReglasTextosCotizacion.Correo },
+        { Json(AsuntoIa, "Escríbanos a ventas (arroba) boterosoto con sus dudas."), clsReglasTextosCotizacion.Correo },
+        { Json(AsuntoIa, "Su carga viaja asegurada durante todo el trayecto."), clsReglasTextosCotizacion.CondicionNoPermitida },
+        { Json(AsuntoIa, "Incluimos póliza de mercancías para su operación."), clsReglasTextosCotizacion.CondicionNoPermitida },
+        { Json(AsuntoIa, "Ofrecemos pago a sesenta días sin recargo."), clsReglasTextosCotizacion.CondicionNoPermitida },
+        { Json(AsuntoIa, "Le damos un descuento especial por ser cliente."), clsReglasTextosCotizacion.CondicionNoPermitida },
+        { Json(AsuntoIa, "Garantizamos la entrega en 3 días hábiles."), clsReglasTextosCotizacion.CondicionNoPermitida },
+        { Json(AsuntoIa, "La oferta tiene vigencia hasta fin de mes."), clsReglasTextosCotizacion.CondicionNoPermitida },
         { Json(new string('a', 121), IntroIa), clsReglasTextosCotizacion.AsuntoLargo },
         { Json(AsuntoIa, new string('b', 901)), clsReglasTextosCotizacion.IntroduccionLarga },
         { Json(" ", IntroIa), clsReglasTextosCotizacion.AsuntoVacio },
@@ -159,11 +198,22 @@ public sealed class clsRedactorCotizacionLlmTests
     {
         _modelo.Responder(salida);
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteEstandar);
         resultado.MotivoRespaldo.Should().Be(motivo);
-        resultado.Introduccion.Should().Be(clsTextosEstandar.IntroduccionEstandar);
+        resultado.Introduccion.Should().Be(_estandar.Introduccion);
+    }
+
+    [Fact]
+    public async Task LosNombresDelContextoNoCuentanComoCifras()
+    {
+        var contexto = Contexto() with { Cliente = "3M Colombia S.A.", Conexos = ["Escolta 2000"] };
+        _modelo.Responder(Json("Cotización para 3M Colombia S.A.", "Apreciado equipo de 3M Colombia S.A.: incluimos el servicio Escolta 2000 en su ruta."));
+
+        var resultado = await Servicio().RedactarAsync(contexto, _estandar, Ct);
+
+        resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteIa, "los textos que vienen literalmente del contexto se permiten");
     }
 
     [Fact]
@@ -171,7 +221,7 @@ public sealed class clsRedactorCotizacionLlmTests
     {
         _modelo.Responder("```json\n" + Json("  Cotización   transporte\nBuenaventura  ", "Párrafo uno\ncontinúa.\n\n\n\nPárrafo dos.") + "\n```");
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
         resultado.Asunto.Should().Be("Cotización transporte Buenaventura");
@@ -184,7 +234,7 @@ public sealed class clsRedactorCotizacionLlmTests
         _agente.SoportaJsonSchema = false;
         _modelo.Responder(Json(AsuntoIa, IntroIa));
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var resultado = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
         resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
         var llamada = _modelo.Llamadas.Single();
@@ -193,20 +243,27 @@ public sealed class clsRedactorCotizacionLlmTests
     }
 
     [Fact]
-    public async Task SiElProveedorRechazaElEsquemaSeRepiteUnaVezSinFormato()
+    public async Task SiElProveedorRechazaElEsquemaSeRepiteSinFormatoYSeApagaParaLasSiguientes()
     {
         _modelo.RechazarJsonSchema(new HttpRequestException("Invalid parameter: 'response_format' of type 'json_schema' is not supported.", null, HttpStatusCode.BadRequest))
+            .Responder(Json(AsuntoIa, IntroIa))
             .Responder(Json(AsuntoIa, IntroIa));
 
-        var resultado = await Servicio().RedactarAsync(Folio, Contexto(), Ct);
+        var primera = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
+        var segunda = await Servicio().RedactarAsync(Contexto(), _estandar, Ct);
 
-        resultado.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
-        _modelo.Llamadas.Should().HaveCount(2);
-        _modelo.Llamadas[1].Opciones!.ResponseFormat.Should().BeNull();
+        primera.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
+        segunda.Fuente.Should().Be(clsTextosCotizacion.FuenteIa);
+        _modelo.Llamadas.Should().HaveCount(3, "la segunda redacción ya no envía el esquema rechazado");
+        _modelo.Llamadas[2].Opciones!.ResponseFormat.Should().BeNull();
+        _interruptor.Habilitado(_reloj.AhoraUtc).Should().BeFalse("el apagado lo comparte con el agente");
+
+        _reloj.Avanzar(TimeSpan.FromMinutes(_agente.MinutosSinJsonSchema));
+        _interruptor.Habilitado(_reloj.AhoraUtc).Should().BeTrue("pasado IA:MinutosSinJsonSchema se vuelve a probar con esquema");
     }
 
     [Fact]
-    public void ConJsonSchemaEstrictoElEsquemaNoTraeLongitudesYMarcaStrict()
+    public void ConJsonSchemaEstrictoElEsquemaNoTraeLongitudes()
     {
         clsReglasTextosCotizacion.EsquemaEstricto.GetRawText().Should().NotContain("maxLength");
         clsReglasTextosCotizacion.Esquema.GetRawText().Should().Contain("\"maxLength\":120").And.Contain("\"maxLength\":900");
@@ -220,14 +277,14 @@ public sealed class clsRedactorCotizacionLlmTests
     }
 
     private clsRedaccionCotizacionService Servicio(clsRedactorCotizacionLlm? redactor = null) => new(
-        redactor ?? new clsRedactorCotizacionLlm(_modelo, Options.Create(_agente), Options.Create(_ia), NullLogger<clsRedactorCotizacionLlm>.Instance),
-        _auditoria,
+        redactor ?? new clsRedactorCotizacionLlm(_modelo, Options.Create(_agente), Options.Create(_ia), _interruptor, _reloj,
+            NullLogger<clsRedactorCotizacionLlm>.Instance),
         Options.Create(_redaccion),
-        TimeProvider.System,
+        _tiempo,
         NullLogger<clsRedaccionCotizacionService>.Instance);
 
     private static clsContextoRedaccion Contexto() =>
-        new("CLIENTE SAS", "Nacional", [new clsRutaRedaccion("Buenaventura", "Bogotá D.C.")], "3S3", ["Cargue"], "COP", "Ana Pérez");
+        new("CLIENTE SAS", "Nacional", [new clsRutaRedaccion("Buenaventura", "Bogotá D.C.")], "3S3", ["Cargue"], "COP");
 
     /// <summary>Cotización en USD costeada (costo 2.550.000, margen 15 %, precio 746 USD con TRM 4.000) y un conexo incluido.</summary>
     private static clsCotizacion CotizacionCosteada()
@@ -258,6 +315,4 @@ public sealed class clsRedactorCotizacionLlmTests
 
     private static string Json(string asunto, string introduccion) =>
         JsonSerializer.Serialize(new { asunto, introduccion }, clsReglasRespuestaAgente.OpcionesJson);
-
-    private static string Json(object? valor) => clsAuditoriaService.AJson(valor!);
 }

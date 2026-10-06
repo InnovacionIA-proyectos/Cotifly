@@ -29,16 +29,23 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     [Given("que el modelo responde el asunto {string} y una introducción válida")]
     public void DadoQueElModeloResponde(string asunto) => Modelo.Responder(Json(asunto, IntroduccionValida));
 
-    [Given("que el modelo tarda {int} segundos en responder")]
-    public void DadoQueElModeloTarda(int segundos) =>
-        Modelo.Demorar(TimeSpan.FromSeconds(segundos)).Responder(Json("Cotización tardía", IntroduccionValida));
+    /// <summary>La API de aceptación corre con <c>IA:TiempoRedaccionSegundos = 1</c> (<see cref="clsPasosCosteo"/>): el modelo tarda 2 s.</summary>
+    [Given("que el modelo tarda más que el tiempo máximo de redacción")]
+    public void DadoQueElModeloTarda() =>
+        Modelo.Demorar(TimeSpan.FromSeconds(clsPasosCosteo.TiempoRedaccionSegundos + 1)).Responder(Json("Cotización tardía", IntroduccionValida));
+
+    [Given("que el modelo responde una introducción con el teléfono {string}")]
+    public void DadoUnaIntroduccionConTelefono(string telefono) => Modelo.Responder(Json("Cotización de transporte", $"Comuníquese al {telefono}."));
+
+    [Given("que el modelo responde una introducción que promete {string}")]
+    public void DadoUnaIntroduccionConCondicion(string condicion) => Modelo.Responder(Json("Cotización de transporte", $"Le ofrecemos {condicion}."));
 
     [Given("que el modelo falla con un error {int}")]
     public void DadoQueElModeloFalla(int estado) =>
         Modelo.Fallar(new HttpRequestException($"El proveedor respondió {estado}.", null, (HttpStatusCode)estado));
 
     [Given("que el modelo responde una introducción que menciona {string}")]
-    public void DadoUnaIntroduccionConMonto(string texto) => Modelo.Responder(Json("Cotización de transporte", $"Nuestra tarifa es {texto} por viaje."));
+    public void DadoUnaIntroduccionConMonto(string texto) => Modelo.Responder(Json("Cotización de transporte", $"Nuestra propuesta considera {texto}."));
 
     [Given("que el modelo responde una introducción con la URL {string}")]
     public void DadoUnaIntroduccionConUrl(string url) => Modelo.Responder(Json("Cotización de transporte", $"Conozca más en {url} sobre nosotros."));
@@ -129,7 +136,7 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     {
         var mensaje = MensajeUsuario();
         mensaje.Should().Contain("CLIENTE 900555111 S.A.S.").And.Contain($"\"{linea}\"").And.Contain(origen).And.Contain(destino)
-            .And.Contain($"\"{moneda}\"");
+            .And.Contain($"\"{moneda}\"").And.NotContain("comercial", "el nombre del comercial no va al proveedor (minimización)");
     }
 
     [Then("el mensaje enviado al modelo no contiene {string}, {string} ni {string}")]

@@ -3721,8 +3721,11 @@ components:
           maxLength: 120
         introduccion:
           type: string
-          maxLength: 900
-          description: Uno o más párrafos separados por una línea en blanco.
+          maxLength: 1100
+          description: |
+            Uno o más párrafos separados por una línea en blanco. La IA y el comercial escriben hasta 900 caracteres
+            (`TextosCotizacionWeb`); con `fuente = estandar` en un pliego llega la introducción estándar del PDF de pliego
+            (1026 caracteres, con viñetas `·`), la misma que imprime el PDF.
         fuente:
           type: string
           enum: [ia, estandar]

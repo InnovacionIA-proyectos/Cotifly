@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using Cotifly.Aplicacion.Auditoria.Services;
-using Cotifly.Aplicacion.Pdf.Services;
+using System.Security.Cryptography;
+using System.Text;
 using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Aplicacion.Redaccion.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -14,39 +14,42 @@ namespace Cotifly.Aplicacion.Redaccion.Services;
 /// </summary>
 public interface IClsRedaccionCotizacionService
 {
+    /// <summary>Versión (hash) del prompt del redactor, para la auditoría.</summary>
+    string VersionPrompt { get; }
+
     /// <summary>
     /// Pide los textos a <see cref="IClsRedactorCotizacion"/> con el tiempo máximo de <see cref="clsOpcionesRedaccion"/>. Si tarda, falla
-    /// o la salida no pasa <see cref="clsReglasTextosCotizacion"/>, devuelve los de <see cref="clsTextosEstandar"/> con
-    /// <c>fuente = estandar</c>. Audita la redacción de <paramref name="folio"/>. Solo la cancelación del llamador se propaga.
+    /// o la salida no pasa <see cref="clsReglasTextosCotizacion"/>, devuelve <paramref name="estandar"/> (exactamente los que imprime el
+    /// PDF de la variante) con <c>fuente = estandar</c>. Solo la cancelación del llamador se propaga. No audita: lo hace el caso de
+    /// uso después de guardar, con el resultado de la escritura.
     /// </summary>
-    Task<clsResultadoRedaccion> RedactarAsync(string folio, clsContextoRedaccion contexto, CancellationToken cancellationToken = default);
+    Task<clsResultadoRedaccion> RedactarAsync(clsContextoRedaccion contexto, clsTextosBase estandar, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Implementación de <see cref="IClsRedaccionCotizacionService"/>. La espera se corta con el tiempo máximo aunque el proveedor no
-/// atienda la cancelación (<see cref="Task.WaitAsync(TimeSpan, TimeProvider, CancellationToken)"/>). La auditoría
-/// (<c>EventosHerramienta</c>, <see cref="HerramientaAuditoria"/>) guarda el folio, el proveedor, el modelo, la duración, la fuente, si
-/// hubo respaldo y su motivo; nunca los textos ni el contexto (nombres del cliente y del comercial). Va sin <c>ThreadId</c>, como la
-/// re-solicitud (#100): el asistente no la ve.
+/// Implementación de <see cref="IClsRedaccionCotizacionService"/>. El tiempo máximo corre sobre el <see cref="TimeProvider"/> inyectado
+/// (las pruebas lo adelantan sin esperar) y corta la espera aunque el proveedor no atienda la cancelación
+/// (<see cref="Task.WaitAsync(TimeSpan, TimeProvider, CancellationToken)"/>).
 /// </summary>
 public sealed class clsRedaccionCotizacionService(
     IClsRedactorCotizacion redactor,
-    IClsAuditoriaService auditoria,
     IOptions<clsOpcionesRedaccion> opciones,
     TimeProvider tiempo,
     ILogger<clsRedaccionCotizacionService> logger) : IClsRedaccionCotizacionService
 {
-    /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
+    /// <summary>Herramienta de la auditoría de la redacción (<c>EventosHerramienta.herramienta</c>; la registra el caso de uso).</summary>
     public const string HerramientaAuditoria = "redactar_textos_costeo";
 
     // Motivos del respaldo que no son de validación (los de validación son los de clsReglasTextosCotizacion).
     public const string MotivoTiempoAgotado = "tiempo_agotado";
     public const string MotivoIaNoDisponible = "ia_no_disponible";
 
-    public async Task<clsResultadoRedaccion> RedactarAsync(string folio, clsContextoRedaccion contexto, CancellationToken cancellationToken = default)
+    public string VersionPrompt => redactor.Identidad.VersionPrompt;
+
+    public async Task<clsResultadoRedaccion> RedactarAsync(clsContextoRedaccion contexto, clsTextosBase estandar, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(folio);
         ArgumentNullException.ThrowIfNull(contexto);
+        ArgumentNullException.ThrowIfNull(estandar);
         var identidad = redactor.Identidad;
         var limite = TimeSpan.FromSeconds(opciones.Value.TiempoRedaccionSegundos);
         var cronometro = Stopwatch.StartNew();
@@ -54,14 +57,14 @@ public sealed class clsRedaccionCotizacionService(
         string? motivo;
         clsValidacionTextosCotizacion? validacion = null;
 
-        using (var corte = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        using (var plazo = new CancellationTokenSource(limite, tiempo))
+        using (var corte = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, plazo.Token))
         {
-            corte.CancelAfter(limite);
             try
             {
                 var respuesta = await redactor.RedactarAsync(contexto, corte.Token).WaitAsync(limite, tiempo, cancellationToken);
                 modelo = respuesta.Modelo;
-                validacion = clsReglasTextosCotizacion.InterpretarSalidaIa(respuesta.Texto);
+                validacion = clsReglasTextosCotizacion.InterpretarSalidaIa(respuesta.Texto, Permitidos(contexto));
                 motivo = validacion.Motivo;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -81,35 +84,31 @@ public sealed class clsRedaccionCotizacionService(
         }
 
         var duracion = (int)Math.Min(int.MaxValue, cronometro.ElapsedMilliseconds);
-        var respaldo = motivo is not null;
-        if (respaldo)
+        if (motivo is not null)
         {
-            logger.LogInformation("La redacción del folio {Folio} usa los textos estándar: {Motivo}.", folio, motivo);
+            logger.LogInformation("La redacción usa los textos estándar: {Motivo}.", motivo);
+            return new clsResultadoRedaccion(estandar.Asunto, estandar.Introduccion, clsTextosCotizacion.FuenteEstandar,
+                identidad.Proveedor, modelo ?? identidad.Modelo, identidad.VersionPrompt, duracion, Respaldo: true, motivo);
         }
 
-        var resultado = respaldo
-            ? new clsResultadoRedaccion(
-                clsTextosEstandar.AsuntoEstandar(contexto.LineaNegocio), clsTextosEstandar.IntroduccionEstandar, clsTextosCotizacion.FuenteEstandar,
-                identidad.Proveedor, modelo ?? identidad.Modelo, duracion, Respaldo: true, motivo)
-            : new clsResultadoRedaccion(
-                validacion!.Asunto!, validacion.Introduccion!, clsTextosCotizacion.FuenteIa,
-                identidad.Proveedor, modelo ?? identidad.Modelo, duracion, Respaldo: false, null);
+        return new clsResultadoRedaccion(validacion!.Asunto!, validacion.Introduccion!, clsTextosCotizacion.FuenteIa,
+            identidad.Proveedor, modelo ?? identidad.Modelo, identidad.VersionPrompt, duracion, Respaldo: false, null);
+    }
 
-        await auditoria.RegistrarAsync(
-            HerramientaAuditoria,
-            new { folio },
-            new
-            {
-                proveedor = resultado.Proveedor,
-                modelo = resultado.Modelo,
-                duracion_ms = duracion,
-                fuente = resultado.Fuente,
-                respaldo,
-                motivo_respaldo = motivo,
-            },
-            exito: true,
-            duracion,
-            threadId: null);
-        return resultado;
+    /// <summary>Textos del contexto que el modelo puede repetir literalmente (no cuentan como cifras en la validación).</summary>
+    public static IEnumerable<string?> Permitidos(clsContextoRedaccion contexto)
+    {
+        ArgumentNullException.ThrowIfNull(contexto);
+        return new[] { contexto.Cliente, contexto.LineaNegocio, contexto.TipoVehiculo }
+            .Concat(contexto.Rutas.SelectMany(r => new[] { r.Origen, r.Destino }))
+            .Concat(contexto.Conexos);
+    }
+
+    /// <summary>SHA-256 (hexadecimal en minúsculas) del asunto y la introducción: identifica el texto en la auditoría sin guardarlo.</summary>
+    public static string Huella(string asunto, string introduccion)
+    {
+        ArgumentNullException.ThrowIfNull(asunto);
+        ArgumentNullException.ThrowIfNull(introduccion);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(asunto + "\n\n" + introduccion)));
     }
 }

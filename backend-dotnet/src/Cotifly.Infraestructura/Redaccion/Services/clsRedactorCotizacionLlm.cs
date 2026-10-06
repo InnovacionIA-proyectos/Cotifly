@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Cotifly.Aplicacion.Agente.Services;
+using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Aplicacion.Redaccion.Interfaces;
 using Cotifly.Aplicacion.Redaccion.Services;
@@ -20,13 +21,17 @@ namespace Cotifly.Infraestructura.Redaccion.Services;
 /// conoce la cotización.</item>
 /// <item>Formato: <c>response_format</c> con el JSON Schema de <see cref="clsReglasTextosCotizacion"/> si <c>IA:SoportaJsonSchema</c>
 /// (estricto con <c>IA:JsonSchemaEstricto</c>); si no, o si el proveedor rechaza el esquema (400/422), el esquema va en la instrucción
-/// y la llamada se repite una vez sin formato. La validación de la salida la hace siempre Aplicación.</item>
+/// y la llamada se repite una vez sin formato. El rechazo apaga el esquema <c>IA:MinutosSinJsonSchema</c> en el
+/// <see cref="clsInterruptorJsonSchema"/> que comparte con el agente, así ninguno repite la llamada rechazada. La validación de la
+/// salida la hace siempre Aplicación.</item>
 /// </list>
 /// </summary>
 public sealed class clsRedactorCotizacionLlm(
     IChatClient chat,
     IOptions<clsOpcionesAgente> agente,
     IOptions<clsOpcionesIA> ia,
+    clsInterruptorJsonSchema interruptor,
+    IClsReloj reloj,
     ILogger<clsRedactorCotizacionLlm> logger) : IClsRedactorCotizacion
 {
     public const string NombreRecurso = "Cotifly.Redaccion.PromptRedactorCotizacion.md";
@@ -38,6 +43,11 @@ public sealed class clsRedactorCotizacionLlm(
     public const string NoConfigurado = "no_configurado";
 
     private static readonly Lazy<string> _prompt = new(CargarPrompt);
+    private static readonly Lazy<string> _versionPrompt = new(() =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Prompt)))[..16]);
+
+    /// <summary>Versión del prompt: los primeros 16 caracteres hexadecimales de su SHA-256 (cambia con cualquier edición).</summary>
+    public static string VersionPrompt => _versionPrompt.Value;
 
     /// <summary>Prompt de sistema del redactor (recurso embebido).</summary>
     public static string Prompt => _prompt.Value;
@@ -49,14 +59,15 @@ public sealed class clsRedactorCotizacionLlm(
             var metadatos = chat.GetService(typeof(ChatClientMetadata)) as ChatClientMetadata;
             return new clsIdentidadRedactor(
                 Vacio(ia.Value.Proveedor) ?? Vacio(metadatos?.ProviderName) ?? NoConfigurado,
-                Vacio(ia.Value.Modelo) ?? Vacio(metadatos?.DefaultModelId) ?? NoConfigurado);
+                Vacio(ia.Value.Modelo) ?? Vacio(metadatos?.DefaultModelId) ?? NoConfigurado,
+                VersionPrompt);
         }
     }
 
     public async Task<clsRespuestaRedactor> RedactarAsync(clsContextoRedaccion contexto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(contexto);
-        var conEsquema = agente.Value.SoportaJsonSchema;
+        var conEsquema = agente.Value.SoportaJsonSchema && interruptor.Habilitado(reloj.AhoraUtc);
         try
         {
             var respuesta = await chat.GetResponseAsync(Mensajes(contexto, conEsquema), Opciones(conEsquema), cancellationToken);
@@ -64,7 +75,10 @@ public sealed class clsRedactorCotizacionLlm(
         }
         catch (Exception ex) when (conEsquema && !cancellationToken.IsCancellationRequested && clsValidadorRespuestaAgente.EsEsquemaNoSoportado(ex))
         {
-            logger.LogWarning("El proveedor de IA rechazó el JSON Schema del redactor ({Tipo}); se repite sin formato.", ex.GetType().Name);
+            interruptor.Apagar(reloj.AhoraUtc.AddMinutes(agente.Value.MinutosSinJsonSchema));
+            logger.LogWarning(
+                "El proveedor de IA rechazó el JSON Schema del redactor ({Tipo}); se repite sin formato y se apaga {Minutos} min.",
+                ex.GetType().Name, agente.Value.MinutosSinJsonSchema);
             var respuesta = await chat.GetResponseAsync(Mensajes(contexto, conEsquema: false), Opciones(conEsquema: false), cancellationToken);
             return new clsRespuestaRedactor(respuesta.Text, respuesta.ModelId);
         }

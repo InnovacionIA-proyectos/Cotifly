@@ -99,6 +99,7 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<clsHerramientasCotizador>();
         servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
         servicios.AddMetrics(); // IMeterFactory del medidor "Cotifly.Agente" (idempotente; el host web ya lo registra).
+        servicios.TryAddSingleton<clsInterruptorJsonSchema>();
         servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaAgente>();
         servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
         servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();

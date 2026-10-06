@@ -318,6 +318,21 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
+    /// Asunto e introducción que imprime el PDF de la cotización sin textos de la IA ni del comercial: los de tarifa única (con la
+    /// línea) o, en un pliego (<see cref="EsPliego"/>), el asunto de licitación y la introducción de <c>MultiSeccion</c>. Son el
+    /// respaldo del redactor (HU-013.5): lo que ve el comercial es exactamente lo que sale en el PDF.
+    /// </summary>
+    public static clsTextosBase TextosEstandar(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string? lineaNegocio)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        var esPliego = EsPliego(cotizacion, lineas);
+        return new clsTextosBase(
+            esPliego ? clsTextosEstandar.AsuntoLicitacion(cotizacion.Referencia, lineas.Count) : clsTextosEstandar.AsuntoEstandar(lineaNegocio),
+            clsTextosEstandar.IntroduccionEstandar(esPliego));
+    }
+
+    /// <summary>
     /// HU-013.5 (ADR-018 §2a): el asunto y la introducción guardados (de la IA ya validados, o del comercial) reemplazan los del PDF.
     /// Sin textos, o con los estándar sin editar, el PDF usa los suyos (los de <see cref="clsTextosEstandar"/> de su variante). Nunca
     /// llama a la IA: el PDF siempre sale. Las condiciones, las notas legales y la nota de TRM no cambian.
@@ -407,9 +422,7 @@ public sealed class clsCosteoCotizacionService(
             Cliente = cotizacion.ClienteNombre,
             LineaNegocio = lineaNegocio,
             MetodoCalculo = cotizacion.MetodoCalculo,
-            Asunto = cotizacion.Referencia is null
-                ? $"presentación oferta de servicios de Transporte para su licitación ({lineas.Count} rutas)"
-                : $"presentación oferta de servicios de Transporte para la licitación {cotizacion.Referencia} ({lineas.Count} rutas)",
+            Asunto = clsTextosEstandar.AsuntoLicitacion(cotizacion.Referencia, lineas.Count),
             Secciones = secciones,
             ServiciosConexos = incluidos.Count == 0
                 ? null

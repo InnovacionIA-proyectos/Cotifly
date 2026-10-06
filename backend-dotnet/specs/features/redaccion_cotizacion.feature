@@ -5,7 +5,8 @@
 # caracteres) y, si falla o tarda más de 15 s, se usa clsTextosEstandar. El PDF siempre sale. Con un IChatClient guionizado
 # (nunca un proveedor real), la API real en memoria y SQL Server 2019 en Testcontainers. Pasos en
 # tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosRedaccionCotizacion.cs. El formulario de los antecedentes es el de la línea
-# "Importacion" (política del 15 %: el flete de 2550000 queda en un precio de 3000000).
+# "Importacion" (política del 15 %: el flete de 2550000 queda en un precio de 3000000). La API de estos escenarios corre con
+# IA__TiempoRedaccionSegundos=1 (en producción, 15) para no esperar el tiempo máximo real.
 @integracion
 Característica: Redacción del asunto y la introducción de la cotización
   Como comercial de Botero Soto
@@ -33,7 +34,7 @@ Característica: Redacción del asunto y la introducción de la cotización
     Y el mensaje enviado al modelo no contiene "2550000", "3000000" ni "0.15"
 
   Escenario: Si la IA tarda más de 15 segundos se usa el texto estándar
-    Dado que el modelo tarda 16 segundos en responder
+    Dado que el modelo tarda más que el tiempo máximo de redacción
     Cuando "ana" pide redactar los textos de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "TextosCotizacion" del contrato
     Y los textos de "C1" tienen la fuente "estandar" y no están editados
@@ -53,6 +54,16 @@ Característica: Redacción del asunto y la introducción de la cotización
     Ejemplos:
       | salida                                                         |
       | una introducción que menciona "$ 3.000.000"                    |
+      | una introducción que menciona "2550000"                        |
+      | una introducción que menciona "una TRM de 3.987,65"            |
+      | una introducción que menciona "un margen del 15 %"             |
+      | una introducción que menciona "tres millones de pesos"         |
+      | una introducción que menciona "500 euros"                      |
+      | una introducción con el teléfono "300 123 4567"                |
+      | una introducción con la URL "botero[.]com"                     |
+      | una introducción con el correo "ventas (arroba) boterosoto"    |
+      | una introducción que promete "pago a 30 días"                  |
+      | una introducción que promete "una póliza de mercancías"        |
       | una introducción con la URL "https://ejemplo.com"              |
       | una introducción con el correo "alguien@ejemplo.com"           |
       | un asunto de 121 caracteres                                    |

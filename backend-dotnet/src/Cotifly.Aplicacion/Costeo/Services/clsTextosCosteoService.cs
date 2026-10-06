@@ -3,7 +3,6 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
-using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Aplicacion.Redaccion.Services;
@@ -43,7 +42,6 @@ public interface IClsTextosCosteoService
 public sealed class clsTextosCosteoService(
     IClsCotizacionRepository cotizaciones,
     IClsMargenPoliticaRepository politicas,
-    IClsUsuarioWebRepository usuarios,
     IClsRedaccionCotizacionService redaccion,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
@@ -80,10 +78,35 @@ public sealed class clsTextosCosteoService(
                 $"Los textos de la cotización {cotizacion.Folio} los editó el comercial: confirma para reemplazarlos (sobrescribir=true).");
         }
 
-        var contexto = await ContextoAsync(cotizacion, usuarioId, cancellationToken);
-        var redactado = await redaccion.RedactarAsync(cotizacion.Folio, contexto, cancellationToken);
+        var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
+        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+        var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, lineas, linea?.LineaNegocio);
+        var redactado = await redaccion.RedactarAsync(Contexto(cotizacion, linea?.LineaNegocio, lineas), estandar, cancellationToken);
         var textos = new clsTextosCotizacion(redactado.Asunto, redactado.Introduccion, redactado.Fuente, Editado: false, tiempo.GetUtcNow());
-        return await GuardarAsync(cotizacion, textos, usuarioId, versionEsperada, cancellationToken);
+        var pdfInvalidado = cotizacion.PdfPath is not null;
+        var resultado = await GuardarAsync(cotizacion, textos, usuarioId, versionEsperada, cancellationToken);
+
+        // Se audita DESPUÉS de guardar: con CONFLICTO_CONCURRENCIA queda guardado = false (la fuente no llegó a la cotización).
+        await auditoria.RegistrarAsync(
+            clsRedaccionCotizacionService.HerramientaAuditoria,
+            new { folio = cotizacion.Folio, sobrescribir },
+            new
+            {
+                proveedor = redactado.Proveedor,
+                modelo = redactado.Modelo,
+                version_prompt = redactado.VersionPrompt,
+                duracion_ms = redactado.DuracionMs,
+                fuente = redactado.Fuente,
+                respaldo = redactado.Respaldo,
+                motivo_respaldo = redactado.MotivoRespaldo,
+                sha256 = clsRedaccionCotizacionService.Huella(textos.Asunto, textos.Introduccion),
+                guardado = resultado.EsExitoso,
+                pdf_invalidado = resultado.EsExitoso && pdfInvalidado,
+            },
+            exito: resultado.EsExitoso,
+            redactado.DuracionMs,
+            threadId: null);
+        return resultado;
     }
 
     public async Task<clsResultado<clsTextosGuardados>> EditarAsync(
@@ -101,7 +124,14 @@ public sealed class clsTextosCosteoService(
             HerramientaEdicion,
             new { folio = cotizacion.Folio },
             resultado.EsExitoso
-                ? (object)new { fuente = resultado.Valor.Textos.Fuente, editado = true, pdf_invalidado = pdfInvalidado }
+                ? (object)new
+                {
+                    fuente = resultado.Valor.Textos.Fuente,
+                    editado = true,
+                    pdf_invalidado = pdfInvalidado,
+                    sha256 = clsRedaccionCotizacionService.Huella(resultado.Valor.Textos.Asunto, resultado.Valor.Textos.Introduccion),
+                    version_prompt = redaccion.VersionPrompt,
+                }
                 : new { error = new { codigo = resultado.Error.Codigo, mensaje = resultado.Error.Mensaje } },
             resultado.EsExitoso,
             (int)cronometro.ElapsedMilliseconds,
@@ -153,44 +183,42 @@ public sealed class clsTextosCosteoService(
             : clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
     }
 
-    private async Task<clsContextoRedaccion> ContextoAsync(clsCotizacion cotizacion, Guid usuarioId, CancellationToken cancellationToken)
-    {
-        var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
-        return Contexto(cotizacion, linea?.LineaNegocio, lineas, usuario?.NombreCompleto ?? usuario?.NombreUsuario);
-    }
-
     /// <summary>
     /// Contexto de la IA desde la cotización (ADR-018 §2a): cliente, línea, rutas (las líneas de la solicitud, o el origen y destino de
-    /// la cotización), tipo de vehículo, nombres de los conexos incluidos, moneda y comercial. Nada más: ni costos, ni margen, ni
-    /// precios, ni la TRM, ni el folio o el NIT.
+    /// la cotización), tipo de vehículo, nombres de los conexos incluidos y moneda, cada texto recortado a
+    /// <see cref="clsContextoRedaccion.LargoMaximoCampo"/>. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
+    /// el comercial.
     /// </summary>
     public static clsContextoRedaccion Contexto(
-        clsCotizacion cotizacion, string? lineaNegocio, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string? comercial)
+        clsCotizacion cotizacion, string? lineaNegocio, IReadOnlyList<clsCotizacionLineaSolicitud> lineas)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         var ordenadas = lineas.OrderBy(l => l.Orden).ToList();
         List<clsRutaRedaccion> rutas = ordenadas.Count > 0
-            ? [.. ordenadas.Select(l => new clsRutaRedaccion(l.Origen, l.Destino)).Distinct().Take(clsContextoRedaccion.MaximoRutas)]
-            : cotizacion.Origen is { } origen && cotizacion.Destino is { } destino ? [new clsRutaRedaccion(origen, destino)] : [];
+            ? [.. ordenadas.Select(l => new clsRutaRedaccion(Recortar(l.Origen)!, Recortar(l.Destino)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)]
+            : cotizacion.Origen is { } origen && cotizacion.Destino is { } destino ? [new clsRutaRedaccion(Recortar(origen)!, Recortar(destino)!)] : [];
         var vehiculos = ordenadas.Count > 0
             ? ordenadas.Select(l => l.TipoVehiculo).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList()
             : cotizacion.TipoVehiculo is { } vehiculo ? [vehiculo] : [];
         var conexos = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
             .Where(s => s.Incluido)
-            .Select(s => s.Nombre ?? s.Categoria)
+            .Select(s => Recortar(s.Nombre ?? s.Categoria)!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         return new clsContextoRedaccion(
-            cotizacion.ClienteNombre,
-            lineaNegocio,
+            Recortar(cotizacion.ClienteNombre),
+            Recortar(lineaNegocio),
             rutas,
-            vehiculos.Count == 0 ? null : string.Join(", ", vehiculos),
+            Recortar(vehiculos.Count == 0 ? null : string.Join(", ", vehiculos)),
             conexos,
-            cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
-            comercial);
+            cotizacion.Moneda ?? clsCotizacion.MonedaPesos);
+    }
+
+    private static string? Recortar(string? texto)
+    {
+        var limpio = texto?.Trim();
+        return limpio is { Length: > clsContextoRedaccion.LargoMaximoCampo } ? limpio[..clsContextoRedaccion.LargoMaximoCampo] : limpio;
     }
 
     private async Task<clsCotizacion?> PropiaAsync(Guid usuarioId, string folio, CancellationToken cancellationToken) =>

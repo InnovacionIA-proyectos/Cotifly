@@ -21,9 +21,14 @@ public sealed record clsValidacionTextosCotizacion(string? Asunto, string? Intro
 /// <item>No vacíos: asunto de 1 a <see cref="clsTextosCotizacion.LargoMaximoAsunto"/> caracteres e introducción de 1 a
 /// <see cref="clsTextosCotizacion.LargoMaximoIntroduccion"/>, contados después de normalizar (sin caracteres de control, el asunto
 /// en una línea, la introducción en párrafos separados por una línea en blanco).</item>
-/// <item>Sin correos ni URL (<c>http(s)://</c>, <c>www.</c> o un dominio con terminación conocida).</item>
-/// <item>Solo para la IA: sin montos ni cifras de dinero (<c>$</c>, <c>COP</c>/<c>USD</c> junto a un número, o lo que detecta
-/// <see cref="clsReglasRespuestaAgente.Montos"/>). Los montos que escribe el comercial sí se permiten: son suyos.</item>
+/// <item>Sin correos ni URL, tampoco ofuscados (<c>http(s)://</c>, <c>www.</c>, un dominio con terminación conocida, <c>[.]</c>,
+/// <c>(punto)</c>, "punto com", <c>(arroba)</c>, <c>[at]</c>).</item>
+/// <item>Solo para la IA, después de quitar los textos que vienen literalmente en el contexto (así "3M Colombia" no cuenta como
+/// cifra): sin teléfonos (<see cref="Telefono"/>); sin montos ni cifras (<see cref="Monto"/>: <c>$</c>, <c>€</c>, porcentajes,
+/// números de 4 o más dígitos con o sin separadores, millones, mil pesos, pesos, euros, dólares, USD, COP, TRM y lo que detecta
+/// <see cref="clsReglasRespuestaAgente.Montos"/>); y sin condiciones comerciales inventadas (<see cref="CondicionNoPermitida"/>:
+/// póliza, asegurad…, seguro, pago a, plazo, crédito, descuento, vigencia, garantiz… o "N días/horas"). Los montos y las
+/// condiciones que escribe el comercial sí se permiten: son suyos.</item>
 /// </list>
 /// La validación es manual aunque el proveedor reciba el JSON Schema: no todos lo cumplen y las reglas de negocio no caben en él.
 /// </summary>
@@ -41,6 +46,8 @@ public static partial class clsReglasTextosCotizacion
     public const string Correo = "correo";
     public const string Url = "url";
     public const string Monto = "monto";
+    public const string Telefono = "telefono";
+    public const string CondicionNoPermitida = "condicion_no_permitida";
 
     private const string CampoAsunto = "asunto";
     private const string CampoIntroduccion = "introduccion";
@@ -63,9 +70,11 @@ public static partial class clsReglasTextosCotizacion
 
     /// <summary>
     /// Interpreta la salida cruda del modelo: JSON (se toleran las cercas <c>```json</c> y texto alrededor de un único objeto) con
-    /// exactamente <c>asunto</c> e <c>introduccion</c> como texto, y luego las reglas de la IA (sin montos). Nunca lanza.
+    /// exactamente <c>asunto</c> e <c>introduccion</c> como texto, y luego las reglas de la IA. <paramref name="permitidos"/> son los
+    /// textos del contexto enviados al modelo (cliente, ciudades, vehículo, conexos): sus apariciones literales no cuentan como cifras.
+    /// Nunca lanza.
     /// </summary>
-    public static clsValidacionTextosCotizacion InterpretarSalidaIa(string? crudo)
+    public static clsValidacionTextosCotizacion InterpretarSalidaIa(string? crudo, IEnumerable<string?>? permitidos = null)
     {
         if (LeerObjeto(crudo) is not { } objeto)
         {
@@ -80,14 +89,16 @@ public static partial class clsReglasTextosCotizacion
             return Fallo(JsonInvalido, "La salida no cumple el esquema: se esperan solo 'asunto' e 'introduccion' como texto.");
         }
 
-        return Validar(objeto.GetProperty(CampoAsunto).GetString(), objeto.GetProperty(CampoIntroduccion).GetString(), permitirMontos: false);
+        return Validar(objeto.GetProperty(CampoAsunto).GetString(), objeto.GetProperty(CampoIntroduccion).GetString(), permitirMontos: false, permitidos);
     }
 
     /// <summary>
-    /// Normaliza y valida un asunto y una introducción. <paramref name="permitirMontos"/> es <c>true</c> para los del comercial y
-    /// <c>false</c> para los de la IA.
+    /// Normaliza y valida un asunto y una introducción. <paramref name="permitirMontos"/> es <c>true</c> para los del comercial (solo
+    /// longitudes, correos y URL) y <c>false</c> para los de la IA (además teléfonos, cifras y condiciones; ver el resumen de la
+    /// clase). <paramref name="permitidos"/>: textos del contexto cuyas apariciones literales no cuentan como cifras.
     /// </summary>
-    public static clsValidacionTextosCotizacion Validar(string? asunto, string? introduccion, bool permitirMontos)
+    public static clsValidacionTextosCotizacion Validar(
+        string? asunto, string? introduccion, bool permitirMontos, IEnumerable<string?>? permitidos = null)
     {
         var asuntoNormal = NormalizarAsunto(asunto);
         var introNormal = NormalizarIntroduccion(introduccion);
@@ -111,30 +122,65 @@ public static partial class clsReglasTextosCotizacion
             return Fallo(IntroduccionLarga, $"La introducción admite hasta {clsTextosCotizacion.LargoMaximoIntroduccion} caracteres.");
         }
 
+        var literales = (permitidos ?? []).Select(p => p?.Trim()).OfType<string>().Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(p => p.Length).ToList();
         foreach (var texto in new[] { asuntoNormal, introNormal })
         {
-            if (ExpresionCorreo().IsMatch(texto))
+            if (ExpresionCorreo().IsMatch(texto) || ExpresionCorreoOfuscado().IsMatch(texto))
             {
                 return Fallo(Correo, "Los textos de la cotización no pueden llevar correos.");
             }
 
-            if (ExpresionUrl().IsMatch(texto))
+            if (ExpresionUrl().IsMatch(texto) || ExpresionUrlOfuscada().IsMatch(texto))
             {
                 return Fallo(Url, "Los textos de la cotización no pueden llevar URL.");
             }
 
-            if (!permitirMontos && TieneMontos(texto))
+            if (permitirMontos)
             {
-                return Fallo(Monto, "Los textos redactados por la IA no pueden llevar montos ni cifras de dinero.");
+                continue;
+            }
+
+            var depurado = QuitarLiterales(texto, literales);
+            if (ExpresionTelefono().IsMatch(depurado))
+            {
+                return Fallo(Telefono, "Los textos redactados por la IA no pueden llevar teléfonos.");
+            }
+
+            if (TieneMontos(depurado))
+            {
+                return Fallo(Monto, "Los textos redactados por la IA no pueden llevar montos ni cifras.");
+            }
+
+            if (ExpresionCondicion().IsMatch(depurado))
+            {
+                return Fallo(CondicionNoPermitida,
+                    "Los textos redactados por la IA no pueden prometer condiciones comerciales (pólizas, seguros, plazos, pagos, descuentos, vigencias).");
             }
         }
 
         return new clsValidacionTextosCotizacion(asuntoNormal, introNormal, null, null);
     }
 
-    /// <summary>¿El texto trae un monto o una cifra de dinero? (<c>$</c>, <c>COP</c>/<c>USD</c> junto a un número o un monto detectado.)</summary>
+    /// <summary>
+    /// ¿El texto trae un monto o una cifra? (<c>$</c>, <c>€</c>, palabras de cantidad monetaria, porcentajes, números de 4 o más
+    /// dígitos con o sin separadores, o un monto que detecta <see cref="clsReglasRespuestaAgente.Montos"/>.)
+    /// </summary>
     public static bool TieneMontos(string? texto) =>
-        !string.IsNullOrWhiteSpace(texto) && (ExpresionMoneda().IsMatch(texto) || clsReglasRespuestaAgente.Montos(texto).Count > 0);
+        !string.IsNullOrWhiteSpace(texto)
+        && (ExpresionMoneda().IsMatch(texto) || ExpresionPorcentaje().IsMatch(texto) || ExpresionCifra().IsMatch(texto)
+            || clsReglasRespuestaAgente.Montos(texto).Count > 0);
+
+    /// <summary>Quita del texto las apariciones literales de los textos del contexto (sin distinguir mayúsculas).</summary>
+    private static string QuitarLiterales(string texto, IReadOnlyList<string> literales)
+    {
+        foreach (var literal in literales)
+        {
+            texto = texto.Replace(literal, " ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return texto;
+    }
 
     /// <summary>Asunto en una línea, sin caracteres de control ni espacios repetidos; <c>null</c> si queda vacío.</summary>
     public static string? NormalizarAsunto(string? asunto) =>
@@ -232,8 +278,30 @@ public static partial class clsReglasTextosCotizacion
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionUrl();
 
-    [GeneratedRegex(@"\$|\b(?:COP|USD)\s?\d|\d\s?(?:COP|USD)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\(\s*arroba\s*\)|\[\s*arroba\s*\]|\barroba\b|[\[(]\s*at\s*[\])]", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionCorreoOfuscado();
+
+    [GeneratedRegex(@"\[\s*(?:\.|punto|dot)\s*\]|\(\s*(?:\.|punto|dot)\s*\)|\b(?:punto|dot)\s+(?:com|co|net|org)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionUrlOfuscada();
+
+    [GeneratedRegex(
+        @"(?<!\d)(?:\+\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]?\d{2,4}(?!\d)|\b(?:tel[eé]fonos?|celular(?:es)?|whats\s?app|m[oó]vil(?:es)?|pbx)(?!\p{L})",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionTelefono();
+
+    [GeneratedRegex(@"[$€£]|\b(?:COP|USD|EUR|TRM)\b|\b(?:millones|mill[oó]n|mil\s+pesos|pesos|euros?|d[oó]lares?)(?!\p{L})", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionMoneda();
+
+    [GeneratedRegex(@"\d\s?%|\bpor\s?ciento\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionPorcentaje();
+
+    [GeneratedRegex(@"(?<![\p{L}\d])(?:\d{1,3}(?:[.,' ]\d{3})+(?:[.,]\d+)?|\d{4,})(?!\d)", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionCifra();
+
+    [GeneratedRegex(
+        @"\b(?:p[oó]lizas?|asegurad\p{L}*|seguros?|pagos?\s+a|plazos?|cr[eé]ditos?|descuentos?|vigencias?|garantiz\p{L}*)(?!\p{L})|\b\d+\s*(?:d[ií]as?|horas?)(?!\p{L})",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionCondicion();
 
     [GeneratedRegex(@"[ \t ]{2,}", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionEspacios();

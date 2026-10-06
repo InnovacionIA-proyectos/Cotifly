@@ -2,7 +2,6 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
-using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
@@ -23,7 +22,6 @@ public sealed class clsTextosCosteoServiceTests
     private const int Version = 7;
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
-    private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
     private readonly IClsRedaccionCotizacionService _redaccion = Substitute.For<IClsRedaccionCotizacionService>();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
@@ -36,9 +34,10 @@ public sealed class clsTextosCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
-        _redaccion.RedactarAsync(_cotizacion.Folio, Arg.Any<clsContextoRedaccion>(), Arg.Any<CancellationToken>())
+        _redaccion.VersionPrompt.Returns("abcdef0123456789");
+        _redaccion.RedactarAsync(Arg.Any<clsContextoRedaccion>(), Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>())
             .Returns(new clsResultadoRedaccion("Cotización transporte Buenaventura - Bogotá", "Apreciado cliente.\n\nCon gusto.",
-                clsTextosCotizacion.FuenteIa, "guion", "modelo", 120, false, null));
+                clsTextosCotizacion.FuenteIa, "guion", "modelo", "abcdef0123456789", 120, false, null));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -187,14 +186,13 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void ElContextoDeLaIaSoloTraeNombresYNuncaMontos()
     {
-        var contexto = clsTextosCosteoService.Contexto(_cotizacion, "Nacional", [], "Ana Pérez");
+        var contexto = clsTextosCosteoService.Contexto(_cotizacion, "Nacional", []);
 
         typeof(clsContextoRedaccion).GetProperties().Select(p => p.PropertyType)
             .Should().OnlyContain(t => t == typeof(string) || t == typeof(IReadOnlyList<clsRutaRedaccion>) || t == typeof(IReadOnlyList<string>),
                 "el contexto de la IA no tiene ningún campo numérico (ADR-018 §2a)");
         contexto.Conexos.Should().BeEmpty("el único conexo de la cotización está excluido");
         contexto.LineaNegocio.Should().Be("Nacional");
-        contexto.Comercial.Should().Be("Ana Pérez");
     }
 
     [Fact]
@@ -232,12 +230,75 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void ElTextoEstandarCabeEnLosLimitesDelContrato()
     {
-        clsTextosEstandar.IntroduccionEstandar.Length.Should().BeLessThanOrEqualTo(clsTextosCotizacion.LargoMaximoIntroduccion);
+        clsTextosEstandar.IntroduccionEstandar(false).Length.Should().BeLessThanOrEqualTo(clsTextosCotizacion.LargoMaximoIntroduccion);
         clsTextosEstandar.AsuntoEstandar("Nacional").Should().Be("presentación oferta de servicios de Transporte Nacional");
-        clsReglasTextosCotizacion.Validar(clsTextosEstandar.AsuntoEstandar("Nacional"), clsTextosEstandar.IntroduccionEstandar, permitirMontos: false)
-            .EsValida.Should().BeTrue("el respaldo cumple las mismas reglas que la IA");
+        clsReglasTextosCotizacion.Validar(clsTextosEstandar.AsuntoEstandar("Nacional"), clsTextosEstandar.IntroduccionEstandar(false), permitirMontos: false)
+            .EsValida.Should().BeTrue("el respaldo de tarifa única cumple las mismas reglas que la IA");
     }
 
     private clsTextosCosteoService Servicio() =>
-        new(_cotizaciones, _politicas, _usuarios, _redaccion, _unidad, _auditoria, TimeProvider.System);
+        new(_cotizaciones, _politicas, _redaccion, _unidad, _auditoria, TimeProvider.System);
+
+    [Fact]
+    public async Task ElRespaldoQueRecibeElRedactorEsElDeLaVarianteDelPdf()
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+
+        await _redaccion.Received(1).RedactarAsync(Arg.Any<clsContextoRedaccion>(),
+            new clsTextosBase("presentación oferta de servicios de Transporte", clsTextosEstandar.IntroduccionEstandar(false)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void EnUnPliegoElRespaldoEsElAsuntoDeLicitacionYLaIntroduccionMultiseccionComoLosImprimeElPdf()
+    {
+        var lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [Linea("Buenaventura"), Linea("Cartagena")]);
+
+        var estandar = clsCosteoCotizacionService.TextosEstandar(_cotizacion, lineas, "Nacional");
+
+        var payload = clsCosteoCotizacionService.PayloadPliego(_cotizacion, lineas, "Nacional", "COP");
+        estandar.Asunto.Should().Be(payload.Asunto, "el mismo asunto que imprime el pliego");
+        estandar.Introduccion.Should().Be(string.Join("\n\n", clsTextosEstandar.MultiSeccion.Intro), "la introducción del pliego, no la de tarifa única");
+        clsCosteoCotizacionService.TextosEstandar(_cotizacion, [], "Nacional")
+            .Should().Be(new clsTextosBase("presentación oferta de servicios de Transporte Nacional", string.Join("\n\n", clsTextosEstandar.TarifaUnica.Intro)));
+    }
+
+    [Fact]
+    public async Task LaRedaccionSeAuditaDespuesDeGuardarConLaHuellaYLaVersionDelPrompt()
+    {
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+
+        var huella = clsRedaccionCotizacionService.Huella("Cotización transporte Buenaventura - Bogotá", "Apreciado cliente.\n\nCon gusto.");
+        huella.Should().HaveLength(64);
+        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria,
+            Arg.Is<object?>(e => clsAuditoriaService.AJson(e!).Contains(_cotizacion.Folio)),
+            Arg.Is<object?>(s => clsAuditoriaService.AJson(s!).Contains("\"guardado\":true") && clsAuditoriaService.AJson(s!).Contains(huella)
+                                 && clsAuditoriaService.AJson(s!).Contains("\"version_prompt\":\"abcdef0123456789\"")
+                                 && clsAuditoriaService.AJson(s!).Contains("\"respaldo\":false")
+                                 && !clsAuditoriaService.AJson(s!).Contains("Apreciado")),
+            true, 120, null);
+    }
+
+    [Fact]
+    public async Task ConConflictoLaAuditoriaDiceQueNoSeGuardo()
+    {
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
+
+        await Servicio().RedactarAsync(_ana, _cotizacion.Folio, false, Version, Ct);
+
+        await _auditoria.Received(1).RegistrarAsync(clsRedaccionCotizacionService.HerramientaAuditoria, Arg.Any<object?>(),
+            Arg.Is<object?>(s => clsAuditoriaService.AJson(s!).Contains("\"guardado\":false")), false, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task LaEdicionSeAuditaConLaHuellaYLaVersionDelPrompt()
+    {
+        await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", "Introducción.", Version, Ct);
+
+        var huella = clsRedaccionCotizacionService.Huella("Asunto", "Introducción.");
+        await _auditoria.Received(1).RegistrarAsync(clsTextosCosteoService.HerramientaEdicion, Arg.Any<object?>(),
+            Arg.Is<object?>(s => clsAuditoriaService.AJson(s!).Contains(huella) && clsAuditoriaService.AJson(s!).Contains("abcdef0123456789")),
+            true, Arg.Any<int>(), null);
+    }
+
+    private static clsLineaSolicitudCosteo Linea(string origen) => new() { Origen = origen, Destino = "BOGOTA", PesoKg = 1m };
 }
