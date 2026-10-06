@@ -160,14 +160,33 @@ public sealed class clsTextosCosteoServiceTests
     }
 
     [Fact]
-    public async Task LargosDelComercialPorEncimaDe120Y900SeRechazan()
+    public async Task LargosDelComercialPorEncimaDe120Y1100SeRechazan()
     {
         (await Servicio().EditarAsync(_ana, _cotizacion.Folio, new string('a', 121), "Intro", Version, Ct)).Error.Codigo
             .Should().Be(clsCodigosError.TextosCotizacionInvalidos);
-        (await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", new string('b', 901), Version, Ct)).Error.Codigo
+        (await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto", new string('b', 1101), Version, Ct)).Error.Codigo
             .Should().Be(clsCodigosError.TextosCotizacionInvalidos);
-        (await Servicio().EditarAsync(_ana, _cotizacion.Folio, new string('a', 120), new string('b', 900), Version, Ct)).EsExitoso
-            .Should().BeTrue();
+        (await Servicio().EditarAsync(_ana, _cotizacion.Folio, new string('a', 120), new string('b', 1100), Version, Ct)).EsExitoso
+            .Should().BeTrue("el comercial escribe hasta 1100 (la IA, hasta 900)");
+    }
+
+    [Fact]
+    public async Task ElComercialGuardaLaIntroduccionEstandarDelPliegoSinRecortarla()
+    {
+        var intro = clsTextosEstandar.IntroduccionEstandar(true);
+        intro.Length.Should().BeGreaterThan(clsTextosCotizacion.LargoMaximoIntroduccion).And.BeLessThanOrEqualTo(clsTextosCotizacion.LargoMaximoIntroduccionComercial);
+
+        var resultado = await Servicio().EditarAsync(_ana, _cotizacion.Folio, "Asunto del pliego", intro, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.Textos.Introduccion.Should().Be(intro);
+    }
+
+    [Fact]
+    public void LaIaSigueLimitadaA900Caracteres()
+    {
+        clsReglasTextosCotizacion.Validar("Asunto", new string('b', 901), permitirMontos: false).Motivo.Should().Be(clsReglasTextosCotizacion.IntroduccionLarga);
+        clsReglasTextosCotizacion.Validar("Asunto", new string('b', 901), permitirMontos: true).EsValida.Should().BeTrue();
     }
 
     [Fact]

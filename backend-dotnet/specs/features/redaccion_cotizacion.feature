@@ -88,6 +88,15 @@ Característica: Redacción del asunto y la introducción de la cotización
       | Asunto válido           | Visite https://ejemplo.com para más detalles  |
       | Escriba a a@ejemplo.com | Introducción válida                           |
 
+  Esquema del escenario: El comercial escribe una introducción de hasta 1100 caracteres
+    Cuando "ana" guarda en "C1" el asunto "Propuesta de transporte" y una introducción de <caracteres> caracteres
+    Entonces la respuesta tiene el estado <estado>
+
+    Ejemplos:
+      | caracteres | estado |
+      | 1100       | 200    |
+      | 1101       | 400    |
+
   Escenario: El PDF imprime los textos guardados
     Dado que "ana" guardó en "C1" el asunto "Propuesta de transporte para Cliente SAS" y una introducción válida
     Cuando "ana" genera el PDF del costeo de "C1"

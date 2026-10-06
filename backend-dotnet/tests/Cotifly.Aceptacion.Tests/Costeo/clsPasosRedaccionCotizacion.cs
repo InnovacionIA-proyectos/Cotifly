@@ -94,6 +94,10 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     public async Task CuandoGuardaConIntroduccionValida(string alias, string cotizacion, string asunto) =>
         await GuardarAsync(alias, cotizacion, asunto, IntroduccionValida, await VersionVigenteAsync(cotizacion));
 
+    [When("{string} guarda en {string} el asunto {string} y una introducción de {int} caracteres")]
+    public async Task CuandoGuardaConIntroduccionDeLargo(string alias, string cotizacion, string asunto, int caracteres) =>
+        await GuardarAsync(alias, cotizacion, asunto, new string('b', caracteres), await VersionVigenteAsync(cotizacion));
+
     [When("{string} guarda en {string} el asunto {string} y una introducción válida sin If-Match")]
     public Task CuandoGuardaSinIfMatch(string alias, string cotizacion, string asunto) =>
         GuardarAsync(alias, cotizacion, asunto, IntroduccionValida, null);

@@ -19,7 +19,8 @@ public sealed record clsValidacionTextosCotizacion(string? Asunto, string? Intro
 /// <c>asunto</c> e <c>introduccion</c> (texto). Reglas, en este orden (la primera que falla es el motivo):
 /// <list type="number">
 /// <item>No vacíos: asunto de 1 a <see cref="clsTextosCotizacion.LargoMaximoAsunto"/> caracteres e introducción de 1 a
-/// <see cref="clsTextosCotizacion.LargoMaximoIntroduccion"/>, contados después de normalizar (sin caracteres de control, el asunto
+/// <see cref="clsTextosCotizacion.LargoMaximoIntroduccion"/> (la IA) o <see cref="clsTextosCotizacion.LargoMaximoIntroduccionComercial"/>
+/// (el comercial), contados después de normalizar (sin caracteres de control, el asunto
 /// en una línea, la introducción en párrafos separados por una línea en blanco).</item>
 /// <item>Sin correos ni URL, tampoco ofuscados (<c>http(s)://</c>, <c>www.</c>, un dominio con terminación conocida, <c>[.]</c>,
 /// <c>(punto)</c>, "punto com", <c>(arroba)</c>, <c>[at]</c>).</item>
@@ -117,9 +118,10 @@ public static partial class clsReglasTextosCotizacion
             return Fallo(AsuntoLargo, $"El asunto admite hasta {clsTextosCotizacion.LargoMaximoAsunto} caracteres.");
         }
 
-        if (introNormal.Length > clsTextosCotizacion.LargoMaximoIntroduccion)
+        var maximoIntroduccion = permitirMontos ? clsTextosCotizacion.LargoMaximoIntroduccionComercial : clsTextosCotizacion.LargoMaximoIntroduccion;
+        if (introNormal.Length > maximoIntroduccion)
         {
-            return Fallo(IntroduccionLarga, $"La introducción admite hasta {clsTextosCotizacion.LargoMaximoIntroduccion} caracteres.");
+            return Fallo(IntroduccionLarga, $"La introducción admite hasta {maximoIntroduccion} caracteres.");
         }
 
         var literales = (permitidos ?? []).Select(p => p?.Trim()).OfType<string>().Where(p => p.Length > 0)

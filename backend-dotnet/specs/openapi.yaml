@@ -1670,7 +1670,7 @@ paths:
       description: |
         HU-013.5 (ADR-018 §2a). Guarda los textos que escribió el comercial (`editado = true`; `fuente` conserva el origen
         del texto que editó, o `estandar` si no había). Mismos límites que el redactor: asunto de 1 a 120 caracteres e
-        introducción de 1 a 900, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
+        introducción de 1 a 1100 (la IA, hasta 900), sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
         escribe el comercial, no la IA. Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si
         no, invalida el PDF actual. `If-Match` **obligatorio** (428 / 409). Solo el dueño.
       security:
@@ -3744,9 +3744,9 @@ components:
           type: string
           maxLength: 1100
           description: |
-            Uno o más párrafos separados por una línea en blanco. La IA y el comercial escriben hasta 900 caracteres
-            (`TextosCotizacionWeb`); con `fuente = estandar` en un pliego llega la introducción estándar del PDF de pliego
-            (1026 caracteres, con viñetas `·`), la misma que imprime el PDF.
+            Uno o más párrafos separados por una línea en blanco. La IA redacta hasta 900 caracteres y el comercial escribe
+            hasta 1100 (`TextosCotizacionWeb`); con `fuente = estandar` en un pliego llega la introducción estándar del PDF de
+            pliego (1026 caracteres, con viñetas `·`), la misma que imprime el PDF, y el comercial la puede guardar sin recortarla.
         fuente:
           type: string
           enum: [ia, estandar]
@@ -3772,7 +3772,8 @@ components:
         introduccion:
           type: string
           minLength: 1
-          maxLength: 900
+          maxLength: 1100
+          description: Hasta 1100 caracteres, como la respuesta (la introducción estándar del pliego mide 1026); la IA redacta hasta 900.
 
     PosicionCargaWeb:
       type: object

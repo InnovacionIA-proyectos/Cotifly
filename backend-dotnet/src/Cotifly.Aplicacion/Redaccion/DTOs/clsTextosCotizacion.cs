@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace Cotifly.Aplicacion.Redaccion.DTOs;
 
 /// <summary>
-/// <c>TextosCotizacion</c> (HU-013.5): asunto (hasta 120 caracteres) e introducción (hasta 900, párrafos separados por una línea en
+/// <c>TextosCotizacion</c> (HU-013.5): asunto (hasta 120 caracteres) e introducción (hasta 900 de la IA y 1100 del comercial, párrafos separados por una línea en
 /// blanco) del PDF guardados en <c>Cotizaciones.textosCotizacion</c>. <see cref="Fuente"/> es <see cref="FuenteIa"/> o
 /// <see cref="FuenteEstandar"/>; <see cref="Editado"/> es <c>true</c> si el comercial los cambió después.
 /// </summary>
@@ -18,8 +18,14 @@ public sealed record clsTextosCotizacion(string Asunto, string Introduccion, str
     /// <summary>Largo máximo del asunto (contrato <c>TextosCotizacion.asunto</c>).</summary>
     public const int LargoMaximoAsunto = 120;
 
-    /// <summary>Largo máximo de la introducción (contrato <c>TextosCotizacion.introduccion</c>).</summary>
+    /// <summary>Largo máximo de la introducción que redacta la IA (esquema del redactor).</summary>
     public const int LargoMaximoIntroduccion = 900;
+
+    /// <summary>
+    /// Largo máximo de la introducción del comercial (<c>TextosCotizacionWeb.introduccion</c>) y de la respuesta
+    /// (<c>TextosCotizacion.introduccion</c>): 1100, para que pueda guardar la introducción estándar del pliego (1026) sin recortarla.
+    /// </summary>
+    public const int LargoMaximoIntroduccionComercial = 1100;
 
     /// <summary>
     /// ¿El PDF imprime estos textos? Solo los de la IA o los editados por el comercial; los estándar sin editar dejan que el PDF use
