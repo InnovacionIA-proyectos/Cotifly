@@ -109,6 +109,9 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsReloj, clsRelojSistema>();
         servicios.TryAddSingleton<IClsCalendarioNegocio, clsCalendarioNegocio>();
 
+        // Idempotency-Key de las mutaciones de la etapa final (ADR-018 §8, #100): en memoria, una sola réplica de la API.
+        servicios.TryAddSingleton<IClsAlmacenIdempotencia, clsAlmacenIdempotenciaEnMemoria>();
+
         AgregarPersistencia(servicios);
 
         // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
@@ -356,6 +359,13 @@ public static class clsDependenciasInfraestructura
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
+
+        // Servicios conexos de Nexo (HU-013.3, ADR-018 §4): mismo cliente NexoCosteo y misma identidad, vía clsCosteoNexo.
+        servicios.TryAddScoped<clsServiciosConexosNoDisponible>();
+        servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsServiciosConexosNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+                ? sp.GetRequiredService<clsServiciosConexosNoDisponible>()
+                : new clsServiciosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()));
 
         // Licitaciones (HU-011, ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
         // sin Nexo:UrlBase responde COSTEO_NEXO_NO_DISPONIBLE. La lectura del original es local (ClosedXML).

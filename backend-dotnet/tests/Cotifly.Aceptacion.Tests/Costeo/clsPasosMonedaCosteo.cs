@@ -13,7 +13,8 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 /// Pasos de <c>specs/features/moneda_formulario_costeo.feature</c> y del escenario en USD de <c>ajuste_margen_costeo.feature</c>
 /// (HU-013.7, #103, ADR-014 §5): la API real en memoria, SQL Server 2019 en Testcontainers, el Nexo falso y las fuentes de la TRM falsas
 /// de <see cref="clsPasosCosteo"/> (DolarApi principal y Superfinanciera de respaldo). Los montos en dólares se escriben con punto decimal y
-/// se comparan con la cultura invariante.
+/// se comparan con la cultura invariante. El envío en pesos ("que ... envió a costeo el formulario ampliado ...") y el costeo con un
+/// conexo son de <see cref="clsPasosAjusteMargen"/> y de <c>clsPasosServiciosConexos</c> (#98, #99): aquí no se repiten.
 /// </summary>
 [Binding]
 public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCosteo costeo)
@@ -54,13 +55,6 @@ public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCos
         web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
     }
 
-    [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
-    public async Task DadoQueEnvioEnPesos(string alias, string nit, string cotizacion)
-    {
-        await EnviarAsync(alias, nit, cotizacion, null);
-        web.UltimoEstado.Should().Be(HttpStatusCode.Created, web.UltimoCuerpo);
-    }
-
     [Given("que {string} envió a costeo en {string} el formulario del cliente {string} como {string} con la TRM {int}")]
     public async Task DadoQueEnvioConLaTrm(string alias, string moneda, string nit, string cotizacion, int trm)
     {
@@ -68,14 +62,18 @@ public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCos
         await DadoQueEnvioEnMoneda(alias, moneda, nit, cotizacion);
     }
 
-    [Given("Nexo costeó la solicitud de {string} con un flete de {int} y el conexo {string} de {int} y el polling lo registró")]
-    public async Task DadoQueNexoCosteoConConexo(string cotizacion, int flete, string conexo, int valor)
+    /// <summary>
+    /// Re-solicitud en USD (HU-013.4 + HU-013.7): la cotización se creó con el formulario en USD y la TRM fijada fue la de un día anterior.
+    /// La caché de la TRM fija una sola TRM por día de negocio, así que el "día anterior" se simula cambiando solo la TRM guardada; la moneda
+    /// es la que fijó el formulario.
+    /// </summary>
+    [Given("que la TRM fijada de {string} fue {string} el día que se creó")]
+    public async Task DadoQueLaTrmFueOtroDia(string cotizacion, string trm)
     {
-        var costeoId = (await costeo.Columna(cotizacion, "costeoId"))!;
-        costeo.Nexo.Costear(costeoId, flete);
-        costeo.Nexo.AgregarConexo(costeoId, conexo, valor);
-        await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
-        (await costeo.Columna(cotizacion, "estadoCosteo")).Should().Be("autocosteo");
+        (await costeo.Columna(cotizacion, "moneda")).Should().Be("USD", "la moneda la fija el formulario, no la prueba");
+        await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET trmAplicada = {Decimal(trm).ToString(CultureInfo.InvariantCulture)} "
+            + $"WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
 
     [Then("la cotización {string} está en {string} con la TRM aplicada {int}")]

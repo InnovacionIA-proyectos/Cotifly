@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Cotifly.Api.Comun;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
@@ -113,3 +115,116 @@ public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justific
 /// <summary><c>ResultadoWeb</c>: <c>resultado</c> (<c>ganada</c> | <c>perdida</c>), <c>motivo</c> (se guarda en <c>motivo_rechazo</c>) y
 /// <c>comentario</c> (solo se reenvía a Nexo).</summary>
 public sealed record clsResultadoWebRequest(string? Resultado, string? Motivo, string? Comentario);
+
+/// <summary>
+/// <c>ReSolicitudCosteoWeb</c> (HU-013.4): <c>motivo</c>, <c>datos_carga</c> (<c>DatosCargaWeb</c>; ausente o <c>null</c> = sin cambios) y
+/// <c>nueva_version</c>. <c>datos_carga</c> se lee como JSON para distinguir un campo que no viene (se conserva) de uno en <c>null</c>
+/// (se borra); los límites y la coherencia los valida el dominio con las reglas de la captura.
+/// </summary>
+public sealed record clsReSolicitudCosteoWebRequest(string? Motivo, JsonElement? DatosCarga, bool? NuevaVersion)
+{
+    /// <summary>
+    /// Entrada del caso de uso, o <c>SOLICITUD_COSTEO_INVALIDA</c> si <c>datos_carga</c> no es un objeto o trae un campo desconocido o
+    /// de otro tipo.
+    /// </summary>
+    public clsResultado<clsEntradaReSolicitudCosteo> AEntrada()
+    {
+        if (DatosCarga is not { } datos || datos.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return new clsEntradaReSolicitudCosteo(Motivo, null, NuevaVersion ?? false);
+        }
+
+        var cambios = clsDatosCargaWebRequest.ACambios(datos);
+        return cambios.EsFallo ? cambios.Error : new clsEntradaReSolicitudCosteo(Motivo, cambios.Valor, NuevaVersion ?? false);
+    }
+}
+
+/// <summary>
+/// <c>DatosCargaWeb</c> (HU-013.4): los mismos campos de línea que la captura (más las horas de cargue y descargue), solo los que
+/// cambian. Origen, destino, cliente y línea de negocio no se cambian por esta vía.
+/// </summary>
+public sealed class clsDatosCargaWebRequest
+{
+    public string? TipoVehiculo { get; init; }
+    public string? Carroceria { get; init; }
+    public string? Tipologia { get; init; }
+    public string? ClaseViaje { get; init; }
+    public string? ClaseContenedor { get; init; }
+    public bool? Exclusivo { get; init; }
+    public bool? Consolidado { get; init; }
+    public bool? RetornaContenedor { get; init; }
+    public string? CiudadDevolucionContenedor { get; init; }
+    public bool? LevanteContenedorDiferente { get; init; }
+    public string? CiudadLevanteContenedor { get; init; }
+    public decimal? ValorAprovisionamiento { get; init; }
+    public decimal? HorasCargue { get; init; }
+    public decimal? HorasDescargue { get; init; }
+    public decimal? PesoKg { get; init; }
+    public decimal? ValorMercancia { get; init; }
+    public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
+
+    /// <summary>Cambios de carga del dominio a partir del JSON de <c>datos_carga</c> (nombres snake_case del contrato).</summary>
+    public static clsResultado<clsCambiosCarga> ACambios(JsonElement datos)
+    {
+        if (datos.ValueKind != JsonValueKind.Object)
+        {
+            return Invalido("El campo 'datos_carga' debe ser un objeto con los campos de carga que cambian.");
+        }
+
+        var presentes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var propiedad in datos.EnumerateObject())
+        {
+            var nombre = propiedad.Name.ToLowerInvariant();
+            if (!clsCambiosCarga.Campos.Contains(nombre))
+            {
+                return Invalido($"El campo 'datos_carga.{propiedad.Name}' no se puede cambiar al re-solicitar (origen, destino, cliente y "
+                    + "línea de negocio son otra cotización).");
+            }
+
+            presentes.Add(nombre);
+        }
+
+        clsDatosCargaWebRequest? leido;
+        try
+        {
+            leido = datos.Deserialize<clsDatosCargaWebRequest>(clsJsonWeb.Opciones);
+        }
+        catch (JsonException ex)
+        {
+            return Invalido($"El campo 'datos_carga' tiene un valor de tipo inválido{(ex.Path is { } ruta ? $" en '{ruta.TrimStart('$', '.')}'" : string.Empty)}.");
+        }
+
+        if (leido is null)
+        {
+            return Invalido("El campo 'datos_carga' debe ser un objeto con los campos de carga que cambian.");
+        }
+
+        return new clsCambiosCarga
+        {
+            Presentes = presentes,
+            TipoVehiculo = leido.TipoVehiculo,
+            Carroceria = leido.Carroceria,
+            Tipologia = leido.Tipologia,
+            ClaseViaje = leido.ClaseViaje,
+            ClaseContenedor = leido.ClaseContenedor,
+            Exclusivo = leido.Exclusivo,
+            Consolidado = leido.Consolidado,
+            RetornaContenedor = leido.RetornaContenedor,
+            CiudadDevolucionContenedor = leido.CiudadDevolucionContenedor,
+            LevanteContenedorDiferente = leido.LevanteContenedorDiferente,
+            CiudadLevanteContenedor = leido.CiudadLevanteContenedor,
+            ValorAprovisionamiento = leido.ValorAprovisionamiento,
+            HorasCargue = leido.HorasCargue,
+            HorasDescargue = leido.HorasDescargue,
+            PesoKg = leido.PesoKg,
+            ValorMercancia = leido.ValorMercancia,
+            Posiciones = leido.Posiciones is null
+                ? null
+                : [.. leido.Posiciones.Select(p => p is null
+                    ? null!
+                    : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+        };
+    }
+
+    private static clsErrorDominio Invalido(string mensaje) => new(clsCodigosError.SolicitudCosteoInvalida, mensaje);
+}
