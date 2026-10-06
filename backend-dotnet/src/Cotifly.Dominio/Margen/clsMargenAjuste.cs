@@ -8,7 +8,7 @@ namespace Cotifly.Dominio.Margen;
 /// validar y de calcular <see cref="Diferencia"/> = aplicado − política, para que lo que queda en memoria sea
 /// exactamente lo que guarda la base (el Python redondeaba la diferencia a 6, pero la columna solo guarda 4).
 /// </summary>
-public sealed class clsMargenAjuste
+public sealed partial class clsMargenAjuste
 {
     public const string CodigoError = clsCodigosError.AjusteMargenInvalido;
 
@@ -72,8 +72,10 @@ public sealed class clsMargenAjuste
     }
 
     /// <summary>
-    /// Justificación lista para guardar (en <c>MargenAjustes.motivo</c> y en la auditoría): sin caracteres de control (saltos de línea,
-    /// tabuladores, nulos), que se reemplazan por un espacio, y sin espacios en los extremos; <c>null</c> si queda vacía.
+    /// Justificación lista para guardar (en <c>MargenAjustes.motivo</c> y en la auditoría): sin secuencias de escape ANSI completas
+    /// (<c>ESC [ ... letra</c>, <c>ESC ] ... BEL</c> y <c>ESC</c> más un carácter), sin caracteres de control (saltos de línea,
+    /// tabuladores, nulos), que se reemplazan por un espacio, con los espacios repetidos colapsados en uno y sin espacios en los
+    /// extremos; <c>null</c> si queda vacía.
     /// </summary>
     public static string? LimpiarJustificacion(string? justificacion)
     {
@@ -82,9 +84,18 @@ public sealed class clsMargenAjuste
             return null;
         }
 
-        var limpia = new string([.. justificacion.Select(c => char.IsControl(c) ? ' ' : c)]).Trim();
+        var sinAnsi = ExpresionAnsi().Replace(justificacion, " ");
+        var sinControl = new string([.. sinAnsi.Select(c => char.IsControl(c) ? ' ' : c)]);
+        var limpia = ExpresionEspacios().Replace(sinControl, " ").Trim();
         return limpia.Length == 0 ? null : limpia;
     }
+
+    /// <summary>CSI (<c>ESC [</c> parámetros y una letra final), OSC (<c>ESC ]</c> hasta BEL o <c>ESC \</c>) o ESC con un carácter.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)?|[@-Z\\-_])", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ExpresionAnsi();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s{2,}", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ExpresionEspacios();
 
     /// <summary>
     /// Ajuste del comercial sobre el costeo de Nexo (HU-013.2, ADR-018 §3): <paramref name="margenSugerido"/> queda en

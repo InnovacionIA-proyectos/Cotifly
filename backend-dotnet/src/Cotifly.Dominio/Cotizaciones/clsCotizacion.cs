@@ -654,6 +654,12 @@ public sealed class clsCotizacion
             ? Cotizaciones.EstadoEnvio.Enviada
             : Cotizaciones.EstadoEnvio.Reenviada;
 
+    /// <summary>
+    /// Deshace la reserva de un envío que no salió (el transporte falló): vuelve al estado de envío anterior (ADR-018 §12: el correo
+    /// marca la cotización como enviada ANTES de enviar, para que ningún ajuste invalide el PDF mientras sale).
+    /// </summary>
+    public void RestaurarEstadoEnvio(EstadoEnvio? anterior) => EstadoEnvio = anterior ?? Cotizaciones.EstadoEnvio.SinEnviar;
+
     /// <summary>Asocia la ruta del PDF generado (el PDF vuelve a estar vigente: <see cref="PdfDesactualizado"/> pasa a <c>false</c>).</summary>
     public void AsignarPdf(string pdfPath)
     {

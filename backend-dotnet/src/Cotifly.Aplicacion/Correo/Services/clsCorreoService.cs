@@ -30,6 +30,10 @@ namespace Cotifly.Aplicacion.Correo.Services;
 /// <c>enviada</c>/<c>reenviada</c> → <c>reenviada</c> (corrige el bug del Python, que siempre escribía <c>enviada</c>).</item>
 /// <item>Fallo del transporte: fila <c>fallido</c> con el error, en una transacción propia (no hay otros cambios pendientes),
 /// y <c>CORREO_ENVIO_FALLIDO</c>; el estado de envío no cambia.</item>
+/// <item>Concurrencia (ADR-018 §12): antes de enviar, el estado de envío se RESERVA (enviada/reenviada, versión de negocio + 1)
+/// con <c>GuardarCambiosSiVersionAsync</c> sobre la versión leída. Así un ajuste de margen o de conexos concurrente pierde
+/// (<c>CONFLICTO_CONCURRENCIA</c> o <c>PDF_YA_ENVIADO</c>) y nunca invalida un PDF que ya está saliendo; si el ajuste ganó antes, el
+/// envío responde <c>CONFLICTO_CONCURRENCIA</c> sin enviar nada. Si el transporte falla, la reserva se deshace.</item>
 /// </list>
 /// </summary>
 public sealed class clsCorreoService(
@@ -94,6 +98,13 @@ public sealed class clsCorreoService(
             return new clsErrorDominio(clsCodigosError.CorreoDuplicado, "Envío duplicado a los mismos destinatarios en menos de 5 minutos.");
         }
 
+        if (cotizacion.PdfDesactualizado)
+        {
+            // ADR-018 §11: un ajuste posterior invalidó el PDF (también si ganó una carrera contra este envío): no se envía.
+            return new clsErrorDominio(clsCodigosError.ConflictoConcurrencia,
+                $"El PDF de la cotización {cotizacion.Folio} quedó desactualizado por un cambio reciente: regenéralo antes de enviarlo.");
+        }
+
         var pdf = await almacen.LeerPorReferenciaAsync(cotizacion.PdfPath, cancellationToken);
         if (pdf is null)
         {
@@ -111,6 +122,17 @@ public sealed class clsCorreoService(
             clsPlantillaCorreo.Html(cuerpo),
             new clsAdjuntoCorreo(NombreAdjunto(cotizacion), pdf));
 
+        // Reserva del envío (ADR-018 §12): sube la versión y deja la cotización enviada antes de que el correo salga.
+        var estadoAnterior = cotizacion.EstadoEnvio;
+        var versionLeida = cotizacion.VersionNegocio;
+        cotizacion.RegistrarEnvio();
+        cotizacion.IncrementarVersionNegocio();
+        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionLeida, cancellationToken))
+        {
+            return new clsErrorDominio(clsCodigosError.ConflictoConcurrencia,
+                $"La cotización {cotizacion.Folio} cambió mientras se preparaba el envío: recárgala y vuelve a intentarlo.");
+        }
+
         string messageId;
         try
         {
@@ -119,6 +141,7 @@ public sealed class clsCorreoService(
         catch (clsEnvioCorreoException ex)
         {
             logger.LogWarning("Falló el envío de la cotización {Folio} por {Modo}: {Motivo}", cotizacion.Folio, transporte.Modo, ex.Message);
+            await DeshacerReservaAsync(cotizacion, estadoAnterior);
             await RegistrarFallidoAsync(cotizacion, para, cc, asunto, entrada.UsuarioId, ex.Message);
             return new clsErrorDominio(clsCodigosError.CorreoEnvioFallido, ex.Message);
         }
@@ -145,8 +168,7 @@ public sealed class clsCorreoService(
         {
             var correo = clsCorreo.Crear(cotizacion.Id, para, EstadoCorreo.Enviado, asunto, cc, usuarioId, messageId).Valor;
             correos.Agregar(correo);
-            cotizacion.RegistrarEnvio();
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None); // el estado de envío ya quedó en la reserva
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -155,6 +177,39 @@ public sealed class clsCorreoService(
             logger.LogError(ex, "El correo de la cotización {Folio} salió ({MessageId}) pero no se pudo registrar en la base.", cotizacion.Folio, messageId);
             return false;
         }
+    }
+
+    /// <summary>
+    /// El correo no salió: vuelve al estado de envío anterior (y sube la versión, porque el estado cambió). Si otra escritura cambió la
+    /// versión entretanto (el polling), recarga y reintenta; ningún ajuste puede colarse porque la cotización figura enviada.
+    /// </summary>
+    private async Task DeshacerReservaAsync(clsCotizacion cotizacion, EstadoEnvio? estadoAnterior)
+    {
+        for (var intento = 0; intento < 3; intento++)
+        {
+            try
+            {
+                if (intento > 0)
+                {
+                    await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
+                }
+
+                var version = cotizacion.VersionNegocio;
+                cotizacion.RestaurarEstadoEnvio(estadoAnterior);
+                cotizacion.IncrementarVersionNegocio();
+                if (await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None))
+                {
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "No se pudo deshacer la reserva del envío de la cotización {Folio}.", cotizacion.Folio);
+                return;
+            }
+        }
+
+        logger.LogError("No se pudo deshacer la reserva del envío de la cotización {Folio}: queda marcada como enviada.", cotizacion.Folio);
     }
 
     private async Task RegistrarFallidoAsync(clsCotizacion cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string error)
