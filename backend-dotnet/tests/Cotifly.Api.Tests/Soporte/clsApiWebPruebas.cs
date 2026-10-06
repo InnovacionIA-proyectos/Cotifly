@@ -58,6 +58,10 @@ public sealed class clsApiWebPruebas : IDisposable
             ["Jwt:SigningKey"] = ClaveJwt,
             ["LimiteAuth:PeticionesPorVentana"] = "100000",
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
+
+            // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
+            ["Trm:Url"] = clsTrmFalso.Url,
+            ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,
         };
         if (correoHabilitado)
         {
@@ -86,9 +90,15 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
-    /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red.
+    /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red. Con <paramref name="dolarApi"/> y
+    /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas.
     /// </summary>
-    public static clsApiWebPruebas ConNexo(clsBaseDatosPruebas baseDatos, clsNexoFalso nexo, IDictionary<string, string?>? extra = null)
+    public static clsApiWebPruebas ConNexo(
+        clsBaseDatosPruebas baseDatos,
+        clsNexoFalso nexo,
+        IDictionary<string, string?>? extra = null,
+        HttpMessageHandler? dolarApi = null,
+        HttpMessageHandler? superfinanciera = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
@@ -102,6 +112,15 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
             s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            if (dolarApi is not null)
+            {
+                s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => dolarApi);
+            }
+
+            if (superfinanciera is not null)
+            {
+                s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => superfinanciera);
+            }
         }));
     }
 

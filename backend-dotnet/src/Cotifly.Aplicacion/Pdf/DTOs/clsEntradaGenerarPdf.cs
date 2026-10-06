@@ -33,7 +33,7 @@ public sealed record clsEntradaGenerarPdf(
 /// <param name="OrigenCliente"><c>cliente</c> | <c>prospecto</c>.</param>
 /// <param name="Moneda">ISO de 3 letras (por defecto <c>COP</c>); con otra moneda la TRM debe ser mayor que 0.</param>
 /// <param name="PrecioCop">
-/// Valor cotizado en pesos de una cotización en USD: el mínimo a pagar que imprime la aclaración (HU-012.3). No tiene columna propia: es el
+/// Valor cotizado en pesos de una cotización en USD, antes de convertir (HU-012.2); no se imprime en el PDF. No tiene columna propia: es el
 /// precio en pesos de <c>Costo</c> y <c>MargenAplicado</c> (persistidos), y se verifica contra ellos.
 /// </param>
 public sealed record clsTrazabilidadCotizacion(

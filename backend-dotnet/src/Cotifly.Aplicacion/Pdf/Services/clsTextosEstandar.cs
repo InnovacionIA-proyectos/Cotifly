@@ -38,7 +38,6 @@ public static class clsTextosEstandar
     public const string EtiquetaAsunto = "Asunto:";
     public const string EtiquetaNota = "Nota:";
     public const string EtiquetaTiemposLogisticos = "Tiempos logísticos:";
-    public const string EtiquetaMoneda = "Cotización en dólares:";
     public const string EtiquetaCelular = "Cel";
 
     /// <summary>Encabezados de columna de la tabla de tarifa (tarifa única).</summary>
@@ -74,25 +73,14 @@ public static class clsTextosEstandar
         + "Asimismo, el Decreto 16075 regula el manejo y la devolución de los contenedores vacíos.";
 
     /// <summary>
-    /// Aclaración de la cotización en USD (HU-012.3, regla de negocio del backlog, ADR-014): el valor en pesos se ajusta día a día con la TRM
-    /// (la aplicada es la referencia), pero el mínimo a pagar es el valor cotizado originalmente en pesos (<c>precio_cop</c>: el precio en
-    /// pesos que salió del costo y el margen, antes de convertir). El piso se imprime como un valor exacto, no como "USD × TRM" (con el
-    /// redondeo a centavos esa multiplicación difiere unos pesos del valor cotizado). Texto de referencia pendiente de validar con Gerencia
-    /// Comercial / jurídica.
+    /// Nota de la cotización en USD (HU-012.3, ADR-014 §4). Texto exacto definido por negocio el 2026-10-05, que reemplaza la aclaración del
+    /// piso mínimo en pesos: la TRM es la aplicada en la cotización (<c>trmAplicada</c>, la del día en que se cotizó, nunca la del día en que
+    /// se genera o reimprime el PDF) con 2 decimales (<see cref="clsFormatoMoneda.FormatearTrmNota"/>). Los PDF en COP no la llevan.
     /// </summary>
     /// <param name="trmAplicada">TRM de la cotización (&gt; 0).</param>
-    /// <param name="precioCop">Valor cotizado originalmente en pesos (&gt; 0): el piso.</param>
-    public static string AclaracionDolares(decimal trmAplicada, decimal precioCop)
-    {
-        var trm = clsFormatoMoneda.FormatearTrm(trmAplicada);
-        return "Los valores de esta cotización están expresados en dólares estadounidenses (USD) y se liquidaron con la "
-            + $"TRM de {trm} por dólar, vigente el día de la cotización. El valor en pesos colombianos se ajusta día a día "
-            + $"con la TRM vigente (TRM de referencia: {trm}), pero {Piso(precioCop)}.";
-    }
-
-    /// <summary>Frase del piso: <c>el mínimo a pagar es $3.294.798, el valor cotizado originalmente en pesos</c>.</summary>
-    public static string Piso(decimal precioCop) =>
-        $"el mínimo a pagar es {clsFormatoMoneda.Formatear(precioCop, "COP")}, el valor cotizado originalmente en pesos";
+    public static string NotaTrmMinima(decimal trmAplicada) =>
+        $"Esta cotización está bajo una TRM mínima de {clsFormatoMoneda.FormatearTrmNota(trmAplicada)} y es de resaltar que la tarifa puede "
+        + "variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.";
 
     /// <summary>Frase de cierre (<c>FRASE_FINAL_STD</c>); el enlace va en la línea siguiente.</summary>
     public const string FraseFinal = "Para conocer más de nuestra organización, ingresa a:";

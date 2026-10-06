@@ -64,14 +64,26 @@ public static class clsPliegoMuestra
         })];
 
     /// <summary>JSON de <c>POST /web/licitaciones</c> con las líneas dadas.</summary>
-    public static string Json(string nit, object[] lineas, string? hoja = Hoja) => System.Text.Json.JsonSerializer.Serialize(new
-    {
-        nit_cliente = nit,
-        cliente_nombre = "Agencia de Aduanas JF",
-        linea_negocio = "Nacional",
-        deadline = "2026-10-20T17:00:00-05:00",
-        referencia = "Pliego 2026-04",
-        hoja,
-        lineas,
-    });
+    public static string Json(string nit, object[] lineas, string? hoja = Hoja, string? moneda = null) => moneda is null
+        ? System.Text.Json.JsonSerializer.Serialize(new
+        {
+            nit_cliente = nit,
+            cliente_nombre = "Agencia de Aduanas JF",
+            linea_negocio = "Nacional",
+            deadline = "2026-10-20T17:00:00-05:00",
+            referencia = "Pliego 2026-04",
+            hoja,
+            lineas,
+        })
+        : System.Text.Json.JsonSerializer.Serialize(new
+        {
+            nit_cliente = nit,
+            cliente_nombre = "Agencia de Aduanas JF",
+            linea_negocio = "Nacional",
+            deadline = "2026-10-20T17:00:00-05:00",
+            referencia = "Pliego 2026-04",
+            hoja,
+            moneda,
+            lineas,
+        });
 }
