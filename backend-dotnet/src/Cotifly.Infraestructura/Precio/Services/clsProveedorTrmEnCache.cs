@@ -7,14 +7,15 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// Caché de la TRM por fecha de negocio (HU-012.1): la TRM se fija por día y no cambia intradía, así que solo la primera cotización en
-/// USD de cada día consulta la fuente. Decorador de <see cref="IClsProveedorTrm"/> (singleton).
+/// Caché de la TRM por fecha de negocio (HU-012.1, ADR-014 §2): la primera TRM válida que se obtiene para un día queda fija hasta el fin de
+/// ese día en America/Bogota, así todas las cotizaciones del día usan la misma TRM (mañana y tarde). Decorador de
+/// <see cref="IClsProveedorTrm"/> (singleton). Cada TRM que entrega se registra en <see cref="clsMemoriaTrm"/>.
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
 /// <item>La clave es la fecha que pide el caso de uso (el "hoy" de America/Bogota, <c>IClsCalendarioNegocio</c>), nunca la fecha UTC.</item>
-/// <item>Una TRM vive <see cref="Duracion"/> según <see cref="IClsReloj"/>: si la Superintendencia corrige un valor, se toma en la siguiente
-/// consulta tras el vencimiento. Al guardar se descartan las entradas vencidas.</item>
+/// <item>Una TRM vive hasta las 00:00 del día siguiente a su fecha en la zona de negocio (<see cref="IClsCalendarioNegocio.InicioDelDia"/>);
+/// para una fecha ya pasada, <see cref="Duracion"/> desde que se obtuvo. Al guardar se descartan las entradas vencidas.</item>
 /// <item>Consulta compartida por fecha: las llamadas simultáneas sin caché esperan la misma consulta a la fuente y reciben el mismo
 /// resultado, también si falla (una fuente caída no encola N consultas de N comerciales). La consulta compartida no usa el token de
 /// ningún llamador (el adaptador tiene su propio límite de tiempo); cada llamador puede dejar de esperar con el suyo.</item>
@@ -23,9 +24,10 @@ namespace Cotifly.Infraestructura.Precio.Services;
 /// comerciales: compartir el fallo no filtra nada.</item>
 /// </list>
 /// </remarks>
-public sealed class clsProveedorTrmEnCache(IClsProveedorTrm fuente, IClsReloj reloj) : IClsProveedorTrm
+public sealed class clsProveedorTrmEnCache(
+    IClsProveedorTrm fuente, IClsReloj reloj, IClsCalendarioNegocio calendario, clsMemoriaTrm memoria) : IClsProveedorTrm
 {
-    /// <summary>Vida de una TRM en la caché.</summary>
+    /// <summary>Vida de una TRM de una fecha ya pasada (la de hoy o una futura vive hasta el fin de su día).</summary>
     public static readonly TimeSpan Duracion = TimeSpan.FromHours(6);
 
     /// <summary>Vida de un fallo en la caché negativa.</summary>
@@ -77,7 +79,15 @@ public sealed class clsProveedorTrmEnCache(IClsProveedorTrm fuente, IClsReloj re
             _entradas.TryRemove(vencida, out _);
         }
 
-        _entradas[fecha] = new clsEntrada(resultado, ahora + (resultado.EsExitoso ? Duracion : DuracionFallo));
+        if (resultado.EsFallo)
+        {
+            _entradas[fecha] = new clsEntrada(resultado, ahora + DuracionFallo);
+            return;
+        }
+
+        memoria.Registrar(resultado.Valor);
+        var finDelDia = calendario.InicioDelDia(fecha.AddDays(1));
+        _entradas[fecha] = new clsEntrada(resultado, finDelDia > ahora ? finDelDia : ahora + Duracion);
     }
 
     private sealed record clsEntrada(clsResultado<clsTrm> Resultado, DateTimeOffset Vence);

@@ -34,6 +34,7 @@ public static class clsDependenciasAplicacion
 
         // Precio y Margen (HU-003.4, #10). El ajuste negociado se audita (#11).
         servicios.AddSingleton<IClsPrecioService, clsPrecioService>();
+        servicios.AddSingleton<Cotizaciones.Services.IClsFijacionMonedaService, Cotizaciones.Services.clsFijacionMonedaService>();
         servicios.AddScoped<IClsMargenResolverService, clsMargenResolverService>();
         servicios.AddScoped<clsAjusteMargenService>();
         servicios.AddScoped<IClsAjusteMargenService>(sp => new clsAjusteMargenServiceAuditado(

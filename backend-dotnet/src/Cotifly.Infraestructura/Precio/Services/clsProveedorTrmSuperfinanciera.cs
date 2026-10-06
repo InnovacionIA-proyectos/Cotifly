@@ -5,7 +5,6 @@ using Cotifly.Aplicacion.Precio.DTOs;
 using Cotifly.Aplicacion.Precio.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Configuracion;
-using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -25,7 +24,7 @@ namespace Cotifly.Infraestructura.Precio.Services;
 /// <c>TRM_NO_DISPONIBLE</c> con una sola línea de warning (la traza completa, en Debug). La caché por día la pone
 /// <see cref="clsProveedorTrmEnCache"/>.</para>
 /// <para><b>Resiliencia</b> (registrada en <c>AddInfraestructura</c>): <c>Trm:TiempoEsperaSegundos</c> para toda la consulta,
-/// un tercio por intento y <see cref="Reintentos"/> reintentos ante 5xx, 408, 429, fallos de red o intento agotado (GET, idempotente).</para>
+/// un tercio por intento y <see cref="clsResilienciaTrm.Reintentos"/> reintentos (<see cref="clsResilienciaTrm"/>) ante 5xx, 408, 429, fallos de red o intento agotado (GET, idempotente).</para>
 /// <para><b>Inyección.</b> La fecha llega como <see cref="DateOnly"/> y se formatea con cultura invariante; aun así va como literal
 /// SoQL (comilla simple duplicada) y cada parámetro se codifica para URL.</para>
 /// </remarks>
@@ -38,15 +37,7 @@ public sealed class clsProveedorTrmSuperfinanciera(
     /// <summary>Identificador de la fuente en <see cref="clsTrm.Fuente"/>.</summary>
     public const string Fuente = "superfinanciera";
 
-    /// <summary>Reintentos ante fallos transitorios (además del primer intento).</summary>
-    public const int Reintentos = 2;
-
-    /// <summary>Intentos mínimos en la ventana del circuito para que pueda abrir.</summary>
-    public const int UmbralCircuito = 5;
-
     public const string Mensaje = "No se pudo obtener la TRM oficial del día (Superintendencia Financiera): la cotización en dólares no está disponible en este momento. Intenta de nuevo en unos minutos o cotiza en pesos.";
-
-    private static readonly TimeSpan _esperaEntreIntentos = TimeSpan.FromMilliseconds(200);
 
     private readonly string _url = (opciones.Value.Url ?? clsOpcionesTrm.UrlPorDefecto).Trim();
 
@@ -106,29 +97,6 @@ public sealed class clsProveedorTrmSuperfinanciera(
             + $"&$order={Uri.EscapeDataString("vigenciadesde DESC")}"
             + "&$limit=1",
             UriKind.Absolute);
-    }
-
-    /// <summary>Tubería estándar de resiliencia con el tiempo total de <c>Trm:TiempoEsperaSegundos</c> (ver <c>AddInfraestructura</c>).</summary>
-    public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, clsOpcionesTrm opciones)
-    {
-        ArgumentNullException.ThrowIfNull(resiliencia);
-        ArgumentNullException.ThrowIfNull(opciones);
-        var total = TimeSpan.FromSeconds(opciones.TiempoEsperaSegundos);
-        var porIntento = total / (Reintentos + 1);
-        resiliencia.TotalRequestTimeout.Timeout = total;
-        resiliencia.AttemptTimeout.Timeout = porIntento;
-        resiliencia.Retry.MaxRetryAttempts = Reintentos;
-        resiliencia.Retry.Delay = _esperaEntreIntentos;
-        resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
-        resiliencia.Retry.UseJitter = true;
-
-        // Circuito: con el valor por defecto (100 peticiones) nunca abriría con el volumen de la TRM (una consulta por día y réplica, más
-        // los reintentos). Abre con 5 intentos en 60 s si la mitad falla y corta 30 s. La ventana debe ser al menos el doble del intento.
-        var ventana = TimeSpan.FromSeconds(60);
-        resiliencia.CircuitBreaker.MinimumThroughput = UmbralCircuito;
-        resiliencia.CircuitBreaker.FailureRatio = 0.5;
-        resiliencia.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(30);
-        resiliencia.CircuitBreaker.SamplingDuration = ventana >= porIntento * 2 ? ventana : porIntento * 2;
     }
 
     /// <summary>
