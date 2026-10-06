@@ -35,6 +35,9 @@ public sealed class clsContextoWeb : IDisposable
     /// <summary>Encabezado <c>ETag</c> de la última respuesta (concurrencia optimista, ADR-018 §8), o <c>null</c>.</summary>
     public string? UltimoEtag { get; private set; }
 
+    /// <summary>Encabezado <c>Location</c> de la última respuesta (201 de la versión nueva, HU-013.4), o <c>null</c>.</summary>
+    public string? UltimaUbicacion { get; private set; }
+
     public void Iniciar(bool correoHabilitado) => _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, correoHabilitado);
 
     /// <summary>API ya armada por el escenario (ej. conectada al Nexo falso del costeo, ADR-015).</summary>
@@ -66,8 +69,54 @@ public sealed class clsContextoWeb : IDisposable
     public async Task EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null, string? ifMatch = null)
     {
         using var respuesta = await Api.EnviarAsync(metodo, ruta, token, cuerpoJson, ifMatch);
+        await GuardarAsync(respuesta);
+    }
+
+    /// <summary>Petición con encabezados adicionales (ej. <c>Idempotency-Key</c>, ADR-018 §8); guarda la respuesta igual.</summary>
+    public async Task EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson, IReadOnlyDictionary<string, string> encabezados)
+    {
+        ArgumentNullException.ThrowIfNull(encabezados);
+        using var respuesta = await EnviarSinGuardarAsync(metodo, ruta, token, cuerpoJson, encabezados);
+        await GuardarAsync(respuesta);
+    }
+
+    /// <summary>Envía y devuelve la respuesta sin guardarla (el llamador la libera): para peticiones simultáneas (doble clic).</summary>
+    public Task<HttpResponseMessage> EnviarSinGuardarAsync(
+        HttpMethod metodo, string ruta, string? token, string? cuerpoJson, IReadOnlyDictionary<string, string> encabezados)
+    {
+        ArgumentNullException.ThrowIfNull(encabezados);
+        var peticion = new HttpRequestMessage(metodo, ruta);
+        if (token is not null)
+        {
+            peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        foreach (var (nombre, valor) in encabezados)
+        {
+            peticion.Headers.TryAddWithoutValidation(nombre, valor);
+        }
+
+        if (cuerpoJson is not null)
+        {
+            peticion.Content = new StringContent(cuerpoJson, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        return EnviarYLiberarAsync(peticion);
+    }
+
+    private async Task<HttpResponseMessage> EnviarYLiberarAsync(HttpRequestMessage peticion)
+    {
+        using (peticion)
+        {
+            return await Api.Cliente.SendAsync(peticion);
+        }
+    }
+
+    private async Task GuardarAsync(HttpResponseMessage respuesta)
+    {
         UltimoEstado = respuesta.StatusCode;
         UltimoEtag = respuesta.Headers.ETag?.Tag;
+        UltimaUbicacion = respuesta.Headers.Location?.ToString();
         UltimoContenido = await respuesta.Content.ReadAsByteArrayAsync();
         UltimoTipo = respuesta.Content.Headers.ContentType?.MediaType;
         UltimoCuerpo = UltimoTipo == "application/pdf" ? string.Empty : System.Text.Encoding.UTF8.GetString(UltimoContenido);

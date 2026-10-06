@@ -45,9 +45,6 @@ try
         .AddConvencionJsonWeb();
     clsFabricaErroresCliente.Registrar(builder.Services);
 
-    // Idempotency-Key de las mutaciones que llaman a un POST no idempotente de Nexo (ADR-018 §8; conexos #99, re-solicitar #100).
-    builder.Services.AddSingleton<clsAlmacenIdempotencia>();
-
     // CORS del frontend de ClientePro, encabezados reenviados de Traefik y límites HTTP (#12 parte B).
     builder.Services.AddSeguridadHttp();
     builder.WebHost.ConfigureKestrel(k => k.AddServerHeader = false);

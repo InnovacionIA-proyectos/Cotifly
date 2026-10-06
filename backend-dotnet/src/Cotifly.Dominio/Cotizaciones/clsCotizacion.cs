@@ -682,6 +682,127 @@ public sealed class clsCotizacion
     /// <summary>Sube la versión de negocio: lo llaman los casos de uso al confirmar un cambio que ve el comercial (ADR-018 §12).</summary>
     public void IncrementarVersionNegocio() => VersionNegocio = checked(VersionNegocio + 1);
 
+    /// <summary>
+    /// Invariantes de "Cotizar costo" (re-solicitar el costeo a Nexo, ADR-018 §5 y §11), en este orden:
+    /// <list type="number">
+    /// <item>la cotización nació del formulario de costeo (si no, <c>ESTADO_NO_PERMITE</c>);</item>
+    /// <item>sin un costeo en curso (<c>pendiente_envio</c> o <c>pendiente_costeo</c>: <c>ESTADO_NO_PERMITE</c>), en el mismo folio y en
+    /// la versión nueva;</item>
+    /// <item>en el mismo folio (<paramref name="versionNueva"/> falso): sin envío al cliente ni resultado (<c>PDF_YA_ENVIADO</c>) y con
+    /// <c>estado_costeo</c> en <c>costeo_vencido</c>, <c>entregada</c> o un <c>error_envio</c> que no sea un rechazo definitivo de Nexo
+    /// (reenviar los mismos datos no sirve: se corrigen en una versión nueva); en otro estado, <c>ESTADO_NO_PERMITE</c>.</item>
+    /// </list>
+    /// La versión nueva se permite también ya enviada o con resultado (es la salida de <c>PDF_YA_ENVIADO</c>).
+    /// </summary>
+    public clsErrorDominio? ValidarReSolicitud(bool versionNueva)
+    {
+        if (EstadoCosteo is not { } estado || EncabezadoSolicitud is null)
+        {
+            return NoPermite("no nació del formulario de costeo en Nexo");
+        }
+
+        if (estado is Cotizaciones.EstadoCosteo.PendienteEnvio or Cotizaciones.EstadoCosteo.PendienteCosteo)
+        {
+            return NoPermite("tiene un costeo en curso en Nexo");
+        }
+
+        if (versionNueva)
+        {
+            return null;
+        }
+
+        if (ValidarCambioEtapaFinal() is { } entregada)
+        {
+            return entregada;
+        }
+
+        if (ErrorEnvioDefinitivo)
+        {
+            return NoPermite("Nexo rechazó sus datos: corrige la carga en una versión nueva (datos_carga)");
+        }
+
+        return estado is Cotizaciones.EstadoCosteo.CosteoVencido or Cotizaciones.EstadoCosteo.Entregada or Cotizaciones.EstadoCosteo.ErrorEnvio
+            ? null
+            : NoPermite("solo se re-solicita con el costeo vencido, entregado o con error de envío");
+    }
+
+    /// <summary>
+    /// Deja la cotización lista para volver a enviarla a Nexo en el mismo folio (HU-013.4): sin el costeo anterior (id de la solicitud y
+    /// de la cotización de Nexo, costo, precio, conexos y fecha de costeo; el caso de uso los deja antes en la auditoría), sin polling y
+    /// en <see cref="Cotizaciones.EstadoCosteo.PendienteEnvio"/> mientras se envía. El margen se vuelve a resolver al enviar.
+    /// </summary>
+    public void PrepararReSolicitud()
+    {
+        CosteoId = null;
+        CotizacionNexoId = null;
+        Costo = null;
+        PrecioFinal = null;
+        ServiciosConexos = null;
+        CosteoListoAt = null;
+        CosteoUltimaConsultaAt = null;
+        CosteoSiguienteConsultaAt = null;
+        CosteoConsultasFallidas = 0;
+        EstadoCosteo = Cotizaciones.EstadoCosteo.PendienteEnvio;
+        MotivoEstadoCosteo = null;
+    }
+
+    /// <summary>
+    /// Cotización de la versión <paramref name="folio"/> (<c>-vN</c>, ADR-011) con la identidad de esta: cliente, línea de negocio,
+    /// comercial, moneda y TRM fijada. El formulario, las líneas y las posiciones los registra el caso de uso; el costeo, el margen, el
+    /// PDF, los textos y el resultado empiezan de cero (la versión nueva pasa otra vez por Nexo, ADR-018 §11).
+    /// </summary>
+    public clsResultado<clsCotizacion> CrearVersion(clsFolio folio)
+    {
+        ArgumentNullException.ThrowIfNull(folio);
+        if (folio.Version <= Version)
+        {
+            throw new ArgumentException($"La versión nueva debe ser mayor que {Version}.", nameof(folio));
+        }
+
+        // Un margen ajustado por el comercial se copia (decisión del 2026-10-06): el envío lo conserva y solo refresca el sugerido.
+        var negociado = TieneMargenNegociado;
+        return Crear(new clsDatosCotizacion
+        {
+            Folio = folio.Valor,
+            Version = folio.Version,
+            LineaNegocioId = LineaNegocioId,
+            ClienteNombre = ClienteNombre,
+            NitCliente = NitCliente,
+            OrigenCliente = OrigenCliente,
+            UsuarioId = UsuarioId,
+            Moneda = Moneda ?? MonedaPesos,
+            TrmAplicada = TrmAplicada,
+            MargenPolitica = negociado ? MargenPolitica : null,
+            MargenAplicado = negociado ? MargenAplicado : null,
+            OrigenMargen = negociado ? Margen.OrigenMargen.Negociado : null,
+            MetodoCalculo = negociado ? MetodoCalculo : null,
+        });
+    }
+
+    /// <summary>¿El comercial ajustó el margen? (<c>origen_margen = negociado</c> con margen y método de cálculo.)</summary>
+    public bool TieneMargenNegociado =>
+        OrigenMargen == Margen.OrigenMargen.Negociado && MargenAplicado is not null && MetodoCalculo is not null;
+
+    /// <summary>
+    /// Re-solicitud con margen negociado (HU-013.4, decisión del 2026-10-06): conserva <see cref="MargenAplicado"/> y el origen
+    /// <c>negociado</c>, y refresca el margen sugerido y su fuente (SAP TM o la política de la línea) como referencia.
+    /// </summary>
+    public void RefrescarMargenSugerido(decimal? margenPolitica, decimal sugerido, OrigenMargen origen)
+    {
+        if (sugerido < 0m || origen == Margen.OrigenMargen.Negociado)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sugerido), "El sugerido es no negativo y sale de SAP TM o de la política.");
+        }
+
+        MargenPolitica = margenPolitica ?? MargenPolitica;
+        MargenSugerido = sugerido;
+        OrigenMargenSugerido = origen;
+    }
+
+    private clsErrorDominio NoPermite(string motivo) => new(clsCodigosError.EstadoNoPermite,
+        $"La cotización {Folio} no permite re-solicitar el costeo en su estado actual "
+        + $"({(EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : "sin costeo en Nexo")}): {motivo}.");
+
     private static clsErrorDominio? ValidarTrm(string moneda, decimal trm)
     {
         if (moneda == MonedaPesos && trm != 0m)

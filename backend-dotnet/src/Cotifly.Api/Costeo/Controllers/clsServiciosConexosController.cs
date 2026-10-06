@@ -41,7 +41,6 @@ public sealed class clsServiciosConexosController(IClsContextoUsuario usuario, I
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/servicios-conexos")]
     [clsRequiereIfMatch]
-    [clsIdempotente]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status403Forbidden)]
@@ -52,7 +51,9 @@ public sealed class clsServiciosConexosController(IClsContextoUsuario usuario, I
     public async Task<IActionResult> Agregar(string folio, [FromBody] clsAgregarServiciosConexosWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
-        var resultado = await conexos.AgregarAsync(UsuarioId, folio, cuerpo.AEntrada(), clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        var clave = Request.Headers[clsCosteoController.EncabezadoIdempotencia].ToString();
+        var resultado = await conexos.AgregarAsync(
+            UsuarioId, folio, cuerpo.AEntrada(), clsConcurrenciaHttp.VersionDe(HttpContext), clave.Length == 0 ? null : clave, cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 }

@@ -15,10 +15,10 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 /// <c>If-Match</c> con la versión vigente de la fila (leída de la base) salvo que el paso diga otra cosa.
 /// </summary>
 [Binding]
-public sealed class clsPasosServiciosConexos(clsContextoWeb web, clsPasosCosteo costeo, clsPasosLicitaciones licitaciones)
+public sealed class clsPasosServiciosConexos(
+    clsContextoWeb web, clsPasosCosteo costeo, clsPasosLicitaciones licitaciones, clsPasosReSolicitudCosteo reSolicitud)
 {
     private readonly Dictionary<string, string> _licitaciones = new(StringComparer.OrdinalIgnoreCase);
-    private (HttpStatusCode Estado, string Cuerpo)[] _dobleClic = [];
 
     [Given("el catálogo de Nexo tiene estos servicios conexos:")]
     public void DadoElCatalogo(DataTable tabla)
@@ -115,7 +115,8 @@ public sealed class clsPasosServiciosConexos(clsContextoWeb web, clsPasosCosteo 
         var version = await VersionAsync(cotizacion);
         var clave = Guid.NewGuid().ToString();
         var cuerpo = Cuerpo([(linea, servicio, cantidad)]);
-        var respuestas = new List<(HttpStatusCode, string)>();
+        var respuestas = reSolicitud.RespuestasDobleClic;
+        respuestas.Clear();
         for (var i = 0; i < 2; i++)
         {
             using var peticion = new HttpRequestMessage(HttpMethod.Post, Ruta(cotizacion));
@@ -126,17 +127,9 @@ public sealed class clsPasosServiciosConexos(clsContextoWeb web, clsPasosCosteo 
             using var respuesta = await web.Api.Cliente.SendAsync(peticion);
             respuestas.Add((respuesta.StatusCode, await respuesta.Content.ReadAsStringAsync()));
         }
-
-        _dobleClic = [.. respuestas];
     }
 
-    [Then("las dos respuestas tienen el estado {int} y el mismo cuerpo")]
-    public void EntoncesLasDosRespuestas(int estado)
-    {
-        _dobleClic.Should().HaveCount(2);
-        _dobleClic.Should().OnlyContain(r => r.Estado == (HttpStatusCode)estado, _dobleClic[0].Cuerpo);
-        _dobleClic[1].Cuerpo.Should().Be(_dobleClic[0].Cuerpo);
-    }
+    // "las dos respuestas tienen el estado {int} y el mismo cuerpo" es de clsPasosReSolicitudCosteo (una sola definición).
 
     [Given("que Nexo responde 403 al agregar conexos porque {string} no tiene el rol Comercial, CoordinadorFletes ni Admin")]
     public void DadoSinRol(string alias)

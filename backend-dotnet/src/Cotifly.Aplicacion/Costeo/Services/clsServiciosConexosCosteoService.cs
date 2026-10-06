@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -35,9 +38,12 @@ public interface IClsServiciosConexosCosteoService
     /// <c>CONFLICTO_CONCURRENCIA</c> (409), <c>ESTADO_NO_PERMITE</c> (409, licitación), <c>COSTEO_NO_LISTO</c> y <c>PDF_YA_ENVIADO</c>
     /// (409), <c>CONEXO_INVALIDO</c> (400, línea inexistente), <c>LINEA_SIN_COTIZACION_NEXO</c> (409) y los de Nexo. Si Nexo aceptó
     /// pero la relectura falla, <c>NEXO_NO_DISPONIBLE</c> con <c>agregado_en_nexo = true</c> (el polling lo recoge).
+    /// <paramref name="claveIdempotencia"/> (<c>Idempotency-Key</c>, opcional): la repetición con la misma clave devuelve el resultado
+    /// guardado (<see cref="IClsAlmacenIdempotencia"/>); la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> AgregarAsync(
-        Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, string? claveIdempotencia,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -63,8 +69,14 @@ public sealed class clsServiciosConexosCosteoService(
     IClsPrecioService precios,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
-    IOptions<clsOpcionesPdf> opcionesPdf) : IClsServiciosConexosCosteoService
+    IOptions<clsOpcionesPdf> opcionesPdf,
+    IClsAlmacenIdempotencia idempotencia) : IClsServiciosConexosCosteoService
 {
+    /// <summary>Operación del ámbito de la idempotencia (<c>"conexos:{usuarioId}"</c>).</summary>
+    public const string OperacionIdempotencia = "conexos";
+
+    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
+
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "agregar_servicios_conexos";
 
@@ -120,8 +132,39 @@ public sealed class clsServiciosConexosCosteoService(
         return new clsPaginaServiciosConexos(resultado.Valor.Total, pagina, tamano, items);
     }
 
-    public async Task<clsResultado<clsCosteoCotizacion>> AgregarAsync(
-        Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsCosteoCotizacion>> AgregarAsync(
+        Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, string? claveIdempotencia,
+        CancellationToken cancellationToken = default) =>
+        claveIdempotencia is null
+            ? EjecutarAsync(usuarioId, folio, items, versionEsperada, cancellationToken)
+            : idempotencia.EjecutarUnaVezAsync(
+                $"{OperacionIdempotencia}:{usuarioId}",
+                claveIdempotencia,
+                Huella(folio, items),
+                ct => EjecutarAsync(usuarioId, folio, items, versionEsperada, ct),
+                SeGuarda,
+                cancellationToken);
+
+    /// <summary>
+    /// Qué consume la <c>Idempotency-Key</c>: los éxitos y TODA respuesta cuyo POST a Nexo ya ocurrió o pudo ocurrir
+    /// (<c>agregado_en_nexo</c> = <c>true</c> o <c>"desconocido"</c>): repetirla duplicaría el conexo en Nexo, que no tiene DELETE. Los
+    /// demás errores no tocaron Nexo y la repetición se vuelve a evaluar.
+    /// </summary>
+    public static bool SeGuarda(clsResultado<clsCosteoCotizacion> resultado)
+    {
+        ArgumentNullException.ThrowIfNull(resultado);
+        return resultado.EsExitoso || resultado.Error.Datos?.ContainsKey(ClaveAgregadoEnNexo) == true;
+    }
+
+    /// <summary>Huella de la petición para la idempotencia: folio e items tal como llegaron (SHA-256).</summary>
+    public static string Huella(string folio, IReadOnlyList<clsConexoAgregarEntrada>? items)
+    {
+        var cuerpo = JsonSerializer.Serialize(new { folio = folio?.Trim(), items }, _jsonHuella);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+    }
+
+    private async Task<clsResultado<clsCosteoCotizacion>> EjecutarAsync(
+        Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, CancellationToken cancellationToken)
     {
         var validados = Validar(items);
         if (validados.EsFallo)
