@@ -133,6 +133,9 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         }
     }
 
+    /// <summary>Respuestas del doble clic del escenario (también las llenan los pasos de servicios conexos, #99).</summary>
+    public List<(HttpStatusCode Estado, string Cuerpo)> RespuestasDobleClic => _dobleClic;
+
     [Then("las dos respuestas tienen el estado {int} y el mismo cuerpo")]
     public void EntoncesDobleClic(int estado)
     {

@@ -3,9 +3,8 @@
 # POST /web/cotizaciones/{folio}/costeo/servicios-conexos. Nexo es la fuente de verdad del costo (el conexo se agrega en
 # Nexo con POST /api/cotizaciones/{id}/conexos) y Cotifly le aplica el margen. El catálogo nunca expone costoUnitario.
 # Por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers y un Nexo falso (200, 400, 404, 403 y caída).
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #99 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# Pasos en Cotifly.Aceptacion.Tests/Costeo/clsPasosServiciosConexos.cs (#99).
+@integracion
 Característica: Servicios conexos del catálogo de Nexo
   Como comercial de Botero Soto
   Quiero buscar servicios conexos en el catálogo de Nexo y agregarlos a mi cotización
@@ -22,7 +21,7 @@ Característica: Servicios conexos del catálogo de Nexo
 
   # Catálogo
   Escenario: La búsqueda devuelve los servicios activos sin el costo de Nexo
-    Cuando "ana" busca servicios conexos con el texto "a"
+    Cuando "ana" busca servicios conexos con el texto "o"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "PaginaServiciosConexos" del contrato
     Y la página trae 2 servicios con el total 2
     Y ninguna respuesta del catálogo contiene el campo "costo_unitario" ni el valor 120000

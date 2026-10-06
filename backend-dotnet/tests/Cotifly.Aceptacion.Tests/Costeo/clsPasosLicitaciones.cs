@@ -221,7 +221,8 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         }
     }
 
-    private string Folio(string licitacion) =>
+    /// <summary>Folio real de la licitación del escenario (lo usan también los pasos de servicios conexos, HU-013.3).</summary>
+    public string Folio(string licitacion) =>
         _folios.TryGetValue(licitacion, out var folio) ? folio : throw new InvalidOperationException($"No se creó la licitación '{licitacion}'.");
 
     private async Task<string> CosteoIdAsync(string licitacion) =>

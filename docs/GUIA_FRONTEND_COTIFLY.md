@@ -2225,7 +2225,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 
 ## 10. Próximo contrato HU-013 (en construcción)
 
-**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98) y "Cotizar costo" (`re-solicitar`, implementado en #100, apilado sobre #98; PR por abrir).** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98), los servicios conexos de Nexo (implementados en #99) y "Cotizar costo" (`re-solicitar`, implementado en #100); PR por abrir.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2239,8 +2239,8 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 |---|---|---|
 | `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | Formulario en dólares; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada | #103 (HU-013.7) |
 | `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | **Implementado (#98).** Ajuste de margen de 0 a 0,99, con `If-Match` obligatorio. La justificación es obligatoria por debajo de `margen_sugerido` (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2) |
-| `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | Buscador del catálogo de Nexo (sin costos) | #99 (HU-013.3) |
-| `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | Agregar conexos en Nexo; vuelven con precio e incluidos | #99 (HU-013.3) |
+| `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | **Implementado (#99).** Buscador del catálogo de Nexo: solo servicios activos y nunca su costo. Ver abajo | #99 (HU-013.3) |
+| `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | **Implementado (#99).** Agrega conexos en Nexo; vuelven con precio e incluidos. `If-Match` obligatorio e `Idempotency-Key` opcional. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}` | **Implementado (#100).** Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` (y `Location`) si cambia la carga o con `nueva_version: true`. `If-Match` obligatorio e `Idempotency-Key` recomendada. Ver "Cotizar costo" abajo | #100 (HU-013.4) |
 | `POST /web/cotizaciones/{folio}/costeo/textos/redactar[?sobrescribir=true]` | La IA redacta el asunto y la introducción (`fuente`: `ia` o `estandar`). Sobre textos editados responde 409 `TEXTOS_EDITADOS` salvo con `sobrescribir` | #101 (HU-013.5) |
 | `PUT /web/cotizaciones/{folio}/costeo/textos` `{asunto, introduccion}` | El comercial edita los textos | #101 (HU-013.5) |
@@ -2248,6 +2248,17 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
 
 **`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` y `textos` llegan con #103 y #101. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
+
+**Servicios conexos de Nexo (implementado en #99).**
+
+- **Buscar:** `GET /web/servicios-conexos?q=alm&categoria=logistico&page=1&page_size=20`. `q` busca en el nombre o el código (hasta 100 caracteres), `categoria` es `logistico` o `adicional`, `page` desde 1 y `page_size` de 1 a 50 (por defecto 20). Responde `PaginaServiciosConexos` `{total, page, page_size, items: [{id, codigo, nombre, categoria, unidad, origen, destino, puerto, ruta, tipo_maquina, vigencia}]}`. Nunca trae costos. Errores: 400 `ErrorWeb` (filtro fuera de límites), 403 `NEXO_SIN_PERMISO` (el comercial no tiene rol en Nexo), 503 `NEXO_NO_DISPONIBLE`.
+- **Agregar:** `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` con `{"items": [{"linea_orden": 1, "servicio_id": "<id del catálogo>", "cantidad": 2}]}`. Entre 1 y 20 items; `cantidad` de 0,01 a 999.999,99 con hasta 2 decimales; `linea_orden` es 1 en una cotización del formulario. Encabezados: `If-Match` (obligatorio) e `Idempotency-Key` (un UUID nuevo por clic). Responde 200 `CosteoCotizacion` con el `ETag` nuevo: los conexos agregados quedan en `servicios_conexos` con su `precio` (con el margen de la cotización) e `incluido = true`. Si había PDF sin enviar, queda `pdf_desactualizado`.
+- **Errores al agregar:** 400 `ErrorWeb` (items vacíos, más de 20 o fuera de rango); 400 `CONEXO_INVALIDO` (la línea no existe o Nexo no acepta el servicio; `detalle.motivo` trae el código de Nexo); 403 `NEXO_SIN_PERMISO`; 404 (no es suya); 409 `COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO` (esa línea todavía no tiene flete en Nexo), `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (las licitaciones no admiten conexos todavía) y `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE`.
+- **503 con `detalle.agregado_en_nexo = true`:** Nexo sí agregó el conexo pero no se pudo leer de nuevo la cotización. **No reintentar el POST**: avisar "El conexo se agregó; su precio aparecerá en unos segundos" y seguir consultando `GET .../costeo`. Un 409 `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` significa lo mismo: recargar el costeo, no volver a agregar.
+- **503 con `detalle.agregado_en_nexo = "desconocido"`:** Nexo no respondió y no se pudo confirmar si agregó el conexo. Avisar "No sabemos si el conexo se agregó; revisa el costeo en unos minutos" y no ofrecer reintentar hasta recargar el costeo.
+- **Versión reservada:** de dos peticiones con el mismo `If-Match`, solo una llega a Nexo; la otra recibe 409 `CONFLICTO_CONCURRENCIA`. Si Nexo falla después de reservar, el `ETag` ya cambió: recargar el costeo antes de reintentar.
+- **Doble clic:** con la misma `Idempotency-Key`, la segunda petición devuelve la misma respuesta (mismo cuerpo y `ETag`) sin repetir el POST en Nexo. La misma clave con otro cuerpo responde 400. Generar una clave nueva para cada intención del usuario, no para cada reintento de red.
+- Excluir un conexo sigue siendo `PUT .../servicios-conexos` y no lo borra en Nexo.
 
 **"Cotizar costo" (`re-solicitar`, implementado en #100).** Nexo no tiene "reabrir": Cotifly hace una captura nueva en Nexo con lo guardado y guarda el id de la solicitud nueva.
 

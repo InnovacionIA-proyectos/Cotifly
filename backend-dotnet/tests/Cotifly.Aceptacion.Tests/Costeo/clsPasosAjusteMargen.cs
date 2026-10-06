@@ -21,6 +21,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private string? _etagGuardado;
 
     [Given("{string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
+    [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string}")]
     [Given("que {string} envió a costeo el formulario ampliado del cliente {string} como {string} y Nexo no lo ha costeado")]
     public async Task DadoQueEnvioACosteo(string alias, string nit, string cotizacion)
     {
