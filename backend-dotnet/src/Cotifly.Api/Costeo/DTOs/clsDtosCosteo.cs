@@ -46,6 +46,9 @@ public sealed class clsSolicitudCosteoWebRequest
     public decimal? ValorMercancia { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
 
+    /// <summary><c>COP</c> (por defecto) o <c>USD</c> (HU-013.7, ADR-014 §5); otro valor lo rechaza el caso de uso (<c>SOLICITUD_COSTEO_INVALIDA</c>).</summary>
+    public string? Moneda { get; init; }
+
     /// <summary>Entrada del caso de uso, o <c>SOLICITUD_COSTEO_INVALIDA</c> si falta el tipo o no es <c>spot</c>/<c>licitacion</c>.</summary>
     public clsResultado<clsEntradaSolicitudCosteo> AEntrada()
     {
@@ -85,7 +88,7 @@ public sealed class clsSolicitudCosteoWebRequest
                 ? null!
                 : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
         };
-        return new clsEntradaSolicitudCosteo(NitCliente, ClienteNombre, LineaNegocio, solicitud);
+        return new clsEntradaSolicitudCosteo(NitCliente, ClienteNombre, LineaNegocio, solicitud, Moneda);
     }
 }
 

@@ -53,9 +53,15 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     }
 
     [When("{string} envía a costeo el formulario ampliado del cliente {string} como {string}")]
-    public async Task CuandoEnviaACosteo(string alias, string nit, string cotizacion)
+    public Task CuandoEnviaACosteo(string alias, string nit, string cotizacion) => EnviarACosteoAsync(alias, nit, cotizacion, null);
+
+    /// <summary>
+    /// <c>POST /web/solicitudes-costeo</c> con el formulario ampliado; <paramref name="moneda"/> (HU-013.7) solo viaja si no es <c>null</c>.
+    /// Con 201 asocia el alias al folio del servidor.
+    /// </summary>
+    public async Task EnviarACosteoAsync(string alias, string nit, string cotizacion, string? moneda)
     {
-        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit));
+        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit, moneda));
         if (web.UltimoEstado == HttpStatusCode.Created)
         {
             _folios[cotizacion] = web.UltimoJson().GetProperty("folio").GetString()!;
@@ -181,6 +187,12 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 
+    /// <summary>Fuente principal de la TRM del escenario (DolarApi falsa, HU-013.7).</summary>
+    public clsDolarApiFalso DolarApi => _dolarApi;
+
+    /// <summary>Fuente de respaldo de la TRM del escenario (Superfinanciera falsa, HU-013.7).</summary>
+    public clsTrmFalso Superfinanciera => _superfinanciera;
+
     /// <summary>Asocia el alias de la cotización al folio que devolvió el servidor (pasos de otros archivos, HU-013.10).</summary>
     public void Registrar(string cotizacion, string folio) => _folios[cotizacion] = folio;
 
@@ -190,6 +202,12 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public Task<string?> Columna(string cotizacion, string columna) =>
         clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"SELECT CAST({columna} AS nvarchar(max)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(cotizacion)}'");
+
+    private static string Formulario(string nit, string? moneda)
+    {
+        var json = Formulario(nit);
+        return moneda is null ? json : json[..json.LastIndexOf('}')] + ",\"moneda\":" + System.Text.Json.JsonSerializer.Serialize(moneda) + "}";
+    }
 
     private static string Formulario(string nit) => clsApiWebPruebas.Json(new
     {

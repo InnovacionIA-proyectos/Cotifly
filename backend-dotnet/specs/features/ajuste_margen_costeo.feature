@@ -4,8 +4,8 @@
 # en Testcontainers y un Nexo falso. Margen sugerido de la cotización: 15 % (política de la línea), método "margen":
 # precio = costo / (1 - margen), a pesos enteros. Los pasos de mutación envían If-Match con el ETag vigente salvo que el
 # escenario diga otra cosa (ADR-018 §8). Regla del PDF: ADR-018 §11.
-# Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosAjusteMargen.cs (#98). El escenario en USD sigue con @pendiente @ignore
-# hasta que #103 (HU-013.7) agregue la moneda al formulario de costeo.
+# Pasos: tests/Cotifly.Aceptacion.Tests/Costeo/clsPasosAjusteMargen.cs (#98); los de la moneda del escenario en USD, en
+# clsPasosMonedaCosteo.cs (#103, HU-013.7).
 @integracion
 Característica: Ajuste de margen sobre el costeo de Nexo
   Como comercial de Botero Soto
@@ -74,9 +74,8 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Entonces el servicio conexo "Cargue" de "C1" tiene el precio 106250
     Y ninguna respuesta del costeo de "C1" contiene el costo 85000
 
-  # Pendiente de #103 (HU-013.7): el formulario de costeo todavía no acepta "moneda". La conversión con la TRM fijada ya la cubre
-  # la prueba unitaria clsAjusteMargenCosteoServiceTests.EnDolaresConvierteConLaTrmFijadaDeLaCotizacion.
-  @pendiente @ignore
+  # HU-013.7 (#103): 2.550.000 / (1 - 0,18) = 3.109.756 pesos / 4.000 = 777,44 USD, con la TRM fijada al crear y no la del día.
+  @trm
   Escenario: En USD el ajuste usa la TRM ya fijada, nunca una nueva
     Dado que "ana" envió a costeo en "USD" el formulario del cliente "900555111" como "U1" con la TRM 4000
     Y Nexo costeó la solicitud de "U1" con un flete de 2550000 y el polling lo registró

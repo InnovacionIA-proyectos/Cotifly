@@ -265,7 +265,8 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     [Given("que la cotización {string} está en {string} con la TRM {string}")]
     public async Task DadoEnMoneda(string cotizacion, string moneda, string trm)
     {
-        // El formulario en USD llega con #103: aquí se deja la cotización como la deja un alta en dólares.
+        // Cotización en USD de un día anterior, sin pasar por la TRM de hoy: así la caché del día queda vacía y "sin TRM" falla de verdad.
+        // El alta con el formulario en USD (#103) la cubre el escenario anterior.
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"UPDATE dbo_cotifly.Cotizaciones SET moneda = '{moneda}', trmAplicada = {trm} WHERE folio = '{costeo.Folio(cotizacion)}'");
     }

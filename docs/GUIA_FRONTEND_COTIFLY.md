@@ -537,7 +537,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion` | Nexo rechazó la solicitud (típicamente demasiados bultos; también medidas inválidas) | "Reduce el número de bultos o revisa las medidas" | En QA |
 | `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
 | `ERROR_INTERNO` | Cualquiera | Error no controlado | "Ocurrió un error. Reintenta" | En QA |
-| `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
+| `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` y en `POST /web/solicitudes-costeo` (#103) con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En PR #74 |
 | `COSTEO_NEXO_NO_DISPONIBLE` | `motivo_estado_costeo` (envío); 503 en `resultado` | Nexo caído, circuito abierto, sin configurar, 401/403 de Nexo o cliente no resoluble | En el envío queda `error_envio` (botón Reintentar). En resultado: "Nexo no responde; intenta más tarde". Nada cambió | En PR #74/#77 |
 | `COSTEO_NEXO_TIEMPO_AGOTADO` | 503 en `resultado`; motivo del envío | Nexo no respondió a tiempo | En el envío: advertir "Nexo pudo haber recibido la solicitud: verifica en Nexo antes de reintentar" | En PR #74/#77 |
@@ -1049,6 +1049,7 @@ Crea la cotización con el formulario ampliado (folio del servidor con el NIT) y
 | `peso_kg` | number o null | Condicional | 0 a 999.999,99. **Regla de peso de Nexo:** hace falta `peso_kg` > 0 **o** posiciones con peso (`PESO_REQUERIDO`); y si hay los dos, el peso no puede diferir más del 1 % de `sum(cantidad × peso_kg)` (`PESO_INCONSISTENTE`) |
 | `valor_mercancia` | number o null | No | 0 o más, 2 decimales |
 | `posiciones` | array, hasta 200 | No | `[{descripcion?, cantidad (1 a 100000, por defecto 1), largo_cm, ancho_cm, alto_cm (0,1 a 999999, 2 decimales), peso_kg? (0 a 999.999,99)}]` |
+| `moneda` | `"COP"`, `"USD"` o null | No | #103 (HU-013.7). COP por defecto. Con USD la TRM del día queda fija al crear (ver "Moneda" más abajo) |
 
 Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **no las valida el servidor** más allá de los largos y rangos: el formulario debe replicarlas (HU-005.3).
 
@@ -1090,9 +1091,9 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
   - `autocosteo`: Nexo la costeó en la misma petición (el `precio_final` llega con el polling, en segundos);
   - `error_envio`: Nexo no la recibió; ver `motivo_estado_costeo` y ofrecer Reintentar (salvo un rechazo definitivo);
   - `pendiente_envio`: el envío quedó a medias (raro).
-- 400 (nada queda guardado): `SOLICITUD_COSTEO_INVALIDA` (el `mensaje` nombra el campo; para el peso, `detalle.motivo`), `MARGEN_LINEA_DESCONOCIDA` o `FOLIO_CONSECUTIVO_AGOTADO`. 400 `ErrorWeb` si el JSON es inválido.
+- 400 (nada queda guardado): `SOLICITUD_COSTEO_INVALIDA` (el `mensaje` nombra el campo; para el peso, `detalle.motivo`), `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` o `TRM_NO_DISPONIBLE` (solo con `moneda = USD`). 400 `ErrorWeb` si el JSON es inválido.
 - La petición puede tardar hasta unos 30 s (el alta en Nexo auto-costea en línea). Spinner y bloquear el doble clic: un segundo POST crea **otra** cotización.
-- Moneda: **solo COP** en esta iteración (no hay campo `moneda`). USD sobre el costeo está **Pendiente**.
+- **Moneda (#103, HU-013.7, ADR-014 §5):** `moneda` opcional, `"COP"` (por defecto) o `"USD"`, sin distinguir mayúsculas ni espacios al borde. Con `USD` la API fija la TRM del día **antes de guardar** (`trm_aplicada` de 5.17 y de "Mis cotizaciones") y ya no cambia: el `precio_final` y el `precio` de los conexos llegan en USD (2 decimales), convertidos con esa TRM, también tras un ajuste de margen o un reintento. El costo sigue en COP y nunca se muestra. El PDF lleva la tarifa en `US$` y la nota de TRM mínima (sección 6.3, punto 7). Sin TRM: 400 `TRM_NO_DISPONIBLE`, no se crea nada ni se envía a Nexo; ofrecer **Reintentar** o **Cambiar a COP**. Una cadena vacía u otro valor: 400 `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra `moneda`).
 
 ### 5.16 Reintentar el envío (`POST /web/cotizaciones/{folio}/costeo/reintentar`). En PR #74
 
@@ -1116,6 +1117,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
   "precio_final": 4705882,
   "margen_aplicado": 0.15,
   "moneda": "COP",
+  "trm_aplicada": 0,
   "servicios_conexos": [
     { "id": "8b1f3c2a-0d4e-4f5a-9b6c-7d8e9f0a1b2c", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 1, "precio": 411765, "incluido": true },
     { "id": "2c4e6a8b-1d3f-4a5b-8c7d-9e0f1a2b3c4d", "nombre": "Escolta", "categoria": "seguridad", "cantidad": 1, "precio": 823529, "incluido": false }
@@ -1128,6 +1130,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 |---|---|
 | `precio_final` | Flete con margen (flete + aprovisionamiento + retorno del contenedor, con el margen de la cotización). null mientras no haya costeo |
 | `margen_aplicado` | null mientras no haya `precio_final` |
+| `moneda`, `trm_aplicada` | #103 (HU-013.7). `trm_aplicada` es la TRM fijada al crear (COP por USD); 0 en COP. En USD, `precio_final` y el `precio` de los conexos van en dólares con 2 decimales: mostrar `US$` y "TRM aplicada: `trm_aplicada`" |
 | `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (con el mismo margen) e `incluido` (por defecto true). **Nunca trae el costo** |
 | `costeo_listo_at` | Cuándo quedó costeada |
 | `pdf_url` | null hasta generar el PDF |
@@ -1762,7 +1765,7 @@ Responsabilidades del frontend:
 5. TRM vencida: si el comercial confirma después de `trm_vigencia_hasta` (fecha de Bogotá), el servidor recalcula y **no** genera el PDF en ese turno. Detectarlo así: se envió "Confirmo", `pdf` es null y `precio` trae valor. Mostrar el precio nuevo y pedir confirmar otra vez. Opcional: avisar antes, comparando la fecha de hoy en Bogotá con `trm_vigencia_hasta`.
 6. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
 7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05, rama de #50): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
-8. El formulario ampliado de Nexo (spot) **no** soporta USD todavía: deshabilitar el selector en ese modo o mostrar "Solo COP" (**Pendiente**). Las **licitaciones** sí: ver 5.24 (`moneda`).
+8. El formulario ampliado de Nexo (spot) soporta USD desde #103 (HU-013.7): enviar `moneda` en `POST /web/solicitudes-costeo` (sección 5.15). Las **licitaciones** también: ver 5.24 (`moneda`).
 
 ### 6.4 Formulario ampliado con costeo en Nexo. En PR #74 a #76
 
@@ -2237,7 +2240,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
 | Endpoint | Para qué | Issue |
 |---|---|---|
-| `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | Formulario en dólares; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada | #103 (HU-013.7) |
+| `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | **Implementado (#103).** Formulario en dólares con la TRM fijada al crear; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada. Ver 5.15 | #103 (HU-013.7) |
 | `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | **Implementado (#98).** Ajuste de margen de 0 a 0,99, con `If-Match` obligatorio. La justificación es obligatoria por debajo de `margen_sugerido` (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | **Implementado (#99).** Buscador del catálogo de Nexo: solo servicios activos y nunca su costo. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | **Implementado (#99).** Agrega conexos en Nexo; vuelven con precio e incluidos. `If-Match` obligatorio e `Idempotency-Key` opcional. Ver abajo | #99 (HU-013.3) |
@@ -2247,7 +2250,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /web/chat` con `folio` obligatorio | Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`. Responde `{texto, accion_propuesta?}` | #102 (HU-013.6) |
 | `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
 
-**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` y `textos` llegan con #103 y #101. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
+**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` ya está (#103) y `textos` llega con #101. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
 
 **Servicios conexos de Nexo (implementado en #99).**
 

@@ -64,16 +64,22 @@ Característica: Re-solicitar el costeo a Nexo
     Y la versión nueva tiene el margen aplicado "0.18" con el origen "negociado"
 
   # Decisión del usuario (2026-10-06): la versión nueva es una cotización nueva; copia la moneda y fija la TRM del día.
+  # HU-013.7 (#103): "U1" se crea con el formulario en USD; la caché fija una TRM por día, así que la TRM de su día de creación se
+  # simula cambiando solo la TRM guardada.
+  @trm
   Escenario: La versión nueva en USD fija la TRM del día y la original conserva la suya
-    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
-    Y que la cotización "C1" está en "USD" con la TRM "3900.00"
-    Y que DolarApi publica hoy la TRM "4012.35"
-    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión en dólares" y nueva_version "true"
+    Dado que DolarApi publica hoy la TRM "4012.35"
+    Y que "ana" envió a costeo en "USD" el formulario ampliado del cliente "900555111" como "U1"
+    Y que el polling consultó a Nexo 73 horas después del envío y "U1" quedó en "costeo_vencido"
+    Y que la TRM fijada de "U1" fue "3900.00" el día que se creó
+    Cuando "ana" re-solicita el costeo de "U1" con el motivo "Nueva versión en dólares" y nueva_version "true"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
-    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la respuesta trae el folio de "U1" con el sufijo "-v2" y la versión 2
     Y la versión nueva está en "USD" con la TRM "4012.35"
-    Y la cotización "C1" sigue en "USD" con la TRM "3900.00"
+    Y la cotización "U1" sigue en "USD" con la TRM "3900.00"
 
+  # Sin TRM en la caché del día: la cotización en USD de un día anterior se deja como la deja ese alta (con el formulario en USD la
+  # caché ya tendría la TRM de hoy y la versión nueva no fallaría).
   Escenario: Sin TRM la versión nueva en USD no se crea ni llega a Nexo
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
     Y que la cotización "C1" está en "USD" con la TRM "3900.00"
