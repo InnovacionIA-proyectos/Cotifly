@@ -1,6 +1,9 @@
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Precio.DTOs;
 using Cotifly.Aplicacion.Precio.Services;
+using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Precio;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -8,6 +11,8 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// Margen sobre el costeo de Nexo (HU-005.7, ADR-015 §5): cuando el costeo está completo (<c>autocosteo</c> o <c>entregada</c>) el
 /// costo de la línea pasa por el módulo de Precio (HU-003.4) con el margen que se resolvió al enviar; el LLM nunca pone números
 /// (ADR-003). El costo bruto de Nexo solo queda en <c>Cotizaciones.costo</c> (interno): el comercial ve el precio.
+/// En una cotización en USD (licitación con <c>moneda = USD</c>, ADR-014 §5) cada precio (líneas, total y servicios conexos) se calcula en
+/// pesos y se convierte con la <c>trmAplicada</c> de la cotización: <c>round(precio_cop / trm, 2)</c>. El costo sigue en pesos.
 /// </summary>
 public interface IClsPrecioCosteoService
 {
@@ -212,6 +217,24 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         }
 
         return conexos;
+    }
+
+    /// <summary>
+    /// Precio en la moneda de la cotización (ADR-014): en COP el precio en pesos; en otra moneda, el de pesos convertido con
+    /// <c>trmAplicada</c> (<see cref="clsConversorMoneda.PesosADolares"/>, 2 decimales half-to-even).
+    /// </summary>
+    public static clsResultado<decimal> EnMoneda(clsCotizacion cotizacion, clsResultado<clsSalidaPrecio> enPesos)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(enPesos);
+        if (enPesos.EsFallo)
+        {
+            return enPesos.Error;
+        }
+
+        return clsConversorMoneda.EsPesos(cotizacion.Moneda)
+            ? enPesos.Valor.Precio
+            : clsConversorMoneda.PesosADolares(enPesos.Valor.Precio, cotizacion.TrmAplicada);
     }
 
     public bool Aplicar(clsCotizacion cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)

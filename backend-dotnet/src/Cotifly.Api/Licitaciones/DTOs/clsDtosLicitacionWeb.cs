@@ -15,12 +15,19 @@ public sealed class clsLicitacionWebRequest
     public string? NitCliente { get; init; }
     public string? ClienteNombre { get; init; }
     public string? LineaNegocio { get; init; }
+
+    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
+    [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
     public decimal? ValorEstimado { get; init; }
     public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
     public string? Hoja { get; init; }
+
+    /// <summary><c>COP</c> (por defecto) o <c>USD</c> (ADR-014 §5); otro valor o una cadena vacía es un error del reporte (campo <c>moneda</c>).</summary>
+    public string? Moneda { get; init; }
+
     public IReadOnlyList<clsLineaLicitacionWebRequest?>? Lineas { get; init; }
 
     /// <summary>Entrada del caso de uso, con el archivo original si vino en la parte <c>archivo</c> del multipart.</summary>
@@ -39,7 +46,8 @@ public sealed class clsLicitacionWebRequest
         },
         Hoja,
         [.. (Lineas ?? []).Select(l => l is null ? null! : new clsLineaLicitacionEntrada(l.Fila, l.ALinea()))],
-        archivo);
+        archivo,
+        Moneda);
 }
 
 /// <summary><c>LineaLicitacionWeb</c>: los campos destino del mapeo (los de <c>CapturaLineaRequest</c>) y la fila del análisis.</summary>

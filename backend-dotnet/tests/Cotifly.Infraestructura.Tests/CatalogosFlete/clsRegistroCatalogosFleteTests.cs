@@ -44,40 +44,46 @@ public sealed class clsRegistroCatalogosFleteTests
     }
 
     [Fact]
+    public void ConUrlBaseLosMaestrosVanConCacheYSinUrlBaseElNoDisponible()
+    {
+        using (var conNexo = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }))
+        {
+            conNexo.GetRequiredService<IClsCatalogosMaestrosProvider>().Should().BeOfType<clsCatalogosMaestrosEnCache>();
+        }
+
+        using var sinNexo = Proveedor(new() { ["Nexo:UrlBase"] = null });
+        sinNexo.GetRequiredService<IClsCatalogosMaestrosProvider>().Should().BeOfType<clsCatalogosMaestrosNoDisponible>();
+    }
+
+    [Fact]
     public async Task ElClienteDeNexoReintentaUnErrorTransitorio()
     {
-        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.ServiceUnavailable).ResponderCandidatos(
-            """{"tiposVehiculo":[{"valor":"NHR","etiqueta":"NHR"}],"tiposCarroseria":[],"clasesViaje":[]}""");
+        using var nexo = new clsNexoFalso { FallasCatalogos = 1 };
         using var proveedor = Proveedor(
-            new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase },
+            new() { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase },
             configurar: s => UsarNexoFalso(s, nexo));
 
         var resultado = await proveedor.GetRequiredService<IClsCatalogosFleteProvider>().ObtenerAsync(_usuarioId, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
-        nexo.Peticiones.Should().HaveCount(2);
+        nexo.Peticiones.Should().HaveCount(5, "cuatro catálogos y un reintento del que falló");
     }
 
     [Fact]
     public async Task ElClienteDeNexoAgotaLosReintentosYReportaCatalogosFleteNoDisponible()
     {
-        var nexo = new clsNexoClientesFalso();
-        for (var i = 0; i < 5; i++)
-        {
-            nexo.Responder(HttpStatusCode.InternalServerError);
-        }
-
+        using var nexo = new clsNexoFalso { CatalogosCaidos = HttpStatusCode.InternalServerError };
         using var proveedor = Proveedor(
-            new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase },
+            new() { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase },
             configurar: s => UsarNexoFalso(s, nexo));
 
         var resultado = await proveedor.GetRequiredService<IClsCatalogosFleteProvider>().ObtenerAsync(_usuarioId, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
-        nexo.Peticiones.Should().HaveCount(1 + clsBuscadorClientesNexo.Reintentos);
+        nexo.Peticiones.Should().HaveCount(4 * (1 + clsBuscadorClientesNexo.Reintentos));
     }
 
-    private static void UsarNexoFalso(IServiceCollection servicios, clsNexoClientesFalso nexo)
+    private static void UsarNexoFalso(IServiceCollection servicios, HttpMessageHandler nexo)
     {
         servicios.AddHttpClient(clsBuscadorClientesNexo.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => nexo);
 

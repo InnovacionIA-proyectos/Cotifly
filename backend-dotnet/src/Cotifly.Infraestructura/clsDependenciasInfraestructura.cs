@@ -218,34 +218,62 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// TRM oficial (HU-012.1, ADR-014): <see cref="clsProveedorTrmSuperfinanciera"/> (datos abiertos de la Superintendencia Financiera)
-    /// detrás de la caché por día <see cref="clsProveedorTrmEnCache"/>, ambos singleton. Cliente HTTP con nombre (se crea por consulta
-    /// con <c>IHttpClientFactory</c>), tubería estándar de resiliencia con el tiempo de <c>Trm:TiempoEsperaSegundos</c> y sin registrar
-    /// cabeceras. Los eventos de Polly de cada intento bajan a Debug, como en SAP TM. TryAdd: un adaptador registrado antes (pruebas) se
-    /// respeta.
+    /// TRM (HU-012.1, ADR-014): la cadena que elige <c>Trm:Proveedor</c> (<see cref="ProveedorTrm"/>) detrás de la caché por día
+    /// <see cref="clsProveedorTrmEnCache"/>, todo singleton. Por defecto DolarApi (<see cref="clsProveedorTrmDolarApi"/>) con respaldo en los
+    /// datos abiertos de la Superintendencia Financiera (<see cref="clsProveedorTrmSuperfinanciera"/>). Cada fuente tiene su cliente HTTP con
+    /// nombre (se crea por consulta con <c>IHttpClientFactory</c>), la tubería estándar de resiliencia con el tiempo de
+    /// <c>Trm:TiempoEsperaSegundos</c> y sin registrar cabeceras. Los eventos de Polly de cada intento bajan a Debug, como en SAP TM. TryAdd:
+    /// un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarTrm(IServiceCollection servicios)
     {
-        var tuberia = servicios.AddHttpClient(clsProveedorTrmSuperfinanciera.NombreCliente)
-            .RedactLoggedHeaders(_ => true)
-            .AddStandardResilienceHandler();
+        (string Cliente, Func<clsOpcionesTrm, int> Segundos)[] clientes =
+        [
+            (clsProveedorTrmSuperfinanciera.NombreCliente, o => o.TiempoEsperaSegundos),
+            (clsProveedorTrmDolarApi.NombreCliente, o => o.TiempoEsperaDolarApiSegundos),
+        ];
+        foreach (var (cliente, segundos) in clientes)
+        {
+            var tuberia = servicios.AddHttpClient(cliente)
+                .RedactLoggedHeaders(_ => true)
+                .AddStandardResilienceHandler();
 
-        // Las opciones de la tubería son opciones con nombre (el de la tubería): así toman Trm:TiempoEsperaSegundos ya validado.
-        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
-            .Configure<IOptions<clsOpcionesTrm>>((resiliencia, opciones) => clsProveedorTrmSuperfinanciera.ConfigurarResiliencia(resiliencia, opciones.Value));
+            // Las opciones de la tubería son opciones con nombre (el de la tubería): así toman el tiempo de Trm ya validado.
+            servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+                .Configure<IOptions<clsOpcionesTrm>>((resiliencia, opciones) =>
+                    clsResilienciaTrm.Configurar(resiliencia, TimeSpan.FromSeconds(segundos(opciones.Value))));
+        }
+
+        servicios.TryAddSingleton<clsMemoriaTrm>();
         servicios.TryAddSingleton<clsProveedorTrmSuperfinanciera>();
+        servicios.TryAddSingleton<clsProveedorTrmDolarApi>();
         servicios.TryAddSingleton<IClsProveedorTrm>(proveedor => new clsProveedorTrmEnCache(
-            proveedor.GetRequiredService<clsProveedorTrmSuperfinanciera>(), proveedor.GetRequiredService<IClsReloj>()));
+            ProveedorTrm(proveedor),
+            proveedor.GetRequiredService<IClsReloj>(),
+            proveedor.GetRequiredService<IClsCalendarioNegocio>(),
+            proveedor.GetRequiredService<clsMemoriaTrm>()));
 
         servicios.Configure<TelemetryOptions>(telemetria =>
         {
             var anterior = telemetria.SeverityProvider;
             telemetria.SeverityProvider = argumentos =>
-                argumentos.Source.PipelineName?.StartsWith(clsProveedorTrmSuperfinanciera.NombreCliente + "-", StringComparison.Ordinal) == true
+                argumentos.Source.PipelineName is { } nombre && clientes.Any(c => nombre.StartsWith(c.Cliente + "-", StringComparison.Ordinal))
                     ? ResilienceEventSeverity.Debug
                     : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
         });
     }
+
+    /// <summary>Fuente (o cadena de fuentes) de la TRM según <c>Trm:Proveedor</c>, ya validado al arrancar.</summary>
+    private static IClsProveedorTrm ProveedorTrm(IServiceProvider proveedor) =>
+        proveedor.GetRequiredService<IOptions<clsOpcionesTrm>>().Value.ProveedorNormalizado switch
+        {
+            clsOpcionesTrm.ProveedorSuperfinanciera => proveedor.GetRequiredService<clsProveedorTrmSuperfinanciera>(),
+            clsOpcionesTrm.ProveedorDolarApi => proveedor.GetRequiredService<clsProveedorTrmDolarApi>(),
+            _ => new clsProveedorTrmConRespaldo(
+                proveedor.GetRequiredService<clsProveedorTrmDolarApi>(),
+                proveedor.GetRequiredService<clsProveedorTrmSuperfinanciera>(),
+                proveedor.GetRequiredService<Microsoft.Extensions.Logging.ILogger<clsProveedorTrmConRespaldo>>()),
+        };
 
     /// <summary>
     /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
@@ -282,16 +310,23 @@ public static class clsDependenciasInfraestructura
 
     /// <summary>
     /// Catálogos de tipo de vehículo/carrocería/clase de viaje elegidos por <c>Nexo:UrlBase</c> al resolver
-    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/>; vacía →
-    /// <see cref="clsCatalogosFleteNoDisponible"/>. Mismo cliente HTTP tipado (nombre
-    /// <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el mismo servicio Nexo.
+    /// (<see cref="clsFabricaCatalogosFlete.Crear"/>): configurada → <see cref="clsCatalogosFleteNexo"/> sobre los catálogos maestros
+    /// (<see cref="clsFabricaCatalogosMaestros.Crear"/>, HU-013.10); vacía → <see cref="clsCatalogosFleteNoDisponible"/>. Los
+    /// catálogos maestros usan el mismo cliente HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la
+    /// búsqueda de clientes: es el mismo servicio Nexo.
     /// No repite la configuración de resiliencia/redacción por la misma razón que <see cref="AgregarMunicipios"/>.
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarCatalogosFlete(IServiceCollection servicios)
     {
+        // Catálogos maestros de Nexo (HU-013.10, G1/G2): GET /api/catalogos/*, con caché en memoria y copia de respaldo.
+        servicios.TryAddScoped<clsCatalogosMaestrosNoDisponible>();
+        servicios.TryAddSingleton<clsCacheCatalogosMaestros>();
+        servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
+
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
-        servicios.AddHttpClient<clsCatalogosFleteNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<clsCatalogosFleteNexo>();
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
     }
 

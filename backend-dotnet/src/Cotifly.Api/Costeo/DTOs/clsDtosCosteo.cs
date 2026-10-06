@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Cotifly.Api.Comun;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Dominio.Comun;
@@ -17,13 +18,18 @@ public sealed class clsSolicitudCosteoWebRequest
     public string? NitCliente { get; init; }
     public string? ClienteNombre { get; init; }
     public string? LineaNegocio { get; init; }
+    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
+    [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
     public decimal? ValorEstimado { get; init; }
     public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
+    public string? Notas { get; init; }
     public string? Origen { get; init; }
     public string? Destino { get; init; }
+    public int? OrigenMunicipioId { get; init; }
+    public int? DestinoMunicipioId { get; init; }
     public string? TipoVehiculo { get; init; }
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
@@ -56,8 +62,11 @@ public sealed class clsSolicitudCosteoWebRequest
             Referencia = Referencia,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
+            Notas = Notas,
             Origen = Origen ?? string.Empty,
             Destino = Destino ?? string.Empty,
+            OrigenMunicipioId = OrigenMunicipioId,
+            DestinoMunicipioId = DestinoMunicipioId,
             TipoVehiculo = TipoVehiculo,
             Carroceria = Carroceria,
             Tipologia = Tipologia,

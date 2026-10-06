@@ -19,7 +19,8 @@ public sealed record clsLineaLicitacionEntrada(int? Fila, clsLineaSolicitudCoste
 
 /// <summary>
 /// Entrada de <c>POST /web/licitaciones</c> (HU-011.2, ADR-017): el cliente (NIT del buscador), la línea de negocio de Cotifly, el
-/// encabezado (siempre <c>licitacion</c>), la hoja mapeada, las líneas ya mapeadas y, opcionalmente, el Excel original.
+/// encabezado (siempre <c>licitacion</c>), la hoja mapeada, las líneas ya mapeadas, opcionalmente el Excel original y la moneda
+/// (<c>COP</c> por defecto o <c>USD</c>, ADR-014 §5: en USD los precios se convierten con la TRM del día de creación).
 /// </summary>
 public sealed record clsEntradaLicitacion(
     string? NitCliente,
@@ -28,7 +29,8 @@ public sealed record clsEntradaLicitacion(
     clsEncabezadoSolicitudCosteo Encabezado,
     string? Hoja,
     IReadOnlyList<clsLineaLicitacionEntrada> Lineas,
-    clsArchivoSubido? Archivo);
+    clsArchivoSubido? Archivo,
+    string? Moneda = null);
 
 /// <summary>
 /// Un error del reporte de validación (<c>ErrorFilaLicitacion</c>): <paramref name="Indice"/> es la posición en <c>lineas[]</c>
@@ -65,6 +67,7 @@ public sealed record clsLicitacion(
     string? EstadoCosteo,
     string? MotivoEstadoCosteo,
     string Moneda,
+    decimal TrmAplicada,
     decimal? PrecioFinal,
     int LineasCosteadas,
     int LineasPendientes,

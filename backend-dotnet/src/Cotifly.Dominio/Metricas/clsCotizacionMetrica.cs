@@ -70,7 +70,7 @@ public sealed record clsCotizacionMetrica
     /// <summary>
     /// <c>valor_cop</c> del tablero: el precio tal cual en pesos; en otra moneda <c>round(precioFinal × trmAplicada, 2)</c>
     /// (half-to-even). Sin precio, o en otra moneda sin TRM, es <c>null</c> (no suma dinero). No es el <c>precio_cop</c> de ADR-014
-    /// (precio en pesos recalculado del costo y el margen antes de convertir, el piso del PDF): puede diferir unos pesos.
+    /// (precio en pesos recalculado del costo y el margen antes de convertir): puede diferir unos pesos.
     /// </summary>
     public decimal? ValorCop => PrecioFinal switch
     {

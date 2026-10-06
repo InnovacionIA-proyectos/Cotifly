@@ -3,15 +3,43 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// Lo que se envía a Nexo en <c>POST /api/captura-solicitudes</c> (ADR-015, ADR-017): el cliente por su BP (del catálogo de Nexo,
-/// nunca del formulario), el encabezado, las líneas (una en el formulario de HU-005.5, N en una licitación) y la línea de negocio de
+/// Cliente de la solicitud de Nexo (HU-013.10, G14): Nexo exige <c>clienteBp</c> o <c>clienteId</c> (uuid del catálogo de Nexo),
+/// nunca el NIT. Ambos salen del catálogo de Nexo (búsqueda por NIT), nunca del formulario. Exactamente uno de los dos.
+/// </summary>
+public sealed record clsClienteNexo
+{
+    private clsClienteNexo(string? bp, Guid? id)
+    {
+        Bp = bp;
+        Id = id;
+    }
+
+    /// <summary>BP de SAP del cliente (<c>clienteBp</c>).</summary>
+    public string? Bp { get; }
+
+    /// <summary>Id del cliente o prospecto en el catálogo de Nexo (<c>clienteId</c>); solo si no tiene BP.</summary>
+    public Guid? Id { get; }
+
+    public static clsClienteNexo PorBp(string bp)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bp);
+        return new clsClienteNexo(bp.Trim(), null);
+    }
+
+    public static clsClienteNexo PorId(Guid id) =>
+        id == Guid.Empty ? throw new ArgumentException("El id del cliente de Nexo no puede ser vacío.", nameof(id)) : new clsClienteNexo(null, id);
+}
+
+/// <summary>
+/// Lo que se envía a Nexo en <c>POST /api/captura-solicitudes</c> (ADR-015, ADR-017): el cliente por su BP o su id del catálogo de Nexo
+/// (nunca del formulario), el encabezado, las líneas (una en el formulario de HU-005.5, N en una licitación) y la línea de negocio de
 /// Nexo (<c>MargenesPolitica.mapeoLineasNexo</c>, nula si la línea de Cotifly no tiene equivalente), que viaja en cada línea.
 /// </summary>
 public sealed record clsSolicitudNexo
 {
-    public clsSolicitudNexo(string clienteBp, clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas, string? lineaNegocioNexo)
+    public clsSolicitudNexo(clsClienteNexo cliente, clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas, string? lineaNegocioNexo)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(clienteBp);
+        ArgumentNullException.ThrowIfNull(cliente);
         ArgumentNullException.ThrowIfNull(encabezado);
         ArgumentNullException.ThrowIfNull(lineas);
         if (lineas.Count == 0)
@@ -19,19 +47,29 @@ public sealed record clsSolicitudNexo
             throw new ArgumentException("La solicitud debe traer al menos una línea.", nameof(lineas));
         }
 
-        ClienteBp = clienteBp;
+        Cliente = cliente;
         Encabezado = encabezado;
         Lineas = lineas;
         LineaNegocioNexo = lineaNegocioNexo;
     }
 
-    /// <summary>Solicitud de una sola línea (formulario ampliado de HU-005.5).</summary>
+    /// <summary>Solicitud de un cliente con BP.</summary>
+    public clsSolicitudNexo(string clienteBp, clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsLineaSolicitudCosteo> lineas, string? lineaNegocioNexo)
+        : this(clsClienteNexo.PorBp(clienteBp), encabezado, lineas, lineaNegocioNexo)
+    {
+    }
+
+    /// <summary>Solicitud de una sola línea (formulario ampliado de HU-005.5) de un cliente con BP.</summary>
     public clsSolicitudNexo(string clienteBp, clsSolicitudCosteo solicitud, string? lineaNegocioNexo)
         : this(clienteBp, (solicitud ?? throw new ArgumentNullException(nameof(solicitud))).Encabezado, [solicitud.ALinea()], lineaNegocioNexo)
     {
     }
 
-    public string ClienteBp { get; }
+    public clsClienteNexo Cliente { get; }
+
+    /// <summary>BP del cliente (<c>null</c> si viaja por <see cref="clsClienteNexo.Id"/>).</summary>
+    public string? ClienteBp => Cliente.Bp;
+
     public clsEncabezadoSolicitudCosteo Encabezado { get; }
     public IReadOnlyList<clsLineaSolicitudCosteo> Lineas { get; }
     public string? LineaNegocioNexo { get; }

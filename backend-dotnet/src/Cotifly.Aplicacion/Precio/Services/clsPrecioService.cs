@@ -68,7 +68,7 @@ public sealed class clsPrecioService(IClsProveedorTrm trm, IClsCalendarioNegocio
         var precioPesos = enPesos.PrecioEnPesos();
         if (normalizada.Valor == clsConversorMoneda.Pesos)
         {
-            return enPesos with { Precio = precioPesos, Moneda = clsConversorMoneda.Pesos, TrmAplicada = 0m, PrecioCop = null, TrmVigenciaDesde = null, TrmVigenciaHasta = null };
+            return enPesos with { Precio = precioPesos, Moneda = clsConversorMoneda.Pesos, TrmAplicada = 0m, PrecioCop = null, TrmVigenciaDesde = null, TrmVigenciaHasta = null, TrmFuente = null };
         }
 
         if (trm.Valor <= 0m)
@@ -87,6 +87,7 @@ public sealed class clsPrecioService(IClsProveedorTrm trm, IClsCalendarioNegocio
                 PrecioCop = precioPesos,
                 TrmVigenciaDesde = trm.VigenciaDesde,
                 TrmVigenciaHasta = trm.VigenciaHasta,
+                TrmFuente = trm.Fuente,
             };
     }
 }

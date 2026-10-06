@@ -52,6 +52,17 @@ public sealed class clsFormatosTests
     public void LaTrmSeFormateaConSuEscalaReal(string trm, string esperado) =>
         clsFormatoMoneda.FormatearTrm(decimal.Parse(trm, CultureInfo.InvariantCulture)).Should().Be(esperado);
 
+    // HU-012.3 (2026-10-05): en la nota del PDF en USD la TRM va siempre con 2 decimales (half-to-even), es-CO.
+    [Theory]
+    [InlineData("3273.49", "$3.273,49")]
+    [InlineData("3273.4900", "$3.273,49")]
+    [InlineData("3306.8612", "$3.306,86")]
+    [InlineData("3306.865", "$3.306,86")]
+    [InlineData("950", "$950,00")]
+    [InlineData("12345.6", "$12.345,60")]
+    public void LaTrmDeLaNotaVaConDosDecimales(string trm, string esperado) =>
+        clsFormatoMoneda.FormatearTrmNota(decimal.Parse(trm, CultureInfo.InvariantCulture)).Should().Be(esperado);
+
     [Fact]
     public void SinValorDevuelveLaRaya() => clsFormatoMoneda.Formatear(null).Should().Be("—");
 
@@ -69,6 +80,7 @@ public sealed class clsFormatosTests
             clsFormatoMoneda.Formatear(1200m, "USD").Should().Be("US$1.200,00");
             clsFormatoMoneda.Formatear(996.35m, "USD").Should().Be("US$996,35");
             clsFormatoMoneda.FormatearTrm(3306.86m).Should().Be("$3.306,86");
+            clsFormatoMoneda.FormatearTrmNota(3273.49m).Should().Be("$3.273,49");
         }
         finally
         {

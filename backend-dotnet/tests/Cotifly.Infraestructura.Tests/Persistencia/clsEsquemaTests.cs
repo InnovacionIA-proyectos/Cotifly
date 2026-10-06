@@ -237,6 +237,45 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript0007EsIdempotenteYAgregaNotasYMunicipios()
+    {
+        // Mismo patrón que #91: base AISLADA, filas propias antes de re-aplicar y verificación de que siguen iguales.
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0007", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var id = Guid.NewGuid();
+        var propias = $"'{id}'";
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud, notas) VALUES ('{id}', 'PCN-ID7-{Guid.NewGuid().ToString("N")[..12]}', 'spot', N'Cita previa'); "
+            + "INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, origenMunicipioId, destinoMunicipioId) "
+            + $"VALUES ('{id}', 1, 'YUMBO', 'BOGOTA', 76892, 11001);");
+        var huella = await HuellaFilasPropiasAsync(cadena, propias);
+
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0007_captura_nexo_campos.sql");
+
+        (await HuellaFilasPropiasAsync(cadena, propias)).Should().Equal(huella, "re-aplicar el 0007 no cambia las filas existentes");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            $"SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.Cotizaciones c JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id WHERE c.id = '{id}'"))
+            .Should().Be("Cita previa|76892|11001");
+        var columnas = await LeerColumnasAsync(cadena);
+        columnas[("Cotizaciones", "notas")].Should().Be(("nvarchar(2000)", true));
+        columnas[("CotizacionLineasSolicitud", "origenMunicipioId")].Should().Be(("int", true));
+        columnas[("CotizacionLineasSolicitud", "destinoMunicipioId")].Should().Be(("int", true));
+    }
+
+    [Fact]
+    public async Task ElCheckDel0007RechazaIdsDeMunicipioNoPositivos()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+
+        var cero = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, origenMunicipioId) VALUES ('{id}', 1, 'A', 'B', 0)");
+
+        (await cero.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_municipios");
+    }
+
+    [Fact]
     public async Task ElBackfillDel0005CreaUnaLineaPorCotizacionDelFormularioYEnlazaSusPosiciones()
     {
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbBackfill0005", 4);
@@ -283,7 +322,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         nuevas.Where(c => c != "costeoConsultasFallidas" && !columnas[("Cotizaciones", c)].Nula).Should().BeEmpty(
             "las cotizaciones existentes (chat con costo manual) no traen estos datos");
         columnas[("Cotizaciones", "costeoConsultasFallidas")].Nula.Should().BeFalse();
-        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 5, "0001 crea 28 columnas, el 0004 agrega 29 y el 0006 cinco (versionNegocio, textosCotizacion, pdfDesactualizado, margenSugerido y origenMargenSugerido)");
+        columnas.Keys.Count(k => k.Tabla == "Cotizaciones").Should().Be(28 + nuevas.Length + 5 + 1,
+            "0001 crea 28 columnas, el 0004 agrega 29, el 0006 cinco (versionNegocio, textosCotizacion, pdfDesactualizado, margenSugerido y origenMargenSugerido) y el 0007 agrega notas");
     }
 
     [Fact]
@@ -672,7 +712,7 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             r => r.GetString(0),
             cadena);
 
-    private async Task<Dictionary<(string Tabla, string Columna), (string Tipo, bool Nula)>> LeerColumnasAsync()
+    private async Task<Dictionary<(string Tabla, string Columna), (string Tipo, bool Nula)>> LeerColumnasAsync(string? cadena = null)
     {
         var filas = await LeerAsync(
             """
@@ -692,7 +732,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                     _ => tipo,
                 };
                 return (Tabla: r.GetString(0), Columna: r.GetString(1), Tipo: tipoCompleto, Nula: r.GetString(6) == "YES");
-            });
+            },
+            cadena);
 
         return filas.ToDictionary(f => (f.Tabla, f.Columna), f => (f.Tipo, f.Nula));
     }

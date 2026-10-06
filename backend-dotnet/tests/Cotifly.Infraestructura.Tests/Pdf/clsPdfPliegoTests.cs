@@ -15,7 +15,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 /// <summary>
 /// PDF de pliego (HU-011.5, ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el
 /// total sin conexos, tablas por origen (o solo el resumen en pliegos grandes), solo los servicios conexos incluidos, nunca costos,
-/// el encabezado del resumen en cada página y pliegos de hasta 1000 rutas. USD se rechaza hasta integrar la TRM.
+/// el encabezado del resumen en cada página y pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5).
 /// </summary>
 public sealed class clsPdfPliegoTests
 {
@@ -180,12 +180,40 @@ public sealed class clsPdfPliegoTests
         Generar(cotizacion, lineas).Lector.Texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.Contain("TOTAL DEL PLIEGO (1 RUTAS");
     }
 
+    // ADR-014 §5: el pliego en USD sale con las tarifas en US$ y la nota de TRM mínima con la TRM aplicada de la licitación.
     [Fact]
-    public void EnDolaresElPliegoSeRechazaHastaIntegrarLaTrm()
+    public void EnDolaresElPliegoSaleEnUsdConLaNotaDeTrmMinima()
     {
         var (cotizacion, lineas) = Pliego(3);
 
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, "USD")!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
+        clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, "USD").Should().BeNull();
+        var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, lineas, "Nacional", "USD");
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 5), "USD", 3273.49m).Valor;
+        var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, lineas, "USD"));
+        var texto = System.Text.RegularExpressions.Regex.Replace(clsLectorPdf.Leer(pdf.Contenido).Texto, @"\s+", " ");
+
+        texto.Should().Contain(clsFormatoMoneda.Formatear(lineas[0].PrecioFinal!.Value, "USD"));
+        texto.Should().Contain(
+            "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al "
+            + "comportamiento de la misma a la fecha de elaboración de la CPI.");
+    }
+
+    [Fact]
+    public void UnPliegoEnPesosNoLlevaLaNotaDeTrm()
+    {
+        var (cotizacion, lineas) = Pliego(3);
+
+        Generar(cotizacion, lineas).Lector.Texto.Should().NotContain("TRM mínima").And.NotContain("elaboración de la CPI");
+    }
+
+    [Fact]
+    public void UnPliegoEnDolaresSinTrmEsPayloadInvalido()
+    {
+        var (cotizacion, lineas) = Pliego(3);
+        var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, lineas, "Nacional", "USD");
+
+        clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 5), "USD", 0m).Error.Codigo
+            .Should().Be(clsCodigosError.PdfPayloadInvalido);
     }
 
     [Fact]
