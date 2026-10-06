@@ -307,6 +307,10 @@ paths:
         El remitente es el comercial autenticado. Solo puede enviar cotizaciones propias
         (si no es suya responde 404, igual que si no existe). Un envío idéntico a los
         mismos destinatarios en los últimos 5 minutos se rechaza como duplicado.
+
+        Concurrencia (HU-013.2, ADR-018 §12): antes de que el correo salga, la cotización queda marcada como enviada
+        con control de versión; si un ajuste (margen, conexos) la cambió entretanto, o su PDF quedó desactualizado,
+        responde 409 `CONFLICTO_CONCURRENCIA` sin enviar nada. Si el transporte falla, la marca se deshace.
       security:
         - bearer: []
       parameters:
@@ -336,6 +340,12 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`CONFLICTO_CONCURRENCIA`: la cotización cambió mientras se preparaba el envío o su PDF quedó desactualizado; no se envió nada'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: El envío de correo está deshabilitado (`Correo:Habilitado=false`, valor por defecto)
           content:

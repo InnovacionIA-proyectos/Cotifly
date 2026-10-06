@@ -153,7 +153,9 @@ public sealed class clsAjusteMargenCotizacionTests
     [Fact]
     public void LaJustificacionSeGuardaSinCaracteresDeControl()
     {
-        clsMargenAjuste.LimpiarJustificacion(" Cliente\r\nestratégico\t\0 ").Should().Be("Cliente  estratégico");
+        clsMargenAjuste.LimpiarJustificacion(" Cliente\r\nestratégico\t\0 ").Should().Be("Cliente estratégico");
+        clsMargenAjuste.LimpiarJustificacion("\u001b[31mCliente\u001b[0m   estratégico \u001b]0;titulo\u0007ok").Should().Be("Cliente estratégico ok",
+            "las secuencias ANSI se quitan completas, no solo el ESC, y los espacios repetidos se colapsan");
         clsMargenAjuste.LimpiarJustificacion("\n\t").Should().BeNull();
         clsMargenAjuste.RegistrarNegociacionCosteo(0.15m, 0.12m, "\r\n", Guid.NewGuid(), Guid.NewGuid(), "PCN-1").Error.Codigo
             .Should().Be(clsCodigosError.JustificacionRequerida, "una justificación de solo caracteres de control cuenta como ausente");
