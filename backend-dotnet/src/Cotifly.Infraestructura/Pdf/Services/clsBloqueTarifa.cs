@@ -46,10 +46,11 @@ internal static class clsBloqueTarifa
             NotaResaltada(seccion, clsTextosEstandar.EtiquetaTiemposLogisticos, decreto, diseno);
         }
 
-        // HU-012.3: en USD, la TRM aplicada y el piso mínimo, con el mismo recuadro de la nota de decretos (ambas variantes).
+        // HU-012.3: en USD, la nota de TRM mínima con la TRM aplicada, en el mismo recuadro de la nota de decretos y SIN etiqueta: el PDF
+        // muestra solo el texto exacto que definió negocio (ambas variantes y el pliego).
         if (documento.NotaMoneda is { } moneda)
         {
-            NotaResaltada(seccion, clsTextosEstandar.EtiquetaMoneda, moneda, diseno);
+            NotaResaltada(seccion, null, moneda, diseno);
         }
 
         if (documento.BloquesAdicionales.Count > 0)
@@ -146,7 +147,7 @@ internal static class clsBloqueTarifa
     /// Nota resaltada (<c>.nota-decreto</c>): fondo gris claro con borde izquierdo azul de 3 px y la etiqueta en negrita azul. La usan la
     /// nota de decretos y la aclaración de la cotización en dólares.
     /// </summary>
-    private static void NotaResaltada(Section seccion, string etiqueta, string nota, clsDisenoPdf diseno)
+    private static void NotaResaltada(Section seccion, string? etiqueta, string nota, clsDisenoPdf diseno)
     {
         Espacio(seccion, 12);
         var tabla = seccion.AddTable();
@@ -162,8 +163,12 @@ internal static class clsBloqueTarifa
         celda.Borders.Left.Width = Px(3);
         celda.Borders.Left.Color = Primario;
         var parrafo = Parrafo(celda.AddParagraph(), 10, diseno.Alto);
-        parrafo.AddFormattedText(etiqueta, TextFormat.Bold).Color = Primario;
-        parrafo.AddText(" ");
+        if (etiqueta is not null)
+        {
+            parrafo.AddFormattedText(etiqueta, TextFormat.Bold).Color = Primario;
+            parrafo.AddText(" ");
+        }
+
         AgregarTexto(parrafo, nota);
         Espacio(seccion, 12);
     }

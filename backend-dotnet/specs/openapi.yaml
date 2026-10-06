@@ -1683,14 +1683,17 @@ paths:
         layout de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin
         servicios conexos, y luego una tabla por origen. Con más de 60 rutas o más de 20 orígenes solo trae el resumen
         (hasta 1000 rutas). Solo cuando todas las líneas tienen precio y el total es su suma (si no, `COSTEO_NO_LISTO`).
-        En USD responde `PDF_PAYLOAD_INVALIDO` hasta integrar la TRM al costeo. Nunca imprime costos de Nexo.
+        En USD (HU-012.1, licitaciones con `moneda = USD`) las tarifas salen en `US$` con 2 decimales y el PDF lleva la nota
+        "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al
+        comportamiento de la misma a la fecha de elaboración de la CPI." con la `trm_aplicada` de la cotización (formato
+        `$3.273,49`); en COP no la lleva. Nunca imprime costos de Nexo.
 
         HU-013 (ADR-018): es el único generador de PDF (el chat ya no arma payloads). Desde HU-013.5 imprime el asunto y
         la introducción guardados en `textos` (o los de `clsTextosEstandar` si no hay); nunca llama a la IA, así que el
-        PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD imprime las tarifas en `US$` y la nota de
-        TRM mínima con su `trm_aplicada`. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409
-        `CONFLICTO_CONCURRENCIA`). Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como
-        `{folio}-hN.pdf` (queda en el historial) y el nuevo conserva el nombre `{folio}.pdf`.
+        PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD reutiliza el mismo formato y nota de TRM de
+        HU-012.1. Acepta `If-Match` opcional (desde el `0006` de #98: si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`).
+        Al regenerar un PDF desactualizado, el anterior se archiva en el almacén como `{folio}-hN.pdf` (queda en el
+        historial) y el nuevo conserva el nombre `{folio}.pdf`.
       security:
         - bearer: []
       parameters:
@@ -1803,6 +1806,12 @@ paths:
         `archivo` (el Excel original, para exportarlo después con los precios, HU-011.3); o `application/json` con el
         `LicitacionWeb` sin archivo. Con archivo, `hoja` y la `fila` de cada línea son obligatorias y se verifican contra el
         archivo con la misma regla de detección de Nexo.
+
+        Moneda (ADR-014 §5): `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día (DolarApi con respaldo en la
+        Superintendencia Financiera) se consulta antes de guardar y queda en `trm_aplicada`; el polling calcula cada precio en
+        pesos y lo convierte con ella (`round(precio_cop / trm, 2)`), también el total y los servicios conexos. Sin TRM responde
+        400 `TRM_NO_DISPONIBLE` y no guarda nada. Otro valor de `moneda` es un error del reporte (campo `moneda`,
+        `VALOR_FUERA_DE_RANGO`).
       security:
         - bearer: []
       requestBody:
@@ -1834,7 +1843,8 @@ paths:
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
             `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
-            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`). `ErrorWeb` si el cuerpo no
+            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
+            `moneda = USD`). `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
             `NEXO_SIN_PERMISO` (201).
           content:
@@ -2335,9 +2345,9 @@ components:
                 `CUBICACION_NO_DISPONIBLE` (`POST /web/cubicacion`: idem `MUNICIPIOS_NO_DISPONIBLE`, cubicación
                 rápida de Nexo) y `CUBICACION_DEMASIADO_GRANDE` (`POST /web/cubicacion`: Nexo/Cubicador rechazó la
                 solicitud, típicamente por superar el límite de bultos por solicitud) y `TRM_NO_DISPONIBLE`
-                (HU-012.1/HU-012.2, ADR-014: la fuente oficial de la TRM, datos abiertos de la Superintendencia
-                Financiera, no respondió o no tiene TRM vigente para el día; no se cotiza en USD y el comercial
-                puede reintentar o cotizar en COP). Solo en la herramienta
+                (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
+                DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
+                comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
                 `resolver_municipio` del agente (HU-005.13), nunca en `/web/*`: `MUNICIPIO_ARGUMENTO_INVALIDO`
                 (`campo` distinto de `origen`/`destino` o `texto` vacío; no se consulta Nexo).
                 Costeo en Nexo (ADR-015): `SOLICITUD_COSTEO_INVALIDA` (formulario ampliado fuera de los límites de
@@ -2553,8 +2563,9 @@ components:
             Opcional (HU-012.2, ADR-014). Moneda de la cotización que eligió el comercial en el selector del
             formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
             si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
-            con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM oficial
-            del día; si la fuente de la TRM falla, el agente responde que no puede cotizar en dólares
+            con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM del día
+            (DolarApi con respaldo en la Superintendencia Financiera, ADR-014); si ninguna fuente responde, el agente
+            responde que no puede cotizar en dólares
             (`TRM_NO_DISPONIBLE` en la herramienta) y el comercial puede reintentar o cotizar en COP.
             Se acepta sin distinguir mayúsculas ni espacios al borde (`usd`, ` Usd ` → `USD`). Otro valor, o una cadena
             vacía, responde 400 (`moneda inválida`).
@@ -2568,7 +2579,7 @@ components:
         respuesta del chat vuelve a exponer `costo` ni `utilidad`. No se usa en endpoints nuevos.
         `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
         enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-014).
-        `moneda`, `trm_aplicada` y `precio_cop` son opcionales para compatibilidad: si faltan, la moneda es COP.
+        `moneda`, `trm_aplicada`, `precio_cop` y `trm_fuente` son opcionales para compatibilidad: si faltan, la moneda es COP.
       properties:
         precio:
           type: number
@@ -2587,12 +2598,14 @@ components:
           description: Moneda de `precio` (COP por defecto).
         trm_aplicada:
           type: number
-          description: TRM oficial del día (COP por USD) con que se convirtió el precio; 0 cuando la moneda es COP.
+          description: TRM del día (COP por USD) con que se convirtió el precio; 0 cuando la moneda es COP.
         trm_vigencia_desde:
           type: string
           format: date
           nullable: true
-          description: Primer día de vigencia de `trm_aplicada` (Superintendencia Financiera); `null` en COP.
+          description: |
+            Primer día de vigencia de `trm_aplicada`; `null` en COP. Con la Superintendencia Financiera es el inicio
+            de su rango de vigencia; con DolarApi (no publica rangos) es el día de la cotización.
         trm_vigencia_hasta:
           type: string
           format: date
@@ -2604,8 +2617,15 @@ components:
           type: number
           nullable: true
           description: |
-            Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`). En USD es el
-            mínimo a pagar (piso, HU-012.3): el valor cotizado originalmente en pesos que imprime el PDF.
+            Precio en pesos antes de convertir; `null` cuando la moneda es COP (es el mismo `precio`). Desde el
+            2026-10-05 el PDF en USD ya no imprime este valor (nota de TRM mínima, HU-012.3).
+        trm_fuente:
+          type: string
+          nullable: true
+          enum: [dolarapi, superfinanciera, null]
+          description: |
+            Fuente de `trm_aplicada` (ADR-014, auditoría): `dolarapi` (principal) o `superfinanciera` (respaldo o
+            proveedor configurado); `null` en COP.
 
     SalidaMargen:
       type: object
@@ -2802,9 +2822,9 @@ components:
         trm_aplicada:
           type: number
           description: |
-            TRM con que se convirtió el precio (HU-012.2); 0 cuando la moneda es COP. En USD es la referencia del
-            ajuste diario en pesos. El mínimo a pagar (piso, HU-012.3) no es `precio_final × trm_aplicada`: es el valor
-            cotizado originalmente en pesos, el precio en pesos del costo y el margen aplicado (`precio_cop` de `SalidaPrecio`).
+            TRM con que se convirtió el precio (HU-012.2); 0 cuando la moneda es COP. Es la TRM del día en que se
+            cotizó, la que imprime la nota del PDF en USD ("Esta cotización está bajo una TRM mínima de $X ...",
+            HU-012.3) aunque el PDF se genere otro día.
         estado_costeo:
           type: string
           nullable: true
@@ -4069,6 +4089,14 @@ components:
           nullable: true
           maxLength: 31
           description: Hoja mapeada (`hojas[h].nombre`). Obligatoria con el archivo.
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: |
+            Opcional (ADR-014 §5). Moneda de la licitación: `COP` por defecto. Con `USD` los precios se convierten con la TRM
+            del día de creación (`trm_aplicada` de `Licitacion`) y el PDF de pliego lleva la nota de TRM mínima. Se acepta
+            sin distinguir mayúsculas ni espacios al borde.
         lineas:
           type: array
           minItems: 1
@@ -4150,8 +4178,8 @@ components:
 
     Licitacion:
       type: object
-      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, precio_final,
-                 lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
+      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
+                 precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
       description: Licitación vista por el comercial (HU-011.2). Solo precios.
       properties:
         folio:
@@ -4178,10 +4206,14 @@ components:
           nullable: true
         moneda:
           type: string
+          enum: [COP, USD]
+        trm_aplicada:
+          type: number
+          description: TRM del día de creación con que se convierten los precios en USD (ADR-014 §5); 0 en COP.
         precio_final:
           type: number
           nullable: true
-          description: Suma de los precios de las líneas; solo cuando todas tienen flete (`autocosteo` o `entregada`).
+          description: Suma de los precios de las líneas, en `moneda`; solo cuando todas tienen flete (`autocosteo` o `entregada`).
         lineas_costeadas:
           type: integer
         lineas_pendientes:

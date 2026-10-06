@@ -27,6 +27,7 @@ public interface IClsLicitacionService
     /// Valida TODA la licitación (reporte por fila si algo falla, nada guardado), crea la cotización <c>licitacion</c> con sus líneas,
     /// posiciones y el Excel original en <c>pendiente_envio</c>, la confirma y la envía a Nexo con N líneas. Si Nexo falla la
     /// cotización se devuelve igual, en <c>error_envio</c> (se reintenta con <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c>).
+    /// En USD (ADR-014 §5) consulta antes la TRM del día y la guarda en <c>trmAplicada</c>; sin TRM, <c>TRM_NO_DISPONIBLE</c> y nada se guarda.
     /// </summary>
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
@@ -51,7 +52,8 @@ public sealed class clsLicitacionService(
     IClsAnalizadorExcelNexo analizador,
     IClsLectorExcelLicitacion lector,
     IClsExportadorExcelLicitacion exportador,
-    IClsReloj reloj) : IClsLicitacionService
+    IClsReloj reloj,
+    IClsFijacionMonedaService monedas) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -194,6 +196,13 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(politica.LineaNegocio));
         }
 
+        // ADR-014 §5: en USD la TRM del día de creación queda fija en la licitación; el polling convierte cada precio con ella.
+        var fijada = await monedas.FijarAsync(entrada.Moneda, cancellationToken);
+        if (fijada.EsFallo)
+        {
+            return clsResultadoLicitacion.Fallo(fijada.Error);
+        }
+
         var nit = entrada.NitCliente!.Trim();
         IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
         List<clsCotizacionPosicion> posiciones = [];
@@ -207,6 +216,8 @@ public sealed class clsLicitacionService(
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
+                Moneda = fijada.Valor.Moneda,
+                TrmAplicada = fijada.Valor.TrmAplicada,
             });
             if (cotizacion.EsFallo)
             {
@@ -282,6 +293,7 @@ public sealed class clsLicitacionService(
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,
             cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
+            cotizacion.TrmAplicada,
             cotizacion.PrecioFinal,
             ordenadas.Count(l => l.PrecioFinal is not null),
             ordenadas.Count(l => l.PrecioFinal is null),

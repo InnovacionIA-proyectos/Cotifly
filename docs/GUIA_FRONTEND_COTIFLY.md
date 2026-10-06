@@ -34,7 +34,8 @@ Estado verificado con `gh pr list --repo InnovacionIA-proyectos/Cotifly --state 
 | 0 | #69 | HU-005.13 | El agente del chat resuelve origen y destino contra el catálogo de Nexo y desambigua. No cambia el contrato HTTP | Fusionado (En QA) |
 | 0 | #70 | HU-012.1 | Código `TRM_NO_DISPONIBLE` (fuente oficial de TRM con caché) | Fusionado (En QA) |
 | 0 | #71 | HU-012.2 | `moneda` en `POST /web/chat`, `precio` en USD (`moneda`, `trm_aplicada`, `precio_cop`, `trm_vigencia_desde`/`hasta`), `errores` en `RespuestaChat` y `trm_aplicada` en `CotizacionResumen` | Fusionado (En QA) |
-| A1 | #72 | HU-012.3 | PDF en dólares con la aclaración del piso mínimo. No cambia el contrato HTTP | Abierto |
+| A1 | #72 | HU-012.3 | PDF en dólares (su aclaración del piso mínimo la reemplaza la nota de TRM mínima de la rama de #50). No cambia el contrato HTTP | Fusionado (En QA) |
+| A2 | Rama de #50 (por abrir) | HU-012.1 | TRM desde DolarApi con respaldo (`trm_fuente` en `SalidaPrecio`), nota de TRM mínima en el PDF en USD, `moneda` en `POST /web/licitaciones` y `trm_aplicada` en `Licitacion` | Por abrir |
 | B1 | #73 | HU-005.8 | Script `0004` (persistencia del costeo). Sin endpoints nuevos. **También llena el mapa de métricas** (columnas `origen`/`destino`) | Abierto |
 | B2 | #74 | HU-005.5 | `POST /web/solicitudes-costeo`, `POST /web/cotizaciones/{folio}/costeo/reintentar`, enum de `estado_costeo` y `motivo_estado_costeo` | Abierto |
 | B3 | #75 | HU-005.6 | Polling del lado del servidor: `estado_costeo` avanza solo (sin endpoint nuevo) | Abierto |
@@ -51,7 +52,7 @@ Notas sobre la fusión:
 - Todas las ramas abiertas (#72 a #79) y la de #45 ya están actualizadas con `QA` (`8edcdd7`, que incluye #71). Una simulación de fusión (`git merge-tree`) contra ese `QA` da **cero conflictos** en todas, y `gh pr list` las reporta `MERGEABLE`.
 - Al actualizarse con `QA`, los contratos de los endpoints de costeo no cambiaron: solo heredaron lo de #71 (`moneda`, TRM).
 - Dentro de la pila B, cada PR contiene al anterior: se fusionan en orden. El PR #72 y el de #45 son independientes de la pila B.
-- La pila B es **solo COP** (ADR-015 §5): el costeo de Nexo todavía no pasa por la TRM. Hay que integrarlo con HU-012 (**Pendiente**).
+- La pila B es **solo COP** en el formulario spot (ADR-015 §5). Las licitaciones ya admiten USD (rama de #50, sección 5.24).
 
 ## 2. Arquitectura y comunicación
 
@@ -76,7 +77,7 @@ flowchart LR
     DBC[("dbo_cotifly<br/>SQL Server 2019")]
     NEXO["Nexo<br/>clientes, municipios, catálogos,<br/>cubicación y costeo"]
     SAP["SAP TM OData<br/>márgenes por cliente"]
-    TRM["datos.gov.co<br/>TRM Superfinanciera"]
+    TRM["co.dolarapi.com<br/>TRM (respaldo datos.gov.co)"]
     IA["Proveedor de IA<br/>agente cotizador"]
     SMTP["Relay SMTP"]
     GC["Google Chat"]
@@ -157,7 +158,7 @@ Reglas de serialización de `/web/*` (`clsJsonWeb`):
 
 - En USD, `costo` y `utilidad` **siguen en COP**. Solo `precio` va en dólares.
 - Formatear en la UI: COP como `$ 3.294.798` (sin decimales, locale `es-CO`); USD como `US$ 996,35`.
-- El piso mínimo en USD es `precio_cop`, **no** `precio × trm_aplicada` (ADR-014 §4).
+- `precio_cop` es el precio en pesos antes de convertir, **no** `precio × trm_aplicada`. Desde el 2026-10-05 ya no es un "mínimo a pagar": el PDF en USD lleva la nota de TRM mínima (ADR-014 §4, sección 6.3).
 - El costo bruto de Nexo nunca llega al frontend. Solo precios con margen.
 - Excepción: las métricas (sección 5.22) devuelven montos en COP con **2 decimales** (`costeo_total`, `valor_cotizado_cop`...), porque convierten USD × TRM por fila. En las tarjetas, mostrarlos sin decimales.
 
@@ -536,7 +537,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion` | Nexo rechazó la solicitud (típicamente demasiados bultos; también medidas inválidas) | "Reduce el número de bultos o revisa las medidas" | En QA |
 | `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
 | `ERROR_INTERNO` | Cualquiera | Error no controlado | "Ocurrió un error. Reintenta" | En QA |
-| `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`) | La fuente de la TRM no respondió: no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
+| `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
 | `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En PR #74 |
 | `COSTEO_NEXO_NO_DISPONIBLE` | `motivo_estado_costeo` (envío); 503 en `resultado` | Nexo caído, circuito abierto, sin configurar, 401/403 de Nexo o cliente no resoluble | En el envío queda `error_envio` (botón Reintentar). En resultado: "Nexo no responde; intenta más tarde". Nada cambió | En PR #74/#77 |
 | `COSTEO_NEXO_TIEMPO_AGOTADO` | 503 en `resultado`; motivo del envío | Nexo no respondió a tiempo | En el envío: advertir "Nexo pudo haber recibido la solicitud: verifica en Nexo antes de reintentar" | En PR #74/#77 |
@@ -658,7 +659,8 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 | `moneda` | `COP` o `USD` | En QA. Si falta, es COP |
 | `trm_aplicada` | number | En QA. 0 en COP |
 | `trm_vigencia_desde`, `trm_vigencia_hasta` | fecha `AAAA-MM-DD` o null | En QA. null en COP |
-| `precio_cop` | number o null | En QA. En USD, el precio en pesos antes de convertir: el **piso mínimo** que imprime el PDF. null en COP |
+| `precio_cop` | number o null | En QA. En USD, el precio en pesos antes de convertir (ya no se imprime en el PDF ni es un piso). null en COP |
+| `trm_fuente` | `dolarapi`, `superfinanciera` o null | Rama de #50. Fuente de `trm_aplicada` (auditoría; no hace falta mostrarla). null en COP |
 
 `SalidaMargen`: `margen` (fracción), `origen` (`sap_tm`, `politica_linea` o `negociado`), `trq_type` (string o null), `anomalo` (bool: margen SAP fuera de 0 a 0,6, que el agente pide validar) y `detalle` (texto).
 
@@ -668,7 +670,7 @@ Ejemplo en USD (En QA):
 
 ```json
 {
-  "texto": "Previsualización de la cotización...\n\n- Precio final: **US$ 996,35** (TRM 3.306,86)\n- Mínimo a pagar: $ 3.294.798\n\nResponde «Confirmo» para generar el PDF o «Ajusta el margen a X%».",
+  "texto": "Previsualización de la cotización...\n\n- Precio final: **US$ 996,35** (TRM 3.306,86)\n\nResponde «Confirmo» para generar el PDF o «Ajusta el margen a X%».",
   "herramientas": ["buscar_cliente", "resolver_municipio", "resolver_municipio", "buscar_tarifa", "obtener_margen", "calcular_precio"],
   "precio": {
     "precio": 996.35, "costo": 2850000, "margen": 0.135, "metodo": "margen", "utilidad": 444798,
@@ -1219,7 +1221,7 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 - una fila en USD con `trmAplicada = 0` cuenta en `cantidad` pero no suma dinero;
 - `costo` siempre está en COP y **nunca** se convierte.
 
-`valor_cop` es un nombre interno de la definición (no es un campo de la respuesta) y **no es** el `precio_cop` de ADR-014 que devuelve el chat (`SalidaPrecio.precio_cop`, el piso del PDF, recalculado del costo y el margen antes de convertir). Pueden diferir unos pesos por el redondeo a centavos del precio en USD. El nombre distinto evita confundirlos.
+`valor_cop` es un nombre interno de la definición (no es un campo de la respuesta) y **no es** el `precio_cop` de ADR-014 que devuelve el chat (`SalidaPrecio.precio_cop`, recalculado del costo y el margen antes de convertir). Pueden diferir unos pesos por el redondeo a centavos del precio en USD. El nombre distinto evita confundirlos.
 
 **Partición.** Siempre se cumple `cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar`:
 
@@ -1573,7 +1575,7 @@ Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone 
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
 
 - Request recomendado: `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y la parte `archivo` (el mismo Excel que se analizó; se guarda para la exportación de la sección 5.26). Sin archivo se puede enviar `application/json` con el `LicitacionWeb`.
-- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo) y `lineas` (1 a 1000). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos) y `fila` (obligatoria con archivo, única). El `tipo` lo pone el servidor (`licitacion`).
+- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos) y `fila` (obligatoria con archivo, única). El `tipo` lo pone el servidor (`licitacion`).
 
 ```json
 {
@@ -1603,14 +1605,15 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 ```
 
   `indice` es la posición en `lineas[]` (`null` = error del encabezado). Códigos: `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`, `LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`, `VALOR_FUERA_DE_RANGO`, `DEMASIADAS_POSICIONES`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `FILA_INVALIDA`.
-- 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA` (la línea no existe **o está inactiva**: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`. 400 `ErrorWeb` si el JSON es inválido. 413 `ErrorWeb` si el cuerpo (Excel + JSON) pasa de 12 MB.
+- **Moneda (rama de #50, ADR-014 §5):** con `"moneda": "USD"` la API consulta la TRM del día antes de guardar y la deja fija en la licitación (`trm_aplicada` de 5.25). Todos los precios (líneas, total, servicios conexos, Excel y PDF del pliego) salen en USD, convertidos con esa TRM. Mostrar `US$` con 2 decimales y la TRM aplicada. Otro valor de `moneda` (o cadena vacía) es un error del reporte con `campo = "moneda"` y `VALOR_FUERA_DE_RANGO`.
+- 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA` (la línea no existe **o está inactiva**: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` (con `moneda = USD` y ninguna fuente de la TRM respondió: no se guardó nada ni se envió a Nexo; ofrecer Reintentar en unos segundos o crearla en COP). 400 `ErrorWeb` si el JSON es inválido. 413 `ErrorWeb` si el cuerpo (Excel + JSON) pasa de 12 MB.
 - Si Nexo responde 403 al alta (rol del comercial en Nexo), la licitación se crea igual (201) en `error_envio` con `motivo_estado_costeo` que lo explica; se reintenta cuando le den el rol.
 - La petición puede tardar hasta unos 30 s (alta en Nexo). Con más de 10 líneas Nexo costea en segundo plano: la licitación nace en `pendiente_costeo` y el polling la avanza.
 - **Doble envío (responsabilidad del frontend):** el servidor no tiene clave de idempotencia; dos POST iguales crean **dos** licitaciones y dos solicitudes en Nexo. Deshabilitar el botón desde el clic hasta la respuesta (hasta unos 30 s), no reintentar automáticamente un POST que se cortó (consultar "Mis cotizaciones" antes) y no reenviar en un refresco de la página.
 
 ### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). PR de #47
 
-200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `referencia`, `deadline`, `estado_costeo`, `motivo_estado_costeo`, `moneda`, `precio_final` (suma de las líneas, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
+200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `referencia`, `deadline`, `estado_costeo`, `motivo_estado_costeo`, `moneda`, `trm_aplicada` (rama de #50; 0 en COP), `precio_final` (suma de las líneas en `moneda`, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
@@ -1634,7 +1637,7 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - **Tamaño:** con más de 60 rutas o más de 20 orígenes el PDF trae **solo el resumen** (todas las rutas siguen ahí; las tablas por origen se omiten). Admite hasta 1000 rutas; un pliego grande puede tener decenas de páginas: mostrar un spinner y descargar el blob.
 - **409 `COSTEO_NO_LISTO`** mientras alguna línea no tenga precio (`lineas_pendientes > 0`, o una línea sin asociar en Nexo) o el total todavía no sea la suma de las líneas (esperar la siguiente consulta del costeo): deshabilitar el botón hasta que `precio_final` de la licitación tenga valor.
 - **409 `PDF_YA_GENERADO`**: una sola vez por licitación. Los servicios conexos excluidos con `PUT .../costeo/servicios-conexos` no aparecen.
-- 400 `PDF_PAYLOAD_INVALIDO` si la licitación estuviera en USD (no disponible hasta integrar la TRM al costeo).
+- En USD (rama de #50) las tarifas salen en `US$` y el PDF lleva la nota de TRM mínima con la `trm_aplicada` de la licitación (sección 6.3, punto 7). Ya no responde `PDF_PAYLOAD_INVALIDO` por la moneda.
 
 ## 6. Flujos
 
@@ -1729,13 +1732,13 @@ sequenceDiagram
     participant U as Comercial
     participant F as Frontend
     participant A as POST /web/chat
-    participant T as TRM datos.gov.co
+    participant T as TRM DolarApi (respaldo datos.gov.co)
     U->>F: Elige USD en el selector
     F->>A: mensaje y moneda USD
     A->>T: TRM del día (caché de 6 horas)
     alt TRM disponible
         A-->>F: 200 precio en USD, trm_aplicada, precio_cop, vigencia
-        F->>U: US$ con TRM y mínimo a pagar en pesos
+        F->>U: US$ con la TRM aplicada
     else Fuente caída
         A-->>F: 200 precio null y errores TRM_NO_DISPONIBLE
         F->>U: Aviso con Reintentar y Cambiar a COP
@@ -1754,12 +1757,12 @@ Responsabilidades del frontend:
 
 1. Selector COP/USD (COP por defecto). Enviar `moneda` en **cada** mensaje del formulario.
 2. Al cambiar la moneda con una previsualización abierta, avisar que el precio se recalcula y enviar un mensaje (por ejemplo, "Cambia la moneda a USD") con `moneda` nueva. El servidor descarta el precio anterior.
-3. Mostrar en USD: `US$ precio`, "TRM aplicada: `trm_aplicada` (vigente del `trm_vigencia_desde` al `trm_vigencia_hasta`)" y "Mínimo a pagar: $ `precio_cop`". Costo y utilidad, si se muestran, en COP.
+3. Mostrar en USD: `US$ precio` y "TRM aplicada: `trm_aplicada` (vigente del `trm_vigencia_desde` al `trm_vigencia_hasta`)". Ya no se muestra un "mínimo a pagar" en pesos (decisión de negocio del 2026-10-05). Costo y utilidad, si se muestran, en COP.
 4. `TRM_NO_DISPONIBLE` en `errores`: sin precio, quitar el spinner y ofrecer Reintentar (reenviar el mismo mensaje) o cotizar en COP. La API recuerda el fallo 20 s: esperar antes de reintentar.
 5. TRM vencida: si el comercial confirma después de `trm_vigencia_hasta` (fecha de Bogotá), el servidor recalcula y **no** genera el PDF en ese turno. Detectarlo así: se envió "Confirmo", `pdf` es null y `precio` trae valor. Mostrar el precio nuevo y pedir confirmar otra vez. Opcional: avisar antes, comparando la fecha de hoy en Bogotá con `trm_vigencia_hasta`.
 6. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
-7. El PDF en USD trae la aclaración del piso mínimo (PR #72). No hace falta nada en el frontend. El texto legal está **a confirmar** con Gerencia Comercial.
-8. El formulario ampliado de Nexo **no** soporta USD todavía: deshabilitar el selector en ese modo o mostrar "Solo COP" (**Pendiente**).
+7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05, rama de #50): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
+8. El formulario ampliado de Nexo (spot) **no** soporta USD todavía: deshabilitar el selector en ese modo o mostrar "Solo COP" (**Pendiente**). Las **licitaciones** sí: ver 5.24 (`moneda`).
 
 ### 6.4 Formulario ampliado con costeo en Nexo. En PR #74 a #76
 
@@ -2159,7 +2162,7 @@ UI por estado:
 
 | Tarea | Espera | Issue |
 |---|---|---|
-| QA de conversión de moneda (el precio ya está en QA; falta el PDF en USD con la aclaración del piso) | PR #72 | HU-012.5 (#56) |
+| QA de conversión de moneda (el precio ya está en QA; falta el PDF en USD con la nota de TRM mínima) | Rama de #50 | HU-012.5 (#56) |
 | Enviar el formulario ampliado a Nexo, estados `estado_costeo`, `motivo_estado_costeo` y Reintentar | PR #73 y #74 | HU-005.3 (#39), HU-005.5 (backend) |
 | Polling del frontend y estados que avanzan solos | PR #75 | HU-005.6 (backend), "Mis cotizaciones" (#36) |
 | Vista de costeo, selección de conexos y PDF del costeo | PR #76 | HU-005.7 (backend); patrón reutilizable para HU-011.4 (#53) |
@@ -2205,7 +2208,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Negocio: nueva versión de una cotización de Nexo | `PDF_YA_GENERADO` dice "genera una versión nueva", pero `solicitudes-costeo` no crea versiones (`-vN`) | Duban + negocio | Botón "Nueva versión" en filas de Nexo |
 | Negocio: USD en el costeo de Nexo | La pila B es solo COP | Duban (integración HU-012 con ADR-015) | Selector de moneda en el formulario ampliado |
 | Negocio: v2 en USD | ¿TRM de la original o la del día al rehacer? | Gerencia Comercial | Texto de la nueva versión |
-| Negocio: texto legal del piso en USD | Pendiente de jurídica | Gerencia Comercial | Ninguno (lo pone el PDF) |
+| Negocio: texto de la nota del PDF en USD | Definido el 2026-10-05 (nota de TRM mínima, ADR-014 §4) | Gerencia Comercial | Ninguno (lo pone el PDF) |
 | Backend: precio del ajuste de margen | `RespuestaChat.precio` no expone la salida de `registrar_ajuste_margen` | Duban | Precio estructurado tras "Ajusta el margen" |
 | Backend: endpoint de líneas para el comercial | No existe; el selector sigue hardcodeado | Duban | Selector de línea (HU-005.3) |
 | Backend: PR de #45 | Las ramas #72 a #79 y la de #45 fusionan sin conflictos contra `QA`. Falta abrir el PR de #45 | Duban | Ninguno en el contrato |

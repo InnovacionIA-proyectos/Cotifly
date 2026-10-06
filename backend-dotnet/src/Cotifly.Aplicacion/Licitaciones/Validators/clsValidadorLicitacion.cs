@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Precio;
 
 namespace Cotifly.Aplicacion.Licitaciones.Validators;
 
@@ -43,6 +44,11 @@ public static class clsValidadorLicitacion
         if (string.IsNullOrWhiteSpace(entrada.LineaNegocio))
         {
             Encabezado("linea_negocio", clsCodigosLineaSolicitud.CampoRequerido, "El campo 'linea_negocio' es obligatorio.");
+        }
+
+        if (entrada.Moneda is { } moneda && (string.IsNullOrWhiteSpace(moneda) || clsConversorMoneda.Normalizar(moneda).EsFallo))
+        {
+            Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, $"El campo 'moneda' debe ser COP o USD (llegó '{moneda.Trim()}').");
         }
 
         foreach (var error in entrada.Encabezado.Errores())

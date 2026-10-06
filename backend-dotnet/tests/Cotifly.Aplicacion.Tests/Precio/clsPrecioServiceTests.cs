@@ -118,7 +118,15 @@ public sealed class clsPrecioServiceTests
     {
         (await _servicio.TrmDelDiaAsync("COP", Ct)).Valor.Should().Be(clsTrmDelDia.Pesos);
         (await _servicio.TrmDelDiaAsync(null, Ct)).Valor.Valor.Should().Be(0m);
-        (await _servicio.TrmDelDiaAsync("USD", Ct)).Valor.Should().Be(new clsTrmDelDia(3306.86m, new DateOnly(2026, 9, 26), _hoy));
+        (await _servicio.TrmDelDiaAsync("USD", Ct)).Valor.Should().Be(new clsTrmDelDia(3306.86m, new DateOnly(2026, 9, 26), _hoy, "prueba"));
+    }
+
+    // ADR-014: la fuente de la TRM (dolarapi o superfinanciera) viaja en la salida de calcular_precio para auditoría; en COP es nula.
+    [Fact]
+    public async Task LaSalidaEnDolaresLlevaLaFuenteDeLaTrm()
+    {
+        (await _servicio.CalcularAsync(2_850_000m, 0.11m, "margen", "USD", Ct)).Valor.TrmFuente.Should().Be("prueba");
+        (await _servicio.CalcularAsync(2_850_000m, 0.11m, "margen", "COP", Ct)).Valor.TrmFuente.Should().BeNull();
     }
 
     [Fact]
@@ -133,7 +141,7 @@ public sealed class clsPrecioServiceTests
         enDolares.TrmVigenciaDesde.Should().Be(new DateOnly(2026, 9, 26));
         enDolares.TrmVigenciaHasta.Should().Be(_hoy);
 
-        _servicio.EnMoneda(enDolares, "COP", clsTrmDelDia.Pesos).Valor.Should().Be(enPesos);
+        _servicio.EnMoneda(enDolares with { TrmFuente = "dolarapi" }, "COP", clsTrmDelDia.Pesos).Valor.Should().Be(enPesos);
         _servicio.EnMoneda(enPesos, "USD", clsTrmDelDia.Pesos).Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible, "en USD nunca se cae en silencio a pesos");
     }
 }
