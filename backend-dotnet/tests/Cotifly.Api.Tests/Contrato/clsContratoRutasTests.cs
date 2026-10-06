@@ -18,37 +18,84 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Pruebas.Contrato;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Api.Tests.Contrato;
 
 /// <summary>
 /// La API expone exactamente lo que declara <c>specs/openapi.yaml</c> (SDD, ADR-010): cada ruta y método del contrato tiene un
-/// endpoint (salvo los pendientes de la parte C de #12, marcados aquí), cada endpoint de <c>/web/*</c> está en el contrato,
-/// todos exigen sesión y los DTOs de <c>/web/*</c> se serializan en snake_case con exactamente las propiedades de su esquema.
+/// endpoint (salvo los pendientes de implementar, listados aquí con su issue), cada endpoint de <c>/web/*</c> está en el contrato,
+/// todos exigen sesión y los DTOs de <c>/web/*</c> se serializan en snake_case con exactamente las propiedades de su esquema
+/// (salvo las propiedades pendientes de implementar, también listadas con su issue).
 /// </summary>
 public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) : IClassFixture<clsCotiflyApiFactory>
 {
     /// <summary>
-    /// Operaciones del contrato que todavía no existen. Vacía desde la parte C de #12 (<c>/web/chat</c> y <c>/chat/events</c>); si una
-    /// operación nueva del contrato llega antes que su endpoint, se anota aquí (la prueba falla si un pendiente ya existe).
+    /// Operaciones del contrato que todavía no existen, con la issue que las implementa (SDD: el contrato llega antes que el
+    /// endpoint). Son las marcadas con <c>x-estado: pendiente</c> en el spec. Cuando una issue implementa su endpoint, quita su
+    /// entrada: la prueba falla si un pendiente ya existe o si deja de estar en el contrato. HU-013.1 (#97, ADR-018).
     /// </summary>
-    public static readonly IReadOnlySet<string> PendientesParteC = new HashSet<string>(StringComparer.Ordinal);
+    public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["PUT /web/cotizaciones/{folio}/costeo/margen"] = "#98 (HU-013.2)",
+        ["GET /web/servicios-conexos"] = "#99 (HU-013.3)",
+        ["POST /web/cotizaciones/{folio}/costeo/servicios-conexos"] = "#99 (HU-013.3)",
+        ["POST /web/cotizaciones/{folio}/costeo/re-solicitar"] = "#100 (HU-013.4)",
+        ["POST /web/cotizaciones/{folio}/costeo/textos/redactar"] = "#101 (HU-013.5)",
+        ["PUT /web/cotizaciones/{folio}/costeo/textos"] = "#101 (HU-013.5)",
+    };
+
+    /// <summary>
+    /// Propiedades que el contrato ya declara en el esquema de un DTO de <c>/web/*</c> y que el DTO todavía no tiene, con la issue
+    /// que las agrega (HU-013.1, #97). Se excluyen de la comparación exacta de propiedades; la prueba falla si el DTO ya las tiene
+    /// (quítalas de aquí) o si el esquema ya no las declara. En los esquemas de respuesta son opcionales, así que las respuestas
+    /// actuales siguen cumpliendo el contrato.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> PropiedadesPendientes =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
+        {
+            ["SolicitudCosteoWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["moneda"] = "#103 (HU-013.7)" },
+            ["MensajeWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["folio"] = "#102 (HU-013.6)" },
+            ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
+            ["CosteoCotizacion"] = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["margen_sugerido"] = "#98 (HU-013.2)",
+                ["origen_margen"] = "#98 (HU-013.2)",
+                ["trm_aplicada"] = "#103 (HU-013.7)",
+                ["textos"] = "#101 (HU-013.5)",
+                ["pdf_desactualizado"] = "#98 (HU-013.2)",
+                ["row_version"] = "#98 (HU-013.2, script 0006)",
+            },
+        };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task CadaOperacionDelContratoTieneSuEndpointSalvoLasPendientesDeLaParteC()
+    public async Task CadaOperacionDelContratoTieneSuEndpointSalvoLasPendientesDeImplementar()
     {
         var contrato = await OperacionesDelContratoAsync();
         var expuestas = OperacionesExpuestas();
 
-        var faltantes = contrato.Where(o => !expuestas.Contains(o) && !PendientesParteC.Contains(o)).ToList();
-        var pendientesYaImplementadas = PendientesParteC.Where(expuestas.Contains).ToList();
+        var faltantes = contrato.Where(o => !expuestas.Contains(o) && !PendientesDeImplementar.ContainsKey(o)).ToList();
+        var pendientesYaImplementadas = PendientesDeImplementar.Keys.Where(expuestas.Contains).ToList();
 
         faltantes.Should().BeEmpty("cada operación de specs/openapi.yaml debe estar implementada");
-        pendientesYaImplementadas.Should().BeEmpty("si ya existe, quítala de PendientesParteC");
-        PendientesParteC.Should().OnlyContain(p => contrato.Contains(p), "los pendientes deben ser operaciones del contrato");
+        pendientesYaImplementadas.Should().BeEmpty("si ya existe, quítala de PendientesDeImplementar");
+        PendientesDeImplementar.Keys.Should().OnlyContain(p => contrato.Contains(p), "los pendientes deben ser operaciones del contrato");
+    }
+
+    [Fact]
+    public async Task LasOperacionesPendientesSonExactamenteLasMarcadasConXEstadoPendiente()
+    {
+        var contrato = await clsValidadorEsquemaOpenApi.ContratoAsync();
+        var marcadas = contrato.Paths
+            .SelectMany(p => p.Value.Operations!
+                .Where(o => EstadoExtension(o.Value) == "pendiente")
+                .Select(o => $"{o.Key.Method.ToUpperInvariant()} {p.Key}"))
+            .ToList();
+
+        marcadas.Should().BeEquivalentTo(PendientesDeImplementar.Keys, "x-estado: pendiente del spec y la lista de la prueba van juntos");
     }
 
     [Fact]
@@ -69,7 +116,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         var datos = new TheoryData<string>();
         foreach (var operacion in OperacionesDelContratoAsync().GetAwaiter().GetResult()
                      .Where(o => (o.Contains(" /web/", StringComparison.Ordinal) || o.Contains(" /pdfs/", StringComparison.Ordinal))
-                                 && !PendientesParteC.Contains(o)))
+                                 && !PendientesDeImplementar.ContainsKey(o)))
         {
             datos.Add(operacion);
         }
@@ -168,10 +215,13 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     [MemberData(nameof(DtosWeb))]
     public async Task LosDtosDeWebTienenExactamenteLasPropiedadesSnakeCaseDeSuEsquema(Type dto, string esquema)
     {
-        var propiedades = (await clsValidadorEsquemaOpenApi.EsquemaAsync(esquema)).Properties!.Keys;
-        var info = clsJsonWeb.Opciones.GetTypeInfo(dto);
+        var propiedades = (await clsValidadorEsquemaOpenApi.EsquemaAsync(esquema)).Properties!.Keys.ToList();
+        var pendientes = PropiedadesPendientes.TryGetValue(esquema, out var deEsquema) ? deEsquema.Keys.ToList() : [];
+        var delDto = clsJsonWeb.Opciones.GetTypeInfo(dto).Properties.Select(p => p.Name).ToList();
 
-        info.Properties.Select(p => p.Name).Should().BeEquivalentTo(propiedades);
+        pendientes.Should().OnlyContain(p => propiedades.Contains(p), "una propiedad pendiente debe estar en el esquema");
+        delDto.Intersect(pendientes).Should().BeEmpty("si el DTO ya la tiene, quítala de PropiedadesPendientes");
+        delDto.Should().BeEquivalentTo(propiedades.Except(pendientes));
     }
 
     [Fact]
@@ -189,6 +239,13 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
             clsValidadorEsquemaOpenApi.Validar(json, esquema).Should().BeEmpty(json);
         }
     }
+
+    /// <summary>Valor de la extensión <c>x-estado</c> de una operación, o <c>null</c>.</summary>
+    private static string? EstadoExtension(OpenApiOperation operacion) =>
+        operacion.Extensions is { } extensiones && extensiones.TryGetValue("x-estado", out var estado)
+            && estado is JsonNodeExtension { Node: { } nodo }
+            ? nodo.GetValue<string>()
+            : null;
 
     /// <summary><c>"METODO /ruta/{}"</c> de cada operación del contrato, con los parámetros normalizados a su nombre.</summary>
     private static async Task<HashSet<string>> OperacionesDelContratoAsync()

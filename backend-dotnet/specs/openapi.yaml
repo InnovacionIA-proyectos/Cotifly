@@ -19,6 +19,25 @@ info:
       (`{"error": {"codigo", "mensaje", "detalle?"}}`).
     - Autenticación: `Authorization: Bearer <access>` emitido por
       `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
+    - Las operaciones marcadas con `x-estado: pendiente` tienen el contrato acordado y todavía no
+      están implementadas; `x-issue` dice qué issue las implementa. Mientras tanto la prueba de
+      contrato las lista en `clsContratoRutasTests.PendientesDeImplementar` (HU-013, ADR-018).
+    - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
+      encabezado `ETag` (y `row_version` en el cuerpo), y toda respuesta 200 o 201 de una mutación del
+      costeo trae el `ETag` nuevo. Las mutaciones de la etapa final (margen, conexos POST y PUT,
+      re-solicitar, textos y redactar) EXIGEN `If-Match` con ese valor: sin él responden 428
+      `PRECONDICION_REQUERIDA`; si la cotización cambió entretanto, 409 `CONFLICTO_CONCURRENCIA`, sin
+      cambios. `POST .../costeo/pdf` lo acepta opcional. `POST .../costeo/servicios-conexos` y
+      `POST .../costeo/re-solicitar` aceptan además `Idempotency-Key` (doble clic). Rige desde el
+      script `0006` (columna `rowVersion`), que entrega #98 (HU-013.2).
+    - Regla del PDF (ADR-018 §11): mientras la cotización no se haya enviado al cliente ni tenga
+      resultado, ajustar el margen, agregar o seleccionar conexos, redactar o editar los textos y
+      re-solicitar en el mismo folio invalidan el PDF (`pdf_url = null`, `pdf_desactualizado = true`)
+      y el comercial lo regenera. Ya enviada o con resultado: 409 `PDF_YA_ENVIADO` (versión `-vN`).
+    - Pipeline determinista (ADR-018): el costo sale de Nexo, el margen sugerido de SAP TM (o de la
+      política de la línea) y el precio y el PDF los calcula el código. La IA solo redacta el asunto
+      y la introducción del PDF y PROPONE acciones (`accion_propuesta`) que el frontend ejecuta con
+      el botón Confirmar llamando al endpoint determinista. La IA nunca escribe datos de negocio.
 servers:
   - url: http://localhost:8080
     description: Desarrollo local (contenedor)
@@ -76,7 +95,8 @@ tags:
       Pendiente de Nexo, NO implementado: "score de urgencia" por cotización (su contrato depende del equipo de Nexo,
       ver ADR-016).
   - name: chat
-    description: Webhook de Google Chat
+    description: |
+      Webhook de Google Chat. Obsoleto: Google Chat se retira del proyecto en HU-013.9 (#105, ADR-018).
   - name: sistema
     description: Salud del servicio y archivos PDF
 
@@ -173,8 +193,21 @@ paths:
     post:
       operationId: enviarMensajeChat
       tags: [web]
-      summary: Corre un turno del agente cotizador
+      summary: Corre un turno del asistente IA sobre una cotización (folio)
       description: |
+        **HU-013.6 (#102, ADR-018), pendiente de implementar:** el asistente trabaja sobre UNA cotización ya creada por
+        el formulario. `folio` es obligatorio: sin él responde 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial,
+        404 (`Cotización no encontrada o no es tuya.`). Las cotizaciones ya no se crean por chat (flag
+        `Chat:CreacionHabilitada=false`; después se borra el código): `cotizacion_origen_id` y `moneda` quedan obsoletos.
+        Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`,
+        `proponer_re_solicitud` y `buscar_servicio_conexo`. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
+        costo, ni totales, ni valores de conexos): `consultar_cotizacion` da solo estado, ruta, línea, moneda, nombres de
+        conexos y los porcentajes de margen actual y sugerido (ADR-018 §2b). El `resumen` con montos de la acción
+        propuesta lo arma el servidor después del LLM. La respuesta es `{texto, accion_propuesta?}`: la acción
+        propuesta trae el método, el endpoint, el cuerpo exacto y un resumen; el frontend la ejecuta solo si el comercial
+        pulsa Confirmar, llamando a ese endpoint con ese cuerpo (y `If-Match` = `row_version`). **La IA nunca ejecuta
+        cambios.** `precio`, `margen` y `pdf` de `RespuestaChat` quedan siempre en `null` desde HU-013.6.
+
         `sesion_id` lo genera el cliente (UUID sin guiones) y agrupa la conversación.
         La sesión queda ligada al usuario del token: otro usuario no puede continuarla.
         Un fallo interno del agente (incluido el límite de peticiones del proveedor de
@@ -190,8 +223,9 @@ paths:
             schema:
               $ref: '#/components/schemas/MensajeWeb'
             example:
-              mensaje: "Cotiza Nacional Bogotá a Medellín tractomula 10000 kg para cliente 15927"
+              mensaje: "Súbele el margen al 18 % porque el cliente acepta el valor"
               sesion_id: "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c"
+              folio: "PCN-900555111-DG-05102026-001"
       responses:
         '200':
           description: Respuesta del agente (o error controlado con `error = true`)
@@ -201,12 +235,32 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
+              example:
+                texto: "Te propongo subir el margen de 15 % a 18 %. El precio pasaría a 3.109.756 COP."
+                herramientas: [consultar_cotizacion, proponer_ajuste_margen]
+                precio: null
+                margen: null
+                pdf: null
+                errores: []
+                accion_propuesta:
+                  tipo: ajustar_margen
+                  metodo: PUT
+                  endpoint: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/margen
+                  cuerpo:
+                    margen: 0.18
+                    justificacion: null
+                  resumen: "Ajustar el margen de 15 % a 18 % (precio estimado 3.109.756 COP)."
+                  row_version: "AAAAAAAAB9E="
         '400':
-          description: '`sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido'
+          description: |
+            `ErrorWeb`: `sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido. `ErrorNegocio`
+            `FOLIO_REQUERIDO` (HU-013.6): falta `folio` o viene vacío.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorWeb'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorWeb'
+                  - $ref: '#/components/schemas/ErrorNegocio'
               example:
                 error: "sesion_id inválido"
         '401':
@@ -826,6 +880,20 @@ paths:
       description: |
         Catálogos de la biblioteca SAP TM histórico de Nexo para el formulario de captura. Se omite
         `lineasNegocio` de la respuesta de Nexo: Cotifly ya tiene su propio catálogo de línea de negocio.
+
+        **Migración pendiente (HU-013, ADR-018; `docs/HU-005.1-mapeo-campos-nexo.md`):** la fuente actual,
+        `GET /api/biblioteca-sap-historico/filtros`, es el histórico de tarifas, no el catálogo maestro. La respuesta de
+        este endpoint no cambia, pero sus opciones deben salir de los catálogos maestros de Nexo:
+        - tipos de vehículo: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
+          cortos como `2S3`; `valor` = `codigo`, `etiqueta` = `descripcion`);
+        - clases de viaje: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`);
+        - clases de contenedor: `GET /api/catalogos/clases-contenedor` (`{id, descripcion, tamanoContenedor, pesoInfCnt,
+          pesoSupCnt}`), hoy en código;
+        - líneas de negocio: `GET /api/catalogos/lineas-negocio` (`{id, descripcion}`), solo para validar
+          `MargenesPolitica.mapeoLineasNexo` (Cotifly conserva su catálogo propio);
+        - carrocería: sigue en código hasta que Nexo publique su catálogo;
+        - tipología: enum de Nexo de 7 valores, en código.
+        El valor que el frontend envía a `POST /web/solicitudes-costeo` es siempre `valor` (el código), nunca la etiqueta.
       security:
         - bearer: []
       responses:
@@ -902,6 +970,15 @@ paths:
         reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar` sin volver a llenar el formulario. Con
         éxito queda en `pendiente_costeo` (o `autocosteo` si Nexo costeó la línea en la misma petición) y el polling
         (HU-005.6) sigue su estado. `precio_final` es `null` hasta que el costeo pasa por el margen (HU-005.7).
+
+        Es el ÚNICO camino para crear una cotización (ADR-018): el chat ya no crea cotizaciones.
+
+        **Moneda (HU-013.7, #103, pendiente de implementar; mismo contrato que `POST /web/licitaciones`, ADR-014 §5):**
+        `moneda` opcional, `COP` por defecto o `USD`. En USD la TRM del día se fija **antes de guardar** con
+        `clsFijacionMonedaService` y queda en `trm_aplicada`; sin TRM responde 400 `TRM_NO_DISPONIBLE`, no guarda nada y
+        no envía nada a Nexo. El polling calcula el precio del flete y de los conexos en pesos y lo convierte con esa TRM
+        (`round(precio_cop / trm, 2)`); el costo sigue en COP. El PDF lleva la nota de TRM mínima con la `trm_aplicada`.
+        Depende de #50 (PR #96, `clsFijacionMonedaService` y la nota del PDF), que todavía no está en `QA`.
       security:
         - bearer: []
       requestBody:
@@ -922,6 +999,8 @@ paths:
             `SOLICITUD_COSTEO_INVALIDA` (campo obligatorio, largo o rango fuera de los límites de Nexo, más de 200
             posiciones, o la regla de peso de Nexo: `detalle.motivo` = `PESO_REQUERIDO` si la línea no trae peso > 0 ni
             posiciones con peso, `PESO_INCONSISTENTE` si el peso difiere más del 1 % de `sum(cantidad × peso_kg)`), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
+            Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
+            es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -944,6 +1023,8 @@ paths:
         `pendiente_costeo`/`autocosteo`, o de nuevo en `error_envio` con el motivo. Si el motivo anterior era
         "tiempo agotado", Nexo pudo haber creado la solicitud: el comercial debe verificar antes de reintentar
         (pendiente de confirmar con el equipo de Nexo una clave de idempotencia). Solo el dueño.
+        HU-013.4: `POST .../costeo/re-solicitar` lo amplía (también costeo vencido o entregado, y con cambios de carga);
+        este endpoint se conserva por compatibilidad.
       security:
         - bearer: []
       parameters:
@@ -1037,6 +1118,11 @@ paths:
         cotizaciones"); `precio_final` y el `precio` de cada servicio conexo salen del módulo de Precio con el margen
         de la cotización (resuelto al enviarla: SAP TM con el BP o la política de la línea). `precio_final` es `null`
         mientras no haya costeo. Solo el dueño.
+
+        HU-013 (ADR-018): trae además `margen_sugerido` y `origen_margen` (botón de ajuste de margen, HU-013.2),
+        `trm_aplicada` (HU-013.7), `textos` (asunto e introducción del PDF, HU-013.5), `pdf_desactualizado` (ADR-018 §11)
+        y `row_version` (#98), que también va en
+        el encabezado `ETag`. Son opcionales en el esquema hasta que cada issue los implemente.
       security:
         - bearer: []
       parameters:
@@ -1044,6 +1130,9 @@ paths:
       responses:
         '200':
           description: Costeo de la cotización
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1053,18 +1142,371 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
 
+  /web/cotizaciones/{folio}/costeo/margen:
+    put:
+      operationId: ajustarMargenCosteo
+      tags: [web]
+      summary: Ajusta el margen de la cotización y recalcula el precio del flete y de los conexos
+      x-estado: pendiente
+      x-issue: '#98 (HU-013.2; entrega el script 0006)'
+      description: |
+        HU-013.2 (ADR-018 §3). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
+        propuesta `ajustar_margen` del asistente.
+
+        - `margen` es libre entre 0 y 0,99 (fracción: 0.18 = 18 %). Fuera de rango: 400 `AJUSTE_MARGEN_INVALIDO`.
+        - `justificacion` es **obligatoria** si `margen` queda por debajo del margen sugerido (`margen_sugerido` del
+          costeo: SAP TM con el BP o la política de la línea). Sin ella: 400 `JUSTIFICACION_REQUERIDA`.
+        - Solo con costo disponible (`autocosteo` o `entregada` con `precio_final`; si no, 409 `COSTEO_NO_LISTO`).
+        - **Regla del PDF (ADR-018 §11):** si la cotización ya se envió al cliente (`estado_envio` distinto de
+          `sin_enviar`) o tiene resultado, 409 `PDF_YA_ENVIADO` (la `detalle` indica crear la versión `-vN`). Si no, se
+          permite aunque haya PDF: el PDF actual queda invalidado (`pdf_url = null`, `pdf_desactualizado = true`, el
+          anterior queda en el historial) y se regenera con `POST .../costeo/pdf`.
+        - Recalcula con `IClsPrecioService` el `precio_final` y el precio de cada servicio conexo, con el método de
+          cálculo de la cotización, respetando la moneda y la TRM ya fijada (`trm_aplicada`, nunca una TRM nueva).
+        - Registra el ajuste en `MargenAjustes` (margen sugerido = `margenPolitica`, nuevo margen = `margenAplicado`,
+          `diferencia`, usuario y justificación en `motivo`). `origen_margen` pasa a `negociado`. Las métricas de ajustes
+          marcan los que quedan por debajo del sugerido.
+        - Ajustar al mismo margen vigente responde 200 sin registrar un ajuste nuevo ni invalidar el PDF (idempotente).
+        - `If-Match` **obligatorio** (428 `PRECONDICION_REQUERIDA` sin él; 409 `CONFLICTO_CONCURRENCIA` si no coincide).
+          Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AjusteMargenWeb'
+            example:
+              margen: 0.12
+              justificacion: "Cliente estratégico; competencia cotizó 8 % por debajo."
+      responses:
+        '200':
+          description: Margen ajustado y precios recalculados
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`AJUSTE_MARGEN_INVALIDO` (fuera de 0 a 0,99) o `JUSTIFICACION_REQUERIDA` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error:
+                  codigo: JUSTIFICACION_REQUERIDA
+                  mensaje: "El margen 12 % queda por debajo del sugerido (15 %): escribe la justificación."
+                  detalle:
+                    margen_sugerido: 0.15
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO`, `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: PDF_YA_ENVIADO
+                  mensaje: "La cotización ya se envió al cliente: crea una versión nueva para cambiarla."
+                  detalle:
+                    accion: nueva_version
+                    metodo: POST
+                    endpoint: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/re-solicitar
+                    cuerpo:
+                      motivo: "Ajuste de margen después del envío"
+                      nueva_version: true
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+
+  /web/cotizaciones/{folio}/costeo/re-solicitar:
+    post:
+      operationId: reSolicitarCosteo
+      tags: [web]
+      summary: Vuelve a pedir el costeo a Nexo ("Cotizar costo"), en el mismo folio o en una versión nueva
+      x-estado: pendiente
+      x-issue: '#100 (HU-013.4)'
+      description: |
+        HU-013.4 (ADR-018 §5). Amplía `POST .../costeo/reintentar`. Es el endpoint del botón "Cotizar costo", del
+        Confirmar de la acción propuesta `re_solicitar_costeo` y de la "versión nueva" que pide `PDF_YA_ENVIADO`.
+
+        **Mismo folio** (sin `datos_carga` y sin `nueva_version`):
+        - Permitido si `estado_costeo` es `costeo_vencido`, `entregada` o `error_envio`; en otro estado, 409
+          `ESTADO_NO_PERMITE`. Si la cotización ya se envió al cliente o tiene resultado, 409 `PDF_YA_ENVIADO` (con
+          `detalle.cuerpo.nueva_version = true`).
+        - Se reenvía la misma cotización a Nexo. Responde **200** con la cotización en `pendiente_costeo` (o
+          `autocosteo` si Nexo costea en la misma petición) y el polling se reanuda. Invalida el PDF actual
+          (`pdf_desactualizado`). Desde `error_envio` equivale a `reintentar`.
+
+        **Versión nueva** (con `datos_carga`, o con `nueva_version: true` sin cambios de carga):
+        - Permitida en cualquier estado salvo con un costeo en curso (`pendiente_envio` o `pendiente_costeo`: 409
+          `ESTADO_NO_PERMITE`), también si la cotización ya se envió o tiene resultado.
+        - Crea `{folio base}-vN` (ADR-011) con el formulario de la vigente y los cambios de carga, si los hay, y la envía a
+          Nexo como solicitud nueva; la versión anterior se conserva sin cambios. Responde **201** con la versión nueva y
+          `Location` a su costeo.
+
+        Comunes:
+        - Si Nexo falla, igual que el alta: la cotización (o la versión nueva) queda en `error_envio` con el motivo.
+        - Queda auditado (`EventosHerramienta`, `costeo_nexo_re_solicitud`) con el motivo y el usuario.
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
+          respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
+        - El mecanismo en Nexo para "reenviar la misma" está pendiente (`docs/HU-013-preguntas-nexo.md`). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReSolicitudCosteoWeb'
+            example:
+              motivo: "El cliente cambió el peso de la carga"
+              datos_carga:
+                peso_kg: 28000
+                tipo_vehiculo: "3S3"
+      responses:
+        '200':
+          description: Reenviada a Nexo con el mismo folio; `estado_costeo` dice si Nexo la recibió
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '201':
+          description: Versión nueva creada (`folio` con `-vN`) y enviada a Nexo; la anterior se conserva
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Location:
+              description: '`/web/cotizaciones/{folio nuevo}/costeo`'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionResumen'
+        '400':
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+
+  /web/servicios-conexos:
+    get:
+      operationId: buscarServiciosConexos
+      tags: [web]
+      summary: Catálogo de servicios conexos de Nexo (sin costos)
+      x-estado: pendiente
+      x-issue: '#99 (HU-013.3)'
+      description: |
+        HU-013.3 (ADR-018 §4). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
+        con la identidad del comercial y devuelve solo servicios activos, **sin `costoUnitario`** (Nexo es la fuente de
+        verdad del costo; Cotifly solo expone precios con margen, y solo de los conexos ya agregados a una cotización).
+        Lo usan el buscador del detalle de la cotización y la herramienta `buscar_servicio_conexo` del asistente.
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Texto a buscar en el nombre (tipo de servicio) o en el código. Vacío = todos.
+          schema:
+            type: string
+            maxLength: 100
+        - name: categoria
+          in: query
+          required: false
+          description: Segmento del catálogo de Nexo (`logistico` o `adicional`).
+          schema:
+            type: string
+            maxLength: 20
+          example: logistico
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Página del catálogo (puede venir vacía)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaServiciosConexos'
+        '400':
+          $ref: '#/components/responses/Validacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 al comercial (rol en Nexo)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE`: Nexo sin configurar, caído, sin respuesta a tiempo o el comercial sin `idUsuarioExterno`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/cotizaciones/{folio}/costeo/servicios-conexos:
+    post:
+      operationId: agregarServiciosConexos
+      tags: [web]
+      summary: Agrega servicios conexos del catálogo a la cotización en Nexo
+      x-estado: pendiente
+      x-issue: '#99 (HU-013.3)'
+      description: |
+        HU-013.3 (ADR-018 §4). Es el endpoint del botón "Agregar conexo" y del Confirmar de la acción propuesta
+        `agregar_servicios_conexos`. Los conexos se agregan **en Nexo**, que es la fuente de verdad del costo:
+
+        1. `POST {Nexo:UrlBase}/api/cotizaciones/{cotizacionNexoId}/conexos` con
+           `{items: [{lineaId, servicioConexoId, cantidad}]}` (`clsAgregarConexosRequest` / `clsConexoItemRequest` del
+           swagger de Nexo; `lineaId` y `servicioConexoId` obligatorios, `cantidad` de 0,01 a 999.999,99). `lineaId` es la
+           línea de la cotización de Nexo que corresponde a `linea_orden` (ver `ConexoAgregarWeb`). Cotifly **nunca**
+           envía `valorAplicado`: si no viaja, Nexo lo calcula como valor base × cantidad (Nexo es la fuente de verdad del
+           costo). Roles de Nexo para este endpoint: `Comercial`, `CoordinadorFletes` y `Admin` (leído del código de
+           Nexo, `docs/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara).
+        2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
+           conexo con `IClsPrecioService` y los deja `incluido = true`.
+
+        - `items` de 1 a 20 (vacío o más de 20: 400 `ErrorWeb` por el esquema, sin llamar a Nexo), cada uno con
+          `linea_orden`, `servicio_id` del catálogo (`GET /web/servicios-conexos`) y `cantidad` de 0,01 a 999.999,99. Una
+          `linea_orden` que no existe en la cotización: 400 `CONEXO_INVALIDO` sin llamar a Nexo.
+        - Una línea que existe pero todavía no tiene línea en la cotización de Nexo (sin flete, o sin el id de la línea de
+          la cotización de Nexo guardado): 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. #99 debe guardar ese id
+          (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo`
+          (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`) al leer la cotización.
+        - Solo con costeo disponible (409 `COSTEO_NO_LISTO`). Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409
+          `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación responde 409
+          `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
+        - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
+          `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos nada cambia en Cotifly.
+        - Si Nexo lo agregó pero la relectura falla, responde 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
+          true`; Cotifly no reintenta el POST y el polling recoge el conexo en la siguiente consulta.
+        - Si el conexo queda costeado de inmediato o pasa por Servicios Logísticos está pendiente de confirmar con Nexo.
+        - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
+          respuesta de la primera petición sin volver a llamar a Nexo (el POST de Nexo no es idempotente). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgregarServiciosConexosWeb'
+            example:
+              items:
+                - linea_orden: 1
+                  servicio_id: "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d"
+                  cantidad: 2
+      responses:
+        '200':
+          description: Conexos agregados en Nexo e incluidos con su precio
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: '`CONEXO_INVALIDO` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido o no cumple el esquema (`items` vacío o con más de 20)'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 (el comercial no tiene `Comercial`, `CoordinadorFletes` ni `Admin` en Nexo)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si solo falló la relectura)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
       summary: Elige qué servicios conexos del costeo se incluyen en el precio y en el PDF
       description: |
         HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
-        mientras la cotización tenga precio y no tenga PDF. Solo el dueño.
+        mientras la cotización tenga precio. Solo el dueño.
+
+        Cambia con HU-013 (ADR-018 §11, lo implementa #98 junto con el `0006`): con PDF ya generado se permite e invalida
+        el PDF (`pdf_desactualizado`) en lugar de responder `PDF_YA_GENERADO`; ya enviada o con resultado responde 409
+        `PDF_YA_ENVIADO`. `If-Match` pasa a ser obligatorio (428 `PRECONDICION_REQUERIDA`) y la respuesta trae `ETag`.
+        Excluir un conexo no lo borra en Nexo (no hay DELETE de conexos, pregunta abierta con Nexo).
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
       requestBody:
         required: true
         content:
@@ -1074,6 +1516,9 @@ paths:
       responses:
         '200':
           description: Selección guardada
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1091,11 +1536,123 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` (todavía sin precio) o `PDF_YA_GENERADO`'
+          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_GENERADO` (comportamiento actual, hasta #98), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+
+  /web/cotizaciones/{folio}/costeo/textos/redactar:
+    post:
+      operationId: redactarTextosCosteo
+      tags: [web]
+      summary: La IA redacta el asunto y la introducción del PDF (con el texto estándar de respaldo)
+      x-estado: pendiente
+      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
+      description: |
+        HU-013.5 (ADR-018 §2a). Sin cuerpo. El redactor (`IClsRedactorCotizacion`) **recibe** solo: cliente, línea de
+        negocio, origen y destino, tipo de vehículo, nombres de los conexos incluidos, moneda y nombre del comercial.
+        **Nunca recibe** costos, margen ni precios.
+
+        - Tiempo máximo de 15 s. Si la IA tarda, falla, o su salida trae montos, URL o correos, o pasa de 120 caracteres
+          (asunto) o 900 (introducción), se descarta y se usan los textos de `clsTextosEstandar`: responde igual **200**
+          con `fuente = estandar`. Nunca responde error por la IA.
+        - Guarda el resultado en `Cotizaciones.textosCotizacion` y lo audita (proveedor, modelo, duración y si se usó el
+          respaldo). Si los textos guardados fueron editados por el comercial (`editado = true`), responde 409
+          `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `?sobrescribir=true`.
+        - Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si no, invalida el PDF actual.
+        - `If-Match` **obligatorio** (428 / 409). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - name: sobrescribir
+          in: query
+          required: false
+          description: '`true` reemplaza textos editados por el comercial (el frontend lo pide tras confirmar con él).'
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Textos redactados (o estándar) y guardados
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextosCotizacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`TEXTOS_EDITADOS`, `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+
+  /web/cotizaciones/{folio}/costeo/textos:
+    put:
+      operationId: editarTextosCosteo
+      tags: [web]
+      summary: El comercial edita el asunto y la introducción del PDF
+      x-estado: pendiente
+      x-issue: '#101 (HU-013.5; requiere el 0006 de #98)'
+      description: |
+        HU-013.5 (ADR-018 §2a). Guarda los textos que escribió el comercial (`editado = true`; `fuente` conserva el origen
+        del texto que editó, o `estandar` si no había). Mismos límites que el redactor: asunto de 1 a 120 caracteres e
+        introducción de 1 a 900, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`). Los montos sí se permiten: los
+        escribe el comercial, no la IA. Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409 `PDF_YA_ENVIADO`; si
+        no, invalida el PDF actual. `If-Match` **obligatorio** (428 / 409). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextosCotizacionWeb'
+      responses:
+        '200':
+          description: Textos guardados
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TextosCotizacion'
+        '400':
+          description: '`TEXTOS_COTIZACION_INVALIDOS` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
 
   /web/cotizaciones/{folio}/costeo/pdf:
     post:
@@ -1105,7 +1662,9 @@ paths:
       description: |
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
         destino, vehículo y `precio_final`, y solo los servicios conexos incluidos, cada uno con su precio. Una sola
-        vez por cotización (para cambiarla, versión nueva). Solo el dueño.
+        vez por cotización (para cambiarla, versión nueva). Solo el dueño. Desde HU-013 (ADR-018 §11, #98) se puede
+        regenerar cuando `pdf_desactualizado = true` (el anterior queda en el historial); con el PDF vigente sigue
+        respondiendo `PDF_YA_GENERADO` y, ya enviada o con resultado, `PDF_YA_ENVIADO`.
 
         HU-011.5 (ADR-017 §6): una licitación (aunque tenga una sola línea) o una cotización de dos o más líneas sale con el
         layout de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin
@@ -1115,13 +1674,22 @@ paths:
         "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al
         comportamiento de la misma a la fecha de elaboración de la CPI." con la `trm_aplicada` de la cotización (formato
         `$3.273,49`); en COP no la lleva. Nunca imprime costos de Nexo.
+
+        HU-013 (ADR-018): es el único generador de PDF (el chat ya no arma payloads). Desde HU-013.5 imprime el asunto y
+        la introducción guardados en `textos` (o los de `clsTextosEstandar` si no hay); nunca llama a la IA, así que el
+        PDF siempre sale. Desde HU-013.7 la cotización del formulario en USD reutiliza el mismo formato y nota de TRM de
+        HU-012.1. Acepta `If-Match` opcional (rige con el `0006` de #98).
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatch'
       responses:
         '201':
           description: PDF generado y registrado
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1137,7 +1705,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` o `PDF_YA_GENERADO`'
+          description: '`COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -1453,8 +2021,13 @@ paths:
     post:
       operationId: recibirEventoChat
       tags: [chat]
-      summary: Webhook de Google Chat
+      summary: Webhook de Google Chat (obsoleto, se retira en HU-013.9)
+      deprecated: true
       description: |
+        **Obsoleto (ADR-018):** Google Chat sale del alcance de Cotifly; el webhook, su controlador y
+        `Infraestructura/GoogleChat/*` se retiran en HU-013.9 (#105). Las tablas `EventosConversacion` y `Sesiones` se
+        conservan como auditoría. No integrar nada nuevo contra este endpoint.
+
         Verifica el JWT de Google (audience = número de proyecto, emisor
         `chat@system.gserviceaccount.com`), responde de inmediato con un acuse y procesa
         el turno en segundo plano. La respuesta final se publica en el hilo de Chat.
@@ -1599,8 +2172,69 @@ components:
         type: string
         format: date
       example: '2026-09-29'
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        Concurrencia optimista (HU-013, ADR-018). El `ETag` (o `row_version`) que el frontend leyó en
+        `GET /web/cotizaciones/{folio}/costeo`, o el `row_version` de la `accion_propuesta` que confirma. Con comillas o
+        sin ellas. Si la cotización cambió entretanto responde 409 `CONFLICTO_CONCURRENCIA` sin cambiar nada (el frontend
+        recarga el costeo y vuelve a pedir la confirmación). Sin el encabezado no hay control. Rige desde que el script
+        `0006` (`rowVersion`, que entrega #98) esté aplicado; antes se acepta y se ignora. Opcional solo en
+        `POST .../costeo/pdf`; las mutaciones de la etapa final usan `IfMatchObligatorio`.
+      schema:
+        type: string
+        maxLength: 64
+      example: '"AAAAAAAAB9E="'
+    IfMatchObligatorio:
+      name: If-Match
+      in: header
+      required: true
+      description: |
+        Obligatorio en las mutaciones de la etapa final (ADR-018 §8): el `ETag`/`row_version` leído en
+        `GET .../costeo` o el `row_version` de la `accion_propuesta`. Sin él responde 428 `PRECONDICION_REQUERIDA`; si no
+        coincide, 409 `CONFLICTO_CONCURRENCIA`, sin cambios. Rige desde el script `0006` de #98; antes de aplicarlo el
+        servidor no lo exige.
+      schema:
+        type: string
+        maxLength: 64
+      example: '"AAAAAAAAB9E="'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Opcional (ADR-018 §8). Clave única por intención del usuario (UUID generado al pulsar Confirmar o el botón). Una
+        repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada de la primera petición sin
+        volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
+        cuerpo responde 400 `ErrorWeb`.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 64
+      example: 5f0c1e2a-9b8d-4c7e-a6f5-3d2c1b0a9f8e
+
+  headers:
+    ETag:
+      description: |
+        Versión de la fila de la cotización (`Cotizaciones.rowVersion` en base64, entre comillas). Mismo valor que
+        `row_version` del cuerpo. Ausente mientras el script `0006` no esté aplicado.
+      schema:
+        type: string
+      example: '"AAAAAAAAB9E="'
 
   responses:
+    PrecondicionRequerida:
+      description: '`PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final (ADR-018 §8)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorNegocio'
+          example:
+            error:
+              codigo: PRECONDICION_REQUERIDA
+              mensaje: "Recarga la cotización y vuelve a intentarlo (falta If-Match)."
     Validacion:
       description: Cuerpo inválido
       content:
@@ -1718,6 +2352,20 @@ components:
                 (mismos códigos que Nexo en `analizar-excel`), `ARCHIVO_DEMASIADO_GRANDE` (más de 10 MB) y
                 `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`) y `NEXO_SIN_PERMISO`
                 (403 de Nexo al alta o al análisis: el comercial no tiene el rol de Cabina de Fletes; en `/web/*` responde 403).
+                Pipeline determinista (HU-013, ADR-018): `CONFLICTO_CONCURRENCIA` (409: el `If-Match` no coincide con la
+                versión actual de la cotización; nada cambió), `FOLIO_REQUERIDO` (400: `/web/chat` sin `folio`),
+                `ESTADO_NO_PERMITE` (409: el estado de la cotización no admite la operación, por ejemplo con resultado
+                registrado o un costeo que no está vencido, entregado ni con error de envío), `JUSTIFICACION_REQUERIDA`
+                (400: margen por debajo del sugerido sin justificación; `detalle.margen_sugerido`), `CONEXO_INVALIDO`
+                (400: servicio inexistente o inactivo en Nexo, o cantidad fuera de rango; el código de Nexo en
+                `detalle.motivo`), `NEXO_NO_DISPONIBLE` (503: Nexo caído, sin configurar o sin respuesta al consultar o
+                agregar servicios conexos) y `TEXTOS_COTIZACION_INVALIDOS` (400: asunto o introducción vacíos, largos o con
+                URL o correos). `AJUSTE_MARGEN_INVALIDO` también es el margen fuera de 0 a 0,99 en
+                `PUT .../costeo/margen`. `PDF_YA_ENVIADO` (409: la cotización ya se envió al cliente o tiene resultado;
+                `detalle` trae `accion = nueva_version` con el método, el endpoint y el cuerpo para crear `-vN`),
+                `PRECONDICION_REQUERIDA` (428: falta `If-Match`), `LINEA_SIN_COTIZACION_NEXO` (409: la línea no tiene
+                todavía línea en la cotización de Nexo) y `TEXTOS_EDITADOS` (409: redactar sobre textos editados por el
+                comercial sin `?sobrescribir=true`).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -1769,6 +2417,17 @@ components:
                 - EXCEL_SIN_DATOS
                 - LICITACION_INVALIDA
                 - NEXO_SIN_PERMISO
+                - CONFLICTO_CONCURRENCIA
+                - FOLIO_REQUERIDO
+                - ESTADO_NO_PERMITE
+                - JUSTIFICACION_REQUERIDA
+                - CONEXO_INVALIDO
+                - NEXO_NO_DISPONIBLE
+                - TEXTOS_COTIZACION_INVALIDOS
+                - PDF_YA_ENVIADO
+                - PRECONDICION_REQUERIDA
+                - LINEA_SIN_COTIZACION_NEXO
+                - TEXTOS_EDITADOS
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -1851,7 +2510,7 @@ components:
 
     MensajeWeb:
       type: object
-      required: [mensaje, sesion_id]
+      required: [mensaje, sesion_id, folio]
       properties:
         mensaje:
           type: string
@@ -1860,19 +2519,31 @@ components:
         sesion_id:
           type: string
           pattern: '^[A-Za-z0-9_-]{8,64}$'
+        folio:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: |
+            Obligatorio desde HU-013.6 (#102, ADR-018): la cotización (creada por el formulario) sobre la que trabaja el
+            asistente. Sin él, 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial, 404. Mientras HU-013.6 no esté
+            implementado el servidor todavía no lo exige.
         cotizacion_origen_id:
           type: string
           format: uuid
           nullable: true
+          deprecated: true
           description: |
-            Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
+            Obsoleto desde HU-013.6 (el chat ya no crea cotizaciones ni versiones; la versión nueva sale de
+            `POST .../costeo/re-solicitar` con cambios de carga). Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
             parte de su cliente, línea y números, y el PDF sale como `{folio base}-vN`. Si no es del
             comercial responde 404 (igual que si no existe); si no es un UUID, 400.
         moneda:
           type: string
           nullable: true
           enum: [COP, USD, null]
+          deprecated: true
           description: |
+            Obsoleto desde HU-013.6: la moneda se elige en el formulario (`SolicitudCosteoWeb.moneda`, HU-013.7).
             Opcional (HU-012.2, ADR-014). Moneda de la cotización que eligió el comercial en el selector del
             formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
             si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
@@ -1885,8 +2556,11 @@ components:
 
     SalidaPrecio:
       type: object
+      deprecated: true
       required: [precio, costo, margen, metodo, utilidad]
       description: |
+        **Obsoleto (ADR-018 §2):** solo lo usa `RespuestaChat.precio`, que desde HU-013.6 siempre es `null`; ninguna
+        respuesta del chat vuelve a exponer `costo` ni `utilidad`. No se usa en endpoints nuevos.
         `costo` y `utilidad` siempre en COP (el costeo es en pesos). `precio` va en `moneda`: en COP a pesos
         enteros; en USD, `precio_cop / trm_aplicada` a 2 decimales (half-to-even, HU-012.2, ADR-014).
         `moneda`, `trm_aplicada`, `precio_cop` y `trm_fuente` son opcionales para compatibilidad: si faltan, la moneda es COP.
@@ -1972,6 +2646,10 @@ components:
     RespuestaChat:
       type: object
       required: [texto, herramientas]
+      description: |
+        Desde HU-013.6 (ADR-018) el asistente responde `{texto, accion_propuesta?}`: `herramientas` y `errores` se
+        conservan, y `precio`, `margen` y `pdf` quedan siempre en `null` (se retiran `calcular_precio`, `obtener_margen`,
+        `buscar_tarifa` y `generar_pdf` del agente). Se mantienen en el esquema por compatibilidad.
       properties:
         texto:
           type: string
@@ -1981,17 +2659,20 @@ components:
             type: string
           description: Nombres de las herramientas invocadas en el turno, en orden.
         precio:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaPrecio'
             - $ref: '#/components/schemas/Nulo'
         margen:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaMargen'
             - $ref: '#/components/schemas/Nulo'
         pdf:
-          description: Última salida exitosa de la herramienta en el turno, o `null`.
+          deprecated: true
+          description: Obsoleto (siempre `null` desde HU-013.6). Última salida exitosa de la herramienta en el turno, o `null`.
           oneOf:
             - $ref: '#/components/schemas/SalidaPdf'
             - $ref: '#/components/schemas/Nulo'
@@ -2004,6 +2685,61 @@ components:
             Los códigos son los de `ErrorNegocio`.
           items:
             $ref: '#/components/schemas/ErrorHerramienta'
+        accion_propuesta:
+          description: |
+            Opcional (HU-013.6, ADR-018). Acción que el asistente PROPONE en este turno, o `null`. El frontend la muestra
+            con su `resumen` y un botón Confirmar; solo al confirmar llama a `metodo` `endpoint` con `cuerpo` tal cual y
+            `If-Match: row_version`. La IA nunca la ejecuta. Una propuesta por turno como máximo.
+          oneOf:
+            - $ref: '#/components/schemas/AccionPropuesta'
+            - $ref: '#/components/schemas/Nulo'
+
+    AccionPropuesta:
+      type: object
+      required: [tipo, metodo, endpoint, cuerpo, resumen, row_version]
+      description: |
+        Acción final propuesta por el asistente (ADR-018). La arman herramientas deterministas (`proponer_ajuste_margen`,
+        `proponer_re_solicitud`, `buscar_servicio_conexo`) con datos validados por el servidor: el LLM elige la acción y
+        sus argumentos de texto, pero `endpoint`, `metodo` y `row_version` los pone el servidor, y `cuerpo` se valida
+        contra el esquema del endpoint destino antes de responder. Ejecutarla es exactamente igual que usar el botón de la
+        pantalla: mismas validaciones y mismos errores.
+      properties:
+        tipo:
+          type: string
+          enum: [ajustar_margen, re_solicitar_costeo, agregar_servicios_conexos]
+          description: |
+            `ajustar_margen` → `PUT /web/cotizaciones/{folio}/costeo/margen` (`AjusteMargenWeb`);
+            `re_solicitar_costeo` → `POST /web/cotizaciones/{folio}/costeo/re-solicitar` (`ReSolicitudCosteoWeb`);
+            `agregar_servicios_conexos` → `POST /web/cotizaciones/{folio}/costeo/servicios-conexos`
+            (`AgregarServiciosConexosWeb`).
+        metodo:
+          type: string
+          enum: [PUT, POST]
+        endpoint:
+          type: string
+          maxLength: 200
+          description: Ruta relativa a la URL base de la API, con el folio ya puesto (siempre el folio de la conversación).
+          example: /web/cotizaciones/PCN-900555111-DG-05102026-001/costeo/margen
+        cuerpo:
+          description: Cuerpo JSON exacto que el frontend envía al confirmar.
+          oneOf:
+            - $ref: '#/components/schemas/AjusteMargenWeb'
+            - $ref: '#/components/schemas/ReSolicitudCosteoWeb'
+            - $ref: '#/components/schemas/AgregarServiciosConexosWeb'
+        resumen:
+          type: string
+          maxLength: 300
+          description: |
+            Texto legible para el botón de confirmación ("Ajustar el margen de 15 % a 18 %: el precio pasa de 3.000.000
+            a 3.109.756 COP"). Lo arma el SERVIDOR con plantilla y valores calculados por código (`IClsPrecioService`) al
+            recibir la propuesta; el LLM nunca lo escribe ni ve esos montos (ADR-018 §2b).
+        row_version:
+          type: string
+          nullable: true
+          description: |
+            Versión de la cotización que vio el asistente al proponer; va en `If-Match` al confirmar. Si la cotización
+            cambió, el endpoint responde 409 `CONFLICTO_CONCURRENCIA` y la propuesta se descarta. `null` mientras el
+            script `0006` (#98) no esté aplicado.
 
     ErrorHerramienta:
       type: object
@@ -2662,6 +3398,34 @@ components:
         pdf_url:
           type: string
           nullable: true
+        margen_sugerido:
+          type: number
+          nullable: true
+          description: |
+            HU-013.2. Margen sugerido de la cotización (fracción): SAP TM con el BP o la política de la línea, resuelto al
+            enviarla (`margenPolitica`). Por debajo de él, el ajuste exige justificación.
+        origen_margen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+          description: HU-013.2. `negociado` cuando el comercial ajustó el margen.
+        trm_aplicada:
+          type: number
+          description: HU-013.7. TRM fijada al crear la cotización (COP por USD); 0 en COP.
+        textos:
+          description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
+          oneOf:
+            - $ref: '#/components/schemas/TextosCotizacion'
+            - $ref: '#/components/schemas/Nulo'
+        pdf_desactualizado:
+          type: boolean
+          description: |
+            ADR-018 §11. `true` si una acción posterior (margen, conexos, textos, re-solicitud) invalidó el PDF: `pdf_url`
+            queda en `null` y el comercial lo regenera con `POST .../costeo/pdf`. El PDF anterior queda en el historial.
+        row_version:
+          type: string
+          nullable: true
+          description: '#98 (script 0006). Mismo valor que el encabezado `ETag`; va en `If-Match`. `null` sin el `0006`.'
 
     SeleccionServiciosConexos:
       type: object
@@ -2672,94 +3436,40 @@ components:
           items:
             type: string
 
-    PosicionCargaWeb:
+    AjusteMargenWeb:
       type: object
-      required: [largo_cm, ancho_cm, alto_cm]
-      description: Posición de cubicaje (`CapturaPosicionRequest` de Nexo), en centímetros y kilogramos.
+      required: [margen]
+      description: HU-013.2. Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/margen`.
       properties:
-        descripcion:
+        margen:
+          type: number
+          minimum: 0
+          maximum: 0.99
+          description: Nuevo margen (fracción decimal, 0.18 = 18 %).
+        justificacion:
           type: string
           nullable: true
-          maxLength: 200
-        cantidad:
-          type: integer
-          minimum: 1
-          maximum: 100000
-          default: 1
-        largo_cm:
-          type: number
-          minimum: 0.1
-          maximum: 999999
-        ancho_cm:
-          type: number
-          minimum: 0.1
-          maximum: 999999
-        alto_cm:
-          type: number
-          minimum: 0.1
-          maximum: 999999
-        peso_kg:
-          type: number
-          nullable: true
-          minimum: 0
-          maximum: 999999.99
+          maxLength: 500
+          description: |
+            Obligatoria (no vacía) si `margen` es menor que `margen_sugerido`; se guarda en `MargenAjustes.motivo`. Por
+            encima del sugerido es opcional.
 
-    SolicitudCosteoWeb:
+    DatosCargaWeb:
       type: object
-      required: [tipo, nit_cliente, linea_negocio, origen, destino]
+      minProperties: 1
       description: |
-        Formulario ampliado (HU-005.3, mapeo aprobado en `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`): encabezado y la única
-        línea de `CapturaSolicitudRequest` de Nexo, con sus mismos límites.
+        HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
+        `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
+        Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
+        valida igual que en la captura, con las condiciones de G3 (`docs/HU-013-preguntas-nexo.md`): `clase_contenedor`
+        solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
+        `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
+        distinto del origen, y la regla de peso.
       properties:
-        tipo:
-          type: string
-          enum: [spot, licitacion]
-        nit_cliente:
-          type: string
-          maxLength: 20
-          description: NIT elegido en el buscador (`GET /web/clientes`). El BP se resuelve en el catálogo de Nexo.
-        cliente_nombre:
-          type: string
-          nullable: true
-          maxLength: 300
-          description: Referencia visible mientras se resuelve; se reemplaza por el nombre del catálogo de Nexo.
-        linea_negocio:
-          type: string
-          description: Línea de negocio de Cotifly (`MargenesPolitica`); a Nexo va su `mapeoLineasNexo`.
-        deadline:
-          type: string
-          format: date-time
-          nullable: true
-        valor_estimado:
-          type: number
-          nullable: true
-          minimum: 0
-        referencia:
-          type: string
-          nullable: true
-          maxLength: 200
-        horas_cargue:
-          type: number
-          nullable: true
-          minimum: 0
-          maximum: 240
-        horas_descargue:
-          type: number
-          nullable: true
-          minimum: 0
-          maximum: 240
-        origen:
-          type: string
-          maxLength: 150
-          description: Municipio de `GET /web/municipios`.
-        destino:
-          type: string
-          maxLength: 150
         tipo_vehiculo:
           type: string
           nullable: true
           maxLength: 100
-          description: Código SICE-TAC de Nexo (`2`, `2S3`, `3S3`...).
         carroceria:
           type: string
           nullable: true
@@ -2800,6 +3510,17 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
         peso_kg:
           type: number
           nullable: true
@@ -2809,12 +3530,385 @@ components:
           type: number
           nullable: true
           minimum: 0
+          maximum: 9999999999999.99
+        posiciones:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
+
+    ReSolicitudCosteoWeb:
+      type: object
+      required: [motivo]
+      description: HU-013.4. Cuerpo de `POST /web/cotizaciones/{folio}/costeo/re-solicitar`.
+      properties:
+        motivo:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Por qué se vuelve a pedir el costeo; queda en la auditoría.
+        datos_carga:
+          description: Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva.
+          oneOf:
+            - $ref: '#/components/schemas/DatosCargaWeb'
+            - $ref: '#/components/schemas/Nulo'
+        nueva_version:
+          type: boolean
+          default: false
+          description: |
+            `true` crea la versión `-vN` aunque no haya cambios de carga (la salida de `PDF_YA_ENVIADO`: cotización ya
+            enviada o con resultado). Con `datos_carga` siempre se crea versión nueva, con o sin este campo.
+
+    ConexoAgregarWeb:
+      type: object
+      required: [linea_orden, servicio_id, cantidad]
+      description: |
+        Un conexo para una LÍNEA de la cotización. En Nexo el conexo se asocia a una línea de una cotización ya costeada
+        (`clsConexoItemRequest.lineaId`, obligatorio): el backend traduce `linea_orden` a la línea de solicitud de Cotifly
+        (`CotizacionLineasSolicitud`, ADR-017), de ahí a la línea de solicitud de Nexo y a la línea de su cotización
+        (`clsCotizacionLineaDto.id` con ese `lineaSolicitudId`). El frontend nunca maneja ids de Nexo.
+      properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+          description: '`orden` de la línea (1 en una cotización del formulario, que tiene una sola).'
+        servicio_id:
+          type: string
+          format: uuid
+          description: '`id` de `ServicioConexoCatalogo` (`servicioConexoId` de Nexo).'
+        cantidad:
+          type: number
+          minimum: 0.01
+          maximum: 999999.99
+
+    AgregarServiciosConexosWeb:
+      type: object
+      required: [items]
+      description: |
+        HU-013.3. Cuerpo de `POST /web/cotizaciones/{folio}/costeo/servicios-conexos`. Nunca lleva costos ni valores: Nexo
+        calcula el valor del conexo y Cotifly le aplica el margen.
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ConexoAgregarWeb'
+
+    ServicioConexoCatalogo:
+      type: object
+      required: [id, codigo, nombre, categoria, unidad]
+      description: |
+        HU-013.3. Servicio del catálogo de Nexo (`clsServicioConexoDto`) **sin `costoUnitario`**: Cotifly nunca expone
+        el costo de Nexo.
+      properties:
+        id:
+          type: string
+          format: uuid
+        codigo:
+          type: string
+          nullable: true
+          description: '`codigoServicio` de Nexo.'
+        nombre:
+          type: string
+          nullable: true
+          description: '`tipoServicio` de Nexo (ej. "Almacenamiento", "Precinto").'
+        categoria:
+          type: string
+          nullable: true
+          example: logistico
+        unidad:
+          type: string
+          nullable: true
+          example: Viaje
+        origen:
+          type: string
+          nullable: true
+        destino:
+          type: string
+          nullable: true
+        puerto:
+          type: string
+          nullable: true
+        ruta:
+          type: string
+          nullable: true
+        tipo_maquina:
+          type: string
+          nullable: true
+        vigencia:
+          type: string
+          format: date
+          nullable: true
+
+    PaginaServiciosConexos:
+      type: object
+      required: [total, page, page_size, items]
+      properties:
+        total:
+          type: integer
+          description: Total de servicios que cumplen el filtro (todas las páginas).
+        page:
+          type: integer
+        page_size:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServicioConexoCatalogo'
+
+    TextosCotizacion:
+      type: object
+      required: [asunto, introduccion, fuente, editado, actualizado_at]
+      description: HU-013.5. Asunto e introducción del PDF guardados en `Cotizaciones.textosCotizacion`.
+      properties:
+        asunto:
+          type: string
+          maxLength: 120
+        introduccion:
+          type: string
+          maxLength: 900
+          description: Uno o más párrafos separados por una línea en blanco.
+        fuente:
+          type: string
+          enum: [ia, estandar]
+          description: |
+            `ia` = los redactó la IA y pasaron la validación; `estandar` = textos de `clsTextosEstandar` (la IA tardó más
+            de 15 s, falló o su salida no pasó la validación, o no se ha redactado).
+        editado:
+          type: boolean
+          description: '`true` si el comercial los editó después (`PUT .../costeo/textos`).'
+        actualizado_at:
+          type: string
+          format: date-time
+
+    TextosCotizacionWeb:
+      type: object
+      required: [asunto, introduccion]
+      description: HU-013.5. Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/textos`.
+      properties:
+        asunto:
+          type: string
+          minLength: 1
+          maxLength: 120
+        introduccion:
+          type: string
+          minLength: 1
+          maxLength: 900
+
+    PosicionCargaWeb:
+      type: object
+      required: [largo_cm, ancho_cm, alto_cm]
+      description: |
+        Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
+        `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son obligatorios (0,1 a
+        999.999). `peso_kg` es opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
+      properties:
+        descripcion:
+          type: string
+          nullable: true
+          maxLength: 200
+        cantidad:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 1
+        largo_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        ancho_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        alto_cm:
+          type: number
+          minimum: 0.1
+          maximum: 999999
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+
+    SolicitudCosteoWeb:
+      type: object
+      required: [tipo, nit_cliente, linea_negocio, origen, destino]
+      description: |
+        Formulario ampliado (HU-005.3, mapeo aprobado en `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
+        el 2026-10-05 en `docs/HU-005.1-mapeo-campos-nexo.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
+        / `clsCapturaLineaRequest` de Nexo, con sus mismos límites. Cotifly lo reenvía a `POST /api/captura-solicitudes` en
+        camelCase (nombre de Nexo entre paréntesis en cada campo).
+
+        Catálogos (HU-013, ADR-018): `POST /api/captura-solicitudes` de Nexo NO valida contra sus catálogos: resuelve el
+        texto por coincidencia aproximada y, si no encuentra el tipo de vehículo, **crea una fila nueva de catálogo**
+        (duplicados). Por eso el frontend envía SOLO códigos de catálogo (los de `GET /web/catalogos-flete`) en
+        `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre; la validación
+        del lado de Cotifly contra el catálogo es un gap documentado en `docs/HU-013-preguntas-nexo.md`.
+
+        No se envían (decisión de HU-005.1 o gap documentado): `modalidad` (la cubre la línea de negocio), `notas` (la
+        personalización es del PDF), `clienteId` (Cotifly envía `clienteBp`), `origenMunicipioId`/`destinoMunicipioId`
+        y las horas de cargue y descargue por línea (gaps).
+      properties:
+        tipo:
+          type: string
+          enum: [spot, licitacion]
+          description: Encabezado (`tipo`), en minúscula como lo valida Nexo.
+        nit_cliente:
+          type: string
+          maxLength: 20
+          description: |
+            Encabezado. NIT elegido en el buscador (`GET /web/clientes`). Nexo no acepta el NIT: Cotifly resuelve el BP en
+            el catálogo de Nexo y envía `clienteBp`.
+        cliente_nombre:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Referencia visible mientras se resuelve; se reemplaza por el nombre del catálogo de Nexo. No viaja a Nexo.
+        linea_negocio:
+          type: string
+          description: |
+            Línea (`lineaNegocio`, máx. 100 en Nexo). Línea de negocio de Cotifly (`MargenesPolitica`, da el margen); a
+            Nexo va su `mapeoLineasNexo` (enum de Nexo `PuertoAInterior`, `InteriorAPuerto`, `Nacional`,
+            `DevolucionContenedor`, `Andino`, `Licitaciones`; catálogo `GET /api/catalogos/lineas-negocio`).
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Encabezado (`deadline`, `date-time` en Nexo). Cotifly lo lee como fecha y hora con zona y lo reenvía a Nexo en
+            ISO 8601 con desplazamiento (`2026-10-10T17:00:00-05:00`). El frontend debe enviar fecha y hora con
+            `-05:00`: una fecha sola o sin zona (`2026-10-10`) toma la zona del servidor (UTC en el contenedor), es decir
+            las 19:00 del día anterior en Bogotá; gap documentado.
+        valor_estimado:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: Encabezado (`valorEstimado`), uno por solicitud; distinto de `valor_mercancia` (por línea).
+        referencia:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Encabezado (`referencia`), la referencia u orden de compra del cliente (distinta de `notas`).
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: |
+            Encabezado (`horasCargue`). Nexo también lo acepta por línea (sobreescribe el valor por defecto de la línea);
+            Cotifly solo lo envía en el encabezado (gap no bloqueante).
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Encabezado (`horasDescargue`). Igual que `horas_cargue`.
+        origen:
+          type: string
+          maxLength: 150
+          description: Línea (`origen`). Municipio de `GET /web/municipios` (columna `municipio`).
+        destino:
+          type: string
+          maxLength: 150
+          description: Línea (`destino`). Municipio de `GET /web/municipios`.
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: |
+            Línea (`tipoVehiculo`). Código SICE-TAC/SAP de Nexo (`2`, `2S3`, `3S3`...), SOLO del catálogo: un texto que no
+            coincide crea un tipo de vehículo nuevo en Nexo.
+        carroceria:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: |
+            Línea (`carroceria`). Código del catálogo (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`,
+            `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`); en código hasta que Nexo publique su catálogo.
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: |
+            Línea (`tipologia`; en Nexo solo existe a nivel de LÍNEA, no por posición). Enum de Nexo de 7 valores:
+            `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca`.
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Línea (`claseViaje`). Catálogo de Nexo (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`).
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+          description: |
+            Línea (`claseContenedor`), condicional a `clase_viaje = Contenedor`. Catálogo de Nexo (`CNT20.IT`, `CNT20.RE`,
+            `CNT20.ST`, `CNT40.HC`, `CNT40.RE`).
+        exclusivo:
+          type: boolean
+          nullable: true
+          description: Línea (`exclusivo`).
+        consolidado:
+          type: boolean
+          nullable: true
+          description: Línea (`consolidado`).
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+          description: Línea (`retornaContenedor`). Nexo lo fuerza a `true` si viene `ciudad_devolucion_contenedor`.
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Línea (`ciudadDevolucionContenedor`), condicional a `retorna_contenedor`.
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+          description: Línea (`levanteContenedorDiferente`). Nexo lo fuerza a `true` si la ciudad de levante difiere del origen.
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Línea (`ciudadLevanteContenedor`), condicional a `levante_contenedor_diferente`.
+        valor_aprovisionamiento:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: |
+            Línea (`valorAprovisionamiento`), condicional a un levante distinto del origen: Nexo solo lo guarda en ese caso.
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: |
+            Línea (`peso`). Obligatorio (> 0) si las posiciones no aportan peso; si ambos vienen, deben coincidir con
+            `sum(cantidad × posiciones[].peso_kg)` dentro del 1 % (`PESO_REQUERIDO` / `PESO_INCONSISTENTE`).
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: Línea (`valorMercancia`).
         posiciones:
           type: array
           maxItems: 200
           default: []
           items:
             $ref: '#/components/schemas/PosicionCargaWeb'
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: |
+            Opcional (HU-013.7, #103; mismo contrato que `LicitacionWeb.moneda`, ADR-014 §5). Moneda de la cotización: `COP`
+            por defecto. Con `USD` la TRM del día se fija al crear (`trm_aplicada`), los precios del flete y de los
+            conexos se convierten con ella y el PDF lleva la nota de TRM mínima. Sin TRM, 400 `TRM_NO_DISPONIBLE` y nada
+            se guarda ni se envía a Nexo. Se acepta sin distinguir mayúsculas ni espacios al borde. Depende de #50 (PR #96).
 
     HojaExcel:
       type: object
