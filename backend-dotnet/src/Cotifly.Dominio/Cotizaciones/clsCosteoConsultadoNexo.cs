@@ -111,8 +111,14 @@ public sealed record clsCotizacionNexo(
     public const string EstadoBorrador = "Borrador";
 }
 
-/// <summary>Línea con flete de la cotización de Nexo (<c>CotizacionLineaDto</c>).</summary>
-public sealed record clsLineaCosteoNexo(string? LineaSolicitudId, decimal ValorFlete, decimal? ValorAprovisionamiento, decimal? ValorRetornoContenedor)
+/// <summary>
+/// Línea con flete de la cotización de Nexo (<c>CotizacionLineaDto</c>). <paramref name="Id"/> es el id de la línea de la COTIZACIÓN de
+/// Nexo (<c>clsCotizacionLineaDto.id</c>), distinto de <paramref name="LineaSolicitudId"/> (la línea de la solicitud): es el
+/// <c>lineaId</c> que pide <c>POST /api/cotizaciones/{id}/conexos</c> (HU-013.3, ADR-018 §4). Se lee cada vez que se lee la
+/// cotización de Nexo; <c>null</c> si Nexo no lo trae.
+/// </summary>
+public sealed record clsLineaCosteoNexo(
+    string? LineaSolicitudId, decimal ValorFlete, decimal? ValorAprovisionamiento, decimal? ValorRetornoContenedor, string? Id = null)
 {
     /// <summary>Costo de la línea: flete + aprovisionamiento + retorno del contenedor (lo que suma Nexo en su total).</summary>
     public decimal Costo => ValorFlete + (ValorAprovisionamiento ?? 0m) + (ValorRetornoContenedor ?? 0m);

@@ -38,8 +38,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> PendientesDeImplementar = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["GET /web/servicios-conexos"] = "#99 (HU-013.3)",
-        ["POST /web/cotizaciones/{folio}/costeo/servicios-conexos"] = "#99 (HU-013.3)",
         ["POST /web/cotizaciones/{folio}/costeo/re-solicitar"] = "#100 (HU-013.4)",
         ["POST /web/cotizaciones/{folio}/costeo/textos/redactar"] = "#101 (HU-013.5)",
         ["PUT /web/cotizaciones/{folio}/costeo/textos"] = "#101 (HU-013.5)",
@@ -193,6 +191,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb" },
+        { typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb" },
+        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos" },
+        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsServicioConexoCatalogo), "ServicioConexoCatalogo" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb" },
         { typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida" },

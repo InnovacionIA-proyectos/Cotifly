@@ -221,7 +221,9 @@ public sealed class clsCosteoNexo(
             {
                 if (Decimal(linea, "valorFlete") is { } flete)
                 {
-                    lineas.Add(new clsLineaCosteoNexo(Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor")));
+                    // id = la línea de la COTIZACIÓN de Nexo (clsCotizacionLineaDto.id): el lineaId de los conexos (HU-013.3).
+                    lineas.Add(new clsLineaCosteoNexo(
+                        Texto(linea, "lineaSolicitudId"), flete, Decimal(linea, "valorAprovisionamiento"), Decimal(linea, "valorRetornoContenedor"), Texto(linea, "id")));
                 }
             }
         }
@@ -293,10 +295,11 @@ public sealed class clsCosteoNexo(
 
     /// <summary>
     /// Envía la petición con la identidad del comercial y traduce los fallos. Devuelve el JSON de una respuesta 2xx (el llamador lo
-    /// libera) o el error de negocio.
+    /// libera) o el error de negocio. Con <paramref name="limiteBytes"/>, una respuesta 2xx más grande se descarta sin leerla entera
+    /// (<c>COSTEO_NEXO_NO_DISPONIBLE</c>, "respuesta demasiado grande"); lo usan los servicios conexos (HU-013.3).
     /// </summary>
     internal async Task<clsResultado<JsonDocument>> EnviarAsync(
-        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
+        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, long? limiteBytes = null)
     {
         if (_urlBase is null)
         {
@@ -356,7 +359,20 @@ public sealed class clsCosteoNexo(
             }
 
             await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
-            return await JsonDocument.ParseAsync(flujo, cancellationToken: cancellationToken);
+            if (limiteBytes is not { } limite)
+            {
+                return await JsonDocument.ParseAsync(flujo, cancellationToken: cancellationToken);
+            }
+
+            if (respuesta.Content.Headers.ContentLength is { } largo && largo > limite)
+            {
+                return NoDisponible($"respuesta demasiado grande ({largo.ToString(CultureInfo.InvariantCulture)} bytes)");
+            }
+
+            using var acotado = await LeerAcotadoAsync(flujo, limite, cancellationToken);
+            return acotado is null
+                ? NoDisponible($"respuesta de más de {limite.ToString(CultureInfo.InvariantCulture)} bytes")
+                : await JsonDocument.ParseAsync(acotado, cancellationToken: cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -376,6 +392,27 @@ public sealed class clsCosteoNexo(
         {
             return NoDisponible("JSON inválido", ex);
         }
+    }
+
+    /// <summary>Lee hasta <paramref name="limite"/> bytes en memoria; <c>null</c> si el flujo trae más.</summary>
+    private static async Task<MemoryStream?> LeerAcotadoAsync(Stream flujo, long limite, CancellationToken cancellationToken)
+    {
+        var memoria = new MemoryStream();
+        var bufer = new byte[16 * 1024];
+        int leidos;
+        while ((leidos = await flujo.ReadAsync(bufer, cancellationToken)) > 0)
+        {
+            if (memoria.Length + leidos > limite)
+            {
+                await memoria.DisposeAsync();
+                return null;
+            }
+
+            memoria.Write(bufer, 0, leidos);
+        }
+
+        memoria.Position = 0;
+        return memoria;
     }
 
     /// <summary>Error de Nexo (<c>{code, message, timestamp, details?}</c>) como <c>HTTP {estado} {code}: {message}</c> (máx. 400 caracteres).</summary>

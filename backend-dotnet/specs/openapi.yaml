@@ -1330,7 +1330,6 @@ paths:
       operationId: buscarServiciosConexos
       tags: [web]
       summary: Catálogo de servicios conexos de Nexo (sin costos)
-      x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
         HU-013.3 (ADR-018 §4). Consulta `GET {Nexo:UrlBase}/api/servicios-conexos?soloActivos=true&q=&categoria=&page=&pageSize=`
@@ -1399,7 +1398,6 @@ paths:
       operationId: agregarServiciosConexos
       tags: [web]
       summary: Agrega servicios conexos del catálogo a la cotización en Nexo
-      x-estado: pendiente
       x-issue: '#99 (HU-013.3)'
       description: |
         HU-013.3 (ADR-018 §4). Es el endpoint del botón "Agregar conexo" y del Confirmar de la acción propuesta

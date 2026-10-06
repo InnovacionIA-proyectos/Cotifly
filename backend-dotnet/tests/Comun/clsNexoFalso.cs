@@ -23,6 +23,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private readonly ConcurrentQueue<clsPeticionNexo> _peticiones = new();
     private readonly Dictionary<string, clsSolicitudFalsa> _solicitudes = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(string Nit, string Nombre, string Origen, string? Bp)> _clientes = [];
+    private readonly List<clsServicioCatalogoFalso> _catalogo = [];
 
     /// <summary>Si tiene valor, TODAS las peticiones responden este estado (Nexo caído o rechazando).</summary>
     public HttpStatusCode? Caido { get; set; }
@@ -127,6 +128,49 @@ public sealed class clsNexoFalso : HttpMessageHandler
             s.Cotizacion.Conexos.Add((Guid.NewGuid().ToString(), nombre, categoria, cantidad, valorAplicado));
         });
 
+    /// <summary>Si tiene valor, <c>GET /api/servicios-conexos</c> responde este estado (ej. 403: sin rol en Nexo).</summary>
+    public HttpStatusCode? CatalogoFalla { get; set; }
+
+    /// <summary>Si tiene valor, <c>POST /api/cotizaciones/{id}/conexos</c> responde este estado (ej. 403: sin rol en Nexo).</summary>
+    public HttpStatusCode? ConexosFalla { get; set; }
+
+    /// <summary>
+    /// Si es verdadero, después de agregar conexos <c>GET /api/cotizaciones/{id}</c> responde 503 (Nexo agregó el conexo pero la
+    /// relectura falla); "crear o recuperar" (el polling) sigue respondiendo.
+    /// </summary>
+    public bool FallarRelecturaTrasConexos { get; set; }
+
+    /// <summary>Servicios que <c>POST .../conexos</c> rechaza con el estado indicado (ej. 400 o 404), además de las reglas del catálogo.</summary>
+    public ConcurrentDictionary<string, HttpStatusCode> RechazosConexo { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Agrega un servicio al catálogo de <c>GET /api/servicios-conexos</c> (<c>clsServicioConexoDto</c>).</summary>
+    public clsNexoFalso ConServicioConexo(string id, string codigo, string nombre, string categoria, string unidad, decimal costoUnitario, bool activo = true)
+    {
+        lock (_candado)
+        {
+            _catalogo.Add(new clsServicioCatalogoFalso(id, codigo, nombre, categoria, unidad, costoUnitario, activo));
+        }
+
+        return this;
+    }
+
+    /// <summary>Cuerpos de los <c>POST /api/cotizaciones/{cotizacionId}/conexos</c> recibidos, en orden.</summary>
+    public IReadOnlyList<JsonNode> PeticionesConexos(string cotizacionId) =>
+        [.. Peticiones
+            .Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.TrimEnd('/') == $"/api/cotizaciones/{cotizacionId}/conexos")
+            .Select(p => JsonNode.Parse(p.Cuerpo ?? "{}")!)];
+
+    /// <summary>Id de la línea de la COTIZACIÓN de Nexo que corresponde a la línea <paramref name="indice"/> (base 0) de la solicitud.</summary>
+    public string? LineaCotizacionDe(string solicitudId, int indice)
+    {
+        lock (_candado)
+        {
+            return _solicitudes.TryGetValue(solicitudId, out var s) && s.Cotizacion is { } c && c.Fletes.ContainsKey(indice)
+                ? c.LineaId(indice)
+                : null;
+        }
+    }
+
     /// <summary><c>POST /api/cotizaciones/{id}/entregar</c> de la Mesa: cotización y solicitud en <c>Entregada</c>.</summary>
     public void Entregar(string solicitudId) =>
         Con(solicitudId, s =>
@@ -202,6 +246,10 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 ("POST", "/api/cotizaciones") => CrearORecuperar(cuerpo),
                 ("POST", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) && r.EndsWith("/resultado", StringComparison.Ordinal) =>
                     MarcarResultado(r["/api/cotizaciones/".Length..^"/resultado".Length], cuerpo),
+                ("POST", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) && r.EndsWith("/conexos", StringComparison.Ordinal) =>
+                    AgregarConexos(r["/api/cotizaciones/".Length..^"/conexos".Length], cuerpo),
+                ("GET", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) => LeerCotizacion(r["/api/cotizaciones/".Length..]),
+                ("GET", "/api/servicios-conexos") => Catalogo(request.RequestUri),
                 _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{request.Method} {ruta}"),
             };
         }
@@ -367,15 +415,131 @@ public sealed class clsNexoFalso : HttpMessageHandler
         return Json(HttpStatusCode.OK, Cotizacion(s));
     }
 
+    /// <summary><c>GET /api/servicios-conexos</c>: filtro por activos, texto (nombre o código), categoría y página, como Nexo.</summary>
+    private HttpResponseMessage Catalogo(Uri url)
+    {
+        if (CatalogoFalla is { } falla)
+        {
+            return Error(falla, falla == HttpStatusCode.Forbidden ? "SIN_PERMISO" : "ERROR", "Catálogo rechazado por el Nexo falso.");
+        }
+
+        var parametros = url.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2))
+            .ToDictionary(p => p[0], p => p.Length > 1 ? Uri.UnescapeDataString(p[1]) : string.Empty, StringComparer.OrdinalIgnoreCase);
+        var soloActivos = parametros.TryGetValue("soloActivos", out var activos) && bool.Parse(activos);
+        var q = parametros.GetValueOrDefault("q");
+        var categoria = parametros.GetValueOrDefault("categoria");
+        var page = int.Parse(parametros.GetValueOrDefault("page") ?? "1", System.Globalization.CultureInfo.InvariantCulture);
+        var pageSize = int.Parse(parametros.GetValueOrDefault("pageSize") ?? "50", System.Globalization.CultureInfo.InvariantCulture);
+        var filtrados = _catalogo
+            .Where(x => !soloActivos || x.Activo)
+            .Where(x => string.IsNullOrEmpty(q) || x.Nombre.Contains(q, StringComparison.OrdinalIgnoreCase) || x.Codigo.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrEmpty(categoria) || string.Equals(x.Categoria, categoria, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var items = filtrados.Skip((page - 1) * pageSize).Take(pageSize).Select(x => new
+        {
+            id = x.Id, codigoServicio = x.Codigo, tipoServicio = x.Nombre, origen = (string?)null, destino = (string?)null, puerto = (string?)null,
+            ruta = (string?)null, tipoMaquina = (string?)null, costoUnitario = x.Costo, unidad = x.Unidad, vigencia = "2026-12-31", categoria = x.Categoria,
+            activo = x.Activo,
+        }).ToList();
+        return Json(HttpStatusCode.OK, new { items, total = filtrados.Count });
+    }
+
+    /// <summary><c>GET /api/cotizaciones/{id}</c>: la cotización con sus líneas y conexos (o 503 si se pidió fallar la relectura).</summary>
+    private HttpResponseMessage LeerCotizacion(string cotizacionId)
+    {
+        var s = _solicitudes.Values.FirstOrDefault(x => x.Cotizacion?.Id == cotizacionId);
+        if (s?.Cotizacion is not { } c)
+        {
+            return Error(HttpStatusCode.NotFound, "COTIZACION_NO_ENCONTRADA", "Cotización no encontrada.");
+        }
+
+        return FallarRelecturaTrasConexos && c.ConexosAgregados > 0
+            ? Error(HttpStatusCode.ServiceUnavailable, "NEXO_CAIDO", "Relectura fallida (prueba).")
+            : Json(HttpStatusCode.OK, Cotizacion(s));
+    }
+
+    /// <summary>
+    /// <c>POST /api/cotizaciones/{id}/conexos</c> (<c>clsAgregarConexosRequest</c>): cada item exige una línea de la cotización y un
+    /// servicio activo del catálogo; el valor aplicado lo calcula Nexo (costo unitario × cantidad) si no viene. Todo o nada.
+    /// </summary>
+    private HttpResponseMessage AgregarConexos(string cotizacionId, string? cuerpo)
+    {
+        if (ConexosFalla is { } falla)
+        {
+            return Error(falla, falla == HttpStatusCode.Forbidden ? "SIN_PERMISO" : "ERROR", "Conexos rechazados por el Nexo falso.");
+        }
+
+        var s = _solicitudes.Values.FirstOrDefault(x => x.Cotizacion?.Id == cotizacionId);
+        if (s?.Cotizacion is not { } c)
+        {
+            return Error(HttpStatusCode.NotFound, "COTIZACION_NO_ENCONTRADA", "Cotización no encontrada.");
+        }
+
+        if (JsonNode.Parse(cuerpo ?? "{}")?["items"] is not JsonArray items || items.Count == 0)
+        {
+            return Error(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "Items es obligatorio.");
+        }
+
+        var nuevos = new List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor, string? ServicioId, string? LineaId)>();
+        foreach (var item in items)
+        {
+            var lineaId = item?["lineaId"]?.GetValue<string>();
+            var servicioId = item?["servicioConexoId"]?.GetValue<string>();
+            var cantidad = item?["cantidad"]?.GetValue<decimal>() ?? 1m;
+            if (!c.Fletes.Keys.Any(i => c.LineaId(i) == lineaId))
+            {
+                return Error(HttpStatusCode.BadRequest, "LINEA_NO_ENCONTRADA", "La línea no pertenece a la cotización.");
+            }
+
+            if (servicioId is not null && RechazosConexo.TryGetValue(servicioId, out var rechazo))
+            {
+                return Error(rechazo, rechazo == HttpStatusCode.NotFound ? "SERVICIO_CONEXO_NO_ENCONTRADO" : "SERVICIO_CONEXO_INVALIDO", "Servicio rechazado (prueba).");
+            }
+
+            var servicio = _catalogo.FirstOrDefault(x => string.Equals(x.Id, servicioId, StringComparison.OrdinalIgnoreCase));
+            if (servicio is null)
+            {
+                return Error(HttpStatusCode.NotFound, "SERVICIO_CONEXO_NO_ENCONTRADO", "Servicio conexo no encontrado.");
+            }
+
+            if (!servicio.Activo)
+            {
+                return Error(HttpStatusCode.BadRequest, "SERVICIO_CONEXO_INACTIVO", "El servicio conexo está inactivo.");
+            }
+
+            var valor = item?["valorAplicado"]?.GetValue<decimal>() ?? servicio.Costo * cantidad;
+            nuevos.Add((Guid.NewGuid().ToString(), servicio.Nombre, servicio.Categoria, cantidad, valor, servicio.Id, lineaId));
+        }
+
+        foreach (var nuevo in nuevos)
+        {
+            c.Conexos.Add((nuevo.Id, nuevo.Nombre, nuevo.Categoria, nuevo.Cantidad, nuevo.Valor));
+            c.ServicioYLinea[nuevo.Id] = (nuevo.ServicioId, nuevo.LineaId);
+        }
+
+        c.ConexosAgregados++;
+        return Json(HttpStatusCode.OK, Cotizacion(s));
+    }
+
     private static object Cotizacion(clsSolicitudFalsa s)
     {
         var c = s.Cotizacion!;
         var lineas = c.Fletes.OrderByDescending(f => f.Key).Where(f => f.Key < s.LineaIds.Count).Select(f => new
         {
-            id = Guid.NewGuid().ToString(), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
+            id = c.LineaId(f.Key), lineaSolicitudId = (string?)s.LineaIds[f.Key], valorFlete = f.Value.Flete, fuente = "Sicetac",
             valorAprovisionamiento = f.Value.Aprovisionamiento, valorRetornoContenedor = f.Value.Retorno,
         }).ToArray();
-        var conexos = c.Conexos.Select(x => new { id = x.Id, servicioConexoId = (string?)null, nombre = x.Nombre, categoria = x.Categoria, cantidad = x.Cantidad, valorAplicado = x.Valor }).ToList();
+        var conexos = c.Conexos.Select(x => new
+        {
+            id = x.Id,
+            cotizacionLineaId = c.ServicioYLinea.TryGetValue(x.Id, out var sl) ? sl.LineaId : null,
+            servicioConexoId = c.ServicioYLinea.TryGetValue(x.Id, out var sl2) ? sl2.ServicioId : null,
+            nombre = x.Nombre,
+            categoria = x.Categoria,
+            cantidad = x.Cantidad,
+            valorAplicado = x.Valor,
+        }).ToList();
         return new
         {
             id = c.Id,
@@ -428,5 +592,27 @@ public sealed class clsNexoFalso : HttpMessageHandler
         /// <summary>Fletes por índice de línea de la solicitud (base 0).</summary>
         public Dictionary<int, (decimal Flete, decimal? Aprovisionamiento, decimal? Retorno)> Fletes { get; } = [];
         public List<(string Id, string Nombre, string Categoria, decimal Cantidad, decimal Valor)> Conexos { get; } = [];
+
+        /// <summary>Servicio del catálogo y línea de la cotización de cada conexo agregado por <c>POST .../conexos</c>.</summary>
+        public Dictionary<string, (string? ServicioId, string? LineaId)> ServicioYLinea { get; } = [];
+
+        /// <summary>Veces que se agregaron conexos por la API (para fallar la relectura después).</summary>
+        public int ConexosAgregados { get; set; }
+
+        private readonly Dictionary<int, string> _lineaIds = [];
+
+        /// <summary>Id ESTABLE de la línea de la cotización para el índice de línea de la solicitud (como el GUID de Nexo).</summary>
+        public string LineaId(int indice)
+        {
+            if (!_lineaIds.TryGetValue(indice, out var id))
+            {
+                id = Guid.NewGuid().ToString();
+                _lineaIds[indice] = id;
+            }
+
+            return id;
+        }
     }
+
+    private sealed record clsServicioCatalogoFalso(string Id, string Codigo, string Nombre, string Categoria, string Unidad, decimal Costo, bool Activo);
 }
