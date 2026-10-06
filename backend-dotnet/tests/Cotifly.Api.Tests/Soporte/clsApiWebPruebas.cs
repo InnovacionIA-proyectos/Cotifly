@@ -247,13 +247,21 @@ public sealed class clsApiWebPruebas : IDisposable
         await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync();
     }
 
-    /// <summary>Petición con <c>Authorization: Bearer</c> (si hay token) y cuerpo JSON crudo (si viene).</summary>
-    public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null)
+    /// <summary>
+    /// Petición con <c>Authorization: Bearer</c> (si hay token), cuerpo JSON crudo (si viene) e <c>If-Match</c> (si viene, tal cual:
+    /// la concurrencia optimista de HU-013, ADR-018 §8).
+    /// </summary>
+    public async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null, string? ifMatch = null)
     {
         using var peticion = new HttpRequestMessage(metodo, ruta);
         if (token is not null)
         {
             peticion.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        if (ifMatch is not null)
+        {
+            peticion.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         }
 
         if (cuerpoJson is not null)

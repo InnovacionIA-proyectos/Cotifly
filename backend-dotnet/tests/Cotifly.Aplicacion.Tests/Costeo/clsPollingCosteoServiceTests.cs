@@ -38,6 +38,7 @@ public sealed class clsPollingCosteoServiceTests
         _reloj.Avanzar(TimeSpan.FromSeconds(8));
         _cotizaciones.ReclamarConsultaCosteoAsync(_cotizacion.Id, _pendiente.SiguienteConsultaAt, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(true);
         _cotizaciones.ObtenerPorIdAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_cotizacion);
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -54,7 +55,8 @@ public sealed class clsPollingCosteoServiceTests
         _cotizacion.CosteoUltimaConsultaAt.Should().Be(_reloj.AhoraUtc);
         _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5), "al principio se pregunta cada 5 s");
         _cotizacion.CotizacionNexoId.Should().Be("COT-1");
-        await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        _cotizacion.VersionNegocio.Should().Be(0, "una consulta sin cambios (solo la agenda) no sube la versión de negocio");
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>());
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
     }
 
@@ -217,6 +219,47 @@ public sealed class clsPollingCosteoServiceTests
 
         clsAgendaPollingCosteo.Siguiente(ahora, ahora.AddHours(-72), 0, _opciones).Should().BeNull();
         clsAgendaPollingCosteo.Siguiente(ahora, ahora.AddHours(-71), 0, _opciones).Should().Be(ahora.AddMinutes(15));
+    }
+
+    [Fact]
+    public async Task UnCambioDePrecioSubeLaVersionDeNegocioYSeGuardaContraLaVersionLeida()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: true));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Cambio);
+
+        _cotizacion.VersionNegocio.Should().Be(1);
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SiElComercialCambioLaCotizacionMientrasSeConsultabaNoSeGuardaNiSeAudita()
+    {
+        NexoResponde(Foto("EnCosteo", conFlete: true));
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        var resultado = await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        resultado.Should().Be(ResultadoConsultaCosteo.Conflicto, "se descarta y se vuelve a consultar en el siguiente ciclo");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+        await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+    }
+
+    [Fact]
+    public void EnDolaresElPollingConvierteConLaTrmFijadaDeLaCotizacion()
+    {
+        var usd = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-USD-1", UsuarioId = _ana, Moneda = "USD", TrmAplicada = 4000m }).Valor;
+        usd.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        usd.RegistrarEnvioCosteo("SOL-2", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
+        usd.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        usd.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, null);
+        var precioCosteo = new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(
+            Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>()));
+
+        precioCosteo.Aplicar(usd, Foto("EnCosteo", conFlete: true), _reloj.AhoraUtc).Should().BeTrue();
+
+        usd.PrecioFinal.Should().Be(588.24m, "2.000.000 / 0,85 = 2.352.941 COP, / 4.000 (la TRM fijada) = 588,24 USD");
+        usd.Costo.Should().Be(2_000_000m, "el costo sigue en pesos");
     }
 
     private void NexoResponde(clsCosteoConsultadoNexo foto) =>

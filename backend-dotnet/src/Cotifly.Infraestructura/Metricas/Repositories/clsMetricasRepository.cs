@@ -161,7 +161,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             ? contexto.Database.SqlQuery<clsFilaAjustes>($"""
                 SELECT v.usuarioId AS UsuarioId, u.nombreCompleto AS NombreCompleto, v.lineaNegocio AS LineaNegocio, v.numAjustes AS NumAjustes,
                        v.diferenciaPromedio AS DiferenciaPromedio, v.diferenciaMin AS DiferenciaMin, v.diferenciaMax AS DiferenciaMax,
-                       v.ultimoAjuste AS UltimoAjuste
+                       v.ultimoAjuste AS UltimoAjuste, v.numAjustesBajoSugerido AS NumAjustesBajoSugerido
                 FROM dbo_cotifly.vAjustesMargenPorComercial v
                 LEFT JOIN dbo_cotifly.UsuariosWeb u ON u.id = v.usuarioId
                 WHERE v.usuarioId = {usuarioId}
@@ -169,7 +169,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             : contexto.Database.SqlQuery<clsFilaAjustes>($"""
                 SELECT v.usuarioId AS UsuarioId, u.nombreCompleto AS NombreCompleto, v.lineaNegocio AS LineaNegocio, v.numAjustes AS NumAjustes,
                        v.diferenciaPromedio AS DiferenciaPromedio, v.diferenciaMin AS DiferenciaMin, v.diferenciaMax AS DiferenciaMax,
-                       v.ultimoAjuste AS UltimoAjuste
+                       v.ultimoAjuste AS UltimoAjuste, v.numAjustesBajoSugerido AS NumAjustesBajoSugerido
                 FROM dbo_cotifly.vAjustesMargenPorComercial v
                 INNER JOIN dbo_cotifly.UsuariosWeb u ON u.id = v.usuarioId
                 WHERE u.regional = {alcance.Regional!}
@@ -181,7 +181,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             .ThenBy(f => f.UsuarioId)
             .ThenBy(f => f.LineaNegocio ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .Select(f => new clsAjustesMargenComercial(
-                f.UsuarioId, f.NombreCompleto, f.LineaNegocio, f.NumAjustes, f.DiferenciaPromedio, f.DiferenciaMin, f.DiferenciaMax, f.UltimoAjuste))
+                f.UsuarioId, f.NombreCompleto, f.LineaNegocio, f.NumAjustes, f.DiferenciaPromedio, f.DiferenciaMin, f.DiferenciaMax, f.UltimoAjuste,
+                f.NumAjustesBajoSugerido))
             .ToList();
     }
 
@@ -237,5 +238,6 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal? DiferenciaMin { get; set; }
         public decimal? DiferenciaMax { get; set; }
         public DateTimeOffset? UltimoAjuste { get; set; }
+        public int NumAjustesBajoSugerido { get; set; }
     }
 }

@@ -125,7 +125,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
                     continue;
                 }
 
-                var precioLinea = EnMoneda(cotizacion, precios.Calcular(costoLinea, m, metodo));
+                var precioLinea = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, costoLinea, m, metodo);
                 if (precioLinea.EsFallo)
                 {
                     if (ordenadas.Count == 1)
@@ -207,7 +207,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         var conexos = new List<clsServicioConexoCosteo>();
         foreach (var conexo in nexo.Conexos)
         {
-            var precioConexo = EnMoneda(cotizacion, precios.Calcular(conexo.ValorAplicado, margen, metodo));
+            var precioConexo = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, conexo.ValorAplicado, margen, metodo);
             if (precioConexo.EsExitoso)
             {
                 conexos.Add(new clsServicioConexoCosteo(
@@ -254,7 +254,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
             return false;
         }
 
-        var precio = EnMoneda(cotizacion, precios.Calcular(costo, margen, metodo));
+        var precio = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, costo, margen, metodo);
         if (precio.EsFallo)
         {
             cotizacion.AdvertirCosteo($"No se pudo calcular el precio sobre el costeo de Nexo: {precio.Error.Mensaje}");
@@ -276,7 +276,7 @@ public sealed class clsPrecioCosteoService(IClsPrecioService precios) : IClsPrec
         var conexos = new List<clsServicioConexoCosteo>();
         foreach (var conexo in nexo.Conexos)
         {
-            var precioConexo = EnMoneda(cotizacion, precios.Calcular(conexo.ValorAplicado, margen, metodo));
+            var precioConexo = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, conexo.ValorAplicado, margen, metodo);
             if (precioConexo.EsExitoso)
             {
                 conexos.Add(new clsServicioConexoCosteo(

@@ -14,7 +14,8 @@ public sealed record clsActividadComercial(
 
 /// <summary>
 /// Fila de <c>vAjustesMargenPorComercial</c> (una por comercial y línea) con <c>nombre_completo</c>
-/// (<c>AjustesMargenComercial</c>, borrador hasta HU-010.1).
+/// (<c>AjustesMargenComercial</c>, borrador hasta HU-010.1). <see cref="NumAjustesBajoSugerido"/> (script 0006, HU-013.2) cuenta
+/// los ajustes que quedaron por debajo del margen sugerido (diferencia negativa).
 /// </summary>
 public sealed record clsAjustesMargenComercial(
     Guid? UsuarioId,
@@ -24,7 +25,8 @@ public sealed record clsAjustesMargenComercial(
     decimal? DiferenciaPromedio,
     decimal? DiferenciaMin,
     decimal? DiferenciaMax,
-    DateTimeOffset? UltimoAjuste);
+    DateTimeOffset? UltimoAjuste,
+    int NumAjustesBajoSugerido = 0);
 
 /// <summary>
 /// Qué filas de métricas puede ver el usuario: las de un comercial (<see cref="UsuarioId"/>) o las de todos los comerciales de

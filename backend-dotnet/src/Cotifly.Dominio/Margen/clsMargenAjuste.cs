@@ -8,7 +8,7 @@ namespace Cotifly.Dominio.Margen;
 /// validar y de calcular <see cref="Diferencia"/> = aplicado − política, para que lo que queda en memoria sea
 /// exactamente lo que guarda la base (el Python redondeaba la diferencia a 6, pero la columna solo guarda 4).
 /// </summary>
-public sealed class clsMargenAjuste
+public sealed partial class clsMargenAjuste
 {
     public const string CodigoError = clsCodigosError.AjusteMargenInvalido;
 
@@ -67,6 +67,74 @@ public sealed class clsMargenAjuste
             MargenAplicado = aplicado,
             Diferencia = aplicado - politica,
             Motivo = motivo.Trim(),
+            UsuarioId = usuarioId,
+        };
+    }
+
+    /// <summary>
+    /// Justificación lista para guardar (en <c>MargenAjustes.motivo</c> y en la auditoría): sin secuencias de escape ANSI completas
+    /// (<c>ESC [ ... letra</c>, <c>ESC ] ... BEL</c> y <c>ESC</c> más un carácter), sin caracteres de control (saltos de línea,
+    /// tabuladores, nulos), que se reemplazan por un espacio, con los espacios repetidos colapsados en uno y sin espacios en los
+    /// extremos; <c>null</c> si queda vacía.
+    /// </summary>
+    public static string? LimpiarJustificacion(string? justificacion)
+    {
+        if (justificacion is null)
+        {
+            return null;
+        }
+
+        var sinAnsi = ExpresionAnsi().Replace(justificacion, " ");
+        var sinControl = new string([.. sinAnsi.Select(c => char.IsControl(c) ? ' ' : c)]);
+        var limpia = ExpresionEspacios().Replace(sinControl, " ").Trim();
+        return limpia.Length == 0 ? null : limpia;
+    }
+
+    /// <summary>CSI (<c>ESC [</c> parámetros y una letra final), OSC (<c>ESC ]</c> hasta BEL o <c>ESC \</c>) o ESC con un carácter.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)?|[@-Z\\-_])", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ExpresionAnsi();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s{2,}", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex ExpresionEspacios();
+
+    /// <summary>
+    /// Ajuste del comercial sobre el costeo de Nexo (HU-013.2, ADR-018 §3): <paramref name="margenSugerido"/> queda en
+    /// <c>margenPolitica</c> y la justificación en <c>motivo</c>. La justificación es obligatoria solo si el margen queda por debajo del
+    /// sugerido (<c>JUSTIFICACION_REQUERIDA</c>); por encima puede faltar (<c>motivo</c> nulo). Mismo redondeo y validación por método
+    /// que <see cref="Registrar"/>.
+    /// </summary>
+    public static clsResultado<clsMargenAjuste> RegistrarNegociacionCosteo(
+        decimal margenSugerido,
+        decimal margenAplicado,
+        string? justificacion,
+        Guid usuarioId,
+        Guid cotizacionId,
+        string folio,
+        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+    {
+        var sugerido = RedondearMargen(margenSugerido);
+        var aplicado = RedondearMargen(margenAplicado);
+        justificacion = LimpiarJustificacion(justificacion);
+        var error = clsValidacion.Primero(
+            clsReglaMargen.Validar(CodigoError, "margenPolitica", sugerido, metodoCalculo),
+            clsReglaMargen.Validar(CodigoError, "margenAplicado", aplicado, metodoCalculo),
+            aplicado < sugerido && string.IsNullOrWhiteSpace(justificacion)
+                ? new clsErrorDominio(clsCodigosError.JustificacionRequerida, "El margen queda por debajo del sugerido: la justificación es obligatoria.")
+                : null);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return new clsMargenAjuste
+        {
+            Id = Guid.NewGuid(),
+            CotizacionId = cotizacionId,
+            Folio = clsValidacion.Normalizar(folio),
+            MargenPolitica = sugerido,
+            MargenAplicado = aplicado,
+            Diferencia = aplicado - sugerido,
+            Motivo = clsValidacion.Normalizar(justificacion),
             UsuarioId = usuarioId,
         };
     }

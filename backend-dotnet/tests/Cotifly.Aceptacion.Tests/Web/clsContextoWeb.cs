@@ -32,6 +32,9 @@ public sealed class clsContextoWeb : IDisposable
 
     public string? UltimoTipo { get; private set; }
 
+    /// <summary>Encabezado <c>ETag</c> de la última respuesta (concurrencia optimista, ADR-018 §8), o <c>null</c>.</summary>
+    public string? UltimoEtag { get; private set; }
+
     public void Iniciar(bool correoHabilitado) => _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, correoHabilitado);
 
     /// <summary>API ya armada por el escenario (ej. conectada al Nexo falso del costeo, ADR-015).</summary>
@@ -59,11 +62,12 @@ public sealed class clsContextoWeb : IDisposable
     public clsCotizacionPrueba Cotizacion(string alias) =>
         Cotizaciones.TryGetValue(alias, out var cotizacion) ? cotizacion : throw new InvalidOperationException($"No existe la cotización '{alias}'.");
 
-    /// <summary>Ejecuta la petición y guarda estado, cuerpo y tipo de contenido.</summary>
-    public async Task EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null)
+    /// <summary>Ejecuta la petición (con <c>If-Match</c> si viene) y guarda estado, cuerpo, tipo de contenido y <c>ETag</c>.</summary>
+    public async Task EnviarAsync(HttpMethod metodo, string ruta, string? token, string? cuerpoJson = null, string? ifMatch = null)
     {
-        using var respuesta = await Api.EnviarAsync(metodo, ruta, token, cuerpoJson);
+        using var respuesta = await Api.EnviarAsync(metodo, ruta, token, cuerpoJson, ifMatch);
         UltimoEstado = respuesta.StatusCode;
+        UltimoEtag = respuesta.Headers.ETag?.Tag;
         UltimoContenido = await respuesta.Content.ReadAsByteArrayAsync();
         UltimoTipo = respuesta.Content.Headers.ContentType?.MediaType;
         UltimoCuerpo = UltimoTipo == "application/pdf" ? string.Empty : System.Text.Encoding.UTF8.GetString(UltimoContenido);

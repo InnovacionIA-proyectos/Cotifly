@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Dominio.Comun;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Cotifly.Api.Costeo.Controllers;
@@ -18,6 +19,7 @@ public sealed class clsCosteoController(
     IClsEnvioCosteoService envio,
     IClsMisCotizacionesService misCotizaciones,
     IClsCosteoCotizacionService costeo,
+    IClsAjusteMargenCosteoService ajusteMargen,
     IClsResultadoCotizacionService resultadoCotizacion) : clsControladorWebBase(usuario)
 {
     /// <summary>
@@ -42,26 +44,64 @@ public sealed class clsCosteoController(
     public async Task<IActionResult> Obtener(string folio, CancellationToken cancellationToken) =>
         (await costeo.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(c => Ok(c), Error);
 
-    /// <summary>200 <c>CosteoCotizacion</c> con la selección; 400 id desconocido; 404; 409 <c>COSTEO_NO_LISTO</c> o <c>PDF_YA_GENERADO</c>.</summary>
+    /// <summary>
+    /// HU-013.2 (ADR-018 §3): 200 <c>CosteoCotizacion</c> con el margen ajustado y los precios recalculados (y el <c>ETag</c> nuevo);
+    /// 400 <c>AJUSTE_MARGEN_INVALIDO</c> o <c>JUSTIFICACION_REQUERIDA</c>; 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c> o
+    /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
+    /// </summary>
+    [HttpPut("cotizaciones/{folio}/costeo/margen")]
+    [clsRequiereIfMatch]
+    [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> AjustarMargen(string folio, [FromBody] clsAjusteMargenWebRequest cuerpo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(cuerpo);
+        if (cuerpo.Margen is not { } margen)
+        {
+            return Error(new clsErrorDominio(clsCodigosError.AjusteMargenInvalido, "El campo 'margen' es obligatorio (fracción: 0.18 = 18 %)."));
+        }
+
+        var resultado = await ajusteMargen.AjustarAsync(UsuarioId, folio, margen, cuerpo.Justificacion, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
+    }
+
+    /// <summary>
+    /// 200 <c>CosteoCotizacion</c> con la selección (y el <c>ETag</c> nuevo); 400 id desconocido; 404; 409 <c>COSTEO_NO_LISTO</c>,
+    /// <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>. Con PDF vigente lo invalida (ADR-018 §11).
+    /// </summary>
     [HttpPut("cotizaciones/{folio}/costeo/servicios-conexos")]
+    [clsRequiereIfMatch]
     [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> SeleccionarServiciosConexos(
         string folio, [FromBody] clsSeleccionServiciosConexosWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
-        var resultado = await costeo.SeleccionarServiciosConexosAsync(UsuarioId, folio, cuerpo.Incluidos ?? [], cancellationToken);
+        var resultado = await costeo.SeleccionarServiciosConexosAsync(
+            UsuarioId, folio, cuerpo.Incluidos ?? [], clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 
-    /// <summary>201 <c>SalidaPdf</c>; 404; 409 <c>COSTEO_NO_LISTO</c> o <c>PDF_YA_GENERADO</c>; 400 errores del PDF.</summary>
+    /// <summary>
+    /// 201 <c>SalidaPdf</c> (y el <c>ETag</c> nuevo); 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_GENERADO</c>, <c>PDF_YA_ENVIADO</c> o
+    /// <c>CONFLICTO_CONCURRENCIA</c> (solo con <c>If-Match</c>, que aquí es opcional); 400 errores del PDF.
+    /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/pdf")]
     [ProducesResponseType<Aplicacion.Pdf.DTOs.clsSalidaPdf>(StatusCodes.Status201Created)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> GenerarPdf(string folio, CancellationToken cancellationToken)
     {
-        var resultado = await costeo.GenerarPdfAsync(UsuarioId, folio, cancellationToken);
-        return resultado.Coincidir<IActionResult>(p => StatusCode(StatusCodes.Status201Created, p), Error);
+        var resultado = await costeo.GenerarPdfAsync(UsuarioId, folio, clsConcurrenciaHttp.LeerIfMatch(Request), cancellationToken);
+        if (resultado.EsFallo)
+        {
+            return Error(resultado.Error);
+        }
+
+        clsConcurrenciaHttp.EscribirEtag(Response, resultado.Valor.RowVersion);
+        return StatusCode(StatusCodes.Status201Created, resultado.Valor.Pdf);
     }
 
     /// <summary>

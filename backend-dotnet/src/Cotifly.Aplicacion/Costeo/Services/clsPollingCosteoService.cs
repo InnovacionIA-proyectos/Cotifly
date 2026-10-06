@@ -26,6 +26,12 @@ public enum ResultadoConsultaCosteo
     /// <summary>La consulta a Nexo falló: se reprogramó con espaciado y quedó el error en la auditoría.</summary>
     Error,
 
+    /// <summary>
+    /// Otra escritura (un ajuste del comercial, otra réplica) cambió la versión de negocio de la cotización mientras se consultaba a
+    /// Nexo: no se guardó nada y se vuelve a consultar en el siguiente ciclo, cuando vence el reclamo (ADR-018 §12).
+    /// </summary>
+    Conflicto,
+
     /// <summary>Ya no se consulta (estado que no se sigue, datos incompletos o edad máxima).</summary>
     Detenida,
 }
@@ -90,12 +96,17 @@ public sealed class clsPollingCosteoService(
         }
 
         var anterior = cotizacion.EstadoCosteo;
+        var version = cotizacion.VersionNegocio;
         if (clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
         {
             var vencio = cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
             await VencerLineasAsync(cotizacion, cancellationToken);
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            if (!await GuardarConVersionAsync(cotizacion, version, vencio))
+            {
+                return ResultadoConsultaCosteo.Conflicto;
+            }
+
             if (vencio)
             {
                 await AuditarCambioAsync(cotizacion, anterior, 0);
@@ -112,7 +123,11 @@ public sealed class clsPollingCosteoService(
                 $"Nexo ya no reconoce la solicitud {cotizacion.CosteoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
             cotizacion.RegistrarFalloConsultaCosteo(ahora, siguiente: null);
             await VencerLineasAsync(cotizacion, cancellationToken);
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            if (!await GuardarConVersionAsync(cotizacion, version, cambioDesconocida))
+            {
+                return ResultadoConsultaCosteo.Conflicto;
+            }
+
             await auditoria.RegistrarAsync(
                 HerramientaErrorConsulta,
                 new { folio = cotizacion.Folio, costeo_id = cotizacion.CosteoId, terminal = true },
@@ -154,13 +169,33 @@ public sealed class clsPollingCosteoService(
         var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var precio = precioCosteo.Aplicar(cotizacion, lineas, foto, ahora);
         cambio |= precio;
-        await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+        if (!await GuardarConVersionAsync(cotizacion, version, cambio))
+        {
+            // El precio se calculó con un margen que el comercial pudo cambiar entretanto: se descarta y se repite después.
+            logger.LogInformation("La cotización {Folio} cambió mientras se consultaba a Nexo: se vuelve a consultar en el siguiente ciclo.", cotizacion.Folio);
+            return ResultadoConsultaCosteo.Conflicto;
+        }
+
         if (cambio)
         {
             await AuditarCambioAsync(cotizacion, anterior, (int)cronometro.ElapsedMilliseconds);
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;
+    }
+
+    /// <summary>
+    /// Guarda solo si nadie cambió la versión de negocio desde que se cargó la cotización (ADR-018 §12). Sube la versión cuando cambia
+    /// el estado, el costo o el precio (<paramref name="cambioNegocio"/>); el reclamo y la agenda no la cambian.
+    /// </summary>
+    private async Task<bool> GuardarConVersionAsync(clsCotizacion cotizacion, int version, bool cambioNegocio)
+    {
+        if (cambioNegocio)
+        {
+            cotizacion.IncrementarVersionNegocio();
+        }
+
+        return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None);
     }
 
     /// <summary>

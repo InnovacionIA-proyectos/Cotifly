@@ -50,7 +50,33 @@ public sealed class clsRespuestasWebTests
         var cuerpo = clsErrorNegocioWeb.Desde(new clsErrorDominio("CORREO_ENVIO_FALLIDO", "Falló el relay", "timeout"));
 
         cuerpo.Error.Codigo.Should().Be("CORREO_ENVIO_FALLIDO");
-        cuerpo.Error.Detalle.Should().Equal(new Dictionary<string, string> { ["motivo"] = "timeout" });
+        cuerpo.Error.Detalle.Should().Equal(new Dictionary<string, object?> { ["motivo"] = "timeout" });
         clsErrorNegocioWeb.Desde(new clsErrorDominio("CORREO_DUPLICADO", "x")).Error.Detalle.Should().BeNull();
+    }
+
+    [Fact]
+    public void LosDatosDelErrorVanEnElDetalleJuntoAlMotivo()
+    {
+        var error = new clsErrorDominio("JUSTIFICACION_REQUERIDA", "Falta la justificación", "texto")
+        {
+            Datos = new Dictionary<string, object?> { ["margen_sugerido"] = 0.15m },
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(clsErrorNegocioWeb.Desde(error), clsJsonWeb.Opciones);
+
+        json.Should().Contain("\"detalle\":{\"margen_sugerido\":0.15,\"motivo\":\"texto\"}");
+    }
+
+    [Theory]
+    [InlineData("CONFLICTO_CONCURRENCIA", 409)]
+    [InlineData("PDF_YA_ENVIADO", 409)]
+    [InlineData("PRECONDICION_REQUERIDA", 428)]
+    [InlineData("JUSTIFICACION_REQUERIDA", 400)]
+    public void LosCodigosDelPipelineDeterministaTienenSuEstadoHttp(string codigo, int estado)
+    {
+        var resultado = (ObjectResult)clsRespuestasWeb.Error(new clsErrorDominio(codigo, "x"));
+
+        (resultado.StatusCode ?? 200).Should().Be(estado);
+        resultado.Value.Should().BeOfType<clsErrorNegocioWeb>();
     }
 }

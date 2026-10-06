@@ -230,4 +230,25 @@ public static class clsCodigosError
     /// (<c>SIN_PERMISO_CABINA_FLETES</c>). Es configuración del usuario en Nexo, no una caída (ADR-017 §4). Código nuevo del backend .NET.
     /// </summary>
     public const string NexoSinPermiso = "NEXO_SIN_PERMISO";
+
+    /// <summary>
+    /// HU-013.2 (ADR-018 §3): el margen ajustado queda por debajo del margen sugerido (SAP TM o la política de la línea) y no trae
+    /// justificación (400; <c>detalle.margen_sugerido</c>). Código nuevo del backend .NET.
+    /// </summary>
+    public const string JustificacionRequerida = "JUSTIFICACION_REQUERIDA";
+
+    /// <summary>
+    /// Regla del PDF (ADR-018 §11): la cotización ya se envió al cliente o tiene resultado; para cambiarla se crea la versión
+    /// <c>-vN</c> (409; <c>detalle</c> trae la llamada a <c>re-solicitar</c> con <c>nueva_version</c>). Código nuevo del backend .NET.
+    /// </summary>
+    public const string PdfYaEnviado = "PDF_YA_ENVIADO";
+
+    /// <summary>
+    /// Concurrencia optimista (ADR-018 §8): el <c>If-Match</c> no coincide con la versión actual de la cotización
+    /// (<c>Cotizaciones.versionNegocio</c>); nada cambió (409). Código nuevo del backend .NET.
+    /// </summary>
+    public const string ConflictoConcurrencia = "CONFLICTO_CONCURRENCIA";
+
+    /// <summary>Falta <c>If-Match</c> en una mutación de la etapa final del costeo (428, ADR-018 §8). Código nuevo del backend .NET.</summary>
+    public const string PrecondicionRequerida = "PRECONDICION_REQUERIDA";
 }

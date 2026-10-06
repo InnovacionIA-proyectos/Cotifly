@@ -26,6 +26,7 @@ public sealed class clsCorreoController(
     [ProducesResponseType<clsRespuestaEnvio>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Enviar(string folio, [FromBody] clsEnvioWebRequest cuerpo, CancellationToken cancellationToken)
     {

@@ -2225,7 +2225,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 
 ## 10. Próximo contrato HU-013 (en construcción)
 
-**Estado: Pendiente.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98, PR por abrir).** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2238,7 +2238,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | Endpoint | Para qué | Issue |
 |---|---|---|
 | `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | Formulario en dólares; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada | #103 (HU-013.7) |
-| `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | Ajuste de margen de 0 a 0,99. La justificación es obligatoria por debajo de `margen_sugerido` | #98 (HU-013.2) |
+| `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | **Implementado (#98).** Ajuste de margen de 0 a 0,99, con `If-Match` obligatorio. La justificación es obligatoria por debajo de `margen_sugerido` (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | Buscador del catálogo de Nexo (sin costos) | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | Agregar conexos en Nexo; vuelven con precio e incluidos | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}` | Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` si cambia la carga o con `nueva_version: true` | #100 (HU-013.4) |
@@ -2247,7 +2247,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /web/chat` con `folio` obligatorio | Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`. Responde `{texto, accion_propuesta?}` | #102 (HU-013.6) |
 | `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
 
-**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `trm_aplicada`, `textos`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag`. Todos son opcionales hasta que cada issue los implemente.
+**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` y `textos` llegan con #103 y #101. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
 
 **Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta`:
 
@@ -2256,7 +2256,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 3. La respuesta es la del endpoint normal (por ejemplo `CosteoCotizacion`), con sus mismos errores. Ante 409 `CONFLICTO_CONCURRENCIA`: la cotización cambió después de la propuesta. Recargar el costeo y pedirle al asistente una propuesta nueva.
 4. Cancelar no llama a nada. La IA nunca ejecuta cambios por su cuenta.
 
-**Concurrencia.** Guardar el `ETag` de `GET .../costeo` (y el de cada respuesta de una mutación, que trae el nuevo) y enviarlo en `If-Match`. Es **obligatorio** en margen, conexos (POST y PUT), re-solicitar, textos y redactar: sin él la respuesta es 428 `PRECONDICION_REQUERIDA`. En el PDF es opcional. En `POST .../servicios-conexos` y en `re-solicitar`, enviar además `Idempotency-Key` con un UUID nuevo por cada clic de Confirmar o del botón: un doble clic no duplica el conexo ni crea dos versiones.
+**Concurrencia (implementada en #98 para margen, conexos PUT y PDF).** Guardar el `ETag` de `GET .../costeo` (y el de cada respuesta de una mutación, que trae el nuevo) y enviarlo en `If-Match`. El `ETag` es opaco (hoy un número entre comillas): guardarlo y reenviarlo tal cual. Solo cambia con cambios de negocio (margen, conexos, PDF, o un costo, precio o estado nuevo que trae el polling), no con cada consulta del polling. Ante 409 `CONFLICTO_CONCURRENCIA`: recargar el costeo y reintentar. Es **obligatorio** en margen, conexos (POST y PUT), re-solicitar, textos y redactar: sin él la respuesta es 428 `PRECONDICION_REQUERIDA`. En el PDF es opcional. En `POST .../servicios-conexos` y en `re-solicitar`, enviar además `Idempotency-Key` con un UUID nuevo por cada clic de Confirmar o del botón: un doble clic no duplica el conexo ni crea dos versiones.
 
 **Regla del PDF.** Mientras la cotización no se haya enviado al cliente ni tenga resultado, el margen, los conexos, los textos y la re-solicitud se pueden cambiar en el mismo folio. Cada cambio deja `pdf_url = null` y `pdf_desactualizado = true`: mostrar "PDF desactualizado" y el botón para regenerarlo (`POST .../costeo/pdf`). Ya enviada o con resultado, la respuesta es 409 `PDF_YA_ENVIADO` y `detalle` trae la llamada para crear la versión `-vN` (`re-solicitar` con `nueva_version: true`); ofrecerla con un Confirmar.
 

@@ -35,6 +35,7 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsCotizacionNexo("COT-1", "Entregada", "Ganada", [], []));
+        _unidad.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -49,7 +50,8 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizacion.MarcadoAt.Should().Be(_reloj.AhoraUtc);
         await _nexo.Received(1).MarcarResultadoAsync(_ana, "COT-1",
             Arg.Is<clsResultadoNexo>(r => r.Ganada && r.Motivo == "Mejor precio" && r.Comentario == "Nota interna"), Arg.Any<CancellationToken>());
-        await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>());
+        _cotizacion.VersionNegocio.Should().Be(1, "el resultado es un cambio de negocio");
     }
 
     [Theory]
@@ -72,6 +74,7 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizacion.MotivoRechazo.Should().BeNull();
         _cotizacion.MarcadoAt.Should().BeNull();
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
         await _auditoria.Received(1).RegistrarAsync(clsResultadoCotizacionService.HerramientaAuditoria, Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
     }
 
