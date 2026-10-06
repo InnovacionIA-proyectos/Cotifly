@@ -35,6 +35,13 @@ public sealed record clsPaginaCatalogoConexosNexo(int Total, IReadOnlyList<clsSe
 public sealed record clsConexoParaNexo(string LineaId, string ServicioConexoId, decimal Cantidad);
 
 /// <summary>
+/// Resultado de un POST de conexos que Nexo pudo aplicar. <paramref name="Seguro"/>: Nexo respondió 2xx (el conexo existe aunque el
+/// cuerpo falte). <c>false</c>: no hubo respuesta (tiempo agotado, red o 5xx) y el efecto es incierto. <paramref name="Cotizacion"/> es
+/// la <c>clsCotizacionDto</c> que devolvió Nexo, o <c>null</c> si no vino o no se pudo leer.
+/// </summary>
+public sealed record clsAgregadoNexo(bool Seguro, Cotifly.Dominio.Cotizaciones.clsCotizacionNexo? Cotizacion, string? Detalle = null);
+
+/// <summary>
 /// <c>ServicioConexoCatalogo</c> del contrato (HU-013.3): el servicio del catálogo de Nexo sin ningún costo.
 /// </summary>
 public sealed record clsServicioConexoCatalogo(

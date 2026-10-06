@@ -52,8 +52,9 @@ public interface IClsServiciosConexosCosteoService
 /// polling y del ajuste: margen y método de la cotización, moneda y TRM fijada). Los que ya estaban conservan si el comercial los
 /// incluye; los nuevos quedan incluidos. El JSON resultante es el mismo que arma el polling, así que la siguiente consulta no lo
 /// cambia.</item>
-/// <item><b>Concurrencia.</b> La versión se verifica antes de llamar a Nexo (un <c>If-Match</c> viejo no agrega nada) y otra vez al
-/// guardar. El doble clic lo cubre el <c>Idempotency-Key</c> de la API.</item>
+/// <item><b>Concurrencia.</b> La versión se RESERVA en la base (sube y se guarda con el <c>If-Match</c>) antes del POST a Nexo: solo
+/// una de varias peticiones simultáneas llega a Nexo; las demás reciben <c>CONFLICTO_CONCURRENCIA</c>. Los precios se guardan después
+/// con la versión reservada. Todo 2xx de Nexo es efecto; sin respuesta, <c>agregado_en_nexo = "desconocido"</c>.</item>
 /// </list>
 /// </summary>
 public sealed class clsServiciosConexosCosteoService(
@@ -72,6 +73,9 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>Clave de <c>detalle</c> cuando Nexo ya agregó el conexo pero Cotifly no pudo terminar (contrato).</summary>
     public const string ClaveAgregadoEnNexo = "agregado_en_nexo";
+
+    /// <summary>Valor de <c>agregado_en_nexo</c> cuando Nexo no respondió al POST y la relectura no confirma el conexo.</summary>
+    public const string AgregadoDesconocido = "desconocido";
 
     /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ESTADO_NO_PERMITE</c> en una licitación.</summary>
     public const string MotivoLicitacion = "LICITACION";
@@ -262,58 +266,87 @@ public sealed class clsServiciosConexosCosteoService(
             paraNexo.Add(new clsConexoParaNexo(lineaId, item.ServicioId, item.Cantidad));
         }
 
-        var agregado = await nexo.AgregarAsync(usuarioId, cotizacionNexoId, paraNexo, cancellationToken);
+        // Reserva de la versión EN LA BASE antes de Nexo (ADR-018 §13): de N peticiones con el mismo If-Match solo una gana y llama al
+        // POST (que no es idempotente); las demás reciben CONFLICTO_CONCURRENCIA sin tocar Nexo, con o sin Idempotency-Key, en
+        // cualquier réplica y tras un reinicio.
+        cotizacion.IncrementarVersionNegocio();
+        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None))
+        {
+            return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), 0, false);
+        }
+
+        var reservada = cotizacion.VersionNegocio;
+
+        // Sin el token del cliente: un POST no se corta a mitad.
+        var agregado = await nexo.AgregarAsync(usuarioId, cotizacionNexoId, paraNexo, CancellationToken.None);
         if (agregado.EsFallo)
         {
-            return (agregado.Error, 0, false); // nada cambia en Cotifly
+            return (agregado.Error, 0, false); // Nexo no lo aplicó: solo la versión reservada cambió
         }
 
-        // Desde aquí el conexo YA existe en Nexo: no se vuelve a llamar al POST pase lo que pase.
-        var releida = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, CancellationToken.None);
-        if (releida.EsFallo)
+        // Desde aquí el conexo existe (o pudo existir) en Nexo: no se vuelve a llamar al POST pase lo que pase.
+        var cotizacionNexo = agregado.Valor.Cotizacion;
+        string? detalleRelectura = agregado.Valor.Detalle;
+        if (cotizacionNexo is null)
         {
-            return await SinRelecturaAsync(cotizacion, usuarioId, versionEsperada, releida.Error);
+            var releida = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, CancellationToken.None);
+            if (releida.EsExitoso && (agregado.Valor.Seguro || TieneConexosNuevos(actual.Valor, releida.Valor)))
+            {
+                cotizacionNexo = releida.Valor;
+            }
+            else
+            {
+                detalleRelectura = releida.EsFallo ? releida.Error.Detalle ?? releida.Error.Codigo : "la cotización de Nexo no muestra el conexo";
+            }
         }
 
-        var conexos = ConexosConPrecio(cotizacion, releida.Valor);
+        if (cotizacionNexo is null)
+        {
+            return await SinRelecturaAsync(cotizacion, usuarioId, reservada, agregado.Valor.Seguro ? (object)true : AgregadoDesconocido, detalleRelectura);
+        }
+
+        var conexos = ConexosConPrecio(cotizacion, cotizacionNexo);
         if (conexos.EsFallo)
         {
-            return (AgregadoEnNexo(conexos.Error), 0, false);
+            return (AgregadoEnNexo(conexos.Error, true), 0, false);
         }
 
         var anteriores = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Count;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(conexos.Valor));
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
-        cotizacion.IncrementarVersionNegocio();
-        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None))
+        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None))
         {
-            // Otro cambio (el polling, otra pestaña) ganó entre la verificación y el guardado: el conexo ya está en Nexo y la
-            // siguiente consulta del polling lo recoge; el comercial recarga.
-            return (AgregadoEnNexo(clsReglaPdfCosteo.Conflicto(cotizacion.Folio)), 0, false);
+            // Otro cambio (el polling) ganó después de la reserva: el conexo ya está en Nexo y la siguiente consulta lo recoge.
+            return (AgregadoEnNexo(clsReglaPdfCosteo.Conflicto(cotizacion.Folio), true), 0, false);
         }
 
         return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), Math.Max(0, conexos.Valor.Count - anteriores), pdfInvalidado);
     }
 
+    /// <summary>¿La cotización releída tiene conexos que no estaban antes del POST? (confirma un efecto incierto).</summary>
+    public static bool TieneConexosNuevos(clsCotizacionNexo antes, clsCotizacionNexo despues)
+    {
+        ArgumentNullException.ThrowIfNull(antes);
+        ArgumentNullException.ThrowIfNull(despues);
+        var previos = antes.Conexos.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return despues.Conexos.Any(c => !previos.Contains(c.Id));
+    }
+
     /// <summary>
-    /// Nexo agregó el conexo pero no se pudo releer la cotización: 503 <c>NEXO_NO_DISPONIBLE</c> con <c>agregado_en_nexo = true</c>.
-    /// Si había PDF vigente se invalida (la cotización ya cambió en Nexo y el polling no toca los conexos de una cotización con PDF);
-    /// sin PDF nada cambia en Cotifly y el polling recoge el conexo en su siguiente consulta.
+    /// No hay cotización de Nexo con el conexo: Nexo lo agregó pero no se pudo leer (<paramref name="agregado"/> = <c>true</c>) o no se
+    /// sabe si lo agregó (<see cref="AgregadoDesconocido"/>: tiempo agotado, red o 5xx sin confirmación). 503 <c>NEXO_NO_DISPONIBLE</c>
+    /// con <c>detalle.agregado_en_nexo</c>; nunca se repite el POST. Si había PDF vigente se invalida (el polling no toca los conexos de
+    /// una cotización con PDF) con la versión ya reservada; sin PDF el polling recoge el conexo en su siguiente consulta.
     /// </summary>
     private async Task<(clsResultado<clsCosteoCotizacion>, int, bool)> SinRelecturaAsync(
-        clsCotizacion cotizacion, Guid usuarioId, int versionEsperada, clsErrorDominio error)
+        clsCotizacion cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle)
     {
-        var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
-        if (pdfInvalidado)
-        {
-            cotizacion.IncrementarVersionNegocio();
-            pdfInvalidado = await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, CancellationToken.None);
-        }
-
-        var noDisponible = new clsErrorDominio(clsCodigosError.NexoNoDisponible,
-            "Nexo agregó el servicio conexo pero no se pudo leer de nuevo la cotización: aparecerá con su precio en la siguiente actualización. No lo vuelvas a agregar.",
-            error.Detalle ?? error.Codigo);
-        return (AgregadoEnNexo(noDisponible), 0, pdfInvalidado);
+        var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones)
+                            && await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None);
+        var mensaje = agregado is true
+            ? "Nexo agregó el servicio conexo pero no se pudo leer de nuevo la cotización: aparecerá con su precio en la siguiente actualización. No lo vuelvas a agregar."
+            : "Nexo no respondió y no se sabe si agregó el servicio conexo: revisa el costeo en unos minutos antes de volver a agregarlo.";
+        return (AgregadoEnNexo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, mensaje, detalle), agregado), 0, pdfInvalidado);
     }
 
     /// <summary>
@@ -363,12 +396,15 @@ public sealed class clsServiciosConexosCosteoService(
     private static clsErrorDominio SinLineaNexo(clsCotizacion cotizacion, int orden) => new(clsCodigosError.LineaSinCotizacionNexo,
         $"La línea {orden} de la cotización {cotizacion.Folio} todavía no tiene línea en la cotización de Nexo: espera su costeo para agregarle conexos.");
 
-    /// <summary>El error lleva <c>detalle.agregado_en_nexo = true</c>: el conexo ya está en Nexo y no se debe volver a agregar.</summary>
-    private static clsErrorDominio AgregadoEnNexo(clsErrorDominio error)
+    /// <summary>
+    /// El error lleva <c>detalle.agregado_en_nexo</c>: <c>true</c> (el conexo ya está en Nexo) o <see cref="AgregadoDesconocido"/>. En
+    /// ambos casos no se debe volver a agregar sin revisar el costeo.
+    /// </summary>
+    private static clsErrorDominio AgregadoEnNexo(clsErrorDominio error, object agregado)
     {
         var datos = new Dictionary<string, object?>(error.Datos ?? new Dictionary<string, object?>(), StringComparer.Ordinal)
         {
-            [ClaveAgregadoEnNexo] = true,
+            [ClaveAgregadoEnNexo] = agregado,
         };
         return error with { Datos = datos };
     }

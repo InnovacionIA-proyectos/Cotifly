@@ -22,8 +22,10 @@ public interface IClsServiciosConexosNexo
 
     /// <summary>
     /// Agrega los conexos a la cotización de Nexo (<c>POST /api/cotizaciones/{id}/conexos</c> con <c>{items: [{lineaId,
-    /// servicioConexoId, cantidad}]}</c>, sin <c>valorAplicado</c>). No se reintenta: el POST de Nexo no es idempotente.
+    /// servicioConexoId, cantidad}]}</c>, sin <c>valorAplicado</c>). No se reintenta ni se cancela a mitad: el POST de Nexo no es
+    /// idempotente. Un ERROR significa que Nexo no lo aplicó (no se envió, 4xx). Si no hay error, el resultado dice si el efecto es
+    /// seguro (cualquier 2xx, con la cotización que devolvió Nexo si su cuerpo se pudo leer) o incierto (tiempo agotado, red, 5xx).
     /// </summary>
-    Task<clsResultado<bool>> AgregarAsync(
+    Task<clsResultado<clsAgregadoNexo>> AgregarAsync(
         Guid usuarioId, string cotizacionNexoId, IReadOnlyList<clsConexoParaNexo> items, CancellationToken cancellationToken = default);
 }

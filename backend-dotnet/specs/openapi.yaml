@@ -1466,8 +1466,17 @@ paths:
           `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
           `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos nada cambia en Cotifly.
-        - Si Nexo lo agregó pero la relectura falla, responde 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
-          true`; Cotifly no reintenta el POST y el polling recoge el conexo en la siguiente consulta.
+        - La versión se RESERVA en la base antes del POST a Nexo (ADR-018 §13): de varias peticiones con el mismo `If-Match` solo una
+          llega a Nexo; las demás reciben 409 `CONFLICTO_CONCURRENCIA` sin tocar Nexo. Por eso un fallo de Nexo después de la reserva
+          deja la versión (y el `ETag`) cambiada aunque nada más cambie: recargar el costeo antes de reintentar.
+        - Todo 2xx de Nexo es efecto: Cotifly usa la cotización que devuelve el POST y solo relee (`GET /api/cotizaciones/{id}`)
+          si el cuerpo falta o no se puede leer. Si no se puede releer, 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo =
+          true`.
+        - Si Nexo no responde al POST (tiempo agotado, red o 5xx), Cotifly relee la cotización: si muestra el conexo nuevo, termina
+          normal (200); si no se puede determinar, 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo = "desconocido"`.
+          Nunca reintenta el POST; el polling recoge el conexo en la siguiente consulta. Con `agregado_en_nexo` (true o
+          "desconocido") el frontend NO debe volver a agregar sin recargar el costeo; la respuesta queda guardada para la misma
+          `Idempotency-Key`.
         - Si el conexo queda costeado de inmediato o pasa por Servicios Logísticos está pendiente de confirmar con Nexo.
         - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
           respuesta de la primera petición sin volver a llamar a Nexo (el POST de Nexo no es idempotente). Solo el dueño.
@@ -1525,7 +1534,7 @@ paths:
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
         '503':
-          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si solo falló la relectura)'
+          description: '`NEXO_NO_DISPONIBLE` (con `detalle.agregado_en_nexo = true` si Nexo lo agregó pero no se pudo releer, o `"desconocido"` si Nexo no respondió al POST y no se pudo confirmar)'
           content:
             application/json:
               schema:

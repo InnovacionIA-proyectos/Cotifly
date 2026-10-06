@@ -44,10 +44,9 @@ public sealed class clsServiciosConexosCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_lineas);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
-        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>())
-            .Returns(Ok(Nexo()), Ok(Nexo(new clsConexoNexo("CX-2", "Almacenamiento", "logistico", 2m, 240_000m))));
-        _nexo.AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<bool>.Exito(true));
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>()).Returns(true);
+        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(Nexo()));
+        PostResponde(new clsAgregadoNexo(true, Nexo(_cx2)));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -64,8 +63,14 @@ public sealed class clsServiciosConexosCosteoServiceTests
         nuevo.Precio.Should().Be(_precios.Calcular(240_000m, 0.15m).Valor.Precio).And.Be(282_353m);
         nuevo.Incluido.Should().BeTrue("un conexo agregado queda incluido");
         resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").Incluido.Should().BeFalse("la selección anterior se conserva");
-        resultado.Valor.RowVersion.Should().Be("8");
-        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>());
+        resultado.Valor.RowVersion.Should().Be("8", "la versión reservada antes del POST");
+        Received.InOrder(() =>
+        {
+            _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>());
+            _nexo.AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), CancellationToken.None);
+            _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
+        });
+        await _nexo.Received(1).LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>());
         await _auditoria.Received(1).RegistrarAsync(clsServiciosConexosCosteoService.HerramientaAuditoria,
             Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
     }
@@ -76,7 +81,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
         await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, Ct);
 
         var polling = new clsPrecioCosteoService(_precios);
-        var foto = new clsCosteoConsultadoNexo("EnCosteo", ["LS-1"], Nexo(new clsConexoNexo("CX-2", "Almacenamiento", "logistico", 2m, 240_000m)));
+        var foto = new clsCosteoConsultadoNexo("EnCosteo", ["LS-1"], Nexo(_cx2));
         polling.Aplicar(_cotizacion, foto, DateTimeOffset.UtcNow).Should().BeFalse("el polling ve los mismos conexos y no cambia nada");
     }
 
@@ -210,35 +215,37 @@ public sealed class clsServiciosConexosCosteoServiceTests
     public async Task SiNexoRechazaElConexoNadaCambiaEnCotifly()
     {
         _nexo.AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<bool>.Fallo(new clsErrorDominio(clsCodigosError.ConexoInvalido, "No.", "SERVICIO_CONEXO_NO_ENCONTRADO")));
+            .Returns(clsResultado<clsAgregadoNexo>.Fallo(new clsErrorDominio(clsCodigosError.ConexoInvalido, "No.", "SERVICIO_CONEXO_NO_ENCONTRADO")));
         var antes = _cotizacion.ServiciosConexos;
 
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConexoInvalido);
         _cotizacion.ServiciosConexos.Should().Be(antes);
-        _cotizacion.VersionNegocio.Should().Be(Version);
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        _cotizacion.VersionNegocio.Should().Be(Version + 1, "solo queda la versión reservada");
+        await _unidad.DidNotReceive().GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SiLaRelecturaFallaRespondeNoDisponibleConAgregadoEnNexoYNoRepiteElPost()
     {
+        PostResponde(new clsAgregadoNexo(true, null, "respuesta vacía"));
         _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>())
             .Returns(Ok(Nexo()), clsResultado<clsCotizacionNexo>.Fallo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "Caído.", "HTTP 503")));
 
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
-        resultado.Error.Datos.Should().ContainKey("agregado_en_nexo").WhoseValue.Should().Be(true);
+        resultado.Error.Datos.Should().ContainKey("agregado_en_nexo").WhoseValue.Should().Be(true, "un 2xx de Nexo siempre es efecto");
         await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>());
-        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _unidad.DidNotReceive().GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SiLaRelecturaFallaConPdfLoInvalidaParaQueElPollingRecojaElConexo()
     {
         _cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");
+        PostResponde(new clsAgregadoNexo(true, null, "respuesta vacía"));
         _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>())
             .Returns(Ok(Nexo()), clsResultado<clsCotizacionNexo>.Fallo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "Caído.")));
 
@@ -246,18 +253,59 @@ public sealed class clsServiciosConexosCosteoServiceTests
 
         resultado.Error.Datos!["agregado_en_nexo"].Should().Be(true);
         _cotizacion.PdfPath.Should().BeNull();
-        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>());
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SiLaVersionCambiaAlGuardarRespondeConflictoConAgregadoEnNexo()
+    {
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>()).Returns(false);
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
+        resultado.Error.Datos!["agregado_en_nexo"].Should().Be(true);
+    }
+
+    [Fact]
+    public async Task SiOtraPeticionReservoLaVersionNoSeLlamaAlPostDeNexo()
     {
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
-        resultado.Error.Datos!["agregado_en_nexo"].Should().Be(true);
+        resultado.Error.Datos.Should().BeNull("Nexo no se tocó");
+        await _nexo.DidNotReceiveWithAnyArgs().AgregarAsync(default, default!, default!, Ct);
+    }
+
+    [Fact]
+    public async Task SinRespuestaDeNexoYConLaRelecturaQueMuestraElConexoSeTerminaNormal()
+    {
+        PostResponde(new clsAgregadoNexo(false, null, "Nexo no respondió a tiempo"));
+        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(Nexo()), Ok(Nexo(_cx2)));
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        resultado.Valor.ServiciosConexos.Should().Contain(s => s.Id == "CX-2" && s.Incluido);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SinRespuestaDeNexoYSinConfirmacionElAgregadoEsDesconocido(bool relecturaFalla)
+    {
+        PostResponde(new clsAgregadoNexo(false, null, "error de red"));
+        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(Nexo()), relecturaFalla
+            ? clsResultado<clsCotizacionNexo>.Fallo(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "Caído."))
+            : Ok(Nexo()));
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        resultado.Error.Datos!["agregado_en_nexo"].Should().Be("desconocido");
+        await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -279,7 +327,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
             MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.Autocosteo,
         }).Valor;
 
-        var conexos = Servicio().ConexosConPrecio(usd, Nexo(new clsConexoNexo("CX-2", "Almacenamiento", "logistico", 2m, 240_000m)));
+        var conexos = Servicio().ConexosConPrecio(usd, Nexo(_cx2));
 
         conexos.Valor.Single(c => c.Id == "CX-2").Precio.Should().Be(70.59m, "282.353 / 4.000, con la TRM de la cotización y no la del día");
     }
@@ -329,7 +377,13 @@ public sealed class clsServiciosConexosCosteoServiceTests
     private clsServiciosConexosCosteoService Servicio() =>
         new(_cotizaciones, _nexo, _precios, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()));
 
+    private static readonly clsConexoNexo _cx2 = new("CX-2", "Almacenamiento", "logistico", 2m, 240_000m);
+
     private static clsResultado<clsCotizacionNexo> Ok(clsCotizacionNexo cotizacion) => clsResultado<clsCotizacionNexo>.Exito(cotizacion);
+
+    private void PostResponde(clsAgregadoNexo agregado) =>
+        _nexo.AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsAgregadoNexo>.Exito(agregado));
 
     private static clsConexoAgregarEntrada Item(int linea, string servicio, decimal cantidad) => new(linea, servicio, cantidad);
 

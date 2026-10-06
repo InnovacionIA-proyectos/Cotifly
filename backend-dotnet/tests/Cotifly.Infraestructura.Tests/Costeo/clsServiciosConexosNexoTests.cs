@@ -78,7 +78,7 @@ public sealed class clsServiciosConexosNexoTests
         var resultado = await ambito.ServiceProvider.GetRequiredService<IClsServiciosConexosNexo>()
             .AgregarAsync(_usuarioId, "COT-1", [new clsConexoParaNexo("LC-1", "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", 2.5m)], Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        resultado.Valor.Seguro.Should().BeFalse("un 503 al POST no descarta que Nexo lo haya aplicado");
         var peticion = nexo.Peticiones.Should().ContainSingle("el POST de conexos no es idempotente").Subject;
         peticion.Metodo.Should().Be(HttpMethod.Post);
         peticion.Url.AbsolutePath.Should().Be("/api/cotizaciones/COT-1/conexos");
@@ -129,7 +129,7 @@ public sealed class clsServiciosConexosNexoTests
     [InlineData(HttpStatusCode.NotFound, true, "CONEXO_INVALIDO")]
     [InlineData(HttpStatusCode.Unauthorized, true, "NEXO_NO_DISPONIBLE")]
     [InlineData(HttpStatusCode.BadRequest, false, "NEXO_NO_DISPONIBLE")]
-    [InlineData(HttpStatusCode.InternalServerError, true, "NEXO_NO_DISPONIBLE")]
+    [InlineData(HttpStatusCode.InternalServerError, false, "NEXO_NO_DISPONIBLE")]
     public async Task LosErroresDeNexoSeTraducenAlContrato(HttpStatusCode estado, bool agregando, string codigo)
     {
         var nexo = new clsNexoClientesFalso();
@@ -147,11 +147,79 @@ public sealed class clsServiciosConexosNexoTests
             : (await adaptador.BuscarAsync(_usuarioId, new clsFiltroCatalogoConexos(null, null, 1, 20), Ct)).Error;
 
         error.Codigo.Should().Be(codigo);
-        if (codigo == "CONEXO_INVALIDO")
+        if (codigo is "CONEXO_INVALIDO" or "NEXO_SIN_PERMISO")
         {
-            error.Detalle.Should().Be("SERVICIO_CONEXO_NO_ENCONTRADO", "el código de Nexo viaja en detalle.motivo");
+            error.Detalle.Should().Be("SERVICIO_CONEXO_NO_ENCONTRADO", "solo el código de Nexo viaja en detalle.motivo, nunca su texto");
         }
     }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "")]
+    [InlineData(HttpStatusCode.NoContent, "")]
+    [InlineData(HttpStatusCode.OK, "{no es json")]
+    [InlineData(HttpStatusCode.OK, "[]")]
+    [InlineData(HttpStatusCode.Created, "{\"sinId\":true}")]
+    public async Task TodoDosXxEsEfectoAunqueElCuerpoNoSirva(HttpStatusCode estado, string cuerpo)
+    {
+        var nexo = new clsNexoClientesFalso().Responder(estado, cuerpo);
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var resultado = await Agregar(ambito);
+
+        resultado.Valor.Seguro.Should().BeTrue("Nexo respondió 2xx: el conexo existe");
+        resultado.Valor.Cotizacion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnDosXxMasGrandeQueElLimiteTambienEsEfecto()
+    {
+        var enorme = """{"id":"COT-1","relleno":""" + "\"" + new string('x', (int)clsServiciosConexosNexo.LimiteRespuestaBytes) + "\"}";
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, enorme);
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var resultado = await Agregar(ambito);
+
+        resultado.Valor.Seguro.Should().BeTrue();
+        resultado.Valor.Cotizacion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ElDosXxConLaCotizacionLaDevuelve()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.OK, """
+            {"id":"COT-1","estado":"Entregada","lineas":[{"id":"LC-1","lineaSolicitudId":"LS-1","valorFlete":1}],
+             "conexos":[{"id":"CX-9","nombre":"Precinto","categoria":"adicional","cantidad":1,"valorAplicado":35000}]}
+            """);
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var resultado = await Agregar(ambito);
+
+        resultado.Valor.Seguro.Should().BeTrue();
+        resultado.Valor.Cotizacion!.Conexos.Single().Id.Should().Be("CX-9");
+        nexo.Peticiones.Should().ContainSingle("no hace falta releer");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SinRespuestaElEfectoEsInciertoYNoSeReintenta(bool tiempo)
+    {
+        var nexo = new clsNexoClientesFalso().Fallar(tiempo ? new TaskCanceledException("tiempo") : new HttpRequestException("red"));
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var resultado = await Agregar(ambito);
+
+        resultado.Valor.Seguro.Should().BeFalse();
+        nexo.Peticiones.Should().ContainSingle();
+    }
+
+    private static Task<clsResultado<clsAgregadoNexo>> Agregar(IServiceScope ambito) =>
+        ambito.ServiceProvider.GetRequiredService<IClsServiciosConexosNexo>()
+            .AgregarAsync(_usuarioId, "COT-1", [new clsConexoParaNexo("LC-1", Guid.NewGuid().ToString(), 1m)], Ct);
 
     [Fact]
     public void ElCodigoDeNexoSeExtraeDelDetalle()

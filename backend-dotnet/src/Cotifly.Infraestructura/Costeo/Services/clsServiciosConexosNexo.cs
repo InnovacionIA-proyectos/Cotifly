@@ -90,21 +90,33 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
             : NoDisponible("respuesta de la cotización sin id");
     }
 
-    public async Task<clsResultado<bool>> AgregarAsync(
+    /// <summary>
+    /// <c>POST /api/cotizaciones/{id}/conexos</c> sin el token del llamador (no se corta a mitad) y sin reintentos. Todo 2xx es efecto
+    /// (con la cotización devuelta si se pudo leer); tiempo agotado, red o 5xx es efecto incierto; no enviado o 4xx es error sin efecto.
+    /// </summary>
+    public async Task<clsResultado<clsAgregadoNexo>> AgregarAsync(
         Guid usuarioId, string cotizacionNexoId, IReadOnlyList<clsConexoParaNexo> items, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cotizacionNexoId);
         ArgumentNullException.ThrowIfNull(items);
         var cuerpo = new clsAgregarConexosWire([.. items.Select(i => new clsConexoItemWire(i.LineaId, i.ServicioConexoId, i.Cantidad))]);
-        var respuesta = await costeo.EnviarAsync(
-            usuarioId, HttpMethod.Post, $"/api/cotizaciones/{Uri.EscapeDataString(cotizacionNexoId.Trim())}/conexos", cuerpo, cancellationToken, LimiteRespuestaBytes);
-        if (respuesta.EsFallo)
+        var respuesta = await costeo.EnviarPostConEfectoAsync(
+            usuarioId, $"/api/cotizaciones/{Uri.EscapeDataString(cotizacionNexoId.Trim())}/conexos", cuerpo, LimiteRespuestaBytes);
+        switch (respuesta.Fase)
         {
-            return Traducir(respuesta.Error, agregando: true);
+            case FasePostNexo.NoEnviado:
+                return NoDisponible(respuesta.Detalle ?? "no enviado");
+            case FasePostNexo.Rechazado:
+                return Traducir(new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, MensajeConexoInvalido, respuesta.Detalle), agregando: true);
+            case FasePostNexo.Incierto:
+                return new clsAgregadoNexo(false, null, respuesta.Detalle);
+            default:
+                using (respuesta.Json)
+                {
+                    var cotizacion = respuesta.Json is { } json ? clsCosteoNexo.LeerCotizacion(json.RootElement) : null;
+                    return new clsAgregadoNexo(true, cotizacion, cotizacion is null ? respuesta.Detalle ?? "respuesta sin cotización" : null);
+                }
         }
-
-        respuesta.Valor.Dispose();
-        return true;
     }
 
     /// <summary><c>/api/servicios-conexos?soloActivos=true&amp;page=&amp;pageSize=[&amp;q=][&amp;categoria=]</c>.</summary>
@@ -136,7 +148,8 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
         var detalle = error.Detalle ?? string.Empty;
         if (detalle.StartsWith("HTTP 403", StringComparison.Ordinal))
         {
-            return new clsErrorDominio(clsCodigosError.NexoSinPermiso, MensajeSinPermiso, detalle);
+            // Solo el código de Nexo (o "HTTP 403"): el texto crudo de Nexo no sale al comercial.
+            return new clsErrorDominio(clsCodigosError.NexoSinPermiso, MensajeSinPermiso, CodigoNexo(detalle) ?? "HTTP 403");
         }
 
         if (agregando && detalle.StartsWith("HTTP 4", StringComparison.Ordinal) && !detalle.StartsWith("HTTP 401", StringComparison.Ordinal))
@@ -180,9 +193,9 @@ public sealed class clsServiciosConexosNoDisponible : IClsServiciosConexosNexo
     public Task<clsResultado<clsCotizacionNexo>> LeerCotizacionAsync(Guid usuarioId, string cotizacionNexoId, CancellationToken cancellationToken = default) =>
         Task.FromResult<clsResultado<clsCotizacionNexo>>(NoDisponible());
 
-    public Task<clsResultado<bool>> AgregarAsync(
+    public Task<clsResultado<clsAgregadoNexo>> AgregarAsync(
         Guid usuarioId, string cotizacionNexoId, IReadOnlyList<clsConexoParaNexo> items, CancellationToken cancellationToken = default) =>
-        Task.FromResult<clsResultado<bool>>(NoDisponible());
+        Task.FromResult<clsResultado<clsAgregadoNexo>>(NoDisponible());
 
     private static clsErrorDominio NoDisponible() => new(clsCodigosError.NexoNoDisponible, Mensaje);
 }

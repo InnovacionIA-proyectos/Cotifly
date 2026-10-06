@@ -174,6 +174,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public bool FallarRelecturaTrasConexos { get; set; }
 
+    /// <summary>Si es verdadero, <c>POST .../conexos</c> aplica el conexo y luego corta la conexión (efecto incierto para Cotifly).</summary>
+    public bool CortarRespuestaConexos { get; set; }
+
     /// <summary>Servicios que <c>POST .../conexos</c> rechaza con el estado indicado (ej. 400 o 404), además de las reglas del catálogo.</summary>
     public ConcurrentDictionary<string, HttpStatusCode> RechazosConexo { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -587,7 +590,14 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         c.ConexosAgregados++;
-        return Json(HttpStatusCode.OK, Cotizacion(s));
+        if (CortarRespuestaConexos)
+        {
+            // Nexo aplicó el conexo pero la respuesta no llegó (red o tiempo agotado): el efecto es incierto para Cotifly.
+            throw new HttpRequestException("Conexión cortada después de agregar los conexos (prueba).");
+        }
+
+        // Con la relectura fallida, Nexo responde 2xx sin cuerpo: Cotifly tiene que releer la cotización.
+        return FallarRelecturaTrasConexos ? new HttpResponseMessage(HttpStatusCode.NoContent) : Json(HttpStatusCode.OK, Cotizacion(s));
     }
 
     private static object Cotizacion(clsSolicitudFalsa s)

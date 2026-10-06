@@ -136,6 +136,57 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo");
     }
 
+    [Fact]
+    public async Task VariasPeticionesSimultaneasSinClaveLleganUnaSolaVezANexo()
+    {
+        var (sesion, folio, solicitud) = await CosteadaAsync();
+        var etag = await EtagAsync(sesion, folio);
+
+        var envios = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), etag)));
+        try
+        {
+            envios.Count(r => r.StatusCode == HttpStatusCode.OK).Should().Be(1);
+            envios.Where(r => r.StatusCode != HttpStatusCode.OK).Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Conflict);
+            _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle("la versión se reserva en la base antes del POST");
+        }
+        finally
+        {
+            foreach (var envio in envios)
+            {
+                envio.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SiLaRespuestaDelPostSeCortaYLaRelecturaConfirmaElConexoSeTerminaNormal()
+    {
+        var (sesion, folio, solicitud) = await CosteadaAsync();
+        _nexo.CortarRespuestaConexos = true;
+
+        using var respuesta = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 2), await EtagAsync(sesion, folio));
+
+        var json = await VerificarContratoAsync(respuesta, RutaContrato, _post, HttpStatusCode.OK);
+        json.GetProperty("servicios_conexos").EnumerateArray().Should().ContainSingle(s => s.GetProperty("incluido").GetBoolean());
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle("no se reintenta el POST");
+    }
+
+    [Fact]
+    public async Task SiLaRespuestaSeCortaYNoSePuedeReleerElAgregadoEsDesconocido()
+    {
+        var (sesion, folio, solicitud) = await CosteadaAsync();
+        _nexo.CortarRespuestaConexos = true;
+        _nexo.FallarRelecturaTrasConexos = true;
+
+        using var respuesta = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), await EtagAsync(sesion, folio));
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarContratoAsync(respuesta, RutaContrato, _post, HttpStatusCode.ServiceUnavailable);
+        using var documento = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        documento.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("agregado_en_nexo").GetString().Should().Be("desconocido");
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle();
+    }
+
     [Theory]
     [InlineData(Escolta, "SERVICIO_CONEXO_INACTIVO")]
     [InlineData("9c4f5d2b-6e0a-4f88-8d3b-4a5b6c7d8e9f", "SERVICIO_CONEXO_NO_ENCONTRADO")]
@@ -150,27 +201,34 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         using var documento = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
         documento.RootElement.GetProperty("error").GetProperty("codigo").GetString().Should().Be("CONEXO_INVALIDO");
         documento.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be(codigoNexo);
-        (await EtagAsync(sesion, folio)).Should().Be(etag, "nada cambia en Cotifly");
+        (await ConexosAsync(sesion, folio)).Should().BeEmpty("nada cambia en Cotifly salvo la versión reservada");
     }
 
     [Fact]
     public async Task ConNexoCaidoOSinPermisoNadaCambia()
     {
         var (sesion, folio, _) = await CosteadaAsync();
-        var etag = await EtagAsync(sesion, folio);
 
         _nexo.ConexosFalla = HttpStatusCode.Forbidden;
-        using var sinPermiso = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), etag);
+        using var sinPermiso = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), await EtagAsync(sesion, folio));
         _nexo.ConexosFalla = null;
+        var etag = await EtagAsync(sesion, folio);
         _nexo.Caido = HttpStatusCode.ServiceUnavailable;
         using var caido = await AgregarAsync(sesion, folio, Cuerpo(1, Almacenamiento, 1), etag);
         _nexo.Caido = null;
 
         sinPermiso.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         await VerificarErrorNegocioAsync(sinPermiso, "NEXO_SIN_PERMISO");
+        using (var documento = JsonDocument.Parse(await sinPermiso.Content.ReadAsStringAsync(Ct)))
+        {
+            documento.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString()
+                .Should().Be("SIN_PERMISO", "solo el código de Nexo, sin su texto");
+        }
+
         caido.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(caido, "NEXO_NO_DISPONIBLE");
-        (await EtagAsync(sesion, folio)).Should().Be(etag);
+        (await EtagAsync(sesion, folio)).Should().Be(etag, "con Nexo caído falla la lectura previa, antes de reservar la versión");
+        (await ConexosAsync(sesion, folio)).Should().BeEmpty();
     }
 
     [Fact]
@@ -226,6 +284,13 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         _nexo.Costear(solicitud, 2_550_000m);
         await _api.ProcesarPollingAsync(folio);
         return (sesion, folio, solicitud);
+    }
+
+    private async Task<List<JsonElement>> ConexosAsync(clsSesionPrueba sesion, string folio)
+    {
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        using var documento = JsonDocument.Parse(await costeo.Content.ReadAsStringAsync(Ct));
+        return [.. documento.RootElement.GetProperty("servicios_conexos").EnumerateArray().Select(e => e.Clone())];
     }
 
     private async Task<string?> EtagAsync(clsSesionPrueba sesion, string folio)
