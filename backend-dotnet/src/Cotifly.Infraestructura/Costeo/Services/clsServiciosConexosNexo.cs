@@ -159,7 +159,22 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
 
         return new clsErrorDominio(clsCodigosError.NexoNoDisponible, MensajeNoDisponible, error.Codigo == clsCodigosError.CosteoNexoTiempoAgotado
             ? "Nexo no respondió a tiempo"
-            : detalle.Length == 0 ? error.Codigo : detalle);
+            : detalle.Length == 0 ? error.Codigo : SoloCodigo(detalle));
+    }
+
+    /// <summary>
+    /// Detalle de un error HTTP de Nexo sin su texto crudo (arrastre de #99 en #102): <c>HTTP 401 CODIGO: mensaje</c> → <c>CODIGO</c>, y
+    /// sin código de Nexo, solo <c>HTTP 401</c>. Los demás detalles (propios de Cotifly, sin texto de Nexo) quedan igual.
+    /// </summary>
+    public static string SoloCodigo(string detalle)
+    {
+        ArgumentNullException.ThrowIfNull(detalle);
+        if (!detalle.StartsWith("HTTP ", StringComparison.Ordinal))
+        {
+            return detalle;
+        }
+
+        return CodigoNexo(detalle) ?? string.Join(' ', detalle.Split(':', 2)[0].Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2));
     }
 
     /// <summary>El código de Nexo de un detalle <c>HTTP 404 CODIGO: mensaje</c> (<c>CODIGO</c>), o <c>null</c> si no trae.</summary>

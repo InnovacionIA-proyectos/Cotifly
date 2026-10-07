@@ -151,6 +151,27 @@ public sealed class clsServiciosConexosNexoTests
         {
             error.Detalle.Should().Be("SERVICIO_CONEXO_NO_ENCONTRADO", "solo el código de Nexo viaja en detalle.motivo, nunca su texto");
         }
+
+        // Arrastre de #99 (#102): tampoco en NEXO_NO_DISPONIBLE (401, otro 4xx al buscar, 5xx) viaja el texto crudo de Nexo.
+        (error.Detalle ?? string.Empty).Should().NotContain("No existe", "el texto de Nexo nunca llega al comercial ni al asistente");
+    }
+
+    [Theory]
+    [InlineData("HTTP 401 TOKEN_INVALIDO: El token venció para el usuario x@y.com", "TOKEN_INVALIDO")]
+    [InlineData("HTTP 401: Unauthorized: texto crudo", "HTTP 401")]
+    [InlineData("HTTP 503", "HTTP 503")]
+    [InlineData("comercial sin idUsuarioExterno", "comercial sin idUsuarioExterno")]
+    public void ElDetalleDeUnErrorHttpDeNexoLlevaSoloElCodigo(string detalle, string esperado) =>
+        clsServiciosConexosNexo.SoloCodigo(detalle).Should().Be(esperado);
+
+    [Fact]
+    public void UnCuatrocientosUnoAlAgregarConexosDejaSoloElCodigoEnElDetalle()
+    {
+        var error = clsServiciosConexosNexo.Traducir(
+            new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "x", "HTTP 401 NO_AUTORIZADO: Usuario 123 sin sesión en Nexo"), agregando: true);
+
+        error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        error.Detalle.Should().Be("NO_AUTORIZADO");
     }
 
     [Theory]

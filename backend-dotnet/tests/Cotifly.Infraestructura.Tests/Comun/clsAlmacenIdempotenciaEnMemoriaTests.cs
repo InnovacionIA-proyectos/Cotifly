@@ -145,6 +145,46 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
         almacen.Cantidad.Should().Be(1, "la clave vencida se purgó");
     }
 
+    // Arrastre de #99 (#102): la purga no corre en cada petición, sino cada IntervaloPurga (o al llegar al tope).
+    [Fact]
+    public async Task LaPurgaEsPeriodicaYNoEnCadaPeticion()
+    {
+        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
+        await almacen.EjecutarUnaVezAsync(Ambito, "clave-0001", "h", Accion("v"), null, Ct);
+        var purgas = almacen.Purgas;
+
+        for (var i = 2; i <= 50; i++)
+        {
+            await almacen.EjecutarUnaVezAsync(Ambito, $"clave-{i:D4}", "h", Accion("v"), null, Ct);
+        }
+
+        almacen.Purgas.Should().Be(purgas, "dentro del intervalo no se recorre el diccionario en cada clave nueva");
+        _reloj.Avanzar(clsAlmacenIdempotenciaEnMemoria.IntervaloPurga + TimeSpan.FromSeconds(1));
+        await almacen.EjecutarUnaVezAsync(Ambito, "clave-0051", "h", Accion("v"), null, Ct);
+        almacen.Purgas.Should().Be(purgas + 1);
+    }
+
+    // Arrastre de #99 (#102): tope de claves (20.000 por defecto); al llenarse se desalojan primero las más próximas a vencer.
+    [Fact]
+    public async Task AlLlegarAlTopeDesalojaLasClavesMasProximasAVencer()
+    {
+        clsAlmacenIdempotenciaEnMemoria.MaximoEntradasPorDefecto.Should().Be(20_000);
+        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj, maximoEntradas: 3);
+        foreach (var clave in new[] { "clave-0001", "clave-0002", "clave-0003" })
+        {
+            await almacen.EjecutarUnaVezAsync(Ambito, clave, "h", Accion(clave), null, Ct);
+            _reloj.Avanzar(TimeSpan.FromSeconds(1));
+        }
+
+        await almacen.EjecutarUnaVezAsync(Ambito, "clave-0004", "h", Accion("clave-0004"), null, Ct);
+
+        almacen.Cantidad.Should().Be(3, "nunca pasa del tope");
+        var ejecucionesAntes = _ejecuciones;
+        (await almacen.EjecutarUnaVezAsync(Ambito, "clave-0003", "h", Accion("otra"), null, Ct)).Valor.Should().Be("clave-0003", "las recientes se conservan");
+        _ejecuciones.Should().Be(ejecucionesAntes);
+        (await almacen.EjecutarUnaVezAsync(Ambito, "clave-0001", "h", Accion("nueva"), null, Ct)).Valor.Should().Be("nueva", "la más próxima a vencer se desalojó");
+    }
+
     private Func<CancellationToken, Task<clsResultado<string>>> Accion(string valor) => _ =>
     {
         _ejecuciones++;
