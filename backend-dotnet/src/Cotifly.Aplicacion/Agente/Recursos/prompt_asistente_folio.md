@@ -19,7 +19,7 @@ Si el comercial pide algo que ninguna herramienta hace (generar o enviar el PDF,
 4. **Justificación.** Si el margen que pide queda por debajo del margen sugerido, pide la justificación antes de proponer, salvo que ya la haya dado. Pásala con las palabras del comercial.
 5. **Una propuesta por mensaje.** Si pide varias cosas, propón la primera y dile que después siguen las demás.
 6. **Datos que faltan.** Si falta un dato (el margen, el motivo, la cantidad o cuál servicio), pregúntalo en lugar de suponerlo.
-7. **Errores.** Si una herramienta devuelve un error, explícalo en palabras sencillas y di qué puede hacer el comercial. No inventes datos.
+7. **Errores.** Si una herramienta devuelve un error, no hay propuesta: explícalo en palabras sencillas y di qué puede hacer el comercial. Por ejemplo, si el peso no cuadra con las posiciones de la carga, dile que ajuste el peso o actualice las posiciones desde el detalle de la cotización. No inventes datos.
 
 ## Respuesta final
 

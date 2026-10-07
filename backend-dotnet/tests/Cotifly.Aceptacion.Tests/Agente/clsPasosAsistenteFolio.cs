@@ -62,6 +62,15 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     public void DadoQueProponeReSolicitar(string motivo, int peso) =>
         Proponer(costeo.Modelo.Llamar("proponer_re_solicitud", new { motivo, pesoKg = peso }));
 
+    [Given("que el modelo propone re-solicitar el costeo con el motivo {string} sin cambios de carga")]
+    public void DadoQueProponeReSolicitarSinCambios(string motivo) =>
+        Proponer(costeo.Modelo.Llamar("proponer_re_solicitud", new { motivo }));
+
+    [Given("que el modelo intenta re-solicitar el costeo con el motivo {string} y el peso {int}")]
+    public void DadoQueIntentaReSolicitar(string motivo, int peso) =>
+        costeo.Modelo.Llamar("proponer_re_solicitud", new { motivo, pesoKg = peso })
+            .Cerrar("El peso no cuadra con las posiciones de la carga: ajústalo o actualiza las posiciones desde el detalle de la cotización.");
+
     [Given("que el modelo pide la herramienta {string}")]
     public void DadoQuePideLaHerramienta(string herramienta) =>
         costeo.Modelo.Llamar(herramienta, new { costo = 2_550_000, margen = 0.15 }).Cerrar("Esa acción no está disponible en el asistente.");
@@ -104,14 +113,19 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     [When("{string} confirma la acción propuesta")]
     public async Task CuandoConfirma(string alias)
     {
-        // Como el frontend: método, endpoint y cuerpo tal cual, e If-Match con el row_version de la propuesta.
+        // Como el frontend: método, endpoint y cuerpo tal cual, If-Match con el row_version de la propuesta y una Idempotency-Key
+        // nueva por clic (la usan re-solicitar y conexos; el margen la ignora).
         var accion = JsonDocument.Parse(_respuestasChat[^1]).RootElement.GetProperty("accion_propuesta");
         await web.EnviarAsync(
             new HttpMethod(accion.GetProperty("metodo").GetString()!),
             accion.GetProperty("endpoint").GetString()!,
             web.Sesion(alias).Access,
             accion.GetProperty("cuerpo").GetRawText(),
-            $"\"{accion.GetProperty("row_version").GetString()}\"");
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["If-Match"] = $"\"{accion.GetProperty("row_version").GetString()}\"",
+                ["Idempotency-Key"] = Guid.NewGuid().ToString(),
+            });
     }
 
     [When("{string} consulta \"Mis cotizaciones\"")]
@@ -142,6 +156,18 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     [Then("la acción propuesta es {string} con {string} al endpoint de re-solicitud de {string}")]
     public void EntoncesLaAccionDeReSolicitud(string tipo, string metodo, string cotizacion) =>
         Verificar(tipo, metodo, $"/web/cotizaciones/{costeo.Folio(cotizacion)}/costeo/re-solicitar");
+
+    [Then("el resumen de la acción propuesta menciona {string}")]
+    public void EntoncesElResumenMenciona(string texto) =>
+        Accion().GetProperty("resumen").GetString().Should().Contain(texto, "el comercial ve lo que confirma");
+
+    [Then("el cuerpo de la acción propuesta no trae datos de carga")]
+    public void EntoncesSinDatosDeCarga()
+    {
+        var cuerpo = Accion().GetProperty("cuerpo");
+        cuerpo.TryGetProperty("datos_carga", out _).Should().BeFalse();
+        cuerpo.GetProperty("nueva_version").GetBoolean().Should().BeFalse("sin cambios de carga se pide en el mismo folio");
+    }
 
     [Then("el resumen de la acción propuesta menciona {string} y el precio {int}")]
     public void EntoncesElResumen(string texto, int precio)

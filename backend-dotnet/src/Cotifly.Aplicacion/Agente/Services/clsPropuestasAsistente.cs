@@ -10,10 +10,13 @@ using Cotifly.Dominio.Margen;
 
 namespace Cotifly.Aplicacion.Agente.Services;
 
-/// <summary>Cambios de carga que el asistente puede proponer al re-solicitar (solo campos sin dinero ni catálogos de Nexo).</summary>
-/// <param name="PesoKg">Peso nuevo en kilogramos (0 a 999.999,99).</param>
-/// <param name="HorasCargue">Horas de cargue (0 a 240).</param>
-/// <param name="HorasDescargue">Horas de descargue (0 a 240).</param>
+/// <summary>
+/// Cambios de carga que el asistente puede proponer al re-solicitar (solo campos sin dinero ni catálogos de Nexo). Sus límites y la
+/// coherencia con las posiciones los valida el caso de uso de la re-solicitud (<c>IClsReSolicitudCosteoService.ValidarAsync</c>).
+/// </summary>
+/// <param name="PesoKg">Peso nuevo en kilogramos.</param>
+/// <param name="HorasCargue">Horas de cargue.</param>
+/// <param name="HorasDescargue">Horas de descargue.</param>
 /// <param name="Exclusivo">Vehículo exclusivo.</param>
 /// <param name="Consolidado">Carga consolidada.</param>
 public sealed record clsCambiosCargaAsistente(
@@ -23,10 +26,12 @@ public sealed record clsCambiosCargaAsistente(
 }
 
 /// <summary>
-/// Arma las acciones propuestas del asistente (HU-013.6, #102, ADR-018 §2b) con código, nunca con el LLM: valida con las MISMAS reglas
-/// del dominio que el endpoint destino (rango del margen, justificación, regla del PDF, estado del costeo, motivo, cantidades), arma el
-/// cuerpo exacto del contrato, pone el endpoint con el folio de la conversación y el <c>row_version</c> vigente, y redacta el
-/// <c>resumen</c> con plantilla. La vista previa del precio usa el mismo recálculo del ajuste
+/// Arma las acciones propuestas del asistente (HU-013.6, #102, ADR-018 §2b) con código, nunca con el LLM. Las reglas son las MISMAS
+/// del endpoint destino, sin copias: margen con <see cref="clsCotizacion.ValidarAjusteMargen"/>; conexos con
+/// <see cref="clsServiciosConexosCosteoService.Validar"/> y <see cref="clsServiciosConexosCosteoService.ValidarPrecondiciones"/>; la
+/// re-solicitud la valida antes el caso de uso (<c>IClsReSolicitudCosteoService.ValidarAsync</c>, que necesita la base y el catálogo).
+/// Arma el cuerpo exacto del contrato, pone el endpoint con el folio de la conversación y el <c>row_version</c> vigente, y redacta el
+/// <c>resumen</c> con plantilla, con los textos del LLM (justificación, motivo) entre comillas para que el comercial vea lo que confirma. La vista previa del precio usa el mismo recálculo del ajuste
 /// (<see cref="clsAjusteMargenCosteoService.Recalcular(IClsPrecioService, clsCotizacion, IReadOnlyList{clsCotizacionLineaSolicitud}, decimal)"/>,
 /// sobre <see cref="clsPrecioMonedaCosteo"/>) SIN cambiar la cotización. Los errores no traen montos: su mensaje va al LLM.
 /// </summary>
@@ -35,11 +40,8 @@ public static class clsPropuestasAsistente
     public const string MetodoPut = "PUT";
     public const string MetodoPost = "POST";
 
-    /// <summary>Peso máximo de <c>DatosCargaWeb.peso_kg</c>.</summary>
-    public const decimal PesoMaximo = 999_999.99m;
-
-    /// <summary>Horas máximas de cargue o descargue (<c>DatosCargaWeb</c>).</summary>
-    public const decimal HorasMaximas = 240m;
+    /// <summary>Largo máximo de un texto del LLM citado en el resumen (justificación, motivo).</summary>
+    public const int LargoMaximoCita = 90;
 
     public static string RutaMargen(string folio) => $"{Base(folio)}/costeo/margen";
 
@@ -79,8 +81,14 @@ public static class clsPropuestasAsistente
 
         var moneda = cotizacion.Moneda ?? clsCotizacion.MonedaPesos;
         var concepto = lineas.Count > 1 ? "el precio total" : "el precio del flete";
+        var limpia = clsMargenAjuste.LimpiarJustificacion(justificacion);
         var resumen = $"Ajustar el margen de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: {concepto} pasa de "
                       + $"{clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, moneda)} a {clsFormatoMoneda.Formatear(recalculo.Valor.PrecioFinal, moneda)} {moneda}.";
+        if (limpia is not null)
+        {
+            resumen += $" Justificación: {Cita(limpia)}.";
+        }
+
         if (clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Count > 0)
         {
             resumen += " Los servicios conexos se recalculan con el mismo margen.";
@@ -90,51 +98,34 @@ public static class clsPropuestasAsistente
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["margen"] = nuevo,
-            ["justificacion"] = clsMargenAjuste.LimpiarJustificacion(justificacion),
+            ["justificacion"] = limpia,
         };
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAjustarMargen, MetodoPut, RutaMargen(cotizacion.Folio), cuerpo, Recortar(resumen), clsCosteoCotizacionService.VersionEtag(cotizacion));
     }
 
     /// <summary>
-    /// <c>re_solicitar_costeo</c> → <c>POST .../costeo/re-solicitar</c> <c>{motivo, datos_carga?, nueva_version}</c>. Con cambios de carga
-    /// siempre es versión nueva. Errores: <c>SOLICITUD_COSTEO_INVALIDA</c> (motivo, límites), <c>ESTADO_NO_PERMITE</c> y
-    /// <c>PDF_YA_ENVIADO</c> (estado de la cotización, las mismas reglas del endpoint).
+    /// Entrada del caso de uso de la re-solicitud con lo que propone el LLM: con cambios de carga siempre es versión nueva. Con ella se
+    /// valida (<c>IClsReSolicitudCosteoService.ValidarAsync</c>) ANTES de <see cref="ReSolicitar"/>.
     /// </summary>
-    public static clsResultado<clsAccionPropuesta> ReSolicitar(
-        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, string? motivo, clsCambiosCargaAsistente cambios, bool nuevaVersion)
+    public static clsEntradaReSolicitudCosteo EntradaReSolicitud(string? motivo, clsCambiosCargaAsistente cambios, bool nuevaVersion)
+    {
+        ArgumentNullException.ThrowIfNull(cambios);
+        return new clsEntradaReSolicitudCosteo(motivo, cambios.TieneCambios ? CambiosDominio(cambios) : null, nuevaVersion);
+    }
+
+    /// <summary>
+    /// <c>re_solicitar_costeo</c> → <c>POST .../costeo/re-solicitar</c> <c>{motivo, datos_carga?, nueva_version}</c>, para una
+    /// <paramref name="entrada"/> que ya pasó la validación del caso de uso (motivo, estado, catálogo y reglas de la captura).
+    /// </summary>
+    public static clsAccionPropuesta ReSolicitar(clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, clsCambiosCargaAsistente cambios)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(cambios);
-        if (cambios.PesoKg is < 0m or > PesoMaximo
-            || cambios.HorasCargue is < 0m or > HorasMaximas
-            || cambios.HorasDescargue is < 0m or > HorasMaximas)
-        {
-            return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
-                $"Revisa los cambios de carga: el peso va de 0 a {Numero(PesoMaximo)} kg y las horas de cargue o descargue de 0 a {Numero(HorasMaximas)}.");
-        }
-
-        var datosCarga = DatosCarga(cambios);
-        var entrada = new clsEntradaReSolicitudCosteo(motivo, datosCarga is null ? null : CambiosDominio(cambios), nuevaVersion);
-        if (clsReSolicitudCosteoService.ValidarEntrada(entrada) is { } invalida)
-        {
-            return invalida;
-        }
-
-        if (cotizacion.ValidarReSolicitud(entrada.VersionNueva) is { } noPermitida)
-        {
-            return noPermitida;
-        }
-
-        if (datosCarga is not null && clsCosteoCotizacionService.EsPliego(cotizacion, lineas))
-        {
-            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {cotizacion.Folio} es una licitación: los cambios de carga se hacen desde el detalle, línea por línea.");
-        }
-
-        var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["motivo"] = motivo!.Trim() };
-        if (datosCarga is not null)
+        var motivo = (entrada.Motivo ?? string.Empty).Trim();
+        var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["motivo"] = motivo };
+        if (DatosCarga(cambios) is { } datosCarga)
         {
             cuerpo["datos_carga"] = datosCarga;
         }
@@ -142,9 +133,9 @@ public static class clsPropuestasAsistente
         cuerpo["nueva_version"] = entrada.VersionNueva;
         var resumen = entrada.VersionNueva
             ? $"Volver a pedir el costeo a Nexo en una versión nueva de {cotizacion.Folio}"
-              + (datosCarga is null ? "." : $" con estos cambios: {DescribirCambios(cambios)}.")
-              + " La cotización original no cambia."
-            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}. El precio actual se descarta hasta el nuevo costeo"
+              + (cambios.TieneCambios ? $" con estos cambios: {DescribirCambios(cambios)}." : ".")
+              + $" Motivo: {Cita(motivo)}. La cotización original no cambia."
+            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}. Motivo: {Cita(motivo)}. El precio actual se descarta hasta el nuevo costeo"
               + (cotizacion.PdfPath is null ? "." : " y el PDF actual queda desactualizado.");
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoReSolicitarCosteo, MetodoPost, RutaReSolicitud(cotizacion.Folio), cuerpo, Recortar(resumen), clsCosteoCotizacionService.VersionEtag(cotizacion));
@@ -152,8 +143,8 @@ public static class clsPropuestasAsistente
 
     /// <summary>
     /// <c>agregar_servicios_conexos</c> → <c>POST .../costeo/servicios-conexos</c> <c>{items: [{linea_orden, servicio_id, cantidad}]}</c>.
-    /// Errores: <c>CONEXO_INVALIDO</c> (cantidad o línea), <c>ESTADO_NO_PERMITE</c> (licitación), <c>COSTEO_NO_LISTO</c> y
-    /// <c>PDF_YA_ENVIADO</c>, con las mismas reglas del endpoint.
+    /// Errores: los del endpoint antes de llamar a Nexo (<c>SOLICITUD_INVALIDA</c> por la forma, <c>ESTADO_NO_PERMITE</c>,
+    /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
     /// </summary>
     public static clsResultado<clsAccionPropuesta> AgregarConexo(
         clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsServicioConexoCatalogo servicio, decimal cantidad, int lineaOrden)
@@ -161,39 +152,21 @@ public static class clsPropuestasAsistente
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(servicio);
-        if (cantidad < clsServiciosConexosCosteoService.CantidadMinima || cantidad > clsServiciosConexosCosteoService.CantidadMaxima
-            || decimal.Round(cantidad, 2) != cantidad)
+        var items = clsServiciosConexosCosteoService.Validar([new clsConexoAgregarEntrada(lineaOrden, servicio.Id, cantidad)]);
+        if (items.EsFallo)
         {
-            return new clsErrorDominio(clsCodigosError.ConexoInvalido,
-                $"La cantidad va de {Numero(clsServiciosConexosCosteoService.CantidadMinima)} a {Numero(clsServiciosConexosCosteoService.CantidadMaxima)}, con hasta 2 decimales.");
+            return items.Error;
         }
 
-        if (clsCosteoCotizacionService.EsPliego(cotizacion, lineas))
+        if (clsServiciosConexosCosteoService.ValidarPrecondiciones(cotizacion, lineas, items.Valor) is { } noPermitido)
         {
-            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.");
-        }
-
-        if (!cotizacion.TieneCostoDisponible || cotizacion.MargenAplicado is null || cotizacion.MetodoCalculo is null)
-        {
-            return new clsErrorDominio(clsCodigosError.CosteoNoListo,
-                $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado: espera el costeo para agregar conexos.");
-        }
-
-        if (cotizacion.ValidarCambioEtapaFinal() is { } entregada)
-        {
-            return entregada;
-        }
-
-        if (lineaOrden < 1 || (lineas.Count == 0 ? lineaOrden != 1 : lineas.All(l => l.Orden != lineaOrden)))
-        {
-            return new clsErrorDominio(clsCodigosError.ConexoInvalido, $"La línea {lineaOrden} no existe en la cotización {cotizacion.Folio}.");
+            return noPermitido;
         }
 
         var item = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["linea_orden"] = lineaOrden,
-            ["servicio_id"] = servicio.Id,
+            ["servicio_id"] = items.Valor[0].ServicioId,
             ["cantidad"] = cantidad,
         };
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["items"] = new[] { item } };
@@ -299,6 +272,13 @@ public static class clsPropuestasAsistente
         }
 
         return string.Join(", ", partes);
+    }
+
+    /// <summary>Texto del LLM entre comillas latinas, recortado a <see cref="LargoMaximoCita"/> caracteres.</summary>
+    public static string Cita(string? texto)
+    {
+        var limpio = string.Join(' ', (texto ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return "«" + (limpio.Length <= LargoMaximoCita ? limpio : limpio[..(LargoMaximoCita - 1)].TrimEnd() + "…") + "»";
     }
 
     private static string Recortar(string resumen) =>

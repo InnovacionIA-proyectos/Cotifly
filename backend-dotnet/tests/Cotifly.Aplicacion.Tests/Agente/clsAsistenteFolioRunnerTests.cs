@@ -36,6 +36,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
 {
     private const string Folio = "PCN-900555111-AP-05102026-001";
     private const string Espacio = "web/sesion-folio-001";
+    private const string Precinto1 = "0b6e2a51-1111-4c55-9a0e-1d2f3a4b5c61";
+    private const string Precinto2 = "0b6e2a51-2222-4c55-9a0e-1d2f3a4b5c62";
     private static readonly string _hilo = $"{Espacio}/{Folio}";
 
     private readonly clsChatClientGuionizado _modelo = new();
@@ -47,6 +49,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     private readonly IClsCalendarioNegocio _calendario = Substitute.For<IClsCalendarioNegocio>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsServiciosConexosCosteoService _conexos = Substitute.For<IClsServiciosConexosCosteoService>();
+    private readonly IClsReSolicitudCosteoService _reSolicitud = Substitute.For<IClsReSolicitudCosteoService>();
     private readonly clsRelojFalso _reloj = new();
     private readonly clsUsuarioWeb _ana;
     private clsContextoAsistenteFolio _contextoFolio = new();
@@ -57,6 +60,11 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _usuarios.ObtenerPorIdAsync(_ana.Id, Arg.Any<CancellationToken>()).Returns(_ana);
         _calendario.Hoy.Returns(new DateOnly(2026, 10, 7));
         _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        // La validación de la re-solicitud es del caso de uso (con la base y el catálogo): aquí, su parte de dominio (entrada y estado).
+        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacion>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsReSolicitudCosteoService.ValidarEntrada(ci.Arg<clsEntradaReSolicitudCosteo>())
+                           ?? ci.Arg<clsCotizacion>().ValidarReSolicitud(ci.Arg<clsEntradaReSolicitudCosteo>().VersionNueva));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -143,7 +151,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var accion = resultado.Valor.AccionPropuesta!;
         accion.Cuerpo["margen"].Should().Be(0.12m);
         accion.Cuerpo["justificacion"].Should().Be("El cliente tiene una oferta más baja");
-        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.897.727");
+        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.897.727")
+            .And.Contain("Justificación: «El cliente tiene una oferta más baja»", "el comercial ve lo que confirma");
     }
 
     [Fact]
@@ -162,8 +171,42 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Cuerpo["motivo"].Should().Be("El cliente cambió el peso");
         accion.Cuerpo["nueva_version"].Should().Be(true);
         ((IReadOnlyDictionary<string, object?>)accion.Cuerpo["datos_carga"]!)["peso_kg"].Should().Be(28000m);
-        accion.Resumen.Should().Contain("versión nueva").And.Contain("peso 28.000 kg");
+        accion.Resumen.Should().Contain("versión nueva").And.Contain("peso 28.000 kg").And.Contain("Motivo: «El cliente cambió el peso»");
+        await _reSolicitud.Received(1).ValidarAsync(_ana.Id, cotizacion,
+            Arg.Is<clsEntradaReSolicitudCosteo>(e => e.VersionNueva && e.DatosCarga!.PesoKg == 28000m && e.Motivo == "El cliente cambió el peso"),
+            Arg.Any<CancellationToken>());
         SinCambios(cotizacion);
+    }
+
+    // Validador de #102: una propuesta que el endpoint rechazaría (peso que no cuadra con las posiciones) nunca se arma.
+    [Fact]
+    public async Task SiElCasoDeUsoRechazaLaReSolicitudNoHayPropuestaYElModeloRecibeElMotivo()
+    {
+        Registrar(Vencida());
+        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacion>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "El peso total (28000 kg) no cuadra con la suma de las posiciones (28500 kg)."));
+        _modelo.Llamar("proponer_re_solicitud", new { motivo = "El cliente cambió el peso", pesoKg = 28000 })
+            .Cerrar("El peso no cuadra con las posiciones: ajústalo o actualiza las posiciones desde el detalle.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Ahora son 28 toneladas"), Ct);
+
+        resultado.Valor.AccionPropuesta.Should().BeNull();
+        resultado.Valor.Salidas.Single().Error!.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        _modelo.Llamadas[1].ResultadosHerramientas.Single().Should().Contain("posiciones");
+    }
+
+    [Fact]
+    public async Task LaReSolicitudSinCambiosEnElMismoFolioCitaElMotivo()
+    {
+        Registrar(Vencida());
+        _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Cerrar("Te propongo volver a pedir el flete.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Vuelve a pedirlo"), Ct);
+
+        var accion = resultado.Valor.AccionPropuesta!;
+        accion.Cuerpo.Should().NotContainKey("datos_carga");
+        accion.Cuerpo["nueva_version"].Should().Be(false);
+        accion.Resumen.Should().Contain($"mismo folio {Folio}").And.Contain("Motivo: «Nexo no respondió a tiempo»");
     }
 
     [Fact]
@@ -178,10 +221,26 @@ public sealed partial class clsAsistenteFolioRunnerTests
         resultado.Valor.Salidas.Single().Error!.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
     }
 
+    // Auditor de #102: las reglas de conexos son las del endpoint (ValidarPrecondiciones), también LINEA_SIN_COTIZACION_NEXO.
+    [Fact]
+    public async Task SinCotizacionDeNexoElConexoNoSePropone()
+    {
+        Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        _conexos.BuscarAsync(_ana.Id, "almacenamiento", null, 1, clsHerramientasAsistenteFolio.MaximoServicios, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPaginaServiciosConexos>.Exito(new clsPaginaServiciosConexos(1, 1, 10,
+                [new clsServicioConexoCatalogo(Precinto1, "ALM-01", "Almacenamiento", "logistico", "Día", null, null, null, null, null, null)])));
+        _modelo.Llamar("buscar_servicio_conexo", new { texto = "almacenamiento", cantidad = 2 }).Cerrar("Todavía no se puede agregar.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Agrégale almacenamiento"), Ct);
+
+        resultado.Valor.AccionPropuesta.Should().BeNull();
+        resultado.Valor.Salidas.Single().Error!.Codigo.Should().Be(clsCodigosError.LineaSinCotizacionNexo);
+    }
+
     [Fact]
     public async Task BuscarUnConexoConCantidadProponeAgregarloSinCostos()
     {
-        var cotizacion = Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        var cotizacion = Registrar(ConCotizacionNexo(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio)));
         const string IdServicio = "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d";
         _conexos.BuscarAsync(_ana.Id, "almacenamiento", null, 1, clsHerramientasAsistenteFolio.MaximoServicios, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPaginaServiciosConexos>.Exito(
@@ -205,15 +264,15 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
     [Theory]
     [InlineData(null, null)]
-    [InlineData("a2", "a2")]
+    [InlineData(Precinto2, Precinto2)]
     public async Task ConVariosServiciosSoloProponeElQueEligioElComercial(string? servicioId, string? propuesto)
     {
-        Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        Registrar(ConCotizacionNexo(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio)));
         _conexos.BuscarAsync(_ana.Id, "precinto", null, 1, clsHerramientasAsistenteFolio.MaximoServicios, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPaginaServiciosConexos>.Exito(new clsPaginaServiciosConexos(2, 1, 10,
             [
-                new clsServicioConexoCatalogo("a1", "P-1", "Precinto", "adicional", "Unidad", null, null, null, null, null, null),
-                new clsServicioConexoCatalogo("a2", "P-2", "Precinto electrónico", "adicional", "Unidad", null, null, null, null, null, null),
+                new clsServicioConexoCatalogo(Precinto1, "P-1", "Precinto", "adicional", "Unidad", null, null, null, null, null, null),
+                new clsServicioConexoCatalogo(Precinto2, "P-2", "Precinto electrónico", "adicional", "Unidad", null, null, null, null, null, null),
             ])));
         _modelo.Llamar("buscar_servicio_conexo", new { texto = "precinto", cantidad = 1, servicioId }).Cerrar("Listo.");
 
@@ -386,6 +445,12 @@ public sealed partial class clsAsistenteFolioRunnerTests
         return cotizacion;
     }
 
+    private static clsCotizacion ConCotizacionNexo(clsCotizacion cotizacion)
+    {
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.CotizacionNexoId))!.SetValue(cotizacion, "COT-NEXO-1");
+        return cotizacion;
+    }
+
     /// <summary>Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % = 750 USD y el conexo Cargue (85.000 COP = 25 USD).</summary>
     private clsCotizacion EnDolares()
     {
@@ -433,7 +498,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
             _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
             new clsValidadorRespuestaAgente(Options.Create(opcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), _reloj),
             _auditoria, new clsCandadoSesionFalso(), contexto, _contextoFolio,
-            new clsHerramientasAsistenteFolio(_contextoFolio, _cotizaciones, precios, _conexos),
+            new clsHerramientasAsistenteFolio(_contextoFolio, _cotizaciones, precios, _conexos, _reSolicitud),
             Options.Create(opcionesAgente), Options.Create(new clsOpcionesSesiones()), NullLogger<clsAsistenteFolioRunner>.Instance);
     }
 

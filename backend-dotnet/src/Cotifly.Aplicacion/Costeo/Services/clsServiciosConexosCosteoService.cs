@@ -245,6 +245,52 @@ public sealed class clsServiciosConexosCosteoService(
         return clsResultado<IReadOnlyList<clsConexoValidado>>.Exito(validados);
     }
 
+    /// <summary>
+    /// Única fuente de las reglas de la cotización para agregar conexos, sin tocar Nexo (la usan el endpoint y la propuesta
+    /// <c>agregar_servicios_conexos</c> del asistente, HU-013.6), en este orden: licitación (<c>ESTADO_NO_PERMITE</c>), costeo con
+    /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), línea inexistente (<c>CONEXO_INVALIDO</c>) y línea sin
+    /// cotización de Nexo (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
+    /// </summary>
+    public static clsErrorDominio? ValidarPrecondiciones(
+        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsConexoValidado> items)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(items);
+        if (clsCosteoCotizacionService.EsPliego(cotizacion, lineas))
+        {
+            // ADR-017 §6 y ADR-018 §4: el PDF de pliego no imprime conexos; las licitaciones no los admiten en esta iteración.
+            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.", MotivoLicitacion);
+        }
+
+        if (!cotizacion.TieneCostoDisponible || cotizacion.MargenAplicado is null || cotizacion.MetodoCalculo is null)
+        {
+            return new clsErrorDominio(clsCodigosError.CosteoNoListo,
+                $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado: espera el costeo para agregar conexos.");
+        }
+
+        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } entregada)
+        {
+            return entregada;
+        }
+
+        // linea_orden → línea de Cotifly. Una cotización anterior al 0005 (sin filas de línea) solo tiene la línea 1.
+        var porOrden = lineas.ToDictionary(l => l.Orden);
+        if (items.FirstOrDefault(i => lineas.Count == 0 ? i.LineaOrden != 1 : !porOrden.ContainsKey(i.LineaOrden)) is { } inexistente)
+        {
+            return new clsErrorDominio(clsCodigosError.ConexoInvalido,
+                $"La línea {inexistente.LineaOrden} no existe en la cotización {cotizacion.Folio}.", "LINEA_INEXISTENTE");
+        }
+
+        if (items.FirstOrDefault(i => lineas.Count > 0 && porOrden[i.LineaOrden].LineaSolicitudNexoId is null) is { } sinNexo)
+        {
+            return SinLineaNexo(cotizacion, sinNexo.LineaOrden);
+        }
+
+        return cotizacion.CotizacionNexoId is null && items.Count > 0 ? SinLineaNexo(cotizacion, items[0].LineaOrden) : null;
+    }
+
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, int Agregados, bool PdfInvalidado)> AgregarAsync(
         clsCotizacion cotizacion, Guid usuarioId, IReadOnlyList<clsConexoValidado> items, int versionEsperada, CancellationToken cancellationToken)
     {
@@ -254,41 +300,13 @@ public sealed class clsServiciosConexosCosteoService(
         }
 
         var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        if (clsCosteoCotizacionService.EsPliego(cotizacion, lineas))
+        if (ValidarPrecondiciones(cotizacion, lineas, items) is { } noPermitido)
         {
-            // ADR-017 §6 y ADR-018 §4: el PDF de pliego no imprime conexos; las licitaciones no los admiten en esta iteración.
-            return (new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.", MotivoLicitacion), 0, false);
+            return (noPermitido, 0, false);
         }
 
-        if (!cotizacion.TieneCostoDisponible || cotizacion.MargenAplicado is null || cotizacion.MetodoCalculo is null)
-        {
-            return (new clsErrorDominio(clsCodigosError.CosteoNoListo,
-                $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado: espera el costeo para agregar conexos."), 0, false);
-        }
-
-        if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersion) is { } entregada)
-        {
-            return (entregada, 0, false);
-        }
-
-        // linea_orden → línea de Cotifly. Una cotización anterior al 0005 (sin filas de línea) solo tiene la línea 1.
+        var cotizacionNexoId = cotizacion.CotizacionNexoId!;
         var porOrden = lineas.ToDictionary(l => l.Orden);
-        if (items.FirstOrDefault(i => lineas.Count == 0 ? i.LineaOrden != 1 : !porOrden.ContainsKey(i.LineaOrden)) is { } inexistente)
-        {
-            return (new clsErrorDominio(clsCodigosError.ConexoInvalido,
-                $"La línea {inexistente.LineaOrden} no existe en la cotización {cotizacion.Folio}.", "LINEA_INEXISTENTE"), 0, false);
-        }
-
-        if (items.FirstOrDefault(i => lineas.Count > 0 && porOrden[i.LineaOrden].LineaSolicitudNexoId is null) is { } sinNexo)
-        {
-            return (SinLineaNexo(cotizacion, sinNexo.LineaOrden), 0, false);
-        }
-
-        if (cotizacion.CotizacionNexoId is not { } cotizacionNexoId)
-        {
-            return (SinLineaNexo(cotizacion, items[0].LineaOrden), 0, false);
-        }
 
         // El id de la línea de la cotización de Nexo se lee de Nexo justo antes de agregar (ver el resumen de la clase).
         var actual = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, cancellationToken);

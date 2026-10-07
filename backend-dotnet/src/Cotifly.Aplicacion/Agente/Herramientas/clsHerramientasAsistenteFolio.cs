@@ -28,7 +28,8 @@ public sealed class clsHerramientasAsistenteFolio(
     clsContextoAsistenteFolio contexto,
     IClsCotizacionRepository cotizaciones,
     IClsPrecioService precios,
-    IClsServiciosConexosCosteoService conexos)
+    IClsServiciosConexosCosteoService conexos,
+    IClsReSolicitudCosteoService reSolicitud)
 {
     /// <summary>Servicios del catálogo que ve el modelo por búsqueda.</summary>
     public const int MaximoServicios = 10;
@@ -95,7 +96,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var propuesta = clsPropuestasAsistente.AjustarMargen(precios, cotizacion, lineas, margen, justificacion);
         if (propuesta.EsFallo)
         {
-            return clsResultadoHerramienta.Fallo(herramienta, SinMontos(propuesta.Error));
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));
         }
 
         contexto.Proponer(propuesta.Valor);
@@ -124,20 +125,23 @@ public sealed class clsHerramientasAsistenteFolio(
     {
         var herramienta = clsNombresHerramientas.ProponerReSolicitud;
         var cotizacion = contexto.Cotizacion;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var cambios = new clsCambiosCargaAsistente(pesoKg, horasCargue, horasDescargue, exclusivo, consolidado);
-        var propuesta = clsPropuestasAsistente.ReSolicitar(cotizacion, lineas, motivo, cambios, nuevaVersion);
-        if (propuesta.EsFallo)
+        var entrada = clsPropuestasAsistente.EntradaReSolicitud(motivo, cambios, nuevaVersion);
+
+        // Las MISMAS validaciones del endpoint (estado, catálogo, rangos, peso frente a las posiciones): si no pasa, no hay propuesta y el
+        // modelo explica el motivo (por ejemplo, que el peso no cuadra con las posiciones y hay que ajustarlo desde el detalle).
+        if (await reSolicitud.ValidarAsync(contexto.UsuarioId, cotizacion, entrada, cancellationToken) is { } invalida)
         {
-            return clsResultadoHerramienta.Fallo(herramienta, SinMontos(propuesta.Error));
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(invalida));
         }
 
-        contexto.Proponer(propuesta.Valor);
+        var propuesta = clsPropuestasAsistente.ReSolicitar(cotizacion, entrada, cambios);
+        contexto.Proponer(propuesta);
         return clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["propuesta"] = clsAccionPropuesta.TipoReSolicitarCosteo,
-            ["version_nueva"] = propuesta.Valor.Cuerpo["nueva_version"],
-            ["cambios_de_carga"] = propuesta.Valor.Cuerpo.TryGetValue("datos_carga", out var datos) && datos is IReadOnlyDictionary<string, object?> campos
+            ["version_nueva"] = propuesta.Cuerpo["nueva_version"],
+            ["cambios_de_carga"] = propuesta.Cuerpo.TryGetValue("datos_carga", out var datos) && datos is IReadOnlyDictionary<string, object?> campos
                 ? campos.Keys.ToList()
                 : [],
             ["mensaje"] = MensajePropuesta,
@@ -157,7 +161,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var pagina = await conexos.BuscarAsync(contexto.UsuarioId, texto, null, 1, MaximoServicios, cancellationToken);
         if (pagina.EsFallo)
         {
-            return clsResultadoHerramienta.Fallo(herramienta, SinMontos(pagina.Error));
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(pagina.Error));
         }
 
         var servicios = pagina.Valor.Items;
@@ -195,7 +199,7 @@ public sealed class clsHerramientasAsistenteFolio(
         var propuesta = clsPropuestasAsistente.AgregarConexo(cotizacion, lineas, elegido, valor, lineaOrden);
         if (propuesta.EsFallo)
         {
-            return clsResultadoHerramienta.Fallo(herramienta, SinMontos(propuesta.Error));
+            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));
         }
 
         contexto.Proponer(propuesta.Valor);
@@ -221,8 +225,9 @@ public sealed class clsHerramientasAsistenteFolio(
     }
 
     /// <summary>
-    /// Error para el modelo sin <c>Datos</c> (el detalle estructurado de algunos errores, como <c>PDF_YA_ENVIADO</c>, es para el frontend)
-    /// y con el detalle de Nexo reducido a su código.
+    /// Error para el modelo sin <c>Datos</c>: el detalle estructurado de algunos errores (la llamada de la versión nueva de
+    /// <c>PDF_YA_ENVIADO</c>, <c>margen_sugerido</c>...) es para el frontend. El <c>Detalle</c> de los errores de Nexo ya llega reducido
+    /// a su código desde el adaptador (<c>clsServiciosConexosNexo.SoloCodigo</c>).
     /// </summary>
-    private static clsErrorDominio SinMontos(clsErrorDominio error) => new(error.Codigo, error.Mensaje, error.Detalle);
+    private static clsErrorDominio SinDatos(clsErrorDominio error) => new(error.Codigo, error.Mensaje, error.Detalle);
 }

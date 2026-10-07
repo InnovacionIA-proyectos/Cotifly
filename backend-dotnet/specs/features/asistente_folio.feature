@@ -57,6 +57,10 @@ Característica: Asistente IA sobre una cotización (folio)
     Cuando "ana" escribe en el chat "Bájalo al 12 %, tiene otra oferta" sobre el folio de "C1"
     Entonces la acción propuesta es "ajustar_margen" con "PUT" al endpoint del margen de "C1" y el cuerpo con el margen "0.12"
     Y el cuerpo de la acción propuesta trae la justificación "El cliente tiene una oferta más baja"
+    Y el resumen de la acción propuesta menciona "«El cliente tiene una oferta más baja»"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y queda un ajuste de margen de "C1" de "0.15" a "0.12" por "ana" con la justificación "El cliente tiene una oferta más baja"
 
   Escenario: Confirmar una propuesta vieja responde conflicto de concurrencia
     Dado que el modelo propone ajustar el margen a "0.18"
@@ -74,14 +78,42 @@ Característica: Asistente IA sobre una cotización (folio)
     Y el cuerpo de la acción propuesta trae en la línea 1 el servicio "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d" con la cantidad 2
     Y ninguna respuesta del chat contiene el campo "costo_unitario"
     Y Nexo no recibió conexos para la cotización de "C1"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y Nexo recibió 1 petición de conexos para la cotización de "C1"
+    Y el servicio conexo "Almacenamiento" de "C1" está incluido con el precio 117647
 
-  Escenario: El asistente propone re-solicitar el costeo con cambios de carga
+  # El peso nuevo es 28400: la regla de peso de Nexo (1 %) se aplica contra las posiciones guardadas (28500 kg), igual que al confirmar.
+  Escenario: El asistente propone re-solicitar el costeo con cambios de carga y confirmarla crea la versión nueva
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
-    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28000
-    Cuando "ana" escribe en el chat "El cliente ahora manda 28 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
+    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28400
+    Cuando "ana" escribe en el chat "El cliente ahora manda 28,4 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
     Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
-    Y el cuerpo de la acción propuesta trae el motivo "El cliente cambió el peso" y el peso 28000
+    Y el cuerpo de la acción propuesta trae el motivo "El cliente cambió el peso" y el peso 28400
+    Y el resumen de la acción propuesta menciona "«El cliente cambió el peso»"
     Y Nexo no recibió otra solicitud para "C1"
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió la solicitud de la versión nueva con el peso 28400
+
+  Escenario: Un peso que no cuadra con las posiciones no se propone
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo intenta re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28000
+    Cuando "ana" escribe en el chat "Ahora son 28 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
+    Entonces la respuesta tiene el estado 200
+    Y la respuesta del chat no trae acción propuesta
+    Y el error de herramienta del turno es "SOLICITUD_COSTEO_INVALIDA"
+    Y Nexo no recibió otra solicitud para "C1"
+
+  Escenario: El asistente propone re-solicitar en el mismo folio y confirmarla lo reenvía a Nexo
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que el modelo propone re-solicitar el costeo con el motivo "El cliente pidió actualizar el flete" sin cambios de carga
+    Cuando "ana" escribe en el chat "Vuelve a pedir el costo a Nexo" sobre el folio de "C1"
+    Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
+    Y el cuerpo de la acción propuesta no trae datos de carga
+    Cuando "ana" confirma la acción propuesta
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
 
   Escenario: Si el modelo intenta una herramienta retirada no se ejecuta
     Dado que el modelo pide la herramienta "calcular_precio"
