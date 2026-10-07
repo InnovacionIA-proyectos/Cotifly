@@ -37,7 +37,7 @@ distinto, por ejemplo un gestor de secretos):
    referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey`,
    `IA__ApiKey` y `SapTm__Pass`.
 2. **Sin secretos de Docker Swarm.** El único que había era la cuenta de servicio de Google Chat (`GChat__SaJson`,
-   secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §14). Tras desplegar la versión
+   secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §15). Tras desplegar la versión
    sin Google Chat, borrar el secreto en el manager: `docker secret rm cotifly_gchat_sa_v1 cotifly_staging_gchat_sa_v1`
    (solo con confirmación del usuario: es el clúster).
 
@@ -664,7 +664,7 @@ exista el login `cotifly_respaldo` y la instancia de pruebas (DBA).
 
 ## 7. Google Chat retirado (HU-013.9, #105)
 
-Decisión del 2026-10-05 (ADR-018 §14): Cotifly es un módulo de formularios dentro de ClientePro y Google Chat sale del
+Decisión del 2026-10-05 (ADR-018 §15): Cotifly es un módulo de formularios dentro de ClientePro y Google Chat sale del
 alcance. Desde HU-013.9 el backend .NET **no tiene** el webhook `POST /chat/events` (responde 404), ni el verificador del
 JWT de Google, la cola, el worker, el publicador o las tarjetas, ni las opciones `GChat__*` y su validación al arrancar.
 El agente cotizador legado y el flag `Chat__CreacionHabilitada` también se retiraron: `POST /web/chat` exige `folio`.

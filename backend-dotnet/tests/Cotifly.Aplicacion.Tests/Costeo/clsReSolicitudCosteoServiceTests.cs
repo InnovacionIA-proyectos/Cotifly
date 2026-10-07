@@ -365,6 +365,10 @@ public sealed class clsReSolicitudCosteoServiceTests
         resultado.Error.Detalle.Should().Be(clsValidadorFilasLicitacion.MotivoRequiereNuevaCarga);
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default!, default!, default, default, default);
         _agregada.Should().BeNull("la -vN copia las mismas filas: tampoco se crea");
+
+        // La misma regla corre al validar la propuesta del asistente (HU-013.6): nunca propone re-solicitar una licitación inválida.
+        var propuesta = await Servicio().ValidarAsync(_ana, licitacion, Entrada() with { NuevaVersion = versionNueva }, Ct);
+        propuesta!.Detalle.Should().Be(clsValidadorFilasLicitacion.MotivoRequiereNuevaCarga);
     }
 
     [Fact]

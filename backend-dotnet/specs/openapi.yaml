@@ -1400,6 +1400,15 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '503':
+          description: |
+            Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
+            filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
+            cambia ni se envía a Nexo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/servicios-conexos:
     get:
