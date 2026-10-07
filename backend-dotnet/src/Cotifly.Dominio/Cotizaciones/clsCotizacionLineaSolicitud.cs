@@ -155,6 +155,23 @@ public sealed class clsCotizacionLineaSolicitud
         PrecioFinal = null;
     }
 
+    /// <summary>
+    /// Completa los ids de municipio que faltan (HU-013.11): una línea guardada antes de #108 se reenvía con los ids resueltos desde su
+    /// texto, y se guardan para que el siguiente reenvío mande lo mismo. Un id que ya tiene no se cambia. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    public bool CompletarMunicipios(int? origenMunicipioId, int? destinoMunicipioId)
+    {
+        if (origenMunicipioId is <= 0 || destinoMunicipioId is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(origenMunicipioId), "Un id de municipio de Nexo es un entero positivo.");
+        }
+
+        var antes = (OrigenMunicipioId, DestinoMunicipioId);
+        OrigenMunicipioId ??= origenMunicipioId;
+        DestinoMunicipioId ??= destinoMunicipioId;
+        return antes != (OrigenMunicipioId, DestinoMunicipioId);
+    }
+
     /// <summary>Nexo recibió la solicitud: la línea queda con el mismo estado inicial que la cotización.</summary>
     public void RegistrarEnvio(EstadoCosteo estado) => EstadoCosteo = estado;
 

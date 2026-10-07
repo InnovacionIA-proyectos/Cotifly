@@ -144,7 +144,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         _nexo.MunicipiosFalla = HttpStatusCode.ServiceUnavailable;
 
         using var sinIds = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([Valida()]));
-        sinIds.StatusCode.Should().Be(HttpStatusCode.BadRequest, "el mismo estado de GET /web/municipios");
+        sinIds.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "igual que CATALOGOS_FLETE_NO_DISPONIBLE");
         await VerificarErrorNegocioAsync(sinIds, "MUNICIPIOS_NO_DISPONIBLE");
         _nexo.SolicitudesCreadas.Should().BeEmpty();
 
@@ -153,6 +153,74 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         await VerificarContratoAsync(conIds, Ruta, HttpMethod.Post, HttpStatusCode.Created);
         _nexo.UltimaAlta!["lineas"]![0]!["origenMunicipioId"]!.GetValue<int>().Should().Be(76109);
     }
+
+    [Fact]
+    public async Task ConElCatalogoMaestroCaidoSeReportanIgualLosErroresQueNoDependenDeNexo()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.CatalogosCaidos = HttpStatusCode.ServiceUnavailable;
+
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
+            Cuerpo([Valida(), Valida() with { tipologia = "carga seca", clase_contenedor = "CNT40.HC" }]));
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, HttpMethod.Post, HttpStatusCode.BadRequest);
+        json.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("CATALOGOS_FLETE_NO_DISPONIBLE");
+        json.GetProperty("errores").EnumerateArray().Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().BeEquivalentTo(new[] { (1, "clase_contenedor", "CAMPO_NO_APLICA"), (1, "tipologia", "CODIGO_NO_CATALOGO") });
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UnaLicitacionGuardadaConTextoLibreNoSeReintentaYPideUnaCargaNueva()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        using var envio = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([Valida(), Valida()]));
+        var folio = (await VerificarContratoAsync(envio, Ruta, HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.AltaFalla = null;
+        var altasAntes = Altas().Count;
+
+        // Como una licitación guardada antes de #108: texto libre y sin ids de municipio.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE l SET tipoVehiculo = N'Tractomula', origenMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}' AND l.orden = 2");
+
+        using var reintento = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/reintentar", sesion.Access);
+
+        var json = await VerificarContratoAsync(reintento, "/web/cotizaciones/{folio}/costeo/reintentar", HttpMethod.Post, HttpStatusCode.BadRequest);
+        json.GetProperty("error").GetProperty("codigo").GetString().Should().Be("LICITACION_INVALIDA");
+        json.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("LICITACION_REQUIERE_NUEVA_CARGA");
+        json.GetProperty("error").GetProperty("mensaje").GetString().Should().Contain("POST /web/licitaciones");
+        var error = json.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray().Should().ContainSingle().Subject;
+        (error.GetProperty("indice").GetInt32(), error.GetProperty("campo").GetString(), error.GetProperty("codigo").GetString())
+            .Should().Be((1, "tipo_vehiculo", "CODIGO_NO_CATALOGO"));
+        Altas().Should().HaveCount(altasAntes, "nunca llega texto libre a Nexo");
+    }
+
+    [Fact]
+    public async Task ElReintentoDeUnaLicitacionSinIdsDeMunicipioLosResuelveLosEnviaYLosGuarda()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        using var envio = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([Valida()]));
+        var folio = (await VerificarContratoAsync(envio, Ruta, HttpMethod.Post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        _nexo.AltaFalla = null;
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE l SET origenMunicipioId = NULL, destinoMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'");
+
+        using var reintento = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/reintentar", sesion.Access);
+
+        reintento.StatusCode.Should().Be(HttpStatusCode.OK);
+        var linea = _nexo.UltimaAlta!["lineas"]![0]!;
+        (linea["origenMunicipioId"]!.GetValue<int>(), linea["destinoMunicipioId"]!.GetValue<int>()).Should().Be((76109, 11001));
+        (await EscalarAsync("SELECT CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
+            .Should().Be("76109|11001", "el siguiente reenvío manda lo mismo");
+    }
+
+    private List<string> Altas() =>
+        [.. _nexo.Peticiones.Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath == "/api/captura-solicitudes").Select(p => p.Cuerpo!)];
 
     /// <summary>Fila válida del pliego (snake_case de <c>LineaLicitacionWeb</c>); los nulos no se serializan.</summary>
     private static clsFila Valida() => new();

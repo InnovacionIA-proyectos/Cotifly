@@ -1068,6 +1068,13 @@ paths:
         (pendiente de confirmar con el equipo de Nexo una clave de idempotencia). Solo el dueño.
         HU-013.4: `POST .../costeo/re-solicitar` lo amplía (también costeo vencido o entregado, y con cambios de carga);
         este endpoint se conserva por compatibilidad.
+
+        HU-013.11 (#108): lo guardado se revalida antes de reenviar. Una licitación vuelve a pasar sus filas por todas las reglas de
+        captura (forma, contenedor y aprovisionamiento, códigos de catálogo y municipios; las filas sin `origen_municipio_id`/
+        `destino_municipio_id` se resuelven y el id queda guardado). Si alguna fila guardada ya no pasa (por ejemplo, una
+        licitación creada antes de #108 con `Tractomula` como tipo de vehículo), responde 400 `LICITACION_INVALIDA` con
+        `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` y no envía nada: ni este reintento ni una `-vN`
+        la arreglan, hay que crear una licitación nueva con `POST /web/licitaciones`.
       security:
         - bearer: []
       parameters:
@@ -1083,8 +1090,24 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '400':
+          description: |
+            `SOLICITUD_COSTEO_INVALIDA` (el formulario guardado ya no cumple los límites de Nexo) o, en una licitación,
+            `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (HU-013.11). Nada se envía.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '409':
           description: '`COSTEO_NO_REINTENTABLE`: la cotización no está en `error_envio` ni en `pendiente_envio`, o no nació del formulario ampliado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: |
+            Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
+            filas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada se envía.
           content:
             application/json:
               schema:
@@ -1358,7 +1381,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) o `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -1866,8 +1889,10 @@ paths:
         Nexo (G6). Todos los errores vuelven juntos en `errores[]` (índice, fila, campo y código), con el encabezado primero y
         luego por línea. Como en `POST /web/solicitudes-costeo`: sin catálogo maestro de Nexo ni una copia de menos de 24 h
         responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE`; si alguna fila necesita resolver su municipio y el catálogo de municipios
-        no responde, 400 `MUNICIPIOS_NO_DISPONIBLE` (el mismo código y estado de `GET /web/municipios`). En los dos casos nada se
-        guarda; si además hay errores en las filas, se devuelve primero el reporte.
+        no responde, 503 `MUNICIPIOS_NO_DISPONIBLE` (en `GET /web/municipios` ese código sigue siendo 400, pendiente de alinear).
+        En los dos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo (forma, contenedor y
+        aprovisionamiento, tipología, carrocería, clase de contenedor), se devuelve primero el reporte 400 con todos ellos y el
+        código del catálogo caído en `error.detalle.motivo`: lo que dependía de él se valida al volver a enviarla.
       security:
         - bearer: []
       requestBody:
@@ -1900,7 +1925,7 @@ paths:
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
             `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
             línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
-            `moneda = USD`, `MUNICIPIOS_NO_DISPONIBLE`). `ErrorWeb` si el cuerpo no
+            `moneda = USD`). `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
             `NEXO_SIN_PERMISO` (201).
           content:
@@ -1914,8 +1939,9 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '503':
           description: |
-            `CATALOGOS_FLETE_NO_DISPONIBLE` (HU-013.11): alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
-            de Nexo ni una copia de menos de 24 h para validarlos. Nada se guarda.
+            HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
+            de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
+            catálogo de municipios no responde). Nada se guarda.
           content:
             application/json:
               schema:

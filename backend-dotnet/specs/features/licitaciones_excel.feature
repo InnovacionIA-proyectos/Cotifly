@@ -121,3 +121,18 @@ Característica: Licitaciones desde Excel
     Y "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
     Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
     Y Nexo no recibió ninguna solicitud
+
+  Escenario: Sin catálogo de municipios las filas sin id no se pueden resolver y la licitación no se guarda
+    Dado que el catálogo de municipios de Nexo no responde
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Entonces la respuesta tiene el estado 503 con el código de negocio "MUNICIPIOS_NO_DISPONIBLE"
+    Y Nexo no recibió ninguna solicitud
+    Y "ana" no tiene cotizaciones en "Mis cotizaciones"
+
+  Escenario: Sin catálogo de municipios una licitación con los ids de cada fila se crea igual
+    Dado que el catálogo de municipios de Nexo no responde
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen       | destino      | origen_municipio_id | destino_municipio_id | tipo_vehiculo | tipologia |
+      | BUENAVENTURA | BOGOTA, D.C. | 76109               | 11001                | 3S3           | CargaSeca |
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
+    Y la línea 1 que recibió Nexo trae los municipios 76109 y 11001 sin horas propias

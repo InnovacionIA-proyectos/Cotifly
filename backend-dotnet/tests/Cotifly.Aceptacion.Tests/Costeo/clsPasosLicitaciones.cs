@@ -213,6 +213,10 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 
     // HU-013.11 (#108): reglas de captura por fila.
     private static readonly string[] _columnasNumericas = ["valor_aprovisionamiento", "horas_cargue", "horas_descargue"];
+    private static readonly string[] _columnasEnteras = ["origen_municipio_id", "destino_municipio_id"];
+
+    [Given("que el catálogo de municipios de Nexo no responde")]
+    public void DadoMunicipiosCaidos() => costeo.Nexo.MunicipiosFalla = HttpStatusCode.ServiceUnavailable;
 
     [When("{string} crea la licitación {string} del cliente {string} con estas filas:")]
     public Task CuandoCreaConFilas(string alias, string licitacion, string nit, DataTable tabla)
@@ -223,7 +227,9 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
             var linea = new Dictionary<string, object?> { ["peso_kg"] = 28_000m };
             foreach (var (columna, valor) in fila.Where(c => !string.IsNullOrWhiteSpace(c.Value)))
             {
-                linea[columna] = _columnasNumericas.Contains(columna) ? decimal.Parse(valor, CultureInfo.InvariantCulture) : valor;
+                linea[columna] = _columnasNumericas.Contains(columna) ? decimal.Parse(valor, CultureInfo.InvariantCulture)
+                    : _columnasEnteras.Contains(columna) ? (object)int.Parse(valor, CultureInfo.InvariantCulture)
+                    : valor;
             }
 
             return (object)linea;

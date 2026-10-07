@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Clientes;
@@ -34,7 +35,9 @@ public interface IClsEnvioCosteoService
 
     /// <summary>
     /// Reenvía la solicitud guardada. <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial;
-    /// <c>COSTEO_NO_REINTENTABLE</c> si no está en <c>error_envio</c> ni en un <c>pendiente_envio</c> abandonado.
+    /// <c>COSTEO_NO_REINTENTABLE</c> si no está en <c>error_envio</c> ni en un <c>pendiente_envio</c> abandonado. Una licitación se
+    /// revalida completa con las reglas de captura (HU-013.11, <see cref="IClsValidadorFilasLicitacion.RevalidarGuardadasAsync"/>): si una
+    /// fila guardada ya no pasa, <c>LICITACION_INVALIDA</c> con <c>detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA</c> y nada se envía.
     /// </summary>
     Task<clsResultado<clsCotizacion>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
@@ -74,6 +77,7 @@ public sealed class clsEnvioCosteoService(
     IClsBuscadorClientes buscadorClientes,
     IClsCosteoNexo nexo,
     IClsValidadorCatalogosCaptura catalogos,
+    IClsValidadorFilasLicitacion filasLicitacion,
     IClsFijacionMonedaService monedas,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
@@ -261,9 +265,22 @@ public sealed class clsEnvioCosteoService(
             return NoReintentable(cotizacion);
         }
 
-        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una línea
-        // usa la validación del formulario (mismos mensajes que HU-005.5); varias, la de la licitación.
-        if (Revalidar(encabezado, lineas) is { } invalida)
+        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una licitación
+        // pasa por todas las reglas de captura, también catálogos y municipios (HU-013.11: nunca texto libre a Nexo); el formulario de
+        // una línea usa su validación (mismos mensajes que HU-005.5).
+        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion && guardadas.Count > 0)
+        {
+            var revalidada = await filasLicitacion.RevalidarGuardadasAsync(
+                usuarioId, cotizacion.Folio, encabezado, lineas, [.. guardadas.OrderBy(l => l.Orden).Select(l => l.FilaOrigen)], cancellationToken);
+            if (revalidada.EsFallo)
+            {
+                return revalidada.Error;
+            }
+
+            CompletarMunicipios(guardadas, revalidada.Valor);
+            lineas = LineasConPosiciones(guardadas, posiciones);
+        }
+        else if (Revalidar(encabezado, lineas) is { } invalida)
         {
             return invalida;
         }
@@ -279,6 +296,21 @@ public sealed class clsEnvioCosteoService(
         var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
         await EnviarANexoAsync(cotizacion, encabezado, lineas, guardadas, politica, usuarioId, reintento: true);
         return cotizacion;
+    }
+
+    /// <summary>
+    /// Copia a las líneas guardadas (en orden) los ids de municipio resueltos por la revalidación de una licitación (HU-013.11): se
+    /// guardan con el envío, así el siguiente reenvío manda lo mismo.
+    /// </summary>
+    public static void CompletarMunicipios(IReadOnlyList<clsCotizacionLineaSolicitud> guardadas, IReadOnlyList<clsLineaSolicitudCosteo> revalidadas)
+    {
+        ArgumentNullException.ThrowIfNull(guardadas);
+        ArgumentNullException.ThrowIfNull(revalidadas);
+        var ordenadas = guardadas.OrderBy(l => l.Orden).ToList();
+        for (var i = 0; i < ordenadas.Count && i < revalidadas.Count; i++)
+        {
+            ordenadas[i].CompletarMunicipios(revalidadas[i].OrigenMunicipioId, revalidadas[i].DestinoMunicipioId);
+        }
     }
 
     /// <summary>

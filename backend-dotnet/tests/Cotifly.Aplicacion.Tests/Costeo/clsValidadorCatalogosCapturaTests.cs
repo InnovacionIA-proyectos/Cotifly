@@ -132,8 +132,8 @@ public sealed class clsValidadorCatalogosCapturaTests
 
         var resultado = await Validador().ValidarLineasAsync(_usuarioId, lineas, Ct);
 
-        resultado.EsExitoso.Should().BeTrue();
-        resultado.Valor.Select(l => l.Select(e => (e.Campo, e.Codigo)).ToArray()).Should().BeEquivalentTo(new (string, string)[][]
+        resultado.NoDisponible.Should().BeNull();
+        resultado.Errores.Select(l => l.Select(e => (e.Campo, e.Codigo)).ToArray()).Should().BeEquivalentTo(new (string, string)[][]
         {
             [],
             [("carroceria", clsCodigosLineaSolicitud.CodigoNoCatalogo), ("tipo_vehiculo", clsCodigosLineaSolicitud.CodigoNoCatalogo)],
@@ -146,14 +146,17 @@ public sealed class clsValidadorCatalogosCapturaTests
     }
 
     [Fact]
-    public async Task SinCatalogoMaestroLasFilasNoSeValidanYSeRechazanConCatalogosNoDisponibles()
+    public async Task SinCatalogoMaestroSeAvisaQueNoEstaDisponibleYSeReportaIgualLoQueSeValidaEnCodigo()
     {
         _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsCatalogosMaestros>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
 
-        var resultado = await Validador().ValidarLineasAsync(_usuarioId, [Linea(), Linea() with { Tipologia = "x" }], Ct);
+        var resultado = await Validador().ValidarLineasAsync(
+            _usuarioId, [Linea() with { TipoVehiculo = "Tractomula" }, Linea() with { Tipologia = "x", ClaseContenedor = "CNT40" }], Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        resultado.NoDisponible!.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        resultado.Errores[0].Should().BeEmpty("el tipo de vehículo depende del catálogo de Nexo: no se puede juzgar");
+        resultado.Errores[1].Select(e => e.Campo).Should().Equal("tipologia", "clase_contenedor");
     }
 
     [Fact]
@@ -163,7 +166,8 @@ public sealed class clsValidadorCatalogosCapturaTests
 
         var resultado = await Validador().ValidarLineasAsync(_usuarioId, [linea, linea with { Carroceria = "VOLCO" }], Ct);
 
-        resultado.Valor.Should().OnlyContain(e => e.Count == 0);
+        resultado.Errores.Should().OnlyContain(e => e.Count == 0);
+        resultado.NoDisponible.Should().BeNull();
         await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
     }
 

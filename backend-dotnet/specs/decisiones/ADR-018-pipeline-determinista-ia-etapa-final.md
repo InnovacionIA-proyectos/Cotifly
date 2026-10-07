@@ -212,7 +212,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **Métricas.** `vAjustesMargenPorComercial` gana `numAjustesBajoSugerido` (`diferencia < 0`) y `GET /web/metricas/ajustes-margen` lo expone como `num_ajustes_bajo_sugerido`.
 - **No se reutiliza `IClsAjusteMargenService`** (chat, HU-003.4): guarda por su cuenta y pone un motivo por defecto. El ajuste del costeo confirma el ajuste, los precios, la invalidación del PDF y la versión en una sola transacción, y deja la justificación nula por encima del sugerido.
 - **Reversa del 0006:** `db/migrations_mssql/rollback/0006_textos_y_concurrencia_reversa.sql` (destructiva para esas columnas y el historial; primero se vuelve a la versión anterior de la aplicación).
-- **Idempotencia (#100, adoptada por #99).** `IClsAlmacenIdempotencia.EjecutarUnaVezAsync<T>(ambito, clave, huella, accion, seGuarda, ct)` es la única abstracción de `Idempotency-Key` del proyecto: `ambito = "{operacion}:{usuarioId}"`, `huella` = SHA-256 del folio y el cuerpo, semáforo por clave, 24 h de vigencia, purga de claves vencidas y fallidas, y `seGuarda` (por defecto, solo los éxitos) decide qué resultados consumen la clave. La implementación vigente es en memoria (`clsAlmacenIdempotenciaEnMemoria`) y vale mientras la API corre con `replicas: 1` (`infra/stack.dotnet.dokploy.yml`). Al escalar se crea la tabla de idempotencia con un script `0008` y una implementación SQL de la misma interfaz.
+- **Idempotencia (#100, adoptada por #99).** `IClsAlmacenIdempotencia.EjecutarUnaVezAsync<T>(ambito, clave, huella, accion, seGuarda, ct)` es la única abstracción de `Idempotency-Key` del proyecto: `ambito = "{operacion}:{usuarioId}"`, `huella` = SHA-256 del folio y el cuerpo, semáforo por clave, 24 h de vigencia, purga de claves vencidas y fallidas, y `seGuarda` (por defecto, solo los éxitos) decide qué resultados consumen la clave. La implementación vigente es en memoria (`clsAlmacenIdempotenciaEnMemoria`) y vale mientras la API corre con `replicas: 1` (`infra/stack.dotnet.dokploy.yml`). Al escalar se crea la tabla de idempotencia con el siguiente script libre (`0009`; el `0008` es el de las horas por línea de HU-013.11) y una implementación SQL de la misma interfaz.
 
 ### 13. Decisiones de implementación (#99)
 
@@ -223,6 +223,15 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **Efecto incierto: "desconocido".** Tiempo agotado, error de red o 5xx después de enviar el POST: Cotifly relee la cotización y la compara con la lectura previa. Si aparece un conexo nuevo, termina normal (200). Si no se puede determinar, 503 `NEXO_NO_DISPONIBLE` con `agregado_en_nexo = "desconocido"`. Nunca se reintenta el POST. Las respuestas con `agregado_en_nexo` (true o "desconocido") se guardan en la idempotencia.
 - **403 de Nexo.** `detalle.motivo` lleva solo el código de Nexo (o `HTTP 403`), nunca su texto.
 - **Respuestas de Nexo de hasta 1 MiB** en estas tres rutas (`clsServiciosConexosNexo.LimiteRespuestaBytes`): en las lecturas, más grande es `NEXO_NO_DISPONIBLE`; en el POST es efecto sin cuerpo (se relee).
+
+### 14. Decisiones de implementación (#108, HU-013.11)
+
+- **Mismas reglas de captura en cada fila de una licitación.** `IClsValidadorFilasLicitacion` junta lo que depende de catálogos: códigos (G2, con `IClsValidadorCatalogosCaptura.ValidarLineasAsync`, la misma regla del formulario) e ids de municipio (G6). G3 vive en `clsLineaSolicitudCosteo.ErroresCondicionales` y la comparten el formulario y las filas. Todos los errores vuelven juntos en `errores[]`.
+- **Municipios sin adivinar.** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, se resuelve el texto con el catálogo de `GET /web/municipios` y la regla determinista de HU-005.13. Una sola coincidencia no aproximada se usa; varias o una aproximada es `MUNICIPIO_AMBIGUO`; ninguna, `MUNICIPIO_NO_ENCONTRADO`.
+- **El reenvío también valida.** El reintento y la re-solicitud (mismo folio o `-vN`) de una licitación vuelven a pasar sus filas guardadas por todas las reglas (forma, G3, catálogos y municipios). Las filas sin id que se resuelven guardan su id con el envío. Si una fila ya no pasa (una licitación guardada antes de #108 con texto libre, o un G3 inválido), responde 400 `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]`, y nada llega a Nexo: ni el reintento ni la `-vN` (que copia las mismas filas) la arreglan; se carga de nuevo con `POST /web/licitaciones`.
+- **Catálogos caídos.** En las licitaciones, `CATALOGOS_FLETE_NO_DISPONIBLE` y `MUNICIPIOS_NO_DISPONIBLE` son 503 (nada se guarda). Si además hay errores que se detectan sin ese catálogo (forma, G3, tipología, carrocería, clase de contenedor fija), se devuelve primero el reporte 400 con todos ellos y el código del catálogo caído en `error.detalle.motivo`: el comercial no pierde errores que puede corregir ya.
+- **`GET /web/municipios` sigue respondiendo 400** con `MUNICIPIOS_NO_DISPONIBLE` (contrato vigente, el controlador lo fija). Conviene alinearlo a 503 como el resto de catálogos en una issue propia, junto con el frontend.
+- **Script `0008_horas_por_linea.sql`.** Horas de cargue y descargue por línea (G5). Orden de aplicación: 0006 → 0007 → 0008.
 
 ## Alternativas consideradas
 
@@ -259,3 +268,5 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 | Integrar #50 (PR #96) antes de HU-013.7 | Duban |
 | Issue de gaps del formulario y migración de catálogos (`docs/HU-013-preguntas-nexo.md` §Gaps) | Coordinador + Duban |
 | Compartir el contrato con el desarrollador del frontend | Duban |
+| Alinear `GET /web/municipios` a 503 con `MUNICIPIOS_NO_DISPONIBLE` (hoy 400; en licitaciones ya es 503, §14) | Duban + frontend |
+| Script `0008_horas_por_linea.sql` (#108): pendiente de aprobación; se aplica después del 0007 | Duban + DBA |

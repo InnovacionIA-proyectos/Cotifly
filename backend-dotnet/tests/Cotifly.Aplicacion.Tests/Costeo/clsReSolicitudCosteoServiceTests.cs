@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Dominio.Auditoria;
 using Cotifly.Dominio.Comun;
@@ -34,6 +35,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsAuditoriaRepository _registro = Substitute.For<IClsAuditoriaRepository>();
     private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
+    private readonly IClsValidadorFilasLicitacion _filas = FilasQuePasan();
     private readonly List<clsEventoHerramienta> _instantaneas = [];
     private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
     private readonly Guid _ana = Guid.NewGuid();
@@ -342,6 +344,29 @@ public sealed class clsReSolicitudCosteoServiceTests
         resultado.Error.Mensaje.Should().Contain("datos_carga");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnaLicitacionCuyasFilasGuardadasYaNoPasanPideUnaCargaNuevaYNoLlegaANexo(bool versionNueva)
+    {
+        var (licitacion, lineas, posiciones) = Vencida(_ana, "PCN-900555111-AP-05102026-009", 2_550_000m, TipoSolicitud.Licitacion);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(licitacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(licitacion);
+        _cotizaciones.ListarLineasAsync(licitacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
+        _cotizaciones.ListarPosicionesAsync(licitacion.Id, Arg.Any<CancellationToken>()).Returns(posiciones);
+        var requiere = clsValidadorFilasLicitacion.RequiereNuevaCarga(licitacion.Folio,
+            [new(0, 3, "tipo_vehiculo", clsCodigosLineaSolicitud.CodigoNoCatalogo, "Tractomula no es un código.")]);
+        _filas.RevalidarGuardadasAsync(_ana, licitacion.Folio, Arg.Any<clsEncabezadoSolicitudCosteo>(),
+                Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<IReadOnlyList<int?>>(), Arg.Any<CancellationToken>())
+            .Returns(requiere);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, new clsEntradaReSolicitudCosteo("El costeo venció", null, versionNueva), Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.LicitacionInvalida);
+        resultado.Error.Detalle.Should().Be(clsValidadorFilasLicitacion.MotivoRequiereNuevaCarga);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default!, default!, default, default, default);
+        _agregada.Should().BeNull("la -vN copia las mismas filas: tampoco se crea");
+    }
+
     [Fact]
     public async Task UnaLicitacionNoAdmiteCambiosDeCarga()
     {
@@ -386,7 +411,17 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     private clsReSolicitudCosteoService Servicio() =>
-        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria);
+        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria);
+
+    /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
+    private static IClsValidadorFilasLicitacion FilasQuePasan()
+    {
+        var filas = Substitute.For<IClsValidadorFilasLicitacion>();
+        filas.RevalidarGuardadasAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<clsEncabezadoSolicitudCosteo>(),
+                Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<IReadOnlyList<int?>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsResultado<IReadOnlyList<clsLineaSolicitudCosteo>>.Exito(ci.ArgAt<IReadOnlyList<clsLineaSolicitudCosteo>>(3)));
+        return filas;
+    }
 
     private static clsEntradaReSolicitudCosteo Entrada() => new("El costeo venció", null, false);
 
@@ -399,7 +434,7 @@ public sealed class clsReSolicitudCosteoServiceTests
 
     /// <summary>Cotización del formulario enviada a Nexo (solicitud <c>sol-vieja</c>), con costo y en <c>costeo_vencido</c>.</summary>
     public static (clsCotizacion, IReadOnlyList<clsCotizacionLineaSolicitud>, IReadOnlyList<clsCotizacionPosicion>) Vencida(
-        Guid usuarioId, string folio, decimal costo)
+        Guid usuarioId, string folio, decimal costo, TipoSolicitud tipo = TipoSolicitud.Spot)
     {
         var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
         {
@@ -412,7 +447,7 @@ public sealed class clsReSolicitudCosteoServiceTests
             OrigenMargen = OrigenMargen.PoliticaLinea,
             MetodoCalculo = "margen",
         }).Valor;
-        var solicitud = clsSolicitudCosteoMuestra.Crear();
+        var solicitud = clsSolicitudCosteoMuestra.Crear() with { Tipo = tipo };
         cotizacion.RegistrarSolicitudCosteo(solicitud);
         var lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
         var posiciones = clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones, lineas[0].Id, 1);

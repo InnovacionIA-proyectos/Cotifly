@@ -1614,7 +1614,39 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
   - **Municipios:** si la fila no trae `origen_municipio_id`/`destino_municipio_id`, la API resuelve el texto de `origen`/`destino` en el catálogo de `GET /web/municipios` (sin tildes ni mayúsculas; acepta `Municipio, Departamento`). Una sola coincidencia: se usa su id. Varias, o solo una aproximada: `MUNICIPIO_AMBIGUO`, con los candidatos y su id en el `mensaje`. Ninguna: `MUNICIPIO_NO_ENCONTRADO`. **La API nunca elige entre candidatos.** Para corregir, el comercial elige el municipio y el frontend reenvía la fila con `origen_municipio_id` (o escribe `La Unión, Nariño`). Si el frontend ya resolvió los ids con `GET /web/municipios`, que los mande: se respetan y la API no consulta el catálogo.
   - **Horas por línea:** `horas_cargue`/`horas_descargue` de la fila viajan a Nexo en esa línea; sin ellas, viajan las del encabezado.
   - El primer envío, el reintento y la re-solicitud mandan exactamente lo guardado (valores recortados, ids resueltos y horas por línea).
-- **Catálogos caídos (HU-013.11):** sin catálogo maestro de Nexo ni una copia de menos de 24 h, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` (igual que el formulario). Si alguna fila necesita resolver su municipio y el catálogo de municipios no responde, 400 `MUNICIPIOS_NO_DISPONIBLE` (el mismo de 5.12). En los dos casos no se guarda nada; ofrecer Reintentar. Si además hay errores en las filas, llega primero el reporte.
+- **Catálogos caídos (HU-013.11):** sin catálogo maestro de Nexo ni una copia de menos de 24 h, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` (igual que el formulario). Si alguna fila necesita resolver su municipio y el catálogo de municipios no responde, 503 `MUNICIPIOS_NO_DISPONIBLE` (ojo: en `GET /web/municipios`, 5.12, ese código sigue siendo 400). En los dos casos no se guarda nada; ofrecer Reintentar. Si además hay errores que se detectan sin ese catálogo (forma, contenedor y aprovisionamiento, tipología, carrocería, clase de contenedor), llega primero el reporte 400 con todos ellos y `error.detalle.motivo` = el código del catálogo caído: pintar las filas y avisar que el tipo de vehículo, la clase de viaje o los municipios se validarán al volver a enviar.
+- **Licitaciones guardadas que ya no se pueden reenviar (HU-013.11).** El reintento (5.16) y la re-solicitud de una licitación (mismo folio o `-vN`) vuelven a validar sus filas guardadas con todas estas reglas; las filas sin id de municipio se resuelven y el id queda guardado. Una licitación creada antes de #108 con texto libre (`Tractomula`), un contenedor o aprovisionamiento incoherente, o un municipio ambiguo responde 400 `LICITACION_INVALIDA` con `detalle.motivo = "LICITACION_REQUIERE_NUEVA_CARGA"` y `detalle.errores[]` (las mismas filas de `ErrorFilaLicitacion`). No se envía nada a Nexo, y una `-vN` tampoco la arregla porque copia las mismas filas. UX: mostrar las filas con error y el botón "Crear licitación nueva", que reabre el mapeo del pliego y la crea con `POST /web/licitaciones`.
+
+  Diagnóstico para el DBA (solo lectura; no cambia nada). Cuenta las licitaciones con filas que fallan reglas que se pueden revisar sin Nexo (tipología, carrocería, clase de contenedor y reglas de contenedor y aprovisionamiento). El tipo de vehículo, la clase de viaje y los municipios dependen de los catálogos de Nexo: la segunda consulta lista los valores para revisarlos contra `GET /web/catalogos-flete`.
+
+  ```sql
+  -- 1. Licitaciones con filas que ya no pasan las reglas que se validan en código (HU-013.11).
+  SELECT COUNT(DISTINCT c.id) AS licitaciones, COUNT(*) AS filas
+  FROM dbo_cotifly.Cotizaciones c
+  JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id
+  WHERE c.tipoSolicitud = 'licitacion'
+    AND (
+         (l.tipologia IS NOT NULL AND LTRIM(RTRIM(l.tipologia)) COLLATE Latin1_General_100_BIN2 NOT IN
+             ('Contenedor', 'CargaSuelta', 'GranelSolido', 'GranelLiquido', 'Alimentos', 'Refrigerados', 'CargaSeca'))
+      OR (l.carroceria IS NOT NULL AND LTRIM(RTRIM(l.carroceria)) COLLATE Latin1_General_100_BIN2 NOT IN
+             ('ESTACAS', 'ESTIBAS', 'FURGON', 'FURGON REFRIGERADO', 'PLATAFORMA', 'PORTACONTENEDORES', 'TANQUE', 'TRAYLER', 'VOLCO'))
+      OR (l.claseContenedor IS NOT NULL AND LTRIM(RTRIM(l.claseContenedor)) COLLATE Latin1_General_100_BIN2 NOT IN
+             ('CNT20.IT', 'CNT20.RE', 'CNT20.ST', 'CNT40.HC', 'CNT40.RE', 'CNT20.FT', 'CNT20.OP', 'CNT40.FT', 'CNT40.OP'))
+      OR (l.claseContenedor IS NOT NULL AND ISNULL(LTRIM(RTRIM(l.claseViaje)), '') COLLATE Latin1_General_100_BIN2 <> 'Contenedor')
+      OR (LTRIM(RTRIM(l.claseViaje)) COLLATE Latin1_General_100_BIN2 = 'Contenedor' AND l.claseContenedor IS NULL)
+      OR (l.valorAprovisionamiento IS NOT NULL
+          AND (l.ciudadLevanteContenedor IS NULL OR UPPER(LTRIM(RTRIM(l.ciudadLevanteContenedor))) = UPPER(LTRIM(RTRIM(l.origen)))))
+    );
+
+  -- 2. Valores que dependen de los catálogos de Nexo, para revisarlos a mano (y filas sin ids de municipio, que se resuelven al reenviar).
+  SELECT l.tipoVehiculo, l.claseViaje, COUNT(*) AS filas,
+         SUM(CASE WHEN l.origenMunicipioId IS NULL OR l.destinoMunicipioId IS NULL THEN 1 ELSE 0 END) AS filas_sin_ids
+  FROM dbo_cotifly.Cotizaciones c
+  JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id
+  WHERE c.tipoSolicitud = 'licitacion'
+  GROUP BY l.tipoVehiculo, l.claseViaje
+  ORDER BY filas DESC;
+  ```
 - **Moneda (rama de #50, ADR-014 §5):** con `"moneda": "USD"` la API consulta la TRM del día antes de guardar y la deja fija en la licitación (`trm_aplicada` de 5.25). Todos los precios (líneas, total, servicios conexos, Excel y PDF del pliego) salen en USD, convertidos con esa TRM. Mostrar `US$` con 2 decimales y la TRM aplicada. Otro valor de `moneda` (o cadena vacía) es un error del reporte con `campo = "moneda"` y `VALOR_FUERA_DE_RANGO`.
 - 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA` (la línea no existe **o está inactiva**: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` (con `moneda = USD` y ninguna fuente de la TRM respondió: no se guardó nada ni se envió a Nexo; ofrecer Reintentar en unos segundos o crearla en COP). 400 `ErrorWeb` si el JSON es inválido. 413 `ErrorWeb` si el cuerpo (Excel + JSON) pasa de 12 MB.
 - Si Nexo responde 403 al alta (rol del comercial en Nexo), la licitación se crea igual (201) en `error_envio` con `motivo_estado_costeo` que lo explica; se reintenta cuando le den el rol.

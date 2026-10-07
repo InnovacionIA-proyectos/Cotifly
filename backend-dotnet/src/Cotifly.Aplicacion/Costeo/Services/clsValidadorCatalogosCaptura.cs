@@ -24,10 +24,11 @@ public interface IClsValidadorCatalogosCaptura
     /// <summary>
     /// Las mismas reglas que <see cref="ValidarAsync"/> sobre todas las filas de una licitación (HU-013.11), sin detenerse en el primer
     /// error: por cada línea (en el mismo orden) la lista de campos que no son códigos de catálogo (<c>CODIGO_NO_CATALOGO</c>). El
-    /// catálogo maestro se consulta una sola vez y solo si alguna fila trae <c>tipo_vehiculo</c> o <c>clase_viaje</c>; sin copia
-    /// utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.
+    /// catálogo maestro se consulta una sola vez y solo si alguna fila trae <c>tipo_vehiculo</c> o <c>clase_viaje</c>. Sin copia
+    /// utilizable, <see cref="clsValidacionCatalogoLineas.NoDisponible"/> es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> y los errores traen
+    /// igual lo que se valida en código (tipología, carrocería y clase de contenedor): el comercial no los pierde por una caída de Nexo.
     /// </summary>
-    Task<clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>> ValidarLineasAsync(
+    Task<clsValidacionCatalogoLineas> ValidarLineasAsync(
         Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo> lineas, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -37,6 +38,12 @@ public interface IClsValidadorCatalogosCaptura
     /// </summary>
     bool RevisarMapeoLineaNexo(clsMargenPolitica? politica);
 }
+
+/// <summary>
+/// Resultado de <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>: por línea, los campos que no son códigos de catálogo, y
+/// <see cref="NoDisponible"/> si <c>tipo_vehiculo</c>/<c>clase_viaje</c> no se pudieron validar (catálogo maestro caído y sin copia).
+/// </summary>
+public sealed record clsValidacionCatalogoLineas(IReadOnlyList<IReadOnlyList<clsErrorCampo>> Errores, clsErrorDominio? NoDisponible);
 
 /// <summary>Implementación de <see cref="IClsValidadorCatalogosCaptura"/>.</summary>
 /// <remarks>
@@ -80,26 +87,29 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
         return ErroresMaestros(linea, catalogos.Valor) is [var maestro, ..] ? AErrorDominio(maestro) : null;
     }
 
-    public async Task<clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>> ValidarLineasAsync(
+    public async Task<clsValidacionCatalogoLineas> ValidarLineasAsync(
         Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo> lineas, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lineas);
         clsCatalogosMaestros? catalogos = null;
+        clsErrorDominio? noDisponible = null;
         if (lineas.Any(l => l is not null && UsaCatalogoMaestro(l)))
         {
             var obtenidos = await ObtenerMaestrosAsync(usuarioId, cancellationToken);
             if (obtenidos.EsFallo)
             {
-                return obtenidos.Error;
+                noDisponible = obtenidos.Error;
             }
-
-            catalogos = obtenidos.Valor;
+            else
+            {
+                catalogos = obtenidos.Valor;
+            }
         }
 
         IReadOnlyList<IReadOnlyList<clsErrorCampo>> errores = [.. lineas.Select(l => l is null
             ? (IReadOnlyList<clsErrorCampo>)[]
             : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos)])];
-        return clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>.Exito(errores);
+        return new clsValidacionCatalogoLineas(errores, noDisponible);
     }
 
     /// <summary>Tipología, carrocería y clase de contenedor: catálogos en código (más las descripciones de la copia en memoria).</summary>

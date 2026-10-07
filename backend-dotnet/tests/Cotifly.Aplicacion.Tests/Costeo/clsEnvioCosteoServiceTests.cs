@@ -7,6 +7,7 @@ using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Clientes;
@@ -35,6 +36,7 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly IClsBuscadorClientes _buscador = Substitute.For<IClsBuscadorClientes>();
     private readonly IClsCosteoNexo _nexo = Substitute.For<IClsCosteoNexo>();
     private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
+    private readonly IClsValidadorFilasLicitacion _filas = FilasQuePasan();
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
@@ -565,7 +567,17 @@ public sealed class clsEnvioCosteoServiceTests
         return cotizacion;
     }
 
+    /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
+    private static IClsValidadorFilasLicitacion FilasQuePasan()
+    {
+        var filas = Substitute.For<IClsValidadorFilasLicitacion>();
+        filas.RevalidarGuardadasAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<clsEncabezadoSolicitudCosteo>(),
+                Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<IReadOnlyList<int?>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsResultado<IReadOnlyList<clsLineaSolicitudCosteo>>.Exito(ci.ArgAt<IReadOnlyList<clsLineaSolicitudCosteo>>(3)));
+        return filas;
+    }
+
     private clsEnvioCosteoService Servicio() => new(
-        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _monedas, _unidad, _auditoria, _reloj,
+        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
         Options.Create(new clsOpcionesCosteoNexo()), NullLogger<clsEnvioCosteoService>.Instance);
 }
