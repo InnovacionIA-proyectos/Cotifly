@@ -22,6 +22,15 @@ public interface IClsValidadorCatalogosCaptura
     Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsLineaSolicitudCosteo linea, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Las mismas reglas que <see cref="ValidarAsync"/> sobre todas las filas de una licitación (HU-013.11), sin detenerse en el primer
+    /// error: por cada línea (en el mismo orden) la lista de campos que no son códigos de catálogo (<c>CODIGO_NO_CATALOGO</c>). El
+    /// catálogo maestro se consulta una sola vez y solo si alguna fila trae <c>tipo_vehiculo</c> o <c>clase_viaje</c>; sin copia
+    /// utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.
+    /// </summary>
+    Task<clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>> ValidarLineasAsync(
+        Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo> lineas, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// G11: advierte (log, nunca bloquea) si <c>MargenesPolitica.mapeoLineasNexo</c> de <paramref name="politica"/> no aparece en la
     /// última copia de <c>GET /api/catalogos/lineas-negocio</c>. Sin copia en memoria no consulta Nexo. Devuelve <c>false</c> solo si
     /// pudo revisarlo y no está.
@@ -50,33 +59,94 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
     public async Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsLineaSolicitudCosteo linea, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(linea);
-        var tipologia = Recortar(linea.Tipologia);
-        var carroceria = Recortar(linea.Carroceria);
-        var claseContenedor = Recortar(linea.ClaseContenedor);
-        var tipoVehiculo = Recortar(linea.TipoVehiculo);
-        var claseViaje = Recortar(linea.ClaseViaje);
 
-        if (tipologia is not null && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Tipologias, tipologia))
+        // Primero lo que se valida en código: si ya falla, no hace falta consultar el catálogo maestro de Nexo.
+        if (ErroresEnCodigo(linea) is [var local, ..])
         {
-            return NoEsCodigo("tipologia", tipologia, string.Join(", ", clsCatalogosCaptura.Tipologias));
+            return AErrorDominio(local);
         }
 
-        if (carroceria is not null && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Carrocerias, carroceria))
-        {
-            return NoEsCodigo("carroceria", carroceria, string.Join(", ", clsCatalogosCaptura.Carrocerias));
-        }
-
-        if (claseContenedor is not null && !EsClaseContenedor(claseContenedor))
-        {
-            return NoEsCodigo("clase_contenedor", claseContenedor,
-                string.Join(", ", clsCatalogosCaptura.ClasesContenedor.Concat(clsCatalogosCaptura.ClasesContenedorProvisionales)));
-        }
-
-        if (tipoVehiculo is null && claseViaje is null)
+        if (!UsaCatalogoMaestro(linea))
         {
             return null;
         }
 
+        var catalogos = await ObtenerMaestrosAsync(usuarioId, cancellationToken);
+        if (catalogos.EsFallo)
+        {
+            return catalogos.Error;
+        }
+
+        return ErroresMaestros(linea, catalogos.Valor) is [var maestro, ..] ? AErrorDominio(maestro) : null;
+    }
+
+    public async Task<clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>> ValidarLineasAsync(
+        Guid usuarioId, IReadOnlyList<clsLineaSolicitudCosteo> lineas, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lineas);
+        clsCatalogosMaestros? catalogos = null;
+        if (lineas.Any(l => l is not null && UsaCatalogoMaestro(l)))
+        {
+            var obtenidos = await ObtenerMaestrosAsync(usuarioId, cancellationToken);
+            if (obtenidos.EsFallo)
+            {
+                return obtenidos.Error;
+            }
+
+            catalogos = obtenidos.Valor;
+        }
+
+        IReadOnlyList<IReadOnlyList<clsErrorCampo>> errores = [.. lineas.Select(l => l is null
+            ? (IReadOnlyList<clsErrorCampo>)[]
+            : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos)])];
+        return clsResultado<IReadOnlyList<IReadOnlyList<clsErrorCampo>>>.Exito(errores);
+    }
+
+    /// <summary>Tipología, carrocería y clase de contenedor: catálogos en código (más las descripciones de la copia en memoria).</summary>
+    private List<clsErrorCampo> ErroresEnCodigo(clsLineaSolicitudCosteo linea)
+    {
+        var errores = new List<clsErrorCampo>();
+        if (Recortar(linea.Tipologia) is { } tipologia && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Tipologias, tipologia))
+        {
+            errores.Add(NoEsCodigo("tipologia", tipologia, string.Join(", ", clsCatalogosCaptura.Tipologias)));
+        }
+
+        if (Recortar(linea.Carroceria) is { } carroceria && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Carrocerias, carroceria))
+        {
+            errores.Add(NoEsCodigo("carroceria", carroceria, string.Join(", ", clsCatalogosCaptura.Carrocerias)));
+        }
+
+        if (Recortar(linea.ClaseContenedor) is { } claseContenedor && !EsClaseContenedor(claseContenedor))
+        {
+            errores.Add(NoEsCodigo("clase_contenedor", claseContenedor,
+                string.Join(", ", clsCatalogosCaptura.ClasesContenedor.Concat(clsCatalogosCaptura.ClasesContenedorProvisionales))));
+        }
+
+        return errores;
+    }
+
+    /// <summary>Tipo de vehículo (<c>codigo</c>) y clase de viaje (<c>descripcion</c>) contra el catálogo maestro de Nexo.</summary>
+    private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos)
+    {
+        var errores = new List<clsErrorCampo>();
+        if (Recortar(linea.TipoVehiculo) is { } tipoVehiculo && !EnCatalogo(catalogos.TiposVehiculo, tipoVehiculo))
+        {
+            errores.Add(NoEsCodigo("tipo_vehiculo", tipoVehiculo, null));
+        }
+
+        if (Recortar(linea.ClaseViaje) is { } claseViaje && !EnCatalogo(catalogos.ClasesViaje, claseViaje))
+        {
+            errores.Add(NoEsCodigo("clase_viaje", claseViaje, null));
+        }
+
+        return errores;
+    }
+
+    private static bool UsaCatalogoMaestro(clsLineaSolicitudCosteo linea) =>
+        Recortar(linea.TipoVehiculo) is not null || Recortar(linea.ClaseViaje) is not null;
+
+    private async Task<clsResultado<clsCatalogosMaestros>> ObtenerMaestrosAsync(Guid usuarioId, CancellationToken cancellationToken)
+    {
         var catalogos = await maestros.ObtenerAsync(usuarioId, cancellationToken);
         if (catalogos.EsFallo)
         {
@@ -84,14 +154,7 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             return new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, MensajeSinCatalogo);
         }
 
-        if (tipoVehiculo is not null && !EnCatalogo(catalogos.Valor.TiposVehiculo, tipoVehiculo))
-        {
-            return NoEsCodigo("tipo_vehiculo", tipoVehiculo, null);
-        }
-
-        return claseViaje is not null && !EnCatalogo(catalogos.Valor.ClasesViaje, claseViaje)
-            ? NoEsCodigo("clase_viaje", claseViaje, null)
-            : null;
+        return catalogos;
     }
 
     public bool RevisarMapeoLineaNexo(clsMargenPolitica? politica)
@@ -124,10 +187,12 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
     private static bool EnCatalogo(IReadOnlyList<clsOpcionCatalogo> catalogo, string valor) =>
         catalogo.Any(o => string.Equals(o.Valor, valor, StringComparison.Ordinal));
 
-    private static clsErrorDominio NoEsCodigo(string campo, string valor, string? opciones) =>
-        new(clsCodigosError.SolicitudCosteoInvalida,
+    private static clsErrorCampo NoEsCodigo(string campo, string valor, string? opciones) =>
+        new(campo, clsCodigosLineaSolicitud.CodigoNoCatalogo,
             $"El campo '{campo}' debe ser un código del catálogo de Nexo (GET /web/catalogos-flete); '{valor}' no lo es."
             + (opciones is null ? string.Empty : $" Opciones: {opciones}."));
+
+    private static clsErrorDominio AErrorDominio(clsErrorCampo error) => new(clsCodigosError.SolicitudCosteoInvalida, error.Mensaje);
 
     private static string? Recortar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 

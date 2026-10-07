@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Cotifly.Aceptacion.Tests.Soporte;
@@ -210,9 +211,92 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         clsLectorPdf.Leer(web.UltimoContenido).Texto.Should().NotContain(
             "$" + costo.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".", StringComparison.Ordinal));
 
+    // HU-013.11 (#108): reglas de captura por fila.
+    private static readonly string[] _columnasNumericas = ["valor_aprovisionamiento", "horas_cargue", "horas_descargue"];
+
+    [When("{string} crea la licitación {string} del cliente {string} con estas filas:")]
+    public Task CuandoCreaConFilas(string alias, string licitacion, string nit, DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        object[] lineas = [.. tabla.Rows.Select(fila =>
+        {
+            var linea = new Dictionary<string, object?> { ["peso_kg"] = 28_000m };
+            foreach (var (columna, valor) in fila.Where(c => !string.IsNullOrWhiteSpace(c.Value)))
+            {
+                linea[columna] = _columnasNumericas.Contains(columna) ? decimal.Parse(valor, CultureInfo.InvariantCulture) : valor;
+            }
+
+            return (object)linea;
+        })];
+        return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas, hoja: null), null);
+    }
+
+    [Then("el reporte trae exactamente estos errores:")]
+    public void EntoncesElReporteTraeExactamente(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var errores = web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .ToList();
+        errores.Should().BeEquivalentTo(tabla.Rows.Select(f => (int.Parse(f["linea"], CultureInfo.InvariantCulture), f["campo"], f["codigo"])));
+    }
+
+    [Then("la línea {int} que recibió Nexo trae {string} igual a {string}")]
+    public void EntoncesLaLineaTrae(int linea, string campo, string valor) =>
+        LineaDeLaUltimaAlta(linea)[campo]!.GetValue<string>().Should().Be(valor);
+
+    [Then(@"^la línea (\d+) que recibió Nexo trae los municipios (\d+) y (\d+) con ([\d.]+) horas de cargue y ([\d.]+) de descargue$")]
+    public void EntoncesLaLineaTraeMunicipiosYHoras(int linea, int origen, int destino, string cargue, string descargue)
+    {
+        var nodo = LineaDeLaUltimaAlta(linea);
+        nodo["origenMunicipioId"]!.GetValue<int>().Should().Be(origen);
+        nodo["destinoMunicipioId"]!.GetValue<int>().Should().Be(destino);
+        nodo["horasCargue"]!.GetValue<decimal>().Should().Be(decimal.Parse(cargue, CultureInfo.InvariantCulture));
+        nodo["horasDescargue"]!.GetValue<decimal>().Should().Be(decimal.Parse(descargue, CultureInfo.InvariantCulture));
+    }
+
+    [Then("la línea {int} que recibió Nexo trae los municipios {int} y {int} sin horas propias")]
+    public void EntoncesLaLineaTraeMunicipiosSinHoras(int linea, int origen, int destino)
+    {
+        var nodo = LineaDeLaUltimaAlta(linea);
+        nodo["origenMunicipioId"]!.GetValue<int>().Should().Be(origen);
+        nodo["destinoMunicipioId"]!.GetValue<int>().Should().Be(destino);
+        nodo["horasCargue"].Should().BeNull("sin horas en la fila ni en el encabezado no viajan");
+        nodo["horasDescargue"].Should().BeNull();
+    }
+
+    [Then("el primer envío y el reintento mandaron a Nexo la misma solicitud")]
+    public void EntoncesMismaSolicitud()
+    {
+        var altas = costeo.Nexo.Peticiones
+            .Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath == "/api/captura-solicitudes")
+            .Select(p => Canonico(p.Cuerpo!))
+            .ToList();
+        altas.Should().HaveCount(2).And.OnlyContain(a => a == altas[0], "el reintento reenvía lo guardado, normalizado");
+    }
+
+    private System.Text.Json.Nodes.JsonNode LineaDeLaUltimaAlta(int linea) =>
+        (costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta."))["lineas"]![linea - 1]!;
+
+    /// <summary>JSON con los números sin ceros decimales a la derecha (la escala de un DECIMAL releído no es contenido).</summary>
+    private static string Canonico(string json)
+    {
+        static System.Text.Json.Nodes.JsonNode? Normalizar(System.Text.Json.Nodes.JsonNode? nodo) => nodo switch
+        {
+            System.Text.Json.Nodes.JsonObject o => new System.Text.Json.Nodes.JsonObject(
+                o.Select(p => new KeyValuePair<string, System.Text.Json.Nodes.JsonNode?>(p.Key, Normalizar(p.Value)))),
+            System.Text.Json.Nodes.JsonArray a => new System.Text.Json.Nodes.JsonArray([.. a.Select(Normalizar)]),
+            System.Text.Json.Nodes.JsonValue v when v.GetValueKind() == JsonValueKind.Number =>
+                System.Text.Json.Nodes.JsonValue.Create(v.GetValue<decimal>() / 1.000000000000000000000000000000000m),
+            _ => nodo?.DeepClone(),
+        };
+
+        return Normalizar(System.Text.Json.Nodes.JsonNode.Parse(json))!.ToJsonString();
+    }
+
     private ClosedXML.Excel.XLWorkbook Libro() => new(new MemoryStream(web.UltimoContenido));
 
-    private async Task CrearAsync(string alias, string licitacion, string json, byte[] archivo)
+    private async Task CrearAsync(string alias, string licitacion, string json, byte[]? archivo)
     {
         await web.EnviarAsync(HttpMethod.Post, "/web/licitaciones", web.Sesion(alias).Access, clsApiWebPruebas.Licitacion(json, archivo));
         if (web.UltimoEstado == HttpStatusCode.Created)

@@ -44,6 +44,12 @@ public sealed class clsCotizacionLineaSolicitud
     public decimal? PesoKg { get; private set; }
     public decimal? ValorMercancia { get; private set; }
 
+    /// <summary>Horas de cargue propias de la línea (script 0008, G5 de HU-013.11); <c>null</c> = las del encabezado.</summary>
+    public decimal? HorasCargue { get; private set; }
+
+    /// <summary>Horas de descargue propias de la línea (script 0008); <c>null</c> = las del encabezado.</summary>
+    public decimal? HorasDescargue { get; private set; }
+
     /// <summary>Id de la línea en Nexo (<c>solicitud.lineas[].id</c> de <c>GET /api/solicitudes/{id}</c>).</summary>
     public string? LineaSolicitudNexoId { get; private set; }
 
@@ -102,6 +108,8 @@ public sealed class clsCotizacionLineaSolicitud
             ValorAprovisionamiento = l.ValorAprovisionamiento,
             PesoKg = l.PesoKg,
             ValorMercancia = l.ValorMercancia,
+            HorasCargue = l.HorasCargue,
+            HorasDescargue = l.HorasDescargue,
         })];
     }
 
@@ -129,6 +137,8 @@ public sealed class clsCotizacionLineaSolicitud
             ValorAprovisionamiento = ValorAprovisionamiento,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
             Posiciones = [.. posiciones.OrderBy(p => p.Orden).Select(p => p.APosicion())],
         };
     }

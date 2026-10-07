@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Validators;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 
@@ -28,6 +29,10 @@ public interface IClsLicitacionService
     /// posiciones y el Excel original en <c>pendiente_envio</c>, la confirma y la envía a Nexo con N líneas. Si Nexo falla la
     /// cotización se devuelve igual, en <c>error_envio</c> (se reintenta con <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c>).
     /// En USD (ADR-014 §5) consulta antes la TRM del día y la guarda en <c>trmAplicada</c>; sin TRM, <c>TRM_NO_DISPONIBLE</c> y nada se guarda.
+    /// HU-013.11: cada fila se valida además por código de catálogo (G2, <c>CODIGO_NO_CATALOGO</c>) y con las reglas condicionales de
+    /// G3, y su origen y destino se resuelven a ids de municipio de Nexo (G6, <see cref="clsMunicipiosLicitacion"/>). Sin catálogo
+    /// maestro utilizable, <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>; sin catálogo de municipios (si alguna fila lo necesita),
+    /// <c>MUNICIPIOS_NO_DISPONIBLE</c>; en ambos casos nada se guarda.
     /// </summary>
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
@@ -53,7 +58,9 @@ public sealed class clsLicitacionService(
     IClsLectorExcelLicitacion lector,
     IClsExportadorExcelLicitacion exportador,
     IClsReloj reloj,
-    IClsFijacionMonedaService monedas) : IClsLicitacionService
+    IClsFijacionMonedaService monedas,
+    IClsValidadorCatalogosCaptura catalogos,
+    IClsMunicipiosProvider municipios) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -178,11 +185,18 @@ public sealed class clsLicitacionService(
             }
         }
 
-        var errores = clsValidadorLicitacion.Validar(entrada, filasEnHoja);
-        if (errores.Count > 0)
+        var validadas = await ValidarFilasAsync(usuarioId, entrada, filasEnHoja, cancellationToken);
+        if (validadas.Errores.Count > 0)
         {
-            return clsResultadoLicitacion.Invalida(errores);
+            return clsResultadoLicitacion.Invalida(validadas.Errores);
         }
+
+        if (validadas.NoDisponible is { } noDisponible)
+        {
+            return clsResultadoLicitacion.Fallo(noDisponible);
+        }
+
+        var entradas = validadas.Lineas;
 
         var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
         if (politica is null)
@@ -226,12 +240,12 @@ public sealed class clsLicitacionService(
 
             var id = cotizacion.Valor.Id;
             cotizacion.Valor.RegistrarSolicitudLicitacion(entrada.Encabezado);
-            lineas = clsCotizacionLineaSolicitud.Desde(id, [.. entrada.Lineas.Select(l => l.Linea)], [.. entrada.Lineas.Select(l => l.Fila)]);
+            lineas = clsCotizacionLineaSolicitud.Desde(id, [.. entradas.Select(l => l.Linea)], [.. entradas.Select(l => l.Fila)]);
             posiciones = [];
             var orden = 1;
             for (var i = 0; i < lineas.Count; i++)
             {
-                var deLinea = clsCotizacionPosicion.Desde(id, entrada.Lineas[i].Linea.Posiciones, lineas[i].Id, orden);
+                var deLinea = clsCotizacionPosicion.Desde(id, entradas[i].Linea.Posiciones, lineas[i].Id, orden);
                 posiciones.AddRange(deLinea);
                 orden += deLinea.Count;
             }
@@ -261,6 +275,54 @@ public sealed class clsLicitacionService(
         // Confirmada: desde aquí, sin el token de la petición (como HU-005.5, ADR-015 §3).
         await envio.EnviarGuardadaAsync(creada.Valor, lineas, posiciones, politica, usuarioId);
         return clsResultadoLicitacion.Exito(creada.Valor);
+    }
+
+    /// <summary>
+    /// Todas las validaciones de las filas, juntas (HU-013.11): las de forma y rango de <see cref="clsValidadorLicitacion"/> (con G3),
+    /// los códigos de catálogo de cada fila (G2, la misma regla del formulario, <see cref="IClsValidadorCatalogosCaptura"/>) y los ids
+    /// de municipio (G6). Devuelve las líneas con los ids resueltos, los errores ordenados (encabezado primero, luego por línea) y,
+    /// si un catálogo no está disponible, ese error: como en el formulario, los errores de las filas se reportan primero.
+    /// </summary>
+    private async Task<(IReadOnlyList<clsLineaLicitacionEntrada> Lineas, IReadOnlyList<clsErrorFilaLicitacion> Errores, clsErrorDominio? NoDisponible)> ValidarFilasAsync(
+        Guid usuarioId, clsEntradaLicitacion entrada, int? filasEnHoja, CancellationToken cancellationToken)
+    {
+        var errores = new List<clsErrorFilaLicitacion>(clsValidadorLicitacion.Validar(entrada, filasEnHoja));
+        IReadOnlyList<clsLineaLicitacionEntrada?> lineas = entrada.Lineas ?? [];
+        if (lineas.Count is 0 or > clsValidadorLicitacion.MaximoLineas)
+        {
+            return ([], errores, null);
+        }
+
+        clsErrorDominio? noDisponible = null;
+        var codigos = await catalogos.ValidarLineasAsync(usuarioId, [.. lineas.Select(l => l?.Linea!)], cancellationToken);
+        if (codigos.EsFallo)
+        {
+            noDisponible = codigos.Error;
+        }
+        else
+        {
+            for (var i = 0; i < lineas.Count; i++)
+            {
+                errores.AddRange(codigos.Valor[i].Select(e => new clsErrorFilaLicitacion(i, lineas[i]?.Fila, e.Campo, e.Codigo, e.Mensaje)));
+            }
+        }
+
+        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas))
+        {
+            var catalogo = await municipios.ObtenerAsync(usuarioId, cancellationToken);
+            if (catalogo.EsFallo)
+            {
+                noDisponible ??= catalogo.Error;
+            }
+            else
+            {
+                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor);
+                lineas = resueltas.Lineas;
+                errores.AddRange(resueltas.Errores);
+            }
+        }
+
+        return ([.. lineas.Select(l => l!)], [.. errores.OrderBy(e => e.Indice ?? -1)], noDisponible);
     }
 
     public async Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)

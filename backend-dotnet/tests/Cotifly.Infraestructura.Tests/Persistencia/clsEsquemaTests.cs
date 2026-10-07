@@ -263,6 +263,43 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript0008EsIdempotenteYAgregaLasHorasPorLinea()
+    {
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0008", clsBaseDatosPruebas.Scripts.Length);
+        var cadena = baseAislada.Cadena;
+        var id = Guid.NewGuid();
+        var propias = $"'{id}'";
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio, tipoSolicitud) VALUES ('{id}', 'PCN-ID8-{Guid.NewGuid().ToString("N")[..12]}', 'licitacion'); "
+            + "INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, horasCargue, horasDescargue) "
+            + $"VALUES ('{id}', 1, 'YUMBO', 'BOGOTA', 4.5, 240);");
+        var huella = await HuellaFilasPropiasAsync(cadena, propias);
+
+        await ReaplicarYVerificarIdempotenciaAsync(cadena, "0008_horas_por_linea.sql");
+
+        (await HuellaFilasPropiasAsync(cadena, propias)).Should().Equal(huella, "re-aplicar el 0008 no cambia las filas existentes");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            $"SELECT CONCAT(horasCargue, '|', horasDescargue) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionId = '{id}'"))
+            .Should().Be("4.50|240.00");
+        var columnas = await LeerColumnasAsync(cadena);
+        columnas[("CotizacionLineasSolicitud", "horasCargue")].Should().Be(("decimal(6,2)", true));
+        columnas[("CotizacionLineasSolicitud", "horasDescargue")].Should().Be(("decimal(6,2)", true));
+    }
+
+    [Fact]
+    public async Task ElCheckDel0008RechazaHorasFueraDelRangoDeNexo()
+    {
+        var id = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Cotizaciones (id, folio) VALUES ('{id}', '{FolioUnico()}')");
+
+        var excedida = () => clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionId, orden, origen, destino, horasDescargue) VALUES ('{id}', 1, 'A', 'B', 240.01)");
+
+        (await excedida.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionLineasSolicitud_horas");
+    }
+
+    [Fact]
     public async Task ElCheckDel0007RechazaIdsDeMunicipioNoPositivos()
     {
         var id = Guid.NewGuid();

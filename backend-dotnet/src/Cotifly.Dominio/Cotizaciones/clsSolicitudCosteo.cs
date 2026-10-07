@@ -106,31 +106,10 @@ public sealed record clsSolicitudCosteo
     /// <summary>
     /// Validaciones condicionales de la captura (G3, HU-013.10): <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c>
     /// y obligatoria con ella, y <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen
-    /// (Nexo lo descarta en otro caso).
+    /// (Nexo lo descarta en otro caso). La regla es la de cada fila de una licitación (<see cref="clsLineaSolicitudCosteo.ErroresCondicionales"/>).
     /// </summary>
-    private clsErrorDominio? ValidarCondicionales()
-    {
-        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
-        var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
-        if (conClase && !esContenedor)
-        {
-            return new clsErrorDominio(CodigoError,
-                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
-        }
-
-        if (esContenedor && !conClase)
-        {
-            return new clsErrorDominio(CodigoError,
-                $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
-        }
-
-        var levanteDistinto = !string.IsNullOrWhiteSpace(CiudadLevanteContenedor)
-            && !string.Equals(CiudadLevanteContenedor.Trim(), Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
-        return ValorAprovisionamiento is not null && !levanteDistinto
-            ? new clsErrorDominio(CodigoError,
-                "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen.")
-            : null;
-    }
+    private clsErrorDominio? ValidarCondicionales() =>
+        ALinea().ErroresCondicionales() is [var primero, ..] ? new clsErrorDominio(CodigoError, primero.Mensaje) : null;
 
     /// <summary>Id de municipio de Nexo: entero positivo si viene.</summary>
     internal static clsErrorDominio? IdMunicipio(string campo, int? valor) =>
@@ -183,8 +162,10 @@ public sealed record clsSolicitudCosteo
             Deadline = encabezado.Deadline,
             ValorEstimado = encabezado.ValorEstimado,
             Referencia = encabezado.Referencia,
-            HorasCargue = encabezado.HorasCargue,
-            HorasDescargue = encabezado.HorasDescargue,
+
+            // G5 (HU-013.11): las horas de la línea, si las trae, son las que viajan a Nexo; si no, las del encabezado.
+            HorasCargue = linea.HorasCargue ?? encabezado.HorasCargue,
+            HorasDescargue = linea.HorasDescargue ?? encabezado.HorasDescargue,
             Notas = encabezado.Notas,
             Origen = linea.Origen,
             Destino = linea.Destino,
