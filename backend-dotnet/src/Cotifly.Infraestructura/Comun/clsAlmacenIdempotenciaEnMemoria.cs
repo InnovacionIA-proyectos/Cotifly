@@ -11,7 +11,7 @@ namespace Cotifly.Infraestructura.Comun;
 /// <remarks>
 /// Válido mientras la API corre con una sola réplica (<c>infra/stack.dotnet.dokploy.yml</c>, <c>replicas: 1</c>). Un reinicio olvida
 /// las claves; la defensa que queda es el <c>If-Match</c> obligatorio (la segunda petición responde <c>CONFLICTO_CONCURRENCIA</c>). Con
-/// varias réplicas se pasa a una tabla con un script <c>0008</c> (ADR-018 §12).
+/// varias réplicas se pasa a una tabla con el siguiente script libre, <c>0009</c> (ADR-018 §12).
 /// <para>Cada entrada cuenta cuántas peticiones la están usando (bajo <see cref="_candado"/>): la purga solo quita una entrada sin
 /// usuarios, así dos peticiones con la misma clave nunca obtienen semáforos distintos.</para>
 /// <para>Memoria acotada (arrastre de #99 en #102): la purga de vencidas y fallidas corre cada <see cref="IntervaloPurga"/> (no en cada

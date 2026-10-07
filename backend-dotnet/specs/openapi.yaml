@@ -1068,6 +1068,13 @@ paths:
         (pendiente de confirmar con el equipo de Nexo una clave de idempotencia). Solo el dueño.
         HU-013.4: `POST .../costeo/re-solicitar` lo amplía (también costeo vencido o entregado, y con cambios de carga);
         este endpoint se conserva por compatibilidad.
+
+        HU-013.11 (#108): lo guardado se revalida antes de reenviar. Una licitación vuelve a pasar sus filas por todas las reglas de
+        captura (forma, contenedor y aprovisionamiento, códigos de catálogo y municipios; las filas sin `origen_municipio_id`/
+        `destino_municipio_id` se resuelven y el id queda guardado). Si alguna fila guardada ya no pasa (por ejemplo, una
+        licitación creada antes de #108 con `Tractomula` como tipo de vehículo), responde 400 `LICITACION_INVALIDA` con
+        `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` y no envía nada: ni este reintento ni una `-vN`
+        la arreglan, hay que crear una licitación nueva con `POST /web/licitaciones`.
       security:
         - bearer: []
       parameters:
@@ -1083,8 +1090,24 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+        '400':
+          description: |
+            `SOLICITUD_COSTEO_INVALIDA` (el formulario guardado ya no cumple los límites de Nexo) o, en una licitación,
+            `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (HU-013.11). Nada se envía.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '409':
           description: '`COSTEO_NO_REINTENTABLE`: la cotización no está en `error_envio` ni en `pendiente_envio`, o no nació del formulario ampliado'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: |
+            Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
+            filas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada se envía.
           content:
             application/json:
               schema:
@@ -1358,7 +1381,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso) o `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (`motivo` vacío o largo, `datos_carga` vacío, fuera de los límites de Nexo o incoherente, reglas de peso), `TRM_NO_DISPONIBLE` (versión nueva en USD sin TRM del día) o, en una licitación, `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]` (sus filas guardadas ya no cumplen las reglas de captura, HU-013.11: ni el mismo folio ni la `-vN` se pueden enviar; crear una licitación nueva) (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido. Nada cambia. Con un catálogo de Nexo caído al revalidar una licitación, 503 `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`'
           content:
             application/json:
               schema:
@@ -1377,6 +1400,15 @@ paths:
                 $ref: '#/components/schemas/ErrorNegocio'
         '428':
           $ref: '#/components/responses/PrecondicionRequerida'
+        '503':
+          description: |
+            Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
+            filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
+            cambia ni se envía a Nexo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/servicios-conexos:
     get:
@@ -1871,6 +1903,16 @@ paths:
         pesos y lo convierte con ella (`round(precio_cop / trm, 2)`), también el total y los servicios conexos. Sin TRM responde
         400 `TRM_NO_DISPONIBLE` y no guarda nada. Otro valor de `moneda` es un error del reporte (campo `moneda`,
         `VALOR_FUERA_DE_RANGO`).
+
+        Captura por fila (HU-013.11, #108; ver `LineaLicitacionWeb`): cada fila se valida por código de catálogo (G2), con las
+        reglas condicionales de contenedor y aprovisionamiento (G3) y con el origen y el destino resueltos a ids de municipio de
+        Nexo (G6). Todos los errores vuelven juntos en `errores[]` (índice, fila, campo y código), con el encabezado primero y
+        luego por línea. Como en `POST /web/solicitudes-costeo`: sin catálogo maestro de Nexo ni una copia de menos de 24 h
+        responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE`; si alguna fila necesita resolver su municipio y el catálogo de municipios
+        no responde, 503 `MUNICIPIOS_NO_DISPONIBLE` (en `GET /web/municipios` ese código sigue siendo 400, pendiente de alinear).
+        En los dos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo (forma, contenedor y
+        aprovisionamiento, tipología, carrocería, clase de contenedor), se devuelve primero el reporte 400 con todos ellos y el
+        código del catálogo caído en `error.detalle.motivo`: lo que dependía de él se valida al volver a enviarla.
       security:
         - bearer: []
       requestBody:
@@ -1915,6 +1957,15 @@ paths:
                   - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
+        '503':
+          description: |
+            HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
+            de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
+            catálogo de municipios no responde). Nada se guarda.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '413':
           description: El cuerpo (Excel + JSON) supera `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto)
           content:
@@ -4005,6 +4056,23 @@ components:
       description: |
         Una línea mapeada por el frontend: los campos destino de `docs/HU-011-formato-excel-licitacion.md` §3 (los de
         `CapturaLineaRequest` de Nexo, con los límites de `SolicitudCosteoWeb`) y la `fila` del análisis.
+
+        HU-013.11 (#108): cada fila cumple las mismas reglas de captura que el formulario de una línea:
+        - **Códigos de catálogo (G2).** `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia` se validan
+          por código, igual que en `SolicitudCosteoWeb` (comparación exacta, distinguiendo mayúsculas; se acepta la lista
+          provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`). Un texto libre del pliego (`Tractomula`, `3s3`) es
+          `CODIGO_NO_CATALOGO` en esa fila: el frontend mapea los valores del pliego a los códigos de `GET /web/catalogos-flete`.
+        - **Condicionales (G3).** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se
+          admite con ella (`CAMPO_NO_APLICA`); `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del
+          origen (`CAMPO_NO_APLICA`).
+        - **Municipios (G6).** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto de
+          `origen`/`destino` en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 (sin tildes ni
+          mayúsculas; acepta `Municipio, Departamento`). Una sola coincidencia: se usa su id. Varias, o solo una coincidencia
+          aproximada: `MUNICIPIO_AMBIGUO` (el mensaje trae los candidatos con su id). Ninguna: `MUNICIPIO_NO_ENCONTRADO`.
+          Cotifly nunca elige entre candidatos. El texto se guarda y viaja tal como vino, junto al id.
+        - **Horas (G5).** `horas_cargue`/`horas_descargue` de la fila, si vienen, viajan en esa línea; si no, las del encabezado.
+
+        Los valores se guardan recortados y el primer envío, el reintento y la re-solicitud mandan exactamente lo guardado.
       properties:
         fila:
           type: integer
@@ -4014,13 +4082,40 @@ components:
         origen:
           type: string
           maxLength: 150
+          description: Texto del pliego (municipio, opcionalmente con su departamento). Sin `origen_municipio_id`, se resuelve.
         destino:
           type: string
           maxLength: 150
+          description: Igual que `origen`, para el destino.
+        origen_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Opcional (`origenMunicipioId`; HU-013.11, G6). `id` de `GET /web/municipios` si el frontend ya lo resolvió (por
+            ejemplo, al elegir entre los candidatos de un `MUNICIPIO_AMBIGUO`). Si viene, se respeta y no se resuelve el texto.
+        destino_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Opcional (`destinoMunicipioId`). Igual que `origen_municipio_id`, para el destino.
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Opcional (`horasCargue` de la línea; HU-013.11, G5). Sin valor, viajan las del encabezado.
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Opcional (`horasDescargue` de la línea). Sin valor, viajan las del encabezado.
         tipo_vehiculo:
           type: string
           nullable: true
           maxLength: 100
+          description: Código del catálogo maestro de Nexo (`GET /web/catalogos-flete`), igual que en `SolicitudCosteoWeb`.
         carroceria:
           type: string
           nullable: true
@@ -4104,16 +4199,23 @@ components:
           type: string
           nullable: true
           maxLength: 200
+        notas:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: Opcional (`notas`, HU-013.11). Nota para la Mesa de Nexo, igual que en `SolicitudCosteoWeb` (G7).
         horas_cargue:
           type: number
           nullable: true
           minimum: 0
           maximum: 240
+          description: Encabezado. Viajan en cada línea que no trae sus propias `horas_cargue` (G5).
         horas_descargue:
           type: number
           nullable: true
           minimum: 0
           maximum: 240
+          description: Encabezado. Igual que `horas_cargue`.
         hoja:
           type: string
           nullable: true
@@ -4151,7 +4253,11 @@ components:
         codigo:
           type: string
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
-                 DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA]
+                 DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
+                 CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO]
+          description: |
+            HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
+            reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
         mensaje:
           type: string
 

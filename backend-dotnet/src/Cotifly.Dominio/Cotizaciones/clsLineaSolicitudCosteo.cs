@@ -20,6 +20,18 @@ public static class clsCodigosLineaSolicitud
     public const string PesoInconsistente = clsSolicitudCosteo.PesoInconsistente;
     public const string FilaInvalida = "FILA_INVALIDA";
     public const string CampoRequerido = "CAMPO_REQUERIDO";
+
+    /// <summary>G3 (HU-013.11): el campo no aplica con los demás valores de la línea (Nexo lo descartaría).</summary>
+    public const string CampoNoAplica = "CAMPO_NO_APLICA";
+
+    /// <summary>G2 (HU-013.11): el valor no es un código de catálogo (texto libre, o mayúsculas distintas del código).</summary>
+    public const string CodigoNoCatalogo = "CODIGO_NO_CATALOGO";
+
+    /// <summary>G6 (HU-013.11): el texto del origen o destino coincide con varios municipios del catálogo de Nexo.</summary>
+    public const string MunicipioAmbiguo = "MUNICIPIO_AMBIGUO";
+
+    /// <summary>G6 (HU-013.11): el texto del origen o destino no coincide con ningún municipio del catálogo de Nexo.</summary>
+    public const string MunicipioNoEncontrado = "MUNICIPIO_NO_ENCONTRADO";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -84,6 +96,15 @@ public sealed record clsLineaSolicitudCosteo
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
+    /// <summary>
+    /// Horas de cargue propias de la línea (<c>horasCargue</c> de <c>CapturaLineaRequest</c>, G5 de HU-013.11); <c>null</c> = las del
+    /// encabezado. Solo las licitaciones las traen por fila; el formulario de una línea usa las del encabezado.
+    /// </summary>
+    public decimal? HorasCargue { get; init; }
+
+    /// <summary>Horas de descargue propias de la línea (<c>horasDescargue</c>); <c>null</c> = las del encabezado.</summary>
+    public decimal? HorasDescargue { get; init; }
+
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario o del pliego.</summary>
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
@@ -112,6 +133,9 @@ public sealed record clsLineaSolicitudCosteo
         Rango(errores, "valor_aprovisionamiento", ValorAprovisionamiento, 0m, clsSolicitudCosteo.MaximoValor);
         Rango(errores, "peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "valor_mercancia", ValorMercancia, 0m, clsSolicitudCosteo.MaximoValor);
+        Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
+        errores.AddRange(ErroresCondicionales());
 
         if (Posiciones.Count > clsSolicitudCosteo.MaximoPosiciones)
         {
@@ -142,6 +166,39 @@ public sealed record clsLineaSolicitudCosteo
         {
             errores.Add(new clsErrorCampo("peso_kg", clsCodigosLineaSolicitud.PesoInconsistente,
                 $"El peso total ({peso.Value:0.##} kg) no coincide con la suma de las posiciones ({suma:0.##} kg)."));
+        }
+
+        return errores;
+    }
+
+    /// <summary>
+    /// Validaciones condicionales de la captura (G3, HU-013.10/HU-013.11), las mismas para el formulario y para cada fila de una
+    /// licitación: <c>clase_contenedor</c> solo con <c>clase_viaje = Contenedor</c> y obligatoria con ella, y
+    /// <c>valor_aprovisionamiento</c> solo con una <c>ciudad_levante_contenedor</c> distinta del origen (Nexo lo descarta en otro caso).
+    /// Los valores se comparan recortados, como se guardan.
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresCondicionales()
+    {
+        var errores = new List<clsErrorCampo>();
+        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+        var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
+        if (conClase && !esContenedor)
+        {
+            errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.CampoNoAplica,
+                $"El campo 'clase_contenedor' solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
+        }
+        else if (esContenedor && !conClase)
+        {
+            errores.Add(new clsErrorCampo("clase_contenedor", clsCodigosLineaSolicitud.CampoRequerido,
+                $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
+        }
+
+        var levanteDistinto = !string.IsNullOrWhiteSpace(CiudadLevanteContenedor)
+            && !string.Equals(CiudadLevanteContenedor.Trim(), Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (ValorAprovisionamiento is not null && !levanteDistinto)
+        {
+            errores.Add(new clsErrorCampo("valor_aprovisionamiento", clsCodigosLineaSolicitud.CampoNoAplica,
+                "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen."));
         }
 
         return errores;

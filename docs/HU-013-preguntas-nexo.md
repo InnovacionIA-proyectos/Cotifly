@@ -82,21 +82,31 @@ Las respuestas de las preguntas 1 y 2 salen del código de Nexo (`docs/HU-005.1-
 viajan por línea las horas del encabezado), G6 (formulario), G7, G11 (advertencia en el log), G12, G14 (`clienteId` para
 prospectos con id en el catálogo), G15 y G16 (los `CLIENTE_*` quedan reintentables: el reintento vuelve a resolver el BP).
 G4 deja la fecha sola como inicio del día en Bogotá (pregunta 15 para negocio). G13 y G17 no requieren cambio de captura en el backend (G13 es diseño coherente
-con ADR-015; G17 lo implementa #99). Quedan para el frontend y negocio G8 y G9, y G10 es de #99. Pendiente: horas, municipios
-y validación por código en las líneas de una licitación (vienen del Excel como texto), y confirmar con Nexo si
-`clases-contenedor` devuelve los códigos `CNT..` en `descripcion` (Cotifly acepta los códigos en código y, además, las
-descripciones de ese catálogo).
+con ADR-015; G17 lo implementa #99). Quedan para el frontend y negocio G8 y G9, y G10 es de #99. Pendiente: confirmar con
+Nexo si `clases-contenedor` devuelve los códigos `CNT..` en `descripcion` (Cotifly acepta los códigos en código y, además,
+las descripciones de ese catálogo).
+
+**Estado (2026-10-07, HU-013.11, #108):** G2, G3, G5 y G6 quedan cerrados también en las licitaciones (`POST /web/licitaciones`).
+Cada fila del Excel se valida por código de catálogo con el mismo `IClsValidadorCatalogosCaptura` del formulario (sin duplicar
+reglas; `CODIGO_NO_CATALOGO` por campo) y con las reglas condicionales de G3 (una sola regla en
+`clsLineaSolicitudCosteo.ErroresCondicionales`, que también usa el formulario). Todos los errores vuelven juntos en `errores[]`.
+Las horas viajan por línea (`horas_cargue`/`horas_descargue` opcionales en `LineaLicitacionWeb`, guardadas en el script 0008;
+sin ellas, las del encabezado). Los ids de municipio viajan por línea: la fila puede traerlos (`origen_municipio_id`/
+`destino_municipio_id`) y, si no, Cotifly resuelve el texto con el catálogo de `GET /web/municipios` y la regla determinista de
+HU-005.13; si es ambiguo (`MUNICIPIO_AMBIGUO`) o no aparece (`MUNICIPIO_NO_ENCONTRADO`) es un error de la fila, nunca se elige un
+candidato. Sin catálogo maestro: 503 `CATALOGOS_FLETE_NO_DISPONIBLE` (copia de hasta 24 h, como el formulario); sin catálogo de
+municipios cuando alguna fila lo necesita: 400 `MUNICIPIOS_NO_DISPONIBLE`. Nada se guarda en esos casos.
 
 Comparación de `docs/HU-005.1-mapeo-campos-nexo.md` (Parte 2) con `clsSolicitudCosteoWebRequest`, `clsPosicionCargaWebRequest`, el envío `clsCosteoNexo.CuerpoCaptura` y `clsCapturaSolicitudRequest`, `clsCapturaLineaRequest` y `clsCapturaPosicionRequest` del swagger. **Ningún campo de la Parte 2 falta en el DTO ni en el spec.** Todos están, con los mismos límites de Nexo. Los gaps son de comportamiento y de catálogos: **17 en total (G1 a G17)**. No se implementan en #97, que es solo SDD; van a una issue nueva.
 
 | # | Gap | Dónde | Propuesta |
 |---|---|---|---|
 | G1 | `/web/catalogos-flete` lee `GET /api/biblioteca-sap-historico/filtros` (histórico de tarifas), no los catálogos maestros | `clsCatalogosFleteNexo` | Migrar a `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`), `clases-viaje` (`{id, descripcion}`) y `clases-contenedor` (`{id, descripcion, tamanoContenedor, pesoInfCnt, pesoSupCnt}`) sin cambiar la respuesta `CatalogosFlete`. La carrocería sigue en código y la tipología es un enum de 7 valores |
-| G2 | `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia` solo se validan por largo. Nexo resuelve texto libre y **crea un tipo de vehículo nuevo** si no hay coincidencia (duplicados) | `clsSolicitudCosteo.Validar` | Validar contra el catálogo (G1) o el enum antes de guardar y responder `SOLICITUD_COSTEO_INVALIDA`. **No rechazar** la lista provisional de Nexo para extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`), que no viene en el catálogo maestro. Escenarios en `catalogos_formulario_costeo.feature` |
-| G3 | `clase_contenedor` debería ir solo con `clase_viaje = Contenedor`, y `valor_aprovisionamiento` solo con un levante distinto del origen (Nexo lo descarta en otro caso). No hay validación condicional | `clsSolicitudCosteo.Validar` | Rechazar la combinación inválida, o descartar el valor con una advertencia |
+| G2 | `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia` solo se validan por largo. Nexo resuelve texto libre y **crea un tipo de vehículo nuevo** si no hay coincidencia (duplicados) | `clsSolicitudCosteo.Validar` | Validar contra el catálogo (G1) o el enum antes de guardar y responder `SOLICITUD_COSTEO_INVALIDA`. **No rechazar** la lista provisional de Nexo para extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`), que no viene en el catálogo maestro. Escenarios en `catalogos_formulario_costeo.feature`. **Cerrado** en el formulario (#106) y en las filas de una licitación (#108, `licitaciones_excel.feature`) |
+| G3 | `clase_contenedor` debería ir solo con `clase_viaje = Contenedor`, y `valor_aprovisionamiento` solo con un levante distinto del origen (Nexo lo descarta en otro caso). No hay validación condicional | `clsSolicitudCosteo.Validar` | Rechazar la combinación inválida, o descartar el valor con una advertencia. **Cerrado**: se rechaza en el formulario (#106) y en cada fila de una licitación (#108, `CAMPO_REQUERIDO`/`CAMPO_NO_APLICA`) |
 | G4 | `deadline`: el DTO es `DateTimeOffset` y se reenvía en ISO 8601, pero una fecha sola o sin zona (`2026-10-10`) toma la zona del servidor (UTC en el contenedor): 19:00 del día anterior en Bogotá | `clsSolicitudCosteoWebRequest` / serialización | Interpretar las fechas sin zona en America/Bogota, o exigir zona. Documentado en el spec |
-| G5 | `horasCargue`/`horasDescargue` por línea: Nexo los acepta en la línea (sobreescriben el valor por defecto); Cotifly solo los envía en el encabezado | `clsCapturaLineaWire` | No bloqueante con una línea. Para licitaciones, agregarlos a `LineaLicitacionWeb` |
-| G6 | `origenMunicipioId`/`destinoMunicipioId`: Nexo los acepta (id de `tbl_municipios` del buscador) y `GET /web/municipios` ya devuelve `id`, pero Cotifly no los envía | `SolicitudCosteoWeb`, `clsCapturaLineaWire` | Agregar `origen_municipio_id` y `destino_municipio_id` opcionales y reenviarlos (evita la resolución aproximada de la ruta) |
+| G5 | `horasCargue`/`horasDescargue` por línea: Nexo los acepta en la línea (sobreescriben el valor por defecto); Cotifly solo los envía en el encabezado | `clsCapturaLineaWire` | No bloqueante con una línea. Para licitaciones, agregarlos a `LineaLicitacionWeb`. **Cerrado** (#108): opcionales por fila, guardados (0008) y reenviados; sin ellos viajan los del encabezado |
+| G6 | `origenMunicipioId`/`destinoMunicipioId`: Nexo los acepta (id de `tbl_municipios` del buscador) y `GET /web/municipios` ya devuelve `id`, pero Cotifly no los envía | `SolicitudCosteoWeb`, `clsCapturaLineaWire` | Agregar `origen_municipio_id` y `destino_municipio_id` opcionales y reenviarlos (evita la resolución aproximada de la ruta). **Cerrado**: formulario (#106) y licitaciones (#108: opcionales por fila o resueltos por Cotifly desde el texto; ambiguo o sin coincidencia = error de la fila) |
 | G7 | `notas` (encabezado de Nexo, hasta 2000) no se envía | `clsCapturaSolicitudWire` | Decisión de HU-005.1: la personalización es del PDF. Confirmar con negocio si conviene mandar una nota a la Mesa |
 | G8 | `tipologia` por posición: el wizard del frontend la captura por mercancía y Nexo solo la tiene por línea | Frontend (`cotizador.component.ts`) | El contrato la deja en la línea. El frontend la mueve a la línea o la retira (decisión de negocio) |
 | G9 | Formulario del frontend sin `referencia`, `valor_estimado` ni `valor_aprovisionamiento` | Frontend | El backend ya los acepta. Agregarlos al wizard (HU-013.8) |

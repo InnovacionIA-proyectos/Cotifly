@@ -44,6 +44,12 @@ public sealed class clsCotizacionLineaSolicitud
     public decimal? PesoKg { get; private set; }
     public decimal? ValorMercancia { get; private set; }
 
+    /// <summary>Horas de cargue propias de la línea (script 0008, G5 de HU-013.11); <c>null</c> = las del encabezado.</summary>
+    public decimal? HorasCargue { get; private set; }
+
+    /// <summary>Horas de descargue propias de la línea (script 0008); <c>null</c> = las del encabezado.</summary>
+    public decimal? HorasDescargue { get; private set; }
+
     /// <summary>Id de la línea en Nexo (<c>solicitud.lineas[].id</c> de <c>GET /api/solicitudes/{id}</c>).</summary>
     public string? LineaSolicitudNexoId { get; private set; }
 
@@ -102,6 +108,8 @@ public sealed class clsCotizacionLineaSolicitud
             ValorAprovisionamiento = l.ValorAprovisionamiento,
             PesoKg = l.PesoKg,
             ValorMercancia = l.ValorMercancia,
+            HorasCargue = l.HorasCargue,
+            HorasDescargue = l.HorasDescargue,
         })];
     }
 
@@ -129,6 +137,8 @@ public sealed class clsCotizacionLineaSolicitud
             ValorAprovisionamiento = ValorAprovisionamiento,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
             Posiciones = [.. posiciones.OrderBy(p => p.Orden).Select(p => p.APosicion())],
         };
     }
@@ -143,6 +153,23 @@ public sealed class clsCotizacionLineaSolicitud
         EstadoCosteo = null;
         Costo = null;
         PrecioFinal = null;
+    }
+
+    /// <summary>
+    /// Completa los ids de municipio que faltan (HU-013.11): una línea guardada antes de #108 se reenvía con los ids resueltos desde su
+    /// texto, y se guardan para que el siguiente reenvío mande lo mismo. Un id que ya tiene no se cambia. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    public bool CompletarMunicipios(int? origenMunicipioId, int? destinoMunicipioId)
+    {
+        if (origenMunicipioId is <= 0 || destinoMunicipioId is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(origenMunicipioId), "Un id de municipio de Nexo es un entero positivo.");
+        }
+
+        var antes = (OrigenMunicipioId, DestinoMunicipioId);
+        OrigenMunicipioId ??= origenMunicipioId;
+        DestinoMunicipioId ??= destinoMunicipioId;
+        return antes != (OrigenMunicipioId, DestinoMunicipioId);
     }
 
     /// <summary>Nexo recibió la solicitud: la línea queda con el mismo estado inicial que la cotización.</summary>

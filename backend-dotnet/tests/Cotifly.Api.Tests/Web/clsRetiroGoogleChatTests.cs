@@ -10,7 +10,7 @@ using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 namespace Cotifly.Api.Tests.Web;
 
 /// <summary>
-/// HU-013.9 (#105, ADR-018 §14): Google Chat y el agente cotizador legado se retiraron. El webhook <c>POST /chat/events</c> ya no
+/// HU-013.9 (#105, ADR-018 §15): Google Chat y el agente cotizador legado se retiraron. El webhook <c>POST /chat/events</c> ya no
 /// existe (404), la API arranca sin las variables <c>GChat__*</c> y las ignora si un despliegue viejo todavía las trae (también el
 /// flag <c>Chat:CreacionHabilitada</c>), y las cotizaciones creadas por el chat antes del retiro (<c>estadoCosteo = null</c>) siguen
 /// en Mis cotizaciones, admiten el seguimiento y cuentan en las métricas.

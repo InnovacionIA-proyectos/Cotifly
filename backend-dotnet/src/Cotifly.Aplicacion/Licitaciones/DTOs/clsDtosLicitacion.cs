@@ -48,10 +48,19 @@ public sealed record clsResultadoLicitacion(clsCotizacion? Cotizacion, Dominio.C
 
     public static clsResultadoLicitacion Fallo(Dominio.Comun.clsErrorDominio error) => new(null, error, []);
 
-    public static clsResultadoLicitacion Invalida(IReadOnlyList<clsErrorFilaLicitacion> errores) => new(
+    /// <summary>
+    /// Reporte por fila. <paramref name="catalogoNoDisponible"/> (HU-013.11) es el código del catálogo que no respondió
+    /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c> o <c>MUNICIPIOS_NO_DISPONIBLE</c>): va en <c>error.detalle.motivo</c> y el mensaje avisa
+    /// que lo que dependía de él se valida al volver a enviarla.
+    /// </summary>
+    public static clsResultadoLicitacion Invalida(IReadOnlyList<clsErrorFilaLicitacion> errores, string? catalogoNoDisponible = null) => new(
         null,
         new Dominio.Comun.clsErrorDominio(Dominio.Comun.clsCodigosError.LicitacionInvalida,
-            $"La licitación tiene {errores.Count} error(es): corrige las filas indicadas y vuelve a enviarla."),
+            $"La licitación tiene {errores.Count} error(es): corrige las filas indicadas y vuelve a enviarla."
+            + (catalogoNoDisponible is null
+                ? string.Empty
+                : " Un catálogo de Nexo no respondió: lo que depende de él (tipo de vehículo, clase de viaje o municipios) se validará al volver a enviarla."),
+            catalogoNoDisponible),
         errores);
 }
 

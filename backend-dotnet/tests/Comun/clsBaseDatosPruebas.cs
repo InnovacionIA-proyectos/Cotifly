@@ -26,6 +26,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     [
         "0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql", "0004_costeo_nexo.sql",
         "0005_lineas_solicitud.sql", "0006_textos_y_concurrencia.sql", "0007_captura_nexo_campos.sql",
+        "0008_horas_por_linea.sql",
     ];
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>

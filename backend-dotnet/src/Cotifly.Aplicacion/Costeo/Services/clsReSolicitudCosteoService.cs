@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Auditoria;
@@ -76,6 +77,7 @@ public sealed class clsReSolicitudCosteoService(
     IClsGeneradorFolioService folios,
     IClsEnvioCosteoService envio,
     IClsValidadorCatalogosCaptura catalogos,
+    IClsValidadorFilasLicitacion filasLicitacion,
     IClsFijacionMonedaService monedas,
     IClsMisCotizacionesService misCotizaciones,
     IClsAlmacenIdempotencia idempotencia,
@@ -206,7 +208,7 @@ public sealed class clsReSolicitudCosteoService(
         return entrada.VersionNueva
             ? await CrearVersionAsync(cotizacion, usuarioId, v.Encabezado, v.Lineas, v.Politica, versionEsperada,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
-            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Guardadas, v.Posiciones, v.Politica,
+            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Guardadas, v.Posiciones, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
     }
 
@@ -274,7 +276,18 @@ public sealed class clsReSolicitudCosteoService(
         }
 
         // Lo guardado (o la combinación con los cambios) se valida con las reglas de la captura: nunca se envía algo que Nexo rechazaría.
-        if (clsEnvioCosteoService.Revalidar(encabezado, lineas) is { } reglas)
+        // Una licitación sin cambios de carga pasa por todas las reglas, también catálogos y municipios (HU-013.11).
+        if (!(entrada.VersionNueva && entrada.DatosCarga is not null) && cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
+        {
+            var revalidada = await filasLicitacion.RevalidarGuardadasAsync(usuarioId, cotizacion.Folio, encabezado, lineas, Filas(guardadas), cancellationToken);
+            if (revalidada.EsFallo)
+            {
+                return revalidada.Error;
+            }
+
+            lineas = revalidada.Valor;
+        }
+        else if (clsEnvioCosteoService.Revalidar(encabezado, lineas) is { } reglas)
         {
             return reglas;
         }
@@ -297,12 +310,18 @@ public sealed class clsReSolicitudCosteoService(
         int versionEsperada,
         IReadOnlyList<clsCotizacionLineaSolicitud> guardadas,
         IReadOnlyList<clsCotizacionPosicion> posiciones,
+        IReadOnlyList<clsLineaSolicitudCosteo> lineasValidadas,
         clsMargenPolitica? politica,
         clsEventoHerramienta? reserva,
         string nota,
         CancellationToken cancellationToken)
     {
         // Lo guardado ya se revalidó en ValidarReglasAsync (filas anteriores a una regla nueva).
+        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
+        {
+            clsEnvioCosteoService.CompletarMunicipios(guardadas, lineasValidadas);
+        }
+
         cotizacion.PrepararReSolicitud();
         foreach (var linea in guardadas)
         {
@@ -394,6 +413,10 @@ public sealed class clsReSolicitudCosteoService(
         await envio.EnviarGuardadaAsync(creada.Valor, nuevasLineas, nuevasPosiciones, politica, usuarioId, nota);
         return (await ResultadoAsync(creada.Valor, versionNueva: true), creada.Valor, false);
     }
+
+    /// <summary>Filas del pliego de las líneas guardadas, en el orden en que viajan a Nexo.</summary>
+    private static IReadOnlyList<int?> Filas(IReadOnlyList<clsCotizacionLineaSolicitud> guardadas) =>
+        [.. guardadas.OrderBy(l => l.Orden).Select(l => l.FilaOrigen)];
 
     /// <summary>
     /// Sube la versión de negocio y guarda, con la instantánea de auditoría, en la transacción del control de versión. <c>false</c> si
