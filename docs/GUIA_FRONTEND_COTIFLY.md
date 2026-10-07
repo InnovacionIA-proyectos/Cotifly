@@ -42,7 +42,7 @@ Estado verificado con `gh pr list --repo InnovacionIA-proyectos/Cotifly --state 
 | B4 | #76 | HU-005.7 | `GET /web/cotizaciones/{folio}/costeo`, `PUT .../costeo/servicios-conexos`, `POST .../costeo/pdf` y `precio_final` sobre el costeo | Abierto |
 | B5 | #77 | HU-005.14 | `POST /web/cotizaciones/{folio}/resultado`. `/seguimiento` pasa a obsoleto y responde 409 `USAR_RESULTADO_NEXO` en el flujo de costeo | Abierto |
 | C1 | PR de #45 (por abrir) | HU-010.1 | `GET /web/metricas/comercial` y `GET /web/metricas/regional`; `/actividad` y `/ajustes-margen` pasan a obsoletos | Por abrir |
-| — | #78, #79 | HU-006.6, HU-006.7 | Infraestructura (Swarm, respaldos, JWT de Google Chat). No afectan al frontend | Abierto |
+| — | #78, #79 | HU-006.6, HU-006.7 | Infraestructura (Swarm, respaldos; el JWT de Google Chat se fue con Google Chat en #105). No afectan al frontend | Abierto |
 | D1 | PR de #47 (por abrir) | HU-011.2 | `POST /web/licitaciones/analizar-excel`, `POST /web/licitaciones` y `GET /web/licitaciones/{folio}` (licitaciones desde Excel, ADR-017); script `0005` | Por abrir |
 | D2 | PR de #48 (por abrir) | HU-011.3 | `GET /web/licitaciones/{folio}/excel` (exportación con precios) | Por abrir |
 | D3 | PR de #49 (por abrir) | HU-011.5 | El PDF del costeo de una licitación sale con el layout de pliego (sin endpoint nuevo) | Por abrir |
@@ -71,16 +71,14 @@ flowchart LR
         WEB["/web/*"]
         PDF["/pdfs/*"]
         WRK["Worker de polling<br/>del costeo"]
-        GCH["/chat/events<br/>webhook Google Chat"]
     end
     DBS[("dbsolucionesti<br/>tblSAPUsuariosApp y roles")]
     DBC[("dbo_cotifly<br/>SQL Server 2019")]
     NEXO["Nexo<br/>clientes, municipios, catálogos,<br/>cubicación y costeo"]
     SAP["SAP TM OData<br/>márgenes por cliente"]
     TRM["co.dolarapi.com<br/>TRM (respaldo datos.gov.co)"]
-    IA["Proveedor de IA<br/>agente cotizador"]
+    IA["Proveedor de IA<br/>asistente por folio y textos del PDF"]
     SMTP["Relay SMTP"]
-    GC["Google Chat"]
 
     FE -- "login SSO, JWT Bearer, JSON" --> AUTH
     FE -- "Bearer, JSON snake_case" --> WEB
@@ -95,12 +93,11 @@ flowchart LR
     WEB --> TRM
     WEB --> IA
     WEB --> SMTP
-    GC --> GCH
 ```
 
 - El navegador **solo** habla con la API de Cotifly (y, para crear prospectos, con el backend de ClientePro por su canal existente `RequestDataService`, ver ADR-005 §3). Nunca llama a Nexo, SAP, la TRM ni la IA directamente.
 - La API llama a Nexo en nombre del comercial con `X-Portal-Usuario-Id` = `UsuariosWeb.idUsuarioExterno`, que sale del `sub` del JWT y nunca del cliente. El frontend no envía nada de Nexo.
-- Google Chat es un canal paralelo (webhook). No es para el frontend.
+- Google Chat se retiró en #105 (HU-013.9, ADR-018): `POST /chat/events` ya no existe (404). La consola web es el único canal.
 
 ### 2.2 URL base por ambiente
 
@@ -478,7 +475,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 |---|---|---|
 | `/api/auth/*` | 400, 401, 429 | Nunca |
 | Cualquier `/web/*` | 401, 403, 404, 413, 429 y 400 de validación del cuerpo | — |
-| `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, `cotizacion_origen_id inválido`, `moneda inválida`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
+| `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` (En PR #77) |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
@@ -599,7 +596,6 @@ Resumen:
 | `GET /web/metricas/regional` | `gerente_comercial` | PR de #45 (por abrir) |
 | `GET /web/metricas/actividad` | Ambos | En QA, borrador **obsoleto** |
 | `GET /web/metricas/ajustes-margen` | Ambos | En QA, borrador **obsoleto** |
-| `POST /chat/events` | Google Chat (no frontend) | En QA |
 | Líneas de negocio activas para el comercial | Ambos | **Pendiente** (no existe) |
 | Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`, con el `0004`) |
 
@@ -617,7 +613,7 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 
 ### 5.3 `POST /web/chat`. En QA
 
-> **Desde #102 (HU-013.6) el chat es el asistente de UNA cotización y `folio` es obligatorio.** Sin `folio` responde 400 `FOLIO_REQUERIDO` y las cotizaciones ya no se crean por chat (`Chat:CreacionHabilitada=false`). Lo que sigue en esta sección (slot filling, `precio`, `margen`, `pdf`, `cotizacion_origen_id`, `moneda`) es el agente cotizador legado: solo responde con el flag en `true` y un mensaje SIN `folio`. El flujo nuevo está en la sección 10, "Asistente por folio".
+> **El chat es el asistente de UNA cotización y `folio` es obligatorio** (#102, HU-013.6). Sin `folio` responde siempre 400 `FOLIO_REQUERIDO`. Desde #105 (HU-013.9) el agente cotizador legado (slot filling, `calcular_precio`, `generar_pdf`...) y el flag `Chat:CreacionHabilitada` **ya no existen**: las cotizaciones solo se crean con el formulario. El flujo completo está en la sección 10, "Asistente por folio".
 
 - Rol: ambos. Límite: 20 turnos por minuto por comercial.
 - Request (`MensajeWeb`):
@@ -626,105 +622,13 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 |---|---|---|---|
 | `mensaje` | string | Sí | 1 a 8000 caracteres, sin contar espacios al borde |
 | `sesion_id` | string | Sí | `^[A-Za-z0-9_-]{8,64}$`. La genera el cliente: `crypto.randomUUID().replaceAll('-', '')` |
-| `folio` | string | Sí (desde #102) | Folio de la cotización abierta (hasta 50 caracteres; más: 400 `folio inválido`). Vacío o ausente: 400 `FOLIO_REQUERIDO`. Ajeno o inexistente: 404 |
-| `cotizacion_origen_id` | string (UUID) o null | No | Obsoleto desde #102. "Nueva versión" de una cotización propia (solo agente legado) |
-| `moneda` | `"COP"`, `"USD"` o null | No | Obsoleto desde #102 (la moneda va en el formulario). Selector de moneda del agente legado. Otro valor o cadena vacía: 400 `moneda inválida` |
+| `folio` | string | Sí | Folio de la cotización abierta (hasta 50 caracteres; más: 400 `folio inválido`). Vacío o ausente: 400 `FOLIO_REQUERIDO`. Ajeno o inexistente: 404 |
+| `cotizacion_origen_id` | string (UUID) o null | No | Obsoleto: se acepta y se ignora desde #105. No enviarlo |
+| `moneda` | `"COP"`, `"USD"` o null | No | Obsoleto: se acepta y se ignora desde #105 (la moneda va en el formulario). No enviarlo |
 
-```json
-{
-  "mensaje": "Cotiza Nacional de Cali a Bogotá, tractomula 3S3, 10000 kg, cliente Almacenes Éxito, costo 2.850.000",
-  "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c",
-  "cotizacion_origen_id": null,
-  "moneda": "USD"
-}
-```
-
-- Respuesta 200 normal (`RespuestaChat`):
-
-| Campo | Tipo | Significado |
-|---|---|---|
-| `texto` | string | Respuesta del agente en markdown simple. Mostrarla tal cual (con el render de markdown) |
-| `herramientas` | string[] | Herramientas del turno, en orden: `buscar_cliente`, `resolver_municipio`, `buscar_tarifa`, `obtener_margen`, `calcular_precio`, `registrar_ajuste_margen`, `generar_pdf`, `enviar_correo`, `consultar_cotizacion` |
-| `precio` | `SalidaPrecio` o null | Última salida exitosa de `calcular_precio` en el turno |
-| `margen` | `SalidaMargen` o null | Última salida exitosa de `obtener_margen` en el turno |
-| `pdf` | `SalidaPdf` o null | Última salida exitosa de `generar_pdf` en el turno |
-| `errores` | `[{herramienta, codigo}]` | En QA (#71). Errores de negocio de las herramientas del turno. Siempre presente (lista vacía si no hubo) |
-
-`SalidaPrecio`:
-
-| Campo | Tipo | Nota |
-|---|---|---|
-| `precio` | number | En `moneda`: pesos enteros en COP; 2 decimales en USD |
-| `costo` | number | Siempre COP |
-| `margen` | number | Fracción |
-| `metodo` | `margen` o `markup` | `margen`: precio = costo / (1 − margen). `markup`: precio = costo × (1 + margen) |
-| `utilidad` | number | COP (precio en pesos − costo) |
-| `moneda` | `COP` o `USD` | En QA. Si falta, es COP |
-| `trm_aplicada` | number | En QA. 0 en COP |
-| `trm_vigencia_desde`, `trm_vigencia_hasta` | fecha `AAAA-MM-DD` o null | En QA. null en COP |
-| `precio_cop` | number o null | En QA. En USD, el precio en pesos antes de convertir (ya no se imprime en el PDF ni es un piso). null en COP |
-| `trm_fuente` | `dolarapi`, `superfinanciera` o null | Rama de #50. Fuente de `trm_aplicada` (auditoría; no hace falta mostrarla). null en COP |
-
-`SalidaMargen`: `margen` (fracción), `origen` (`sap_tm`, `politica_linea` o `negociado`), `trq_type` (string o null), `anomalo` (bool: margen SAP fuera de 0 a 0,6, que el agente pide validar) y `detalle` (texto).
-
-`SalidaPdf`: `cotizacion_id` (UUID), `folio`, `pdf_url` y `registrada_en_bd` (bool). `pdf_url` es `{Pdf:BaseUrl}/pdfs/{folio}.pdf` (absoluta) o `/pdfs/{folio}.pdf` (relativa) si el servidor no tiene `Pdf:BaseUrl`. El frontend debe soportar las dos.
-
-Ejemplo en USD (En QA):
-
-```json
-{
-  "texto": "Previsualización de la cotización...\n\n- Precio final: **US$ 996,35** (TRM 3.306,86)\n\nResponde «Confirmo» para generar el PDF o «Ajusta el margen a X%».",
-  "herramientas": ["buscar_cliente", "resolver_municipio", "resolver_municipio", "buscar_tarifa", "obtener_margen", "calcular_precio"],
-  "precio": {
-    "precio": 996.35, "costo": 2850000, "margen": 0.135, "metodo": "margen", "utilidad": 444798,
-    "moneda": "USD", "trm_aplicada": 3306.86, "trm_vigencia_desde": "2026-09-26", "trm_vigencia_hasta": "2026-09-29",
-    "precio_cop": 3294798
-  },
-  "margen": { "margen": 0.135, "origen": "sap_tm", "trq_type": "OPTN", "anomalo": false, "detalle": "Margen SAP TM del cliente para OPTN" },
-  "pdf": null,
-  "errores": [{ "herramienta": "buscar_tarifa", "codigo": "TARIFA_FUENTE_NO_DISPONIBLE" }]
-}
-```
-
-Ejemplo del turno de confirmación:
-
-```json
-{
-  "texto": "Listo, generé la cotización PCN-9000472281-DG-29092026-004. Puedes descargar el PDF.",
-  "herramientas": ["generar_pdf"],
-  "precio": null,
-  "margen": null,
-  "pdf": {
-    "cotizacion_id": "5a0c1e7b-7d0e-4a8e-9a55-2f1f6f3d8c21",
-    "folio": "PCN-9000472281-DG-29092026-004",
-    "pdf_url": "/pdfs/PCN-9000472281-DG-29092026-004.pdf",
-    "registrada_en_bd": true
-  },
-  "errores": []
-}
-```
-
-- Respuesta 200 de error controlado (`RespuestaChatError`): `{"texto": "...", "error": true}`. Se usa ante un fallo interno, el límite del proveedor de IA ("El modelo alcanzó su límite de peticiones por minuto. Espera unos segundos y reenvía el mismo mensaje..."; el backend antepone un emoji de reloj de arena a este texto), un turno simultáneo en la misma sesión ("Todavía estoy respondiendo tu mensaje anterior en esta conversación...") o una respuesta del modelo que no pasó el validador. Mostrar `texto` tal cual, sin datos. La conversación no se pierde.
-- Códigos HTTP:
-
-| HTTP | Cuerpo | Cuándo |
-|---|---|---|
-| 200 | `RespuestaChat` o `RespuestaChatError` | Siempre que el turno corrió |
-| 400 | `{"error":"Cuerpo inválido. Revisa: mensaje."}`, `{"error":"sesion_id inválido"}`, `{"error":"cotizacion_origen_id inválido"}`, `{"error":"moneda inválida"}` | Validación |
-| 401 | `Inicia sesión de nuevo.` | Token |
-| 404 | `{"error":"Sesión no encontrada."}` o `{"error":"Cotización no encontrada o no es tuya."}` | `sesion_id` de otro comercial, o `cotizacion_origen_id` ajeno o inexistente |
-| 413 | `ErrorWeb` | Más de 64 KB |
-| 429 | `ErrorWeb` | Límite de la API |
-
-Notas para la UI:
-
-- Ciclo de vida de `sesion_id`: una por conversación ("Nueva conversación" crea otra). Queda ligada al usuario del token. Se archiva a las 24 h de inactividad; un mensaje con una sesión archivada inicia una conversación nueva con el mismo id.
-- **Un turno a la vez por sesión**: deshabilitar el envío mientras hay un turno en vuelo. Un turno puede tardar decenas de segundos (IA, SAP, Nexo, TRM). Poner un timeout de cliente de **al menos 120 s** (sección 2.8.1; pendiente de confirmar con frontend).
-- Progreso de pasos (Tarifa → Margen → Precio → PDF): derivarlo de `herramientas` y de qué bloques traen valor. `buscar_tarifa` hoy siempre falla con `TARIFA_FUENTE_NO_DISPONIBLE` y el costo lo escribe el comercial: el paso "Tarifa" se da por cumplido cuando hay `precio`.
-- **Ajuste de margen:** el precio con el margen negociado lo calcula `registrar_ajuste_margen`, pero `RespuestaChat.precio` solo expone `calcular_precio`. En un turno de ajuste `precio` puede venir `null` aunque `texto` muestre el nuevo precio (**a confirmar** con el backend si se expone esa salida). No borrar el último precio mostrado cuando llega `null`; conservar el último `precio` no nulo de la conversación.
-- `acciones_sugeridas` y `requiere_confirmacion` (mencionados en `04-flujo-del-sistema.md`) son internos del agente y **no llegan** al frontend. Para confirmar, enviar el mensaje "Confirmo". Para ajustar, "Ajusta el margen a 18 %".
-- La desambiguación de municipios, clientes y moneda del chat va **solo en `texto`**. No hay estructura de candidatos (sección 6.2).
-- Moneda: `moneda` manda sobre lo que diga el mensaje y queda en la conversación. Sin el campo, sigue la moneda que ya tenía (COP por defecto). Si cambia, el precio calculado se descarta y se recalcula. Recomendado: enviar `moneda` en **cada** mensaje del formulario.
+- Respuesta 200 (`RespuestaChat`): `texto` (markdown simple, mostrarlo tal cual), `herramientas` (las del asistente: `consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud`, `buscar_servicio_conexo`), `errores` (`[{herramienta, codigo}]`, lista vacía si no hubo) y `accion_propuesta` (o `null`). `precio`, `margen` y `pdf` siguen en el esquema como **obsoletos** y siempre llegan en `null`: no leerlos (`SalidaPrecio`, `SalidaMargen` y `SalidaPdf` eran del agente legado).
+- Un fallo del asistente o del proveedor de IA responde 200 `RespuestaChatError` `{texto, error: true}`: mostrar el texto como error.
+- 404 `Sesión no encontrada.` si el `sesion_id` es de otro comercial; 404 `Cotización no encontrada o no es tuya.` si el folio no es suyo.
 
 ### 5.4 `GET /web/mis-cotizaciones`. En QA
 
@@ -843,7 +747,7 @@ No trae costo (ni `costo` ni el de Nexo) a propósito.
 - `archivo` sigue `^[A-Za-z0-9_-]+\.pdf$` (el folio más `.pdf`). Tomarlo de `pdf_url`, nunca construirlo a mano.
 - Acceso con **Bearer**: el dueño, o un `gerente_comercial` de la misma regional (si la regional del gerente no se conoce, solo el dueño).
 - 200 `application/pdf` inline. 401 `ErrorWeb` sin sesión. 404 `ErrorWeb` (no existe o no es tuya), con cuerpo JSON aunque se haya pedido un blob.
-- **URL firmada `?t=`**: es solo para Google Chat (HMAC de 15 minutos, `{usuario}.{vence}.{firma}`, solo el dueño). El frontend **no la usa ni la genera**.
+- **URL firmada `?t=`**: la emitía Google Chat (HMAC de 15 minutos, `{usuario}.{vence}.{firma}`, solo el dueño), retirado en #105. El endpoint la sigue aceptando, pero ningún canal la emite. El frontend **no la usa ni la genera**.
 - Un `<a href>` directo no envía `Authorization` y recibe 401. Además, `X-Frame-Options: DENY` impide incrustar la URL en un iframe. Hay que descargar el blob:
 
 ```typescript
@@ -1178,9 +1082,9 @@ Solo `gerente_comercial` (403 `ErrorWeb` para `comercial`).
 - 200 `LineaNegocio` actualizada (queda auditada). 400 `ErrorWeb` (falta un campo, fuera de rango, método inválido, número como texto). 403. 404 (la línea no existe).
 - No crea ni borra líneas. La UI debe trabajar en porcentaje y convertir: 18 % se envía como `0.18`.
 
-### 5.21 Webhook de Google Chat (`POST /chat/events`). En QA
+### 5.21 Webhook de Google Chat (`POST /chat/events`). Retirado en #105
 
-**No es para el frontend.** Lo llama Google Chat con su propio JWT (RS256). Se documenta solo para que no se confunda con `/web/chat`. Las cotizaciones hechas por Google Chat aparecen igual en "Mis cotizaciones" (misma identidad por correo, ADR-011).
+Ya no existe: responde 404 (HU-013.9, ADR-018). Las cotizaciones que se crearon por Google Chat o por el chat de la consola antes del retiro (`estado_costeo = null`) siguen en "Mis cotizaciones", admiten `/seguimiento` y cuentan en las métricas.
 
 ### 5.22 Métricas (HU-010.1). PR de #45 (por abrir)
 
@@ -1681,91 +1585,19 @@ Responsabilidades del frontend:
 4. Interceptor con refresh single-flight, un solo reintento y SSO silencioso si el refresh falla.
 5. Al cerrar la sesión de ClientePro, llamar a `logout` de Cotifly y borrar los tokens.
 
-### 6.2 Cotización por chat (slot-filling, municipios, confirmación y PDF)
+### 6.2 Cotización por chat. Retirada en #105
 
-El formulario "Nueva cotización" en modo simple y la vista "Asistente" usan el mismo endpoint: el formulario arma un mensaje con sus datos y lo envía a `POST /web/chat`.
+La cotización por chat (slot-filling, municipios, previsualización, confirmación y PDF por `POST /web/chat`) y el selector de moneda del chat se retiraron con el agente cotizador legado (#102 la apagó, #105 borró el código). Las cotizaciones se crean con el formulario (6.4) y la moneda va en él (`moneda` de `SolicitudCosteoWeb`, #103). El chat es el asistente de una cotización ya creada (sección 10, "Asistente por folio").
 
-Cada turno puede tardar hasta 2 minutos (sección 2.8.1): el `HttpClient` de este flujo usa un timeout de al menos 120 s y la UI mantiene el input deshabilitado mientras espera.
+### 6.3 Cotización en USD
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as Comercial
-    participant F as Frontend
-    participant A as POST /web/chat
-    participant N as Nexo
-    U->>F: Escribe la solicitud (o llena el formulario)
-    F->>A: mensaje y sesion_id nuevo
-    A->>N: buscar_cliente y resolver_municipio de origen y destino
-    alt Varios municipios coinciden
-        A-->>F: 200 texto con la lista de candidatos y departamentos
-        F->>U: Muestra el texto
-        U->>F: "La de Nariño" o "2"
-        F->>A: mensaje con la elección, mismo sesion_id
-    end
-    A-->>F: 200 texto de previsualización, margen y precio
-    F->>U: Tarjeta de previsualización y botones Confirmo y Ajustar margen
-    alt Ajusta el margen
-        U->>F: Ajusta el margen a 18 %
-        F->>A: mensaje con el ajuste
-        A-->>F: 200 nueva previsualización (precio puede venir null)
-    end
-    U->>F: Confirmo
-    F->>F: Modal para confirmar o editar el teléfono
-    F->>A: mensaje "Confirmo"
-    A-->>F: 200 pdf con folio y pdf_url
-    F->>A: GET /pdfs/archivo con Bearer
-    A-->>F: 200 application/pdf
-```
+El selector de moneda del chat se retiró (#105): la cotización en dólares se pide en el formulario (5.15, #103) o en la licitación (5.24), que fijan la TRM del día al crear la cotización. Lo que sigue vigente para el frontend:
 
-Responsabilidades del frontend:
-
-1. `sesion_id`: generarlo al abrir una conversación y reutilizarlo en todos los turnos. "Nueva conversación" crea otro.
-2. Deshabilitar el envío mientras hay un turno en vuelo (un turno a la vez por sesión).
-3. Mostrar `texto` con markdown (listas, negrita, enlaces). Los candidatos de cliente o municipio **solo vienen en el texto**. Opcional: detectar listas numeradas para ofrecer botones, **sin** depender de su formato (lo redacta el LLM).
-4. Reglas del servidor que la UI no debe romper: un "sí" sin previsualización no confirma; elegir un cliente o un municipio no confirma el PDF; mientras el municipio sea ambiguo no hay precio; si cambian el cliente, la línea o la ruta, la cotización en curso se descarta.
-5. Botones de acción: "Confirmo" envía el texto `Confirmo`. "Ajustar margen" pide el porcentaje y envía `Ajusta el margen a X %`.
-6. Progreso: Margen (`margen` con valor o `obtener_margen` en `herramientas`), Precio (`precio`), PDF (`pdf`).
-7. Con `pdf` con valor: botón de descarga (blob) y enlace a "Mis cotizaciones".
-8. `error: true`: mostrar `texto` con estilo de aviso y reactivar el envío.
-9. Sin catálogo de municipios (`MUNICIPIOS_NO_DISPONIBLE`), el agente sigue con el texto libre: no bloquear.
-
-### 6.3 Cotización en USD (selector, TRM caída y TRM vencida). En QA; el PDF en USD En PR #72
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as Comercial
-    participant F as Frontend
-    participant A as POST /web/chat
-    participant T as TRM DolarApi (respaldo datos.gov.co)
-    U->>F: Elige USD en el selector
-    F->>A: mensaje y moneda USD
-    A->>T: TRM del día (caché de 6 horas)
-    alt TRM disponible
-        A-->>F: 200 precio en USD, trm_aplicada, precio_cop, vigencia
-        F->>U: US$ con la TRM aplicada
-    else Fuente caída
-        A-->>F: 200 precio null y errores TRM_NO_DISPONIBLE
-        F->>U: Aviso con Reintentar y Cambiar a COP
-        opt Cambia a COP
-            F->>A: mensaje y moneda COP
-            A-->>F: 200 precio en COP
-        end
-    end
-    U->>F: Confirmo (otro día, TRM vencida)
-    F->>A: mensaje Confirmo y moneda USD
-    A-->>F: 200 precio recalculado con la TRM vigente y pdf null
-    F->>U: Muestra el nuevo precio y pide confirmar otra vez
-```
-
-Responsabilidades del frontend:
-
-1. Selector COP/USD (COP por defecto). Enviar `moneda` en **cada** mensaje del formulario.
-2. Al cambiar la moneda con una previsualización abierta, avisar que el precio se recalcula y enviar un mensaje (por ejemplo, "Cambia la moneda a USD") con `moneda` nueva. El servidor descarta el precio anterior.
-3. Mostrar en USD: `US$ precio` y "TRM aplicada: `trm_aplicada` (vigente del `trm_vigencia_desde` al `trm_vigencia_hasta`)". Ya no se muestra un "mínimo a pagar" en pesos (decisión de negocio del 2026-10-05). Costo y utilidad, si se muestran, en COP.
-4. `TRM_NO_DISPONIBLE` en `errores`: sin precio, quitar el spinner y ofrecer Reintentar (reenviar el mismo mensaje) o cotizar en COP. La API recuerda el fallo 20 s: esperar antes de reintentar.
-5. TRM vencida: si el comercial confirma después de `trm_vigencia_hasta` (fecha de Bogotá), el servidor recalcula y **no** genera el PDF en ese turno. Detectarlo así: se envió "Confirmo", `pdf` es null y `precio` trae valor. Mostrar el precio nuevo y pedir confirmar otra vez. Opcional: avisar antes, comparando la fecha de hoy en Bogotá con `trm_vigencia_hasta`.
+1. (Retirado con el chat.)
+2. (Retirado con el chat.)
+3. Mostrar en USD: `US$ precio` y "TRM aplicada: `trm_aplicada`". Ya no se muestra un "mínimo a pagar" en pesos (decisión de negocio del 2026-10-05). Costo y utilidad, si se muestran, en COP.
+4. `TRM_NO_DISPONIBLE` al crear: no se crea nada; ofrecer Reintentar o cambiar a COP.
+5. (Retirado con el chat: la TRM queda fijada al crear la cotización.)
 6. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
 7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05, rama de #50): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
 8. El formulario ampliado de Nexo (spot) soporta USD desde #103 (HU-013.7): enviar `moneda` en `POST /web/solicitudes-costeo` (sección 5.15). Las **licitaciones** también: ver 5.24 (`moneda`).
@@ -2239,7 +2071,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 - el margen sugerido, SAP TM o la política de la línea;
 - el precio y el PDF, el código.
 
-La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones. El chat ya no crea cotizaciones, y Google Chat se retira.
+La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones. El chat ya no crea cotizaciones, y Google Chat se retiró (#105).
 
 | Endpoint | Para qué | Issue |
 |---|---|---|
@@ -2251,7 +2083,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /web/cotizaciones/{folio}/costeo/textos/redactar[?sobrescribir=true]` | **Implementado (#101).** Sin cuerpo, con `If-Match` obligatorio. La IA redacta el asunto y la introducción y responde 200 `TextosCotizacion` con el `ETag` nuevo (`fuente`: `ia`, o `estandar` si la IA tardó más de 15 s, falló o su texto no pasó la validación: nunca un error por la IA). Sobre textos editados responde 409 `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `sobrescribir=true` | #101 (HU-013.5) |
 | `PUT /web/cotizaciones/{folio}/costeo/textos` `{asunto, introduccion}` | **Implementado (#101).** El comercial edita los textos (`editado: true`), con `If-Match` obligatorio. Asunto de 1 a 120 caracteres e introducción de 1 a 1100, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`); los montos sí se permiten | #101 (HU-013.5) |
 | `POST /web/chat` con `folio` obligatorio | **Implementado (#102).** Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`; folio ajeno o inexistente: 404. Responde `{texto, accion_propuesta?}`. Ver "Asistente por folio" abajo | #102 (HU-013.6) |
-| `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
+| `POST /chat/events` | **Retirado (#105).** Responde 404 | #105 (HU-013.9) |
 
 **`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` (#103) y `textos` (asunto e introducción guardados, o `null` si todavía no hay; #101) ya están. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
 
@@ -2285,7 +2117,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - **Respuesta.** `RespuestaChat` con `texto`, `herramientas`, `errores`, `accion_propuesta` (o `null`) y `precio`, `margen` y `pdf` siempre en `null` (obsoletos). Un fallo del agente o del proveedor sigue siendo 200 `{texto, error: true}`.
 - **Cotizaciones de chat anteriores** (`estado_costeo = null` en "Mis cotizaciones"): siguen visibles con su seguimiento y el asistente las puede consultar, pero no propone cambios sobre ellas (no tienen costeo de Nexo: `COSTEO_NO_LISTO`).
 
-**Transición del frontend (`Chat:CreacionHabilitada`).** El backend ya exige `folio` en `/web/chat`. Mientras el frontend despliega la versión que envía `folio` y retira la vista "Asistente" de creación, en QA (y en staging) se puede dejar `Chat__CreacionHabilitada=true`: un mensaje SIN `folio` sigue yendo al agente cotizador legado y uno CON `folio` va al asistente nuevo. En cuanto esa versión del frontend esté desplegada, volver a `false` (el valor por defecto). En Production debe quedar `false`: con `true` la API registra un aviso al arrancar porque se reactiva la creación desde Google Chat y desde el chat libre. El código legado y Google Chat se retiran en #105, que debe cerrarse antes de producción.
+**Fin de la transición (#105).** El flag `Chat:CreacionHabilitada` y el agente cotizador legado se retiraron: un mensaje SIN `folio` responde siempre 400 `FOLIO_REQUERIDO`, en todos los ambientes. El frontend debe enviar `folio` y no ofrecer una vista de "Asistente" para crear cotizaciones (HU-013.8).
 
 **Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta` (como máximo una por turno):
 

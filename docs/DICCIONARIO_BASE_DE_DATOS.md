@@ -227,6 +227,17 @@ no depende del agente ni del negocio — es el log técnico.
 
 ### 3.6 `sesiones` — estado de la conversación
 
+> **Uso actual en el backend .NET (HU-013.9, #105).** Google Chat se retiró y `Sesiones` / `EventosConversacion` **no se
+> borran**: guardan la auditoría de las conversaciones de Chat y siguen recibiendo las del asistente por folio.
+> - `spaceId`: `spaces/<id>` en las sesiones antiguas de Google Chat (ya no se crean); `web/<sesion_id>` en la consola web.
+> - `threadId`: `spaces/<id>/threads/<id>` en Google Chat; `web/<sesion_id>` en el chat legado de la consola (sin folio,
+>   ya no se crean); `web/<sesion_id>/<FOLIO>` en el asistente por folio (HU-013.6), una conversación por comercial y folio.
+>   `EventosHerramienta.threadId` lleva ese mismo valor para la auditoría de las herramientas del asistente.
+> - `estadoAgente`: en las sesiones nuevas solo `{folioEnProgreso, cotizacionId, version, moneda}`; las antiguas conservan el
+>   JSON del slot-filling legado (se lee ignorando los campos retirados y no se reescribe).
+> - `EventosConversacion.rol`: `user`, `assistant` y `herramienta` (resultados de las herramientas de una iteración).
+
+
 > **HU-002.2:** columna `contexto` (JSONB) eliminada — nunca se leía. `estado` ahora tiene
 > `CHECK (estado IN ('activa','archivada'))`.
 

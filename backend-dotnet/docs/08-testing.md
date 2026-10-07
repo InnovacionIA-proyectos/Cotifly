@@ -29,16 +29,18 @@ flowchart TB
 
 | Nivel | Proyecto | Herramientas | Alcance |
 |---|---|---|---|
-| Unitario | `Cotifly.Dominio.Tests`, `Cotifly.Aplicacion.Tests` | xUnit v3, NSubstitute, AwesomeAssertions | Reglas puras (precio, margen, folio), casos de uso con puertos simulados, runner del agente con un `IChatClient` guionizado |
-| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `db/migrations_mssql/` aplicados, esquema igual al modelo EF, adaptadores (SAP TM, SMTP, PDF, IA, Google Chat) con dobles locales |
+| Unitario | `Cotifly.Dominio.Tests`, `Cotifly.Aplicacion.Tests` | xUnit v3, NSubstitute, AwesomeAssertions | Reglas puras (precio, margen, folio), casos de uso con puertos simulados, runner del asistente por folio con un `IChatClient` guionizado |
+| Integración | `Cotifly.Infraestructura.Tests` | Testcontainers.MsSql | Repositorios, scripts `db/migrations_mssql/` aplicados, esquema igual al modelo EF, adaptadores (SAP TM, SMTP, PDF, IA, Nexo) con dobles locales |
 | API | `Cotifly.Api.Tests` | `WebApplicationFactory` | Forma exacta de las respuestas del contrato, autenticación, CORS, aislamiento por comercial |
 | Aceptación | `Cotifly.Aceptacion.Tests` | Reqnroll (`Reqnroll.xunit.v3`) | Los `.feature` de `specs/features/` |
 | Arquitectura | `Cotifly.Arquitectura.Tests` | ArchUnitNET | Dependencias entre capas, Dominio sin paquetes externos, convención `cls`/`ICls`, contexto de `docker build` |
 
 - TDD: test en rojo, implementación, refactor (ADR-010).
-- Las pruebas no llaman a proveedores de IA reales ni a SAP TM, Google o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsSapTmFalso`, `clsGoogleFalso`, `clsServidorSmtpFalso`, `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
+- Las pruebas no llaman a proveedores de IA reales ni a SAP TM o un relay reales: usan dobles locales (`clsChatClientGuionizado`, `clsSapTmFalso`, `clsServidorSmtpFalso`, `clsNexoClientesFalso` para Nexo y `clsTrmFalso` para los datos abiertos de la TRM, HU-012). Las pruebas con proveedores reales son manuales.
 
 ## 8.2 Proyectos y alcance
+
+> **HU-013.9 (#105).** Se retiraron Google Chat y el agente cotizador legado, y con ellos sus pruebas: `google_chat.feature`, `chat_slot_filling.feature`, `chat_municipios.feature` y `chat_web.feature`; `clsAgenteRunnerTests`, `clsInyeccionEstadoTests`, `clsEstadoConversacionServiceTests`, `clsMonedaUsdTests`, `clsResolverMunicipioTests`, `clsCorreccionesAuditoriaTests` y el arnés `clsArnesAgente`; `clsGoogleChatTests`, `clsGoogleChatInfraestructuraTests`, `clsAvisoArranqueChatTests`, `clsChatEventosEndpointTests` y el doble `clsGoogleFalso`. `validador_respuesta_ia.feature` corre ahora sobre una cotización con folio. Pruebas nuevas: `clsRetiroGoogleChatTests` (Api: `/chat/events` responde 404, la API arranca con variables `GChat__*` heredadas y las ignora, no quedan opciones ni servicios de Google Chat, las cotizaciones antiguas del chat siguen en Mis cotizaciones, el seguimiento y las métricas) y `clsRegistroAgenteInfraestructuraTests` (Infraestructura: registro sin Google Chat, ninguna opción enlazada a `GChat` ni `Chat`, URL firmada y clave efímera). Las filas de esta sección y de [8.8](#88-paridad-con-el-python) que citan esas pruebas son históricas: describen lo que cubrían antes del retiro.
 
 Conteos verificados el 2026-09-28 en #43 (HU-005.13), sobre #14, #12 (folio con iniciales), #16 y la integración de Nexo (#20, PR #65): **1979 pruebas**, de ellas **1620 sin la categoría `Integracion`** (1619 en el job `unitarias`, que además excluye la omitida `Categoria=sap`) y **359 de integración**; todas en verde. Por proyecto, en la tabla.
 
@@ -183,6 +185,8 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 - **Scripts de despliegue (HU-006, fuera del CI):** `sh scripts/respaldo/probar-respaldo-local.sh` prueba de punta a punta la exportación y el restore de `dbo_cotifly` con dos SQL Server 2019 en contenedores (datos ficticios, login de solo `SELECT`, retención, controles del restore y SHA-256 del contenido de cada tabla); `sh scripts/publicar-imagen.sh --sin-push` construye, prueba (humo) y escanea la imagen. Los manifiestos se validan con `docker stack config -c infra/stack.dotnet.*.yml`. Ver [DEPLOY.md](../../DEPLOY.md) §4 a §6. Los scripts de shell se revisan con `shellcheck` (`docker run --rm -v "<repo>/backend-dotnet/scripts:/mnt" -w /mnt koalaman/shellcheck:stable -x -s sh ...`).
 
 ## 8.8 Paridad con el Python
+
+> Las filas del agente conversacional y de Google Chat (`clsAgenteRunnerTests`, `clsInyeccionEstadoTests`, `clsGoogleChat*Tests`, `clsChatEventosEndpointTests`, `chat_slot_filling.feature`, `google_chat.feature`, `chat_web.feature`) son históricas: esas pruebas se borraron con el retiro de HU-013.9 (#105) y el comportamiento del Python que verificaban ya no existe en Cotifly.
 
 - **Paridad con el Python (#10, #13).** Cada caso de `tests/test_precio.py` y `tests/test_margen.py` tiene su prueba .NET (el comentario sobre cada prueba nombra el test de origen):
 

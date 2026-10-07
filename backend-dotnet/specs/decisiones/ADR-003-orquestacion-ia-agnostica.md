@@ -1,6 +1,7 @@
 # ADR-003 — Orquestación de IA agnóstica al proveedor y principio "el LLM solo redacta"
 
 - **Estado:** Aceptada. Principio ampliado por ADR-018 (2026-10-05): la IA solo redacta el asunto y la introducción del PDF y propone acciones que el comercial confirma (ver "Actualización 2026-10-05").
+- **Nota de estado (HU-013.9, #105):** el webhook de Google Chat y el agente cotizador legado (plugin `cotizador`, filtro de inyección y slot-filling) se retiraron. Siguen vigentes el mecanismo (loop manual sobre `IChatClient`, Semantic Kernel solo para declarar y ejecutar herramientas, respaldos, esquemas portables) y el validador de la respuesta final, que hoy usa el asistente por folio (`clsAsistenteFolioRunner`, plugin `asistente`) de `POST /web/chat`. Lo que sigue es la decisión histórica.
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6) y #16 (HU-003.10).
 

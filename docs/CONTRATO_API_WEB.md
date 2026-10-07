@@ -65,7 +65,7 @@ ClientePro (ya autenticado)
 | `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador obsoleto**: usar `/web/metricas/comercial` y `/regional`) |
 | `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador obsoleto**) |
-| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es solo para el enlace firmado de Google Chat (ADR-011); el frontend no lo usa |
+| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es el enlace firmado que emitía Google Chat (ADR-011, retirado en #105); el frontend no lo usa |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
@@ -169,7 +169,7 @@ No existen todavía; se agregarán al spec cuando se implemente la integración 
 | Servicios conexos del costeo | HU-004.4 / HU-011.4 |
 | `POST /web/cotizaciones/{folio}/resultado` (reemplaza a `/seguimiento`) | HU-005.14 |
 
-Los esquemas completos de request y response están en el `openapi.yaml`. El spec incluye además el webhook de Google Chat (`POST /chat/events`) y `/health`, `/health/ready`, que no consume el frontend.
+Los esquemas completos de request y response están en el `openapi.yaml`. El spec incluye además `/health` y `/health/ready`, que no consume el frontend. El webhook de Google Chat (`POST /chat/events`) se retiró en #105 (HU-013.9).
 
 ## 4. `POST /web/chat`
 
@@ -245,7 +245,7 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | `/web/login` se reemplaza por `/api/auth/login-clientepro` | Login SSO desde ClientePro (HU-004) |
 | `GET /pdfs/{archivo}` pasa a exigir sesión | En Python era público y los folios son adivinables |
 | `sesion_id` queda ligada al usuario | En Python cualquier token válido podía continuar cualquier sesión |
-| `GET /pdfs/{archivo}?t=` (enlace firmado de 15 minutos) | Google Chat no envía `Authorization` al abrir un enlace (ADR-011); solo para el dueño |
+| `GET /pdfs/{archivo}?t=` (enlace firmado de 15 minutos) | Lo emitía Google Chat, que no envía `Authorization` al abrir un enlace (ADR-011, retirado en #105); solo para el dueño |
 | `estado_envio` pasa a `reenviada` en el segundo envío | Bug de Python: siempre escribía `enviada` (HU-003.5). La métrica de enviadas cuenta ambos estados. |
 | Seguimiento usa `ganada`/`motivo_rechazo` | Renombrado en HU-002.2 |
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |

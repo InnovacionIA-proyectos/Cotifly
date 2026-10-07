@@ -1,6 +1,6 @@
 # ADR-011 — Folio e identidad en Google Chat
 
-- **Estado:** Reemplazada por ADR-018 (2026-10-05). Google Chat sale del alcance de Cotifly: la identidad y la entrega del PDF por Google Chat se retiran en HU-013.9 (#105). El formato del folio de esta ADR sigue vigente sin cambios y ADR-018 §7 lo retoma. Estado anterior: Aceptada (folio: aprobado por Duban el 2026-09-25 e implementado en #12 parte B; iniciales del comercial en el folio: decisión de Duban del 2026-09-25, implementada en #12; identidad y PDF en Google Chat: implementados en #12 parte C según esta decisión).
+- **Estado:** Reemplazado por ADR-018 (2026-10-05). Google Chat sale del alcance de Cotifly: la identidad y la entrega del PDF por Google Chat **se retiraron en HU-013.9 (#105)** (ver «Retiro (#105)» al final). El formato del folio de esta ADR sigue vigente sin cambios y ADR-018 §7 lo retoma. Estado anterior: Aceptada (folio: aprobado por Duban el 2026-09-25 e implementado en #12 parte B; iniciales del comercial en el folio: decisión de Duban del 2026-09-25, implementada en #12; identidad y PDF en Google Chat: implementados en #12 parte C según esta decisión).
 - **Fecha:** 2026-09-24 (aceptación del folio y de las iniciales: 2026-09-25)
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6). Relacionada con HU-004.4/HU-004.5, HU-005.2 y HU-010.
 
@@ -102,6 +102,12 @@
 - **Production:** `GChat:VerificarJwt=false` no arranca y, con Google Chat configurado (`GChat:ProjectNumber` o `GChat:SaJson`), `Pdf:ClaveFirmaUrl` es obligatoria (Google Chat es el único que emite enlaces firmados).
 - **PDF:** la tarjeta del PDF lleva `{Pdf:BaseUrl}/pdfs/{folio}.pdf?t={token}`. El token es `{usuarioId}.{vence}.{firma}`, con HMAC-SHA256 sobre `archivo\nusuarioId\nvence` (`Pdf:ClaveFirmaUrl`, secreto; sin ella, clave efímera por proceso) y 15 minutos de vida (`Pdf:MinutosUrlFirmada`). `GET /pdfs/{archivo}?t=` lo acepta sin Bearer solo para el dueño (`clsDescargaPdfFirmadaService`); alterado, vencido o de otro archivo → 401; de otro comercial → 404. Con Bearer no cambia nada. `specs/openapi.yaml` documenta el parámetro `t`.
 - **Webhook:** `POST /chat/events` verifica el JWT (RS256, certificados de `chat@system.gserviceaccount.com` en caché, audiencia `GChat:ProjectNumber`), acusa de inmediato y encola; `clsWorkerEventosChat` procesa cada evento en su ámbito y publica con la cuenta de servicio (`GChat:SaJson`). Pruebas con certificados y tokens falsos (`tests/fixtures/chat/`), sin red.
+
+## Retiro (#105, HU-013.9)
+
+- Se borraron `POST /chat/events`, `clsProcesadorEventoChat`, el verificador del JWT, la cola, el worker, el publicador, las tarjetas, las opciones `GChat:*` con su validación de Production y `IClsUsuarioWebRepository.ObtenerPorEmailAsync` (la identidad por correo de Google). La API arranca sin `GChat__*` y las ignora si un despliegue viejo las trae.
+- **Sigue vigente:** el formato del folio (§1 de la decisión, retomado en ADR-018 §7) y la descarga con URL firmada (`GET /pdfs/{archivo}?t=`, §3): el endpoint y `Pdf:ClaveFirmaUrl` se conservan, pero hoy ningún canal emite enlaces firmados (la regla de Production que exigía la clave con Google Chat se fue con él).
+- Las sesiones de Google Chat (`spaceId = spaces/...`) quedan en `Sesiones` y `EventosConversacion` como auditoría.
 
 ## Pendientes
 

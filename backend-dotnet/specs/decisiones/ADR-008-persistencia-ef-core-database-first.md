@@ -38,7 +38,7 @@ El esquema `dbo_cotifly` ya existe en `dbTarifario_Nexo_Pruebas` (host `tbsdatac
 
    Todos los secretos (contraseña SQL, SAP OData, Grovity, API key del LLM, `Jwt:SigningKey`) llegan por Dokploy (HU-006.5). En `Production`, el arranque falla si falta alguno, si queda un valor por defecto o si la cadena usa `Trusted_Connection`.
    - El mecanismo de fallo al arrancar del backend .NET lo da el patrón de configuración de #8 (HU-003.2): opciones con DataAnnotations + `ValidateOnStart`, atributo `[clsSecreto]` y `clsValidadorSecretos` (vacío, placeholder o largo mínimo en `Production`).
-   - Las validaciones concretas llegan con cada HU: `ConnectionStrings` y la regla de `Trusted_Connection` en #9; `Jwt`, `IA` y `GChat` en #12.
+   - Las validaciones concretas llegan con cada HU: `ConnectionStrings` y la regla de `Trusted_Connection` en #9; `Jwt`, `IA` y `GChat` en #12 (`GChat` se retiró con Google Chat en HU-013.9, #105).
    - El issue #1 corresponde al backend Python, no a este.
 
 ## Alternativas consideradas
