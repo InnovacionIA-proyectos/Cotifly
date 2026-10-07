@@ -44,6 +44,8 @@ Contenido:
 | `OnAuthenticationFailed` con el tipo de rechazo | Information | Tokens vencidos, de otra clave o mal formados |
 | "El agente de IA no está configurado" | Error | Falta `IA:Proveedor`, `IA:Modelo` o `IA:ApiKey` |
 | Clave JWT o de firma de URL efímera | Warning | Fuera de Production sin clave: los tokens o enlaces dejan de valer al reiniciar |
+| "PDF {Referencia} renderizado: espera de turno {EsperaMs} ms, render {RenderMs} ms" | Information | Un PDF por render. La espera es el tiempo en cola detrás de otros renders (el render es uno a la vez por proceso, #92). Es la señal de capacidad, ver [10.6](#106-riesgos-y-limitaciones-conocidos) |
+| "PDF {Referencia} sin turno de render tras {EsperaMs} ms" | Warning | La cola de render no avanzó en `Pdf__TiempoEsperaRenderSegundos`: el comercial recibió 503 `PDF_RENDER_NO_DISPONIBLE` |
 
 - `EventosHerramienta` es la auditoría de negocio (herramientas, logins, descargas de PDF ajenos, administración de líneas): consultarla en la base, no en los logs. Contiene datos personales (ver [10.6](#106-riesgos-y-limitaciones-conocidos)).
 
@@ -117,6 +119,7 @@ Otros puntos de operación (de #11 y #12):
 | Cambio de correo en el login | Desde #81 el login refresca `email` desde el almacén y deja un warning `El correo de '<usuario>' cambió en el almacén corporativo`. Desde #105 el correo ya no es una identidad (era la de Google Chat, ADR-011): solo es el remitente y el contacto del comercial |
 | Datos personales en `EventosHerramienta` | Entradas con correos de clientes, nombres y NIT: definir retención y purga con datos y seguridad |
 | SPF/DMARC del correo | El `From` es el correo del comercial aunque sale por el relay: TI debe autorizar el relay en SPF/DMARC para no caer en spam |
+| Render de PDF serializado (#92, #95, ADR-006) | PDFsharp-MigraDoc no es thread-safe, así que cada proceso renderiza un PDF a la vez y los demás esperan turno hasta `Pdf__TiempoEsperaRenderSegundos` (30 s). Si se agota, responde 503 `PDF_RENDER_NO_DISPONIBLE` sin guardar nada. **Capacidad medida** (contenedor `sdk:10.0` en la estación de desarrollo, 2026-10-07): la tarifa única tarda unos 67 ms sola, unos 15 PDF/s por réplica, y con 10 a la vez el último termina en unos 0,5 s (el auditor midió 0,87 s). El pliego de 300 rutas tarda unos 230 ms solo y, con 10 a la vez, el último termina en 1,8 s (el auditor midió 1,9 s). **Señal para escalar réplicas:** el p95 de `espera de turno` en el log. Si pasa de 2 s de forma sostenida en horas pico, o aparece el warning "sin turno de render", se escala o se mueve el render a un worker. Con más réplicas aplica lo de la fila "Réplicas" (almacén compartido) |
 | `/data/pdfs` | Debe ser escribible por el UID 1654 (un volumen con nombre copia el dueño de la imagen; con bind mount, `chown 1654:1654`) |
 | Sin `.pdb` en la imagen | Las trazas no traen número de línea; HU-006.4 (#28) mantuvo `DebugType=none` (alternativa: `DebugType=embedded` + `PathMap`, ver 03-infraestructura §3.1) |
 

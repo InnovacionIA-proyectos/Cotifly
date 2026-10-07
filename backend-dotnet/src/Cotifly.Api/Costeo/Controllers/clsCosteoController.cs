@@ -88,11 +88,13 @@ public sealed class clsCosteoController(
 
     /// <summary>
     /// 201 <c>SalidaPdf</c> (y el <c>ETag</c> nuevo); 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_GENERADO</c>, <c>PDF_YA_ENVIADO</c> o
-    /// <c>CONFLICTO_CONCURRENCIA</c> (solo con <c>If-Match</c>, que aquí es opcional); 400 errores del PDF.
+    /// <c>CONFLICTO_CONCURRENCIA</c> (solo con <c>If-Match</c>, que aquí es opcional); 400 <c>PDF_PAYLOAD_INVALIDO</c>; 503
+    /// <c>PDF_RENDER_NO_DISPONIBLE</c> (falló el render o no hubo turno a tiempo, #92/#95).
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/pdf")]
     [ProducesResponseType<Aplicacion.Pdf.DTOs.clsSalidaPdf>(StatusCodes.Status201Created)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> GenerarPdf(string folio, CancellationToken cancellationToken)
     {
         var resultado = await costeo.GenerarPdfAsync(UsuarioId, folio, clsConcurrenciaHttp.LeerIfMatch(Request), cancellationToken);

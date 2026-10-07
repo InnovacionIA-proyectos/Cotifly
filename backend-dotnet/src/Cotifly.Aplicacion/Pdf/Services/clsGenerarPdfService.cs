@@ -120,7 +120,12 @@ public sealed partial class clsGenerarPdfService(
         clsPdfGenerado pdf;
         try
         {
-            pdf = generador.Generar(documento.Valor);
+            pdf = await generador.GenerarAsync(documento.Valor, cancellationToken);
+        }
+        catch (clsRenderPdfOcupadoException)
+        {
+            // El turno de render no llegó a tiempo (#92/#95): ya quedó en el log del generador; es transitorio (503).
+            return new clsErrorDominio(clsCodigosError.PdfRenderNoDisponible, "El generador de PDF está ocupado. Reintenta en unos segundos.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

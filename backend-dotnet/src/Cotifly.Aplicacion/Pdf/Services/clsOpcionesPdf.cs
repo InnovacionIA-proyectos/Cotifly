@@ -16,4 +16,12 @@ public sealed class clsOpcionesPdf
     /// </summary>
     [MaxLength(300)]
     public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// Segundos que un PDF espera su turno de render (<c>Pdf__TiempoEsperaRenderSegundos</c>, por defecto 30). El render es
+    /// uno a la vez por proceso (PDFsharp-MigraDoc no es thread-safe, #92/#95); si la espera se agota responde
+    /// <c>PDF_RENDER_NO_DISPONIBLE</c> (503).
+    /// </summary>
+    [Range(1, 600)]
+    public int TiempoEsperaRenderSegundos { get; set; } = 30;
 }
