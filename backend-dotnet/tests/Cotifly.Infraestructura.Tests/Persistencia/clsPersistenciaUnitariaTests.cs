@@ -1,5 +1,4 @@
 using Cotifly.Dominio.Agente;
-using Cotifly.Dominio.Clientes;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
@@ -34,23 +33,29 @@ public sealed class clsPersistenciaUnitariaTests
     }
 
     [Fact]
-    public void ElEstadoDeConversacionSeSerializaEnCamelCaseConCodigosYSinNulos()
+    public void ElEstadoDeConversacionSeSerializaEnCamelCaseYSinNulos()
     {
-        var estado = clsEstadoConversacion.Vacio with
-        {
-            NitCliente = "900123456",
-            OrigenCliente = OrigenCliente.Prospecto,
-            OrigenMargen = OrigenMargen.SapTm,
-            CandidatosCliente = [new clsCandidatoCliente("800", "Otro", OrigenCliente.Cliente)],
-        };
+        var estado = clsEstadoConversacion.Vacio with { FolioEnProgreso = "PCN-NV-24092026-001", Version = 1 };
 
         var json = clsConvertidorEstadoConversacion.Serializar(estado);
 
-        json.Should().Contain("\"nitCliente\":\"900123456\"")
-            .And.Contain("\"origenCliente\":\"prospecto\"")
-            .And.Contain("\"origenMargen\":\"sap_tm\"")
-            .And.NotContain("destino");
+        json.Should().Be("""{"folioEnProgreso":"PCN-NV-24092026-001","version":1}""");
         clsConvertidorEstadoConversacion.Deserializar(json).Should().Be(estado);
+    }
+
+    // HU-013.9 (#105): el JSON del slot-filling legado (sesiones antiguas de Google Chat) se lee sin fallar; los campos retirados se ignoran.
+    [Fact]
+    public void ElJsonDelSlotFillingLegadoSeLeeIgnorandoLosCamposRetirados()
+    {
+        const string Legado =
+            """{"nitCliente":"900123456","origenCliente":"prospecto","candidatosCliente":[{"nitCliente":"800","nombre":"Otro","origenCliente":"cliente"}],"origenMargen":"sap_tm","precioFinal":3352941,"trmVigenciaDesde":"2026-09-26","folioEnProgreso":"PCN-NV-24092026-001","cotizacionId":"6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d","moneda":"USD"}""";
+
+        clsConvertidorEstadoConversacion.Deserializar(Legado).Should().Be(clsEstadoConversacion.Vacio with
+        {
+            FolioEnProgreso = "PCN-NV-24092026-001",
+            CotizacionId = Guid.Parse("6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d"),
+            Moneda = "USD",
+        });
     }
 
     [Fact]

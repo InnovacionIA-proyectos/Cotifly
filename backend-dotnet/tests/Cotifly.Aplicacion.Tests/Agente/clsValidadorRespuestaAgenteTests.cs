@@ -77,10 +77,13 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     private static clsContextoValidacionRespuesta SinDatos(params string[] mensajes) =>
         new(clsEstadoConversacion.Vacio, [], mensajes.Length == 0 ? ["hola"] : mensajes, _declaradas);
 
-    /// <summary>calcular_precio del turno: costo 2.850.000, margen 15 %, precio 3.352.941, utilidad 502.941; previsualización pendiente.</summary>
+    /// <summary>
+    /// Salidas del turno con montos: costo 2.850.000, margen 15 %, precio 3.352.941, utilidad 502.941. Desde HU-013.9 el estado no
+    /// tiene montos: solo las salidas de las herramientas y lo que escribió el comercial respaldan un monto.
+    /// </summary>
     private static clsContextoValidacionRespuesta ConPrecio(params string[] mensajes) =>
         new(
-            clsEstadoConversacion.Vacio with { Costo = 2_850_000m, MargenAplicado = 0.15m, PrecioFinal = 3_352_941m, Moneda = "COP", ConfirmacionPendiente = true },
+            clsEstadoConversacion.Vacio with { Moneda = "COP" },
             [
                 clsResultadoHerramienta.Exito("obtener_margen", new clsSalidaMargen(0.15m, "politica_linea", "OPTN", false, "Política")),
                 clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_352_941m, 2_850_000m, 0.15m, "margen", 502_941m)),
@@ -90,7 +93,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
 
     private static clsContextoValidacionRespuesta ConFolio() =>
         new(
-            clsEstadoConversacion.Vacio with { PrecioFinal = 3_352_941m, FolioEnProgreso = Folio + "-v2" },
+            clsEstadoConversacion.Vacio with { FolioEnProgreso = Folio + "-v2" },
             [clsResultadoHerramienta.Exito("generar_pdf", new clsSalidaPdf(Guid.NewGuid(), Folio + "-v2", $"/pdfs/{Folio}-v2.pdf", true))],
             ["Confirmo"],
             _declaradas);
@@ -98,12 +101,9 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     /// <summary>Contexto de la batería del validador de #16: precio 3.294.798, costo 2.850.000, NIT 9000472281, tarifa USD 1.200.</summary>
     private static clsContextoValidacionRespuesta Bateria(params string[] mensajes) =>
         new(
-            clsEstadoConversacion.Vacio with
-            {
-                Costo = 2_850_000m, MargenAplicado = 0.135m, PrecioFinal = 3_294_798m, Moneda = "COP", ConfirmacionPendiente = true,
-                NitCliente = "9000472281", FolioEnProgreso = "PCN-24092026-001-v2",
-            },
+            clsEstadoConversacion.Vacio with { Moneda = "COP", FolioEnProgreso = "PCN-24092026-001-v2" },
             [
+                clsResultadoHerramienta.Exito("consultar_cotizacion", new Dictionary<string, object> { ["nit_cliente"] = "9000472281" }),
                 clsResultadoHerramienta.Exito("obtener_margen", new clsSalidaMargen(0.135m, "politica_linea", "OPTN", false, "Política")),
                 clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "margen", 444_798m)),
                 clsResultadoHerramienta.Exito("buscar_tarifa", new Dictionary<string, object> { ["costo"] = 1200m, ["moneda"] = "USD" }),
@@ -359,20 +359,23 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     public void RequiereConfirmacionDebeCoincidirConElTipo(string tipo, bool requiere) =>
         Codigos(clsReglasRespuestaAgente.Validar(Json("Texto.", tipo, requiere), ConPrecio())).Should().Contain(clsReglasRespuestaAgente.IncoherenciaConfirmacion);
 
+    // HU-013.9 (#105): el asistente no calcula precios; la previsualización era del agente legado y nunca es válida.
     [Fact]
-    public void UnaPrevisualizacionSinPrecioCalculadoSeRechaza()
+    public void UnaPrevisualizacionNuncaEsValida()
     {
         Codigos(clsReglasRespuestaAgente.Validar(Json("Aquí va la previsualización.", "previsualizacion", true), SinDatos()))
             .Should().Equal(clsReglasRespuestaAgente.PrevisualizacionSinPrecio);
-
-        clsReglasRespuestaAgente.Validar(Json("El precio final es $3.352.941. ¿Confirmas?", "previsualizacion", true, "confirmar_pdf", "ajustar_margen"), ConPrecio())
-            .Respuesta!.AccionesSugeridas.Should().Equal(AccionSugeridaAgente.ConfirmarPdf, AccionSugeridaAgente.AjustarMargen);
+        Codigos(clsReglasRespuestaAgente.Validar(Json("El precio final es $3.352.941. ¿Confirmas?", "previsualizacion", true), ConPrecio()))
+            .Should().Equal(clsReglasRespuestaAgente.PrevisualizacionSinPrecio);
     }
 
     [Fact]
-    public void LasAccionesExigenUnaPrevisualizacionPendienteYSuHerramientaDeclarada()
+    public void LasAccionesExigenSuHerramientaDeclaradaYElAsistenteNoDeclaraNinguna()
     {
-        Codigos(clsReglasRespuestaAgente.Validar(Json("¿Genero el PDF?", "confirmacion_requerida", true, "confirmar_pdf"), SinDatos()))
+        var asistente = SinDatos() with { HerramientasDeclaradas = ["consultar_cotizacion", "proponer_ajuste_margen", "proponer_re_solicitud", "buscar_servicio_conexo"] };
+        Codigos(clsReglasRespuestaAgente.Validar(Json("¿Genero el PDF?", "confirmacion_requerida", true, "confirmar_pdf"), asistente))
+            .Should().Equal(clsReglasRespuestaAgente.AccionNoDisponible);
+        Codigos(clsReglasRespuestaAgente.Validar(Json("¿Ajusto el margen?", "confirmacion_requerida", true, "ajustar_margen"), asistente))
             .Should().Equal(clsReglasRespuestaAgente.AccionNoDisponible);
 
         var sinHerramienta = ConPrecio() with { HerramientasDeclaradas = ["obtener_margen", "calcular_precio", "generar_pdf"] };
@@ -412,12 +415,13 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         validacion.Fallos[0].Detalle.Should().Contain("no aparece en las salidas de las herramientas");
     }
 
+    // HU-013.9 (#105): el estado ya no guarda montos, así que un precio de un turno anterior no queda respaldado.
     [Fact]
-    public void UnPrecioDeUnTurnoAnteriorQuedaRespaldadoPorElEstado()
+    public void ElEstadoNoRespaldaMontos()
     {
         var contexto = ConPrecio() with { Salidas = [] };
 
-        clsReglasRespuestaAgente.Validar(Json("Seguimos con el precio de $3.352.941 y la utilidad de $502.941."), contexto).Fallos.Should().BeEmpty();
+        Codigos(clsReglasRespuestaAgente.Validar(Json("Seguimos con el precio de $3.352.941."), contexto)).Should().Equal(clsReglasRespuestaAgente.MontoNoRespaldado);
     }
 
     [Fact]
@@ -426,8 +430,8 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         Codigos(clsReglasRespuestaAgente.Validar(Json("Tu cotización es la PCN-24092026-007."), ConPrecio()))
             .Should().Equal(clsReglasRespuestaAgente.FolioNoRespaldado);
 
-        clsReglasRespuestaAgente.Validar(Json($"Listo: la cotización {Folio}-v2 (versión 2 de {Folio}) quedó con un total de $3.352.941."), ConFolio())
-            .Fallos.Should().BeEmpty("el folio no se lee como un monto y la versión reutiliza el folio base");
+        clsReglasRespuestaAgente.Validar(Json($"Listo: la cotización {Folio}-v2 (versión 2 de {Folio}) quedó lista."), ConFolio())
+            .Fallos.Should().BeEmpty("el folio del estado respalda la versión y el folio base; sus dígitos no se leen como un monto");
     }
 
     // Falsos positivos de la batería del validador de #16: NIT, teléfono y NIT con puntos no son montos.
@@ -475,7 +479,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     }
 
     [Fact]
-    public void ElNitDelEstadoYLasCadenasDeDigitosDeLasSalidasRespaldan()
+    public void LasCadenasDeDigitosDeLasSalidasRespaldan()
     {
         var contexto = Bateria() with
         {
@@ -494,6 +498,13 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         montos[0].Candidatos.Should().Contain(3_294_798m);
         montos[1].Candidatos.Should().Contain(3_500_000m);
     }
+
+    // HU-013.6 (#102): un número junto a "TRM" es un monto aunque no lleve moneda (el asistente nunca ve la TRM).
+    [Theory]
+    [InlineData("La TRM aplicada es 4000.", 4000)]
+    [InlineData("Con una TRM de 3.306,86 queda así.", 3306.86)]
+    public void UnNumeroJuntoALaTrmEsUnMonto(string texto, double valor) =>
+        clsReglasRespuestaAgente.Montos(texto).Should().ContainSingle().Which.Candidatos.Should().Contain((decimal)valor);
 
     // ---------- Orquestación: llamada final, reintento, respaldo ----------
 
@@ -697,36 +708,4 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
                 new clsRespuestaAgenteEstructurada { Tipo = TipoRespuestaAgente.ConfirmacionRequerida, Texto = "¿Genero el PDF?", RequiereConfirmacion = true, AccionesSugeridas = [AccionSugeridaAgente.ConfirmarPdf] },
                 clsReglasRespuestaAgente.OpcionesJson)
             .Should().Be("{\"tipo\":\"confirmacion_requerida\",\"texto\":\"¿Genero el PDF?\",\"requiere_confirmacion\":true,\"acciones_sugeridas\":[\"confirmar_pdf\"]}");
-
-    // ---------- Monedas (HU-012.2, auditoría) ----------
-
-    /// <summary>Estado en USD de un turno anterior (sin salidas en este turno): precio US$996,35, equivalente $3.294.798, TRM $3.306,86.</summary>
-    private static clsContextoValidacionRespuesta EnDolares() =>
-        new(
-            clsEstadoConversacion.Vacio with
-            {
-                Costo = 2_850_000m, MargenAplicado = 0.135m, PrecioFinal = 996.35m, Moneda = "USD", TrmAplicada = 3306.86m,
-                PrecioCop = 3_294_798m, ConfirmacionPendiente = true,
-            },
-            [],
-            ["cotiza en dólares"],
-            _declaradas);
-
-    [Theory]
-    [InlineData("El precio es US$996,35 (equivalente a $3.294.798 con la TRM de $3.306,86).")]
-    [InlineData("La utilidad es de $444.798 sobre un costo de $2.850.000.")]
-    public void EnDolaresRespaldanElEquivalenteYLaUtilidadEnPesos(string texto) =>
-        clsReglasRespuestaAgente.Validar(Json(texto), EnDolares()).Fallos.Should().BeEmpty();
-
-    [Fact]
-    public void EnDolaresLaUtilidadEnPesosSaleDelEquivalenteEnPesosNoDelPrecioEnUsd()
-    {
-        // Sin PrecioCop no hay utilidad en pesos que respaldar: PrecioFinal (USD) − Costo (COP) mezcla monedas y no cuenta.
-        var sinEquivalente = EnDolares() with { Estado = EnDolares().Estado with { PrecioCop = null } };
-
-        Codigos(clsReglasRespuestaAgente.Validar(Json("La utilidad es de $444.798."), sinEquivalente))
-            .Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
-        Codigos(clsReglasRespuestaAgente.Validar(Json("El equivalente es $3.294.798."), sinEquivalente))
-            .Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
-    }
 }

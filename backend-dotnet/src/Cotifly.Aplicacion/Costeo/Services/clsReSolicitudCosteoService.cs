@@ -38,6 +38,15 @@ public interface IClsReSolicitudCosteoService
         int versionEsperada,
         string? claveIdempotencia,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Las MISMAS validaciones de <see cref="ReSolicitarAsync"/> sin escribir nada ni enviar a Nexo (HU-013.6, #102): entrada, estado,
+    /// regla del PDF, líneas guardadas, política activa y, con cambios de carga, el catálogo de Nexo (G2/G3, solo lectura) y las reglas
+    /// de la captura sobre la combinación (rangos, peso frente a las posiciones). La usa la propuesta <c>re_solicitar_costeo</c> del
+    /// asistente: una propuesta que el endpoint rechazaría nunca se arma. No valida el <c>If-Match</c> ni la TRM del día (cambian
+    /// entre proponer y confirmar). <c>null</c> si pasa.
+    /// </summary>
+    Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -184,36 +193,102 @@ public sealed class clsReSolicitudCosteoService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), null, false);
         }
 
+        var validada = await ValidarReglasAsync(usuarioId, cotizacion, entrada, cancellationToken);
+        if (validada.EsFallo)
+        {
+            return (validada.Error, null, false);
+        }
+
+        // Instantánea completa del costeo anterior: se toma antes de cualquier cambio y se guarda con la reserva.
+        var v = validada.Valor;
+        var instantanea = Instantanea(cotizacion, v.Guardadas);
+        var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.CosteoId);
+        return entrada.VersionNueva
+            ? await CrearVersionAsync(cotizacion, usuarioId, v.Encabezado, v.Lineas, v.Politica, versionEsperada,
+                Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
+            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Guardadas, v.Posiciones, v.Politica,
+                Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
+    }
+
+    public async Task<clsErrorDominio?> ValidarAsync(
+        Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(entrada);
+        if (ValidarEntrada(entrada) is { } invalida)
+        {
+            return invalida;
+        }
+
+        var validada = await ValidarReglasAsync(usuarioId, cotizacion, entrada, cancellationToken);
+        return validada.EsFallo ? validada.Error : null;
+    }
+
+    /// <summary>
+    /// Única fuente de las reglas de la re-solicitud (todo lo que se valida antes de escribir, salvo la entrada y el <c>If-Match</c>):
+    /// estado y regla del PDF, líneas guardadas, política activa y, en la versión nueva con cambios de carga, que sea de una línea, el
+    /// catálogo (G2) y las reglas de la captura sobre la combinación; en el mismo folio, las reglas sobre lo guardado.
+    /// </summary>
+    private async Task<clsResultado<clsReSolicitudValidada>> ValidarReglasAsync(
+        Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken)
+    {
         if (cotizacion.ValidarReSolicitud(entrada.VersionNueva) is { } noPermitida)
         {
-            return (noPermitida.Codigo == clsCodigosError.PdfYaEnviado
+            return noPermitida.Codigo == clsCodigosError.PdfYaEnviado
                 ? clsReglaPdfCosteo.ConVersionNueva(noPermitida, cotizacion.Folio, MotivoVersion)
-                : noPermitida, null, false);
+                : noPermitida;
         }
 
         var guardadas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var posiciones = await cotizaciones.ListarPosicionesAsync(cotizacion.Id, cancellationToken);
         if (guardadas.Count == 0 || cotizacion.EncabezadoSolicitud is not { } encabezado)
         {
-            return (new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La cotización {cotizacion.Folio} no tiene guardadas las líneas de la solicitud: no se puede volver a enviar a Nexo."), null, false);
+            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                $"La cotización {cotizacion.Folio} no tiene guardadas las líneas de la solicitud: no se puede volver a enviar a Nexo.");
         }
 
         var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
         if (politica is { Activa: false })
         {
-            return (clsMargenResolverService.LineaInactiva(politica.LineaNegocio), null, false);
+            return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
         }
 
-        // Instantánea completa del costeo anterior: se toma antes de cualquier cambio y se guarda con la reserva.
-        var instantanea = Instantanea(cotizacion, guardadas);
-        var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.CosteoId);
-        return entrada.VersionNueva
-            ? await CrearVersionAsync(cotizacion, usuarioId, entrada.DatosCarga, encabezado, guardadas, posiciones, politica, versionEsperada,
-                Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
-            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, guardadas, posiciones, politica,
-                Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
+        var lineas = clsEnvioCosteoService.LineasConPosiciones(guardadas, posiciones);
+        if (entrada.VersionNueva && entrada.DatosCarga is { } cambios)
+        {
+            if (lineas.Count != 1)
+            {
+                return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                    $"La cotización {cotizacion.Folio} es una licitación de {lineas.Count} líneas: los cambios de carga solo aplican a una "
+                    + "cotización de una línea (crea la versión con nueva_version y sin datos_carga).", "LICITACION");
+            }
+
+            encabezado = cambios.Aplicar(encabezado);
+            lineas = [cambios.Aplicar(lineas[0])];
+
+            // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo).
+            if (await catalogos.ValidarAsync(usuarioId, lineas[0], cancellationToken) is { } noCatalogo)
+            {
+                return noCatalogo;
+            }
+        }
+
+        // Lo guardado (o la combinación con los cambios) se valida con las reglas de la captura: nunca se envía algo que Nexo rechazaría.
+        if (clsEnvioCosteoService.Revalidar(encabezado, lineas) is { } reglas)
+        {
+            return reglas;
+        }
+
+        return new clsReSolicitudValidada(guardadas, posiciones, encabezado, lineas, politica);
     }
+
+    /// <summary>Lo que dejó listo la validación: líneas y posiciones guardadas, y el encabezado y las líneas a enviar (con los cambios).</summary>
+    private sealed record clsReSolicitudValidada(
+        IReadOnlyList<clsCotizacionLineaSolicitud> Guardadas,
+        IReadOnlyList<clsCotizacionPosicion> Posiciones,
+        clsEncabezadoSolicitudCosteo Encabezado,
+        IReadOnlyList<clsLineaSolicitudCosteo> Lineas,
+        clsMargenPolitica? Politica);
 
     /// <summary>Mismo folio: reserva (con el costeo anterior olvidado y su instantánea auditada) y vuelve a capturar en Nexo.</summary>
     private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacion?, bool)> ReenviarAsync(
@@ -227,12 +302,7 @@ public sealed class clsReSolicitudCosteoService(
         string nota,
         CancellationToken cancellationToken)
     {
-        // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría.
-        if (clsEnvioCosteoService.Revalidar(cotizacion.EncabezadoSolicitud!, clsEnvioCosteoService.LineasConPosiciones(guardadas, posiciones)) is { } invalida)
-        {
-            return (invalida, null, false);
-        }
-
+        // Lo guardado ya se revalidó en ValidarReglasAsync (filas anteriores a una regla nueva).
         cotizacion.PrepararReSolicitud();
         foreach (var linea in guardadas)
         {
@@ -257,41 +327,15 @@ public sealed class clsReSolicitudCosteoService(
     private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacion?, bool)> CrearVersionAsync(
         clsCotizacion original,
         Guid usuarioId,
-        clsCambiosCarga? cambios,
         clsEncabezadoSolicitudCosteo encabezado,
-        IReadOnlyList<clsCotizacionLineaSolicitud> guardadas,
-        IReadOnlyList<clsCotizacionPosicion> posiciones,
+        IReadOnlyList<clsLineaSolicitudCosteo> lineas,
         clsMargenPolitica? politica,
         int versionEsperada,
         clsEventoHerramienta? reserva,
         string nota,
         CancellationToken cancellationToken)
     {
-        var lineas = clsEnvioCosteoService.LineasConPosiciones(guardadas, posiciones);
-        if (cambios is not null)
-        {
-            if (lineas.Count != 1)
-            {
-                return (new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                    $"La cotización {original.Folio} es una licitación de {lineas.Count} líneas: los cambios de carga solo aplican a una "
-                    + "cotización de una línea (crea la versión con nueva_version y sin datos_carga).", "LICITACION"), null, false);
-            }
-
-            encabezado = cambios.Aplicar(encabezado);
-            lineas = [cambios.Aplicar(lineas[0])];
-
-            // G2 (#106): los cambios de carga solo traen códigos de catálogo, igual que la captura (nunca texto libre a Nexo).
-            if (await catalogos.ValidarAsync(usuarioId, lineas[0], cancellationToken) is { } noCatalogo)
-            {
-                return (noCatalogo, null, false);
-            }
-        }
-
-        if (clsEnvioCosteoService.Revalidar(encabezado, lineas) is { } invalida)
-        {
-            return (invalida, null, false);
-        }
-
+        // Encabezado y líneas ya validados (con los cambios de carga aplicados) por ValidarReglasAsync.
         // La versión nueva es una cotización nueva (decisión del 2026-10-06): misma moneda, TRM del día. Sin TRM no se crea nada (ni
         // la reserva de la original, ni la versión, ni la captura en Nexo), igual que el formulario y las licitaciones.
         var moneda = await monedas.FijarAsync(original.Moneda, cancellationToken);
@@ -430,9 +474,13 @@ public sealed class clsReSolicitudCosteoService(
             await misCotizaciones.ResumirAsync(cotizacion, CancellationToken.None),
             cotizacion.VersionNegocio.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>Motivo obligatorio (1 a 300 caracteres) y, si vienen, cambios de carga con al menos un campo.</summary>
-    private static clsErrorDominio? ValidarEntrada(clsEntradaReSolicitudCosteo entrada)
+    /// <summary>
+    /// Motivo (1 a 300 caracteres) y <c>datos_carga</c> no vacío (<c>SOLICITUD_COSTEO_INVALIDA</c>). Pública: la usa también la propuesta
+    /// <c>re_solicitar_costeo</c> del asistente (HU-013.6) antes de armar el cuerpo.
+    /// </summary>
+    public static clsErrorDominio? ValidarEntrada(clsEntradaReSolicitudCosteo entrada)
     {
+        ArgumentNullException.ThrowIfNull(entrada);
         var motivo = Motivo(entrada.Motivo);
         if (motivo is null)
         {

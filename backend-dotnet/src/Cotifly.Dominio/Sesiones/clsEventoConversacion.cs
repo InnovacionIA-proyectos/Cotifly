@@ -12,6 +12,9 @@ public sealed class clsEventoConversacion
     public const string RolUsuario = "user";
     public const string RolAsistente = "assistant";
 
+    /// <summary>Resultados de las herramientas de una iteración del loop (no vuelven al modelo como historial).</summary>
+    public const string RolHerramienta = "herramienta";
+
     private clsEventoConversacion()
     {
     }

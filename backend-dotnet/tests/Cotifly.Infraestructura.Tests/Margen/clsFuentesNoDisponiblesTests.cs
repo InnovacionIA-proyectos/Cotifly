@@ -1,10 +1,7 @@
 using Cotifly.Aplicacion.Margen.Interfaces;
 using Cotifly.Aplicacion.Margen.Services;
-using Cotifly.Aplicacion.Tarifas.DTOs;
-using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Infraestructura.Margen.Services;
-using Cotifly.Infraestructura.Tarifas.Services;
 using Cotifly.Infraestructura.Tests.Configuracion;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +12,7 @@ namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
 /// Adaptadores por defecto de #10: SAP TM sin <c>SapTm:Modo</c> (los adaptadores reales de #13 se prueban en
-/// <c>clsRegistroFuenteMargenTests</c>) y costeo Nexo (HU-005). También el registro de la opción <c>SapTm:SalesOrgDefault</c>.
+/// <c>clsRegistroFuenteMargenTests</c>). El proveedor de tarifas por defecto de #10 se retiró con el agente legado (HU-013.9). También el registro de la opción <c>SapTm:SalesOrgDefault</c>.
 /// </summary>
 public sealed class clsFuentesNoDisponiblesTests
 {
@@ -31,28 +28,6 @@ public sealed class clsFuentesNoDisponiblesTests
         fuente.Modo.Should().Be("no_configurada");
         fuente.EstaConfigurada.Should().BeFalse();
         valor.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task ElProveedorDeTarifasRespondeTarifaFuenteNoDisponibleYRemiteANexo()
-    {
-        var resultado = await new clsTarifaProviderNoDisponible()
-            .BuscarAsync(new clsEntradaBuscarTarifa("Nacional", "Medellín", "Bogotá", PesoKg: 12_000m), Ct);
-
-        resultado.Error.Codigo.Should().Be(clsCodigosError.TarifaFuenteNoDisponible);
-        resultado.Error.Mensaje.Should().Contain("Nexo").And.Contain("HU-005").And.Contain("el comercial ingresa el costo");
-    }
-
-    [Fact]
-    public void AddInfraestructuraRegistraElProveedorDeTarifasPorDefectoComoSingleton()
-    {
-        var servicios = new ServiceCollection();
-
-        servicios.AddInfraestructura(new ConfigurationBuilder().Build());
-
-        servicios.Should().ContainSingle(d => d.ServiceType == typeof(IClsTarifaProvider))
-            .Which.Should().Match<ServiceDescriptor>(d =>
-                d.ImplementationType == typeof(clsTarifaProviderNoDisponible) && d.Lifetime == ServiceLifetime.Singleton);
     }
 
     [Fact]

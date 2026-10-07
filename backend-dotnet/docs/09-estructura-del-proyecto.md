@@ -28,12 +28,13 @@ backend-dotnet/
 │   ├── openapi.yaml             # contrato HTTP (#17)
 │   ├── features/                # escenarios Gherkin (Reqnroll): persistencia, precio, margen, pdf, correo, auditoria,
 │   │                            # login_clientepro, refresh_logout, folio, aislamiento_comercial, web_cotizaciones,
-│   │                            # admin_lineas_negocio, chat_slot_filling, chat_web, google_chat, validador_respuesta_ia
+│   │                            # admin_lineas_negocio, asistente_folio, validador_respuesta_ia, costeo y licitaciones
+│   │                            # (chat_slot_filling, chat_web, chat_municipios y google_chat se borraron en HU-013.9)
 │   └── decisiones/              # ADR-001 … ADR-012
 ├── src/
 │   ├── Cotifly.Dominio/         # Comun/ + entidades, value objects y enums por módulo; Sesiones/
 │   ├── Cotifly.Aplicacion/      # Comun/{Interfaces,Exceptions}/ + <Módulo>/{DTOs,Validators,Services,Repositories,Interfaces}/
-│   │                            # Agente/{Herramientas,Filtros,Recursos}/ + clsDependenciasAplicacion
+│   │                            # Agente/{Herramientas,Filtros,Recursos}/ (asistente por folio) + clsDependenciasAplicacion
 │   ├── Cotifly.Infraestructura/ # Comun/Persistence/ (DbContext, configuraciones EF, UoW, interceptor, candados, health check),
 │   │                            # Configuracion/, <Módulo>/{Repositories,Services}/, Identidad/Persistence/, IA/Services/,
 │   │                            # recursos del PDF + clsDependenciasInfraestructura
@@ -43,10 +44,9 @@ backend-dotnet/
     ├── Directory.Build.props    # xUnit v3, AwesomeAssertions, TRX y cobertura; Testcontainers y soporte con UsaSqlServerPruebas
     ├── cobertura.config.xml     # ensamblados medidos por la cobertura (#14)
     ├── Comun/                   # soporte compartido de integración (enlazado, no es proyecto): SQL Server, reloj, SMTP, SAP,
-    │                            # Google, Nexo y modelo de IA falsos, lector de PDF
+    │                            # Nexo, TRM y modelo de IA falsos, lector de PDF
     ├── fixtures/sap/            # muestra de RentabClienteSet portada del Python
     ├── fixtures/cotizacion/     # ejemplo-solicitud.json del Python (payload del PDF, #11)
-    ├── fixtures/chat/           # evento_mensaje.json del Python; jwt_valido/jwt_invalido.txt y certs_chat_falsos.json
     ├── artefactos/              # PDF de la comparación visual que generan las pruebas (#11, no versionado)
     ├── Cotifly.Dominio.Tests/
     ├── Cotifly.Aplicacion.Tests/
@@ -68,7 +68,7 @@ docs/MAPEO_CAMPOS_NEXO_COTIFLY.md # mapeo de campos Nexo ↔ Cotifly del formula
 | Un caso de uso o un puerto | `Cotifly.Aplicacion/<Módulo>/Services/` y `Interfaces/` o `Repositories/` (puerto `ICls*`) |
 | Un adaptador (base, HTTP, SDK) | `Cotifly.Infraestructura/<Módulo>/Services/` o `Repositories/`, registrado en `clsDependenciasInfraestructura` |
 | Un endpoint | Primero `specs/openapi.yaml`; luego `Cotifly.Api/<Módulo>/Controllers/` heredando de `clsControladorWebBase` si es `/web/*` |
-| Una herramienta del agente | `Cotifly.Aplicacion/Agente/Herramientas/clsHerramientasCotizador` + inyección en `clsInyeccionEstadoFilter` + estado en `clsEstadoConversacionService` |
+| Una herramienta del asistente | `Cotifly.Aplicacion/Agente/Herramientas/clsHerramientasAsistenteFolio` (solo lectura o propuesta; la cotización sale de `clsContextoAsistenteFolio`, nunca del LLM) + la propuesta en `clsPropuestasAsistente` con las reglas del endpoint destino |
 | Un cambio de esquema | Script nuevo `db/migrations_mssql/000N_*.sql` idempotente (nunca migraciones EF), mapeo en `Comun/Persistence/Configurations/` y prueba de deriva |
 | Una opción de configuración | Clase `clsOpcionesXxx` con `AddOpcionesValidadas<T>()`, variable en `.env.example` y fila en [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración) |
 | Una decisión de arquitectura | ADR nueva en `specs/decisiones/` con la plantilla del índice |
