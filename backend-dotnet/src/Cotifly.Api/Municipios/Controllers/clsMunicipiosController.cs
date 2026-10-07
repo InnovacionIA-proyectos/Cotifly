@@ -21,7 +21,7 @@ public sealed class clsMunicipiosController(IClsContextoUsuario usuario, IClsMun
     {
         var resultado = await municipios.ObtenerAsync(UsuarioId, cancellationToken);
         // Contrato vigente de GET /web/municipios: MUNICIPIOS_NO_DISPONIBLE es 400 aquí (en las licitaciones es 503, HU-013.11).
-        // Pendiente de alinear a 503 en una issue propia (ADR-018 §Disponibilidad de catálogos).
+        // Pendiente de alinear a 503 en una issue propia (ADR-018 §16).
         return resultado.Coincidir<IActionResult>(m => Ok(m), e => BadRequest(clsErrorNegocioWeb.Desde(e)));
     }
 }

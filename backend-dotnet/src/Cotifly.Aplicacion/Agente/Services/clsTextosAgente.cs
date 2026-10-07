@@ -12,20 +12,8 @@ public static class clsTextosAgente
     /// <summary>Cualquier otro fallo interno del turno (texto de <c>orquestador/web.py</c>).</summary>
     public const string ErrorInterno = "Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.";
 
-    /// <summary>Acuse del webhook de Google Chat (<c>_RECIBO</c> de <c>orquestador/webhook.py</c>).</summary>
-    public const string Recibo = "Recibí tu solicitud, la estoy procesando…";
-
-    /// <summary>Email de Google Chat sin comercial en <c>UsuariosWeb</c> (ADR-011): no se cotiza.</summary>
-    public const string SinIdentidad = "Ingresa primero a Cotifly desde ClientePro.";
-
-    /// <summary>El hilo de Chat ya es la cotización de otro comercial (la sesión queda ligada a su dueño, ADR-004 §6).</summary>
-    public const string HiloAjeno = "Este hilo pertenece a la cotización de otro comercial. Abre un hilo nuevo para cotizar.";
-
     /// <summary><c>sesion_id</c> de otro usuario en <c>POST /web/chat</c> (404 del contrato).</summary>
     public const string SesionNoEncontrada = "Sesión no encontrada.";
-
-    /// <summary>La cola del webhook está llena: se acusa el evento pero no se procesa.</summary>
-    public const string ColaLlena = "Estoy atendiendo muchas solicitudes en este momento. Reenvía tu mensaje en un minuto.";
 
     /// <summary>
     /// ¿El fallo es el límite de peticiones del proveedor (HTTP 429)? Misma heurística que el Python (tipo <c>RateLimit*</c> o
@@ -55,10 +43,16 @@ public static class clsTextosAgente
 
     /// <summary>
     /// Respaldo del validador de la respuesta final (HU-003.10, #16): el modelo no produjo una respuesta válida ni con el reintento.
-    /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>, texto simple en Google Chat).
+    /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>).
     /// </summary>
     public const string RespuestaNoEstructurada =
         "No pude estructurar la respuesta. Reenvía tu mensaje o reformúlalo; lo que ya calculé en esta conversación no se pierde.";
+
+    /// <summary>
+    /// HU-013.6 (#102): el turno armó una acción propuesta pero el modelo no dio un texto válido ni con el reintento. La propuesta (con
+    /// su resumen del servidor) sale igual con este texto.
+    /// </summary>
+    public const string PropuestaSinTexto = "Preparé una propuesta para esta cotización: revisa el resumen y, si estás de acuerdo, confírmala con el botón.";
 
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";

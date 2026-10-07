@@ -47,7 +47,8 @@ public sealed class clsApiWebPruebas : IDisposable
         clsBaseDatosPruebas baseDatos,
         bool correoHabilitado = false,
         IDictionary<string, string?>? extra = null,
-        Action<IWebHostBuilder>? configurar = null)
+        Action<IWebHostBuilder>? configurar = null,
+        string entorno = "Pruebas")
     {
         ArgumentNullException.ThrowIfNull(baseDatos);
         _baseDatos = baseDatos;
@@ -80,6 +81,7 @@ public sealed class clsApiWebPruebas : IDisposable
 
         Factory = new clsFabricaApiWeb().WithWebHostBuilder(b =>
         {
+            b.UseEnvironment(entorno);
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
             configurar?.Invoke(b);
         });

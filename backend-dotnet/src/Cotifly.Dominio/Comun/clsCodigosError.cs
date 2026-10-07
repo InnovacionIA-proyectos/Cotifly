@@ -287,4 +287,10 @@ public static class clsCodigosError
     /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409. Código nuevo del backend .NET.
     /// </summary>
     public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
+
+    /// <summary>
+    /// HU-013.6 (#102, ADR-018 §2b): <c>POST /web/chat</c> sin <c>folio</c> (o vacío): el asistente solo trabaja sobre una cotización
+    /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
+    /// </summary>
+    public const string FolioRequerido = "FOLIO_REQUERIDO";
 }

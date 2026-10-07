@@ -1,6 +1,7 @@
 # ADR-013 — Despliegue del backend .NET en Dokploy
 
 - **Estado:** Propuesta (pendiente de confirmar con el equipo de infraestructura los puntos marcados en Pendientes)
+- **Nota de estado (HU-013.9, #105):** Google Chat se retiró. Ya no aplican el secreto `cotifly_gchat_sa_v1` (`gchat_sa`), las variables `GChat__*` de los manifiestos ni la verificación del JWT del webhook (§4.2): `POST /chat/events` responde 404. El resto de la decisión sigue vigente.
 - **Fecha:** 2026-09-28
 - **Issue / HU:** HU-006: #29 (HU-006.5), #28 (HU-006.4), #30 (HU-006.6), #31 (HU-006.7). Relacionada con ADR-001 (corte único), ADR-007 (solo Dockerfile), ADR-008 (SQL Server corporativo) y ADR-012 (volumen de PDF), y con HU-007.1 (#33).
 
@@ -18,7 +19,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 
 1. Los valores sensibles llegan como **variables de entorno de Dokploy** del stack; el manifiesto solo tiene
    `${Variable}`. Aplica a `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`,
-   `Pdf__ClaveFirmaUrl`, `IA__ApiKey` (y respaldos) y `SapTm__Pass`.
+   `IA__ApiKey` (y respaldos) y `SapTm__Pass` (`Pdf__ClaveFirmaUrl` se retiró con la URL firmada en HU-013.9).
 2. La cuenta de servicio de Google Chat va como **secreto de Docker Swarm** con nombre versionado
    (`cotifly_gchat_sa_v1`), montado en `/run/secrets/gchat_sa.json`; `GChat__SaJson` apunta a esa ruta.
 3. MinIO no se mantiene (ADR-012): no hay credenciales S3. Nexo no usa credencial (ADR-005).

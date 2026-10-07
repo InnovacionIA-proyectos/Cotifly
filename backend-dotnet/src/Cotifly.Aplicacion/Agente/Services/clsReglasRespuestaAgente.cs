@@ -37,17 +37,17 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 /// <item>Campos: <c>tipo</c> ∈ {conversacional, previsualizacion, confirmacion_requerida, error}; <c>texto</c> string de 1 a 4000
 /// caracteres sin contar espacios al borde; <c>requiere_confirmacion</c> booleano; <c>acciones_sugeridas</c> ausente, null o una
 /// lista de {confirmar_pdf, ajustar_margen}.</item>
-/// <item>Coherencia: <c>requiere_confirmacion</c> es true exactamente con previsualizacion y confirmacion_requerida; una
-/// previsualizacion exige un precio calculado por las herramientas (estado) y ningún origen o destino ambiguo sin elegir en el
-/// catálogo de municipios (HU-005.13); las acciones exigen una previsualización pendiente y
-/// su herramienta declarada en el turno.</item>
+/// <item>Coherencia: <c>requiere_confirmacion</c> es true exactamente con previsualizacion y confirmacion_requerida; el asistente
+/// por folio no calcula precios, así que una previsualizacion nunca es válida (HU-013.9: el agente cotizador legado, el único que
+/// previsualizaba, se retiró); una acción sugerida exige su herramienta declarada en el turno (ninguna del asistente lo es: las
+/// propuestas van en <c>accion_propuesta</c>, que arma el servidor).</item>
 /// <item>Montos (<see cref="Montos"/>): con moneda (<c>$</c>, <c>COP</c>, <c>USD</c>, <c>US$</c>, pesos, dólares), con sufijo de
 /// millones (<c>millones</c>, <c>mill</c>, <c>M</c>, <c>MM</c>), con separadores de miles de 1.000.000 o más, o de 1.000 o más en
 /// la ventana de 40 caracteres tras "precio", "costo", "utilidad", "tarifa", "valor", "total", "flete", "descuento", "IVA",
 /// "cobr…" o "pag…" (todos los números de la ventana). Se descartan fechas, años sueltos tras una palabra clave, números tras
 /// NIT/tel/teléfono/cel/celular/cédula/CC/folio/llamar y los seguidos de kg/ton/toneladas/km/%. Cada monto debe coincidir,
-/// redondeado a pesos, con un número de las salidas de las herramientas del turno (o una cadena de solo dígitos), con el costo,
-/// el precio, la utilidad o el NIT del estado, o con un monto que el comercial escribió como dinero.</item>
+/// redondeado a pesos, con un número de las salidas de las herramientas del turno (o una cadena de solo dígitos) o con un monto
+/// que el comercial escribió como dinero. El estado de la conversación no respalda montos: no los tiene.</item>
 /// <item>Folios: todo <c>PCN-…</c> de <c>texto</c> debe aparecer en el estado, en las salidas de las herramientas o en los mensajes
 /// del comercial.</item>
 /// </list>
@@ -72,7 +72,6 @@ public static partial class clsReglasRespuestaAgente
     public const string AccionNoDisponible = "accion_no_disponible";
     public const string IncoherenciaConfirmacion = "incoherencia_confirmacion";
     public const string PrevisualizacionSinPrecio = "previsualizacion_sin_precio";
-    public const string PrevisualizacionMunicipioPendiente = "previsualizacion_municipio_pendiente";
     public const string MontoNoRespaldado = "monto_no_respaldado";
     public const string FolioNoRespaldado = "folio_no_respaldado";
 
@@ -470,28 +469,18 @@ public static partial class clsReglasRespuestaAgente
                 "requiere_confirmacion debe ser true solo con tipo previsualizacion o confirmacion_requerida, y false con los demás tipos."));
         }
 
-        if (respuesta.Tipo == TipoRespuestaAgente.Previsualizacion && contexto.Estado.PrecioFinal is null)
+        if (respuesta.Tipo == TipoRespuestaAgente.Previsualizacion)
         {
             fallos.Add(new(PrevisualizacionSinPrecio,
-                "No hay un precio calculado por calcular_precio: no uses tipo previsualizacion; pide los datos que faltan (tipo conversacional)."));
-        }
-
-        if (respuesta.Tipo == TipoRespuestaAgente.Previsualizacion && contexto.Estado.TieneMunicipiosPorConfirmar())
-        {
-            fallos.Add(new(PrevisualizacionMunicipioPendiente,
-                "El origen o el destino tienen varios municipios posibles sin elegir: no uses tipo previsualizacion; muestra los candidatos y pregunta cuál es (tipo conversacional)."));
+                "El asistente no calcula precios ni previsualiza cotizaciones: no uses tipo previsualizacion; responde con tipo conversacional."));
         }
 
         foreach (var accion in respuesta.AccionesSugeridas ?? [])
         {
-            if (!contexto.Estado.ConfirmacionPendiente || !respuesta.RequiereConfirmacion)
+            if (!contexto.HerramientasDeclaradas.Contains(HerramientaDeAccion[accion]))
             {
                 fallos.Add(new(AccionNoDisponible,
-                    $"La acción '{Codigo(accion)}' solo se sugiere con una previsualización pendiente de confirmar; usa acciones_sugeridas null."));
-            }
-            else if (!contexto.HerramientasDeclaradas.Contains(HerramientaDeAccion[accion]))
-            {
-                fallos.Add(new(AccionNoDisponible, $"La acción '{Codigo(accion)}' no está disponible en esta conversación."));
+                    $"La acción '{Codigo(accion)}' no está disponible en esta conversación; usa acciones_sugeridas null (las propuestas las arma el servidor)."));
             }
         }
     }
@@ -595,27 +584,14 @@ public static partial class clsReglasRespuestaAgente
     }
 
     /// <summary>
-    /// Números y textos que respaldan un monto o un folio: salidas de herramientas (y sus cadenas de solo dígitos), estado (costo,
-    /// precio, utilidad, NIT, folio) y los montos que el comercial escribió como dinero.
+    /// Números y textos que respaldan un monto o un folio: salidas de herramientas (y sus cadenas de solo dígitos), el folio del
+    /// estado y los montos que el comercial escribió como dinero.
     /// </summary>
     private static (HashSet<decimal> Numeros, List<string> Cadenas) Respaldos(clsContextoValidacionRespuesta contexto)
     {
         var numeros = new HashSet<decimal>();
         var cadenas = new List<string>();
         var estado = contexto.Estado;
-        // Montos en su moneda (HU-012.2): costo y utilidad siempre en COP. En USD el precio final no se resta del costo (monedas distintas):
-        // respaldan el equivalente en pesos (PrecioCop), la utilidad en pesos (PrecioCop − Costo) y la TRM aplicada.
-        var enPesos = Dominio.Precio.clsConversorMoneda.EsPesos(estado.Moneda);
-        var precioCop = enPesos ? estado.PrecioFinal : estado.PrecioCop;
-        foreach (var valor in new[] { estado.Costo, estado.PrecioFinal, precioCop, precioCop - estado.Costo, enPesos ? null : estado.TrmAplicada })
-        {
-            if (valor is { } v)
-            {
-                numeros.Add(v);
-            }
-        }
-
-        AgregarDigitos(estado.NitCliente, numeros);
         if (!string.IsNullOrWhiteSpace(estado.FolioEnProgreso))
         {
             cadenas.Add(estado.FolioEnProgreso);
@@ -759,7 +735,7 @@ public static partial class clsReglasRespuestaAgente
     [GeneratedRegex(@"\A\d{1,3}(?:[.,'’]\d{3}){2,}(?:[.,]\d{1,2})?\z", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionMillonesAgrupados();
 
-    [GeneratedRegex(@"\b(?:precios?|costos?|utilidad(?:es)?|tarifas?|valor(?:es)?|total(?:es)?|fletes?|descuentos?|iva|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\b(?:precios?|costos?|utilidad(?:es)?|tarifas?|valor(?:es)?|total(?:es)?|fletes?|descuentos?|iva|trm|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionPalabraDinero();
 
     [GeneratedRegex(@"\b(?:NIT|tel|tel[eé]fono|cel|celular|c[eé]dula|CC|folio|llam\w*|whatsapp|m[oó]vil)\b[^\d]{0,15}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]

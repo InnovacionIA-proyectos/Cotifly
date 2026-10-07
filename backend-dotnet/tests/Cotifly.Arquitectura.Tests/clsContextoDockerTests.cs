@@ -25,13 +25,13 @@ public sealed class clsContextoDockerTests
         var reglas = LeerReglas();
         var archivos = ArchivosDeLosProyectos().ToList();
 
-        archivos.Should().Contain(a => a.EndsWith("Agente/Recursos/prompt_cotizador.md", StringComparison.Ordinal), "el prompt del agente es un recurso embebido");
+        archivos.Should().Contain(a => a.EndsWith("Agente/Recursos/prompt_asistente_folio.md", StringComparison.Ordinal), "el prompt del agente es un recurso embebido");
         archivos.Where(a => EstaExcluido(reglas, a)).Should().BeEmpty("todo recurso de un .csproj de src/ debe viajar en el contexto de docker build");
     }
 
     [Theory]
     [InlineData("src/Cotifly.Dominio/Pdf/LEEME.md", true)]
-    [InlineData("src/Cotifly.Aplicacion/Agente/Recursos/prompt_cotizador.md", false)]
+    [InlineData("src/Cotifly.Aplicacion/Agente/Recursos/prompt_asistente_folio.md", false)]
     [InlineData("src/Cotifly.Api/bin/Release/x.dll", true)]
     [InlineData("tests/Cotifly.Api.Tests/clsCotiflyApiFactory.cs", true)]
     [InlineData("specs/openapi.yaml", true)]

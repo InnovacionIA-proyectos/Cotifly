@@ -56,7 +56,7 @@ public sealed class clsVerificadorIdentidad(
     /// <param name="idUsuario">Identidad a revalidar (como <c>NOMBREUSUARIO</c> y, si no, como <c>ID</c>).</param>
     /// <param name="permitirAlta">
     /// <c>true</c> en el login: alta JIT y refresco de los datos corporativos (nombre, correo y regional). <c>false</c> en el
-    /// refresh y en Google Chat: el usuario ya debe existir y no se toca.
+    /// refresh: el usuario ya debe existir y no se toca.
     /// </param>
     /// <param name="ahora">Instante de la operación.</param>
     /// <param name="cancellationToken">Cancelación del llamador.</param>
@@ -144,9 +144,9 @@ public sealed class clsVerificadorIdentidad(
             porNombre.ActualizarDatos(externo.NombreCompleto, externo.Email, regional);
             if (!string.Equals(correoAnterior, porNombre.Email, StringComparison.OrdinalIgnoreCase))
             {
-                // El correo es la identidad en Google Chat (ADR-011): se deja rastro del cambio, sin los valores.
+                // El correo es el remitente y el contacto del comercial: se deja rastro del cambio, sin los valores.
                 logger.LogWarning(
-                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: su identidad en Google Chat pasa a ser el correo nuevo.",
+                    "El correo de '{NombreUsuario}' cambió en el almacén corporativo: sus cotizaciones nuevas salen con el correo nuevo.",
                     externo.NombreUsuario);
             }
         }
@@ -232,8 +232,8 @@ public sealed class clsVerificadorIdentidad(
 }
 
 /// <summary>
-/// Verificación doble de la identidad (login, refresh y, desde #12 parte C, cada turno de Google Chat). Interfaz para poder
-/// simularla en las pruebas del procesamiento de Google Chat.
+/// Verificación doble de la identidad (login y refresh; hasta HU-013.9 también cada turno de Google Chat, retirado). Interfaz
+/// para poder simularla en las pruebas.
 /// </summary>
 public interface IClsVerificadorIdentidad
 {

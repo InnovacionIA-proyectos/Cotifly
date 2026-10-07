@@ -5,7 +5,9 @@
 # y se valida a mano (JSON, campos, tipos, enums, largos, acciones disponibles, montos y folios respaldados por las herramientas
 # o el estado). Si no valida: un reintento con un mensaje de corrección; si vuelve a fallar, el error controlado
 # (200 {texto, error: true}). Nunca llega al comercial una respuesta sin validar. Por HTTP contra la API real con SQL Server 2019 en
-# Testcontainers y el modelo guionizado (sin red).
+# Testcontainers y el modelo guionizado (sin red). Desde HU-013.9 (#105) el único agente es el asistente por folio (HU-013.6): los
+# escenarios corren sobre una cotización costeada; el del precio calculado por las herramientas se retiró con el agente legado (el
+# asistente no calcula precios ni ve montos, ver asistente_folio.feature).
 @integracion
 Característica: Validación estructurada de la respuesta final del agente
   Como comercial de Botero Soto
@@ -13,18 +15,20 @@ Característica: Validación estructurada de la respuesta final del agente
   Para no recibir textos rotos ni precios o folios que el servidor no calculó
 
   Antecedentes:
-    Dado la API web de Cotifly con el agente guionizado
+    Dado la API web de Cotifly conectada a Nexo con el cliente "900555111" de BP "15927"
     Y el comercial "ana" con sesión en la regional "Occidente"
+    Y "ana" envió a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costeó la solicitud de "C1" con un flete de 2550000 y el polling lo registró
 
   Escenario: Una respuesta final válida llega al comercial y se pidió con el esquema JSON
     Dado que el modelo cierra el loop sin herramientas
     Y que la respuesta final del modelo es:
       """
-      {"tipo": "conversacional", "texto": "¿De qué ciudad sale la carga?", "requiere_confirmacion": false, "acciones_sugeridas": null}
+      {"tipo": "conversacional", "texto": "La cotización está costeada y lista para generar el PDF.", "requiere_confirmacion": false, "acciones_sugeridas": null}
       """
-    Cuando "ana" escribe en el chat "Hola, necesito cotizar"
+    Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
-    Y el texto del chat es "¿De qué ciudad sale la carga?"
+    Y el texto del chat es "La cotización está costeada y lista para generar el PDF."
     Y la llamada final al modelo pidió el esquema JSON "respuesta_agente" sin herramientas
 
   # HU-003.6 (#84): Gemini vía OmniRoute ignora response_format y envuelve el JSON en prosa y un bloque de código.
@@ -34,26 +38,26 @@ Característica: Validación estructurada de la respuesta final del agente
       """
       Claro, esta es la respuesta final:
       ```json
-      {"tipo": "conversacional", "texto": "¿De qué ciudad sale la carga?", "requiere_confirmacion": false, "acciones_sugeridas": null}
+      {"tipo": "conversacional", "texto": "La cotización está costeada y lista para generar el PDF.", "requiere_confirmacion": false, "acciones_sugeridas": null}
       ```
       """
-    Cuando "ana" escribe en el chat "Hola, necesito cotizar"
+    Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
-    Y el texto del chat es "¿De qué ciudad sale la carga?"
+    Y el texto del chat es "La cotización está costeada y lista para generar el PDF."
 
   Escenario: Un JSON incompleto se corrige con un reintento
     Dado que el modelo cierra el loop sin herramientas
     Y que la respuesta final del modelo es:
       """
-      {"tipo": "conversacional", "texto": "¿De qué ciudad sale
+      {"tipo": "conversacional", "texto": "La cotización está
       """
     Y que la respuesta final del modelo es:
       """
-      {"tipo": "conversacional", "texto": "¿De qué ciudad sale la carga?", "requiere_confirmacion": false, "acciones_sugeridas": null}
+      {"tipo": "conversacional", "texto": "La cotización está costeada y lista para generar el PDF.", "requiere_confirmacion": false, "acciones_sugeridas": null}
       """
-    Cuando "ana" escribe en el chat "Hola, necesito cotizar"
+    Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
-    Y el texto del chat es "¿De qué ciudad sale la carga?"
+    Y el texto del chat es "La cotización está costeada y lista para generar el PDF."
     Y el modelo recibió un mensaje de corrección que menciona "JSON"
 
   Escenario: Una acción inventada dos veces termina en el error controlado
@@ -66,22 +70,6 @@ Característica: Validación estructurada de la respuesta final del agente
       """
       {"tipo": "confirmacion_requerida", "texto": "¿Reservo el vehículo?", "requiere_confirmacion": true, "acciones_sugeridas": ["reservar_vehiculo"]}
       """
-    Cuando "ana" escribe en el chat "Hola, necesito cotizar"
+    Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChatError" del contrato
     Y el texto del chat empieza por "No pude estructurar la respuesta"
-
-  Escenario: Un precio que no calcularon las herramientas se rechaza y el reintento usa el del servidor
-    Dado que el modelo pide el margen de "Nacional" y calcula el precio con costo 2850000 y margen 0.40 sin cerrar el turno
-    Y que la respuesta final del modelo es:
-      """
-      {"tipo": "previsualizacion", "texto": "El precio final es $3.500.000. ¿Confirmas?", "requiere_confirmacion": true, "acciones_sugeridas": ["confirmar_pdf"]}
-      """
-    Y que la respuesta final del modelo es:
-      """
-      {"tipo": "previsualizacion", "texto": "El precio final es $3.352.941. ¿Confirmas?", "requiere_confirmacion": true, "acciones_sugeridas": ["confirmar_pdf", "ajustar_margen"]}
-      """
-    Cuando "ana" escribe en el chat "Cotiza Nacional YUMBO a BUN, costo 2.850.000"
-    Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
-    Y el texto del chat es "El precio final es $3.352.941. ¿Confirmas?"
-    Y la respuesta del chat trae el margen "0.15" con origen "politica_linea" y el precio "3352941"
-    Y el modelo recibió un mensaje de corrección que menciona "$3.500.000"

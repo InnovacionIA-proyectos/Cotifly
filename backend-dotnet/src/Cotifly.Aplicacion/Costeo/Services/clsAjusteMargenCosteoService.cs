@@ -145,8 +145,17 @@ public sealed class clsAjusteMargenCosteoService(
     /// sus líneas (todas deben tener costo, si no <c>COSTEO_NO_LISTO</c>); una de una línea usa <c>costo</c>. Los conexos conservan si
     /// están incluidos.
     /// </summary>
-    public clsResultado<clsRecalculoMargen> Recalcular(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, decimal margen)
+    public clsResultado<clsRecalculoMargen> Recalcular(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, decimal margen) =>
+        Recalcular(precios, cotizacion, lineas, margen);
+
+    /// <summary>
+    /// El mismo recálculo sin instancia del caso de uso y SIN cambiar la cotización: lo usa también la vista previa del asistente
+    /// (HU-013.6, #102) para el <c>resumen</c> de la acción propuesta <c>ajustar_margen</c>, con los precios que se guardarían.
+    /// </summary>
+    public static clsResultado<clsRecalculoMargen> Recalcular(
+        IClsPrecioService precios, clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, decimal margen)
     {
+        ArgumentNullException.ThrowIfNull(precios);
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(lineas);
         var metodo = cotizacion.MetodoCalculo ?? clsReglaMargen.MetodoMargen;

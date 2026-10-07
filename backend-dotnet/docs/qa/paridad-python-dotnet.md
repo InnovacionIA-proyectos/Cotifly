@@ -5,6 +5,8 @@ Plantilla para el plan y la ejecución de las pruebas de paridad. La define y la
 - Estado: **plantilla; casos por definir con datos reales**.
 - Responsable: Kevin (QA). Soporte: Duban (backend).
 
+> **Nota (HU-013.9, #105).** Documento histórico de la migración. Google Chat y el agente cotizador conversacional se retiraron del backend .NET en HU-013.9: los casos de Google Chat y los de cotizar conversando por `POST /web/chat` ya no aplican (hoy `/web/chat` es el asistente por folio y sin `folio` responde 400 `FOLIO_REQUERIDO`; `/chat/events` responde 404).
+
 ## 1. Objetivo y alcance
 
 Comparar el resultado exacto de al menos **10 casos reales** entre el backend Python actual y el backend .NET, cubriendo distintas líneas de negocio: margen (valor y origen), precio, utilidad y PDF generado. Además, probar con Postman los 5 endpoints `/web/*` del contrato congelado (HU-004.1) y confirmar códigos de estado y forma de respuesta.
