@@ -96,9 +96,6 @@ tags:
 
       Pendiente de Nexo, NO implementado: "score de urgencia" por cotización (su contrato depende del equipo de Nexo,
       ver ADR-016).
-  - name: chat
-    description: |
-      Webhook de Google Chat. Obsoleto: Google Chat se retira del proyecto en HU-013.9 (#105, ADR-018).
   - name: sistema
     description: Salud del servicio y archivos PDF
 
@@ -199,9 +196,9 @@ paths:
       description: |
         **HU-013.6 (#102, ADR-018), implementado:** el asistente trabaja sobre UNA cotización ya creada por
         el formulario. `folio` es obligatorio: sin él responde 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial,
-        404 (`Cotización no encontrada o no es tuya.`), sin llamar al modelo. Las cotizaciones ya no se crean por chat (flag
-        `Chat:CreacionHabilitada=false` por defecto; con `true`, solo para una transición, un mensaje SIN `folio` vuelve al
-        agente legado; después se borra el código): `cotizacion_origen_id` y `moneda` quedan obsoletos. La sesión queda
+        404 (`Cotización no encontrada o no es tuya.`), sin llamar al modelo. Las cotizaciones ya no se crean por chat: el
+        agente legado y el flag `Chat:CreacionHabilitada` se retiraron en HU-013.9 (#105), así que sin `folio` la respuesta
+        es siempre 400 `FOLIO_REQUERIDO`; `cotizacion_origen_id` y `moneda` quedan obsoletos y se ignoran. La sesión queda
         ligada al comercial y al folio (el mismo `sesion_id` con otro folio es otra conversación).
         Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`,
         `proponer_re_solicitud` y `buscar_servicio_conexo`. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
@@ -2040,10 +2037,10 @@ paths:
         regional; si la regional del gerente no se conoce, solo el dueño) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
-        Alternativa sin `Authorization` para Google Chat (ADR-011 §3, #12 parte C): el enlace
-        de la tarjeta del PDF lleva `?t=<token>`, una firma HMAC de vida corta (15 minutos por
-        defecto) sobre el archivo, el comercial y el vencimiento; solo vale para el dueño.
-        Un token alterado o vencido responde 401. El frontend sigue usando Bearer.
+        Alternativa sin `Authorization` (ADR-011 §3, #12 parte C): `?t=<token>`, una firma HMAC de vida corta (15 minutos
+        por defecto) sobre el archivo, el comercial y el vencimiento; solo vale para el dueño. Un token alterado o vencido
+        responde 401. La emitía la tarjeta del PDF de Google Chat, retirado en HU-013.9 (#105): hoy ningún canal emite
+        enlaces firmados y el frontend usa Bearer.
       security:
         - bearer: []
         - {}
@@ -2057,7 +2054,7 @@ paths:
         - name: t
           in: query
           required: false
-          description: Token del enlace firmado de Google Chat (`{usuario}.{vence}.{firma}`); con él no se exige Bearer.
+          description: Token del enlace firmado (`{usuario}.{vence}.{firma}`, ADR-011 §3); con él no se exige Bearer.
           schema:
             type: string
             maxLength: 200
@@ -2079,55 +2076,6 @@ paths:
                 error: "Inicia sesión de nuevo."
         '404':
           description: No existe o no es tuya
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorWeb'
-
-  /chat/events:
-    post:
-      operationId: recibirEventoChat
-      tags: [chat]
-      summary: Webhook de Google Chat (obsoleto, se retira en HU-013.9)
-      deprecated: true
-      description: |
-        **Obsoleto (ADR-018):** Google Chat sale del alcance de Cotifly; el webhook, su controlador y
-        `Infraestructura/GoogleChat/*` se retiran en HU-013.9 (#105). Las tablas `EventosConversacion` y `Sesiones` se
-        conservan como auditoría. No integrar nada nuevo contra este endpoint.
-
-        Verifica el JWT de Google (audience = número de proyecto, emisor
-        `chat@system.gserviceaccount.com`), responde de inmediato con un acuse y procesa
-        el turno en segundo plano. La respuesta final se publica en el hilo de Chat.
-        La identidad es el correo del remitente en `UsuariosWeb.email` (ADR-011): sin cuenta se
-        responde en el hilo "Ingresa primero a Cotifly desde ClientePro." y no se cotiza. Los clics
-        en los botones de la tarjeta de previsualización (`CARD_CLICKED`) cuentan como mensaje.
-      security:
-        - googleChat: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        '200':
-          description: |
-            Acuse. Evento MESSAGE en formato clásico → `{"text": "..."}`; en formato
-            add-on → `hostAppDataAction.chatDataAction.createMessageAction`. Otros eventos → `{}`.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '400':
-          description: El cuerpo no es JSON
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorWeb'
-        '401':
-          description: JWT de Google inválido
           content:
             application/json:
               schema:
@@ -2199,11 +2147,6 @@ components:
       description: |
         JWT HS256, 60 minutos. Claims: `sub` (UUID del usuario en `UsuariosWeb`),
         `jti`, `username`, `rol` (`comercial` | `gerente_comercial`).
-    googleChat:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: JWT firmado por Google Chat (RS256).
 
   parameters:
     Folio:
@@ -2603,8 +2546,9 @@ components:
           nullable: true
           deprecated: true
           description: |
-            Obsoleto desde HU-013.6 (el chat ya no crea cotizaciones ni versiones; la versión nueva sale de
-            `POST .../costeo/re-solicitar` con cambios de carga). Opcional. Inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
+            Obsoleto desde HU-013.6 y sin efecto desde HU-013.9 (#105): se acepta y se ignora (el chat ya no crea
+            cotizaciones ni versiones; la versión nueva sale de `POST .../costeo/re-solicitar` con cambios de carga).
+            Comportamiento histórico del agente legado: inicia una nueva versión de una cotización propia (botón "Nueva versión"): el agente
             parte de su cliente, línea y números, y el PDF sale como `{folio base}-vN`. Si no es del
             comercial responde 404 (igual que si no existe); si no es un UUID, 400.
         moneda:
@@ -2613,8 +2557,8 @@ components:
           enum: [COP, USD, null]
           deprecated: true
           description: |
-            Obsoleto desde HU-013.6: la moneda se elige en el formulario (`SolicitudCosteoWeb.moneda`, HU-013.7).
-            Opcional (HU-012.2, ADR-014). Moneda de la cotización que eligió el comercial en el selector del
+            Obsoleto desde HU-013.6 y sin efecto desde HU-013.9 (#105): se acepta y se ignora; la moneda se elige en el
+            formulario (`SolicitudCosteoWeb.moneda`, HU-013.7). Comportamiento histórico del agente legado (HU-012.2, ADR-014): moneda de la cotización que eligió el comercial en el selector del
             formulario (HU-012.4). Queda en el estado de la conversación y manda sobre lo que diga el modelo;
             si cambia, el precio ya calculado se descarta y se recalcula. Sin el campo, la conversación sigue
             con la moneda que ya tenía (COP por defecto). Con `USD`, el precio se convierte con la TRM del día
@@ -2719,7 +2663,8 @@ components:
       description: |
         Desde HU-013.6 (ADR-018) el asistente responde `{texto, accion_propuesta?}`: `herramientas` y `errores` se
         conservan, y `precio`, `margen` y `pdf` quedan siempre en `null` (se retiran `calcular_precio`, `obtener_margen`,
-        `buscar_tarifa` y `generar_pdf` del agente). Se mantienen en el esquema por compatibilidad.
+        `buscar_tarifa` y `generar_pdf` del agente; el agente legado se borró en HU-013.9, #105). Se mantienen en el esquema,
+        deprecated, por compatibilidad con el frontend que todavía los lee; se podrán quitar cuando el frontend deje de leerlos.
       properties:
         texto:
           type: string

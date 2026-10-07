@@ -12,7 +12,7 @@
 #
 # Topología:
 #   Internet ──TLS──> Traefik (dokploy-network) ──> cotifly-api:8080 ──> tbsdatacenter:1433 (SQL Server 2019)
-#                                                         │         ──> LLM, Google Chat, Nexo, SAP TM, relay SMTP
+#                                                         │         ──> LLM, Nexo, SAP TM, relay SMTP
 #                                                         └── volumen cotifly_pdfs (/data/pdfs)
 #   - Un solo servicio (ADR-002): no hay MCP, ni base de datos, ni MinIO en el stack.
 #   - SQL Server es la instancia corporativa EXTERNA (HU-002.4, ADR-008): se llega por la cadena de conexión, no por
@@ -20,7 +20,7 @@
 #
 # Redes (equivalentes a bot-edge / bot-back del Python):
 #   - edge    = dokploy-network (externa, la de Traefik). Solo entrada desde Traefik; ningún otro servicio del stack.
-#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Google, Nexo, TRM en
+#   - salida  = overlay propia NO interna: salida a internet y a la red corporativa (SQL Server, LLM, Nexo, TRM en
 #               www.datos.gov.co, SAP, relay). Equivale a bot-edge.
 #   - bot-back (interna, sin salida) no hace falta: no hay servicios internos. Si vuelve alguno (p. ej. MinIO,
 #     ADR-012), va en una overlay con internal: true y sin labels de Traefik.
@@ -51,26 +51,12 @@ volumes:
   pdfs:
     name: cotifly_pdfs
 
-secrets:
-  # Cuenta de servicio de Google Chat (DEPLOY.md §2.1). Debe existir antes del deploy:
-  #   docker secret create cotifly_gchat_sa_v1 ./cuenta-servicio.json
-  # Mientras no haya app de Chat puede crearse con "{}": la app solo lo lee si GChat__SaJson apunta a él.
-  gchat_sa:
-    external: true
-    name: ${GCHAT_SA_SECRETO:-cotifly_gchat_sa_v1}
-
 services:
   cotifly-api:
     image: ghcr.io/innovacionia-proyectos/cotifly-backend:${COTIFLY_TAG:?falta COTIFLY_TAG}
     networks: [edge, salida]
     volumes:
       - pdfs:/data/pdfs
-    secrets:
-      - source: gchat_sa
-        target: gchat_sa.json
-        uid: "1654"
-        gid: "1654"
-        mode: 0400
     # Sin "ports": solo Traefik (TLS). No usar aquí el puerto en modo host de staging (HTTP sin cifrar).
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -151,7 +137,7 @@ services:
       Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
       Trm__TiempoEsperaDolarApiSegundos: ${Trm__TiempoEsperaDolarApiSegundos:-4}
 
-      # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto, obligatorio con Google Chat configurado.
+      # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto opcional (enlace firmado, ADR-011 §3).
       Pdf__StorageModo: volumen
       Pdf__StorageDir: /data/pdfs
       Pdf__BaseUrl: ${Pdf__BaseUrl:-}
@@ -177,7 +163,6 @@ services:
       IA__Endpoint: ${IA__Endpoint:-}
       IA__MaxTokens: ${IA__MaxTokens:-4096}
       IA__MaxIteraciones: ${IA__MaxIteraciones:-12}
-      Chat__CreacionHabilitada: ${Chat__CreacionHabilitada:-false}
       IA__SoportaJsonSchema: ${IA__SoportaJsonSchema:-true}
       IA__MinutosSinJsonSchema: ${IA__MinutosSinJsonSchema:-30}
       IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}
@@ -201,13 +186,6 @@ services:
       Sesiones__BarridoMinutos: ${Sesiones__BarridoMinutos:-60}
       Sesiones__EsperaTurnoSegundos: ${Sesiones__EsperaTurnoSegundos:-3}
 
-      # Google Chat (ADR-011, HU-006.7): el JWT se verifica SIEMPRE (fijo, no se lee del entorno).
-      # GChat__SaJson: vacío o /run/secrets/gchat_sa.json (el secreto montado arriba).
-      GChat__VerificarJwt: "true"
-      GChat__ProjectNumber: ${GChat__ProjectNumber:-}
-      GChat__SaJson: ${GChat__SaJson:-}
-      GChat__SupportSpace: ${GChat__SupportSpace:-}
-      GChat__CapacidadCola: ${GChat__CapacidadCola:-200}
     # Igual al HEALTHCHECK de la imagen (vida, /health), en forma exec: la imagen no tiene shell. La disponibilidad
     # (/health/ready, base de datos) la mira Traefik, así una base caída no reinicia la tarea.
     healthcheck:
@@ -217,7 +195,7 @@ services:
       retries: 3
       start_period: 30s
     deploy:
-      # Una réplica: cola de Google Chat y barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
+      # Una réplica: barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
       # También la Idempotency-Key (ADR-018 §12, #100/#99) vive en memoria: al subir réplicas, crear antes la tabla de
       # idempotencia con el script 0008 y cambiar IClsAlmacenIdempotencia a la implementación SQL.
       replicas: 1

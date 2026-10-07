@@ -383,8 +383,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var sesion = await _sesiones.ObtenerAsync(Espacio, _hilo, Ct);
         sesion!.UsuarioId.Should().Be(_ana.Id);
         sesion.EstadoAgente!.FolioEnProgreso.Should().Be(Folio);
-        sesion.EstadoAgente.PrecioFinal.Should().BeNull();
-        sesion.EstadoAgente.Costo.Should().BeNull();
+        sesion.EstadoAgente.CotizacionId.Should().NotBeNull("el estado es solo la cotización de la conversación, sin montos (HU-013.9)");
         _sesiones.Eventos.Should().OnlyContain(e => e.ThreadId == _hilo);
         string.Join("\n", _sesiones.Eventos.Select(e => e.Contenido + e.Herramientas)).Should().NotContain("3.109.756").And.NotContain("3109756");
         await _auditoria.Received().RegistrarAsync("proponer_ajuste_margen", Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), _hilo);
@@ -490,14 +489,13 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
     private clsAsistenteFolioRunner Runner()
     {
-        var contexto = new clsContextoTurnoAgente();
         _contextoFolio = new clsContextoAsistenteFolio();
         var precios = new clsPrecioService(Substitute.For<IClsProveedorTrm>(), _calendario);
         var opcionesAgente = new clsOpcionesAgente();
         return new clsAsistenteFolioRunner(
             _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
             new clsValidadorRespuestaAgente(Options.Create(opcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), _reloj),
-            _auditoria, new clsCandadoSesionFalso(), contexto, _contextoFolio,
+            _auditoria, new clsCandadoSesionFalso(), _contextoFolio,
             new clsHerramientasAsistenteFolio(_contextoFolio, _cotizaciones, precios, _conexos, _reSolicitud),
             Options.Create(opcionesAgente), Options.Create(new clsOpcionesSesiones()), NullLogger<clsAsistenteFolioRunner>.Instance);
     }

@@ -1,9 +1,7 @@
 using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Aplicacion.Agente.Services;
-using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Agente;
-using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Sesiones;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Pruebas.Comun;
@@ -14,46 +12,13 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Persistencia del agente (#12 parte C) contra SQL Server 2019: identidad de Google Chat por <c>UsuariosWeb.email</c> (ADR-011),
-/// barrido de sesiones inactivas (port de <c>test_archivar_inactivas_por_timeout</c>) y el estado nuevo en <c>estadoAgente</c>.
+/// Persistencia del asistente (#12 parte C, HU-013.9) contra SQL Server 2019: barrido de sesiones inactivas (port de
+/// <c>test_archivar_inactivas_por_timeout</c>), sesiones legadas de Google Chat legibles como auditoría y candado por sesión.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsAgentePersistenciaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
-    [Fact]
-    public async Task ElComercialDeGoogleChatSeEncuentraPorSuCorreoSinDistinguirMayusculas()
-    {
-        var correo = $"c{Guid.NewGuid():N}@boterosoto.com.co"[..40];
-        var usuario = clsUsuarioWeb.Crear($"u{Guid.NewGuid():N}", "Comercial Chat", correo, null, Reloj.AhoraUtc).Valor;
-        await EnAmbitoAsync(s =>
-        {
-            s.GetRequiredService<IClsUsuarioWebRepository>().Agregar(usuario);
-            return Task.CompletedTask;
-        });
-
-        var encontrado = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ObtenerPorEmailAsync(correo.ToUpperInvariant(), Ct));
-        var inexistente = await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ObtenerPorEmailAsync("nadie@gmail.com", Ct));
-
-        encontrado!.Id.Should().Be(usuario.Id);
-        inexistente.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task UnCorreoRepetidoNoIdentificaANadie()
-    {
-        var correo = $"r{Guid.NewGuid():N}@boterosoto.com.co"[..40];
-        await EnAmbitoAsync(s =>
-        {
-            var repositorio = s.GetRequiredService<IClsUsuarioWebRepository>();
-            repositorio.Agregar(clsUsuarioWeb.Crear($"u{Guid.NewGuid():N}", "Uno", correo, null, Reloj.AhoraUtc).Valor);
-            repositorio.Agregar(clsUsuarioWeb.Crear($"u{Guid.NewGuid():N}", "Dos", correo, null, Reloj.AhoraUtc).Valor);
-            return Task.CompletedTask;
-        });
-
-        (await ConsultarAsync(s => s.GetRequiredService<IClsUsuarioWebRepository>().ObtenerPorEmailAsync(correo, Ct))).Should().BeNull();
-    }
-
     // test_archivar_inactivas_por_timeout
     [Fact]
     public async Task ElBarridoArchivaLasSesionesInactivasDesdeHaceMasDelTtl()
@@ -76,22 +41,24 @@ public sealed class clsAgentePersistenciaTests(clsBaseDatosPruebas baseDatos) : 
         (await ConsultarAsync(s => s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(fresca, fresca, Ct)))!.Estado.Should().Be(EstadoSesion.Activa);
     }
 
+    // HU-013.9 (#105): las sesiones de Google Chat y del chat sin folio quedan en la base como auditoría con el JSON del slot-filling
+    // legado. Se siguen leyendo (los campos retirados se ignoran, el folio se conserva) y la lectura no reescribe la fila.
     [Fact]
-    public async Task ElEstadoConLosCamposNuevosSeGuardaYSeLeeIgual()
+    public async Task UnaSesionLegadaDeGoogleChatSeLeeSinPerderSuJsonDeAuditoria()
     {
-        var hilo = $"web/estado-{Guid.NewGuid():N}";
-        var estado = clsEstadoConversacion.Vacio with
-        {
-            MargenSugerido = 0.12m,
-            FuenteCosto = clsEstadoConversacion.FuenteCostoManual,
-            CandidatosCliente = [new clsCandidatoCliente("900111222", "ACME", Dominio.Clientes.OrigenCliente.Cliente, "700")],
-        };
-        await EnAmbitoAsync(async s => (await s.GetRequiredService<IClsSesionRepository>().ObtenerOCrearAsync(hilo, hilo, cancellationToken: Ct)).ActualizarEstadoAgente(estado));
+        var space = $"spaces/legado-{Guid.NewGuid():N}"[..40];
+        var hilo = $"{space}/threads/t1";
+        const string JsonLegado =
+            """{"nitCliente":"900123456","origenCliente":"prospecto","clienteConfirmado":true,"candidatosCliente":[{"nitCliente":"800","nombre":"Otro","origenCliente":"cliente"}],"costo":2850000,"fuenteCosto":"manual","origenMargen":"politica_linea","precioFinal":3352941,"candidatosOrigen":[{"id":2,"nombre":"La Unión","departamento":"Nariño"}],"folioEnProgreso":"PCN-NV-24092026-001","version":1,"moneda":"COP","confirmacionPendiente":true}""";
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"INSERT INTO dbo_cotifly.Sesiones (spaceId, threadId, estado, ultimaActividad, estadoAgente) VALUES ('{space}', '{hilo}', 'activa', SYSDATETIMEOFFSET(), N'{JsonLegado}')");
 
-        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(hilo, hilo, Ct));
+        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(space, hilo, Ct));
+        await EnAmbitoAsync(async s => _ = await s.GetRequiredService<IClsSesionRepository>().ObtenerAsync(space, hilo, Ct));
 
-        leida!.EstadoAgente.Should().Be(estado);
-        leida.EstadoAgente!.CandidatosCliente[0].Bp.Should().Be("700");
+        leida!.EstadoAgente.Should().Be(clsEstadoConversacion.Vacio with { FolioEnProgreso = "PCN-NV-24092026-001", Version = 1, Moneda = "COP" });
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+            $"SELECT estadoAgente FROM dbo_cotifly.Sesiones WHERE spaceId = '{space}' AND threadId = '{hilo}'")).Should().Be(JsonLegado);
     }
 
     // Riesgo 4 (auditoría de #12): un turno a la vez por sesión, entre conexiones (y réplicas), con sp_getapplock de sesión.

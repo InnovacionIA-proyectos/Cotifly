@@ -60,8 +60,9 @@ public enum TipoRespuestaAgente
 }
 
 /// <summary>
-/// Acción sugerida al comercial. Cada una corresponde a una herramienta del plugin <c>cotizador</c> que debe estar declarada en el
-/// turno (<see cref="clsNombresHerramientas"/>); en Google Chat se muestran como botones.
+/// Acción sugerida al comercial. Cada una corresponde a una herramienta retirada del agente cotizador legado (HU-013.9, #105) que
+/// debía estar declarada en el turno: el asistente por folio no declara ninguna, así que el validador rechaza cualquier acción sugerida
+/// (sus propuestas van en <c>accion_propuesta</c>). Se conserva en el esquema de la respuesta final.
 /// </summary>
 public enum AccionSugeridaAgente
 {

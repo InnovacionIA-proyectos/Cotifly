@@ -74,7 +74,7 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA/GChat...).
+        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA, Nexo, TRM...).
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
@@ -93,13 +93,10 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
         servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
-        servicios.AddOpcionesValidadas<clsOpcionesChat>(configuracion, clsOpcionesChat.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
         servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
-        servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
-        servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
         servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
@@ -139,10 +136,10 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes en Nexo
-    /// (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), Google Chat (verificación del JWT,
-    /// cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido de sesiones inactivas. TryAdd: un
-    /// adaptador registrado antes (pruebas) se respeta.
+    /// Asistente IA (#12 parte C, ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
+    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), URL firmada del PDF,
+    /// candado por sesión y barrido de sesiones inactivas. Google Chat (webhook, cola, worker y publicador) se retiró en HU-013.9 (#105).
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
@@ -153,15 +150,8 @@ public static class clsDependenciasInfraestructura
         AgregarBuscadorClientes(servicios);
         servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
-        servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
-        servicios.TryAddSingleton<IClsVerificadorJwtGoogleChat, clsVerificadorJwtGoogleChat>();
-        servicios.TryAddSingleton<clsTokenCuentaServicioGoogle>();
-        servicios.TryAddSingleton<IClsPublicadorChat, clsPublicadorGoogleChat>();
-        servicios.TryAddSingleton<IClsColaEventosChat, clsColaEventosChat>();
         servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
-        servicios.AddHostedService<clsWorkerEventosChat>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();
-        servicios.AddHostedService<clsAvisoArranqueChat>();
     }
 
     /// <summary>

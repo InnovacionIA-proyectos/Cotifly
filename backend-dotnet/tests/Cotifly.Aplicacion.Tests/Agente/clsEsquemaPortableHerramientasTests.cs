@@ -3,32 +3,45 @@ using System.Text.Json;
 using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Herramientas;
 using Microsoft.Extensions.AI;
+using Cotifly.Aplicacion.Agente.Services;
+using Cotifly.Aplicacion.Costeo.Services;
+using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.SemanticKernel;
+using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Agente;
 
 /// <summary>
 /// Declaraciones portables de las herramientas (HU-003.6, issue #84): el esquema de Semantic Kernel trae la descripción en la clave
-/// no estándar <c>condition</c> y la nulabilidad como arreglo de tipos, que Gemini (vía OmniRoute) rechaza con 400. Contrato: las 9
-/// herramientas que ve el modelo solo usan palabras portables y conservan nombres, descripciones, tipos y obligatorios.
+/// no estándar <c>condition</c> y la nulabilidad como arreglo de tipos, que Gemini (vía OmniRoute) rechaza con 400. Contrato: las 4
+/// herramientas del asistente por folio (HU-013.6; las 9 del agente legado se retiraron en HU-013.9) solo usan palabras portables y
+/// conservan nombres, descripciones, tipos y obligatorios.
 /// </summary>
 public sealed class clsEsquemaPortableHerramientasTests
 {
-    private static readonly string[] _nueveHerramientas =
+    private static readonly string[] _cuatroHerramientas =
     [
-        "buscar_cliente", "resolver_municipio", "buscar_tarifa", "obtener_margen", "calcular_precio", "registrar_ajuste_margen",
-        "generar_pdf", "enviar_correo", "consultar_cotizacion",
+        "consultar_cotizacion", "proponer_ajuste_margen", "proponer_re_solicitud", "buscar_servicio_conexo",
     ];
 
-    private readonly clsArnesAgente _arnes = new();
+    /// <summary>Plugin real del asistente (las dependencias no se invocan: solo se leen los esquemas).</summary>
+    private static KernelPlugin Plugin() => KernelPluginFactory.CreateFromObject(
+        new clsHerramientasAsistenteFolio(
+            new clsContextoAsistenteFolio(),
+            Substitute.For<IClsCotizacionRepository>(),
+            Substitute.For<IClsPrecioService>(),
+            Substitute.For<IClsServiciosConexosCosteoService>(),
+            Substitute.For<IClsReSolicitudCosteoService>()),
+        clsNombresHerramientas.PluginAsistente);
 
-    // Contrato sobre lo que de verdad recibe el modelo: las declaraciones de la primera llamada del loop, con el correo habilitado.
+    // Contrato sobre lo que recibe el modelo: las declaraciones que arma el runner del asistente.
     [Fact]
-    public async Task LasNueveHerramientasQueVeElModeloSoloUsanJsonSchemaPortable()
+    public void LasCuatroHerramientasQueVeElModeloSoloUsanJsonSchemaPortable()
     {
-        var declaraciones = await DeclaracionesDelTurnoAsync();
+        var declaraciones = Declaraciones();
 
-        declaraciones.Select(d => d.Name).Should().BeEquivalentTo(_nueveHerramientas);
+        declaraciones.Select(d => d.Name).Should().BeEquivalentTo(_cuatroHerramientas);
         foreach (var declaracion in declaraciones)
         {
             declaracion.Description.Should().NotBeNullOrWhiteSpace($"{declaracion.Name} lleva la descripción a nivel de función");
@@ -47,10 +60,10 @@ public sealed class clsEsquemaPortableHerramientasTests
 
     // Mismo contenido que el esquema de Semantic Kernel: cambia la forma, no lo que el modelo sabe de cada parámetro.
     [Fact]
-    public async Task ConservanNombresDescripcionesTiposYObligatoriosDelEsquemaDeSemanticKernel()
+    public void ConservanNombresDescripcionesTiposYObligatoriosDelEsquemaDeSemanticKernel()
     {
-        var declaraciones = (await DeclaracionesDelTurnoAsync()).ToDictionary(d => d.Name);
-        var plugin = KernelPluginFactory.CreateFromObject(_arnes.Herramientas(), clsNombresHerramientas.Plugin);
+        var declaraciones = Declaraciones().ToDictionary(d => d.Name);
+        var plugin = Plugin();
 
         foreach (var funcion in plugin)
         {
@@ -80,7 +93,7 @@ public sealed class clsEsquemaPortableHerramientasTests
     [Fact]
     public void ElEsquemaDeSemanticKernelTraeConditionYElPortableNo()
     {
-        var funcion = KernelPluginFactory.CreateFromObject(_arnes.Herramientas(), clsNombresHerramientas.Plugin)[clsNombresHerramientas.BuscarTarifa];
+        var funcion = Plugin()[clsNombresHerramientas.ProponerReSolicitud];
 
         funcion.JsonSchema.GetProperty("condition").GetString().Should().Be(funcion.Description, "si Semantic Kernel lo corrige, esta prueba avisa");
         funcion.JsonSchema.GetProperty("properties").GetProperty("pesoKg").GetProperty("type").ValueKind.Should().Be(JsonValueKind.Array);
@@ -90,47 +103,6 @@ public sealed class clsEsquemaPortableHerramientasTests
         portable.JsonSchema.TryGetProperty("condition", out _).Should().BeFalse();
         portable.JsonSchema.GetProperty("properties").GetProperty("pesoKg").GetProperty("type").GetString().Should().Be("number");
         Requeridos(portable.JsonSchema).Should().NotContain("pesoKg");
-    }
-
-    // El payload de generar_pdf se declara tipado (Semantic Kernel lo deja sin tipo y Gemini arma los objetos anidados como texto).
-    [Fact]
-    public async Task ElPayloadDeGenerarPdfSeDeclaraTipadoConLaDescripcionOriginal()
-    {
-        var generar = (await DeclaracionesDelTurnoAsync()).Single(d => d.Name == clsNombresHerramientas.GenerarPdf);
-        var original = KernelPluginFactory.CreateFromObject(_arnes.Herramientas(), clsNombresHerramientas.Plugin)[clsNombresHerramientas.GenerarPdf];
-
-        var cotizacion = generar.JsonSchema.GetProperty("properties").GetProperty(clsEsquemaPayloadPdf.Parametro);
-
-        cotizacion.GetProperty("type").GetString().Should().Be("object");
-        Texto(cotizacion, "description").Should().Be(Texto(original.JsonSchema.GetProperty("properties").GetProperty("cotizacion"), "description"));
-        var propiedades = cotizacion.GetProperty("properties");
-        propiedades.GetProperty("textos").GetProperty("properties").GetProperty("intro").GetProperty("type").GetString().Should().Be("array");
-        var fila = propiedades.GetProperty("tarifa").GetProperty("properties").GetProperty("filas").GetProperty("items");
-        fila.GetProperty("properties").EnumerateObject().Select(p => p.Name).Should().Equal("destino", "vehiculo_peso", "nota");
-        propiedades.TryGetProperty("referencia", out _).Should().BeFalse("el folio lo genera el servidor");
-        Requeridos(cotizacion).Should().Equal("cliente", "linea_negocio", "tarifa");
-        Requeridos(generar.JsonSchema).Should().Equal("cotizacion");
-    }
-
-    // Lo que declara el esquema tipado lo lee el payload real del PDF (mismos nombres en snake_case).
-    [Fact]
-    public void UnPayloadQueCumpleElEsquemaTipadoSeLeeSinFallos()
-    {
-        const string Json = """
-            {"ciudad": "Bogotá", "fecha": "2026-10-01", "cliente": "Comercializadora Ficticia Andina SAS", "contactos": ["Señora Ana Prueba"],
-             "linea_negocio": "Nacional", "modalidad": "Carga seca", "textos": {"intro": ["Párrafo de prueba."]}, "comercial": {"cargo": "Ejecutiva"},
-             "tarifa": {"titulo": "COTIZACIÓN TRANSPORTE NACIONAL", "origen": "Bogotá", "filas": [{"destino": "Medellín", "vehiculo_peso": "Tractomula - 10 TON", "nota": ""}]},
-             "aduana": {"modalidad": "DTA", "frontera": "Ipiales", "arancel": "0"}, "extradimensionada": {"peso_kg": "40000"}, "refrigerada": {"temperatura": "4 °C"}}
-            """;
-        var nombres = new HashSet<string>(StringComparer.Ordinal);
-        RecolectarPropiedades(clsEsquemaPayloadPdf.Esquema, "", nombres);
-
-        var payload = Cotifly.Aplicacion.Pdf.DTOs.clsCotizacionPdfPayload.DesdeJson(Json);
-
-        payload.EsExitoso.Should().BeTrue();
-        payload.Valor.Tarifa!.Filas!.Single().VehiculoPeso.Should().Be("Tractomula - 10 TON");
-        payload.Valor.Textos!.Intro.Should().Equal("Párrafo de prueba.");
-        nombres.Should().Contain(["textos.intro", "tarifa.filas.vehiculo_peso", "extradimensionada.peso_kg", "comercial.cargo"]);
     }
 
     [Fact]
@@ -193,27 +165,6 @@ public sealed class clsEsquemaPortableHerramientasTests
         portar.Should().Throw<InvalidOperationException>().WithMessage($"*'parameters.{ruta}'*{motivo}*");
     }
 
-    // B3: el esquema tipado del PDF no puede desviarse del tipo que lo lee (mismos nombres en snake_case y tipos compatibles).
-    [Fact]
-    public void CadaCampoDelEsquemaDelPdfExisteEnElPayloadConUnTipoCompatible()
-    {
-        var desvios = new List<string>();
-
-        CompararConTipo(clsEsquemaPayloadPdf.Esquema, typeof(Cotifly.Aplicacion.Pdf.DTOs.clsCotizacionPdfPayload), "cotizacion", desvios);
-
-        desvios.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void UnPayloadMinimoQueCumpleElEsquemaPasaElValidadorDelPdf()
-    {
-        var payload = Cotifly.Aplicacion.Pdf.DTOs.clsCotizacionPdfPayload.DesdeJson(
-            """{"cliente":"Ficticia SAS","linea_negocio":"Nacional","tarifa":{"filas":[{"destino":"Medellín"}]}}""");
-
-        payload.EsExitoso.Should().BeTrue();
-        Cotifly.Aplicacion.Pdf.Validators.clsValidadorCotizacionPdfPayload.Validar(payload.Valor).Should().BeNull();
-    }
-
     [Fact]
     public void UnEsquemaVacioONoObjetoQuedaComoObjetoSinPropiedades()
     {
@@ -233,13 +184,8 @@ public sealed class clsEsquemaPortableHerramientasTests
         RecorrerSoloPortable(declaracion.JsonSchema, "sin_descripcion");
     }
 
-    private async Task<IReadOnlyList<AIFunctionDeclaration>> DeclaracionesDelTurnoAsync()
-    {
-        _arnes.OpcionesCorreo.Habilitado = true;
-        _arnes.Modelo.Cerrar("ok");
-        await _arnes.TurnoAsync("hola");
-        return _arnes.Modelo.Llamadas[0].Opciones!.Tools!.Cast<AIFunctionDeclaration>().ToList();
-    }
+    private static List<AIFunctionDeclaration> Declaraciones() =>
+        clsEsquemaPortableHerramientas.Declarar(Plugin()).Cast<AIFunctionDeclaration>().ToList();
 
     /// <summary>Recorre el esquema: solo palabras portables, <c>type</c> siempre un string y <c>format</c> de la lista segura.</summary>
     private static void RecorrerSoloPortable(JsonElement nodo, string ruta)
@@ -288,65 +234,6 @@ public sealed class clsEsquemaPortableHerramientasTests
                     propiedad.Value.EnumerateArray().Should().NotContain(v => v.ValueKind == JsonValueKind.Null, ruta);
                     break;
             }
-        }
-    }
-
-    private static void CompararConTipo(JsonElement nodo, Type tipo, string ruta, List<string> desvios)
-    {
-        if (nodo.TryGetProperty("items", out var elementos))
-        {
-            CompararConTipo(elementos, tipo.IsGenericType ? tipo.GetGenericArguments()[0] : tipo, ruta + "[]", desvios);
-            return;
-        }
-
-        if (!nodo.TryGetProperty("properties", out var propiedades))
-        {
-            return;
-        }
-
-        foreach (var propiedad in propiedades.EnumerateObject())
-        {
-            var clr = tipo.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                .FirstOrDefault(p => JsonNamingPolicy.SnakeCaseLower.ConvertName(p.Name) == propiedad.Name);
-            if (clr is null)
-            {
-                desvios.Add($"{ruta}.{propiedad.Name}: no existe en {tipo.Name}");
-                continue;
-            }
-
-            var t = Nullable.GetUnderlyingType(clr.PropertyType) ?? clr.PropertyType;
-            var real = t == typeof(string) ? "string"
-                : t == typeof(decimal) || t == typeof(int) ? "number"
-                : t == typeof(bool) ? "boolean"
-                : t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>) ? "array"
-                : "object";
-            var declarado = propiedad.Value.GetProperty("type").GetString();
-            if (declarado != real)
-            {
-                desvios.Add($"{ruta}.{propiedad.Name}: el esquema dice {declarado} y el payload es {real}");
-            }
-
-            CompararConTipo(propiedad.Value, t, $"{ruta}.{propiedad.Name}", desvios);
-        }
-    }
-
-    private static void RecolectarPropiedades(JsonElement nodo, string ruta, HashSet<string> nombres)
-    {
-        if (nodo.TryGetProperty("items", out var elementos))
-        {
-            RecolectarPropiedades(elementos, ruta, nombres);
-        }
-
-        if (!nodo.TryGetProperty("properties", out var propiedades))
-        {
-            return;
-        }
-
-        foreach (var propiedad in propiedades.EnumerateObject())
-        {
-            var hija = ruta.Length == 0 ? propiedad.Name : $"{ruta}.{propiedad.Name}";
-            nombres.Add(hija);
-            RecolectarPropiedades(propiedad.Value, hija, nombres);
         }
     }
 

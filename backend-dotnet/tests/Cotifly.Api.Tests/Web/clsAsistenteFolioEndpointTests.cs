@@ -110,14 +110,19 @@ public sealed class clsAsistenteFolioEndpointTests(clsEntornoApiWeb entorno)
             $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{cotizacion.Folio}'")).Should().Be(0);
     }
 
-    // Con Chat:CreacionHabilitada=true y folio, responde el asistente (el agente legado solo atiende mensajes sin folio).
+    // HU-013.9 (#105): el flag Chat:CreacionHabilitada se retiró. Si un despliegue viejo lo trae en true, se ignora: sin folio sigue
+    // FOLIO_REQUERIDO y con folio responde el asistente, que no conoce las herramientas del agente legado.
     [Fact]
-    public async Task ConLaCreacionHabilitadaYFolioRespondeElAsistente()
+    public async Task UnFlagDeCreacionHeredadoSeIgnora()
     {
         var modelo = new clsChatClientGuionizado().Llamar("calcular_precio", new { costo = 1, margen = 0.5 }).Cerrar("Esa acción no está disponible aquí.");
         using var api = Api(modelo, new Dictionary<string, string?> { ["Chat:CreacionHabilitada"] = "true" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await api.CrearCotizacionAsync(ana.UsuarioId, "900555113", conPdf: false);
+
+        using var sinFolio = await api.EnviarAsync(_post, RutaChat, ana.Access, clsApiWebPruebas.Json(new { mensaje = "Cotiza Bogotá a Cali", sesion_id = SesionId() }));
+        (await VerificarContratoAsync(sinFolio, RutaChat, _post, HttpStatusCode.BadRequest)).GetProperty("error").GetProperty("codigo").GetString().Should().Be("FOLIO_REQUERIDO");
+        modelo.Llamadas.Should().BeEmpty();
 
         using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("Calcula el precio", cotizacion.Folio));
 

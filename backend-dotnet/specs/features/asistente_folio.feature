@@ -2,8 +2,8 @@
 # HU-013.6 (#102, ADR-018) — Asistente IA por folio: POST /web/chat exige folio y responde {texto, accion_propuesta?}.
 # Herramientas de solo lectura o propuesta (consultar_cotizacion, proponer_ajuste_margen, proponer_re_solicitud,
 # buscar_servicio_conexo). La IA nunca ejecuta cambios: el frontend confirma la acción propuesta llamando al endpoint
-# determinista con el cuerpo exacto y If-Match = row_version. La creación de cotizaciones por chat se retira
-# (Chat:CreacionHabilitada=false). Con un IChatClient guionizado, la API real en memoria y SQL Server 2019 en Testcontainers.
+# determinista con el cuerpo exacto y If-Match = row_version. La creación de cotizaciones por chat se retiró (HU-013.9, #105: sin
+# agente legado ni flag Chat:CreacionHabilitada; sin folio siempre FOLIO_REQUERIDO). Con un IChatClient guionizado, la API real en memoria y SQL Server 2019 en Testcontainers.
 # Pasos en Cotifly.Aceptacion.Tests/Agente/clsPasosAsistenteFolio.cs (#102). El modelo nunca escribe montos: su texto se valida
 # contra cifras de dinero y nada de lo que ve las respalda; los montos solo van en el resumen que arma el servidor.
 @integracion
@@ -123,7 +123,7 @@ Característica: Asistente IA sobre una cotización (folio)
     Y el costeo de "C1" tiene el precio final 3000000 con el margen aplicado "0.15" y el origen "politica_linea"
 
   Escenario: El chat ya no crea cotizaciones
-    Dado que la creación por chat está deshabilitada
+    Dado que la creación por chat se retiró
     Y que el modelo pide la herramienta "generar_pdf"
     Cuando "ana" escribe en el chat "Cotiza Bogotá a Medellín tractomula" sobre el folio de "C1"
     Entonces "ana" tiene 1 cotización en "Mis cotizaciones"

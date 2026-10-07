@@ -57,12 +57,10 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsMetricasService), typeof(clsMetricasService), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsAgenteRunner), typeof(clsAgenteRunner), ServiceLifetime.Scoped)]
-    [InlineData(typeof(clsContextoTurnoAgente), typeof(clsContextoTurnoAgente), ServiceLifetime.Scoped)]
-    [InlineData(typeof(clsHerramientasCotizador), typeof(clsHerramientasCotizador), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsEstadoConversacionService), typeof(clsEstadoConversacionService), ServiceLifetime.Singleton)]
+    [InlineData(typeof(IClsAsistenteFolioRunner), typeof(clsAsistenteFolioRunner), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
+    [InlineData(typeof(clsHerramientasAsistenteFolio), typeof(clsHerramientasAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaAgente), ServiceLifetime.Singleton)]
-    [InlineData(typeof(IClsProcesadorEventoChat), typeof(clsProcesadorEventoChat), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
@@ -73,6 +71,17 @@ public sealed class clsDependenciasAplicacionTests
         servicios.Should().ContainSingle(d => d.ServiceType == servicio)
             .Which.Should().Match<ServiceDescriptor>(d => d.ImplementationType == implementacion && d.Lifetime == ciclo);
     }
+
+    // HU-013.9 (#105): el agente cotizador legado, el slot-filling y el procesamiento de Google Chat ya no se registran.
+    [Theory]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsAgenteRunner")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsEstadoConversacionService")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.IClsProcesadorEventoChat")]
+    [InlineData("Cotifly.Aplicacion.Agente.Herramientas.clsHerramientasCotizador")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.clsContextoTurnoAgente")]
+    [InlineData("Cotifly.Aplicacion.Agente.Services.clsOpcionesChat")]
+    public void ElAgenteLegadoYGoogleChatYaNoExisten(string tipo) =>
+        typeof(clsDependenciasAplicacion).Assembly.GetType(tipo).Should().BeNull();
 
     /// <summary>Los casos de uso auditados (#11) se registran como decorador sobre la implementación concreta.</summary>
     [Theory]

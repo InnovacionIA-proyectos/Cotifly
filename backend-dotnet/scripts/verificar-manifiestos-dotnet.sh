@@ -84,7 +84,11 @@ fi
 echo "OK: producción no publica ningún puerto."
 
 for archivo in /tmp/qa-staging-config.$$.yml /tmp/qa-dokploy-config.$$.yml; do
-  verificar_valor "$archivo" 'GChat__VerificarJwt: "true"' "$archivo fija GChat__VerificarJwt=true"
+  # HU-013.9 (#105): Google Chat se retiró; ningún manifiesto trae variables GChat__*, el secreto gchat_sa ni Chat__CreacionHabilitada.
+  if grep -qE "GChat__|gchat_sa|Chat__CreacionHabilitada" "$archivo"; then
+    fallo "$archivo todavía trae configuración de Google Chat o del chat legado (retirados en HU-013.9)."
+  fi
+  echo "OK: $archivo sin configuración de Google Chat."
   verificar_valor "$archivo" "ASPNETCORE_ENVIRONMENT: Production" "$archivo fija ASPNETCORE_ENVIRONMENT=Production"
 done
 
