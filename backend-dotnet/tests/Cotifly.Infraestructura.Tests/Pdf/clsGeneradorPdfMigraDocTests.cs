@@ -252,6 +252,40 @@ public sealed class clsGeneradorPdfMigraDocTests
         var segundo = Generar(clsDocumentosPrueba.Nacional()).Lector;
 
         segundo.Paginas.Should().Equal(primero.Paginas);
+        segundo.Disposicion.Should().Equal(primero.Disposicion, "cada letra queda en la misma posición");
+    }
+
+    // #92, #95: PDFsharp-MigraDoc comparte estado global entre renders. Sin el candado del generador, renders simultáneos
+    // (peticiones concurrentes en producción, clases de prueba en paralelo) sacaban el mismo documento con otra maquetación:
+    // espacios medidos con la fuente de otro documento, palabras corridas y saltos de línea distintos.
+    [Fact]
+    public void LosRendersSimultaneosDanLaMismaMaquetacionQueUnRenderSolo()
+    {
+        var referencia = Generar(clsDocumentosPrueba.Nacional()).Lector;
+        var resultados = new System.Collections.Concurrent.ConcurrentBag<clsLectorPdf>();
+
+        Parallel.For(0, 48, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(4, Environment.ProcessorCount) }, i =>
+        {
+            var documento = (i % 4) switch
+            {
+                0 => clsDocumentosPrueba.Nacional(),
+                1 => clsDocumentosPrueba.Multi(),
+                2 => clsDocumentosPrueba.Internacional(),
+                _ => clsDocumentosPrueba.Dolares(),
+            };
+            var lector = clsLectorPdf.Leer(_generador.Generar(documento).Contenido);
+            if (i % 4 == 0)
+            {
+                resultados.Add(lector);
+            }
+        });
+
+        resultados.Should().HaveCount(12);
+        foreach (var lector in resultados)
+        {
+            lector.Paginas.Should().Equal(referencia.Paginas);
+            lector.Disposicion.Should().Equal(referencia.Disposicion, "un render concurrente no cambia la posición de ninguna letra");
+        }
     }
 
     [Fact]

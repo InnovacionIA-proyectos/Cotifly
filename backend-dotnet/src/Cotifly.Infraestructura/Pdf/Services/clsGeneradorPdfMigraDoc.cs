@@ -22,11 +22,27 @@ namespace Cotifly.Infraestructura.Pdf.Services;
 /// </remarks>
 public sealed class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
 {
+    /// <summary>
+    /// Serializa los renders del proceso (#92, #95). PDFsharp-MigraDoc 6.2 comparte estado global entre documentos al medir y
+    /// escribir el texto: con dos renders a la vez, el mismo documento sale con otra maquetación (espacios medidos con la
+    /// fuente de otro documento, palabras corridas hasta cientos de puntos, saltos de línea distintos). El generador es
+    /// singleton y lo usan peticiones concurrentes, así que el candado es de proceso, no de instancia.
+    /// </summary>
+    private static readonly Lock _candadoRender = new();
+
     public clsGeneradorPdfMigraDoc() => clsResolvedorFuentes.Registrar();
 
     public clsPdfGenerado Generar(clsDocumentoCotizacion documento)
     {
         ArgumentNullException.ThrowIfNull(documento);
+        lock (_candadoRender)
+        {
+            return Renderizar(documento);
+        }
+    }
+
+    private static clsPdfGenerado Renderizar(clsDocumentoCotizacion documento)
+    {
         var modelo = Construir(documento);
 
         var renderizador = new PdfDocumentRenderer { Document = modelo };
