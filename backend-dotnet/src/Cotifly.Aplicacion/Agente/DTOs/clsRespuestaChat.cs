@@ -5,11 +5,11 @@ using Cotifly.Aplicacion.Precio.DTOs;
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// Respuesta de <c>POST /web/chat</c> (<c>RespuestaChat</c> de <c>specs/openapi.yaml</c>, paridad con <c>_datos_de</c> de
-/// <c>orquestador/web.py</c>): el texto del agente y, de las herramientas del turno, la última salida exitosa de
-/// <c>calcular_precio</c>, <c>obtener_margen</c> y <c>generar_pdf</c>. Los números nunca salen del LLM (ADR-003). <see cref="Errores"/>
-/// (HU-012.4): los errores de negocio de las herramientas del turno, para que el frontend no interprete el texto.
-/// <see cref="AccionPropuesta"/> (HU-013.6): la acción que propuso el asistente por folio; <c>null</c> en el agente legado.
+/// Respuesta de <c>POST /web/chat</c> (<c>RespuestaChat</c> de <c>specs/openapi.yaml</c>): el texto del asistente, las herramientas
+/// del turno, <see cref="Errores"/> (HU-012.4: los errores de negocio de las herramientas, para que el frontend no interprete el texto)
+/// y <see cref="AccionPropuesta"/> (HU-013.6: la acción que propuso el asistente por folio). <see cref="Precio"/>, <see cref="Margen"/> y
+/// <see cref="Pdf"/> están obsoletos (deprecated en el contrato) y siempre van en <c>null</c>: los llenaba el agente legado, retirado
+/// en HU-013.9 (#105); se conservan para no romper a clientes que todavía los leen.
 /// </summary>
 public sealed record clsRespuestaChat(
     string Texto,
@@ -38,18 +38,6 @@ public sealed record clsRespuestaChat(
             resultado.AccionPropuesta);
     }
 
-
-    public static clsRespuestaChat Desde(clsResultadoTurno resultado)
-    {
-        ArgumentNullException.ThrowIfNull(resultado);
-        return new clsRespuestaChat(
-            resultado.Texto,
-            resultado.HerramientasInvocadas,
-            resultado.UltimaSalida<clsSalidaPrecio>(clsNombresHerramientas.CalcularPrecio),
-            resultado.UltimaSalida<clsSalidaMargen>(clsNombresHerramientas.ObtenerMargen),
-            resultado.UltimaSalida<clsSalidaPdf>(clsNombresHerramientas.GenerarPdf),
-            [.. resultado.Salidas.Where(s => !s.EsExitoso).Select(s => new clsErrorHerramienta(s.Herramienta, s.Error!.Codigo))]);
-    }
 }
 
 /// <summary><c>ErrorHerramienta</c>: herramienta del turno que terminó con un error de negocio y su código de <c>ErrorNegocio</c>.</summary>

@@ -1,6 +1,6 @@
 # 1. Descripción
 
-Cotifly es el bot cotizador de Botero Soto: un comercial conversa con un agente de IA (consola web de ClientePro o Google Chat), el agente reúne los datos, resuelve margen y precio, genera el PDF de la cotización y la envía por correo. Este proyecto reemplaza por completo a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](../specs/decisiones/ADR-001-estrategia-de-corte.md)). El código Python queda intacto hasta validar el backend .NET en producción.
+Cotifly es el bot cotizador de Botero Soto: un comercial captura la solicitud en la consola web de ClientePro, Nexo la costea, el backend resuelve margen y precio, genera el PDF de la cotización y la envía por correo; la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Hasta HU-013.9 (#105) la cotización la armaba un agente conversacional, también desde Google Chat; ambos se retiraron. Este proyecto reemplaza por completo a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](../specs/decisiones/ADR-001-estrategia-de-corte.md)). El código Python queda intacto hasta validar el backend .NET en producción.
 
 ## 1.1 Objetivo
 
@@ -10,7 +10,7 @@ Migrar el backend de Cotifly a C# / .NET 10 (milestone HU-003) con Clean Archite
 
 | Rol interno | Quién | Qué puede hacer |
 |---|---|---|
-| `comercial` | Comercial de Botero Soto con rol "Comercial" en ClientePro | Cotizar por la consola web o por Google Chat, ver y hacer seguimiento a sus cotizaciones, enviarlas por correo, registrar su teléfono |
+| `comercial` | Comercial de Botero Soto con rol "Comercial" en ClientePro | Cotizar por la consola web, ver y hacer seguimiento a sus cotizaciones, enviarlas por correo, registrar su teléfono |
 | `gerente_comercial` | Gerente comercial | Todo lo del comercial, más la administración de las líneas de negocio (margen, método, estado; HU-004.9) y el tablero de métricas de su regional, filtrable por comercial (HU-010.1, [ADR-016](../specs/decisiones/ADR-016-metricas-agregadas-y-regional.md)) |
 
 El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en cada login y se compara con la asignación interna (verificación doble, [ADR-009](../specs/decisiones/ADR-009-autenticacion-sso-clientepro.md)). Cotifly no tiene login propio.
@@ -18,14 +18,14 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 ## 1.3 Capacidades
 
 - **Login SSO desde ClientePro** con verificación doble, access JWT de 60 minutos, refresh rotado de 30 días y logout que revoca ambos.
-- **Agente de IA agnóstico al proveedor** (`POST /web/chat` y webhook de Google Chat) con estado de conversación estructurado: el LLM redacta y elige herramientas; los datos y los números salen de las herramientas y del estado ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md), [ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)).
+- **Asistente IA por folio, agnóstico al proveedor** (`POST /web/chat` con `folio`): consulta la cotización y propone ajustes de margen, re-solicitudes del costeo y servicios conexos que el comercial confirma; ningún monto llega al modelo ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md), [ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). El agente cotizador con slot filling ([ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y el webhook de Google Chat se retiraron en HU-013.9 (#105).
 - **Validador de la respuesta final** del agente con JSON Schema, un reintento y respaldo controlado (HU-003.10).
 - **Margen** desde SAP TM (export JSON u OData en vivo) con respaldo en la política de la línea, y margen negociado auditado.
 - **Precio** por margen o markup con redondeo half-to-even sobre `decimal`.
 - **PDF** de la cotización con PDFsharp-MigraDoc (una tarifa o varias secciones), folio generado por el servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)) y almacén en volumen.
 - **Correo** por el relay interno con vista previa, destinatarios previos, deduplicación de 5 minutos y estado `enviada`/`reenviada`.
 - **Consola web** `/web/*`: mis cotizaciones, seguimiento ganada/perdida, nueva versión, teléfono del comercial, descarga autenticada del PDF, administración de líneas de negocio y métricas.
-- **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el agente y el formulario, catálogo de municipios, catálogos de flete (tipo de vehículo, carrocería y clase de viaje) y cubicación rápida.
+- **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el formulario, catálogo de municipios, catálogos de flete (tipo de vehículo, carrocería y clase de viaje) y cubicación rápida.
 - **Auditoría** de cada herramienta y de los accesos sensibles en `EventosHerramienta`.
 
 ## 1.4 Estado por issue (milestone HU-003)
@@ -41,7 +41,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | #27 | HU-006.3 | `Dockerfile` multi-stage con runtime chiseled, sonda propia y usuario no root |
 | #12 parte A | HU-003.6 | Login SSO ClientePro con verificación doble, refresh y logout (`/api/auth/*`) |
 | #12 parte B | HU-003.6 | API web `/web/*`, folio del servidor, descarga autenticada del PDF, administración de líneas (HU-004.9), métricas en borrador (HU-010.1), CORS, encabezados reenviados y endurecimiento HTTP |
-| #12 parte C | HU-003.6 | Agente de IA, `POST /web/chat`, webhook de Google Chat con worker y enlace firmado del PDF |
+| #12 parte C | HU-003.6 | Agente de IA, `POST /web/chat`, webhook de Google Chat con worker y enlace firmado del PDF (el agente cotizador y Google Chat se retiraron en HU-013.9, #105) |
 | #16 | HU-003.10 | Validador de la respuesta final del agente |
 | #14 | HU-003.8 | Integración continua, scripts de ejecución local, cobertura, documentación técnica y casos de regresión manual (este conjunto de documentos) |
 | #20 (PR #65) | HU-005.2, HU-005.3, HU-005.4, HU-005.13 | Fuera del milestone HU-003: integración con Nexo (`GET /web/clientes?q=` y `buscar_cliente`, `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion`) |
@@ -51,9 +51,9 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 
 | Tema | Dónde se resuelve |
 |---|---|
-| Costeo real de rutas (Nexo) | HU-005.5 en adelante; mientras tanto `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE` y el comercial escribe el costo |
+| Costeo real de rutas (Nexo) | HU-005.5 en adelante ([ADR-015](../specs/decisiones/ADR-015-costeo-nexo.md)) |
 | Criterio de coincidencia exacta de la búsqueda de clientes | Pendiente con el equipo de Nexo ([ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)); hasta entonces es exacta solo con un único candidato |
-| Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005; el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
+| Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005 y sin objeto desde HU-013.9 (el agente que la usaría se retiró); el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
 | Regional del comercial desde `DWCubosEBSSAP` | Adaptador listo tras `ConnectionStrings__Regional` (ADR-016); falta que el DBA confirme la tabla y dé acceso. Mientras tanto la fija el DBA en `UsuariosWeb.regional`; sin ella el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` |
 | Score de urgencia y deadline vencido (Nexo) en el tablero | Pendiente del contrato de Nexo (ADR-016 §8) |
 | Conversión a USD con TRM | HU-012 (`trmAplicada` queda en 0) |
@@ -70,8 +70,8 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | Política de la línea | Margen y método por línea de negocio en `MargenesPolitica`, editables por el gerente comercial |
 | Margen / markup | `margen`: precio = costo / (1 − m). `markup`: precio = costo × (1 + m) |
 | Folio | Identificador de la cotización que genera el servidor: `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`, con las iniciales del comercial y un consecutivo diario por iniciales (ej. `PCN-DG-25092026-001`, [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)); una nueva versión agrega `-vN` |
-| Slot-filling | Estado estructurado de la conversación: lo resuelto por las herramientas (cliente, línea, margen, precio, folio) viaja entre turnos sin depender del texto |
-| Previsualización | Resumen con el precio que el agente muestra antes de generar el PDF; el PDF exige la confirmación explícita del comercial |
+| Slot-filling | Estado estructurado de la conversación del agente cotizador legado (cliente, línea, margen, precio, folio); retirado en HU-013.9. Hoy el estado de la sesión solo guarda la cotización del folio |
+| Acción propuesta | Cambio que propone el asistente por folio (margen, re-solicitud, conexos), armado por el servidor; el frontend lo ejecuta cuando el comercial pulsa Confirmar |
 | Verificación doble | El rol externo de ClientePro debe coincidir con la asignación interna en `UsuariosRoles` en cada login |
 | JIT | Alta automática del usuario en `UsuariosWeb` en su primer ingreso |
 | MTP | Microsoft.Testing.Platform, el ejecutor de pruebas de xUnit v3 en el SDK 10 |

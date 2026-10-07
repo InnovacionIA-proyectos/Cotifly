@@ -10,7 +10,6 @@ using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Reqnroll;
 using FunctionCallContent = Microsoft.Extensions.AI.FunctionCallContent;
 using FunctionResultContent = Microsoft.Extensions.AI.FunctionResultContent;
@@ -75,9 +74,10 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     public void DadoQuePideLaHerramienta(string herramienta) =>
         costeo.Modelo.Llamar(herramienta, new { costo = 2_550_000, margen = 0.15 }).Cerrar("Esa acción no está disponible en el asistente.");
 
-    [Given("que la creación por chat está deshabilitada")]
-    public void DadoQueLaCreacionEstaDeshabilitada() =>
-        web.Api.Factory.Services.GetRequiredService<IOptions<clsOpcionesChat>>().Value.CreacionHabilitada.Should().BeFalse("es el valor por defecto");
+    [Given("que la creación por chat se retiró")]
+    public void DadoQueLaCreacionSeRetiro() =>
+        typeof(clsAsistenteFolioRunner).Assembly.GetType("Cotifly.Aplicacion.Agente.Services.IClsAgenteRunner")
+            .Should().BeNull("el agente cotizador legado y el flag Chat:CreacionHabilitada se retiraron en HU-013.9 (#105)");
 
     [Given("que Nexo costeó la solicitud de {string} con el conexo {string} de {int}")]
     public Task DadoElConexo(string cotizacion, string conexo, int valor) => ajuste.DadoElConexo(cotizacion, conexo, valor);

@@ -1,8 +1,6 @@
 using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Aplicacion.Municipios.Interfaces;
-using Cotifly.Dominio.Agente;
 using Cotifly.Dominio.Comun;
-using Cotifly.Infraestructura.Comun.Persistence;
 using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Pruebas.Comun;
@@ -163,22 +161,6 @@ public sealed class clsMunicipiosEnCacheTests
         }
 
         _logger.Registros.Should().ContainSingle(e => e.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && e.Excepcion is InvalidOperationException);
-    }
-
-    [Fact]
-    public void ElEstadoConMunicipiosSobreviveAlJsonDeSesiones()
-    {
-        var estado = clsEstadoConversacion.Vacio with
-        {
-            Origen = "La Unión, Nariño",
-            OrigenMunicipio = new clsMunicipioResuelto(2, "La Unión", "Nariño", "Colombia", "52399"),
-            CandidatosDestino = [new clsMunicipioResuelto(1, "La Unión", "Antioquia"), new clsMunicipioResuelto(3, "La Unión", "Valle del Cauca")],
-        };
-
-        var json = clsConvertidorEstadoConversacion.Serializar(estado);
-
-        clsConvertidorEstadoConversacion.Deserializar(json).Should().Be(estado);
-        json.Should().NotContain("tieneMunicipiosPorConfirmar");
     }
 
     private clsMunicipiosEnCache Proveedor(int minutos) =>

@@ -22,7 +22,6 @@ using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Interfaces;
-using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
@@ -46,7 +45,6 @@ using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Precio.Services;
-using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -74,7 +72,7 @@ public static class clsDependenciasInfraestructura
         ArgumentNullException.ThrowIfNull(servicios);
         ArgumentNullException.ThrowIfNull(configuracion);
 
-        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA/GChat...).
+        // Opciones (cada HU agrega las suyas aquí: #12 Jwt, luego IA, Nexo, TRM...).
         servicios.AddOpcionesValidadas<clsOpcionesZona>(configuracion, clsOpcionesZona.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
@@ -93,14 +91,10 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
         servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
-        servicios.AddOpcionesValidadas<clsOpcionesChat>(configuracion, clsOpcionesChat.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
         servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
-        servicios.AddOpcionesValidadas<clsOpcionesGoogleChat>(configuracion, clsOpcionesGoogleChat.Seccion);
-        servicios.AddSingleton<IValidateOptions<clsOpcionesGoogleChat>, clsValidadorOpcionesGoogleChat>();
-        servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
@@ -116,9 +110,8 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
+        // Fuente externa de Margen (#13). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
         AgregarFuenteMargen(servicios);
-        servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
@@ -139,10 +132,10 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Agente (#12 parte C, ADR-003/ADR-011): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, búsqueda de clientes en Nexo
-    /// (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), Google Chat (verificación del JWT,
-    /// cola, worker y publicador con la cuenta de servicio), URL firmada del PDF y barrido de sesiones inactivas. TryAdd: un
-    /// adaptador registrado antes (pruebas) se respeta.
+    /// Asistente IA (#12 parte C, ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
+    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>),
+    /// candado por sesión y barrido de sesiones inactivas. Google Chat (webhook, cola, worker y publicador) se retiró en HU-013.9 (#105).
+    /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarAgente(IServiceCollection servicios)
     {
@@ -151,17 +144,9 @@ public static class clsDependenciasInfraestructura
         // Redactor del asunto y la introducción del PDF (HU-013.5) sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
         servicios.TryAddScoped<Aplicacion.Redaccion.Interfaces.IClsRedactorCotizacion, Redaccion.Services.clsRedactorCotizacionLlm>();
         AgregarBuscadorClientes(servicios);
-        servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
-        servicios.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente, c => c.Timeout = TimeSpan.FromSeconds(30)).RedactLoggedHeaders(_ => true);
-        servicios.TryAddSingleton<IClsVerificadorJwtGoogleChat, clsVerificadorJwtGoogleChat>();
-        servicios.TryAddSingleton<clsTokenCuentaServicioGoogle>();
-        servicios.TryAddSingleton<IClsPublicadorChat, clsPublicadorGoogleChat>();
-        servicios.TryAddSingleton<IClsColaEventosChat, clsColaEventosChat>();
         servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
-        servicios.AddHostedService<clsWorkerEventosChat>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();
-        servicios.AddHostedService<clsAvisoArranqueChat>();
     }
 
     /// <summary>

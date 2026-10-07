@@ -289,8 +289,8 @@ public static class clsCodigosError
     public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
 
     /// <summary>
-    /// HU-013.6 (#102, ADR-018 §2b): <c>POST /web/chat</c> sin <c>folio</c> (o vacío) con la creación por chat deshabilitada
-    /// (<c>Chat:CreacionHabilitada=false</c>): el asistente solo trabaja sobre una cotización ya creada; 400. Código nuevo del backend .NET.
+    /// HU-013.6 (#102, ADR-018 §2b): <c>POST /web/chat</c> sin <c>folio</c> (o vacío): el asistente solo trabaja sobre una cotización
+    /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
     /// </summary>
     public const string FolioRequerido = "FOLIO_REQUERIDO";
 }

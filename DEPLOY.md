@@ -23,7 +23,7 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 | #29 (HU-006.5) | Secretos fuera del repositorio | [§2](#2-secretos-y-variables-hu-0065-29), [§3](#3-tabla-de-variables-de-producción-plantilla-para-hu-0071-33) |
 | #28 (HU-006.4) | Registry, imagen versionada y release | [§4](#4-registry-imagen-versionada-y-release-hu-0064-28) |
 | #30 (HU-006.6) | Manifiestos del stack .NET + SQL Server externo | [§5](#5-manifiestos-del-stack-net-hu-0066-30) |
-| #31 (HU-006.7) | Backups de `dbo_cotifly` y verificación del JWT de Google Chat | [§6](#6-backups-de-dbo_cotifly-hu-0067-31), [§7](#7-webhook-de-google-chat-verificación-del-jwt-hu-0067-31) |
+| #31 (HU-006.7) | Backups de `dbo_cotifly` (y la verificación del JWT de Google Chat, retirado en #105) | [§6](#6-backups-de-dbo_cotifly-hu-0067-31), [§7](#7-google-chat-retirado-hu-0139-105) |
 
 ## 2. Secretos y variables (HU-006.5, #29)
 
@@ -35,22 +35,13 @@ distinto, por ejemplo un gestor de secretos):
 1. **Variables de entorno de Dokploy por servicio** (pestaña *Environment* del compose de tipo *stack*). Dokploy las
    guarda en su base y las escribe en el `.env` con el que hace `docker stack deploy`; el manifiesto solo las
    referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey`,
-   `Pdf__ClaveFirmaUrl`, `IA__ApiKey` y `SapTm__Pass`.
-2. **Secreto de Docker Swarm** para la cuenta de servicio de Google Chat (`GChat__SaJson`): es un archivo JSON con una
-   clave privada, lo más pesado y sensible. Se crea una vez en el manager y se monta en `/run/secrets/gchat_sa.json`;
-   la variable `GChat__SaJson` apunta a esa ruta (la app acepta el contenido o la ruta, ver
-   `clsOpcionesGoogleChat`).
+   `IA__ApiKey` y `SapTm__Pass`.
+2. **Sin secretos de Docker Swarm.** El único que había era la cuenta de servicio de Google Chat (`GChat__SaJson`,
+   secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §14). Tras desplegar la versión
+   sin Google Chat, borrar el secreto en el manager: `docker secret rm cotifly_gchat_sa_v1 cotifly_staging_gchat_sa_v1`
+   (solo con confirmación del usuario: es el clúster).
 
-   ```bash
-   # En el manager (10.10.40.17). El nombre lleva versión: los secretos de Swarm son inmutables.
-   docker secret create cotifly_gchat_sa_v1 ./cuenta-servicio-chat.json && shred -u ./cuenta-servicio-chat.json
-   ```
-
-   Rotar = crear `cotifly_gchat_sa_v2`, cambiar el nombre en la variable del stack (`GCHAT_SA_SECRETO`) y redesplegar;
-   luego `docker secret rm cotifly_gchat_sa_v1`. Staging usa su propio secreto, `cotifly_staging_gchat_sa_v1` (§5.3).
-
-Por qué no todo como secreto de Swarm: el backend lee la configuración de variables de entorno; solo `GChat__SaJson`
-acepta una ruta de archivo. Llevar las cadenas de conexión o la clave JWT a `/run/secrets` exige agregar el proveedor
+Por qué no se usan secretos de Swarm: el backend lee la configuración de variables de entorno. Llevar las cadenas de conexión o la clave JWT a `/run/secrets` exige agregar el proveedor
 *key-per-file* de ASP.NET Core (`AddKeyPerFile("/run/secrets")`), un cambio de código que queda como mejora
 propuesta, no implementada.
 
@@ -77,7 +68,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 
 | Variable | Secreto | Obligatoria en Production | Por defecto | Dónde se carga | Nota |
 |---|---|---|---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Production` en staging **y** en producción, a propósito: así staging aplica las mismas validaciones de arranque (`clsValidadorSecretos`, CORS obligatorio, `GChat:VerificarJwt=false` prohibido) y un error de configuración aparece antes de producción |
+| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Production` en staging **y** en producción, a propósito: así staging aplica las mismas validaciones de arranque (`clsValidadorSecretos`, CORS obligatorio) y un error de configuración aparece antes de producción |
 | `ASPNETCORE_HTTP_PORTS` | no | no | `8080` (imagen) | imagen | no se cambia |
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
@@ -114,9 +105,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Trm__TiempoEsperaSegundos` | no | no | `10` | manifiesto | límite de la consulta de la TRM a la Superintendencia (2 a 60) |
 | `Trm__TiempoEsperaDolarApiSegundos` | no | no | `4` | manifiesto | límite de la consulta de la TRM a DolarApi (2 a 60), corto para no demorar el respaldo |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
-| `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web, pero la tarjeta de Google Chat no lo puede abrir; configurarla si Google Chat está activo |
-| `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | con Google Chat configurado | vacío | Dokploy | `openssl rand -base64 48` |
-| `Pdf__MinutosUrlFirmada` | no | no | `15` | manifiesto | |
+| `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web |
 | `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
 | `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
 | `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
@@ -124,15 +113,9 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `IA__ApiKey` | **sí** (≥ 16) | según el proveedor (obligatoria con openai, azure_openai, gemini y anthropic); si tiene valor, en Production no puede ser un placeholder ni tener menos de 16 caracteres | vacío | Dokploy | **secreto de Dokploy**, nunca en el repositorio ni en el manifiesto. Con OmniRoute es la clave del gateway (`Authorization: Bearer`); como el tráfico va por HTTP, solo debe viajar dentro de la red interna. La clave usada en las pruebas del 2026-10-01 se compartió por chat: **rotarla** antes de cargarla en staging |
 | `IA__Fallbacks__N__Proveedor`, `__Modelo`, `__Endpoint` | no | no | vacío | Dokploy | respaldos ante 429, 5xx, red caída o el 400 "No credentials for provider" de OmniRoute. Los manifiestos declaran `__0__` y `__1__` con `${...:-}`: un respaldo con `Proveedor` vacío no existe (si tiene modelo, endpoint o clave sin proveedor, la API no arranca). Con OmniRoute: `__0__` `gemini/gemini-3.5-flash`, `__1__` `gemini/gemini-3-flash-preview`, mismo endpoint y clave |
 | `IA__Fallbacks__N__ApiKey` | **sí** (≥ 16) | igual que `IA__ApiKey`, por respaldo | vacío | Dokploy | secreto de Dokploy; con OmniRoute, la misma clave del gateway |
-| `Chat__CreacionHabilitada` | no | no | `false` | manifiesto | HU-013.6 (#102, ADR-018 §1). `false`: `POST /web/chat` exige `folio` y solo corre el asistente de lectura y propuesta; Google Chat responde que la creación por chat se retiró. **Transición:** en QA/staging se puede dejar `true` mientras el frontend despliega la versión que envía `folio` (sin `folio` responde el agente legado); después, `false`. En Production debe ser `false`: con `true` la API registra un aviso al arrancar (`clsAvisoArranqueChat`). El código legado se retira en #105, antes de producción |
 | `IA__MaxTokens`, `IA__MaxIteraciones`, `IA__SoportaJsonSchema`, `IA__MinutosSinJsonSchema`, `IA__JsonSchemaEstricto`, `IA__Rpm`, `IA__TimeoutSeg` | no | no | `4096`, `12`, `true`, `30`, `false`, `8`, `60` | manifiesto | con OmniRoute y Gemini: `IA__SoportaJsonSchema=false` (Gemini vía OmniRoute ignora `json_schema`) e `IA__MaxTokens=1500` (con 4096 OpenRouter respondió 402 porque reserva crédito por el máximo pedido) |
 | `LimiteChat__PeticionesPorVentana`, `LimiteChat__VentanaSegundos` | no | no | `20`, `60` | manifiesto | |
 | `Sesiones__LimiteTokens`, `Sesiones__TtlHoras`, `Sesiones__BarridoMinutos`, `Sesiones__EsperaTurnoSegundos` | no | no | `6000`, `24`, `60`, `3` | manifiesto | |
-| `GChat__ProjectNumber` | no | no (sin él el webhook responde 401) | vacío | Dokploy | número del proyecto de Google Cloud |
-| `GChat__VerificarJwt` | no | `false` no arranca | `true` | manifiesto | siempre `true` en QA y producción |
-| `GChat__SaJson` | **sí** | no | vacío | **secreto de Swarm** | `/run/secrets/gchat_sa.json` |
-| `GChat__SupportSpace`, `GChat__CapacidadCola` | no | no | vacío, `200` | Dokploy / manifiesto | |
-| `GChat__UrlCertificados`, `GChat__ApiBase` | no | no | certificados de `chat@system.gserviceaccount.com`, `https://chat.googleapis.com/v1` | — | solo pruebas: no se cargan en QA ni producción (no están en los manifiestos) |
 | `Grovity__BaseUrl`, `Grovity__Usuario` / `Grovity__Clave` | no / **sí** | no (el código no las lee) | — | — | solo si se aprueba Grovity desde el agente (ADR-005) |
 
 **OmniRoute: riesgo de transporte y de datos (#84).**
@@ -147,7 +130,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
 `WEB_SESSION_SECRET` (reemplazada por `Jwt__SigningKey`), `INTERNAL_API_TOKEN`, `LLM_MODEL`/`LLM_API_KEY`/`LLM_RPM`
-(reemplazadas por `IA__*`), `GCHAT_*` (reemplazadas por `GChat__*`), `GOOGLE_SA_JSON` y `DRIVE_TARIFARIO_*` (tarifario
+(reemplazadas por `IA__*`), `GCHAT_*` y `GOOGLE_SA_JSON` (Google Chat retirado en #105), y `DRIVE_TARIFARIO_*` (tarifario
 de Drive retirado), `TARIFA_*`, `S3_*` y `MINIO_*` (MinIO no se mantiene, ADR-012), `SHEETS_*` (diferida, ADR-012),
 `SMTP_*`/`SMTP_RELAY_*`/`CORREO_*` (reemplazadas por `Correo__*`), `SAP_TM_*`/`SAP_SALES_ORG_DEFAULT` (reemplazadas por
 `SapTm__*`), `PDF_*` (reemplazadas por `Pdf__*`), `PUBLIC_HOST` (sigue como variable del manifiesto para Traefik, no
@@ -194,15 +177,10 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `ForwardedHeaders__Habilitado` / `RedesConocidas__0` | no | infraestructura (subred de `dokploy-network`) | no | Infraestructura | — |
 | `PUBLIC_HOST` (Traefik) | no | infraestructura (DNS y TLS, HU-006.2) | no | Infraestructura | `PUBLIC_HOST` |
 | `Pdf__BaseUrl` | no | `https://<PUBLIC_HOST>` | no | Backend | `PDF_BASE_URL` |
-| `Pdf__ClaveFirmaUrl` | sí | generada por el equipo de despliegue | no | Backend | — |
 | `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003). Propuesta con OmniRoute: `openai_compatible`, `gemini/gemini-3.5-flash-lite`, endpoint interno (por HTTPS si se publica, §2.2) | no | Negocio / Backend | `LLM_MODEL` |
 | `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM (con OmniRoute, su administrador; rotar antes de staging, §2.2) | no | Negocio | `LLM_API_KEY` |
 | `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
 | `IA__SoportaJsonSchema` / `IA__MaxTokens` | no | con OmniRoute y Gemini: `false` y `1500` (§2.2) | no | Backend | `LLM_MAX_TOKENS` |
-| `GChat__ProjectNumber` | no | Google Cloud (proyecto de la app de Chat) | no | Backend | `GCHAT_PROJECT_NUMBER` |
-| `GChat__VerificarJwt` | no | fijo: `true` (§7) | no | Backend | `GCHAT_VERIFICAR_JWT` (hoy `false`) |
-| `GChat__SaJson` (secreto de Swarm) | sí | Google Cloud (cuenta de servicio `chat.bot`) | no | Backend | `GOOGLE_SA_JSON` |
-| `GChat__SupportSpace` | no | Google Chat (space de soporte) | no | Backend | `GCHAT_SUPPORT_SPACE` |
 | `Nexo__UrlBase` | no | equipo de Nexo (URL de producción, no la de pruebas) | no | Backend / Nexo | — |
 | `SapTm__Modo` (+ `ExportPath` o `Url`/`User`/`Pass`) | `Pass` sí | SAP / infraestructura (HU-009) | no | SAP / Backend | `SAP_TM_*` |
 | `Correo__Habilitado` / `Correo__SmtpRelay__Host` | no | TI (relay y transporte real, D3) | no | TI | `CORREO_*`, `SMTP_RELAY_HOST` |
@@ -387,9 +365,8 @@ Internet / red corporativa
         ▼
   cotifly-api (1 réplica, anclada al worker TBSNODO1-DKP)
         ├── volumen cotifly_pdfs → /data/pdfs
-        ├── secreto de Swarm → /run/secrets/gchat_sa.json
         └── red "salida" (overlay con egreso) → tbsdatacenter:1433 (SQL Server 2019, externo)
-                                              → proveedor LLM, Google Chat, Nexo, SAP TM, relay SMTP,
+                                              → proveedor LLM, Nexo, SAP TM, relay SMTP,
                                                 TRM en co.dolarapi.com:443 y www.datos.gov.co:443
 ```
 
@@ -407,7 +384,7 @@ Internet / red corporativa
   | Python | .NET | Para qué |
   |---|---|---|
   | `web` / `dokploy-network` (Traefik) | `edge` = `dokploy-network` (externa) | Solo entrada desde Traefik. Es el único servicio del stack en esa red |
-  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Google Chat, Nexo, SAP TM, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
+  | `bot-edge` (overlay con egreso) | `salida` (overlay propia, no interna) | Salida a internet y a la red corporativa: LLM, Nexo, SAP TM, TRM (`co.dolarapi.com` y `www.datos.gov.co`), relay, SQL Server |
   | `bot-back` (overlay `internal: true`) | — | No hace falta: no hay servicios internos. Si vuelve alguno (MinIO, ADR-012), va en una overlay interna sin labels de Traefik |
 
 - **Healthchecks:** el del stack es el mismo de la imagen, en forma exec (`dotnet /app/Cotifly.Api.dll --healthcheck`,
@@ -428,7 +405,7 @@ Internet / red corporativa
   rango propio dentro de la red (verificarlo con `docker network inspect dokploy-network` en staging), usar
   `ForwardedHeaders__ProxiesConocidos__0=<IP de Traefik>` (agregando esa línea al manifiesto, §5.4) o un CIDR más
   estrecho en `RedesConocidas`.
-- **Una réplica:** la cola de Google Chat y el barrido de sesiones viven en el proceso, y el volumen de PDFs es local
+- **Una réplica:** el barrido de sesiones y la Idempotency-Key viven en el proceso, y el volumen de PDFs es local
   (ADR-012). Escalar exige un volumen compartido y el candado de correo en la base.
 - **TLS:** los labels de Traefik (router `websecure`, `certresolver=letsencrypt`, HSTS, puerto 8080 y healthcheck de
   `/health/ready`) están escritos; que el certificado funcione depende de HU-006.2.
@@ -450,7 +427,7 @@ para los manifiestos, iguales a las que ya asumía el Python:
   |---|---|---|
   | Acceso mientras el overlay esté caído | Puerto en modo host `10.10.40.31:${COTIFLY_PUERTO_HOST:-8092}` → 8080, HTTP **sin TLS**, solo red corporativa (el Python usa 8091) | Ninguno: sin `ports`. **No se despliega hasta HU-006.2** |
   | Orden de actualización | `stop-first` (dos tareas no pueden usar el mismo puerto del nodo); `COTIFLY_ORDEN_UPDATE=start-first` al quitar el puerto | `start-first` |
-  | Volumen / secreto / router | `cotifly_staging_pdfs` / `cotifly_staging_gchat_sa_v1` / `cotifly-api-staging` | `cotifly_pdfs` / `cotifly_gchat_sa_v1` / `cotifly-api` |
+  | Volumen / router | `cotifly_staging_pdfs` / `cotifly-api-staging` | `cotifly_pdfs` / `cotifly-api` |
   | `ASPNETCORE_ENVIRONMENT` | `Production` fijo (mismas validaciones de arranque) | `Production` fijo |
 
 - Al resolverse HU-006.2: quitar `ports` de staging, pasar a `start-first` y validar el acceso por Traefik con TLS. La
@@ -465,7 +442,6 @@ manifiesto:
 |---|---|---|
 | `COTIFLY_TAG` | **sí** | Tag inmutable de la imagen (`sha-<corto>` o `X.Y.Z`, §4) |
 | `PUBLIC_HOST` | **sí** | Dominio del router de Traefik |
-| `GCHAT_SA_SECRETO` | no | Nombre del secreto de Swarm (por defecto `cotifly_gchat_sa_v1` o `cotifly_staging_gchat_sa_v1`) |
 | `COTIFLY_PUERTO_HOST` | no (staging) | Puerto del worker en modo host (por defecto 8092) |
 | `COTIFLY_ORDEN_UPDATE` | no (staging) | `stop-first` (por defecto) o `start-first` |
 
@@ -474,14 +450,14 @@ Obligatorias por el manifiesto (`${VAR:?}`: sin ellas `docker stack deploy` fall
 `Cors__OrigenesPermitidos__0` y `ForwardedHeaders__RedesConocidas__0` (la subred de `dokploy-network`:
 `docker network inspect dokploy-network --format '{{(index .IPAM.Config 0).Subnet}}'`).
 
-Fijas en el manifiesto (no se leen de Dokploy): `GChat__VerificarJwt=true`, `ForwardedHeaders__Habilitado=true`,
+Fijas en el manifiesto (no se leen de Dokploy): `ForwardedHeaders__Habilitado=true`,
 `Pdf__StorageModo=volumen`, `Pdf__StorageDir=/data/pdfs`, `Zona__ZonaHoraria=America/Bogota`.
 
 Opcionales con valor vacío = "no configurada" (verificado en el código de cada opción): `ConnectionStrings__Regional`
 (vacía, se usa lo que ya haya en `UsuariosWeb.regional`; con valor, el login la llena y refresca (#81) y el tablero
 del gerente la lee en vivo (#45), y necesita salida desde el worker a `10.10.40.24:1433` y un usuario SQL de solo
 lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`,
-`GChat__ProjectNumber`, `GChat__SaJson`, `SapTm__Modo`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl`. En cambio
+`SapTm__Modo`, `Pdf__BaseUrl`. En cambio
 `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` y `__Dominio` son identificadores obligatorios:
 el manifiesto trae los valores por defecto de `clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`,
 `boterosoto`) y no deben cargarse vacías en Dokploy. **Ojo:** como el manifiesto siempre manda la variable, su valor por
@@ -498,8 +474,8 @@ por defecto.
 
 ### 5.5 Desplegar en Dokploy (pasos; staging pendiente de aprobación)
 
-1. En el manager: `docker secret create cotifly_staging_gchat_sa_v1 <archivo>` (o con `{}` mientras no exista la app
-   de Chat) y `docker login ghcr.io` con el PAT de solo lectura (§4.4).
+1. En el manager: `docker login ghcr.io` con el PAT de solo lectura (§4.4). Ya no hace falta el secreto de Google Chat
+   (retirado en #105).
 2. En Dokploy: proyecto Cotifly → *Compose* de tipo **Stack**, fuente: este repositorio, rama `QA`, archivo
    `infra/stack.dotnet.staging.yml`.
 3. *Environment*: variables del §2.2 y del §5.4, con `COTIFLY_TAG=sha-<corto>` publicado (§4).
@@ -518,7 +494,7 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
 - Arranque real (2026-09-28): el `environment` que producía cada manifiesto (`docker compose config`, 61 variables en
   ese momento, defaults incluidos) se pasó tal cual a la imagen contra un SQL Server 2019 local con `0001`–`0003` y el login `cotifly_app` de
   permisos mínimos: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200. Confirma que los
-  valores por defecto vacíos (IA, Google Chat, SAP, Nexo, correo) no rompen la validación de arranque.
+  valores por defecto vacíos (IA, SAP, Nexo, correo; en esa corrida también Google Chat, hoy retirado) no rompen la validación de arranque.
   - Esa corrida fue con la imagen de `QA` de ese día, que exigía `0001`–`0003`. **Desde el costeo en Nexo (HU-005.8)
     la precondición es `0001`–`0004`**: una imagen que incluye el costeo contra una base sin `0004` responde `503`
     `falta 0004` en `/health/ready` (§4.5, paso 0). Las variables `CosteoNexo__*`, `Trm__*` y
@@ -686,34 +662,34 @@ una vez con la imagen de la API.
 **Pendiente:** repetir la prueba con un respaldo real de `tbsdatacenter` en una instancia de pruebas corporativa, cuando
 exista el login `cotifly_respaldo` y la instancia de pruebas (DBA).
 
-## 7. Webhook de Google Chat: verificación del JWT (HU-006.7, #31)
+## 7. Google Chat retirado (HU-013.9, #105)
 
-**Decisión: la verificación del JWT queda activada en el backend .NET** (`GChat__VerificarJwt=true`, fija en los
-manifiestos del §5; en `Production` la API ni siquiera arranca con `false`, `clsValidadorOpcionesGoogleChat`).
+Decisión del 2026-10-05 (ADR-018 §14): Cotifly es un módulo de formularios dentro de ClientePro y Google Chat sale del
+alcance. Desde HU-013.9 el backend .NET **no tiene** el webhook `POST /chat/events` (responde 404), ni el verificador del
+JWT de Google, la cola, el worker, el publicador o las tarjetas, ni las opciones `GChat__*` y su validación al arrancar.
+El agente cotizador legado y el flag `Chat__CreacionHabilitada` también se retiraron: `POST /web/chat` exige `folio`.
 
-- **Qué verifica:** `POST /chat/events` exige el `Authorization: Bearer` que firma Google: RS256 con los certificados
-  públicos de `chat@system.gserviceaccount.com`, emisor `chat@system.gserviceaccount.com`, audiencia =
-  **`GChat__ProjectNumber`** y vigencia. Sin token válido responde 401 y no procesa nada.
-- **Qué necesita:** `GChat__ProjectNumber` = el **número** (solo dígitos, no el ID) del proyecto de Google Cloud donde
-  se crea la app de Chat (*Google Cloud Console → Panel del proyecto → Número del proyecto*). En la configuración de la
-  app de Chat, *Authentication Audience* debe ser **Project Number** (no *HTTP endpoint URL*). Sin el número, con la
-  verificación activa, todo evento responde 401 (fail-closed). La URL de la app debe ser HTTPS pública
-  (`https://<PUBLIC_HOST>/chat/events`), así que depende de HU-006.2.
-- **Por qué estaba apagada en el Python** (`GCHAT_VERIFICAR_JWT=false` en `deploy/docker-compose.swarm.yml`):
-  **pendiente de confirmar con el equipo.** Lo más probable, por el resto de ese manifiesto, es que se apagara para
-  probar mientras el servicio estaba expuesto por HTTP en `10.10.40.31:8091` sin Traefik ni TLS y sin
-  `GCHAT_PROJECT_NUMBER` configurado.
-- **Riesgo de dejarla apagada:** cualquiera que alcance el endpoint puede enviar eventos falsos. En el backend .NET la
-  identidad sale del correo del evento (`UsuariosWeb.email`, ADR-011), así que un evento falso **suplanta a un
-  comercial**: ve sus cotizaciones y clientes, genera cotizaciones y PDF a su nombre y dispara correos con su
-  remitente por el relay interno. Además consume cuota del proveedor LLM. Con la API en la red corporativa y detrás de
-  Traefik el riesgo no desaparece (cualquier equipo interno, o una SSRF, llega al endpoint).
-- `GChat__VerificarJwt=false` solo se admite fuera de `Production` para pruebas locales con túnel.
+Al desplegar esta versión:
+
+- Quitar del *Environment* de Dokploy las variables `GChat__*`, `Chat__CreacionHabilitada` y `GCHAT_SA_SECRETO` (si
+  quedan, la API las ignora y arranca igual, pero no deben confundir).
+- Borrar el secreto de Swarm de la cuenta de servicio (`cotifly_gchat_sa_v1`, `cotifly_staging_gchat_sa_v1`) y, en
+  Google Cloud, deshabilitar la app de Chat que apuntaba a `https://<PUBLIC_HOST>/chat/events`. Ambas acciones tocan
+  infraestructura real: solo con confirmación explícita.
+- Las tablas `Sesiones` y `EventosConversacion` **no se borran**: guardan la auditoría de las conversaciones de Google
+  Chat (`spaceId = spaces/...`) y siguen alimentándose con el asistente por folio (`web/{sesion_id}`).
+
+La sección anterior (verificación del JWT del webhook, HU-006.7) queda solo como historia en el Anexo A, que describe el
+stack Python de rollback.
 
 ## Anexo A. Stack Python (solo rollback)
 
 Runbook del stack Python (Fase 15), sin cambios de contenido. Se conserva para volver atrás si el backend .NET falla
 en producción. **No usarlo para el backend .NET.**
+
+> **Ojo con el rollback (HU-013.9, #105).** Volver al Python reabre Google Chat y la creación de cotizaciones por chat, sin
+> formulario ni costeo en Nexo, en contra de la decisión del 2026-10-05 (ADR-018: Cotifly es un módulo de formularios dentro
+> de ClientePro). Solo se justifica como contingencia temporal y con aprobación explícita del negocio.
 
 > **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
 > `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con

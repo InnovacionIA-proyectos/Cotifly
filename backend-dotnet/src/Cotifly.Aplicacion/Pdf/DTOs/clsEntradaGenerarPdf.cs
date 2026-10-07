@@ -12,7 +12,7 @@ namespace Cotifly.Aplicacion.Pdf.DTOs;
 /// </param>
 /// <param name="Version">Versión de la cotización (1 la original; una nueva versión la pasa con su folio <c>-vN</c>).</param>
 /// <param name="Trazabilidad">Costo, márgenes, precio, origen del margen, cliente y moneda que se guardan en <c>Cotizaciones</c>.</param>
-/// <param name="SpaceId">Space de Google Chat o <c>web/{sesion_id}</c>.</param>
+/// <param name="SpaceId">Espacio de la conversación de origen (<c>web/{sesion_id}</c>), o vacío si el PDF no sale de un chat.</param>
 /// <param name="ThreadId">Hilo de la conversación (también identifica el evento de auditoría).</param>
 public sealed record clsEntradaGenerarPdf(
     Guid UsuarioId,

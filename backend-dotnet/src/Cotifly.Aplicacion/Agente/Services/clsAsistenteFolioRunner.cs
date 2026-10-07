@@ -36,7 +36,7 @@ public interface IClsAsistenteFolioRunner
 }
 
 /// <summary>
-/// Asistente por folio (HU-013.6, #102, ADR-018 §2b). El mismo loop manual del agente (ADR-003: <see cref="IChatClient"/> con las
+/// Asistente por folio (HU-013.6, #102, ADR-018 §2b), único agente de Cotifly desde HU-013.9 (#105). Loop manual (ADR-003: <see cref="IChatClient"/> con las
 /// declaraciones portables y <c>kernel.InvokeAsync</c> por llamada, con el filtro de auditoría; respuesta final aparte con
 /// <see cref="IClsValidadorRespuestaAgente"/>), pero:
 /// <list type="bullet">
@@ -62,7 +62,6 @@ public sealed class clsAsistenteFolioRunner(
     IClsValidadorRespuestaAgente validador,
     IClsAuditoriaService auditoria,
     IClsCandadoSesion candadoSesion,
-    clsContextoTurnoAgente contexto,
     clsContextoAsistenteFolio contextoFolio,
     clsHerramientasAsistenteFolio herramientas,
     IOptions<clsOpcionesAgente> opcionesAgente,
@@ -122,8 +121,7 @@ public sealed class clsAsistenteFolioRunner(
             .Append(solicitud.Mensaje)
             .ToList();
         var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        contexto.Iniciar(usuario.Id, solicitud.SpaceId, solicitud.ThreadId, solicitud.Mensaje, estado, false, mensajesDelComercial, null, calendario.Hoy);
-        contextoFolio.Iniciar(usuario.Id, cotizacion, linea?.LineaNegocio);
+        contextoFolio.Iniciar(usuario.Id, cotizacion, linea?.LineaNegocio, solicitud.ThreadId);
 
         var mensajes = new List<ChatMessage>
         {
@@ -135,7 +133,7 @@ public sealed class clsAsistenteFolioRunner(
         var declaraciones = clsEsquemaPortableHerramientas.Declarar(funciones.Values);
         try
         {
-            return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, estado, cancellationToken);
+            return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, estado, mensajesDelComercial, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -160,6 +158,7 @@ public sealed class clsAsistenteFolioRunner(
         List<ChatMessage> mensajes,
         clsMarcasTurno marcas,
         clsEstadoConversacion estado,
+        IReadOnlyList<string> mensajesDelComercial,
         CancellationToken cancellationToken)
     {
         var maximo = opcionesAgente.Value.MaxIteraciones;
@@ -207,13 +206,13 @@ public sealed class clsAsistenteFolioRunner(
             }
 
             mensajes.Add(new ChatMessage(ChatRole.Tool, resultados));
-            AgregarEvento(solicitud, clsAgenteRunner.RolHerramienta, null, new { resultados = traza }, null, marcas.Siguiente());
+            AgregarEvento(solicitud, clsEventoConversacion.RolHerramienta, null, new { resultados = traza }, null, marcas.Siguiente());
         }
 
         var final = await validador.ObtenerRespuestaFinalAsync(
             chat,
             mensajes,
-            new clsContextoValidacionRespuesta(estado, salidas, contexto.MensajesDelComercial, funciones.Keys.ToList()),
+            new clsContextoValidacionRespuesta(estado, salidas, mensajesDelComercial, funciones.Keys.ToList()),
             cancellationToken);
         iteraciones += final.Llamadas;
 
@@ -234,7 +233,7 @@ public sealed class clsAsistenteFolioRunner(
         var kernel = new Kernel();
         var plugin = KernelPluginFactory.CreateFromObject(herramientas, clsNombresHerramientas.PluginAsistente);
         kernel.Plugins.Add(plugin);
-        kernel.FunctionInvocationFilters.Add(new clsAuditoriaHerramientaFilter(auditoria, contexto));
+        kernel.FunctionInvocationFilters.Add(new clsAuditoriaHerramientaFilter(auditoria, contextoFolio));
         funciones = plugin.ToDictionary(f => f.Name, StringComparer.Ordinal);
         return kernel;
     }

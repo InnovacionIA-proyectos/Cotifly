@@ -1,7 +1,5 @@
 using Cotifly.Aplicacion.Agente.Repositories;
 using Cotifly.Dominio.Agente;
-using Cotifly.Dominio.Clientes;
-using Cotifly.Dominio.Margen;
 using Cotifly.Dominio.Sesiones;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,23 +72,16 @@ public sealed class clsSesionRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
     }
 
     [Fact]
-    public async Task ElEstadoDelAgenteSeGuardaComoJsonValidoConCodigosYSeRecuperaIgual()
+    public async Task ElEstadoDelAgenteSeGuardaComoJsonValidoYSeRecuperaIgual()
     {
         var (space, hilo) = IdsUnicos();
         var usuario = await CrearUsuarioAsync();
         var estado = clsEstadoConversacion.Vacio with
         {
-            NitCliente = "900123456",
-            ClienteNombre = "Cliente S.A.S.",
-            OrigenCliente = OrigenCliente.Prospecto,
-            BpCliente = "0001000123",
-            ClienteConfirmado = true,
-            CandidatosCliente = [new clsCandidatoCliente("800111222", "Otro Cliente", OrigenCliente.Cliente)],
-            LineaNegocioId = 1,
-            PesoKg = 1250.5m,
-            OrigenMargen = OrigenMargen.PoliticaLinea,
-            PrecioFinal = 1_500_000m,
+            FolioEnProgreso = "PCN-NV-24092026-001",
             CotizacionId = Guid.NewGuid(),
+            Version = 2,
+            Moneda = "USD",
         };
 
         await EnAmbitoAsync(async s =>
@@ -104,7 +95,7 @@ public sealed class clsSesionRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
 
         leida!.EstadoAgente.Should().Be(estado);
         leida.UsuarioId.Should().Be(usuario);
-        json.Should().Contain("\"origenCliente\":\"prospecto\"").And.Contain("\"origenMargen\":\"politica_linea\"");
+        json.Should().Contain("\"folioEnProgreso\":\"PCN-NV-24092026-001\"").And.Contain("\"moneda\":\"USD\"");
     }
 
     [Fact]

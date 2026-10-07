@@ -18,7 +18,7 @@ Contenido:
 |---|---|---|
 | `/web/*` | snake_case (`clsJsonSnakeCase`, `clsFormateadorEntradaWeb`/`clsFormateadorSalidaWeb`) | Nulos siempre escritos; números estrictos (`"0.2"` como texto es un cuerpo inválido) |
 | `/api/auth/*` | camelCase del patrón "Login SSO — Cliente Pro" (`idUsuario`, `debeCambiarPassword`) | Excepción definida por el contrato: `user.nombre_completo` |
-| `/health`, `/health/ready`, `/pdfs/*`, `/chat/events` | JSON por defecto de ASP.NET Core o binario | `/pdfs/*` devuelve `application/pdf` inline |
+| `/health`, `/health/ready`, `/pdfs/*` | JSON por defecto de ASP.NET Core o binario | `/pdfs/*` devuelve `application/pdf` inline |
 
 - Operaciones con `x-estado: borrador` no están congeladas; hoy son solo `/web/metricas/actividad` y `/ajustes-margen`, además obsoletas (`deprecated: true`) desde que HU-010.1 (#45) agregó `/web/metricas/comercial` y `/regional`.
 - Las rutas de los controllers son explícitas (`[Route("web/...")]`), nunca `[controller]`.
@@ -30,8 +30,8 @@ Contenido:
 - Cada llamada a `/web/*` y `/pdfs/*` lleva `Authorization: Bearer <access>` (JWT HS256, 60 minutos; claims `sub`, `jti`, `username`, `rol`, `iss`, `aud`, `iat`, `exp`).
 - Sin token, vencido, firmado con otra clave o revocado: `401 {"error":"Inicia sesión de nuevo."}`. Rol insuficiente: `403 {"error":"No tienes permiso para esta operación."}`.
 - Políticas: `Comercial` (roles `comercial` y `gerente_comercial`) en toda la consola; `GerenteComercial` además en `/web/admin/*`. Los casos de uso sensibles revalidan el rol.
-- `/pdfs/{archivo}` acepta también el enlace firmado `?t=` de Google Chat (HMAC-SHA256, 15 minutos, solo el dueño).
-- `/chat/events` no usa el Bearer de ClientePro: exige el JWT de Google (RS256, audiencia `GChat:ProjectNumber`).
+- `/pdfs/{archivo}` exige siempre Bearer. El enlace firmado `?t=` (ADR-011 §3), que solo emitía Google Chat, se retiró en HU-013.9 (#105): el parámetro se ignora.
+- `/chat/events` (webhook de Google Chat con JWT de Google) se retiró en HU-013.9 (#105): responde 404.
 - `/health` y `/health/ready` son anónimos.
 
 ## 7.3 Endpoints
@@ -78,11 +78,10 @@ El contrato congelado es `specs/openapi.yaml` (#17), fuente de verdad (SDD, ADR-
 | GET | `/web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial`. `200 MetricasRegional` `{periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales, serie_mensual, concentracion_ciudades}` de su regional (o de un comercial de ella; el gerente aparece en `comerciales` con su `rol` y sus cotizaciones cuentan en el agregado); `400` fechas o `usuario_id` no UUID; `403` comercial; `404 ErrorWeb` `Comercial no encontrado en tu regional.`; `409 ErrorNegocio` `REGIONAL_NO_ASIGNADA`; `503 ErrorNegocio` `REGIONAL_NO_DISPONIBLE` |
 | GET | `/web/metricas/actividad` | **Borrador obsoleto.** `200 [ActividadComercial]`: el comercial su fila; el gerente su regional |
 | GET | `/web/metricas/ajustes-margen` | **Borrador obsoleto.** `200 [AjustesMargenComercial]`, mismo alcance |
-| GET | `/pdfs/{archivo}` | `200 application/pdf` inline (dueño o gerente de su regional con Bearer; o el dueño con el enlace firmado `?t=` de Google Chat, 15 min); `401` (sin sesión, o enlace alterado o vencido); `404 ErrorWeb` (no existe o no es tuyo) |
-| POST | `/web/chat` | `200 RespuestaChat` `{texto, herramientas, precio, margen, pdf}` (los números salen de las herramientas del turno); `200 RespuestaChatError` `{texto, error: true}` ante un fallo del agente o del proveedor (texto del límite de peticiones del Python si es un 429); `400` (`sesion_id inválido`, `moneda inválida`, mensaje vacío o de más de 8000); `moneda` opcional (`COP`\|`USD`, selector de HU-012.4): con `USD` el `precio` llega convertido con la TRM oficial del día (`moneda`, `trm_aplicada`, `precio_cop`, `trm_vigencia_desde`/`trm_vigencia_hasta`; costo y utilidad en COP); `errores` (opcional, aditivo, HU-012.4): `[{herramienta, codigo}]` con los errores de negocio de las herramientas del turno (ej. `{"herramienta":"calcular_precio","codigo":"TRM_NO_DISPONIBLE"}`), para que el frontend reaccione sin interpretar el texto; `401`; `404 {"error":"Sesión no encontrada."}` (sesión de otro comercial); `429` (`LimiteChat`) |
-| POST | `/chat/events` | Webhook de Google Chat (sin Bearer de ClientePro): `200` acuse (`{"text": ...}`, `hostAppDataAction...` en add-on, `{}` si no es mensaje); `400 {"error":"payload no es JSON"}`; `401 {"error":"JWT inválido o ausente"}` |
+| GET | `/pdfs/{archivo}` | `200 application/pdf` inline (dueño o gerente de su regional, con Bearer); `401` (sin sesión); `404 ErrorWeb` (no existe o no es tuyo) |
+| POST | `/web/chat` | Asistente IA por folio (HU-013.6, #102, ADR-018 §2b). Cuerpo `{sesion_id, folio, mensaje}`. `200 RespuestaChat` `{texto, herramientas, errores, accion_propuesta, precio, margen, pdf}`: `accion_propuesta` (opcional) es la acción que armó el servidor (`tipo` `ajustar_margen` \| `re_solicitar_costeo` \| `agregar_servicios_conexos`, `metodo`, `endpoint`, `cuerpo`, `resumen`, `row_version`) y el frontend la ejecuta solo si el comercial confirma; `errores` (HU-012.4): `[{herramienta, codigo}]` con los errores de negocio de las herramientas del turno; `precio`, `margen` y `pdf` están obsoletos y siempre van en `null`. `200 RespuestaChatError` `{texto, error: true}` ante un fallo del asistente o del proveedor (texto del límite de peticiones del Python si es un 429); `400` (`sesion_id inválido`, `folio inválido`, mensaje vacío o de más de 8000, o `ErrorNegocio` `FOLIO_REQUERIDO` sin folio); `401`; `404` (el folio no es del comercial, o `{"error":"Sesión no encontrada."}` si la sesión es de otro comercial); `429` (`LimiteChat`). `cotizacion_origen_id` y `moneda` se aceptan y se ignoran: eran del agente cotizador legado, retirado en HU-013.9 (#105) |
 
-Los endpoints de Nexo (`/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete`, `/web/cubicacion` y los del costeo) usan la política `Comercial` como el resto de la consola. El backend reenvía la consulta a `Nexo__UrlBase` sin token: identifica al comercial ante Nexo con `X-Portal-Usuario-Id` (su `UsuariosWeb.idUsuarioExterno`, resuelto a partir del `sub` del JWT, nunca del cliente). Sin `Nexo__UrlBase` los cuatro responden su código `*_NO_DISPONIBLE`. `GET /web/municipios` sirve la foto del catálogo que guarda `Nexo__MinutosCacheMunicipios` (60 minutos por defecto, HU-005.13), la misma que usa el agente para resolver el origen y el destino del chat; el contrato no cambia. Detalle en [2.14](02-arquitectura.md#214-integración-con-nexo) y [3.5](03-infraestructura.md#35-servicios-externos).
+Los endpoints de Nexo (`/web/clientes?q=`, `/web/municipios`, `/web/catalogos-flete`, `/web/cubicacion` y los del costeo) usan la política `Comercial` como el resto de la consola. El backend reenvía la consulta a `Nexo__UrlBase` sin token: identifica al comercial ante Nexo con `X-Portal-Usuario-Id` (su `UsuariosWeb.idUsuarioExterno`, resuelto a partir del `sub` del JWT, nunca del cliente). Sin `Nexo__UrlBase` los cuatro responden su código `*_NO_DISPONIBLE`. `GET /web/municipios` sirve la foto del catálogo que guarda `Nexo__MinutosCacheMunicipios` (60 minutos por defecto, HU-005.13); el contrato no cambia. Detalle en [2.14](02-arquitectura.md#214-integración-con-nexo) y [3.5](03-infraestructura.md#35-servicios-externos).
 
 Endpoints protegidos (parte B de #12): `Authorization: Bearer <access>`; sin token, vencido, de otra clave o revocado → `401 {"error":"Inicia sesión de nuevo."}`; rol insuficiente → `403 {"error":"No tienes permiso para esta operación."}`.
 
@@ -102,7 +101,7 @@ Dos formas de error, ambas del contrato:
 { "error": { "codigo": "CORREO_DUPLICADO", "mensaje": "...", "detalle": { "motivo": "..." } } }
 ```
 
-La primera (`ErrorWeb`) es la de autenticación, validación y acceso; la segunda (`ErrorNegocio`) la de los códigos de negocio de los casos de uso y de las herramientas del agente. Los códigos válidos son el enum de `ErrorNegocio` en `openapi.yaml`; `Cotifly.Api.Tests` verifica que cada `clsCodigosError` exista allí.
+La primera (`ErrorWeb`) es la de autenticación, validación y acceso; la segunda (`ErrorNegocio`) la de los códigos de negocio de los casos de uso y de las herramientas del asistente. Los códigos válidos son el enum de `ErrorNegocio` en `openapi.yaml`; `Cotifly.Api.Tests` verifica que cada `clsCodigosError` exista allí.
 
 Traducción de los códigos de los casos de uso a HTTP en `/web/*` (`Comun/clsRespuestasWeb`, una sola tabla para todos los controllers):
 
@@ -116,8 +115,8 @@ Errores de `/web/*` (`clsRespuestasWeb`, cumple la tabla "Para #12" de abajo):
 | `CORREO_DESHABILITADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE` (HU-013.10) | 503 `ErrorNegocio` |
 | `REGIONAL_NO_ASIGNADA` (tablero del gerente sin regional, #45) | 409 `ErrorNegocio` |
 | `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`, `SEGUIMIENTO_INVALIDO`, cuerpo mal formado | 400 `ErrorWeb` |
-| `TRM_NO_DISPONIBLE` (HU-012: ninguna fuente de la TRM respondió, DolarApi ni la Superintendencia; no se cotiza en USD; en `POST /web/licitaciones` con `moneda = USD` es 400 y no se guarda nada) | Lo devuelven las herramientas `calcular_precio` y `registrar_ajuste_margen` del agente; en `/web/chat` es 200 `RespuestaChat` con `precio: null` y `errores: [{"herramienta":"calcular_precio","codigo":"TRM_NO_DISPONIBLE"}]` (el agente además explica que puede reintentar o cotizar en COP), no un HTTP de error |
-| `TARIFA_CONFIG_INVALIDA` (la fuente de costeo devolvió una tarifa en una moneda distinta de COP) | Lo devuelve `buscar_tarifa`; llega en `errores` de `RespuestaChat` |
+| `TRM_NO_DISPONIBLE` (HU-012: ninguna fuente de la TRM respondió, DolarApi ni la Superintendencia; no se cotiza en USD; en `POST /web/licitaciones` con `moneda = USD` es 400 y no se guarda nada) | 400 `ErrorNegocio` en los endpoints que convierten a USD (fila "Resto"). Hasta HU-013.9 (#105) lo devolvían también las herramientas `calcular_precio` y `registrar_ajuste_margen` del agente legado, en `errores` de `RespuestaChat` |
+| `TARIFA_CONFIG_INVALIDA` (la fuente de costeo devolvió una tarifa en una moneda distinta de COP) | Lo devolvía `buscar_tarifa` del agente legado, retirado en HU-013.9; hoy ningún endpoint lo produce |
 | Resto de códigos de negocio (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`, `CONFIRMACION_REQUERIDA`, y los de Nexo: `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_NO_DISPONIBLE`, `CUBICACION_DEMASIADO_GRANDE`, `SOLICITUD_COSTEO_INVALIDA`...) | 400 `ErrorNegocio` (`detalle` como objeto `{"motivo": ...}`) |
 | `COSTEO_NO_REINTENTABLE` | 409 `ErrorNegocio` |
 | Cuerpo de más de `SeguridadHttp:LimiteCuerpoWebBytes` | 413 `ErrorWeb` (fuera del contrato: transporte) |
@@ -164,27 +163,36 @@ Content-Type: application/json
 }
 ```
 
-Turno de chat:
+Turno del asistente por folio:
 
 ```http
 POST /web/chat
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 Content-Type: application/json
 
-{ "sesion_id": "consola-5f2c9a1b", "mensaje": "Confirmo", "cotizacion_origen_id": null }
+{ "sesion_id": "consola-5f2c9a1b", "folio": "PCN-DG-25092026-001", "mensaje": "Déjalo en 18 %, el cliente firmó volumen anual" }
 ```
 
 ```json
 {
-  "texto": "Listo, generé la cotización. Puedes descargar el PDF.",
-  "herramientas": ["generar_pdf"],
+  "texto": "Te propongo ajustar el margen al 18 %. Revisa el resumen y confirma.",
+  "herramientas": ["proponer_ajuste_margen"],
   "precio": null,
   "margen": null,
-  "pdf": { "cotizacion_id": "…", "folio": "PCN-DG-25092026-001", "pdf_url": "/pdfs/PCN-DG-25092026-001.pdf", "registrada_en_bd": true }
+  "pdf": null,
+  "errores": [],
+  "accion_propuesta": {
+    "tipo": "ajustar_margen",
+    "metodo": "PUT",
+    "endpoint": "/web/cotizaciones/PCN-DG-25092026-001/costeo/margen",
+    "cuerpo": { "margen": 0.18, "justificacion": "el cliente firmó volumen anual" },
+    "resumen": "…",
+    "row_version": "…"
+  }
 }
 ```
 
-Ante un fallo del agente o del proveedor: `200 {"texto": "...", "error": true}` (`RespuestaChatError`). El folio tiene el formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (iniciales del comercial, fecha de Bogotá y consecutivo diario por iniciales; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)). Los folios sin iniciales de la primera implementación se aceptan como heredados.
+Sin `folio`: `400 ErrorNegocio` `FOLIO_REQUERIDO`. Ante un fallo del asistente o del proveedor: `200 {"texto": "...", "error": true}` (`RespuestaChatError`). `precio`, `margen` y `pdf` están obsoletos y siempre van en `null` (los llenaba el agente cotizador legado, retirado en HU-013.9). El folio tiene el formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (iniciales del comercial, fecha de Bogotá y consecutivo diario por iniciales; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)). Los folios sin iniciales de la primera implementación se aceptan como heredados.
 
 ## 7.6 Límites, CORS y encabezados
 

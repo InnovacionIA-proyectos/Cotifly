@@ -1,6 +1,7 @@
 # ADR-005 — Búsqueda real de clientes desde el chat
 
 - **Estado:** Aceptada (depende de HU-005.2). El uso de Grovity para validar clientes (punto 3) queda como **Propuesta**.
+- **Nota de estado (HU-013.9, #105):** la búsqueda desde el chat (herramienta `buscar_cliente` del agente legado y su paso al estado de la conversación) se retiró con el agente y Google Chat. Sigue vigente la búsqueda de clientes en Nexo para el formulario (`GET /web/clientes?q=`, `IClsBuscadorClientes`) y el envío del costeo. La propuesta de Grovity desde el agente queda sin objeto. Lo que sigue es la decisión histórica.
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Relacionada con #12 (HU-003.6), HU-005.2 y HU-005.10 (repo NEXO).
 
