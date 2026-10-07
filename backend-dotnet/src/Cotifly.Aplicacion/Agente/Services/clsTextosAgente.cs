@@ -60,6 +60,18 @@ public static class clsTextosAgente
     public const string RespuestaNoEstructurada =
         "No pude estructurar la respuesta. Reenvía tu mensaje o reformúlalo; lo que ya calculé en esta conversación no se pierde.";
 
+    /// <summary>
+    /// HU-013.6 (#102): el turno armó una acción propuesta pero el modelo no dio un texto válido ni con el reintento. La propuesta (con
+    /// su resumen del servidor) sale igual con este texto.
+    /// </summary>
+    public const string PropuestaSinTexto = "Preparé una propuesta para esta cotización: revisa el resumen y, si estás de acuerdo, confírmala con el botón.";
+
+    /// <summary>
+    /// HU-013.6 (#102, ADR-018 §1): Google Chat con <c>Chat:CreacionHabilitada=false</c>. Las cotizaciones solo se crean con el formulario.
+    /// </summary>
+    public const string CreacionPorChatRetirada =
+        "Las cotizaciones ya no se crean por chat. Créala con el formulario de Cotifly; el asistente de cada cotización te ayuda desde su detalle.";
+
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
 

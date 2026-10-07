@@ -246,12 +246,31 @@ public sealed class clsGoogleChatTests
 
         public clsUsuarioWeb Usuario { get; }
 
+        /// <summary>Creación por chat habilitada (agente legado, HU-003); <c>false</c> es el valor por defecto desde HU-013.6 (#102).</summary>
+        public bool CreacionHabilitada { get; set; } = true;
+
         public clsProcesadorEventoChat Crear() =>
-            new(Usuarios, Verificador, Auditoria, new clsRelojFalso(), Runner, Publicador, Firma, Options.Create(new clsOpcionesPdf { BaseUrl = "https://cotifly.boterosoto.com.co" }), new clsLoggerFalso<clsProcesadorEventoChat>());
+            new(Usuarios, Verificador, Auditoria, new clsRelojFalso(), Runner, Publicador, Firma, Options.Create(new clsOpcionesPdf { BaseUrl = "https://cotifly.boterosoto.com.co" }), new clsLoggerFalso<clsProcesadorEventoChat>(),
+                Options.Create(new clsOpcionesChat { CreacionHabilitada = CreacionHabilitada }));
     }
 
     private static clsEventoChat Mensaje(string email = "nvargas@boterosoto.com.co", string texto = "Cotiza YUMBO→BUN.") =>
         new("MESSAGE", "spaces/PROC", "spaces/PROC/threads/1", texto, email, "Nathaly");
+
+    // HU-013.6 (#102, ADR-018 §1): con la creación por chat deshabilitada (por defecto) Google Chat no corre el agente.
+    [Fact]
+    public async Task ConLaCreacionPorChatDeshabilitadaNoCorreElAgenteYAvisaElRetiro()
+    {
+        var proc = new clsProcesador { CreacionHabilitada = false };
+
+        await proc.Crear().ProcesarAsync(Mensaje(), Ct);
+
+        proc.Publicados.Should().ContainSingle().Which["text"]!.GetValue<string>().Should().Be(clsTextosAgente.CreacionPorChatRetirada);
+        await proc.Runner.DidNotReceive().EjecutarTurnoAsync(Arg.Any<clsSolicitudTurno>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void LaCreacionPorChatEstaDeshabilitadaPorDefecto() => new clsOpcionesChat().CreacionHabilitada.Should().BeFalse();
 
     // ADR-011 §2: sin cuenta en UsuariosWeb no se cotiza.
     [Fact]

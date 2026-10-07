@@ -177,6 +177,7 @@ services:
       IA__Endpoint: ${IA__Endpoint:-}
       IA__MaxTokens: ${IA__MaxTokens:-4096}
       IA__MaxIteraciones: ${IA__MaxIteraciones:-12}
+      Chat__CreacionHabilitada: ${Chat__CreacionHabilitada:-false}
       IA__SoportaJsonSchema: ${IA__SoportaJsonSchema:-true}
       IA__MinutosSinJsonSchema: ${IA__MinutosSinJsonSchema:-30}
       IA__JsonSchemaEstricto: ${IA__JsonSchemaEstricto:-false}

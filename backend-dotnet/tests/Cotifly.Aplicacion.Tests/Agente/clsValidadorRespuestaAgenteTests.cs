@@ -495,6 +495,13 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         montos[1].Candidatos.Should().Contain(3_500_000m);
     }
 
+    // HU-013.6 (#102): un número junto a "TRM" es un monto aunque no lleve moneda (el asistente nunca ve la TRM).
+    [Theory]
+    [InlineData("La TRM aplicada es 4000.", 4000)]
+    [InlineData("Con una TRM de 3.306,86 queda así.", 3306.86)]
+    public void UnNumeroJuntoALaTrmEsUnMonto(string texto, double valor) =>
+        clsReglasRespuestaAgente.Montos(texto).Should().ContainSingle().Which.Candidatos.Should().Contain((decimal)valor);
+
     // ---------- Orquestación: llamada final, reintento, respaldo ----------
 
     [Fact]

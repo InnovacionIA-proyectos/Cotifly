@@ -138,16 +138,26 @@ public sealed class clsPasosAgente(clsContextoWeb web, clsContextoAgente agente)
             s.AddHttpClient(clsVerificadorJwtGoogleChat.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => agente.Google);
         });
 
+    /// <summary>
+    /// Estos escenarios son del agente cotizador LEGADO (HU-003): desde HU-013.6 (#102) solo corre con
+    /// <c>Chat:CreacionHabilitada=true</c>; por defecto <c>/web/chat</c> exige <c>folio</c> y Google Chat no cotiza.
+    /// </summary>
+    private static Dictionary<string, string?> Legado(IDictionary<string, string?>? extra = null)
+    {
+        var valores = new Dictionary<string, string?>(extra ?? new Dictionary<string, string?>()) { ["Chat:CreacionHabilitada"] = "true" };
+        return valores;
+    }
+
     [Given("la API web de Cotifly con el agente guionizado")]
-    public void DadoLaApiConElAgente() => web.Iniciar(null, Configurar);
+    public void DadoLaApiConElAgente() => web.Iniciar(Legado(), Configurar);
 
     [Given("la API web de Cotifly con el agente guionizado y SAP TM de muestra")]
     public void DadoLaApiConElAgenteYSap() => web.Iniciar(
-        new Dictionary<string, string?> { ["SapTm:Modo"] = "export_json", ["SapTm:ExportPath"] = clsSapTmFalso.RutaMuestra },
+        Legado(new Dictionary<string, string?> { ["SapTm:Modo"] = "export_json", ["SapTm:ExportPath"] = clsSapTmFalso.RutaMuestra }),
         Configurar);
 
     [Given("la API de Cotifly conectada a Google Chat con el agente guionizado")]
-    public void DadoLaApiConGoogleChat() => web.Iniciar(agente.Google.Configuracion(), Configurar);
+    public void DadoLaApiConGoogleChat() => web.Iniciar(Legado(agente.Google.Configuracion()), Configurar);
 
     [Given("el catálogo de clientes tiene a {string} con NIT {string} y BP {string}")]
     public void DadoElCatalogo(string nombre, string nit, string bp) => agente.Buscador.Clientes.Add(new clsClienteEncontrado(nit, nombre, "cliente", bp));

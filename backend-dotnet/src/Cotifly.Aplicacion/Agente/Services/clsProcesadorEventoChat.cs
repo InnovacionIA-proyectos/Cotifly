@@ -31,6 +31,8 @@ public interface IClsProcesadorEventoChat
 /// se cotiza; así ninguna cotización queda sin <c>usuarioId</c>.</item>
 /// <item>Sesión por <c>spaceId</c> + <c>threadId</c> ligada al comercial: un hilo de otro comercial no se continúa.</item>
 /// <item>Respuesta: tarjeta del PDF (con URL firmada de 15 minutos), previsualización o texto (<see cref="clsTarjetasChat"/>).</item>
+/// <item>HU-013.6 (#102): con <c>Chat:CreacionHabilitada=false</c> (por defecto) no corre el agente: responde que la
+/// creación por chat se retiró. Google Chat se retira del todo en HU-013.9 (#105).</item>
 /// </list>
 /// </summary>
 public sealed class clsProcesadorEventoChat(
@@ -42,7 +44,8 @@ public sealed class clsProcesadorEventoChat(
     IClsPublicadorChat publicador,
     IClsFirmaUrlPdf firmaUrl,
     IOptions<clsOpcionesPdf> opcionesPdf,
-    ILogger<clsProcesadorEventoChat> logger) : IClsProcesadorEventoChat
+    ILogger<clsProcesadorEventoChat> logger,
+    IOptions<clsOpcionesChat> opcionesChat) : IClsProcesadorEventoChat
 {
     /// <summary>Evento de auditoría del rechazo de la verificación doble en Google Chat.</summary>
     public const string HerramientaAuditoria = "google_chat_identidad";
@@ -82,6 +85,14 @@ public sealed class clsProcesadorEventoChat(
                 0,
                 threadId);
             await publicador.PublicarAsync(spaceId, evento.ThreadId, clsTarjetasChat.Texto(clsTextosAgente.SinIdentidad), cancellationToken);
+            return;
+        }
+
+        if (!opcionesChat.Value.CreacionHabilitada)
+        {
+            // HU-013.6 (#102, ADR-018 §1): Google Chat solo creaba cotizaciones; con la creación por chat retirada no corre el agente.
+            logger.LogInformation("Google Chat: la creación de cotizaciones por chat está deshabilitada (Chat:CreacionHabilitada=false).");
+            await publicador.PublicarAsync(spaceId, evento.ThreadId, clsTarjetasChat.Texto(clsTextosAgente.CreacionPorChatRetirada), cancellationToken);
             return;
         }
 

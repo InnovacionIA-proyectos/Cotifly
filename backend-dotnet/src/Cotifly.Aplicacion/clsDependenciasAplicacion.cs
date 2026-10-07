@@ -104,6 +104,11 @@ public static class clsDependenciasAplicacion
         servicios.TryAddSingleton<clsInterruptorJsonSchema>();
         servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaAgente>();
         servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
+
+        // Asistente por folio (HU-013.6, #102, ADR-018 §2b): solo lectura y propuesta sobre la cotización de la conversación.
+        servicios.AddScoped<clsContextoAsistenteFolio>();
+        servicios.AddScoped<clsHerramientasAsistenteFolio>();
+        servicios.AddScoped<IClsAsistenteFolioRunner, clsAsistenteFolioRunner>();
         servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();
         servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();
 

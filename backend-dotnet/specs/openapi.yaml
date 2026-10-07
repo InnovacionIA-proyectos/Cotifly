@@ -197,10 +197,12 @@ paths:
       tags: [web]
       summary: Corre un turno del asistente IA sobre una cotización (folio)
       description: |
-        **HU-013.6 (#102, ADR-018), pendiente de implementar:** el asistente trabaja sobre UNA cotización ya creada por
+        **HU-013.6 (#102, ADR-018), implementado:** el asistente trabaja sobre UNA cotización ya creada por
         el formulario. `folio` es obligatorio: sin él responde 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial,
-        404 (`Cotización no encontrada o no es tuya.`). Las cotizaciones ya no se crean por chat (flag
-        `Chat:CreacionHabilitada=false`; después se borra el código): `cotizacion_origen_id` y `moneda` quedan obsoletos.
+        404 (`Cotización no encontrada o no es tuya.`), sin llamar al modelo. Las cotizaciones ya no se crean por chat (flag
+        `Chat:CreacionHabilitada=false` por defecto; con `true`, solo para una transición, un mensaje SIN `folio` vuelve al
+        agente legado; después se borra el código): `cotizacion_origen_id` y `moneda` quedan obsoletos. La sesión queda
+        ligada al comercial y al folio (el mismo `sesion_id` con otro folio es otra conversación).
         Herramientas de solo lectura o propuesta: `consultar_cotizacion`, `proponer_ajuste_margen`,
         `proponer_re_solicitud` y `buscar_servicio_conexo`. **Ninguna entrega montos de dinero al LLM** (ni precio, ni
         costo, ni totales, ni valores de conexos): `consultar_cotizacion` da solo estado, ruta, línea, moneda, nombres de
@@ -238,7 +240,7 @@ paths:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
               example:
-                texto: "Te propongo subir el margen de 15 % a 18 %. El precio pasaría a 3.109.756 COP."
+                texto: "Te propongo subir el margen de 15 % a 18 %. Revisa el resumen y, si estás de acuerdo, confírmalo."
                 herramientas: [consultar_cotizacion, proponer_ajuste_margen]
                 precio: null
                 margen: null
@@ -255,8 +257,8 @@ paths:
                   row_version: "7"
         '400':
           description: |
-            `ErrorWeb`: `sesion_id`, `cotizacion_origen_id` o `moneda` inválido, o cuerpo inválido. `ErrorNegocio`
-            `FOLIO_REQUERIDO` (HU-013.6): falta `folio` o viene vacío.
+            `ErrorWeb`: `sesion_id`, `folio` (más de 50 caracteres: `folio inválido`), `cotizacion_origen_id` o `moneda`
+            inválido, o cuerpo inválido. `ErrorNegocio` `FOLIO_REQUERIDO` (HU-013.6): falta `folio` o viene vacío.
           content:
             application/json:
               schema:
@@ -269,8 +271,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           description: |
-            El `sesion_id` pertenece a otro usuario (`Sesión no encontrada.`), o `cotizacion_origen_id`
-            no existe o no es del comercial (`Cotización no encontrada o no es tuya.`).
+            El `sesion_id` pertenece a otro usuario (`Sesión no encontrada.`), o el `folio` (o el obsoleto
+            `cotizacion_origen_id`) no existe o no es del comercial (`Cotización no encontrada o no es tuya.`).
           content:
             application/json:
               schema:
@@ -1477,7 +1479,9 @@ paths:
           `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación responde 409
           `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
-          `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos nada cambia en Cotifly.
+          `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos no se agrega nada en
+          Cotifly, pero la versión ya se reservó (ver el punto siguiente): el `ETag` cambió y hay que recargar el costeo. En
+          `detalle.motivo` viaja solo el código de Nexo (o `HTTP 401`), nunca su texto.
         - La versión se RESERVA en la base antes del POST a Nexo (ADR-018 §13): de varias peticiones con el mismo `If-Match` solo una
           llega a Nexo; las demás reciben 409 `CONFLICTO_CONCURRENCIA` sin tocar Nexo. Por eso un fallo de Nexo después de la reserva
           deja la versión (y el `ETag`) cambiada aunque nada más cambie: recargar el costeo antes de reintentar.
@@ -2592,8 +2596,7 @@ components:
           maxLength: 50
           description: |
             Obligatorio desde HU-013.6 (#102, ADR-018): la cotización (creada por el formulario) sobre la que trabaja el
-            asistente. Sin él, 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial, 404. Mientras HU-013.6 no esté
-            implementado el servidor todavía no lo exige.
+            asistente. Sin él, 400 `FOLIO_REQUERIDO`; si no existe o no es del comercial, 404.
         cotizacion_origen_id:
           type: string
           format: uuid

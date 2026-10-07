@@ -17,6 +17,16 @@ namespace Cotifly.Aplicacion.Agente.DTOs;
 /// </param>
 public sealed record clsSolicitudTurno(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, Guid? CotizacionOrigenId = null, string? Moneda = null);
 
+/// <summary>
+/// Un mensaje del comercial para el asistente por folio (HU-013.6, #102): la sesión queda ligada al comercial y al folio.
+/// </summary>
+/// <param name="Mensaje">Texto del comercial (máximo 8000 caracteres).</param>
+/// <param name="SpaceId">Agrupa la conversación de la consola (<c>web/{sesion_id}</c>).</param>
+/// <param name="ThreadId">Hilo de ESTA cotización (<c>web/{sesion_id}/{folio}</c>): otro folio con el mismo <c>sesion_id</c> es otro hilo.</param>
+/// <param name="UsuarioId">Comercial del token (nunca del LLM).</param>
+/// <param name="Folio">Cotización sobre la que trabaja el asistente; debe ser del comercial.</param>
+public sealed record clsSolicitudTurnoFolio(string Mensaje, string SpaceId, string ThreadId, Guid UsuarioId, string Folio);
+
 /// <summary>Salida de un turno del agente (port de <c>ResultadoTurno</c> de <c>orquestador/agente.py</c>).</summary>
 /// <param name="Texto">Respuesta final para el comercial (redactada en la llamada final sin herramientas y validada).</param>
 /// <param name="Iteraciones">Llamadas al modelo del turno (incluida la llamada final).</param>
@@ -45,6 +55,12 @@ public sealed record clsResultadoTurno(
 
     /// <summary>Reintentos de la respuesta final por validación fallida (0 o 1).</summary>
     public int ReintentosRespuesta { get; init; }
+
+    /// <summary>
+    /// Acción que el asistente por folio PROPUSO en el turno (HU-013.6, #102), armada por el servidor, o <c>null</c>. Siempre
+    /// <c>null</c> en el agente legado.
+    /// </summary>
+    public clsAccionPropuesta? AccionPropuesta { get; init; }
 
     /// <summary>
     /// Última salida de la herramienta <paramref name="herramienta"/> en el turno si terminó bien y es del tipo pedido (como
@@ -81,4 +97,10 @@ public static class clsNombresHerramientas
     public const string GenerarPdf = "generar_pdf";
     public const string EnviarCorreo = "enviar_correo";
     public const string ConsultarCotizacion = "consultar_cotizacion";
+
+    /// <summary>Plugin del asistente por folio (HU-013.6, #102): solo lectura y propuesta.</summary>
+    public const string PluginAsistente = "asistente";
+    public const string ProponerAjusteMargen = "proponer_ajuste_margen";
+    public const string ProponerReSolicitud = "proponer_re_solicitud";
+    public const string BuscarServicioConexo = "buscar_servicio_conexo";
 }
