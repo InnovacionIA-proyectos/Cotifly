@@ -309,6 +309,7 @@ Los valores del polling (5 s al inicio, hasta 15 min, 72 h) quedan **pendientes 
 | `IA:Rpm` | `8` | Peticiones por minuto al proveedor (limitador local; 0 lo desactiva) | `IA__Rpm` |
 | `IA:TimeoutSeg` | `60` | Tiempo máximo de cada llamada (5–600 s) | `IA__TimeoutSeg` |
 | `IA:Fallbacks[]` | vacío | Proveedores de respaldo (`Proveedor`, `Modelo`, `ApiKey`, `Endpoint`), en orden, ante 429, 5xx o red caída. En Production sus claves pasan la misma regla de secretos | `IA__Fallbacks__0__Proveedor`... |
+| `Chat:CreacionHabilitada` | `false` | HU-013.6 (#102, ADR-018 §1). `false`: `POST /web/chat` exige `folio` (400 `FOLIO_REQUERIDO`) y solo corre el asistente de lectura y propuesta; Google Chat responde que la creación por chat se retiró. `true`, solo para una transición: un mensaje sin `folio` vuelve al agente cotizador legado | `Chat__CreacionHabilitada` |
 | `LimiteChat:PeticionesPorVentana` / `VentanaSegundos` | `20` / `60` | Límite de `POST /web/chat` por comercial (429 de la propia API) | `LimiteChat__PeticionesPorVentana`... |
 | `Sesiones:LimiteTokens` | `6000` | Ventana del historial que ve el modelo | `Sesiones__LimiteTokens` |
 | `Sesiones:TtlHoras` | `24` | Horas de inactividad tras las que el barrido archiva la sesión | `Sesiones__TtlHoras` |

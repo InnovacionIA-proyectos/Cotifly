@@ -430,9 +430,13 @@ public sealed class clsReSolicitudCosteoService(
             await misCotizaciones.ResumirAsync(cotizacion, CancellationToken.None),
             cotizacion.VersionNegocio.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>Motivo obligatorio (1 a 300 caracteres) y, si vienen, cambios de carga con al menos un campo.</summary>
-    private static clsErrorDominio? ValidarEntrada(clsEntradaReSolicitudCosteo entrada)
+    /// <summary>
+    /// Motivo (1 a 300 caracteres) y <c>datos_carga</c> no vacío (<c>SOLICITUD_COSTEO_INVALIDA</c>). Pública: la usa también la propuesta
+    /// <c>re_solicitar_costeo</c> del asistente (HU-013.6) antes de armar el cuerpo.
+    /// </summary>
+    public static clsErrorDominio? ValidarEntrada(clsEntradaReSolicitudCosteo entrada)
     {
+        ArgumentNullException.ThrowIfNull(entrada);
         var motivo = Motivo(entrada.Motivo);
         if (motivo is null)
         {

@@ -368,6 +368,8 @@ Decisiones de la parte B:
 
 ## 2.11 Agente de IA, /web/chat y Google Chat
 
+> **Desde HU-013.6 (#102, ADR-018 §2b y §14)** `POST /web/chat` es el asistente de UNA cotización: exige `folio` y corre `clsAsistenteFolioRunner` con el plugin `asistente` (`clsHerramientasAsistenteFolio`: `consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud`, `buscar_servicio_conexo`), que solo lee y propone; la acción propuesta (cuerpo, endpoint, `row_version` y resumen con precios) la arma `clsPropuestasAsistente` y la ejecuta el frontend con Confirmar. Ningún monto llega al modelo. Lo que sigue describe el agente cotizador legado, que solo corre con `Chat:CreacionHabilitada=true` y un mensaje sin `folio` (Google Chat incluido).
+
 **Agente de IA, `/web/chat` y Google Chat (#12, parte C, ADR-003, ADR-004, ADR-005, ADR-011).** Port de `orquestador/agente.py`, `prompt.py`, `sesiones.py`, `web.py` (`web_chat`, `_datos_de`), `webhook.py`, `gchat.py`, `worker.py`, `procesador.py`, `publicador.py`, `cards.py` y `alertas.py`, con las herramientas de `mcp_server/server.py` sobre los casos de uso de #10, #11 y #12:
 
 | Pieza | Capa | Qué hace |

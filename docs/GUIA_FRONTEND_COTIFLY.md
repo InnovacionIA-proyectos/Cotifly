@@ -478,7 +478,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 |---|---|---|
 | `/api/auth/*` | 400, 401, 429 | Nunca |
 | Cualquier `/web/*` | 401, 403, 404, 413, 429 y 400 de validación del cuerpo | — |
-| `POST /web/chat` | 400 (`sesion_id inválido`, `cotizacion_origen_id inválido`, `moneda inválida`, mensaje), 404 | Nunca como HTTP. Los errores de las herramientas llegan en `errores` de un 200 |
+| `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, `cotizacion_origen_id inválido`, `moneda inválida`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` (En PR #77) |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
@@ -617,6 +617,8 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 
 ### 5.3 `POST /web/chat`. En QA
 
+> **Desde #102 (HU-013.6) el chat es el asistente de UNA cotización y `folio` es obligatorio.** Sin `folio` responde 400 `FOLIO_REQUERIDO` y las cotizaciones ya no se crean por chat (`Chat:CreacionHabilitada=false`). Lo que sigue en esta sección (slot filling, `precio`, `margen`, `pdf`, `cotizacion_origen_id`, `moneda`) es el agente cotizador legado: solo responde con el flag en `true` y un mensaje SIN `folio`. El flujo nuevo está en la sección 10, "Asistente por folio".
+
 - Rol: ambos. Límite: 20 turnos por minuto por comercial.
 - Request (`MensajeWeb`):
 
@@ -624,8 +626,9 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 |---|---|---|---|
 | `mensaje` | string | Sí | 1 a 8000 caracteres, sin contar espacios al borde |
 | `sesion_id` | string | Sí | `^[A-Za-z0-9_-]{8,64}$`. La genera el cliente: `crypto.randomUUID().replaceAll('-', '')` |
-| `cotizacion_origen_id` | string (UUID) o null | No | "Nueva versión" de una cotización propia |
-| `moneda` | `"COP"`, `"USD"` o null | No | En QA (#71). Selector de moneda. Sin distinguir mayúsculas ni espacios al borde. Otro valor o cadena vacía: 400 `moneda inválida` |
+| `folio` | string | Sí (desde #102) | Folio de la cotización abierta (hasta 50 caracteres; más: 400 `folio inválido`). Vacío o ausente: 400 `FOLIO_REQUERIDO`. Ajeno o inexistente: 404 |
+| `cotizacion_origen_id` | string (UUID) o null | No | Obsoleto desde #102. "Nueva versión" de una cotización propia (solo agente legado) |
+| `moneda` | `"COP"`, `"USD"` o null | No | Obsoleto desde #102 (la moneda va en el formulario). Selector de moneda del agente legado. Otro valor o cadena vacía: 400 `moneda inválida` |
 
 ```json
 {
@@ -2228,7 +2231,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 
 ## 10. Próximo contrato HU-013 (en construcción)
 
-**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98), los servicios conexos de Nexo (implementados en #99) y "Cotizar costo" (`re-solicitar`, implementado en #100); PR por abrir.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98), los servicios conexos de Nexo (implementados en #99), "Cotizar costo" (`re-solicitar`, implementado en #100), los textos del PDF (#101), la moneda del formulario (#103) y el asistente por folio (`/web/chat` con `folio`, implementado en #102); PR por abrir.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2247,7 +2250,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}` | **Implementado (#100).** Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` (y `Location`) si cambia la carga o con `nueva_version: true`. `If-Match` obligatorio e `Idempotency-Key` recomendada. Ver "Cotizar costo" abajo | #100 (HU-013.4) |
 | `POST /web/cotizaciones/{folio}/costeo/textos/redactar[?sobrescribir=true]` | **Implementado (#101).** Sin cuerpo, con `If-Match` obligatorio. La IA redacta el asunto y la introducción y responde 200 `TextosCotizacion` con el `ETag` nuevo (`fuente`: `ia`, o `estandar` si la IA tardó más de 15 s, falló o su texto no pasó la validación: nunca un error por la IA). Sobre textos editados responde 409 `TEXTOS_EDITADOS` sin llamar a la IA, salvo con `sobrescribir=true` | #101 (HU-013.5) |
 | `PUT /web/cotizaciones/{folio}/costeo/textos` `{asunto, introduccion}` | **Implementado (#101).** El comercial edita los textos (`editado: true`), con `If-Match` obligatorio. Asunto de 1 a 120 caracteres e introducción de 1 a 1100, sin URL ni correos (400 `TEXTOS_COTIZACION_INVALIDOS`); los montos sí se permiten | #101 (HU-013.5) |
-| `POST /web/chat` con `folio` obligatorio | Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`. Responde `{texto, accion_propuesta?}` | #102 (HU-013.6) |
+| `POST /web/chat` con `folio` obligatorio | **Implementado (#102).** Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`; folio ajeno o inexistente: 404. Responde `{texto, accion_propuesta?}`. Ver "Asistente por folio" abajo | #102 (HU-013.6) |
 | `POST /chat/events` | Obsoleto, se retira | #105 (HU-013.9) |
 
 **`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` (#103) y `textos` (asunto e introducción guardados, o `null` si todavía no hay; #101) ya están. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
@@ -2256,7 +2259,8 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
 - **Buscar:** `GET /web/servicios-conexos?q=alm&categoria=logistico&page=1&page_size=20`. `q` busca en el nombre o el código (hasta 100 caracteres), `categoria` es `logistico` o `adicional`, `page` desde 1 y `page_size` de 1 a 50 (por defecto 20). Responde `PaginaServiciosConexos` `{total, page, page_size, items: [{id, codigo, nombre, categoria, unidad, origen, destino, puerto, ruta, tipo_maquina, vigencia}]}`. Nunca trae costos. Errores: 400 `ErrorWeb` (filtro fuera de límites), 403 `NEXO_SIN_PERMISO` (el comercial no tiene rol en Nexo), 503 `NEXO_NO_DISPONIBLE`.
 - **Agregar:** `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` con `{"items": [{"linea_orden": 1, "servicio_id": "<id del catálogo>", "cantidad": 2}]}`. Entre 1 y 20 items; `cantidad` de 0,01 a 999.999,99 con hasta 2 decimales; `linea_orden` es 1 en una cotización del formulario. Encabezados: `If-Match` (obligatorio) e `Idempotency-Key` (un UUID nuevo por clic). Responde 200 `CosteoCotizacion` con el `ETag` nuevo: los conexos agregados quedan en `servicios_conexos` con su `precio` (con el margen de la cotización) e `incluido = true`. Si había PDF sin enviar, queda `pdf_desactualizado`.
-- **Errores al agregar:** 400 `ErrorWeb` (items vacíos, más de 20 o fuera de rango); 400 `CONEXO_INVALIDO` (la línea no existe o Nexo no acepta el servicio; `detalle.motivo` trae el código de Nexo); 403 `NEXO_SIN_PERMISO`; 404 (no es suya); 409 `COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO` (esa línea todavía no tiene flete en Nexo), `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (las licitaciones no admiten conexos todavía) y `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE`.
+- **Errores al agregar:** 400 `ErrorWeb` (items vacíos, más de 20 o fuera de rango); 400 `CONEXO_INVALIDO` (la línea no existe o Nexo no acepta el servicio; `detalle.motivo` trae el código de Nexo); 403 `NEXO_SIN_PERMISO`; 404 (no es suya); 409 `COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO` (esa línea todavía no tiene flete en Nexo), `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (las licitaciones no admiten conexos todavía) y `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE`. En `detalle.motivo` viaja solo el código de Nexo (o `HTTP 401`), nunca su texto.
+- **Tras un rechazo de Nexo el `ETag` YA CAMBIÓ.** Un 400 `CONEXO_INVALIDO` de Nexo, un 403 `NEXO_SIN_PERMISO` o un 503 `NEXO_NO_DISPONIBLE` llegan después de reservar la versión: el conexo no se agregó, pero el `If-Match` que se usó ya no sirve. Antes de reintentar (o de ofrecer otro servicio), recargar el costeo (`GET .../costeo`) y usar su `ETag` nuevo; si no, el reintento responde 409 `CONFLICTO_CONCURRENCIA`.
 - **503 con `detalle.agregado_en_nexo = true`:** Nexo sí agregó el conexo pero no se pudo leer de nuevo la cotización. **No reintentar el POST**: avisar "El conexo se agregó; su precio aparecerá en unos segundos" y seguir consultando `GET .../costeo`. Un 409 `CONFLICTO_CONCURRENCIA` con `agregado_en_nexo = true` significa lo mismo: recargar el costeo, no volver a agregar.
 - **503 con `detalle.agregado_en_nexo = "desconocido"`:** Nexo no respondió y no se pudo confirmar si agregó el conexo. Avisar "No sabemos si el conexo se agregó; revisa el costeo en unos minutos" y no ofrecer reintentar hasta recargar el costeo.
 - **Versión reservada:** de dos peticiones con el mismo `If-Match`, solo una llega a Nexo; la otra recibe 409 `CONFLICTO_CONCURRENCIA`. Si Nexo falla después de reservar, el `ETag` ya cambió: recargar el costeo antes de reintentar.
@@ -2274,12 +2278,26 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
 **Textos del PDF (#101).** Mostrar `textos.asunto` y `textos.introduccion` del costeo en un editor (la introducción son párrafos separados por una línea en blanco). El botón "Redactar con IA" llama a `.../textos/redactar`: si responde 409 `TEXTOS_EDITADOS`, preguntar al comercial si reemplaza sus textos y repetir con `?sobrescribir=true`. Guardar llama a `PUT .../textos`. Con `fuente = estandar` conviene avisar que se usó el texto estándar: es exactamente el que imprime el PDF (en un pliego, su introducción con viñetas `·` mide 1026 caracteres y se puede guardar editada sin recortarla: el límite del comercial es 1100; la IA redacta hasta 900). Sin textos guardados, el PDF sale con los estándar: `POST .../costeo/pdf` nunca llama a la IA. Las condiciones, las notas legales y la nota de TRM del PDF no cambian con los textos.
 
-**Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta`:
+**Asistente por folio (implementado en #102).** El asistente se abre desde el detalle de una cotización y solo trabaja sobre ella.
 
-1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
-2. Solo al pulsar Confirmar, llamar a `accion_propuesta.metodo` sobre `accion_propuesta.endpoint`, con `accion_propuesta.cuerpo` como cuerpo JSON (tal cual) y el encabezado `If-Match: <accion_propuesta.row_version>`.
-3. La respuesta es la del endpoint normal (por ejemplo `CosteoCotizacion`), con sus mismos errores. Ante 409 `CONFLICTO_CONCURRENCIA`: la cotización cambió después de la propuesta. Recargar el costeo y pedirle al asistente una propuesta nueva.
-4. Cancelar no llama a nada. La IA nunca ejecuta cambios por su cuenta.
+- **Petición.** `POST /web/chat` con `{"mensaje": "...", "sesion_id": "<uuid sin guiones>", "folio": "<folio de la cotización abierta>"}`. Sin `folio`: 400 `FOLIO_REQUERIDO` (`ErrorNegocio`). Folio ajeno o inexistente: 404 `Cotización no encontrada o no es tuya.`. La conversación queda ligada al comercial y al folio: con el mismo `sesion_id` y otro folio empieza otra conversación. Conviene un `sesion_id` por cotización abierta.
+- **Qué hace.** Lee la cotización (`consultar_cotizacion`) y **propone**: ajustar el margen (`proponer_ajuste_margen`), volver a pedir el flete a Nexo (`proponer_re_solicitud`, con cambios de peso, horas de cargue o descargue, exclusivo o consolidado) o agregar un servicio conexo del catálogo (`buscar_servicio_conexo`). No genera ni envía el PDF, no redacta los textos y no crea cotizaciones: para eso están los botones del detalle. `herramientas` trae los nombres usados; `errores`, los códigos de negocio de las herramientas (por ejemplo `JUSTIFICACION_REQUERIDA` si pidió bajar del sugerido sin justificar, `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`).
+- **Respuesta.** `RespuestaChat` con `texto`, `herramientas`, `errores`, `accion_propuesta` (o `null`) y `precio`, `margen` y `pdf` siempre en `null` (obsoletos). Un fallo del agente o del proveedor sigue siendo 200 `{texto, error: true}`.
+- **Cotizaciones de chat anteriores** (`estado_costeo = null` en "Mis cotizaciones"): siguen visibles con su seguimiento y el asistente las puede consultar, pero no propone cambios sobre ellas (no tienen costeo de Nexo: `COSTEO_NO_LISTO`).
+
+**Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta` (como máximo una por turno):
+
+1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. El resumen lo arma el servidor con los precios calculados por código ("Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP."); el `texto` del asistente nunca trae montos. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
+2. Solo al pulsar Confirmar, llamar a `accion_propuesta.metodo` sobre `accion_propuesta.endpoint`, con `accion_propuesta.cuerpo` como cuerpo JSON (tal cual) y el encabezado `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo` y `agregar_servicios_conexos` enviar además `Idempotency-Key` con un UUID nuevo por clic.
+
+   | `tipo` | `metodo` y `endpoint` | `cuerpo` |
+   |---|---|---|
+   | `ajustar_margen` | `PUT /web/cotizaciones/{folio}/costeo/margen` | `{"margen": 0.18, "justificacion": null}` |
+   | `re_solicitar_costeo` | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` | `{"motivo": "...", "datos_carga": {"peso_kg": 28000}, "nueva_version": true}` (sin `datos_carga` si no cambia la carga) |
+   | `agregar_servicios_conexos` | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` | `{"items": [{"linea_orden": 1, "servicio_id": "<id>", "cantidad": 2}]}` |
+
+3. La respuesta es la del endpoint normal (por ejemplo `CosteoCotizacion`, o 201 con la versión `-vN` en `re-solicitar`), con sus mismos errores. Ante 409 `CONFLICTO_CONCURRENCIA`: la cotización cambió después de la propuesta. Recargar el costeo y pedirle al asistente una propuesta nueva.
+4. Cancelar no llama a nada. La IA nunca ejecuta cambios por su cuenta: conversar con el asistente nunca modifica la cotización (su `ETag` no cambia).
 
 **Concurrencia (implementada en #98 para margen, conexos PUT y PDF).** Guardar el `ETag` de `GET .../costeo` (y el de cada respuesta de una mutación, que trae el nuevo) y enviarlo en `If-Match`. El `ETag` es opaco (hoy un número entre comillas): guardarlo y reenviarlo tal cual. Solo cambia con cambios de negocio (margen, conexos, PDF, o un costo, precio o estado nuevo que trae el polling), no con cada consulta del polling. Ante 409 `CONFLICTO_CONCURRENCIA`: recargar el costeo y reintentar. Es **obligatorio** en margen, conexos (POST y PUT), re-solicitar, textos y redactar: sin él la respuesta es 428 `PRECONDICION_REQUERIDA`. En el PDF es opcional. En `POST .../servicios-conexos` y en `re-solicitar`, enviar además `Idempotency-Key` con un UUID nuevo por cada clic de Confirmar o del botón: un doble clic no duplica el conexo ni crea dos versiones.
 

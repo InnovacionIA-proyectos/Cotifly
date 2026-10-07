@@ -93,6 +93,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesJwt>(configuracion, clsOpcionesJwt.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesJwt>, clsValidadorOpcionesJwt>();
         servicios.AddOpcionesValidadas<clsOpcionesAgente>(configuracion, clsOpcionesAgente.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesChat>(configuracion, clsOpcionesChat.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesSesiones>(configuracion, clsOpcionesSesiones.Seccion);
         servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);

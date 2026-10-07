@@ -62,6 +62,17 @@ public sealed class clsSesion
         return PrefijoWeb + sesionId.Trim();
     }
 
+    /// <summary>
+    /// Hilo del asistente por folio (HU-013.6, #102): <c>web/{sesion_id}/{folio}</c>. La sesión queda ligada al comercial y a ESA
+    /// cotización: el mismo <c>sesion_id</c> con otro folio es otro hilo, con su propio historial. Cabe en los 128 caracteres de
+    /// <c>Sesiones.threadId</c> (64 del <c>sesion_id</c> + 50 del folio).
+    /// </summary>
+    public static string IdWebFolio(string sesionId, string folio)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folio);
+        return $"{IdWeb(sesionId)}/{folio.Trim().ToUpperInvariant()}";
+    }
+
     public bool EsDe(Guid usuarioId) => UsuarioId == usuarioId;
 
     /// <summary>Registra actividad; una sesión archivada que vuelve a usarse queda activa.</summary>

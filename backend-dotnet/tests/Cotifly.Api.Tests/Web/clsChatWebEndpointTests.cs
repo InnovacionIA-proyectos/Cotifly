@@ -29,7 +29,14 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
     private static string SesionId() => Guid.NewGuid().ToString("N");
 
     private clsApiWebPruebas Api(clsChatClientGuionizado modelo, IDictionary<string, string?>? extra = null) =>
-        new(entorno.BaseDatos, extra: extra, configurar: b => b.ConfigureTestServices(s => s.AddSingleton<IChatClient>(modelo)));
+        new(entorno.BaseDatos, extra: Legado(extra), configurar: b => b.ConfigureTestServices(s => s.AddSingleton<IChatClient>(modelo)));
+
+    /// <summary>
+    /// Estas pruebas son del agente cotizador LEGADO (HU-003): desde HU-013.6 (#102) solo corre sin <c>folio</c> y con
+    /// <c>Chat:CreacionHabilitada=true</c> (por defecto <c>false</c>: <c>FOLIO_REQUERIDO</c>, ver <see cref="clsAsistenteFolioEndpointTests"/>).
+    /// </summary>
+    private static Dictionary<string, string?> Legado(IDictionary<string, string?>? extra = null) =>
+        new(extra ?? new Dictionary<string, string?>()) { ["Chat:CreacionHabilitada"] = "true" };
 
     private static string Mensaje(string texto, string sesion) => clsApiWebPruebas.Json(new { mensaje = texto, sesion_id = sesion });
 
@@ -68,6 +75,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         using var dolarApi = new clsDolarApiFalso { Valor = 3306.86m, FechaActualizacion = clsDolarApiFalso.HoyALasOchoEnBogota() };
         using var api = new clsApiWebPruebas(
             entorno.BaseDatos,
+            extra: Legado(),
             configurar: b => b.ConfigureTestServices(s =>
             {
                 s.AddSingleton<IChatClient>(modelo);
@@ -256,7 +264,7 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
     [Fact]
     public async Task SinProveedorConfiguradoElTurnoEsUnErrorControlado()
     {
-        using var api = new clsApiWebPruebas(entorno.BaseDatos);
+        using var api = new clsApiWebPruebas(entorno.BaseDatos, extra: Legado());
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var respuesta = await api.EnviarAsync(_post, RutaChat, ana.Access, Mensaje("hola", SesionId()));

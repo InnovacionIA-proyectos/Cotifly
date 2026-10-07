@@ -6,24 +6,33 @@ using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Precio;
 using Cotifly.Dominio.Sesiones;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Api.Agente.Controllers;
 
 /// <summary>
-/// Asistente de la consola web (<c>POST /web/chat</c>, port de <c>web_chat</c> de <c>orquestador/web.py</c>): un turno del agente
-/// en la sesión <c>web/{sesion_id}</c>, ligada al comercial del token.
+/// Asistente de la consola web (<c>POST /web/chat</c>). Desde HU-013.6 (#102, ADR-018 §2b) trabaja sobre UNA cotización: con
+/// <c>folio</c> corre el asistente de solo lectura y propuesta (<see cref="IClsAsistenteFolioRunner"/>) en la sesión
+/// <c>web/{sesion_id}</c> ligada al comercial del token y al folio; sin <c>folio</c> responde 400 <c>FOLIO_REQUERIDO</c>, salvo con
+/// <c>Chat:CreacionHabilitada=true</c>, que vuelve al agente cotizador legado (port de <c>web_chat</c> de <c>orquestador/web.py</c>).
 /// </summary>
 [Route("web")]
 public sealed partial class clsChatWebController(
     IClsContextoUsuario usuario,
     IClsAgenteRunner runner,
+    IClsAsistenteFolioRunner asistente,
+    IOptions<clsOpcionesChat> opcionesChat,
     ILogger<clsChatWebController> logger) : clsControladorWebBase(usuario)
 {
     public const string MensajeSesionInvalida = "sesion_id inválido";
+    public const string MensajeFolioInvalido = "folio inválido";
+    public const string MensajeFolioRequerido = "Abre el asistente desde una cotización: falta el folio.";
     public const string MensajeCotizacionOrigenInvalida = "cotizacion_origen_id inválido";
     public const string MensajeMonedaInvalida = "moneda inválida";
     public const int LargoMaximoMensaje = 8000;
@@ -32,7 +41,8 @@ public sealed partial class clsChatWebController(
     /// 200 <c>RespuestaChat</c> (o <c>RespuestaChatError</c> con <c>error: true</c> ante un fallo del agente o del proveedor de IA, o
     /// si la respuesta final no pasó la validación ni con el reintento y el turno no produjo PDF, precio ni margen, HU-003.10; si
     /// los produjo, <c>RespuestaChat</c> con ellos y el texto de respaldo);
-    /// 400 <c>sesion_id</c>, <c>moneda</c> o cuerpo inválido; 401 sin sesión; 404 si la sesión es de otro comercial; 429 límite de la API.
+    /// 400 <c>sesion_id</c>, <c>folio</c>, <c>moneda</c> o cuerpo inválido, o <c>FOLIO_REQUERIDO</c> (HU-013.6) sin folio; 401 sin sesión;
+    /// 404 si la sesión es de otro comercial o el folio no es suyo; 429 límite de la API.
     /// </summary>
     [HttpPost("chat")]
     [EnableRateLimiting(clsConfiguracionAutenticacion.PoliticaLimiteChat)]
@@ -50,6 +60,18 @@ public sealed partial class clsChatWebController(
         if (cuerpo.SesionId is null || !ExpresionSesion().IsMatch(cuerpo.SesionId))
         {
             return BadRequest(new clsErrorWeb(MensajeSesionInvalida));
+        }
+
+        if (!string.IsNullOrWhiteSpace(cuerpo.Folio))
+        {
+            return cuerpo.Folio.Trim().Length > clsCotizacion.LargoMaximoFolio
+                ? BadRequest(new clsErrorWeb(MensajeFolioInvalido))
+                : await AsistenteAsync(cuerpo.Mensaje, cuerpo.SesionId, cuerpo.Folio.Trim(), cancellationToken);
+        }
+
+        if (!opcionesChat.Value.CreacionHabilitada)
+        {
+            return Error(new clsErrorDominio(clsCodigosError.FolioRequerido, MensajeFolioRequerido));
         }
 
         Guid? origen = null;
@@ -98,6 +120,37 @@ public sealed partial class clsChatWebController(
         {
             // El frontend muestra el texto tal cual (paridad con el Python): 200 con error = true.
             logger.LogError(ex, "Fallo procesando el turno web de la sesión {Sesion}.", clave);
+            return Ok(new clsRespuestaChatError(clsTextosAgente.ParaFallo(ex)));
+        }
+    }
+
+    /// <summary>
+    /// Turno del asistente por folio: 200 <c>RespuestaChat</c> con <c>accion_propuesta</c> (o <c>RespuestaChatError</c> ante un fallo del
+    /// agente o del proveedor, o si el validador no obtuvo respuesta y no hubo propuesta); 404 si el folio no es del comercial o la
+    /// sesión es de otro. Ni el texto ni la propuesta cambian datos: el frontend ejecuta la propuesta al pulsar Confirmar.
+    /// </summary>
+    private async Task<IActionResult> AsistenteAsync(string mensaje, string sesionId, string folio, CancellationToken cancellationToken)
+    {
+        var espacio = clsSesion.IdWeb(sesionId);
+        var hilo = clsSesion.IdWebFolio(sesionId, folio);
+        try
+        {
+            var resultado = await asistente.EjecutarTurnoAsync(new clsSolicitudTurnoFolio(mensaje, espacio, hilo, UsuarioId, folio), cancellationToken);
+            if (resultado.EsFallo)
+            {
+                return resultado.Error.Codigo == clsCodigosAplicacion.NoEncontrado
+                    ? NotFound(new clsErrorWeb(clsTextosAgente.SesionNoEncontrada))
+                    : Error(resultado.Error);
+            }
+
+            var turno = resultado.Valor;
+            return turno.EsRespaldo && turno.AccionPropuesta is null
+                ? Ok(new clsRespuestaChatError(turno.Texto))
+                : Ok(clsRespuestaChat.DesdeAsistente(turno, clsTextosAgente.PropuestaSinTexto));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Fallo procesando el turno del asistente de la sesión {Sesion}.", hilo);
             return Ok(new clsRespuestaChatError(clsTextosAgente.ParaFallo(ex)));
         }
     }

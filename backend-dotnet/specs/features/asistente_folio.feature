@@ -4,9 +4,9 @@
 # buscar_servicio_conexo). La IA nunca ejecuta cambios: el frontend confirma la acción propuesta llamando al endpoint
 # determinista con el cuerpo exacto y If-Match = row_version. La creación de cotizaciones por chat se retira
 # (Chat:CreacionHabilitada=false). Con un IChatClient guionizado, la API real en memoria y SQL Server 2019 en Testcontainers.
-# @pendiente @ignore: escenario SDD de HU-013.1 (#97); Reqnroll los genera como omitidos hasta que #102 enlace los pasos y
-# quite las dos etiquetas.
-@integracion @pendiente @ignore
+# Pasos en Cotifly.Aceptacion.Tests/Agente/clsPasosAsistenteFolio.cs (#102). El modelo nunca escribe montos: su texto se valida
+# contra cifras de dinero y nada de lo que ve las respalda; los montos solo van en el resumen que arma el servidor.
+@integracion
 Característica: Asistente IA sobre una cotización (folio)
   Como comercial de Botero Soto
   Quiero conversar con el asistente sobre una cotización ya creada y confirmar lo que me propone
@@ -29,7 +29,7 @@ Característica: Asistente IA sobre una cotización (folio)
     Entonces la respuesta tiene el estado 404
 
   Escenario: Una consulta responde solo texto, sin acción propuesta
-    Dado que el modelo consulta la cotización y responde "La cotización está costeada en 3.000.000 COP."
+    Dado que el modelo consulta la cotización y responde "La cotización está costeada y lista para generar el PDF."
     Cuando "ana" escribe en el chat "¿En qué va la cotización?" sobre el folio de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "RespuestaChat" del contrato
     Y la respuesta del chat no trae acción propuesta
@@ -76,7 +76,7 @@ Característica: Asistente IA sobre una cotización (folio)
     Y Nexo no recibió conexos para la cotización de "C1"
 
   Escenario: El asistente propone re-solicitar el costeo con cambios de carga
-    Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
     Y que el modelo propone re-solicitar el costeo con el motivo "El cliente cambió el peso" y el peso 28000
     Cuando "ana" escribe en el chat "El cliente ahora manda 28 toneladas, vuelve a pedir el costo" sobre el folio de "C1"
     Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
