@@ -1,5 +1,4 @@
 using System.Net;
-using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using Microsoft.AspNetCore.TestHost;
@@ -12,8 +11,8 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// Reglas del canal <c>POST /web/chat</c> por HTTP contra la base real con el modelo guionizado, comunes al asistente por folio
 /// (HU-013.6; desde HU-013.9 el agente cotizador legado ya no existe): 400 por <c>sesion_id</c> o mensaje, 401 sin sesión, validación
-/// de la respuesta final con reintento y respaldo (HU-003.10), 200 <c>error: true</c> ante un fallo del proveedor, 429 propio y la
-/// descarga del PDF con el enlace firmado (<c>?t=</c>, ADR-011 §3).
+/// de la respuesta final con reintento y respaldo (HU-003.10), 200 <c>error: true</c> ante un fallo del proveedor, 429 propio y el
+/// retiro de la URL firmada del PDF (<c>?t=</c>, ADR-011 §3).
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -161,28 +160,21 @@ public sealed class clsChatWebEndpointTests(clsEntornoApiWeb entorno)
         await VerificarContratoAsync(segunda, RutaChat, _post, HttpStatusCode.TooManyRequests);
     }
 
-    // ADR-011 §3: el enlace firmado abre el PDF sin Authorization; alterado o de otro comercial, no. Lo emitía la tarjeta de Google Chat
-    // (retirada en HU-013.9); la descarga se conserva mientras siga en el contrato.
+    // HU-013.9 (#105): la URL firmada (?t=, ADR-011 §3) se retiró; el parámetro se ignora y sin Bearer el PDF responde 401.
     [Fact]
-    public async Task ElEnlaceFirmadoAbreElPdfSinBearerYAlteradoNo()
+    public async Task ElPdfExigeBearerAunqueVengaUnTokenDeEnlaceFirmado()
     {
         var api = entorno.Api;
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var luis = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cotizacion = await api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
-        var firma = api.Factory.Services.GetRequiredService<IClsFirmaUrlPdf>();
-        var token = firma.Firmar(cotizacion.ArchivoPdf!, ana.UsuarioId);
-        var deLuis = firma.Firmar(cotizacion.ArchivoPdf!, luis.UsuarioId);
+        var token = $"{ana.UsuarioId:N}.{DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()}.firma";
 
-        using var valido = await api.EnviarAsync(HttpMethod.Get, $"/pdfs/{cotizacion.ArchivoPdf}?t={Uri.EscapeDataString(token)}", null);
-        using var alterado = await api.EnviarAsync(HttpMethod.Get, $"/pdfs/{cotizacion.ArchivoPdf}?t={Uri.EscapeDataString(token[..^3] + "abc")}", null);
-        using var ajeno = await api.EnviarAsync(HttpMethod.Get, $"/pdfs/{cotizacion.ArchivoPdf}?t={Uri.EscapeDataString(deLuis)}", null);
+        using var sinBearer = await api.EnviarAsync(HttpMethod.Get, $"/pdfs/{cotizacion.ArchivoPdf}?t={Uri.EscapeDataString(token)}", null);
+        using var conBearer = await api.EnviarAsync(HttpMethod.Get, $"/pdfs/{cotizacion.ArchivoPdf}?t={Uri.EscapeDataString(token)}", ana.Access);
 
-        valido.StatusCode.Should().Be(HttpStatusCode.OK);
-        valido.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
-        (await valido.Content.ReadAsByteArrayAsync(Ct)).Should().Equal(clsApiWebPruebas.PdfMinimo);
-        alterado.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await alterado.Content.ReadAsStringAsync(Ct)).Should().Contain("venció o no es válido");
-        ajeno.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        sinBearer.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await sinBearer.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Inicia sesión de nuevo."}""");
+        conBearer.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await conBearer.Content.ReadAsByteArrayAsync(Ct)).Should().Equal(clsApiWebPruebas.PdfMinimo);
     }
 }

@@ -65,7 +65,7 @@ dotnet-counters monitor -p 1 --counters Cotifly.Agente,System.Runtime,Microsoft.
 ## 10.4 Arranque fallido
 
 - Cualquier excepción al construir o arrancar el host termina el contenedor con **código 1** y un solo registro del error, sin secretos (si falla antes de existir el logger, una línea `crit:` en stderr).
-- En `Production` no arranca sin `ConnectionStrings:Cotifly`, `ConnectionStrings:Identidad`, `Jwt:SigningKey` o `Cors:OrigenesPermitidos`, con placeholders (`<secreto>`, `cambiar...`, `changeme`, `dev`), con autenticación integrada en una cadena, con `GChat:VerificarJwt=false`, o con Google Chat configurado sin `Pdf:ClaveFirmaUrl`. Lista completa en [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración).
+- En `Production` no arranca sin `ConnectionStrings:Cotifly`, `ConnectionStrings:Identidad`, `Jwt:SigningKey` o `Cors:OrigenesPermitidos`, con placeholders (`<secreto>`, `cambiar...`, `changeme`, `dev`), con autenticación integrada en una cadena. Las variables `GChat__*` y `Pdf__ClaveFirmaUrl` se retiraron en HU-013.9 (#105) y ya no se validan. Lista completa en [03-infraestructura](03-infraestructura.md#32-variables-de-entorno-y-configuración).
 - En cualquier entorno no arranca con un `SapTm:Modo` desconocido, `export_json` sin ruta, `odata` sin URL, usuario o clave, un proveedor de IA desconocido o incompleto, `Pdf:StorageModo` distinto de `volumen`, o un `Correo:Modo` no implementado con el correo habilitado.
 
 ## 10.5 Depurar sin shell

@@ -19,7 +19,7 @@ namespace Cotifly.Infraestructura.Tests.Agente;
 
 /// <summary>
 /// Registro del asistente en Infraestructura (HU-013.9, #105): sin Google Chat (ni verificador del JWT, ni cola, ni worker, ni
-/// publicador, ni opciones <c>GChat</c>), con el candado por sesión, el barrido de sesiones y la URL firmada del PDF (ADR-011 §3).
+/// publicador, ni opciones <c>GChat</c>, ni la URL firmada del PDF), con el candado por sesión y el barrido de sesiones.
 /// </summary>
 public sealed class clsRegistroAgenteInfraestructuraTests
 {
@@ -47,7 +47,6 @@ public sealed class clsRegistroAgenteInfraestructuraTests
         await using var ambito = proveedor.CreateAsyncScope();
 
         proveedor.GetRequiredService<IChatClient>().Should().BeOfType<clsChatClientNoConfigurado>();
-        proveedor.GetRequiredService<IClsFirmaUrlPdf>().Should().BeOfType<clsFirmaUrlPdfHmac>();
         proveedor.GetRequiredService<IClsCandadoSesion>().Should().BeOfType<clsCandadoSesionSql>();
         var hospedados = proveedor.GetServices<IHostedService>().Select(h => h.GetType()).ToList();
         hospedados.Should().Contain(typeof(clsBarridoSesionesHostedService));
@@ -72,40 +71,4 @@ public sealed class clsRegistroAgenteInfraestructuraTests
         secciones.Should().Contain(["Sesiones", "IA"]);
         secciones.Should().NotContain(["GChat", "Chat"], "las opciones de Google Chat y el flag del chat legado se retiraron");
     }
-
-    // ADR-011 §3: URL firmada válida, vencida, alterada o de otro archivo.
-    [Fact]
-    public void LaUrlFirmadaValeQuinceMinutosSoloParaSuArchivoYSinAlteraciones()
-    {
-        var reloj = new clsRelojFalso();
-        var firma = Firma(reloj);
-        var usuario = Guid.NewGuid();
-        var token = firma.Firmar("PCN-NV-24092026-001.pdf", usuario);
-
-        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().Be(usuario);
-        firma.Verificar("PCN-NV-24092026-002.pdf", token).Should().BeNull("el token es de otro archivo");
-        firma.Verificar("PCN-NV-24092026-001.pdf", token[..^2] + (token[^2] == 'A' ? "BB" : "AA")).Should().BeNull("firma alterada");
-        firma.Verificar("PCN-NV-24092026-001.pdf", $"{Guid.NewGuid():N}{token[32..]}").Should().BeNull("otro comercial con la misma firma");
-        firma.Verificar("PCN-NV-24092026-001.pdf", "basura").Should().BeNull();
-        firma.Verificar("PCN-NV-24092026-001.pdf", null).Should().BeNull();
-        Firma(reloj, "otra-clave-hmac-distinta-de-32-caracteres").Verificar("PCN-NV-24092026-001.pdf", token).Should().BeNull("otra clave");
-
-        reloj.Avanzar(TimeSpan.FromMinutes(14));
-        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().Be(usuario);
-        reloj.Avanzar(TimeSpan.FromMinutes(2));
-        firma.Verificar("PCN-NV-24092026-001.pdf", token).Should().BeNull("venció a los 15 minutos");
-    }
-
-    [Fact]
-    public void SinClaveConfiguradaUsaUnaClaveEfimeraPorProceso()
-    {
-        var reloj = new clsRelojFalso();
-        var usuario = Guid.NewGuid();
-        var token = Firma(reloj, null).Firmar("a.pdf", usuario);
-
-        Firma(reloj, null).Verificar("a.pdf", token).Should().BeNull("cada instancia sin clave tiene la suya");
-    }
-
-    private static clsFirmaUrlPdfHmac Firma(clsRelojFalso reloj, string? clave = "clave-hmac-de-pruebas-de-32-caracteres!") =>
-        new(Options.Create(new clsOpcionesFirmaUrlPdf { ClaveFirmaUrl = clave, MinutosUrlFirmada = 15 }), reloj, NullLogger<clsFirmaUrlPdfHmac>.Instance);
 }

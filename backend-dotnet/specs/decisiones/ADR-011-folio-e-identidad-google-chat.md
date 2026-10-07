@@ -106,7 +106,7 @@
 ## Retiro (#105, HU-013.9)
 
 - Se borraron `POST /chat/events`, `clsProcesadorEventoChat`, el verificador del JWT, la cola, el worker, el publicador, las tarjetas, las opciones `GChat:*` con su validación de Production y `IClsUsuarioWebRepository.ObtenerPorEmailAsync` (la identidad por correo de Google). La API arranca sin `GChat__*` y las ignora si un despliegue viejo las trae.
-- **Sigue vigente:** el formato del folio (§1 de la decisión, retomado en ADR-018 §7) y la descarga con URL firmada (`GET /pdfs/{archivo}?t=`, §3): el endpoint y `Pdf:ClaveFirmaUrl` se conservan, pero hoy ningún canal emite enlaces firmados (la regla de Production que exigía la clave con Google Chat se fue con él).
+- **Sigue vigente:** el formato del folio (§1 de la decisión, retomado en ADR-018 §7). La URL firmada del PDF (§3, `GET /pdfs/{archivo}?t=`, `Pdf:ClaveFirmaUrl`) también se retiró: solo la emitía Google Chat y era una entrada anónima. El PDF se descarga siempre con Bearer.
 - Las sesiones de Google Chat (`spaceId = spaces/...`) quedan en `Sesiones` y `EventosConversacion` como auditoría.
 
 ## Pendientes

@@ -254,8 +254,9 @@ paths:
                   row_version: "7"
         '400':
           description: |
-            `ErrorWeb`: `sesion_id`, `folio` (más de 50 caracteres: `folio inválido`), `cotizacion_origen_id` o `moneda`
-            inválido, o cuerpo inválido. `ErrorNegocio` `FOLIO_REQUERIDO` (HU-013.6): falta `folio` o viene vacío.
+            `ErrorWeb`: `sesion_id` o `folio` (más de 50 caracteres: `folio inválido`) inválido, o cuerpo inválido.
+            `ErrorNegocio` `FOLIO_REQUERIDO` (HU-013.6): falta `folio` o viene vacío. Los obsoletos `cotizacion_origen_id` y
+            `moneda` se ignoran desde HU-013.9 (#105): ya no producen 400.
           content:
             application/json:
               schema:
@@ -268,8 +269,8 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           description: |
-            El `sesion_id` pertenece a otro usuario (`Sesión no encontrada.`), o el `folio` (o el obsoleto
-            `cotizacion_origen_id`) no existe o no es del comercial (`Cotización no encontrada o no es tuya.`).
+            El `sesion_id` pertenece a otro usuario (`Sesión no encontrada.`), o el `folio` no existe o no es del comercial
+            (`Cotización no encontrada o no es tuya.`). El obsoleto `cotizacion_origen_id` se ignora desde HU-013.9 (#105).
           content:
             application/json:
               schema:
@@ -2037,13 +2038,10 @@ paths:
         regional; si la regional del gerente no se conoce, solo el dueño) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
-        Alternativa sin `Authorization` (ADR-011 §3, #12 parte C): `?t=<token>`, una firma HMAC de vida corta (15 minutos
-        por defecto) sobre el archivo, el comercial y el vencimiento; solo vale para el dueño. Un token alterado o vencido
-        responde 401. La emitía la tarjeta del PDF de Google Chat, retirado en HU-013.9 (#105): hoy ningún canal emite
-        enlaces firmados y el frontend usa Bearer.
+        La URL firmada sin `Authorization` (`?t=`, ADR-011 §3), que solo emitía Google Chat, se retiró en HU-013.9 (#105):
+        el endpoint exige siempre Bearer.
       security:
         - bearer: []
-        - {}
       parameters:
         - name: archivo
           in: path
@@ -2051,13 +2049,6 @@ paths:
           schema:
             type: string
             pattern: '^[A-Za-z0-9_-]+\.pdf$'
-        - name: t
-          in: query
-          required: false
-          description: Token del enlace firmado (`{usuario}.{vence}.{firma}`, ADR-011 §3); con él no se exige Bearer.
-          schema:
-            type: string
-            maxLength: 200
       responses:
         '200':
           description: PDF
@@ -2067,7 +2058,7 @@ paths:
                 type: string
                 format: binary
         '401':
-          description: Falta el token, expiró o fue revocado; o el enlace firmado está alterado o vencido
+          description: Falta el token, expiró o fue revocado
           content:
             application/json:
               schema:

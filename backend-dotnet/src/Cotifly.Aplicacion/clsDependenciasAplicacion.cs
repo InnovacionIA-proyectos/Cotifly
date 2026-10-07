@@ -104,9 +104,6 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<clsHerramientasAsistenteFolio>();
         servicios.AddScoped<IClsAsistenteFolioRunner, clsAsistenteFolioRunner>();
 
-        // Descarga del PDF con URL firmada (ADR-011 §3). La emitía Google Chat (retirado en HU-013.9): se conserva el endpoint.
-        servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();
-
         return servicios;
     }
 }

@@ -19,7 +19,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
 
 1. Los valores sensibles llegan como **variables de entorno de Dokploy** del stack; el manifiesto solo tiene
    `${Variable}`. Aplica a `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`,
-   `Pdf__ClaveFirmaUrl`, `IA__ApiKey` (y respaldos) y `SapTm__Pass`.
+   `IA__ApiKey` (y respaldos) y `SapTm__Pass` (`Pdf__ClaveFirmaUrl` se retiró con la URL firmada en HU-013.9).
 2. La cuenta de servicio de Google Chat va como **secreto de Docker Swarm** con nombre versionado
    (`cotifly_gchat_sa_v1`), montado en `/run/secrets/gchat_sa.json`; `GChat__SaJson` apunta a esa ruta.
 3. MinIO no se mantiene (ADR-012): no hay credenciales S3. Nexo no usa credencial (ADR-005).

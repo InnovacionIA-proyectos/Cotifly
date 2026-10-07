@@ -65,7 +65,7 @@ ClientePro (ya autenticado)
 | `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador obsoleto**: usar `/web/metricas/comercial` y `/regional`) |
 | `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador obsoleto**) |
-| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El parámetro `?t=` es el enlace firmado que emitía Google Chat (ADR-011, retirado en #105); el frontend no lo usa |
+| `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
@@ -173,45 +173,39 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 
 ## 4. `POST /web/chat`
 
+Desde HU-013.6 (#102) el chat es el **asistente de una cotización ya creada** y desde HU-013.9 (#105) el agente cotizador legado
+no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitudes-costeo`, 3.2) y una versión nueva sale de
+`POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` o con cambios de carga. Detalle completo en
+`docs/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
+
 ```json
 // request
-{ "mensaje": "Cotiza Nacional Bogotá a Medellín tractomula 10000 kg", "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c", "moneda": "USD" }
+{ "mensaje": "Súbele el margen al 18 %", "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c", "folio": "PCN-900555111-DG-05102026-001" }
 
-// 200 normal
-{ "texto": "...", "herramientas": ["obtener_margen", "calcular_precio"],
-  "precio": { "precio": 996.35, "costo": 2850000, "margen": 0.135, "metodo": "margen", "utilidad": 444798,
-              "moneda": "USD", "trm_aplicada": 3306.86, "precio_cop": 3294798,
-              "trm_vigencia_desde": "2026-09-26", "trm_vigencia_hasta": "2026-09-28" },
-  "margen": { "margen": 0.135, "origen": "sap_tm", "trq_type": "OPTN", "anomalo": false, "detalle": "Margen SAP TM del cliente para OPTN" },
-  "pdf": null,
-  "errores": [] }
-
-// 200 con la TRM caída (moneda USD): sin precio y con el error de la herramienta
-{ "texto": "...", "herramientas": ["obtener_margen", "calcular_precio"], "precio": null, "margen": { "...": "..." }, "pdf": null,
-  "errores": [{ "herramienta": "calcular_precio", "codigo": "TRM_NO_DISPONIBLE" }] }
+// 200 normal: texto sin montos y, si la hubo, la acción propuesta que el frontend confirma con el endpoint determinista
+{ "texto": "...", "herramientas": ["consultar_cotizacion", "proponer_ajuste_margen"], "precio": null, "margen": null, "pdf": null,
+  "errores": [], "accion_propuesta": { "tipo": "ajustar_margen", "metodo": "PUT", "endpoint": "/web/cotizaciones/.../costeo/margen",
+  "cuerpo": { "margen": 0.18, "justificacion": null }, "resumen": "...", "row_version": "7" } }
 
 // 200 con fallo interno controlado
 { "texto": "Ocurrió un error interno procesando tu solicitud. Inténtalo de nuevo.", "error": true }
 ```
 
-- `precio`, `margen` y `pdf` son `null` si la herramienta no se usó en el turno o terminó en error.
-- **Moneda (HU-012):** `moneda` (opcional, `COP` o `USD`, sin distinguir mayúsculas) es el selector del formulario. Manda sobre el texto del mensaje y queda en la conversación; si cambia, el precio ya calculado se descarta y se recalcula. Otro valor: 400 `{"error":"moneda inválida"}`. Sin el campo sigue la moneda que ya tenía la conversación (COP por defecto).
-- En USD, `precio` viene en dólares a 2 decimales; `costo` y `utilidad` siguen en pesos. `trm_aplicada` es la TRM del día con que se convirtió (DolarApi con respaldo en la Superintendencia Financiera, ADR-014), `trm_fuente` la fuente que la entregó (`dolarapi` o `superfinanciera`), `precio_cop` el valor en pesos antes de convertir (no es `precio × trm_aplicada`; el PDF ya no lo imprime) y `trm_vigencia_desde`/`trm_vigencia_hasta` el rango de vigencia de esa TRM (con DolarApi, el día de la cotización). En COP: `trm_aplicada` 0 y los demás `null`. El PDF en USD lleva la nota: "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI." con la `trm_aplicada` de la cotización. Si el comercial confirma cuando la TRM ya no rige, el servidor recalcula y vuelve a previsualizar: `precio` trae el nuevo valor y no se genera el PDF en ese turno.
-- `errores` (opcional, `[{herramienta, codigo}]`): errores de negocio de las herramientas del turno, con los códigos de `ErrorNegocio`. Con `TRM_NO_DISPONIBLE` no hay precio en dólares: mostrar que se puede reintentar en unos minutos o cotizar en pesos, sin dejar el formulario en carga (HU-012.4). `TARIFA_CONFIG_INVALIDA`: la tarifa de la fuente no está en pesos.
-- El formulario de "Nueva cotización" también usa este endpoint, igual que `chat.html`: arma un mensaje con los datos del formulario y lo envía. El progreso de pasos se deriva de `herramientas` y de qué bloques (`margen`, `precio`, `pdf`) vienen con valor. Con el tarifario de Drive retirado, el costo lo aporta el comercial o Nexo (HU-005).
-- Un fallo interno responde **200** con `error: true` (igual que Python). El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA ("Espera unos segundos y reenvía el mismo mensaje").
+- `folio` es obligatorio: sin él (o vacío), 400 `ErrorNegocio` `FOLIO_REQUERIDO`; con más de 50 caracteres, 400 `{"error":"folio inválido"}`; ajeno o inexistente, 404 `{"error":"Cotización no encontrada o no es tuya."}`.
+- `precio`, `margen` y `pdf` son **obsoletos** y siempre `null`. `cotizacion_origen_id` y `moneda` del request son **obsoletos**: se aceptan y se ignoran (ya no producen 400 ni 404).
+- `errores` (`[{herramienta, codigo}]`): errores de negocio de las herramientas del turno, con los códigos de `ErrorNegocio`.
+- Un fallo interno responde **200** con `error: true`. El frontend muestra `texto` tal cual. Esto incluye el límite de peticiones del proveedor de IA.
 - 429 es otra cosa: el límite de peticiones de la propia API de Cotifly (por defecto 20 turnos por minuto y comercial, `LimiteChat`).
 - 400 `{"error":"Cuerpo inválido. Revisa: mensaje."}` si `mensaje` está vacío o tiene más de 8000 caracteres.
 - 400 `{"error":"sesion_id inválido"}` si no cumple `^[A-Za-z0-9_-]{8,64}$`.
 - 404 `{"error":"Sesión no encontrada."}` si el `sesion_id` pertenece a otro usuario.
-- `cotizacion_origen_id` (UUID, opcional): "Nueva versión" desde el frontend. El agente parte del cliente, la línea y los números de esa cotización y el PDF sale como `{folio base}-vN`. 404 `{"error":"Cotización no encontrada o no es tuya."}` si no es del comercial; 400 `{"error":"cotizacion_origen_id inválido"}` si no es un UUID. Solo siembra el estado en una sesión nueva o sin cotización en curso (se puede reenviar en cada mensaje sin reiniciar el avance); lo habitual es abrir un `sesion_id` nuevo para la nueva versión.
 
 ### Ciclo de vida de `sesion_id`
 
 | Paso | Comportamiento |
 |---|---|
 | Creación | La genera el cliente: `crypto.randomUUID()` sin guiones. Una por conversación ("Nueva conversación" crea otra). |
-| Persistencia | El backend la guarda como `web/{sesion_id}` en `Sesiones`, junto con el estado estructurado de la cotización en curso (cliente, línea, costo, margen). |
+| Persistencia | El backend la guarda en `Sesiones` como `spaceId = web/{sesion_id}` y `threadId = web/{sesion_id}/{FOLIO}` (una conversación por folio), con el folio de la cotización como estado. |
 | Pertenencia | Queda ligada al usuario del token que la creó. Otro usuario que envíe el mismo `sesion_id` recibe 404. |
 | Expiración | Se archiva tras 24 h de inactividad. Un mensaje con una sesión archivada inicia una conversación nueva con el mismo id. |
 
@@ -245,7 +239,6 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | `/web/login` se reemplaza por `/api/auth/login-clientepro` | Login SSO desde ClientePro (HU-004) |
 | `GET /pdfs/{archivo}` pasa a exigir sesión | En Python era público y los folios son adivinables |
 | `sesion_id` queda ligada al usuario | En Python cualquier token válido podía continuar cualquier sesión |
-| `GET /pdfs/{archivo}?t=` (enlace firmado de 15 minutos) | Lo emitía Google Chat, que no envía `Authorization` al abrir un enlace (ADR-011, retirado en #105); solo para el dueño |
 | `estado_envio` pasa a `reenviada` en el segundo envío | Bug de Python: siempre escribía `enviada` (HU-003.5). La métrica de enviadas cuenta ambos estados. |
 | Seguimiento usa `ganada`/`motivo_rechazo` | Renombrado en HU-002.2 |
 | Cuerpo inválido responde 400 `{"error": "..."}` | En Python (FastAPI) era 422 `{"detail": [...]}` |

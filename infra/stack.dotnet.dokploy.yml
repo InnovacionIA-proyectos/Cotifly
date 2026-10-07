@@ -137,12 +137,10 @@ services:
       Trm__TiempoEsperaSegundos: ${Trm__TiempoEsperaSegundos:-10}
       Trm__TiempoEsperaDolarApiSegundos: ${Trm__TiempoEsperaDolarApiSegundos:-4}
 
-      # PDF (ADR-006, ADR-012): volumen. Pdf__ClaveFirmaUrl: secreto opcional (enlace firmado, ADR-011 §3).
+      # PDF (ADR-006, ADR-012): volumen.
       Pdf__StorageModo: volumen
       Pdf__StorageDir: /data/pdfs
       Pdf__BaseUrl: ${Pdf__BaseUrl:-}
-      Pdf__ClaveFirmaUrl: ${Pdf__ClaveFirmaUrl:-}
-      Pdf__MinutosUrlFirmada: ${Pdf__MinutosUrlFirmada:-15}
 
       # Correo (D3): deshabilitado por defecto; relay interno sin AUTH.
       Correo__Habilitado: ${Correo__Habilitado:-false}

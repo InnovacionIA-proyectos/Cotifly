@@ -747,7 +747,7 @@ No trae costo (ni `costo` ni el de Nexo) a propósito.
 - `archivo` sigue `^[A-Za-z0-9_-]+\.pdf$` (el folio más `.pdf`). Tomarlo de `pdf_url`, nunca construirlo a mano.
 - Acceso con **Bearer**: el dueño, o un `gerente_comercial` de la misma regional (si la regional del gerente no se conoce, solo el dueño).
 - 200 `application/pdf` inline. 401 `ErrorWeb` sin sesión. 404 `ErrorWeb` (no existe o no es tuya), con cuerpo JSON aunque se haya pedido un blob.
-- **URL firmada `?t=`**: la emitía Google Chat (HMAC de 15 minutos, `{usuario}.{vence}.{firma}`, solo el dueño), retirado en #105. El endpoint la sigue aceptando, pero ningún canal la emite. El frontend **no la usa ni la genera**.
+- **URL firmada `?t=`**: se retiró en #105 junto con Google Chat (era el único que la emitía). El endpoint exige siempre Bearer.
 - Un `<a href>` directo no envía `Authorization` y recibe 401. Además, `X-Frame-Options: DENY` impide incrustar la URL en un iframe. Hay que descargar el blob:
 
 ```typescript

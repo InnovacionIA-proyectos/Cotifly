@@ -29,13 +29,14 @@ public sealed class clsContextoAsistenteFolio
 
     public bool Iniciado => _cotizacion is not null;
 
-    public void Iniciar(Guid usuarioId, clsCotizacion cotizacion, string? lineaNegocio, string threadId = "")
+    public void Iniciar(Guid usuarioId, clsCotizacion cotizacion, string? lineaNegocio, string threadId)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(threadId);
         UsuarioId = usuarioId;
         _cotizacion = cotizacion;
         LineaNegocio = lineaNegocio;
-        ThreadId = threadId ?? string.Empty;
+        ThreadId = threadId;
         Propuesta = null;
     }
 

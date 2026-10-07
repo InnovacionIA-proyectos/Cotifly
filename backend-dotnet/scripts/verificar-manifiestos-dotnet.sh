@@ -84,8 +84,8 @@ fi
 echo "OK: producción no publica ningún puerto."
 
 for archivo in /tmp/qa-staging-config.$$.yml /tmp/qa-dokploy-config.$$.yml; do
-  # HU-013.9 (#105): Google Chat se retiró; ningún manifiesto trae variables GChat__*, el secreto gchat_sa ni Chat__CreacionHabilitada.
-  if grep -qE "GChat__|gchat_sa|Chat__CreacionHabilitada" "$archivo"; then
+  # HU-013.9 (#105): Google Chat se retiró; ningún manifiesto trae GChat__*, el secreto gchat_sa, Chat__CreacionHabilitada ni la firma del PDF (Pdf__ClaveFirmaUrl).
+  if grep -qE "GChat__|gchat_sa|Chat__CreacionHabilitada|Pdf__ClaveFirmaUrl|Pdf__MinutosUrlFirmada" "$archivo"; then
     fallo "$archivo todavía trae configuración de Google Chat o del chat legado (retirados en HU-013.9)."
   fi
   echo "OK: $archivo sin configuración de Google Chat."

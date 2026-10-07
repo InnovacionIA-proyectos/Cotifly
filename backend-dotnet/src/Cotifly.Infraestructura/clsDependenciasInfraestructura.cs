@@ -22,7 +22,6 @@ using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Precio.Interfaces;
-using Cotifly.Aplicacion.Tarifas.Interfaces;
 using Cotifly.Infraestructura.Agente.Repositories;
 using Cotifly.Infraestructura.Agente.Services;
 using Cotifly.Infraestructura.Auditoria.Repositories;
@@ -46,7 +45,6 @@ using Cotifly.Infraestructura.Metricas.Repositories;
 using Cotifly.Infraestructura.Municipios.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Infraestructura.Precio.Services;
-using Cotifly.Infraestructura.Tarifas.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -97,7 +95,6 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<Aplicacion.Redaccion.Services.clsOpcionesRedaccion>(configuracion, Aplicacion.Redaccion.Services.clsOpcionesRedaccion.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesIA>(configuracion, clsOpcionesIA.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesIA>, clsValidadorOpcionesIA>();
-        servicios.AddOpcionesValidadas<clsOpcionesFirmaUrlPdf>(configuracion, clsOpcionesFirmaUrlPdf.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesNexo>(configuracion, clsOpcionesNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
@@ -113,9 +110,8 @@ public static class clsDependenciasInfraestructura
 
         AgregarPersistencia(servicios);
 
-        // Fuentes externas de Margen (#13) y Tarifas (#10). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
+        // Fuente externa de Margen (#13). TryAdd: un adaptador registrado antes (pruebas, HU-005) se respeta.
         AgregarFuenteMargen(servicios);
-        servicios.TryAddSingleton<IClsTarifaProvider, clsTarifaProviderNoDisponible>();
 
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
@@ -137,7 +133,7 @@ public static class clsDependenciasInfraestructura
 
     /// <summary>
     /// Asistente IA (#12 parte C, ADR-003, ADR-018): <see cref="IChatClient"/> por <c>IA:Proveedor</c>, redactor del PDF, búsqueda de
-    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>), URL firmada del PDF,
+    /// clientes en Nexo (HU-005.2, elegida por <c>Nexo:UrlBase</c>: ver <see cref="AgregarBuscadorClientes"/>),
     /// candado por sesión y barrido de sesiones inactivas. Google Chat (webhook, cola, worker y publicador) se retiró en HU-013.9 (#105).
     /// TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
@@ -148,7 +144,6 @@ public static class clsDependenciasInfraestructura
         // Redactor del asunto y la introducción del PDF (HU-013.5) sobre el mismo IChatClient; el respaldo lo aplica Aplicación.
         servicios.TryAddScoped<Aplicacion.Redaccion.Interfaces.IClsRedactorCotizacion, Redaccion.Services.clsRedactorCotizacionLlm>();
         AgregarBuscadorClientes(servicios);
-        servicios.TryAddSingleton<IClsFirmaUrlPdf, clsFirmaUrlPdfHmac>();
 
         servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();

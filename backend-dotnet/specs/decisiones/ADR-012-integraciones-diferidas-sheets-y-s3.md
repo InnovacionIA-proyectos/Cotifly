@@ -11,7 +11,7 @@ El Python tiene cuatro integraciones externas. HU-003.7 pide portar las que sigu
 | Integración (Python) | Qué hace | Estado en .NET |
 |---|---|---|
 | SAP TM (`mcp_server/margen/export_fuente.py`, `odata_fuente.py`) | Margen propuesto por cliente desde el export JSON o en vivo por OData | **Portada en #13** (`clsFuenteMargenExportJson`, `clsFuenteMargenOData`, `SapTm:Modo`). La conexión OData real se activa con HU-009 |
-| Tarifario en Google Drive (`mcp_server/tarifas/`, `DriveFlatFileProvider`) | Costo del flete desde un Excel o CSV de Drive con cuenta de servicio | **Retirada, no se porta** (decisión del 2026-09-23, HU-005 y HU-003.4): el costeo viene de Nexo. `IClsTarifaProvider` responde `TARIFA_FUENTE_NO_DISPONIBLE` hasta HU-005 |
+| Tarifario en Google Drive (`mcp_server/tarifas/`, `DriveFlatFileProvider`) | Costo del flete desde un Excel o CSV de Drive con cuenta de servicio | **Retirada, no se porta** (decisión del 2026-09-23, HU-005 y HU-003.4): el costeo viene de Nexo. El puerto `IClsTarifaProvider` (que respondía `TARIFA_FUENTE_NO_DISPONIBLE` a la herramienta `buscar_tarifa` del agente legado) se borró en HU-013.9 (#105) |
 | Sincronización a Google Sheets (`shared/sheets_sync.py`, `scripts/sync_sheets.py`, `POST /internal/sync-sheets`) | Vuelca cada 15 min la trazabilidad de la base (cotizaciones, ajustes de margen, correos, actividad por comercial, uso de herramientas, KPI) a un libro de Sheets para un tablero de Looker Studio, con la cuenta de servicio de Google | **Diferida** (este ADR) |
 | PDF en S3/MinIO (`shared/almacen_pdf.py`, `PDF_STORAGE_MODO=volumen\|s3`) | Guarda los PDF en un volumen local (por defecto) o en un bucket S3/MinIO | **Diferida** (este ADR). #11 crea `IClsAlmacenPdf` con el adaptador de volumen |
 

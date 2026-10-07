@@ -35,7 +35,7 @@ distinto, por ejemplo un gestor de secretos):
 1. **Variables de entorno de Dokploy por servicio** (pestaña *Environment* del compose de tipo *stack*). Dokploy las
    guarda en su base y las escribe en el `.env` con el que hace `docker stack deploy`; el manifiesto solo las
    referencia como `${Variable}` y nunca lleva el valor. Así llegan las cadenas de conexión, `Jwt__SigningKey`,
-   `Pdf__ClaveFirmaUrl`, `IA__ApiKey` y `SapTm__Pass`.
+   `IA__ApiKey` y `SapTm__Pass`.
 2. **Sin secretos de Docker Swarm.** El único que había era la cuenta de servicio de Google Chat (`GChat__SaJson`,
    secreto `cotifly_gchat_sa_v1`), retirada con Google Chat en HU-013.9 (#105, ADR-018 §14). Tras desplegar la versión
    sin Google Chat, borrar el secreto en el manager: `docker secret rm cotifly_gchat_sa_v1 cotifly_staging_gchat_sa_v1`
@@ -68,7 +68,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 
 | Variable | Secreto | Obligatoria en Production | Por defecto | Dónde se carga | Nota |
 |---|---|---|---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Production` en staging **y** en producción, a propósito: así staging aplica las mismas validaciones de arranque (`clsValidadorSecretos`, CORS obligatorio, `GChat:VerificarJwt=false` prohibido) y un error de configuración aparece antes de producción |
+| `ASPNETCORE_ENVIRONMENT` | no | — | `Production` (sin valor) | manifiesto | `Production` en staging **y** en producción, a propósito: así staging aplica las mismas validaciones de arranque (`clsValidadorSecretos`, CORS obligatorio) y un error de configuración aparece antes de producción |
 | `ASPNETCORE_HTTP_PORTS` | no | no | `8080` (imagen) | imagen | no se cambia |
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
@@ -106,8 +106,6 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Trm__TiempoEsperaDolarApiSegundos` | no | no | `4` | manifiesto | límite de la consulta de la TRM a DolarApi (2 a 60), corto para no demorar el respaldo |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web |
-| `Pdf__ClaveFirmaUrl` | **sí** (≥ 32) | no (era obligatoria con Google Chat, retirado en #105) | vacío | Dokploy | `openssl rand -base64 48`. Firma el enlace `?t=` del PDF (ADR-011 §3); hoy ningún canal lo emite |
-| `Pdf__MinutosUrlFirmada` | no | no | `15` | manifiesto | |
 | `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
 | `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
 | `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
@@ -179,7 +177,6 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 | `ForwardedHeaders__Habilitado` / `RedesConocidas__0` | no | infraestructura (subred de `dokploy-network`) | no | Infraestructura | — |
 | `PUBLIC_HOST` (Traefik) | no | infraestructura (DNS y TLS, HU-006.2) | no | Infraestructura | `PUBLIC_HOST` |
 | `Pdf__BaseUrl` | no | `https://<PUBLIC_HOST>` | no | Backend | `PDF_BASE_URL` |
-| `Pdf__ClaveFirmaUrl` | sí | generada por el equipo de despliegue | no | Backend | — |
 | `IA__Proveedor` / `IA__Modelo` / `IA__Endpoint` | no | negocio (ADR-003). Propuesta con OmniRoute: `openai_compatible`, `gemini/gemini-3.5-flash-lite`, endpoint interno (por HTTPS si se publica, §2.2) | no | Negocio / Backend | `LLM_MODEL` |
 | `IA__ApiKey` (y respaldos) | sí | dueño de la cuenta del proveedor LLM (con OmniRoute, su administrador; rotar antes de staging, §2.2) | no | Negocio | `LLM_API_KEY` |
 | `IA__Fallbacks__0__*`, `IA__Fallbacks__1__*` | `ApiKey` sí | negocio (ADR-003). Propuesta con OmniRoute: `gemini/gemini-3.5-flash` y `gemini/gemini-3-flash-preview` | no | Negocio / Backend | fallbacks de LiteLLM |
@@ -460,7 +457,7 @@ Opcionales con valor vacío = "no configurada" (verificado en el código de cada
 (vacía, se usa lo que ya haya en `UsuariosWeb.regional`; con valor, el login la llena y refresca (#81) y el tablero
 del gerente la lee en vivo (#45), y necesita salida desde el worker a `10.10.40.24:1433` y un usuario SQL de solo
 lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`, pendiente con el DBA), `Nexo__UrlBase`, `IA__Proveedor`,
-`SapTm__Modo`, `Pdf__BaseUrl`, `Pdf__ClaveFirmaUrl`. En cambio
+`SapTm__Modo`, `Pdf__BaseUrl`. En cambio
 `Regional__Esquema`, `__Tabla`, `__ColumnaUsuario`, `__ColumnaRegional` y `__Dominio` son identificadores obligatorios:
 el manifiesto trae los valores por defecto de `clsOpcionesRegional` (`dbo`, `DimEjecutivo`, `USUARIO`, `REGIONAL`,
 `boterosoto`) y no deben cargarse vacías en Dokploy. **Ojo:** como el manifiesto siempre manda la variable, su valor por
@@ -689,6 +686,10 @@ stack Python de rollback.
 
 Runbook del stack Python (Fase 15), sin cambios de contenido. Se conserva para volver atrás si el backend .NET falla
 en producción. **No usarlo para el backend .NET.**
+
+> **Ojo con el rollback (HU-013.9, #105).** Volver al Python reabre Google Chat y la creación de cotizaciones por chat, sin
+> formulario ni costeo en Nexo, en contra de la decisión del 2026-10-05 (ADR-018: Cotifly es un módulo de formularios dentro
+> de ClientePro). Solo se justifica como contingencia temporal y con aprobación explícita del negocio.
 
 > **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
 > `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con

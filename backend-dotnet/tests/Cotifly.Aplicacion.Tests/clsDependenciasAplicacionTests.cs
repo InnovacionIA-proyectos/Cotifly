@@ -61,7 +61,6 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsHerramientasAsistenteFolio), typeof(clsHerramientasAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaAgente), ServiceLifetime.Singleton)]
-    [InlineData(typeof(IClsDescargaPdfFirmadaService), typeof(clsDescargaPdfFirmadaService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();

@@ -70,6 +70,30 @@ public sealed class clsRetiroGoogleChatTests(clsEntornoApiWeb entorno)
             .GetProperty("error").GetProperty("codigo").GetString().Should().Be("FOLIO_REQUERIDO", "Chat:CreacionHabilitada ya no reactiva el agente legado");
     }
 
+    // Igual en Production, donde antes GChat:VerificarJwt=false o una cuenta de servicio ilegible tumbaban el arranque.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EnProductionArrancaSinYConLasVariablesGChatYNoHayWebhookNiChatSinFolio(bool conHeredadas)
+    {
+        var valores = new Dictionary<string, string?>(conHeredadas ? _variablesHeredadas : [])
+        {
+            ["Cors:OrigenesPermitidos:0"] = "https://clientepro.boterosoto.com.co",
+        };
+        using var api = new clsApiWebPruebas(entorno.BaseDatos, extra: valores, entorno: "Production");
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var salud = await api.EnviarAsync(HttpMethod.Get, "/health", null);
+        using var webhook = await api.EnviarAsync(HttpMethod.Post, "/chat/events", null, "{}");
+        using var sinFolio = await api.EnviarAsync(HttpMethod.Post, "/web/chat", ana.Access, clsApiWebPruebas.Json(new { mensaje = "Cotiza", sesion_id = Guid.NewGuid().ToString("N") }));
+
+        salud.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await salud.Content.ReadAsStringAsync(Ct)).Should().Contain("Production");
+        webhook.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await VerificarContratoAsync(sinFolio, "/web/chat", HttpMethod.Post, HttpStatusCode.BadRequest))
+            .GetProperty("error").GetProperty("codigo").GetString().Should().Be("FOLIO_REQUERIDO");
+    }
+
     [Fact]
     public void NoQuedanOpcionesNiServiciosDeGoogleChat()
     {
