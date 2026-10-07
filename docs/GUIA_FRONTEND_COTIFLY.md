@@ -2231,7 +2231,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 
 ## 10. Próximo contrato HU-013 (en construcción)
 
-**Estado: Pendiente, salvo el ajuste de margen y la concurrencia (implementados en #98), los servicios conexos de Nexo (implementados en #99), "Cotizar costo" (`re-solicitar`, implementado en #100), los textos del PDF (#101), la moneda del formulario (#103) y el asistente por folio (`/web/chat` con `folio`, implementado en #102); PR por abrir.** El contrato ya está en `backend-dotnet/specs/openapi.yaml` (operaciones con `x-estado: pendiente` y `x-issue`). Los endpoints pendientes todavía no existen: se puede maquetar con mocks, pero no integrar. Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: implementado en el backend** (ajuste de margen y concurrencia #98, servicios conexos #99, "Cotizar costo" #100, textos del PDF #101, asistente por folio #102 y moneda del formulario #103; los de #102 entran a QA con su PR). Ningún endpoint de esta sección queda con `x-estado: pendiente` en `backend-dotnet/specs/openapi.yaml`: ya se puede integrar. Quedan pendientes #104 (la guía completa de estos flujos) y #105 (retiro de Google Chat y del código legado del chat). Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2285,9 +2285,11 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - **Respuesta.** `RespuestaChat` con `texto`, `herramientas`, `errores`, `accion_propuesta` (o `null`) y `precio`, `margen` y `pdf` siempre en `null` (obsoletos). Un fallo del agente o del proveedor sigue siendo 200 `{texto, error: true}`.
 - **Cotizaciones de chat anteriores** (`estado_costeo = null` en "Mis cotizaciones"): siguen visibles con su seguimiento y el asistente las puede consultar, pero no propone cambios sobre ellas (no tienen costeo de Nexo: `COSTEO_NO_LISTO`).
 
+**Transición del frontend (`Chat:CreacionHabilitada`).** El backend ya exige `folio` en `/web/chat`. Mientras el frontend despliega la versión que envía `folio` y retira la vista "Asistente" de creación, en QA (y en staging) se puede dejar `Chat__CreacionHabilitada=true`: un mensaje SIN `folio` sigue yendo al agente cotizador legado y uno CON `folio` va al asistente nuevo. En cuanto esa versión del frontend esté desplegada, volver a `false` (el valor por defecto). En Production debe quedar `false`: con `true` la API registra un aviso al arrancar porque se reactiva la creación desde Google Chat y desde el chat libre. El código legado y Google Chat se retiran en #105, que debe cerrarse antes de producción.
+
 **Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta` (como máximo una por turno):
 
-1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. El resumen lo arma el servidor con los precios calculados por código ("Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP."); el `texto` del asistente nunca trae montos. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
+1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. El resumen lo arma el servidor con los precios calculados por código ("Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP."), y cita entre comillas la justificación o el motivo que quedarán guardados ("Justificación: «…»", "Motivo: «…»"); el `texto` del asistente nunca trae montos. La propuesta ya pasó las mismas validaciones del endpoint (por ejemplo, la regla de peso frente a las posiciones al re-solicitar con cambios de carga): si no las pasa, el asistente responde solo con texto y explica el motivo. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
 2. Solo al pulsar Confirmar, llamar a `accion_propuesta.metodo` sobre `accion_propuesta.endpoint`, con `accion_propuesta.cuerpo` como cuerpo JSON (tal cual) y el encabezado `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo` y `agregar_servicios_conexos` enviar además `Idempotency-Key` con un UUID nuevo por clic.
 
    | `tipo` | `metodo` y `endpoint` | `cuerpo` |

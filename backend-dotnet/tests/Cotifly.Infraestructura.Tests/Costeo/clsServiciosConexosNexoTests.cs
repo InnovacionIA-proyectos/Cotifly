@@ -160,9 +160,21 @@ public sealed class clsServiciosConexosNexoTests
     [InlineData("HTTP 401 TOKEN_INVALIDO: El token venció para el usuario x@y.com", "TOKEN_INVALIDO")]
     [InlineData("HTTP 401: Unauthorized: texto crudo", "HTTP 401")]
     [InlineData("HTTP 503", "HTTP 503")]
+    [InlineData("HTTP 400 Bad request", "HTTP 400")]
+    [InlineData("HTTP 400 El servicio x: no existe", "HTTP 400")]
     [InlineData("comercial sin idUsuarioExterno", "comercial sin idUsuarioExterno")]
     public void ElDetalleDeUnErrorHttpDeNexoLlevaSoloElCodigo(string detalle, string esperado) =>
         clsServiciosConexosNexo.SoloCodigo(detalle).Should().Be(esperado);
+
+    [Fact]
+    public void UnCuatrocientosSinCodigoAlAgregarNoDejaElTextoDeNexoEnElDetalle()
+    {
+        var error = clsServiciosConexosNexo.Traducir(
+            new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "x", "HTTP 400: El servicio no aplica para la ruta del cliente"), agregando: true);
+
+        error.Codigo.Should().Be(clsCodigosError.ConexoInvalido);
+        error.Detalle.Should().Be("HTTP 400");
+    }
 
     [Fact]
     public void UnCuatrocientosUnoAlAgregarConexosDejaSoloElCodigoEnElDetalle()
@@ -247,6 +259,8 @@ public sealed class clsServiciosConexosNexoTests
     {
         clsServiciosConexosNexo.CodigoNexo("HTTP 404 SERVICIO_CONEXO_NO_ENCONTRADO: No existe.").Should().Be("SERVICIO_CONEXO_NO_ENCONTRADO");
         clsServiciosConexosNexo.CodigoNexo("HTTP 400: texto").Should().BeNull();
+        clsServiciosConexosNexo.CodigoNexo("HTTP 400 Bad request").Should().BeNull("una palabra suelta del texto no es un código");
+        clsServiciosConexosNexo.CodigoNexo("HTTP 400 servicio: no existe").Should().BeNull();
     }
 
     private static ServiceProvider Proveedor(Dictionary<string, string?> valores, clsNexoClientesFalso nexo)

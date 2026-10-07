@@ -164,23 +164,24 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
         almacen.Purgas.Should().Be(purgas + 1);
     }
 
-    // Arrastre de #99 (#102): tope de claves (20.000 por defecto); al llenarse se desalojan primero las más próximas a vencer.
+    // Arrastre de #99 (#102): tope de claves (20.000 por defecto); al llenarse desaloja por lotes (10 % del tope), primero las más
+    // próximas a vencer.
     [Fact]
-    public async Task AlLlegarAlTopeDesalojaLasClavesMasProximasAVencer()
+    public async Task AlLlegarAlTopeDesalojaUnLoteDeLasClavesMasProximasAVencer()
     {
         clsAlmacenIdempotenciaEnMemoria.MaximoEntradasPorDefecto.Should().Be(20_000);
-        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj, maximoEntradas: 3);
-        foreach (var clave in new[] { "clave-0001", "clave-0002", "clave-0003" })
+        var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj, maximoEntradas: 20);
+        for (var i = 1; i <= 20; i++)
         {
-            await almacen.EjecutarUnaVezAsync(Ambito, clave, "h", Accion(clave), null, Ct);
+            await almacen.EjecutarUnaVezAsync(Ambito, $"clave-{i:D4}", "h", Accion($"v{i}"), null, Ct);
             _reloj.Avanzar(TimeSpan.FromSeconds(1));
         }
 
-        await almacen.EjecutarUnaVezAsync(Ambito, "clave-0004", "h", Accion("clave-0004"), null, Ct);
+        await almacen.EjecutarUnaVezAsync(Ambito, "clave-0021", "h", Accion("v21"), null, Ct);
 
-        almacen.Cantidad.Should().Be(3, "nunca pasa del tope");
+        almacen.Cantidad.Should().Be(19, "se desalojó un lote de 2 (10 % de 20) y entró la nueva");
         var ejecucionesAntes = _ejecuciones;
-        (await almacen.EjecutarUnaVezAsync(Ambito, "clave-0003", "h", Accion("otra"), null, Ct)).Valor.Should().Be("clave-0003", "las recientes se conservan");
+        (await almacen.EjecutarUnaVezAsync(Ambito, "clave-0003", "h", Accion("otra"), null, Ct)).Valor.Should().Be("v3", "las recientes se conservan");
         _ejecuciones.Should().Be(ejecucionesAntes);
         (await almacen.EjecutarUnaVezAsync(Ambito, "clave-0001", "h", Accion("nueva"), null, Ct)).Valor.Should().Be("nueva", "la más próxima a vencer se desalojó");
     }

@@ -15,8 +15,8 @@ namespace Cotifly.Infraestructura.Comun;
 /// <para>Cada entrada cuenta cuántas peticiones la están usando (bajo <see cref="_candado"/>): la purga solo quita una entrada sin
 /// usuarios, así dos peticiones con la misma clave nunca obtienen semáforos distintos.</para>
 /// <para>Memoria acotada (arrastre de #99 en #102): la purga de vencidas y fallidas corre cada <see cref="IntervaloPurga"/> (no en cada
-/// petición) o al llegar al tope; con <see cref="MaximoEntradasPorDefecto"/> claves recordadas, una clave nueva desaloja primero las
-/// guardadas más próximas a vencer que nadie esté usando. Una clave desalojada antes de su vigencia deja como defensa el
+/// petición) o al llegar al tope; con <see cref="MaximoEntradasPorDefecto"/> claves recordadas, una clave nueva desaloja un lote (el 10 %
+/// del tope) de las guardadas más próximas a vencer que nadie esté usando. Una clave desalojada antes de su vigencia deja como defensa el
 /// <c>If-Match</c> (la repetición responde <c>CONFLICTO_CONCURRENCIA</c>), igual que tras un reinicio.</para>
 /// </remarks>
 public sealed class clsAlmacenIdempotenciaEnMemoria : IClsAlmacenIdempotencia
@@ -139,7 +139,8 @@ public sealed class clsAlmacenIdempotenciaEnMemoria : IClsAlmacenIdempotencia
 
                 if (_entradas.Count >= _maximo)
                 {
-                    Desalojar(_entradas.Count - _maximo + 1);
+                    // Por lotes (10 % del tope): ordenar las 20.000 claves en cada alta con el almacén lleno sería caro.
+                    Desalojar(Math.Max(_entradas.Count - _maximo + 1, _maximo / 10));
                 }
 
                 entrada = new clsEntrada();

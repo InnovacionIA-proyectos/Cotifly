@@ -759,7 +759,7 @@ public static partial class clsReglasRespuestaAgente
     [GeneratedRegex(@"\A\d{1,3}(?:[.,'’]\d{3}){2,}(?:[.,]\d{1,2})?\z", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionMillonesAgrupados();
 
-    [GeneratedRegex(@"\b(?:precios?|costos?|utilidad(?:es)?|tarifas?|valor(?:es)?|total(?:es)?|fletes?|descuentos?|iva|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\b(?:precios?|costos?|utilidad(?:es)?|tarifas?|valor(?:es)?|total(?:es)?|fletes?|descuentos?|iva|trm|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionPalabraDinero();
 
     [GeneratedRegex(@"\b(?:NIT|tel|tel[eé]fono|cel|celular|c[eé]dula|CC|folio|llam\w*|whatsapp|m[oó]vil)\b[^\d]{0,15}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]

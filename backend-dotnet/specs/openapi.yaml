@@ -240,7 +240,7 @@ paths:
                   - $ref: '#/components/schemas/RespuestaChat'
                   - $ref: '#/components/schemas/RespuestaChatError'
               example:
-                texto: "Te propongo subir el margen de 15 % a 18 %. El precio pasaría a 3.109.756 COP."
+                texto: "Te propongo subir el margen de 15 % a 18 %. Revisa el resumen y, si estás de acuerdo, confírmalo."
                 herramientas: [consultar_cotizacion, proponer_ajuste_margen]
                 precio: null
                 margen: null

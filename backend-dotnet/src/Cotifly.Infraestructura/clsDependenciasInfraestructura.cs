@@ -161,6 +161,7 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<IClsCandadoSesion, clsCandadoSesionSql>();
         servicios.AddHostedService<clsWorkerEventosChat>();
         servicios.AddHostedService<clsBarridoSesionesHostedService>();
+        servicios.AddHostedService<clsAvisoArranqueChat>();
     }
 
     /// <summary>
