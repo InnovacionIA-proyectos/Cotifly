@@ -1783,7 +1783,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SalidaPdf'
         '400':
-          description: Error del módulo PDF (`PDF_PAYLOAD_INVALIDO`, `PDF_RENDER_NO_DISPONIBLE`)
+          description: Payload del PDF inválido (`PDF_PAYLOAD_INVALIDO`)
           content:
             application/json:
               schema:
@@ -1794,6 +1794,15 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: '`COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: |
+            `PDF_RENDER_NO_DISPONIBLE`: el render falló o no consiguió turno a tiempo (#92/#95: el render es uno a la vez por
+            proceso y espera hasta `Pdf:TiempoEsperaRenderSegundos`, 30 s por defecto). Es transitorio: reintentar. No queda nada
+            guardado ni cambia la versión.
           content:
             application/json:
               schema:

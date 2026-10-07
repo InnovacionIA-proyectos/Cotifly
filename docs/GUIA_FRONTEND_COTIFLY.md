@@ -482,7 +482,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401 | 400 `*_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_DEMASIADO_GRANDE` |
 | `POST /web/solicitudes-costeo` (En PR #74) | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
 | `POST .../costeo/reintentar` (En PR #74) | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
-| `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` (En PR #76) | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`, `PDF_RENDER_NO_DISPONIBLE`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO` |
+| `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` (En PR #76) | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
 | `POST .../resultado` (En PR #77) | 400 (`resultado` inválido, `motivo` de más de 100, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
 | `GET /web/metricas/comercial` (PR de #45) | 400 (fechas), 401 | — |
@@ -515,7 +515,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `AJUSTE_MARGEN_INVALIDO` | chat | Margen negociado fuera de rango (negativo o 1 o más con método `margen`) | "Margen fuera de rango" | En QA |
 | `AJUSTE_COTIZACION_INVALIDA`, `AJUSTE_ID_INVALIDO` | chat | Ajuste de margen sin cotización válida | Texto del agente | En QA |
 | `PDF_PAYLOAD_INVALIDO` | chat; 400 en `costeo/pdf` | Datos incompletos o incoherentes para el PDF | "No se pudo generar el PDF: faltan datos" | En QA / En PR #76 |
-| `PDF_RENDER_NO_DISPONIBLE` | chat; 400 en `costeo/pdf` | Falló el render | "Reintenta más tarde" con botón Reintentar | En QA / En PR #76 |
+| `PDF_RENDER_NO_DISPONIBLE` | chat; 503 en `costeo/pdf` (desde #92) | Falló el render o no hubo turno de render a tiempo (los PDF se generan uno a la vez) | "Reintenta más tarde" con botón Reintentar | En QA / En PR #76 |
 | `CONFIRMACION_REQUERIDA` | chat (y `errores`); 400 en `/enviar` | Falta confirmar (PDF, o elegir el municipio o el cliente) | No mostrar alerta: el agente lo pide. Ofrecer el botón "Confirmo" si hay previsualización | En QA |
 | `COTIZACION_NO_ENCONTRADA` | 404 `ErrorWeb` en `/web/*` | No existe o no es tuya | "Cotización no encontrada" y refrescar la lista | En QA |
 | `CORREO_DUPLICADO` | 400 en `/enviar` | Mismo envío a los mismos destinatarios hace menos de 5 min | "Ya enviaste esta cotización a esos destinatarios hace poco" | En QA |
@@ -1055,7 +1055,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y `precio_final`, más solo los conexos incluidos, cada uno con su precio.
 - 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
-- 400 `PDF_PAYLOAD_INVALIDO` o `PDF_RENDER_NO_DISPONIBLE`. 404. 409 `COSTEO_NO_LISTO` o `PDF_YA_GENERADO`.
+- 400 `PDF_PAYLOAD_INVALIDO`. 404. 409 `COSTEO_NO_LISTO` o `PDF_YA_GENERADO`. 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Una sola vez por cotización.** Pedir confirmación antes ("Después no podrás cambiar los servicios conexos"). Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`), igual que en el chat.
 - Hoy se permite en `autocosteo` y en `entregada` (**a confirmar** con negocio si solo en `entregada`).
 

@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Services;
@@ -16,6 +17,7 @@ using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
@@ -40,7 +42,7 @@ public sealed class clsPdfCosteoMonedaTests
     {
         _usuarios.ObtenerPorIdAsync(_ana, Arg.Any<CancellationToken>())
             .Returns(clsUsuarioWeb.Crear("ana", "Ana Pérez", "ana@boterosoto.com.co", "Occidente", DateTimeOffset.UnixEpoch).Valor);
-        _generador.Generar(Arg.Do<clsDocumentoCotizacion>(d => _documento = d)).Returns(new clsPdfGenerado([1, 2, 3], 1));
+        _generador.GenerarAsync(Arg.Do<clsDocumentoCotizacion>(d => _documento = d), Arg.Any<CancellationToken>()).Returns(new clsPdfGenerado([1, 2, 3], 1));
         _almacen.GuardarNuevoAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>()).Returns(ci => "/data/pdfs/" + ci.Arg<string>());
         _unidad.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Version, Arg.Any<CancellationToken>()).Returns(true);
     }
@@ -79,7 +81,22 @@ public sealed class clsPdfCosteoMonedaTests
         var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "2.550.000 / 0,85 / 4.000 = 750,00, no 760");
-        _generador.DidNotReceiveWithAnyArgs().Generar(default!);
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
+    }
+
+    // #92, #95: con el turno de render agotado no se guarda el PDF ni cambia la versión.
+    [Fact]
+    public async Task SiElTurnoDeRenderSeAgotaElPdfDelCosteoEsPdfRenderNoDisponible()
+    {
+        var cotizacion = Registrada(EnDolares(precioFinal: 750m));
+        _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new clsRenderPdfOcupadoException(TimeSpan.FromSeconds(30)));
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfRenderNoDisponible);
+        await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
     }
 
     [Fact]
