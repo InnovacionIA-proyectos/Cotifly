@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -240,7 +241,12 @@ public sealed class clsCosteoCotizacionService(
         clsPdfGenerado pdf;
         try
         {
-            pdf = generador.Generar(aRenderizar);
+            pdf = await generador.GenerarAsync(aRenderizar, cancellationToken);
+        }
+        catch (clsRenderPdfOcupadoException)
+        {
+            // El turno de render no llegó a tiempo (#92/#95): ya quedó en el log del generador; es transitorio (503).
+            return new clsErrorDominio(clsCodigosError.PdfRenderNoDisponible, "El generador de PDF está ocupado. Reintenta en unos segundos.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

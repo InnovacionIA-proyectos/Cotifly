@@ -43,7 +43,7 @@ public sealed class clsGenerarPdfServiceTests
         _usuarios.ObtenerPorIdAsync(_usuario.Id, Arg.Any<CancellationToken>()).Returns(_usuario);
         _margen.ResolverLineaAsync(Arg.Is<string?>(l => l == "Nacional"), Arg.Any<CancellationToken>()).Returns(_nacional);
         _calendario.Hoy.Returns(new DateOnly(2026, 9, 24));
-        _generador.Generar(Arg.Do<clsDocumentoCotizacion>(d => _documento = d)).Returns(new clsPdfGenerado([0x25, 0x50, 0x44, 0x46], 3));
+        _generador.GenerarAsync(Arg.Do<clsDocumentoCotizacion>(d => _documento = d), Arg.Any<CancellationToken>()).Returns(new clsPdfGenerado([0x25, 0x50, 0x44, 0x46], 3));
         _almacen.GuardarNuevoAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(ci => $"/data/pdfs/{ci.ArgAt<string>(0)}");
         _cotizaciones.When(c => c.Agregar(Arg.Any<clsCotizacion>())).Do(ci => _agregada = ci.Arg<clsCotizacion>());
@@ -126,7 +126,7 @@ public sealed class clsGenerarPdfServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
         resultado.Error.Mensaje.Should().Contain("lo genera el servidor");
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     private static clsCotizacionPdfPayload UnaFila(decimal? tarifa = 3_000_000m, string? moneda = null)
@@ -149,7 +149,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(UnaFila(3_100_000m), folio: "PCN-2", traza: traza), Ct);
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
         resultado.Error.Mensaje.Should().Contain("$3.100.000").And.Contain("$3.000.000").And.Contain("ADR-004");
-        _generador.Received(1).Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.Received(1).GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -228,7 +228,7 @@ public sealed class clsGenerarPdfServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
         resultado.Error.Mensaje.Should().Contain("$3.300.000").And.Contain("$3.294.798");
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     // HU-012.3 (2026-10-05): la nota ya no necesita el valor en pesos; sin PrecioCop ni costo el PDF en USD sale con la TRM aplicada.
@@ -274,7 +274,7 @@ public sealed class clsGenerarPdfServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
         resultado.Error.Mensaje.Should().Contain("TRM");
-        _generador.DidNotReceiveWithAnyArgs().Generar(default!);
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -295,7 +295,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(folio: folio), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     // test_generar_pdf_linea_negocio_desconocida_hoy_falla_entero (issue #44): ahora se rechaza antes de renderizar.
@@ -308,7 +308,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(payload), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
         await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
@@ -322,7 +322,7 @@ public sealed class clsGenerarPdfServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
         resultado.Error.Detalle.Should().Be(clsMargenResolverService.DetalleLineaInactiva);
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     // test_generar_pdf_idempotencia_versiona: en .NET el folio lo genera #12 y la colisión se informa.
@@ -334,7 +334,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.FolioDuplicado);
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -376,11 +376,25 @@ public sealed class clsGenerarPdfServiceTests
     [Fact]
     public async Task UnFalloDelRenderEsPdfRenderNoDisponible()
     {
-        _generador.Generar(Arg.Any<clsDocumentoCotizacion>()).Throws(new InvalidOperationException("sin fuentes"));
+        _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("sin fuentes"));
 
         var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfRenderNoDisponible);
+        await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
+    }
+
+    // #92, #95: el render es uno a la vez por proceso; si el turno no llega a tiempo es transitorio (503) y no se guarda nada.
+    [Fact]
+    public async Task SiElTurnoDeRenderSeAgotaEsPdfRenderNoDisponible()
+    {
+        _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new clsRenderPdfOcupadoException(TimeSpan.FromSeconds(30)));
+
+        var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfRenderNoDisponible);
+        resultado.Error.Mensaje.Should().Contain("ocupado");
         await _almacen.DidNotReceiveWithAnyArgs().GuardarNuevoAsync(default!, default!, Ct);
     }
 
@@ -414,7 +428,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(traza: traza), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido);
-        _generador.DidNotReceive().Generar(Arg.Any<clsDocumentoCotizacion>());
+        await _generador.DidNotReceive().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

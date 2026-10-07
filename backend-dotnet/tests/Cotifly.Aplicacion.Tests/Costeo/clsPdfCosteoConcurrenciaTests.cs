@@ -45,7 +45,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
         _usuarios.ObtenerPorIdAsync(_ana, Arg.Any<CancellationToken>())
             .Returns(clsUsuarioWeb.Crear("ana", "Ana Pérez", "ana@boterosoto.com.co", "Occidente", DateTimeOffset.UnixEpoch).Valor);
-        _generador.Generar(Arg.Any<clsDocumentoCotizacion>()).Returns(new clsPdfGenerado([1, 2, 3], 1));
+        _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>()).Returns(new clsPdfGenerado([1, 2, 3], 1));
         _almacen.GuardarNuevoAsync(_cotizacion.Folio + ".pdf", Arg.Any<byte[]>(), Arg.Any<CancellationToken>()).Returns("/data/pdfs/" + _cotizacion.Folio + ".pdf");
     }
 
@@ -80,7 +80,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
         var resultado = await Servicio().GenerarPdfAsync(_ana, _cotizacion.Folio, 6, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
-        _generador.DidNotReceiveWithAnyArgs().Generar(default!);
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
     }
 
     private clsCosteoCotizacionService Servicio() => new(
