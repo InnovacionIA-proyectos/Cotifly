@@ -100,7 +100,7 @@ public sealed class clsFiltroMontosTests
     // Sufijos de miles y miles de millones.
     [InlineData("Te lo dejo en 3k.")]
     [InlineData("Son $3 mil más.")]
-    [InlineData("El cliente factura 3 mil millones al año.")]
+    [InlineData("El cliente mueve 3 mil millones al año.")]
     // Palabras de dinero nuevas: monto, cuesta, vale, tasa, tipo de cambio.
     [InlineData("El monto final es 3400000.")]
     [InlineData("Cuesta 3400000 en total.")]
@@ -191,6 +191,105 @@ public sealed class clsFiltroMontosTests
         Codigos("Son USD 1.250.", contexto).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado);
     }
 
+    // ---------- Tabla adversarial del validador de #126 ----------
+
+    // Ningún campo de las herramientas respalda un monto: "version": 1, "cantidad": 2 y el margen 0,15 dejaban pasar "$1", "USD 2",
+    // "$0,15" y "$0". Los números partidos por espacios, saltos de línea o separadores Unicode se leen enteros.
+    [Theory]
+    [InlineData("A1", "El precio es $3 400 000.")]
+    [InlineData("A2", "El precio es $3 400 000.")]
+    [InlineData("A3", "El precio es $3 400 000.")]
+    [InlineData("A4", "Queda en 3 400 000.")]
+    [InlineData("A5", "El precio es $1 400 000.")]
+    [InlineData("B1", "El precio es ３４００００ pesos.")]
+    [InlineData("B2", "El precio es $٣٬٤٠٠٬٠٠٠.")]
+    [InlineData("B3", "Son ٣.٤٠٠.٠٠٠ pesos.")]
+    [InlineData("B4", "Son ۳۴۰۰۰۰۰ pesos.")]
+    [InlineData("B5", "Son ३४००००० pesos.")]
+    [InlineData("B6", "El precio es ３，４００，０００ pesos.")]
+    [InlineData("B7", "El precio es $١.")]
+    [InlineData("C1", "Te sale en un millón doscientos mil.")]
+    [InlineData("C3", "El flete queda en doscientos mil.")]
+    [InlineData("C4", "Son dos millones y medio.")]
+    [InlineData("C5", "SON TRES MILLONES DE PESOS.")]
+    [InlineData("D1", "Precio: 1.2M")]
+    [InlineData("D2", "Son 1,2 MM.")]
+    [InlineData("D3", "Son 1M.")]
+    [InlineData("E1", "Queda en COP 3,2 millones.")]
+    [InlineData("E2", "Queda en 3,2 millones COP.")]
+    [InlineData("F1", "El precio es $ 3 . 400 . 000.")]
+    [InlineData("F2", "El precio es $ 1 . 400 . 000.")]
+    [InlineData("F3", "El precio es $ 2 . 400 . 000.")]
+    [InlineData("G1", "El precio es $3.400\n.000.")]
+    [InlineData("G2", "El precio es $1\n400.000.")]
+    [InlineData("G3", "El precio es $1.\n400.000.")]
+    [InlineData("G4", "El precio es 3.400.\n000 pesos.")]
+    [InlineData("G5", "Son 3\n400\n000 pesos.")]
+    [InlineData("H2", "Mira https://ejemplo.test/c?precio=3400000 para el detalle.")]
+    [InlineData("I1", "La TRM es 4.123,45.")]
+    [InlineData("I2", "La TRM es COP 4.100.")]
+    [InlineData("I3", "La TRM 4100 aplica hoy.")]
+    [InlineData("I4", "La TRM es 999,5.")]
+    [InlineData("N1", "Son $1.")]
+    [InlineData("N2", "Son USD 2.")]
+    [InlineData("N3", "Son $0,15.")]
+    [InlineData("N4", "Son $0.")]
+    [InlineData("N6", "Son $1 millón.")]
+    [InlineData("O1", "Son 950 pesos.")]
+    [InlineData("O2", "El precio es 950.")]
+    [InlineData("O3", "El valor queda en 3,4.")]
+    [InlineData("R7", "Son $1 … más el cargue.")]
+    [InlineData("R8", "El precio es $1.")]
+    [InlineData("R11", "Te lo dejo en 3M.")]
+    public void LaTablaAdversarialBloquea(string caso, string texto) =>
+        Codigos(texto, Asistente()).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado, caso);
+
+    [Theory]
+    [InlineData("H1", "Descárgalo en /pdfs/PCN-900555111-AP-05102026-001.pdf cuando quieras.")]
+    [InlineData("J1", "Subo el margen al 18 %.")]
+    [InlineData("J2", "Subo el margen al 18 por ciento.")]
+    [InlineData("J3", "Queda un descuento del 5 % sobre el margen.")]
+    [InlineData("J4", "El margen pasa a 0,18.")]
+    [InlineData("K1", "La cotización es del 2026-10-08.")]
+    [InlineData("K2", "El precio se fijó el 2026-10-08.")]
+    [InlineData("K3", "El total se calculó el 08.10.2026.")]
+    [InlineData("K4", "El precio vence el 08/10/2026.")]
+    [InlineData("K5", "El precio vence el 8 de octubre de 2026.")]
+    [InlineData("L1", "Trabajo sobre la PCN-900555111-AP-05102026-001.")]
+    [InlineData("L3", "Tu orden de compra 4500012345 ya está registrada.")]
+    [InlineData("L4", "El radicado 3.400.000 quedó registrado.")]
+    [InlineData("M1", "La placa es ABC123.")]
+    [InlineData("M2", "La placa es ABC 123.")]
+    [InlineData("M3", "El vehículo es un 3S3; el precio del 2S2 es otro.")]
+    [InlineData("M4", "La placa es ABC-123.")]
+    [InlineData("N5", "Es la versión 1 de la cotización.")]
+    public void LaTablaAdversarialDejaPasar(string caso, string texto) =>
+        Codigos(texto, Asistente()).Should().BeEmpty(caso);
+
+    [Fact]
+    public void ElRespaldoDelComercialEsExactoYNormalizado()
+    {
+        Codigos("Con la TRM de 4.123,45 queda igual.", Asistente("La TRM de hoy es 4.123,45")).Should().BeEmpty("R2");
+        Codigos("Con la TRM de 4.123,46 queda igual.", Asistente("La TRM de hoy es 4.123,45"))
+            .Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado, "R3: sin redondeo");
+        Codigos("Son $2.", Asistente("Son 2 vehículos")).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado, "R4");
+        Codigos("Con los $3.400.000 que mencionas.", Asistente("El cliente ofrece $3 400 000")).Should().BeEmpty("R5");
+        Codigos("Con 1,4M queda bien.", Asistente("El cliente ofrece 1.400.000 pesos")).Should().BeEmpty("R6");
+    }
+
+    [Fact]
+    public void UnTextoDeHerramientaSoloRespaldaUnaCifraSinMarcaDeDineroDentroDelMismoTexto()
+    {
+        var conPrecinto = Asistente() with
+        {
+            Salidas = [clsResultadoHerramienta.Exito("buscar_servicio_conexo", new Dictionary<string, object?> { ["nombre"] = "Precinto 5k" })],
+        };
+
+        Codigos("Agrego el Precinto 5k a la cotización.", conPrecinto).Should().BeEmpty("R9: es el nombre del servicio");
+        Codigos("El Precinto 5k cuesta 5k.", conPrecinto).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado, "R10");
+        Codigos("El precio es 3M Colombia.", Asistente()).Should().Contain(clsReglasRespuestaAgente.MontoNoRespaldado, "con palabra de dinero nunca");
+    }
+
     // ---------- Extracción ----------
 
     [Fact]
@@ -198,7 +297,7 @@ public sealed class clsFiltroMontosTests
     {
         var montos = clsReglasRespuestaAgente.Montos("Precio $1 109 756; 3 mil millones; 5k; tres millones de pesos; 2.5M.");
 
-        montos.Select(m => m.Fragmento).Should().Equal("$1 109 756", "3 mil millones", "5k", "2.5M", "tres millones");
+        montos.Select(m => m.Fragmento).Should().Equal("$1.109.756", "3 mil millones", "5k", "2.5M", "tres millones");
         montos[0].Candidatos.Should().Contain(1_109_756m);
         montos[1].Candidatos.Should().Contain(3_000_000_000m);
         montos[2].Candidatos.Should().Contain(5_000m);
