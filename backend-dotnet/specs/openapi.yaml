@@ -84,7 +84,14 @@ tags:
       - `conversion` = ganadas / cantidad (definición del backlog HU-010, "#ganadas / #totales");
         `conversion_sobre_cerradas` = ganadas / (ganadas + perdidas). Fracción de 0 a 1 con 4 decimales; `null` si el
         denominador es 0.
-      - `margen_promedio` = promedio simple de `margenAplicado` (fracción, 0.15 = 15 %) de las que lo tienen.
+      - **Rutas (HU-021, decisión 8 del 2026-10-08):** los CONTEOS (`cantidad`, `ganadas`, `perdidas`…) son por
+        cotización: una cotización con 3 rutas de 3 líneas de negocio cuenta 1. Los VALORES salen de sus rutas:
+        `costo` = SUM(`costoFinal`) de las rutas (fletes + retorno + levante + conexos; `null` si alguna no lo tiene),
+        `precioFinal` de la cabecera = SUM(`precioFinalLinea`), y el margen de la cotización = promedio de sus rutas
+        ponderado por `costoFinal`. La apertura por línea de negocio (`por_linea_negocio`) es por ruta.
+      - `margen_promedio` = promedio simple del margen de cada cotización (el de sus rutas ponderado por costo).
+      - `margen_ponderado` = SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de TODAS las rutas del universo
+        con margen y costo > 0 (una ruta grande pesa más que una pequeña). `null` si no hay ninguna.
       - `costeo_total` = SUM(`costo`) en COP de todas; `costeo_ganadas` = SUM(`costo`) de las ganadas.
       - `valor_cotizado_cop` = SUM(`valor_cop`); `valor_ganado_cop` = SUM(`valor_cop`) de las ganadas. Es el valor
         cotizado de las ganadas, NO dinero recaudado: en la UI, "Valor ganado (COP)".
@@ -96,9 +103,18 @@ tags:
         versión vigente; `desviacion_promedio_margen_abs` = promedio de su valor absoluto; `ajustes_margen` = cuántos.
       - `deadline_vencidas` = sin resultado y con `deadline` anterior al momento de la consulta. `null` mientras el
         esquema no tenga la columna `deadline` (script 0004).
+      - `por_linea_negocio` (apertura por ruta): una fila por línea de negocio de las rutas (la de `null` agrupa las
+        rutas sin línea). `cotizaciones`/`ganadas`/`perdidas` cuentan cotizaciones DISTINTAS con al menos una ruta de
+        esa línea (una cotización de 3 líneas aparece en las 3 filas, así que la suma de la apertura puede superar
+        `cantidad`); `rutas` cuenta rutas. Los valores son de las rutas de esa línea: `costeo_total` =
+        SUM(`costoFinal`), `valor_cotizado_cop` = SUM(`valor_cop` de cada ruta), con `valor_cop` de la ruta =
+        `precioFinalLinea` en COP o `round(precioFinalLinea × trmAplicada, 2)` en USD; `ganancias` = SUM(`valor_cop` −
+        `costoFinal`) de las rutas de cotizaciones ganadas con precio y costo; `margen_ponderado` como arriba; y
+        `ajustes_margen`/`desviacion_promedio_margen` de los `MargenAjustes` de la ruta (`lineaSolicitudId`; un ajuste sin
+        ruta va a la ruta 1). Por el redondeo por ruta, la suma de `valor_cotizado_cop` de la apertura puede diferir unos
+        centavos de `indicadores.valor_cotizado_cop` en USD.
       - Montos en COP con 2 decimales; redondeo half-to-even.
-      - Fuera de alcance por ahora: los servicios conexos (ADR-015) no se suman (pendiente tras #42), y una solicitud de
-        varias líneas cuenta solo la ciudad de la cabecera (ADR-016 §7).
+      - Los servicios conexos ya están en `costoFinal` de la ruta (HU-021). Las ciudades del mapa son las de la ruta 1.
 
       Pendiente de Nexo, NO implementado: "score de urgencia" por cotización (su contrato depende del equipo de Nexo,
       ver ADR-016).
@@ -505,6 +521,7 @@ paths:
                   conversion: 0.25
                   conversion_sobre_cerradas: 0.4286
                   margen_promedio: 0.1542
+                  margen_ponderado: 0.1561
                   costeo_total: 38500000.00
                   costeo_ganadas: 10540000.00
                   valor_cotizado_cop: 45310000.00
@@ -519,6 +536,15 @@ paths:
                 serie_mensual:
                   - {mes: '2026-08', cantidad: 5, ganadas: 1, perdidas: 2, valor_cotizado_cop: 18200000.00, valor_ganado_cop: 4100000.00}
                   - {mes: '2026-09', cantidad: 7, ganadas: 2, perdidas: 2, valor_cotizado_cop: 27110000.00, valor_ganado_cop: 8300000.00}
+                por_linea_negocio:
+                  - {linea_negocio_id: 1, linea_negocio: Nacional, cotizaciones: 10, ganadas: 3, perdidas: 3, rutas: 13,
+                     costeo_total: 30100000.00, costeo_ganadas: 8200000.00, valor_cotizado_cop: 35410000.00,
+                     valor_ganado_cop: 9600000.00, ganancias: 1400000.00, margen_ponderado: 0.1498, ajustes_margen: 2,
+                     desviacion_promedio_margen: -0.015}
+                  - {linea_negocio_id: 2, linea_negocio: Importacion, cotizaciones: 3, ganadas: 1, perdidas: 1, rutas: 3,
+                     costeo_total: 8400000.00, costeo_ganadas: 2340000.00, valor_cotizado_cop: 9900000.00,
+                     valor_ganado_cop: 2800000.00, ganancias: 460000.00, margen_ponderado: 0.1515, ajustes_margen: 0,
+                     desviacion_promedio_margen: null}
         '400':
           description: '`desde`/`hasta` no son fechas AAAA-MM-DD, `hasta` es anterior a `desde` o el rango supera 3 años'
           content:
@@ -588,6 +614,7 @@ paths:
                   conversion: 0.225
                   conversion_sobre_cerradas: 0.45
                   margen_promedio: 0.1497
+                  margen_ponderado: 0.1503
                   costeo_total: 131000000.00
                   costeo_ganadas: 31370000.00
                   valor_cotizado_cop: 154100000.00
@@ -614,6 +641,7 @@ paths:
                       conversion: 0.25
                       conversion_sobre_cerradas: 0.4286
                       margen_promedio: 0.1542
+                      margen_ponderado: 0.1561
                       costeo_total: 38500000.00
                       costeo_ganadas: 10540000.00
                       valor_cotizado_cop: 45310000.00
@@ -639,6 +667,7 @@ paths:
                       conversion: null
                       conversion_sobre_cerradas: null
                       margen_promedio: null
+                      margen_ponderado: null
                       costeo_total: 0
                       costeo_ganadas: 0
                       valor_cotizado_cop: 0
@@ -662,6 +691,15 @@ paths:
                     - {ciudad: CARTAGENA, cantidad: 9, ganadas: 2, valor_cotizado_cop: 35800000.00, valor_ganado_cop: 8900000.00}
                   por_origen:
                     - {ciudad: MEDELLIN, cantidad: 30, ganadas: 7, valor_cotizado_cop: 118000000.00, valor_ganado_cop: 28700000.00}
+                por_linea_negocio:
+                  - {linea_negocio_id: 1, linea_negocio: Nacional, cotizaciones: 34, ganadas: 8, perdidas: 9, rutas: 41,
+                     costeo_total: 112000000.00, costeo_ganadas: 27370000.00, valor_cotizado_cop: 131700000.00,
+                     valor_ganado_cop: 32100000.00, ganancias: 4730000.00, margen_ponderado: 0.1496, ajustes_margen: 5,
+                     desviacion_promedio_margen: -0.013}
+                  - {linea_negocio_id: 2, linea_negocio: Importacion, cotizaciones: 8, ganadas: 1, perdidas: 2, rutas: 8,
+                     costeo_total: 19000000.00, costeo_ganadas: 4000000.00, valor_cotizado_cop: 22400000.00,
+                     valor_ganado_cop: 4800000.00, ganancias: 800000.00, margen_ponderado: 0.1518, ajustes_margen: 1,
+                     desviacion_promedio_margen: -0.01}
         '400':
           description: Fechas inválidas (como en `/web/metricas/comercial`) o `usuario_id` que no es un UUID
           content:
@@ -3121,7 +3159,7 @@ components:
         exacta de cada campo en el tag `metricas` y en ADR-016. Montos en COP con 2 decimales; fracciones de 0 a 1.
         Siempre se cumple `cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar`.
       required: [cantidad, versiones, ganadas, perdidas, sin_resultado, pendientes_por_cotizar, conversion,
-                 conversion_sobre_cerradas, margen_promedio, costeo_total, costeo_ganadas, valor_cotizado_cop,
+                 conversion_sobre_cerradas, margen_promedio, margen_ponderado, costeo_total, costeo_ganadas, valor_cotizado_cop,
                  valor_ganado_cop, ganancias, cotizaciones_usd, tiempo_promedio_cotizacion_horas,
                  desviacion_promedio_margen, desviacion_promedio_margen_abs, ajustes_margen, deadline_vencidas]
       properties:
@@ -3154,10 +3192,18 @@ components:
         margen_promedio:
           type: number
           nullable: true
-          description: Promedio simple de `margenAplicado` (fracción). `null` si ninguna lo tiene.
+          description: |
+            Promedio simple del margen de cada cotización (fracción); el de una cotización es el promedio de sus rutas
+            ponderado por `costoFinal` (HU-021). `null` si ninguna lo tiene.
+        margen_ponderado:
+          type: number
+          nullable: true
+          description: |
+            Por ruta (HU-021, decisión 8): SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de todas las rutas
+            del universo con margen y costo > 0 (4 decimales). `null` si no hay ninguna.
         costeo_total:
           type: number
-          description: SUM(`costo`) en COP de todas (el costo nunca se convierte).
+          description: SUM(`costo`) en COP de todas (el costo nunca se convierte). El costo de una cotización es la suma del `costoFinal` de sus rutas.
         costeo_ganadas:
           type: number
           description: SUM(`costo`) en COP de las ganadas.
@@ -3218,8 +3264,8 @@ components:
     MetricaCiudad:
       type: object
       description: |
-        Cotizaciones con ese municipio (texto del catálogo de Nexo, tal como se guardó en la cabecera de la cotización; una
-        solicitud de varias líneas cuenta solo la ciudad de la cabecera).
+        Cotizaciones con ese municipio (nombre del catálogo de Nexo guardado en la ruta 1 de la cotización; una
+        solicitud de varias rutas cuenta solo la ciudad de su ruta 1, una vez).
       required: [ciudad, cantidad, ganadas, valor_cotizado_cop, valor_ganado_cop]
       properties:
         ciudad:
@@ -3258,9 +3304,68 @@ components:
         sin_origen:
           type: integer
 
+    MetricaLineaNegocio:
+      type: object
+      description: |
+        Apertura por línea de negocio, POR RUTA (HU-021, decisión 8). Una fila por línea de negocio de las rutas de las
+        cotizaciones del universo; `linea_negocio_id`/`linea_negocio` en `null` agrupa las rutas sin línea. Los conteos
+        son de cotizaciones distintas con al menos una ruta de la línea: una cotización con rutas de 3 líneas aparece en
+        las 3 filas, así que la suma de `cotizaciones` de la apertura puede superar `indicadores.cantidad`. Los valores
+        son solo de las rutas de esa línea. Ordenada por `valor_cotizado_cop` descendente y luego por nombre (las rutas
+        sin línea al final).
+      required: [linea_negocio_id, linea_negocio, cotizaciones, ganadas, perdidas, rutas, costeo_total, costeo_ganadas,
+                 valor_cotizado_cop, valor_ganado_cop, ganancias, margen_ponderado, ajustes_margen, desviacion_promedio_margen]
+      properties:
+        linea_negocio_id:
+          type: integer
+          nullable: true
+          description: '`MargenesPolitica.id` de la ruta (`CotizacionLineasSolicitud.lineaNegocioId`).'
+        linea_negocio:
+          type: string
+          nullable: true
+          description: '`MargenesPolitica.lineaNegocio`.'
+        cotizaciones:
+          type: integer
+          description: Cotizaciones (cadenas) distintas con al menos una ruta de esta línea.
+        ganadas:
+          type: integer
+          description: De esas, con resultado ganada.
+        perdidas:
+          type: integer
+          description: De esas, con resultado perdida.
+        rutas:
+          type: integer
+          description: Rutas de esta línea (de la versión vigente de cada cotización).
+        costeo_total:
+          type: number
+          description: SUM(`costoFinal`) en COP de las rutas de la línea.
+        costeo_ganadas:
+          type: number
+          description: SUM(`costoFinal`) de las rutas de la línea en cotizaciones ganadas.
+        valor_cotizado_cop:
+          type: number
+          description: SUM(`valor_cop` de cada ruta) = `precioFinalLinea` en COP, o `round(precioFinalLinea × trmAplicada, 2)` en USD.
+        valor_ganado_cop:
+          type: number
+          description: Lo mismo, solo de las rutas de cotizaciones ganadas (valor cotizado, no recaudado).
+        ganancias:
+          type: number
+          description: SUM(`valor_cop` − `costoFinal`) de las rutas de cotizaciones ganadas con precio y costo.
+        margen_ponderado:
+          type: number
+          nullable: true
+          description: SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de las rutas de la línea con margen y costo > 0. `null` si ninguna.
+        ajustes_margen:
+          type: integer
+          description: '`MargenAjustes` de esas rutas (`lineaSolicitudId`; un ajuste sin ruta cuenta en la ruta 1 de su cotización).'
+        desviacion_promedio_margen:
+          type: number
+          nullable: true
+          description: Promedio de `MargenAjustes.diferencia` (con signo) de esos ajustes (4 decimales). `null` sin ajustes con diferencia.
+
     MetricasComercial:
       type: object
-      required: [periodo, usuario_id, indicadores, serie_mensual]
+      required: [periodo, usuario_id, indicadores, serie_mensual, por_linea_negocio]
       properties:
         periodo:
           $ref: '#/components/schemas/PeriodoMetricas'
@@ -3273,6 +3378,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PuntoSerieMensual'
+        por_linea_negocio:
+          type: array
+          description: Apertura por línea de negocio, por ruta (HU-021). Vacía si no hay cotizaciones con rutas.
+          items:
+            $ref: '#/components/schemas/MetricaLineaNegocio'
 
     ComercialRegional:
       type: object
@@ -3300,7 +3410,7 @@ components:
     MetricasRegional:
       type: object
       required: [periodo, regional, fuente_regional, usuario_id, indicadores, lineas_negocio_activas, comerciales,
-                 serie_mensual, concentracion_ciudades]
+                 serie_mensual, concentracion_ciudades, por_linea_negocio]
       properties:
         periodo:
           $ref: '#/components/schemas/PeriodoMetricas'
@@ -3332,6 +3442,11 @@ components:
             $ref: '#/components/schemas/PuntoSerieMensual'
         concentracion_ciudades:
           $ref: '#/components/schemas/ConcentracionCiudades'
+        por_linea_negocio:
+          type: array
+          description: Apertura por línea de negocio, por ruta, de la regional o del comercial filtrado (como `indicadores`).
+          items:
+            $ref: '#/components/schemas/MetricaLineaNegocio'
 
     ActividadComercial:
       type: object

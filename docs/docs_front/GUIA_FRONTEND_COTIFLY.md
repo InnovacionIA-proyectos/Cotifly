@@ -1178,7 +1178,8 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `pendientes_por_cotizar` | int | Ver la partición |
 | `conversion` | number o null | ganadas / cantidad (definición del backlog, "#ganadas / #totales"). `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | number o null | ganadas / (ganadas + perdidas). `null` si no hay cerradas |
-| `margen_promedio` | number o null | Promedio simple de `margenAplicado` (fracción, 0.15 = 15 %) de las que lo tienen. `null` si ninguna |
+| `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna |
+| `margen_ponderado` | number o null | **Por ruta** (HU-021): SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de todas las rutas con margen y costo > 0. Una ruta grande pesa más. `null` si ninguna |
 | `costeo_total` | number | SUM(`costo`) en COP de **todas** |
 | `costeo_ganadas` | number | SUM(`costo`) en COP de las ganadas |
 | `valor_cotizado_cop` | number | SUM(`valor_cop`) |
@@ -1197,7 +1198,27 @@ Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPoliti
 
 **Redondeo:** half-to-even. Fracciones (`conversion`, `conversion_sobre_cerradas`, `margen_promedio`, `desviacion_promedio_margen`, `desviacion_promedio_margen_abs`) con 4 decimales (la desviación con signo puede ser negativa). Montos en COP con **2 decimales** (a diferencia del resto de la API, donde COP es entero, porque `precioFinal × trmAplicada` produce centavos). Horas con 2 decimales.
 
-**Fuera de alcance por ahora:** los servicios conexos (ADR-015) **no** se suman a precio ni costo; se integran después de #42 (HU-005.14). Una solicitud de varias líneas cuenta solo la ciudad de la cabecera.
+**Rutas (HU-021.10, #137; decisión 8 del 2026-10-08).** Una cotización puede tener varias rutas, cada una con su línea de negocio.
+
+- **Los conteos son por cotización.** Una cotización ganada con 3 rutas de 3 líneas suma **1** en `cantidad` y **1** en `ganadas` (también en la serie y en el mapa).
+- **Los valores salen de las rutas.** `costo` de la cotización = suma del `costoFinal` de sus rutas (ya incluye los servicios conexos); el precio es el de la cabecera (suma de los precios de las rutas); su margen, el de sus rutas ponderado por costo.
+- La ciudad del mapa es la de la **ruta 1**.
+- **`por_linea_negocio[]`** (en `/comercial` y en `/regional`, filtrado igual que `indicadores`) abre por línea de negocio, **por ruta**:
+
+| Campo | Tipo | Definición |
+|---|---|---|
+| `linea_negocio_id`, `linea_negocio` | int / string, o null | Línea de las rutas. `null` agrupa las rutas sin línea (va al final) |
+| `cotizaciones`, `ganadas`, `perdidas` | int | Cotizaciones **distintas** con al menos una ruta de esa línea. La cotización de 3 líneas aparece en las 3 filas: **no sumar la apertura para obtener el total** (usar `indicadores.cantidad`) |
+| `rutas` | int | Rutas de esa línea |
+| `costeo_total`, `costeo_ganadas` | number | SUM(`costoFinal`) de esas rutas (las de cotizaciones ganadas, en el segundo) |
+| `valor_cotizado_cop`, `valor_ganado_cop` | number | SUM del precio de cada ruta en COP (USD × TRM de su cotización, redondeado **por ruta**). En USD la suma de la apertura puede diferir unos centavos de `indicadores.valor_cotizado_cop` |
+| `ganancias` | number | SUM(valor en COP − costo) de las rutas de cotizaciones ganadas con precio y costo |
+| `margen_ponderado` | number o null | Como el indicador, sobre las rutas de esa línea |
+| `ajustes_margen`, `desviacion_promedio_margen` | int / number o null | Ajustes de margen de esas rutas (un ajuste sin ruta cuenta en la ruta 1) |
+
+Orden: `valor_cotizado_cop` descendente, luego el nombre. Lista vacía si no hay cotizaciones.
+
+**Fuera de alcance por ahora:** ninguno de los dos pendientes anteriores sigue abierto: los servicios conexos ya están en el costo de la ruta y las solicitudes de varias rutas se abren en `por_linea_negocio`.
 
 Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 ganada, A2 COP 2.000.000 perdida, A3 USD 1.000 × TRM 4.000 ganada, A4 sin precio ni resultado. Resultado: `cantidad` 4, `ganadas` 2, `perdidas` 1, `sin_resultado` 0, `pendientes_por_cotizar` 1, `conversion` 0.5, `conversion_sobre_cerradas` 0.6667, `margen_promedio` 0.15, `costeo_total` 5.950.000, `costeo_ganadas` 4.250.000, `valor_cotizado_cop` 7.000.000, `valor_ganado_cop` 5.000.000, `ganancias` 750.000, `cotizaciones_usd` 1 y `deadline_vencidas` null (sin el `0004`).
 
@@ -1212,12 +1233,12 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
 | `por_origen` | `MetricaCiudad[]` | Por municipio de origen (complemento) |
 | `sin_destino`, `sin_origen` | int | Cotizaciones sin ciudad (las del chat no guardan ciudades) |
 
-`MetricaCiudad`: `ciudad` (texto del catálogo de municipios de Nexo, tal como se guardó en la cabecera), `cantidad`, `ganadas`, `valor_cotizado_cop` y `valor_ganado_cop` ("Valor ganado (COP)"). Ordenadas por `cantidad` descendente y luego por nombre. No vienen coordenadas ni código DANE.
+`MetricaCiudad`: `ciudad` (texto del catálogo de municipios de Nexo, guardado en la ruta 1 de la cotización), `cantidad`, `ganadas`, `valor_cotizado_cop` y `valor_ganado_cop` ("Valor ganado (COP)"). Ordenadas por `cantidad` descendente y luego por nombre. No vienen coordenadas ni código DANE.
 
 #### 5.22.3 `GET /web/metricas/comercial`
 
 - Alcance: las cotizaciones del usuario del token (`sub`).
-- 200 (`MetricasComercial`): `periodo`, `usuario_id`, `indicadores` y `serie_mensual`. Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
+- 200 (`MetricasComercial`): `periodo`, `usuario_id`, `indicadores`, `serie_mensual` y `por_linea_negocio` (HU-021.10). Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
 
 ```json
 {
@@ -1233,6 +1254,7 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
     "conversion": 0.25,
     "conversion_sobre_cerradas": 0.4286,
     "margen_promedio": 0.1542,
+    "margen_ponderado": 0.1561,
     "costeo_total": 38500000.00,
     "costeo_ganadas": 10540000.00,
     "valor_cotizado_cop": 45310000.00,
@@ -1248,9 +1270,19 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
     { "mes": "2026-09", "cantidad": 7, "ganadas": 2, "perdidas": 2, "valor_cotizado_cop": 27110000.00, "valor_ganado_cop": 8300000.00 }
+  ],
+  "por_linea_negocio": [
+    { "linea_negocio_id": 1, "linea_negocio": "Nacional", "cotizaciones": 10, "ganadas": 3, "perdidas": 3, "rutas": 13,
+      "costeo_total": 30100000.00, "costeo_ganadas": 8200000.00, "valor_cotizado_cop": 35410000.00, "valor_ganado_cop": 9600000.00,
+      "ganancias": 1400000.00, "margen_ponderado": 0.1498, "ajustes_margen": 2, "desviacion_promedio_margen": -0.015 },
+    { "linea_negocio_id": 2, "linea_negocio": "Importacion", "cotizaciones": 3, "ganadas": 1, "perdidas": 1, "rutas": 3,
+      "costeo_total": 8400000.00, "costeo_ganadas": 2340000.00, "valor_cotizado_cop": 9900000.00, "valor_ganado_cop": 2800000.00,
+      "ganancias": 460000.00, "margen_ponderado": 0.1515, "ajustes_margen": 0, "desviacion_promedio_margen": null }
   ]
 }
 ```
+
+(`por_linea_negocio`: 10 + 3 = 13 cotizaciones contra `cantidad` 12, porque una cotización tiene rutas de las dos líneas. Los valores sí cuadran: 30.100.000 + 8.400.000 = `costeo_total` 38.500.000.)
 
 (En el ejemplo se cumple la partición: 3 + 4 + 3 + 2 = 12, y también `ganancias = valor_ganado_cop − costeo_ganadas`: 12.400.000 − 10.540.000 = 1.860.000.)
 
@@ -1262,7 +1294,7 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
   "usuario_id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602",
   "indicadores": {
     "cantidad": 0, "versiones": 0, "ganadas": 0, "perdidas": 0, "sin_resultado": 0, "pendientes_por_cotizar": 0,
-    "conversion": null, "conversion_sobre_cerradas": null, "margen_promedio": null,
+    "conversion": null, "conversion_sobre_cerradas": null, "margen_promedio": null, "margen_ponderado": null,
     "costeo_total": 0, "costeo_ganadas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0, "ganancias": 0,
     "cotizaciones_usd": 0, "tiempo_promedio_cotizacion_horas": null,
     "desviacion_promedio_margen": null, "desviacion_promedio_margen_abs": null, "ajustes_margen": 0,
@@ -1271,7 +1303,8 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
   "serie_mensual": [
     { "mes": "2026-08", "cantidad": 0, "ganadas": 0, "perdidas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0 },
     { "mes": "2026-09", "cantidad": 0, "ganadas": 0, "perdidas": 0, "valor_cotizado_cop": 0, "valor_ganado_cop": 0 }
-  ]
+  ],
+  "por_linea_negocio": []
 }
 ```
 
@@ -1303,6 +1336,7 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
 | `comerciales[]` | `{usuario_id, nombre_usuario, nombre_completo, rol, indicadores}` | Todos los usuarios de la regional, incluido el gerente. `nombre_usuario` y `nombre_completo` pueden ser null. `rol`: `comercial`, `gerente_comercial` o `null` (rol interno asignado en `UsuariosRoles`, fijado en el login SSO; `null` si no tiene asignación activa) |
 | `serie_mensual[]` | `PuntoSerieMensual[]` | De la regional o del comercial filtrado |
 | `concentracion_ciudades` | `ConcentracionCiudades` | De la regional o del comercial filtrado |
+| `por_linea_negocio[]` | `MetricaLineaNegocio[]` | Apertura por línea de negocio, por ruta (HU-021.10), de la regional o del comercial filtrado. Ver 5.22.2 |
 
 Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
 
@@ -1323,6 +1357,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "conversion": 0.225,
     "conversion_sobre_cerradas": 0.45,
     "margen_promedio": 0.1497,
+    "margen_ponderado": 0.1503,
     "costeo_total": 131000000.00,
     "costeo_ganadas": 31370000.00,
     "valor_cotizado_cop": 154100000.00,
@@ -1351,6 +1386,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "conversion": 0.25,
         "conversion_sobre_cerradas": 0.4286,
         "margen_promedio": 0.1542,
+        "margen_ponderado": 0.1561,
         "costeo_total": 38500000.00,
         "costeo_ganadas": 10540000.00,
         "valor_cotizado_cop": 45310000.00,
@@ -1379,6 +1415,7 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
         "conversion": null,
         "conversion_sobre_cerradas": null,
         "margen_promedio": null,
+        "margen_ponderado": null,
         "costeo_total": 0,
         "costeo_ganadas": 0,
         "valor_cotizado_cop": 0,
@@ -1408,7 +1445,15 @@ Ejemplo exacto del spec (periodo 2026-08-01 a 2026-09-29):
     "por_origen": [
       { "ciudad": "MEDELLIN", "cantidad": 30, "ganadas": 7, "valor_cotizado_cop": 118000000.00, "valor_ganado_cop": 28700000.00 }
     ]
-  }
+  },
+  "por_linea_negocio": [
+    { "linea_negocio_id": 1, "linea_negocio": "Nacional", "cotizaciones": 34, "ganadas": 8, "perdidas": 9, "rutas": 41,
+      "costeo_total": 112000000.00, "costeo_ganadas": 27370000.00, "valor_cotizado_cop": 131700000.00, "valor_ganado_cop": 32100000.00,
+      "ganancias": 4730000.00, "margen_ponderado": 0.1496, "ajustes_margen": 5, "desviacion_promedio_margen": -0.013 },
+    { "linea_negocio_id": 2, "linea_negocio": "Importacion", "cotizaciones": 8, "ganadas": 1, "perdidas": 2, "rutas": 8,
+      "costeo_total": 19000000.00, "costeo_ganadas": 4000000.00, "valor_cotizado_cop": 22400000.00, "valor_ganado_cop": 4800000.00,
+      "ganancias": 800000.00, "margen_ponderado": 0.1518, "ajustes_margen": 1, "desviacion_promedio_margen": -0.01 }
+  ]
 }
 ```
 

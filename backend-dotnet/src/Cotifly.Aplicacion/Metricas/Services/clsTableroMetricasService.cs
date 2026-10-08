@@ -62,7 +62,8 @@ public sealed class clsTableroMetricasService(
             periodo.Valor,
             usuarioId,
             Indicadores(datos.Filas, datos),
-            Serie(datos.Filas, periodo.Valor));
+            Serie(datos.Filas, periodo.Valor),
+            clsCalculadoraMetricas.PorLineaNegocio(datos.Filas));
     }
 
     public async Task<clsResultado<clsMetricasRegional>> ObtenerRegionalAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default)
@@ -143,7 +144,8 @@ public sealed class clsTableroMetricasService(
             await metricas.ContarLineasNegocioActivasAsync(cancellationToken),
             comerciales,
             Serie(seleccion, periodo.Valor),
-            clsCalculadoraMetricas.Concentracion(seleccion, datos.CiudadesDisponibles));
+            clsCalculadoraMetricas.Concentracion(seleccion, datos.CiudadesDisponibles),
+            clsCalculadoraMetricas.PorLineaNegocio(seleccion));
     }
 
     /// <summary>

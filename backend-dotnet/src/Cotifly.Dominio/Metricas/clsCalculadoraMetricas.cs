@@ -11,6 +11,9 @@ namespace Cotifly.Dominio.Metricas;
 /// Partición del universo: <c>cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar</c>. Las ganadas y perdidas
 /// cuentan por su resultado aunque no tengan precio; <c>sin_resultado</c> son las que tienen precio y aún no tienen resultado, y
 /// <c>pendientes_por_cotizar</c> las que no tienen ni precio ni resultado.
+/// HU-021.10 (decisión 8): los conteos son por cotización (una cotización con rutas de varias líneas de negocio cuenta una vez); los
+/// valores salen de sus rutas (<see cref="clsCotizacionMetrica.Rutas"/>): el margen ponderado y la apertura por línea
+/// (<see cref="PorLineaNegocio"/>) son por ruta.
 /// </remarks>
 public static class clsCalculadoraMetricas
 {
@@ -47,6 +50,7 @@ public static class clsCalculadoraMetricas
             Conversion = Fraccion(ganadas.Count, universo.Count),
             ConversionSobreCerradas = Fraccion(ganadas.Count, ganadas.Count + perdidas),
             MargenPromedio = margenes.Count == 0 ? null : Redondear(margenes.Average(), DecimalesFraccion),
+            MargenPonderado = MargenPonderadoDe(universo.SelectMany(f => f.Rutas)),
             CosteoTotal = Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
             CosteoGanadas = Redondear(ganadas.Sum(f => f.Costo ?? 0m), DecimalesMonto),
             ValorCotizadoCop = Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
@@ -125,6 +129,59 @@ public static class clsCalculadoraMetricas
             universo.Count(f => string.IsNullOrWhiteSpace(f.Origen)));
     }
 
+    /// <summary>
+    /// Apertura por línea de negocio, por ruta (HU-021.10, decisión 8). Agrupa las rutas de <paramref name="filas"/> por
+    /// <see cref="clsRutaMetrica.LineaNegocioId"/>:
+    /// <list type="bullet">
+    /// <item><c>cotizaciones</c>/<c>ganadas</c>/<c>perdidas</c> = cotizaciones distintas con al menos una ruta de la línea (la cotización
+    /// de tres líneas cuenta en las tres; su resultado es el de la cotización);</item>
+    /// <item><c>costeo_total</c> = Σ <c>costoFinal</c>; <c>valor_cotizado_cop</c> = Σ <c>precioFinalLinea</c> en COP con la TRM de su
+    /// cotización (<see cref="clsCotizacionMetrica.ACop"/>, redondeado por ruta); las de ganadas, solo las rutas de cotizaciones
+    /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo) de esas rutas con precio y costo;</item>
+    /// <item><c>margen_ponderado</c> = Σ(margen × costo) / Σ costo de las rutas con margen y costo &gt; 0;</item>
+    /// <item><c>ajustes_margen</c> y <c>desviacion_promedio_margen</c> = los <c>MargenAjustes</c> de esas rutas.</item>
+    /// </list>
+    /// Orden: <c>valor_cotizado_cop</c> descendente, luego el nombre; las rutas sin línea al final.
+    /// </summary>
+    public static IReadOnlyList<clsMetricaLineaNegocio> PorLineaNegocio(IEnumerable<clsCotizacionMetrica> filas)
+    {
+        ArgumentNullException.ThrowIfNull(filas);
+        return [.. filas
+            .SelectMany(f => f.Rutas.Select(r => (Cotizacion: f, Ruta: r)))
+            .GroupBy(x => x.Ruta.LineaNegocioId)
+            .Select(g =>
+            {
+                // Por referencia: dos cotizaciones con los mismos valores son dos cotizaciones.
+                var cotizaciones = g.Select(x => x.Cotizacion).Distinct<clsCotizacionMetrica>(ReferenceEqualityComparer.Instance).ToList();
+                var ganadas = g.Where(x => x.Cotizacion.Ganada == true).ToList();
+                var numDiferencias = g.Sum(x => x.Ruta.NumDiferencias);
+                return new clsMetricaLineaNegocio(
+                    g.Key,
+                    g.Select(x => x.Ruta.LineaNegocio).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                    cotizaciones.Count,
+                    cotizaciones.Count(c => c.Ganada == true),
+                    cotizaciones.Count(c => c.Ganada == false),
+                    g.Count(),
+                    Redondear(g.Sum(x => x.Ruta.Costo ?? 0m), DecimalesMonto),
+                    Redondear(ganadas.Sum(x => x.Ruta.Costo ?? 0m), DecimalesMonto),
+                    Redondear(g.Sum(x => x.Cotizacion.ACop(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
+                    Redondear(ganadas.Sum(x => x.Cotizacion.ACop(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
+                    Redondear(
+                        ganadas
+                            .Select(x => (Valor: x.Cotizacion.ACop(x.Ruta.PrecioFinal), x.Ruta.Costo))
+                            .Where(x => x.Valor.HasValue && x.Costo.HasValue)
+                            .Sum(x => x.Valor!.Value - x.Costo!.Value),
+                        DecimalesMonto),
+                    MargenPonderadoDe(g.Select(x => x.Ruta)),
+                    g.Sum(x => x.Ruta.NumAjustes),
+                    numDiferencias == 0 ? null : Redondear(g.Sum(x => x.Ruta.SumaDiferencias ?? 0m) / numDiferencias, DecimalesFraccion));
+            })
+            .OrderBy(l => l.LineaNegocioId is null ? 1 : 0)
+            .ThenByDescending(l => l.ValorCotizadoCop)
+            .ThenBy(l => l.LineaNegocio ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(l => l.LineaNegocioId)];
+    }
+
     /// <summary>Mes <c>AAAA-MM</c> de una fecha.</summary>
     public static string Mes(DateOnly fecha) => fecha.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
@@ -144,6 +201,14 @@ public static class clsCalculadoraMetricas
             })
             .OrderByDescending(c => c.Cantidad)
             .ThenBy(c => c.Ciudad, StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Σ(margen × costo) / Σ costo de las rutas con margen y costo &gt; 0 (4 decimales); <c>null</c> si no hay ninguna.</summary>
+    private static decimal? MargenPonderadoDe(IEnumerable<clsRutaMetrica> rutas)
+    {
+        var conPeso = rutas.Where(r => r.MargenAplicado.HasValue && r.Costo > 0m).ToList();
+        var peso = conPeso.Sum(r => r.Costo!.Value);
+        return peso == 0m ? null : Redondear(conPeso.Sum(r => r.MargenAplicado!.Value * r.Costo!.Value) / peso, DecimalesFraccion);
+    }
 
     private static decimal? Fraccion(int numerador, int denominador) =>
         denominador == 0 ? null : Redondear((decimal)numerador / denominador, DecimalesFraccion);

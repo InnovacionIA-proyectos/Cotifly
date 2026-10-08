@@ -213,6 +213,58 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     [Fact]
+    public async Task UnaCotizacionGanadaConTresRutasDeDistintasLineasEsUnaFilaConSusTresRutasYLosAjustesDeCadaUna()
+    {
+        // HU-021.10 (#137), decisión 8: una fila por cotización (conteos) con sus rutas (valores y apertura por línea). Los ajustes
+        // cuentan en su ruta (lineaSolicitudId); el que no tiene ruta va a la ruta 1, como en la migración del 0009.
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';
+            DECLARE @nacional INT = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Nacional');
+            DECLARE @importacion INT = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Importacion');
+            DECLARE @exportacion INT = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Exportacion');
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET lineaNegocioId = @nacional, costoFinal = 1000000, precioFinalLinea = 1200000, margenAplicado = 0.1667
+            WHERE cotizacionSolicitudId = @id AND orden = 1;
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, precioFinalLinea, margenAplicado) VALUES
+                (@id, 2, @importacion, 2000000, 2500000, 0.20), (@id, 3, @exportacion, 3000000, 3300000, 0.0909);
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET precioFinal = 7000000, ganada = 1, moneda = N'USD', trmAplicada = 2 WHERE id = @id;
+            DECLARE @r3 UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id AND orden = 3);
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), @id, @r3, N'{cotizacion.Folio}', 0.10, 0.12, 0.02, N'A', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), @id, @r3, N'{cotizacion.Folio}', 0.10, 0.11, 0.01, N'B', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), @id, NULL, N'{cotizacion.Folio}', 0.15, 0.13, -0.02, N'C', '{ana}', SYSDATETIMEOFFSET());
+            """);
+
+        var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1))).Filas
+            .Should().ContainSingle("una cotización con tres rutas cuenta una vez").Subject;
+
+        fila.Costo.Should().Be(6_000_000m);
+        fila.NumAjustes.Should().Be(3);
+        fila.Rutas.Select(r => (r.Orden, r.LineaNegocio, r.Costo, r.PrecioFinal, r.MargenAplicado, r.NumAjustes, r.NumDiferencias, r.SumaDiferencias))
+            .Should().Equal(
+                (1, "Nacional", 1_000_000m, 1_200_000m, 0.1667m, 1, 1, -0.02m),
+                (2, "Importacion", 2_000_000m, 2_500_000m, 0.20m, 0, 0, null),
+                (3, "Exportacion", 3_000_000m, 3_300_000m, 0.0909m, 2, 2, 0.03m));
+        fila.Rutas.Sum(r => r.NumAjustes).Should().Be(fila.NumAjustes, "cada ajuste cuenta en una sola ruta");
+
+        var apertura = Cotifly.Dominio.Metricas.clsCalculadoraMetricas.PorLineaNegocio([fila]);
+        apertura.Select(l => (l.LineaNegocio, l.Cotizaciones, l.Ganadas, l.ValorCotizadoCop)).Should().Equal(
+            ("Exportacion", 1, 1, 6_600_000m), ("Importacion", 1, 1, 5_000_000m), ("Nacional", 1, 1, 2_400_000m));
+    }
+
+    [Fact]
+    public async Task SinCotizacionesNoConsultaRutas()
+    {
+        var ana = await CrearUsuarioAsync();
+
+        var datos = await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1));
+
+        datos.Filas.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CuentaLasLineasDeNegocioActivas()
     {
         var esperadas = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,

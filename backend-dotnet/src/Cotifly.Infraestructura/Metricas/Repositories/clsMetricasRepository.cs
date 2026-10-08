@@ -15,8 +15,9 @@ namespace Cotifly.Infraestructura.Metricas.Repositories;
 /// con el catálogo en ambos sentidos. Las consultas son SQL parametrizado (interpolación de EF Core → <c>@p0</c>, <c>@p1</c>).
 /// El tablero de HU-010.1 (<see cref="ListarCotizacionesAsync"/>) lee <c>CotizacionesSolicitud</c> y sus rutas con SQL propio por la
 /// misma razón (HU-021, ADR-019, decisión 8 del 2026-10-08): los conteos son por cotización; el costo es la suma del costo final de sus
-/// rutas, el margen el promedio de sus rutas ponderado por costo y la ciudad la de la ruta 1 (las métricas por ruta llegan con #137). Los
-/// nombres de municipio son del 0010 y pueden no existir todavía.
+/// rutas, el margen el promedio de sus rutas ponderado por costo y la ciudad la de la ruta 1. Una segunda consulta (<see cref="SqlRutas"/>)
+/// trae las rutas de las versiones vigentes, con su línea de negocio y sus ajustes, para el margen ponderado y la apertura por línea
+/// (#137). Los nombres de municipio son del 0010 y pueden no existir todavía.
 /// </summary>
 public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMetricasRepository
 {
@@ -66,7 +67,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                    COUNT(*) OVER (PARTITION BY b.usuarioId, b.folioBase) AS versiones
             FROM base b
         )
-        SELECT v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
+        SELECT v.id AS CotizacionId, v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
                v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
                v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
                v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
@@ -86,6 +87,35 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             WHERE m.cotizacionId = v.id
         ) a
         WHERE v.orden = 1 AND v.primeraCreacion >= @desde AND v.primeraCreacion < @hasta
+        """;
+
+    /// <summary>
+    /// Rutas de las versiones vigentes (<c>@cotizaciones</c>, JSON de ids) con su línea de negocio y el resumen de sus
+    /// <c>MargenAjustes</c> (HU-021.10, decisión 8). Un ajuste cuenta en la ruta de su <c>lineaSolicitudId</c>; si no tiene ruta, o la
+    /// ruta no es de su cotización, cuenta en la primera ruta (menor <c>orden</c>), como la migración del 0009. Así la suma de las rutas
+    /// da exactamente los ajustes de la cotización (<c>OUTER APPLY</c> por <c>cotizacionId</c> de <see cref="SqlCotizaciones"/>).
+    /// </summary>
+    private const string SqlRutas = """
+        WITH rutas AS (
+            SELECT l.id, l.cotizacionSolicitudId, l.orden, l.lineaNegocioId, mp.lineaNegocio, l.costoFinal, l.precioFinalLinea, l.margenAplicado,
+                   ROW_NUMBER() OVER (PARTITION BY l.cotizacionSolicitudId ORDER BY l.orden, l.id) AS posicion
+            FROM dbo_cotifly.CotizacionLineasSolicitud l
+            LEFT JOIN dbo_cotifly.MargenesPolitica mp ON mp.id = l.lineaNegocioId
+            WHERE l.cotizacionSolicitudId IN (SELECT CAST([value] AS uniqueidentifier) FROM OPENJSON(@cotizaciones))
+        )
+        SELECT r.cotizacionSolicitudId AS CotizacionId, r.orden AS Orden, r.lineaNegocioId AS LineaNegocioId, r.lineaNegocio AS LineaNegocio,
+               r.costoFinal AS Costo, r.precioFinalLinea AS PrecioFinal, r.margenAplicado AS MargenAplicado,
+               a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias, a.sumaDiferencias AS SumaDiferencias
+        FROM rutas r
+        OUTER APPLY (
+            SELECT COUNT(*) AS numAjustes, COUNT(m.diferencia) AS numDiferencias, SUM(m.diferencia) AS sumaDiferencias
+            FROM dbo_cotifly.MargenAjustes m
+            WHERE m.cotizacionId = r.cotizacionSolicitudId
+              AND (m.lineaSolicitudId = r.id
+                   OR (r.posicion = 1 AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud x
+                                                      WHERE x.id = m.lineaSolicitudId AND x.cotizacionSolicitudId = m.cotizacionId)))
+        ) a
+        ORDER BY r.cotizacionSolicitudId, r.orden
         """;
 
     public async Task<clsDatosMetricas> ListarCotizacionesAsync(
@@ -114,10 +144,12 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 new SqlParameter("@desde", System.Data.SqlDbType.DateTimeOffset) { Value = desde },
                 new SqlParameter("@hasta", System.Data.SqlDbType.DateTimeOffset) { Value = hastaExclusivo })
             .ToListAsync(cancellationToken));
+        var rutas = await ListarRutasAsync([.. filas.Select(f => f.CotizacionId)], cancellationToken);
 
         return new clsDatosMetricas(
             [.. filas.Select(f => new clsCotizacionMetrica
             {
+                Rutas = rutas[f.CotizacionId].ToList(),
                 UsuarioId = f.UsuarioId,
                 CreatedAt = f.CreatedAt,
                 CreatedAtVigente = f.CreatedAtVigente,
@@ -139,6 +171,34 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             })],
             columnas.Ciudades,
             columnas.Deadline);
+    }
+
+    /// <summary>Rutas de <paramref name="cotizaciones"/> (versiones vigentes), por cotización y en su orden.</summary>
+    private async Task<ILookup<Guid, clsRutaMetrica>> ListarRutasAsync(IReadOnlyCollection<Guid> cotizaciones, CancellationToken cancellationToken)
+    {
+        if (cotizaciones.Count == 0)
+        {
+            return Array.Empty<(Guid, clsRutaMetrica)>().ToLookup(x => x.Item1, x => x.Item2);
+        }
+
+        var ids = JsonSerializer.Serialize(cotizaciones);
+        var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaRuta>(
+                SqlRutas, new SqlParameter("@cotizaciones", System.Data.SqlDbType.NVarChar, -1) { Value = ids })
+            .ToListAsync(cancellationToken));
+        return filas.ToLookup(
+            f => f.CotizacionId,
+            f => new clsRutaMetrica
+            {
+                Orden = f.Orden,
+                LineaNegocioId = f.LineaNegocioId,
+                LineaNegocio = f.LineaNegocio,
+                Costo = f.Costo,
+                PrecioFinal = f.PrecioFinal,
+                MargenAplicado = f.MargenAplicado,
+                NumAjustes = f.NumAjustes,
+                NumDiferencias = f.NumDiferencias,
+                SumaDiferencias = f.SumaDiferencias,
+            });
     }
 
     /// <summary>
@@ -245,6 +305,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <summary>Fila cruda del tablero, una por cadena (materializada por nombre de columna).</summary>
     internal sealed class clsFilaMetrica
     {
+        public Guid CotizacionId { get; set; }
         public Guid UsuarioId { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset CreatedAtVigente { get; set; }
@@ -263,6 +324,21 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public int NumDiferencias { get; set; }
         public decimal? SumaDiferencias { get; set; }
         public decimal? SumaDiferenciasAbsolutas { get; set; }
+    }
+
+    /// <summary>Fila cruda de una ruta del tablero (HU-021.10).</summary>
+    internal sealed class clsFilaRuta
+    {
+        public Guid CotizacionId { get; set; }
+        public int Orden { get; set; }
+        public int? LineaNegocioId { get; set; }
+        public string? LineaNegocio { get; set; }
+        public decimal? Costo { get; set; }
+        public decimal? PrecioFinal { get; set; }
+        public decimal? MargenAplicado { get; set; }
+        public int NumAjustes { get; set; }
+        public int NumDiferencias { get; set; }
+        public decimal? SumaDiferencias { get; set; }
     }
 
     /// <summary>Fila cruda de <c>vAjustesMargenPorComercial</c>.</summary>

@@ -63,6 +63,29 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             """);
     }
 
+    /// <summary>
+    /// HU-021.10: reemplaza los valores de la ruta 1 y agrega las demás rutas con su línea de negocio (por nombre); la cabecera queda con la
+    /// suma de los precios, como la deja el dominio.
+    /// </summary>
+    [Given("que la cotización {string} tiene estas rutas:")]
+    public async Task DadoLasRutas(string alias, DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var cotizacion = web.Cotizacion(alias);
+        var sentencias = new System.Text.StringBuilder($"DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';\n");
+        foreach (var fila in tabla.Rows)
+        {
+            var linea = $"(SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'{fila["linea"]}')";
+            var (costo, precio, margen) = (Numero(fila["costo"]) ?? "NULL", Numero(fila["precio"]) ?? "NULL", Numero(fila["margen"]) ?? "NULL");
+            sentencias.AppendLine(fila["orden"] == "1"
+                ? $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET lineaNegocioId = {linea}, costoFinal = {costo}, precioFinalLinea = {precio}, margenAplicado = {margen} WHERE cotizacionSolicitudId = @id AND orden = 1;"
+                : $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, precioFinalLinea, margenAplicado) VALUES (@id, {int.Parse(fila["orden"], CultureInfo.InvariantCulture)}, {linea}, {costo}, {precio}, {margen});");
+        }
+
+        sentencias.AppendLine("UPDATE dbo_cotifly.CotizacionesSolicitud SET precioFinal = (SELECT SUM(precioFinalLinea) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id) WHERE id = @id;");
+        await clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, sentencias.ToString());
+    }
+
     [When("{string} consulta sus métricas del {string} al {string}")]
     public Task CuandoConsultaSusMetricas(string alias, string desde, string hasta) =>
         web.EnviarAsync(_get, $"/web/metricas/comercial?desde={desde}&hasta={hasta}", web.Sesion(alias).Access);
@@ -92,6 +115,24 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             else
             {
                 valor.GetDecimal().Should().Be(decimal.Parse(fila["valor"], CultureInfo.InvariantCulture), fila["campo"]);
+            }
+        }
+    }
+
+    /// <summary>Cada fila de la tabla es una línea de <c>por_linea_negocio</c>; una celda vacía no se comprueba.</summary>
+    [Then("la apertura por línea de negocio es:")]
+    public void EntoncesLaApertura(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var apertura = web.UltimoJson().GetProperty("por_linea_negocio").EnumerateArray()
+            .ToDictionary(l => l.GetProperty("linea_negocio").GetString() ?? string.Empty, StringComparer.Ordinal);
+        foreach (var fila in tabla.Rows)
+        {
+            apertura.Should().ContainKey(fila["linea"]);
+            var linea = apertura[fila["linea"]];
+            foreach (var campo in tabla.Header.Where(c => c != "linea" && !string.IsNullOrWhiteSpace(fila[c])))
+            {
+                linea.GetProperty(campo).GetDecimal().Should().Be(decimal.Parse(fila[campo], CultureInfo.InvariantCulture), $"{fila["linea"]}.{campo}");
             }
         }
     }

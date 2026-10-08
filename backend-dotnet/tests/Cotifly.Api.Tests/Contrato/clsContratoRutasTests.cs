@@ -162,6 +162,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(Cotifly.Dominio.Metricas.clsPuntoSerieMensual), "PuntoSerieMensual" },
         { typeof(Cotifly.Dominio.Metricas.clsMetricaCiudad), "MetricaCiudad" },
         { typeof(Cotifly.Dominio.Metricas.clsConcentracionCiudades), "ConcentracionCiudades" },
+        { typeof(Cotifly.Dominio.Metricas.clsMetricaLineaNegocio), "MetricaLineaNegocio" },
         { typeof(clsTelefonoComercial), "TelefonoComercial" },
         { typeof(clsDestinatarios), "Destinatarios" },
         { typeof(clsVistaPreviaCorreo), "VistaPreviaCorreo" },
