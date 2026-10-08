@@ -231,7 +231,7 @@ public sealed class clsCosteoNexo(
         "Nexo no tiene configurado el cálculo de cubicaje (DWCubos): intenta de nuevo más tarde o avisa al equipo de Nexo.";
 
     /// <summary>
-    /// Traduce un 400 del alta (G16, <c>docs/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
+    /// Traduce un 400 del alta (G16, <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c> §3): <c>ENUM_INVALIDO</c>, <c>LINEA_INCOMPLETA</c>,
     /// <c>PESO_REQUERIDO</c> y <c>PESO_INCONSISTENTE</c> → <c>SOLICITUD_COSTEO_INVALIDA</c> (definitivo); <c>CLIENTE_REQUERIDO</c>,
     /// <c>CLIENTE_INVALIDO</c> y <c>CLIENTE_BP_INVALIDO</c> → <c>COSTEO_NEXO_RECHAZADA</c> con un motivo de cliente (reintentable);
     /// <c>DWCUBOS_NO_CONFIGURADO</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c> (reintentable); cualquier otro (<c>VALIDATION_ERROR</c>...) →

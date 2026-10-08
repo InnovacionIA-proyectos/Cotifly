@@ -6,7 +6,7 @@ using Cotifly.Dominio.Precio;
 namespace Cotifly.Aplicacion.Licitaciones.Validators;
 
 /// <summary>
-/// Validación completa de una licitación ANTES de guardar o enviar nada (HU-011.2, <c>docs/HU-011-formato-excel-licitacion.md</c> §5):
+/// Validación completa de una licitación ANTES de guardar o enviar nada (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5):
 /// espejo de <c>CapturarSolicitudValidador</c> y de los límites de <c>CapturaSolicitudRequest</c> de Nexo, más las reglas de Cotifly
 /// (cliente, línea de negocio, tope de líneas, filas del Excel). A diferencia de Nexo, no se detiene en el primer error: devuelve
 /// todos, con el índice de la línea, la fila del análisis, el campo y el código.

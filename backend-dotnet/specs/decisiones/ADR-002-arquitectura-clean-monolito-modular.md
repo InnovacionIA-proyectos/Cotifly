@@ -61,7 +61,7 @@ El estándar corporativo `dotnet-enterprise-architect` exige Clean Architecture 
 - Parámetros de tipo con `T` + PascalCase (`TValor`).
 - Namespaces file-scoped (`namespace Cotifly.Dominio.Comun;`), exigidos con IDE0161 en `error`.
 - Controllers: nunca `[Route("[controller]")]`, porque el prefijo `cls` terminaría en la URL; la ruta se escribe explícita según `specs/openapi.yaml` (ej. `[Route("health")]`).
-- Tablas en PascalCase sin prefijo (ya creadas en `dbo_cotifly`) y columnas en camelCase. No se reintroduce `tbl`/`tblSap` (desviación del 2026-09-22, `docs/ESQUEMA_OBJETIVO_SQLSERVER.md` §9).
+- Tablas en PascalCase sin prefijo (ya creadas en `dbo_cotifly`) y columnas en camelCase. No se reintroduce `tbl`/`tblSap` (desviación del 2026-09-22, `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §9).
 - `.editorconfig` hace cumplir todas estas reglas (IDE1006 e IDE0161) con severidad `error`, y `Cotifly.Arquitectura.Tests` verifica `cls`/`ICls` sobre los ensamblados compilados. `Program` (instrucciones de nivel superior) queda exento: `Program.cs` suprime IDE1006 solo en su primera línea.
 
 **Base técnica:** .NET 10, `Nullable` activado, `TreatWarningsAsErrors`, Central Package Management (`Directory.Packages.props`) con versiones fijas.

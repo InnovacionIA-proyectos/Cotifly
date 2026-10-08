@@ -4,7 +4,7 @@ Cotifly es el bot cotizador de Botero Soto: un comercial captura la solicitud en
 
 ## 1.1 Objetivo
 
-Migrar el backend de Cotifly a C# / .NET 10 (milestone HU-003) con Clean Architecture, conservando el comportamiento de negocio del Python (política de márgenes, cálculo de precio, formato del PDF, flujo de correo) salvo los cambios que el equipo decidió de forma explícita, y exponer el contrato congelado que consume el módulo Angular de ClientePro (HU-004, [`docs/CONTRATO_API_WEB.md`](../../docs/CONTRATO_API_WEB.md)).
+Migrar el backend de Cotifly a C# / .NET 10 (milestone HU-003) con Clean Architecture, conservando el comportamiento de negocio del Python (política de márgenes, cálculo de precio, formato del PDF, flujo de correo) salvo los cambios que el equipo decidió de forma explícita, y exponer el contrato congelado que consume el módulo Angular de ClientePro (HU-004, [`docs/docs_front/CONTRATO_API_WEB.md`](../../docs/docs_front/CONTRATO_API_WEB.md)).
 
 ## 1.2 Usuarios y roles
 

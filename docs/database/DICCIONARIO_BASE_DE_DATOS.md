@@ -1,6 +1,6 @@
 # Diccionario de datos — Base de datos Cotifly
 
-Complemento de [`../BASE_DE_DATOS.md`](../BASE_DE_DATOS.md) (que explica motor, capas de
+Complemento de [`../../BASE_DE_DATOS.md`](../../BASE_DE_DATOS.md) (que explica motor, capas de
 acceso y cómo conectarse). Este documento va **columna por columna**: qué significa cada
 una, de dónde sale el valor, un ejemplo real, **si algo la vuelve a leer** y **qué
 constraints tiene hoy en la BD real** (verificado contra Postgres, no solo contra el
@@ -357,7 +357,7 @@ de humo (`tests/test_despliegue.py`) que solo verifica que la vista responda. Es
 
 ## 5. Referencias
 
-- Motor, cómo conectarse local/producción, backup/restore: [`../BASE_DE_DATOS.md`](../BASE_DE_DATOS.md).
+- Motor, cómo conectarse local/producción, backup/restore: [`../../BASE_DE_DATOS.md`](../../BASE_DE_DATOS.md).
 - Modelos ORM: `shared/models.py`. Consultas/escrituras: `shared/repos.py`.
 - Dónde se escribe cada tabla en el flujo de negocio: `mcp_server/server.py` (herramientas
   `generar_pdf`, `registrar_ajuste_margen`, `enviar_correo`) y `orquestador/web.py` (login,

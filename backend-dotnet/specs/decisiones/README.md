@@ -58,4 +58,4 @@ Qué se gana, qué se pierde, qué cambia para otros issues.
 Reglas:
 
 - Una ADR aceptada no se edita para cambiar la decisión. Se escribe una nueva que la reemplace y se actualiza el estado de la anterior.
-- Las decisiones del usuario y del equipo registradas en el backlog (`docs/HU_Backlog_Cotifly_ClientePro.md`) tienen prioridad. Si una ADR las contradice, se corrige la ADR.
+- Las decisiones del usuario y del equipo registradas en el backlog (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`) tienen prioridad. Si una ADR las contradice, se corrige la ADR.

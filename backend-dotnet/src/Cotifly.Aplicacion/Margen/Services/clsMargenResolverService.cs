@@ -162,7 +162,7 @@ public sealed class clsMargenResolverService(
     /// <c>MARGEN_LINEA_DESCONOCIDA</c> con las líneas que sí se pueden usar (HU-013.15, #124) en <c>detalle.lineas_validas</c>. Con
     /// <paramref name="esLicitacion"/> y la línea "Licitaciones" del catálogo de Nexo, el mensaje explica que esa línea es de Nexo y
     /// no da margen (<c>detalle.motivo = LINEA_DE_NEXO</c>): una licitación se crea con la línea de Cotifly que da el margen (decisión
-    /// del 2026-10-08, pregunta abierta en <c>docs/HU-013-preguntas-nexo.md</c>).
+    /// del 2026-10-08, pregunta abierta en <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c>).
     /// </summary>
     public static clsErrorDominio LineaDesconocida(string? linea, IReadOnlyList<string> activas, bool esLicitacion = false)
     {

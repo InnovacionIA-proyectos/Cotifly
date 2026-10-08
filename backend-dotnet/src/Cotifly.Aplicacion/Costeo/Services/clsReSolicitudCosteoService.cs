@@ -52,7 +52,7 @@ public interface IClsReSolicitudCosteoService
 
 /// <summary>
 /// Implementación de <see cref="IClsReSolicitudCosteoService"/>. Nexo no tiene una operación para reabrir ni para re-solicitar una
-/// solicitud (<c>docs/HU-013-preguntas-nexo.md</c>, pregunta 4): re-solicitar es una <b>captura nueva</b>
+/// solicitud (<c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c>, pregunta 4): re-solicitar es una <b>captura nueva</b>
 /// (<c>POST /api/captura-solicitudes</c>) con lo guardado, enviada con <see cref="IClsEnvioCosteoService.EnviarGuardadaAsync"/> (el
 /// mismo envío normalizado del alta y de las licitaciones), con una nota de trazabilidad en <c>notas</c>.
 /// <list type="bullet">

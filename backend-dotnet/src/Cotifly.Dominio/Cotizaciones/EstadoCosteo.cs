@@ -7,7 +7,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <remarks>
 /// Los tres valores derivados de Nexo (<see cref="PendienteCosteo"/>, <see cref="Autocosteo"/> y <see cref="Entregada"/>) siguen la
 /// regla de la HU-005.7 (cruce de líneas de la solicitud contra líneas de la cotización de Nexo). <see cref="Descartada"/> cubre el
-/// cuarto estado real de la solicitud en Nexo, que el diseño original no tenía (ver <c>docs/MAPEO_CAMPOS_NEXO_COTIFLY.md</c>).
+/// cuarto estado real de la solicitud en Nexo, que el diseño original no tenía (ver <c>docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md</c>).
 /// Los demás son propios de Cotifly: el envío (<see cref="PendienteEnvio"/>, <see cref="ErrorEnvio"/>) y el fin del polling sin
 /// costeo (<see cref="CosteoVencido"/>).
 /// </remarks>

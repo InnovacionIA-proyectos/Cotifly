@@ -1,6 +1,6 @@
 # 7. API
 
-La fuente de verdad del contrato es [`specs/openapi.yaml`](../specs/openapi.yaml) (OpenAPI 3.0.3, #17, SDD según [ADR-010](../specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). El resumen para el frontend está en [`docs/CONTRATO_API_WEB.md`](../../docs/CONTRATO_API_WEB.md). Este documento no repite los esquemas: resume lo implementado, la autenticación, los errores y los límites. Un cambio de contrato empieza siempre en `openapi.yaml`.
+La fuente de verdad del contrato es [`specs/openapi.yaml`](../specs/openapi.yaml) (OpenAPI 3.0.3, #17, SDD según [ADR-010](../specs/decisiones/ADR-010-metodologia-sdd-tdd-bdd.md)). El resumen para el frontend está en [`docs/docs_front/CONTRATO_API_WEB.md`](../../docs/docs_front/CONTRATO_API_WEB.md). Este documento no repite los esquemas: resume lo implementado, la autenticación, los errores y los límites. Un cambio de contrato empieza siempre en `openapi.yaml`.
 
 Contenido:
 

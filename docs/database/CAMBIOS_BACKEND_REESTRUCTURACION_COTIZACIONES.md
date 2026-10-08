@@ -54,7 +54,7 @@ tenga listo su `POST /recomendaciones`.
 
 Las cotizaciones que crea el agente de chat (`generar_pdf`; la integración con Google Chat se retiró en HU-013.9, el agente sigue en el chat web) **no tienen filas en `CotizacionLineasSolicitud`**.
 Su costo, margen y precio viven solo en la cabecera
-([src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs:287-307](../backend-dotnet/src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs#L287-L307)).
+([src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs:287-307](../../backend-dotnet/src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs#L287-L307)).
 
 Como esas columnas salen de la cabecera, el flujo del chat tiene que crear también **una ruta y un camión**:
 - La ruta, con la línea de negocio, el margen y el precio.

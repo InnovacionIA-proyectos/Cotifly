@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Códigos por campo del reporte de validación de una licitación (HU-011.2, <c>docs/HU-011-formato-excel-licitacion.md</c> §5).
+/// Códigos por campo del reporte de validación de una licitación (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).
 /// Espejo de <c>CapturarSolicitudValidador</c> y de los atributos de <c>CapturaLineaRequest</c> de Nexo; viajan en
 /// <c>errores[].codigo</c>, no como <c>ErrorNegocio</c>.
 /// </summary>

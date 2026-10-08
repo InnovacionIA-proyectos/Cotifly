@@ -57,7 +57,7 @@ tags:
       propias) y `GET /web/metricas/regional` (solo `gerente_comercial`: su regional, filtrable por comercial).
       `/web/metricas/actividad` y `/web/metricas/ajustes-margen` son el borrador anterior y quedan obsoletos.
 
-      Definiciones (recalculables a mano sobre `dbo_cotifly`, ver `docs/CONTRATO_API_WEB.md` §3.1):
+      Definiciones (recalculables a mano sobre `dbo_cotifly`, ver `docs/docs_front/CONTRATO_API_WEB.md` §3.1):
       - **Unidad: la cadena de versiones.** Cadena = filas del mismo `usuarioId` con el mismo folio base (el folio sin
         el sufijo `-vN`; ADR-011: la v2+ reutiliza el folio de la v1). Cada cadena cuenta UNA vez:
         - valores (precio, costo, margen, moneda, costeo, ciudades, deadline, ajustes) de la **versión vigente** (mayor
@@ -891,7 +891,7 @@ paths:
       summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
       description: |
         Opciones del formulario de captura a partir de los **catálogos maestros de Nexo** (HU-013.10, #106, gap G1; ADR-018;
-        `docs/HU-005.1-mapeo-campos-nexo.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
+        `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
         tarifas). La forma de la respuesta no cambió:
         - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
           cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten;
@@ -1375,7 +1375,7 @@ paths:
         - Queda auditado (`EventosHerramienta`, `costeo_nexo_re_solicitud`) con el motivo y el usuario.
         - `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional: un doble clic con la misma clave devuelve la
           respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
-        - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/HU-013-preguntas-nexo.md`,
+        - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/conexion_nexo/HU-013-preguntas-nexo.md`,
           pregunta 4): en los dos casos Cotifly hace una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, y
           guarda el id de la solicitud nueva. En el mismo folio el costo, el precio y los conexos anteriores se limpian (quedan en
           la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva.
@@ -1548,7 +1548,7 @@ paths:
            línea de la cotización de Nexo que corresponde a `linea_orden` (ver `ConexoAgregarWeb`). Cotifly **nunca**
            envía `valorAplicado`: si no viaja, Nexo lo calcula como valor base × cantidad (Nexo es la fuente de verdad del
            costo). Roles de Nexo para este endpoint: `Comercial`, `CoordinadorFletes` y `Admin` (leído del código de
-           Nexo, `docs/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara).
+           Nexo, `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara).
         2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
            conexo con `IClsPrecioService` y los deja `incluido = true`.
 
@@ -1877,7 +1877,7 @@ paths:
       tags: [web]
       summary: Analiza el Excel del pliego en Nexo para mapear sus columnas (no guarda nada)
       description: |
-        HU-011.2 (ADR-017, `docs/HU-011-formato-excel-licitacion.md`). Cotifly no impone plantilla: reenvía el archivo a
+        HU-011.2 (ADR-017, `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`). Cotifly no impone plantilla: reenvía el archivo a
         `POST {Nexo:UrlBase}/api/captura-solicitudes/analizar-excel` con la identidad del comercial y devuelve las hojas con
         su fila de encabezado, los encabezados y hasta 1000 filas como texto, para que el frontend mapee las columnas a los
         campos destino. Ni Nexo ni Cotifly guardan el archivo en este paso. `multipart/form-data` con el campo `archivo`
@@ -3625,7 +3625,7 @@ components:
         HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
         `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
         Si trae `posiciones`, reemplaza todas las anteriores. La combinación resultante (lo guardado más los cambios) se
-        valida igual que en la captura, con las condiciones de G3 (`docs/HU-013-preguntas-nexo.md`): `clase_contenedor`
+        valida igual que en la captura, con las condiciones de G3 (`docs/conexion_nexo/HU-013-preguntas-nexo.md`): `clase_contenedor`
         solo con `clase_viaje = Contenedor`, `ciudad_devolucion_contenedor` con `retorna_contenedor`,
         `ciudad_levante_contenedor` con `levante_contenedor_diferente` y `valor_aprovisionamiento` solo con un levante
         distinto del origen, y la regla de peso.
@@ -3904,8 +3904,8 @@ components:
       type: object
       required: [tipo, nit_cliente, linea_negocio, origen, destino]
       description: |
-        Formulario ampliado (HU-005.3, mapeo aprobado en `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
-        el 2026-10-05 en `docs/HU-005.1-mapeo-campos-nexo.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
+        Formulario ampliado (HU-005.3, mapeo aprobado en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
+        el 2026-10-05 en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
         / `clsCapturaLineaRequest` de Nexo, con sus mismos límites. Cotifly lo reenvía a `POST /api/captura-solicitudes` en
         camelCase (nombre de Nexo entre paréntesis en cada campo).
 
@@ -4155,7 +4155,7 @@ components:
       type: object
       required: [origen, destino]
       description: |
-        Una línea mapeada por el frontend: los campos destino de `docs/HU-011-formato-excel-licitacion.md` §3 (los de
+        Una línea mapeada por el frontend: los campos destino de `docs/conexion_nexo/HU-011-formato-excel-licitacion.md` §3 (los de
         `CapturaLineaRequest` de Nexo, con los límites de `SolicitudCosteoWeb`) y la `fila` del análisis.
 
         HU-013.11 (#108): cada fila cumple las mismas reglas de captura que el formulario de una línea:
@@ -4293,7 +4293,7 @@ components:
           description: |
             Línea de Cotifly; da el margen de toda la licitación y su `mapeoLineasNexo` viaja en cada línea. "Licitaciones" no es
             una línea de Cotifly (es del catálogo de Nexo): responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo =
-            LINEA_DE_NEXO` y `detalle.lineas_validas` (HU-013.15, #124; pregunta 16 de `docs/HU-013-preguntas-nexo.md`).
+            LINEA_DE_NEXO` y `detalle.lineas_validas` (HU-013.15, #124; pregunta 16 de `docs/conexion_nexo/HU-013-preguntas-nexo.md`).
         deadline:
           type: string
           format: date-time

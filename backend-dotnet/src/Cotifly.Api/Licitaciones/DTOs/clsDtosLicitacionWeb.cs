@@ -7,7 +7,7 @@ namespace Cotifly.Api.Licitaciones.DTOs;
 
 /// <summary>
 /// <c>LicitacionWeb</c> (snake_case): el encabezado de la licitación y sus líneas ya mapeadas por el frontend (HU-011.2,
-/// <c>docs/HU-011-formato-excel-licitacion.md</c>). El tipo es siempre <c>licitacion</c>. Los límites los valida el caso de uso para
+/// <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c>). El tipo es siempre <c>licitacion</c>. Los límites los valida el caso de uso para
 /// devolver el reporte por fila.
 /// </summary>
 public sealed class clsLicitacionWebRequest

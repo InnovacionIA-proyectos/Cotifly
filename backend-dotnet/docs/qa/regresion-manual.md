@@ -4,7 +4,7 @@ Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaci
 
 - Estado: **pendiente de ejecución**.
 - Responsable: Kevin (QA). Soporte: Duban (backend).
-- Contrato de referencia: [`specs/openapi.yaml`](../../specs/openapi.yaml) y [`docs/CONTRATO_API_WEB.md`](../../../docs/CONTRATO_API_WEB.md).
+- Contrato de referencia: [`specs/openapi.yaml`](../../specs/openapi.yaml) y [`docs/docs_front/CONTRATO_API_WEB.md`](../../../docs/docs_front/CONTRATO_API_WEB.md).
 
 ## 1. Preparación
 

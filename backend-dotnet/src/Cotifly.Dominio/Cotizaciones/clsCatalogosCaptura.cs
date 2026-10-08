@@ -2,7 +2,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
 /// Catálogos de la captura hacia Nexo que Nexo no publica en <c>GET /api/catalogos/*</c> (HU-013.10, #106,
-/// <c>docs/HU-005.1-mapeo-campos-nexo.md</c>): carrocería, tipología y las clases de contenedor que resuelve
+/// <c>docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md</c>): carrocería, tipología y las clases de contenedor que resuelve
 /// <c>POST /api/captura-solicitudes</c>. Los códigos van tal cual a Nexo y se comparan exactos, distinguiendo mayúsculas (Nexo
 /// resuelve el texto por coincidencia aproximada y crea un vehículo duplicado si no coincide). Los tipos de vehículo y las clases de viaje salen del catálogo
 /// maestro de Nexo, no de aquí.
