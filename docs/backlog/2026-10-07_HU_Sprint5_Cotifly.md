@@ -204,6 +204,26 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 
 ---
 
+## HU-022 — Cierre del proyecto: limpieza y documentación profesional
+
+> **Repo:** `Cotifly` · **Asignado a:** Sara (Datos) + Duban (Backend) · **Va al final de todo el Sprint 5**, después de todas las HU anteriores (HU-021 incluida).
+
+### [HU-022.1] Limpiar el código viejo y dejar la documentación profesional
+
+**Contexto:** al borrar Alembic (HU-021.2) apareció que el stack viejo en Python y su infraestructura de Postgres siguen en el repo sin usarse (hallazgo en el punto 12 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`). Además, buena parte de la documentación describe ese stack o el esquema anterior. HU-021.14 pone los documentos al día con el esquema nuevo; esta HU los deja **profesionales** y quita lo que sobra.
+
+- [ ] **Evaluar qué quedó viejo y sin uso** (Python viejo, Alembic, Postgres, servicios de compose, scripts y pruebas del stack viejo) con un inventario: qué existe, quién lo usa y si está en algún ambiente.
+- [ ] **Borrar por partes** y comprobar después de cada una que el backend compila, las pruebas pasan y el despliegue sigue sano.
+- [ ] **Inventario de documentos** (`docs/`, `backend-dotnet/docs/`, `specs/`, `README.md`, `BASE_DE_DATOS.md`, `DEPLOY.md`, `infra/`, `db/README.md`): marcar cada uno como *vigente*, *por corregir* o *obsoleto*.
+- [ ] **Borrar lo obsoleto**: documentos del stack viejo o propuestas ya ejecutadas y superadas. Antes de borrar, confirmar que nada vigente los enlaza.
+- [ ] **Un solo lugar por tema** (esquema, API, despliegue, integración con Nexo y el cubicador, backlog) y un índice claro en `docs/README.md` y en el `README.md` de la raíz.
+- [ ] **Estilo uniforme**: mismos encabezados, fecha y dueño, idioma y tono; sin texto de trabajo, tachados ni notas de sesión.
+- [ ] **HU y notas de trabajo** (`docs/backlog/`): dejar las vigentes y archivar o borrar las cerradas.
+- [ ] Revisar que **todos los enlaces y rutas** funcionen (incluye las 28 referencias de `backend-dotnet/`, punto 11 de los pendientes de Duban).
+- [ ] Revisión final por alguien que **no** haya escrito el documento: ¿se entiende sin contexto?
+
+---
+
 ## Sin incluir / descartado
 
 - El manejo del prefijo de dominio (`boterosoto\usuario`) en el mecanismo de regional (`clsDirectorioEjecutivosDimEjecutivo`, PR #83) se revisó y **se ve correcto** — no se incluye como pendiente salvo que aparezca un caso raro concreto en pruebas reales.
@@ -218,6 +238,8 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 3. HU-014.1 y 014.4, que ya están absorbidas o coordinadas con HU-021.
 4. HU-015.1, 015.2 y 015.3, sobre la estructura nueva.
 5. HU-016, 017, 018, 019 y 020, que dependen de los DTOs y el resumen nuevos (HU-021.9 y 021.11). HU-019.1 y la verificación de `/seguimiento` contra `/resultado` se pueden adelantar: son independientes de la estructura.
+
+6. **HU-022 al final de todo**: la limpieza del código viejo y la documentación profesional se hacen cuando el resto esté terminado.
 
 ## Pendiente de agregar
 

@@ -23,7 +23,6 @@ db/
 │   └── 03_roles.sql               roles internos (comercial, gerente_comercial)
 ├── migrations_mssql/      migraciones 0001 a 0009 (SQL Server): llevan una base que ya existe de un estado al siguiente
 │   └── rollback/          reversas
-└── migrations/            Alembic: migraciones del stack viejo de Postgres (no se usan en SQL Server)
 ```
 
 `scripts/` y `seeder/` son para **instalar desde cero**; `migrations_mssql/` es para **bases que ya existen**. El backend,

@@ -270,6 +270,8 @@ El comercial declara las mercancías de la ruta **antes** de saber cuántos cami
 cubicador. El reparto ("el camión 1 lleva 10 cajas de naranja y 30 de aguacate") lo guarda el cubicador en su
 Tabla 8 (`recomendacionVehiculoMercancia`). Cotifly no lo copia: a Nexo le basta el peso total de cada camión.
 
+**Qué se guarda de la mercancía.** `idTipoMercancia` (el que se manda al cubicador) y `nombreMercancia` (copia). No hay un código estable aparte: si el cubicador resiembra su catálogo y hay que re-cubicar una cotización vieja, se busca la mercancía por nombre y, si no hay una coincidencia única, el comercial la vuelve a escoger. El histórico no se afecta porque el nombre, las medidas y el peso ya están copiados.
+
 ---
 
 ## 7. `CotizacionServiciosConexos` (tabla nueva)

@@ -18,6 +18,7 @@
 3. `QA` retiró la integración con Google Chat (HU-013.9): el agente sigue en el chat web. Afecta al escenario Gherkin de la milestone.
 4. El `0001` **no se edita** (es un script ya aplicado y las pruebas dependen de él): afecta a HU-021.2.
 5. Al probar el `0009` en una base real (HU-021.2) apareció un error: no se podía renombrar `filaOrigen` por su `CHECK`. Ya está corregido en el script. Además el `0009` y `01_crear_esquema.sql` ahora traen el `CHECK` de `estadoEnvio`.
+6. Se quitó el visto bueno del DBA: autorizan scalderon-bs y Duban. La documentación profesional y la limpieza final pasaron a **HU-022** en `docs/backlog/2026-10-07_HU_Sprint5_Cotifly.md` (al final del proyecto). Las decisiones con el cubicador (mercancía por id y nombre, condicionada como resultado) están en HU-021.5.
 
 ---
 
@@ -147,7 +148,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - **Limitación conocida del `0009`**: si se vuelve a ejecutar sobre una base instalada desde cero (que ya trae el esquema final), imprime "ya está aplicado" y no cambia nada, pero después muestra errores de compilación `207` y `sqlcmd -b` sale con código 1. Sobre una base migrada con el propio `0009` sí sale limpio. Una instalación desde cero no debe correr migraciones, así que no bloquea.
 - [ ] Conseguir el **`TrqType` de SAP para `DevolucionContenedor`** (negocio/SAP) y sembrarlo en `db/seeder/02_sap_mapeo_trqtype.sql`. No se inventa.
 - [ ] **Visto bueno del DBA** sobre `01_crear_esquema.sql` y `0009`, como los scripts anteriores.
-- [ ] Decidir qué se hace con `db/migrations/` (Alembic, el stack viejo de Postgres). `deploy/docker-compose.swarm.yml` todavía levanta un Postgres y un orquestador; confirmar con quien llevó el despliegue si siguen en uso antes de archivar nada.
+- [x] **`db/migrations/` (Alembic, el stack viejo de Postgres): borrado** junto con `alembic.ini` (2026-10-08; Postgres ya no se usa). Alcance acordado: solo Alembic. Siguen refiriéndose a él, sin tocar: `orquestador/Dockerfile`, `scripts/entrypoint_orquestador.sh`, `scripts/verificar_bd.ps1`, `tests/conftest.py`, `tests/test_db.py`, `pyproject.toml` y los compose de `deploy/` e `infra/`. Si el orquestador viejo sigue en algún ambiente, esos archivos fallarían al construir o arrancar.
 - [x] **Reversa del `0009`: se descarta.** El `0009` queda solo como respaldo y no se sigue trabajando; la base nueva se arma con `01_crear_esquema.sql`. Si algún día se aplicara el `0009`, la vuelta atrás es restaurar el respaldo completo de la base (o las tablas `Respaldo0009_*` que el propio script crea).
 - [x] Probar que `01_crear_esquema.sql` se niega a correr dos veces (si ya hay tablas se salta el esquema) y que los seeders se pueden repetir sin duplicar: probado con `docker compose run --rm db-init` sobre una base ya instalada (20 tablas, 6 líneas, 5 mapeos, 2 roles, sin cambios).
 - [ ] Regla permanente: **cada migración nueva `000N` se refleja también en `db/scripts/01_crear_esquema.sql`**, para que una instalación desde cero y una base migrada queden idénticas. **Y no se edita una migración que ya está aplicada** (el `0001` al `0008` son de `QA` y de otros ambientes): un intento de cambiar el seeder del `0001` rompió las pruebas de integración del PR (`clsPasosAdmin`, `clsPasosMargen`, `clsPdfAdminMetricasEndpointsTests`, `clsEsquemaTests` esperan las 8 líneas de negocio originales). Los cambios van en un script nuevo.
@@ -196,7 +197,12 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - [ ] Enviar al cubicador, por ruta: `IdLineaSolicitud` = id de la ruta, `OrigenSistema = COTIFLY`, y por mercancía `idTipoMercancia`, medidas, cantidad y peso.
 - [ ] Leer las filas de su Tabla 7 (vehículo, carrocería, peso, id, resultado) y crear un camión por cada una.
 - [ ] Reglas: "sin selección automática" → camión con vehículo y carrocería vacíos (lo resuelve la Mesa de Costeo de Nexo); mercancía condicionada pendiente de aprobación → la solicitud se envía completa; si el cubicador no responde, la captura falla con un error claro y no se manda nada a Nexo.
-- [ ] Endpoint `GET /web/tipos-mercancia` que pasa el catálogo del cubicador, para el desplegable del formulario.
+- [ ] Endpoint `GET /web/tipos-mercancia` que pasa el catálogo del cubicador, para el desplegable del formulario (con caché, como `clsCatalogosMaestrosEnCache`).
+- [ ] **Decisiones acordadas con el equipo del cubicador (2026-10-08):**
+  - A `POST /recomendaciones` se manda el **`idTipoMercancia`** (el id que el cubicador devolvió en `GET /tipos-mercancia`). En `CotizacionMercancias` se guardan el id **y el nombre** (`nombreMercancia`, copia). No se guarda un código estable de la mercancía; si el cubicador lo devuelve en el GET, no se usa por ahora.
+  - Si hay que re-cubicar una cotización vieja y el id ya no existe en el catálogo (por una resiembra), se busca la mercancía **por nombre**; si no hay coincidencia única, el comercial la vuelve a escoger del desplegable.
+  - La mercancía **condicionada** vuelve como resultado marcado, no como error. Cotifly manda la solicitud completa a la Mesa de Costeo de Nexo y no depende de ningún flujo de aprobación del cubicador (`EstadoAprobacion` de su plan, si lo construyen, no le afecta).
+  - El cubicador solo le responde a Cotifly; no hace nada en Nexo. Esto vale cuando la solicitud la hace Cotifly.
 
 ### [HU-021.6] [Corrección con BD] Captura: formulario, licitación y agente de chat
 **Labels:** `cotifly`, `backend`, `corrección-bd`
@@ -336,7 +342,6 @@ Lo que se le pide a **Nexo** (N1 a N4) y al **cubicador** (C1 a C6) está en `do
 | Nexo | N1: campo de ruta en la línea (para emparejar camiones) | HU-021.7 |
 | Nexo | N3: vehículo editable en la Mesa; N4: confirmar línea sin vehículo. (N2, horas por línea, ya está resuelta: Nexo las acepta por línea desde HU-013.11) | HU-021.5, 021.7 |
 | Negocio / SAP | El `TrqType` de SAP para `DevolucionContenedor`. No se inventa: hay que pedirlo. | HU-021.2 |
-| DBA | Visto bueno de `01_crear_esquema.sql` y `0009` | HU-021.2 |
 
 ## Riesgos
 
