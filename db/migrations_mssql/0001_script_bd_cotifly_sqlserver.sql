@@ -1,7 +1,7 @@
 /* ============================================================================
    Cotifly — Esquema objetivo SQL Server 2019 (HU-002.4 + Fase 2)
    ============================================================================
-   Fuente de diseño: docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md — no rediseña nada, es la
+   Fuente de diseño: docs/ESQUEMA_OBJETIVO_SQLSERVER.md — no rediseña nada, es la
    traducción literal de ese documento a T-SQL ejecutable. Script único: crea
    todo el esquema (tablas, FKs, constraints, vistas) y siembra la configuración
    base de una sola vez, en su forma FINAL — no hay una "Fase 1" intermedia que
@@ -21,7 +21,7 @@
 
    Confirmar antes de ejecutar en el entorno real: `dbTarifario_Nexo_Pruebas`
    suena a nombre de instancia de pruebas — validar si producción usa el mismo
-   nombre de base o uno distinto (ver docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md §9).
+   nombre de base o uno distinto (ver docs/ESQUEMA_OBJETIVO_SQLSERVER.md §9).
 
    Decisión de HU-002.4: se ejecuta como script T-SQL directo (no migraciones EF
    Core) porque HU-003 (.NET/EF Core) todavía no existe como opción real.
@@ -56,8 +56,8 @@
    Nombres de tabla: PascalCase plano, sin prefijo (`Cotizaciones`,
    `SapMapeoTrqType`, etc.) — se probó el prefijo `tbl`/`tblSap` del estándar
    `dotnet-enterprise-architect` primero y el equipo lo retiró (desviación
-   explícita, ver docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md §9 y
-   docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md línea 218).
+   explícita, ver docs/ESQUEMA_OBJETIVO_SQLSERVER.md §9 y
+   docs/HU_Backlog_Cotifly_ClientePro.md línea 218).
 
    `UsuariosWeb.id` es `UNIQUEIDENTIFIER` (UUID generado por Cotifly), NO el id
    de SAP — no existe columna de id de SAP en este esquema. El aprovisionamiento
@@ -465,42 +465,41 @@ GO
 --     (equivalente a db/migrations/versions/0002_seed_config.py del lado Postgres)
 --     Sin esto, la app fallaría con "línea de negocio desconocida" en la
 --     primera cotización -- no es dato histórico, es configuración que la app
---     necesita desde el día uno. mapeoLineasNexo: catálogo real de Nexo
---     confirmado con el equipo (2026-09-23); 1 de las 6 líneas (Distribucion)
---     no tiene equivalente y queda NULL a propósito. Reestructuración HU-021
---     (2026-10-07): se retiraron Almacenamiento/Almacenamiento3PL/ITR (sin
---     equivalente real en Nexo) y se agregó DevolucionContenedor.
+--     necesita desde el día uno. Valores verificados en vivo contra el
+--     Postgres de dev, no copiados de la documentación a ciegas -- ver nota
+--     de ITR abajo. mapeoLineasNexo: catálogo real de Nexo confirmado con el
+--     equipo (2026-09-23); 4 de las 8 líneas no tienen equivalente y quedan
+--     NULL a propósito.
 -- =============================================================================
 IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.MargenesPolitica)
 BEGIN
-    -- Reestructuración HU-021 (2026-10-07): se retiran Almacenamiento, Almacenamiento3PL
-    -- e ITR (sin equivalente real en el catálogo de líneas de negocio de Nexo) y se
-    -- agrega DevolucionContenedor (línea real de Nexo que faltaba en el seed original).
-    -- Confirmado contra el código fuente de Nexo: `public enum LineaNegocio { PuertoAInterior,
-    -- InteriorAPuerto, Nacional, DevolucionContenedor, Andino, Licitaciones }`
-    -- (repo NEXO, src/Nexo.Domain/Enums/Enums.cs) - catálogo real: dbsolucionesTI.tblSAPLineaNegocio.
-    -- `Licitaciones` no se mapea acá a propósito (es un tipo de solicitud, no una línea comercial).
+    -- Nota: BASE_DE_DATOS.md afirma que ITR está al 50% ("una al 50%, ITR,
+    -- intencional"), pero el dato real (Postgres en vivo + migración
+    -- 0002_seed_config.py) es 0.15 igual que las otras 7 líneas -- ese dato
+    -- del documento está desactualizado, no se usó acá.
     INSERT INTO dbo_cotifly.MargenesPolitica (lineaNegocio, margen, metodoCalculo, isActive, mapeoLineasNexo) VALUES
-    ('Nacional',            0.15, 'margen', 1, 'Nacional'),
-    ('Distribucion',        0.15, 'margen', 1, NULL),
-    ('Importacion',         0.15, 'margen', 1, 'PuertoAInterior'),
-    ('Exportacion',         0.15, 'margen', 1, 'InteriorAPuerto'),
-    ('Internacional',       0.15, 'margen', 1, 'Andino'),
-    ('DevolucionContenedor',0.15, 'margen', 1, 'DevolucionContenedor');
+    ('Nacional',          0.15, 'margen', 1, 'Nacional'),
+    ('Distribucion',      0.15, 'margen', 1, NULL),
+    ('Importacion',       0.15, 'margen', 1, 'PuertoAInterior'),
+    ('Exportacion',       0.15, 'margen', 1, 'InteriorAPuerto'),
+    ('Internacional',     0.15, 'margen', 1, 'Andino'),
+    ('Almacenamiento',    0.15, 'margen', 1, NULL),
+    ('Almacenamiento3PL', 0.15, 'margen', 1, NULL),
+    ('ITR',               0.15, 'margen', 1, NULL);
 END
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.SapMapeoTrqType)
 BEGIN
-    -- Reestructuración HU-021 (2026-10-07): ver nota de arriba (MargenesPolitica).
-    -- PENDIENTE: falta el TrqType real de SAP para 'DevolucionContenedor' (confirmar
-    -- con negocio/SAP antes de sembrarlo - no se debe inventar un código de SAP).
     INSERT INTO dbo_cotifly.SapMapeoTrqType (trqType, salesOrg, lineaNegocio, activo) VALUES
     ('OPTN', '', 'Nacional', 1),
     ('OPDS', '', 'Distribucion', 1),
     ('OPIM', '', 'Importacion', 1),
     ('OPEX', '', 'Exportacion', 1),
-    ('OPTI', '', 'Internacional', 1);
+    ('OPTI', '', 'Internacional', 1),
+    ('OHUB', '', 'Almacenamiento', 1),
+    ('OH3P', '', 'Almacenamiento3PL', 1),
+    ('OPSC', '', 'ITR', 1);
 END
 GO
 

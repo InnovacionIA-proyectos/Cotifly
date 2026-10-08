@@ -355,7 +355,9 @@ migración `0008_horas_por_linea`): cada camión lleva las horas de su ruta. La 
 
 ## 10. `MargenesPolitica` — solo cambia el seed
 
-Ya aplicado en el script `0001` de esta rama (falta reflejarlo en la base real):
+**Dónde se hace:** en la **instalación desde cero** (`db/seeder/01_lineas_negocio.sql`, 6 líneas) y en la **migración** (`0009`, que borra las tres líneas y agrega la nueva). **El `0001` no se toca**: es un script que ya está aplicado en otros ambientes y varias pruebas del backend (`clsPasosAdmin`, `clsPasosMargen`, `clsPdfAdminMetricasEndpointsTests`, `clsEsquemaTests`) esperan las 8 líneas originales que siembra. Un primer intento editó el `0001` y rompió las pruebas de integración del PR.
+
+Cambios en el catálogo:
 
 - **Se retiran:** `Almacenamiento`, `Almacenamiento3PL` e `ITR`, que no tienen equivalente en las líneas de
   negocio de Nexo.
