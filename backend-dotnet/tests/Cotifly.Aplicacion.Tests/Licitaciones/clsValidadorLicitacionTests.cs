@@ -49,6 +49,55 @@ public sealed class clsValidadorLicitacionTests
         errores.Where(e => e.Codigo == clsCodigosLineaSolicitud.FilaInvalida).Select(e => e.Indice).Should().Equal(0, 2, 3, 4);
     }
 
+    // HU-013.15 (#124): los mensajes usan la numeración del Excel del comercial (o la línea, base 1), nunca el índice 'fila' (base 0).
+    // Hallazgo E2E: "La fila 3 no existe (3 filas con datos)" con fila = 3 (base 0) contaba desde 1 en el mensaje.
+    private static readonly int[] _filasExcel = [4, 5, 7];
+
+    [Fact]
+    public void UnaFilaFueraDeLaHojaSeExplicaConLaLineaYLasFilasDelExcel()
+    {
+        var errores = clsValidadorLicitacion.Validar(Entrada([Linea(0), Linea(1), Linea(2), Linea(3)], _archivo), filasEnHoja: 3, _filasExcel);
+
+        var error = errores.Should().ContainSingle().Subject;
+        error.Should().Match<clsErrorFilaLicitacion>(e => e.Indice == 3 && e.Fila == 3 && e.Codigo == clsCodigosLineaSolicitud.FilaInvalida);
+        error.Mensaje.Should().Be("La línea 4 apunta a una fila que no está en la hoja 'Pliego': la hoja tiene 3 filas con datos (de la fila 4 a la 7 del Excel).");
+    }
+
+    [Fact]
+    public void UnaFilaRepetidaSeNombraConSuFilaDelExcel()
+    {
+        var conExcel = clsValidadorLicitacion.Validar(Entrada([Linea(1), Linea(1)], _archivo), filasEnHoja: 3, _filasExcel);
+        var sinExcel = clsValidadorLicitacion.Validar(Entrada([Linea(1), Linea(1)], hoja: null), filasEnHoja: null);
+
+        conExcel.Should().ContainSingle().Which.Mensaje.Should().Be("La línea 2 repite la fila 5 del Excel, que ya está en otra línea.");
+        sinExcel.Should().ContainSingle().Which.Mensaje.Should().Be("La línea 2 repite la 'fila' de otra línea.");
+    }
+
+    [Fact]
+    public void LosMensajesDeFilaNombranLaLineaEnBaseUno()
+    {
+        var errores = clsValidadorLicitacion.Validar(Entrada([Linea(0), Linea(null), Linea(-1)], _archivo), filasEnHoja: 3, _filasExcel);
+
+        errores.Select(e => e.Mensaje).Should().Equal(
+            "La línea 2 no trae su 'fila' del análisis: con el archivo adjunto cada línea debe traerla.",
+            "La línea 3 trae una 'fila' negativa.");
+    }
+
+    [Fact]
+    public void CadaErrorLlevaSuFilaDelExcelSiExisteEnLaHoja()
+    {
+        clsErrorFilaLicitacion[] errores =
+        [
+            new(null, null, "nit_cliente", clsCodigosLineaSolicitud.CampoRequerido, "x"),
+            new(0, 2, "peso_kg", clsCodigosLineaSolicitud.PesoRequerido, "x"),
+            new(1, 9, "fila", clsCodigosLineaSolicitud.FilaInvalida, "x"),
+            new(2, null, "destino", clsCodigosLineaSolicitud.LineaIncompleta, "x"),
+        ];
+
+        clsValidadorLicitacion.ConFilaExcel(errores, _filasExcel).Select(e => e.FilaExcel).Should().Equal(null, 7, null, null);
+        clsValidadorLicitacion.ConFilaExcel(errores, null).Should().BeSameAs(errores, "sin archivo no hay fila de Excel");
+    }
+
     // ADR-014 §5: moneda opcional (COP por defecto), COP o USD sin distinguir mayúsculas; otro valor o vacía es error del encabezado.
     [Theory]
     [InlineData(null, true)]

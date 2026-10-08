@@ -281,6 +281,88 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
         altas.Should().HaveCount(2).And.OnlyContain(a => a == altas[0], "el reintento reenvía lo guardado, normalizado");
     }
 
+    // --- HU-013.15 (#124): numeración del Excel, línea "Licitaciones" de Nexo y detalle de los errores de Nexo ---
+
+    [Given("que Nexo analiza el pliego de {int} filas de la hoja {string}")]
+    public void DadoQueNexoAnaliza(int filas, string hoja) => costeo.Nexo.Analisis = new
+    {
+        archivo = "pliego.xlsx",
+        hojas = new[]
+        {
+            new
+            {
+                nombre = hoja,
+                filaEncabezado = 3,
+                encabezados = new[] { "ITEM", "CIUDAD ORIGEN", "CIUDAD DESTINO", "TIPO VEHÍCULO", "TON", "OBSERVACIONES" },
+                filas = Enumerable.Range(0, filas).Select(i => new[] { (i + 1).ToString(CultureInfo.InvariantCulture), clsPliegoMuestra.Ruta(i).Origen }).ToArray(),
+                totalFilas = filas,
+            },
+        },
+    };
+
+    [Then("la hoja {string} del análisis trae las filas del Excel {int}, {int} y {int}")]
+    public void EntoncesFilasDelExcel(string hoja, int a, int b, int c) =>
+        web.UltimoJson().GetProperty("hojas").EnumerateArray().Single(h => h.GetProperty("nombre").GetString() == hoja)
+            .GetProperty("filas_excel").EnumerateArray().Select(f => f.GetInt32()).Should().Equal(a, b, c);
+
+    [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas, la última sin peso y una línea de más")]
+    public Task CuandoCreaConFilaDeMas(string alias, string licitacion, string nit, int filas)
+    {
+        var lineas = Enumerable.Range(0, filas + 1).Select(i =>
+        {
+            // La línea de más repite la ruta de la primera (municipios conocidos): su único error es la fila que no existe.
+            var (origen, destino, vehiculo, toneladas) = clsPliegoMuestra.Ruta(i % filas);
+            var linea = new Dictionary<string, object?>
+            {
+                ["fila"] = i, ["origen"] = origen, ["destino"] = destino, ["tipo_vehiculo"] = vehiculo, ["tipologia"] = "CargaSeca",
+                ["valor_mercancia"] = 50_000_000m,
+            };
+            if (i != filas - 1)
+            {
+                linea["peso_kg"] = toneladas * 1000m;
+            }
+
+            return (object)linea;
+        }).ToArray();
+        return CrearAsync(alias, licitacion, clsPliegoMuestra.Json(nit, lineas), clsPliegoMuestra.Excel(filas));
+    }
+
+    [Then("el reporte trae estos errores con la fila del Excel:")]
+    public void EntoncesErroresConFilaExcel(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        var errores = web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("codigo").GetString(),
+                e.GetProperty("fila_excel").ValueKind == JsonValueKind.Null ? (int?)null : e.GetProperty("fila_excel").GetInt32()))
+            .ToList();
+        errores.Should().BeEquivalentTo(tabla.Rows.Select(f => (int.Parse(f["linea"], CultureInfo.InvariantCulture), f["codigo"],
+            string.IsNullOrWhiteSpace(f["fila_excel"]) ? (int?)null : int.Parse(f["fila_excel"], CultureInfo.InvariantCulture))));
+    }
+
+    [Then("el mensaje del error de la línea {int} es {string}")]
+    public void EntoncesMensajeDelError(int linea, string mensaje) =>
+        web.UltimoJson().GetProperty("errores").EnumerateArray()
+            .Single(e => e.GetProperty("indice").ValueKind == JsonValueKind.Number && e.GetProperty("indice").GetInt32() == linea)
+            .GetProperty("mensaje").GetString().Should().Be(mensaje);
+
+    [When("{string} crea la licitación {string} del cliente {string} con el pliego de {int} filas mapeadas y la línea de negocio {string}")]
+    public Task CuandoCreaConLinea(string alias, string licitacion, string nit, int filas, string linea) =>
+        CrearAsync(alias, licitacion,
+            clsPliegoMuestra.Json(nit, clsPliegoMuestra.Lineas(filas)).Replace("\"linea_negocio\":\"Nacional\"", $"\"linea_negocio\":\"{linea}\"", StringComparison.Ordinal),
+            clsPliegoMuestra.Excel(filas));
+
+    [Then("el detalle del error trae la línea válida {string}")]
+    public void EntoncesLineaValida(string linea) =>
+        web.UltimoJson().GetProperty("error").GetProperty("detalle").GetProperty("lineas_validas").EnumerateArray()
+            .Select(l => l.GetString()).Should().Contain(linea);
+
+    [Given("que Nexo responde {int} con el código {string} al análisis del Excel")]
+    public void DadoQueElAnalisisFalla(int estado, string codigo)
+    {
+        costeo.Nexo.AnalisisFalla = (HttpStatusCode)estado;
+        costeo.Nexo.CodigoAnalisisFalla = codigo;
+    }
+
     private System.Text.Json.Nodes.JsonNode LineaDeLaUltimaAlta(int linea) =>
         (costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta."))["lineas"]![linea - 1]!;
 

@@ -168,6 +168,7 @@ public sealed class clsReSolicitudCosteoService(
                     costeo_id = resultante.CosteoId,
                     motivo_estado = resultante.MotivoEstadoCosteo,
                     pdf_invalidado = pdfInvalidado,
+                    conexos_descartados = resultado.Valor.ConexosDescartados,
                 }
                 : new { fase = "rechazada", error = new { codigo = resultado.Error.Codigo, mensaje = resultado.Error.Mensaje } },
             resultado.EsExitoso,
@@ -204,12 +205,33 @@ public sealed class clsReSolicitudCosteoService(
         // Instantánea completa del costeo anterior: se toma antes de cualquier cambio y se guarda con la reserva.
         var v = validada.Valor;
         var instantanea = Instantanea(cotizacion, v.Guardadas);
+        var descartados = ConexosDescartados(cotizacion);
         var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.CosteoId);
-        return entrada.VersionNueva
+        var (resultado, resultante, pdfInvalidado) = entrada.VersionNueva
             ? await CrearVersionAsync(cotizacion, usuarioId, v.Encabezado, v.Lineas, v.Politica, versionEsperada,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
             : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Guardadas, v.Posiciones, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
+        return (resultado.EsExitoso
+            ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with { ConexosDescartados = descartados })
+            : resultado, resultante, pdfInvalidado);
+    }
+
+    /// <summary>
+    /// Regla de los servicios conexos al re-solicitar (HU-013.15, #124; ADR-018 §5): la captura nueva de Nexo empieza sin conexos (en
+    /// el mismo folio el costeo anterior se olvida; la versión <c>-vN</c> empieza de cero), así que los conexos del costeo anterior se
+    /// DESCARTAN. Cotifly no los vuelve a agregar en Nexo por su cuenta (Nexo no tiene DELETE: un re-agregado automático que falle a
+    /// medias, o que se repita, deja conexos duplicados o cobrados sin que el comercial los confirme); los avisa para que el comercial
+    /// los agregue de nuevo cuando llegue el costeo nuevo. Devuelve sus nombres sin repetir y en orden, sin montos: los ve el comercial
+    /// en la respuesta (<c>conexos_descartados</c>) y en el resumen de la propuesta del asistente.
+    /// </summary>
+    public static IReadOnlyList<string> ConexosDescartados(clsCotizacion cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return [.. clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
+            .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? c.Categoria ?? string.Empty : c.Nombre).Trim())
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     public async Task<clsErrorDominio?> ValidarAsync(

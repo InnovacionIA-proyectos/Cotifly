@@ -207,6 +207,41 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Cuerpo.Should().NotContainKey("datos_carga");
         accion.Cuerpo["nueva_version"].Should().Be(false);
         accion.Resumen.Should().Contain($"mismo folio {Folio}").And.Contain("Motivo: «Nexo no respondió a tiempo»");
+        accion.Resumen.Should().NotContain("servicios conexos", "sin conexos no hay nada que avisar");
+    }
+
+    // HU-013.15 (#124): el comercial ve ANTES de confirmar qué conexos se descartan (solo nombres) y el modelo recibe los mismos nombres.
+    [Fact]
+    public async Task LaReSolicitudEnElMismoFolioAvisaLosConexosQueSeDescartan()
+    {
+        var cotizacion = Vencida();
+        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
+        [
+            new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
+            new clsServicioConexoCosteo("CX-2", "Stand-by", "logistico", 2m, 40_000m, 47_059m, false),
+        ]));
+        Registrar(cotizacion);
+        _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Cerrar("Te propongo volver a pedir el flete.");
+
+        var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Vuelve a pedirlo"), Ct);
+
+        var resumen = resultado.Valor.AccionPropuesta!.Resumen;
+        resumen.Should().Contain("Se descartan los servicios conexos «Cargue», «Stand-by»").And.Contain("agrégalos de nuevo")
+            .And.NotContain("85").And.NotContain("100.000").And.NotContain("47");
+        resumen.IndexOf("conexos", StringComparison.Ordinal).Should().BeLessThan(resumen.IndexOf("Motivo:", StringComparison.Ordinal),
+            "el aviso va antes del texto del modelo para que el recorte a 300 caracteres no lo oculte");
+        var salida = _modelo.Llamadas[1].ResultadosHerramientas.Single();
+        salida.Should().Contain("conexos_descartados").And.Contain("Stand-by").And.NotContain("85000").And.NotContain("47059");
+    }
+
+    [Fact]
+    public void ElAvisoDeConexosNombraTresYCuentaElResto()
+    {
+        var aviso = clsPropuestasAsistente.AvisoConexosDescartados(["A", "B", "C", "D", "E"], versionNueva: true);
+
+        aviso.Should().Be(" La versión nueva no lleva los servicios conexos «A», «B», «C» y 2 más: agrégalos de nuevo cuando llegue su costeo.");
+        clsPropuestasAsistente.AvisoConexosDescartados([], versionNueva: false).Should().BeEmpty();
+        clsPropuestasAsistente.AvisoConexosDescartados([new string('x', 60)], versionNueva: false).Should().Contain("«" + new string('x', 39) + "…»");
     }
 
     [Fact]

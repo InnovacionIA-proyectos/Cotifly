@@ -72,6 +72,40 @@ public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacio
         }
     }
 
+    public clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>> FilasDeDatosPorHoja(byte[] contenido, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(contenido);
+        XLWorkbook libro;
+        try
+        {
+            libro = new XLWorkbook(new MemoryStream(contenido, writable: false));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new clsErrorDominio(clsCodigosError.ExcelInvalido, "No se pudo leer el archivo Excel.");
+        }
+
+        using (libro)
+        {
+            var porHoja = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
+            foreach (var hoja in libro.Worksheets)
+            {
+                var detectado = Detectar(hoja, out var error, cancellationToken);
+                if (error is not null)
+                {
+                    return error;
+                }
+
+                if (detectado is not null)
+                {
+                    porHoja[hoja.Name] = detectado.Datos;
+                }
+            }
+
+            return clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>>.Exito(porHoja);
+        }
+    }
+
     /// <summary>
     /// Regla de Nexo sobre una hoja, acotada: la fila del encabezado, la última fila del encabezado (subencabezado), la primera
     /// columna usada, la última columna leída, la última columna usada de verdad (para escribir a la derecha al exportar) y las

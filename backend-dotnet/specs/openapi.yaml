@@ -1334,7 +1334,13 @@ paths:
         - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/HU-013-preguntas-nexo.md`,
           pregunta 4): en los dos casos Cotifly hace una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, y
           guarda el id de la solicitud nueva. En el mismo folio el costo, el precio y los conexos anteriores se limpian (quedan en
-          la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva. Un `error_envio` por un rechazo
+          la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva.
+        - **Servicios conexos (HU-013.15, #124; ADR-018 §5).** La captura nueva de Nexo empieza sin conexos: en el mismo folio los
+          del costeo anterior se pierden y la versión `-vN` no los copia. La respuesta (200 o 201) trae siempre
+          `conexos_descartados` con sus nombres (sin montos; `[]` si no había) y el resumen de la propuesta del asistente lo avisa
+          antes de confirmar. Cotifly **no** los vuelve a agregar en Nexo por su cuenta (Nexo no tiene DELETE de conexos: un
+          re-agregado automático repetido o a medias los duplicaría o cobraría sin confirmación); el comercial los agrega de nuevo
+          con `POST .../costeo/servicios-conexos` cuando llegue el costeo nuevo. Un `error_envio` por un rechazo
           definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
           Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
           (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
@@ -1874,7 +1880,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorWeb'
         '503':
-          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`'
+          description: '`COSTEO_NEXO_NO_DISPONIBLE` o `COSTEO_NEXO_TIEMPO_AGOTADO`. Como en el resto de los endpoints, `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`, o `HTTP 401` si Nexo no manda código), nunca su texto (HU-013.15, #124)'
           content:
             application/json:
               schema:
@@ -1944,7 +1950,9 @@ paths:
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
             `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
-            línea no existe, o está inactiva: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
+            línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: `detalle.lineas_validas` trae las líneas activas
+            de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
+            LINEA_DE_NEXO`), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
             `moneda = USD`). `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
             `NEXO_SIN_PERMISO` (201).
@@ -2906,6 +2914,14 @@ components:
           type: string
           format: date-time
           nullable: true
+        conexos_descartados:
+          type: array
+          items:
+            type: string
+          description: |
+            HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí, `[]` si no había):
+            nombres de los servicios conexos del costeo anterior que la cotización resultante ya no tiene (sin montos). No se
+            vuelven a agregar en Nexo; el frontend los muestra como aviso y ofrece agregarlos de nuevo cuando llegue el costeo.
 
     MisCotizaciones:
       type: object
@@ -4037,6 +4053,16 @@ components:
               type: string
         total_filas:
           type: integer
+        filas_excel:
+          type: array
+          nullable: true
+          items:
+            type: integer
+          description: |
+            HU-013.15 (#124). Número de fila de la hoja de Excel (base 1, encabezado incluido) de cada elemento de `filas`, en el
+            mismo orden: es la numeración que ve el comercial en su archivo y la que el frontend debe mostrar (`filas_excel[i]`
+            para `filas[i]`). La calcula Cotifly con la misma regla de detección de Nexo; `null` si la hoja no cuadra con el
+            análisis de Nexo (en ese caso, mostrar la posición base 1).
 
     AnalisisExcel:
       type: object
@@ -4078,7 +4104,10 @@ components:
           type: integer
           nullable: true
           minimum: 0
-          description: Índice (base 0) en `hojas[h].filas`. Obligatorio si se adjunta el archivo; único por licitación.
+          description: |
+            Índice (base 0) en `hojas[h].filas`. Obligatorio si se adjunta el archivo; único por licitación. Es un dato técnico:
+            al comercial se le muestra `hojas[h].filas_excel[fila]` (fila del Excel) y los mensajes de error nunca usan este índice
+            (HU-013.15, #124).
         origen:
           type: string
           maxLength: 150
@@ -4186,7 +4215,10 @@ components:
           maxLength: 300
         linea_negocio:
           type: string
-          description: Línea de Cotifly; da el margen de toda la licitación y su `mapeoLineasNexo` viaja en cada línea.
+          description: |
+            Línea de Cotifly; da el margen de toda la licitación y su `mapeoLineasNexo` viaja en cada línea. "Licitaciones" no es
+            una línea de Cotifly (es del catálogo de Nexo): responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo =
+            LINEA_DE_NEXO` y `detalle.lineas_validas` (HU-013.15, #124; pregunta 16 de `docs/HU-013-preguntas-nexo.md`).
         deadline:
           type: string
           format: date-time
@@ -4247,7 +4279,14 @@ components:
         fila:
           type: integer
           nullable: true
-          description: La `fila` que mandó el frontend para esa línea.
+          description: La `fila` que mandó el frontend para esa línea (índice base 0 en `hojas[h].filas`, técnico).
+        fila_excel:
+          type: integer
+          nullable: true
+          description: |
+            HU-013.15 (#124). Número de fila de la hoja de Excel (base 1, encabezado incluido) de esa línea, el que ve el comercial:
+            solo con el archivo adjunto y una `fila` que existe en la hoja; si no, `null` (mostrar "línea `indice + 1`"). Los
+            `mensaje` usan la misma numeración: la fila del Excel o la línea en base 1, nunca el índice `fila`.
         campo:
           type: string
         codigo:

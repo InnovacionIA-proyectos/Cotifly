@@ -31,6 +31,17 @@ Característica: Re-solicitar el costeo a Nexo
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente pidió actualizar el valor"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+    Y la respuesta no descarta servicios conexos
+
+  # HU-013.15 (#124, ADR-018 §5): la captura nueva de Nexo empieza sin conexos. Cotifly avisa cuáles se descartan (solo nombres) y
+  # no los vuelve a agregar en Nexo: el comercial los agrega de nuevo cuando llegue el costeo nuevo.
+  Escenario: Re-solicitar en el mismo folio avisa los servicios conexos que se descartan y no los vuelve a agregar en Nexo
+    Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
+    Y que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente pidió actualizar el valor"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta avisa que se descartan los servicios conexos "Cargue"
+    Y Nexo no recibió ninguna petición para agregar conexos
 
   Escenario: Con cambios de carga se crea una versión nueva y la anterior se conserva
     Dado que el polling consultó a Nexo 73 horas después del envío y "C1" quedó en "costeo_vencido"

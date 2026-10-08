@@ -146,7 +146,30 @@ public sealed class clsLicitacionService(
             return invalido;
         }
 
-        return await analizador.AnalizarAsync(usuarioId, clsArchivoLicitacion.NombreLimpio(archivo.Nombre), archivo.Contenido, cancellationToken);
+        var analisis = await analizador.AnalizarAsync(usuarioId, clsArchivoLicitacion.NombreLimpio(archivo.Nombre), archivo.Contenido, cancellationToken);
+        return analisis.EsFallo ? analisis : ConFilasExcel(analisis.Valor, archivo.Contenido, cancellationToken);
+    }
+
+    /// <summary>
+    /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
+    /// con la misma regla de detección (<see cref="IClsLectorExcelLicitacion"/>), para que el frontend muestre la numeración del archivo
+    /// del comercial. Si Cotifly no puede leer el archivo, o una hoja no cuadra con lo que devolvió Nexo (otro número de filas), esa
+    /// hoja queda sin <c>filas_excel</c>: el análisis nunca falla por esto.
+    /// </summary>
+    private clsAnalisisExcel ConFilasExcel(clsAnalisisExcel analisis, byte[] contenido, CancellationToken cancellationToken)
+    {
+        var porHoja = lector.FilasDeDatosPorHoja(contenido, cancellationToken);
+        if (porHoja.EsFallo)
+        {
+            return analisis;
+        }
+
+        return analisis with
+        {
+            Hojas = [.. analisis.Hojas.Select(h => porHoja.Valor.TryGetValue(h.Nombre, out var filas) && filas.Count == h.Filas.Count
+                ? h with { FilasExcel = filas }
+                : h)],
+        };
     }
 
     public async Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default)
@@ -164,7 +187,7 @@ public sealed class clsLicitacionService(
         }
 
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.
-        int? filasEnHoja = null;
+        IReadOnlyList<int>? filasExcel = null;
         if (entrada.Archivo is { } archivo)
         {
             if (clsArchivoLicitacion.ValidarArchivo(archivo.Nombre, archivo.Contenido) is { } invalido)
@@ -180,16 +203,16 @@ public sealed class clsLicitacionService(
                     return clsResultadoLicitacion.Fallo(filas.Error);
                 }
 
-                filasEnHoja = filas.Valor.Count;
+                filasExcel = filas.Valor;
             }
         }
 
-        var validadas = await ValidarFilasAsync(usuarioId, entrada, filasEnHoja, cancellationToken);
+        var validadas = await ValidarFilasAsync(usuarioId, entrada, filasExcel, cancellationToken);
         if (validadas.Errores.Count > 0)
         {
             // HU-013.11: con un catálogo caído se reportan igual los errores que se detectan sin él, con el código del catálogo en
-            // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla).
-            return clsResultadoLicitacion.Invalida(validadas.Errores, validadas.NoDisponible?.Codigo);
+            // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla). HU-013.15: cada error con su fila de Excel.
+            return clsResultadoLicitacion.Invalida(clsValidadorLicitacion.ConFilaExcel(validadas.Errores, filasExcel), validadas.NoDisponible?.Codigo);
         }
 
         if (validadas.NoDisponible is { } noDisponible)
@@ -202,8 +225,9 @@ public sealed class clsLicitacionService(
         var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
         if (politica is null)
         {
-            return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.MargenLineaDesconocida,
-                $"La línea de negocio '{entrada.LineaNegocio!.Trim()}' no existe en Cotifly."));
+            // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
+            return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaDesconocida(
+                entrada.LineaNegocio!, await margen.LineasActivasAsync(cancellationToken) ?? [], esLicitacion: true));
         }
 
         if (!politica.Activa)
@@ -283,9 +307,9 @@ public sealed class clsLicitacionService(
     /// las que dependen de catálogos (<see cref="IClsValidadorFilasLicitacion"/>: códigos de catálogo y municipios).
     /// </summary>
     private async Task<clsFilasLicitacionValidadas> ValidarFilasAsync(
-        Guid usuarioId, clsEntradaLicitacion entrada, int? filasEnHoja, CancellationToken cancellationToken)
+        Guid usuarioId, clsEntradaLicitacion entrada, IReadOnlyList<int>? filasExcel, CancellationToken cancellationToken)
     {
-        var errores = clsValidadorLicitacion.Validar(entrada, filasEnHoja);
+        var errores = clsValidadorLicitacion.Validar(entrada, filasExcel?.Count, filasExcel);
         IReadOnlyList<clsLineaLicitacionEntrada?> lineas = entrada.Lineas ?? [];
         return lineas.Count is 0 or > clsValidadorLicitacion.MaximoLineas
             ? new clsFilasLicitacionValidadas([], errores, null)

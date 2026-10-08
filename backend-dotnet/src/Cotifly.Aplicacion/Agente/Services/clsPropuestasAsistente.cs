@@ -131,11 +131,17 @@ public static class clsPropuestasAsistente
         }
 
         cuerpo["nueva_version"] = entrada.VersionNueva;
+
+        // HU-013.15 (#124): el aviso de los conexos que se descartan va antes del motivo (texto del LLM), para que el recorte a 300
+        // caracteres nunca lo oculte.
+        var conexos = AvisoConexosDescartados(clsReSolicitudCosteoService.ConexosDescartados(cotizacion), entrada.VersionNueva);
         var resumen = entrada.VersionNueva
             ? $"Volver a pedir el costeo a Nexo en una versión nueva de {cotizacion.Folio}"
               + (cambios.TieneCambios ? $" con estos cambios: {DescribirCambios(cambios)}." : ".")
+              + conexos
               + $" Motivo: {Cita(motivo)}. La cotización original no cambia."
-            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}. Motivo: {Cita(motivo)}. El precio actual se descarta hasta el nuevo costeo"
+            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}." + conexos
+              + $" Motivo: {Cita(motivo)}. El precio actual se descarta hasta el nuevo costeo"
               + (cotizacion.PdfPath is null ? "." : " y el PDF actual queda desactualizado.");
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoReSolicitarCosteo, MetodoPost, RutaReSolicitud(cotizacion.Folio), cuerpo, Recortar(resumen), clsCosteoCotizacionService.VersionEtag(cotizacion));
@@ -272,6 +278,36 @@ public static class clsPropuestasAsistente
         }
 
         return string.Join(", ", partes);
+    }
+
+    /// <summary>Conexos que se nombran en el aviso del resumen; el resto se cuenta ("y N más").</summary>
+    public const int MaximoConexosEnAviso = 3;
+
+    /// <summary>Largo máximo del nombre de un conexo en el aviso del resumen.</summary>
+    public const int LargoMaximoNombreConexo = 40;
+
+    /// <summary>
+    /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se descartan (HU-013.15, #124), con un espacio inicial; vacío
+    /// si no hay. Solo nombres (de Nexo, nunca del LLM) y sin montos.
+    /// </summary>
+    public static string AvisoConexosDescartados(IReadOnlyList<string> conexos, bool versionNueva)
+    {
+        ArgumentNullException.ThrowIfNull(conexos);
+        if (conexos.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var nombres = string.Join(", ", conexos.Take(MaximoConexosEnAviso).Select(n =>
+            "«" + (n.Length <= LargoMaximoNombreConexo ? n : n[..(LargoMaximoNombreConexo - 1)].TrimEnd() + "…") + "»"));
+        if (conexos.Count > MaximoConexosEnAviso)
+        {
+            nombres += $" y {conexos.Count - MaximoConexosEnAviso} más";
+        }
+
+        return versionNueva
+            ? $" La versión nueva no lleva los servicios conexos {nombres}: agrégalos de nuevo cuando llegue su costeo."
+            : $" Se descartan los servicios conexos {nombres}: agrégalos de nuevo cuando llegue el costeo nuevo.";
     }
 
     /// <summary>Texto del LLM entre comillas latinas, recortado a <see cref="LargoMaximoCita"/> caracteres.</summary>
