@@ -19,5 +19,9 @@ public sealed record clsEntradaReSolicitudCosteo(string? Motivo, clsCambiosCarga
 /// <summary>
 /// Resultado de la re-solicitud: la cotización que quedó en Nexo (la misma, 200, o la versión nueva, 201) como <c>CotizacionResumen</c>
 /// y su versión de negocio para el <c>ETag</c>. Es lo que se guarda para repetir la respuesta con la misma <c>Idempotency-Key</c>.
+/// <paramref name="ConexosDescartados"/> (HU-013.15, #124): nombres de los servicios conexos del costeo anterior que la cotización
+/// resultante no tiene (la captura nueva de Nexo empieza sin conexos y Cotifly no los vuelve a agregar); sin montos. <c>null</c> en
+/// una respuesta guardada antes de #124 (se responde como lista vacía).
 /// </summary>
-public sealed record clsReSolicitudCosteo(bool VersionNueva, clsCotizacionResumen Cotizacion, string RowVersion);
+public sealed record clsReSolicitudCosteo(
+    bool VersionNueva, clsCotizacionResumen Cotizacion, string RowVersion, IReadOnlyList<string>? ConexosDescartados = null);

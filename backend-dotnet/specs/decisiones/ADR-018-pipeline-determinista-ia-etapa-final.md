@@ -129,6 +129,7 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
   - **Moneda (decisión del usuario, 2026-10-06; ADR-014 §5).** La versión nueva `-vN` es una cotización nueva: copia la moneda pero **vuelve a fijar la TRM del día** (`IClsFijacionMonedaService.FijarAsync`) antes de reservar la versión de la original y antes de llamar a Nexo; sin TRM, `TRM_NO_DISPONIBLE` (400, igual que el formulario y las licitaciones) y no se crea nada (ni la reserva, ni la `-vN`, ni la captura). Re-solicitar en el mismo folio y reintentar conservan la moneda y la TRM fijadas.
   - **Catálogos (#106, G2).** Los `datos_carga` de `-vN` se validan con `IClsValidadorCatalogosCaptura` antes de reservar, y la captura usa el envío normalizado de #106.
   - **Restricción para #102.** Los eventos `costeo_nexo_re_solicitud` traen costos y se escriben SIN `ThreadId`: el asistente no debe leer `EventosHerramienta` de esta herramienta (ni de otra con montos) para construir su contexto.
+  - **Servicios conexos al re-solicitar (#124, HU-013.15).** Regla en §18.
 
 ### 6. Moneda en el formulario (HU-013.7)
 
@@ -256,6 +257,83 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **`GET /web/municipios` sigue respondiendo 400** con `MUNICIPIOS_NO_DISPONIBLE` (contrato vigente, el controlador lo fija). Conviene alinearlo a 503 como el resto de catálogos en una issue propia, junto con el frontend.
 - **Script `0008_horas_por_linea.sql`.** Horas de cargue y descargue por línea (G5). Orden de aplicación: 0006 → 0007 → 0008.
 
+### 17. Consistencia del costeo al entregar y al registrar el resultado (#123, HU-013.14)
+
+**Defecto (E2E del 2026-10-07, folio `PCN-9001234567-AP-07102026-004`).** El comercial marcó el resultado (`POST .../resultado`) cuando Nexo ya había entregado pero el polling aún no lo leía. El resultado pasaba `estado_costeo` a `entregada` (entrega implícita) y detenía el polling **sin leer el costo**. La cotización quedaba en `entregada`, con `precio_final` nulo para siempre, el PDF en 409 `COSTEO_NO_LISTO` y las métricas la contaban como ganada por 0. Además, el formulario respondía `autocosteo` con `precio_final: null` hasta la primera consulta del polling.
+
+**Regla: `autocosteo` y `entregada` solo se exponen después de que Cotifly leyó el costo de Nexo.** La lectura siempre aplica la misma regla del polling (`clsLecturaCosteo.AplicarFoto`): deriva el estado, guarda el id de la cotización de Nexo, agenda o detiene el polling y pone el precio con el margen guardado, también por línea.
+
+- **Resultado con el costeo no aplicado** (sin `precio_final` y sin PDF):
+  - Primero se escribe en Nexo, como antes.
+  - Si Nexo acepta, Cotifly **relee el costeo** y guarda el resultado, el estado y el precio **en una sola escritura** con `versionNegocio` (`GuardarCambiosSiVersionAsync`).
+  - Si la relectura falla, el resultado se registra igual, porque Nexo ya lo tiene. La cotización **conserva su estado de costeo** (nunca pasa a `entregada` sin haber leído el costo) y queda agendada para el polling en ese momento (`costeoSiguienteConsultaAt = ahora`), que aplica el precio en segundos.
+  - **Carrera con el polling:** si el polling guarda primero, el resultado recarga, encuentra el precio y no reaplica la foto. Si el resultado guarda primero, el polling pierde la versión y su siguiente lectura no cambia nada.
+  - Con el precio ya aplicado no se relee. La entrega implícita se mantiene: pasa a `entregada` y se detiene el polling.
+- **Resultado en `pendiente_costeo`.** El polling espacia sus consultas según la edad de la solicitud (hasta 15 min), así que Cotifly puede no haber visto todavía un costeo que Nexo ya completó o entregó. Antes de pedirle el resultado a Nexo, Cotifly lee el costeo:
+  - si Nexo ya tiene el costo, sigue la regla anterior;
+  - si no lo tiene, responde 409 `COTIZACION_NO_ENTREGADA` sin llamar al POST del resultado;
+  - si Nexo no responde, 503 sin cambio local.
+
+  Antes respondía 409 sin preguntar. `pendiente_envio` sigue sin llamar a Nexo.
+- **El polling aplica el precio aunque ya haya resultado.** El resultado no congela el precio; solo lo congela el PDF (§11).
+- **Opción A para el formulario (elegida).** Si la respuesta del alta (`POST /api/captura-solicitudes`) trae todas las líneas con flete (`fletesCalculados`, `costeoCompleto`), Cotifly lee el costeo en la misma petición y responde `autocosteo` **con** `precio_final`. Antes guarda el `costeoId`: si el proceso muere, el polling la retoma. La lectura cuesta un `GET /api/solicitudes/{id}` y un "crear o recuperar" `POST /api/cotizaciones`, los mismos que haría el polling 5 s después. Si la lectura falla, o el polling ganó la versión, la cotización queda en `pendiente_costeo` y el polling la promueve.
+  - Se descartó la **opción B** (un estado intermedio nuevo, p. ej. `costeado_sin_precio`). Exigía un script para el `CHECK` de `estadoCosteo`, ampliar el enum del contrato y cambiar el frontend, y solo cubría el hueco de pocos segundos que la opción A cierra sin cambios.
+  - **Compatibilidad:** el enum no cambia. El formulario ya no devuelve `autocosteo` sin precio: devuelve `autocosteo` con precio o `pendiente_costeo`. Un frontend que consulta mientras el estado sea `pendiente_costeo` no cambia. `autocosteo` sin precio solo aparece si falta el margen, y entonces lleva `motivo_estado_costeo`.
+- **Reparación de las afectadas.** Al arrancar, el worker del polling agenda una relectura (`IClsPollingCosteoService.ReprogramarEntregadasSinPrecioAsync`) de las cotizaciones que cumplen todo esto: `entregada`, con `costeoId`, sin `precioFinal`, sin PDF, sin `motivoEstadoCosteo` y sin agenda. El polling lee una vez cada `entregada` sin precio (`clsCotizacion.EntregadaSinPrecio`), aunque haya pasado la edad máxima de 72 h. Si Nexo no responde, reintenta con el espaciado máximo hasta leerla. Después vuelve a ser terminal. Es idempotente: una ya leída tiene precio o un motivo (sin margen, líneas sin flete) y no se vuelve a agendar. No hay script de datos.
+- **Diagnóstico para el DBA (solo lectura):**
+
+  ```sql
+  SELECT c.folio, c.usuarioId, c.costeoId, c.cotizacionNexoId, c.ganada, c.marcadoAt, c.costeoEnviadoAt,
+         c.costeoUltimaConsultaAt, c.costeoSiguienteConsultaAt, c.motivoEstadoCosteo
+  FROM dbo_cotifly.Cotizaciones c
+  WHERE c.estadoCosteo = 'entregada' AND c.costeoId IS NOT NULL AND c.precioFinal IS NULL AND c.pdfPath IS NULL
+  ORDER BY c.marcadoAt DESC;
+  ```
+
+  Las filas con `motivoEstadoCosteo` nulo son las que repara el arranque.
+
+**Correcciones de la auditoría (#123).**
+
+- **Menos llamadas a Nexo.** En `pendiente_costeo`, la lectura previa se reutiliza como la foto que se aplica: también aporta el id de la cotización de Nexo, así que no hace falta "crear o recuperar". Solo se le pide el resultado a Nexo si esa lectura muestra la cotización **entregada**; si no, una `ganada` responde 409 `COTIZACION_NO_ENTREGADA` sin llamar al POST. En `autocosteo` sin precio, la foto se arma con la cotización entregada que devuelve el POST del resultado, siempre que todas las líneas ya tengan su id de Nexo. Solo si no hay ninguna de las dos se relee el costeo.
+- **Resultado ya definido en Nexo.** Puede pasar que Nexo acepte, el guardado en Cotifly falle y el comercial pida después el resultado contrario: Nexo responde `RESULTADO_YA_DEFINIDO`. Ante ese 409, Cotifly lee el resultado de Nexo (`POST /api/cotizaciones`, "crear o recuperar") y lo guarda con `versionNegocio`. Luego responde el 409 con `detalle` = `ganada`/`perdida` (el de Nexo) y un mensaje que lo dice. Nexo es la fuente de verdad del resultado y Cotifly queda igual. Si el comercial repite el mismo resultado, Nexo responde 200 (es idempotente) y el guardado local se completa.
+- **Lectura del alta con tiempo propio.** La lectura del costeo en la misma petición usa `CosteoNexo:LecturaInmediataSegundos` (6 s por defecto, de 1 a 30). Si no alcanza, responde `pendiente_costeo` y el polling sigue.
+- **Tope de la relectura.** El polling relee una cotización que solo espera precio (`clsCotizacion.RequiereRelecturaCosteo`: una `entregada` sin precio, o una con resultado registrado en Nexo sin costo leído). Después de `CosteoNexo:MaximoFallosRelectura` fallos seguidos (10 por defecto), deja el motivo y para; si además pasó la edad máxima y sigue en `pendiente_costeo`, la vence. Un 404 `SOLICITUD_NO_ENCONTRADA` la detiene en la primera consulta, como antes.
+- **`pendiente_costeo` con resultado y más de 72 h.** Se lee antes de vencerla: si Nexo la entregó, toma el precio; si sigue sin costeo, se vence después de leerla.
+- **`entregada` leída sin precio y sin explicación** (por ejemplo, Nexo no trajo la cotización en la foto). Queda con el motivo `clsLecturaCosteo.MotivoEntregadaSinPrecio`, así la reparación del arranque no la vuelve a agendar cada vez.
+
+**Perdida solo en Cotifly (#127, HU-013.17; decisión del usuario del 2026-10-08).** Si el cliente desiste antes de que Nexo costee, el comercial puede marcarla **perdida solo en Cotifly** con el mismo `POST .../resultado`:
+
+- **Cuándo aplica:**
+  - en `error_envio`;
+  - en `pendiente_costeo` solo si la lectura previa **confirma** que Nexo no tiene la cotización entregada. Si Nexo no responde (caído o lento), responde 503 reintentable y no registra nada, igual que con una `ganada`: si Nexo ya hubiera entregado, una perdida solo en Cotifly dejaría a Cotifly y Nexo distintos para siempre, con el polling detenido.
+- **Reglas:**
+  - solo se admite `perdida`; una `ganada` responde 409 `COTIZACION_NO_ENTREGADA`;
+  - el `motivo` es obligatorio (400 `SEGUIMIENTO_INVALIDO`);
+  - `If-Match` es obligatorio: 428 sin él y 409 `CONFLICTO_CONCURRENCIA` si no coincide. Se guarda con `versionNegocio` y el 200 trae el `ETag` nuevo. En el resto de `/resultado`, `If-Match` sigue opcional por compatibilidad: si viene, se compara.
+- **Efectos:**
+  - no se envía a Nexo, porque allá no hay cotización entregada;
+  - el polling se detiene y no se reanuda. `clsCotizacion.RegistrarPerdidaSinCosteo` deja `ganada = 0`, `motivoRechazo` y `marcadoAt`; el estado de costeo no cambia; `motivoEstadoCosteo` queda con el prefijo "Perdida solo en Cotifly ...", que la distingue (`PerdidaSoloEnCotifly`).
+  - Si Nexo costea después, el resultado no cambia y el costeo no se lee.
+  - Cuenta en las métricas como perdida (`ganada = 0`), sin script nuevo.
+  - Queda en `EventosHerramienta` como `resultado_cotizacion_sin_costeo`.
+  - Un segundo intento responde 409 `RESULTADO_YA_DEFINIDO`. El reintento del envío ya no aplica, porque exige que no haya resultado.
+  - `/seguimiento` sigue respondiendo `USAR_RESULTADO_NEXO` en esos estados: el camino es `/resultado`. Las que tienen motivo se leyeron y no admiten precio (revisar el margen de la línea o las líneas sin flete con Nexo). Mientras una fila aparezca aquí, las métricas la cuentan sin valor: `valor_ganado_cop` queda subestimado.
+
+### 18. Avisos en la re-solicitud y en las licitaciones (#124, HU-013.15)
+
+Hallazgos de las pruebas E2E del 2026-10-07.
+
+- **Los conexos se descartan, se avisan y no se re-agregan.** Re-solicitar es una captura nueva en Nexo (§5): la cotización nueva de Nexo empieza sin conexos. En el mismo folio los conexos del costeo anterior se pierden (`PrepararReSolicitud` limpia `serviciosConexos`; quedan en la instantánea de la auditoría) y la `-vN` no los copia (la original conserva los suyos). La regla:
+  - la respuesta de `re-solicitar` (200 o 201) trae siempre `conexos_descartados` (`CotizacionResumen`, solo en este endpoint): los nombres sin repetir, sin montos, `[]` si no había. **Solo los incluidos** (`incluido = true`): uno excluido no iba en el PDF ni en el precio para el cliente, así que no se pierde nada con él. También van en la fase `resultado` de la auditoría;
+  - la propuesta `re_solicitar_costeo` del asistente los avisa en el `resumen` que el comercial ve ANTES de confirmar ("Se descartan los servicios conexos «Cargue», …: agrégalos de nuevo cuando llegue el costeo nuevo"; en la `-vN`, "La versión nueva no lleva…"). El aviso tiene espacio reservado dentro de los 300 caracteres: va después de la acción y antes del motivo (texto del LLM), y siempre cabe completo con "y N más" y "agrégalos de nuevo". Para eso nombra hasta 3 conexos (cada nombre recortado a 40 caracteres) y nombra menos si no cabe (en el límite, solo los cuenta), y en la `-vN` la descripción de los cambios de carga se acorta antes (o queda en "con cambios de carga"); solo el motivo y lo que sigue pueden recortarse. La salida de `proponer_re_solicitud` lleva los mismos nombres, recortados a 40 caracteres y nunca con montos, para que el modelo lo mencione;
+  - **Cotifly no los vuelve a agregar en Nexo por su cuenta.** Nexo no tiene DELETE de conexos ni idempotencia en `POST .../conexos` (`docs/HU-013-preguntas-nexo.md`, preguntas 9 y 13): un re-agregado automático que falle a medias o se repita dejaría conexos duplicados o cobrados sin que el comercial los confirme, y el precio del conexo puede haber cambiado. Además el costeo nuevo todavía no existe al responder (los conexos se agregan sobre la cotización de Nexo con el costeo listo, `COSTEO_NO_LISTO`). El comercial los agrega de nuevo con `POST .../costeo/servicios-conexos` (o la propuesta del asistente) cuando llegue el costeo. Se descartó "ofrecer volver a agregarlos" como una acción automática por las mismas razones; el frontend puede precargar el buscador con los nombres.
+- **Numeración de filas: la del Excel del comercial.** `fila` (en `LineaLicitacionWeb`, `ErrorFilaLicitacion` y `LineaLicitacion`) sigue siendo el índice base 0 en `hojas[h].filas` (contrato y dato guardado en `CotizacionLineasSolicitud.filaOrigen`; cambiarlo rompería el frontend, las licitaciones guardadas y la exportación). Lo que ve el comercial es el **número de fila de la hoja de Excel** (base 1, encabezado incluido):
+  - `analizar-excel` agrega `hojas[h].filas_excel` (el número de fila de Excel de cada `filas[i]`), calculado con el puerto de la detección de Nexo (`IClsLectorExcelLicitacion.FilasDeDatosPorHoja`, una sola lectura del libro). Se compara con el total real de la hoja (`total_filas`), porque Nexo corta `filas` en 1000 (Cotifly también se detiene en 1000), y se toman tantos números como filas devolvió Nexo. Una hoja que no cuadra, o que Cotifly no puede ubicar (por ejemplo, con demasiadas combinadas), queda en `null` sin afectar a las demás; el análisis nunca falla por esto;
+  - `ErrorFilaLicitacion.fila_excel`: la fila de Excel de la línea con error, con el archivo adjunto y una `fila` que existe en la hoja; si no, `null`;
+  - los `mensaje` nombran la fila del Excel o, sin ella, la línea en base 1 (`indice + 1`); nunca el índice `fila`. Ejemplo: "La línea 4 apunta a una fila que no está en la hoja 'Pliego': la hoja tiene 3 filas con datos (de la fila 2 a la 4 del Excel)." en lugar de "La fila 3 no existe (3 filas con datos)". `indice` se mantiene.
+- **La línea "Licitaciones" de Nexo no es una línea de Cotifly.** Existe en `GET /api/catalogos/lineas-negocio` de Nexo pero no en `MargenesPolitica`: no tiene margen ni `mapeoLineasNexo`. Una licitación se crea con la línea de Cotifly que le da el margen (la misma para todas sus filas: las filas del pliego no traen línea de negocio propia) y en Nexo viaja su `mapeoLineasNexo` (ADR-017 §3). Con "Licitaciones" (o cualquier línea desconocida) `POST /web/licitaciones` responde 400 `MARGEN_LINEA_DESCONOCIDA` con un mensaje que dice qué líneas usar y `detalle.lineas_validas` (las activas; también con una línea inactiva); con "Licitaciones", además `detalle.motivo = LINEA_DE_NEXO`. No se agrega un mapeo a `Licitaciones` en Nexo hasta que negocio lo defina: cambia la tarifa y la bandeja de la Mesa (pregunta 16 de `docs/HU-013-preguntas-nexo.md`). No hay cambio de esquema.
+- **`analizar-excel` sin texto crudo de Nexo.** Su `detalle.motivo` (503 `COSTEO_NEXO_NO_DISPONIBLE`, 403, 413 y otros 4xx) lleva solo el código de Nexo (`SESION_INVALIDA`) o `HTTP {estado}` si Nexo no manda código, con la misma regla de los conexos (`clsServiciosConexosNexo.SoloCodigo`); el texto completo queda en el log. Los 400 de archivo (`EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`…) conservan el mensaje de Nexo, que describe el archivo del comercial.
+
 ### 19. Filtro de montos y latencia del asistente (#126, HU-013.16)
 
 Complementa §2b y §14. Ninguna regla de seguridad cambia: el modelo sigue sin recibir montos, solo propone, y toda respuesta que llega al comercial pasa por las mismas reglas de `clsReglasRespuestaAgente`.
@@ -335,3 +413,4 @@ Complementa §2b y §14. Ninguna regla de seguridad cambia: el modelo sigue sin 
 | Compartir el contrato con el desarrollador del frontend | Duban |
 | Alinear `GET /web/municipios` a 503 con `MUNICIPIOS_NO_DISPONIBLE` (hoy 400; en licitaciones ya es 503, §16) | Duban + frontend |
 | Script `0008_horas_por_linea.sql` (#108): pendiente de aprobación; se aplica después del 0007 | Duban + DBA |
+| ¿Una licitación debe viajar a Nexo con la línea `Licitaciones` (y el margen salir de la línea de Cotifly)? Hoy viaja el `mapeoLineasNexo` de la línea elegida (§18, pregunta 16) | Negocio + equipo de Nexo |

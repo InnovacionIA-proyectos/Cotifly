@@ -25,7 +25,8 @@ public sealed class clsCosteoController(
 {
     /// <summary>
     /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
-    /// 409 <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c> o <c>COSTEO_NO_LISTO</c>; 503 si Nexo no responde.
+    /// 409 <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c>, <c>COSTEO_NO_LISTO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 en la
+    /// perdida solo en Cotifly sin <c>If-Match</c> (HU-013.17); 503 si Nexo no responde. El 200 trae el <c>ETag</c> nuevo.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/resultado")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status200OK)]
@@ -34,7 +35,14 @@ public sealed class clsCosteoController(
     public async Task<IActionResult> MarcarResultado(string folio, [FromBody] clsResultadoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
-        var resultado = await resultadoCotizacion.MarcarAsync(UsuarioId, folio, cuerpo.Resultado, cuerpo.Motivo, cuerpo.Comentario, cancellationToken);
+        // If-Match opcional (compatibilidad); la perdida solo en Cotifly (HU-013.17) lo exige: 428 sin él, 409 si no coincide.
+        var resultado = await resultadoCotizacion.MarcarAsync(
+            UsuarioId, folio, cuerpo.Resultado, cuerpo.Motivo, cuerpo.Comentario, clsConcurrenciaHttp.LeerIfMatch(Request), cancellationToken);
+        if (resultado.EsExitoso)
+        {
+            clsConcurrenciaHttp.EscribirEtag(Response, resultado.Valor.VersionNegocio.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         return resultado.EsFallo ? Error(resultado.Error) : Ok(await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
     }
 
@@ -167,9 +175,12 @@ public sealed class clsCosteoController(
 
         var valor = resultado.Valor;
         clsConcurrenciaHttp.EscribirEtag(Response, valor.RowVersion);
+
+        // HU-013.15 (#124): la respuesta avisa siempre (lista vacía si no había) los conexos del costeo anterior que se descartan.
+        var resumen = valor.Cotizacion with { ConexosDescartados = valor.ConexosDescartados ?? [] };
         return valor.VersionNueva
-            ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", valor.Cotizacion)
-            : Ok(valor.Cotizacion);
+            ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", resumen)
+            : Ok(resumen);
     }
 
     /// <summary>

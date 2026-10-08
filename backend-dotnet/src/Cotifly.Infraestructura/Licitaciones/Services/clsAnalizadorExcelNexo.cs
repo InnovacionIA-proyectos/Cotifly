@@ -75,13 +75,16 @@ public sealed class clsAnalizadorExcelNexo(
                     return new clsErrorDominio(codigo, mensaje ?? "Nexo no pudo leer el archivo.");
                 }
 
+                // HU-013.15 (#124): el detalle lleva solo el código de Nexo (o "HTTP 401"), nunca su texto crudo, igual que el resto de
+                // los endpoints (clsServiciosConexosNexo.SoloCodigo); el texto completo queda en el log.
+                var soloCodigo = clsServiciosConexosNexo.SoloCodigo(detalle);
                 return respuesta.StatusCode switch
                 {
-                    HttpStatusCode.Forbidden => new clsErrorDominio(clsCodigosError.NexoSinPermiso, clsCosteoNexo.MensajeSinPermiso, detalle),
-                    HttpStatusCode.Unauthorized => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, detalle),
+                    HttpStatusCode.Forbidden => new clsErrorDominio(clsCodigosError.NexoSinPermiso, clsCosteoNexo.MensajeSinPermiso, soloCodigo),
+                    HttpStatusCode.Unauthorized => new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, clsCosteoNexo.MensajeNoDisponible, soloCodigo),
                     HttpStatusCode.RequestEntityTooLarge => new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande,
-                        "Nexo rechazó el archivo por tamaño (máximo 10 MB con el envío).", detalle),
-                    _ => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", detalle),
+                        "Nexo rechazó el archivo por tamaño (máximo 10 MB con el envío).", soloCodigo),
+                    _ => new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "Nexo rechazó el análisis del archivo.", soloCodigo),
                 };
             }
 

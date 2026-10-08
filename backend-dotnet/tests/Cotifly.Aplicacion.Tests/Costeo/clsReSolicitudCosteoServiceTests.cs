@@ -414,6 +414,57 @@ public sealed class clsReSolicitudCosteoServiceTests
         clsReSolicitudCosteoService.Huella("F", Entrada()).Should().NotBe(clsReSolicitudCosteoService.Huella("G", Entrada()));
     }
 
+    // --- HU-013.15 (#124): los conexos del costeo anterior se descartan y se avisan; nunca se vuelven a agregar en Nexo ---
+
+    [Fact]
+    public async Task EnElMismoFolioLaRespuestaAvisaLosConexosQueSeDescartanSinMontos()
+    {
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada(), Version, null, Ct);
+
+        resultado.Valor.ConexosDescartados.Should().Equal("Cargue");
+        _cotizacion.ServiciosConexos.Should().BeNull("el costeo anterior se olvidó");
+        Json(resultado.Valor.ConexosDescartados).Should().NotContain("85000").And.NotContain("100000");
+        await _auditoria.Received(1).RegistrarAsync(clsReSolicitudCosteoService.HerramientaAuditoria,
+            Arg.Any<object?>(), Arg.Is<object?>(s => Json(s).Contains("\"conexos_descartados\":[\"Cargue\"]")), true, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task LaVersionNuevaAvisaLosConexosDeLaOriginalQueNoLleva()
+    {
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.Valor.VersionNueva.Should().BeTrue();
+        resultado.Valor.ConexosDescartados.Should().Equal("Cargue");
+        _agregada!.ServiciosConexos.Should().BeNull("la versión nueva empieza sin conexos");
+        _cotizacion.ServiciosConexos.Should().NotBeNull("la original conserva los suyos");
+    }
+
+    [Fact]
+    public void LosConexosDescartadosSonLosIncluidosSinRepetirConLaCategoriaSiNoTienenNombre()
+    {
+        var (cotizacion, _, _) = Vencida(_ana, "PCN-900555111-AP-05102026-002", 1_000_000m);
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.ServiciosConexos))!.SetValue(cotizacion, clsServiciosConexosJson.Escribir(
+        [
+            new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
+            new clsServicioConexoCosteo("CX-2", " cargue ", "logistico", 2m, 85_000m, 100_000m, false),
+            new clsServicioConexoCosteo("CX-3", null, "portuario", 1m, 10m, 12m, true),
+            new clsServicioConexoCosteo("CX-4", "Stand-by", "logistico", 1m, 10m, 12m, true),
+            new clsServicioConexoCosteo("CX-5", "Precinto", "logistico", 1m, 10m, 12m, false),
+        ]));
+
+        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().Equal(new[] { "Cargue", "portuario", "Stand-by" },
+            "un conexo excluido (Precinto) no iba para el cliente: no se pierde nada con él");
+    }
+
+    [Fact]
+    public void SinConexosNoSeDescartaNada()
+    {
+        var (cotizacion, _, _) = Vencida(_ana, "PCN-900555111-AP-05102026-003", 1_000_000m);
+        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.ServiciosConexos))!.SetValue(cotizacion, null);
+
+        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().BeEmpty();
+    }
+
     private clsReSolicitudCosteoService Servicio() =>
         new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria);
 

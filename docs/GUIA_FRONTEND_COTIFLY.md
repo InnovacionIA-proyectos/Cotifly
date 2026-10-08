@@ -806,7 +806,16 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 
 - Primero escribe en Nexo y, **solo si Nexo responde 200**, en Cotifly. En 409 y 503 no cambia nada local.
 - 200 `CotizacionResumen` (con `ganada` y `motivo_rechazo`; puede traer `estado_costeo` = `entregada` si Nexo la entregó en ese momento).
-- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin llamar a Nexo si el estado no es `autocosteo` ni `entregada`), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
+- **Costeo no leído (#123, HU-013.14).** Si Nexo ya entregó y Cotifly todavía no lo había leído, la API relee el costeo al registrar el resultado y la respuesta trae `estado_costeo = entregada` **con** `precio_final`. Si esa relectura falla, el resultado queda registrado igual, `estado_costeo` conserva su valor (por ejemplo `pendiente_costeo`) y `precio_final` llega con el polling en segundos: seguir consultando `GET .../costeo` mientras `precio_final` sea `null`. Con resultado registrado, el PDF sigue la regla de ADR-018 §11 (`PDF_YA_ENVIADO`: versión nueva), ya no `COSTEO_NO_LISTO`.
+- **`RESULTADO_YA_DEFINIDO` con `detalle.motivo` (#123).** Si Nexo ya tenía otro resultado, Cotifly lo toma y responde 409 con `detalle.motivo` = `ganada`/`perdida` (el de Nexo). Mostrar el mensaje y recargar la cotización: Cotifly ya quedó con el resultado de Nexo.
+- **Perdida antes del costeo (#127, HU-013.17).** Si el cliente desiste mientras `estado_costeo` es `pendiente_costeo` o `error_envio`, ofrecer **solo** "Marcar perdida", con el motivo obligatorio, y enviar `If-Match` con el `ETag` de `GET .../costeo`:
+  - sin `If-Match`, 428; con uno viejo, 409 `CONFLICTO_CONCURRENCIA` (recargar);
+  - no se envía a Nexo y el polling se detiene: dejar de consultar;
+  - la respuesta trae `ganada = false` y `motivo_estado_costeo` empieza por "Perdida solo en Cotifly";
+  - el 200 trae el `ETag` nuevo;
+  - una "ganada" en esos estados es 409 `COTIZACION_NO_ENTREGADA`;
+  - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre; si Nexo no responde, 503 sin cambios: ofrecer Reintentar.
+- Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en `pendiente_envio`, o en `pendiente_costeo` si Nexo todavía no tiene el costo; desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
 
 ### 5.9 Nueva versión (`GET /web/cotizaciones/{id}/nueva-version`). En QA
@@ -1004,10 +1013,11 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 - 201 `CotizacionResumen` (la fila nueva). Leer `estado_costeo`:
   - `pendiente_costeo`: Nexo la recibió y falta el flete;
-  - `autocosteo`: Nexo la costeó en la misma petición (el `precio_final` llega con el polling, en segundos);
+  - `autocosteo`: Nexo la costeó en la misma petición y la respuesta **ya trae `precio_final`** (#123, HU-013.14). Si `precio_final` es `null`, falta el margen y `motivo_estado_costeo` lo explica: no esperar a que llegue;
   - `error_envio`: Nexo no la recibió; ver `motivo_estado_costeo` y ofrecer Reintentar (salvo un rechazo definitivo);
   - `pendiente_envio`: el envío quedó a medias (raro).
 - 400 (nada queda guardado): `SOLICITUD_COSTEO_INVALIDA` (el `mensaje` nombra el campo; para el peso, `detalle.motivo`), `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` o `TRM_NO_DISPONIBLE` (solo con `moneda = USD`). 400 `ErrorWeb` si el JSON es inválido.
+- **Cambio de #123 (compatible, el enum no cambia):** antes el formulario podía devolver `autocosteo` con `precio_final: null` hasta la primera consulta del polling. Ahora, si Nexo costea en el alta, la API lee el costo antes de responder; si esa lectura falla, responde `pendiente_costeo` y el polling la promueve. Regla para la UI: consultar `GET .../costeo` mientras `estado_costeo` sea `pendiente_costeo`, o mientras sea `autocosteo`/`entregada` con `precio_final` nulo y sin `motivo_estado_costeo`. Nunca dejar de consultar solo porque el estado dice `autocosteo`.
 - La petición puede tardar hasta unos 30 s (el alta en Nexo auto-costea en línea). Spinner y bloquear el doble clic: un segundo POST crea **otra** cotización.
 - **Moneda (#103, HU-013.7, ADR-014 §5):** `moneda` opcional, `"COP"` (por defecto) o `"USD"`, sin distinguir mayúsculas ni espacios al borde. Con `USD` la API fija la TRM del día **antes de guardar** (`trm_aplicada` de 5.17 y de "Mis cotizaciones") y ya no cambia: el `precio_final` y el `precio` de los conexos llegan en USD (2 decimales), convertidos con esa TRM, también tras un ajuste de margen o un reintento. El costo sigue en COP y nunca se muestra. El PDF lleva la tarifa en `US$` y la nota de TRM mínima (sección 6.3, punto 7). Sin TRM: 400 `TRM_NO_DISPONIBLE`, no se crea nada ni se envía a Nexo; ofrecer **Reintentar** o **Cambiar a COP**. Una cadena vacía u otro valor: 400 `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra `moneda`).
 
@@ -1480,21 +1490,23 @@ Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone 
       "fila_encabezado": 3,
       "encabezados": ["ITEM", "CIUDAD ORIGEN", "CIUDAD DESTINO", "TIPO VEHÍCULO", "TON", "OBSERVACIONES"],
       "filas": [["1", "Buenaventura", "Bogotá", "Tractomula", "32", "Carga seca"], ["2", "Cali", "Cartagena", "Tractomula", "28", ""]],
-      "total_filas": 2
+      "total_filas": 2,
+      "filas_excel": [4, 5]
     }
   ]
 }
 ```
 
 - `filas` trae hasta 1000 filas por hoja (`total_filas` es el total real). **El índice de cada fila en `filas` es la `fila` que se envía en cada línea** de `POST /web/licitaciones`.
-- 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 403 `ErrorNegocio` `NEXO_SIN_PERMISO`: el comercial no tiene el rol de Cabina de Fletes en Nexo ("Pide a soporte el rol Comercial en Nexo"; no cerrar la sesión de Cotifly). 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`. 413 `ErrorWeb` si el cuerpo pasa de 12 MB.
+- **Numeración que ve el comercial (HU-013.15, #124): la fila del Excel.** `filas_excel[i]` es el número de fila de la hoja de Excel (base 1, encabezado incluido) de `filas[i]`: en el ejemplo, la portada ocupa la fila 1, el encabezado la 3 y los datos empiezan en la 4. Mostrar siempre esa numeración en la tabla del mapeo y en los errores ("Fila 7 del Excel"); el índice `fila` (base 0) es técnico y no se muestra. Si `filas_excel` es `null` (la hoja no cuadra con el análisis de Nexo), mostrar la posición base 1 (`i + 1`) como "línea".
+- 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 403 `ErrorNegocio` `NEXO_SIN_PERMISO`: el comercial no tiene el rol de Cabina de Fletes en Nexo ("Pide a soporte el rol Comercial en Nexo"; no cerrar la sesión de Cotifly). 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`; `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`), nunca su texto (#124): mostrar el `mensaje`. 413 `ErrorWeb` si el cuerpo pasa de 12 MB.
 
 ### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
 
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
 
 - Request recomendado: `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y la parte `archivo` (el mismo Excel que se analizó; se guarda para la exportación de la sección 5.26). Sin archivo se puede enviar `application/json` con el `LicitacionWeb`.
-- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `notas?` (nota para la Mesa de Nexo, HU-013.11), `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos), `fila` (obligatoria con archivo, única) y, opcionales (HU-013.11, #108), `origen_municipio_id`, `destino_municipio_id`, `horas_cargue` y `horas_descargue` propias de la fila. El `tipo` lo pone el servidor (`licitacion`).
+- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `notas?` (nota para la Mesa de Nexo, HU-013.11), `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). **`linea_negocio` es una línea de Cotifly** (las de 5.20): da el margen de toda la licitación. "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly: responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo = "LINEA_DE_NEXO"` y `detalle.lineas_validas` (las líneas activas; cualquier otra línea desconocida trae también `lineas_validas`). UX: ofrecer un selector con las líneas de Cotifly, nunca texto libre (HU-013.15, #124; pregunta abierta a negocio en `docs/HU-013-preguntas-nexo.md`, 16). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos), `fila` (obligatoria con archivo, única) y, opcionales (HU-013.11, #108), `origen_municipio_id`, `destino_municipio_id`, `horas_cargue` y `horas_descargue` propias de la fila. El `tipo` lo pone el servidor (`licitacion`).
 
 ```json
 {
@@ -1517,11 +1529,14 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 {
   "error": { "codigo": "LICITACION_INVALIDA", "mensaje": "La licitación tiene 2 error(es): corrige las filas indicadas y vuelve a enviarla." },
   "errores": [
-    { "indice": 0, "fila": 0, "campo": "destino", "codigo": "LINEA_INCOMPLETA", "mensaje": "El campo 'destino' es obligatorio." },
-    { "indice": 2, "fila": 2, "campo": "peso_kg", "codigo": "PESO_REQUERIDO", "mensaje": "La línea debe traer el peso total en kg (o posiciones con peso)." }
+    { "indice": 0, "fila": 0, "fila_excel": 4, "campo": "destino", "codigo": "LINEA_INCOMPLETA", "mensaje": "El campo 'destino' es obligatorio." },
+    { "indice": 2, "fila": 2, "fila_excel": 7, "campo": "peso_kg", "codigo": "PESO_REQUERIDO", "mensaje": "La línea debe traer el peso total en kg (o posiciones con peso)." },
+    { "indice": 3, "fila": 3, "fila_excel": null, "campo": "fila", "codigo": "FILA_INVALIDA", "mensaje": "La línea 4 apunta a una fila que no está en la hoja 'Pliego 2026': la hoja tiene 3 filas con datos (de la fila 4 a la 7 del Excel)." }
   ]
 }
 ```
+
+  **Numeración (HU-013.15, #124).** `fila_excel` es la fila de la hoja de Excel (base 1, encabezado incluido) de esa línea, la que ve el comercial; `null` sin archivo, en un error del encabezado o si la `fila` no existe en la hoja (entonces mostrar "línea `indice + 1`"). Los `mensaje` usan la misma numeración (la fila del Excel o la línea en base 1), nunca el índice `fila`.
 
   `indice` es la posición en `lineas[]` (`null` = error del encabezado). Los errores vienen ordenados: encabezado primero y luego por línea. Códigos: `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`, `LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`, `VALOR_FUERA_DE_RANGO`, `DEMASIADAS_POSICIONES`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `FILA_INVALIDA` y, desde HU-013.11 (#108), `CODIGO_NO_CATALOGO`, `CAMPO_NO_APLICA`, `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (ver "Reglas de captura por fila").
 - **Reglas de captura por fila (HU-013.11, #108).** Cada fila cumple las mismas reglas del formulario de 5.15, y todos los errores llegan juntos en `errores[]`:
@@ -2156,6 +2171,12 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - **Errores.** 400 `SOLICITUD_COSTEO_INVALIDA` (motivo vacío o de más de 300 caracteres, `datos_carga` vacío o con un campo no permitido, o reglas de la captura como el peso); 409 `ESTADO_NO_PERMITE` (estado; con `detalle.motivo = LICITACION` si se mandan cambios de carga a una licitación), `PDF_YA_ENVIADO` (ofrecer la versión con `nueva_version: true`) o `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`. Un `error_envio` por rechazo definitivo de Nexo (motivo "Rechazo definitivo de Nexo…") no se reenvía igual: pedir los cambios de carga.
 - **Dólares.** En el mismo folio la cotización conserva su moneda y su TRM. La versión nueva copia la moneda y toma la TRM del día (puede diferir de la original); si no hay TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada: mostrar "no hay TRM disponible, intenta más tarde".
 - **Doble clic.** Generar un UUID por clic y enviarlo en `Idempotency-Key`: la repetición devuelve la misma respuesta sin crear otra versión ni reenviar a Nexo. La misma clave con otro cuerpo responde 400 `ErrorWeb`.
+- **Servicios conexos descartados (HU-013.15, #124).** La captura nueva de Nexo empieza sin conexos: en el mismo folio se pierden los del costeo anterior y la `-vN` no los copia. La respuesta (200 o 201) trae siempre `conexos_descartados` (solo nombres, sin montos; `[]` si no había), por ejemplo `"conexos_descartados": ["Cargue", "Stand-by"]`. Cotifly **no** los vuelve a agregar en Nexo. UX: si la lista no está vacía, mostrar un aviso persistente en el detalle ("Se descartaron los servicios conexos Cargue y Stand-by: agrégalos de nuevo cuando llegue el costeo") y, cuando el costeo vuelva a estar listo, ofrecer el buscador de 5.18 precargado con esos nombres. Solo se listan los conexos **incluidos**: los excluidos no iban para el cliente.
+- **Aviso antes de confirmar "Cotizar costo" (regla, #124).** Si `servicios_conexos` de `GET .../costeo` tiene conexos con `incluido = true`, el diálogo de confirmación del botón muestra, antes de llamar al endpoint, el mismo texto que el resumen del asistente, con sus nombres (hasta 3 y "y N más"):
+  - mismo folio: «Se descartan los servicios conexos «Cargue», «Stand-by»: agrégalos de nuevo cuando llegue el costeo nuevo.»;
+  - versión nueva: «La versión nueva no lleva los servicios conexos «Cargue», «Stand-by»: agrégalos de nuevo cuando llegue su costeo.».
+
+  Sin conexos incluidos, no se muestra aviso.
 
 **Textos del PDF (#101).** Mostrar `textos.asunto` y `textos.introduccion` del costeo en un editor (la introducción son párrafos separados por una línea en blanco). El botón "Redactar con IA" llama a `.../textos/redactar`: si responde 409 `TEXTOS_EDITADOS`, preguntar al comercial si reemplaza sus textos y repetir con `?sobrescribir=true`. Guardar llama a `PUT .../textos`. Con `fuente = estandar` conviene avisar que se usó el texto estándar: es exactamente el que imprime el PDF (en un pliego, su introducción con viñetas `·` mide 1026 caracteres y se puede guardar editada sin recortarla: el límite del comercial es 1100; la IA redacta hasta 900). Sin textos guardados, el PDF sale con los estándar: `POST .../costeo/pdf` nunca llama a la IA. Las condiciones, las notas legales y la nota de TRM del PDF no cambian con los textos.
 
@@ -2170,7 +2191,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
 **Patrón propuesta → Confirmar.** Cuando la respuesta del chat trae `accion_propuesta` (como máximo una por turno):
 
-1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. El resumen lo arma el servidor con los precios calculados por código ("Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP."), y cita entre comillas la justificación o el motivo que quedarán guardados ("Justificación: «…»", "Motivo: «…»"); el `texto` del asistente nunca trae montos. La propuesta ya pasó las mismas validaciones del endpoint (por ejemplo, la regla de peso frente a las posiciones al re-solicitar con cambios de carga): si no las pasa, el asistente responde solo con texto y explica el motivo. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar.
+1. Mostrar `accion_propuesta.resumen` con un botón **Confirmar**. El resumen lo arma el servidor con los precios calculados por código ("Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP."), y cita entre comillas la justificación o el motivo que quedarán guardados ("Justificación: «…»", "Motivo: «…»"); el `texto` del asistente nunca trae montos. La propuesta ya pasó las mismas validaciones del endpoint (por ejemplo, la regla de peso frente a las posiciones al re-solicitar con cambios de carga): si no las pasa, el asistente responde solo con texto y explica el motivo. Si el `tipo` es `ajustar_margen` y el cuerpo trae `justificacion`, dejar que el comercial la edite antes de confirmar. En `re_solicitar_costeo`, si la cotización tiene conexos, el resumen avisa cuáles se descartan antes del motivo ("Se descartan los servicios conexos «Cargue», «Stand-by»: agrégalos de nuevo cuando llegue el costeo nuevo."; en la `-vN`, "La versión nueva no lleva los servicios conexos …"), y al confirmar la respuesta trae `conexos_descartados` (HU-013.15, #124).
 2. Solo al pulsar Confirmar, llamar a `accion_propuesta.metodo` sobre `accion_propuesta.endpoint`, con `accion_propuesta.cuerpo` como cuerpo JSON (tal cual) y el encabezado `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo` y `agregar_servicios_conexos` enviar además `Idempotency-Key` con un UUID nuevo por clic.
 
    | `tipo` | `metodo` y `endpoint` | `cuerpo` |
