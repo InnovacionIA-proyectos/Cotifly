@@ -37,12 +37,18 @@ La base compartida ya se instaló con ese esquema el 2026-10-08 y el backend dej
 - **Totales guardados.** Cada cambio de camión o conexo recalcula la ruta: `costoFletesTotal`, `costoRetornoContenedorTotal`, `costoLevanteContenedorTotal`, `costoServiciosConexos` (Σ precio × cantidad) y `costoFinal` (su suma); `precioFinalLinea` = `costoFinal` con el margen y el método de la ruta (`clsCalculadoraPrecio`, en la moneda y TRM de la cabecera). `precioFinal` de la cabecera = Σ `precioFinalLinea` (NULL mientras alguna ruta no tenga precio).
 - **Estado agregado** (`clsResumenEstadoCosteo`, la misma regla camión → ruta y ruta → cabecera, "el más atrasado"):
   1. sin elementos o todos NULL → NULL (chat o sin camiones);
-  2. un NULL mezclado con estados cuenta como `pendiente_envio`;
+  2. un NULL mezclado con estados cuenta como `pendiente_envio` si la solicitud **no** se ha enviado a Nexo, y como `pendiente_costeo` si ya se envió (tiene `solicitudNexoId`): así un camión sin estado no corta el polling ni permite reenviar la solicitud (regla del coordinador, 2026-10-08);
   3. `descartada` se ignora salvo que todos lo sean;
   4. si todos los que quedan coinciden, ese estado;
   5. si no, el primero de `error_envio` → `costeo_vencido` → `pendiente_envio` → `pendiente_costeo` → `entregada` → `autocosteo`.
 
   Las transiciones de la solicitud (envío, error de envío, vencimiento, descarte) se aplican a los camiones y la cabecera vuelve a ser el resumen de sus rutas.
+- **Camiones descartados y totales (misma regla del coordinador).** Los camiones `descartada` se ignoran **en el estado y en los totales** (`TodosConFlete`, la suma de fletes, retornos y levantes, `costoFinal` y el precio), salvo que todos estén descartados: entonces cuentan todos, la ruta queda `descartada` y sin flete (`clsLineaSolicitud.VehiculosQueCuentan`).
+- **Invariantes en la raíz.** Fuera del dominio nadie cambia camiones ni conexos directamente: los métodos de `clsVehiculoLineaSolicitud` (estado, costeo, vehículo, línea de Nexo) y `AgregarOActualizarConexo`/`ConservarConexos` de la ruta son `internal`. La raíz expone `AplicarFotoNexo` (lectura de Nexo por camión, `clsCosteoCamionNexo`), `AsignarLineaNexo`, `CambiarConexos` y `ConservarConexos`, que siempre resumen el estado y recalculan totales y precio (con PDF, `AplicarFotoNexo` recibe solo estados y el precio de la versión se conserva). Las pruebas usan los métodos internos con `InternalsVisibleTo`; la persistencia, solo `ReemplazarRutasLeidas` para recargar.
+- **Recarga del agregado.** `RecargarAsync` limpia el rastreador, vuelve a leer el agregado completo (`ConAgregado`) y reemplaza las rutas de la misma instancia: una fila borrada por otro proceso desaparece (no se reinserta al guardar) y una nueva aparece.
+- **Interbloqueos.** Leer o guardar el agregado toca varias tablas. Fuera de una transacción, la lectura del agregado, la consulta del tablero y `GuardarCambiosAsync` se repiten hasta tres veces ante el error 1205 (sobre todo el guardado después del alta en Nexo: perderlo dejaría la solicitud en Nexo sin `solicitudNexoId` y el reintento la duplicaría). Dentro de `GuardarCambiosSiVersionAsync` el 1205 sigue siendo `CONFLICTO_CONCURRENCIA`.
+- **Solicitud de Nexo desconocida.** Una cotización `pendiente_costeo` (o `autocosteo`) sin `solicitudNexoId` (migrada sin respaldo) no se puede consultar: el polling (y el registro del resultado) la deja en `error_envio` con el motivo `SOLICITUD_NEXO_DESCONOCIDA` (no definitivo). Desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly (#127).
+- **Tarifa y conexos.** El precio de la ruta incluye los conexos. El PDF (de una ruta o de pliego), el Excel de la licitación y su vista muestran la **tarifa del transporte** y los conexos aparte, una sola vez; el total del pliego, del Excel y de la vista de la licitación es la suma de las tarifas, sin conexos. La tarifa absorbe el redondeo (`precioFinalLinea − conexos` cuando la diferencia con el transporte calculado es de a lo sumo una unidad por conexo), así tarifa + conexos = precio de la ruta, exacto.
 - **Invariantes que se conservan:** `versionNegocio` y el candado de `clsUnitOfWork`, `sp_getapplock` (#125), `pdfDesactualizado` y la regla del PDF, `textosCotizacion`, resultado y "perdida" solo en Cotifly (#127), `costeoConsultasFallidas` y los reclamos del polling. `costeoUltimaConsultaAt` ya no se usa (el `0009` lo borró).
 - **Margen sugerido dividido:** la ruta guarda `margenPoliticaSugerido` y `margenSAPSugerido`; el vigente es el de SAP si existe y si no el de la política. El ajuste de margen guarda la ruta en `MargenAjustes.lineaSolicitudId`.
 
@@ -53,13 +59,13 @@ Idempotente, no destructivo y en una transacción. Agrega a la ruta `origenNombr
 - `CotizacionesSolicitud.solicitudNexoId`: el `0009` borró `costeoId` como "nunca usado", pero es el id de la **solicitud** de Nexo que devuelve el alta y consulta el polling (`cotizacionNexoId` es el de la cotización de Nexo). Sin él no hay polling.
 - `CotizacionServiciosConexos.nombreServicioConexo`: copia del nombre del conexo para el PDF (mismo criterio de la decisión 2).
 - `ck_cotizaciones_estadoEnvio` si falta (la base compartida se instaló antes de que el `0009` lo trajera).
-- Si existen los respaldos `Respaldo0009_*`, llena desde ellos los nombres y `solicitudNexoId` vacíos.
+- Si existen los respaldos `Respaldo0009_*`, llena desde ellos los nombres y `solicitudNexoId` vacíos, incluidos los nombres de los conexos que venían del JSON de cada línea de una licitación (`Respaldo0009_CotizacionLineasSolicitud.serviciosConexos`).
 
 `db/scripts/01_crear_esquema.sql` ya trae esas columnas; una prueba de integración verifica que la instalación desde cero y las migraciones `0001` → `0010` dejan el mismo esquema.
 
 ### Sonda `/health/ready`
 
-`clsBaseDatosHealthCheck` se rehízo desde el modelo EF: compara las tablas y columnas mapeadas con `INFORMATION_SCHEMA` y responde `falta 0002` (sin las tablas de usuarios), `falta 0009` (esquema anterior: no hay `CotizacionesSolicitud`), `falta 0010` (faltan las columnas del `0010`) o `falta <Tabla.columna>` para cualquier otra diferencia.
+`clsBaseDatosHealthCheck` se rehízo desde el modelo EF: compara las tablas y columnas mapeadas con la base y verifica también `ck_cotizaciones_estadoEnvio`. Responde `falta 0002` (sin las tablas de usuarios), `falta 0009` (esquema anterior: no hay `CotizacionesSolicitud`), `falta 0010` (faltan las columnas del `0010` o el `CHECK` de `estadoEnvio`) o `falta <Tabla.columna>` para cualquier otra diferencia.
 
 ### Qué reemplaza
 
@@ -75,11 +81,14 @@ Idempotente, no destructivo y en una transacción. Agrega a la ruta `origenNombr
 | Las posiciones solo viajan a Nexo cuando la ruta tiene un único camión | #133 |
 | El emparejamiento con la foto de Nexo deja sin asociar los camiones empatados (no desempata por orden) | #134 |
 | El polling no importa los conexos de Nexo (la fuente es Cotifly, decisión 3), salvo la marca de "agregado sin relectura" de #124 | #134 |
-| Excluir un conexo lo **borra** de la ruta (ya no hay columna `incluido`); para volver a incluirlo se agrega de nuevo | #134 |
-| El ajuste de margen aplica el mismo margen a todas las rutas; `MargenAjustes.lineaSolicitudId` = ruta 1 | #134, #135 |
-| El precio de la ruta (y el de la vista de costeo) incluye los conexos; el PDF (de una ruta o de pliego) imprime la tarifa del transporte y los conexos por separado, y el total del pliego sigue sin conexos | #136 |
+| Excluir un conexo lo **borra** de la ruta (ya no hay columna `incluido`); para volver a incluirlo se agrega de nuevo | #135 |
+| El ajuste de margen aplica el mismo margen a todas las rutas; `MargenAjustes.lineaSolicitudId` = ruta 1 | #135 |
+| El precio de la ruta (y el de la vista de costeo) incluye los conexos; el PDF y el Excel imprimen la tarifa del transporte y los conexos por separado, y el total del pliego sigue sin conexos | #136 |
+| La re-solicitud en el mismo folio descarta los conexos (la captura nueva de Nexo empieza sin ellos; se avisan en `conexos_descartados`) | #136 |
+| El chat no guarda municipios (ni id ni nombre): su ruta queda sin ubicación (decisión 2) | #132 |
 | `IdTipoMercancia` no se exige en la captura vieja (`clsMercancia.DesdeCaptura`) | #132 |
-| No se resuelven los ids de las ciudades de devolución y levante | #132 |
+| Los ids de las ciudades de devolución y levante no se resuelven ni se guardan (solo el nombre) | #132 |
+| Cotizaciones migradas por el 0009 cuyo `precioFinalLinea` no incluye los conexos: se recalculan con el próximo cambio de costo, conexos o margen (mientras tanto el PDF usa el transporte calculado) | #136 |
 | Métricas por cotización: costo = Σ `costoFinal` de las rutas y margen ponderado por costo; la ciudad es la de la ruta 1 | #137 |
 | La API acepta `valor_estimado` y `referencia` y los ignora | #138 |
 
@@ -92,8 +101,8 @@ Idempotente, no destructivo y en una transacción. Agrega a la ruta `origenNombr
 ## Consecuencias
 
 - El backend vuelve a funcionar sobre `0001` → `0009` + `0010` (o `01_crear_esquema.sql`). **Sin el `0010`, `/health/ready` responde `503 falta 0010`**: hay que aplicarlo antes de desplegar.
-- Los costeos guardados antes del `0009` sin respaldos no tienen `solicitudNexoId`: el polling no los puede consultar (quedan como están).
-- El precio de la cotización incluye los conexos (antes se sumaban aparte en la vista).
+- Los costeos guardados antes del `0009` sin respaldos no tienen `solicitudNexoId`: el polling no los puede consultar y los deja en `error_envio` con `SOLICITUD_NEXO_DESCONOCIDA` (reintento, re-solicitud o perdida solo en Cotifly).
+- El precio de la cotización incluye los conexos (antes se sumaban aparte en la vista). `openapi.yaml` y la guía del frontend lo avisan: el frontend no debe sumarle el precio de los conexos.
 
 ## Pendientes
 

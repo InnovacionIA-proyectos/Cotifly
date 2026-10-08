@@ -99,6 +99,32 @@ public sealed class clsPollingCosteoServiceTests
         await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
     }
 
+    /// <summary>
+    /// ADR-019 (Riesgo 2): una cotización migrada sin respaldo queda en <c>pendiente_costeo</c> sin el id de la solicitud de Nexo. El
+    /// polling no la puede consultar: la deja en <c>error_envio</c> con <c>SOLICITUD_NEXO_DESCONOCIDA</c> (desde ahí funcionan el
+    /// reintento, la re-solicitud y la perdida solo en Cotifly) y lo audita.
+    /// </summary>
+    [Fact]
+    public async Task UnaPendienteDeCosteoSinIdDeNexoQuedaEnErrorDeEnvioConSuMotivo()
+    {
+        _cotizacion.PrepararReSolicitud();
+        foreach (var ruta in _cotizacion.Rutas)
+        {
+            ruta.RegistrarEstadoCamiones(EstadoCosteo.PendienteCosteo);
+        }
+
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteCosteo, null, _pendiente.SiguienteConsultaAt);
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        _cotizacion.MotivoEstadoCosteo.Should().StartWith("SOLICITUD_NEXO_DESCONOCIDA");
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+        await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _auditoria.Received(1).RegistrarAsync(clsPollingCosteoService.HerramientaCambioEstado, Arg.Any<object?>(), Arg.Any<object?>(), true, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
     [Fact]
     public async Task SiOtraReplicaLaReclamoNoSeConsultaANexo()
     {

@@ -174,6 +174,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             .HasConstraintName("fk_cotizacionServiciosConexos_lineaSolicitudId").OnDelete(DeleteBehavior.ClientCascade);
         builder.Navigation(l => l.Conexos).HasField("_conexos").UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Ignore(l => l.VehiculosOrdenados);
+        builder.Ignore(l => l.VehiculosQueCuentan);
         builder.Ignore(l => l.MercanciasOrdenadas);
     }
 }

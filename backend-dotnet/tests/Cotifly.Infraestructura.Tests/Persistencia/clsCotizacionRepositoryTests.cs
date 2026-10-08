@@ -44,6 +44,43 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida.UpdatedAt.Should().Be(Reloj.AhoraUtc);
     }
 
+    /// <summary>
+    /// HU-021 (corrección del núcleo): recargar reconstruye las colecciones desde la base. Una fila que otro proceso borró desaparece (y
+    /// el guardado siguiente no la reinserta) y una que otro proceso agregó aparece.
+    /// </summary>
+    [Fact]
+    public async Task RecargarReconstruyeElAgregadoYNoReinsertaLasFilasQueOtroProcesoBorro()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 10_000m, 1m), new clsCambioConexo("CX-2", "Escolta", 5_000m, 1m)], Reloj.AhoraUtc);
+        await GuardarAsync(cotizacion);
+
+        await using var ambito = NuevoAmbito();
+        var repositorio = ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>();
+        var leida = (await repositorio.ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+        leida.PrimeraRuta!.Conexos.Should().HaveCount(2);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DELETE s FROM dbo_cotifly.CotizacionServiciosConexos s
+              JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId
+             WHERE l.cotizacionSolicitudId = '{cotizacion.Id}' AND s.idServicioConexo = N'CX-1';
+            INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad)
+            SELECT id, N'CX-3', N'Precinto', 1000, 1 FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{cotizacion.Id}';
+            """);
+
+        await repositorio.RecargarAsync(leida, Ct);
+
+        leida.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().BeEquivalentTo(["CX-2", "CX-3"]);
+        leida.RegistrarEnvio();
+        await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT STRING_AGG(s.idServicioConexo, ',') WITHIN GROUP (ORDER BY s.idServicioConexo) FROM dbo_cotifly.CotizacionServiciosConexos s "
+                + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("CX-2,CX-3", "la fila borrada no se reinserta");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                $"SELECT estadoEnvio FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{cotizacion.Id}'"))
+            .Should().Be("enviada", "el cambio después de recargar sí se guarda");
+    }
+
     [Fact]
     public async Task LosEnumsSeGuardanConElCodigoQueExigenLosCheckDelEsquema()
     {

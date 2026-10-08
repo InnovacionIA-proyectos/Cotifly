@@ -5,8 +5,9 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// MISMA regla para la ruta (resume a sus camiones) y para la cabecera (resume a sus rutas). Es "el más atrasado":
 /// <list type="number">
 /// <item>Sin elementos, o todos con estado <c>NULL</c> → <c>NULL</c> (no pasa por Nexo: cotización del chat o todavía sin camiones).</item>
-/// <item>Un <c>NULL</c> mezclado con estados → cuenta como <see cref="EstadoCosteo.PendienteEnvio"/>: ese camión (o ruta) todavía no
-/// viajó a Nexo, así que el conjunto no puede estar más adelantado que "por enviar".</item>
+/// <item>Un <c>NULL</c> mezclado con estados cuenta como <see cref="EstadoCosteo.PendienteEnvio"/> si la solicitud todavía no se envió a
+/// Nexo, y como <see cref="EstadoCosteo.PendienteCosteo"/> si ya se envió (tiene <c>solicitudNexoId</c>): un camión sin estado dentro de
+/// una solicitud enviada no corta el polling ni permite reenviarla (regla del coordinador del 2026-10-08, ADR-019).</item>
 /// <item>Los <see cref="EstadoCosteo.Descartada"/> se ignoran, salvo que todos lo sean (entonces <c>descartada</c>).</item>
 /// <item>Si todos los que quedan tienen el mismo estado, se toma ese.</item>
 /// <item>Si no, el primero en este orden (del más atrasado o problemático al más avanzado): <c>error_envio</c> →
@@ -29,7 +30,7 @@ public static class clsResumenEstadoCosteo
     ];
 
     /// <summary>Estado que resume <paramref name="estados"/> con la regla de la clase.</summary>
-    public static EstadoCosteo? Resumir(IEnumerable<EstadoCosteo?> estados)
+    public static EstadoCosteo? Resumir(IEnumerable<EstadoCosteo?> estados, bool solicitudEnviada = false)
     {
         ArgumentNullException.ThrowIfNull(estados);
         var lista = estados.ToList();
@@ -38,7 +39,8 @@ public static class clsResumenEstadoCosteo
             return null;
         }
 
-        var conEstado = lista.Select(e => e ?? EstadoCosteo.PendienteEnvio).ToList();
+        var sinEstado = solicitudEnviada ? EstadoCosteo.PendienteCosteo : EstadoCosteo.PendienteEnvio;
+        var conEstado = lista.Select(e => e ?? sinEstado).ToList();
         var vigentes = conEstado.Where(e => e != EstadoCosteo.Descartada).ToList();
         if (vigentes.Count == 0)
         {

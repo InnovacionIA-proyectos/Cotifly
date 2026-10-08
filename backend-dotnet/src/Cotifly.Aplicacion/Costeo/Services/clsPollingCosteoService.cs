@@ -97,6 +97,22 @@ public sealed class clsPollingCosteoService(
 
         // HU-013.14: una entregada sin precio, o una con resultado cuyo costo no se leyó, se lee aunque sea terminal o haya pasado la
         // edad máxima. Una perdida solo en Cotifly (HU-013.17) ya no se consulta.
+        // ADR-019 (Riesgo 2): "en Nexo" sin el id de la solicitud (migrada sin respaldo) nadie la puede consultar. Queda en error_envio
+        // con el motivo SOLICITUD_NEXO_DESCONOCIDA: desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly.
+        if (!cotizacion.PerdidaSoloEnCotifly && cotizacion.SolicitudNexoDesconocida)
+        {
+            var anteriorDesconocida = cotizacion.EstadoCosteo;
+            var versionDesconocida = cotizacion.VersionNegocio;
+            cotizacion.MarcarSolicitudNexoDesconocida();
+            if (!await GuardarConVersionAsync(cotizacion, versionDesconocida, cambioNegocio: true))
+            {
+                return ResultadoConsultaCosteo.Conflicto;
+            }
+
+            await AuditarCambioAsync(cotizacion, anteriorDesconocida, 0);
+            return ResultadoConsultaCosteo.Detenida;
+        }
+
         var relectura = cotizacion.RequiereRelecturaCosteo;
         if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
         {

@@ -305,4 +305,98 @@ public sealed class clsAgregadoRutasTests
         lineas.Should().OnlyContain(l => l.Linea.Posiciones.Count == 0, "con varios camiones a Nexo le basta el peso de cada uno");
         lineas.Should().OnlyContain(l => l.Linea.Origen == "Buenaventura" && l.Linea.Destino == "Bogotá D.C.");
     }
+
+    // ------------------------------------------------------------------ Correcciones del núcleo (2026-10-08, ADR-019)
+
+    [Fact]
+    public void UnCamionSinEstadoEnUnaSolicitudEnviadaCuentaComoPendienteDeCosteo()
+    {
+        clsResumenEstadoCosteo.Resumir([EstadoCosteo.Autocosteo, null], solicitudEnviada: true).Should().Be(EstadoCosteo.PendienteCosteo,
+            "ya enviada: un camión sin estado no corta el polling ni permite reenviarla");
+        clsResumenEstadoCosteo.Resumir([EstadoCosteo.Descartada, null], solicitudEnviada: true).Should().Be(EstadoCosteo.PendienteCosteo);
+
+        var cotizacion = clsCotizacionMuestra.Formulario();
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
+        cotizacion.PrimeraRuta!.Vehiculos[0].RegistrarCosteo(EstadoCosteo.Autocosteo, 1_000m, null);
+        cotizacion.PrimeraRuta.AgregarVehiculo("2S2", "FURGON", 1_000m).EstadoCosteo.Should().BeNull();
+
+        cotizacion.ResumirRutas().Should().Be(EstadoCosteo.PendienteCosteo);
+        cotizacion.PrimeraRuta.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+    }
+
+    [Fact]
+    public void LosCamionesDescartadosNoCuentanEnLosTotalesSalvoQueTodosLoEsten()
+    {
+        var cotizacion = clsCotizacionMuestra.Formulario();
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.20m, 0.20m, OrigenMargen.PoliticaLinea, "margen");
+        var descartado = ruta.AgregarVehiculo("2S2", "FURGON", 1_000m);
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(ruta.Vehiculos[0].Id, EstadoCosteo.Autocosteo, ConCostos: true, Flete: 1_000_000m),
+            new clsCosteoCamionNexo(descartado.Id, EstadoCosteo.Descartada, ConCostos: true),
+        ], _ahora).EsExitoso.Should().BeTrue();
+
+        ruta.TodosConFlete.Should().BeTrue("el descartado no cuenta");
+        (ruta.EstadoCosteo, ruta.CostoFletesTotal, ruta.CostoFinal, ruta.PrecioFinalLinea)
+            .Should().Be(((EstadoCosteo?)EstadoCosteo.Autocosteo, (decimal?)1_000_000m, (decimal?)1_000_000m, (decimal?)1_250_000m));
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(ruta.Vehiculos[0].Id, EstadoCosteo.Descartada, ConCostos: true)], _ahora);
+
+        ruta.EstadoCosteo.Should().Be(EstadoCosteo.Descartada, "todos descartados");
+        (ruta.TodosConFlete, ruta.CostoFinal, ruta.PrecioFinalLinea).Should().Be((false, (decimal?)null, (decimal?)null));
+    }
+
+    [Fact]
+    public void LaRaizSiempreRecalculaAlAplicarLaFotoDeNexoYAlCambiarConexos()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 1_000_000m, margen: 0.20m);
+        cotizacion.PrecioFinal.Should().Be(1_250_000m);
+        var camion = cotizacion.Vehiculos.Single();
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, ConCostos: true, Flete: 2_000_000m)], _ahora)
+            .Valor.Should().BeTrue();
+        cotizacion.PrecioFinal.Should().Be(2_500_000m, "el flete nuevo recalcula la ruta y la solicitud");
+
+        cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 100_000m, 2m)], _ahora).Valor.Should().Be(1);
+        cotizacion.PrecioFinal.Should().Be(2_750_000m, "(2.000.000 + 200.000) / 0,8");
+
+        cotizacion.ConservarConexos(new HashSet<string>(), _ahora).Valor.Should().Be(1);
+        cotizacion.PrecioFinal.Should().Be(2_500_000m);
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Entregada, ConCostos: false)], _ahora);
+        (camion.EstadoCosteo, cotizacion.PrecioFinal).Should().Be(((EstadoCosteo?)EstadoCosteo.Entregada, (decimal?)2_500_000m),
+            "sin costos (PDF generado) solo cambia el estado");
+        FluentActions.Invoking(() => cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(Guid.NewGuid(), EstadoCosteo.Autocosteo, false)], _ahora))
+            .Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UnaSolicitudEnNexoSinSuIdQuedaEnErrorDeEnvioConSuMotivo()
+    {
+        var cotizacion = clsCotizacionMuestra.Formulario();
+        cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
+        cotizacion.MarcarSolicitudNexoDesconocida().Should().BeFalse("tiene su id");
+
+        // Como queda una cotización migrada sin respaldo: pendiente_costeo y sin solicitudNexoId.
+        cotizacion.PrepararReSolicitud();
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            ruta.RegistrarEstadoCamiones(EstadoCosteo.PendienteCosteo);
+        }
+
+        cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteCosteo, null, null);
+        cotizacion.SolicitudNexoDesconocida.Should().BeTrue();
+
+        cotizacion.MarcarSolicitudNexoDesconocida().Should().BeTrue();
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.ErrorEnvio);
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacionSolicitud.CodigoSolicitudNexoDesconocida);
+        cotizacion.ErrorEnvioDefinitivo.Should().BeFalse("se puede reintentar");
+        cotizacion.AdmitePerdidaSinCosteo.Should().BeTrue("perdida solo en Cotifly (#127)");
+        cotizacion.ValidarReSolicitud(versionNueva: false).Should().BeNull("se puede re-solicitar");
+        cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
 }

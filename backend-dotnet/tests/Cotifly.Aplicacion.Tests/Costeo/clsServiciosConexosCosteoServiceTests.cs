@@ -367,8 +367,9 @@ public sealed class clsServiciosConexosCosteoServiceTests
         // HU-021: el conexo de Nexo queda en la ruta y su precio sale con el margen de la ruta, en la moneda de la solicitud.
         var usd = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-U", moneda: "USD", trm: 4000m);
         var ruta = usd.PrimeraRuta!;
-        clsServiciosConexosCosteoService.ImportarConexos(ruta, [_cx2]).Should().Be(1);
-        usd.RecalcularTotales(clsCotizacionMuestra.Ahora);
+        var precioAntes = usd.PrecioFinal;
+        clsServiciosConexosCosteoService.ImportarConexos(usd, ruta, [_cx2], clsCotizacionMuestra.Ahora).Valor.Should().Be(1);
+        usd.PrecioFinal.Should().BeGreaterThan(precioAntes!.Value, "la raíz recalcula siempre al cambiar los conexos (ADR-019)");
 
         var conexos = clsCosteoCotizacionService.ConexosConPrecio(usd, ruta);
 

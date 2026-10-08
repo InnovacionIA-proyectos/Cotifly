@@ -122,6 +122,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task SinElCheckDeEstadoEnvioEsUnhealthyPorqueLeFaltaEl0010()
+    {
+        await using var sinCheck = await baseDatos.CrearBaseInstaladaAsync("dbSaludSinCheck");
+        await clsBaseDatosPruebas.EjecutarAsync(sinCheck.Cadena, "ALTER TABLE dbo_cotifly.CotizacionesSolicitud DROP CONSTRAINT ck_cotizaciones_estadoEnvio;");
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sinCheck.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(clsBaseDatosHealthCheck.DescripcionEsquemaSin0010, "el 0010 crea el CHECK si falta");
+    }
+
+    [Fact]
     public async Task SiFaltaOtraColumnaDelModeloLaNombra()
     {
         await using var incompleta = await baseDatos.CrearBaseInstaladaAsync("dbSaludIncompleta");

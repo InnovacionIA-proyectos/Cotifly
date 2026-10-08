@@ -16,7 +16,7 @@ public interface IClsPrecioCosteoService
     /// derivado y, si la solicitud no tiene PDF, el flete y el retorno; cada ruta resume el estado de sus camiones. Con PDF solo cambian
     /// los estados (el precio de la versión se conserva, ADR-015 §5). Devuelve <c>true</c> si algo cambió.
     /// </summary>
-    bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto);
+    bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora);
 
     /// <summary>
     /// Segunda parte (después de registrar el estado de la solicitud): recalcula los totales y el precio de cada ruta y de la solicitud
@@ -58,7 +58,7 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
 
         if (camiones.Count == 1 && foto.LineasSolicitud.Count == 1)
         {
-            camiones[0].AsignarLineaNexo(foto.LineasSolicitud[0]);
+            cotizacion.AsignarLineaNexo(camiones[0].Id, foto.LineasSolicitud[0]);
             return 0;
         }
 
@@ -68,51 +68,44 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
         var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c)).ToList();
         foreach (var (camionId, nexoId) in clsEmparejadorLineasNexo.Emparejar(candidatos, detalle, asignados))
         {
-            porCamion[camionId].Camion.AsignarLineaNexo(nexoId);
+            cotizacion.AsignarLineaNexo(camionId, nexoId);
         }
 
         return camiones.Count(c => c.LineaSolicitudNexoId is null);
     }
 
-    public bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
+    public bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
         AsociarCamionesNexo(cotizacion, foto);
 
-        // Con PDF el precio de la versión se conserva: los camiones solo actualizan su estado (ADR-015 §5).
+        // Con PDF el precio de la versión se conserva: los camiones solo actualizan su estado (ADR-015 §5). La raíz aplica la lectura,
+        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado).
         var conPdf = cotizacion.PdfPath is not null;
-        var cambio = false;
-        foreach (var ruta in cotizacion.RutasOrdenadas)
+        var lecturas = cotizacion.Vehiculos.Select(camion =>
         {
-            foreach (var camion in ruta.VehiculosOrdenados)
+            var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
+            if (conPdf)
             {
-                var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
-                if (conPdf)
-                {
-                    cambio |= camion.RegistrarEstado(estado);
-                    continue;
-                }
-
-                var costos = clsDerivacionEstadoCosteo.CostosCamion(foto, camion.LineaSolicitudNexoId);
-                if (costos is { } c && (c.Flete < 0m || c.Retorno < 0m))
-                {
-                    // Un costo negativo de Nexo no se usa (ni rompe el polling): el camión queda sin flete y se advierte en AplicarPrecio.
-                    costos = null;
-                }
-
-                cambio |= camion.RegistrarCosteo(estado, costos?.Flete, costos?.Retorno);
-                if (Detalle(foto, camion.LineaSolicitudNexoId) is { } linea)
-                {
-                    // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia.
-                    cambio |= camion.AsignarVehiculo(linea.TipoVehiculo, linea.Carroceria);
-                }
+                return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: false);
             }
 
-            cambio |= ruta.ResumirEstado();
-        }
+            var costos = clsDerivacionEstadoCosteo.CostosCamion(foto, camion.LineaSolicitudNexoId);
+            if (costos is { } c && (c.Flete < 0m || c.Retorno < 0m))
+            {
+                // Un costo negativo de Nexo no se usa (ni rompe el polling): el camión queda sin flete y se advierte en AplicarPrecio.
+                costos = null;
+            }
 
-        return cambio;
+            // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia.
+            var linea = Detalle(foto, camion.LineaSolicitudNexoId);
+            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, linea?.TipoVehiculo, linea?.Carroceria);
+        }).ToList();
+
+        // Un error del módulo de precio lo reporta AplicarPrecio (que vuelve a recalcular): aquí cuenta como cambio.
+        var aplicado = cotizacion.AplicarFotoNexo(lecturas, ahora);
+        return aplicado.EsFallo || aplicado.Valor;
     }
 
     public bool AplicarPrecio(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)

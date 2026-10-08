@@ -106,7 +106,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>La Mesa de Costeo de Nexo le puso vehículo a una línea que iba vacía: se copia (solo si el camión no tenía).</summary>
-    public bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
+    internal bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
     {
         var antes = (TipoVehiculo, Carroceria);
         TipoVehiculo ??= Normalizar(tipoVehiculo);
@@ -115,7 +115,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud.</summary>
-    public bool RegistrarEstado(EstadoCosteo estado)
+    internal bool RegistrarEstado(EstadoCosteo estado)
     {
         var cambio = EstadoCosteo != estado;
         EstadoCosteo = estado;
@@ -123,7 +123,7 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>Id de la línea en Nexo, asignado la primera vez que el polling ve la solicitud (se conserva después).</summary>
-    public bool AsignarLineaNexo(string lineaSolicitudNexoId)
+    internal bool AsignarLineaNexo(string lineaSolicitudNexoId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(lineaSolicitudNexoId);
         var id = lineaSolicitudNexoId.Trim();
@@ -140,7 +140,7 @@ public sealed class clsVehiculoLineaSolicitud
     /// Estado y costos del camión en la última consulta del polling (HU-005.6). <paramref name="flete"/> <c>null</c> = sin flete (el
     /// retorno se olvida también). El levante no lo toca: es la copia de la ruta. Devuelve <c>true</c> si algo cambió.
     /// </summary>
-    public bool RegistrarCosteo(EstadoCosteo estado, decimal? flete, decimal? retorno)
+    internal bool RegistrarCosteo(EstadoCosteo estado, decimal? flete, decimal? retorno)
     {
         if (flete is < 0m || retorno is < 0m)
         {
@@ -159,7 +159,7 @@ public sealed class clsVehiculoLineaSolicitud
     /// Re-solicitud en el mismo folio (HU-013.4): el camión vuelve a viajar a Nexo como una línea nueva. Se olvidan el id anterior en
     /// Nexo, el estado y los costos de Nexo (el levante, que es de Cotifly, se conserva).
     /// </summary>
-    public void ReiniciarCosteo()
+    internal void ReiniciarCosteo()
     {
         LineaSolicitudNexoId = null;
         EstadoCosteo = null;

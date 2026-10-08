@@ -315,7 +315,7 @@ public sealed class clsLineaSolicitud
     /// Un estado de toda la solicitud (envío, error de envío, entrega...) llega a todos los camiones de la ruta y la ruta lo resume.
     /// Devuelve <c>true</c> si algo cambió.
     /// </summary>
-    public bool RegistrarEstadoCamiones(EstadoCosteo estado)
+    internal bool RegistrarEstadoCamiones(EstadoCosteo estado)
     {
         var cambio = false;
         foreach (var camion in _vehiculos)
@@ -330,7 +330,7 @@ public sealed class clsLineaSolicitud
     /// Vence los camiones sin flete (<c>pendiente_costeo</c> o sin estado): el polling llegó a la edad máxima o Nexo ya no reconoce la
     /// solicitud. Los que tienen flete conservan su estado y su costo. Devuelve <c>true</c> si algo cambió.
     /// </summary>
-    public bool VencerCamionesSinFlete()
+    internal bool VencerCamionesSinFlete()
     {
         var cambio = false;
         foreach (var camion in _vehiculos.Where(c => c.EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.PendienteEnvio or null))
@@ -341,10 +341,13 @@ public sealed class clsLineaSolicitud
         return ResumirEstado() | cambio;
     }
 
-    /// <summary>Recalcula <see cref="EstadoCosteo"/> como el resumen de sus camiones (§9.2). Devuelve <c>true</c> si cambió.</summary>
-    public bool ResumirEstado()
+    /// <summary>
+    /// Recalcula <see cref="EstadoCosteo"/> como el resumen de sus camiones (§9.2); <paramref name="solicitudEnviada"/> decide cómo cuenta un
+    /// camión sin estado (<see cref="clsResumenEstadoCosteo"/>). Devuelve <c>true</c> si cambió.
+    /// </summary>
+    internal bool ResumirEstado(bool solicitudEnviada = false)
     {
-        var resumen = clsResumenEstadoCosteo.Resumir(_vehiculos.Select(v => v.EstadoCosteo));
+        var resumen = clsResumenEstadoCosteo.Resumir(_vehiculos.Select(v => v.EstadoCosteo), solicitudEnviada);
         var cambio = EstadoCosteo != resumen;
         EstadoCosteo = resumen;
         return cambio;
@@ -354,7 +357,7 @@ public sealed class clsLineaSolicitud
     /// Re-solicitud en el mismo folio (HU-013.4): sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
     /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>.
     /// </summary>
-    public void ReiniciarCosteo()
+    internal void ReiniciarCosteo()
     {
         foreach (var camion in _vehiculos)
         {
@@ -432,15 +435,29 @@ public sealed class clsLineaSolicitud
     public decimal? CostoTransporte =>
         CostoFletesTotal is { } fletes && CostoRetornoContenedorTotal is { } retorno ? fletes + retorno + (CostoLevanteContenedorTotal ?? 0m) : null;
 
-    /// <summary>¿Todos sus camiones tienen flete? (sin camiones, no.)</summary>
-    public bool TodosConFlete => _vehiculos.Count > 0 && _vehiculos.All(v => v.CostoFlete is not null);
+    /// <summary>
+    /// Camiones que cuentan para el estado y los totales: los <c>descartada</c> en Nexo se ignoran, salvo que todos lo estén (entonces
+    /// cuentan todos y la ruta queda descartada y sin flete). Regla del coordinador del 2026-10-08 (ADR-019).
+    /// </summary>
+    public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueCuentan
+    {
+        get
+        {
+            var vigentes = _vehiculos.Where(v => v.EstadoCosteo != Cotizaciones.EstadoCosteo.Descartada).ToList();
+            return vigentes.Count > 0 ? vigentes : [.. _vehiculos];
+        }
+    }
+
+    /// <summary>¿Todos sus camiones que cuentan (<see cref="VehiculosQueCuentan"/>) tienen flete? (sin camiones, no.)</summary>
+    public bool TodosConFlete => VehiculosQueCuentan is { Count: > 0 } cuentan && cuentan.All(v => v.CostoFlete is not null);
 
     private void SumarCostos()
     {
+        var cuentan = VehiculosQueCuentan;
         var conFlete = TodosConFlete;
-        CostoFletesTotal = conFlete ? _vehiculos.Sum(v => v.CostoFlete!.Value) : null;
-        CostoRetornoContenedorTotal = conFlete ? _vehiculos.Sum(v => v.CostoRetornoContenedor ?? 0m) : null;
-        CostoLevanteContenedorTotal = _vehiculos.Count == 0 ? null : _vehiculos.Sum(v => v.CostoLevanteContenedor ?? 0m);
+        CostoFletesTotal = conFlete ? cuentan.Sum(v => v.CostoFlete!.Value) : null;
+        CostoRetornoContenedorTotal = conFlete ? cuentan.Sum(v => v.CostoRetornoContenedor ?? 0m) : null;
+        CostoLevanteContenedorTotal = cuentan.Count == 0 ? null : cuentan.Sum(v => v.CostoLevanteContenedor ?? 0m);
         CostoServiciosConexos = _conexos.Sum(s => s.Costo);
         CostoFinal = conFlete ? CostoFletesTotal + CostoRetornoContenedorTotal + (CostoLevanteContenedorTotal ?? 0m) + CostoServiciosConexos : null;
     }
@@ -468,9 +485,10 @@ public sealed class clsLineaSolicitud
 
     /// <summary>
     /// Agrega el conexo o, si ya está (mismo <paramref name="idServicioConexo"/>), actualiza su precio unitario, cantidad y nombre. No
-    /// recalcula: lo hace quien termina de cambiar los conexos (<see cref="RecalcularTotales"/>). Devuelve <c>true</c> si cambió algo.
+    /// recalcula: es interno; desde fuera se usa <see cref="clsCotizacionSolicitud.CambiarConexos"/>, que siempre recalcula. Devuelve
+    /// <c>true</c> si cambió algo.
     /// </summary>
-    public bool AgregarOActualizarConexo(string idServicioConexo, string? nombre, decimal precio, decimal cantidad)
+    internal bool AgregarOActualizarConexo(string idServicioConexo, string? nombre, decimal precio, decimal cantidad)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(idServicioConexo);
         var id = idServicioConexo.Trim();
@@ -483,8 +501,11 @@ public sealed class clsLineaSolicitud
         return true;
     }
 
-    /// <summary>Quita los conexos que no están en <paramref name="conservar"/>. Devuelve los quitados.</summary>
-    public IReadOnlyList<clsServicioConexoRuta> ConservarConexos(IReadOnlySet<string> conservar)
+    /// <summary>
+    /// Quita los conexos que no están en <paramref name="conservar"/>. Devuelve los quitados. Interno: desde fuera se usa
+    /// <see cref="clsCotizacionSolicitud.ConservarConexos"/>, que siempre recalcula.
+    /// </summary>
+    internal IReadOnlyList<clsServicioConexoRuta> ConservarConexos(IReadOnlySet<string> conservar)
     {
         ArgumentNullException.ThrowIfNull(conservar);
         var quitados = _conexos.Where(c => !conservar.Contains(c.IdServicioConexo)).ToList();

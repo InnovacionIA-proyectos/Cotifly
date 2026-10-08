@@ -350,6 +350,8 @@ public sealed class clsEnvioCosteoService(
             cotizacion.RegistrarErrorEnvioCosteo(Motivo(resultado.Error), definitivo: EsRechazoDefinitivo(resultado.Error));
         }
 
+        // Nexo ya tiene la solicitud: este guardado se repite ante un interbloqueo (IClsUnitOfWork.GuardarCambiosAsync) para no perder el
+        // solicitudNexoId (sin él, el reintento la duplicaría en Nexo).
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         if (resultado.EsFallo)
         {

@@ -85,14 +85,16 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Datos de la exportación (HU-021: una fila por ruta): precio de la ruta, estado legible y los servicios conexos de las rutas con su
-    /// precio. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
+    /// Datos de la exportación (HU-021: una fila por ruta): la tarifa del transporte de la ruta (sin conexos, la misma del PDF del pliego),
+    /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos), como
+    /// el resumen del PDF: los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
     /// Nexo no entra a este objeto: el exportador no lo puede escribir.
     /// </summary>
     public static clsExportacionLicitacion DatosExportacion(clsCotizacionSolicitud cotizacion, clsArchivoLicitacion? archivo, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
+        var tarifas = lineas.Select(l => Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         var conexos = lineas
             .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r))
             .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
@@ -104,11 +106,11 @@ public sealed class clsLicitacionService(
             null,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
-            cotizacion.PrecioFinal,
+            tarifas.All(t => t is not null) ? tarifas.Sum(t => t!.Value) : null,
             archivo?.Hoja,
             archivo?.Contenido,
-            [.. lineas.Select(l => new clsLineaExportacion(
-                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), l.PrecioFinalLinea))],
+            [.. lineas.Select((l, i) => new clsLineaExportacion(
+                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), tarifas[i]))],
             conexos,
             ahora);
     }
@@ -337,11 +339,16 @@ public sealed class clsLicitacionService(
         return Vista(cotizacion, archivo);
     }
 
-    /// <summary>Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale).</summary>
+    /// <summary>
+    /// Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale). Como el Excel y el PDF del
+    /// pliego, el precio de cada fila es la tarifa del transporte y el total su suma, sin servicios conexos (que se ven aparte en el
+    /// costeo): HU-021, el precio de la ruta ya los incluye.
+    /// </summary>
     public static clsLicitacion Vista(clsCotizacionSolicitud cotizacion, clsArchivoLicitacionResumen? archivo)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ordenadas = cotizacion.RutasOrdenadas;
+        var tarifas = ordenadas.Select(l => Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         return new clsLicitacion(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
@@ -352,14 +359,14 @@ public sealed class clsLicitacionService(
             cotizacion.MotivoEstadoCosteo,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
-            cotizacion.PrecioFinal,
+            cotizacion.PrecioFinal is not null && tarifas.All(t => t is not null) ? tarifas.Sum(t => t!.Value) : null,
             ordenadas.Count(l => l.PrecioFinalLinea is not null),
             ordenadas.Count(l => l.PrecioFinalLinea is null),
             archivo?.NombreArchivo,
             archivo?.Hoja,
-            [.. ordenadas.Select(l => new clsLineaLicitacion(
+            [.. ordenadas.Select((l, i) => new clsLineaLicitacion(
                 l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg,
-                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea))]);
+                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea is null ? null : tarifas[i]))]);
     }
 
     /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>

@@ -364,12 +364,13 @@ public sealed class clsServiciosConexosCosteoService(
         // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de la ruta (costo unitario de Nexo y cantidad) y la ruta
         // recalcula su costo final y su precio con su margen.
         var ruta = porOrden[items[0].LineaOrden];
-        var agregados = ImportarConexos(ruta, NuevosConexos(actual.Valor, cotizacionNexo));
-        var recalculo = cotizacion.RecalcularTotales(cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
-        if (recalculo.EsFallo)
+        var importados = ImportarConexos(cotizacion, ruta, NuevosConexos(actual.Valor, cotizacionNexo), cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
+        if (importados.EsFallo)
         {
-            return (AgregadoEnNexo(recalculo.Error, true), 0, false);
+            return (AgregadoEnNexo(importados.Error, true), 0, false);
         }
+
+        var agregados = importados.Valor;
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None))
@@ -395,24 +396,22 @@ public sealed class clsServiciosConexosCosteoService(
 
     /// <summary>
     /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
-    /// criterio del 0009), la cantidad y el nombre. Un conexo que ya estaba se actualiza. No recalcula. Devuelve cuántos agregó o cambió.
+    /// criterio del 0009), la cantidad y el nombre. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
+    /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
     /// </summary>
-    public static int ImportarConexos(clsLineaSolicitud ruta, IEnumerable<clsConexoNexo> conexos)
+    public static clsResultado<int> ImportarConexos(
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IEnumerable<clsConexoNexo> conexos, DateTimeOffset ahora)
     {
+        ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(conexos);
-        var cambios = 0;
-        foreach (var conexo in conexos.Where(c => c.ValorAplicado >= 0m))
+        var cambios = conexos.Where(c => c.ValorAplicado >= 0m).Select(conexo =>
         {
             var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
             var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
-            if (ruta.AgregarOActualizarConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad))
-            {
-                cambios++;
-            }
-        }
-
-        return cambios;
+            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad);
+        }).ToList();
+        return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
     }
 
     /// <summary>

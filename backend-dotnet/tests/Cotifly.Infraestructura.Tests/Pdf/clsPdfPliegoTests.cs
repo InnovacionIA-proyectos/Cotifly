@@ -1,11 +1,14 @@
 using System.Diagnostics;
+using ClosedXML.Excel;
 using Cotifly.Aplicacion.Costeo.Services;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Aplicacion.Pdf.Validators;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Cotifly.Infraestructura.Licitaciones.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Pruebas.Comun;
 
@@ -71,6 +74,54 @@ public sealed class clsPdfPliegoTests
         var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, "COP"));
         pdf.Paginas.Should().BeGreaterThanOrEqualTo(2, "carta y condiciones en la hoja 1; resumen y tarifas desde la hoja 2");
         return (clsLectorPdf.Leer(pdf.Contenido), pdf.Paginas);
+    }
+
+    /// <summary>
+    /// HU-021 (corrección del núcleo): el Excel de la licitación y el PDF del pliego cuadran. Las dos tarifas son el transporte de la ruta
+    /// (sin conexos), el total es su suma (sin conexos) y los conexos van aparte una sola vez: tarifas + conexos = precio final.
+    /// </summary>
+    [Fact]
+    public void ElExcelYElPdfDelPliegoCuadranYNoCobranDosVecesLosConexos()
+    {
+        var (cotizacion, _) = Pliego(3);
+        var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
+        var datos = clsLicitacionService.DatosExportacion(cotizacion, null, _ahora);
+        var excel = new clsExportadorExcelLicitacionClosedXml().Generar(datos);
+        excel.EsExitoso.Should().BeTrue();
+        using var libro = new XLWorkbook(new MemoryStream(excel.Valor));
+        var hoja = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaSinOriginal);
+        var resumen = libro.Worksheet(clsExportadorExcelLicitacionClosedXml.HojaResumen);
+        var columnaPrecio = hoja.Row(1).CellsUsed().Single(c => c.GetString() == clsExportadorExcelLicitacionClosedXml.ColumnaPrecio("COP")).Address.ColumnNumber;
+        var tarifasExcel = Enumerable.Range(2, 3).Select(f => hoja.Cell(f, columnaPrecio).GetValue<decimal>()).ToList();
+        var totalExcel = resumen.Column(1).CellsUsed().Single(c => c.GetString() == clsExportadorExcelLicitacionClosedXml.EtiquetaTotal)
+            .CellRight().GetValue<decimal>();
+        var conexos = datos.ServiciosConexos.Sum(c => c.Precio);
+
+        tarifasExcel.Should().BeEquivalentTo(payload.Secciones!.SelectMany(s => s.Filas!).Select(f => f.Tarifa!.Value), "la misma tarifa en el Excel y el PDF");
+        totalExcel.Should().Be(tarifasExcel.Sum(), "el total es sin servicios conexos");
+        conexos.Should().BeGreaterThan(0m);
+        (totalExcel + conexos).Should().Be(cotizacion.PrecioFinal, "el conexo se cobra una sola vez");
+        payload.ServiciosConexos!.Sum(c => c.Precio).Should().Be(conexos);
+        Generar(cotizacion).Lector.Texto.Should().Contain(clsFormatoMoneda.Formatear(totalExcel, "COP"), "el total del resumen del PDF es el del Excel");
+    }
+
+    /// <summary>
+    /// Cada precio se redondea por separado: con fracciones de ,4 el transporte y el conexo bajan y la ruta sube, y sumarlos daría 1 peso
+    /// menos. La tarifa absorbe el redondeo: tarifa + conexos = precio de la ruta, exacto.
+    /// </summary>
+    [Fact]
+    public void LaTarifaMasLosConexosDaExactamenteElPrecioDeLaRuta()
+    {
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 999_999.84m, margen: 0.15m);
+        cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 100_000.29m, 1m)], clsCotizacionMuestra.Ahora).EsExitoso.Should().BeTrue();
+        var ruta = cotizacion.PrimeraRuta!;
+        var conexo = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta).Single().Precio;
+        ruta.PrecioDe(ruta.CostoTransporte, "COP", 0m, out var transporteSolo);
+
+        var tarifa = clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value;
+
+        (tarifa + conexo).Should().Be(ruta.PrecioFinalLinea!.Value).And.Be(cotizacion.PrecioFinal!.Value);
+        Math.Abs(tarifa - transporteSolo!.Value).Should().BeLessThanOrEqualTo(1m, "a lo sumo una unidad por conexo");
     }
 
     [Fact]

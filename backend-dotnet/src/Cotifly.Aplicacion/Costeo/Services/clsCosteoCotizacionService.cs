@@ -144,16 +144,16 @@ public sealed class clsCosteoCotizacionService(
         }
 
         var seleccion = incluidos.ToHashSet(StringComparer.Ordinal);
-        var quitados = cotizacion.Rutas.Sum(r => r.ConservarConexos(seleccion).Count);
-        if (quitados == 0)
+        var quitados = cotizacion.ConservarConexos(seleccion, cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
+        if (quitados.EsFallo)
+        {
+            return quitados.Error;
+        }
+
+        if (quitados.Valor == 0)
         {
             // La misma selección no cambia nada (ni invalida el PDF): idempotente.
             return Vista(cotizacion, opcionesPdf.Value.BaseUrl);
-        }
-
-        if (cotizacion.RecalcularTotales(cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt) is { EsFallo: true } fallo)
-        {
-            return fallo.Error;
         }
 
         clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
@@ -557,12 +557,33 @@ public sealed class clsCosteoCotizacionService(
         return string.Join(", ", grupos) + peso;
     }
 
-    /// <summary>Precio del transporte de la ruta (fletes, retorno y levante con su margen), en la moneda de la solicitud; <c>null</c> sin costo.</summary>
+    /// <summary>
+    /// Precio del transporte de la ruta (fletes, retorno y levante con su margen), en la moneda de la solicitud; <c>null</c> sin costo.
+    /// Es la tarifa que ven el PDF y el Excel: los conexos van aparte (<see cref="ConexosConPrecio"/>), así que la tarifa + los conexos
+    /// tienen que dar exactamente <c>precioFinalLinea</c>. Cada precio se redondea por separado; la diferencia de redondeo (a lo sumo
+    /// una unidad por conexo) la absorbe la tarifa: <c>precioFinalLinea − conexos</c>. Si la diferencia es mayor, la ruta no incluye
+    /// los conexos en su precio (cotización migrada antes de HU-021) y la tarifa es el transporte calculado.
+    /// </summary>
     public static decimal? PrecioTransporte(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        return ruta.PrecioDe(ruta.CostoTransporte, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio) is null ? precio : null;
+        if (ruta.PrecioDe(ruta.CostoTransporte, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio) is not null || precio is not { } transporte)
+        {
+            return null;
+        }
+
+        var conexos = ConexosConPrecio(cotizacion, ruta);
+        if (ruta.PrecioFinalLinea is { } total && conexos.Count > 0)
+        {
+            var ajustado = total - conexos.Sum(c => c.Precio);
+            if (Math.Abs(ajustado - transporte) <= conexos.Count)
+            {
+                return ajustado;
+            }
+        }
+
+        return transporte;
     }
 
     /// <summary>Conexos de la ruta como los ve el comercial: precio con el margen de la ruta (nunca el costo de Nexo); todos incluidos.</summary>

@@ -120,6 +120,13 @@ public sealed class clsResultadoCotizacionService(
                 $"La cotización {cotizacion.Folio} ya tiene resultado registrado: crea una versión nueva para cambiarla.");
         }
 
+        // ADR-019 (Riesgo 2): "en Nexo" sin el id de la solicitud (migrada sin respaldo) se trata como un envío fallido: queda en
+        // error_envio con SOLICITUD_NEXO_DESCONOCIDA y la perdida va solo en Cotifly (#127); la ganada pide reintentar el envío.
+        if (cotizacion.Ganada is null && cotizacion.SolicitudNexoDesconocida)
+        {
+            cotizacion.MarcarSolicitudNexoDesconocida();
+        }
+
         // HU-013.17: Nexo no recibió la solicitud; si el cliente desistió, la perdida queda solo en Cotifly.
         if (cotizacion.EstadoCosteo == EstadoCosteo.ErrorEnvio)
         {

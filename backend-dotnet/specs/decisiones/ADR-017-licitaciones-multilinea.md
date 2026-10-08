@@ -1,6 +1,6 @@
 # ADR-017 — Licitaciones desde Excel y cotizaciones de varias líneas
 
-- **Estado:** Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
+- **Estado:** Reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones). Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
 - **Fecha:** 2026-10-01
 - **Issue / HU:** #46 (HU-011.1), #47 (HU-011.2), #48 (HU-011.3) y #49 (HU-011.5). Amplía ADR-015 (costeo en Nexo, que dejó la deuda "HU-011 multi-línea"). Relacionada con ADR-006 (PDF), ADR-008 (esquema solo por scripts), ADR-011 (folio) y ADR-014 (TRM y USD).
 - **Nota de numeración:** ADR-016 es la de métricas (HU-010.1); esta queda como ADR-017.

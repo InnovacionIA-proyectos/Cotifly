@@ -369,6 +369,34 @@ public sealed class clsCotizacionSolicitud
         CosteoSiguienteConsultaAt = null;
     }
 
+    /// <summary>Código del motivo cuando la solicitud quedó "en Nexo" sin su id (migración sin respaldo, ADR-019).</summary>
+    public const string CodigoSolicitudNexoDesconocida = "SOLICITUD_NEXO_DESCONOCIDA";
+
+    /// <summary>Motivo de <see cref="MarcarSolicitudNexoDesconocida"/>.</summary>
+    public const string MotivoSolicitudNexoDesconocida =
+        CodigoSolicitudNexoDesconocida + ": Cotifly no tiene el id de la solicitud en Nexo (cotización migrada sin respaldo), así que no "
+        + "puede consultar el costeo. Reintenta el envío o re-solicita el costeo; si el cliente desistió, márcala perdida.";
+
+    /// <summary>¿Está "en Nexo" (<c>pendiente_costeo</c> o <c>autocosteo</c>) sin <see cref="SolicitudNexoId"/>? Nadie la puede consultar.</summary>
+    public bool SolicitudNexoDesconocida =>
+        SolicitudNexoId is null && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.Autocosteo;
+
+    /// <summary>
+    /// Sale del callejón de <see cref="SolicitudNexoDesconocida"/> (ADR-019): la deja en <c>error_envio</c> (no definitivo) con
+    /// <see cref="MotivoSolicitudNexoDesconocida"/>, y desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly
+    /// (#127). Devuelve <c>true</c> si la marcó.
+    /// </summary>
+    public bool MarcarSolicitudNexoDesconocida()
+    {
+        if (!SolicitudNexoDesconocida)
+        {
+            return false;
+        }
+
+        RegistrarErrorEnvioCosteo(MotivoSolicitudNexoDesconocida);
+        return true;
+    }
+
     /// <summary>¿El polling debe consultar esta cotización? (tiene <see cref="SolicitudNexoId"/> y no está en un estado terminal.)</summary>
     public bool SeConsultaEnNexo =>
         SolicitudNexoId is not null
@@ -559,16 +587,115 @@ public sealed class clsCotizacionSolicitud
         EstadoCosteo = estado;
     }
 
-    /// <summary>Resumen del estado de las rutas (§9.2), con cada ruta resumida antes desde sus camiones.</summary>
+    /// <summary>
+    /// Resumen del estado de las rutas (§9.2), con cada ruta resumida antes desde sus camiones. Un camión (o una ruta) sin estado cuenta
+    /// como <c>pendiente_costeo</c> si la solicitud ya se envió a Nexo (<see cref="SolicitudNexoId"/>) y como <c>pendiente_envio</c> si no.
+    /// </summary>
     public Cotizaciones.EstadoCosteo? ResumirRutas()
     {
+        var enviada = SolicitudNexoId is not null;
         foreach (var ruta in _rutas)
         {
-            ruta.ResumirEstado();
+            ruta.ResumirEstado(enviada);
         }
 
-        return clsResumenEstadoCosteo.Resumir(_rutas.Select(r => r.EstadoCosteo));
+        return clsResumenEstadoCosteo.Resumir(_rutas.Select(r => r.EstadoCosteo), enviada);
     }
+
+    // ------------------------------------------------------------------ Lectura de Nexo y conexos (invariantes de la raíz, ADR-019)
+
+    /// <summary>Asocia el camión <paramref name="camionId"/> con su línea de Nexo (primera vez que el polling la ve). Devuelve si cambió.</summary>
+    public bool AsignarLineaNexo(Guid camionId, string lineaSolicitudNexoId) => Camion(camionId).AsignarLineaNexo(lineaSolicitudNexoId);
+
+    /// <summary>
+    /// Aplica una lectura de Nexo a los camiones (HU-005.6): a cada uno su estado y, si <see cref="clsCosteoCamionNexo.ConCostos"/>, el
+    /// flete, el retorno y el vehículo que puso la Mesa de Costeo. Después cada ruta resume su estado y, si algún camión cambió de costos,
+    /// se recalculan los totales y el precio de las rutas y de la solicitud (siempre: nadie toca los camiones por fuera). Con PDF el
+    /// llamador manda solo estados (el precio de la versión se conserva, ADR-015 §5). Devuelve si algo cambió, o el error del módulo de
+    /// precio (el cambio de los camiones queda aplicado).
+    /// </summary>
+    public clsResultado<bool> AplicarFotoNexo(IEnumerable<clsCosteoCamionNexo> camiones, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(camiones);
+        var cambio = false;
+        var conCostos = false;
+        foreach (var lectura in camiones)
+        {
+            var camion = Camion(lectura.CamionId);
+            if (!lectura.ConCostos)
+            {
+                cambio |= camion.RegistrarEstado(lectura.Estado);
+                continue;
+            }
+
+            conCostos = true;
+            cambio |= camion.RegistrarCosteo(lectura.Estado, lectura.Flete, lectura.Retorno);
+            if (lectura.TipoVehiculo is not null || lectura.Carroceria is not null)
+            {
+                cambio |= camion.AsignarVehiculo(lectura.TipoVehiculo, lectura.Carroceria);
+            }
+        }
+
+        var enviada = SolicitudNexoId is not null;
+        foreach (var ruta in _rutas)
+        {
+            cambio |= ruta.ResumirEstado(enviada);
+        }
+
+        if (!conCostos)
+        {
+            return cambio;
+        }
+
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : cambio | recalculo.Valor;
+    }
+
+    /// <summary>
+    /// Agrega o actualiza conexos en la ruta <paramref name="ordenRuta"/> (precio = costo unitario de Nexo) y recalcula SIEMPRE los
+    /// totales y el precio. Devuelve cuántos agregó o cambió, o el error del módulo de precio.
+    /// </summary>
+    public clsResultado<int> CambiarConexos(int ordenRuta, IEnumerable<clsCambioConexo> conexos, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(conexos);
+        var ruta = _rutas.FirstOrDefault(r => r.Orden == ordenRuta)
+            ?? throw new ArgumentOutOfRangeException(nameof(ordenRuta), $"La cotización {Folio} no tiene la ruta {ordenRuta}.");
+        var cambios = conexos.Count(c => ruta.AgregarOActualizarConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : cambios;
+    }
+
+    /// <summary>
+    /// Quita de todas las rutas los conexos que no están en <paramref name="conservar"/> (vacío = todos) y recalcula SIEMPRE los totales y
+    /// el precio. Devuelve cuántos quitó, o el error del módulo de precio.
+    /// </summary>
+    public clsResultado<int> ConservarConexos(IReadOnlySet<string> conservar, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(conservar);
+        var quitados = _rutas.Sum(r => r.ConservarConexos(conservar).Count);
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : quitados;
+    }
+
+    /// <summary>
+    /// Persistencia (recarga del agregado, <c>IClsCotizacionRepository.RecargarAsync</c>): reemplaza las rutas en memoria, con sus
+    /// camiones, mercancías y conexos, por las de <paramref name="leida"/>, recién leída de la base. No es una operación de negocio.
+    /// </summary>
+    internal void ReemplazarRutasLeidas(clsCotizacionSolicitud leida)
+    {
+        ArgumentNullException.ThrowIfNull(leida);
+        if (leida.Id != Id)
+        {
+            throw new ArgumentException("La cotización leída no es esta.", nameof(leida));
+        }
+
+        _rutas.Clear();
+        _rutas.AddRange(leida._rutas);
+    }
+
+    private clsVehiculoLineaSolicitud Camion(Guid camionId) =>
+        _rutas.SelectMany(r => r.Vehiculos).FirstOrDefault(v => v.Id == camionId)
+        ?? throw new ArgumentOutOfRangeException(nameof(camionId), $"El camión {camionId} no es de la cotización {Folio}.");
 
     // ------------------------------------------------------------------ Totales y precio (§9.1)
 

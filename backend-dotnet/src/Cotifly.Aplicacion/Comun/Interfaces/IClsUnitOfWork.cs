@@ -9,7 +9,10 @@ namespace Cotifly.Aplicacion.Comun.Interfaces;
 /// </summary>
 public interface IClsUnitOfWork
 {
-    /// <summary>Confirma los cambios pendientes y devuelve cuántas filas se escribieron.</summary>
+    /// <summary>
+    /// Confirma los cambios pendientes y devuelve cuántas filas se escribieron. Sin una transacción abierta, si SQL Server elige el
+    /// guardado como víctima de un interbloqueo (1205) se repite hasta tres veces (HU-021, ADR-019).
+    /// </summary>
     /// <exception cref="clsViolacionUnicidadException">
     /// Una restricción única rechazó el cambio (ej. <c>uq_cotizaciones_folio</c> → <c>FOLIO_DUPLICADO</c>).
     /// Tras la excepción los cambios pendientes se descartan.

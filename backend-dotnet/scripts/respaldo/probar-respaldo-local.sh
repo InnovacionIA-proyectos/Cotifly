@@ -60,7 +60,7 @@ levantar_sql() {
   esperar_sql "$1"
 }
 
-paso "1. Origen $ORIGEN con 0001-0003 y datos ficticios"
+paso "1. Origen $ORIGEN con todas las migraciones (0001-0010) y datos ficticios"
 docker network create "$RED" >/dev/null
 levantar_sql "$ORIGEN"
 qf "$ORIGEN" master "$DIR_SQL_DEV/dev-01-bases.sql"

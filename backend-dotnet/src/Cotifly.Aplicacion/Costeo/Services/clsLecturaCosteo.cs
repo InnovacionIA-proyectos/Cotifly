@@ -27,14 +27,15 @@ public static class clsLecturaCosteo
         ArgumentNullException.ThrowIfNull(precioCosteo);
 
         // HU-021: primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
-        var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto);
+        var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto, ahora);
 
         // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a la ruta 1 y se quita la marca.
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
         if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo && cotizacion.PrimeraRuta is { } ruta)
         {
             var faltantes = nexo.Conexos.Where(c => ruta.Conexos.All(r => !string.Equals(r.IdServicioConexo, c.Id, StringComparison.OrdinalIgnoreCase)));
-            cambio |= clsServiciosConexosCosteoService.ImportarConexos(ruta, faltantes) > 0;
+            var importados = clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, faltantes, ahora);
+            cambio |= importados.EsFallo || importados.Valor > 0;
         }
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);
         var estado = cotizacion.Rutas.Count == 0 ? estadoNexo : cotizacion.ResumirRutas() ?? estadoNexo;

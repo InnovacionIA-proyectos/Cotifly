@@ -344,11 +344,7 @@ public sealed class clsReSolicitudCosteoService(
         // HU-021: la solicitud y cada ruta olvidan el costeo anterior (camiones en pendiente_envio, sin costos de Nexo ni precio) y los
         // conexos se descartan (HU-013.15: la captura nueva de Nexo empieza sin ellos; se avisan en conexos_descartados).
         cotizacion.PrepararReSolicitud();
-        foreach (var ruta in cotizacion.Rutas)
-        {
-            ruta.ConservarConexos(new HashSet<string>(StringComparer.Ordinal));
-            ruta.RecalcularTotales(cotizacion.Moneda, cotizacion.TrmAplicada);
-        }
+        cotizacion.ConservarConexos(new HashSet<string>(StringComparer.Ordinal), cotizacion.UpdatedAt);
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ReSolicitud, usuarioId, cotizaciones);
         if (!await ReservarAsync(cotizacion, versionEsperada, reserva, cancellationToken))

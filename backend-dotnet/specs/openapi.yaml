@@ -22,6 +22,12 @@ info:
     - Las operaciones marcadas con `x-estado: pendiente` tienen el contrato acordado y todavía no
       están implementadas; `x-issue` dice qué issue las implementa. Mientras tanto la prueba de
       contrato las lista en `clsContratoRutasTests.PendientesDeImplementar` (HU-013, ADR-018).
+    - **AVISO PARA EL FRONTEND (HU-021, ADR-019): `precio_final` de la cotización YA INCLUYE los servicios
+      conexos.** Es la suma de las rutas, y el precio de cada ruta es su costo (fletes, retorno, levante y
+      conexos) con el margen. NO sumarle el `precio` de los conexos: se cobrarían dos veces. El `precio` de
+      cada conexo es informativo (el desglose del PDF). La excepción son la licitación (`Licitacion.precio_final`
+      y `lineas[].precio_final`), el Excel y el PDF del pliego: allí cada fila es la tarifa del transporte y el
+      total va sin conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta, exacto.
     - Concurrencia optimista (HU-013, ADR-018 §8): `GET /web/cotizaciones/{folio}/costeo` devuelve el
       encabezado `ETag` (y `row_version` en el cuerpo), y toda respuesta 200 o 201 de una mutación del
       costeo trae el `ETag` nuevo. Las mutaciones de la etapa final (margen, conexos POST y PUT,
@@ -3546,7 +3552,10 @@ components:
         precio_final:
           type: number
           nullable: true
-          description: Precio al cliente (costeo de Nexo con margen). `null` mientras no haya costeo.
+          description: |
+            Precio al cliente (costeo de Nexo con margen). `null` mientras no haya costeo. **HU-021 (ADR-019): incluye los
+            servicios conexos** (es la suma de las rutas; cada ruta = fletes + retorno + levante + conexos, con su margen). No
+            sumarle el `precio` de `servicios_conexos`, que es el desglose.
         margen_aplicado:
           type: number
           nullable: true
@@ -4424,7 +4433,9 @@ components:
         precio_final:
           type: number
           nullable: true
-          description: Precio con margen de la línea; `null` mientras no tiene flete. Nunca el costo de Nexo.
+          description: |
+            Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel y del PDF del pliego;
+            HU-021); `null` mientras no tiene flete. Nunca el costo de Nexo.
 
     Licitacion:
       type: object

@@ -41,9 +41,16 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
     /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
     public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
 
-    /// <summary>Columnas que agrega el 0010 (borrador pendiente de aprobación).</summary>
+    /// <summary>
+    /// El <c>CHECK</c> de <c>estadoEnvio</c>: el modelo no lo describe, así que la sonda lo verifica aparte. Lo trae el 0009 (y
+    /// <c>01_crear_esquema.sql</c>), pero la base compartida se instaló antes; el 0010 lo crea si falta.
+    /// </summary>
+    public const string CheckEstadoEnvio = "CotizacionesSolicitud.ck_cotizaciones_estadoEnvio";
+
+    /// <summary>Columnas (y el <c>CHECK</c> de <c>estadoEnvio</c>) que agrega el 0010 (borrador pendiente de aprobación).</summary>
     public static readonly IReadOnlySet<string> Columnas0010 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
+        CheckEstadoEnvio,
         "CotizacionesSolicitud.solicitudNexoId",
         "CotizacionLineasSolicitud.origenNombre",
         "CotizacionLineasSolicitud.destinoNombre",
@@ -115,7 +122,8 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
 
     /// <summary>
     /// <c>Tabla.columna</c> de cada columna del modelo EF que no existe en <c>dbo_cotifly</c> (<c>COL_LENGTH</c> es NULL si no existe la
-    /// columna o la tabla). Los nombres salen del modelo (código), nunca de datos del usuario.
+    /// columna o la tabla), y <see cref="CheckEstadoEnvio"/> si falta ese <c>CHECK</c>. Los nombres salen del modelo (código), nunca de
+    /// datos del usuario.
     /// </summary>
     public static string ConsultaFaltantes(IModel modelo)
     {
@@ -141,6 +149,8 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
         var sql = new StringBuilder("SELECT CONCAT(t.tabla, N'.', t.columna) AS [Value] FROM (VALUES ");
         sql.AppendJoin(", ", filas);
         sql.Append(") AS t(tabla, columna) WHERE COL_LENGTH(N'dbo_cotifly.' + t.tabla, t.columna) IS NULL");
+        sql.Append($" UNION ALL SELECT N'{CheckEstadoEnvio}' WHERE NOT EXISTS (SELECT 1 FROM sys.check_constraints ")
+            .Append("WHERE name = N'ck_cotizaciones_estadoEnvio' AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud'))");
         return sql.ToString();
     }
 }

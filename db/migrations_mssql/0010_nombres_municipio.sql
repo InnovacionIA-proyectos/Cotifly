@@ -24,7 +24,8 @@
         compartida se instaló antes de ese cambio. Se crea solo si falta (y se detiene, sin aplicar
         nada, si alguna fila trae un valor fuera de sin_enviar/enviada/reenviada).
      5. Si la base pasó por el 0009 y todavía tiene sus respaldos (Respaldo0009_*), llena los nombres
-        y el id de la solicitud de Nexo que estén vacíos desde esos respaldos (las rutas de las
+        (también los de los conexos del JSON de cada línea de una licitación) y el id de la solicitud de
+        Nexo que estén vacíos desde esos respaldos (las rutas de las
         cotizaciones del chat toman el origen y el destino de su cabecera). Sin respaldos, no hace nada.
 
    Todo corre en UNA transacción: si algo falla, no queda nada aplicado. Si ya se aplicó, no cambia
@@ -152,6 +153,21 @@ BEGIN
     CROSS APPLY OPENJSON(c.serviciosConexos) WITH (idServicio NVARCHAR(64) ''$.id'', nombre NVARCHAR(400) ''$.nombre'') AS j
     WHERE s.nombreServicioConexo IS NULL AND j.idServicio = s.idServicioConexo AND NULLIF(LTRIM(RTRIM(j.nombre)), N'''') IS NOT NULL
       AND ISJSON(c.serviciosConexos) = 1;');
+END
+GO
+
+-- 3.4 Nombre de los conexos que el 0009 pasó del JSON de cada línea (licitaciones) a su ruta.
+IF OBJECT_ID(N'dbo_cotifly.Respaldo0009_CotizacionLineasSolicitud', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo_cotifly.Respaldo0009_CotizacionLineasSolicitud', N'serviciosConexos') IS NOT NULL
+BEGIN
+    EXEC (N'
+    UPDATE s
+    SET s.nombreServicioConexo = LEFT(j.nombre, 200)
+    FROM dbo_cotifly.CotizacionServiciosConexos AS s
+    JOIN dbo_cotifly.Respaldo0009_CotizacionLineasSolicitud AS r ON r.id = s.lineaSolicitudId
+    CROSS APPLY OPENJSON(r.serviciosConexos) WITH (idServicio NVARCHAR(64) ''$.id'', nombre NVARCHAR(400) ''$.nombre'') AS j
+    WHERE s.nombreServicioConexo IS NULL AND j.idServicio = s.idServicioConexo AND NULLIF(LTRIM(RTRIM(j.nombre)), N'''') IS NOT NULL
+      AND ISJSON(r.serviciosConexos) = 1;');
 END
 GO
 

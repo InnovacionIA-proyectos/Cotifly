@@ -8,6 +8,11 @@
 | Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` y los controllers de `backend-dotnet/src/Cotifly.Api`, en `origin/QA` y en las ramas de los PR abiertos |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec de la rama correspondiente, y hay que avisar al backend |
 
+> **AVISO HU-021 (ADR-019, 2026-10-08): `precio_final` YA INCLUYE los servicios conexos.** Es la suma de las rutas, y cada ruta es
+> su costo (fletes, retorno, levante y conexos) con el margen. **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
+> ese `precio` es el desglose. En la licitación (`GET /web/licitaciones/{folio}`), su Excel y el PDF del pliego cada línea es la
+> tarifa del transporte y el total va **sin** conexos, que se listan aparte una sola vez. Tarifa + conexos = precio de la ruta.
+
 Convención de la guía: "a confirmar" marca todo lo que no está cerrado en el código ni en las decisiones. No hay nada inventado. Si algo no aparece aquí, no existe en el backend.
 
 ## 1. Portada
@@ -1054,7 +1059,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 | Campo | Nota |
 |---|---|
-| `precio_final` | Flete con margen (flete + aprovisionamiento + retorno del contenedor, con el margen de la cotización). null mientras no haya costeo |
+| `precio_final` | Precio total con margen: flete + aprovisionamiento + retorno del contenedor **+ servicios conexos** (HU-021, ADR-019). null mientras no haya costeo |
 | `margen_aplicado` | null mientras no haya `precio_final` |
 | `moneda`, `trm_aplicada` | #103 (HU-013.7). `trm_aplicada` es la TRM fijada al crear (COP por USD); 0 en COP. En USD, `precio_final` y el `precio` de los conexos van en dólares con 2 decimales: mostrar `US$` y "TRM aplicada: `trm_aplicada`" |
 | `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (con el mismo margen) e `incluido` (por defecto true). **Nunca trae el costo** |
@@ -1062,7 +1067,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 | `pdf_url` | null hasta generar el PDF |
 
 - 404 si no es tuya.
-- Mostrar el total estimado = `precio_final` + suma de `precio` de los conexos con `incluido = true` (cálculo del cliente, **a confirmar** si el PDF muestra un total o solo las filas).
+- **HU-021:** el total es `precio_final` (ya incluye los conexos). **No** sumarle el `precio` de los conexos. Todos los conexos que llegan están incluidos (`incluido` siempre es true): excluir uno lo quita de la ruta.
 
 ### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En PR #76
 
@@ -1072,7 +1077,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En PR #76
 
-- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y `precio_final`, más solo los conexos incluidos, cada uno con su precio.
+- Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y la tarifa del transporte, más los conexos, cada uno con su precio. Tarifa + conexos = `precio_final` (HU-021).
 - 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
 - 400 `PDF_PAYLOAD_INVALIDO`. 404. 409 `COSTEO_NO_LISTO` o `PDF_YA_GENERADO`. 503 `PDF_RENDER_NO_DISPONIBLE` (transitorio: reintentar; desde #92).
 - **Una sola vez por cotización.** Pedir confirmación antes ("Después no podrás cambiar los servicios conexos"). Antes de generarlo, confirmar el teléfono (`GET`/`PUT /web/usuario/telefono`), igual que en el chat.

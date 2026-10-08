@@ -146,51 +146,23 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     }
 
     /// <summary>
-    /// Relee la cabecera y cada fila de su agregado que está en memoria, en pocas consultas (una por tabla), y las deja como
-    /// <c>Unchanged</c>: también después de un <c>ChangeTracker.Clear()</c> (conflicto de versión), así un guardado posterior no
-    /// confunde las rutas ya existentes con filas nuevas. Una fila que ya no existe en la base queda fuera del seguimiento.
+    /// Vuelve a leer el agregado completo de la base y deja <paramref name="cotizacion"/> (la MISMA instancia, que siguen usando los
+    /// llamadores) igual a la base: limpia el rastreador de cambios, lee la cabecera con sus rutas, camiones, mercancías y conexos con
+    /// <see cref="ConAgregado"/>, reemplaza las rutas en memoria por las leídas (las que otro proceso borró desaparecen y las nuevas
+    /// aparecen) y la vuelve a seguir como <c>Unchanged</c> con los valores de la cabecera recargados. Así un guardado posterior no
+    /// reinserta filas borradas ni confunde filas existentes con nuevas.
     /// </summary>
     public async Task RecargarAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var rutas = cotizacion.Rutas.ToList();
-        var rutaIds = rutas.Select(r => r.Id).ToList();
-        await RecargarFilasAsync(contexto.CotizacionLineasSolicitud, rutas, r => rutaIds.Contains(r.Id), r => r.Id, cancellationToken);
-        await RecargarFilasAsync(
-            contexto.CotizacionVehiculosLineaSolicitud, [.. rutas.SelectMany(r => r.Vehiculos)], v => rutaIds.Contains(v.LineaSolicitudId), v => v.Id, cancellationToken);
-        await RecargarFilasAsync(
-            contexto.CotizacionMercancias, [.. rutas.SelectMany(r => r.Mercancias)], m => rutaIds.Contains(m.LineaSolicitudId), m => m.Id, cancellationToken);
-        await RecargarFilasAsync(
-            contexto.CotizacionServiciosConexos, [.. rutas.SelectMany(r => r.Conexos)], c => rutaIds.Contains(c.LineaSolicitudId), c => c.Id, cancellationToken);
-
-        // La cabecera al final: así, si EF la vuelve a seguir, sus rutas ya están seguidas como existentes.
+        contexto.ChangeTracker.Clear();
+        var id = cotizacion.Id;
+        var leida = await LeerAgregadoAsync(
+                () => ConAgregado().AsNoTrackingWithIdentityResolution().FirstOrDefaultAsync(c => c.Id == id, cancellationToken), cancellationToken)
+            ?? throw new InvalidOperationException($"La cotización {cotizacion.Folio} ya no existe en la base.");
+        cotizacion.ReemplazarRutasLeidas(leida);
+        contexto.Attach(cotizacion);
         await contexto.Entry(cotizacion).ReloadAsync(cancellationToken);
-    }
-
-    private async Task RecargarFilasAsync<T>(
-        DbSet<T> tabla, IReadOnlyList<T> enMemoria, System.Linq.Expressions.Expression<Func<T, bool>> filtro, Func<T, Guid> id,
-        CancellationToken cancellationToken)
-        where T : class
-    {
-        if (enMemoria.Count == 0)
-        {
-            return;
-        }
-
-        var deBase = (await tabla.AsNoTracking().Where(filtro).ToListAsync(cancellationToken)).ToDictionary(id);
-        foreach (var fila in enMemoria)
-        {
-            var entrada = contexto.Entry(fila);
-            if (!deBase.TryGetValue(id(fila), out var actual))
-            {
-                entrada.State = EntityState.Detached;
-                continue;
-            }
-
-            entrada.CurrentValues.SetValues(actual);
-            entrada.OriginalValues.SetValues(actual);
-            entrada.State = EntityState.Unchanged;
-        }
     }
 
     public async Task<IReadOnlyList<clsCotizacionSolicitud>> ListarPorUsuarioAsync(

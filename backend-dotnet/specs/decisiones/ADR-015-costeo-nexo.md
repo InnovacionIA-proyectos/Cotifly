@@ -1,6 +1,6 @@
 # ADR-015 — Costeo en Nexo: persistencia, envío, polling, margen y resultado
 
-- **Estado:** Aceptada (se implementa por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado). Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
+- **Estado:** Reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones). Aceptada (se implementa por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado). Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
 - **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
