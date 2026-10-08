@@ -136,7 +136,7 @@ public sealed class clsPrecioCosteoLineasTests
     public void DosLineasIdenticasNoSeAsocianYLaLicitacionQuedaSinTotal()
     {
         var cotizacion = Cotizacion();
-        var lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Id,
+        var lineas = clsLineaSolicitud.Desde(cotizacion.Id,
             [new clsLineaSolicitudCosteo { Origen = "Origen 1", Destino = "Destino", PesoKg = 1m }, new clsLineaSolicitudCosteo { Origen = "Origen 1", Destino = "Destino", PesoKg = 1m },
              new clsLineaSolicitudCosteo { Origen = "Origen 3", Destino = "Destino", PesoKg = 1m }]);
         var foto = Foto("EnCosteo", [("L1", 1_000_000m), ("L2", 2_000_000m), ("L3", 850_000m)], [], ["L1", "L3"]) with { };
@@ -217,9 +217,9 @@ public sealed class clsPrecioCosteoLineasTests
         cotizacion.MotivoEstadoCosteo.Should().Contain("versión nueva");
     }
 
-    private static clsCotizacion Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo, string moneda = clsCotizacion.MonedaPesos, decimal trm = 0m)
+    private static clsCotizacionSolicitud Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo, string moneda = clsCotizacionSolicitud.MonedaPesos, decimal trm = 0m)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-01102026-001", Moneda = moneda, TrmAplicada = trm }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-01102026-001", Moneda = moneda, TrmAplicada = trm }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
         cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
@@ -228,8 +228,8 @@ public sealed class clsPrecioCosteoLineasTests
     }
 
     /// <summary>Líneas con rutas distintas: la línea k va de <c>Origen k</c> a <c>Destino</c> (en Nexo, la <c>Lk</c>).</summary>
-    private static IReadOnlyList<clsCotizacionLineaSolicitud> Lineas(clsCotizacion cotizacion, int numero) =>
-        clsCotizacionLineaSolicitud.Desde(cotizacion.Id,
+    private static IReadOnlyList<clsLineaSolicitud> Lineas(clsCotizacionSolicitud cotizacion, int numero) =>
+        clsLineaSolicitud.Desde(cotizacion.Id,
             [.. Enumerable.Range(1, numero).Select(k => new clsLineaSolicitudCosteo { Origen = $"Origen {k}", Destino = "Destino", PesoKg = 1m })]);
 
     /// <summary>

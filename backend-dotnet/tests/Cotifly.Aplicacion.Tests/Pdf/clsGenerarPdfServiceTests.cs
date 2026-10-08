@@ -35,7 +35,7 @@ public sealed class clsGenerarPdfServiceTests
     private readonly clsUsuarioWeb _usuario;
     private readonly clsMargenPolitica _nacional = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
     private clsDocumentoCotizacion? _documento;
-    private clsCotizacion? _agregada;
+    private clsCotizacionSolicitud? _agregada;
 
     public clsGenerarPdfServiceTests()
     {
@@ -46,7 +46,7 @@ public sealed class clsGenerarPdfServiceTests
         _generador.GenerarAsync(Arg.Do<clsDocumentoCotizacion>(d => _documento = d), Arg.Any<CancellationToken>()).Returns(new clsPdfGenerado([0x25, 0x50, 0x44, 0x46], 3));
         _almacen.GuardarNuevoAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
             .Returns(ci => $"/data/pdfs/{ci.ArgAt<string>(0)}");
-        _cotizaciones.When(c => c.Agregar(Arg.Any<clsCotizacion>())).Do(ci => _agregada = ci.Arg<clsCotizacion>());
+        _cotizaciones.When(c => c.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _agregada = ci.Arg<clsCotizacionSolicitud>());
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -345,7 +345,7 @@ public sealed class clsGenerarPdfServiceTests
         var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.FolioDuplicado);
-        _cotizaciones.DidNotReceive().Agregar(Arg.Any<clsCotizacion>());
+        _cotizaciones.DidNotReceive().Agregar(Arg.Any<clsCotizacionSolicitud>());
         await _almacen.DidNotReceiveWithAnyArgs().EliminarAsync(default!, Ct);
     }
 

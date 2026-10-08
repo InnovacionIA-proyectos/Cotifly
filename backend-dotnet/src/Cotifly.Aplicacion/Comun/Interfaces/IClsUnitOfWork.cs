@@ -23,7 +23,7 @@ public interface IClsUnitOfWork
     /// cambios pendientes. Devuelve <c>false</c> sin escribir nada (y descarta los cambios pendientes) si la versión cambió entretanto,
     /// si la cotización no existe o si SQL Server eligió esta transacción como víctima de un interbloqueo (1205): el llamador responde
     /// <c>CONFLICTO_CONCURRENCIA</c> o reintenta después. Subir la versión es responsabilidad del caso de uso
-    /// (<c>clsCotizacion.IncrementarVersionNegocio</c>).
+    /// (<c>clsCotizacionSolicitud.IncrementarVersionNegocio</c>).
     /// </summary>
     /// <exception cref="clsViolacionUnicidadException">Igual que <see cref="GuardarCambiosAsync"/>.</exception>
     Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default);

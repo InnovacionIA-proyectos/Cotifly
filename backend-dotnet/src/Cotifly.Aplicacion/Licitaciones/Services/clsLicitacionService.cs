@@ -68,14 +68,13 @@ public sealed class clsLicitacionService(
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas = cotizacion is null ? [] : await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        if (cotizacion is null || lineas.Count == 0 || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
+        if (cotizacion is null || cotizacion.Rutas.Count == 0 || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
         var archivo = await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        var datos = DatosExportacion(cotizacion, lineas, archivo, reloj.AhoraUtc);
+        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc);
         var generado = exportador.Generar(datos);
         if (generado.EsFallo)
         {
@@ -86,39 +85,39 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Datos de la exportación: precios con margen, estado legible por línea y los servicios conexos incluidos (por cotización, como
-    /// los guarda Nexo). El costo de Nexo no entra a este objeto: el exportador no lo puede escribir.
+    /// Datos de la exportación (HU-021: una fila por ruta): precio de la ruta, estado legible y los servicios conexos de las rutas con su
+    /// precio. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
+    /// Nexo no entra a este objeto: el exportador no lo puede escribir.
     /// </summary>
-    public static clsExportacionLicitacion DatosExportacion(
-        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsArchivoLicitacion? archivo, DateTimeOffset ahora)
+    public static clsExportacionLicitacion DatosExportacion(clsCotizacionSolicitud cotizacion, clsArchivoLicitacion? archivo, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
-        var conexos = Costeo.DTOs.clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
-            .Where(s => s.Incluido)
+        var lineas = cotizacion.RutasOrdenadas;
+        var conexos = lineas
+            .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r))
             .Select(s => new clsConexoExportacion(s.Nombre ?? s.Categoria, s.Categoria, s.Cantidad, s.Precio))
             .ToList();
         return new clsExportacionLicitacion(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            cotizacion.Referencia,
-            cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
+            null,
+            cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
             cotizacion.PrecioFinal,
             archivo?.Hoja,
             archivo?.Contenido,
-            [.. lineas.OrderBy(l => l.Orden).Select(l => new clsLineaExportacion(
-                l.Orden, l.FilaOrigen, l.Origen, l.Destino, l.TipoVehiculo, l.PesoKg, EstadoLegible(l), l.PrecioFinal))],
+            [.. lineas.Select(l => new clsLineaExportacion(
+                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), l.PrecioFinalLinea))],
             conexos,
             ahora);
     }
 
     /// <summary>Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen.</summary>
-    public static string EstadoLegible(clsCotizacionLineaSolicitud linea)
+    public static string EstadoLegible(clsLineaSolicitud linea)
     {
         ArgumentNullException.ThrowIfNull(linea);
-        if (linea.PrecioFinal is not null)
+        if (linea.PrecioFinalLinea is not null)
         {
             return "Costeada";
         }
@@ -264,15 +263,12 @@ public sealed class clsLicitacionService(
         }
 
         var nit = entrada.NitCliente!.Trim();
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
-        List<clsCotizacionPosicion> posiciones = [];
-        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
+        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit, async (folio, ct) =>
         {
-            var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
             {
                 Folio = folio.Valor,
                 Version = folio.Version,
-                LineaNegocioId = politica.Id,
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
@@ -284,21 +280,11 @@ public sealed class clsLicitacionService(
                 return cotizacion.Error;
             }
 
+            // HU-021: una ruta por fila (rutaOrigenIndice = fila del Excel) con su línea de negocio, sus mercancías y un camión.
             var id = cotizacion.Valor.Id;
-            cotizacion.Valor.RegistrarSolicitudLicitacion(entrada.Encabezado);
-            lineas = clsCotizacionLineaSolicitud.Desde(id, [.. entradas.Select(l => l.Linea)], [.. entradas.Select(l => l.Fila)]);
-            posiciones = [];
-            var orden = 1;
-            for (var i = 0; i < lineas.Count; i++)
-            {
-                var deLinea = clsCotizacionPosicion.Desde(id, entradas[i].Linea.Posiciones, lineas[i].Id, orden);
-                posiciones.AddRange(deLinea);
-                orden += deLinea.Count;
-            }
-
+            cotizacion.Valor.RegistrarSolicitudLicitacion(
+                entrada.Encabezado, [.. entradas.Select(l => l.Linea)], [.. entradas.Select(l => l.Fila)], politica.Id);
             cotizaciones.Agregar(cotizacion.Valor);
-            cotizaciones.AgregarLineas(lineas);
-            cotizaciones.AgregarPosiciones(posiciones);
             if (entrada.Archivo is { } original)
             {
                 var guardado = clsArchivoLicitacion.Crear(id, original.Nombre, original.Contenido, entrada.Hoja);
@@ -319,7 +305,7 @@ public sealed class clsLicitacionService(
         }
 
         // Confirmada: desde aquí, sin el token de la petición (como HU-005.5, ADR-015 §3).
-        await envio.EnviarGuardadaAsync(creada.Valor, lineas, posiciones, politica, usuarioId);
+        await envio.EnviarGuardadaAsync(creada.Valor, politica, usuarioId);
         return clsResultadoLicitacion.Exito(creada.Valor);
     }
 
@@ -347,34 +333,39 @@ public sealed class clsLicitacionService(
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var archivo = await cotizaciones.ObtenerResumenArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        return Vista(cotizacion, lineas, archivo);
+        return Vista(cotizacion, archivo);
     }
 
-    /// <summary>Vista de la licitación (solo precios: el costo de Nexo de cada línea nunca sale).</summary>
-    public static clsLicitacion Vista(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsArchivoLicitacionResumen? archivo)
+    /// <summary>Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale).</summary>
+    public static clsLicitacion Vista(clsCotizacionSolicitud cotizacion, clsArchivoLicitacionResumen? archivo)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
-        var ordenadas = lineas.OrderBy(l => l.Orden).ToList();
+        var ordenadas = cotizacion.RutasOrdenadas;
         return new clsLicitacion(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            cotizacion.Referencia,
+            null,
             cotizacion.Deadline,
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,
-            cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
+            cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
             cotizacion.PrecioFinal,
-            ordenadas.Count(l => l.PrecioFinal is not null),
-            ordenadas.Count(l => l.PrecioFinal is null),
+            ordenadas.Count(l => l.PrecioFinalLinea is not null),
+            ordenadas.Count(l => l.PrecioFinalLinea is null),
             archivo?.NombreArchivo,
             archivo?.Hoja,
             [.. ordenadas.Select(l => new clsLineaLicitacion(
-                l.Orden, l.FilaOrigen, l.Origen, l.Destino, l.TipoVehiculo, l.PesoKg,
-                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinal))]);
+                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg,
+                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea))]);
+    }
+
+    /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>
+    private static string? TipoVehiculo(clsLineaSolicitud ruta)
+    {
+        var tipos = ruta.VehiculosOrdenados.Select(v => v.TipoVehiculo).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return tipos.Count == 0 ? null : string.Join(", ", tipos);
     }
 }

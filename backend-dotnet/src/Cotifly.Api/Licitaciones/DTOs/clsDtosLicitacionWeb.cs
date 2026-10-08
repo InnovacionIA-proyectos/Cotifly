@@ -19,7 +19,9 @@ public sealed class clsLicitacionWebRequest
     /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
     [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
+    /// <summary>Obsoleto (decisión 1 de HU-021): se acepta y se ignora; deja de enviarse a Nexo. Lo retira el contrato de #138.</summary>
     public decimal? ValorEstimado { get; init; }
+    /// <summary>Obsoleto (decisión 1 de HU-021): se acepta y se ignora. Lo retira el contrato de #138.</summary>
     public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
@@ -42,8 +44,6 @@ public sealed class clsLicitacionWebRequest
         {
             Tipo = TipoSolicitud.Licitacion,
             Deadline = Deadline,
-            ValorEstimado = ValorEstimado,
-            Referencia = Referencia,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
             Notas = Notas,

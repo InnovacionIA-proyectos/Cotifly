@@ -26,12 +26,12 @@ public sealed class clsPollingCosteoServiceTests
     private readonly clsRelojFalso _reloj = new();
     private readonly clsOpcionesCosteoNexo _opciones = new();
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
     private readonly clsConsultaCosteoPendiente _pendiente;
 
     public clsPollingCosteoServiceTests()
     {
-        _cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-001", UsuarioId = _ana }).Valor;
+        _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-001", UsuarioId = _ana }).Valor;
         _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         _cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc.AddSeconds(5));
         _pendiente = new clsConsultaCosteoPendiente(_cotizacion.Id, _reloj.AhoraUtc.AddSeconds(5));
@@ -248,7 +248,7 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public void EnDolaresElPollingConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        var usd = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-USD-1", UsuarioId = _ana, Moneda = "USD", TrmAplicada = 4000m }).Valor;
+        var usd = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-USD-1", UsuarioId = _ana, Moneda = "USD", TrmAplicada = 4000m }).Valor;
         usd.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         usd.RegistrarEnvioCosteo("SOL-2", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
         usd.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");

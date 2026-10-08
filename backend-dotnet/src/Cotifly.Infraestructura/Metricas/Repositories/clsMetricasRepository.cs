@@ -13,8 +13,10 @@ namespace Cotifly.Infraestructura.Metricas.Repositories;
 /// la de actividad por el 0003) y un JOIN con <c>UsuariosWeb</c>. Las vistas no se mapean como entidades sin clave del
 /// <see cref="clsCotiflyDbContext"/> a propósito: el modelo EF es Database First de tablas y la prueba de deriva lo compara
 /// con el catálogo en ambos sentidos. Las consultas son SQL parametrizado (interpolación de EF Core → <c>@p0</c>, <c>@p1</c>).
-/// El tablero de HU-010.1 (<see cref="ListarCotizacionesAsync"/>) lee <c>Cotizaciones</c> con SQL propio por la misma razón:
-/// las columnas <c>origen</c>/<c>destino</c>/<c>deadline</c> son del script 0004 y pueden no existir todavía.
+/// El tablero de HU-010.1 (<see cref="ListarCotizacionesAsync"/>) lee <c>CotizacionesSolicitud</c> y sus rutas con SQL propio por la
+/// misma razón (HU-021, ADR-019, decisión 8 del 2026-10-08): los conteos son por cotización; el costo es la suma del costo final de sus
+/// rutas, el margen el promedio de sus rutas ponderado por costo y la ciudad la de la ruta 1 (las métricas por ruta llegan con #137). Los
+/// nombres de municipio son del 0010 y pueden no existir todavía.
 /// </summary>
 public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMetricasRepository
 {
@@ -22,9 +24,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// ¿El esquema tiene las columnas opcionales del script 0004? (<c>COL_LENGTH</c> es NULL si la columna no existe.)
     /// </summary>
     private const string SqlColumnasOpcionales = """
-        SELECT CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'origen') IS NOT NULL
-                          AND COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'destino') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Ciudades,
-               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.Cotizaciones', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline
+        SELECT CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'origenNombre') IS NOT NULL
+                          AND COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'destinoNombre') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Ciudades,
+               CAST(CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionesSolicitud', N'deadline') IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Deadline
         """;
 
     /// <summary>
@@ -32,18 +34,29 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>(usuarioId, folio base)</c>. Valores de la versión vigente (mayor <c>version</c>); periodo por la primera creación de la
     /// cadena (<c>MIN(createdAt)</c>); resultado = el último no nulo de la cadena (mayor <c>marcadoAt</c>, sin fecha al final, y
     /// luego mayor <c>version</c>); ajustes de la vigente con <c>OUTER APPLY</c> por <c>cotizacionId</c> (índice del 0002).
-    /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: columnas <c>origen</c>/<c>destino</c>/<c>deadline</c> o <c>NULL</c> si el 0004 no está
-    /// aplicado (fragmentos fijos del código, nunca datos del usuario).
+    /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
+    /// <c>{3}</c>: la lectura de la ruta 1 (fragmentos fijos del código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
+    /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple).
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
-            SELECT c.id, c.usuarioId, c.version, c.createdAt, c.costo, c.precioFinal, c.moneda, c.trmAplicada, c.margenAplicado,
+            SELECT c.id, c.usuarioId, c.version, c.createdAt, rr.costo, c.precioFinal, c.moneda, c.trmAplicada, rr.margen AS margenAplicado,
                    c.ganada, c.marcadoAt, c.costeoListoAt, {0} AS origen, {1} AS destino, {2} AS deadline,
                    CASE WHEN c.version > 1
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
                         THEN LEFT(c.folio, LEN(c.folio) - LEN(N'-v' + CAST(c.version AS nvarchar(10))))
                         ELSE c.folio END AS folioBase
-            FROM dbo_cotifly.Cotizaciones c
+            FROM dbo_cotifly.CotizacionesSolicitud c
+            OUTER APPLY (
+                SELECT CASE WHEN COUNT(*) = COUNT(l.costoFinal) THEN SUM(l.costoFinal) END AS costo,
+                       CASE WHEN SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) > 0
+                            THEN CAST(SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.margenAplicado * l.costoFinal END)
+                                      / SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) AS decimal(9,4))
+                            ELSE CAST(AVG(l.margenAplicado) AS decimal(9,4)) END AS margen
+                FROM dbo_cotifly.CotizacionLineasSolicitud l
+                WHERE l.cotizacionSolicitudId = c.id
+            ) rr
+            {3}
             WHERE c.usuarioId IN (SELECT CAST([value] AS uniqueidentifier) FROM OPENJSON(@usuarios))
         ),
         cadenas AS (
@@ -88,9 +101,12 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         var sql = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
             SqlCotizaciones,
-            columnas.Ciudades ? "c.origen" : "CAST(NULL AS nvarchar(150))",
-            columnas.Ciudades ? "c.destino" : "CAST(NULL AS nvarchar(150))",
-            columnas.Deadline ? "c.deadline" : "CAST(NULL AS datetimeoffset)");
+            columnas.Ciudades ? "r1.origenNombre" : "CAST(NULL AS nvarchar(150))",
+            columnas.Ciudades ? "r1.destinoNombre" : "CAST(NULL AS nvarchar(150))",
+            columnas.Deadline ? "c.deadline" : "CAST(NULL AS datetimeoffset)",
+            columnas.Ciudades
+                ? "OUTER APPLY (SELECT TOP (1) l1.origenNombre, l1.destinoNombre FROM dbo_cotifly.CotizacionLineasSolicitud l1 WHERE l1.cotizacionSolicitudId = c.id ORDER BY l1.orden) r1"
+                : string.Empty);
         var filas = await contexto.Database.SqlQueryRaw<clsFilaMetrica>(
                 sql,
                 new SqlParameter("@usuarios", System.Data.SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(usuarios.Distinct()) },

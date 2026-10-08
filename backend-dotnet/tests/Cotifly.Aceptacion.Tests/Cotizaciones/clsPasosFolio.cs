@@ -74,7 +74,7 @@ public sealed class clsPasosFolio(clsContextoEscenario contexto)
         contexto.EnAmbitoAsync(s =>
         {
             s.GetRequiredService<IClsCotizacionRepository>().Agregar(
-                clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = contexto.Usuarios[alias] }).Valor);
+                clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = contexto.Usuarios[alias] }).Valor);
             return Task.CompletedTask;
         });
 
@@ -136,18 +136,18 @@ public sealed class clsPasosFolio(clsContextoEscenario contexto)
     private async Task CrearVersionAsync(string alias, Guid origen)
     {
         var usuarioId = contexto.Usuarios[alias];
-        var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsGeneradorFolioService>().CrearNuevaVersionAsync<clsCotizacion>(
+        var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsGeneradorFolioService>().CrearNuevaVersionAsync<clsCotizacionSolicitud>(
             usuarioId, origen, (folio, ct) => GuardarAsync(s, new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId }, ct)));
         Registrar(alias, resultado);
     }
 
-    private Task<clsResultado<clsCotizacion>> GenerarAsync(Guid usuarioId, string? nit) =>
-        contexto.ConsultarAsync(s => s.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacion>(
+    private Task<clsResultado<clsCotizacionSolicitud>> GenerarAsync(Guid usuarioId, string? nit) =>
+        contexto.ConsultarAsync(s => s.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(
             usuarioId, nit, (folio, ct) => GuardarAsync(s, new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId, NitCliente = nit }, ct)));
 
-    private static async Task<clsResultado<clsCotizacion>> GuardarAsync(IServiceProvider servicios, clsDatosCotizacion datos, CancellationToken ct)
+    private static async Task<clsResultado<clsCotizacionSolicitud>> GuardarAsync(IServiceProvider servicios, clsDatosCotizacion datos, CancellationToken ct)
     {
-        var cotizacion = clsCotizacion.Crear(datos);
+        var cotizacion = clsCotizacionSolicitud.Crear(datos);
         if (cotizacion.EsFallo)
         {
             return cotizacion.Error;
@@ -158,7 +158,7 @@ public sealed class clsPasosFolio(clsContextoEscenario contexto)
         return cotizacion.Valor;
     }
 
-    private void Registrar(string alias, clsResultado<clsCotizacion> resultado)
+    private void Registrar(string alias, clsResultado<clsCotizacionSolicitud> resultado)
     {
         if (resultado.EsFallo)
         {
@@ -170,6 +170,6 @@ public sealed class clsPasosFolio(clsContextoEscenario contexto)
         _ultimaPorComercial[alias] = resultado.Valor.Id;
     }
 
-    private Task<clsCotizacion> LeerAsync(string folio) =>
+    private Task<clsCotizacionSolicitud> LeerAsync(string folio) =>
         contexto.ConsultarAsync(async s => (await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio))!);
 }

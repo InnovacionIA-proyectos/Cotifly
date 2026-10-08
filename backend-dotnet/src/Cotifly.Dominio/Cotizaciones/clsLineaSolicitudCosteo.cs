@@ -45,8 +45,6 @@ public sealed record clsEncabezadoSolicitudCosteo
 {
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
-    public decimal? ValorEstimado { get; init; }
-    public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
@@ -57,9 +55,7 @@ public sealed record clsEncabezadoSolicitudCosteo
     public IReadOnlyList<clsErrorCampo> Errores()
     {
         var errores = new List<clsErrorCampo>();
-        clsLineaSolicitudCosteo.Largo(errores, "referencia", Referencia, clsSolicitudCosteo.LargoReferencia);
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
-        clsLineaSolicitudCosteo.Rango(errores, "valor_estimado", ValorEstimado, 0m, clsSolicitudCosteo.MaximoValor);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
         return errores;

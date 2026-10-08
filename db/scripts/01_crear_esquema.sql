@@ -3,8 +3,10 @@
    ============================================================================
    Crea el schema `dbo_cotifly` con TODAS sus tablas, llaves, restricciones, índices
    y vistas, ya en su forma final (la del diseño HU-021, docs/PROPUESTA_REESTRUCTURACION_
-   COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0009
-   aplicados en orden, pero en un solo paso.
+   COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0010
+   aplicados en orden, pero en un solo paso (0010, borrador pendiente de revisión de
+   @scalderon-bs: nombres de municipio de la ruta, id de la solicitud de Nexo y nombre del
+   conexo; decisión 2 de HU-021). Una base instalada con este script NO corre migraciones.
 
    NO inserta datos: la configuración inicial (líneas de negocio, mapeo SAP, roles) la
    siembran los archivos de `db/seeder/`. El ejecutador (`ejecutar-bd.ps1` /
@@ -269,6 +271,7 @@ CREATE TABLE dbo_cotifly.CotizacionesSolicitud (
     estadoEnvio                 NVARCHAR(MAX) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     estadoCosteo                NVARCHAR(MAX) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- resumen de sus rutas
     cotizacionNexoId            NVARCHAR(64)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
+    solicitudNexoId             NVARCHAR(64)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- id de la SOLICITUD de Nexo (0010; ex costeoId)
     motivoEstadoCosteo          NVARCHAR(1000) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     costeoEnviadoAt             DATETIMEOFFSET   NULL,
     costeoSiguienteConsultaAt   DATETIMEOFFSET   NULL,
@@ -303,7 +306,9 @@ CREATE TABLE dbo_cotifly.CotizacionLineasSolicitud (
     rutaOrigenIndice            INT              NULL,   -- fila del Excel de la que salió (base 0); 0 en una cotización simple
     lineaNegocioId              INT              NULL,
     origenMunicipioId           INT              NULL,   -- id de tbl_municipios de Nexo (sin FK: es de otra base)
+    origenNombre                NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- copia del nombre (0010)
     destinoMunicipioId          INT              NULL,
+    destinoNombre               NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- copia del nombre (0010)
     tipologia                   NVARCHAR(50)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     claseViaje                  NVARCHAR(50)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     claseContenedor             NVARCHAR(20)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
@@ -312,7 +317,9 @@ CREATE TABLE dbo_cotifly.CotizacionLineasSolicitud (
     retornaContenedor           BIT              NOT NULL CONSTRAINT df_cotizacionLineasSolicitud_retornaContenedor DEFAULT (0),
     levanteContenedorDiferente  BIT              NOT NULL CONSTRAINT df_cotizacionLineasSolicitud_levanteContenedorDiferente DEFAULT (0),
     ciudadDevolucionMunicipioId INT              NULL,
+    ciudadDevolucionNombre      NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- copia del nombre (0010)
     ciudadLevanteMunicipioId    INT              NULL,
+    ciudadLevanteNombre         NVARCHAR(150) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- copia del nombre (0010)
     horasCargue                 DECIMAL(6,2)     NULL,
     horasDescargue              DECIMAL(6,2)     NULL,
     pesoKg                      DECIMAL(12,2)    NULL,   -- peso total que declaró el comercial para la ruta
@@ -420,6 +427,7 @@ CREATE TABLE dbo_cotifly.CotizacionServiciosConexos (
     id                UNIQUEIDENTIFIER NOT NULL CONSTRAINT df_cotizacionServiciosConexos_id DEFAULT (NEWID()),
     lineaSolicitudId  UNIQUEIDENTIFIER NOT NULL,
     idServicioConexo  NVARCHAR(64)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NOT NULL,  -- id del catálogo de Nexo
+    nombreServicioConexo NVARCHAR(200) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,  -- copia del nombre (0010)
     precio            DECIMAL(18,2)    NOT NULL,  -- unitario, al momento de aplicarlo (costo, antes del margen)
     cantidad          DECIMAL(10,2)    NOT NULL,
     createdAt         DATETIMEOFFSET   NOT NULL CONSTRAINT df_cotizacionServiciosConexos_createdAt DEFAULT (SYSDATETIMEOFFSET()),

@@ -41,12 +41,12 @@ public sealed class clsReSolicitudCosteoServiceTests
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m).Valor;
     private readonly List<string> _eventos = [];
-    private readonly clsCotizacion _cotizacion;
-    private readonly IReadOnlyList<clsCotizacionLineaSolicitud> _lineas;
-    private readonly IReadOnlyList<clsCotizacionPosicion> _posiciones;
-    private clsCotizacion? _agregada;
-    private IReadOnlyList<clsCotizacionLineaSolicitud> _lineasAgregadas = [];
-    private IReadOnlyList<clsCotizacionPosicion> _posicionesAgregadas = [];
+    private readonly clsCotizacionSolicitud _cotizacion;
+    private readonly IReadOnlyList<clsLineaSolicitud> _lineas;
+    private readonly IReadOnlyList<clsMercancia> _posiciones;
+    private clsCotizacionSolicitud? _agregada;
+    private IReadOnlyList<clsLineaSolicitud> _lineasAgregadas = [];
+    private IReadOnlyList<clsMercancia> _posicionesAgregadas = [];
 
     public clsReSolicitudCosteoServiceTests()
     {
@@ -54,11 +54,11 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_lineas);
         _cotizaciones.ListarPosicionesAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_posiciones);
-        _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacion>())).Do(ci => _agregada = ci.Arg<clsCotizacion>());
-        _cotizaciones.When(r => r.AgregarLineas(Arg.Any<IEnumerable<clsCotizacionLineaSolicitud>>()))
-            .Do(ci => _lineasAgregadas = [.. ci.Arg<IEnumerable<clsCotizacionLineaSolicitud>>()]);
-        _cotizaciones.When(r => r.AgregarPosiciones(Arg.Any<IEnumerable<clsCotizacionPosicion>>()))
-            .Do(ci => _posicionesAgregadas = [.. ci.Arg<IEnumerable<clsCotizacionPosicion>>()]);
+        _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _agregada = ci.Arg<clsCotizacionSolicitud>());
+        _cotizaciones.When(r => r.AgregarLineas(Arg.Any<IEnumerable<clsLineaSolicitud>>()))
+            .Do(ci => _lineasAgregadas = [.. ci.Arg<IEnumerable<clsLineaSolicitud>>()]);
+        _cotizaciones.When(r => r.AgregarPosiciones(Arg.Any<IEnumerable<clsMercancia>>()))
+            .Do(ci => _posicionesAgregadas = [.. ci.Arg<IEnumerable<clsMercancia>>()]);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
         _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ci => new clsMonedaFijada(ci.Arg<string?>() ?? "COP", ci.Arg<string?>() == "USD" ? 4_012.35m : 0m));
@@ -72,18 +72,18 @@ public sealed class clsReSolicitudCosteoServiceTests
             _eventos.Add($"reservar:{clsCodigoEnum.ACodigo(_cotizacion.EstadoCosteo!.Value)}:v{_cotizacion.VersionNegocio}");
             return true;
         });
-        _envio.EnviarGuardadaAsync(Arg.Any<clsCotizacion>(), Arg.Any<IReadOnlyList<clsCotizacionLineaSolicitud>>(),
-                Arg.Any<IReadOnlyList<clsCotizacionPosicion>>(), Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>())
+        _envio.EnviarGuardadaAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<IReadOnlyList<clsLineaSolicitud>>(),
+                Arg.Any<IReadOnlyList<clsMercancia>>(), Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>())
             .Returns(ci =>
             {
                 _eventos.Add("nexo");
-                ci.Arg<clsCotizacion>().RegistrarEnvioCosteo("sol-nueva", false, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(5));
+                ci.Arg<clsCotizacionSolicitud>().RegistrarEnvioCosteo("sol-nueva", false, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddSeconds(5));
                 return Task.CompletedTask;
             });
-        _mis.ResumirAsync(Arg.Any<clsCotizacion>(), Arg.Any<CancellationToken>())
-            .Returns(ci => clsCotizacionResumen.Desde(ci.Arg<clsCotizacion>(), "Importacion", null));
-        _folios.CrearNuevaVersionAsync(_ana, _cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacion>>>>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacion>>>>()(
+        _mis.ResumirAsync(Arg.Any<clsCotizacionSolicitud>(), Arg.Any<CancellationToken>())
+            .Returns(ci => clsCotizacionResumen.Desde(ci.Arg<clsCotizacionSolicitud>(), "Importacion", null));
+        _folios.CrearNuevaVersionAsync(_ana, _cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
                 clsFolio.Desde(_cotizacion.Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
     }
 
@@ -213,8 +213,8 @@ public sealed class clsReSolicitudCosteoServiceTests
         _posicionesAgregadas.Should().HaveCount(2).And.OnlyContain(p => p.CotizacionId == nueva.Id && p.LineaSolicitudId == _lineasAgregadas[0].Id);
         await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _envio.Received(1).EnviarGuardadaAsync(nueva,
-            Arg.Is<IReadOnlyList<clsCotizacionLineaSolicitud>>(l => l.Count == 1 && l[0].Id == _lineasAgregadas[0].Id),
-            Arg.Is<IReadOnlyList<clsCotizacionPosicion>>(p => p.Count == 2), _politica, _ana, Arg.Any<string?>());
+            Arg.Is<IReadOnlyList<clsLineaSolicitud>>(l => l.Count == 1 && l[0].Id == _lineasAgregadas[0].Id),
+            Arg.Is<IReadOnlyList<clsMercancia>>(p => p.Count == 2), _politica, _ana, Arg.Any<string?>());
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido, "la original no cambia su costeo");
         _cotizacion.CosteoId.Should().Be("sol-vieja");
         _eventos.Should().StartWith(new[] { "instantanea", "reservar:costeo_vencido:v5" }, "la versión de la original se reserva antes de crear la nueva");
@@ -248,7 +248,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         _cotizacion.VersionNegocio.Should().Be(Version, "sin TRM no se reserva la original");
         _agregada.Should().BeNull();
         await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
-        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacion>(default, default, default!, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default!, default!, default, default, default);
     }
 
@@ -264,10 +264,10 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _monedas.DidNotReceiveWithAnyArgs().FijarAsync(default, Ct);
     }
 
-    private static void EnDolares(clsCotizacion cotizacion, decimal trm)
+    private static void EnDolares(clsCotizacionSolicitud cotizacion, decimal trm)
     {
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.Moneda))!.SetValue(cotizacion, "USD");
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.TrmAplicada))!.SetValue(cotizacion, trm);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.Moneda))!.SetValue(cotizacion, "USD");
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.TrmAplicada))!.SetValue(cotizacion, trm);
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public sealed class clsReSolicitudCosteoServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         _agregada.Should().BeNull();
-        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacion>(default, default, default!, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default!, default!, default, default, default);
     }
 
@@ -330,7 +330,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         resultado.Error.Detalle.Should().Be(clsSolicitudCosteo.PesoRequerido);
         _agregada.Should().BeNull();
-        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacion>(default, default, default!, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearNuevaVersionAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
     }
 
     [Fact]
@@ -374,7 +374,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     [Fact]
     public async Task UnaLicitacionNoAdmiteCambiosDeCarga()
     {
-        var segunda = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [_lineas[0].ALinea([]), _lineas[0].ALinea([])]);
+        var segunda = clsLineaSolicitud.Desde(_cotizacion.Id, [_lineas[0].ALinea([]), _lineas[0].ALinea([])]);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(segunda);
         var cambios = new clsCambiosCarga { Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg }, PesoKg = 1000m };
 
@@ -443,7 +443,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     public void LosConexosDescartadosSonLosIncluidosSinRepetirConLaCategoriaSiNoTienenNombre()
     {
         var (cotizacion, _, _) = Vencida(_ana, "PCN-900555111-AP-05102026-002", 1_000_000m);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.ServiciosConexos))!.SetValue(cotizacion, clsServiciosConexosJson.Escribir(
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.ServiciosConexos))!.SetValue(cotizacion, clsServiciosConexosJson.Escribir(
         [
             new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
             new clsServicioConexoCosteo("CX-2", " cargue ", "logistico", 2m, 85_000m, 100_000m, false),
@@ -460,7 +460,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     public void SinConexosNoSeDescartaNada()
     {
         var (cotizacion, _, _) = Vencida(_ana, "PCN-900555111-AP-05102026-003", 1_000_000m);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.ServiciosConexos))!.SetValue(cotizacion, null);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.ServiciosConexos))!.SetValue(cotizacion, null);
 
         clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().BeEmpty();
     }
@@ -488,10 +488,10 @@ public sealed class clsReSolicitudCosteoServiceTests
     private static string Json(object? valor) => System.Text.Json.JsonSerializer.Serialize(valor, _json);
 
     /// <summary>Cotización del formulario enviada a Nexo (solicitud <c>sol-vieja</c>), con costo y en <c>costeo_vencido</c>.</summary>
-    public static (clsCotizacion, IReadOnlyList<clsCotizacionLineaSolicitud>, IReadOnlyList<clsCotizacionPosicion>) Vencida(
+    public static (clsCotizacionSolicitud, IReadOnlyList<clsLineaSolicitud>, IReadOnlyList<clsMercancia>) Vencida(
         Guid usuarioId, string folio, decimal costo, TipoSolicitud tipo = TipoSolicitud.Spot)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             UsuarioId = usuarioId,
@@ -504,15 +504,15 @@ public sealed class clsReSolicitudCosteoServiceTests
         }).Valor;
         var solicitud = clsSolicitudCosteoMuestra.Crear() with { Tipo = tipo };
         cotizacion.RegistrarSolicitudCosteo(solicitud);
-        var lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
-        var posiciones = clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones, lineas[0].Id, 1);
+        var lineas = clsLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
+        var posiciones = clsMercancia.Desde(cotizacion.Id, solicitud.Posiciones, lineas[0].Id, 1);
         cotizacion.RegistrarEnvioCosteo("sol-vieja", false, DateTimeOffset.UtcNow.AddHours(-73), DateTimeOffset.UtcNow);
         lineas[0].AsignarLineaNexo("linea-vieja");
         lineas[0].RegistrarCosteo(EstadoCosteo.PendienteCosteo, costo);
         cotizacion.RegistrarPrecioCosteo(costo, 3_000_000m,
             clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true)]), DateTimeOffset.UtcNow);
         cotizacion.VencerPollingCosteo("Sin costeo de Nexo en 72 h.");
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, Version);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, Version);
         return (cotizacion, lineas, posiciones);
     }
 }

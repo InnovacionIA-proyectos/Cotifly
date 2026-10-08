@@ -326,7 +326,8 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una en HU-005.5, N en una licitación, ADR-017):
+    /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una por camión, ruta por ruta; HU-021, ADR-019). Sin
+    /// <c>valorEstimado</c> ni <c>referencia</c> (decisión 1 del 2026-10-08: se eliminan y dejan de enviarse a Nexo):
     /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
     /// negocio de Nexo en cada línea y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
     /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
@@ -342,8 +343,6 @@ public sealed class clsCosteoNexo(
             solicitud.Cliente.Id,
             clsCodigoEnum.ACodigo(e.Tipo),
             e.Deadline,
-            e.ValorEstimado,
-            e.Referencia,
             e.HorasCargue,
             e.HorasDescargue,
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
@@ -628,7 +627,7 @@ public sealed class clsCosteoNexo(
     // --- Forma exacta de CapturaSolicitudRequest / CapturaLineaRequest / CapturaPosicionRequest de Nexo (camelCase) ---
 
     private sealed record clsCapturaSolicitudWire(
-        string? ClienteBp, Guid? ClienteId, string Tipo, DateTimeOffset? Deadline, decimal? ValorEstimado, string? Referencia,
+        string? ClienteBp, Guid? ClienteId, string Tipo, DateTimeOffset? Deadline,
         decimal? HorasCargue, decimal? HorasDescargue, string? Notas, IReadOnlyList<clsCapturaLineaWire> Lineas);
 
     private sealed record clsCapturaLineaWire(

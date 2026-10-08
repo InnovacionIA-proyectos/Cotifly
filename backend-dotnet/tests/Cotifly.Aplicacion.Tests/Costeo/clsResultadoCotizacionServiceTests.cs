@@ -25,17 +25,17 @@ public sealed class clsResultadoCotizacionServiceTests
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly clsRelojFalso _reloj = new();
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsResultadoCotizacionServiceTests()
     {
-        _cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-004", UsuarioId = _ana }).Valor;
+        _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-004", UsuarioId = _ana }).Valor;
         _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         _cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
         _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, null);
         _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
-        _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsCotizacionLineaSolicitud>());
+        _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsLineaSolicitud>());
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(FotoEntregada("COT-1"));
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsCotizacionNexo("COT-1", "Entregada", "Ganada", [], []));
@@ -162,7 +162,7 @@ public sealed class clsResultadoCotizacionServiceTests
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_ =>
         {
             lecturas++;
-            return Array.Empty<clsCotizacionLineaSolicitud>();
+            return Array.Empty<clsLineaSolicitud>();
         });
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
@@ -177,7 +177,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task SinIdDeLaCotizacionDeNexoLoRecuperaYLoGuarda()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-005", UsuarioId = _ana }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-005", UsuarioId = _ana }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-2", true, _reloj.AhoraUtc, _reloj.AhoraUtc);
         cotizacion.CotizacionNexoId.Should().BeNull("autocosteo desde el alta: el polling aún no guardó la cotización de Nexo");
@@ -261,7 +261,7 @@ public sealed class clsResultadoCotizacionServiceTests
     public async Task ConLasLineasYaAsociadasElCosteoSaleDeLaRespuestaDelResultadoSinReleer()
     {
         _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(1));
-        var linea = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [clsSolicitudCosteoMuestra.Crear().ALinea()])[0];
+        var linea = clsLineaSolicitud.Desde(_cotizacion.Id, [clsSolicitudCosteoMuestra.Crear().ALinea()])[0];
         linea.AsignarLineaNexo("L1");
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([linea]);
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
@@ -391,9 +391,9 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     /// <summary>Cotización enviada a Nexo sin costeo (<c>pendiente_costeo</c>, solicitud SOL-9) o con el envío fallido (<c>error_envio</c>).</summary>
-    private clsCotizacion SinCosteo(bool enError)
+    private clsCotizacionSolicitud SinCosteo(bool enError)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"PCN-AP-28092026-{(enError ? 8 : 9)}", UsuarioId = _ana }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"PCN-AP-28092026-{(enError ? 8 : 9)}", UsuarioId = _ana }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         if (enError)
         {
@@ -422,7 +422,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task ConResultadoYaMarcadoNoSeReintentaElEnvio()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-R1", UsuarioId = _ana }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-R1", UsuarioId = _ana }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
         cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeTrue();
@@ -438,7 +438,7 @@ public sealed class clsResultadoCotizacionServiceTests
     {
         (await Servicio().MarcarAsync(Guid.NewGuid(), _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
 
-        var chat = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-006", UsuarioId = _ana }).Valor;
+        var chat = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-006", UsuarioId = _ana }).Valor;
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(chat.Folio, _ana, Arg.Any<CancellationToken>()).Returns(chat);
         (await Servicio().MarcarAsync(_ana, chat.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
     }

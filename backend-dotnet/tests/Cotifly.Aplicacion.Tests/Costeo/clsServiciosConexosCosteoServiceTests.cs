@@ -32,14 +32,14 @@ public sealed class clsServiciosConexosCosteoServiceTests
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly clsPrecioService _precios = new(Substitute.For<IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>());
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
-    private readonly IReadOnlyList<clsCotizacionLineaSolicitud> _lineas;
+    private readonly clsCotizacionSolicitud _cotizacion;
+    private readonly IReadOnlyList<clsLineaSolicitud> _lineas;
 
     public clsServiciosConexosCosteoServiceTests()
     {
         _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizacion.RegistrarCotizacionNexo(CotizacionNexo);
-        _lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "BUENAVENTURA", Destino = "BOGOTA", PesoKg = 1m }]);
+        _lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "BUENAVENTURA", Destino = "BOGOTA", PesoKg = 1m }]);
         _lineas[0].AsignarLineaNexo("LS-1");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_lineas);
@@ -126,7 +126,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task UnaLineaSinIdDeNexoGuardadoRespondeLineaSinCotizacionNexoSinLlamarANexo()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "A", Destino = "B" }]);
+        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "A", Destino = "B" }]);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
 
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
@@ -150,7 +150,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task UnaLicitacionNoAdmiteConexosConElMotivoLicitacion()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id,
+        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id,
             [new clsLineaSolicitudCosteo { Origen = "A", Destino = "B" }, new clsLineaSolicitudCosteo { Origen = "C", Destino = "D" }]);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
 
@@ -164,7 +164,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task SinCosteoRespondeCosteoNoListo()
     {
-        var sinCosteo = clsCotizacion.Crear(new clsDatosCotizacion
+        var sinCosteo = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-SIN", UsuarioId = _ana, MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.PendienteCosteo,
         }).Valor;
@@ -348,7 +348,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public void EnDolaresElConexoSeConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        var usd = clsCotizacion.Crear(new clsDatosCotizacion
+        var usd = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-U", Moneda = "USD", TrmAplicada = 4000m, Costo = 2_550_000m, PrecioFinal = 750m, MargenPolitica = 0.15m,
             MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.Autocosteo,

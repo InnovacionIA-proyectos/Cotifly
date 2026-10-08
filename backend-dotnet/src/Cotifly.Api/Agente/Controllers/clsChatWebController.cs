@@ -57,7 +57,7 @@ public sealed partial class clsChatWebController(
 
         if (!string.IsNullOrWhiteSpace(cuerpo.Folio))
         {
-            return cuerpo.Folio.Trim().Length > clsCotizacion.LargoMaximoFolio
+            return cuerpo.Folio.Trim().Length > clsCotizacionSolicitud.LargoMaximoFolio
                 ? BadRequest(new clsErrorWeb(MensajeFolioInvalido))
                 : await AsistenteAsync(cuerpo.Mensaje, cuerpo.SesionId, cuerpo.Folio.Trim(), cancellationToken);
         }

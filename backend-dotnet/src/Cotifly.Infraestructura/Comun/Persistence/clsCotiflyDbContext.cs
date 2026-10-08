@@ -11,8 +11,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
 /// Contexto de <c>dbo_cotifly</c> (lectura y escritura), Database First (ADR-008): el mapeo es Fluent
-/// API escrito a mano contra las tablas que crean los scripts <c>db/migrations_mssql/0001</c> y <c>0002</c>
-/// (ver <c>Configurations/</c>). No hay migraciones EF: los cambios de esquema van en scripts nuevos.
+/// API escrito a mano contra las tablas que crean los scripts <c>db/migrations_mssql/0001</c> a <c>0010</c> (o
+/// <c>db/scripts/01_crear_esquema.sql</c>; ver <c>Configurations/</c>). No hay migraciones EF: los cambios de esquema van en scripts nuevos.
 /// </summary>
 public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> options) : DbContext(options)
 {
@@ -25,9 +25,11 @@ public sealed class clsCotiflyDbContext(DbContextOptions<clsCotiflyDbContext> op
     /// <summary>SQL Server 2019 (evita que EF genere SQL que no existe en esa versión).</summary>
     public const int NivelCompatibilidad = 150;
 
-    public DbSet<clsCotizacion> Cotizaciones => Set<clsCotizacion>();
-    public DbSet<clsCotizacionPosicion> CotizacionPosiciones => Set<clsCotizacionPosicion>();
-    public DbSet<clsCotizacionLineaSolicitud> CotizacionLineasSolicitud => Set<clsCotizacionLineaSolicitud>();
+    public DbSet<clsCotizacionSolicitud> CotizacionesSolicitud => Set<clsCotizacionSolicitud>();
+    public DbSet<clsLineaSolicitud> CotizacionLineasSolicitud => Set<clsLineaSolicitud>();
+    public DbSet<clsVehiculoLineaSolicitud> CotizacionVehiculosLineaSolicitud => Set<clsVehiculoLineaSolicitud>();
+    public DbSet<clsMercancia> CotizacionMercancias => Set<clsMercancia>();
+    public DbSet<clsServicioConexoRuta> CotizacionServiciosConexos => Set<clsServicioConexoRuta>();
     public DbSet<clsArchivoLicitacion> ArchivosLicitacion => Set<clsArchivoLicitacion>();
     public DbSet<clsCotizacionPdfHistorial> CotizacionPdfsHistorial => Set<clsCotizacionPdfHistorial>();
     public DbSet<clsMargenAjuste> MargenAjustes => Set<clsMargenAjuste>();

@@ -21,7 +21,7 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsCotizacion Cotizacion(string folio, int version = 1) => clsCotizacion.Crear(new clsDatosCotizacion
+    private clsCotizacionSolicitud Cotizacion(string folio, int version = 1) => clsCotizacionSolicitud.Crear(new clsDatosCotizacion
     {
         Folio = folio,
         Version = version,

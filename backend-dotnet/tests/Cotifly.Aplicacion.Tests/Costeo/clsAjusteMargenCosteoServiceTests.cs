@@ -28,7 +28,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly clsPrecioService _precios = new(Substitute.For<IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>());
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsAjusteMargenCosteoServiceTests()
     {
@@ -161,7 +161,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task EnUnaLicitacionCadaLineaSeRecalculaYElTotalEsLaSuma()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [Linea("YUMBO"), Linea("CALI")]);
+        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [Linea("YUMBO"), Linea("CALI")]);
         lineas[0].RegistrarCosteo(EstadoCosteo.Autocosteo, 1_000_000m);
         lineas[1].RegistrarCosteo(EstadoCosteo.Autocosteo, 1_550_000m);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
@@ -175,7 +175,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public void EnDolaresConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        var usd = clsCotizacion.Crear(new clsDatosCotizacion
+        var usd = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-U", Moneda = "USD", TrmAplicada = 4000m, Costo = 2_550_000m, PrecioFinal = 750m, MargenPolitica = 0.15m,
             MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.Autocosteo,
@@ -192,9 +192,9 @@ public sealed class clsAjusteMargenCosteoServiceTests
     private static clsLineaSolicitudCosteo Linea(string origen) => new() { Origen = origen, Destino = "BOGOTA", PesoKg = 1m };
 
     /// <summary>Cotización costeada por Nexo: flete 2.550.000 con margen de la política (15 %) y un conexo de 85.000 excluido.</summary>
-    public static clsCotizacion Costeada(Guid usuarioId, string folio)
+    public static clsCotizacionSolicitud Costeada(Guid usuarioId, string folio)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             UsuarioId = usuarioId,
@@ -207,7 +207,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
             EstadoCosteo = EstadoCosteo.Autocosteo,
         }).Valor;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, false)]));
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, Version);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, Version);
         return cotizacion;
     }
 }

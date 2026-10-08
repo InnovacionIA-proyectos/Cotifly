@@ -26,8 +26,6 @@ namespace Cotifly.Aplicacion.Agente.Herramientas;
 /// </summary>
 public sealed class clsHerramientasAsistenteFolio(
     clsContextoAsistenteFolio contexto,
-    IClsCotizacionRepository cotizaciones,
-    IClsPrecioService precios,
     IClsServiciosConexosCosteoService conexos,
     IClsReSolicitudCosteoService reSolicitud)
 {
@@ -40,10 +38,13 @@ public sealed class clsHerramientasAsistenteFolio(
 
     [KernelFunction(clsNombresHerramientas.ConsultarCotizacion)]
     [Description("Consulta la cotización de esta conversación: estado del costeo y del envío, cliente, línea, ruta, moneda, márgenes (actual y sugerido, como fracción) y servicios conexos (nombre, cantidad, si van en el PDF). Nunca trae valores en dinero.")]
-    public async Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
+    public Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
     {
         var cotizacion = contexto.Cotizacion;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
+
+        // HU-021: ruta, margen y conexos de la ruta 1 (el asistente propone el margen por ruta con #136).
+        var lineas = cotizacion.RutasOrdenadas;
+        var ruta = cotizacion.PrimeraRuta;
         var salida = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["folio"] = cotizacion.Folio,
@@ -55,15 +56,15 @@ public sealed class clsHerramientasAsistenteFolio(
             ["pdf_desactualizado"] = cotizacion.PdfDesactualizado,
             ["cliente"] = cotizacion.ClienteNombre,
             ["linea_negocio"] = contexto.LineaNegocio,
-            ["origen"] = cotizacion.Origen,
-            ["destino"] = cotizacion.Destino,
-            ["tipo_vehiculo"] = cotizacion.TipoVehiculo,
-            ["moneda"] = cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
-            ["margen_actual"] = cotizacion.MargenAplicado,
+            ["origen"] = ruta?.OrigenNombre,
+            ["destino"] = ruta?.DestinoNombre,
+            ["tipo_vehiculo"] = ruta?.VehiculosOrdenados.FirstOrDefault()?.TipoVehiculo,
+            ["moneda"] = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
+            ["margen_actual"] = ruta?.MargenAplicado,
             ["margen_sugerido"] = cotizacion.SugeridoVigente,
-            ["origen_margen"] = cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-            ["conexos"] = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
-                .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre, ["cantidad"] = c.Cantidad, ["incluido"] = c.Incluido })
+            ["origen_margen"] = ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
+            ["conexos"] = cotizacion.RutasOrdenadas.SelectMany(r => r.Conexos)
+                .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre ?? c.IdServicioConexo, ["cantidad"] = c.Cantidad, ["incluido"] = true })
                 .ToList(),
         };
         if (lineas.Count > 1)
@@ -73,42 +74,41 @@ public sealed class clsHerramientasAsistenteFolio(
                 .Select(l => new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["linea_orden"] = l.Orden,
-                    ["origen"] = l.Origen,
-                    ["destino"] = l.Destino,
-                    ["tipo_vehiculo"] = l.TipoVehiculo,
+                    ["origen"] = l.OrigenNombre,
+                    ["destino"] = l.DestinoNombre,
+                    ["tipo_vehiculo"] = l.VehiculosOrdenados.FirstOrDefault()?.TipoVehiculo,
                 })
                 .ToList();
         }
 
-        return clsResultadoHerramienta.Exito(clsNombresHerramientas.ConsultarCotizacion, salida);
+        return Task.FromResult(clsResultadoHerramienta.Exito(clsNombresHerramientas.ConsultarCotizacion, salida));
     }
 
     [KernelFunction(clsNombresHerramientas.ProponerAjusteMargen)]
     [Description("Propone ajustar el margen de esta cotización. No lo aplica: el comercial lo confirma con un botón. El margen va como fracción (0.18 = 18 %), entre 0 y 0.99. Por debajo del margen sugerido la justificación es obligatoria: pídesela al comercial antes de proponer.")]
-    public async Task<clsResultadoHerramienta> ProponerAjusteMargenAsync(
+    public Task<clsResultadoHerramienta> ProponerAjusteMargenAsync(
         [Description("Margen nuevo como fracción (0.18 = 18 %).")] decimal margen,
         [Description("Justificación del comercial (obligatoria si el margen queda por debajo del sugerido).")] string? justificacion = null,
         CancellationToken cancellationToken = default)
     {
         var herramienta = clsNombresHerramientas.ProponerAjusteMargen;
         var cotizacion = contexto.Cotizacion;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var propuesta = clsPropuestasAsistente.AjustarMargen(precios, cotizacion, lineas, margen, justificacion);
+        var propuesta = clsPropuestasAsistente.AjustarMargen(cotizacion, margen, justificacion);
         if (propuesta.EsFallo)
         {
-            return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));
+            return Task.FromResult(clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error)));
         }
 
         contexto.Proponer(propuesta.Valor);
-        return clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
+        return Task.FromResult(clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["propuesta"] = clsAccionPropuesta.TipoAjustarMargen,
-            ["margen_actual"] = cotizacion.MargenAplicado,
+            ["margen_actual"] = cotizacion.PrimeraRuta?.MargenAplicado,
             ["margen_propuesto"] = propuesta.Valor.Cuerpo["margen"],
             ["margen_sugerido"] = cotizacion.SugeridoVigente,
             ["con_justificacion"] = propuesta.Valor.Cuerpo["justificacion"] is not null,
             ["mensaje"] = MensajePropuesta,
-        });
+        }));
     }
 
     [KernelFunction(clsNombresHerramientas.ProponerReSolicitud)]
@@ -198,8 +198,7 @@ public sealed class clsHerramientasAsistenteFolio(
         }
 
         var cotizacion = contexto.Cotizacion;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var propuesta = clsPropuestasAsistente.AgregarConexo(cotizacion, lineas, elegido, valor, lineaOrden);
+        var propuesta = clsPropuestasAsistente.AgregarConexo(cotizacion, elegido, valor, lineaOrden);
         if (propuesta.EsFallo)
         {
             return clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error));

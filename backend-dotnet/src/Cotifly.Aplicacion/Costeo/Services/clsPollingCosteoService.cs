@@ -111,7 +111,6 @@ public sealed class clsPollingCosteoService(
         {
             var vencio = cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
-            await VencerLineasAsync(cotizacion, cancellationToken);
             if (!await GuardarConVersionAsync(cotizacion, version, vencio))
             {
                 return ResultadoConsultaCosteo.Conflicto;
@@ -126,13 +125,12 @@ public sealed class clsPollingCosteoService(
         }
 
         var cronometro = Stopwatch.StartNew();
-        var consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, cancellationToken);
+        var consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.SolicitudNexoId!, cancellationToken);
         if (consulta.EsFallo && consulta.Error.Codigo == clsCodigosError.CosteoNexoSolicitudNoEncontrada)
         {
             var cambioDesconocida = cotizacion.DetenerPorSolicitudDesconocida(
-                $"Nexo ya no reconoce la solicitud {cotizacion.CosteoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
-            cotizacion.RegistrarFalloConsultaCosteo(ahora, siguiente: null);
-            await VencerLineasAsync(cotizacion, cancellationToken);
+                $"Nexo ya no reconoce la solicitud {cotizacion.SolicitudNexoId} (404 SOLICITUD_NO_ENCONTRADA): se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
+            cotizacion.RegistrarFalloConsultaCosteo(siguiente: null);
             if (!await GuardarConVersionAsync(cotizacion, version, cambioDesconocida))
             {
                 return ResultadoConsultaCosteo.Conflicto;
@@ -140,7 +138,7 @@ public sealed class clsPollingCosteoService(
 
             await auditoria.RegistrarAsync(
                 HerramientaErrorConsulta,
-                new { folio = cotizacion.Folio, costeo_id = cotizacion.CosteoId, terminal = true },
+                new { folio = cotizacion.Folio, costeo_id = cotizacion.SolicitudNexoId, terminal = true },
                 new { error = new { codigo = consulta.Error.Codigo, mensaje = consulta.Error.Mensaje, detalle = consulta.Error.Detalle } },
                 exito: false,
                 (int)cronometro.ElapsedMilliseconds,
@@ -157,7 +155,7 @@ public sealed class clsPollingCosteoService(
         {
             var fallos = cotizacion.CosteoConsultasFallidas + 1;
             // La relectura sigue con espaciado aunque haya pasado la edad máxima, hasta CosteoNexo:MaximoFallosRelectura (HU-013.14).
-            cotizacion.RegistrarFalloConsultaCosteo(ahora, relectura
+            cotizacion.RegistrarFalloConsultaCosteo(relectura
                 ? ahora + clsAgendaPollingCosteo.Espera(ahora, enviadaAt, fallos, config)
                 : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
             var agotada = relectura && fallos >= config.MaximoFallosRelectura;
@@ -173,8 +171,7 @@ public sealed class clsPollingCosteoService(
                     cotizacion.AdvertirCosteo(motivo);
                 }
 
-                await VencerLineasAsync(cotizacion, cancellationToken);
-            }
+                }
 
             if (agotada)
             {
@@ -192,7 +189,7 @@ public sealed class clsPollingCosteoService(
                 cotizacion.Folio, consulta.Error.Codigo, fallos);
             await auditoria.RegistrarAsync(
                 HerramientaErrorConsulta,
-                new { folio = cotizacion.Folio, costeo_id = cotizacion.CosteoId, fallos_seguidos = fallos },
+                new { folio = cotizacion.Folio, costeo_id = cotizacion.SolicitudNexoId, fallos_seguidos = fallos },
                 new { error = new { codigo = consulta.Error.Codigo, mensaje = consulta.Error.Mensaje, detalle = consulta.Error.Detalle } },
                 exito: false,
                 (int)cronometro.ElapsedMilliseconds,
@@ -200,17 +197,15 @@ public sealed class clsPollingCosteoService(
             return agotada ? ResultadoConsultaCosteo.Detenida : ResultadoConsultaCosteo.Error;
         }
 
-        // ADR-017: el estado, el costo y el precio se derivan también por línea (una licitación tiene N; HU-005.5, una). El precio se
-        // aplica aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, lineas, consulta.Valor, ahora, config, precioCosteo);
+        // ADR-017 y HU-021: el estado y el costo se derivan por camión, el precio por ruta y el total en la solicitud. El precio se aplica
+        // aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
+        var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, ahora, config, precioCosteo);
 
         // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla (HU-013.14).
         if (relectura && cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
         {
             cambio |= cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
-            await VencerLineasAsync(cotizacion, cancellationToken);
         }
         if (!await GuardarConVersionAsync(cotizacion, version, cambio))
         {
@@ -242,7 +237,7 @@ public sealed class clsPollingCosteoService(
     /// Guarda solo si nadie cambió la versión de negocio desde que se cargó la cotización (ADR-018 §12). Sube la versión cuando cambia
     /// el estado, el costo o el precio (<paramref name="cambioNegocio"/>); el reclamo y la agenda no la cambian.
     /// </summary>
-    private async Task<bool> GuardarConVersionAsync(clsCotizacion cotizacion, int version, bool cambioNegocio)
+    private async Task<bool> GuardarConVersionAsync(clsCotizacionSolicitud cotizacion, int version, bool cambioNegocio)
     {
         if (cambioNegocio)
         {
@@ -252,30 +247,10 @@ public sealed class clsPollingCosteoService(
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None);
     }
 
-    /// <summary>
-    /// La cotización quedó en <c>costeo_vencido</c> (edad máxima o id que Nexo no reconoce): sus líneas sin flete también (ADR-017).
-    /// Las que ya tenían flete conservan su estado y su precio.
-    /// </summary>
-    private async Task VencerLineasAsync(clsCotizacion cotizacion, CancellationToken cancellationToken)
-    {
-        if (cotizacion.EstadoCosteo != EstadoCosteo.CosteoVencido)
-        {
-            return;
-        }
-
-        foreach (var linea in await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [])
-        {
-            if (linea.EstadoCosteo is EstadoCosteo.PendienteCosteo or null)
-            {
-                linea.RegistrarEstado(EstadoCosteo.CosteoVencido);
-            }
-        }
-    }
-
-    private Task AuditarCambioAsync(clsCotizacion cotizacion, EstadoCosteo? anterior, int duracionMs) =>
+    private Task AuditarCambioAsync(clsCotizacionSolicitud cotizacion, EstadoCosteo? anterior, int duracionMs) =>
         auditoria.RegistrarAsync(
             HerramientaCambioEstado,
-            new { folio = cotizacion.Folio, costeo_id = cotizacion.CosteoId, estado_anterior = anterior is { } a ? clsCodigoEnum.ACodigo(a) : null },
+            new { folio = cotizacion.Folio, costeo_id = cotizacion.SolicitudNexoId, estado_anterior = anterior is { } a ? clsCodigoEnum.ACodigo(a) : null },
             new
             {
                 estado_costeo = cotizacion.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null,

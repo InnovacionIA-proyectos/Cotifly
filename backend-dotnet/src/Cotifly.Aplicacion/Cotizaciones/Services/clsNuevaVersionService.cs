@@ -33,7 +33,9 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
         var folio = clsFolio.Desde(origen.Folio);
         var folioBase = folio.EsExitoso ? folio.Valor.Base : origen.Folio;
         var maxima = await cotizaciones.ObtenerVersionMaximaAsync(folioBase, cancellationToken);
-        var linea = origen.LineaNegocioId is { } id ? await politicas.ObtenerPorIdAsync(id, cancellationToken) : null;
+        // HU-021: la línea de negocio, el costo y el margen son de las rutas; se muestran los de la ruta 1 y el costo total.
+        var ruta = origen.PrimeraRuta;
+        var linea = ruta?.LineaNegocioId is { } id ? await politicas.ObtenerPorIdAsync(id, cancellationToken) : null;
 
         return new clsDatosNuevaVersion(
             origen.Id,
@@ -43,11 +45,11 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
             origen.NitCliente,
             origen.OrigenCliente is { } origenCliente ? clsCodigoEnum.ACodigo(origenCliente) : null,
             linea?.LineaNegocio,
-            origen.Costo,
-            origen.MargenPolitica,
-            origen.MargenAplicado,
-            origen.OrigenMargen is { } origenMargen ? clsCodigoEnum.ACodigo(origenMargen) : null,
-            origen.MetodoCalculo,
+            origen.CostoFinal,
+            ruta?.MargenPoliticaSugerido,
+            ruta?.MargenAplicado,
+            ruta?.OrigenMargen is { } origenMargen ? clsCodigoEnum.ACodigo(origenMargen) : null,
+            ruta?.MetodoCalculo,
             origen.Moneda);
     }
 }

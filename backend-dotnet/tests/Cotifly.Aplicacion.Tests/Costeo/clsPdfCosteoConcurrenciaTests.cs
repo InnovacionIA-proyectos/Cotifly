@@ -31,7 +31,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsPdfCosteoConcurrenciaTests()
     {
@@ -39,7 +39,7 @@ public sealed class clsPdfCosteoConcurrenciaTests
         _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         _cotizacion.RegistrarEnvioCosteo("SOL-1", true, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         _cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.LineaNegocioId))!.SetValue(_cotizacion, 3);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.LineaNegocioId))!.SetValue(_cotizacion, 3);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
         _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);

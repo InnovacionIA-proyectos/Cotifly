@@ -69,11 +69,12 @@ public sealed class clsCapturaFilasLicitacionTests
     [Fact]
     public void LaLineaGuardadaConservaSusHorasYLasDevuelveParaElReintento()
     {
-        var guardada = clsCotizacionLineaSolicitud.Desde(Guid.NewGuid(), [Linea() with { HorasCargue = 2m, HorasDescargue = 3.5m, TipoVehiculo = " 3S3 " }])[0];
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-LIC-2" }).Valor;
+        var guardada = cotizacion.AgregarRuta(Linea() with { HorasCargue = 2m, HorasDescargue = 3.5m, TipoVehiculo = " 3S3 " }, 0, 3);
 
         guardada.HorasCargue.Should().Be(2m);
         guardada.HorasDescargue.Should().Be(3.5m);
-        var reenviada = guardada.ALinea([]);
+        var reenviada = guardada.ALinea();
         reenviada.HorasCargue.Should().Be(2m);
         reenviada.HorasDescargue.Should().Be(3.5m);
         reenviada.TipoVehiculo.Should().Be("3S3", "se reenvía lo guardado, recortado");

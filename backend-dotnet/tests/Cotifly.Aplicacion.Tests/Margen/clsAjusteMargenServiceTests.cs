@@ -122,7 +122,7 @@ public sealed class clsAjusteMargenServiceTests
     public async Task UnaCotizacionInexistenteOAjenaDevuelveAjusteCotizacionInvalida()
     {
         var cotizacionId = Guid.NewGuid();
-        _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacionId, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacion?>(null));
+        _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacionId, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacionSolicitud?>(null));
 
         var resultado = await Servicio().RegistrarAsync(new clsEntradaAjusteMargen(0.15m, 0.12m, _usuario, CotizacionId: cotizacionId), Ct);
 
@@ -134,8 +134,8 @@ public sealed class clsAjusteMargenServiceTests
     [Fact]
     public async Task ConCotizacionDelComercialElAjusteTomaSuFolio()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-24092026", UsuarioId = _usuario }).Valor;
-        _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacion.Id, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacion?>(cotizacion));
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-24092026", UsuarioId = _usuario }).Valor;
+        _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacion.Id, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacionSolicitud?>(cotizacion));
         clsMargenAjuste? agregado = null;
         _ajustes.When(a => a.Agregar(Arg.Any<clsMargenAjuste>())).Do(ci => agregado = ci.Arg<clsMargenAjuste>());
 

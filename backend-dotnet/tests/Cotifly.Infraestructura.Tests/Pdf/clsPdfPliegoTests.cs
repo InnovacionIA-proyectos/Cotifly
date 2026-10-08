@@ -26,14 +26,14 @@ public sealed class clsPdfPliegoTests
     /// <summary>Costo de Nexo de la línea i (base 0): termina en 7 para que ningún precio redondeado lo repita.</summary>
     private static decimal Costo(int i) => 1_000_000m + (i * 85_000m) + 7m;
 
-    internal static (clsCotizacion Cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> Lineas) Pliego(int numero, Func<int, (string Origen, string Destino)>? ruta = null)
+    internal static (clsCotizacionSolicitud Cotizacion, IReadOnlyList<clsLineaSolicitud> Lineas) Pliego(int numero, Func<int, (string Origen, string Destino)>? ruta = null)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-900555111-AP-01102026-001", ClienteNombre = "AGENCIA DE ADUANAS JF", NitCliente = "900555111" }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-900555111-AP-01102026-001", ClienteNombre = "AGENCIA DE ADUANAS JF", NitCliente = "900555111" }).Valor;
         cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, Referencia = "Pliego 2026-04" });
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
         cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
         cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _ahora, _ahora);
-        var lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [.. Enumerable.Range(0, numero).Select(i =>
+        var lineas = clsLineaSolicitud.Desde(cotizacion.Id, [.. Enumerable.Range(0, numero).Select(i =>
         {
             var (origen, destino, vehiculo, toneladas) = clsPliegoMuestra.Ruta(i);
             if (ruta is not null)
@@ -59,7 +59,7 @@ public sealed class clsPdfPliegoTests
     }
 
     /// <summary>El mismo camino de <c>clsCosteoCotizacionService.GenerarAsync</c>: validación del pliego, payload, documento y render.</summary>
-    internal static (clsLectorPdf Lector, int Paginas) Generar(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas)
+    internal static (clsLectorPdf Lector, int Paginas) Generar(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsLineaSolicitud> lineas)
     {
         clsCosteoCotizacionService.ValidarPliego(cotizacion, lineas, "COP").Should().BeNull();
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, lineas, "Nacional", "COP");

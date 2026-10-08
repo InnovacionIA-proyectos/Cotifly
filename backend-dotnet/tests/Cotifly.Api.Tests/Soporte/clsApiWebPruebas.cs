@@ -180,7 +180,7 @@ public sealed class clsApiWebPruebas : IDisposable
         var repositorio = servicios.GetRequiredService<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         var unidad = servicios.GetRequiredService<IClsUnitOfWork>();
 
-        var resultado = await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
+        var resultado = await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit, async (folio, ct) =>
         {
             string? referencia = null;
             if (conPdf)
@@ -188,7 +188,7 @@ public sealed class clsApiWebPruebas : IDisposable
                 referencia = await almacen.GuardarNuevoAsync($"{folio.Valor}.pdf", PdfMinimo, ct);
             }
 
-            var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
             {
                 Folio = folio.Valor,
                 Version = folio.Version,
@@ -211,7 +211,7 @@ public sealed class clsApiWebPruebas : IDisposable
 
             repositorio.Agregar(cotizacion.Valor);
             await unidad.GuardarCambiosAsync(ct);
-            return clsResultado<clsCotizacion>.Exito(cotizacion.Valor);
+            return clsResultado<clsCotizacionSolicitud>.Exito(cotizacion.Valor);
         });
 
         if (resultado.EsFallo)

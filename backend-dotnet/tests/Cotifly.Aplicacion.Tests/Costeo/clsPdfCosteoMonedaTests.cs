@@ -111,9 +111,9 @@ public sealed class clsPdfCosteoMonedaTests
     }
 
     /// <summary>Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (25,00 USD) incluido.</summary>
-    private clsCotizacion EnDolares(decimal precioFinal)
+    private clsCotizacionSolicitud EnDolares(decimal precioFinal)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-900555111-AP-05102026-010",
             UsuarioId = _ana,
@@ -128,11 +128,11 @@ public sealed class clsPdfCosteoMonedaTests
             EstadoCosteo = EstadoCosteo.Autocosteo,
         }).Valor;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 25m, true)]));
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, Version);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, Version);
         return Preparada(cotizacion);
     }
 
-    private static clsCotizacion Preparada(clsCotizacion cotizacion)
+    private static clsCotizacionSolicitud Preparada(clsCotizacionSolicitud cotizacion)
     {
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-1", true, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
@@ -140,11 +140,11 @@ public sealed class clsPdfCosteoMonedaTests
         return cotizacion;
     }
 
-    private clsCotizacion Registrada(clsCotizacion cotizacion)
+    private clsCotizacionSolicitud Registrada(clsCotizacionSolicitud cotizacion)
     {
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
         _cotizaciones.ListarLineasAsync(cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.LineaNegocioId))!.SetValue(cotizacion, 3);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.LineaNegocioId))!.SetValue(cotizacion, 3);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
         return cotizacion;
     }

@@ -102,8 +102,8 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
     }
 
     /// <summary>Cotización válida en memoria (sin guardar).</summary>
-    protected static clsCotizacion NuevaCotizacion(Guid? usuarioId, string? folio = null, decimal precio = 1_500_000m) =>
-        clsCotizacion.Crear(new clsDatosCotizacion
+    protected static clsCotizacionSolicitud NuevaCotizacion(Guid? usuarioId, string? folio = null, decimal precio = 1_500_000m) =>
+        clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio ?? FolioUnico(),
             UsuarioId = usuarioId,
@@ -122,7 +122,7 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
         }).Valor;
 
     /// <summary>Guarda una cotización en un ámbito propio.</summary>
-    protected Task GuardarAsync(clsCotizacion cotizacion) =>
+    protected Task GuardarAsync(clsCotizacionSolicitud cotizacion) =>
         EnAmbitoAsync(s =>
         {
             s.GetRequiredService<IClsCotizacionRepository>().Agregar(cotizacion);

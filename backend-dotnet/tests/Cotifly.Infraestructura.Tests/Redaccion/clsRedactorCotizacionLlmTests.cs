@@ -94,7 +94,7 @@ public sealed class clsRedactorCotizacionLlmTests
     [Fact]
     public void CadaTextoDelContextoLlegaRecortadoA150Caracteres()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = Folio, ClienteNombre = new string('C', 300) }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = Folio, ClienteNombre = new string('C', 300) }).Valor;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
             [new clsServicioConexoCosteo("CX-1", new string('X', 400), "logistico", 1m, 1m, 1m, true)]));
 
@@ -287,9 +287,9 @@ public sealed class clsRedactorCotizacionLlmTests
         new("CLIENTE SAS", "Nacional", [new clsRutaRedaccion("Buenaventura", "Bogotá D.C.")], "3S3", ["Cargue"], "COP");
 
     /// <summary>Cotización en USD costeada (costo 2.550.000, margen 15 %, precio 746 USD con TRM 4.000) y un conexo incluido.</summary>
-    private static clsCotizacion CotizacionCosteada()
+    private static clsCotizacionSolicitud CotizacionCosteada()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = Folio,
             UsuarioId = Guid.NewGuid(),

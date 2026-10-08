@@ -25,7 +25,7 @@ public sealed class clsCorreoRepository(clsCotiflyDbContext contexto) : IClsCorr
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nitCliente);
         var nit = nitCliente.Trim();
-        var cotizacionesDelCliente = contexto.Cotizaciones
+        var cotizacionesDelCliente = contexto.CotizacionesSolicitud
             .Where(c => c.UsuarioId == usuarioId && c.NitCliente == nit)
             .Select(c => c.Id);
 

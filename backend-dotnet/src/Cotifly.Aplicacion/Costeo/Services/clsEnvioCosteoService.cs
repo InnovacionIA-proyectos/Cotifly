@@ -31,7 +31,7 @@ public interface IClsEnvioCosteoService
     /// <c>TRM_NO_DISPONIBLE</c> (en USD sin TRM del día, HU-013.7), <c>FOLIO_CONSECUTIVO_AGOTADO</c> y <c>ERROR_INTERNO</c>.
     /// Si Nexo falla la cotización se devuelve igual, en <c>error_envio</c> con el motivo.
     /// </summary>
-    Task<clsResultado<clsCotizacion>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reenvía la solicitud guardada. <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial;
@@ -39,21 +39,15 @@ public interface IClsEnvioCosteoService
     /// revalida completa con las reglas de captura (HU-013.11, <see cref="IClsValidadorFilasLicitacion.RevalidarGuardadasAsync"/>): si una
     /// fila guardada ya no pasa, <c>LICITACION_INVALIDA</c> con <c>detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA</c> y nada se envía.
     /// </summary>
-    Task<clsResultado<clsCotizacion>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsCotizacionSolicitud>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Envía a Nexo una cotización ya guardada y confirmada con sus líneas (licitación, HU-011.2, ADR-017) y guarda el resultado
-    /// (<c>pendiente_costeo</c>/<c>autocosteo</c> o <c>error_envio</c>), igual que el envío de HU-005.5. Sin el token de la petición.
-    /// <paramref name="notaTrazabilidad"/> (re-solicitud, HU-013.4) se agrega a las <c>notas</c> que viajan a Nexo, sin guardarse en la
-    /// cotización ni sobrepasar el límite de Nexo (<see cref="ConNota"/>).
+    /// Envía a Nexo una solicitud ya guardada y confirmada con sus rutas y camiones (licitación, HU-011.2, ADR-017; re-solicitud) y guarda
+    /// el resultado (<c>pendiente_costeo</c>/<c>autocosteo</c> o <c>error_envio</c>), igual que el envío de HU-005.5. Sin el token de la
+    /// petición. <paramref name="notaTrazabilidad"/> (re-solicitud, HU-013.4) se agrega a las <c>notas</c> que viajan a Nexo, sin guardarse
+    /// en la cotización ni sobrepasar el límite de Nexo (<see cref="ConNota"/>).
     /// </summary>
-    Task EnviarGuardadaAsync(
-        clsCotizacion cotizacion,
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
-        IReadOnlyList<clsCotizacionPosicion> posiciones,
-        clsMargenPolitica? politica,
-        Guid usuarioId,
-        string? notaTrazabilidad = null);
+    Task EnviarGuardadaAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, Guid usuarioId, string? notaTrazabilidad = null);
 }
 
 /// <summary>Implementación de <see cref="IClsEnvioCosteoService"/>.</summary>
@@ -62,8 +56,9 @@ public interface IClsEnvioCosteoService
 /// <item>Valida el formulario (mismos límites que Nexo), exige el NIT y resuelve la línea en <c>MargenesPolitica</c>.</item>
 /// <item>Fija la moneda y, en USD, la TRM del día (HU-013.7, ADR-014 §5, <see cref="IClsFijacionMonedaService"/>): sin TRM no se guarda
 /// nada ni se llama a Nexo. El polling, el ajuste de margen y el PDF convierten con esa TRM fijada; el reintento la conserva.</item>
-/// <item>Crea la cotización con folio del servidor (ADR-011, con el NIT), el formulario y sus posiciones en <c>pendiente_envio</c>, y
-/// confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
+/// <item>Crea la solicitud con folio del servidor (ADR-011, con el NIT): la cabecera y la ruta 1 con su línea de negocio, sus mercancías
+/// y un camión con el vehículo del formulario (HU-021, "una ruta y un camión" hasta el cubicador), en <c>pendiente_envio</c>, y confirma
+/// la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
 /// <item>Envía a Nexo y guarda el resultado: <c>pendiente_costeo</c> con <c>costeoId</c> y la primera consulta del polling, o
 /// <c>error_envio</c> con el motivo. Cada intento queda en la auditoría (<c>enviar_costeo_nexo</c>).</item>
@@ -92,7 +87,7 @@ public sealed class clsEnvioCosteoService(
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
 
-    public async Task<clsResultado<clsCotizacion>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
+    public async Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Solicitud);
@@ -143,15 +138,12 @@ public sealed class clsEnvioCosteoService(
             return fijada.Error;
         }
 
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas = [];
-        IReadOnlyList<clsCotizacionPosicion> posiciones = [];
-        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacion>(usuarioId, nit, async (folio, ct) =>
+        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit, async (folio, ct) =>
         {
-            var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
             {
                 Folio = folio.Valor,
                 Version = folio.Version,
-                LineaNegocioId = politica.Id,
                 ClienteNombre = entrada.ClienteNombre,
                 NitCliente = nit,
                 UsuarioId = usuarioId,
@@ -163,14 +155,9 @@ public sealed class clsEnvioCosteoService(
                 return cotizacion.Error;
             }
 
-            // ADR-017: la única línea también va en CotizacionLineasSolicitud (las columnas de línea de Cotizaciones quedan como
-            // espejo de la línea 1 para métricas, "Mis cotizaciones" y el PDF de una línea).
-            cotizacion.Valor.RegistrarSolicitudCosteo(entrada.Solicitud);
-            lineas = clsCotizacionLineaSolicitud.Desde(cotizacion.Valor.Id, [entrada.Solicitud.ALinea()]);
+            // HU-021: la cabecera, la ruta 1 (línea de negocio y mercancías) y su camión, en una sola escritura.
+            cotizacion.Valor.RegistrarSolicitudCosteo(entrada.Solicitud, politica.Id);
             cotizaciones.Agregar(cotizacion.Valor);
-            cotizaciones.AgregarLineas(lineas);
-            posiciones = [.. clsCotizacionPosicion.Desde(cotizacion.Valor.Id, entrada.Solicitud.Posiciones, lineas[0].Id, ordenInicial: 1)];
-            cotizaciones.AgregarPosiciones(posiciones);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return cotizacion.Valor;
         }, cancellationToken);
@@ -181,26 +168,22 @@ public sealed class clsEnvioCosteoService(
 
         // Desde aquí, sin el token de la petición (ver EnviarANexoAsync). Se envía lo GUARDADO (normalizado: textos recortados), no la
         // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo (G2: " 3S3 " nunca llega con espacios).
-        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Solicitud.Encabezado;
-        await EnviarANexoAsync(creada.Valor, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
+        var encabezado = ConHoras(creada.Valor.EncabezadoSolicitud, entrada.Solicitud.Encabezado);
+        await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
         return creada.Valor;
     }
 
-    public Task EnviarGuardadaAsync(
-        clsCotizacion cotizacion,
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas,
-        IReadOnlyList<clsCotizacionPosicion> posiciones,
-        clsMargenPolitica? politica,
-        Guid usuarioId,
-        string? notaTrazabilidad = null)
+    public Task EnviarGuardadaAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, Guid usuarioId, string? notaTrazabilidad = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
-        ArgumentNullException.ThrowIfNull(posiciones);
         var encabezado = ConNota(cotizacion.EncabezadoSolicitud
             ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion)), notaTrazabilidad);
-        return EnviarANexoAsync(cotizacion, encabezado, LineasConPosiciones(lineas, posiciones), lineas, politica, usuarioId, reintento: false);
+        return EnviarANexoAsync(cotizacion, encabezado, politica, usuarioId, reintento: false);
     }
+
+    /// <summary>El encabezado guardado con las horas de la captura (la cabecera ya no las guarda: viajan en cada línea, HU-021).</summary>
+    private static clsEncabezadoSolicitudCosteo ConHoras(clsEncabezadoSolicitudCosteo? guardado, clsEncabezadoSolicitudCosteo captura) =>
+        guardado is null ? captura : guardado with { HorasCargue = captura.HorasCargue, HorasDescargue = captura.HorasDescargue };
 
     /// <summary>
     /// Encabezado con <paramref name="nota"/> agregada a las <c>notas</c> (en una línea nueva). Si juntas superan
@@ -236,18 +219,16 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// Líneas guardadas como datos de la solicitud, cada una con sus posiciones. Las posiciones sin línea (filas anteriores al
-    /// backfill del 0005) se asignan a la línea 1.
+    /// Las rutas guardadas como líneas de la captura (en orden, cada una con sus mercancías y el vehículo de su camión): lo que se
+    /// revalida con las reglas de la captura antes de reenviar (HU-021, "una ruta y un camión").
     /// </summary>
-    public static IReadOnlyList<clsLineaSolicitudCosteo> LineasConPosiciones(
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsCotizacionPosicion> posiciones)
+    public static IReadOnlyList<clsLineaSolicitudCosteo> LineasGuardadas(clsCotizacionSolicitud cotizacion)
     {
-        ArgumentNullException.ThrowIfNull(lineas);
-        ArgumentNullException.ThrowIfNull(posiciones);
-        return [.. lineas.OrderBy(l => l.Orden).Select(l => l.ALinea(posiciones.Where(p => p.LineaSolicitudId == l.Id || (p.LineaSolicitudId is null && l.Orden == 1))))];
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return [.. cotizacion.RutasOrdenadas.Select(r => r.ALinea())];
     }
 
-    public async Task<clsResultado<clsCotizacion>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
+    public async Task<clsResultado<clsCotizacionSolicitud>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
@@ -258,13 +239,9 @@ public sealed class clsEnvioCosteoService(
         }
 
         var ahora = reloj.AhoraUtc;
-        var posiciones = await cotizaciones.ListarPosicionesAsync(cotizacion.Id, cancellationToken);
-        var guardadas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var encabezado = cotizacion.EncabezadoSolicitud;
-        IReadOnlyList<clsLineaSolicitudCosteo>? lineas = guardadas.Count > 0 && encabezado is not null
-            ? LineasConPosiciones(guardadas, posiciones)
-            : cotizacion.SolicitudCosteo(posiciones) is { } legado ? [legado.ALinea()] : null;
-        if (lineas is null || encabezado is null || !cotizacion.PuedeReenviarCosteo(ahora))
+        var lineas = LineasGuardadas(cotizacion);
+        if (lineas.Count == 0 || encabezado is null || !cotizacion.PuedeReenviarCosteo(ahora))
         {
             return NoReintentable(cotizacion);
         }
@@ -272,17 +249,17 @@ public sealed class clsEnvioCosteoService(
         // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una licitación
         // pasa por todas las reglas de captura, también catálogos y municipios (HU-013.11: nunca texto libre a Nexo); el formulario de
         // una línea usa su validación (mismos mensajes que HU-005.5).
-        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion && guardadas.Count > 0)
+        IReadOnlyList<clsLineaSolicitudCosteo>? revalidadas = null;
+        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
         {
             var revalidada = await filasLicitacion.RevalidarGuardadasAsync(
-                usuarioId, cotizacion.Folio, encabezado, lineas, [.. guardadas.OrderBy(l => l.Orden).Select(l => l.FilaOrigen)], cancellationToken);
+                usuarioId, cotizacion.Folio, encabezado, lineas, [.. cotizacion.RutasOrdenadas.Select(r => r.RutaOrigenIndice)], cancellationToken);
             if (revalidada.EsFallo)
             {
                 return revalidada.Error;
             }
 
-            CompletarMunicipios(guardadas, revalidada.Valor);
-            lineas = LineasConPosiciones(guardadas, posiciones);
+            revalidadas = revalidada.Valor;
         }
         else if (Revalidar(encabezado, lineas) is { } invalida)
         {
@@ -297,16 +274,22 @@ public sealed class clsEnvioCosteoService(
 
         // Reclamada: desde aquí, sin el token de la petición (ver EnviarANexoAsync).
         await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
-        var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
-        await EnviarANexoAsync(cotizacion, encabezado, lineas, guardadas, politica, usuarioId, reintento: true);
+        if (revalidadas is not null)
+        {
+            // Los ids de municipio resueltos por la revalidación se guardan con el envío (HU-013.11).
+            CompletarMunicipios(cotizacion.RutasOrdenadas, revalidadas);
+        }
+
+        var politica = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
+        await EnviarANexoAsync(cotizacion, encabezado, politica, usuarioId, reintento: true);
         return cotizacion;
     }
 
     /// <summary>
-    /// Copia a las líneas guardadas (en orden) los ids de municipio resueltos por la revalidación de una licitación (HU-013.11): se
+    /// Copia a las rutas guardadas (en orden) los ids de municipio resueltos por la revalidación de una licitación (HU-013.11): se
     /// guardan con el envío, así el siguiente reenvío manda lo mismo.
     /// </summary>
-    public static void CompletarMunicipios(IReadOnlyList<clsCotizacionLineaSolicitud> guardadas, IReadOnlyList<clsLineaSolicitudCosteo> revalidadas)
+    public static void CompletarMunicipios(IReadOnlyList<clsLineaSolicitud> guardadas, IReadOnlyList<clsLineaSolicitudCosteo> revalidadas)
     {
         ArgumentNullException.ThrowIfNull(guardadas);
         ArgumentNullException.ThrowIfNull(revalidadas);
@@ -346,28 +329,24 @@ public sealed class clsEnvioCosteoService(
     /// en Nexo. El límite lo pone el cliente <c>NexoCosteo</c> (30 s).
     /// </summary>
     private async Task EnviarANexoAsync(
-        clsCotizacion cotizacion,
+        clsCotizacionSolicitud cotizacion,
         clsEncabezadoSolicitudCosteo encabezado,
-        IReadOnlyList<clsLineaSolicitudCosteo> lineas,
-        IReadOnlyList<clsCotizacionLineaSolicitud> entidades,
         clsMargenPolitica? politica,
         Guid usuarioId,
         bool reintento)
     {
         var cronometro = Stopwatch.StartNew();
+
+        // HU-021 (CAMBIOS_BACKEND §5.3): una línea por camión, ruta por ruta y en orden.
+        IReadOnlyList<clsLineaSolicitudCosteo> lineas = [.. cotizacion.LineasNexo().Select(l => l.Linea)];
         var resultado = await ResolverClienteYEnviarAsync(cotizacion, encabezado, lineas, politica, usuarioId, CancellationToken.None);
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {
             // HU-013.14: siempre "pendiente_costeo" hasta leer el costo; si Nexo ya costeó, la lectura inmediata (abajo) la promueve.
             var creada = resultado.Valor;
+            // La solicitud y cada camión arrancan en pendiente_costeo; el polling deriva después el de cada camión (ADR-017, HU-021).
             cotizacion.RegistrarEnvioCosteo(creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
-
-            // Cada línea arranca con el estado de la cotización; el polling deriva después el de cada una (ADR-017).
-            foreach (var linea in entidades)
-            {
-                linea.RegistrarEnvio(cotizacion.EstadoCosteo!.Value);
-            }
         }
         else
         {
@@ -381,7 +360,7 @@ public sealed class clsEnvioCosteoService(
         }
         else if (resultado.Valor.CosteoCompleto)
         {
-            await LeerCosteoInmediatoAsync(cotizacion, entidades, usuarioId);
+            await LeerCosteoInmediatoAsync(cotizacion, usuarioId);
         }
 
         await auditoria.RegistrarAsync(
@@ -390,7 +369,7 @@ public sealed class clsEnvioCosteoService(
             new
             {
                 estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
-                costeo_id = cotizacion.CosteoId,
+                costeo_id = cotizacion.SolicitudNexoId,
                 motivo = cotizacion.MotivoEstadoCosteo,
                 error = resultado.EsFallo ? resultado.Error.Codigo : null,
             },
@@ -404,7 +383,7 @@ public sealed class clsEnvioCosteoService(
     /// polling, ya con el <c>costeoId</c> guardado (si el proceso muere aquí, el polling la retoma). Guarda con la versión de negocio;
     /// si la lectura falla o el polling ganó la carrera, la cotización queda como está guardada y el polling la completa.
     /// </summary>
-    private async Task LeerCosteoInmediatoAsync(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, Guid usuarioId)
+    private async Task LeerCosteoInmediatoAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId)
     {
         var version = cotizacion.VersionNegocio;
 
@@ -414,7 +393,7 @@ public sealed class clsEnvioCosteoService(
         {
             try
             {
-                consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, limite.Token);
+                consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.SolicitudNexoId!, limite.Token);
             }
             catch (OperationCanceledException) when (limite.IsCancellationRequested)
             {
@@ -431,7 +410,7 @@ public sealed class clsEnvioCosteoService(
             return;
         }
 
-        if (clsLecturaCosteo.AplicarFoto(cotizacion, lineas, consulta.Valor, reloj.AhoraUtc, opciones.Value, precioCosteo))
+        if (clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, reloj.AhoraUtc, opciones.Value, precioCosteo))
         {
             cotizacion.IncrementarVersionNegocio();
         }
@@ -444,7 +423,7 @@ public sealed class clsEnvioCosteoService(
     }
 
     private async Task<clsResultado<clsSolicitudCreadaNexo>> ResolverClienteYEnviarAsync(
-        clsCotizacion cotizacion,
+        clsCotizacionSolicitud cotizacion,
         clsEncabezadoSolicitudCosteo encabezado,
         IReadOnlyList<clsLineaSolicitudCosteo> lineas,
         clsMargenPolitica? politica,
@@ -491,34 +470,47 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
-    /// Margen de la cotización al enviar (HU-005.7, ADR-015 §5): SAP TM con el BP del catálogo o la política de la línea
-    /// (<see cref="IClsMargenResolverService"/>). Se guarda para aplicarlo cuando llegue el costeo; si no se puede resolver, el
-    /// polling lo advierte y nunca muestra el costo sin margen. Un margen negociado (re-solicitud, HU-013.4) no se pisa, falle o no la
-    /// resolución.
+    /// Margen de cada ruta al enviar (HU-005.7, ADR-015 §5; HU-021: el margen es de la línea de negocio de cada ruta): SAP TM con el BP
+    /// del catálogo o la política de la línea (<see cref="IClsMargenResolverService"/>), una vez por línea de negocio. Se guarda para
+    /// aplicarlo cuando llegue el costeo; si no se puede resolver, el polling lo advierte y nunca muestra el costo sin margen. Un margen
+    /// negociado (re-solicitud, HU-013.4) no se pisa, falle o no la resolución.
     /// </summary>
-    private async Task ResolverMargenAsync(clsCotizacion cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
+    private async Task ResolverMargenAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
     {
-        if (politica is null)
+        var resueltos = new Dictionary<int, Margen.DTOs.clsMargenResuelto?>();
+        foreach (var ruta in cotizacion.RutasOrdenadas)
         {
-            return;
-        }
+            var deRuta = ruta.LineaNegocioId is { } lineaId && lineaId != politica?.Id
+                ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken)
+                : politica;
+            if (deRuta is null)
+            {
+                continue;
+            }
 
-        var resuelto = await margen.ResolverAsync(new Margen.DTOs.clsEntradaMargen(politica.LineaNegocio, bp), cancellationToken);
-        if (resuelto.EsFallo || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Valor.Salida.Origen, out var origen))
-        {
-            logger.LogWarning("No se resolvió el margen de la cotización {Folio} al enviarla a Nexo.", cotizacion.Folio);
-            return;
-        }
+            if (!resueltos.TryGetValue(deRuta.Id, out var resuelto))
+            {
+                var resultado = await margen.ResolverAsync(new Margen.DTOs.clsEntradaMargen(deRuta.LineaNegocio, bp), cancellationToken);
+                resuelto = resultado.EsExitoso ? resultado.Valor : null;
+                resueltos[deRuta.Id] = resuelto;
+            }
 
-        // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
-        // sugerido se refresca con SAP TM o la política, como referencia.
-        if (cotizacion.TieneMargenNegociado)
-        {
-            cotizacion.RefrescarMargenSugerido(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen);
-            return;
-        }
+            if (resuelto is null || !clsCodigoEnum.TryDesdeCodigo<OrigenMargen>(resuelto.Salida.Origen, out var origen))
+            {
+                logger.LogWarning("No se resolvió el margen de la ruta {Orden} de la cotización {Folio} al enviarla a Nexo.", ruta.Orden, cotizacion.Folio);
+                continue;
+            }
 
-        cotizacion.RegistrarMargenCosteo(resuelto.Valor.MargenPolitica, resuelto.Valor.Salida.Margen, origen, resuelto.Valor.MetodoCalculo);
+            // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
+            // sugerido se refresca con SAP TM o la política, como referencia.
+            if (ruta.TieneMargenNegociado)
+            {
+                ruta.RefrescarMargenSugerido(resuelto.MargenPolitica, resuelto.Salida.Margen, origen);
+                continue;
+            }
+
+            ruta.RegistrarMargenCosteo(resuelto.MargenPolitica, resuelto.Salida.Margen, origen, resuelto.MetodoCalculo);
+        }
     }
 
     /// <summary>
@@ -537,7 +529,7 @@ public sealed class clsEnvioCosteoService(
     public static string Motivo(clsErrorDominio error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        return clsCotizacion.Recortar(string.IsNullOrWhiteSpace(error.Detalle) ? error.Mensaje : $"{error.Mensaje} ({error.Detalle})");
+        return clsCotizacionSolicitud.Recortar(string.IsNullOrWhiteSpace(error.Detalle) ? error.Mensaje : $"{error.Mensaje} ({error.Detalle})");
     }
 
     private static string SoloDigitos(string? valor) => new((valor ?? string.Empty).Where(char.IsAsciiDigit).ToArray());
@@ -553,7 +545,7 @@ public sealed class clsEnvioCosteoService(
             ? Invalida($"El campo 'moneda' debe ser {string.Join(" o ", clsConversorMoneda.Soportadas)} (llegó '{moneda.Trim()}').")
             : null;
 
-    private static clsErrorDominio NoReintentable(clsCotizacion cotizacion, string? detalle = null) =>
+    private static clsErrorDominio NoReintentable(clsCotizacionSolicitud cotizacion, string? detalle = null) =>
         new(clsCodigosError.CosteoNoReintentable,
             $"La cotización {cotizacion.Folio} no se puede reenviar a Nexo en su estado actual "
             + $"({(cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : "sin costeo en Nexo")}).",

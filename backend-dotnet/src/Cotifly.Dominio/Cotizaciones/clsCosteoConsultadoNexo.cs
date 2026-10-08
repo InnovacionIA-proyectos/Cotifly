@@ -21,33 +21,50 @@ public sealed record clsCosteoConsultadoNexo(string EstadoSolicitud, IReadOnlyLi
 public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria);
 
 /// <summary>
-/// Asocia las líneas de Cotifly con las de Nexo por CONTENIDO (ADR-017 §3), no por orden: Nexo carga las líneas sin <c>OrderBy</c> y
-/// sus ids son GUID aleatorios, así que <c>lineas[]</c> llega en cualquier orden. Clave: la ruta <c>"Origen → Destino"</c> normalizada
-/// (mayúsculas, sin tildes ni espacios repetidos) y, cuando ambos lados lo traen, el peso, la tipología, el tipo de vehículo y la
-/// carrocería. Solo se asocia un par cuando es único en ambos sentidos; dos líneas idénticas, o una sin candidato, quedan sin asociar
-/// (sin precio, con motivo). Con una sola línea en cada lado se asocian directamente (HU-005.5, siempre fue así).
+/// Un camión de Cotifly visto por el emparejador (HU-021): la ruta (<c>"Origen → Destino"</c> con los nombres copiados) y lo que viajó a
+/// Nexo en su línea (tipología, vehículo, carrocería y peso).
+/// </summary>
+public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Destino, string? Tipologia, string? TipoVehiculo, string? Carroceria, decimal? PesoKg)
+{
+    /// <summary>El camión <paramref name="camion"/> de <paramref name="ruta"/>.</summary>
+    public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        ArgumentNullException.ThrowIfNull(camion);
+        return new clsCamionParaEmparejar(
+            camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia, camion.TipoVehiculo, camion.Carroceria,
+            camion.PesoKg ?? (ruta.Vehiculos.Count == 1 ? ruta.PesoKg : null));
+    }
+}
+
+/// <summary>
+/// Asocia los camiones de Cotifly con las líneas de la solicitud de Nexo por CONTENIDO (ADR-017 §3, ADR-019), no por orden: Nexo carga
+/// las líneas sin <c>OrderBy</c> y sus ids son GUID aleatorios. Clave: la ruta <c>"Origen → Destino"</c> normalizada (mayúsculas, sin
+/// tildes ni espacios repetidos) y, cuando ambos lados lo traen, el peso, la tipología, el tipo de vehículo y la carrocería. Solo se
+/// asocia un par cuando es único en ambos sentidos; dos camiones idénticos, o uno sin candidato, quedan sin asociar (sin precio, con
+/// motivo). Mientras Nexo no tenga el campo de ruta (<c>CAMBIOS_BACKEND</c> §3.6), los empates no se resuelven por orden (#134).
 /// </summary>
 public static class clsEmparejadorLineasNexo
 {
     /// <summary>
-    /// Ids de Nexo por id de línea de Cotifly, solo para las que se asocian con certeza. <paramref name="yaAsignados"/> son los ids de
+    /// Ids de Nexo por id de camión de Cotifly, solo para los que se asocian con certeza. <paramref name="yaAsignados"/> son los ids de
     /// Nexo que ya tienen dueño (no se reasignan).
     /// </summary>
     public static IReadOnlyDictionary<Guid, string> Emparejar(
-        IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null)
+        IReadOnlyList<clsCamionParaEmparejar> camiones, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null)
     {
-        ArgumentNullException.ThrowIfNull(lineas);
+        ArgumentNullException.ThrowIfNull(camiones);
         ArgumentNullException.ThrowIfNull(nexo);
         var libres = nexo.Where(n => yaAsignados is null || !yaAsignados.Contains(n.Id)).ToList();
-        var pendientes = lineas.ToList();
+        var pendientes = camiones.ToList();
         var resultado = new Dictionary<Guid, string>();
         bool avanzo;
         do
         {
             avanzo = false;
-            foreach (var linea in pendientes.ToList())
+            foreach (var camion in pendientes.ToList())
             {
-                var candidatos = libres.Where(n => Coincide(linea, n)).ToList();
+                var candidatos = libres.Where(n => Coincide(camion, n)).ToList();
                 if (candidatos.Count != 1)
                 {
                     continue;
@@ -59,8 +76,8 @@ public static class clsEmparejadorLineasNexo
                     continue;
                 }
 
-                resultado[linea.Id] = candidato.Id;
-                pendientes.Remove(linea);
+                resultado[camion.Id] = candidato.Id;
+                pendientes.Remove(camion);
                 libres.Remove(candidato);
                 avanzo = true;
             }
@@ -70,20 +87,20 @@ public static class clsEmparejadorLineasNexo
         return resultado;
     }
 
-    /// <summary>¿La línea de Nexo puede ser esta línea de Cotifly? Misma ruta y sin contradicción en los datos que traen ambos.</summary>
-    public static bool Coincide(clsCotizacionLineaSolicitud linea, clsLineaSolicitudNexo nexo)
+    /// <summary>¿La línea de Nexo puede ser este camión de Cotifly? Misma ruta y sin contradicción en los datos que traen ambos.</summary>
+    public static bool Coincide(clsCamionParaEmparejar camion, clsLineaSolicitudNexo nexo)
     {
-        ArgumentNullException.ThrowIfNull(linea);
+        ArgumentNullException.ThrowIfNull(camion);
         ArgumentNullException.ThrowIfNull(nexo);
-        if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{linea.Origen} → {linea.Destino}"))
+        if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{camion.Origen} → {camion.Destino}"))
         {
             return false;
         }
 
-        return Compatible(linea.Tipologia, nexo.Tipologia)
-               && Compatible(linea.TipoVehiculo, nexo.TipoVehiculo)
-               && Compatible(linea.Carroceria, nexo.Carroceria)
-               && (linea.PesoKg is not { } peso || nexo.Peso is not { } pesoNexo || Math.Round(peso, 2) == Math.Round(pesoNexo, 2));
+        return Compatible(camion.Tipologia, nexo.Tipologia)
+               && Compatible(camion.TipoVehiculo, nexo.TipoVehiculo)
+               && Compatible(camion.Carroceria, nexo.Carroceria)
+               && (camion.PesoKg is not { } peso || nexo.Peso is not { } pesoNexo || Math.Round(peso, 2) == Math.Round(pesoNexo, 2));
     }
 
     private static bool Compatible(string? cotifly, string? nexo) =>
@@ -191,6 +208,22 @@ public static class clsDerivacionEstadoCosteo
 
         var lineas = cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, lineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase)).ToList();
         return lineas.Count == 0 ? null : lineas.Sum(l => l.Costo);
+    }
+
+    /// <summary>
+    /// Flete y retorno de Nexo de un camión (suma de las líneas de la cotización de Nexo con ese <c>lineaSolicitudId</c>; el retorno 0 si
+    /// Nexo no lo trae), o <c>null</c> si no tiene flete. El levante NO sale de Nexo: es la copia de Cotifly (decisión 4).
+    /// </summary>
+    public static (decimal Flete, decimal Retorno)? CostosCamion(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId)
+    {
+        ArgumentNullException.ThrowIfNull(foto);
+        if (string.IsNullOrWhiteSpace(lineaSolicitudNexoId) || foto.Cotizacion is not { } cotizacion)
+        {
+            return null;
+        }
+
+        var lineas = cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, lineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase)).ToList();
+        return lineas.Count == 0 ? null : (lineas.Sum(l => l.ValorFlete), lineas.Sum(l => l.ValorRetornoContenedor ?? 0m));
     }
 
     /// <summary>¿El polling deja de consultar en este estado? (<c>entregada</c> y <c>descartada</c> son terminales.)</summary>

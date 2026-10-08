@@ -26,7 +26,7 @@ public sealed class clsTextosCosteoServiceTests
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsTextosCosteoServiceTests()
     {
@@ -270,7 +270,7 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void EnUnPliegoElRespaldoEsElAsuntoDeLicitacionYLaIntroduccionMultiseccionComoLosImprimeElPdf()
     {
-        var lineas = clsCotizacionLineaSolicitud.Desde(_cotizacion.Id, [Linea("Buenaventura"), Linea("Cartagena")]);
+        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [Linea("Buenaventura"), Linea("Cartagena")]);
 
         var estandar = clsCosteoCotizacionService.TextosEstandar(_cotizacion, lineas, "Nacional");
 

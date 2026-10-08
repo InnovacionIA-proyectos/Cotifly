@@ -47,7 +47,7 @@ public interface IClsReSolicitudCosteoService
     /// asistente: una propuesta que el endpoint rechazaría nunca se arma. No valida el <c>If-Match</c> ni la TRM del día (cambian
     /// entre proponer y confirmar). <c>null</c> si pasa.
     /// </summary>
-    Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default);
+    Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsCotizacionSolicitud cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -165,7 +165,7 @@ public sealed class clsReSolicitudCosteoService(
                     folio_resultante = resultante.Folio,
                     version = resultante.Version,
                     estado_costeo = resultante.EstadoCosteo is { } estadoNuevo ? clsCodigoEnum.ACodigo(estadoNuevo) : null,
-                    costeo_id = resultante.CosteoId,
+                    costeo_id = resultante.SolicitudNexoId,
                     motivo_estado = resultante.MotivoEstadoCosteo,
                     pdf_invalidado = pdfInvalidado,
                     conexos_descartados = resultado.Valor.ConexosDescartados,
@@ -177,8 +177,8 @@ public sealed class clsReSolicitudCosteoService(
         return resultado;
     }
 
-    private async Task<(clsResultado<clsReSolicitudCosteo> Resultado, clsCotizacion? Resultante, bool PdfInvalidado)> ReSolicitarAsync(
-        clsCotizacion cotizacion,
+    private async Task<(clsResultado<clsReSolicitudCosteo> Resultado, clsCotizacionSolicitud? Resultante, bool PdfInvalidado)> ReSolicitarAsync(
+        clsCotizacionSolicitud cotizacion,
         Guid usuarioId,
         clsEntradaReSolicitudCosteo entrada,
         object entradaAuditoria,
@@ -204,13 +204,13 @@ public sealed class clsReSolicitudCosteoService(
 
         // Instantánea completa del costeo anterior: se toma antes de cualquier cambio y se guarda con la reserva.
         var v = validada.Valor;
-        var instantanea = Instantanea(cotizacion, v.Guardadas);
+        var instantanea = Instantanea(cotizacion);
         var descartados = ConexosDescartados(cotizacion);
-        var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.CosteoId);
+        var nota = NotaTrazabilidad(cotizacion.Folio, cotizacion.SolicitudNexoId);
         var (resultado, resultante, pdfInvalidado) = entrada.VersionNueva
             ? await CrearVersionAsync(cotizacion, usuarioId, v.Encabezado, v.Lineas, v.Politica, versionEsperada,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
-            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Guardadas, v.Posiciones, v.Lineas, v.Politica,
+            : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
         return (resultado.EsExitoso
             ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with { ConexosDescartados = descartados })
@@ -223,21 +223,22 @@ public sealed class clsReSolicitudCosteoService(
     /// DESCARTAN. Cotifly no los vuelve a agregar en Nexo por su cuenta (Nexo no tiene DELETE: un re-agregado automático que falle a
     /// medias, o que se repita, deja conexos duplicados o cobrados sin que el comercial los confirme); los avisa para que el comercial
     /// los agregue de nuevo cuando llegue el costeo nuevo. Devuelve sus nombres sin repetir y en orden, sin montos: los ve el comercial
-    /// en la respuesta (<c>conexos_descartados</c>) y en el resumen de la propuesta del asistente. Solo los INCLUIDOS (<c>Incluido</c>):
-    /// los que el comercial había excluido no iban en el PDF ni en el precio para el cliente, así que no se pierde nada con ellos.
+    /// en la respuesta (<c>conexos_descartados</c>) y en el resumen de la propuesta del asistente. HU-021: son las filas de conexos de las
+    /// rutas (todas van en el precio y en el PDF); un conexo migrado sin nombre se muestra con su id de Nexo. La rehace #134 cuando los
+    /// conexos viajen con la captura.
     /// </summary>
-    public static IReadOnlyList<string> ConexosDescartados(clsCotizacion cotizacion)
+    public static IReadOnlyList<string> ConexosDescartados(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        return [.. clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
-            .Where(c => c.Incluido)
-            .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? c.Categoria ?? string.Empty : c.Nombre).Trim())
+        return [.. cotizacion.RutasOrdenadas
+            .SelectMany(r => r.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal))
+            .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? c.IdServicioConexo : c.Nombre).Trim())
             .Where(n => n.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     public async Task<clsErrorDominio?> ValidarAsync(
-        Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default)
+        Guid usuarioId, clsCotizacionSolicitud cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(entrada);
@@ -256,7 +257,7 @@ public sealed class clsReSolicitudCosteoService(
     /// catálogo (G2) y las reglas de la captura sobre la combinación; en el mismo folio, las reglas sobre lo guardado.
     /// </summary>
     private async Task<clsResultado<clsReSolicitudValidada>> ValidarReglasAsync(
-        Guid usuarioId, clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken)
+        Guid usuarioId, clsCotizacionSolicitud cotizacion, clsEntradaReSolicitudCosteo entrada, CancellationToken cancellationToken)
     {
         if (cotizacion.ValidarReSolicitud(entrada.VersionNueva) is { } noPermitida)
         {
@@ -265,21 +266,19 @@ public sealed class clsReSolicitudCosteoService(
                 : noPermitida;
         }
 
-        var guardadas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var posiciones = await cotizaciones.ListarPosicionesAsync(cotizacion.Id, cancellationToken);
-        if (guardadas.Count == 0 || cotizacion.EncabezadoSolicitud is not { } encabezado)
+        if (cotizacion.Rutas.Count == 0 || cotizacion.EncabezadoSolicitud is not { } encabezado)
         {
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
                 $"La cotización {cotizacion.Folio} no tiene guardadas las líneas de la solicitud: no se puede volver a enviar a Nexo.");
         }
 
-        var politica = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
+        var politica = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
         if (politica is { Activa: false })
         {
             return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
         }
 
-        var lineas = clsEnvioCosteoService.LineasConPosiciones(guardadas, posiciones);
+        var lineas = clsEnvioCosteoService.LineasGuardadas(cotizacion);
         if (entrada.VersionNueva && entrada.DatosCarga is { } cambios)
         {
             if (lineas.Count != 1)
@@ -303,7 +302,7 @@ public sealed class clsReSolicitudCosteoService(
         // Una licitación sin cambios de carga pasa por todas las reglas, también catálogos y municipios (HU-013.11).
         if (!(entrada.VersionNueva && entrada.DatosCarga is not null) && cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
         {
-            var revalidada = await filasLicitacion.RevalidarGuardadasAsync(usuarioId, cotizacion.Folio, encabezado, lineas, Filas(guardadas), cancellationToken);
+            var revalidada = await filasLicitacion.RevalidarGuardadasAsync(usuarioId, cotizacion.Folio, encabezado, lineas, Filas(cotizacion), cancellationToken);
             if (revalidada.EsFallo)
             {
                 return revalidada.Error;
@@ -316,24 +315,20 @@ public sealed class clsReSolicitudCosteoService(
             return reglas;
         }
 
-        return new clsReSolicitudValidada(guardadas, posiciones, encabezado, lineas, politica);
+        return new clsReSolicitudValidada(encabezado, lineas, politica);
     }
 
-    /// <summary>Lo que dejó listo la validación: líneas y posiciones guardadas, y el encabezado y las líneas a enviar (con los cambios).</summary>
+    /// <summary>Lo que dejó listo la validación: el encabezado y las líneas a enviar (las rutas guardadas, con los cambios de carga).</summary>
     private sealed record clsReSolicitudValidada(
-        IReadOnlyList<clsCotizacionLineaSolicitud> Guardadas,
-        IReadOnlyList<clsCotizacionPosicion> Posiciones,
         clsEncabezadoSolicitudCosteo Encabezado,
         IReadOnlyList<clsLineaSolicitudCosteo> Lineas,
         clsMargenPolitica? Politica);
 
     /// <summary>Mismo folio: reserva (con el costeo anterior olvidado y su instantánea auditada) y vuelve a capturar en Nexo.</summary>
-    private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacion?, bool)> ReenviarAsync(
-        clsCotizacion cotizacion,
+    private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacionSolicitud?, bool)> ReenviarAsync(
+        clsCotizacionSolicitud cotizacion,
         Guid usuarioId,
         int versionEsperada,
-        IReadOnlyList<clsCotizacionLineaSolicitud> guardadas,
-        IReadOnlyList<clsCotizacionPosicion> posiciones,
         IReadOnlyList<clsLineaSolicitudCosteo> lineasValidadas,
         clsMargenPolitica? politica,
         clsEventoHerramienta? reserva,
@@ -343,13 +338,16 @@ public sealed class clsReSolicitudCosteoService(
         // Lo guardado ya se revalidó en ValidarReglasAsync (filas anteriores a una regla nueva).
         if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
         {
-            clsEnvioCosteoService.CompletarMunicipios(guardadas, lineasValidadas);
+            clsEnvioCosteoService.CompletarMunicipios(cotizacion.RutasOrdenadas, lineasValidadas);
         }
 
+        // HU-021: la solicitud y cada ruta olvidan el costeo anterior (camiones en pendiente_envio, sin costos de Nexo ni precio) y los
+        // conexos se descartan (HU-013.15: la captura nueva de Nexo empieza sin ellos; se avisan en conexos_descartados).
         cotizacion.PrepararReSolicitud();
-        foreach (var linea in guardadas)
+        foreach (var ruta in cotizacion.Rutas)
         {
-            linea.ReiniciarCosteo();
+            ruta.ConservarConexos(new HashSet<string>(StringComparer.Ordinal));
+            ruta.RecalcularTotales(cotizacion.Moneda, cotizacion.TrmAplicada);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ReSolicitud, usuarioId, cotizaciones);
@@ -359,7 +357,7 @@ public sealed class clsReSolicitudCosteoService(
         }
 
         // Reservada y confirmada: desde aquí, sin el token de la petición (como el alta, ADR-015 §3).
-        await envio.EnviarGuardadaAsync(cotizacion, guardadas, posiciones, politica, usuarioId, nota);
+        await envio.EnviarGuardadaAsync(cotizacion, politica, usuarioId, nota);
         return (await ResultadoAsync(cotizacion, versionNueva: false), cotizacion, pdfInvalidado);
     }
 
@@ -367,8 +365,8 @@ public sealed class clsReSolicitudCosteoService(
     /// Versión nueva: valida los cambios de carga (catálogo y reglas de la captura), reserva la versión de la original (de varias
     /// peticiones simultáneas con el mismo <c>If-Match</c> solo una sigue), crea la versión <c>-vN</c> y la envía.
     /// </summary>
-    private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacion?, bool)> CrearVersionAsync(
-        clsCotizacion original,
+    private async Task<(clsResultado<clsReSolicitudCosteo>, clsCotizacionSolicitud?, bool)> CrearVersionAsync(
+        clsCotizacionSolicitud original,
         Guid usuarioId,
         clsEncabezadoSolicitudCosteo encabezado,
         IReadOnlyList<clsLineaSolicitudCosteo> lineas,
@@ -392,9 +390,9 @@ public sealed class clsReSolicitudCosteoService(
             return (clsReglaPdfCosteo.Conflicto(original.Folio), null, false);
         }
 
-        IReadOnlyList<clsCotizacionLineaSolicitud> nuevasLineas = [];
-        List<clsCotizacionPosicion> nuevasPosiciones = [];
-        var creada = await folios.CrearNuevaVersionAsync<clsCotizacion>(usuarioId, original.Id, async (folio, ct) =>
+        var lineaNegocioId = original.PrimeraRuta?.LineaNegocioId ?? politica?.Id;
+        var filas = Filas(original);
+        var creada = await folios.CrearNuevaVersionAsync<clsCotizacionSolicitud>(usuarioId, original.Id, async (folio, ct) =>
         {
             var version = original.CrearVersion(folio, moneda.Valor.TrmAplicada);
             if (version.EsFallo)
@@ -402,29 +400,20 @@ public sealed class clsReSolicitudCosteoService(
                 return version.Error;
             }
 
+            // HU-021: la versión nueva copia las rutas (con los cambios de carga), sus mercancías y un camión por ruta; los conexos y el
+            // costeo empiezan de cero, y el margen negociado de cada ruta se conserva.
             var nueva = version.Valor;
-            if (lineas.Count == 1)
+            if (lineas.Count == 1 && original.TipoSolicitud != TipoSolicitud.Licitacion)
             {
-                nueva.RegistrarSolicitudCosteo(clsSolicitudCosteo.Desde(encabezado, lineas[0]));
+                nueva.RegistrarSolicitudCosteo(clsSolicitudCosteo.Desde(encabezado, lineas[0]), lineaNegocioId);
             }
             else
             {
-                nueva.RegistrarSolicitudLicitacion(encabezado);
+                nueva.RegistrarSolicitudLicitacion(encabezado, lineas, filas.Count == lineas.Count ? filas : null, lineaNegocioId);
             }
 
-            nuevasLineas = clsCotizacionLineaSolicitud.Desde(nueva.Id, lineas);
-            nuevasPosiciones = [];
-            var orden = 1;
-            for (var i = 0; i < nuevasLineas.Count; i++)
-            {
-                var deLinea = clsCotizacionPosicion.Desde(nueva.Id, lineas[i].Posiciones, nuevasLineas[i].Id, orden);
-                nuevasPosiciones.AddRange(deLinea);
-                orden += deLinea.Count;
-            }
-
+            nueva.CopiarMargenesNegociadosDe(original);
             cotizaciones.Agregar(nueva);
-            cotizaciones.AgregarLineas(nuevasLineas);
-            cotizaciones.AgregarPosiciones(nuevasPosiciones);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return nueva;
         }, cancellationToken);
@@ -434,19 +423,19 @@ public sealed class clsReSolicitudCosteoService(
         }
 
         // Confirmada: desde aquí, sin el token de la petición (como el alta, ADR-015 §3).
-        await envio.EnviarGuardadaAsync(creada.Valor, nuevasLineas, nuevasPosiciones, politica, usuarioId, nota);
+        await envio.EnviarGuardadaAsync(creada.Valor, politica, usuarioId, nota);
         return (await ResultadoAsync(creada.Valor, versionNueva: true), creada.Valor, false);
     }
 
-    /// <summary>Filas del pliego de las líneas guardadas, en el orden en que viajan a Nexo.</summary>
-    private static IReadOnlyList<int?> Filas(IReadOnlyList<clsCotizacionLineaSolicitud> guardadas) =>
-        [.. guardadas.OrderBy(l => l.Orden).Select(l => l.FilaOrigen)];
+    /// <summary>Filas del pliego de las rutas guardadas, en el orden en que viajan a Nexo.</summary>
+    private static IReadOnlyList<int?> Filas(clsCotizacionSolicitud cotizacion) =>
+        [.. cotizacion.RutasOrdenadas.Select(r => r.RutaOrigenIndice)];
 
     /// <summary>
     /// Sube la versión de negocio y guarda, con la instantánea de auditoría, en la transacción del control de versión. <c>false</c> si
     /// otra petición cambió la cotización entretanto (nada se escribe, ni siquiera la instantánea).
     /// </summary>
-    private async Task<bool> ReservarAsync(clsCotizacion cotizacion, int versionEsperada, clsEventoHerramienta? reserva, CancellationToken cancellationToken)
+    private async Task<bool> ReservarAsync(clsCotizacionSolicitud cotizacion, int versionEsperada, clsEventoHerramienta? reserva, CancellationToken cancellationToken)
     {
         if (cotizacion.VersionNegocio == versionEsperada)
         {
@@ -475,39 +464,48 @@ public sealed class clsReSolicitudCosteoService(
     }
 
     /// <summary>
-    /// Instantánea completa del costeo (lo que se pierde al re-solicitar en el mismo folio): estado, ids de Nexo, costo, precio, margen
-    /// (aplicado, sugerido, política, origen y método), conexos, cada línea (id de Nexo, estado, costo y precio), PDF y versión.
+    /// Instantánea completa del costeo (lo que se pierde al re-solicitar en el mismo folio): estado, ids de Nexo, precio, moneda y, por
+    /// ruta (HU-021), su margen (aplicado, sugeridos, origen y método), sus totales de costo, su precio, sus conexos y cada camión (id de
+    /// Nexo, estado y costos); PDF y versión.
     /// </summary>
-    public static object Instantanea(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas)
+    public static object Instantanea(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
         return new
         {
             estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             motivo_estado = cotizacion.MotivoEstadoCosteo,
-            costeo_id = cotizacion.CosteoId,
+            costeo_id = cotizacion.SolicitudNexoId,
             cotizacion_nexo_id = cotizacion.CotizacionNexoId,
-            costo = cotizacion.Costo,
+            costo = cotizacion.CostoFinal,
             precio_final = cotizacion.PrecioFinal,
             moneda = cotizacion.Moneda,
             trm_aplicada = cotizacion.TrmAplicada,
-            margen_aplicado = cotizacion.MargenAplicado,
-            margen_sugerido = cotizacion.MargenSugerido,
-            margen_politica = cotizacion.MargenPolitica,
-            origen_margen = cotizacion.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-            origen_margen_sugerido = cotizacion.OrigenMargenSugerido is { } origenSugerido ? clsCodigoEnum.ACodigo(origenSugerido) : null,
-            metodo_calculo = cotizacion.MetodoCalculo,
-            servicios_conexos = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
-                .Select(c => new { c.Id, c.Nombre, c.Categoria, c.Cantidad, c.Costo, c.Precio, c.Incluido }).ToList(),
             costeo_listo_at = cotizacion.CosteoListoAt,
-            lineas = lineas.OrderBy(l => l.Orden).Select(l => new
+            rutas = cotizacion.RutasOrdenadas.Select(r => new
             {
-                orden = l.Orden,
-                linea_solicitud_nexo_id = l.LineaSolicitudNexoId,
-                estado_costeo = l.EstadoCosteo is { } estadoLinea ? clsCodigoEnum.ACodigo(estadoLinea) : null,
-                costo = l.Costo,
-                precio_final = l.PrecioFinal,
+                orden = r.Orden,
+                estado_costeo = r.EstadoCosteo is { } estadoRuta ? clsCodigoEnum.ACodigo(estadoRuta) : null,
+                margen_aplicado = r.MargenAplicado,
+                margen_politica_sugerido = r.MargenPoliticaSugerido,
+                margen_sap_sugerido = r.MargenSAPSugerido,
+                origen_margen = r.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
+                metodo_calculo = r.MetodoCalculo,
+                costo_fletes_total = r.CostoFletesTotal,
+                costo_retorno_contenedor_total = r.CostoRetornoContenedorTotal,
+                costo_levante_contenedor_total = r.CostoLevanteContenedorTotal,
+                costo_servicios_conexos = r.CostoServiciosConexos,
+                costo_final = r.CostoFinal,
+                precio_final_linea = r.PrecioFinalLinea,
+                servicios_conexos = r.Conexos.Select(c => new { id = c.IdServicioConexo, nombre = c.Nombre, precio = c.Precio, cantidad = c.Cantidad }).ToList(),
+                camiones = r.VehiculosOrdenados.Select(v => new
+                {
+                    linea_solicitud_nexo_id = v.LineaSolicitudNexoId,
+                    estado_costeo = v.EstadoCosteo is { } estadoCamion ? clsCodigoEnum.ACodigo(estadoCamion) : null,
+                    costo_flete = v.CostoFlete,
+                    costo_retorno_contenedor = v.CostoRetornoContenedor,
+                    costo_levante_contenedor = v.CostoLevanteContenedor,
+                }).ToList(),
             }).ToList(),
             pdf = cotizacion.PdfPath,
             pdf_desactualizado = cotizacion.PdfDesactualizado,
@@ -515,7 +513,7 @@ public sealed class clsReSolicitudCosteoService(
         };
     }
 
-    private async Task<clsResultado<clsReSolicitudCosteo>> ResultadoAsync(clsCotizacion cotizacion, bool versionNueva) =>
+    private async Task<clsResultado<clsReSolicitudCosteo>> ResultadoAsync(clsCotizacionSolicitud cotizacion, bool versionNueva) =>
         new clsReSolicitudCosteo(
             versionNueva,
             await misCotizaciones.ResumirAsync(cotizacion, CancellationToken.None),

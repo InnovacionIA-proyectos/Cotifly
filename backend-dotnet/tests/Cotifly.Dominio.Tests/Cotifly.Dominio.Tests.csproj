@@ -2,4 +2,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Cotifly.Dominio\Cotifly.Dominio.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Solicitudes de prueba del agregado de HU-021 (solo tipos del dominio). -->
+    <Compile Include="..\Comun\clsSolicitudCosteoMuestra.cs" Link="Comun\clsSolicitudCosteoMuestra.cs" />
+    <Compile Include="..\Comun\clsCotizacionMuestra.cs" Link="Comun\clsCotizacionMuestra.cs" />
+  </ItemGroup>
 </Project>

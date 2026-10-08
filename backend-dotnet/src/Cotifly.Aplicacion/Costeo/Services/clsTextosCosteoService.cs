@@ -78,10 +78,9 @@ public sealed class clsTextosCosteoService(
                 $"Los textos de la cotización {cotizacion.Folio} los editó el comercial: confirma para reemplazarlos (sobrescribir=true).");
         }
 
-        var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, lineas, linea?.LineaNegocio);
-        var redactado = await redaccion.RedactarAsync(Contexto(cotizacion, linea?.LineaNegocio, lineas), estandar, cancellationToken);
+        var linea = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
+        var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, linea?.LineaNegocio);
+        var redactado = await redaccion.RedactarAsync(Contexto(cotizacion, linea?.LineaNegocio), estandar, cancellationToken);
         var textos = new clsTextosCotizacion(redactado.Asunto, redactado.Introduccion, redactado.Fuente, Editado: false, tiempo.GetUtcNow());
         var pdfInvalidado = cotizacion.PdfPath is not null;
         var resultado = await GuardarAsync(cotizacion, textos, usuarioId, versionEsperada, cancellationToken);
@@ -140,7 +139,7 @@ public sealed class clsTextosCosteoService(
     }
 
     private async Task<(clsResultado<clsTextosGuardados> Resultado, bool PdfInvalidado)> EditarAsync(
-        clsCotizacion cotizacion, Guid usuarioId, string? asunto, string? introduccion, int versionEsperada, CancellationToken cancellationToken)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, string? asunto, string? introduccion, int versionEsperada, CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
         {
@@ -173,7 +172,7 @@ public sealed class clsTextosCosteoService(
 
     /// <summary>Guarda los textos, invalida el PDF vigente (queda en el historial) y sube la versión, con el control de versión.</summary>
     private async Task<clsResultado<clsTextosGuardados>> GuardarAsync(
-        clsCotizacion cotizacion, clsTextosCotizacion textos, Guid usuarioId, int versionEsperada, CancellationToken cancellationToken)
+        clsCotizacionSolicitud cotizacion, clsTextosCotizacion textos, Guid usuarioId, int versionEsperada, CancellationToken cancellationToken)
     {
         cotizacion.RegistrarTextos(clsTextosCotizacionJson.Escribir(textos));
         clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.Textos, usuarioId, cotizaciones);
@@ -184,26 +183,22 @@ public sealed class clsTextosCosteoService(
     }
 
     /// <summary>
-    /// Contexto de la IA desde la cotización (ADR-018 §2a): cliente, línea, rutas (las líneas de la solicitud, o el origen y destino de
-    /// la cotización), tipo de vehículo, nombres de los conexos incluidos y moneda, cada texto recortado a
+    /// Contexto de la IA desde la cotización (ADR-018 §2a): cliente, línea, rutas (origen y destino de cada ruta, HU-021), tipos de
+    /// vehículo de sus camiones, nombres de los conexos de las rutas y moneda, cada texto recortado a
     /// <see cref="clsContextoRedaccion.LargoMaximoCampo"/>. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
     /// el comercial.
     /// </summary>
-    public static clsContextoRedaccion Contexto(
-        clsCotizacion cotizacion, string? lineaNegocio, IReadOnlyList<clsCotizacionLineaSolicitud> lineas)
+    public static clsContextoRedaccion Contexto(clsCotizacionSolicitud cotizacion, string? lineaNegocio)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
-        var ordenadas = lineas.OrderBy(l => l.Orden).ToList();
-        List<clsRutaRedaccion> rutas = ordenadas.Count > 0
-            ? [.. ordenadas.Select(l => new clsRutaRedaccion(Recortar(l.Origen)!, Recortar(l.Destino)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)]
-            : cotizacion.Origen is { } origen && cotizacion.Destino is { } destino ? [new clsRutaRedaccion(Recortar(origen)!, Recortar(destino)!)] : [];
-        var vehiculos = ordenadas.Count > 0
-            ? ordenadas.Select(l => l.TipoVehiculo).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList()
-            : cotizacion.TipoVehiculo is { } vehiculo ? [vehiculo] : [];
-        var conexos = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
-            .Where(s => s.Incluido)
-            .Select(s => Recortar(s.Nombre ?? s.Categoria)!)
+        var ordenadas = cotizacion.RutasOrdenadas;
+        List<clsRutaRedaccion> rutas = [.. ordenadas
+            .Where(r => !string.IsNullOrWhiteSpace(r.OrigenNombre) && !string.IsNullOrWhiteSpace(r.DestinoNombre))
+            .Select(r => new clsRutaRedaccion(Recortar(r.OrigenNombre)!, Recortar(r.DestinoNombre)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)];
+        var vehiculos = ordenadas.SelectMany(r => r.VehiculosOrdenados).Select(v => v.TipoVehiculo).OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var conexos = ordenadas.SelectMany(r => r.Conexos)
+            .Select(s => Recortar(s.Nombre ?? s.IdServicioConexo)!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         return new clsContextoRedaccion(
@@ -212,7 +207,7 @@ public sealed class clsTextosCosteoService(
             rutas,
             Recortar(vehiculos.Count == 0 ? null : string.Join(", ", vehiculos)),
             conexos,
-            cotizacion.Moneda ?? clsCotizacion.MonedaPesos);
+            cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos);
     }
 
     private static string? Recortar(string? texto)
@@ -221,7 +216,7 @@ public sealed class clsTextosCosteoService(
         return limpio is { Length: > clsContextoRedaccion.LargoMaximoCampo } ? limpio[..clsContextoRedaccion.LargoMaximoCampo] : limpio;
     }
 
-    private async Task<clsCotizacion?> PropiaAsync(Guid usuarioId, string folio, CancellationToken cancellationToken) =>
+    private async Task<clsCotizacionSolicitud?> PropiaAsync(Guid usuarioId, string folio, CancellationToken cancellationToken) =>
         usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);

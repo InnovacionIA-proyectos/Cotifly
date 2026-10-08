@@ -26,7 +26,7 @@ public static class clsReglaPdfCosteo
     /// <c>PDF_YA_ENVIADO</c> con su <c>detalle</c> (<c>accion = nueva_version</c>, <c>metodo</c>, <c>endpoint</c> y <c>cuerpo</c> con
     /// <paramref name="motivoVersion"/> y <c>nueva_version = true</c>) si la cotización ya se entregó al cliente; si no, <c>null</c>.
     /// </summary>
-    public static clsErrorDominio? Validar(clsCotizacion cotizacion, string motivoVersion)
+    public static clsErrorDominio? Validar(clsCotizacionSolicitud cotizacion, string motivoVersion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentException.ThrowIfNullOrWhiteSpace(motivoVersion);
@@ -53,7 +53,7 @@ public static class clsReglaPdfCosteo
     /// Invalida el PDF vigente (<c>pdf_url = null</c>, <c>pdf_desactualizado = true</c>) y deja el anterior en el historial con la
     /// acción y el comercial. Devuelve <c>true</c> si había PDF. Se escribe al guardar la unidad de trabajo.
     /// </summary>
-    public static bool InvalidarPdf(clsCotizacion cotizacion, MotivoInvalidacionPdf motivo, Guid usuarioId, IClsCotizacionRepository cotizaciones)
+    public static bool InvalidarPdf(clsCotizacionSolicitud cotizacion, MotivoInvalidacionPdf motivo, Guid usuarioId, IClsCotizacionRepository cotizaciones)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(cotizaciones);

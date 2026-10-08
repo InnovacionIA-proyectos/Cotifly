@@ -158,7 +158,7 @@ public sealed class clsPdfCorreoIntegracionTests : clsPruebaIntegracion
     {
         var folio = FolioUnico();
         var ruta = await ConsultarAsync(s => s.GetRequiredService<IClsAlmacenPdf>().GuardarNuevoAsync(folio + ".pdf", "%PDF-1.4 prueba"u8.ToArray(), Ct));
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = usuario, PdfPath = ruta }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = usuario, PdfPath = ruta }).Valor;
         await GuardarAsync(cotizacion);
         return folio;
     }

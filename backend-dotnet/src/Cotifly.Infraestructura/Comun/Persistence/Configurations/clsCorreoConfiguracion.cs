@@ -31,7 +31,7 @@ internal sealed class clsCorreoConfiguracion : IEntityTypeConfiguration<clsCorre
         builder.Navigation(c => c.Destinatarios).UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.HasIndex(c => new { c.CotizacionId, c.CreatedAt }).IsDescending(false, true).HasDatabaseName("ix_correos_cotizacionId_createdAt");
-        builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(c => c.CotizacionId)
+        builder.HasOne<clsCotizacionSolicitud>().WithMany().HasForeignKey(c => c.CotizacionId)
             .HasConstraintName("fk_correos_cotizacionId").OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(c => c.ConfirmadoPor)
             .HasConstraintName("fk_correos_confirmadoPor").OnDelete(DeleteBehavior.NoAction);

@@ -16,7 +16,6 @@ public sealed record clsSolicitudCosteo
     public const int LargoCatalogo = 100;
     public const int LargoCorto = 50;
     public const int LargoClaseContenedor = 20;
-    public const int LargoReferencia = 200;
     public const int LargoNotas = 2000;
     public const int MaximoPosiciones = 200;
     public const decimal MaximoHoras = 240m;
@@ -34,8 +33,6 @@ public sealed record clsSolicitudCosteo
 
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
-    public decimal? ValorEstimado { get; init; }
-    public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
@@ -74,7 +71,6 @@ public sealed record clsSolicitudCosteo
         var error = clsValidacion.Primero(
             clsValidacion.Requerido(CodigoError, "origen", Origen, LargoCiudad),
             clsValidacion.Requerido(CodigoError, "destino", Destino, LargoCiudad),
-            clsValidacion.LargoMaximo(CodigoError, "referencia", Referencia, LargoReferencia),
             clsValidacion.LargoMaximo(CodigoError, "notas", Notas, LargoNotas),
             IdMunicipio("origen_municipio_id", OrigenMunicipioId),
             IdMunicipio("destino_municipio_id", DestinoMunicipioId),
@@ -85,7 +81,6 @@ public sealed record clsSolicitudCosteo
             clsValidacion.LargoMaximo(CodigoError, "clase_contenedor", ClaseContenedor, LargoClaseContenedor),
             clsValidacion.LargoMaximo(CodigoError, "ciudad_devolucion_contenedor", CiudadDevolucionContenedor, LargoCiudad),
             clsValidacion.LargoMaximo(CodigoError, "ciudad_levante_contenedor", CiudadLevanteContenedor, LargoCiudad),
-            Rango("valor_estimado", ValorEstimado, 0m, MaximoValor),
             Rango("horas_cargue", HorasCargue, 0m, MaximoHoras),
             Rango("horas_descargue", HorasDescargue, 0m, MaximoHoras),
             Rango("valor_aprovisionamiento", ValorAprovisionamiento, 0m, MaximoValor),
@@ -120,8 +115,6 @@ public sealed record clsSolicitudCosteo
     {
         Tipo = Tipo,
         Deadline = Deadline,
-        ValorEstimado = ValorEstimado,
-        Referencia = Referencia,
         HorasCargue = HorasCargue,
         HorasDescargue = HorasDescargue,
         Notas = Notas,
@@ -160,8 +153,6 @@ public sealed record clsSolicitudCosteo
         {
             Tipo = encabezado.Tipo,
             Deadline = encabezado.Deadline,
-            ValorEstimado = encabezado.ValorEstimado,
-            Referencia = encabezado.Referencia,
 
             // G5 (HU-013.11): las horas de la línea, si las trae, son las que viajan a Nexo; si no, las del encabezado.
             HorasCargue = linea.HorasCargue ?? encabezado.HorasCargue,
@@ -231,7 +222,12 @@ public sealed record clsSolicitudCosteo
 }
 
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
-public sealed record clsPosicionCarga(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg)
+/// <remarks>
+/// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c> e <paramref name="IdTipoMercancia"/> es el tipo del catálogo del
+/// cubicador (HU-021: obligatorio cuando la captura lo pida, #132).
+/// </remarks>
+public sealed record clsPosicionCarga(
+    string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null)
 {
     public const int LargoDescripcion = 200;
     public const int CantidadMaxima = 100_000;

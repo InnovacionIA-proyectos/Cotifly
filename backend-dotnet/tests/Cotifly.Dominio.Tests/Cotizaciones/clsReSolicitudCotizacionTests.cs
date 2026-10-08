@@ -23,7 +23,7 @@ public sealed class clsReSolicitudCotizacionTests
     public void EntregadaOConErrorDeEnvioSePermiteEnElMismoFolio()
     {
         var entregada = Enviada();
-        entregada.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "cot-1", DateTimeOffset.UtcNow, null);
+        Consultar(entregada, EstadoCosteo.Entregada, "cot-1");
         var conError = Enviada();
         conError.RegistrarErrorEnvioCosteo("Nexo no respondió (HTTP 503)");
 
@@ -39,7 +39,7 @@ public sealed class clsReSolicitudCotizacionTests
     public void EnOtrosEstadosNoSePermite(EstadoCosteo estado, bool versionNueva)
     {
         var cotizacion = Enviada();
-        cotizacion.RegistrarConsultaCosteo(estado, null, DateTimeOffset.UtcNow, null);
+        Consultar(cotizacion, estado, null);
 
         cotizacion.ValidarReSolicitud(versionNueva)!.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
     }
@@ -50,7 +50,7 @@ public sealed class clsReSolicitudCotizacionTests
     public void LaVersionNuevaSePermiteSinUnCosteoEnCurso(EstadoCosteo estado)
     {
         var cotizacion = Enviada();
-        cotizacion.RegistrarConsultaCosteo(estado, null, DateTimeOffset.UtcNow, null);
+        Consultar(cotizacion, estado, null);
 
         cotizacion.ValidarReSolicitud(versionNueva: true).Should().BeNull();
     }
@@ -58,7 +58,7 @@ public sealed class clsReSolicitudCotizacionTests
     [Fact]
     public void UnaCotizacionSinFormularioDeCosteoNoSeReSolicita()
     {
-        var chat = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-05102026-001" }).Valor;
+        var chat = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-05102026-001" }).Valor;
 
         chat.ValidarReSolicitud(true)!.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
     }
@@ -77,7 +77,7 @@ public sealed class clsReSolicitudCotizacionTests
     public void YaEnviadaOConResultadoElMismoFolioEsPdfYaEnviadoPeroLaVersionNuevaSePermite()
     {
         var enviada = Enviada();
-        enviada.RegistrarConsultaCosteo(EstadoCosteo.Entregada, null, DateTimeOffset.UtcNow, null);
+        Consultar(enviada, EstadoCosteo.Entregada, null);
         enviada.RegistrarEnvio();
         var conResultado = Enviada();
         conResultado.VencerPollingCosteo("72 h");
@@ -93,17 +93,20 @@ public sealed class clsReSolicitudCotizacionTests
     public void PrepararLaReSolicitudOlvidaElCosteoAnteriorYLaDejaPendienteDeEnvio()
     {
         var cotizacion = Enviada();
-        cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "cot-1", DateTimeOffset.UtcNow, null);
-        cotizacion.RegistrarPrecioCosteo(2_550_000m, 3_000_000m, "[]", DateTimeOffset.UtcNow);
+        Consultar(cotizacion, EstadoCosteo.Entregada, "cot-1");
+        Costear(cotizacion, 2_550_000m);
+        cotizacion.PrecioFinal.Should().Be(3_000_000m);
 
         cotizacion.PrepararReSolicitud();
 
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
-        cotizacion.CosteoId.Should().BeNull();
+        cotizacion.SolicitudNexoId.Should().BeNull();
         cotizacion.CotizacionNexoId.Should().BeNull();
-        cotizacion.Costo.Should().BeNull();
+        cotizacion.CostoFinal.Should().BeNull();
         cotizacion.PrecioFinal.Should().BeNull();
-        cotizacion.ServiciosConexos.Should().BeNull();
+        var ruta = cotizacion.PrimeraRuta!;
+        (ruta.PrecioFinalLinea, ruta.CostoFletesTotal, ruta.EstadoCosteo).Should().Be(((decimal?)null, (decimal?)null, EstadoCosteo.PendienteEnvio));
+        ruta.Vehiculos.Should().OnlyContain(v => v.LineaSolicitudNexoId == null && v.CostoFlete == null && v.EstadoCosteo == EstadoCosteo.PendienteEnvio);
         cotizacion.CosteoListoAt.Should().BeNull();
         cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
         cotizacion.Folio.Should().Be("PCN-900555111-AP-05102026-001");
@@ -114,8 +117,8 @@ public sealed class clsReSolicitudCotizacionTests
     public void LaVersionNuevaCopiaLaIdentidadYEmpiezaSinCosteo()
     {
         var original = Enviada();
-        original.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "cot-1", DateTimeOffset.UtcNow, null);
-        original.RegistrarPrecioCosteo(2_550_000m, 3_000_000m, null, DateTimeOffset.UtcNow);
+        Consultar(original, EstadoCosteo.Entregada, "cot-1");
+        Costear(original, 2_550_000m);
         original.AsignarPdf("PCN.pdf");
         original.RegistrarEnvio();
 
@@ -125,10 +128,10 @@ public sealed class clsReSolicitudCotizacionTests
         nueva.Version.Should().Be(2);
         nueva.NitCliente.Should().Be(original.NitCliente);
         nueva.ClienteNombre.Should().Be(original.ClienteNombre);
-        nueva.LineaNegocioId.Should().Be(original.LineaNegocioId);
         nueva.UsuarioId.Should().Be(original.UsuarioId);
         nueva.Moneda.Should().Be("COP");
-        nueva.Costo.Should().BeNull();
+        nueva.Rutas.Should().BeEmpty("las rutas las registra el caso de uso (HU-021)");
+        nueva.PrecioFinal.Should().BeNull();
         nueva.PdfPath.Should().BeNull();
         nueva.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
         nueva.Id.Should().NotBe(original.Id);
@@ -137,31 +140,31 @@ public sealed class clsReSolicitudCotizacionTests
     [Fact]
     public void LaVersionNuevaCopiaElMargenNegociadoYRefrescarSoloCambiaElSugerido()
     {
-        var original = clsCotizacion.Crear(new clsDatosCotizacion
-        {
-            Folio = "PCN-900555111-AP-05102026-001",
-            MargenPolitica = 0.15m,
-            MargenAplicado = 0.22m,
-            OrigenMargen = Cotifly.Dominio.Margen.OrigenMargen.Negociado,
-            MetodoCalculo = "margen",
-        }).Valor;
+        var original = Enviada();
+        Costear(original, 2_550_000m);
+        original.AplicarMargenNegociado(0.22m, DateTimeOffset.UnixEpoch);
 
         var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor, 0m).Valor;
-        nueva.RefrescarMargenSugerido(0.15m, 0.18m, Cotifly.Dominio.Margen.OrigenMargen.SapTm);
+        nueva.RegistrarSolicitudCosteo(Solicitud(), 3);
+        nueva.CopiarMargenesNegociadosDe(original);
+        var ruta = nueva.PrimeraRuta!;
+        ruta.RefrescarMargenSugerido(0.15m, 0.18m, Cotifly.Dominio.Margen.OrigenMargen.SapTm);
 
         nueva.TieneMargenNegociado.Should().BeTrue();
-        nueva.MargenAplicado.Should().Be(0.22m);
-        nueva.OrigenMargen.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.Negociado);
-        nueva.MargenSugerido.Should().Be(0.18m);
-        nueva.OrigenMargenSugerido.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.SapTm);
-        Enviada().CrearVersion(clsFolio.Desde("PCN-900555111-AP-05102026-001").Valor.ConVersion(2).Valor, 0m).Valor.MargenAplicado
-            .Should().BeNull("sin margen negociado, la versión resuelve el suyo al enviar");
+        ruta.MargenAplicado.Should().Be(0.22m);
+        ruta.OrigenMargen.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.Negociado);
+        ruta.SugeridoVigente.Should().Be(0.18m);
+        ruta.OrigenMargenSugerido.Should().Be(Cotifly.Dominio.Margen.OrigenMargen.SapTm);
+        var sinNegociar = Enviada().CrearVersion(clsFolio.Desde("PCN-900555111-AP-05102026-001").Valor.ConVersion(2).Valor, 0m).Valor;
+        sinNegociar.RegistrarSolicitudCosteo(Solicitud(), 3);
+        sinNegociar.CopiarMargenesNegociadosDe(Enviada());
+        sinNegociar.PrimeraRuta!.MargenAplicado.Should().BeNull("sin margen negociado, la versión resuelve el suyo al enviar");
     }
 
     [Fact]
     public void LaVersionNuevaEnUsdCopiaLaMonedaYTomaLaTrmDelDiaSinTocarLaOriginal()
     {
-        var original = clsCotizacion.Crear(new clsDatosCotizacion
+        var original = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-900555111-AP-05102026-001",
             Moneda = "USD",
@@ -197,7 +200,7 @@ public sealed class clsReSolicitudCotizacionTests
     }
 
     [Fact]
-    public void LasPosicionesNuevasReemplazanTodasYLasHorasVanAlEncabezado()
+    public void LasPosicionesNuevasReemplazanTodasYLasHorasVanALaLineaYAlEncabezado()
     {
         var solicitud = Solicitud();
         var cambios = new clsCambiosCarga
@@ -207,7 +210,9 @@ public sealed class clsReSolicitudCotizacionTests
             HorasCargue = 8m,
         };
 
-        cambios.Aplicar(solicitud.ALinea()).Posiciones.Should().ContainSingle().Which.Descripcion.Should().Be("Caja");
+        var linea = cambios.Aplicar(solicitud.ALinea());
+        linea.Posiciones.Should().ContainSingle().Which.Descripcion.Should().Be("Caja");
+        linea.HorasCargue.Should().Be(8m, "HU-021: las horas son de la ruta");
         var encabezado = cambios.Aplicar(solicitud.Encabezado);
         encabezado.HorasCargue.Should().Be(8m);
         encabezado.HorasDescargue.Should().Be(solicitud.HorasDescargue);
@@ -227,18 +232,37 @@ public sealed class clsReSolicitudCotizacionTests
         Posiciones = [new clsPosicionCarga("Estiba", 20, 120m, 100m, 150m, 1425m)],
     };
 
-    private static clsCotizacion Enviada()
+    private static clsCotizacionSolicitud Enviada()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-900555111-AP-05102026-001",
             NitCliente = "900555111",
             ClienteNombre = "CLIENTE S.A.S.",
-            LineaNegocioId = 3,
             UsuarioId = Guid.NewGuid(),
         }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(Solicitud());
+        cotizacion.RegistrarSolicitudCosteo(Solicitud(), 3);
         cotizacion.RegistrarEnvioCosteo("sol-1", false, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         return cotizacion;
+    }
+
+    /// <summary>Como el polling (HU-021): el estado llega a cada camión y la solicitud resume a sus rutas.</summary>
+    private static void Consultar(clsCotizacionSolicitud cotizacion, EstadoCosteo estado, string? cotizacionNexoId)
+    {
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            ruta.RegistrarEstadoCamiones(estado);
+        }
+
+        cotizacion.RegistrarConsultaCosteo(estado, cotizacionNexoId, null);
+    }
+
+    /// <summary>Margen de la política (15 %) y el flete de Nexo en el camión; la ruta y la solicitud quedan con precio.</summary>
+    private static void Costear(clsCotizacionSolicitud cotizacion, decimal flete)
+    {
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        ruta.Vehiculos[0].RegistrarCosteo(cotizacion.EstadoCosteo ?? EstadoCosteo.Entregada, flete, null);
+        cotizacion.RecalcularTotales(DateTimeOffset.UnixEpoch);
     }
 }

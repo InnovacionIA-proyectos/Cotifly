@@ -156,7 +156,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
 
     private Task GuardarAsync(string nombreUsuario, string folio, int? lineaNegocioId, decimal precio)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             Version = VersionDelFolio(folio),
@@ -173,14 +173,14 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
     }
 
     /// <summary>Marca como ganada con el caso de uso de seguimiento (#11); <c>null</c> si no es del comercial.</summary>
-    private async Task<clsCotizacion?> MarcarGanadaAsync(string nombreUsuario, string folio)
+    private async Task<clsCotizacionSolicitud?> MarcarGanadaAsync(string nombreUsuario, string folio)
     {
         var resultado = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsSeguimientoService>()
             .MarcarAsync(Usuario(nombreUsuario), folio, true, null));
         return resultado.EsExitoso ? resultado.Valor : null;
     }
 
-    private async Task<clsCotizacion> Leer(string folio)
+    private async Task<clsCotizacionSolicitud> Leer(string folio)
     {
         var cotizacion = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio));
         cotizacion.Should().NotBeNull();

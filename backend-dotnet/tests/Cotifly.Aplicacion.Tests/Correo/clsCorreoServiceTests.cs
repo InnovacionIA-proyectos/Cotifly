@@ -36,14 +36,14 @@ public sealed class clsCorreoServiceTests : IDisposable
     private readonly clsOpcionesCorreo _opciones = new() { Habilitado = true };
     private readonly clsLoggerFalso<clsCorreoService> _logger = new();
     private readonly clsUsuarioWeb _comercial;
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
     private readonly List<clsCorreo> _registrados = [];
     private clsMensajeCorreo? _enviado;
 
     public clsCorreoServiceTests()
     {
         _comercial = clsUsuarioWeb.Crear("nvargas", "Nathaly Vargas", "nvargas@boterosoto.com.co", null, _reloj.AhoraUtc).Valor;
-        _cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-C1",
             UsuarioId = _comercial.Id,

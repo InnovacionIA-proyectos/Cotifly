@@ -104,9 +104,9 @@ public sealed class clsPrecioCosteoServiceTests
         cotizacion.PrecioFinal.Should().Be(2_000_000m);
     }
 
-    private static clsCotizacion Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo, bool conMargen = true)
+    private static clsCotizacionSolicitud Cotizacion(EstadoCosteo estado = EstadoCosteo.Autocosteo, bool conMargen = true)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-009" }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-009" }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _ahora, _ahora);
         if (conMargen)

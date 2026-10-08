@@ -55,9 +55,9 @@ public sealed record clsErrorFilaLicitacion(int? Indice, int? Fila, string Campo
 /// Resultado de crear una licitación: la cotización creada, o un error de negocio (<see cref="Error"/>), o el reporte por fila
 /// (<see cref="Errores"/>, con <see cref="Error"/> = <c>LICITACION_INVALIDA</c>). Nada queda guardado si hay error.
 /// </summary>
-public sealed record clsResultadoLicitacion(clsCotizacion? Cotizacion, Dominio.Comun.clsErrorDominio? Error, IReadOnlyList<clsErrorFilaLicitacion> Errores)
+public sealed record clsResultadoLicitacion(clsCotizacionSolicitud? Cotizacion, Dominio.Comun.clsErrorDominio? Error, IReadOnlyList<clsErrorFilaLicitacion> Errores)
 {
-    public static clsResultadoLicitacion Exito(clsCotizacion cotizacion) => new(cotizacion, null, []);
+    public static clsResultadoLicitacion Exito(clsCotizacionSolicitud cotizacion) => new(cotizacion, null, []);
 
     public static clsResultadoLicitacion Fallo(Dominio.Comun.clsErrorDominio error) => new(null, error, []);
 

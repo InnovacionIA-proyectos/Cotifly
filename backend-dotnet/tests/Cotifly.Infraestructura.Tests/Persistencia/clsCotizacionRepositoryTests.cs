@@ -220,7 +220,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         {
             var repo = s.GetRequiredService<IClsCotizacionRepository>();
             repo.Agregar(cotizacion);
-            repo.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones));
+            repo.AgregarPosiciones(clsMercancia.Desde(cotizacion.Id, solicitud.Posiciones));
             return Task.CompletedTask;
         });
 
@@ -312,7 +312,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     [Fact]
     public async Task UnaCotizacionEnDolaresGuardaLaTrmConCuatroDecimales()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), Moneda = "USD", TrmAplicada = 4123.4567m }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico(), Moneda = "USD", TrmAplicada = 4123.4567m }).Valor;
         await GuardarAsync(cotizacion);
 
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));

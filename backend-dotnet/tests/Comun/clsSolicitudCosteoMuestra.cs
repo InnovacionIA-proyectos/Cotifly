@@ -11,8 +11,6 @@ public static class clsSolicitudCosteoMuestra
     {
         Tipo = TipoSolicitud.Spot,
         Deadline = Deadline,
-        ValorEstimado = 12_000_000m,
-        Referencia = "OC-7788",
         HorasCargue = 4m,
         HorasDescargue = 6.5m,
         Origen = "Buenaventura",

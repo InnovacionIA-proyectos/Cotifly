@@ -21,6 +21,9 @@ public sealed partial class clsMargenAjuste
 
     public Guid Id { get; private set; }
     public Guid? CotizacionId { get; private set; }
+
+    /// <summary>Ruta a la que se le ajustó el margen (<c>lineaSolicitudId</c>, script 0009, HU-021); <c>null</c> en el ajuste del chat.</summary>
+    public Guid? LineaSolicitudId { get; private set; }
     public string? Folio { get; private set; }
     public decimal? MargenPolitica { get; private set; }
     public decimal? MargenAplicado { get; private set; }
@@ -110,7 +113,8 @@ public sealed partial class clsMargenAjuste
         Guid usuarioId,
         Guid cotizacionId,
         string folio,
-        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+        string? metodoCalculo = clsReglaMargen.MetodoMargen,
+        Guid? lineaSolicitudId = null)
     {
         var sugerido = RedondearMargen(margenSugerido);
         var aplicado = RedondearMargen(margenAplicado);
@@ -130,6 +134,7 @@ public sealed partial class clsMargenAjuste
         {
             Id = Guid.NewGuid(),
             CotizacionId = cotizacionId,
+            LineaSolicitudId = lineaSolicitudId,
             Folio = clsValidacion.Normalizar(folio),
             MargenPolitica = sugerido,
             MargenAplicado = aplicado,

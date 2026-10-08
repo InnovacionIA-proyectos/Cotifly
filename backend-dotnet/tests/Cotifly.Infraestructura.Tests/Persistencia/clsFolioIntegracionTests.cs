@@ -90,7 +90,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var dia = UsarDiaPropio();
         var ana = await CrearUsuarioAsync(nombreCompleto: "Ana Duarte Gómez");
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-AD-{dia}-004"));
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"PCN-AD-{dia}-004-v2", Version = 2, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"PCN-AD-{dia}-004-v2", Version = 2, UsuarioId = ana }).Valor);
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-800111222-AD-{dia}-006"));
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-ZAD-{dia}-900"));
         await GuardarAsync(NuevaCotizacion(ana, $"PCN-LP-{dia}-950"));
@@ -167,8 +167,8 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var ana = await CrearUsuarioAsync();
         var sufijo = Guid.NewGuid().ToString("N")[..8];
         await GuardarAsync(NuevaCotizacion(ana, $"LEG_{sufijo}"));
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"LEG_{sufijo}-v3", Version = 3, UsuarioId = ana }).Valor);
-        await GuardarAsync(clsCotizacion.Crear(new clsDatosCotizacion { Folio = $"LEGX{sufijo}-v9", Version = 9, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"LEG_{sufijo}-v3", Version = 3, UsuarioId = ana }).Valor);
+        await GuardarAsync(clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"LEGX{sufijo}-v9", Version = 9, UsuarioId = ana }).Valor);
 
         var maxima = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerVersionMaximaAsync($"LEG_{sufijo}", Ct));
 
@@ -193,7 +193,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var ana = await CrearUsuarioAsync();
         var luis = await CrearUsuarioAsync();
         var conLinea = NuevaCotizacion(ana);
-        var sinLinea = clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = ana }).Valor;
+        var sinLinea = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = ana }).Valor;
         await GuardarAsync(conLinea);
         Reloj.Avanzar(TimeSpan.FromSeconds(1));
         await GuardarAsync(sinLinea);
@@ -222,7 +222,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var servicios = ambito.ServiceProvider;
         return await servicios.GetRequiredService<IClsGeneradorFolioService>().CrearNuevaVersionAsync<string>(usuarioId, origen, async (folio, ct) =>
         {
-            var nueva = clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId }).Valor;
+            var nueva = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio.Valor, Version = folio.Version, UsuarioId = usuarioId }).Valor;
             servicios.GetRequiredService<IClsCotizacionRepository>().Agregar(nueva);
             await servicios.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(ct);
             return folio.Valor;

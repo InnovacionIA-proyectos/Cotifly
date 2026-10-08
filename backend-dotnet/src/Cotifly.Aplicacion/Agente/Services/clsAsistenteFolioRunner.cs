@@ -121,7 +121,7 @@ public sealed class clsAsistenteFolioRunner(
             .Select(e => e.Contenido!)
             .Append(solicitud.Mensaje)
             .ToList();
-        var linea = cotizacion.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
+        var linea = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
         contextoFolio.Iniciar(usuario.Id, cotizacion, linea?.LineaNegocio, solicitud.ThreadId);
 
         var mensajes = new List<ChatMessage>

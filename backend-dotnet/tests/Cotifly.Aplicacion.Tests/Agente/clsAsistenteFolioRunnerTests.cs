@@ -63,9 +63,9 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns([]);
 
         // La validación de la re-solicitud es del caso de uso (con la base y el catálogo): aquí, su parte de dominio (entrada y estado).
-        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacion>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacionSolicitud>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(ci => clsReSolicitudCosteoService.ValidarEntrada(ci.Arg<clsEntradaReSolicitudCosteo>())
-                           ?? ci.Arg<clsCotizacion>().ValidarReSolicitud(ci.Arg<clsEntradaReSolicitudCosteo>().VersionNueva));
+                           ?? ci.Arg<clsCotizacionSolicitud>().ValidarReSolicitud(ci.Arg<clsEntradaReSolicitudCosteo>().VersionNueva));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -190,7 +190,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     public async Task SiElCasoDeUsoRechazaLaReSolicitudNoHayPropuestaYElModeloRecibeElMotivo()
     {
         Registrar(Vencida());
-        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacion>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacionSolicitud>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "El peso total (28000 kg) no cuadra con la suma de las posiciones (28500 kg)."));
         _modelo.Llamar("proponer_re_solicitud", new { motivo = "El cliente cambió el peso", pesoKg = 28000 })
             .Cerrar("El peso no cuadra con las posiciones: ajústalo o actualiza las posiciones desde el detalle.");
@@ -519,7 +519,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _ => string.Empty,
     };
 
-    private void SinCambios(clsCotizacion cotizacion)
+    private void SinCambios(clsCotizacionSolicitud cotizacion)
     {
         cotizacion.VersionNegocio.Should().Be(7, "el chat nunca ejecuta mutaciones");
         cotizacion.PrecioFinal.Should().Be(cotizacion.Moneda == "USD" ? 750m : 3_000_000m);
@@ -527,22 +527,22 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, default);
     }
 
-    private clsCotizacion Registrar(clsCotizacion cotizacion, Guid? dueno = null)
+    private clsCotizacionSolicitud Registrar(clsCotizacionSolicitud cotizacion, Guid? dueno = null)
     {
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, dueno ?? _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
         return cotizacion;
     }
 
-    private static clsCotizacion ConCotizacionNexo(clsCotizacion cotizacion)
+    private static clsCotizacionSolicitud ConCotizacionNexo(clsCotizacionSolicitud cotizacion)
     {
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.CotizacionNexoId))!.SetValue(cotizacion, "COT-NEXO-1");
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.CotizacionNexoId))!.SetValue(cotizacion, "COT-NEXO-1");
         return cotizacion;
     }
 
     /// <summary>Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % = 750 USD y el conexo Cargue (85.000 COP = 25 USD).</summary>
-    private clsCotizacion EnDolares()
+    private clsCotizacionSolicitud EnDolares()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = Folio,
             UsuarioId = _ana.Id,
@@ -557,20 +557,20 @@ public sealed partial class clsAsistenteFolioRunnerTests
             EstadoCosteo = EstadoCosteo.Autocosteo,
         }).Valor;
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 25m, true)]));
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, 7);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, 7);
         return cotizacion;
     }
 
     /// <summary>Del formulario, enviada a Nexo y con el polling vencido (72 h sin costeo): admite re-solicitar.</summary>
-    private clsCotizacion Vencida()
+    private clsCotizacionSolicitud Vencida()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = Folio, UsuarioId = _ana.Id }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = Folio, UsuarioId = _ana.Id }).Valor;
         cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         cotizacion.VencerPollingCosteo("Nexo no costeó en 72 h").Should().BeTrue();
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.VersionNegocio))!.SetValue(cotizacion, 7);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.PrecioFinal))!.SetValue(cotizacion, 3_000_000m);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.MargenAplicado))!.SetValue(cotizacion, 0.15m);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, 7);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.PrecioFinal))!.SetValue(cotizacion, 3_000_000m);
+        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.MargenAplicado))!.SetValue(cotizacion, 0.15m);
         return cotizacion;
     }
 

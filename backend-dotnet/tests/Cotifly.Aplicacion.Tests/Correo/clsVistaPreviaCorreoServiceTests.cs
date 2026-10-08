@@ -15,11 +15,11 @@ public sealed class clsVistaPreviaCorreoServiceTests
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsCorreoRepository _correos = Substitute.For<IClsCorreoRepository>();
     private readonly Guid _usuario = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsVistaPreviaCorreoServiceTests()
     {
-        _cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-V1",
             UsuarioId = _usuario,

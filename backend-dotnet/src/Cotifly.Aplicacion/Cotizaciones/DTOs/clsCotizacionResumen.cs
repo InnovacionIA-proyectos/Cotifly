@@ -39,8 +39,20 @@ public sealed record clsCotizacionResumen(
     decimal TrmAplicada = 0m,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ConexosDescartados = null)
 {
-    /// <summary>Resumen de una cotización con el nombre de su línea y la base pública de los PDF.</summary>
-    public static clsCotizacionResumen Desde(clsCotizacion cotizacion, string? lineaNegocio, string? baseUrlPdf)
+    /// <summary>
+    /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
+    /// (HU-021: el margen es por ruta; el contrato por ruta llega con #138).
+    /// </summary>
+    public static clsCotizacionResumen Desde(clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var ruta = cotizacion.PrimeraRuta;
+        return Desde(cotizacion, lineaNegocio, baseUrlPdf, ruta?.MargenAplicado, ruta?.OrigenMargen);
+    }
+
+    /// <summary>Resumen con el margen y el origen del margen ya leídos (lista de "Mis cotizaciones", sin cargar el agregado).</summary>
+    public static clsCotizacionResumen Desde(
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf, decimal? margenAplicado, Dominio.Margen.OrigenMargen? origenMargen)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return new clsCotizacionResumen(
@@ -49,12 +61,12 @@ public sealed record clsCotizacionResumen(
             cotizacion.Version,
             cotizacion.NitCliente,
             cotizacion.OrigenCliente is { } origenCliente ? clsCodigoEnum.ACodigo(origenCliente) : null,
-            cotizacion.OrigenMargen is { } origenMargen ? clsCodigoEnum.ACodigo(origenMargen) : null,
+            origenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.ClienteNombre,
             lineaNegocio,
             cotizacion.PrecioFinal,
-            cotizacion.MargenAplicado,
-            cotizacion.Moneda ?? clsCotizacion.MonedaPesos,
+            margenAplicado,
+            cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.EstadoCosteo is { } estadoCosteo ? clsCodigoEnum.ACodigo(estadoCosteo) : null,
             cotizacion.MotivoEstadoCosteo,
             clsCodigoEnum.ACodigo(cotizacion.EstadoEnvio ?? Dominio.Cotizaciones.EstadoEnvio.SinEnviar),
@@ -66,8 +78,16 @@ public sealed record clsCotizacionResumen(
     }
 }
 
-/// <summary>Cotización con el nombre de su línea de negocio (lectura con JOIN para "Mis cotizaciones").</summary>
-public sealed record clsCotizacionConLinea(clsCotizacion Cotizacion, string? LineaNegocio);
+/// <summary>
+/// Cabecera con la línea de negocio, el margen y el origen del margen de su ruta 1 (o "Varias" si sus rutas tienen líneas distintas):
+/// lectura de "Mis cotizaciones" sin cargar el agregado (HU-021).
+/// </summary>
+public sealed record clsCotizacionConLinea(
+    clsCotizacionSolicitud Cotizacion, string? LineaNegocio, decimal? MargenAplicado = null, Dominio.Margen.OrigenMargen? OrigenMargen = null)
+{
+    /// <summary>Texto de la línea de negocio cuando las rutas de la solicitud tienen líneas distintas.</summary>
+    public const string Varias = "Varias";
+}
 
 /// <summary><c>MisCotizaciones</c>: <c>{total, cotizaciones}</c>, máximo 100, de la más reciente a la más antigua.</summary>
 public sealed record clsMisCotizaciones(int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);

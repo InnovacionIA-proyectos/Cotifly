@@ -62,10 +62,11 @@ public sealed partial class clsUnitOfWork(clsCotiflyDbContext contexto) : IClsUn
         await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
-            // UPDLOCK retiene la fila hasta confirmar: entre la comparación y el UPDATE nadie más (polling, otra petición) la escribe. Todos
-            // los flujos bloquean primero la cotización y después escriben sus líneas: el mismo orden evita interbloqueos.
+            // UPDLOCK retiene la fila de la cabecera (CotizacionesSolicitud, HU-021) hasta confirmar: entre la comparación y el UPDATE nadie
+            // más (polling, otra petición) la escribe. Todos los flujos bloquean primero la cabecera y después escriben sus rutas, camiones y
+            // conexos: el mismo orden evita interbloqueos.
             var actual = await contexto.Database
-                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.Cotizaciones WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
+                .SqlQuery<int?>($"SELECT versionNegocio AS [Value] FROM dbo_cotifly.CotizacionesSolicitud WITH (UPDLOCK, ROWLOCK) WHERE id = {cotizacionId}")
                 .FirstOrDefaultAsync(cancellationToken);
             if (actual != versionEsperada)
             {

@@ -14,7 +14,7 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 public static class clsPrecioMonedaCosteo
 {
     /// <summary>Precio en la moneda de <paramref name="cotizacion"/>; los errores del módulo de Precio (<c>PRECIO_INVALIDO</c>, <c>TRM_NO_DISPONIBLE</c>).</summary>
-    public static clsResultado<decimal> Calcular(IClsPrecioService precios, clsCotizacion cotizacion, decimal costo, decimal margen, string metodo)
+    public static clsResultado<decimal> Calcular(IClsPrecioService precios, clsCotizacionSolicitud cotizacion, decimal costo, decimal margen, string metodo)
     {
         ArgumentNullException.ThrowIfNull(precios);
         ArgumentNullException.ThrowIfNull(cotizacion);
@@ -24,8 +24,8 @@ public static class clsPrecioMonedaCosteo
             return enPesos.Error;
         }
 
-        var moneda = cotizacion.Moneda ?? clsCotizacion.MonedaPesos;
-        if (string.Equals(moneda, clsCotizacion.MonedaPesos, StringComparison.OrdinalIgnoreCase))
+        var moneda = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos;
+        if (string.Equals(moneda, clsCotizacionSolicitud.MonedaPesos, StringComparison.OrdinalIgnoreCase))
         {
             return enPesos.Valor.Precio;
         }
