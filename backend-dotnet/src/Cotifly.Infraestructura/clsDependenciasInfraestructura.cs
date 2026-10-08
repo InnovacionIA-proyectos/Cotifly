@@ -99,6 +99,7 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesCosteoNexo>(configuracion, clsOpcionesCosteoNexo.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
+        servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);

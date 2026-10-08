@@ -1053,6 +1053,11 @@ paths:
           description: |
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
+            `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
+            reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -1443,7 +1448,11 @@ paths:
           description: |
             Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
-            cambia ni se envía a Nexo.
+            cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
+            los reintentos: no se creó la versión.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -2000,7 +2009,11 @@ paths:
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
-            catálogo de municipios no responde). Nada se guarda.
+            catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
+            tras los reintentos: nada se guarda y se puede reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -2326,6 +2339,13 @@ components:
       schema:
         type: string
       example: '"7"'
+    RetryAfter:
+      description: |
+        Solo con `SERVICIO_OCUPADO` (#125): segundos que conviene esperar antes de reintentar (siempre 1). Las demás causas del
+        503 no lo envían.
+      schema:
+        type: integer
+      example: 1
 
   responses:
     PrecondicionRequerida:
@@ -2469,7 +2489,8 @@ components:
                 `detalle` trae `accion = nueva_version` con el método, el endpoint y el cuerpo para crear `-vN`),
                 `PRECONDICION_REQUERIDA` (428: falta `If-Match`), `LINEA_SIN_COTIZACION_NEXO` (409: la línea no tiene
                 todavía línea en la cotización de Nexo) y `TEXTOS_EDITADOS` (409: redactar sobre textos editados por el
-                comercial sin `?sobrescribir=true`).
+                comercial sin `?sobrescribir=true`). `SERVICIO_OCUPADO` (503, #125: otra operación retiene el candado del
+                folio más allá de los reintentos; nada se guardó y se puede reintentar).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -2532,6 +2553,7 @@ components:
                 - PRECONDICION_REQUERIDA
                 - LINEA_SIN_COTIZACION_NEXO
                 - TEXTOS_EDITADOS
+                - SERVICIO_OCUPADO
                 - ERROR_INTERNO
             mensaje:
               type: string
