@@ -465,41 +465,42 @@ GO
 --     (equivalente a db/migrations/versions/0002_seed_config.py del lado Postgres)
 --     Sin esto, la app fallaría con "línea de negocio desconocida" en la
 --     primera cotización -- no es dato histórico, es configuración que la app
---     necesita desde el día uno. Valores verificados en vivo contra el
---     Postgres de dev, no copiados de la documentación a ciegas -- ver nota
---     de ITR abajo. mapeoLineasNexo: catálogo real de Nexo confirmado con el
---     equipo (2026-09-23); 4 de las 8 líneas no tienen equivalente y quedan
---     NULL a propósito.
+--     necesita desde el día uno. mapeoLineasNexo: catálogo real de Nexo
+--     confirmado con el equipo (2026-09-23); 1 de las 6 líneas (Distribucion)
+--     no tiene equivalente y queda NULL a propósito. Reestructuración HU-021
+--     (2026-10-07): se retiraron Almacenamiento/Almacenamiento3PL/ITR (sin
+--     equivalente real en Nexo) y se agregó DevolucionContenedor.
 -- =============================================================================
 IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.MargenesPolitica)
 BEGIN
-    -- Nota: BASE_DE_DATOS.md afirma que ITR está al 50% ("una al 50%, ITR,
-    -- intencional"), pero el dato real (Postgres en vivo + migración
-    -- 0002_seed_config.py) es 0.15 igual que las otras 7 líneas -- ese dato
-    -- del documento está desactualizado, no se usó acá.
+    -- Reestructuración HU-021 (2026-10-07): se retiran Almacenamiento, Almacenamiento3PL
+    -- e ITR (sin equivalente real en el catálogo de líneas de negocio de Nexo) y se
+    -- agrega DevolucionContenedor (línea real de Nexo que faltaba en el seed original).
+    -- Confirmado contra el código fuente de Nexo: `public enum LineaNegocio { PuertoAInterior,
+    -- InteriorAPuerto, Nacional, DevolucionContenedor, Andino, Licitaciones }`
+    -- (repo NEXO, src/Nexo.Domain/Enums/Enums.cs) - catálogo real: dbsolucionesTI.tblSAPLineaNegocio.
+    -- `Licitaciones` no se mapea acá a propósito (es un tipo de solicitud, no una línea comercial).
     INSERT INTO dbo_cotifly.MargenesPolitica (lineaNegocio, margen, metodoCalculo, isActive, mapeoLineasNexo) VALUES
-    ('Nacional',          0.15, 'margen', 1, 'Nacional'),
-    ('Distribucion',      0.15, 'margen', 1, NULL),
-    ('Importacion',       0.15, 'margen', 1, 'PuertoAInterior'),
-    ('Exportacion',       0.15, 'margen', 1, 'InteriorAPuerto'),
-    ('Internacional',     0.15, 'margen', 1, 'Andino'),
-    ('Almacenamiento',    0.15, 'margen', 1, NULL),
-    ('Almacenamiento3PL', 0.15, 'margen', 1, NULL),
-    ('ITR',               0.15, 'margen', 1, NULL);
+    ('Nacional',            0.15, 'margen', 1, 'Nacional'),
+    ('Distribucion',        0.15, 'margen', 1, NULL),
+    ('Importacion',         0.15, 'margen', 1, 'PuertoAInterior'),
+    ('Exportacion',         0.15, 'margen', 1, 'InteriorAPuerto'),
+    ('Internacional',       0.15, 'margen', 1, 'Andino'),
+    ('DevolucionContenedor',0.15, 'margen', 1, 'DevolucionContenedor');
 END
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo_cotifly.SapMapeoTrqType)
 BEGIN
+    -- Reestructuración HU-021 (2026-10-07): ver nota de arriba (MargenesPolitica).
+    -- PENDIENTE: falta el TrqType real de SAP para 'DevolucionContenedor' (confirmar
+    -- con negocio/SAP antes de sembrarlo - no se debe inventar un código de SAP).
     INSERT INTO dbo_cotifly.SapMapeoTrqType (trqType, salesOrg, lineaNegocio, activo) VALUES
     ('OPTN', '', 'Nacional', 1),
     ('OPDS', '', 'Distribucion', 1),
     ('OPIM', '', 'Importacion', 1),
     ('OPEX', '', 'Exportacion', 1),
-    ('OPTI', '', 'Internacional', 1),
-    ('OHUB', '', 'Almacenamiento', 1),
-    ('OH3P', '', 'Almacenamiento3PL', 1),
-    ('OPSC', '', 'ITR', 1);
+    ('OPTI', '', 'Internacional', 1);
 END
 GO
 
