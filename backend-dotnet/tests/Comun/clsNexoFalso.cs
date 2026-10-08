@@ -31,6 +31,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Si tiene valor, solo el alta responde este estado (con un cuerpo de error de Nexo).</summary>
     public HttpStatusCode? AltaFalla { get; set; }
 
+    /// <summary>
+    /// Si es verdadero, <c>GET /api/solicitudes/{id}</c> responde 503 para las solicitudes cuya cotización ya tiene resultado: la
+    /// relectura del costeo justo después de marcar el resultado falla (HU-013.14).
+    /// </summary>
+    public bool FallarConsultaTrasResultado { get; set; }
+
     /// <summary>Si es verdadero, el alta auto-costea la línea con <see cref="FleteAutocosteo"/> (como la Biblioteca de Nexo).</summary>
     public bool AutoCostear { get; set; }
 
@@ -413,6 +419,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
         if (!_solicitudes.TryGetValue(id, out var s))
         {
             return Error(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", "Solicitud no encontrada.");
+        }
+
+        if (FallarConsultaTrasResultado && s.Cotizacion is { Resultado: not "SinDefinir" })
+        {
+            return Error(HttpStatusCode.ServiceUnavailable, "NEXO_CAIDO", "Consulta no disponible tras el resultado (prueba).");
         }
 
         // Como ObtenerCosteoQuery de Nexo: una descartada responde 409, y abrirla pasa Pendiente -> EnCosteo.
