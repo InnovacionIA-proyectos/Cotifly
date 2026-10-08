@@ -12,6 +12,12 @@
 7. Roles del equipo (fijos): **Duban** = Backend, **Sara** = Frontend y Datos, **Kevin** = QA. Aquí Sara aparece solo como Datos.
 8. Todos los issues llevan el prefijo **[Corrección con BD]** en el título y el label `corrección-bd`.
 
+**Cambios hechos después de crear las issues (2026-10-08, al integrar `QA` en la rama):**
+1. Mi migración pasó de `0008` a **`0009`**, porque `QA` ya trae su propio `0008_horas_por_linea.sql` (HU-013.11). Afecta a la milestone y a HU-021.1, 021.2, 021.10 y 021.12.
+2. **Nexo sí acepta las horas de cargue y descargue por línea**: se retira la petición N2 y la regla de mandar "el mayor valor". Afecta a HU-021.3 y 021.7.
+3. `QA` retiró la integración con Google Chat (HU-013.9): el agente sigue en el chat web. Afecta al escenario Gherkin de la milestone.
+4. El `0001` **no se edita** (es un script ya aplicado y las pruebas dependen de él): afecta a HU-021.2.
+
 ---
 
 ## HU-021 — [Corrección con BD] Adaptar Cotifly a la reestructuración de la base de datos (solicitud → rutas → camiones)
@@ -139,7 +145,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - [ ] **Visto bueno del DBA** sobre `01_crear_esquema.sql` y `0009`, como los scripts anteriores.
 - [ ] Decidir qué se hace con `db/migrations/` (Alembic, el stack viejo de Postgres). `deploy/docker-compose.swarm.yml` todavía levanta un Postgres y un orquestador; confirmar con quien llevó el despliegue si siguen en uso antes de archivar nada.
 - [ ] **Script de reversa del `0009`** en `db/migrations_mssql/rollback/` (como el del `0006`). Hoy no existe: la vuelta atrás sería manual, desde las tablas `Respaldo0009_*` que el propio script crea.
-- [ ] Regla permanente: **cada migración nueva `000N` se refleja también en `db/scripts/01_crear_esquema.sql`**, para que una instalación desde cero y una base migrada queden idénticas.
+- [ ] Regla permanente: **cada migración nueva `000N` se refleja también en `db/scripts/01_crear_esquema.sql`**, para que una instalación desde cero y una base migrada queden idénticas. **Y no se edita una migración que ya está aplicada** (el `0001` al `0008` son de `QA` y de otros ambientes): un intento de cambiar el seeder del `0001` rompió las pruebas de integración del PR (`clsPasosAdmin`, `clsPasosMargen`, `clsPdfAdminMetricasEndpointsTests`, `clsEsquemaTests` esperan las 8 líneas de negocio originales). Los cambios van en un script nuevo.
 
 ### [HU-021.3] [Corrección con BD] Dominio: rutas, camiones, mercancías y conexos
 **Labels:** `cotifly`, `backend`, `corrección-bd`
@@ -148,7 +154,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Parte de HU-021 (milestone). Depende de HU-021.2** (esquema validado). Detalle: `CAMBIOS_BACKEND` §3 y §9. Estimado: 3 a 4 días.
 
 - [ ] `clsCotizacion` (cabecera): quitar las propiedades que salen (`LineaNegocioId`, `Costo`, márgenes, ruta, vehículo, `ServiciosConexos`, `CosteoId`, `CosteoUltimaConsultaAt`…) y los métodos de margen y costo que pasan a la ruta. Se sugiere dejar el nombre de la clase.
-- [ ] `clsCotizacionLineaSolicitud` → la **ruta**: renombres (`CotizacionSolicitudId`, `RutaOrigenIndice`, `PrecioFinalLinea`, `ValorLevanteContenedor`), campos nuevos (línea de negocio, horas, márgenes, totales de costo), municipios por id, y `RetornaContenedor`/`LevanteContenedorDiferente` como `bool` (no `bool?`).
+- [ ] `clsCotizacionLineaSolicitud` → la **ruta**: renombres (`CotizacionSolicitudId`, `RutaOrigenIndice`, `PrecioFinalLinea`, `ValorLevanteContenedor`), campos nuevos (línea de negocio, márgenes, totales de costo; las horas de cargue y descargue ya existen por línea desde el `0008_horas_por_linea`), municipios por id, y `RetornaContenedor`/`LevanteContenedorDiferente` como `bool` (no `bool?`).
 - [ ] Mover a la ruta la lógica de margen (`ValidarAjusteMargen`, `AplicarMargenNegociado`, `RefrescarMargenSugerido`).
 - [ ] **Entidad nueva `clsCotizacionVehiculoLinea`** (camión): vehículo y carrocería opcionales, peso, costos, id de la línea en Nexo, estado, id de la recomendación del cubicador.
 - [ ] Entidad nueva para los **conexos** de la ruta. Reemplaza `clsServicioConexoCosteo` y `clsServiciosConexosJson`.
