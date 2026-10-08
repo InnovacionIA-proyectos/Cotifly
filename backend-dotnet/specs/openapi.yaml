@@ -1150,7 +1150,8 @@ paths:
         `detalle.motivo` = `ganada`/`perdida` (el que tiene Nexo): Cotifly y Nexo quedan iguales.
 
         **Perdida solo en Cotifly (HU-013.17, #127).** Si el cliente desiste antes del costeo, en `error_envio`, o en
-        `pendiente_costeo` cuando Nexo no tiene la cotización entregada, se admite **solo** `perdida`, con `motivo`
+        `pendiente_costeo` cuando Nexo **confirma** que no tiene la cotización entregada (si Nexo no responde, 503
+        reintentable sin cambios), se admite **solo** `perdida`, con `motivo`
         obligatorio (400 si falta) e `If-Match` obligatorio (428 sin él, 409 `CONFLICTO_CONCURRENCIA` si no coincide).
         No se envía a Nexo, se detiene el polling y `motivo_estado_costeo` lo indica ("Perdida solo en Cotifly ...").
         Si Nexo costea después, el resultado no cambia. Cuenta en las métricas como perdida y queda en la auditoría

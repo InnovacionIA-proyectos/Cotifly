@@ -341,6 +341,23 @@ public sealed class clsResultadoCotizacionServiceTests
         await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
     }
 
+    [Theory]
+    [InlineData(clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(clsCodigosError.CosteoNexoTiempoAgotado)]
+    public async Task EnPendienteDeCosteoConNexoSinResponderLaPerdidaEs503YNoSeRegistra(string codigo)
+    {
+        // Sin la confirmación de Nexo no se sabe si ya entregó: registrar la perdida solo en Cotifly dejaría los dos sistemas distintos.
+        var cotizacion = SinCosteo(enError: false);
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-9", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(codigo, "Nexo no responde"));
+
+        (await Servicio().MarcarAsync(_ana, cotizacion.Folio, "perdida", "Desistió", null, versionEsperada: 0, Ct)).Error.Codigo.Should().Be(codigo);
+
+        cotizacion.Ganada.Should().BeNull();
+        cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("el polling sigue");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+    }
+
     [Fact]
     public async Task LaPerdidaSinCosteoExigeMotivoIfMatchYNoAdmiteGanada()
     {

@@ -304,7 +304,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 
 - **Cuándo aplica:**
   - en `error_envio`;
-  - en `pendiente_costeo` si la lectura previa muestra que Nexo no tiene la cotización entregada, o si Nexo no responde.
+  - en `pendiente_costeo` solo si la lectura previa **confirma** que Nexo no tiene la cotización entregada. Si Nexo no responde (caído o lento), responde 503 reintentable y no registra nada, igual que con una `ganada`: si Nexo ya hubiera entregado, una perdida solo en Cotifly dejaría a Cotifly y Nexo distintos para siempre, con el polling detenido.
 - **Reglas:**
   - solo se admite `perdida`; una `ganada` responde 409 `COTIZACION_NO_ENTREGADA`;
   - el `motivo` es obligatorio (400 `SEGUIMIENTO_INVALIDO`);

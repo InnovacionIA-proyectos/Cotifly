@@ -805,7 +805,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
   - la respuesta trae `ganada = false` y `motivo_estado_costeo` empieza por "Perdida solo en Cotifly";
   - el 200 trae el `ETag` nuevo;
   - una "ganada" en esos estados es 409 `COTIZACION_NO_ENTREGADA`;
-  - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre.
+  - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre; si Nexo no responde, 503 sin cambios: ofrecer Reintentar.
 - Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en `pendiente_envio`, o en `pendiente_costeo` si Nexo todavía no tiene el costo; desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
 

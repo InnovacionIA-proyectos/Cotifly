@@ -52,8 +52,8 @@ public interface IClsResultadoCotizacionService
 /// <para><b>Resultado ya definido en Nexo.</b> Si Nexo responde <c>RESULTADO_YA_DEFINIDO</c> (otro resultado quedó en Nexo y no en
 /// Cotifly, p. ej. porque falló el guardado local), Cotifly lee el resultado de Nexo, lo guarda y responde el 409 con
 /// <c>detalle</c> = el resultado de Nexo: Cotifly y Nexo quedan iguales.</para>
-/// <para><b>Perdida solo en Cotifly (HU-013.17).</b> En <c>error_envio</c>, o en <c>pendiente_costeo</c> cuando Nexo no tiene la
-/// cotización entregada, solo se admite <c>perdida</c> con motivo e <c>If-Match</c>: no va a Nexo y detiene el polling.</para>
+/// <para><b>Perdida solo en Cotifly (HU-013.17).</b> En <c>error_envio</c>, o en <c>pendiente_costeo</c> cuando Nexo CONFIRMA que no
+/// tiene la cotización entregada (si Nexo no responde, 503 sin cambios), solo se admite <c>perdida</c> con motivo e <c>If-Match</c>: no va a Nexo y detiene el polling.</para>
 /// </remarks>
 public sealed class clsResultadoCotizacionService(
     IClsCotizacionRepository cotizaciones,
@@ -146,17 +146,19 @@ public sealed class clsResultadoCotizacionService(
         if (cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo)
         {
             var lectura = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId, cancellationToken);
-            var entregada = lectura.EsExitoso && clsDerivacionEstadoCosteo.Derivar(lectura.Valor) == EstadoCosteo.Entregada;
-            if (!entregada)
+            if (lectura.EsFallo)
             {
-                if (!ganada.Value)
-                {
-                    return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
-                }
-
-                return lectura.EsFallo && lectura.Error.Codigo is clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
+                // Sin la respuesta de Nexo no se sabe si ya entregó: nada se registra (ni la perdida solo en Cotifly, que dejaría a
+                // Cotifly y Nexo distintos para siempre). Nexo caído o lento es 503 reintentable.
+                return lectura.Error.Codigo is clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado || !ganada.Value
                     ? lectura.Error
                     : NoEntregada(cotizacion);
+            }
+
+            if (clsDerivacionEstadoCosteo.Derivar(lectura.Valor) != EstadoCosteo.Entregada)
+            {
+                // Nexo CONFIRMA que no hay entrega: la perdida queda solo en Cotifly (HU-013.17); la ganada no se puede marcar.
+                return ganada.Value ? NoEntregada(cotizacion) : await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
             }
 
             previa = lectura.Valor;
