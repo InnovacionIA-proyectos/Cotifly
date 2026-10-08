@@ -440,7 +440,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     }
 
     [Fact]
-    public void LosConexosDescartadosSonNombresSinRepetirConLaCategoriaSiNoTienenNombre()
+    public void LosConexosDescartadosSonLosIncluidosSinRepetirConLaCategoriaSiNoTienenNombre()
     {
         var (cotizacion, _, _) = Vencida(_ana, "PCN-900555111-AP-05102026-002", 1_000_000m);
         typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.ServiciosConexos))!.SetValue(cotizacion, clsServiciosConexosJson.Escribir(
@@ -449,9 +449,11 @@ public sealed class clsReSolicitudCosteoServiceTests
             new clsServicioConexoCosteo("CX-2", " cargue ", "logistico", 2m, 85_000m, 100_000m, false),
             new clsServicioConexoCosteo("CX-3", null, "portuario", 1m, 10m, 12m, true),
             new clsServicioConexoCosteo("CX-4", "Stand-by", "logistico", 1m, 10m, 12m, true),
+            new clsServicioConexoCosteo("CX-5", "Precinto", "logistico", 1m, 10m, 12m, false),
         ]));
 
-        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().Equal("Cargue", "portuario", "Stand-by");
+        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().Equal(new[] { "Cargue", "portuario", "Stand-by" },
+            "un conexo excluido (Precinto) no iba para el cliente: no se pierde nada con él");
     }
 
     [Fact]

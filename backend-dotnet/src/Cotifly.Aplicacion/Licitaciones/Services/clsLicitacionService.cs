@@ -153,8 +153,9 @@ public sealed class clsLicitacionService(
     /// <summary>
     /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
     /// con la misma regla de detección (<see cref="IClsLectorExcelLicitacion"/>), para que el frontend muestre la numeración del archivo
-    /// del comercial. Si Cotifly no puede leer el archivo, o una hoja no cuadra con lo que devolvió Nexo (otro número de filas), esa
-    /// hoja queda sin <c>filas_excel</c>: el análisis nunca falla por esto.
+    /// del comercial. Si Cotifly no puede leer el archivo, todas quedan sin <c>filas_excel</c>; si una hoja no se puede ubicar o no
+    /// cuadra con lo que devolvió Nexo (otro total de filas), solo esa queda sin él y las demás lo conservan: el análisis nunca falla
+    /// por esto.
     /// </summary>
     private clsAnalisisExcel ConFilasExcel(clsAnalisisExcel analisis, byte[] contenido, CancellationToken cancellationToken)
     {
@@ -166,10 +167,23 @@ public sealed class clsLicitacionService(
 
         return analisis with
         {
-            Hojas = [.. analisis.Hojas.Select(h => porHoja.Valor.TryGetValue(h.Nombre, out var filas) && filas.Count == h.Filas.Count
-                ? h with { FilasExcel = filas }
+            Hojas = [.. analisis.Hojas.Select(h => porHoja.Valor.TryGetValue(h.Nombre, out var filas) && Cuadra(filas.Count, h)
+                ? h with { FilasExcel = [.. filas.Take(h.Filas.Count)] }
                 : h)],
         };
+    }
+
+    /// <summary>
+    /// ¿Las filas con datos que ubicó Cotifly cuadran con la hoja de Nexo? Se compara con el total real (<c>TotalFilas</c>), no con
+    /// <c>Filas</c>, que Nexo corta en 1000; como Cotifly también se detiene en 1000, una hoja de más de 1000 filas cuadra si los dos
+    /// llegaron al tope. Además debe haber un número de fila por cada fila que devolvió Nexo.
+    /// </summary>
+    public static bool Cuadra(int ubicadas, clsHojaExcel hoja)
+    {
+        ArgumentNullException.ThrowIfNull(hoja);
+        var mismoTotal = ubicadas == hoja.TotalFilas
+            || (ubicadas == clsValidadorLicitacion.MaximoLineas && hoja.TotalFilas > clsValidadorLicitacion.MaximoLineas);
+        return mismoTotal && ubicadas >= hoja.Filas.Count;
     }
 
     public async Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default)
@@ -232,7 +246,14 @@ public sealed class clsLicitacionService(
 
         if (!politica.Activa)
         {
-            return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(politica.LineaNegocio));
+            // HU-013.15 (#124): también aquí el error trae las líneas que sí se pueden usar.
+            return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(politica.LineaNegocio) with
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["lineas_validas"] = await margen.LineasActivasAsync(cancellationToken) ?? [],
+                },
+            });
         }
 
         // ADR-014 §5: en USD la TRM del día de creación queda fija en la licitación; el polling convierte cada precio con ella.

@@ -90,13 +90,9 @@ public sealed class clsLectorExcelLicitacionClosedXml : IClsLectorExcelLicitacio
             var porHoja = new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal);
             foreach (var hoja in libro.Worksheets)
             {
+                // Una hoja que no se puede ubicar (por ejemplo, demasiadas combinadas) no tumba las demás: solo queda fuera.
                 var detectado = Detectar(hoja, out var error, cancellationToken);
-                if (error is not null)
-                {
-                    return error;
-                }
-
-                if (detectado is not null)
+                if (error is null && detectado is not null)
                 {
                     porHoja[hoja.Name] = detectado.Datos;
                 }

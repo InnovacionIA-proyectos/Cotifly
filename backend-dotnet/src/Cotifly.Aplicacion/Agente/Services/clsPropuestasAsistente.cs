@@ -132,15 +132,22 @@ public static class clsPropuestasAsistente
 
         cuerpo["nueva_version"] = entrada.VersionNueva;
 
-        // HU-013.15 (#124): el aviso de los conexos que se descartan va antes del motivo (texto del LLM), para que el recorte a 300
-        // caracteres nunca lo oculte.
-        var conexos = AvisoConexosDescartados(clsReSolicitudCosteoService.ConexosDescartados(cotizacion), entrada.VersionNueva);
-        var resumen = entrada.VersionNueva
+        // HU-013.15 (#124): el aviso de los conexos que se descartan tiene su espacio reservado dentro de los 300 caracteres: va justo
+        // después de la acción, se arma para que quepa completo ("y N más" y "agrégalos de nuevo" incluidos) y la descripción de los
+        // cambios de carga se acorta antes que él. El motivo (texto del LLM) y el resto van después y son lo único que el recorte final
+        // puede cortar.
+        var inicio = entrada.VersionNueva
             ? $"Volver a pedir el costeo a Nexo en una versión nueva de {cotizacion.Folio}"
-              + (cambios.TieneCambios ? $" con estos cambios: {DescribirCambios(cambios)}." : ".")
+            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}.";
+        var minimoCambios = entrada.VersionNueva && cambios.TieneCambios ? DescripcionCambiosGenerica.Length : 1;
+        var conexos = AvisoConexosDescartados(clsReSolicitudCosteoService.ConexosDescartados(cotizacion), entrada.VersionNueva,
+            clsAccionPropuesta.LargoMaximoResumen - inicio.Length - minimoCambios);
+        var resumen = entrada.VersionNueva
+            ? inicio
+              + DescripcionCambios(cambios, clsAccionPropuesta.LargoMaximoResumen - inicio.Length - conexos.Length)
               + conexos
               + $" Motivo: {Cita(motivo)}. La cotización original no cambia."
-            : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}." + conexos
+            : inicio + conexos
               + $" Motivo: {Cita(motivo)}. El precio actual se descarta hasta el nuevo costeo"
               + (cotizacion.PdfPath is null ? "." : " y el PDF actual queda desactualizado.");
         return new clsAccionPropuesta(
@@ -288,9 +295,11 @@ public static class clsPropuestasAsistente
 
     /// <summary>
     /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se descartan (HU-013.15, #124), con un espacio inicial; vacío
-    /// si no hay. Solo nombres (de Nexo, nunca del LLM) y sin montos.
+    /// si no hay. Solo nombres (de Nexo, nunca del LLM, cada uno recortado a <see cref="LargoMaximoNombreConexo"/>) y sin montos. Siempre
+    /// cabe completo en <paramref name="largoMaximo"/>: si no, nombra menos conexos (el resto va en "y N más") y, en el límite, solo
+    /// los cuenta. Nunca pierde "y N más" ni "agrégalos de nuevo".
     /// </summary>
-    public static string AvisoConexosDescartados(IReadOnlyList<string> conexos, bool versionNueva)
+    public static string AvisoConexosDescartados(IReadOnlyList<string> conexos, bool versionNueva, int largoMaximo = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(conexos);
         if (conexos.Count == 0)
@@ -298,17 +307,61 @@ public static class clsPropuestasAsistente
             return string.Empty;
         }
 
-        var nombres = string.Join(", ", conexos.Take(MaximoConexosEnAviso).Select(n =>
-            "«" + (n.Length <= LargoMaximoNombreConexo ? n : n[..(LargoMaximoNombreConexo - 1)].TrimEnd() + "…") + "»"));
-        if (conexos.Count > MaximoConexosEnAviso)
+        string Aviso(int nombrados)
         {
-            nombres += $" y {conexos.Count - MaximoConexosEnAviso} más";
+            var resto = conexos.Count - nombrados;
+            var nombres = nombrados == 0
+                ? $"{conexos.Count} servicio(s) conexo(s)"
+                : "los servicios conexos " + string.Join(", ", conexos.Take(nombrados).Select(n => "«" + NombreConexo(n) + "»"))
+                  + (resto > 0 ? $" y {resto} más" : string.Empty);
+            return versionNueva
+                ? $" La versión nueva no lleva {nombres}: agrégalos de nuevo cuando llegue su costeo."
+                : $" Se descartan {nombres}: agrégalos de nuevo cuando llegue el costeo nuevo.";
         }
 
-        return versionNueva
-            ? $" La versión nueva no lleva los servicios conexos {nombres}: agrégalos de nuevo cuando llegue su costeo."
-            : $" Se descartan los servicios conexos {nombres}: agrégalos de nuevo cuando llegue el costeo nuevo.";
+        for (var nombrados = Math.Min(MaximoConexosEnAviso, conexos.Count); nombrados > 0; nombrados--)
+        {
+            var aviso = Aviso(nombrados);
+            if (aviso.Length <= largoMaximo)
+            {
+                return aviso;
+            }
+        }
+
+        return Aviso(0);
     }
+
+    /// <summary>Nombre de un conexo para el modelo o el resumen: sin espacios repetidos y recortado a <see cref="LargoMaximoNombreConexo"/>.</summary>
+    public static string NombreConexo(string nombre)
+    {
+        var limpio = string.Join(' ', (nombre ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return limpio.Length <= LargoMaximoNombreConexo ? limpio : limpio[..(LargoMaximoNombreConexo - 1)].TrimEnd() + "…";
+    }
+
+    /// <summary>
+    /// " con estos cambios: …." de la versión nueva, acortada para caber en <paramref name="disponible"/> caracteres (el aviso de
+    /// conexos tiene prioridad); "." si no hay cambios y " con cambios de carga." si no cabe ni un resumen corto.
+    /// </summary>
+    private static string DescripcionCambios(clsCambiosCargaAsistente cambios, int disponible)
+    {
+        if (!cambios.TieneCambios)
+        {
+            return ".";
+        }
+
+        const string Prefijo = " con estos cambios: ";
+        var completa = $"{Prefijo}{DescribirCambios(cambios)}.";
+        if (completa.Length <= disponible)
+        {
+            return completa;
+        }
+
+        var espacio = disponible - Prefijo.Length - 2;
+        return espacio >= 15 ? $"{Prefijo}{DescribirCambios(cambios)[..espacio].TrimEnd()}…." : DescripcionCambiosGenerica;
+    }
+
+    /// <summary>Descripción mínima de los cambios de carga cuando la detallada no cabe junto al aviso de conexos.</summary>
+    private const string DescripcionCambiosGenerica = " con cambios de carga.";
 
     /// <summary>Texto del LLM entre comillas latinas, recortado a <see cref="LargoMaximoCita"/> caracteres.</summary>
     public static string Cita(string? texto)

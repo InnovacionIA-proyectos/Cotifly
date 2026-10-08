@@ -146,7 +146,7 @@ public sealed class clsHerramientasAsistenteFolio(
                 : [],
 
             // HU-013.15 (#124): solo los nombres (sin montos) de los conexos que la re-solicitud descarta, para que el modelo lo avise.
-            ["conexos_descartados"] = clsReSolicitudCosteoService.ConexosDescartados(cotizacion),
+            ["conexos_descartados"] = clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Select(clsPropuestasAsistente.NombreConexo).ToList(),
             ["mensaje"] = MensajePropuesta,
         });
     }

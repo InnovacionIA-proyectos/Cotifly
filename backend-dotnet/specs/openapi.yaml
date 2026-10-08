@@ -1950,8 +1950,8 @@ paths:
             `ReporteLicitacionInvalida` (`LICITACION_INVALIDA` con todas las filas que fallaron; nada queda guardado), o
             `ErrorNegocio` (`ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`,
             `EXCEL_SIN_DATOS` si la hoja no existe, `EXCEL_INVALIDO` también con más de 10.000 rangos combinados, `MARGEN_LINEA_DESCONOCIDA` (la
-            línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: `detalle.lineas_validas` trae las líneas activas
-            de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
+            línea no existe, o está inactiva: `detalle.motivo` lo dice; HU-013.15: en los dos casos `detalle.lineas_validas` trae las
+            líneas activas de Cotifly y, con `linea_negocio = Licitaciones` (la línea del catálogo de Nexo, que no da margen), `detalle.motivo =
             LINEA_DE_NEXO`), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` con
             `moneda = USD`). `ErrorWeb` si el cuerpo no
             es JSON válido. Si Nexo responde 403 al alta, la licitación queda igual en `error_envio` con el motivo
@@ -2423,7 +2423,9 @@ components:
                 conexión a `DimEjecutivo` está configurada pero falla).
                 Licitaciones (HU-011, ADR-017): `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `EXCEL_INVALIDO` y `EXCEL_SIN_DATOS`
                 (mismos códigos que Nexo en `analizar-excel`), `ARCHIVO_DEMASIADO_GRANDE` (más de 10 MB) y
-                `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`) y `NEXO_SIN_PERMISO`
+                `LICITACION_INVALIDA` (filas inválidas; el detalle viaja en `ReporteLicitacionInvalida`), `MARGEN_LINEA_DESCONOCIDA` en
+                `POST /web/licitaciones` con `detalle.lineas_validas` (las líneas activas de Cotifly; con "Licitaciones", la línea de
+                Nexo, además `detalle.motivo = LINEA_DE_NEXO`, HU-013.15) y `NEXO_SIN_PERMISO`
                 (403 de Nexo al alta o al análisis: el comercial no tiene el rol de Cabina de Fletes; en `/web/*` responde 403).
                 Pipeline determinista (HU-013, ADR-018): `CONFLICTO_CONCURRENCIA` (409: el `If-Match` no coincide con la
                 versión actual de la cotización; nada cambió), `FOLIO_REQUERIDO` (400: `/web/chat` sin `folio`),
@@ -2920,7 +2922,8 @@ components:
             type: string
           description: |
             HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí, `[]` si no había):
-            nombres de los servicios conexos del costeo anterior que la cotización resultante ya no tiene (sin montos). No se
+            nombres de los servicios conexos INCLUIDOS del costeo anterior que la cotización resultante ya no tiene (sin montos;
+            los excluidos no iban para el cliente y no se listan). No se
             vuelven a agregar en Nexo; el frontend los muestra como aviso y ofrece agregarlos de nuevo cuando llegue el costeo.
 
     MisCotizaciones:

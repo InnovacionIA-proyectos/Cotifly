@@ -223,12 +223,14 @@ public sealed class clsReSolicitudCosteoService(
     /// DESCARTAN. Cotifly no los vuelve a agregar en Nexo por su cuenta (Nexo no tiene DELETE: un re-agregado automático que falle a
     /// medias, o que se repita, deja conexos duplicados o cobrados sin que el comercial los confirme); los avisa para que el comercial
     /// los agregue de nuevo cuando llegue el costeo nuevo. Devuelve sus nombres sin repetir y en orden, sin montos: los ve el comercial
-    /// en la respuesta (<c>conexos_descartados</c>) y en el resumen de la propuesta del asistente.
+    /// en la respuesta (<c>conexos_descartados</c>) y en el resumen de la propuesta del asistente. Solo los INCLUIDOS (<c>Incluido</c>):
+    /// los que el comercial había excluido no iban en el PDF ni en el precio para el cliente, así que no se pierde nada con ellos.
     /// </summary>
     public static IReadOnlyList<string> ConexosDescartados(clsCotizacion cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         return [.. clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos)
+            .Where(c => c.Incluido)
             .Select(c => (string.IsNullOrWhiteSpace(c.Nombre) ? c.Categoria ?? string.Empty : c.Nombre).Trim())
             .Where(n => n.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)];

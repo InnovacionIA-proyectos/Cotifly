@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Licitaciones.DTOs;
+using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Licitaciones.Validators;
 using Cotifly.Dominio.Cotizaciones;
 
@@ -96,6 +97,20 @@ public sealed class clsValidadorLicitacionTests
 
         clsValidadorLicitacion.ConFilaExcel(errores, _filasExcel).Select(e => e.FilaExcel).Should().Equal(null, 7, null, null);
         clsValidadorLicitacion.ConFilaExcel(errores, null).Should().BeSameAs(errores, "sin archivo no hay fila de Excel");
+    }
+
+    // Auditor de #124: filas_excel se compara con el total real de la hoja (Nexo corta 'filas' en 1000), no con 'filas'.
+    [Theory]
+    [InlineData(3, 3, 3, true)]
+    [InlineData(4, 3, 3, false)]
+    [InlineData(1000, 1500, 1000, true)]
+    [InlineData(999, 1500, 1000, false)]
+    [InlineData(1000, 1000, 1000, true)]
+    public void LasFilasDelExcelCuadranConElTotalDeLaHoja(int ubicadas, int totalNexo, int filasNexo, bool cuadra)
+    {
+        var hoja = new clsHojaExcel("Pliego", 1, [], [.. Enumerable.Range(0, filasNexo).Select(_ => (IReadOnlyList<string>)[])], totalNexo);
+
+        clsLicitacionService.Cuadra(ubicadas, hoja).Should().Be(cuadra);
     }
 
     // ADR-014 §5: moneda opcional (COP por defecto), COP o USD sin distinguir mayúsculas; otro valor o vacía es error del encabezado.

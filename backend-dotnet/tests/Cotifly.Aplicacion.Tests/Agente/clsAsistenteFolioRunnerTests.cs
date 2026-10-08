@@ -218,7 +218,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
         [
             new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
-            new clsServicioConexoCosteo("CX-2", "Stand-by", "logistico", 2m, 40_000m, 47_059m, false),
+            new clsServicioConexoCosteo("CX-2", "Stand-by", "logistico", 2m, 40_000m, 47_059m, true),
         ]));
         Registrar(cotizacion);
         _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Cerrar("Te propongo volver a pedir el flete.");
@@ -232,6 +232,53 @@ public sealed partial class clsAsistenteFolioRunnerTests
             "el aviso va antes del texto del modelo para que el recorte a 300 caracteres no lo oculte");
         var salida = _modelo.Llamadas[1].ResultadosHerramientas.Single();
         salida.Should().Contain("conexos_descartados").And.Contain("Stand-by").And.NotContain("85000").And.NotContain("47059");
+    }
+
+    // Auditor de #124: peor caso (folio de 29 caracteres, -vN con 5 cambios de carga y 5 conexos de nombre largo). El aviso cabe
+    // completo, con "y N más" y "agrégalos de nuevo": se acorta la descripción de los cambios, nunca el aviso.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EnElPeorCasoElAvisoDeConexosCabeCompletoEnElResumen(bool versionNueva)
+    {
+        Folio.Length.Should().Be(29);
+        var cotizacion = Vencida();
+        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([.. Enumerable.Range(1, 5).Select(i =>
+            new clsServicioConexoCosteo($"CX-{i}", $"Servicio conexo de nombre muy largo para el pliego número {i}", "logistico", 1m, 1m, 1m, true))]));
+        var cambios = new clsCambiosCargaAsistente(28_400m, 2.5m, 3.5m, true, false);
+        var entrada = versionNueva
+            ? clsPropuestasAsistente.EntradaReSolicitud(new string('m', 300), cambios, nuevaVersion: true)
+            : clsPropuestasAsistente.EntradaReSolicitud(new string('m', 300), new clsCambiosCargaAsistente(null, null, null, null, null), nuevaVersion: false);
+
+        var resumen = clsPropuestasAsistente.ReSolicitar(cotizacion, entrada, versionNueva ? cambios : new clsCambiosCargaAsistente(null, null, null, null, null)).Resumen;
+
+        resumen.Length.Should().BeLessThanOrEqualTo(clsAccionPropuesta.LargoMaximoResumen);
+        resumen.Should().Contain(Folio).And.Contain(" más: agrégalos de nuevo cuando llegue ", "el recorte nunca oculta el aviso");
+        var motivo = resumen.IndexOf("Motivo:", StringComparison.Ordinal);
+        if (motivo >= 0)
+        {
+            resumen.IndexOf("agrégalos de nuevo", StringComparison.Ordinal).Should().BeLessThan(motivo, "solo el motivo y lo que sigue se recortan");
+        }
+    }
+
+    [Fact]
+    public void ElNombreDeUnConexoSeRecortaACuarentaCaracteres()
+    {
+        clsPropuestasAsistente.NombreConexo("  Cargue   y  descargue ").Should().Be("Cargue y descargue");
+        clsPropuestasAsistente.NombreConexo(new string('x', 60)).Should().Be(new string('x', 39) + "…");
+    }
+
+    [Fact]
+    public void ElAvisoDeConexosNombraMenosSiNoCabe()
+    {
+        string[] largos = ["Servicio conexo de nombre muy largo número 1", "Servicio conexo de nombre muy largo número 2", "C3", "C4"];
+
+        var aviso = clsPropuestasAsistente.AvisoConexosDescartados(largos, versionNueva: false, largoMaximo: 140);
+
+        aviso.Length.Should().BeLessThanOrEqualTo(140);
+        aviso.Should().EndWith("y 3 más: agrégalos de nuevo cuando llegue el costeo nuevo.");
+        clsPropuestasAsistente.AvisoConexosDescartados(largos, versionNueva: false, largoMaximo: 10)
+            .Should().Be(" Se descartan 4 servicio(s) conexo(s): agrégalos de nuevo cuando llegue el costeo nuevo.");
     }
 
     [Fact]

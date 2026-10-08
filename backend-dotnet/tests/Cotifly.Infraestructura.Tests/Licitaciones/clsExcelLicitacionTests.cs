@@ -133,6 +133,28 @@ public sealed class clsExcelLicitacionTests : IDisposable
     }
 
     [Fact]
+    public void UnaHojaQueNoSePuedeUbicarNoQuitaLasFilasDelExcelDeLasDemas()
+    {
+        using var libro = new XLWorkbook(new MemoryStream(clsPliegoMuestra.Excel(3)));
+        var rota = libro.Worksheets.Add("Combinadas");
+        for (var r = 1; r <= clsLectorExcelLicitacionClosedXml.MaximoCombinadas + 1; r++)
+        {
+            rota.Cell(r, 1).Value = "x";
+            rota.Range(r, 1, r, 2).Merge();
+        }
+
+        using var memoria = new MemoryStream();
+        libro.SaveAs(memoria);
+
+        var porHoja = _lector.FilasDeDatosPorHoja(memoria.ToArray(), Ct);
+
+        _lector.FilasDeDatos(memoria.ToArray(), "Combinadas", Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        porHoja.EsExitoso.Should().BeTrue("una hoja con demasiadas combinadas solo queda fuera");
+        porHoja.Valor.Keys.Should().Equal(clsPliegoMuestra.Hoja);
+        porHoja.Valor[clsPliegoMuestra.Hoja].Should().Equal(4, 5, 7);
+    }
+
+    [Fact]
     public async Task SinNexoConfiguradoNoSeLlama()
     {
         var analisis = await Analizador(url: null).AnalizarAsync(_usuarioId, "pliego.xlsx", [1], Ct);

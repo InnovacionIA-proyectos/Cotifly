@@ -32,8 +32,8 @@ public interface IClsLectorExcelLicitacion
 
     /// <summary>
     /// Lo mismo que <see cref="FilasDeDatos"/> para todas las hojas del libro, abriéndolo una sola vez (HU-013.15, #124): por nombre de
-    /// hoja, los números de fila de Excel de sus filas con datos. Las hojas sin encabezado no aparecen. <c>EXCEL_INVALIDO</c> si no se
-    /// puede leer.
+    /// hoja, los números de fila de Excel de sus filas con datos. Las hojas sin encabezado, o que no se pueden ubicar (por ejemplo, con
+    /// demasiadas celdas combinadas), no aparecen; las demás sí. <c>EXCEL_INVALIDO</c> solo si el libro no se puede leer.
     /// </summary>
     clsResultado<IReadOnlyDictionary<string, IReadOnlyList<int>>> FilasDeDatosPorHoja(byte[] contenido, CancellationToken cancellationToken = default);
 }
