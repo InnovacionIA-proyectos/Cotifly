@@ -50,18 +50,11 @@ public sealed class clsCandadoTransaccionalSql(
         for (var intento = 1; ; intento++)
         {
             await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
-            int? codigo;
+            clsResultadoAppLock toma;
             try
             {
-                codigo = await clsAppLockSql.TomarAsync(
-                    contexto.Database.GetDbConnection(),
-                    transaccion.GetDbTransaction(),
-                    recurso,
-                    "Transaction",
-                    TimeSpan.FromMilliseconds(configuracion.EsperaMilisegundos),
-                    TimeSpan.FromMilliseconds(configuracion.MargenRespuestaMilisegundos),
-                    tiempo,
-                    cancellationToken);
+                toma = await clsAppLockSql.TomarAsync(
+                    contexto.Database.GetDbConnection(), transaccion.GetDbTransaction(), recurso, "Transaction", Limites(configuracion), tiempo, cancellationToken);
             }
             catch
             {
@@ -69,6 +62,7 @@ public sealed class clsCandadoTransaccionalSql(
                 throw;
             }
 
+            var codigo = toma.Codigo;
             if (codigo >= clsAppLockSql.Concedido)
             {
                 return await EjecutarConCandadoAsync(transaccion, operacion, cancellationToken);
@@ -101,6 +95,12 @@ public sealed class clsCandadoTransaccionalSql(
             await Task.Delay(Pausa(intento, configuracion.PausaBaseMilisegundos), tiempo, cancellationToken);
         }
     }
+
+    private static clsLimitesAppLock Limites(clsOpcionesCandadoSql configuracion) => new(
+        TimeSpan.FromMilliseconds(configuracion.EsperaMilisegundos),
+        TimeSpan.FromMilliseconds(configuracion.MargenRespuestaMilisegundos),
+        TimeSpan.FromMilliseconds(configuracion.GraciaCancelacionMilisegundos),
+        configuracion.ComandoSegundos);
 
     /// <summary>Pausa antes del intento siguiente: base·2^(intento-1) más una variación aleatoria de hasta la mitad de la base.</summary>
     public static TimeSpan Pausa(int intento, int pausaBaseMilisegundos)

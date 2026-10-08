@@ -1049,6 +1049,9 @@ paths:
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -1408,6 +1411,9 @@ paths:
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
             cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
             los reintentos: no se creó la versión.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -1966,6 +1972,9 @@ paths:
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
             catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
             tras los reintentos: nada se guarda y se puede reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -2291,6 +2300,13 @@ components:
       schema:
         type: string
       example: '"7"'
+    RetryAfter:
+      description: |
+        Solo con `SERVICIO_OCUPADO` (#125): segundos que conviene esperar antes de reintentar (siempre 1). Las demás causas del
+        503 no lo envían.
+      schema:
+        type: integer
+      example: 1
 
   responses:
     PrecondicionRequerida:

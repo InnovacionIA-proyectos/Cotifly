@@ -24,6 +24,12 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
     /// <summary>Margen sobre la espera para la respuesta del servidor (límite del cliente, #125).</summary>
     private static readonly TimeSpan _margenRespuesta = TimeSpan.FromSeconds(30);
 
+    /// <summary>Espera del acuse de una cancelación antes de cerrar la conexión (#125).</summary>
+    private static readonly TimeSpan _gracia = TimeSpan.FromSeconds(5);
+
+    /// <summary><c>CommandTimeout</c> de respaldo (#125): alto, porque SqlClient lo mide con el reloj de pared.</summary>
+    private const int ComandoSegundos = 120;
+
     public async Task<IAsyncDisposable?> IntentarTomarAsync(string spaceId, string threadId, TimeSpan espera, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(spaceId);
@@ -36,14 +42,20 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
         {
             await conexion.OpenAsync(cancellationToken);
 
-            // Límite del cliente monotónico, no CommandTimeout (ver clsAppLockSql, #125). null = sin respuesta a tiempo.
-            var codigo = await clsAppLockSql.TomarAsync(
-                conexion, transaccion: null, recurso, "Session", espera, _margenRespuesta, tiempo, cancellationToken);
+            // Límite del cliente monotónico, CommandTimeout de respaldo y cierre si no se confirma la cancelación (clsAppLockSql, #125).
+            var toma = await clsAppLockSql.TomarAsync(
+                conexion, transaccion: null, recurso, "Session", new clsLimitesAppLock(espera, _margenRespuesta, _gracia, ComandoSegundos), tiempo, cancellationToken);
 
             // 0 = concedido, 1 = concedido tras esperar; negativo = tiempo agotado, cancelado o interbloqueo.
-            if (codigo >= clsAppLockSql.Concedido)
+            if (toma.Codigo >= clsAppLockSql.Concedido)
             {
-                return new clsCandadoTomado(conexion, recurso);
+                return new clsCandadoTomado(conexion, recurso, tiempo);
+            }
+
+            if (toma.ConexionCerrada)
+            {
+                // Ya se cerró (o se está cerrando) a la fuerza: desecharla aquí podría quedarse esperando a SqlClient.
+                return null;
             }
         }
         catch
@@ -65,30 +77,20 @@ public sealed class clsCandadoSesionSql(IOptions<clsOpcionesConexiones> conexion
             : Prefijo + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(recurso)));
     }
 
-    private sealed class clsCandadoTomado(SqlConnection conexion, string recurso) : IAsyncDisposable
+    private sealed class clsCandadoTomado(SqlConnection conexion, string recurso, TimeProvider tiempo) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync()
         {
-            try
+            // Mismos límites que la toma (#125). Si no se confirma, cerrar la conexión también libera el candado de sesión.
+            if (conexion.State == ConnectionState.Open
+                && !await clsAppLockSql.LiberarAsync(
+                    conexion, recurso, "Session", new clsLimitesAppLock(TimeSpan.Zero, _margenRespuesta, _gracia, ComandoSegundos), tiempo))
             {
-                if (conexion.State == ConnectionState.Open)
-                {
-                    await using var comando = conexion.CreateCommand();
-                    comando.CommandText = "sp_releaseapplock";
-                    comando.CommandType = CommandType.StoredProcedure;
-                    comando.Parameters.Add(new SqlParameter("@Resource", SqlDbType.NVarChar, LargoMaximoRecurso) { Value = recurso });
-                    comando.Parameters.Add(new SqlParameter("@LockOwner", SqlDbType.VarChar, 32) { Value = "Session" });
-                    await comando.ExecuteNonQueryAsync();
-                }
+                await clsAppLockSql.CerrarALaFuerzaAsync(conexion, _gracia, tiempo);
+                return;
             }
-            catch (SqlException)
-            {
-                // Cerrar la conexión también libera el candado de sesión.
-            }
-            finally
-            {
-                await conexion.DisposeAsync();
-            }
+
+            await conexion.DisposeAsync();
         }
     }
 }

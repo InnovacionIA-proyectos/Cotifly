@@ -47,6 +47,9 @@ public static class clsRespuestasWeb
 {
     public const string MensajeNoEsTuya = "Cotización no encontrada o no es tuya.";
 
+    /// <summary>Segundos del encabezado <c>Retry-After</c> del 503 <c>SERVICIO_OCUPADO</c> (#125).</summary>
+    public const int SegundosReintentoServicioOcupado = 1;
+
     /// <summary>Códigos que responden 400 con <c>ErrorWeb</c> (validación); el resto de errores de negocio va como <c>ErrorNegocio</c>.</summary>
     private static readonly HashSet<string> _validacion = new(StringComparer.Ordinal)
     {
@@ -78,6 +81,9 @@ public static class clsRespuestasWeb
         ArgumentNullException.ThrowIfNull(error);
         return error.Codigo switch
         {
+            // #125: reintentable de inmediato; Retry-After le dice al cliente cuándo.
+            clsCodigosError.ServicioOcupado =>
+                new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoServicioOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosError.CotizacionNoEncontrada => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya)),
             clsCodigosAplicacion.NoEncontrado => new NotFoundObjectResult(new clsErrorWeb(error.Mensaje)),
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
@@ -85,8 +91,7 @@ public static class clsRespuestasWeb
             clsCodigosAplicacion.SinPermiso => new ObjectResult(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso)) { StatusCode = StatusCodes.Status403Forbidden },
             clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
                 or clsCodigosAplicacion.RegionalNoDisponible or clsCodigosError.CatalogosFleteNoDisponible or clsCodigosError.NexoNoDisponible
-                or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
-                or clsCodigosError.ServicioOcupado =>
+                or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },
@@ -100,6 +105,19 @@ public static class clsRespuestasWeb
 
     /// <summary>404 <c>NoEsTuya</c> (ids o folios que ni siquiera tienen forma válida).</summary>
     public static IActionResult NoEsTuya() => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya));
+}
+
+/// <summary><see cref="ObjectResult"/> que agrega <c>Retry-After</c> (segundos) a la respuesta (#125).</summary>
+public sealed class clsResultadoReintentable(object? valor, int segundos) : ObjectResult(valor)
+{
+    public int Segundos { get; } = segundos;
+
+    public override void OnFormatting(ActionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        base.OnFormatting(context);
+        context.HttpContext.Response.Headers.RetryAfter = Segundos.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
 }
 
 /// <summary>

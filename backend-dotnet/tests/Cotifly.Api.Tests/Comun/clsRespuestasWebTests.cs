@@ -2,6 +2,7 @@ using Cotifly.Api.Comun;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Dominio.Comun;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Cotifly.Api.Tests.Comun;
 
@@ -44,6 +45,22 @@ public sealed class clsRespuestasWebTests
         var resultado = (ObjectResult)clsRespuestasWeb.Error(new clsErrorDominio(codigo, "Cotización no encontrada o no es tuya."));
 
         resultado.Value.Should().Be(new clsErrorWeb("Cotización no encontrada o no es tuya."));
+    }
+
+    [Fact]
+    public async Task ServicioOcupadoResponde503ConRetryAfter()
+    {
+        var resultado = clsRespuestasWeb.Error(new clsErrorDominio(clsCodigosError.ServicioOcupado, "ocupado"));
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().AddControllers().Services.BuildServiceProvider(),
+        };
+        http.Response.Body = new MemoryStream();
+
+        await resultado.ExecuteResultAsync(new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
+
+        http.Response.StatusCode.Should().Be(503);
+        http.Response.Headers.RetryAfter.ToString().Should().Be("1");
     }
 
     [Fact]

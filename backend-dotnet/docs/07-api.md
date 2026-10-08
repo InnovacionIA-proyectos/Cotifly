@@ -112,7 +112,7 @@ Errores de `/web/*` (`clsRespuestasWeb`, cumple la tabla "Para #12" de abajo):
 | `COTIZACION_NO_ENCONTRADA`, `NO_ENCONTRADO` (no existe o no es tuya; PDF ajeno) | 404 `ErrorWeb` (`Cotización no encontrada o no es tuya.`, igual en ambos casos) |
 | `NO_AUTENTICADO`, `USUARIO_NO_ENCONTRADO` | 401 `ErrorWeb` (`Inicia sesión de nuevo.`) |
 | `SIN_PERMISO` (rol revalidado en el caso de uso) | 403 `ErrorWeb` |
-| `CORREO_DESHABILITADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE` (HU-013.10), `SERVICIO_OCUPADO` (#125: el candado del folio siguió ocupado tras los reintentos de `CandadoSql`; nada se guardó, reintentable) | 503 `ErrorNegocio` |
+| `CORREO_DESHABILITADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE` (HU-013.10), `SERVICIO_OCUPADO` (#125: el candado del folio siguió ocupado tras los reintentos de `CandadoSql`; nada se guardó, reintentable) | 503 `ErrorNegocio` (`SERVICIO_OCUPADO` con `Retry-After: 1`) |
 | `REGIONAL_NO_ASIGNADA` (tablero del gerente sin regional, #45) | 409 `ErrorNegocio` |
 | `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`, `SEGUIMIENTO_INVALIDO`, cuerpo mal formado | 400 `ErrorWeb` |
 | `TRM_NO_DISPONIBLE` (HU-012: ninguna fuente de la TRM respondió, DolarApi ni la Superintendencia; no se cotiza en USD; en `POST /web/licitaciones` con `moneda = USD` es 400 y no se guarda nada) | 400 `ErrorNegocio` en los endpoints que convierten a USD (fila "Resto"). Hasta HU-013.9 (#105) lo devolvían también las herramientas `calcular_precio` y `registrar_ajuste_margen` del agente legado, en `errores` de `RespuestaChat` |

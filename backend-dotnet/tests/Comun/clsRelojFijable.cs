@@ -15,13 +15,15 @@ public sealed class clsRelojFijable(TimeProvider tiempo) : IClsReloj
     public DateTimeOffset AhoraUtc => _fijada.Value ?? tiempo.GetUtcNow();
 
     /// <summary>
-    /// Hora base para fijar <c>createdAt</c> explícitos: el minuto actual menos 10 minutos (mismo día de negocio salvo en los primeros
-    /// minutos tras la medianoche; las horas que se fijan a partir de ella quedan en el pasado y nunca dependen del reloj después).
+    /// Hora base para fijar <c>createdAt</c> explícitos: las 12:00 de hoy en Bogotá (UTC-5, sin horario de verano). La hora no depende
+    /// del reloj real, así que las horas que se fijan desde ella nunca cruzan la medianoche ni caen en el día anterior; del reloj solo
+    /// se toma la fecha de negocio, para que el folio y las métricas "de hoy" sigan siendo de hoy.
     /// </summary>
     public static DateTimeOffset HoraBase()
     {
-        var ahora = DateTimeOffset.UtcNow;
-        return new DateTimeOffset(ahora.Year, ahora.Month, ahora.Day, ahora.Hour, ahora.Minute, 0, TimeSpan.Zero).AddMinutes(-10);
+        var bogota = TimeSpan.FromHours(-5);
+        var hoy = DateTimeOffset.UtcNow.ToOffset(bogota);
+        return new DateTimeOffset(hoy.Year, hoy.Month, hoy.Day, 12, 0, 0, bogota);
     }
 
     /// <summary>Fija <paramref name="hora"/> en este flujo hasta disponer el resultado (se restaura la anterior).</summary>

@@ -25,6 +25,20 @@ public sealed class clsOpcionesCandadoSql
     public int MargenRespuestaMilisegundos { get; set; } = 15_000;
 
     /// <summary>
+    /// Tiempo que se espera el acuse del servidor tras cancelar la solicitud (al vencer el margen); pasado ese tiempo la conexión se
+    /// cierra a la fuerza para que el servidor deshaga la transacción y suelte el candado. Por defecto 5 s.
+    /// </summary>
+    [Range(500, 60_000)]
+    public int GraciaCancelacionMilisegundos { get; set; } = 5_000;
+
+    /// <summary>
+    /// <c>CommandTimeout</c> de respaldo del <c>sp_getapplock</c> (s). Alto a propósito: SqlClient lo mide con el reloj de pared y un
+    /// salto del reloj lo vencería al instante; el límite normal es el monotónico de arriba. Por defecto 120.
+    /// </summary>
+    [Range(5, 3_600)]
+    public int ComandoSegundos { get; set; } = 120;
+
+    /// <summary>
     /// Intentos de tomar el candado (el primero incluido) antes de responder <c>SERVICIO_OCUPADO</c> (503). Solo se reintenta la
     /// toma del candado, nunca la operación: entre intentos la transacción se deshace sin haber escrito nada. Por defecto 3.
     /// </summary>

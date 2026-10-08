@@ -101,6 +101,43 @@ public sealed class clsCandadoTransaccionalSqlTests(clsBaseDatosPruebas baseDato
         resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
     }
 
+    [Fact]
+    public async Task ConElServidorCongeladoLaTomaTerminaAcotadaConServicioOcupadoYSinTransaccionesAbiertas()
+    {
+        // La conexión TCP sigue viva pero el servidor no responde (proxy congelado): SqlClient esperaría sin límite el acuse de la
+        // cancelación. Límite del cliente 2 s + gracia 1 s; después la conexión se cierra a la fuerza.
+        await using var proxy = new clsProxyTcpCongelable(BaseDatos.CadenaCotifly);
+        var aplicacion = $"cotifly-congelado-{Guid.NewGuid():N}";
+        var cadena = new SqlConnectionStringBuilder(proxy.Cadena(BaseDatos.CadenaCotifly)) { ApplicationName = aplicacion }.ConnectionString;
+        await using var proveedor = clsServiciosPruebas.Crear(cadena, Reloj, BaseDatos.CadenaIdentidad, new Dictionary<string, string?>
+        {
+            ["CandadoSql:EsperaMilisegundos"] = "1000",
+            ["CandadoSql:MargenRespuestaMilisegundos"] = "1000",
+            ["CandadoSql:GraciaCancelacionMilisegundos"] = "1000",
+            ["CandadoSql:Intentos"] = "1",
+        });
+        var recurso = RecursoUnico();
+        await using var retenedor = await RetenerAsync(recurso);
+        await using var ambito = proveedor.CreateAsyncScope();
+        var candado = ambito.ServiceProvider.GetRequiredService<IClsCandadoTransaccional>();
+        var ejecuciones = 0;
+
+        var ejecucion = candado.EjecutarAsync<int>(recurso, _ => Task.FromResult(clsResultado<int>.Exito(Interlocked.Increment(ref ejecuciones))), Ct);
+        await EsperarAsync(
+            "SELECT COUNT(*) FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id "
+            + $"WHERE s.program_name = N'{aplicacion}' AND r.wait_type LIKE 'LCK%'",
+            esperado: 1);
+        proxy.Congelar();
+        var cronometro = System.Diagnostics.Stopwatch.StartNew();
+        var resultado = await ejecucion.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        cronometro.Stop();
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ServicioOcupado);
+        ejecuciones.Should().Be(0);
+        cronometro.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15), "límite del cliente (2 s) + gracia (1 s) + cierre");
+        await EsperarAsync($"SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE program_name = N'{aplicacion}'", esperado: 0);
+    }
+
     [Theory]
     [InlineData(1, 200, 200, 300)]
     [InlineData(2, 200, 400, 500)]
@@ -111,6 +148,20 @@ public sealed class clsCandadoTransaccionalSqlTests(clsBaseDatosPruebas baseDato
         var pausa = clsCandadoTransaccionalSql.Pausa(intento, baseMs).TotalMilliseconds;
 
         pausa.Should().BeInRange(minimo, maximo);
+    }
+
+    /// <summary>Espera (hasta 20 s) a que la consulta escalar en <c>master</c> devuelva <paramref name="esperado"/>.</summary>
+    private async Task EsperarAsync(string consulta, int esperado)
+    {
+        var cronometro = System.Diagnostics.Stopwatch.StartNew(); // no el reloj de pared: en el contenedor salta
+        int actual;
+        while ((actual = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaMaster, consulta)) != esperado
+               && cronometro.Elapsed < TimeSpan.FromSeconds(20))
+        {
+            await Task.Delay(100, Ct);
+        }
+
+        actual.Should().Be(esperado, consulta);
     }
 
     private static string RecursoUnico() => $"cotifly:prueba-candado:{Guid.NewGuid():N}";
