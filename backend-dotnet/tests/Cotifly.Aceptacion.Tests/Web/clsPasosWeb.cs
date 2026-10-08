@@ -35,7 +35,7 @@ public sealed class clsPasosWeb(clsContextoWeb web)
 
     [Given("que {string} tiene la cotización web {string} del cliente {string} con su PDF")]
     public async Task DadoLaCotizacion(string alias, string cotizacion, string nit) =>
-        web.Cotizaciones[cotizacion] = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, nit);
+        web.Cotizaciones[cotizacion] = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, nit, creadaEn: web.SiguienteHoraCreacion());
 
     [Given("que {string} ya envió la cotización {string} a {string}")]
     public Task DadoQueYaEnvio(string alias, string cotizacion, string para) =>

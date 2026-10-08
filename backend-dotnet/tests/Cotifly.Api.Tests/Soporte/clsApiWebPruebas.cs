@@ -83,6 +83,9 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             b.UseEnvironment(entorno);
             b.ConfigureAppConfiguration((_, configuracion) => configuracion.AddInMemoryCollection(valores));
+
+            // Reloj de la API con horas explícitas por flujo (CrearCotizacionAsync con creadaEn, #117); sin fijar, el del sistema.
+            b.ConfigureTestServices(s => s.AddSingleton<IClsReloj>(sp => new clsRelojFijable(sp.GetRequiredService<TimeProvider>())));
             configurar?.Invoke(b);
         });
         Cliente = Factory.CreateClient();
@@ -162,10 +165,13 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// Cotización del comercial con folio del servidor (<see cref="IClsGeneradorFolioService"/>), línea, precio y, si se pide,
-    /// su PDF en el almacén (<c>pdfPath</c>).
+    /// su PDF en el almacén (<c>pdfPath</c>). Con <paramref name="creadaEn"/>, ese es su <c>createdAt</c> (reloj fijado solo para esta
+    /// creación, <see cref="clsRelojFijable"/>): las pruebas de orden no dependen del reloj real (#117).
     /// </summary>
-    public async Task<clsCotizacionPrueba> CrearCotizacionAsync(Guid usuarioId, string? nit = null, bool conPdf = true, string linea = "Nacional")
+    public async Task<clsCotizacionPrueba> CrearCotizacionAsync(
+        Guid usuarioId, string? nit = null, bool conPdf = true, string linea = "Nacional", DateTimeOffset? creadaEn = null)
     {
+        using var hora = creadaEn is { } fijada ? clsRelojFijable.Fijar(fijada) : null;
         await using var ambito = Factory.Services.CreateAsyncScope();
         var servicios = ambito.ServiceProvider;
         var politica = await servicios.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorLineaAsync(linea)
