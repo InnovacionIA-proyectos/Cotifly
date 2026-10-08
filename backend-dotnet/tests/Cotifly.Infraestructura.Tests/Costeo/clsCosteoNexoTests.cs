@@ -308,14 +308,68 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Peticiones.Single().Url.AbsoluteUri.Should().Be("http://nexo-test.local/api/captura-solicitudes");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnaRutaConTresCamionesViajaComoTresLineasYLaReferenciaDeRutaSoloConLaOpcion(bool enviarReferencia)
+    {
+        // HU-021.7 (#134): una línea por camión con los datos de su ruta y de su camión, sin posiciones (a Nexo le basta el peso). La
+        // referencia de la ruta (N1) solo viaja con Nexo:EnviarReferenciaRuta, porque hoy CapturaLineaRequest no la tiene.
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-CAM-1" }).Valor;
+        var ruta = cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 1);
+        ruta.AgregarVehiculo("2S2", null, 8_000m);
+        ruta.AgregarVehiculo(null, null, 4_000m);
+        var solicitud = new clsSolicitudNexo(clsClienteNexo.PorBp("15927"), cotizacion.EncabezadoSolicitud!, [.. cotizacion.LineasNexo().Select(l => l.Linea)], "PuertoAInterior");
+
+        await Adaptador(enviarReferenciaRuta: enviarReferencia).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+
+        using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        var lineas = cuerpo.RootElement.GetProperty("lineas").EnumerateArray().ToList();
+        lineas.Should().HaveCount(3);
+        lineas.Select(l => l.GetProperty("peso").GetDecimal()).Should().BeEquivalentTo(cotizacion.Vehiculos.Select(v => v.PesoKg!.Value));
+        lineas.Should().OnlyContain(l => l.GetProperty("origen").GetString() == "Buenaventura" && l.GetProperty("destino").GetString() == "Bogotá D.C."
+                                         && l.GetProperty("horasCargue").GetDecimal() == 4m);
+        lineas.Count(l => l.TryGetProperty("posiciones", out _)).Should().Be(0, "a Nexo le basta el peso de cada camión");
+        lineas.Count(l => !l.TryGetProperty("tipoVehiculo", out _)).Should().Be(1, "el camión sin vehículo viaja vacío a la Mesa");
+        lineas.Select(l => l.TryGetProperty("referenciaRuta", out var r) ? r.GetString() : null)
+            .Should().OnlyContain(r => enviarReferencia ? r == ruta.Id.ToString("D") : r == null);
+    }
+
+    [Fact]
+    public void LaLineaDeLaSolicitudAceptaElNombreDelSwaggerYLaReferenciaDeRuta()
+    {
+        // El swagger de Nexo QA (2026-10-08) publica la ruta como "clsRuta"; Cotifly lee los dos nombres.
+        using var documento = JsonDocument.Parse(
+            """{"lineaId":"L1","rutaId":"b2b8c1e0-0000-4000-8000-000000000009","clsRuta":"BUENAVENTURA → BOGOTA","tipologia":"Contenedor","peso":10000,"tipoVehiculo":"3S3","referenciaRuta":"RUTA-COTIFLY"}""");
+
+        var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
+
+        linea.Should().Be(new Dominio.Cotizaciones.clsLineaSolicitudNexo("L1", "BUENAVENTURA → BOGOTA", "Contenedor", 10_000m, "3S3", null)
+        {
+            ReferenciaRuta = "RUTA-COTIFLY",
+        }, "rutaId es del catálogo de rutas de Nexo, no la referencia de Cotifly");
+    }
+
+    [Fact]
+    public void ElConexoDeLaCotizacionTraeSuLineaDeCotizacion()
+    {
+        using var documento = JsonDocument.Parse(
+            """{"id":"COT","lineas":[],"conexos":[{"id":"CX-1","cotizacionLineaId":"LC-7","nombre":"Escolta","categoria":"logistico","cantidad":1,"valorAplicado":50000}]}""");
+
+        clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos.Should().ContainSingle().Which.CotizacionLineaId.Should().Be("LC-7");
+    }
+
     private void UsuarioResuelto(clsUsuarioWeb? usuario) =>
         _usuarios.ObtenerPorIdAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(usuario);
 
     private static clsUsuarioWeb UsuarioConIdExterno(long? idUsuarioExterno) =>
         clsUsuarioWeb.Crear("mospina", "Mariana Ospina", "mospina@boterosoto.com.co", null, DateTimeOffset.UtcNow, idUsuarioExterno).Valor;
 
-    private clsCosteoNexo Adaptador(string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null) =>
-        new(_http, Options.Create(new clsOpcionesNexo { UrlBase = url }), _usuarios, logger ?? NullLogger<clsCosteoNexo>.Instance);
+    private clsCosteoNexo Adaptador(
+        string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null, bool enviarReferenciaRuta = false) =>
+        new(_http, Options.Create(new clsOpcionesNexo { UrlBase = url, EnviarReferenciaRuta = enviarReferenciaRuta }), _usuarios,
+            logger ?? NullLogger<clsCosteoNexo>.Instance);
 
     public void Dispose()
     {

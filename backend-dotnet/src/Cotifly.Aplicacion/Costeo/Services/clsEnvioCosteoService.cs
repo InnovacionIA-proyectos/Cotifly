@@ -215,6 +215,29 @@ public sealed class clsEnvioCosteoService(
         return encabezado with { Notas = existentes.Length == 0 ? agregada : existentes + "\n" + agregada };
     }
 
+    /// <summary>Largo máximo de <see cref="NotaCamionesPorRuta"/> (el resto de <c>notas</c> es del comercial).</summary>
+    public const int LargoMaximoNotaCamiones = 500;
+
+    /// <summary>
+    /// Nota para la Mesa de Costeo cuando alguna ruta viaja partida en varios camiones (#134): Nexo no tiene un campo de ruta por línea
+    /// (N1), así que el encabezado dice cuántas líneas son de cada ruta, p. ej. <c>"Cotifly: una línea por camión. Ruta 1 (Buenaventura →
+    /// Bogotá D.C.): 3 camiones."</c>. <c>null</c> si todas las rutas tienen un solo camión (no hay nada que agrupar). Recortada a
+    /// <see cref="LargoMaximoNotaCamiones"/>.
+    /// </summary>
+    public static string? NotaCamionesPorRuta(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var partidas = cotizacion.RutasOrdenadas.Where(r => r.Vehiculos.Count > 1).ToList();
+        if (partidas.Count == 0)
+        {
+            return null;
+        }
+
+        var nota = "Cotifly: una línea por camión. "
+            + string.Join(" ", partidas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.Vehiculos.Count} camiones."));
+        return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
+    }
+
     /// <summary>
     /// Las rutas guardadas como líneas de la captura (en orden, cada una con sus mercancías y el vehículo de su camión): lo que se
     /// revalida con las reglas de la captura antes de reenviar (HU-021, "una ruta y un camión").
@@ -334,9 +357,12 @@ public sealed class clsEnvioCosteoService(
     {
         var cronometro = Stopwatch.StartNew();
 
-        // HU-021 (CAMBIOS_BACKEND §5.3): una línea por camión, ruta por ruta y en orden.
+        // HU-021 (CAMBIOS_BACKEND §5.3, #134): una línea por camión, ruta por ruta y en orden, cada una con los datos de su ruta y de su
+        // camión. Sin vehículo (sin selección automática) la línea viaja igual y la resuelve la Mesa: la solicitud nunca se parte. Mientras
+        // Nexo no tenga el campo de ruta por línea (N1), la nota del encabezado le dice a la Mesa qué líneas son la misma ruta.
         IReadOnlyList<clsLineaSolicitudCosteo> lineas = [.. cotizacion.LineasNexo().Select(l => l.Linea)];
-        var resultado = await ResolverClienteYEnviarAsync(cotizacion, encabezado, lineas, politica, usuarioId, CancellationToken.None);
+        var conNota = ConNota(encabezado, NotaCamionesPorRuta(cotizacion));
+        var resultado = await ResolverClienteYEnviarAsync(cotizacion, conNota, lineas, politica, usuarioId, CancellationToken.None);
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {

@@ -104,6 +104,13 @@ public sealed record clsLineaSolicitudCosteo
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario o del pliego.</summary>
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
+    /// <summary>
+    /// Ruta de Cotifly de la que sale la línea (HU-021.7, #134; petición N1 a Nexo): solo la llena <see cref="clsLineaSolicitud.ALineaNexo"/>
+    /// al armar una línea por camión. No la captura el comercial ni se valida. Viaja a Nexo como <c>referenciaRuta</c> solo cuando Nexo
+    /// la acepte (<c>Nexo:EnviarReferenciaRuta</c>); mientras tanto, el emparejamiento usa el contenido de la línea y el orden de envío.
+    /// </summary>
+    public Guid? RutaId { get; init; }
+
     /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 

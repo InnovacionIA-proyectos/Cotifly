@@ -17,15 +17,27 @@ public sealed record clsCosteoConsultadoNexo(string EstadoSolicitud, IReadOnlyLi
     public IReadOnlyList<clsLineaSolicitudNexo> Detalle { get; init; } = [];
 }
 
-/// <summary>Una línea de la solicitud en Nexo (<c>LineaCosteoDto</c>): <paramref name="Ruta"/> es <c>"Origen → Destino"</c>.</summary>
-public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria);
+/// <summary>
+/// Una línea de la solicitud en Nexo (<c>LineaCosteoDto</c>): <paramref name="Ruta"/> es <c>"Origen → Destino"</c>.
+/// <see cref="ReferenciaRuta"/> es el id de la ruta de Cotifly que Nexo devolvería con la petición N1 (#134); <c>null</c> mientras Nexo
+/// no la soporte. No es el <c>rutaId</c> de Nexo (su catálogo de rutas origen-destino), que Cotifly no usa.
+/// </summary>
+public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria)
+{
+    /// <summary>Id de la ruta de Cotifly que Nexo guardó en la línea (N1), o <c>null</c>.</summary>
+    public string? ReferenciaRuta { get; init; }
+}
 
 /// <summary>
-/// Un camión de Cotifly visto por el emparejador (HU-021): la ruta (<c>"Origen → Destino"</c> con los nombres copiados) y lo que viajó a
-/// Nexo en su línea (tipología, vehículo, carrocería y peso).
+/// Un camión de Cotifly visto por el emparejador (HU-021): la ruta (<c>"Origen → Destino"</c> con los nombres copiados), el id de la ruta
+/// (<see cref="RutaId"/>: separa rutas iguales y es la llave N1 cuando Nexo la devuelva) y lo que viajó a Nexo en su línea (tipología,
+/// vehículo, carrocería y peso).
 /// </summary>
 public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Destino, string? Tipologia, string? TipoVehiculo, string? Carroceria, decimal? PesoKg)
 {
+    /// <summary>Ruta de Cotifly del camión; <c>null</c> si quien arma el camión no la conoce (entonces la ruta es solo el texto).</summary>
+    public Guid? RutaId { get; init; }
+
     /// <summary>El camión <paramref name="camion"/> de <paramref name="ruta"/>.</summary>
     public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion)
     {
@@ -33,66 +45,130 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
         ArgumentNullException.ThrowIfNull(camion);
         return new clsCamionParaEmparejar(
             camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia, camion.TipoVehiculo, camion.Carroceria,
-            camion.PesoKg ?? (ruta.Vehiculos.Count == 1 ? ruta.PesoKg : null));
+            camion.PesoKg ?? (ruta.Vehiculos.Count == 1 ? ruta.PesoKg : null))
+        {
+            RutaId = ruta.Id,
+        };
     }
 }
 
 /// <summary>
-/// Asocia los camiones de Cotifly con las líneas de la solicitud de Nexo por CONTENIDO (ADR-017 §3, ADR-019), no por orden: Nexo carga
-/// las líneas sin <c>OrderBy</c> y sus ids son GUID aleatorios. Clave: la ruta <c>"Origen → Destino"</c> normalizada (mayúsculas, sin
-/// tildes ni espacios repetidos) y, cuando ambos lados lo traen, el peso, la tipología, el tipo de vehículo y la carrocería. Solo se
-/// asocia un par cuando es único en ambos sentidos; dos camiones idénticos, o uno sin candidato, quedan sin asociar (sin precio, con
-/// motivo). Mientras Nexo no tenga el campo de ruta (<c>CAMBIOS_BACKEND</c> §3.6), los empates no se resuelven por orden (#134).
+/// Asocia los camiones de Cotifly con las líneas de la solicitud de Nexo por CONTENIDO (ADR-017 §3, ADR-019, HU-021.7 #134), no por la
+/// posición en la respuesta: Nexo carga las líneas sin <c>OrderBy</c> y sus ids son GUID aleatorios.
+/// <list type="number">
+/// <item><b>Llave.</b> La ruta: la referencia de la ruta de Cotifly si Nexo la devuelve (N1) o, si no, <c>"Origen → Destino"</c>
+/// normalizado (mayúsculas, sin tildes ni espacios repetidos); y, cuando ambos lados lo traen, el peso, la tipología, el tipo de vehículo
+/// y la carrocería. Un dato que solo trae un lado no contradice (la Mesa pudo ponerle vehículo a una línea que iba vacía).</item>
+/// <item><b>Pares seguros.</b> Un camión y una línea que solo se pueden emparejar entre sí se asocian primero.</item>
+/// <item><b>Empates.</b> Los camiones IDÉNTICOS de la misma ruta (misma llave) son intercambiables: valen lo mismo en Nexo. Si sus líneas
+/// candidatas no las puede reclamar ningún otro camión, se asignan en orden estable: los camiones en el orden de envío (el de la lista
+/// <c>camiones</c>) y las líneas por su id de Nexo (ordinal), así dos lecturas iguales dan la misma asignación. El riesgo que queda (sin
+/// N1) es que el ESTADO de dos camiones idénticos se cruce; el costo no, porque son iguales.</item>
+/// <item><b>Sin asociar.</b> Camiones iguales de rutas DISTINTAS (que pueden costar distinto por datos que no viajan en la línea), datos
+/// que se contradicen o un camión sin candidato quedan sin asociar: sin precio y con motivo.</item>
+/// </list>
 /// </summary>
 public static class clsEmparejadorLineasNexo
 {
     /// <summary>
-    /// Ids de Nexo por id de camión de Cotifly, solo para los que se asocian con certeza. <paramref name="yaAsignados"/> son los ids de
-    /// Nexo que ya tienen dueño (no se reasignan).
+    /// Ids de Nexo por id de camión de Cotifly, solo para los que se asocian (pares seguros y empates resueltos). <paramref name="camiones"/>
+    /// van en el orden en que viajaron a Nexo (es el orden estable de los empates). <paramref name="yaAsignados"/> son los ids de Nexo que
+    /// ya tienen dueño (no se reasignan).
     /// </summary>
     public static IReadOnlyDictionary<Guid, string> Emparejar(
         IReadOnlyList<clsCamionParaEmparejar> camiones, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null)
     {
         ArgumentNullException.ThrowIfNull(camiones);
         ArgumentNullException.ThrowIfNull(nexo);
-        var libres = nexo.Where(n => yaAsignados is null || !yaAsignados.Contains(n.Id)).ToList();
+        var libres = nexo.Where(n => yaAsignados is null || !yaAsignados.Contains(n.Id)).OrderBy(n => n.Id, StringComparer.Ordinal).ToList();
         var pendientes = camiones.ToList();
         var resultado = new Dictionary<Guid, string>();
         bool avanzo;
         do
         {
-            avanzo = false;
-            foreach (var camion in pendientes.ToList())
-            {
-                var candidatos = libres.Where(n => Coincide(camion, n)).ToList();
-                if (candidatos.Count != 1)
-                {
-                    continue;
-                }
-
-                var candidato = candidatos[0];
-                if (pendientes.Count(l => Coincide(l, candidato)) != 1)
-                {
-                    continue;
-                }
-
-                resultado[camion.Id] = candidato.Id;
-                pendientes.Remove(camion);
-                libres.Remove(candidato);
-                avanzo = true;
-            }
+            // Cada vuelta asocia al menos un par; un empate resuelto puede volver seguros otros pares.
+            avanzo = AsociarSeguros(pendientes, libres, resultado) || ResolverEmpate(pendientes, libres, resultado);
         }
-        while (avanzo && pendientes.Count > 0);
+        while (avanzo && pendientes.Count > 0 && libres.Count > 0);
 
         return resultado;
     }
 
-    /// <summary>¿La línea de Nexo puede ser este camión de Cotifly? Misma ruta y sin contradicción en los datos que traen ambos.</summary>
+    /// <summary>Asocia los pares únicos en ambos sentidos. Devuelve si asoció alguno.</summary>
+    private static bool AsociarSeguros(List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado)
+    {
+        var avanzo = false;
+        foreach (var camion in pendientes.ToList())
+        {
+            var candidatos = libres.Where(n => Coincide(camion, n)).ToList();
+            if (candidatos.Count != 1 || pendientes.Count(c => Coincide(c, candidatos[0])) != 1)
+            {
+                continue;
+            }
+
+            Asociar(camion, candidatos[0], pendientes, libres, resultado);
+            avanzo = true;
+        }
+
+        return avanzo;
+    }
+
+    /// <summary>
+    /// Resuelve el primer grupo de camiones idénticos de una misma ruta (en orden de envío) cuyas líneas candidatas no puede reclamar
+    /// ningún otro camión: las asigna en orden estable. Devuelve si asoció alguno.
+    /// </summary>
+    private static bool ResolverEmpate(List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado)
+    {
+        foreach (var grupo in pendientes.GroupBy(Firma).Select(g => g.ToList()))
+        {
+            var candidatos = libres.Where(n => Coincide(grupo[0], n)).ToList();
+            if (candidatos.Count == 0 || pendientes.Except(grupo).Any(otro => candidatos.Any(n => Coincide(otro, n))))
+            {
+                continue;
+            }
+
+            foreach (var (camion, linea) in grupo.Zip(candidatos))
+            {
+                Asociar(camion, linea, pendientes, libres, resultado);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void Asociar(
+        clsCamionParaEmparejar camion, clsLineaSolicitudNexo linea, List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres,
+        Dictionary<Guid, string> resultado)
+    {
+        resultado[camion.Id] = linea.Id;
+        pendientes.Remove(camion);
+        libres.Remove(linea);
+    }
+
+    /// <summary>Lo que hace idénticos a dos camiones: la misma ruta de Cotifly y los mismos datos de su línea en Nexo.</summary>
+    private static (string Ruta, string Tipologia, string Vehiculo, string Carroceria, decimal? Peso) Firma(clsCamionParaEmparejar camion) =>
+        (camion.RutaId?.ToString("D") ?? Normalizar($"{camion.Origen} → {camion.Destino}"),
+         NormalizarOVacio(camion.Tipologia), NormalizarOVacio(camion.TipoVehiculo), NormalizarOVacio(camion.Carroceria),
+         camion.PesoKg is { } peso ? Math.Round(peso, 2) : null);
+
+    /// <summary>
+    /// ¿La línea de Nexo puede ser este camión de Cotifly? Misma ruta (por la referencia N1 si ambos lados la traen, si no por el texto
+    /// <c>"Origen → Destino"</c>) y sin contradicción en los datos que traen ambos.
+    /// </summary>
     public static bool Coincide(clsCamionParaEmparejar camion, clsLineaSolicitudNexo nexo)
     {
         ArgumentNullException.ThrowIfNull(camion);
         ArgumentNullException.ThrowIfNull(nexo);
-        if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{camion.Origen} → {camion.Destino}"))
+        if (camion.RutaId is { } rutaId && Guid.TryParse(nexo.ReferenciaRuta, out var referencia))
+        {
+            if (referencia != rutaId)
+            {
+                return false;
+            }
+        }
+        else if (nexo.Ruta is null || Normalizar(nexo.Ruta) != Normalizar($"{camion.Origen} → {camion.Destino}"))
         {
             return false;
         }
@@ -105,6 +181,8 @@ public static class clsEmparejadorLineasNexo
 
     private static bool Compatible(string? cotifly, string? nexo) =>
         string.IsNullOrWhiteSpace(cotifly) || string.IsNullOrWhiteSpace(nexo) || Normalizar(cotifly) == Normalizar(nexo);
+
+    private static string NormalizarOVacio(string? texto) => string.IsNullOrWhiteSpace(texto) ? string.Empty : Normalizar(texto);
 
     /// <summary>Mayúsculas, sin tildes, la flecha y los espacios normalizados.</summary>
     public static string Normalizar(string texto)
@@ -142,7 +220,14 @@ public sealed record clsLineaCosteoNexo(
 }
 
 /// <summary>Servicio conexo de la cotización de Nexo (<c>CotizacionConexoDto</c>): <paramref name="ValorAplicado"/> es un costo.</summary>
-public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal ValorAplicado);
+public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal ValorAplicado)
+{
+    /// <summary>
+    /// Línea de la COTIZACIÓN de Nexo a la que está pegado (<c>cotizacionLineaId</c>): Cotifly lo pega a la línea del primer camión de su
+    /// ruta (decisión 3), así que esta línea dice de qué ruta es. <c>null</c> si Nexo no lo trae.
+    /// </summary>
+    public string? CotizacionLineaId { get; init; }
+}
 
 /// <summary>
 /// Derivación de <c>estado_costeo</c> (HU-005.7, ADR-015 §4), la misma regla de la bandeja de Nexo

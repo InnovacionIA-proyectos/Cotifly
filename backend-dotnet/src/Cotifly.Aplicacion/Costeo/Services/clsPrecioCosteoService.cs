@@ -42,14 +42,17 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
 
     /// <summary>
     /// Asigna a cada camión sin id su línea de Nexo por CONTENIDO (<see cref="clsEmparejadorLineasNexo"/>; ADR-017 §3: Nexo no garantiza
-    /// el orden de <c>solicitud.lineas[]</c>). Con un camión en Cotifly y una línea en Nexo se asocian directamente, como en HU-005.5.
-    /// Devuelve cuántos camiones siguen sin asociar.
+    /// el orden de <c>solicitud.lineas[]</c>), con los empates de camiones idénticos de una ruta resueltos en el orden de envío (#134).
+    /// Con un camión en Cotifly y una línea en Nexo se asocian directamente, como en HU-005.5. Los camiones <c>descartada</c> no
+    /// participan (regla del núcleo, ADR-019). Devuelve cuántos camiones vigentes siguen sin asociar.
     /// </summary>
     public static int AsociarCamionesNexo(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
-        var camiones = cotizacion.Vehiculos;
+
+        // En el orden en que viajaron a Nexo (ruta por ruta, camión por camión): es el orden estable de los empates.
+        var camiones = Vigentes(cotizacion);
         var pendientes = camiones.Where(c => c.LineaSolicitudNexoId is null).ToList();
         if (pendientes.Count == 0 || foto.LineasSolicitud.Count == 0)
         {
@@ -63,7 +66,7 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
         }
 
         var porCamion = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (Ruta: r, Camion: v))).ToDictionary(x => x.Camion.Id);
-        var asignados = camiones.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var asignados = cotizacion.Vehiculos.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
         var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c)).ToList();
         foreach (var (camionId, nexoId) in clsEmparejadorLineasNexo.Emparejar(candidatos, detalle, asignados))
@@ -81,9 +84,10 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
         AsociarCamionesNexo(cotizacion, foto);
 
         // Con PDF el precio de la versión se conserva: los camiones solo actualizan su estado (ADR-015 §5). La raíz aplica la lectura,
-        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado).
+        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado). Un camión descartado no
+        // se lee (regla del núcleo): sigue descartado, sin línea de Nexo, y no cuenta en el estado ni en los totales de su ruta.
         var conPdf = cotizacion.PdfPath is not null;
-        var lecturas = cotizacion.Vehiculos.Select(camion =>
+        var lecturas = Vigentes(cotizacion).Select(camion =>
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
             if (conPdf)
@@ -112,7 +116,7 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
-        var camiones = cotizacion.Vehiculos;
+        var camiones = Vigentes(cotizacion);
         var varios = camiones.Count > 1;
         var sinAsociar = camiones.Count(c => c.LineaSolicitudNexoId is null);
         if (cotizacion.PdfPath is not null)
@@ -171,6 +175,18 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
         foto.Cotizacion is not null
         && cotizacion.Vehiculos.Any(c => clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
                                          && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m)));
+
+    /// <summary>
+    /// Camiones que lee el polling, en el orden de envío: todos menos los <c>descartada</c> (regla del núcleo, ADR-019), salvo que todos lo
+    /// estén (entonces se leen todos, como cuentan en la ruta).
+    /// </summary>
+    public static IReadOnlyList<clsVehiculoLineaSolicitud> Vigentes(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var todos = cotizacion.Vehiculos;
+        var vigentes = todos.Where(c => c.EstadoCosteo != EstadoCosteo.Descartada).ToList();
+        return vigentes.Count > 0 ? vigentes : todos;
+    }
 
     private static clsLineaSolicitudNexo? Detalle(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId) =>
         lineaSolicitudNexoId is null
