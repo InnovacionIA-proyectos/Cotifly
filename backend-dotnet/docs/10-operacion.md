@@ -64,6 +64,34 @@ Sin exportador todavía (OpenTelemetry o Prometheus se evalúan en HU-006). Las 
 dotnet-counters monitor -p 1 --counters Cotifly.Agente,System.Runtime,Microsoft.AspNetCore.Hosting
 ```
 
+### Latencia del asistente (#126)
+
+Cada turno de `/web/chat` registra en `Information` una línea sin textos del comercial ni del modelo:
+
+```
+Turno del asistente de PCN-…: 4902 ms (preparación 12 ms; modelo con herramientas 2600 ms en 1 llamadas; herramientas 8 ms;
+respuesta final 2280 ms en 1 llamadas; guardado 5 ms). Iteraciones 2, cierre llamada_final, reintentos del validador 0,
+respaldo False, propuesta ajustar_margen, tokens 1830/95, modelos gemini/gemini-3.5-flash-lite, fallo .
+```
+
+Si `modelos` trae un modelo distinto de `IA__Modelo`, ese turno pasó a un respaldo de `IA__Fallbacks__*`. La espera del limitador sale aparte, en el aviso "La llamada al proveedor de IA esperó N ms por IA:Rpm=8". Con estas dos líneas se calcula el p50 y el p95 por turno y se ve qué fase pesa.
+
+**Medición (2026-10-08).** El turno típico es "súbele el margen al 18 % porque el cliente aceptó", con datos ficticios.
+
+- **Antes.** En el E2E del lote 2 con OmniRoute (`gemini/gemini-3.5-flash-lite`, `IA__Rpm=8`), los turnos tardaron de 17,0 a 24,2 s, con 3 llamadas al modelo por turno: herramienta, texto y llamada final.
+- **Sin acceso a OmniRoute.** Cuando se hizo #126 no había acceso a la red de 10.10.40.17, así que la comparación se hizo con el runner, el validador y el limitador reales, y un proveedor simulado:
+  - latencia de 1,5 a 3,5 s por llamada, el rango que se deduce del E2E;
+  - 10 turnos por escenario, con 15 s entre turnos.
+
+| Escenario | Llamadas por turno | Espera por `IA:Rpm` | p50 | p95 |
+|---|---|---|---|---|
+| Antes (intervalo fijo de 7,5 s y sin atajos) | 3 | 8,9 a 11,6 s | 17,6 s | 18,3 s |
+| Después (ventana deslizante y atajos) | 2 | 0 s | 4,9 s | 5,7 s |
+
+El "antes" simulado reproduce los 17 s del E2E: dos de cada tres partes del turno eran espera del limitador. **Pendiente:** repetir la medición con OmniRoute desde la red interna y comparar el p95 con la meta de 8 s, usando la línea "Turno del asistente".
+
+**Límite conocido.** `IA__Rpm` es global al proceso. Con 8, más de unos 4 turnos por minuto en total (sumando todos los comerciales) vuelven a esperar al limitador. Si el p95 sube con varios usuarios, hay que subir `IA__Rpm` según el plan del proveedor.
+
 ## 10.4 Arranque fallido
 
 - Cualquier excepción al construir o arrancar el host termina el contenedor con **código 1** y un solo registro del error, sin secretos (si falla antes de existir el logger, una línea `crit:` en stderr).
@@ -95,7 +123,7 @@ Riesgos registrados en #12 y #16:
 |---|---|
 | **Frontera de confianza del login (CRÍTICO)** | `/api/auth/login-clientepro` es anónimo y confía en `idUsuario`: quien alcance la API y conozca un `NOMBREUSUARIO` (o enumere IDs) obtiene un JWT. Mitigaciones y dueño en ADR-009 ("Riesgo abierto"): aserción firmada por el backend de ClientePro o validación de su token; mientras tanto, restringir la red al origen de ClientePro y considerar quitar el respaldo por `ID` numérico |
 | Folio con iniciales (ADR-011) | Formato `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`; consecutivo por iniciales y día con el candado `cotifly:folio:DDMMAAAA:INICIALES`. Dos comerciales con las mismas iniciales comparten la secuencia del día (no chocan, pero el `NNN` no empieza en `001` para cada uno). Las iniciales salen de `DESCRIPCIONUSUARIO` (vía `UsuariosWeb.nombreCompleto`) con limitaciones conocidas (orden nombre y apellido, texto agregado, abreviaturas); **pendiente** revisar una muestra real antes de producción. Si el comercial cambia de nombre, solo cambian sus folios nuevos |
-| Latencia del chat | Con `IA:Rpm=8` un turno típico (~4 llamadas: herramientas + la llamada final) puede tardar ~30 s solo por el limitador; subir `IA:Rpm` según el plan del proveedor |
+| Latencia del chat | Desde #126 (ADR-018 §17), un turno usa de 1 a 3 llamadas al modelo (una propuesta, 2). El limitador `IA:Rpm` es una ventana deslizante de 60 s que no espacia las llamadas de un mismo turno. `IA:Rpm` es un tope GLOBAL del proceso, compartido por todos los comerciales y el redactor: con 8 caben unos 4 turnos por minuto y, por encima, los turnos esperan. Se sube según el plan del proveedor. Cada turno deja el log "Turno del asistente de {folio}" con la duración por fase, y el limitador registra "esperó N ms por IA:Rpm" |
 | Google Chat retirado (#105) | Ya no hay webhook (`POST /chat/events` → 404), cola ni worker. Las sesiones de Google Chat (`spaceId = spaces/...`) quedan en `Sesiones` y `EventosConversacion` como auditoría; el barrido de sesiones las archiva como a cualquier otra |
 | Revocación de `jti` | Un logout tarda hasta 60 s en verse en las demás réplicas (foto de `TokensRevocados`) |
 | Límites de peticiones | `LimiteAuth` y `LimiteChat` son por proceso: con N réplicas el límite efectivo es N veces mayor |
@@ -106,7 +134,7 @@ Riesgos registrados en #12 y #16:
 | URL base de Nexo | `Nexo__UrlBase` es la raíz del servicio sin `/api` (el código agrega `/api/...`; `.env.example` corregido, ADR-015 §8); confirmar la URL real de cada ambiente con el equipo de Nexo antes de activar |
 | E2E con el Angular | Pendiente (HU-004.8): el contrato está cubierto por pruebas contra `openapi.yaml`, no contra el frontend real |
 | #45 (tablero de métricas) | `/web/metricas/comercial` y `/regional` listos (ADR-016). El 0004 ya está en QA: el mapa por ciudad y `deadline_vencidas` tienen datos. Solo sobre una base sin el 0004 el mapa responde `disponible: false` y `deadline_vencidas` es `null`. Pendiente: definiciones por validar con Gerencia Comercial, score de urgencia de Nexo, servicios conexos (después de #42) y la regional (fila "Regional del comercial"). Desde #81 la descarga de PDF ajenos y `LoginResponse.ubicacion` leen `UsuariosWeb.regional`, que el login refresca desde `DimEjecutivo` |
-| Validador de la respuesta final (#16) | La regla de montos es práctica (ADR-003). Batería de 52 textos del validador: falsos positivos 3 → 0 (NIT, teléfono, NIT con puntos) y falsos negativos 11 de 24 → 2 (montos en palabras, "tres millones y medio"; el folio base de una versión, aceptado a propósito). Sigue rechazando aproximaciones honestas ("3,29 millones", centavos que no existen). Cada reintento cuesta una llamada más (con `IA:Rpm=8`, unos 8 s). Si el proveedor rechaza el JSON Schema (400/422), el proceso sigue sin formato `IA:MinutosSinJsonSchema` (30) y luego re-sonda, también para los proveedores de `IA:Fallbacks`. El respaldo no alerta al space de soporte. Falta medir con el proveedor real la tasa de reintentos, respaldos y rechazos (`cotifly.agente.*`) |
+| Validador de la respuesta final (#16) | La regla de montos es práctica (ADR-003). Batería de 52 textos del validador: falsos positivos 3 → 0 (NIT, teléfono, NIT con puntos) y falsos negativos 11 de 24 → 1 (el folio base de una versión, aceptado a propósito). Desde #126 también detecta montos en letras, miles separados con espacio, dígitos Unicode, sufijos mil/k y EUR (ADR-018 §17). Sigue rechazando aproximaciones honestas ("3,29 millones", centavos que no existen). Cada reintento cuesta una llamada más; con una propuesta ya armada no se reintenta (#126). Si el proveedor rechaza el JSON Schema (400/422), el proceso sigue sin formato `IA:MinutosSinJsonSchema` (30) y luego re-sonda, también para los proveedores de `IA:Fallbacks`. El respaldo no alerta al space de soporte. Falta medir con el proveedor real la tasa de reintentos, respaldos y rechazos (`cotifly.agente.*`) |
 
 Otros puntos de operación (de #11 y #12):
 
@@ -202,7 +230,7 @@ Otras decisiones abiertas:
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |
 | Un logout tarda en verse en otra réplica | Foto de `TokensRevocados` cada 60 s | Comportamiento esperado (hasta 60 s) |
 | `/web/chat` responde `error: true` siempre | Agente sin configurar o proveedor caído | Log "El agente de IA no está configurado" o errores del proveedor; revisar `IA__*` y `IA__Fallbacks__*` |
-| El chat tarda ~30 s por turno | Limitador local `IA:Rpm=8` | Subir `IA__Rpm` según el plan del proveedor |
+| El chat tarda más de 8 s por turno | Varios comerciales a la vez agotan `IA:Rpm` (tope global), entraron respaldos de `IA__Fallbacks__*` o el modelo está lento | Leer el log "Turno del asistente de {folio}" (la fase que más tarda, las llamadas y los modelos) y los avisos "esperó N ms por IA:Rpm". Subir `IA__Rpm` según el plan del proveedor. Verificar que `IA__PropuestaDirecta` e `IA__RespuestaFinalEnLoop` estén en `true`. Para medir con el proveedor real, ver [Latencia del asistente](#latencia-del-asistente-126) |
 | El turno tarda más de 60 s o el frontend corta la petición | Un turno encadena hasta 12 llamadas (`IA__TimeoutSeg` es por llamada); respaldos en cadena | Timeout del frontend ≥ 120 s; revisar `IA__Fallbacks__*` y la cuota del modelo principal |
 | `/web/chat` responde "límite de peticiones" con OmniRoute | `429 model_cooldown` de OmniRoute: las credenciales del modelo están en enfriamiento (`reset_seconds` de horas) | Agregar o cambiar modelos en `IA__Fallbacks__*` (cada modelo tiene su cuota); una credencial con cuota de pago en OmniRoute. Ver la matriz en [03-infraestructura](03-infraestructura.md#omniroute) |
 | Error del proveedor `400 No credentials for provider: <x>` | OmniRoute no tiene credenciales para ese proveedor (OpenRouter el 2026-10-01) o todas están en enfriamiento | El respaldo actúa solo; si es el único modelo, cambiar `IA__Modelo` a uno de un proveedor con credenciales (`gemini/...`) |
