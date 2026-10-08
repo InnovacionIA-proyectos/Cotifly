@@ -121,7 +121,7 @@ siguen ejecutando después de un error.
 | Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
 | Vistas | `vAjustesMargenPorComercial`, `vActividadPorComercial` |
 
-El diseño de las tablas de cotizaciones, columna por columna, está en `docs/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`.
+El diseño de las tablas de cotizaciones, columna por columna, está en `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`.
 
 **Seeders** (`seeder/`): la configuración que la aplicación necesita desde el primer día.
 

@@ -2,7 +2,7 @@
 
 Entrega el esquema objetivo de Cotifly para SQL Server 2019, como insumo directo para
 HU-003.3 (`DbContext` de EF Core). No es una nueva evaluación de diseño — toma las
-decisiones ya cerradas en `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` (§2, §3.2, §3.5) y las
+decisiones ya cerradas en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` (§2, §3.2, §3.5) y las
 aplica sobre el esquema **real** vigente hoy (post HU-002.2, migraciones `0006`/`0007`).
 
 > **Nota de nombres (2026-09-22, revertido después de crear las tablas):** HU-002.3
@@ -18,9 +18,9 @@ aplica sobre el esquema **real** vigente hoy (post HU-002.2, migraciones `0006`/
 
 Se usó como fuente de verdad **`shared/models.py` + `db/migrations/versions/0006_*.py` y
 `0007_*.py`** (esquema corriendo de verdad), no la prosa de `BASE_DE_DATOS.md` /
-`docs/DICCIONARIO_BASE_DE_DATOS.md` a ciegas. Dos hallazgos que afectan este mapeo:
+`docs/database/DICCIONARIO_BASE_DE_DATOS.md` a ciegas. Dos hallazgos que afectan este mapeo:
 
-1. **`docs/DICCIONARIO_BASE_DE_DATOS.md` §3.1-3.9 tiene las tablas columna-por-columna
+1. **`docs/database/DICCIONARIO_BASE_DE_DATOS.md` §3.1-3.9 tiene las tablas columna-por-columna
    desactualizadas.** Los recuadros de advertencia arriba de cada sección sí mencionan
    los cambios de HU-002.2, pero las tablas de detalle debajo siguen documentando el
    esquema pre-migración (`comercial_email`, `estado`, `efectiva`,
@@ -29,7 +29,7 @@ Se usó como fuente de verdad **`shared/models.py` + `db/migrations/versions/000
    documentación para corregirlas, no se tocan acá porque HU-002.3 es solo diseño de
    esquema SQL Server.
 2. **`usuarios_web` en Postgres era más angosta que lo que describe la propuesta**
-   (histórico, ya resuelto). §2.6/§3.5 de `PROPUESTA_REFACTOR_BD_COTIFLY.md` diseñan
+   (histórico, ya resuelto). §2.6/§3.5 de `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` diseñan
    `usuariosWeb` con `nombreUsuario`, `nombreCompleto` y `email` (poblados desde
    `tblSAPUsuariosApp` vía ClientePro). Eso no se ejecutó en la migración `0006`
    original. **Corrección 2026-09-22 (en paralelo, en ambos motores):** se agregaron
@@ -419,7 +419,7 @@ que ya expone la sesión de ClientePro (HU-004.3).
 | `updatedAt` | `datetimeoffset` | NOT NULL | `DEFAULT SYSDATETIMEOFFSET()` (ver nota `updatedAt` en §5.1, mismo patrón) |
 
 > **`metodoCalculo` — decisión abierta heredada, se mantiene por ahora.** Detectada en
-> la auditoría de HU-002.1 (`docs/HU_Backlog_Cotifly_ClientePro.md:157`): es una columna
+> la auditoría de HU-002.1 (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:157`): es una columna
 > **sin uso real** — el cálculo de precio usa el `metodo_calculo` que llega en el
 > payload de cada cotización (`cotizaciones.metodo_calculo`), no este valor de
 > configuración por línea. Nunca hubo una recomendación explícita de eliminarla en la
@@ -556,7 +556,7 @@ quedan mapeadas:
    `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`.
 6. **§2 (2026-09-22, después de crear las tablas en la BD real)** — Se retira el
    prefijo `tbl`/`tblSap` que pedía originalmente HU-002.3
-   (`docs/HU_Backlog_Cotifly_ClientePro.md:174`). Las 10 tablas se llegaron a crear
+   (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:174`). Las 10 tablas se llegaron a crear
    con el prefijo en una primera corrida de `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql`
    — ese mismo script se reescribió (no se agregó uno aparte) para soltar esos objetos
    `tbl*` como primer paso y crear las tablas ya con el nombre correcto. Este documento
@@ -571,9 +571,9 @@ quedan mapeadas:
    — **Resuelto 2026-09-22:** se agregaron ya, sin poblar hasta HU-004, en paralelo en
    ambos motores (Postgres: migración `0009`; SQL Server: §5.8). Sin asimetría.
 9. Corrección de documentación fuera de alcance: actualizar las tablas columna-por-columna
-   de `docs/DICCIONARIO_BASE_DE_DATOS.md` §3.1-3.9 al esquema real post-`0006`/`0007`/`0008`.
+   de `docs/database/DICCIONARIO_BASE_DE_DATOS.md` §3.1-3.9 al esquema real post-`0006`/`0007`/`0008`.
 10. **§5.9** — `MargenesPolitica.metodoCalculo`: decisión abierta heredada de la
-    auditoría de HU-002.1 (`docs/HU_Backlog_Cotifly_ClientePro.md:157`), nunca resuelta —
+    auditoría de HU-002.1 (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:157`), nunca resuelta —
     columna sin uso real, se mantiene y se migra tal cual por ahora.
 11. **Confirmar el nombre de base por entorno:** `dbTarifario_Nexo_Pruebas` suena a
     instancia de pruebas por el nombre — confirmar con el equipo si producción usa el

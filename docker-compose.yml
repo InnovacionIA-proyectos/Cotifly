@@ -6,7 +6,7 @@
 # (LLM_API_KEY, GCHAT_PROJECT_NUMBER, MCP_AUTH_TOKEN) se leen del archivo .env.
 #
 # HU-002.4 (2026-09-22): swap Postgres -> SQL Server 2019 (§3.4 de la propuesta,
-# docs/PROPUESTA_REFACTOR_BD_COTIFLY.md). Es un contenedor LOCAL propio (usuario
+# docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md). Es un contenedor LOCAL propio (usuario
 # `sa`, credenciales locales) -- no tiene relación con la instancia corporativa
 # `tbsdatacenter`/`dbTarifario_Nexo_Pruebas` usada para el esquema real (HU-002.3).
 # Alcance de este cambio: solo config (compose/Dockerfiles/pyproject.toml) -- NO se

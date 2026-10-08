@@ -1,7 +1,7 @@
 /* ============================================================================
    Cotifly — 0007: campos de la captura hacia Nexo que faltaban (notas y municipios)
    ============================================================================
-   HU-013.10 (#106), gaps G6 y G7 de docs/HU-013-preguntas-nexo.md §3. Patrón de
+   HU-013.10 (#106), gaps G6 y G7 de docs/conexion_nexo/HU-013-preguntas-nexo.md §3. Patrón de
    scripts: backend-dotnet/specs/decisiones/ADR-008 (EF Core Database First: el
    esquema SOLO cambia con scripts `db/migrations_mssql/000N_*.sql`; no hay
    migraciones EF). El 0006 es `0006_textos_y_concurrencia.sql` (HU-013.2, #98).

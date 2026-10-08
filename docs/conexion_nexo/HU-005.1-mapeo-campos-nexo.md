@@ -71,7 +71,7 @@ Duban solicitó el listado completo de campos del formulario "Nueva cotización"
 
 El endpoint acepta **una línea por llamada**, no un arreglo de líneas — consistente con el patrón ya implementado en el wizard (un turno de `/web/chat` por línea, de forma secuencial), por lo que no se requiere rediseñar esa parte del flujo.
 
-Este endpoint no está documentado en `docs/CONTRATO_API_WEB.md` (el contrato congelado para este frontend Angular); ese documento es anterior a su construcción (ADR-015) y debería actualizarse una vez se confirme el flujo de integración.
+Este endpoint no está documentado en `docs/docs_front/CONTRATO_API_WEB.md` (el contrato congelado para este frontend Angular); ese documento es anterior a su construcción (ADR-015) y debería actualizarse una vez se confirme el flujo de integración.
 
 **Para contexto adicional:** el estado actual de `/web/chat` solo rastrea un subconjunto mínimo de campos en el estado de conversación (`LineaNegocioId`, `LineaNegocio`, `Origen`, `Destino`, `TipoVehiculo`, `TipoCarga`, `PesoKg` — `clsEstadoConversacion.cs:29-36`); el resto de los campos del formulario nunca se extraen de forma estructurada en ese flujo. Esto refuerza la necesidad de migrar a `/web/solicitudes-costeo`.
 
@@ -92,7 +92,7 @@ Este endpoint no está documentado en `docs/CONTRATO_API_WEB.md` (el contrato co
 | `origen` / `destino` | Línea | Texto libre, máximo 150 caracteres | `origen` / `destino` | Correcto, ya autocompletado contra municipios |
 | `peso` | Línea | Requerido si las posiciones no aportan peso; si ambos vienen, deben coincidir dentro de un 1% de tolerancia | `peso_kg` | Correcto, mismo criterio ya validado en `clsSolicitudCosteo.Validar()` |
 | `valorMercancia` | Línea | `valorMercancia` | `valor_mercancia` | Correcto |
-| `tipoVehiculo` | Línea | Texto libre; coincidencia aproximada contra catálogo existente. **Si no encuentra coincidencia, Nexo crea una fila de catálogo nueva** en lugar de rechazar el valor — riesgo de duplicados si el texto enviado no es consistente | `tipo_vehiculo` | El catálogo que Cotifly consume hoy (`/web/catalogos-flete`) proviene de una fuente incorrecta — ver punto 3.1 de `PENDIENTES_CORRECCION_DUBAN.md` |
+| `tipoVehiculo` | Línea | Texto libre; coincidencia aproximada contra catálogo existente. **Si no encuentra coincidencia, Nexo crea una fila de catálogo nueva** en lugar de rechazar el valor — riesgo de duplicados si el texto enviado no es consistente | `tipo_vehiculo` | El catálogo que Cotifly consume hoy (`/web/catalogos-flete`) proviene de una fuente incorrecta — ver punto 3.1 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` |
 | `carroceria` | Línea | Texto libre, se resuelve en conjunto con `tipoVehiculo` | `carroceria` | Mismo origen de datos que el campo anterior |
 | `claseViaje` | Línea | Texto libre; coincidencia aproximada contra el enum `Contenedor` / `Cupo` / `CargaSuelta` / `Extradimensionado` | `clase_viaje` | Correcto — "Carga Suelta" con espacio es el valor correcto, confirmado también en el frontend propio de Nexo |
 | `claseContenedor` | Línea, condicional a `claseViaje = "Contenedor"` | Texto libre; coincidencia contra la lista `CNT20.IT` / `CNT20.RE` / `CNT20.ST` / `CNT40.HC` / `CNT40.RE`. Existe además una lista provisional adicional para el caso de extradimensionado nacional (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`), marcada como provisional en el propio código de Nexo | `clase_contenedor` | Correcto, coincide exactamente con el catálogo vigente en Cotifly |
@@ -112,19 +112,19 @@ A diferencia de los campos anteriores, los servicios conexos no forman parte de 
 
 - **Catálogo de servicios disponibles:** `GET /api/servicios-conexos` (paginado; roles: todos).
 - **Registro de la selección del comercial:** `POST /api/cotizaciones/{id}/conexos` (roles: Comercial, CoordinadorFletes, Admin; cuerpo `{ items: [{ servicioConexoId, cantidad?, valorAplicado? }] }`); requiere el identificador de una cotización ya costeada.
-- **Estado actual en Cotifly:** `clsCosteoNexo.cs` únicamente **lee** los conexos que ya traiga la cotización al costearla (`LeerCotizacion`); no implementa ninguna llamada a `POST /api/cotizaciones/{id}/conexos` para registrar la selección del comercial. Documentado también en el punto 3.3 de `PENDIENTES_CORRECCION_DUBAN.md`.
+- **Estado actual en Cotifly:** `clsCosteoNexo.cs` únicamente **lee** los conexos que ya traiga la cotización al costearla (`LeerCotizacion`); no implementa ninguna llamada a `POST /api/cotizaciones/{id}/conexos` para registrar la selección del comercial. Documentado también en el punto 3.3 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`.
 - **Relación con el wizard:** corresponde al Paso 4 ("Servicios conexos"), hoy un marcador de posición ("Próximamente"). No puede implementarse hasta contar con un identificador de cotización real — es decir, después de invocar `/web/solicitudes-costeo` por cada línea — y hasta que se implemente el método faltante en `clsCosteoNexo.cs`.
 
 ### Catálogos maestros de Nexo (`GET /api/catalogos/*`)
 
-Nexo expone catálogos maestros que Cotifly todavía no consume como fuente — ver también los puntos 3.1 y 3.2 de `PENDIENTES_CORRECCION_DUBAN.md`.
+Nexo expone catálogos maestros que Cotifly todavía no consume como fuente — ver también los puntos 3.1 y 3.2 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`.
 
 | Catálogo | Endpoint real de Nexo | Forma de la respuesta | Fuente que usa Cotifly hoy |
 |---|---|---|---|
 | Tipos de vehículo | `GET /api/catalogos/tipos-vehiculo` | `{ codigo, descripcion, esCatalogoOficial }` (códigos SAP cortos, p. ej. `"2S3"`) | `GET /api/biblioteca-sap-historico/filtros` — fuente incorrecta (histórico de tarifas, no catálogo maestro) |
 | Clases de viaje | `GET /api/catalogos/clases-viaje` | `{ id, descripcion }` | Misma fuente incorrecta que el campo anterior |
 | Clases de contenedor | `GET /api/catalogos/clases-contenedor` | `{ id, descripcion, tamanoContenedor, pesoInfCnt, pesoSupCnt }` | Hardcodeado en Cotifly; nunca consulta a Nexo |
-| Líneas de negocio | `GET /api/catalogos/lineas-negocio` | `{ id, descripcion }` | Cotifly usa su propio catálogo (`MargenesPolitica`) con mapeo manual — comportamiento intencional, no un vacío (ver nota 3.4 de `PENDIENTES_CORRECCION_DUBAN.md`) |
+| Líneas de negocio | `GET /api/catalogos/lineas-negocio` | `{ id, descripcion }` | Cotifly usa su propio catálogo (`MargenesPolitica`) con mapeo manual — comportamiento intencional, no un vacío (ver nota 3.4 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`) |
 | Carrocería | No se encontró un endpoint equivalente en `/api/catalogos/*` | — | Hardcodeado; pendiente de confirmar con Duban si existe o si el campo permanece así |
 | Tipología de carga | Sin catálogo propio — es un enum puro; Nexo lo resuelve por coincidencia de texto libre | — | Hardcodeado en Cotifly, coincide con los 7 valores reales del enum |
 
@@ -142,7 +142,7 @@ Relevante para el diseño de la integración, independientemente de que Cotifly 
 1. **Agregar al formulario:** `referencia` (encabezado), `valorEstimado` (encabezado) y `valorAprovisionamiento` (por línea, condicional a ciudad de levante).
 2. **Permitir `horasCargue` / `horasDescargue` también a nivel de línea** (hoy solo existen en el encabezado); no bloqueante, ya que el encabezado funciona como valor por defecto si la línea no lo sobreescribe.
 3. **Decidir el tratamiento de "Tipología" por mercancía** — no tiene equivalente real en Nexo a ese nivel; evaluar si se traslada a nivel de línea o se retira de la captura.
-4. **Confirmar con Duban** que `clsCosteoNexo.cs` resuelve correctamente la identificación del cliente por NIT, el mapeo de `lineaNegocio`, y que los catálogos de `tipoVehiculo` / `carroceria` / `claseViaje` / `claseContenedor` usan las fuentes correctas (ver sección 3 de `PENDIENTES_CORRECCION_DUBAN.md`).
-5. **Actualizar `docs/CONTRATO_API_WEB.md`** para documentar `POST /web/solicitudes-costeo` como el endpoint vigente para este frontend, en reemplazo de la referencia actual a `/web/chat`.
+4. **Confirmar con Duban** que `clsCosteoNexo.cs` resuelve correctamente la identificación del cliente por NIT, el mapeo de `lineaNegocio`, y que los catálogos de `tipoVehiculo` / `carroceria` / `claseViaje` / `claseContenedor` usan las fuentes correctas (ver sección 3 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`).
+5. **Actualizar `docs/docs_front/CONTRATO_API_WEB.md`** para documentar `POST /web/solicitudes-costeo` como el endpoint vigente para este frontend, en reemplazo de la referencia actual a `/web/chat`.
 6. **Servicios conexos:** implementar la llamada faltante a `POST /api/cotizaciones/{id}/conexos` en `clsCosteoNexo.cs`, y definir en qué punto del flujo de Cotifly se le presenta al comercial la opción de elegir cuáles incluir — necesariamente después del costeo, no durante la captura inicial.
 7. **Migrar los catálogos de tipo de vehículo y clase de viaje** a `GET /api/catalogos/*` en lugar de `biblioteca-sap-historico/filtros`; confirmar con Duban si existe un catálogo real para carrocería.

@@ -1,9 +1,9 @@
 # Propuesta de reestructuración de `Cotizaciones` y tablas relacionadas (HU-021)
 
-**Estado: propuesta — NO ejecutada.** Mismo patrón que `PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1): primero se
+**Estado: propuesta — NO ejecutada.** Mismo patrón que `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1): primero se
 aprueba el diseño completo acá, y solo después se escribe el script de migración (`000N_*.sql`) contra
 `tbsdatacenter`. Los cambios que esto le pide al backend están en
-`docs/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
+`docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
 
 **Contexto:** las migraciones 0001 a 0007 ya corrieron contra la base real. `Cotizaciones` y sus tablas satélite
 crecieron HU tras HU hasta volverse difíciles de seguir, y ahora llega el cubicador, que puede recomendar varios
@@ -232,7 +232,7 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 - **Se copia el código del vehículo y la carrocería** aunque exista `idRecomendacionVehiculo`, para que la
   cotización no cambie si el cubicador cambia sus catálogos.
 - **`idRecomendacionVehiculo` apunta a la recomendación exacta que se usó.** Si el cubicador recalcula, crea
-  filas nuevas, y la cotización sigue apuntando a la suya. También deja listo el punto de `PROXIMOS_ALCANCES.md`
+  filas nuevas, y la cotización sigue apuntando a la suya. También deja listo el punto de `docs/conexion_nexo/PROXIMOS_ALCANCES.md`
   (ver qué cajas lleva cada camión).
 - **Si el cubicador no puede recomendar** (resultado "sin selección automática"), el camión queda con
   `tipoVehiculo` y `carroceria` vacíos y se manda así a Nexo. El admin de fletes lo resuelve en la Mesa de
@@ -320,7 +320,7 @@ recalcula la ruta y la cabecera.
 - Cada camión tiene su `estadoCosteo`, que viene de Nexo.
 - La ruta resume a sus camiones, y la cabecera resume a sus rutas, con la misma regla: si todos están en el mismo
   estado, toma ese estado; si no, toma el estado del que esté más atrás en el proceso. La regla exacta está en
-  `CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
+  `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
 
 ---
 

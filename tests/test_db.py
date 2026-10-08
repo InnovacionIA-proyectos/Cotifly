@@ -299,7 +299,7 @@ def test_backfill_linea_negocio_id_puebla_filas_existentes(db_session: Session) 
 def test_eventos_conversacion_sin_huerfanos_por_construccion(db_session: Session) -> None:
     """QA de HU-002.1 (PR #37): evidencia de la FK candidata `eventos_conversacion
     (space_id, thread_id) → sesiones (space_id, thread_id)` propuesta en
-    `docs/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.9.
+    `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` §2.9.
 
     La propuesta la marca "SEGURA" con evidencia SQL puntual (52 eventos, 0
     huérfanos) contra la BD de desarrollo del autor en su momento — un conteo así

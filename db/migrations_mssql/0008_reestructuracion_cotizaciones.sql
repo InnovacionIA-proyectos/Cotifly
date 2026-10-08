@@ -1,8 +1,8 @@
 /* ============================================================================
    Cotifly — 0008: reestructuración de cotizaciones (rutas, camiones, mercancías y conexos)
    ============================================================================
-   HU-021. Diseño aprobado en docs/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md; cambios
-   que esto le pide al backend en docs/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md.
+   HU-021. Diseño aprobado en docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md; cambios
+   que esto le pide al backend en docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md.
    Patrón de scripts: backend-dotnet/specs/decisiones/ADR-008 (EF Core Database First:
    el esquema SOLO cambia con scripts `db/migrations_mssql/000N_*.sql`).
 

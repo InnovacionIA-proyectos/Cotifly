@@ -1,7 +1,7 @@
 # Cambios en el backend por la reestructuración de cotizaciones (HU-021)
 
 **Estado: plan — NO ejecutado.** Describe lo que el backend (`backend-dotnet/`) tiene que cambiar para funcionar con
-el esquema de `docs/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`. No se toca código hasta que la propuesta esté
+el esquema de `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`. No se toca código hasta que la propuesta esté
 aprobada y se confirme que el backend ya no está en freeze.
 
 Las rutas de archivo son relativas a `backend-dotnet/`. Los números de línea son de la fecha de este documento
@@ -165,7 +165,7 @@ Archivo: `src/Cotifly.Dominio/Cotizaciones/clsCotizacionPosicion.cs`.
 - Se agrega `IdTipoMercancia` (`Guid?`: vacío en las filas migradas, obligatorio para las nuevas, validado aquí).
 
 `APosicion()` (59) ya no se usa para armar `posiciones[]` hacia Nexo: a Nexo se le manda el peso total por camión
-(ver `docs/PROXIMOS_ALCANCES.md`). Sí se usa para armar la petición al cubicador.
+(ver `docs/conexion_nexo/PROXIMOS_ALCANCES.md`). Sí se usa para armar la petición al cubicador.
 
 ### 3.5 Conexos
 

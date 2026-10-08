@@ -7,7 +7,7 @@ se dejó por fuera y qué tendría que pasar para retomarla.
 
 ## 1. Detalle de bultos por camión al enviar a Nexo
 
-**Origen:** reestructuración de cotizaciones (HU-021, `PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`), integración
+**Origen:** reestructuración de cotizaciones (HU-021, `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`), integración
 con el cubicador.
 
 **Situación actual (lo que sí se hace):** a Nexo se le envía cada camión recomendado por el cubicador como una

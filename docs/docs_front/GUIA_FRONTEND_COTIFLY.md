@@ -5,7 +5,7 @@
 | Propósito | Todo lo que el frontend necesita para integrar el módulo Cotifly de ClientePro con la API .NET 10 de Cotifly: contratos, formas de comunicación, flujos, estados y reglas de UI |
 | Audiencia | Desarrollador(a) frontend de `clientepro-frontend` (Angular 17.3.8) |
 | Fecha | 2026-09-29 |
-| Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`, `docs/HU_Backlog_Cotifly_ClientePro.md` y los controllers de `backend-dotnet/src/Cotifly.Api`, en `origin/QA` y en las ramas de los PR abiertos |
+| Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` y los controllers de `backend-dotnet/src/Cotifly.Api`, en `origin/QA` y en las ramas de los PR abiertos |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec de la rama correspondiente, y hay que avisar al backend |
 
 Convención de la guía: "a confirmar" marca todo lo que no está cerrado en el código ni en las decisiones. No hay nada inventado. Si algo no aparece aquí, no existe en el backend.
@@ -1181,7 +1181,7 @@ Solo `gerente_comercial` (403 `ErrorWeb` para `comercial`).
 
 ### 5.22 Métricas (HU-010.1). PR de #45 (por abrir)
 
-Fuentes: `openapi.yaml` (tag `metricas`), `docs/CONTRATO_API_WEB.md` §3.1, ADR-016 y `specs/features/metricas_tablero.feature` de la rama `45-hu-0101-endpoints-de-métricas-agregadas-backend`, **commit `a48ed49`** (contrato final). ADR-016 está en estado **Propuesta**: Gerencia Comercial todavía tiene que validar las definiciones (sección 9).
+Fuentes: `openapi.yaml` (tag `metricas`), `docs/docs_front/CONTRATO_API_WEB.md` §3.1, ADR-016 y `specs/features/metricas_tablero.feature` de la rama `45-hu-0101-endpoints-de-métricas-agregadas-backend`, **commit `a48ed49`** (contrato final). ADR-016 está en estado **Propuesta**: Gerencia Comercial todavía tiene que validar las definiciones (sección 9).
 
 | Endpoint | Rol | Uso | Estado |
 |---|---|---|---|
@@ -1550,7 +1550,7 @@ Se retirarán cuando el frontend use los nuevos. Si algún componente ya los con
 
 ### 5.23 Analizar el Excel del pliego (`POST /web/licitaciones/analizar-excel`). PR de #47
 
-Formato y mapeo: `docs/HU-011-formato-excel-licitacion.md`. Cotifly **no impone plantilla**: reenvía el archivo al análisis de Nexo, que detecta el encabezado de cada hoja y devuelve las filas como texto. No se guarda nada.
+Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifly **no impone plantilla**: reenvía el archivo al análisis de Nexo, que detecta el encabezado de cada hoja y devuelve las filas como texto. No se guarda nada.
 
 - Request: `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, máximo **10 MB menos 64 KB**: Nexo limita a 10 MB el cuerpo completo). No poner `Content-Type` a mano (el navegador pone el `boundary`).
 - 200 `AnalisisExcel`:
@@ -2053,7 +2053,7 @@ sequenceDiagram
 
 Responsabilidades del frontend:
 
-1. **Analizar** (5.23) y mostrar las hojas; el comercial elige una y asigna columnas a los campos destino (`docs/HU-011-formato-excel-licitacion.md` §3). Las columnas sin asignar se ignoran y se conservan en la exportación.
+1. **Analizar** (5.23) y mostrar las hojas; el comercial elige una y asigna columnas a los campos destino (`docs/conexion_nexo/HU-011-formato-excel-licitacion.md` §3). Las columnas sin asignar se ignoran y se conservan en la exportación.
 2. **Traducir** cada celda al código del catálogo (municipios de `GET /web/municipios`, vehículos de `GET /web/catalogos-flete`) y las unidades (toneladas × 1000, metros × 100). Cargar los catálogos una sola vez, no por fila.
 3. **Validar en el cliente** con las reglas de 5.15 y marcar las filas antes de enviar; el servidor vuelve a validar todo y devuelve el reporte por fila.
 4. **Enviar** con el archivo (5.24); spinner de hasta 30 s y bloqueo del doble envío (un segundo POST crea otra licitación).
@@ -2301,6 +2301,6 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - `LINEA_SIN_COTIZACION_NEXO` (409)
 - `TEXTOS_EDITADOS` (409)
 
-**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/HU-005.1-mapeo-campos-nexo.md` y `docs/HU-013-preguntas-nexo.md`.
+**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
 
 La guía completa de estos flujos llega con HU-013.8 (#104).
