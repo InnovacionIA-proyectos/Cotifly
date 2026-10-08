@@ -407,8 +407,9 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
-    /// Payload del PDF de un pliego (HU-011.5): una tabla por origen (en el orden del pliego) con una fila por ruta, sus camiones y el
-    /// precio de la ruta; los servicios conexos de las rutas, con su precio. Nada del LLM ni del cliente.
+    /// Payload del PDF de un pliego (HU-011.5): una tabla por origen (en el orden del pliego) con una fila por ruta, sus camiones y la
+    /// tarifa del transporte de la ruta (sin conexos: van aparte, con su precio, para no cobrarlos dos veces; HU-021 el precio de la ruta
+    /// los incluye). Nada del LLM ni del cliente.
     /// </summary>
     public static clsCotizacionPdfPayload PayloadPliego(clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda)
     {
@@ -426,7 +427,7 @@ public sealed class clsCosteoCotizacionService(
                 {
                     Destino = $"{r.Orden}. {r.DestinoNombre}",
                     VehiculoPeso = Camiones(r),
-                    Tarifa = r.PrecioFinalLinea,
+                    Tarifa = PrecioTransporte(cotizacion, r),
                     Moneda = moneda,
                 })],
             })
@@ -444,20 +445,25 @@ public sealed class clsCosteoCotizacionService(
         };
     }
 
-    /// <summary>Resumen del pliego: una fila por ruta, en orden, y el total (la suma de los precios de las rutas).</summary>
+    /// <summary>
+    /// Resumen del pliego: una fila por ruta, en orden, con la tarifa del transporte, y el total (la suma de esas tarifas, sin servicios
+    /// conexos; HU-021: <c>PrecioFinal</c> sí los incluye, por eso no se usa aquí).
+    /// </summary>
     public static clsResumenPliegoDocumento ResumenPliego(clsCotizacionSolicitud cotizacion, string moneda)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var filas = cotizacion.RutasOrdenadas.Select(r => new clsFilaPliegoDocumento(
+        var rutas = cotizacion.RutasOrdenadas;
+        var tarifas = rutas.Select(r => PrecioTransporte(cotizacion, r)).ToList();
+        var filas = rutas.Select((r, i) => new clsFilaPliegoDocumento(
             r.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture),
             clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
             Camiones(r) ?? "—",
-            r.PrecioFinalLinea is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
+            tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
         return new clsResumenPliegoDocumento(
             "RESUMEN DEL PLIEGO",
             filas,
             $"TOTAL DEL PLIEGO ({filas.Count} RUTAS, SIN SERVICIOS CONEXOS)",
-            clsFormatoMoneda.Formatear(cotizacion.PrecioFinal ?? 0m, moneda),
+            clsFormatoMoneda.Formatear(tarifas.Sum(t => t ?? 0m), moneda),
             "Tarifas por viaje de cada ruta; el total es la suma de un viaje por ruta, sin servicios conexos, y es solo de referencia.");
     }
 

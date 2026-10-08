@@ -47,7 +47,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     {
         // El alta de los antecedentes ya llegó a Nexo: se deja la cotización como la deja un alta fallida (sin solicitud ni polling).
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = '{estadoCosteo}', costeoId = NULL, costeoSiguienteConsultaAt = NULL, "
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = '{estadoCosteo}', solicitudNexoId = NULL, costeoSiguienteConsultaAt = NULL, "
             + $"motivoEstadoCosteo = N'Nexo no recibió la solicitud (HTTP {estado}).' WHERE folio = '{costeo.Folio(cotizacion)}'");
         costeo.Nexo.AltaFalla = (HttpStatusCode)estado;
         _altasAntes = costeo.Nexo.SolicitudesCreadas.Count;
@@ -154,7 +154,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     {
         var folio = costeo.Folio(cotizacion);
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-                $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{web.Sesion(alias).UsuarioId}' "
+                $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{web.Sesion(alias).UsuarioId}' "
                 + $"AND (folio = '{folio}' OR folio LIKE '{folio}-v%')"))
             .Should().Be(cantidad);
     }
@@ -174,7 +174,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         costeo.EntoncesNexoRecibio(origen, destino, bp, posiciones);
         var cotizacion = costeo.Nexo.SolicitudesCreadas[^1];
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE costeoId = '{cotizacion}'")).Should().Be(1, "se guarda el id de la solicitud nueva");
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE solicitudNexoId = '{cotizacion}'")).Should().Be(1, "se guarda el id de la solicitud nueva");
     }
 
     [Then("la re-solicitud de {string} queda en la auditoría con el motivo {string} y el usuario {string}")]
@@ -268,7 +268,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         // Cotización en USD de un día anterior, sin pasar por la TRM de hoy: así la caché del día queda vacía y "sin TRM" falla de verdad.
         // El alta con el formulario en USD (#103) la cubre el escenario anterior.
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET moneda = '{moneda}', trmAplicada = {trm} WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET moneda = '{moneda}', trmAplicada = {trm} WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
 
     [Then("la versión nueva está en {string} con la TRM {string}")]
@@ -316,8 +316,9 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
 
     [Then("Nexo no recibió ninguna petición para agregar conexos")]
     public void EntoncesNingunConexoAgregado() =>
-        costeo.Nexo.Peticiones.Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/conexos", StringComparison.Ordinal))
-            .Should().BeEmpty("Cotifly no vuelve a agregar en Nexo los conexos descartados (ADR-018 §5)");
+        costeo.Nexo.Peticiones.Count(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/conexos", StringComparison.Ordinal))
+            .Should().Be(costeo.ConexosAgregadosPorLaPrueba,
+                "Cotifly no vuelve a agregar en Nexo los conexos descartados (ADR-018 §5); HU-021: solo están los que agregó la prueba");
 
     private string FolioNuevo => _folioNuevo ??throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
 
@@ -339,9 +340,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         return $"\"{_versionLeida}\"";
     }
 
-    private static Task<string?> ColumnaFolioAsync(string folio, string columna) =>
-        clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT CAST({columna} AS nvarchar(max)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'");
+    private static Task<string?> ColumnaFolioAsync(string folio, string columna) => clsPasosCosteo.ColumnaDelFolio(folio, columna);
 
     /// <summary>Valor de una celda de la tabla como JSON: número, booleano o texto.</summary>
     private static JsonNode? Valor(string texto) =>

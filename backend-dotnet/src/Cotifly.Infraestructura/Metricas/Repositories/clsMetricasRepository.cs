@@ -107,12 +107,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             columnas.Ciudades
                 ? "OUTER APPLY (SELECT TOP (1) l1.origenNombre, l1.destinoNombre FROM dbo_cotifly.CotizacionLineasSolicitud l1 WHERE l1.cotizacionSolicitudId = c.id ORDER BY l1.orden) r1"
                 : string.Empty);
-        var filas = await contexto.Database.SqlQueryRaw<clsFilaMetrica>(
+        var usuariosJson = JsonSerializer.Serialize(usuarios.Distinct());
+        var filas = await ConReintentoPorInterbloqueoAsync(() => contexto.Database.SqlQueryRaw<clsFilaMetrica>(
                 sql,
-                new SqlParameter("@usuarios", System.Data.SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(usuarios.Distinct()) },
+                new SqlParameter("@usuarios", System.Data.SqlDbType.NVarChar, -1) { Value = usuariosJson },
                 new SqlParameter("@desde", System.Data.SqlDbType.DateTimeOffset) { Value = desde },
                 new SqlParameter("@hasta", System.Data.SqlDbType.DateTimeOffset) { Value = hastaExclusivo })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
         return new clsDatosMetricas(
             [.. filas.Select(f => new clsCotizacionMetrica
@@ -138,6 +139,27 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             })],
             columnas.Ciudades,
             columnas.Deadline);
+    }
+
+    /// <summary>
+    /// HU-021: la consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
+    /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite hasta
+    /// tres veces con una espera corta.
+    /// </summary>
+    private static async Task<T> ConReintentoPorInterbloqueoAsync<T>(Func<Task<T>> consulta)
+    {
+        const int Intentos = 3;
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                return await consulta();
+            }
+            catch (SqlException ex) when (ex.Number == 1205 && intento < Intentos)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * intento));
+            }
+        }
     }
 
     public Task<int> ContarLineasNegocioActivasAsync(CancellationToken cancellationToken = default) =>

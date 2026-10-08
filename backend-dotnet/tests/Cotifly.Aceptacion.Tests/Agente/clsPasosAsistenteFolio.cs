@@ -88,7 +88,7 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
         // Como las crea el agente legado (HU-003): folio del servidor, sin estadoCosteo. El alias del .feature apunta al folio real.
         var cotizacion = await web.Api.CrearCotizacionAsync(web.Sesion(alias).UsuarioId, "900555111", conPdf: false);
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE folio = '{cotizacion.Folio}'")).Should().BeNull();
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{cotizacion.Folio}'")).Should().BeNull();
         _foliosChat[folio] = cotizacion.Folio;
     }
 

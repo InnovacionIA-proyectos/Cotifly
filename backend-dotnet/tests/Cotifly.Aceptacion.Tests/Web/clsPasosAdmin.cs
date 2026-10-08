@@ -44,7 +44,7 @@ public sealed class clsPasosAdmin(clsContextoWeb web)
     [Then("el listado de líneas incluye las 8 líneas sembradas y {string}")]
     public void EntoncesElListadoIncluye(string alias) =>
         web.UltimoJson().EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString()).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "Almacenamiento", "Almacenamiento3PL", "ITR", web.Lineas[alias].Nombre]);
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor", web.Lineas[alias].Nombre]); // HU-021 (0009)
 
     [Then("cada línea trae id, linea_negocio, margen, metodo_calculo e is_active")]
     public async Task EntoncesCadaLineaCumpleElContrato()

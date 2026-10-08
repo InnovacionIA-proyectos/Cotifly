@@ -205,8 +205,12 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     [When("la cotización {string} está en autocosteo sin el costo leído")]
     public Task CuandoAutocosteoSinCosto(string cotizacion) =>
         clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'autocosteo', precioFinal = NULL, costo = NULL WHERE folio = '{Folio(cotizacion)}'; "
-            + $"UPDATE l SET lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{Folio(cotizacion)}';");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'autocosteo', precioFinal = NULL WHERE folio = '{Folio(cotizacion)}'; "
+            + "UPDATE l SET estadoCosteo = 'autocosteo', costoFletesTotal = NULL, costoFinal = NULL, precioFinalLinea = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}'; "
+            + "UPDATE v SET estadoCosteo = 'autocosteo', costoFlete = NULL, lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}';");
 
     [When("Nexo vuelve a responder la consulta del costeo")]
     public void CuandoVuelveLaConsulta() => _nexo.FallarConsultaTrasResultado = false;
@@ -262,6 +266,21 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 
+    /// <summary>
+    /// HU-021 (decisión 3): el dueño de <paramref name="cotizacion"/> agrega en Cotifly (ruta 1) un conexo de costo <paramref name="valor"/>;
+    /// Cotifly lo crea en Nexo y guarda el valor que Nexo calcula. El polling ya no importa los conexos que aparezcan en Nexo.
+    /// </summary>
+    public async Task AgregarConexoEnCotiflyAsync(string cotizacion, string nombre, decimal valor)
+    {
+        var usuarioId = Guid.Parse((await Columna(cotizacion, "usuarioId"))!);
+        var dueno = web.Sesiones.Values.First(s => s.UsuarioId == usuarioId);
+        await web.Api.AgregarConexoAsync(_nexo, dueno.Access, Folio(cotizacion), nombre, valor);
+        ConexosAgregadosPorLaPrueba++;
+    }
+
+    /// <summary>Conexos que la propia prueba agregó en Cotifly (cada uno es un <c>POST .../conexos</c> a Nexo).</summary>
+    public int ConexosAgregadosPorLaPrueba { get; private set; }
+
     /// <summary>Fuente principal de la TRM del escenario (DolarApi falsa, HU-013.7).</summary>
     public clsDolarApiFalso DolarApi => _dolarApi;
 
@@ -274,9 +293,27 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     public string Folio(string cotizacion) =>
         _folios.TryGetValue(cotizacion, out var folio) ? folio : throw new InvalidOperationException($"No se envió la cotización '{cotizacion}'.");
 
-    public Task<string?> Columna(string cotizacion, string columna) =>
-        clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT CAST({columna} AS nvarchar(max)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(cotizacion)}'");
+    public Task<string?> Columna(string cotizacion, string columna) => ColumnaDelFolio(Folio(cotizacion), columna);
+
+    /// <summary>
+    /// Una columna de la cotización <paramref name="folio"/>. HU-021: <c>costeoId</c> es <c>solicitudNexoId</c>; el costo, el margen y su
+    /// origen, los de la ruta 1; la carga (peso, vehículo, carrocería), la de su primer camión; el resto, de la cabecera.
+    /// </summary>
+    public static Task<string?> ColumnaDelFolio(string folio, string columna)
+    {
+        var expresion = columna switch
+        {
+            "costeoId" => "c.solicitudNexoId",
+            "costo" => "l.costoFinal",
+            "margenAplicado" or "origenMargen" or "metodoCalculo" => $"l.{columna}",
+            "pesoKg" or "tipoVehiculo" or "carroceria" =>
+                $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY v.createdAt, v.id)",
+            _ => $"c.{columna}",
+        };
+        return clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT CAST({expresion} AS nvarchar(max)) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"LEFT JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id AND l.orden = 1 WHERE c.folio = '{folio}'");
+    }
 
     private static string Formulario(string nit, string? moneda)
     {

@@ -37,10 +37,11 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var antes = await FilaAsync(sesion, folio);
         antes.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
 
-        // Nexo costea con 2.550.000 (flete + retorno) y un conexo de 170.000; la línea Importacion tiene política 15 %.
+        // Nexo costea con 2.550.000 (flete + retorno); el comercial agrega en Cotifly un conexo de 170.000 (HU-021, decisión 3); la línea
+        // Importacion tiene política 15 %.
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_000_000m, retorno: 550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue", 170_000m);
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue", 170_000m);
 
         using var lista = await _api.EnviarAsync(_get, "/web/mis-cotizaciones", sesion.Access);
         var cuerpoLista = await lista.Content.ReadAsStringAsync(Ct);
@@ -50,8 +51,8 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         var fila = (await FilaAsync(sesion, folio));
         fila.GetProperty("estado_costeo").GetString().Should().Be("autocosteo");
-        fila.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m, "2.550.000 / (1 - 0,15), del módulo de Precio");
-        json.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m);
+        fila.GetProperty("precio_final").GetDecimal().Should().Be(3_200_000m, "(2.550.000 + 170.000) / (1 - 0,15): HU-021, el precio de la ruta incluye los conexos");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_200_000m);
         json.GetProperty("servicios_conexos")[0].GetProperty("precio").GetDecimal().Should().Be(200_000m);
         foreach (var cuerpo in new[] { cuerpoLista, cuerpoCosteo })
         {
@@ -65,9 +66,9 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     {
         var (sesion, folio) = await EnviarAsync();
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue en puerto", 170_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Escolta", 85_000m, "adicional");
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue en puerto", 170_000m);
+        await AgregarConexoAsync(sesion, folio, "Escolta", 85_000m);
         using var antes = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         var servicios = (await VerificarContratoAsync(antes, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
             .GetProperty("servicios_conexos").EnumerateArray().ToList();
@@ -126,7 +127,7 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
 
         using var ajuste = await EnviarConVersionAsync(_put, ruta, sesion.Access, """{"margen":0.18}""", etag);
         var json = await VerificarContratoAsync(ajuste, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
-        json.GetProperty("precio_final").GetDecimal().Should().Be(3_109_756m, "2.550.000 / (1 - 0,18)");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_317_073m, "(2.550.000 + 170.000) / (1 - 0,18): el precio incluye los conexos (HU-021)");
         json.GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
         json.GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
         json.GetProperty("origen_margen").GetString().Should().Be("negociado");
@@ -215,14 +216,30 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         (await EtagAsync(sesion, folio)).Should().NotBe(ajuste.Headers.ETag!.Tag, "un costo nuevo de Nexo sí es un cambio de negocio");
     }
 
-    /// <summary>Cotización enviada y costeada por Nexo: flete 2.550.000 y un conexo de 170.000 (precio 3.000.000 con el 15 %).</summary>
+    /// <summary>
+    /// Cotización enviada y costeada por Nexo (flete 2.550.000: transporte de 3.000.000 con el 15 %) y un conexo de 170.000 que el
+    /// comercial agrega en Cotifly (precio total 3.200.000).
+    /// </summary>
     private async Task<(clsSesionPrueba Sesion, string Folio)> CosteadaAsync()
     {
         var (sesion, folio) = await EnviarAsync();
         _nexo.Costear(_nexo.SolicitudesCreadas[^1], 2_550_000m);
-        _nexo.AgregarConexo(_nexo.SolicitudesCreadas[^1], "Cargue", 170_000m);
         await _api.ProcesarPollingAsync(folio);
+        await AgregarConexoAsync(sesion, folio, "Cargue", 170_000m);
         return (sesion, folio);
+    }
+
+    /// <summary>
+    /// HU-021 (decisión 3): los conexos los agrega el comercial en Cotifly (<c>POST .../servicios-conexos</c>), que los crea en Nexo y
+    /// guarda el valor que Nexo calcula; el polling ya no los importa.
+    /// </summary>
+    private async Task AgregarConexoAsync(clsSesionPrueba sesion, string folio, string nombre, decimal costo)
+    {
+        var id = Guid.NewGuid().ToString();
+        _nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo);
+        using var respuesta = await EnviarConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = id, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        respuesta.StatusCode.Should().Be(HttpStatusCode.OK, await respuesta.Content.ReadAsStringAsync(Ct));
     }
 
     private async Task<string?> EtagAsync(clsSesionPrueba sesion, string folio)

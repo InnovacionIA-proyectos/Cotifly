@@ -137,7 +137,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var versiones = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => CrearVersionAsync(ana, idV1)));
         var maxima = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerVersionMaximaAsync(v1.Valor, Ct));
         var columnaVersion = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-            $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = '{v1.Valor}-v6'");
+            $"SELECT version FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{v1.Valor}-v6'");
 
         versiones.Should().OnlyContain(r => r.EsExitoso);
         versiones.Select(r => r.Valor).Should().BeEquivalentTo(Enumerable.Range(2, 5).Select(n => $"PCN-CP-{dia}-001-v{n}"));
@@ -155,7 +155,7 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
 
         var v2 = await CrearVersionAsync(ana, heredada.Id);
         var columnaVersion = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-            $"SELECT version FROM dbo_cotifly.Cotizaciones WHERE folio = 'PCN-{dia}-001-v2'");
+            $"SELECT version FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = 'PCN-{dia}-001-v2'");
 
         v2.Valor.Should().Be($"PCN-{dia}-001-v2");
         columnaVersion.Should().Be(2);

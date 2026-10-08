@@ -68,7 +68,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
             }, "las filas 0 y 10 son válidas (la 10 con la clase provisional CNT40.OP y espacios al borde)");
         json.GetProperty("errores").EnumerateArray().Select(e => e.GetProperty("indice").GetInt32()).Should().BeInAscendingOrder();
         _nexo.SolicitudesCreadas.Should().BeEmpty();
-        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
     }
 
     [Fact]
@@ -119,8 +119,8 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         segunda["valorAprovisionamiento"]!.GetValue<decimal>().Should().Be(150_000m);
 
         (await EscalarAsync("SELECT STRING_AGG(CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId, '|', l.horasCargue, '|', l.horasDescargue), ';') WITHIN GROUP (ORDER BY l.orden) "
-            + $"FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
-            .Should().Be("76109|11001|2.00|3.50;52399|76001||");
+            + $"FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
+            .Should().Be("76109|11001|2.00|3.50;52399|76001|4.00|6.00", "HU-021: la cabecera no guarda horas; la ruta guarda las que viajan");
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         respuesta.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(respuesta, "CATALOGOS_FLETE_NO_DISPONIBLE");
         _nexo.SolicitudesCreadas.Should().BeEmpty();
-        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
     }
 
     [Fact]
@@ -182,8 +182,11 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
 
         // Como una licitación guardada antes de #108: texto libre y sin ids de municipio.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
-            "UPDATE l SET tipoVehiculo = N'Tractomula', origenMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
-            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}' AND l.orden = 2");
+            "UPDATE l SET origenMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND l.orden = 2; "
+            + "UPDATE v SET tipoVehiculo = N'Tractomula' FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND l.orden = 2");
 
         using var reintento = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/reintentar", sesion.Access);
 
@@ -207,7 +210,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         _nexo.AltaFalla = null;
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
             "UPDATE l SET origenMunicipioId = NULL, destinoMunicipioId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l "
-            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'");
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
 
         using var reintento = await _api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/reintentar", sesion.Access);
 
@@ -215,7 +218,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         var linea = _nexo.UltimaAlta!["lineas"]![0]!;
         (linea["origenMunicipioId"]!.GetValue<int>(), linea["destinoMunicipioId"]!.GetValue<int>()).Should().Be((76109, 11001));
         (await EscalarAsync("SELECT CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.CotizacionLineasSolicitud l "
-            + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be("76109|11001", "el siguiente reenvío manda lo mismo");
     }
 

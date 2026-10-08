@@ -52,11 +52,11 @@ public sealed class clsPdfCosteoMonedaTests
     [Fact]
     public void LaVistaDelCosteoExponeLaMonedaYLaTrmFijada()
     {
-        var vista = clsCosteoCotizacionService.Vista(EnDolares(precioFinal: 750m), null);
+        var vista = clsCosteoCotizacionService.Vista(EnDolares(), null);
 
         vista.Moneda.Should().Be("USD");
         vista.TrmAplicada.Should().Be(4000m);
-        vista.PrecioFinal.Should().Be(750m);
+        vista.PrecioFinal.Should().Be(775m, "HU-021: el precio de la ruta incluye el conexo (750,00 del flete + 25,00 del Cargue)");
         vista.ServiciosConexos.Single().Precio.Should().Be(25m);
         clsCosteoCotizacionService.Vista(clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-C"), null).TrmAplicada.Should().Be(0m);
     }
@@ -64,31 +64,41 @@ public sealed class clsPdfCosteoMonedaTests
     [Fact]
     public async Task ElPdfEnDolaresLlevaLasTarifasEnUsdYLaNotaDeTrmMinimaConLaTrmFijada()
     {
-        var cotizacion = Registrada(EnDolares(precioFinal: 750m));
+        var cotizacion = Registrada(EnDolares());
 
         var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
-        _documento!.NotaMoneda.Should().Be(clsTextosEstandar.NotaTrmMinima(4000m));
+        _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$750,00", "la tarifa es el precio del transporte; el conexo va aparte");
+        _documento.NotaMoneda.Should().Be(clsTextosEstandar.NotaTrmMinima(4000m));
         _documento.NotaMoneda.Should().Contain("TRM mínima de $4.000,00");
     }
 
+    // HU-021: el precio ya no se guarda aparte del costo (la ruta lo calcula con su margen), así que la cotización no puede traer un
+    // precio incoherente; la guarda de coherencia del PDF se prueba con el payload alterado y la trazabilidad que arma el servicio.
     [Fact]
-    public async Task UnPrecioEnDolaresQueNoCorrespondeAlCostoYLaTrmNoSeImprime()
+    public void UnPrecioEnDolaresQueNoCorrespondeAlCostoYLaTrmNoSeImprime()
     {
-        var cotizacion = Registrada(EnDolares(precioFinal: 760m));
+        var cotizacion = EnDolares();
+        var ruta = cotizacion.PrimeraRuta!;
+        var payload = clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD");
+        payload.Tarifa!.Filas![0].Tarifa = 760m;
+        var traza = new clsTrazabilidadCotizacion(
+            ruta.CostoTransporte, ruta.MargenPoliticaSugerido, ruta.MargenAplicado, null, ruta.MetodoCalculo, 760m, cotizacion.NitCliente, null, "USD",
+            cotizacion.TrmAplicada);
 
-        var resultado = await Servicio().GenerarPdfAsync(_ana, cotizacion.Folio, Version, Ct);
+        var error = clsGenerarPdfService.ValidarCoherencia(payload, traza, "margen", "USD");
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "2.550.000 / 0,85 / 4.000 = 750,00, no 760");
-        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>());
+        error!.Codigo.Should().Be(clsCodigosError.PdfPayloadInvalido, "2.550.000 / 0,85 / 4.000 = 750,00, no 760");
+        clsGenerarPdfService.ValidarCoherencia(clsCosteoCotizacionService.Payload(cotizacion, "Importacion", "USD"), traza with { PrecioFinal = 750m }, "margen", "USD")
+            .Should().BeNull("el payload que arma el servicio es coherente con el costo y la TRM");
     }
 
     // #92, #95: con el turno de render agotado no se guarda el PDF ni cambia la versión.
     [Fact]
     public async Task SiElTurnoDeRenderSeAgotaElPdfDelCosteoEsPdfRenderNoDisponible()
     {
-        var cotizacion = Registrada(EnDolares(precioFinal: 750m));
+        var cotizacion = Registrada(EnDolares());
         _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new clsRenderPdfOcupadoException(TimeSpan.FromSeconds(30)));
 
@@ -110,32 +120,21 @@ public sealed class clsPdfCosteoMonedaTests
         _documento!.NotaMoneda.Should().BeNull();
     }
 
-    /// <summary>Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (25,00 USD) incluido.</summary>
-    private clsCotizacionSolicitud EnDolares(decimal precioFinal)
+    /// <summary>
+    /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (25,00 USD) en la
+    /// ruta (HU-021: el precio de la ruta, 775,00 USD, incluye el conexo).
+    /// </summary>
+    private clsCotizacionSolicitud EnDolares()
     {
-        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
-        {
-            Folio = "PCN-900555111-AP-05102026-010",
-            UsuarioId = _ana,
-            Moneda = "USD",
-            TrmAplicada = 4000m,
-            Costo = 2_550_000m,
-            PrecioFinal = precioFinal,
-            MargenPolitica = 0.15m,
-            MargenAplicado = 0.15m,
-            OrigenMargen = OrigenMargen.PoliticaLinea,
-            MetodoCalculo = "margen",
-            EstadoCosteo = EstadoCosteo.Autocosteo,
-        }).Valor;
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 25m, true)]));
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, Version);
-        return Preparada(cotizacion);
+        var cotizacion = clsCotizacionMuestra.Costeada(
+            flete: 2_550_000m, margen: 0.15m, folio: "PCN-900555111-AP-05102026-010", usuarioId: _ana, moneda: "USD", trm: 4000m);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
+        return Preparada(clsCotizacionMuestra.ConVersionNegocio(cotizacion, Version));
     }
 
+    /// <summary>HU-021: la costeada ya viene del formulario y enviada; solo falta el cliente del catálogo.</summary>
     private static clsCotizacionSolicitud Preparada(clsCotizacionSolicitud cotizacion)
     {
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
-        cotizacion.RegistrarEnvioCosteo("SOL-1", true, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
         return cotizacion;
     }
@@ -143,8 +142,6 @@ public sealed class clsPdfCosteoMonedaTests
     private clsCotizacionSolicitud Registrada(clsCotizacionSolicitud cotizacion)
     {
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
-        _cotizaciones.ListarLineasAsync(cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.LineaNegocioId))!.SetValue(cotizacion, 3);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
         return cotizacion;
     }

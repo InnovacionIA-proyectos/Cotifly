@@ -119,7 +119,7 @@ public sealed class clsRetiroGoogleChatTests(clsEntornoApiWeb entorno)
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var deChat = await api.CrearCotizacionAsync(ana.UsuarioId, "900777888", conPdf: false);
         (await clsBaseDatosPruebas.EscalarAsync<string>(entorno.BaseDatos.CadenaCotifly,
-            $"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE id = '{deChat.Id}'")).Should().BeNull("así quedaron las del chat");
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{deChat.Id}'")).Should().BeNull("así quedaron las del chat");
 
         using var mis = await api.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", ana.Access);
         var lista = await VerificarContratoAsync(mis, "/web/mis-cotizaciones", HttpMethod.Get, HttpStatusCode.OK);

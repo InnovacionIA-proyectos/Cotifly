@@ -41,7 +41,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
         json.GetProperty("motivo_rechazo").GetString().Should().Be("Precio alto");
         _nexo.Resultado(solicitud).Should().Be("Perdida");
-        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}' AND motivoRechazo LIKE '%menos%'"))
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}' AND motivoRechazo LIKE '%menos%'"))
             .Should().Be("0", "el comentario solo se reenvía a Nexo");
     }
 
@@ -56,7 +56,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(respuesta, "COTIZACION_NO_ENTREGADA");
         _nexo.Peticiones.Count.Should().BeGreaterThan(antes, "en autocosteo se le pregunta a Nexo (pudo entregarse sin que el polling lo viera)");
-        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         segunda.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(segunda, "RESULTADO_YA_DEFINIDO");
-        (await EscalarAsync($"SELECT CONCAT(CAST(ganada AS nvarchar(5)), '|', COALESCE(motivoRechazo, '-')) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
+        (await EscalarAsync($"SELECT CONCAT(CAST(ganada AS nvarchar(5)), '|', COALESCE(motivoRechazo, '-')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
             .Should().Be("1|-");
     }
 
@@ -106,7 +106,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(caido, "COSTEO_NEXO_NO_DISPONIBLE");
         ajena.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ajena.Content.ReadAsStringAsync(Ct)).Should().Be("""{"error":"Cotización no encontrada o no es tuya."}""");
-        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(respuesta, "USAR_RESULTADO_NEXO");
-        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+        (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 
     // HU-013.14 (ADR-018 §17): el resultado y el costeo nunca quedan inconsistentes, gane quien gane la carrera con el polling.
@@ -128,7 +128,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
         _nexo.Costear(solicitud, 2_550_000m);
         _nexo.Entregar(solicitud);
-        (await EscalarAsync($"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("pendiente_costeo", "el polling aún no lo vio");
+        (await EscalarAsync($"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("pendiente_costeo", "el polling aún no lo vio");
 
         using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
@@ -172,7 +172,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Costear(solicitud, 2_550_000m);
         // Fila de antes de la opción A: autocosteo sin precio ni líneas asociadas (el resultado tiene que releer el costeo).
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'autocosteo' WHERE folio = '{folio}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'autocosteo' WHERE folio = '{folio}'");
         _nexo.Entregar(solicitud);
         _nexo.FallarConsultaTrasResultado = true;
 
@@ -182,7 +182,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         json.GetProperty("ganada").GetBoolean().Should().BeTrue("Nexo ya tiene el resultado");
         json.GetProperty("estado_costeo").GetString().Should().Be("autocosteo", "sin leer el costo no se marca entregada");
         json.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
-        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
+        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
             .Should().Be("agendada", "el polling la completa");
 
         _nexo.FallarConsultaTrasResultado = false;
@@ -199,7 +199,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         _nexo.Costear(solicitud, 2_550_000m);
         _nexo.Entregar(solicitud);
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'entregada', ganada = 1, marcadoAt = SYSDATETIMEOFFSET(), costeoSiguienteConsultaAt = NULL, costeoEnviadoAt = DATEADD(HOUR, -100, SYSDATETIMEOFFSET()) WHERE folio = '{folio}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'entregada', ganada = 1, marcadoAt = SYSDATETIMEOFFSET(), costeoSiguienteConsultaAt = NULL, costeoEnviadoAt = DATEADD(HOUR, -100, SYSDATETIMEOFFSET()) WHERE folio = '{folio}'");
         (await EscalarAsync(SqlDiagnosticoEntregadasSinPrecio + $" AND c.folio = '{folio}'")).Should().Be(folio, "la consulta de diagnóstico del DBA la encuentra");
 
         await using (var ambito = _api.Factory.Services.CreateAsyncScope())
@@ -262,25 +262,25 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         // Simula que el guardado en Cotifly falló después del 200 de Nexo: Cotifly quedó sin resultado.
         await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET ganada = NULL, marcadoAt = NULL WHERE folio = '{folio}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = NULL, marcadoAt = NULL WHERE folio = '{folio}'");
 
         using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
 
         contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await contraria.Content.ReadAsStringAsync(Ct)).Should().Contain("RESULTADO_YA_DEFINIDO").And.Contain("ganada");
         _nexo.Resultado(solicitud).Should().Be("Ganada");
-        (await EscalarAsync($"SELECT CAST(ganada AS nvarchar(5)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("1", "Cotifly queda igual que Nexo");
+        (await EscalarAsync($"SELECT CAST(ganada AS nvarchar(5)) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("1", "Cotifly queda igual que Nexo");
     }
 
     /// <summary>La consulta de diagnóstico (solo lectura) documentada para el DBA en ADR-018 §17.</summary>
     private const string SqlDiagnosticoEntregadasSinPrecio = """
-        SELECT c.folio FROM dbo_cotifly.Cotizaciones c
-        WHERE c.estadoCosteo = 'entregada' AND c.costeoId IS NOT NULL AND c.precioFinal IS NULL AND c.pdfPath IS NULL
+        SELECT c.folio FROM dbo_cotifly.CotizacionesSolicitud c
+        WHERE c.estadoCosteo = 'entregada' AND c.solicitudNexoId IS NOT NULL AND c.precioFinal IS NULL AND c.pdfPath IS NULL
         """;
 
     private static string SqlEstado(string folio) =>
         "SELECT CONCAT(estadoCosteo, '|', CAST(ganada AS nvarchar(5)), '|', CAST(CAST(precioFinal AS bigint) AS nvarchar(30)), '|', "
-        + $"IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada')) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'";
+        + $"IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'";
 
     private int Consultas(string solicitud) =>
         _nexo.Peticiones.Count(p => p.Metodo == HttpMethod.Get && p.Url.AbsolutePath.TrimEnd('/') == $"/api/solicitudes/{solicitud}");

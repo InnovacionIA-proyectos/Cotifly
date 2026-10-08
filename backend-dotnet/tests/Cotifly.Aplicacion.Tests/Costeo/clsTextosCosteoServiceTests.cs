@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Redaccion.DTOs;
 using Cotifly.Aplicacion.Redaccion.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Pruebas.Comun;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Costeo;
@@ -32,7 +33,6 @@ public sealed class clsTextosCosteoServiceTests
     {
         _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
         _redaccion.VersionPrompt.Returns("abcdef0123456789");
         _redaccion.RedactarAsync(Arg.Any<clsContextoRedaccion>(), Arg.Any<clsTextosBase>(), Arg.Any<CancellationToken>())
@@ -205,12 +205,13 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void ElContextoDeLaIaSoloTraeNombresYNuncaMontos()
     {
-        var contexto = clsTextosCosteoService.Contexto(_cotizacion, "Nacional", []);
+        var contexto = clsTextosCosteoService.Contexto(_cotizacion, "Nacional");
 
         typeof(clsContextoRedaccion).GetProperties().Select(p => p.PropertyType)
             .Should().OnlyContain(t => t == typeof(string) || t == typeof(IReadOnlyList<clsRutaRedaccion>) || t == typeof(IReadOnlyList<string>),
                 "el contexto de la IA no tiene ningún campo numérico (ADR-018 §2a)");
-        contexto.Conexos.Should().BeEmpty("el único conexo de la cotización está excluido");
+        // HU-021: ya no hay conexos excluidos; el conexo de la ruta va en el precio y en el PDF, así que la IA ve su nombre.
+        contexto.Conexos.Should().Equal("Cargue");
         contexto.LineaNegocio.Should().Be("Nacional");
     }
 
@@ -270,14 +271,15 @@ public sealed class clsTextosCosteoServiceTests
     [Fact]
     public void EnUnPliegoElRespaldoEsElAsuntoDeLicitacionYLaIntroduccionMultiseccionComoLosImprimeElPdf()
     {
-        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [Linea("Buenaventura"), Linea("Cartagena")]);
+        // HU-021: el pliego es la solicitud con varias rutas (o una licitación).
+        var pliego = clsCotizacionMuestra.Licitacion(2, usuarioId: _ana);
 
-        var estandar = clsCosteoCotizacionService.TextosEstandar(_cotizacion, lineas, "Nacional");
+        var estandar = clsCosteoCotizacionService.TextosEstandar(pliego, "Nacional");
 
-        var payload = clsCosteoCotizacionService.PayloadPliego(_cotizacion, lineas, "Nacional", "COP");
+        var payload = clsCosteoCotizacionService.PayloadPliego(pliego, "Nacional", "COP");
         estandar.Asunto.Should().Be(payload.Asunto, "el mismo asunto que imprime el pliego");
         estandar.Introduccion.Should().Be(string.Join("\n\n", clsTextosEstandar.MultiSeccion.Intro), "la introducción del pliego, no la de tarifa única");
-        clsCosteoCotizacionService.TextosEstandar(_cotizacion, [], "Nacional")
+        clsCosteoCotizacionService.TextosEstandar(_cotizacion, "Nacional")
             .Should().Be(new clsTextosBase("presentación oferta de servicios de Transporte Nacional", string.Join("\n\n", clsTextosEstandar.TarifaUnica.Intro)));
     }
 
@@ -318,6 +320,4 @@ public sealed class clsTextosCosteoServiceTests
             Arg.Is<object?>(s => clsAuditoriaService.AJson(s!).Contains(huella) && clsAuditoriaService.AJson(s!).Contains("abcdef0123456789")),
             true, Arg.Any<int>(), null);
     }
-
-    private static clsLineaSolicitudCosteo Linea(string origen) => new() { Origen = origen, Destino = "BOGOTA", PesoKg = 1m };
 }

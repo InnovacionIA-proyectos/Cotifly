@@ -57,8 +57,12 @@ public sealed class clsPdfCorreoIntegracionTests : clsPruebaIntegracion
         var cotizacion = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio, Ct));
         cotizacion!.Id.Should().Be(resultado.Valor.CotizacionId);
         cotizacion.UsuarioId.Should().Be(usuario);
-        cotizacion.LineaNegocioId.Should().NotBeNull("'Distribución' con tilde se resuelve contra 'Distribucion' (issue #44)");
-        cotizacion.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
+        // HU-021: el chat también crea una ruta (línea de negocio, margen y precio) y un camión con el flete.
+        var ruta = cotizacion.Rutas.Should().ContainSingle().Subject;
+        ruta.LineaNegocioId.Should().NotBeNull("'Distribución' con tilde se resuelve contra 'Distribucion' (issue #44)");
+        ruta.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
+        (ruta.CostoFinal, ruta.PrecioFinalLinea, cotizacion.PrecioFinal).Should().Be(((decimal?)2_550_000m, (decimal?)3_000_000m, (decimal?)3_000_000m));
+        ruta.Vehiculos.Should().ContainSingle().Which.CostoFlete.Should().Be(2_550_000m);
         cotizacion.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
         cotizacion.PdfPath.Should().EndWith(folio + ".pdf");
 

@@ -83,9 +83,9 @@ public sealed class clsPasosServiciosConexos(
     {
         var solicitud = (await costeo.Columna(cotizacion, "costeoId"))!;
         costeo.Nexo.Costear(solicitud, flete);
-        costeo.Nexo.AgregarConexo(solicitud, conexo, valor);
         await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
         (await costeo.Columna(cotizacion, "estadoCosteo")).Should().Be("autocosteo");
+        await costeo.AgregarConexoEnCotiflyAsync(cotizacion, conexo, valor);
     }
 
     [When("{string} agrega a {string} en la línea {int} el servicio conexo {string} con la cantidad {int}")]
@@ -151,7 +151,8 @@ public sealed class clsPasosServiciosConexos(
     [Given("que Cotifly no tiene guardado el id de la línea de la cotización de Nexo para la línea {int} de {string}")]
     public Task DadoSinIdDeLinea(int linea, string cotizacion) =>
         clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            "UPDATE l SET lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId "
+            "UPDATE v SET lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
             + $"WHERE c.folio = '{costeo.Folio(cotizacion)}' AND l.orden = {linea.ToString(CultureInfo.InvariantCulture)}");
 
     [Given("que {string} creó la licitación {string} del cliente {string} y Nexo costeó todas sus líneas")]
@@ -162,7 +163,7 @@ public sealed class clsPasosServiciosConexos(
         var folio = licitaciones.Folio(licitacion);
         _licitaciones[licitacion] = folio;
         var solicitud = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT costeoId FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'");
+            $"SELECT solicitudNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
         costeo.Nexo.Costear(solicitud!, 2_550_000m);
         await web.Api.ProcesarPollingAsync(folio);
     }
@@ -229,11 +230,17 @@ public sealed class clsPasosServiciosConexos(
     private Task AgregarAsync(string alias, string cotizacion, string cuerpo, string? ifMatch) =>
         web.EnviarAsync(HttpMethod.Post, Ruta(cotizacion), web.Sesion(alias).Access, cuerpo, ifMatch);
 
-    /// <summary>Conexos guardados (<c>Cotizaciones.serviciosConexos</c>, camelCase): la base, sin depender de la sesión del dueño.</summary>
+    /// <summary>
+    /// Conexos guardados, leídos de la base sin depender de la sesión del dueño. HU-021: son filas de la ruta
+    /// (<c>CotizacionServiciosConexos</c>): todas están incluidas y el precio es su valor con el margen de la ruta.
+    /// </summary>
     private async Task<List<JsonElement>> ConexosAsync(string cotizacion)
     {
         var json = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT serviciosConexos FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(cotizacion)}'");
+            "SELECT s.idServicioConexo AS id, s.nombreServicioConexo AS nombre, CAST(1 AS bit) AS incluido, "
+            + "ROUND(s.precio * s.cantidad / (1 - ISNULL(l.margenAplicado, 0)), 0) AS precio "
+            + "FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(cotizacion)}' FOR JSON PATH");
         if (string.IsNullOrWhiteSpace(json))
         {
             return [];
@@ -247,7 +254,7 @@ public sealed class clsPasosServiciosConexos(
     private async Task<string> VersionAsync(string cotizacion)
     {
         var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(cotizacion)}'");
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{Folio(cotizacion)}'");
         return $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
     }
 

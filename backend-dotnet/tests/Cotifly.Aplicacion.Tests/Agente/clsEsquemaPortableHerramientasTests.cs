@@ -5,8 +5,6 @@ using Cotifly.Aplicacion.Agente.Herramientas;
 using Microsoft.Extensions.AI;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Costeo.Services;
-using Cotifly.Aplicacion.Cotizaciones.Repositories;
-using Cotifly.Aplicacion.Precio.Services;
 using Microsoft.SemanticKernel;
 using NSubstitute;
 
@@ -29,8 +27,6 @@ public sealed class clsEsquemaPortableHerramientasTests
     private static KernelPlugin Plugin() => KernelPluginFactory.CreateFromObject(
         new clsHerramientasAsistenteFolio(
             new clsContextoAsistenteFolio(),
-            Substitute.For<IClsCotizacionRepository>(),
-            Substitute.For<IClsPrecioService>(),
             Substitute.For<IClsServiciosConexosCosteoService>(),
             Substitute.For<IClsReSolicitudCosteoService>()),
         clsNombresHerramientas.PluginAsistente);

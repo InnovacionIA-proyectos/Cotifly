@@ -134,4 +134,29 @@ public static class clsCotizacionMuestra
             new clsCotizacionNexo("COT-1", estadoCotizacion, "SinDefinir",
                 [.. fletes.Select((f, i) => new clsLineaCosteoNexo($"L{i + 1}", f, null, retorno, $"CL{i + 1}"))], conexos ?? []));
     }
+
+    /// <summary>
+    /// Agrega a la ruta <paramref name="orden"/> un conexo con su costo unitario de Nexo (<paramref name="costoUnitario"/>) y recalcula
+    /// los totales y el precio: el precio de la ruta y de la solicitud lo incluye con el margen de la ruta.
+    /// </summary>
+    public static clsCotizacionSolicitud ConConexo(
+        clsCotizacionSolicitud cotizacion, string idServicioConexo, string? nombre, decimal costoUnitario, decimal cantidad = 1m, int orden = 1)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        cotizacion.Rutas.Single(r => r.Orden == orden).AgregarOActualizarConexo(idServicioConexo, nombre, costoUnitario, cantidad);
+        cotizacion.RecalcularTotales(Ahora);
+        return cotizacion;
+    }
+
+    /// <summary>Sube la versión de negocio (<c>row_version</c>) hasta <paramref name="version"/>, como lo harían los casos de uso.</summary>
+    public static clsCotizacionSolicitud ConVersionNegocio(clsCotizacionSolicitud cotizacion, int version)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        while (cotizacion.VersionNegocio < version)
+        {
+            cotizacion.IncrementarVersionNegocio();
+        }
+
+        return cotizacion;
+    }
 }

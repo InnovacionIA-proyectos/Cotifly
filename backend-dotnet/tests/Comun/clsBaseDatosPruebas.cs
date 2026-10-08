@@ -238,8 +238,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
-    /// Base auxiliar con 0001 a 0004 (el 0004 trae <c>origen</c>/<c>destino</c>/<c>deadline</c> de <c>Cotizaciones</c>): para probar la
-    /// concentración por ciudad de HU-010.1 con filas propias, sin ensuciar la base compartida. Se crea una vez por contenedor.
+    /// Base auxiliar con todos los scripts (HU-021: las ciudades son <c>origenNombre</c>/<c>destinoNombre</c> de la ruta, del 0010): para
+    /// probar la concentración por ciudad de HU-010.1 con filas propias, sin ensuciar la base compartida. Se crea una vez por contenedor.
     /// </summary>
     public async Task<string> CadenaConCiudadesAsync()
     {

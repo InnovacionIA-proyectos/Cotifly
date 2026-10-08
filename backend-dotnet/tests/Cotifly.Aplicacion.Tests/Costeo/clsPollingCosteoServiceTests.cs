@@ -32,7 +32,7 @@ public sealed class clsPollingCosteoServiceTests
     public clsPollingCosteoServiceTests()
     {
         _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-001", UsuarioId = _ana }).Valor;
-        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         _cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc.AddSeconds(5));
         _pendiente = new clsConsultaCosteoPendiente(_cotizacion.Id, _reloj.AhoraUtc.AddSeconds(5));
         _reloj.Avanzar(TimeSpan.FromSeconds(8));
@@ -52,7 +52,7 @@ public sealed class clsPollingCosteoServiceTests
 
         resultado.Should().Be(ResultadoConsultaCosteo.SinCambio);
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
-        _cotizacion.CosteoUltimaConsultaAt.Should().Be(_reloj.AhoraUtc);
+        // HU-021: el esquema 0009 ya no guarda la fecha de la última consulta (CosteoUltimaConsultaAt); queda la agenda.
         _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5), "al principio se pregunta cada 5 s");
         _cotizacion.CotizacionNexoId.Should().Be("COT-1");
         _cotizacion.VersionNegocio.Should().Be(0, "una consulta sin cambios (solo la agenda) no sube la versión de negocio");
@@ -180,7 +180,7 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public async Task UnaCotizacionQueYaNoSeSigueSaleDeLaAgenda()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Descartada, null, _reloj.AhoraUtc, _reloj.AhoraUtc);
+        EstadoLeido(EstadoCosteo.Descartada, null, _reloj.AhoraUtc);
 
         (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
 
@@ -248,26 +248,23 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public void EnDolaresElPollingConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        var usd = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-USD-1", UsuarioId = _ana, Moneda = "USD", TrmAplicada = 4000m }).Valor;
-        usd.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        var usd = clsCotizacionMuestra.Formulario("PCN-USD-1", _ana, moneda: "USD", trm: 4000m);
         usd.RegistrarEnvioCosteo("SOL-2", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
-        usd.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
-        usd.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, null);
-        var precioCosteo = new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(
-            Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>()));
+        usd.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
 
-        precioCosteo.Aplicar(usd, Foto("EnCosteo", conFlete: true), _reloj.AhoraUtc).Should().BeTrue();
+        // HU-021: la lectura completa actualiza el camión (flete) y la ruta saca el precio con su margen.
+        clsLecturaCosteo.AplicarFoto(usd, Foto("EnCosteo", conFlete: true), _reloj.AhoraUtc, _opciones, new clsPrecioCosteoService()).Should().BeTrue();
 
         usd.PrecioFinal.Should().Be(588.24m, "2.000.000 / 0,85 = 2.352.941 COP, / 4.000 (la TRM fijada) = 588,24 USD");
-        usd.Costo.Should().Be(2_000_000m, "el costo sigue en pesos");
+        usd.CostoFinal.Should().Be(2_000_000m, "el costo sigue en pesos");
     }
 
     // HU-013.14 (ADR-018 §17): el precio que llega después del resultado y la reparación de las entregadas sin precio.
     [Fact]
     public async Task ElPrecioQueLlegaDespuesDelResultadoSeAplicaAunqueYaEsteGanada()
     {
-        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        EstadoLeido(EstadoCosteo.Autocosteo, "COT-1", _pendiente.SiguienteConsultaAt);
         _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
         NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
 
@@ -282,8 +279,8 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public async Task UnaEntregadaSinPrecioSeReleeUnaVezAunquePasaraLaEdadMaximaYTomaElPrecio()
     {
-        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        EstadoLeido(EstadoCosteo.Entregada, "COT-1", _pendiente.SiguienteConsultaAt);
         _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
         _cotizacion.EntregadaSinPrecio.Should().BeTrue("así la dejaba el defecto de HU-013.14");
         _reloj.Avanzar(TimeSpan.FromHours(100));
@@ -300,7 +297,7 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public async Task SiLaRelecturaDeUnaEntregadaSinPrecioFallaSeReintentaAunquePasaraLaEdadMaxima()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        EstadoLeido(EstadoCosteo.Entregada, "COT-1", _pendiente.SiguienteConsultaAt);
         _reloj.Avanzar(TimeSpan.FromHours(100));
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"));
 
@@ -314,9 +311,9 @@ public sealed class clsPollingCosteoServiceTests
     public async Task UnaRelecturaQueFallaSiempreSeDetieneTrasElTopeDeFallosConMotivo()
     {
         _opciones.MaximoFallosRelectura = 3;
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
-        _cotizacion.RegistrarFalloConsultaCosteo(_reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
-        _cotizacion.RegistrarFalloConsultaCosteo(_reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        EstadoLeido(EstadoCosteo.Entregada, "COT-1", _pendiente.SiguienteConsultaAt);
+        _cotizacion.RegistrarFalloConsultaCosteo(_pendiente.SiguienteConsultaAt);
+        _cotizacion.RegistrarFalloConsultaCosteo(_pendiente.SiguienteConsultaAt);
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "No existe", "HTTP 404 COTIZACION_NO_ENCONTRADA"));
 
@@ -331,7 +328,7 @@ public sealed class clsPollingCosteoServiceTests
     public async Task UnaPendienteConResultadoPasadaLaEdadMaximaSeLeeAntesDeVencerla()
     {
         // La relectura del resultado falló y la cotización quedó en pendiente_costeo con resultado; pasan las 72 h.
-        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        _cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
         _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
         _reloj.Avanzar(TimeSpan.FromHours(80));
         NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
@@ -359,7 +356,7 @@ public sealed class clsPollingCosteoServiceTests
     [Fact]
     public async Task UnaEntregadaSinCotizacionEnLaFotoQuedaConMotivoYNoSeReagenda()
     {
-        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        _cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
         NexoResponde(new clsCosteoConsultadoNexo("Entregada", ["L1"], null));
 
         await Servicio().ProcesarAsync(_pendiente, Ct);
@@ -388,6 +385,16 @@ public sealed class clsPollingCosteoServiceTests
         (await Servicio().ReprogramarEntregadasSinPrecioAsync(Ct)).Should().Be(3);
     }
 
+    /// <summary>
+    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). HU-021: el estado de la cabecera es el resumen
+    /// de sus camiones, así que primero lo toma el camión.
+    /// </summary>
+    private void EstadoLeido(EstadoCosteo estado, string? cotizacionNexoId, DateTimeOffset? siguiente)
+    {
+        _cotizacion.Vehiculos[0].RegistrarEstado(estado);
+        _cotizacion.RegistrarConsultaCosteo(estado, cotizacionNexoId, siguiente);
+    }
+
     private void NexoResponde(clsCosteoConsultadoNexo foto) =>
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(foto);
 
@@ -397,5 +404,5 @@ public sealed class clsPollingCosteoServiceTests
 
     private clsPollingCosteoService Servicio() => new(
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance,
-        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>())));
+        new clsPrecioCosteoService());
 }

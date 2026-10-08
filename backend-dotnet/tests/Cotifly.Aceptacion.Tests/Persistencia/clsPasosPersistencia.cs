@@ -22,8 +22,8 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
     public async Task DadoElEsquemaCreado()
     {
         var tablas = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE'");
-        tablas.Should().Be(18, "las 10 del 0001 + Roles, UsuariosRoles, TokensRefresco y TokensRevocados del 0002 + CotizacionPosiciones del 0004 + CotizacionLineasSolicitud y CotizacionArchivosLicitacion del 0005 + CotizacionPdfsHistorial del 0006");
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME NOT LIKE 'Respaldo0009[_]%'");
+        tablas.Should().Be(20, "HU-021: tras el 0009 son CotizacionesSolicitud, sus rutas, camiones, mercancías y conexos, más las demás tablas de 0001 a 0008 (sin los respaldos Respaldo0009_* que deja el 0009)");
     }
 
     [Given("el comercial {string} registrado")]
@@ -100,7 +100,7 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
         var (cotizacion, lineaLeida) = await contexto.ConsultarAsync(async s =>
         {
             var leida = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio);
-            var politica = await s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorIdAsync(leida!.LineaNegocioId!.Value);
+            var politica = await s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorIdAsync(leida!.PrimeraRuta!.LineaNegocioId!.Value);
             return (leida, politica?.LineaNegocio);
         });
 
@@ -161,9 +161,9 @@ public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
             Folio = folio,
             Version = VersionDelFolio(folio),
             UsuarioId = Usuario(nombreUsuario),
-            LineaNegocioId = lineaNegocioId,
-            PrecioFinal = precio,
         }).Valor;
+        // HU-021: la línea de negocio y el precio son de la ruta; el precio de la cotización, la suma de sus rutas.
+        cotizacion.RegistrarCotizacionChat(lineaNegocioId, null, null, null, null, null, precio);
 
         return contexto.EnAmbitoAsync(s =>
         {

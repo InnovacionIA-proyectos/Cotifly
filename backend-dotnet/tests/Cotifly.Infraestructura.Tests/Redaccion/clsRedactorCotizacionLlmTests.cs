@@ -70,7 +70,7 @@ public sealed class clsRedactorCotizacionLlmTests
         _modelo.Responder(Json(AsuntoIa, IntroIa));
         var cotizacion = CotizacionCosteada();
 
-        await Servicio().RedactarAsync(clsTextosCosteoService.Contexto(cotizacion, "Nacional", []), _estandar, Ct);
+        await Servicio().RedactarAsync(clsTextosCosteoService.Contexto(cotizacion, "Nacional"), _estandar, Ct);
 
         var enviado = string.Join("\n", _modelo.Llamadas.Single().Mensajes.Select(m => m.Text));
         var usuario = _modelo.Llamadas.Single().Mensajes.Single(m => m.Role == ChatRole.User).Text;
@@ -95,10 +95,10 @@ public sealed class clsRedactorCotizacionLlmTests
     public void CadaTextoDelContextoLlegaRecortadoA150Caracteres()
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = Folio, ClienteNombre = new string('C', 300) }).Valor;
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
-            [new clsServicioConexoCosteo("CX-1", new string('X', 400), "logistico", 1m, 1m, 1m, true)]));
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 1);
+        cotizacion.PrimeraRuta!.AgregarOActualizarConexo("CX-1", new string('X', 400), 1m, 1m);
 
-        var contexto = clsTextosCosteoService.Contexto(cotizacion, new string('L', 200), []);
+        var contexto = clsTextosCosteoService.Contexto(cotizacion, new string('L', 200));
 
         contexto.Cliente.Should().HaveLength(clsContextoRedaccion.LargoMaximoCampo);
         contexto.LineaNegocio.Should().HaveLength(clsContextoRedaccion.LargoMaximoCampo);
@@ -286,30 +286,16 @@ public sealed class clsRedactorCotizacionLlmTests
     private static clsContextoRedaccion Contexto() =>
         new("CLIENTE SAS", "Nacional", [new clsRutaRedaccion("Buenaventura", "Bogotá D.C.")], "3S3", ["Cargue"], "COP");
 
-    /// <summary>Cotización en USD costeada (costo 2.550.000, margen 15 %, precio 746 USD con TRM 4.000) y un conexo incluido.</summary>
+    /// <summary>
+    /// Cotización en USD costeada (flete 2.550.000, margen 15 %, TRM 4.000) y un conexo (Cargue, 85.000). HU-021: los conexos son filas de
+    /// la ruta (todas van en el precio); el que antes estaba excluido ya no existe.
+    /// </summary>
     private static clsCotizacionSolicitud CotizacionCosteada()
     {
-        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
-        {
-            Folio = Folio,
-            UsuarioId = Guid.NewGuid(),
-            ClienteNombre = "CLIENTE SAS",
-            Costo = 2_550_000m,
-            PrecioFinal = 746m,
-            MargenPolitica = 0.15m,
-            MargenAplicado = 0.15m,
-            OrigenMargen = OrigenMargen.PoliticaLinea,
-            MetodoCalculo = "margen",
-            Moneda = "USD",
-            TrmAplicada = 4_000m,
-            EstadoCosteo = EstadoCosteo.Autocosteo,
-        }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
-        [
-            new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
-            new clsServicioConexoCosteo("CX-2", "Escolta", "seguridad", 1m, 1_500m, 1_765m, false),
-        ]));
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: Folio, usuarioId: Guid.NewGuid(), moneda: "USD", trm: 4_000m);
+        cotizacion.ActualizarClienteDelCatalogo("CLIENTE SAS", null);
+        cotizacion.PrimeraRuta!.AgregarOActualizarConexo("CX-1", "Cargue", 85_000m, 1m);
+        cotizacion.RecalcularTotales(clsCotizacionMuestra.Ahora);
         return cotizacion;
     }
 

@@ -215,7 +215,7 @@ public sealed partial class clsPasosRedaccionCotizacion(clsContextoWeb web, clsP
     private async Task<string> VersionVigenteAsync(string cotizacion)
     {
         var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{costeo.Folio(cotizacion)}'");
         return $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
     }
 

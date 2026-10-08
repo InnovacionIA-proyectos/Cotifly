@@ -168,7 +168,8 @@ public sealed class clsEnvioCosteoService(
 
         // Desde aquí, sin el token de la petición (ver EnviarANexoAsync). Se envía lo GUARDADO (normalizado: textos recortados), no la
         // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo (G2: " 3S3 " nunca llega con espacios).
-        var encabezado = ConHoras(creada.Valor.EncabezadoSolicitud, entrada.Solicitud.Encabezado);
+        // HU-021: las horas viajan en cada línea (la ruta las guarda); la cabecera no las tiene, así el reintento manda lo mismo.
+        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Solicitud.Encabezado;
         await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
         return creada.Valor;
     }
@@ -180,10 +181,6 @@ public sealed class clsEnvioCosteoService(
             ?? throw new ArgumentException("La cotización no tiene el encabezado de la solicitud.", nameof(cotizacion)), notaTrazabilidad);
         return EnviarANexoAsync(cotizacion, encabezado, politica, usuarioId, reintento: false);
     }
-
-    /// <summary>El encabezado guardado con las horas de la captura (la cabecera ya no las guarda: viajan en cada línea, HU-021).</summary>
-    private static clsEncabezadoSolicitudCosteo ConHoras(clsEncabezadoSolicitudCosteo? guardado, clsEncabezadoSolicitudCosteo captura) =>
-        guardado is null ? captura : guardado with { HorasCargue = captura.HorasCargue, HorasDescargue = captura.HorasDescargue };
 
     /// <summary>
     /// Encabezado con <paramref name="nota"/> agregada a las <c>notas</c> (en una línea nueva). Si juntas superan

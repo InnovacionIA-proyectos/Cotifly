@@ -44,8 +44,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     [Given("que el costeo de {string} trae el servicio conexo {string} con un valor de Nexo de {int}")]
     public async Task DadoElConexo(string cotizacion, string nombre, int valor)
     {
-        costeo.Nexo.AgregarConexo((await costeo.Columna(cotizacion, "costeoId"))!, nombre, valor);
-        await web.Api.ProcesarPollingAsync(costeo.Folio(cotizacion));
+        await costeo.AgregarConexoEnCotiflyAsync(cotizacion, nombre, valor);
     }
 
     [Given("{string} ajusta el margen de {string} a {string} sin justificación")]
@@ -151,7 +150,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
 
         // El envío por correo está deshabilitado en la API de pruebas: se deja la cotización como la deja un envío exitoso.
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'enviada' WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
 
     [Given("que Nexo entregó la cotización de {string} y {string} la marcó como {string}")]
@@ -186,7 +185,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         var folio = costeo.Folio(cotizacion);
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
                 $"SELECT STRING_AGG(CONCAT(h.motivo, '|', h.pdfPath), ';') FROM dbo_cotifly.CotizacionPdfsHistorial h "
-                + $"JOIN dbo_cotifly.Cotizaciones c ON c.id = h.cotizacionId WHERE c.folio = '{folio}'"))
+                + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = h.cotizacionId WHERE c.folio = '{folio}'"))
             .Should().StartWith("ajuste_margen|").And.EndWith($"{folio}.pdf", "una sola fila: el PDF que estaba vigente");
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
                 "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'ajustar_margen_costeo' AND exito = 1 "
@@ -232,7 +231,7 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
     private async Task<string> VersionVigenteAsync(string cotizacion)
     {
         var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{costeo.Folio(cotizacion)}'");
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{costeo.Folio(cotizacion)}'");
         return $"\"{version.ToString(CultureInfo.InvariantCulture)}\"";
     }
 

@@ -49,11 +49,6 @@ public static class clsLecturaCosteo
             cotizacion.QuitarMarcaConexosPendientes();
         }
 
-        if (importarConexos && foto.Cotizacion is not null)
-        {
-            cotizacion.QuitarMarcaConexosPendientes();
-        }
-
         cambio = precioCosteo.AplicarPrecio(cotizacion, foto, ahora) | cambio;
 
         // Una entregada que se leyó y sigue sin precio (p. ej. Nexo no trajo la cotización) queda con motivo: así no parece "sin leer" y

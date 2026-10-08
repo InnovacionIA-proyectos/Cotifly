@@ -66,9 +66,9 @@ public sealed class clsPersistenciaUnitariaTests
         var modelo = ambito.ServiceProvider.GetRequiredService<clsCotiflyDbContext>().Model;
 
         modelo.GetDefaultSchema().Should().Be("dbo_cotifly");
-        modelo.FindEntityType(typeof(clsCotizacionSolicitud))!.GetTableName().Should().Be("Cotizaciones");
+        modelo.FindEntityType(typeof(clsCotizacionSolicitud))!.GetTableName().Should().Be("CotizacionesSolicitud");
         modelo.FindEntityType(typeof(clsMargenPolitica))!.GetTableName().Should().Be("MargenesPolitica");
-        modelo.GetEntityTypes().Should().HaveCount(18, "14 tablas del 0001-0002, CotizacionPosiciones del 0004, las 2 del 0005 y CotizacionPdfsHistorial del 0006");
+        modelo.GetEntityTypes().Should().HaveCount(20, "HU-021: las 20 tablas tras el 0009 (cabecera, rutas, camiones, mercancías y conexos de la cotización)");
     }
 
     [Fact]

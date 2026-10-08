@@ -36,8 +36,8 @@ Característica: Re-solicitar el costeo a Nexo
   # HU-013.15 (#124, ADR-018 §5): la captura nueva de Nexo empieza sin conexos. Cotifly avisa cuáles se descartan (solo nombres) y
   # no los vuelve a agregar en Nexo: el comercial los agrega de nuevo cuando llegue el costeo nuevo.
   Escenario: Re-solicitar en el mismo folio avisa los servicios conexos que se descartan y no los vuelve a agregar en Nexo
-    Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
-    Y que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente pidió actualizar el valor"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta avisa que se descartan los servicios conexos "Cargue"

@@ -162,7 +162,7 @@ public sealed class clsPasosMonedaTrm(clsContextoEscenario contexto)
         cotizacion!.Moneda.Should().Be(moneda);
         cotizacion.PrecioFinal.Should().Be(clsPasosPrecio.Fraccion(precio));
         cotizacion.TrmAplicada.Should().Be(clsPasosPrecio.Fraccion(trm));
-        cotizacion.Costo.Should().Be(2_850_000m, "el costo se guarda en pesos");
+        cotizacion.CostoFinal.Should().Be(2_850_000m, "el costo se guarda en pesos (en la ruta, HU-021)");
     }
 
     internal static DateOnly Fecha(string texto) => DateOnly.ParseExact(texto, "yyyy-MM-dd", CultureInfo.InvariantCulture);

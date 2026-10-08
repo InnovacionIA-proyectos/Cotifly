@@ -136,5 +136,5 @@ public sealed class clsAsistenteFolioEndpointTests(clsEntornoApiWeb entorno)
 
     private async Task<int> VersionNegocioAsync(string folio) =>
         await clsBaseDatosPruebas.EscalarAsync<int>(entorno.BaseDatos.CadenaCotifly,
-            $"SELECT versionNegocio FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'");
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 }

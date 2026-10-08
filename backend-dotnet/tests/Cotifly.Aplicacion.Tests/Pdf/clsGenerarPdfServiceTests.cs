@@ -74,18 +74,20 @@ public sealed class clsGenerarPdfServiceTests
         salida.CotizacionId.Should().Be(_agregada!.Id);
 
         _agregada.Folio.Should().Be("PCN-19032026");
-        _agregada.LineaNegocioId.Should().Be(_nacional.Id);
+        // HU-021: la línea de negocio, el costo, los márgenes y el método son de la ruta 1 (la del chat).
+        var ruta = _agregada.PrimeraRuta!;
+        ruta.LineaNegocioId.Should().Be(_nacional.Id);
         _agregada.UsuarioId.Should().Be(_usuario.Id);
         _agregada.ClienteNombre.Should().Be("LONGYIN");
         _agregada.PdfPath.Should().Be("/data/pdfs/PCN-19032026.pdf");
         _agregada.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
-        _agregada.Costo.Should().Be(3_000_000m);
-        _agregada.MargenPolitica.Should().Be(0.135m);
-        _agregada.MargenAplicado.Should().Be(0.11m);
-        _agregada.OrigenMargen.Should().Be(OrigenMargen.Negociado);
+        _agregada.CostoFinal.Should().Be(3_000_000m);
+        ruta.MargenPoliticaSugerido.Should().Be(0.135m);
+        ruta.MargenAplicado.Should().Be(0.11m);
+        ruta.OrigenMargen.Should().Be(OrigenMargen.Negociado);
         _agregada.PrecioFinal.Should().Be(3_370_787m);
         _agregada.NitCliente.Should().Be("900123456");
-        _agregada.MetodoCalculo.Should().Be("margen");
+        ruta.MetodoCalculo.Should().Be("margen");
         _agregada.Moneda.Should().Be("COP");
         _agregada.SpaceId.Should().Be("web/s-1");
         _agregada.ThreadId.Should().Be("web/s-1");
@@ -211,7 +213,7 @@ public sealed class clsGenerarPdfServiceTests
         coherente.EsExitoso.Should().BeTrue(coherente.EsFallo ? coherente.Error.Mensaje : string.Empty);
         _agregada!.PrecioFinal.Should().Be(996.35m);
         _agregada.TrmAplicada.Should().Be(3306.86m);
-        _agregada.Costo.Should().Be(2_850_000m);
+        _agregada.CostoFinal.Should().Be(2_850_000m, "HU-021: el costo del chat es el flete de su camión");
         _documento!.Secciones[0].Filas[0].Tarifa.Should().Be("US$996,35");
         _documento.NotaMoneda.Should().Contain("TRM mínima de $3.306,86", "HU-012.3: la nota usa la TRM aplicada de la trazabilidad")
             .And.NotContain("mínimo a pagar");

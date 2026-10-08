@@ -104,7 +104,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("el Excel original de {string} quedó guardado")]
     public async Task EntoncesExcelGuardado(string licitacion) =>
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.Cotizaciones c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionArchivosLicitacion a JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = a.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND a.hoja = N'{clsPliegoMuestra.Hoja}'"))
             .Should().Be(1);
 
     [When("Nexo costea las líneas {int} y {int} de {string} con un flete de {int}")]
@@ -143,7 +143,7 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
     [Then("la licitación {string} queda en el estado {string}")]
     public async Task EntoncesEstado(string licitacion, string estado) =>
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(licitacion)}'")).Should().Be(estado);
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{Folio(licitacion)}'")).Should().Be(estado);
 
     [When("{string} reintenta el envío de la licitación {string}")]
     public async Task CuandoReintenta(string alias, string licitacion)
@@ -399,9 +399,9 @@ public sealed class clsPasosLicitaciones(clsContextoWeb web, clsPasosCosteo cost
 
     private async Task<string> CosteoIdAsync(string licitacion) =>
         (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT costeoId FROM dbo_cotifly.Cotizaciones WHERE folio = '{Folio(licitacion)}'"))!;
+            $"SELECT solicitudNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{Folio(licitacion)}'"))!;
 
     private Task<int> LineasAsync(string licitacion, string condicion) =>
         clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{Folio(licitacion)}' AND {condicion}");
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{Folio(licitacion)}' AND {condicion}");
 }

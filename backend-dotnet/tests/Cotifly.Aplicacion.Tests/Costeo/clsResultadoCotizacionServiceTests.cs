@@ -30,12 +30,11 @@ public sealed class clsResultadoCotizacionServiceTests
     public clsResultadoCotizacionServiceTests()
     {
         _cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-004", UsuarioId = _ana }).Valor;
-        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         _cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, null);
-        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        Estado(EstadoCosteo.Entregada, null);
+        _cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
-        _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(Array.Empty<clsLineaSolicitud>());
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(FotoEntregada("COT-1"));
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsCotizacionNexo("COT-1", "Entregada", "Ganada", [], []));
@@ -87,8 +86,9 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task LaEntregaImplicitaConElPrecioYaAplicadoDejaLaCotizacionEntregadaSinReleerNexo()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(1));
-        _cotizacion.RegistrarPrecioCosteo(1_000_000m, 1_176_471m, null, _reloj.AhoraUtc);
+        Estado(EstadoCosteo.Autocosteo, _reloj.AhoraUtc.AddMinutes(1));
+        ConPrecio(EstadoCosteo.Autocosteo, 1_000_000m);
+        _cotizacion.PrecioFinal.Should().Be(1_176_471m);
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
 
@@ -103,14 +103,14 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EntregadaEnNexoSinLeerYLuegoGanadaAplicaElPrecioEnLaMismaEscritura()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(1));
+        Estado(EstadoCosteo.Autocosteo, _reloj.AhoraUtc.AddMinutes(1));
         _cotizacion.PrecioFinal.Should().BeNull("el polling todavía no leyó el costo");
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
 
         resultado.Valor.Ganada.Should().BeTrue();
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
-        _cotizacion.Costo.Should().Be(2_000_000m);
+        _cotizacion.CostoFinal.Should().Be(2_000_000m);
         _cotizacion.PrecioFinal.Should().Be(2_352_941m, "2.000.000 / 0,85 con el margen guardado");
         _cotizacion.CosteoListoAt.Should().Be(_reloj.AhoraUtc);
         _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull("entregada con precio es terminal");
@@ -138,7 +138,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task SiLaRelecturaFallaElResultadoSeRegistraSinDejarlaEntregadaHuerfanaYElPollingLaCompleta()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, null);
+        Estado(EstadoCosteo.Autocosteo, null);
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "Nexo caído"));
 
@@ -155,21 +155,17 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task SiElPollingGanoLaCarreraSeRecargaYNoSeReaplicaElCosteo()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(1));
+        Estado(EstadoCosteo.Autocosteo, _reloj.AhoraUtc.AddMinutes(1));
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, 0, Arg.Any<CancellationToken>()).Returns(false);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, 1, Arg.Any<CancellationToken>()).Returns(true);
-        var lecturas = 0;
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_ =>
-        {
-            lecturas++;
-            return Array.Empty<clsLineaSolicitud>();
-        });
+
+        // HU-021: la recarga trae lo que guardó el polling (otro flete, 1.700.000 → 2.000.000): si la foto se reaplicara, volvería a 2.352.941.
+        _cotizaciones.When(r => r.RecargarAsync(_cotizacion, Arg.Any<CancellationToken>())).Do(_ => ConPrecio(EstadoCosteo.Entregada, 1_700_000m));
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
 
         resultado.Valor.Ganada.Should().BeTrue();
-        _cotizacion.PrecioFinal.Should().Be(2_352_941m);
-        lecturas.Should().Be(1, "tras recargar ya trae el precio (del polling): no se vuelve a aplicar la foto");
+        _cotizacion.PrecioFinal.Should().Be(2_000_000m, "tras recargar ya trae el precio (del polling): no se vuelve a aplicar la foto");
         await _cotizaciones.Received(1).RecargarAsync(_cotizacion, Arg.Any<CancellationToken>());
         await _nexo.Received(1).ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>());
     }
@@ -178,7 +174,7 @@ public sealed class clsResultadoCotizacionServiceTests
     public async Task SinIdDeLaCotizacionDeNexoLoRecuperaYLoGuarda()
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-AP-28092026-005", UsuarioId = _ana }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         cotizacion.RegistrarEnvioCosteo("SOL-2", true, _reloj.AhoraUtc, _reloj.AhoraUtc);
         cotizacion.CotizacionNexoId.Should().BeNull("autocosteo desde el alta: el polling aún no guardó la cotización de Nexo");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
@@ -207,7 +203,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task SinEnviarANexoEsCotizacionNoEntregadaSinLlamarANexo()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteEnvio, "COT-1", _reloj.AhoraUtc, null);
+        Estado(EstadoCosteo.PendienteEnvio, null);
 
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEntregada);
 
@@ -219,7 +215,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EnPendienteDeCosteoSinCostoEnNexoEsCotizacionNoEntregadaSinPedirElResultado()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteCosteo, "COT-1", _reloj.AhoraUtc, null);
+        Estado(EstadoCosteo.PendienteCosteo, null);
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(
             new clsCosteoConsultadoNexo("EnCosteo", ["L1"], new clsCotizacionNexo("COT-1", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [], [])));
 
@@ -233,7 +229,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task EnPendienteDeCosteoConNexoCaidoEs503SinCambioLocal()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteCosteo, "COT-1", _reloj.AhoraUtc, null);
+        Estado(EstadoCosteo.PendienteCosteo, null);
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"));
 
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
@@ -245,7 +241,7 @@ public sealed class clsResultadoCotizacionServiceTests
     public async Task EnPendienteDeCosteoConLaEntregaSinLeerSeMarcaYSeAplicaElPrecio()
     {
         // HU-013.14: Nexo costeó y entregó, y el polling (espaciado por edad) aún no lo vio.
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.PendienteCosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(10));
+        Estado(EstadoCosteo.PendienteCosteo, _reloj.AhoraUtc.AddMinutes(10));
 
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct);
 
@@ -260,10 +256,8 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task ConLasLineasYaAsociadasElCosteoSaleDeLaRespuestaDelResultadoSinReleer()
     {
-        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _reloj.AhoraUtc.AddMinutes(1));
-        var linea = clsLineaSolicitud.Desde(_cotizacion.Id, [clsSolicitudCosteoMuestra.Crear().ALinea()])[0];
-        linea.AsignarLineaNexo("L1");
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([linea]);
+        Estado(EstadoCosteo.Autocosteo, _reloj.AhoraUtc.AddMinutes(1));
+        _cotizacion.Vehiculos[0].AsignarLineaNexo("L1");
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(FotoEntregada("COT-1").Cotizacion!);
 
@@ -278,7 +272,8 @@ public sealed class clsResultadoCotizacionServiceTests
     [Fact]
     public async Task SiNexoYaTieneOtroResultadoSeGuardaElDeNexoYSeRespondeElConflicto()
     {
-        _cotizacion.RegistrarPrecioCosteo(2_000_000m, 2_352_941m, null, _reloj.AhoraUtc);
+        ConPrecio(EstadoCosteo.Entregada, 2_000_000m);
+        _cotizacion.PrecioFinal.Should().Be(2_352_941m);
         _nexo.MarcarResultadoAsync(_ana, "COT-1", Arg.Any<clsResultadoNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.ResultadoYaDefinido, "Ya está marcada como Ganada"));
         _nexo.ObtenerCotizacionAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
@@ -394,7 +389,7 @@ public sealed class clsResultadoCotizacionServiceTests
     private clsCotizacionSolicitud SinCosteo(bool enError)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = $"PCN-AP-28092026-{(enError ? 8 : 9)}", UsuarioId = _ana }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         if (enError)
         {
             cotizacion.RegistrarErrorEnvioCosteo("Nexo no respondió");
@@ -413,7 +408,7 @@ public sealed class clsResultadoCotizacionServiceTests
     [InlineData(EstadoCosteo.CosteoVencido)]
     public async Task UnaDescartadaOVencidaNoVaANexo(EstadoCosteo estado)
     {
-        _cotizacion.RegistrarConsultaCosteo(estado, "COT-1", _reloj.AhoraUtc, null);
+        Estado(estado, null);
 
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", null, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
         await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
@@ -423,7 +418,7 @@ public sealed class clsResultadoCotizacionServiceTests
     public async Task ConResultadoYaMarcadoNoSeReintentaElEnvio()
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-R1", UsuarioId = _ana }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
         cotizacion.PuedeReenviarCosteo(DateTimeOffset.MaxValue).Should().BeTrue();
 
@@ -444,10 +439,24 @@ public sealed class clsResultadoCotizacionServiceTests
     }
 
     private clsResultadoCotizacionService Servicio() => new(
-        _cotizaciones, _nexo, _unidad, _auditoria, _reloj,
-        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(
-            Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>())),
-        Options.Create(new clsOpcionesCosteoNexo()));
+        _cotizaciones, _nexo, _unidad, _auditoria, _reloj, new clsPrecioCosteoService(), Options.Create(new clsOpcionesCosteoNexo()));
+
+    /// <summary>
+    /// Una lectura anterior dejó la cotización en <paramref name="estado"/> (sin flete). HU-021: el estado de la cabecera es el resumen de
+    /// sus camiones, así que primero lo toma el camión.
+    /// </summary>
+    private void Estado(EstadoCosteo estado, DateTimeOffset? siguiente)
+    {
+        _cotizacion.Vehiculos[0].RegistrarEstado(estado);
+        _cotizacion.RegistrarConsultaCosteo(estado, "COT-1", siguiente);
+    }
+
+    /// <summary>El polling ya aplicó el costeo: el camión con su flete y la ruta y la solicitud con el precio (margen guardado).</summary>
+    private void ConPrecio(EstadoCosteo estado, decimal flete)
+    {
+        _cotizacion.Vehiculos[0].RegistrarCosteo(estado, flete, null);
+        _cotizacion.RecalcularTotales(_reloj.AhoraUtc);
+    }
 
     /// <summary>Foto de Nexo con la cotización entregada y la única línea costeada a 2.000.000.</summary>
     private static clsCosteoConsultadoNexo FotoEntregada(string cotizacionNexoId) =>

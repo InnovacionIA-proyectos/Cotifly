@@ -166,7 +166,7 @@ public sealed class clsExcelLicitacionTests : IDisposable
     [Fact]
     public void ElAltaDeUnaLicitacionLlevaTodasSusLineasEnOrdenConLaLineaDeNegocioEnCadaUna()
     {
-        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, Referencia = "Pliego 7" };
+        var encabezado = new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion, Notas = "Pliego 7" };
         clsLineaSolicitudCosteo[] lineas =
         [
             new() { Origen = "A", Destino = "B", PesoKg = 1m },

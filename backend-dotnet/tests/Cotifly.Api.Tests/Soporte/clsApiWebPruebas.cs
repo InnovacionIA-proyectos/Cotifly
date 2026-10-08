@@ -192,15 +192,8 @@ public sealed class clsApiWebPruebas : IDisposable
             {
                 Folio = folio.Valor,
                 Version = folio.Version,
-                LineaNegocioId = politica.Id,
                 NitCliente = nit,
                 ClienteNombre = nit is null ? null : $"Cliente {nit}",
-                Costo = 1_000_000m,
-                MargenPolitica = 0.15m,
-                MargenAplicado = 0.15m,
-                OrigenMargen = OrigenMargen.PoliticaLinea,
-                MetodoCalculo = "margen",
-                PrecioFinal = 1_176_471m,
                 UsuarioId = usuarioId,
                 PdfPath = referencia,
             });
@@ -208,6 +201,9 @@ public sealed class clsApiWebPruebas : IDisposable
             {
                 return cotizacion.Error;
             }
+
+            // HU-021: como la del chat, una ruta con la línea de negocio, el margen y el precio, y un camión con el flete.
+            cotizacion.Valor.RegistrarCotizacionChat(politica.Id, 1_000_000m, 0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen", 1_176_471m);
 
             repositorio.Agregar(cotizacion.Valor);
             await unidad.GuardarCambiosAsync(ct);
@@ -235,13 +231,13 @@ public sealed class clsApiWebPruebas : IDisposable
             ? $", costeoEnviadoAt = DATEADD(SECOND, -{(long)hace.TotalSeconds}, SYSDATETIMEOFFSET())"
             : string.Empty;
         await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00'{envio} WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
 
         // Solo la cotización de ESTA prueba (como lo haría el worker con ella): la agenda es compartida entre pruebas que corren en
         // paralelo, y procesar el lote completo consultaba cotizaciones de otra prueba contra este Nexo falso (que no las conoce:
         // 404 → costeo_vencido en la otra prueba).
         var id = await clsBaseDatosPruebas.EscalarAsync<Guid?>(_baseDatos.CadenaCotifly,
-            $"SELECT id FROM dbo_cotifly.Cotizaciones WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
         if (id is not { } cotizacionId)
         {
             return 0;
@@ -260,6 +256,25 @@ public sealed class clsApiWebPruebas : IDisposable
         var correo = clsCorreo.Crear(cotizacionId, [para], EstadoCorreo.Enviado, "Cotización", [], usuarioId, $"<{Guid.NewGuid():N}@pruebas>").Valor;
         ambito.ServiceProvider.GetRequiredService<IClsCorreoRepository>().Agregar(correo);
         await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync();
+    }
+
+    /// <summary>
+    /// HU-021 (decisión 3): agrega en la ruta 1 de <paramref name="folio"/> un conexo de costo <paramref name="costo"/> como lo hace el
+    /// comercial (<c>POST .../servicios-conexos</c>, que lo crea en Nexo y guarda el valor que Nexo calcula). El polling ya no importa
+    /// los conexos de Nexo. Lanza si la API no responde 200.
+    /// </summary>
+    public async Task AgregarConexoAsync(clsNexoFalso nexo, string token, string folio, string nombre, decimal costo)
+    {
+        ArgumentNullException.ThrowIfNull(nexo);
+        var id = Guid.NewGuid().ToString();
+        nexo.ConServicioConexo(id, $"SC-{id[..8]}", nombre, "logistico", "servicio", costo);
+        using var costeo = await EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", token);
+        using var respuesta = await EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", token,
+            Json(new { items = new[] { new { linea_orden = 1, servicio_id = id, cantidad = 1 } } }), costeo.Headers.ETag?.Tag);
+        if (respuesta.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            throw new InvalidOperationException($"No se pudo agregar el conexo {nombre}: {(int)respuesta.StatusCode} {await respuesta.Content.ReadAsStringAsync()}");
+        }
     }
 
     /// <summary>

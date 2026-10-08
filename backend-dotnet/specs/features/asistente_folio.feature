@@ -154,4 +154,4 @@ Característica: Asistente IA sobre una cotización (folio)
     Y ningún mensaje enviado al modelo contiene "costo", "2550000", "3000000", "85000" ni "100000"
     Y ninguna respuesta del chat contiene el campo "costo" ni los valores 2550000 ni 85000
     Y los campos precio, margen y pdf de la respuesta del chat son null
-    Y el resumen de la acción propuesta lo armó el servidor con el precio 3109756
+    Y el resumen de la acción propuesta lo armó el servidor con el precio 3213415

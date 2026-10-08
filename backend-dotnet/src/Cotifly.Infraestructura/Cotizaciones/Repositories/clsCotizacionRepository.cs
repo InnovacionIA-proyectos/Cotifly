@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Infraestructura.Comun.Persistence;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -91,24 +92,51 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.CosteoSiguienteConsultaAt, (DateTimeOffset?)ahora), cancellationToken);
 
     public Task<clsCotizacionSolicitud?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        ConAgregado().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        LeerAgregadoAsync(() => ConAgregado().FirstOrDefaultAsync(c => c.Id == id, cancellationToken), cancellationToken);
 
     public Task<clsCotizacionSolicitud?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);
         var buscado = folio.Trim();
-        return ConAgregado().FirstOrDefaultAsync(c => c.Folio == buscado, cancellationToken);
+        return LeerAgregadoAsync(() => ConAgregado().FirstOrDefaultAsync(c => c.Folio == buscado, cancellationToken), cancellationToken);
     }
 
     public Task<clsCotizacionSolicitud?> ObtenerPorFolioDelUsuarioAsync(string folio, Guid usuarioId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);
         var buscado = folio.Trim();
-        return ConAgregado().FirstOrDefaultAsync(c => c.Folio == buscado && c.UsuarioId == usuarioId, cancellationToken);
+        return LeerAgregadoAsync(
+            () => ConAgregado().FirstOrDefaultAsync(c => c.Folio == buscado && c.UsuarioId == usuarioId, cancellationToken), cancellationToken);
     }
 
     public Task<clsCotizacionSolicitud?> ObtenerPorIdDelUsuarioAsync(Guid id, Guid usuarioId, CancellationToken cancellationToken = default) =>
-        ConAgregado().FirstOrDefaultAsync(c => c.Id == id && c.UsuarioId == usuarioId, cancellationToken);
+        LeerAgregadoAsync(() => ConAgregado().FirstOrDefaultAsync(c => c.Id == id && c.UsuarioId == usuarioId, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// HU-021: el agregado se lee con una consulta por tabla (cabecera, rutas, camiones, mercancías, conexos) mientras otra petición
+    /// puede estar guardando el mismo agregado en una transacción; SQL Server puede elegir la lectura como víctima de un interbloqueo
+    /// (error 1205). Fuera de una transacción la lectura no tiene efectos y se repite hasta tres veces; dentro de una, el error sube
+    /// (SQL Server ya revirtió la transacción).
+    /// </summary>
+    private async Task<T> LeerAgregadoAsync<T>(Func<Task<T>> consulta, CancellationToken cancellationToken)
+    {
+        const int Intentos = 3;
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                return await consulta();
+            }
+            catch (Exception ex) when (intento < Intentos && contexto.Database.CurrentTransaction is null && EsInterbloqueo(ex))
+            {
+                _logger.LogWarning("La lectura de la cotización fue víctima de un interbloqueo (intento {Intento}); se repite.", intento);
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * intento), cancellationToken);
+            }
+        }
+    }
+
+    private static bool EsInterbloqueo(Exception ex) =>
+        ex is SqlException { Number: 1205 } || (ex.InnerException is { } interna && EsInterbloqueo(interna));
 
     public Task<bool> ExisteFolioAsync(string folio, CancellationToken cancellationToken = default)
     {

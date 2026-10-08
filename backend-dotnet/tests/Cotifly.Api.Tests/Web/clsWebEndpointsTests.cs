@@ -75,7 +75,7 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
         noExiste.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await noExiste.Content.ReadAsStringAsync(Ct)).Should().Be(NoEsTuya);
         var estado = await clsBaseDatosPruebas.EscalarAsync<string>(entorno.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.Cotizaciones WHERE id = '{deLuis.Id}'");
+            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{deLuis.Id}'");
         estado.Should().Be("sin_enviar|null", "el intento de otro comercial no cambia la cotización");
     }
 

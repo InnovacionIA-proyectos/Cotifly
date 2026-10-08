@@ -11,6 +11,7 @@ using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -33,16 +34,14 @@ public sealed class clsServiciosConexosCosteoServiceTests
     private readonly clsPrecioService _precios = new(Substitute.For<IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>());
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsCotizacionSolicitud _cotizacion;
-    private readonly IReadOnlyList<clsLineaSolicitud> _lineas;
 
     public clsServiciosConexosCosteoServiceTests()
     {
+        // HU-021: la línea de Nexo es la del primer camión de la ruta (lineaSolicitudNexoId), guardada por el polling.
         _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-001");
         _cotizacion.RegistrarCotizacionNexo(CotizacionNexo);
-        _lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "BUENAVENTURA", Destino = "BOGOTA", PesoKg = 1m }]);
-        _lineas[0].AsignarLineaNexo("LS-1");
+        _cotizacion.Vehiculos[0].AsignarLineaNexo("LS-1");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_lineas);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>()).Returns(true);
         _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(Nexo()));
@@ -62,7 +61,13 @@ public sealed class clsServiciosConexosCosteoServiceTests
         var nuevo = resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-2");
         nuevo.Precio.Should().Be(_precios.Calcular(240_000m, 0.15m).Valor.Precio).And.Be(282_353m);
         nuevo.Incluido.Should().BeTrue("un conexo agregado queda incluido");
-        resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").Incluido.Should().BeFalse("la selección anterior se conserva");
+
+        // HU-021: el conexo queda como fila de la ruta (costo unitario de Nexo = 240.000 / 2) y el precio de la ruta lo incluye; ya no hay
+        // conexos excluidos (el Cargue de la ruta también va en el precio).
+        var fila = _cotizacion.PrimeraRuta!.Conexos.Single(c => c.IdServicioConexo == "CX-2");
+        (fila.Precio, fila.Cantidad, fila.Nombre).Should().Be((120_000m, 2m, "Almacenamiento"));
+        resultado.Valor.ServiciosConexos.Single(s => s.Id == "CX-1").Incluido.Should().BeTrue();
+        resultado.Valor.PrecioFinal.Should().Be(_precios.Calcular(2_550_000m + 85_000m + 240_000m, 0.15m).Valor.Precio).And.Be(3_382_353m);
         resultado.Valor.RowVersion.Should().Be("8", "la versión reservada antes del POST");
         Received.InOrder(() =>
         {
@@ -76,13 +81,18 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
-    public async Task ElJsonQueGuardaEsElMismoQueArmaElPollingParaNoSubirLaVersionEnLaSiguienteConsulta()
+    public async Task LoQueGuardaNoLoCambiaLaSiguienteConsultaDelPollingParaNoSubirLaVersion()
     {
+        // HU-021: el JSON de conexos ya no existe; lo equivalente es que la siguiente lectura del costeo con los mismos conexos en Nexo no
+        // cambie nada (ni duplique el conexo ni mueva el precio).
         await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, null, Ct);
+        var precio = _cotizacion.PrecioFinal;
 
-        var polling = new clsPrecioCosteoService(_precios);
         var foto = new clsCosteoConsultadoNexo("EnCosteo", ["LS-1"], Nexo(_cx2));
-        polling.Aplicar(_cotizacion, foto, DateTimeOffset.UtcNow).Should().BeFalse("el polling ve los mismos conexos y no cambia nada");
+        clsLecturaCosteo.AplicarFoto(_cotizacion, foto, DateTimeOffset.UtcNow, new clsOpcionesCosteoNexo(), new clsPrecioCosteoService())
+            .Should().BeFalse("el polling ve los mismos conexos y no cambia nada");
+        _cotizacion.PrimeraRuta!.Conexos.Should().HaveCount(2);
+        _cotizacion.PrecioFinal.Should().Be(precio);
     }
 
     [Theory]
@@ -126,10 +136,12 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task UnaLineaSinIdDeNexoGuardadoRespondeLineaSinCotizacionNexoSinLlamarANexo()
     {
-        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id, [new clsLineaSolicitudCosteo { Origen = "A", Destino = "B" }]);
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
+        // HU-021: el camión todavía no tiene su línea de Nexo (el polling no la ha asociado).
+        var sinLinea = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-SIN-LINEA");
+        sinLinea.RegistrarCotizacionNexo(CotizacionNexo);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(sinLinea.Folio, _ana, Arg.Any<CancellationToken>()).Returns(sinLinea);
 
-        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
+        var resultado = await Servicio().AgregarAsync(_ana, sinLinea.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.LineaSinCotizacionNexo);
         _nexo.ReceivedCalls().Should().BeEmpty();
@@ -150,11 +162,11 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task UnaLicitacionNoAdmiteConexosConElMotivoLicitacion()
     {
-        var lineas = clsLineaSolicitud.Desde(_cotizacion.Id,
-            [new clsLineaSolicitudCosteo { Origen = "A", Destino = "B" }, new clsLineaSolicitudCosteo { Origen = "C", Destino = "D" }]);
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns(lineas);
+        var licitacion = clsCotizacionMuestra.ConVersionNegocio(
+            clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 1_550_000m], folio: "PCN-LIC", usuarioId: _ana), Version);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(licitacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(licitacion);
 
-        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
+        var resultado = await Servicio().AgregarAsync(_ana, licitacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
         resultado.Error.Detalle.Should().Be("LICITACION");
@@ -164,12 +176,10 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public async Task SinCosteoRespondeCosteoNoListo()
     {
-        var sinCosteo = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
-        {
-            Folio = "PCN-SIN", UsuarioId = _ana, MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.PendienteCosteo,
-        }).Valor;
+        var sinCosteo = clsCotizacionMuestra.Formulario("PCN-SIN", _ana);
+        sinCosteo.RegistrarEnvioCosteo("SOL-1", false, clsCotizacionMuestra.Ahora, clsCotizacionMuestra.Ahora);
+        sinCosteo.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-SIN", _ana, Arg.Any<CancellationToken>()).Returns(sinCosteo);
-        _cotizaciones.ListarLineasAsync(sinCosteo.Id, Arg.Any<CancellationToken>()).Returns([]);
 
         var resultado = await Servicio().AgregarAsync(_ana, "PCN-SIN", [Item(1, Almacenamiento, 1m)], 0, null, Ct);
 
@@ -216,12 +226,13 @@ public sealed class clsServiciosConexosCosteoServiceTests
     {
         _nexo.AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsAgregadoNexo>.Fallo(new clsErrorDominio(clsCodigosError.ConexoInvalido, "No.", "SERVICIO_CONEXO_NO_ENCONTRADO")));
-        var antes = _cotizacion.ServiciosConexos;
+        var precio = _cotizacion.PrecioFinal;
 
         var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConexoInvalido);
-        _cotizacion.ServiciosConexos.Should().Be(antes);
+        _cotizacion.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1");
+        _cotizacion.PrecioFinal.Should().Be(precio);
         _cotizacion.VersionNegocio.Should().Be(Version + 1, "solo queda la versión reservada");
         await _unidad.DidNotReceive().GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
@@ -238,7 +249,12 @@ public sealed class clsServiciosConexosCosteoServiceTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
         resultado.Error.Datos.Should().ContainKey("agregado_en_nexo").WhoseValue.Should().Be(true, "un 2xx de Nexo siempre es efecto");
         await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Any<IReadOnlyList<clsConexoParaNexo>>(), Arg.Any<CancellationToken>());
-        await _unidad.DidNotReceive().GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
+
+        // HU-021 (decisión 3): el polling ya no importa los conexos de Nexo por su cuenta; para que la siguiente lectura traiga el conexo,
+        // se guarda la marca ConexosPendientesDeLeer con la versión reservada (antes no se guardaba nada sin PDF).
+        _cotizacion.ConexosPendientesDeLeer.Should().BeTrue();
+        _cotizacion.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1");
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -325,7 +341,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     {
         var almacen = Substitute.For<IClsAlmacenIdempotencia>();
         var servicio = new clsServiciosConexosCosteoService(
-            _cotizaciones, _nexo, _precios, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), almacen);
+            _cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), almacen);
 
         await servicio.AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 1m)], Version, "clave-12345", Ct);
 
@@ -348,15 +364,15 @@ public sealed class clsServiciosConexosCosteoServiceTests
     [Fact]
     public void EnDolaresElConexoSeConvierteConLaTrmFijadaDeLaCotizacion()
     {
-        var usd = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
-        {
-            Folio = "PCN-U", Moneda = "USD", TrmAplicada = 4000m, Costo = 2_550_000m, PrecioFinal = 750m, MargenPolitica = 0.15m,
-            MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.Autocosteo,
-        }).Valor;
+        // HU-021: el conexo de Nexo queda en la ruta y su precio sale con el margen de la ruta, en la moneda de la solicitud.
+        var usd = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-U", moneda: "USD", trm: 4000m);
+        var ruta = usd.PrimeraRuta!;
+        clsServiciosConexosCosteoService.ImportarConexos(ruta, [_cx2]).Should().Be(1);
+        usd.RecalcularTotales(clsCotizacionMuestra.Ahora);
 
-        var conexos = Servicio().ConexosConPrecio(usd, Nexo(_cx2));
+        var conexos = clsCosteoCotizacionService.ConexosConPrecio(usd, ruta);
 
-        conexos.Valor.Single(c => c.Id == "CX-2").Precio.Should().Be(70.59m, "282.353 / 4.000, con la TRM de la cotización y no la del día");
+        conexos.Single(c => c.Id == "CX-2").Precio.Should().Be(70.59m, "282.353 / 4.000, con la TRM de la cotización y no la del día");
     }
 
     [Fact]
@@ -402,7 +418,7 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     private clsServiciosConexosCosteoService Servicio() =>
-        new(_cotizaciones, _nexo, _precios, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), Substitute.For<IClsAlmacenIdempotencia>());
+        new(_cotizaciones, _nexo, _unidad, _auditoria, Options.Create(new clsOpcionesPdf()), Substitute.For<IClsAlmacenIdempotencia>());
 
     private static readonly clsConexoNexo _cx2 = new("CX-2", "Almacenamiento", "logistico", 2m, 240_000m);
 

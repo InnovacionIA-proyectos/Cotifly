@@ -21,30 +21,30 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsCotizacionSolicitud Cotizacion(string folio, int version = 1) => clsCotizacionSolicitud.Crear(new clsDatosCotizacion
+    private clsCotizacionSolicitud Cotizacion(string folio, int version = 1)
     {
-        Folio = folio,
-        Version = version,
-        UsuarioId = _ana,
-        LineaNegocioId = 1,
-        NitCliente = "900123456",
-        ClienteNombre = "Cliente SA",
-        OrigenCliente = OrigenCliente.Cliente,
-        OrigenMargen = OrigenMargen.Negociado,
-        MetodoCalculo = "markup",
-        Costo = 100m,
-        MargenPolitica = 0.15m,
-        MargenAplicado = 0.1m,
-        PrecioFinal = 110m,
-        PdfPath = $"/data/pdfs/{folio}.pdf",
-    }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
+        {
+            Folio = folio,
+            Version = version,
+            UsuarioId = _ana,
+            NitCliente = "900123456",
+            ClienteNombre = "Cliente SA",
+            OrigenCliente = OrigenCliente.Cliente,
+            PdfPath = $"/data/pdfs/{folio}.pdf",
+        }).Valor;
+        // HU-021: la línea de negocio, el costo, el margen y el método son de la ruta 1.
+        cotizacion.RegistrarCotizacionChat(1, 100m, 0.15m, 0.1m, OrigenMargen.Negociado, "markup", 110m);
+        return cotizacion;
+    }
 
     [Fact]
     public async Task ElListadoResumeConCodigosLineaYUrlDelPdf()
     {
         var cotizacion = Cotizacion("PCN-DG-25092026-001");
         _cotizaciones.ListarConLineaPorUsuarioAsync(_ana, 100, Arg.Any<CancellationToken>())
-            .Returns([new clsCotizacionConLinea(cotizacion, "Nacional")]);
+            // HU-021: el listado no carga el agregado; el repositorio trae el margen y su origen de la ruta 1.
+            .Returns([new clsCotizacionConLinea(cotizacion, "Nacional", 0.1m, OrigenMargen.Negociado)]);
         var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf { BaseUrl = "https://api.cotifly/" }));
 
         var lista = await servicio.ListarAsync(_ana, Ct);

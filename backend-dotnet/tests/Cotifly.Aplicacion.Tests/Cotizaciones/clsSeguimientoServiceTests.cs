@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using NSubstitute;
 
@@ -53,12 +54,15 @@ public sealed class clsSeguimientoServiceTests
     }
 
     [Fact]
-    public async Task UnaCotizacionDelChatConReferenciaEnCosteoIdSeSigueMarcandoAqui()
+    public async Task UnaCotizacionDelChatSinEstadoDeCosteoSeSigueMarcandoAqui()
     {
-        var chat = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-C1", UsuarioId = _ana, CosteoId = "TARIFA-REF-9" }).Valor;
+        // HU-021: clsDatosCotizacion ya no recibe costeoId (pasó a solicitudNexoId, que solo pone el envío a Nexo); lo que dice que la
+        // cotización es del chat es no tener estado de costeo.
+        var chat = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-C1", UsuarioId = _ana }).Valor;
+        chat.RegistrarCotizacionChat(3, 2_000_000m, 0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen", 2_352_941m);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-C1", _ana, Arg.Any<CancellationToken>()).Returns(chat);
 
-        (await Servicio().MarcarAsync(_ana, "PCN-C1", true, null, Ct)).Valor.Ganada.Should().BeTrue("costeoId no dice que pasó por Nexo");
+        (await Servicio().MarcarAsync(_ana, "PCN-C1", true, null, Ct)).Valor.Ganada.Should().BeTrue("sin estado de costeo no pasó por Nexo");
     }
 
     [Theory]
@@ -74,9 +78,11 @@ public sealed class clsSeguimientoServiceTests
     private clsCotizacionSolicitud EnFlujo(string folio, EstadoCosteo estado)
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = _ana }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 3);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, _reloj.AhoraUtc, _reloj.AhoraUtc);
-        cotizacion.RegistrarConsultaCosteo(estado, "COT-1", _reloj.AhoraUtc, null);
+        // HU-021: el estado de la cabecera es el resumen de sus camiones: primero se actualiza el camión.
+        cotizacion.Vehiculos[0].RegistrarCosteo(estado, null, null);
+        cotizacion.RegistrarConsultaCosteo(estado, "COT-1", null);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
         return cotizacion;
     }

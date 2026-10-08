@@ -54,13 +54,13 @@ public sealed partial class clsAsistenteFolioRunnerTests
     private readonly clsRelojFalso _reloj = new();
     private readonly clsUsuarioWeb _ana;
     private clsContextoAsistenteFolio _contextoFolio = new();
+    private readonly Dictionary<clsCotizacionSolicitud, (decimal? Precio, decimal? Margen, int Conexos)> _inicial = [];
 
     public clsAsistenteFolioRunnerTests()
     {
         _ana = clsUsuarioWeb.Crear("aprueba", "Ana Prueba", "ana.prueba@ejemplo.test", null, _reloj.AhoraUtc).Valor;
         _usuarios.ObtenerPorIdAsync(_ana.Id, Arg.Any<CancellationToken>()).Returns(_ana);
         _calendario.Hoy.Returns(new DateOnly(2026, 10, 7));
-        _cotizaciones.ListarLineasAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns([]);
 
         // La validación de la re-solicitud es del caso de uso (con la base y el catálogo): aquí, su parte de dominio (entrada y estado).
         _reSolicitud.ValidarAsync(Arg.Any<Guid>(), Arg.Any<clsCotizacionSolicitud>(), Arg.Any<clsEntradaReSolicitudCosteo>(), Arg.Any<CancellationToken>())
@@ -121,9 +121,10 @@ public sealed partial class clsAsistenteFolioRunnerTests
         accion.Cuerpo["margen"].Should().Be(0.18m);
         accion.Cuerpo["justificacion"].Should().BeNull();
         accion.RowVersion.Should().Be("7");
+        // HU-021: el precio de la ruta incluye el conexo (2.635.000 / 0,85 → / 0,82), así que el resumen habla del precio total.
         accion.Resumen.Should().Be(
-            "Ajustar el margen de 15 % a 18 %: el precio del flete pasa de $3.000.000 a $3.109.756 COP. Los servicios conexos se recalculan con el mismo margen.");
-        resultado.Valor.Texto.Should().NotContain("3.109.756", "el texto es del LLM y el LLM no conoce los montos");
+            "Ajustar el margen de 15 % a 18 %: el precio total pasa de $3.100.000 a $3.213.415 COP. Los servicios conexos se recalculan con el mismo margen.");
+        resultado.Valor.Texto.Should().NotContain("3.213.415", "el texto es del LLM y el LLM no conoce los montos");
         resultado.Valor.HerramientasInvocadas.Should().Equal("consultar_cotizacion", "proponer_ajuste_margen");
         SinCambios(cotizacion);
     }
@@ -158,7 +159,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var accion = resultado.Valor.AccionPropuesta!;
         accion.Cuerpo["margen"].Should().Be(0.12m);
         accion.Cuerpo["justificacion"].Should().Be("El cliente tiene una oferta más baja");
-        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.897.727")
+        accion.Resumen.Should().Contain("de 15 % a 12 %").And.Contain("$2.994.318")
             .And.Contain("Justificación: «El cliente tiene una oferta más baja»", "el comercial ve lo que confirma");
     }
 
@@ -221,12 +222,10 @@ public sealed partial class clsAsistenteFolioRunnerTests
     [Fact]
     public async Task LaReSolicitudEnElMismoFolioAvisaLosConexosQueSeDescartan()
     {
+        // HU-021: los conexos son filas de la ruta (costo unitario de Nexo y cantidad).
         var cotizacion = Vencida();
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(
-        [
-            new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 100_000m, true),
-            new clsServicioConexoCosteo("CX-2", "Stand-by", "logistico", 2m, 40_000m, 47_059m, true),
-        ]));
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-2", "Stand-by", 20_000m, 2m);
         Registrar(cotizacion);
         _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Cerrar("Te propongo volver a pedir el flete.");
 
@@ -250,8 +249,11 @@ public sealed partial class clsAsistenteFolioRunnerTests
     {
         Folio.Length.Should().Be(29);
         var cotizacion = Vencida();
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([.. Enumerable.Range(1, 5).Select(i =>
-            new clsServicioConexoCosteo($"CX-{i}", $"Servicio conexo de nombre muy largo para el pliego número {i}", "logistico", 1m, 1m, 1m, true))]));
+        foreach (var i in Enumerable.Range(1, 5))
+        {
+            clsCotizacionMuestra.ConConexo(cotizacion, $"CX-{i}", $"Servicio conexo de nombre muy largo para el pliego número {i}", 1m);
+        }
+
         var cambios = new clsCambiosCargaAsistente(28_400m, 2.5m, 3.5m, true, false);
         var entrada = versionNueva
             ? clsPropuestasAsistente.EntradaReSolicitud(new string('m', 300), cambios, nuevaVersion: true)
@@ -409,8 +411,8 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("¿Cuánto nos cuesta y cuánto le cobramos?"), Ct);
 
-        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("$3.109.756", "el resumen con montos sí lo arma el servidor");
-        VerificarSinMontos("costo", "2550000", "3000000", "3109756", "85000", "100000", "103659", "250000000", "12000000");
+        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("$3.213.415", "el resumen con montos sí lo arma el servidor");
+        VerificarSinMontos("costo", "2550000", "2635000", "3100000", "3213415", "85000", "100000", "103659", "250000000", "12000000");
     }
 
     [Fact]
@@ -421,8 +423,9 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("¿Cuánto es en dólares?"), Ct);
 
-        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("US$777,44").And.Contain("USD");
-        VerificarSinMontos("costo", "2550000", "750", "77744", "trm_aplicada", "4.000", "25,00", "85000");
+        // HU-021: (2.550.000 + 85.000 del conexo) con el margen, en dólares: 775 al 15 % y 803,35 al 18 %.
+        resultado.Valor.AccionPropuesta!.Resumen.Should().Contain("US$803,35").And.Contain("USD");
+        VerificarSinMontos("costo", "2550000", "775", "80335", "trm_aplicada", "4.000", "25,00", "85000");
         _modelo.Llamadas[1].ResultadosHerramientas[0].Should().Contain("\"moneda\":\"USD\"");
     }
 
@@ -519,59 +522,52 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _ => string.Empty,
     };
 
+    // HU-021: el precio y el margen se comparan con los que tenía al registrarla (la vencida no tiene precio; el margen es de la ruta 1).
     private void SinCambios(clsCotizacionSolicitud cotizacion)
     {
+        var inicial = _inicial[cotizacion];
         cotizacion.VersionNegocio.Should().Be(7, "el chat nunca ejecuta mutaciones");
-        cotizacion.PrecioFinal.Should().Be(cotizacion.Moneda == "USD" ? 750m : 3_000_000m);
-        cotizacion.MargenAplicado.Should().Be(0.15m);
+        cotizacion.PrecioFinal.Should().Be(inicial.Precio);
+        cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(inicial.Margen);
+        cotizacion.Rutas.Sum(r => r.Conexos.Count).Should().Be(inicial.Conexos);
         _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, default);
     }
 
     private clsCotizacionSolicitud Registrar(clsCotizacionSolicitud cotizacion, Guid? dueno = null)
     {
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, dueno ?? _ana.Id, Arg.Any<CancellationToken>()).Returns(cotizacion);
+        _inicial[cotizacion] = (cotizacion.PrecioFinal, cotizacion.PrimeraRuta?.MargenAplicado, cotizacion.Rutas.Sum(r => r.Conexos.Count));
         return cotizacion;
     }
 
+    /// <summary>Con la cotización de Nexo y la línea de Nexo del camión (las guarda el polling): admite agregar conexos.</summary>
     private static clsCotizacionSolicitud ConCotizacionNexo(clsCotizacionSolicitud cotizacion)
     {
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.CotizacionNexoId))!.SetValue(cotizacion, "COT-NEXO-1");
+        cotizacion.RegistrarCotizacionNexo("COT-NEXO-1");
+        cotizacion.Vehiculos[0].AsignarLineaNexo("L1");
         return cotizacion;
     }
 
-    /// <summary>Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % = 750 USD y el conexo Cargue (85.000 COP = 25 USD).</summary>
+    /// <summary>
+    /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP y el conexo Cargue (85.000 COP) en la ruta, al 15 % = 775 USD
+    /// (HU-021: el conexo va en el precio de la ruta; el conexo solo, 100.000 COP = 25 USD).
+    /// </summary>
     private clsCotizacionSolicitud EnDolares()
     {
-        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
-        {
-            Folio = Folio,
-            UsuarioId = _ana.Id,
-            Moneda = "USD",
-            TrmAplicada = 4000m,
-            Costo = 2_550_000m,
-            PrecioFinal = 750m,
-            MargenPolitica = 0.15m,
-            MargenAplicado = 0.15m,
-            OrigenMargen = OrigenMargen.PoliticaLinea,
-            MetodoCalculo = "margen",
-            EstadoCosteo = EstadoCosteo.Autocosteo,
-        }).Valor;
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir([new clsServicioConexoCosteo("CX-1", "Cargue", "logistico", 1m, 85_000m, 25m, true)]));
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, 7);
-        return cotizacion;
+        var cotizacion = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: Folio, usuarioId: _ana.Id, moneda: "USD", trm: 4000m);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m);
+        return clsCotizacionMuestra.ConVersionNegocio(cotizacion, 7);
     }
 
     /// <summary>Del formulario, enviada a Nexo y con el polling vencido (72 h sin costeo): admite re-solicitar.</summary>
     private clsCotizacionSolicitud Vencida()
     {
-        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = Folio, UsuarioId = _ana.Id }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        // HU-021: sin flete no hay precio (ya no se fuerza con reflexión); el margen resuelto al enviar queda en la ruta.
+        var cotizacion = clsCotizacionMuestra.Formulario(Folio, _ana.Id);
         cotizacion.RegistrarEnvioCosteo("SOL-1", false, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
+        cotizacion.PrimeraRuta!.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
         cotizacion.VencerPollingCosteo("Nexo no costeó en 72 h").Should().BeTrue();
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.VersionNegocio))!.SetValue(cotizacion, 7);
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.PrecioFinal))!.SetValue(cotizacion, 3_000_000m);
-        typeof(clsCotizacionSolicitud).GetProperty(nameof(clsCotizacionSolicitud.MargenAplicado))!.SetValue(cotizacion, 0.15m);
-        return cotizacion;
+        return clsCotizacionMuestra.ConVersionNegocio(cotizacion, 7);
     }
 
     private clsSolicitudTurnoFolio Solicitud(string mensaje) => new(mensaje, Espacio, _hilo, _ana.Id, Folio);
@@ -584,13 +580,12 @@ public sealed partial class clsAsistenteFolioRunnerTests
         Microsoft.Extensions.Logging.ILogger<clsAsistenteFolioRunner>? logger = null)
     {
         _contextoFolio = new clsContextoAsistenteFolio();
-        var precios = new clsPrecioService(Substitute.For<IClsProveedorTrm>(), _calendario);
         opcionesAgente ??= new clsOpcionesAgente();
         return new clsAsistenteFolioRunner(
             modelo ?? _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
             new clsValidadorRespuestaAgente(Options.Create(opcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), _reloj),
             _auditoria, candado ?? new clsCandadoSesionFalso(), _contextoFolio,
-            new clsHerramientasAsistenteFolio(_contextoFolio, _cotizaciones, precios, _conexos, _reSolicitud),
+            new clsHerramientasAsistenteFolio(_contextoFolio, _conexos, _reSolicitud),
             Options.Create(opcionesAgente), Options.Create(opcionesSesiones ?? new clsOpcionesSesiones()), logger ?? NullLogger<clsAsistenteFolioRunner>.Instance);
     }
 

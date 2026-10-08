@@ -83,10 +83,10 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var alta = _nexo.UltimaAlta!;
         alta["tipo"]!.GetValue<string>().Should().Be("licitacion");
         alta["lineas"]!.AsArray().Select(l => l!["origen"]!.GetValue<string>()).Should().Equal("BUENAVENTURA", "CALI", "CUCUTA");
-        (await EscalarAsync($"SELECT CONCAT(COUNT(*), '|', MIN(l.estadoCosteo), '|', SUM(l.filaOrigen)) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
+        (await EscalarAsync($"SELECT CONCAT(COUNT(*), '|', MIN(l.estadoCosteo), '|', SUM(l.rutaOrigenIndice)) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be("3|pendiente_costeo|3");
-        (await EscalarAsync($"SELECT CONCAT(c.tipoSolicitud, '|', ISNULL(c.origen, 'sin-linea'), '|', a.tamanoBytes, '|', a.hoja) FROM dbo_cotifly.Cotizaciones c JOIN dbo_cotifly.CotizacionArchivosLicitacion a ON a.cotizacionId = c.id WHERE c.folio = '{folio}'"))
-            .Should().Be($"licitacion|sin-linea|{excel.Length}|{clsPliegoMuestra.Hoja}", "una licitación no llena las columnas de línea obsoletas de Cotizaciones");
+        (await EscalarAsync($"SELECT CONCAT(c.tipoSolicitud, '|', a.tamanoBytes, '|', a.hoja) FROM dbo_cotifly.CotizacionesSolicitud c JOIN dbo_cotifly.CotizacionArchivosLicitacion a ON a.cotizacionId = c.id WHERE c.folio = '{folio}'"))
+            .Should().Be($"licitacion|{excel.Length}|{clsPliegoMuestra.Hoja}");
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         json.GetProperty("errores").EnumerateArray().Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
             .Should().BeEquivalentTo(new[] { (0, "destino", "LINEA_INCOMPLETA"), (1, "valor_mercancia", "VALOR_FUERA_DE_RANGO"), (2, "fila", "FILA_INVALIDA") });
         _nexo.SolicitudesCreadas.Should().BeEmpty();
-        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         parcial.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
         parcial.GetProperty("lineas").EnumerateArray().Select(l => l.GetProperty("precio_final").ValueKind == JsonValueKind.Null ? (decimal?)null : l.GetProperty("precio_final").GetDecimal())
             .Should().Equal(1_176_471m, null, 1_000_000m);
-        (await EscalarAsync($"SELECT STRING_AGG(l.lineaSolicitudNexoId, ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
+        (await EscalarAsync($"SELECT STRING_AGG(v.lineaSolicitudNexoId, ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be(string.Join(',', _nexo.LineasDe(solicitud)), "los ids de Nexo se asignan por orden");
 
         _nexo.CostearLinea(solicitud, 1, 2_000_000m);
@@ -202,10 +202,10 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
 
         await _api.ProcesarPollingAsync(folio);
 
-        (await EscalarAsync($"SELECT CONCAT(COUNT(*), '|', MAX(l.estadoCosteo), '|', IIF(MAX(l.precioFinal) = MAX(c.precioFinal), 'igual', 'distinto'), '|', IIF(MAX(c.origen) = MAX(l.origen), 'espejo', 'no')) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{folio}'"))
+        (await EscalarAsync($"SELECT CONCAT(COUNT(*), '|', MAX(l.estadoCosteo), '|', IIF(MAX(l.precioFinalLinea) = MAX(c.precioFinal), 'igual', 'distinto'), '|', IIF(MAX(l.origenNombre) IS NOT NULL, 'espejo', 'no')) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be("1|autocosteo|igual|espejo");
-        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.Cotizaciones c ON c.id = p.cotizacionId WHERE c.folio = '{folio}' AND p.lineaSolicitudId IS NULL"))
-            .Should().Be("0", "las posiciones quedan enlazadas a su línea");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = lp.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
+            .Should().Be("2", "HU-021: las dos posiciones del formulario son mercancías de su ruta");
     }
 
     [Fact]

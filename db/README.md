@@ -5,8 +5,9 @@ dejarla con la configuración inicial.
 
 > **Estado:** la instalación desde cero (`scripts/01_crear_esquema.sql` y `seeder/`) se escribió como parte de HU-021 y se
 > **probó el 2026-10-08** sobre `dbTarifario_Nexo_Pruebas` (después de borrar el schema `dbo_cotifly` anterior): creó las
-> 20 tablas, las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. **No se ha comparado** contra una base
-> armada con las migraciones 0001 a 0009, y el `0009` **no se ha probado** (ver [Verificar](#verificar)).
+> 20 tablas, las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Desde #130/#131 las pruebas de
+> integración (Testcontainers) comparan una instalación desde cero con una base armada con las migraciones `0001` a `0010` y
+> exigen el mismo esquema. El `0010_nombres_municipio.sql` es un **borrador pendiente de revisión de scalderon-bs** (ADR-019).
 
 ## Estructura
 
@@ -21,7 +22,7 @@ db/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
 │   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
 │   └── 03_roles.sql               roles internos (comercial, gerente_comercial)
-├── migrations_mssql/      migraciones 0001 a 0009 (SQL Server): llevan una base que ya existe de un estado al siguiente
+├── migrations_mssql/      migraciones 0001 a 0010 (SQL Server): llevan una base que ya existe de un estado al siguiente
 │   └── rollback/          reversas
 ```
 
@@ -83,7 +84,7 @@ Python (`mcp` y `orquestador`) usa modelos de Postgres y no puede usar este esqu
 cualquier carpeta), y los `.sql` de `scripts/` y `seeder/` no traen ningún servidor ni nombre de base escritos: no tienen `USE`.
 La base la eliges al ejecutar, con `-Servidor` y `-Base` (`-s` y `-d` en bash). Sin `-CrearBase`, la base tiene que existir ya.
 
-La excepción son las **migraciones** de `migrations_mssql/` (0001 a 0009): esas sí traen `USE dbTarifario_Nexo_Pruebas`. Si algún
+La excepción son las **migraciones** de `migrations_mssql/` (0001 a 0010): esas sí traen `USE dbTarifario_Nexo_Pruebas`. Si algún
 día se corren contra otra base, hay que cambiar esa línea. No aplica a la instalación desde cero.
 
 ### En SSMS o Azure Data Studio (sin el ejecutador)
@@ -147,7 +148,13 @@ sesión con ese rol (falla cerrado). Las dos sentencias están en `seeder/03_rol
 La base compartida (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`) ya tiene aplicados los scripts `0001` a `0007`. El
 `0009_reestructuracion_cotizaciones.sql` la lleva al esquema de este directorio, conservando sus datos, y está **pendiente
 de aprobación del DBA y de ser probado contra una copia**. Hace un respaldo de las tablas que toca (`Respaldo0009_*`) y corre
-en una sola transacción.
+en una sola transacción. (Nota del 2026-10-08: la base compartida se reinstaló desde cero con `01_crear_esquema.sql`, que
+equivale a `0001`–`0009`.)
+
+El `0010_nombres_municipio.sql` (HU-021, ADR-019) se aplica **después del `0009`**: agrega los nombres de municipio de la
+ruta, `CotizacionesSolicitud.solicitudNexoId`, `CotizacionServiciosConexos.nombreServicioConexo` y el `CHECK` de
+`estadoEnvio` si falta. Es idempotente y no destructivo, y llena los nombres desde `Respaldo0009_*` si existen.
+`scripts/01_crear_esquema.sql` ya trae esas columnas.
 
 ## Mantener esto en sincronía
 
@@ -164,5 +171,5 @@ Contra una base vacía **local o de pruebas, nunca la compartida**:
 ```
 
 El resumen final debe mostrar 20 tablas, 6 líneas de negocio, 5 mapeos SAP TM y 2 roles. Para comprobar que quedó igual que
-una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0009` y comparar columnas (por ejemplo con
+una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` y comparar columnas (por ejemplo con
 `INFORMATION_SCHEMA.COLUMNS`) entre las dos.
