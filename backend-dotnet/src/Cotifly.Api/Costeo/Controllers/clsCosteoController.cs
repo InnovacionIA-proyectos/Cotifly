@@ -1,6 +1,7 @@
 using Cotifly.Api.Comun;
 using Cotifly.Api.Costeo.DTOs;
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Services;
@@ -54,8 +55,9 @@ public sealed class clsCosteoController(
         (await costeo.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(c => Ok(c), Error);
 
     /// <summary>
-    /// HU-013.2 (ADR-018 §3): 200 <c>CosteoCotizacion</c> con el margen ajustado y los precios recalculados (y el <c>ETag</c> nuevo);
-    /// 400 <c>AJUSTE_MARGEN_INVALIDO</c> o <c>JUSTIFICACION_REQUERIDA</c>; 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c> o
+    /// HU-013.2 (ADR-018 §3; por ruta desde HU-021.8, #135): 200 <c>CosteoCotizacion</c> con el margen de la ruta ajustado y los precios
+    /// recalculados (y el <c>ETag</c> nuevo); 400 <c>AJUSTE_MARGEN_INVALIDO</c>, <c>JUSTIFICACION_REQUERIDA</c>, <c>RUTA_REQUERIDA</c> (con
+    /// <c>detalle.rutas</c>) o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c> o
     /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
     /// </summary>
     [HttpPut("cotizaciones/{folio}/costeo/margen")]
@@ -72,12 +74,15 @@ public sealed class clsCosteoController(
             return Error(new clsErrorDominio(clsCodigosError.AjusteMargenInvalido, "El campo 'margen' es obligatorio (fracción: 0.18 = 18 %)."));
         }
 
-        var resultado = await ajusteMargen.AjustarAsync(UsuarioId, folio, margen, cuerpo.Justificacion, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        var resultado = await ajusteMargen.AjustarAsync(
+            UsuarioId, folio, new clsRutaIndicada(cuerpo.LineaOrden, cuerpo.LineaSolicitudId), margen, cuerpo.Justificacion,
+            clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 
     /// <summary>
-    /// 200 <c>CosteoCotizacion</c> con la selección (y el <c>ETag</c> nuevo); 400 id desconocido; 404; 409 <c>COSTEO_NO_LISTO</c>,
+    /// 200 <c>CosteoCotizacion</c> con los conexos de la ruta quitados o con su cantidad nueva (y el <c>ETag</c> nuevo; HU-021.8, #135);
+    /// 400 id desconocido, forma inválida, <c>RUTA_REQUERIDA</c> o <c>RUTA_INEXISTENTE</c>; 404; 409 <c>COSTEO_NO_LISTO</c>,
     /// <c>PDF_YA_ENVIADO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>. Con PDF vigente lo invalida (ADR-018 §11).
     /// </summary>
     [HttpPut("cotizaciones/{folio}/costeo/servicios-conexos")]
@@ -90,7 +95,7 @@ public sealed class clsCosteoController(
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
         var resultado = await costeo.SeleccionarServiciosConexosAsync(
-            UsuarioId, folio, cuerpo.Incluidos ?? [], clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+            UsuarioId, folio, cuerpo.AEntrada(), clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
         return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
     }
 

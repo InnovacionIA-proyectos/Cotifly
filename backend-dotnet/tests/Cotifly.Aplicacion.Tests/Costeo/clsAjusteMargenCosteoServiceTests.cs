@@ -43,7 +43,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task SubirElMargenRecalculaElPrecioYLosConexosComoElModuloDePrecioYRegistraElAjuste()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         var vista = resultado.Valor;
@@ -68,7 +68,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task BajarDelSugeridoConJustificacionLaGuardaComoMotivo()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.12m, " Cliente estratégico ", Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.12m, " Cliente estratégico ", Version, Ct);
 
         resultado.Valor.PrecioFinal.Should().Be(2_994_318m, "HU-021: (2.550.000 + 85.000 del conexo) / 0,88");
         _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a => a.Diferencia == -0.03m && a.Motivo == "Cliente estratégico"));
@@ -77,7 +77,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task BajarDelSugeridoSinJustificacionNoCambiaNadaYTraeElSugeridoEnElDetalle()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.10m, "  ", Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.10m, "  ", Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
         resultado.Error.Datos.Should().ContainKey("margen_sugerido").WhoseValue.Should().Be(0.15m);
@@ -94,7 +94,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         _cotizacion.AsignarPdf("PCN-1.pdf");
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.15m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.15m, null, Version, Ct);
 
         resultado.EsExitoso.Should().BeTrue();
         _cotizacion.PdfPath.Should().Be("PCN-1.pdf");
@@ -107,7 +107,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         _cotizacion.AsignarPdf("/data/pdfs/PCN-1.pdf");
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
 
         resultado.Valor.PdfUrl.Should().BeNull();
         resultado.Valor.PdfDesactualizado.Should().BeTrue();
@@ -121,7 +121,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         _cotizacion.AsignarPdf("PCN-1.pdf");
         _cotizacion.RegistrarEnvio();
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
         var datos = resultado.Error.Datos!;
@@ -135,7 +135,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task ConOtraVersionRespondeConflictoSinTocarNada()
     {
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, 6, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, 6, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
         _cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(0.15m);
@@ -146,7 +146,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
     {
         _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Version, Arg.Any<CancellationToken>()).Returns(false);
 
-        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, 0.18m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
     }
@@ -154,26 +154,104 @@ public sealed class clsAjusteMargenCosteoServiceTests
     [Fact]
     public async Task UnaAjenaOInexistenteEsNoEncontradaYNoSeAudita()
     {
-        var resultado = await Servicio().AjustarAsync(Guid.NewGuid(), _cotizacion.Folio, 0.18m, null, Version, Ct);
+        var resultado = await Servicio().AjustarAsync(Guid.NewGuid(), _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionNoEncontrada);
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
     }
 
+    // ------------------------------------------------------------------ HU-021.8 (#135, decisión 6): margen por ruta
+
     [Fact]
-    public async Task EnUnaLicitacionCadaLineaSeRecalculaYElTotalEsLaSuma()
+    public async Task ConUnaSolaRutaElAjusteSinRutaLaTomaYElAjusteGuardaEsaRuta()
+    {
+        var resultado = await Servicio().AjustarAsync(_ana, _cotizacion.Folio, clsRutaIndicada.Ninguna, 0.18m, null, Version, Ct);
+
+        resultado.Valor.Rutas.Should().ContainSingle().Which.MargenAplicado.Should().Be(0.18m);
+        _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a => a.LineaSolicitudId == _cotizacion.PrimeraRuta!.Id));
+    }
+
+    [Fact]
+    public async Task ConTresRutasSinIndicarLaRutaRespondeRutaRequeridaConLasRutasYNoCambiaNada()
+    {
+        var licitacion = Licitacion();
+
+        var resultado = await Servicio().AjustarAsync(_ana, "PCN-L1", clsRutaIndicada.Ninguna, 0.20m, null, Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.RutaRequerida);
+        ((IReadOnlyList<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["rutas"]!).Select(r => r["linea_orden"]).Should().Equal(1, 2, 3);
+        licitacion.RutasOrdenadas.Select(r => r.MargenAplicado).Should().Equal(0.15m, 0.15m, 0.15m);
+        _ajustes.DidNotReceiveWithAnyArgs().Agregar(default!);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _auditoria.Received(1).RegistrarAsync(clsAjusteMargenCosteoService.HerramientaAuditoria,
+            Arg.Any<object?>(), Arg.Any<object?>(), false, Arg.Any<int>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task ConTresRutasElAjusteDeLaRutaDosSoloRecalculaEsaRutaYRegistraLaRutaReal()
+    {
+        var licitacion = Licitacion();
+        var segunda = licitacion.RutasOrdenadas[1];
+
+        var resultado = await Servicio().AjustarAsync(_ana, "PCN-L1", clsRutaIndicada.DeOrden(2), 0.20m, null, Version, Ct);
+
+        licitacion.RutasOrdenadas.Select(r => r.MargenAplicado).Should().Equal(0.15m, 0.20m, 0.15m);
+        licitacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_000_000m, 2_125_000m, 500_000m);
+        resultado.Valor.PrecioFinal.Should().Be(3_625_000m, "la suma de las rutas: solo cambió la 2");
+        resultado.Valor.Rutas.Select(r => r.MargenAplicado).Should().Equal(0.15m, 0.20m, 0.15m);
+        resultado.Valor.Rutas[1].OrigenMargen.Should().Be("negociado");
+        _ajustes.Received(1).Agregar(Arg.Is<clsMargenAjuste>(a =>
+            a.LineaSolicitudId == segunda.Id && a.MargenPolitica == 0.15m && a.MargenAplicado == 0.20m && a.CotizacionId == licitacion.Id));
+    }
+
+    [Fact]
+    public async Task LaRutaTambienSeIndicaPorSuIdYSeValidaContraSuPropioSugerido()
+    {
+        var licitacion = Licitacion();
+        var tercera = licitacion.RutasOrdenadas[2];
+        tercera.RegistrarMargenCosteo(0.15m, 0.25m, OrigenMargen.SapTm, "margen");
+        licitacion.RecalcularTotales(clsCotizacionMuestra.Ahora);
+
+        var sinJustificar = await Servicio().AjustarAsync(_ana, "PCN-L1", new clsRutaIndicada(null, tercera.Id), 0.20m, null, Version, Ct);
+        var otraRuta = await Servicio().AjustarAsync(_ana, "PCN-L1", new clsRutaIndicada(2, tercera.Id), 0.20m, "x", Version, Ct);
+
+        sinJustificar.Error.Codigo.Should().Be(clsCodigosError.JustificacionRequerida, "la ruta 3 sugiere 25 % (SAP TM)");
+        sinJustificar.Error.Datos!["margen_sugerido"].Should().Be(0.25m);
+        sinJustificar.Error.Datos["linea_orden"].Should().Be(3);
+        otraRuta.Error.Codigo.Should().Be(clsCodigosError.RutaInexistente);
+    }
+
+    [Fact]
+    public async Task ConOtraVersionElConflictoVaAntesQueLaRuta()
+    {
+        Licitacion();
+
+        var resultado = await Servicio().AjustarAsync(_ana, "PCN-L1", clsRutaIndicada.Ninguna, 0.20m, null, Version - 1, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.ConflictoConcurrencia);
+    }
+
+    [Fact]
+    public void LaVistaPreviaDeUnaRutaDaSuPrecioYElTotalSinCambiarNada()
+    {
+        var licitacion = Licitacion();
+
+        var recalculo = clsAjusteMargenCosteoService.Recalcular(licitacion, licitacion.RutasOrdenadas[1], 0.20m).Valor;
+
+        recalculo.PrecioRutaAnterior.Should().Be(2_000_000m);
+        recalculo.PrecioRuta.Should().Be(2_125_000m);
+        recalculo.PrecioFinal.Should().Be(3_625_000m);
+        licitacion.PrecioFinal.Should().Be(3_500_000m, "la vista previa no cambia la cotización");
+    }
+
+    /// <summary>Pliego de 3 rutas al 15 %: fletes 850.000, 1.700.000 y 425.000 → precios 1.000.000, 2.000.000 y 500.000.</summary>
+    private clsCotizacionSolicitud Licitacion()
     {
         var licitacion = clsCotizacionMuestra.ConVersionNegocio(
-            clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 1_550_000m], margen: 0.15m, folio: "PCN-L1", usuarioId: _ana), Version);
+            clsCotizacionMuestra.LicitacionCosteada([850_000m, 1_700_000m, 425_000m], margen: 0.15m, folio: "PCN-L1", usuarioId: _ana), Version);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync("PCN-L1", _ana, Arg.Any<CancellationToken>()).Returns(licitacion);
         _unidad.GuardarCambiosSiVersionAsync(licitacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
-
-        var resultado = await Servicio().AjustarAsync(_ana, "PCN-L1", 0.20m, null, Version, Ct);
-
-        // HU-021: mientras el contrato no diga la ruta (#138), el ajuste aplica el mismo margen a todas las rutas.
-        licitacion.RutasOrdenadas.Select(r => r.MargenAplicado).Should().Equal(0.20m, 0.20m);
-        licitacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_250_000m, 1_937_500m);
-        resultado.Valor.PrecioFinal.Should().Be(3_187_500m, "la suma de las líneas");
+        return licitacion;
     }
 
     [Fact]
@@ -182,7 +260,7 @@ public sealed class clsAjusteMargenCosteoServiceTests
         var usd = clsCotizacionMuestra.Costeada(flete: 2_550_000m, margen: 0.15m, folio: "PCN-U", moneda: "USD", trm: 4000m);
         usd.PrecioFinal.Should().Be(750m);
 
-        var recalculo = clsAjusteMargenCosteoService.Recalcular(usd, 0.18m);
+        var recalculo = clsAjusteMargenCosteoService.Recalcular(usd, usd.PrimeraRuta!, 0.18m);
 
         recalculo.Valor.PrecioFinal.Should().Be(777.44m, "3.109.756 / 4.000, con la TRM de la cotización y no la del día");
     }

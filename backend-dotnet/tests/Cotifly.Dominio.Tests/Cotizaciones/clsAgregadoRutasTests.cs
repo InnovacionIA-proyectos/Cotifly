@@ -222,19 +222,20 @@ public sealed class clsAgregadoRutasTests
         FluentActions.Invoking(() => ruta.AgregarOActualizarConexo("CX-3", null, 1m, 0m)).Should().Throw<ArgumentOutOfRangeException>("la cantidad es mayor que 0");
     }
 
-    // ------------------------------------------------------------------ Margen por ruta (adaptación: el ajuste aplica a todas)
+    // ------------------------------------------------------------------ Margen por ruta (HU-021.8, #135, decisión 6)
 
     [Fact]
-    public void ElAjusteDeLaSolicitudAplicaElMismoMargenATodasSusRutasYRecalculaElTotal()
+    public void ElAjusteDeUnaRutaSoloCambiaEsaRutaYElTotal()
     {
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 850_000m]);
 
-        cotizacion.ValidarAjusteMargen(0.20m, null).Should().BeNull();
-        cotizacion.AplicarMargenNegociado(0.20m, _ahora).Valor.Should().BeTrue();
+        cotizacion.ValidarAjusteMargen(1, 0.20m, null).Should().BeNull();
+        cotizacion.AplicarMargenNegociado(1, 0.20m, _ahora).Valor.Should().BeTrue();
 
-        cotizacion.Rutas.Should().OnlyContain(r => r.MargenAplicado == 0.20m && r.OrigenMargen == OrigenMargen.Negociado);
-        cotizacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_250_000m, 1_062_500m);
-        cotizacion.PrecioFinal.Should().Be(2_312_500m);
+        cotizacion.RutasOrdenadas.Select(r => r.MargenAplicado).Should().Equal(0.20m, 0.15m);
+        cotizacion.RutasOrdenadas.Select(r => r.OrigenMargen).Should().Equal(OrigenMargen.Negociado, OrigenMargen.PoliticaLinea);
+        cotizacion.RutasOrdenadas.Select(r => r.PrecioFinalLinea).Should().Equal(1_250_000m, 1_000_000m);
+        cotizacion.PrecioFinal.Should().Be(2_250_000m, "1.250.000 de la ruta 1 + 1.000.000 de la ruta 2, que no cambia");
         cotizacion.TieneMargenNegociado.Should().BeTrue();
     }
 
@@ -244,7 +245,7 @@ public sealed class clsAgregadoRutasTests
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m]);
         cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m }, 1, 3);
 
-        cotizacion.ValidarAjusteMargen(0.20m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        cotizacion.ValidarAjusteMargen(1, 0.20m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
     }
 
     // ------------------------------------------------------------------ Chat, mercancías y re-solicitud

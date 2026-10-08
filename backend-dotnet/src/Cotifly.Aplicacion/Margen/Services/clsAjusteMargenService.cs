@@ -17,7 +17,8 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// <see cref="clsReglaMargen"/> (<c>markup</c> admite m ≥ 1); fuera de rango o método desconocido → <c>AJUSTE_MARGEN_INVALIDO</c>.</item>
 /// <item>El precio usa el valor manual guardado: no se vuelve a resolver la política (costo inválido → <c>PRECIO_INVALIDO</c>).</item>
 /// <item>El ajuste queda en <c>MargenAjustes</c> con el comercial (<c>usuarioId</c>) y
-/// diferencia = aplicado − política; la cotización, si viene, debe ser del comercial.</item>
+/// diferencia = aplicado − política; la cotización, si viene, debe ser del comercial, y el ajuste guarda su ruta
+/// (<c>lineaSolicitudId</c>: la indicada o la única; HU-021.8, #135).</item>
 /// </list>
 /// Nada se guarda si alguna validación falla.
 /// </summary>
@@ -67,6 +68,7 @@ public sealed class clsAjusteMargenService(
         }
 
         var folio = entrada.Folio;
+        Guid? rutaId = null;
         if (entrada.CotizacionId is { } cotizacionId)
         {
             var cotizacion = await cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacionId, entrada.UsuarioId, cancellationToken);
@@ -76,10 +78,26 @@ public sealed class clsAjusteMargenService(
             }
 
             folio ??= cotizacion.Folio;
+
+            // HU-021.8 (#135): el ajuste guarda la ruta real (la indicada, o la única de la cotización; sin rutas, ninguna).
+            if (cotizacion.Rutas.Count > 0 || entrada.LineaSolicitudId is not null)
+            {
+                var ruta = cotizacion.ResolverRuta(null, entrada.LineaSolicitudId);
+                if (ruta.EsFallo)
+                {
+                    return ruta.Error;
+                }
+
+                rutaId = ruta.Valor.Id;
+            }
+        }
+        else if (entrada.LineaSolicitudId is not null)
+        {
+            return new clsErrorDominio(clsCodigosError.AjusteCotizacionInvalida, "La ruta del ajuste exige la cotización (cotizacionId).");
         }
 
         var motivo = string.IsNullOrWhiteSpace(entrada.Motivo) ? MotivoPorDefecto : entrada.Motivo.Trim();
-        var registro = clsMargenAjuste.Registrar(politica, aplicado, motivo, entrada.UsuarioId, entrada.CotizacionId, folio, metodo);
+        var registro = clsMargenAjuste.Registrar(politica, aplicado, motivo, entrada.UsuarioId, entrada.CotizacionId, folio, metodo, rutaId);
         if (registro.EsFallo)
         {
             return registro.Error;

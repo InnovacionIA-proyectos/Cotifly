@@ -13,8 +13,9 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// precio (<see cref="RecalcularPrecio"/>); se guarda y se recalcula en la misma transacción que cambia una ruta.</item>
 /// <item><see cref="EstadoCosteo"/> resume el de sus rutas (<see cref="clsResumenEstadoCosteo"/>), que a su vez resumen el de sus
 /// camiones. Los estados de toda la solicitud (envío, error de envío, vencimiento) llegan a cada camión.</item>
-/// <item>El margen es de cada ruta (de su línea de negocio). Mientras el contrato del ajuste no diga la ruta (#132, #138), el ajuste de la
-/// solicitud aplica el mismo margen a todas sus rutas (<see cref="AplicarMargenNegociado"/>).</item>
+/// <item>El margen es de cada ruta (de su línea de negocio). El ajuste del comercial es POR RUTA (HU-021.8, #135, decisión 6): la
+/// petición indica la ruta (<see cref="ResolverRuta"/>), se valida contra el sugerido de esa ruta y solo se recalculan esa ruta y la
+/// cabecera (<see cref="AplicarMargenNegociado"/>).</item>
 /// </list>
 /// Una nueva versión es una fila nueva con <see cref="Version"/> + 1 y folio <c>-vN</c>, sin FK a la original (HU-002.4 Fase 2).
 /// <see cref="CreatedAt"/> y <see cref="UpdatedAt"/> los asigna la persistencia con el reloj de la aplicación.
@@ -137,9 +138,6 @@ public sealed class clsCotizacionSolicitud
 
     /// <summary>¿Alguna ruta tiene margen negociado por el comercial?</summary>
     public bool TieneMargenNegociado => _rutas.Any(r => r.TieneMargenNegociado);
-
-    /// <summary>Sugerido vigente de la ruta 1 (la regla de la justificación del ajuste mientras el ajuste sea de toda la solicitud).</summary>
-    public decimal? SugeridoVigente => PrimeraRuta?.SugeridoVigente;
 
     /// <summary>
     /// Crea la cabecera validando las invariantes baratas: folio obligatorio (máx. 50), versión ≥ 1 y TRM 0 en pesos (&gt; 0 en otra
@@ -658,11 +656,126 @@ public sealed class clsCotizacionSolicitud
     public clsResultado<int> CambiarConexos(int ordenRuta, IEnumerable<clsCambioConexo> conexos, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(conexos);
-        var ruta = _rutas.FirstOrDefault(r => r.Orden == ordenRuta)
-            ?? throw new ArgumentOutOfRangeException(nameof(ordenRuta), $"La cotización {Folio} no tiene la ruta {ordenRuta}.");
+        var ruta = RutaDeOrden(ordenRuta);
         var cambios = conexos.Count(c => ruta.AgregarOActualizarConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
-        var recalculo = RecalcularTotales(ahora);
+        var recalculo = RecalcularRuta(ruta, ahora);
         return recalculo.EsFallo ? recalculo.Error : cambios;
+    }
+
+    /// <summary>
+    /// Deja en la ruta <paramref name="ordenRuta"/> exactamente los conexos de <paramref name="cantidades"/> (id del conexo → cantidad
+    /// nueva; HU-021.8, #135, decisión 3): los que no están se BORRAN de la ruta (la tabla no tiene "incluido") y a los demás se les cambia
+    /// la cantidad, con el mismo precio unitario de Nexo. Después recalcula esa ruta y la cabecera. Todos los ids deben ser conexos de la
+    /// ruta (el caso de uso lo valida antes: aquí un id ajeno es un error de programación). Devuelve los movimientos (quitados y con
+    /// cantidad nueva) para la auditoría, o el error del módulo de precio.
+    /// </summary>
+    public clsResultado<IReadOnlyList<clsMovimientoConexo>> AjustarConexosRuta(
+        int ordenRuta, IReadOnlyDictionary<string, decimal> cantidades, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(cantidades);
+        var ruta = RutaDeOrden(ordenRuta);
+        var movimientos = ruta.AjustarConexos(cantidades);
+        if (movimientos.Count == 0)
+        {
+            return clsResultado<IReadOnlyList<clsMovimientoConexo>>.Exito(movimientos);
+        }
+
+        var recalculo = RecalcularRuta(ruta, ahora);
+        return recalculo.EsFallo ? recalculo.Error : clsResultado<IReadOnlyList<clsMovimientoConexo>>.Exito(movimientos);
+    }
+
+    /// <summary>
+    /// El comercial cambia el valor de UN levante de contenedor de la ruta <paramref name="ordenRuta"/> (decisión 4): se guarda en la
+    /// ruta, se copia a cada camión y se recalculan esa ruta y la cabecera. Solo mientras la cotización no se haya entregado al cliente
+    /// (<c>PDF_YA_ENVIADO</c>, ADR-018 §11). Devuelve si cambió, o el error.
+    /// </summary>
+    public clsResultado<bool> CambiarValorLevante(int ordenRuta, decimal? valor, DateTimeOffset ahora)
+    {
+        if (valor is < 0m)
+        {
+            return new clsErrorDominio(CodigoError, "El valor del levante del contenedor no puede ser negativo.");
+        }
+
+        if (ValidarCambioEtapaFinal() is { } entregada)
+        {
+            return entregada;
+        }
+
+        var ruta = RutaDeOrden(ordenRuta);
+        if (!ruta.CambiarValorLevante(valor))
+        {
+            return false;
+        }
+
+        var recalculo = RecalcularRuta(ruta, ahora);
+        return recalculo.EsFallo ? recalculo.Error : true;
+    }
+
+    // ------------------------------------------------------------------ Ruta indicada por la petición (HU-021.8, #135)
+
+    /// <summary>
+    /// La ruta a la que aplica una petición de la etapa final (margen o conexos), por su <c>linea_orden</c> o su id
+    /// (<c>linea_solicitud_id</c>). Sin ninguno de los dos: la única ruta si hay una; con varias, <c>RUTA_REQUERIDA</c> con las rutas en
+    /// <c>detalle.rutas</c> (orden, id, origen y destino, sin montos). Una ruta que no es de la cotización, o un orden y un id que no son la
+    /// misma ruta: <c>RUTA_INEXISTENTE</c>.
+    /// </summary>
+    public clsResultado<clsLineaSolicitud> ResolverRuta(int? lineaOrden, Guid? lineaSolicitudId)
+    {
+        if (lineaSolicitudId is { } id)
+        {
+            var porId = _rutas.FirstOrDefault(r => r.Id == id);
+            if (porId is null || (lineaOrden is { } orden && orden != porId.Orden))
+            {
+                return new clsErrorDominio(clsCodigosError.RutaInexistente,
+                    porId is null
+                        ? $"La ruta {id} no es de la cotización {Folio}."
+                        : $"linea_orden {lineaOrden} y linea_solicitud_id {id} no son la misma ruta de la cotización {Folio}.");
+            }
+
+            return porId;
+        }
+
+        if (lineaOrden is { } soloOrden)
+        {
+            return _rutas.FirstOrDefault(r => r.Orden == soloOrden) is { } porOrden
+                ? porOrden
+                : new clsErrorDominio(clsCodigosError.RutaInexistente, $"La cotización {Folio} no tiene la ruta {soloOrden}.");
+        }
+
+        return _rutas.Count switch
+        {
+            1 => _rutas[0],
+            0 => new clsErrorDominio(clsCodigosError.RutaInexistente, $"La cotización {Folio} no tiene rutas."),
+            _ => new clsErrorDominio(clsCodigosError.RutaRequerida,
+                $"La cotización {Folio} tiene {_rutas.Count} rutas: indica a cuál aplica (linea_orden o linea_solicitud_id).")
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["rutas"] = DescribirRutas() },
+            },
+        };
+    }
+
+    /// <summary>Las rutas en orden, sin montos: <c>linea_orden</c>, <c>linea_solicitud_id</c>, origen y destino (detalle de <c>RUTA_REQUERIDA</c>).</summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, object?>> DescribirRutas() =>
+        [.. RutasOrdenadas.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["linea_orden"] = r.Orden,
+            ["linea_solicitud_id"] = r.Id,
+            ["origen"] = r.OrigenNombre,
+            ["destino"] = r.DestinoNombre,
+        })];
+
+    private clsLineaSolicitud RutaDeOrden(int ordenRuta) =>
+        _rutas.FirstOrDefault(r => r.Orden == ordenRuta)
+        ?? throw new ArgumentOutOfRangeException(nameof(ordenRuta), $"La cotización {Folio} no tiene la ruta {ordenRuta}.");
+
+    /// <summary>Recalcula los totales y el precio de UNA ruta y el precio de la cabecera (§9.1: cambió esa ruta y nada más).</summary>
+    private clsResultado<bool> RecalcularRuta(clsLineaSolicitud ruta, DateTimeOffset ahora)
+    {
+        var recalculo = ruta.RecalcularTotales(Moneda, TrmAplicada);
+        var cambioCabecera = RecalcularPrecio(ahora);
+        return recalculo.EsFallo
+            ? new clsErrorDominio(recalculo.Error.Codigo, $"Ruta {ruta.Orden}: {recalculo.Error.Mensaje}", recalculo.Error.Detalle)
+            : recalculo.Valor | cambioCabecera;
     }
 
     /// <summary>
@@ -745,46 +858,45 @@ public sealed class clsCotizacionSolicitud
     /// <summary>Costo total de la solicitud (interno): la suma del costo final de sus rutas, o <c>null</c> si alguna no lo tiene.</summary>
     public decimal? CostoFinal => _rutas.Count > 0 && _rutas.All(r => r.CostoFinal is not null) ? _rutas.Sum(r => r.CostoFinal!.Value) : null;
 
-    // ------------------------------------------------------------------ Margen (ADR-018 §3): orquesta el de sus rutas
+    // ------------------------------------------------------------------ Margen (ADR-018 §3): por ruta (HU-021.8, #135, decisión 6)
 
     /// <summary>
-    /// Invariantes del ajuste de margen (ADR-018 §3 y §11) mientras el ajuste sea de toda la solicitud (todas sus rutas, adaptación de
-    /// HU-021): forma (<c>AJUSTE_MARGEN_INVALIDO</c>), costo disponible en la solicitud y en cada ruta (<c>COSTEO_NO_LISTO</c>), regla del
-    /// PDF (<c>PDF_YA_ENVIADO</c>) y justificación si queda por debajo del sugerido de alguna ruta (<c>JUSTIFICACION_REQUERIDA</c>).
+    /// Invariantes del ajuste de margen de la ruta <paramref name="ordenRuta"/> (ADR-018 §3 y §11, por ruta desde HU-021.8): forma
+    /// (<c>AJUSTE_MARGEN_INVALIDO</c>), ruta de la cotización (<c>RUTA_INEXISTENTE</c>), costo disponible en la solicitud y en esa ruta
+    /// (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>) y justificación si queda por debajo del sugerido DE ESA RUTA
+    /// (<c>JUSTIFICACION_REQUERIDA</c>).
     /// </summary>
-    public clsErrorDominio? ValidarAjusteMargen(decimal margen, string? justificacion)
+    public clsErrorDominio? ValidarAjusteMargen(int ordenRuta, decimal margen, string? justificacion)
     {
         if (clsLineaSolicitud.ValidarForma(margen, justificacion) is { } forma)
         {
             return forma;
         }
 
-        if (!TieneCostoDisponible || _rutas.Count == 0 || _rutas.Any(r => !r.TienePrecio))
+        var ruta = _rutas.FirstOrDefault(r => r.Orden == ordenRuta);
+        if (ruta is null)
+        {
+            return new clsErrorDominio(clsCodigosError.RutaInexistente, $"La cotización {Folio} no tiene la ruta {ordenRuta}.");
+        }
+
+        // El precio total de la solicitud debe existir: todas sus rutas con precio (la cabecera es su suma, §9.1).
+        if (!TieneCostoDisponible || _rutas.Any(r => !r.TienePrecio))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
         }
 
-        if (ValidarCambioEtapaFinal() is { } entregada)
-        {
-            return entregada;
-        }
-
-        return RutasOrdenadas.Select(r => r.ValidarJustificacion(margen, justificacion)).FirstOrDefault(e => e is not null);
+        return ValidarCambioEtapaFinal() ?? ruta.ValidarJustificacion(margen, justificacion);
     }
 
     /// <summary>
-    /// Aplica el margen negociado a TODAS las rutas (el ajuste todavía es de la solicitud) y recalcula sus totales y el precio. Devuelve
-    /// si algo cambió, o el error del módulo de precio.
+    /// Aplica el margen negociado SOLO a la ruta <paramref name="ordenRuta"/> y recalcula esa ruta y la cabecera (las demás rutas no
+    /// cambian). Devuelve si algo cambió, o el error del módulo de precio.
     /// </summary>
-    public clsResultado<bool> AplicarMargenNegociado(decimal margen, DateTimeOffset ahora)
+    public clsResultado<bool> AplicarMargenNegociado(int ordenRuta, decimal margen, DateTimeOffset ahora)
     {
-        var cambio = false;
-        foreach (var ruta in _rutas)
-        {
-            cambio |= ruta.AplicarMargenNegociado(margen);
-        }
-
-        var recalculo = RecalcularTotales(ahora);
+        var ruta = RutaDeOrden(ordenRuta);
+        var cambio = ruta.AplicarMargenNegociado(margen);
+        var recalculo = RecalcularRuta(ruta, ahora);
         return recalculo.EsFallo ? recalculo.Error : cambio | recalculo.Valor;
     }
 

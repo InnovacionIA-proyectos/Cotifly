@@ -103,14 +103,34 @@ public sealed class clsPosicionCargaWebRequest
     public decimal? PesoKg { get; init; }
 }
 
-/// <summary><c>SeleccionServiciosConexos</c>: ids de los servicios conexos del costeo que van en el PDF (los demás se excluyen).</summary>
-public sealed record clsSeleccionServiciosConexosWebRequest(IReadOnlyList<string>? Incluidos);
+/// <summary>
+/// <c>SeleccionServiciosConexos</c> (HU-005.7; por ruta desde HU-021.8, #135): <c>conexos</c> (los que quedan en la ruta, con su cantidad;
+/// los demás se quitan) o <c>incluidos</c> (los ids que se conservan; los demás se quitan), y la ruta (<c>linea_orden</c> o
+/// <c>linea_solicitud_id</c>). Ver <see cref="clsCambioServiciosConexos"/>.
+/// </summary>
+public sealed record clsSeleccionServiciosConexosWebRequest(
+    IReadOnlyList<string>? Incluidos,
+    int? LineaOrden = null,
+    Guid? LineaSolicitudId = null,
+    IReadOnlyList<clsCantidadConexoWebRequest>? Conexos = null)
+{
+    /// <summary>Entrada del caso de uso.</summary>
+    public clsCambioServiciosConexos AEntrada() => new(
+        new clsRutaIndicada(LineaOrden, LineaSolicitudId),
+        Incluidos,
+        Conexos is null ? null : [.. Conexos.Select(c => c is null ? null! : new clsCantidadConexoEntrada(c.Id, c.Cantidad))]);
+}
+
+/// <summary><c>CantidadConexoWeb</c>: <c>id</c> de un conexo de la ruta (<c>servicios_conexos[].id</c>) y su <c>cantidad</c> nueva.</summary>
+public sealed record clsCantidadConexoWebRequest(string? Id, decimal? Cantidad);
 
 /// <summary>
-/// <c>AjusteMargenWeb</c> (HU-013.2): <c>margen</c> (fracción de 0 a 0,99) y <c>justificacion</c> (obligatoria por debajo del margen
-/// sugerido). Los límites los valida el dominio para responder <c>AJUSTE_MARGEN_INVALIDO</c> o <c>JUSTIFICACION_REQUERIDA</c>.
+/// <c>AjusteMargenWeb</c> (HU-013.2; por ruta desde HU-021.8, #135): <c>margen</c> (fracción de 0 a 0,99), <c>justificacion</c>
+/// (obligatoria por debajo del margen sugerido de la ruta) y la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; opcional si la
+/// cotización tiene una sola). Los límites los valida el dominio para responder <c>AJUSTE_MARGEN_INVALIDO</c>,
+/// <c>JUSTIFICACION_REQUERIDA</c>, <c>RUTA_REQUERIDA</c> o <c>RUTA_INEXISTENTE</c>.
 /// </summary>
-public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justificacion);
+public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justificacion, int? LineaOrden = null, Guid? LineaSolicitudId = null);
 
 /// <summary><c>ResultadoWeb</c>: <c>resultado</c> (<c>ganada</c> | <c>perdida</c>), <c>motivo</c> (se guarda en <c>motivo_rechazo</c>) y
 /// <c>comentario</c> (solo se reenvía a Nexo).</summary>

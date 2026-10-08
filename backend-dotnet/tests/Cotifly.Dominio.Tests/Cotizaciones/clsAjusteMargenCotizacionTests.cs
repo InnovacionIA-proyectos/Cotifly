@@ -16,7 +16,7 @@ public sealed class clsAjusteMargenCotizacionTests
     [InlineData(0.18)]
     [InlineData(0.99)]
     public void UnMargenEntreCeroYNoventaYNueveEsValido(decimal margen) =>
-        Costeada().ValidarAjusteMargen(margen, "Prueba").Should().BeNull();
+        Costeada().ValidarAjusteMargen(1, margen, "Prueba").Should().BeNull();
 
     [Theory]
     [InlineData(-0.01)]
@@ -24,11 +24,11 @@ public sealed class clsAjusteMargenCotizacionTests
     [InlineData(1)]
     [InlineData(1.5)]
     public void UnMargenFueraDeRangoEsInvalido(decimal margen) =>
-        Costeada().ValidarAjusteMargen(margen, "Prueba")!.Codigo.Should().Be(clsCodigosError.AjusteMargenInvalido);
+        Costeada().ValidarAjusteMargen(1, margen, "Prueba")!.Codigo.Should().Be(clsCodigosError.AjusteMargenInvalido);
 
     [Fact]
     public void UnaJustificacionDeMasDeQuinientosCaracteresEsInvalida() =>
-        Costeada().ValidarAjusteMargen(0.10m, new string('x', 501))!.Codigo.Should().Be(clsCodigosError.AjusteMargenInvalido);
+        Costeada().ValidarAjusteMargen(1, 0.10m, new string('x', 501))!.Codigo.Should().Be(clsCodigosError.AjusteMargenInvalido);
 
     [Theory]
     [InlineData(null)]
@@ -36,7 +36,7 @@ public sealed class clsAjusteMargenCotizacionTests
     [InlineData("   ")]
     public void PorDebajoDelSugeridoSinJustificacionSeRechaza(string? justificacion)
     {
-        var error = Costeada().ValidarAjusteMargen(0.12m, justificacion);
+        var error = Costeada().ValidarAjusteMargen(1, 0.12m, justificacion);
 
         error!.Codigo.Should().Be(clsCodigosError.JustificacionRequerida);
         error.Mensaje.Should().Contain("0.12").And.Contain("0.15");
@@ -45,8 +45,8 @@ public sealed class clsAjusteMargenCotizacionTests
     [Fact]
     public void PorEncimaOIgualAlSugeridoLaJustificacionEsOpcional()
     {
-        Costeada().ValidarAjusteMargen(0.18m, null).Should().BeNull();
-        Costeada().ValidarAjusteMargen(0.15m, null).Should().BeNull();
+        Costeada().ValidarAjusteMargen(1, 0.18m, null).Should().BeNull();
+        Costeada().ValidarAjusteMargen(1, 0.15m, null).Should().BeNull();
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var pendiente = clsCotizacionMuestra.Costeada(flete: null);
 
-        pendiente.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        pendiente.ValidarAjusteMargen(1, 0.18m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
         pendiente.TieneCostoDisponible.Should().BeFalse();
     }
 
@@ -66,8 +66,8 @@ public sealed class clsAjusteMargenCotizacionTests
         var ganada = Costeada();
         ganada.MarcarSeguimiento(true, null, DateTimeOffset.UnixEpoch);
 
-        enviada.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
-        ganada.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        enviada.ValidarAjusteMargen(1, 0.18m, null)!.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
+        ganada.ValidarAjusteMargen(1, 0.18m, null)!.Codigo.Should().Be(clsCodigosError.PdfYaEnviado);
         ganada.ValidarCambioEtapaFinal()!.Mensaje.Should().Contain("resultado");
         Costeada().ValidarCambioEtapaFinal().Should().BeNull("sin enviar y sin resultado se permite");
     }
@@ -77,7 +77,7 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada(sugeridoSap: 0.20m);
 
-        cotizacion.AplicarMargenNegociado(0.25m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        cotizacion.AplicarMargenNegociado(1, 0.25m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
 
         var ruta = cotizacion.PrimeraRuta!;
         ruta.MargenAplicado.Should().Be(0.25m);
@@ -88,9 +88,9 @@ public sealed class clsAjusteMargenCotizacionTests
         ruta.PrecioFinalLinea.Should().Be(3_400_000m, "2.550.000 / (1 - 0,25): el precio de la ruta se recalcula con el margen nuevo");
         cotizacion.PrecioFinal.Should().Be(3_400_000m, "la cabecera suma sus rutas");
 
-        cotizacion.AplicarMargenNegociado(0.22m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        cotizacion.AplicarMargenNegociado(1, 0.22m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
         ruta.SugeridoVigente.Should().Be(0.20m, "un segundo ajuste no pisa el sugerido");
-        cotizacion.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.JustificacionRequerida, "la regla usa el sugerido de SAP TM");
+        cotizacion.ValidarAjusteMargen(1, 0.18m, null)!.Codigo.Should().Be(clsCodigosError.JustificacionRequerida, "la regla usa el sugerido de SAP TM");
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada();
 
-        cotizacion.AplicarMargenNegociado(0.15m, clsCotizacionMuestra.Ahora).Valor.Should().BeFalse();
+        cotizacion.AplicarMargenNegociado(1, 0.15m, clsCotizacionMuestra.Ahora).Valor.Should().BeFalse();
 
         cotizacion.PrimeraRuta!.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
     }
@@ -108,7 +108,7 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada();
 
-        cotizacion.AplicarMargenNegociado(0.123456m, clsCotizacionMuestra.Ahora);
+        cotizacion.AplicarMargenNegociado(1, 0.123456m, clsCotizacionMuestra.Ahora);
 
         cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(0.1235m);
     }

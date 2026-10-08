@@ -182,7 +182,7 @@ public sealed class clsServiciosConexosCosteoService(
             new
             {
                 folio = cotizacion.Folio,
-                items = validados.Valor.Select(i => new { linea_orden = i.LineaOrden, servicio_id = i.ServicioId, cantidad = i.Cantidad }).ToList(),
+                items = validados.Valor.Select(i => new { linea_orden = i.LineaOrden, linea_solicitud_id = i.LineaSolicitudId, servicio_id = i.ServicioId, cantidad = i.Cantidad }).ToList(),
             },
             resultado.EsExitoso
                 ? (object)new { conexos_agregados = agregados, pdf_invalidado = pdfInvalidado }
@@ -199,9 +199,10 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// Forma de los items (el esquema <c>AgregarServiciosConexosWeb</c>): de 1 a <see cref="MaximoItems"/>, cada uno con
-    /// <c>linea_orden</c> ≥ 1, <c>servicio_id</c> UUID y <c>cantidad</c> de <see cref="CantidadMinima"/> a <see cref="CantidadMaxima"/>.
-    /// Fuera de eso, <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>) sin tocar nada.
+    /// Forma de los items (el esquema <c>AgregarServiciosConexosWeb</c>): de 1 a <see cref="MaximoItems"/>, cada uno con la ruta opcional
+    /// (<c>linea_orden</c> ≥ 1 o <c>linea_solicitud_id</c> UUID; HU-021.8), <c>servicio_id</c> UUID y <c>cantidad</c> de
+    /// <see cref="CantidadMinima"/> a <see cref="CantidadMaxima"/>. Fuera de eso, <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>) sin
+    /// tocar nada. La ruta la resuelve <see cref="RutaDe"/> con la cotización.
     /// </summary>
     public static clsResultado<IReadOnlyList<clsConexoValidado>> Validar(IReadOnlyList<clsConexoAgregarEntrada>? items)
     {
@@ -219,9 +220,20 @@ public sealed class clsServiciosConexosCosteoService(
                 return Invalido($"items[{i}] es obligatorio.");
             }
 
-            if (item.LineaOrden is not { } orden || orden < 1)
+            if (item.LineaOrden is < 1)
             {
-                return Invalido($"items[{i}].linea_orden es obligatorio y debe ser 1 o mayor.");
+                return Invalido($"items[{i}].linea_orden debe ser 1 o mayor.");
+            }
+
+            Guid? rutaId = null;
+            if (item.LineaSolicitudId is not null)
+            {
+                if (!Guid.TryParse(item.LineaSolicitudId, out var id))
+                {
+                    return Invalido($"items[{i}].linea_solicitud_id debe ser el id (UUID) de una ruta de la cotización.");
+                }
+
+                rutaId = id;
             }
 
             if (!Guid.TryParse(item.ServicioId, out var servicio))
@@ -234,7 +246,7 @@ public sealed class clsServiciosConexosCosteoService(
                 return Invalido($"items[{i}].cantidad debe estar entre {CantidadMinima.ToString(CultureInfo.InvariantCulture)} y {CantidadMaxima.ToString(CultureInfo.InvariantCulture)}, con hasta 2 decimales.");
             }
 
-            validados.Add(new clsConexoValidado(orden, servicio.ToString("D"), cantidad));
+            validados.Add(new clsConexoValidado(item.LineaOrden, servicio.ToString("D"), cantidad, rutaId));
         }
 
         return clsResultado<IReadOnlyList<clsConexoValidado>>.Exito(validados);
@@ -243,14 +255,15 @@ public sealed class clsServiciosConexosCosteoService(
     /// <summary>
     /// Única fuente de las reglas de la cotización para agregar conexos, sin tocar Nexo (la usan el endpoint y la propuesta
     /// <c>agregar_servicios_conexos</c> del asistente, HU-013.6), en este orden: licitación (<c>ESTADO_NO_PERMITE</c>), costeo con
-    /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), línea inexistente (<c>CONEXO_INVALIDO</c>) y línea sin
-    /// cotización de Nexo (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
+    /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), la ruta (<see cref="RutaDe"/>: <c>RUTA_REQUERIDA</c>,
+    /// <c>CONEXO_INVALIDO</c> si no existe, <c>SOLICITUD_INVALIDA</c> si los items son de rutas distintas) y ruta sin cotización de Nexo
+    /// (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
     /// </summary>
     public static clsErrorDominio? ValidarPrecondiciones(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsConexoValidado> items)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(items);
-        if (clsCosteoCotizacionService.EsPliego(cotizacion))
+        if (cotizacion.TipoSolicitud == TipoSolicitud.Licitacion)
         {
             // ADR-017 §6 y ADR-018 §4: el PDF de pliego no imprime conexos; las licitaciones no los admiten en esta iteración.
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
@@ -268,20 +281,51 @@ public sealed class clsServiciosConexosCosteoService(
             return entregada;
         }
 
-        // linea_orden → ruta de Cotifly (HU-021).
-        var porOrden = cotizacion.Rutas.ToDictionary(r => r.Orden);
-        if (items.FirstOrDefault(i => !porOrden.ContainsKey(i.LineaOrden)) is { } inexistente)
+        // linea_orden / linea_solicitud_id → ruta de Cotifly (HU-021.8).
+        var ruta = RutaDe(cotizacion, items);
+        if (ruta.EsFallo)
         {
-            return new clsErrorDominio(clsCodigosError.ConexoInvalido,
-                $"La línea {inexistente.LineaOrden} no existe en la cotización {cotizacion.Folio}.", "LINEA_INEXISTENTE");
+            return ruta.Error;
         }
 
-        if (items.FirstOrDefault(i => PrimerCamion(porOrden[i.LineaOrden])?.LineaSolicitudNexoId is null) is { } sinNexo)
+        return PrimerCamion(ruta.Valor)?.LineaSolicitudNexoId is null || cotizacion.CotizacionNexoId is null
+            ? SinLineaNexo(cotizacion, ruta.Valor.Orden)
+            : null;
+    }
+
+    /// <summary>
+    /// La ruta a la que se agregan los conexos (HU-021.8, #135): cada item la indica con <c>linea_orden</c> o <c>linea_solicitud_id</c>
+    /// (sin ninguno, la única de la cotización; con varias, <c>RUTA_REQUERIDA</c> con las rutas en el detalle). Una ruta que no existe:
+    /// <c>CONEXO_INVALIDO</c> (<c>LINEA_INEXISTENTE</c>). Todos los items de una petición deben ser de la MISMA ruta
+    /// (<c>SOLICITUD_INVALIDA</c>): los conexos nuevos de Nexo no dicen su línea y se guardan en la ruta pedida.
+    /// </summary>
+    public static clsResultado<clsLineaSolicitud> RutaDe(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsConexoValidado> items)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(items);
+        clsLineaSolicitud? ruta = null;
+        foreach (var item in items)
         {
-            return SinLineaNexo(cotizacion, sinNexo.LineaOrden);
+            var resuelta = cotizacion.ResolverRuta(item.LineaOrden, item.LineaSolicitudId);
+            if (resuelta.EsFallo)
+            {
+                return resuelta.Error.Codigo == clsCodigosError.RutaInexistente
+                    ? new clsErrorDominio(clsCodigosError.ConexoInvalido, resuelta.Error.Mensaje, "LINEA_INEXISTENTE")
+                    : resuelta.Error;
+            }
+
+            if (ruta is not null && ruta.Id != resuelta.Valor.Id)
+            {
+                return new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
+                    "Todos los items deben ser de la misma ruta: agrega los conexos de cada ruta en una petición aparte.");
+            }
+
+            ruta = resuelta.Valor;
         }
 
-        return cotizacion.CotizacionNexoId is null && items.Count > 0 ? SinLineaNexo(cotizacion, items[0].LineaOrden) : null;
+        return ruta is null
+            ? new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida, $"'items' debe traer de 1 a {MaximoItems} servicios conexos.")
+            : ruta;
     }
 
     /// <summary>Primer camión de la ruta: el que lleva los conexos en Nexo (decisión 3).</summary>
@@ -301,7 +345,7 @@ public sealed class clsServiciosConexosCosteoService(
         }
 
         var cotizacionNexoId = cotizacion.CotizacionNexoId!;
-        var porOrden = cotizacion.Rutas.ToDictionary(r => r.Orden);
+        var ruta = RutaDe(cotizacion, items).Valor;
 
         // El id de la línea de la cotización de Nexo se lee de Nexo justo antes de agregar (ver el resumen de la clase).
         var actual = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, cancellationToken);
@@ -313,10 +357,10 @@ public sealed class clsServiciosConexosCosteoService(
         var paraNexo = new List<clsConexoParaNexo>();
         foreach (var item in items)
         {
-            var lineaId = LineaDeNexo(actual.Valor, PrimerCamion(porOrden[item.LineaOrden]));
+            var lineaId = LineaDeNexo(actual.Valor, PrimerCamion(ruta));
             if (lineaId is null)
             {
-                return (SinLineaNexo(cotizacion, item.LineaOrden), 0, false);
+                return (SinLineaNexo(cotizacion, ruta.Orden), 0, false);
             }
 
             paraNexo.Add(new clsConexoParaNexo(lineaId, item.ServicioId, item.Cantidad));
@@ -361,9 +405,8 @@ public sealed class clsServiciosConexosCosteoService(
             return await SinRelecturaAsync(cotizacion, usuarioId, reservada, agregado.Valor.Seguro ? (object)true : AgregadoDesconocido, detalleRelectura);
         }
 
-        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de la ruta (costo unitario de Nexo y cantidad) y la ruta
-        // recalcula su costo final y su precio con su margen.
-        var ruta = porOrden[items[0].LineaOrden];
+        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de LA ruta pedida (costo unitario de Nexo y cantidad) y
+        // esa ruta y la cabecera se recalculan con el margen de la ruta (HU-021.8).
         var importados = ImportarConexos(cotizacion, ruta, NuevosConexos(actual.Valor, cotizacionNexo), cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
         if (importados.EsFallo)
         {
@@ -467,5 +510,8 @@ public sealed class clsServiciosConexosCosteoService(
         clsResultado<IReadOnlyList<clsConexoValidado>>.Fallo(new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida, mensaje));
 }
 
-/// <summary>Un conexo ya validado: la línea de Cotifly (<c>orden</c>), el servicio del catálogo de Nexo (UUID) y la cantidad.</summary>
-public sealed record clsConexoValidado(int LineaOrden, string ServicioId, decimal Cantidad);
+/// <summary>
+/// Un conexo ya validado en su forma: la ruta de Cotifly como llegó (<c>linea_orden</c> o <c>linea_solicitud_id</c>, o ninguno; la
+/// resuelve <see cref="clsServiciosConexosCosteoService.RutaDe"/>), el servicio del catálogo de Nexo (UUID) y la cantidad.
+/// </summary>
+public sealed record clsConexoValidado(int? LineaOrden, string ServicioId, decimal Cantidad, Guid? LineaSolicitudId = null);

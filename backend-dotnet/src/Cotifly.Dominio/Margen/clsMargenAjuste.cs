@@ -47,7 +47,8 @@ public sealed partial class clsMargenAjuste
         Guid? usuarioId = null,
         Guid? cotizacionId = null,
         string? folio = null,
-        string? metodoCalculo = clsReglaMargen.MetodoMargen)
+        string? metodoCalculo = clsReglaMargen.MetodoMargen,
+        Guid? lineaSolicitudId = null)
     {
         var politica = RedondearMargen(margenPolitica);
         var aplicado = RedondearMargen(margenAplicado);
@@ -65,6 +66,7 @@ public sealed partial class clsMargenAjuste
         {
             Id = Guid.NewGuid(),
             CotizacionId = cotizacionId,
+            LineaSolicitudId = lineaSolicitudId,
             Folio = clsValidacion.Normalizar(folio),
             MargenPolitica = politica,
             MargenAplicado = aplicado,

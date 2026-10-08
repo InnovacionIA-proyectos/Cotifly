@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
@@ -29,13 +30,16 @@ public interface IClsCosteoCotizacionService
     Task<clsResultado<clsCosteoCotizacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Marca como incluidos exactamente los servicios <paramref name="incluidos"/>. <c>CONFLICTO_CONCURRENCIA</c> (409) si
-    /// <paramref name="versionEsperada"/> no es la de la fila; <c>COSTEO_NO_LISTO</c> (409) sin precio; <c>PDF_YA_ENVIADO</c> (409) ya
-    /// enviada o con resultado; <c>SOLICITUD_COSTEO_INVALIDA</c> (400) con un id que no es del costeo. Si la selección cambia, el PDF
-    /// vigente queda invalidado (ADR-018 §11).
+    /// Quita conexos o cambia su cantidad (HU-005.7; por ruta desde HU-021.8, #135, decisión 3; ver <see cref="clsCambioServiciosConexos"/>).
+    /// Quitar un conexo BORRA su fila de la ruta y queda auditado (<see cref="HerramientaConexos"/>); la ruta y la cabecera se recalculan
+    /// con el margen de la ruta. Errores: <c>CONFLICTO_CONCURRENCIA</c> (409) si <paramref name="versionEsperada"/> no es la de la fila;
+    /// <c>COSTEO_NO_LISTO</c> (409) sin precio; <c>PDF_YA_ENVIADO</c> (409) ya enviada o con resultado; <c>SOLICITUD_INVALIDA</c> (400,
+    /// forma: las dos formas juntas, cantidad fuera de rango o id repetido); <c>RUTA_REQUERIDA</c> y <c>RUTA_INEXISTENTE</c> (400);
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> (400) con un id que no es conexo del costeo (o de la ruta). Si algo cambia, el PDF vigente queda
+    /// invalidado (ADR-018 §11) y sube la versión; sin cambios responde igual sin tocar nada.
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> SeleccionarServiciosConexosAsync(
-        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, int versionEsperada, CancellationToken cancellationToken = default);
+        Guid usuarioId, string folio, clsCambioServiciosConexos cambio, int versionEsperada, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// PDF de la cotización con el flete a <c>precioFinal</c> y solo los servicios conexos incluidos, cada uno con su precio.
@@ -72,10 +76,37 @@ public sealed record clsCosteoCotizacion(
 {
     /// <summary>HU-013.7: TRM fijada al crear la cotización (COP por USD) con que se convierten sus precios; 0 en COP.</summary>
     public decimal TrmAplicada { get; init; }
+
+    /// <summary>
+    /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
+    /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. Nunca trae costos.
+    /// </summary>
+    public IReadOnlyList<clsRutaCosteo> Rutas { get; init; } = [];
 }
 
-/// <summary>Servicio conexo tal como lo ve el comercial: precio con margen y si va en el PDF.</summary>
-public sealed record clsServicioConexoPrecio(string Id, string? Nombre, string Categoria, decimal Cantidad, decimal Precio, bool Incluido);
+/// <summary>
+/// Servicio conexo tal como lo ve el comercial: precio con el margen de su ruta y si va en el PDF (HU-021: siempre). <see cref="LineaOrden"/>
+/// es la ruta a la que pertenece (HU-021.8).
+/// </summary>
+public sealed record clsServicioConexoPrecio(
+    string Id, string? Nombre, string Categoria, decimal Cantidad, decimal Precio, bool Incluido, int? LineaOrden = null);
+
+/// <summary>
+/// <c>RutaCosteo</c> (HU-021.8, #135): una ruta del costeo como la ve el comercial, sin costos. <see cref="MargenSugerido"/> es el de SAP
+/// TM o, si no hay, el de la política de su línea (<c>margenSAPSugerido</c> o <c>margenPoliticaSugerido</c>): por debajo de él el ajuste
+/// de ESTA ruta exige justificación.
+/// </summary>
+public sealed record clsRutaCosteo(
+    int LineaOrden,
+    Guid LineaSolicitudId,
+    string? Origen,
+    string? Destino,
+    string? EstadoCosteo,
+    decimal? PrecioFinalLinea,
+    decimal? MargenAplicado,
+    decimal? MargenSugerido,
+    string? OrigenMargen,
+    IReadOnlyList<clsServicioConexoPrecio> ServiciosConexos);
 
 /// <summary>PDF del costeo generado (<c>SalidaPdf</c>) y la versión nueva de la fila (va en el <c>ETag</c>, no en el cuerpo).</summary>
 public sealed record clsPdfCosteoGenerado(clsSalidaPdf Pdf, string? RowVersion);
@@ -107,61 +138,202 @@ public sealed class clsCosteoCotizacionService(
         return cotizacion is null ? NoEncontrada() : Vista(cotizacion, opcionesPdf.Value.BaseUrl);
     }
 
+    /// <summary>Herramienta de la auditoría de los cambios de conexos (<c>EventosHerramienta.herramienta</c>, HU-021.8).</summary>
+    public const string HerramientaConexos = "cambiar_servicios_conexos";
+
     public async Task<clsResultado<clsCosteoCotizacion>> SeleccionarServiciosConexosAsync(
-        Guid usuarioId, string folio, IReadOnlyCollection<string> incluidos, int versionEsperada, CancellationToken cancellationToken = default)
+        Guid usuarioId, string folio, clsCambioServiciosConexos cambio, int versionEsperada, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(incluidos);
+        ArgumentNullException.ThrowIfNull(cambio);
+        var cronometro = Stopwatch.StartNew();
         var cotizacion = await PropiaAsync(usuarioId, folio, cancellationToken);
         if (cotizacion is null)
         {
             return NoEncontrada();
         }
 
+        var (resultado, movimientos, pdfInvalidado) = await CambiarConexosAsync(cotizacion, usuarioId, cambio, versionEsperada, cancellationToken);
+        await auditoria.RegistrarAsync(
+            HerramientaConexos,
+            new
+            {
+                folio = cotizacion.Folio,
+                linea_orden = cambio.Ruta.LineaOrden,
+                linea_solicitud_id = cambio.Ruta.LineaSolicitudId,
+                incluidos = cambio.Incluidos,
+                conexos = cambio.Conexos?.Select(c => new { id = c?.Id, cantidad = c?.Cantidad }).ToList(),
+            },
+            resultado.EsExitoso
+                ? (object)new
+                {
+                    // Sin montos: qué conexo de qué ruta se quitó (fila borrada) o cambió de cantidad.
+                    movimientos = movimientos.Select(m => new
+                    {
+                        linea_orden = m.Orden,
+                        linea_solicitud_id = m.RutaId,
+                        id = m.Movimiento.IdServicioConexo,
+                        nombre = m.Movimiento.Nombre,
+                        cantidad_anterior = m.Movimiento.CantidadAnterior,
+                        cantidad_nueva = m.Movimiento.CantidadNueva,
+                        quitado = m.Movimiento.Quitado,
+                    }).ToList(),
+                    pdf_invalidado = pdfInvalidado,
+                }
+                : new { error = new { codigo = resultado.Error.Codigo, mensaje = resultado.Error.Mensaje } },
+            resultado.EsExitoso,
+            (int)cronometro.ElapsedMilliseconds,
+            cotizacion.ThreadId);
+        return resultado;
+    }
+
+    private async Task<(clsResultado<clsCosteoCotizacion> Resultado, IReadOnlyList<(int Orden, Guid RutaId, clsMovimientoConexo Movimiento)> Movimientos, bool PdfInvalidado)> CambiarConexosAsync(
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, clsCambioServiciosConexos cambio, int versionEsperada, CancellationToken cancellationToken)
+    {
         if (!cotizacion.TieneVersion(versionEsperada))
         {
-            return clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
+            return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
         }
 
         if (SinCosteo(cotizacion) is { } sinCosteo)
         {
-            return sinCosteo;
+            return (sinCosteo, [], false);
         }
 
         if (clsReglaPdfCosteo.Validar(cotizacion, MotivoVersionConexos) is { } entregada)
         {
-            return entregada;
+            return (entregada, [], false);
         }
 
-        // HU-021 (ADR-019): los conexos de la solicitud son filas de CotizacionServiciosConexos en sus rutas; un conexo excluido se QUITA de
-        // la ruta (la tabla no tiene "incluido": la fila es lo que va en el precio y en el PDF). Excluido no se puede volver a incluir por
-        // aquí: se agrega de nuevo con "Agregar conexo" (adaptación hasta los conexos en la captura, #134).
-        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).ToList();
-        var desconocidos = incluidos.Where(id => conexos.All(s => s.IdServicioConexo != id)).ToList();
-        if (desconocidos.Count > 0)
+        // HU-021 (ADR-019): los conexos son filas de CotizacionServiciosConexos en sus rutas; un conexo excluido se BORRA de la ruta (la tabla
+        // no tiene "incluido": la fila es lo que va en el precio y en el PDF). Para volver a tenerlo se agrega de nuevo con el POST.
+        var plan = PlanConexos(cotizacion, cambio);
+        if (plan.EsFallo)
         {
-            return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
-                $"Estos servicios conexos no son del costeo de la cotización {cotizacion.Folio}: {string.Join(", ", desconocidos)}.");
+            return (plan.Error, [], false);
         }
 
-        var seleccion = incluidos.ToHashSet(StringComparer.Ordinal);
-        var quitados = cotizacion.ConservarConexos(seleccion, cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
-        if (quitados.EsFallo)
+        var ahora = cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt;
+        var movimientos = new List<(int, Guid, clsMovimientoConexo)>();
+        foreach (var (ruta, cantidades) in plan.Valor)
         {
-            return quitados.Error;
+            var ajustados = cotizacion.AjustarConexosRuta(ruta.Orden, cantidades, ahora);
+            if (ajustados.EsFallo)
+            {
+                return (ajustados.Error, [], false);
+            }
+
+            movimientos.AddRange(ajustados.Valor.Select(m => (ruta.Orden, ruta.Id, m)));
         }
 
-        if (quitados.Valor == 0)
+        if (movimientos.Count == 0)
         {
-            // La misma selección no cambia nada (ni invalida el PDF): idempotente.
-            return Vista(cotizacion, opcionesPdf.Value.BaseUrl);
+            // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
+            return (Vista(cotizacion, opcionesPdf.Value.BaseUrl), [], false);
         }
 
-        clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
+        var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
-            ? Vista(cotizacion, opcionesPdf.Value.BaseUrl)
-            : clsReglaPdfCosteo.Conflicto(cotizacion.Folio);
+            ? (Vista(cotizacion, opcionesPdf.Value.BaseUrl), movimientos, pdfInvalidado)
+            : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
+
+    /// <summary>
+    /// Qué conexos deben quedar en cada ruta afectada (id → cantidad), sin tocar la cotización: valida la forma, la ruta y que cada id
+    /// sea un conexo de la ruta (o del costeo, con <c>incluidos</c> sin ruta).
+    /// </summary>
+    public static clsResultado<IReadOnlyList<(clsLineaSolicitud Ruta, IReadOnlyDictionary<string, decimal> Cantidades)>> PlanConexos(
+        clsCotizacionSolicitud cotizacion, clsCambioServiciosConexos cambio)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cambio);
+        if (cambio.Conexos is not null && cambio.Incluidos is not null)
+        {
+            return Invalida("Envía 'conexos' (la ruta con sus cantidades) o 'incluidos' (los que se conservan), no los dos.");
+        }
+
+        var indicada = cambio.Ruta.LineaOrden is not null || cambio.Ruta.LineaSolicitudId is not null;
+        if (cambio.Conexos is null && !indicada)
+        {
+            // HU-005.7: 'incluidos' sin ruta conserva esos ids en TODAS las rutas.
+            var incluidos = cambio.Incluidos ?? [];
+            var todos = cotizacion.Rutas.SelectMany(r => r.Conexos).ToList();
+            if (Ajenos(incluidos, todos) is { Count: > 0 } desconocidos)
+            {
+                return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
+                    $"Estos servicios conexos no son del costeo de la cotización {cotizacion.Folio}: {string.Join(", ", desconocidos)}.");
+            }
+
+            return clsResultado<IReadOnlyList<(clsLineaSolicitud, IReadOnlyDictionary<string, decimal>)>>.Exito(
+                [.. cotizacion.RutasOrdenadas.Select(r => (r, Conservar(r, incluidos)))]);
+        }
+
+        var resuelta = cotizacion.ResolverRuta(cambio.Ruta.LineaOrden, cambio.Ruta.LineaSolicitudId);
+        if (resuelta.EsFallo)
+        {
+            return resuelta.Error;
+        }
+
+        var ruta = resuelta.Valor;
+        if (cambio.Conexos is null)
+        {
+            var incluidos = cambio.Incluidos ?? [];
+            if (Ajenos(incluidos, ruta.Conexos) is { Count: > 0 } ajenos)
+            {
+                return NoDeLaRuta(cotizacion, ruta, ajenos);
+            }
+
+            return clsResultado<IReadOnlyList<(clsLineaSolicitud, IReadOnlyDictionary<string, decimal>)>>.Exito([(ruta, Conservar(ruta, incluidos))]);
+        }
+
+        var cantidades = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < cambio.Conexos.Count; i++)
+        {
+            var item = cambio.Conexos[i];
+            if (item is null || string.IsNullOrWhiteSpace(item.Id))
+            {
+                return Invalida($"conexos[{i}].id es obligatorio.");
+            }
+
+            if (item.Cantidad is not { } cantidad || cantidad < clsServiciosConexosCosteoService.CantidadMinima
+                || cantidad > clsServiciosConexosCosteoService.CantidadMaxima || decimal.Round(cantidad, 2) != cantidad)
+            {
+                return Invalida($"conexos[{i}].cantidad debe estar entre {clsServiciosConexosCosteoService.CantidadMinima.ToString(System.Globalization.CultureInfo.InvariantCulture)} y {clsServiciosConexosCosteoService.CantidadMaxima.ToString(System.Globalization.CultureInfo.InvariantCulture)}, con hasta 2 decimales.");
+            }
+
+            if (!cantidades.TryAdd(item.Id.Trim(), cantidad))
+            {
+                return Invalida($"conexos[{i}].id está repetido.");
+            }
+        }
+
+        if (Ajenos(cantidades.Keys, ruta.Conexos) is { Count: > 0 } noEstan)
+        {
+            return NoDeLaRuta(cotizacion, ruta, noEstan);
+        }
+
+        return clsResultado<IReadOnlyList<(clsLineaSolicitud, IReadOnlyDictionary<string, decimal>)>>.Exito([(ruta, cantidades)]);
+    }
+
+    private static List<string> Ajenos(IEnumerable<string> ids, IEnumerable<clsServicioConexoRuta> conexos)
+    {
+        var propios = conexos.Select(c => c.IdServicioConexo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return [.. ids.Where(id => !propios.Contains(id))];
+    }
+
+    /// <summary>Los conexos de la ruta que están en <paramref name="incluidos"/>, con su cantidad actual (los demás se quitan).</summary>
+    private static IReadOnlyDictionary<string, decimal> Conservar(clsLineaSolicitud ruta, IReadOnlyCollection<string> incluidos)
+    {
+        var conservar = incluidos.ToHashSet(StringComparer.Ordinal);
+        return ruta.Conexos.Where(c => conservar.Contains(c.IdServicioConexo))
+            .ToDictionary(c => c.IdServicioConexo, c => c.Cantidad, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static clsErrorDominio NoDeLaRuta(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IEnumerable<string> ids) =>
+        new(clsCodigosError.SolicitudCosteoInvalida,
+            $"Estos servicios conexos no son de la ruta {ruta.Orden} de la cotización {cotizacion.Folio}: {string.Join(", ", ids)}. Para agregar uno nuevo usa el POST.");
+
+    private static clsErrorDominio Invalida(string mensaje) => new(clsCodigosAplicacion.SolicitudInvalida, mensaje);
 
     public async Task<clsResultado<clsPdfCosteoGenerado>> GenerarPdfAsync(
         Guid usuarioId, string folio, int? versionEsperada = null, CancellationToken cancellationToken = default)
@@ -594,7 +766,7 @@ public sealed class clsCosteoCotizacionService(
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => (Conexo: c, Error: ruta.PrecioDe(c.Costo, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
-            .Select(x => new clsServicioConexoPrecio(x.Conexo.IdServicioConexo, x.Conexo.Nombre, CategoriaConexo, x.Conexo.Cantidad, x.Precio!.Value, true))];
+            .Select(x => new clsServicioConexoPrecio(x.Conexo.IdServicioConexo, x.Conexo.Nombre, CategoriaConexo, x.Conexo.Cantidad, x.Precio!.Value, true, ruta.Orden))];
     }
 
     /// <summary>Categoría con la que se muestra un conexo (la tabla de HU-021 no la guarda).</summary>
@@ -644,7 +816,8 @@ public sealed class clsCosteoCotizacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
-        // HU-021: el margen y su sugerido son de la ruta 1 (el contrato por ruta llega con #138); el precio es la suma de las rutas.
+        // HU-021: el margen y su sugerido de primer nivel son los de la ruta 1 (compatibilidad); cada ruta trae los suyos en `rutas`
+        // (HU-021.8, #135). El precio es la suma de las rutas.
         var ruta = cotizacion.PrimeraRuta;
         return new clsCosteoCotizacion(
             cotizacion.Folio,
@@ -663,6 +836,17 @@ public sealed class clsCosteoCotizacionService(
             clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
         {
             TrmAplicada = cotizacion.TrmAplicada,
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => new clsRutaCosteo(
+                r.Orden,
+                r.Id,
+                r.OrigenNombre,
+                r.DestinoNombre,
+                r.EstadoCosteo is { } estadoRuta ? clsCodigoEnum.ACodigo(estadoRuta) : null,
+                r.PrecioFinalLinea,
+                r.PrecioFinalLinea is null ? null : r.MargenAplicado,
+                r.MargenSAPSugerido ?? r.MargenPoliticaSugerido,
+                r.OrigenMargen is { } origenRuta ? clsCodigoEnum.ACodigo(origenRuta) : null,
+                ConexosConPrecio(cotizacion, r)))],
         };
     }
 
