@@ -42,6 +42,7 @@ public sealed class clsLicitacionesController(
     [HttpPost("licitaciones")]
     [ProducesResponseType<clsLicitacion>(StatusCodes.Status201Created)]
     [ProducesResponseType<clsReporteLicitacionWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Crear(CancellationToken cancellationToken)
     {
         clsLicitacionWebRequest? cuerpo;

@@ -9,16 +9,15 @@ namespace Cotifly.Aplicacion.Agente.Filtros;
 
 /// <summary>
 /// Filtro de auditoría de las herramientas del agente (port del middleware de <c>mcp_server/auditoria.py</c>): cada invocación
-/// queda en <c>EventosHerramienta</c> con la entrada (ya con lo que inyectó el orquestador), la salida que vio el modelo, el éxito,
+/// queda en <c>EventosHerramienta</c> con la entrada, la salida que vio el modelo, el éxito,
 /// la duración y el hilo.
 /// </summary>
 /// <remarks>
 /// No vuelve a auditar lo que audita su propio caso de uso (<see cref="clsAuditoriaService.HerramientasAuditadasPorCasoDeUso"/>:
 /// <c>generar_pdf</c>, <c>enviar_correo</c>, <c>registrar_ajuste_margen</c>) cuando la herramienta llegó a llamarlo
 /// (<see cref="clsResultadoHerramienta.AuditadoPorCasoDeUso"/>); un rechazo del orquestador antes del caso de uso sí se audita aquí.
-/// Se registra antes que <c>clsInyeccionEstadoFilter</c> (queda por fuera), así ve también los rechazos de ese filtro.
 /// </remarks>
-public sealed class clsAuditoriaHerramientaFilter(IClsAuditoriaService auditoria, clsContextoTurnoAgente contexto) : IFunctionInvocationFilter
+public sealed class clsAuditoriaHerramientaFilter(IClsAuditoriaService auditoria, clsContextoAsistenteFolio contexto) : IFunctionInvocationFilter
 {
     public async Task OnFunctionInvocationAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {

@@ -49,8 +49,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> PropiedadesPendientes =
         new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
         {
-            ["MensajeWeb"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["folio"] = "#102 (HU-013.6)" },
-            ["RespuestaChat"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["accion_propuesta"] = "#102 (HU-013.6)" },
         };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -174,6 +172,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         { typeof(clsTelefonoRequest), "TelefonoComercial" },
         { typeof(clsRespuestaChat), "RespuestaChat" },
         { typeof(clsRespuestaChatError), "RespuestaChatError" },
+        { typeof(clsAccionPropuesta), "AccionPropuesta" },
         { typeof(clsMensajeWebRequest), "MensajeWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsSolicitudCosteoWebRequest), "SolicitudCosteoWeb" },
         { typeof(Cotifly.Api.Costeo.DTOs.clsPosicionCargaWebRequest), "PosicionCargaWeb" },

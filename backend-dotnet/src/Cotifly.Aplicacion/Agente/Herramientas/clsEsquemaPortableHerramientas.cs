@@ -39,7 +39,7 @@ public static class clsEsquemaPortableHerramientas
     /// <summary>
     /// Declaraciones portables (solo nombre, descripción y esquema; el modelo nunca invoca la función directamente).
     /// <paramref name="tipados"/> reemplaza el esquema de parámetros que Semantic Kernel declara sin tipo (herramienta → parámetro →
-    /// esquema), como <see cref="clsEsquemaPayloadPdf.PorHerramienta"/>; la descripción del parámetro se conserva.
+    /// esquema; lo usaba el payload de <c>generar_pdf</c> del agente legado, retirado en HU-013.9); la descripción del parámetro se conserva.
     /// </summary>
     public static IList<AITool> Declarar(
         IEnumerable<KernelFunction> funciones, IReadOnlyDictionary<string, IReadOnlyDictionary<string, JsonElement>>? tipados = null)

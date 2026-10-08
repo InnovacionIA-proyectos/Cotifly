@@ -109,9 +109,14 @@ Cotifly valida todas las filas **antes de guardar nada** y responde 400 `LICITAC
 | `fila` repetida o negativa | `FILA_INVALIDA` | Cotifly (la exportación escribe una fila por línea) |
 | `fila` mayor o igual que el **total** de filas con datos de la hoja del archivo adjunto (el `totalFilas` del análisis, que Cotifly recalcula sobre el archivo con la misma regla de Nexo; no las 1000 que trae `filas`) | `FILA_INVALIDA` | Cotifly |
 
-Las reglas condicionales de Nexo (mostrar u ocultar `clase_contenedor`, ciudades del contenedor) **no las valida Nexo en el servidor** y Cotifly tampoco: el frontend las aplica al mapear, igual que en el formulario ampliado (HU-005.3).
+| `horas_cargue`/`horas_descargue` de la fila fuera de 0 a 240 | `VALOR_FUERA_DE_RANGO` | `Range` de `CapturaLineaRequest` (HU-013.11) |
+| `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` o `tipologia` que no es un código de catálogo (texto libre, o mayúsculas distintas) | `CODIGO_NO_CATALOGO` | Cotifly (HU-013.11, G2; la misma regla del formulario) |
+| `clase_viaje = Contenedor` sin `clase_contenedor` | `CAMPO_REQUERIDO` | Cotifly (HU-013.11, G3) |
+| `clase_contenedor` sin `clase_viaje = Contenedor`, o `valor_aprovisionamiento` sin un levante distinto del origen | `CAMPO_NO_APLICA` | Cotifly (HU-013.11, G3) |
+| `origen`/`destino` sin id que coincide con varios municipios (o solo con uno aproximado) | `MUNICIPIO_AMBIGUO` | Cotifly (HU-013.11, G6) |
+| `origen`/`destino` sin id que no está en el catálogo de municipios | `MUNICIPIO_NO_ENCONTRADO` | Cotifly (HU-013.11, G6) |
 
-La validación de catálogos (que `tipo_vehiculo` exista en el catálogo, que el municipio exista) tampoco es del servidor: Nexo resuelve o crea rutas y vehículos por texto libre (`CapturaSolicitudRequest` "resuelve/crea rutas y vehículos por texto libre"). El frontend debe impedir enviar un valor fuera de catálogo; si llega uno, Nexo lo crea y el costeo puede quedar sin tarifa (línea pendiente de costeo manual en la Mesa).
+**Actualización HU-013.11 (#108).** Nexo no valida en el servidor ni las reglas condicionales ni los catálogos: resuelve o crea rutas y vehículos por texto libre. Por eso Cotifly las valida antes de guardar, con las mismas reglas del formulario (HU-013.10): códigos exactos de `GET /web/catalogos-flete` (con la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`), reglas condicionales de contenedor y aprovisionamiento, e ids de municipio. Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, Cotifly resuelve el texto en el catálogo de `GET /web/municipios` con la regla determinista de HU-005.13 y nunca elige entre candidatos. Sin catálogo maestro de Nexo (ni copia de hasta 24 h): 503 `CATALOGOS_FLETE_NO_DISPONIBLE`; sin catálogo de municipios cuando alguna fila lo necesita: 400 `MUNICIPIOS_NO_DISPONIBLE`. Nada se guarda en esos casos. Ver `LineaLicitacionWeb` en `backend-dotnet/specs/openapi.yaml`.
 
 ## 6. Columnas que agrega la exportación (#48)
 

@@ -20,7 +20,7 @@ Nexo no tiene que hacer nada para recibir esto: sigue siendo `POST /api/captura-
 - **Sin `posiciones[]`.** Cada línea lleva solo el peso del camión. Nexo acepta peso total o bultos con peso (`CapturarSolicitudValidador.ValidarLinea`), no exige los bultos.
 - **Una línea puede llegar sin vehículo ni carrocería** cuando el cubicador no pudo recomendar. Hoy Nexo ya lo acepta (no hay validación que lo exija).
 - **Origen y destino** se siguen mandando como el nombre del municipio, que Cotifly resuelve a partir del id con `GET /api/captura-solicitudes/municipios`.
-- **El encabezado** ya no lleva `valorEstimado` ni `referencia`. `horasCargue` y `horasDescargue` van en el encabezado con **el mayor valor** entre las rutas de la solicitud (ver petición 2).
+- **El encabezado** ya no lleva `valorEstimado` ni `referencia`. `horasCargue` y `horasDescargue` van **por línea** (cada camión lleva las de su ruta), como Nexo ya las acepta desde HU-013.11.
 - **El header** sigue siendo `X-Portal-clsUsuario-Id`: Cotifly lo mantiene permanente (decisión del 2026-10-05).
 - **Los servicios conexos** de una ruta se enviarán pegados a la línea del **primer camión** de esa ruta, porque Nexo guarda los conexos por línea.
 
@@ -29,7 +29,7 @@ Nexo no tiene que hacer nada para recibir esto: sigue siendo `POST /api/captura-
 | # | Petición | Prioridad | Si no se hace |
 |---|---|---|---|
 | N1 | Campo en la línea que identifique la ruta | Alta | Cotifly empareja por orden de envío: dos camiones iguales pueden mostrar el estado cruzado |
-| N2 | Recibir las horas de cargue y descargue por línea | Opcional | Cotifly manda el mayor valor entre las rutas |
+| N2 | ~~Recibir las horas de cargue y descargue por línea~~ | **Ya resuelta** | — |
 | N3 | Poder asignar vehículo y carrocería a una línea que llega vacía | Media | El admin de fletes solo puede ponerle el precio |
 | N4 | Confirmar con una prueba real que una línea sin vehículo entra a la Mesa | Baja | Se asume lo que dice el código |
 
@@ -45,9 +45,7 @@ Cotifly le enviará una línea por camión, y los camiones de una misma ruta com
 
 ### N2. Horas de cargue y descargue por línea
 
-El contrato pide `horasCargue`/`horasDescargue` una sola vez, en el encabezado de `CapturaSolicitudRequest`. En Cotifly son **por ruta**, y una licitación puede tener rutas con horas distintas. Mientras Nexo no las reciba por línea, Cotifly manda el mayor valor, para no quedarse corto en el tiempo de planta.
-
-**Petición (opcional):** aceptarlas también en `CapturaLineaRequest`.
+**Ya resuelta, no hay que pedir nada.** Se había supuesto que el contrato pedía `horasCargue`/`horasDescargue` una sola vez, en el encabezado de `CapturaSolicitudRequest`. Pero Nexo **ya las acepta en cada línea** de `CapturaLineaRequest` (sobrescriben su valor por defecto), y `QA` ya las guarda por línea (migración `0008_horas_por_linea`, HU-013.11, #108). Cotifly manda a cada camión las horas de su ruta.
 
 ### N3. Vehículo y carrocería de una línea que llega vacía
 
@@ -109,12 +107,11 @@ Sin nada de lo anterior, Cotifly funciona así:
 
 - **Sin el cubicador (C1):** una ruta = un camión, con el vehículo digitado como hoy.
 - **Sin N1:** empareja los camiones de una ruta por contenido y orden de envío. Los costos no se cruzan (camiones iguales cuestan lo mismo), pero el estado de cada uno sí podría quedar en el camión equivocado.
-- **Sin N2:** manda el mayor valor de horas.
 - **Sin N3:** el admin de fletes pone el precio de una línea sin vehículo.
 
 ## 6. Preguntas abiertas para Nexo
 
-1. ¿Quién del equipo de Nexo toma N1 a N4?
+1. ¿Quién del equipo de Nexo toma N1, N3 y N4? (N2 ya está resuelta.)
 2. ¿Se acepta el campo de ruta (N1) con ese formato, o prefieren otro nombre o tipo?
 3. ¿La asignación de vehículo en la Mesa (N3) se hace, o basta con el precio?
 4. ¿Existe un catálogo maestro de **carrocería** en `/api/catalogos/*`? No se encontró uno (hoy se usa `biblioteca-sap-historico/filtros`).

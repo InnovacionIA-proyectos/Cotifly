@@ -10,7 +10,7 @@
 - Dobles de prueba: NSubstitute (BSD-3-Clause), desde #10.
 - HTTP saliente (#13): `Microsoft.Extensions.Http` (`IHttpClientFactory`, clientes tipados) y `Microsoft.Extensions.Http.Resilience` 10.10.0 (MIT, sobre Polly 8, BSD-3-Clause) para SAP TM OData; `Microsoft.Extensions.Logging.Abstractions` en Aplicacion (warning de SAP caído). Las pruebas usan un `HttpMessageHandler` falso (`tests/Comun/clsSapTmFalso`), sin red.
 - PDF (#11): **PDFsharp-MigraDoc 6.2.4** (MIT; build multiplataforma sin GDI ni WPF) con Liberation Sans embebida (SIL OFL 1.1). Correo: **MailKit 4.18.0** (MIT; trae MimeKit y BouncyCastle.Cryptography, MIT). Solo pruebas: **PdfPig 0.1.16** (Apache-2.0) para extraer texto, fuentes e imágenes de los PDF.
-- Agente (#12 parte C, todo MIT): **Microsoft.SemanticKernel.Core 1.80.1** (Kernel, `KernelFunction`, `IFunctionInvocationFilter`; en Aplicación), **Microsoft.Extensions.AI 10.10.0** / **Abstractions 10.10.1** (`IChatClient`, `ChatClientBuilder`, `UseLogging`), **Microsoft.Extensions.AI.OpenAI 10.10.1** con **OpenAI 2.14.0** (openai, azure_openai, openai_compatible, gemini, ollama) y **Anthropic 12.50.0** (SDK oficial de Anthropic con su `IChatClient`). Google Chat sin SDK de Google: JWT y token de la cuenta de servicio con `Microsoft.IdentityModel.JsonWebTokens` (ya presente). Solo pruebas: NSubstitute también en `Cotifly.Infraestructura.Tests`.
+- Agente (#12 parte C, todo MIT): **Microsoft.SemanticKernel.Core 1.80.1** (Kernel, `KernelFunction`, `IFunctionInvocationFilter`; en Aplicación), **Microsoft.Extensions.AI 10.10.0** / **Abstractions 10.10.1** (`IChatClient`, `ChatClientBuilder`, `UseLogging`), **Microsoft.Extensions.AI.OpenAI 10.10.1** con **OpenAI 2.14.0** (openai, azure_openai, openai_compatible, gemini, ollama) y **Anthropic 12.50.0** (SDK oficial de Anthropic con su `IChatClient`). Google Chat (retirado en HU-013.9, #105) no usaba SDK de Google: el JWT y el token de la cuenta de servicio iban con `Microsoft.IdentityModel.JsonWebTokens`. Solo pruebas: NSubstitute también en `Cotifly.Infraestructura.Tests`.
 - Integración continua (#14): GitHub Actions (`.github/workflows/backend-dotnet.yml`), reportes TRX y de cobertura sobre MTP, ReportGenerator para unir la cobertura, `redocly lint` del contrato. Detalle en [08-testing](08-testing.md#87-integración-continua).
 
 ## 5.2 Paquetes NuGet y licencias
@@ -30,7 +30,7 @@ Todas las versiones se fijan en `Directory.Packages.props` (Central Package Mana
 | PDFsharp-MigraDoc | 6.2.4 | MIT | Infraestructura | Maquetación del PDF (ADR-006) |
 | MailKit | 4.18.0 | MIT (trae MimeKit y BouncyCastle.Cryptography, MIT) | Infraestructura | Transporte SMTP del relay |
 | Microsoft.AspNetCore.Authentication.JwtBearer | 10.0.12 | MIT | Api | Validación del access token |
-| Microsoft.IdentityModel.JsonWebTokens | 8.19.2 | MIT | Infraestructura | Emisión del JWT, token de la cuenta de servicio de Google y verificación del JWT de Google Chat |
+| Microsoft.IdentityModel.JsonWebTokens | 8.19.2 | MIT | Infraestructura | Emisión del JWT (hasta HU-013.9 también el token de la cuenta de servicio de Google y la verificación del JWT de Google Chat) |
 | Microsoft.SemanticKernel.Core | 1.80.1 | MIT | Aplicacion | Kernel, `KernelFunction`, `IFunctionInvocationFilter` |
 | Microsoft.Extensions.AI | 10.10.0 | MIT | Infraestructura | `ChatClientBuilder`, `UseLogging` |
 | Microsoft.Extensions.AI.Abstractions | 10.10.1 | MIT | transitiva, fijada en CPM | `IChatClient`, `ChatResponseFormat`, `AIJsonUtilities` |

@@ -1,6 +1,6 @@
 # Cotifly — backend .NET 10
 
-Backend de Cotifly, el bot cotizador de Botero Soto, migrado de Python a C# / .NET 10 (milestone HU-003). Un comercial conversa con un agente de IA desde la consola web de ClientePro o desde Google Chat; el agente reúne los datos, resuelve margen y precio, genera el PDF de la cotización y la envía por correo. Reemplaza a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)).
+Backend de Cotifly, el bot cotizador de Botero Soto, migrado de Python a C# / .NET 10 (milestone HU-003). Un comercial captura la solicitud en la consola web de ClientePro; Nexo costea, el backend resuelve margen y precio, genera el PDF y lo envía por correo, y la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Google Chat y el agente cotizador conversacional se retiraron en HU-013.9 (#105). Reemplaza a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)).
 
 - Clean Architecture de 4 capas en un monolito modular: `Cotifly.Dominio`, `Cotifly.Aplicacion`, `Cotifly.Infraestructura`, `Cotifly.Api` ([ADR-002](specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)).
 - ASP.NET Core 10, EF Core 10 Database First sobre SQL Server 2019, Semantic Kernel + Microsoft.Extensions.AI, PDFsharp-MigraDoc, MailKit.
@@ -33,9 +33,9 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | Sección | Contenido |
 |---|---|
 | [1. Descripción](docs/01-descripcion.md) | Objetivo, roles, capacidades, estado por issue, alcance y glosario |
-| [2. Arquitectura](docs/02-arquitectura.md) | Capas, módulos, convenciones, modelo de dominio, cada módulo de negocio, turno de `/web/chat`, login SSO, validador del agente e integración con Nexo (diagramas Mermaid) |
+| [2. Arquitectura](docs/02-arquitectura.md) | Capas, módulos, convenciones, modelo de dominio, cada módulo de negocio, turno del asistente por folio (`/web/chat`), login SSO, validador del agente e integración con Nexo (diagramas Mermaid) |
 | [3. Infraestructura](docs/03-infraestructura.md) | Imagen Docker, variables de entorno, SQL Server (`dbo_cotifly`, `dbsolucionesti`, `DWCubosEBSSAP`), configuración por área y servicios externos |
-| [4. Flujo del sistema](docs/04-flujo-del-sistema.md) | Login, nueva cotización, mis cotizaciones, margen, Google Chat, correo, estados y procesos en segundo plano |
+| [4. Flujo del sistema](docs/04-flujo-del-sistema.md) | Login, nueva cotización, mis cotizaciones, margen, correo, estados y procesos en segundo plano |
 | [5. Stack](docs/05-stack.md) | Tecnologías, paquetes NuGet con versión y licencia, imágenes |
 | [6. Ejecución local](docs/06-ejecucion-local.md) | Scripts de entorno local, build y pruebas en el SDK, imagen, IDE |
 | [7. API](docs/07-api.md) | Endpoints, autenticación, errores, ejemplos y límites (el detalle está en `specs/openapi.yaml` y `docs/CONTRATO_API_WEB.md`) |

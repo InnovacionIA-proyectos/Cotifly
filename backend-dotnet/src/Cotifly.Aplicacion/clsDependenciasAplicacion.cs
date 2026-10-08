@@ -88,24 +88,22 @@ public static class clsDependenciasAplicacion
 
         // Licitaciones desde Excel (HU-011, ADR-017).
         servicios.AddScoped<Licitaciones.Services.IClsLicitacionService, Licitaciones.Services.clsLicitacionService>();
+        servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
 
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).
         servicios.AddScoped<IClsRegionalUsuario, clsRegionalUsuarioService>();
         servicios.AddScoped<IClsTableroMetricasService, clsTableroMetricasService>();
 
-        // Agente (HU-003.6, #12 parte C, ADR-003/ADR-004): runner con loop manual sobre IChatClient + Kernel de Semantic Kernel,
-        // herramientas del plugin "cotizador", estado de la conversación, procesamiento de Google Chat y URL firmada del PDF.
-        // El IChatClient (proveedor por IA:Proveedor) lo registra Infraestructura. La respuesta final pasa por el validador con
-        // JSON Schema, validación manual, un reintento y respaldo (HU-003.10, #16; TryAdd: las pruebas pueden cambiarlo).
-        servicios.AddScoped<clsContextoTurnoAgente>();
-        servicios.AddScoped<clsHerramientasCotizador>();
-        servicios.AddSingleton<IClsEstadoConversacionService, clsEstadoConversacionService>();
+        // Asistente por folio (HU-013.6, #102, ADR-018 §2b; único agente desde HU-013.9, #105): loop manual sobre IChatClient + Kernel de
+        // Semantic Kernel con el plugin "asistente" (solo lectura y propuesta sobre la cotización de la conversación). El IChatClient
+        // (proveedor por IA:Proveedor) lo registra Infraestructura. La respuesta final pasa por el validador con JSON Schema, validación
+        // manual, un reintento y respaldo (HU-003.10, #16; TryAdd: las pruebas pueden cambiarlo).
         servicios.AddMetrics(); // IMeterFactory del medidor "Cotifly.Agente" (idempotente; el host web ya lo registra).
         servicios.TryAddSingleton<clsInterruptorJsonSchema>();
         servicios.TryAddSingleton<IClsValidadorRespuestaAgente, clsValidadorRespuestaAgente>();
-        servicios.AddScoped<IClsAgenteRunner, clsAgenteRunner>();
-        servicios.AddScoped<IClsProcesadorEventoChat, clsProcesadorEventoChat>();
-        servicios.AddScoped<IClsDescargaPdfFirmadaService, clsDescargaPdfFirmadaService>();
+        servicios.AddScoped<clsContextoAsistenteFolio>();
+        servicios.AddScoped<clsHerramientasAsistenteFolio>();
+        servicios.AddScoped<IClsAsistenteFolioRunner, clsAsistenteFolioRunner>();
 
         return servicios;
     }

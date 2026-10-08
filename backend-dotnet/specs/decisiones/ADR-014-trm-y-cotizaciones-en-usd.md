@@ -93,7 +93,7 @@ Así los sábados, domingos y festivos reciben la TRM del rango que los cubre (l
 - La TRM se fija al calcular el precio (el que ve el comercial en la previsualización) y es la misma que se guarda con el PDF, siempre que siga vigente al confirmar: si hoy ya está fuera de su rango de vigencia, el servidor recalcula con la TRM vigente y vuelve a previsualizar. El LLM nunca la aporta (ADR-003).
 - Con `moneda="COP"`: `trm_aplicada = 0`.
 - Si la TRM falla, `calcular_precio` (y el ajuste de margen en USD) devuelve `TRM_NO_DISPONIBLE` y no hay precio en el estado: no se puede generar el PDF en USD.
-- La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4) y de `LicitacionWeb` (§5); en Google Chat, cuando lo pide en su mensaje. La detalla #51.
+- La moneda la elige el comercial: en la consola web, con el campo opcional `moneda` (`COP|USD`) de `MensajeWeb` (selector de HU-012.4) y de `LicitacionWeb` (§5); en Google Chat, cuando lo pedía en su mensaje (Google Chat y el agente cotizador se retiraron en HU-013.9, #105; desde entonces el `moneda` de `MensajeWeb` se ignora y la moneda sale del formulario de costeo). La detalla #51.
 
 ### 4. PDF (HU-012.3)
 

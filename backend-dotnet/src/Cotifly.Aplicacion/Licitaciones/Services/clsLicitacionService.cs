@@ -28,6 +28,11 @@ public interface IClsLicitacionService
     /// posiciones y el Excel original en <c>pendiente_envio</c>, la confirma y la envía a Nexo con N líneas. Si Nexo falla la
     /// cotización se devuelve igual, en <c>error_envio</c> (se reintenta con <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c>).
     /// En USD (ADR-014 §5) consulta antes la TRM del día y la guarda en <c>trmAplicada</c>; sin TRM, <c>TRM_NO_DISPONIBLE</c> y nada se guarda.
+    /// HU-013.11: cada fila se valida además por código de catálogo (G2, <c>CODIGO_NO_CATALOGO</c>) y con las reglas condicionales de
+    /// G3, y su origen y destino se resuelven a ids de municipio de Nexo (G6, <see cref="clsMunicipiosLicitacion"/>). Sin catálogo
+    /// maestro utilizable, 503 <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>; sin catálogo de municipios (si alguna fila lo necesita), 503
+    /// <c>MUNICIPIOS_NO_DISPONIBLE</c>; en ambos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo, se
+    /// devuelve el reporte con todos ellos y el código del catálogo caído en <c>error.detalle.motivo</c>.
     /// </summary>
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
@@ -53,7 +58,8 @@ public sealed class clsLicitacionService(
     IClsLectorExcelLicitacion lector,
     IClsExportadorExcelLicitacion exportador,
     IClsReloj reloj,
-    IClsFijacionMonedaService monedas) : IClsLicitacionService
+    IClsFijacionMonedaService monedas,
+    IClsValidadorFilasLicitacion filasLicitacion) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -178,11 +184,20 @@ public sealed class clsLicitacionService(
             }
         }
 
-        var errores = clsValidadorLicitacion.Validar(entrada, filasEnHoja);
-        if (errores.Count > 0)
+        var validadas = await ValidarFilasAsync(usuarioId, entrada, filasEnHoja, cancellationToken);
+        if (validadas.Errores.Count > 0)
         {
-            return clsResultadoLicitacion.Invalida(errores);
+            // HU-013.11: con un catálogo caído se reportan igual los errores que se detectan sin él, con el código del catálogo en
+            // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla).
+            return clsResultadoLicitacion.Invalida(validadas.Errores, validadas.NoDisponible?.Codigo);
         }
+
+        if (validadas.NoDisponible is { } noDisponible)
+        {
+            return clsResultadoLicitacion.Fallo(noDisponible);
+        }
+
+        var entradas = validadas.Lineas;
 
         var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
         if (politica is null)
@@ -226,12 +241,12 @@ public sealed class clsLicitacionService(
 
             var id = cotizacion.Valor.Id;
             cotizacion.Valor.RegistrarSolicitudLicitacion(entrada.Encabezado);
-            lineas = clsCotizacionLineaSolicitud.Desde(id, [.. entrada.Lineas.Select(l => l.Linea)], [.. entrada.Lineas.Select(l => l.Fila)]);
+            lineas = clsCotizacionLineaSolicitud.Desde(id, [.. entradas.Select(l => l.Linea)], [.. entradas.Select(l => l.Fila)]);
             posiciones = [];
             var orden = 1;
             for (var i = 0; i < lineas.Count; i++)
             {
-                var deLinea = clsCotizacionPosicion.Desde(id, entrada.Lineas[i].Linea.Posiciones, lineas[i].Id, orden);
+                var deLinea = clsCotizacionPosicion.Desde(id, entradas[i].Linea.Posiciones, lineas[i].Id, orden);
                 posiciones.AddRange(deLinea);
                 orden += deLinea.Count;
             }
@@ -261,6 +276,20 @@ public sealed class clsLicitacionService(
         // Confirmada: desde aquí, sin el token de la petición (como HU-005.5, ADR-015 §3).
         await envio.EnviarGuardadaAsync(creada.Valor, lineas, posiciones, politica, usuarioId);
         return clsResultadoLicitacion.Exito(creada.Valor);
+    }
+
+    /// <summary>
+    /// Todas las validaciones de las filas, juntas (HU-013.11): las de forma y rango de <see cref="clsValidadorLicitacion"/> (con G3) y
+    /// las que dependen de catálogos (<see cref="IClsValidadorFilasLicitacion"/>: códigos de catálogo y municipios).
+    /// </summary>
+    private async Task<clsFilasLicitacionValidadas> ValidarFilasAsync(
+        Guid usuarioId, clsEntradaLicitacion entrada, int? filasEnHoja, CancellationToken cancellationToken)
+    {
+        var errores = clsValidadorLicitacion.Validar(entrada, filasEnHoja);
+        IReadOnlyList<clsLineaLicitacionEntrada?> lineas = entrada.Lineas ?? [];
+        return lineas.Count is 0 or > clsValidadorLicitacion.MaximoLineas
+            ? new clsFilasLicitacionValidadas([], errores, null)
+            : await filasLicitacion.ValidarAsync(usuarioId, lineas, errores, cancellationToken);
     }
 
     public async Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)

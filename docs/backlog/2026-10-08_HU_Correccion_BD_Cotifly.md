@@ -78,7 +78,7 @@ Entonces a Nexo llega una línea por camión con los datos de su ruta
 Y cada camión recibe su propio flete y su propio estado, sin cruzar los de camiones distintos
 
 Escenario: Las cotizaciones del agente de chat tienen ruta y camión
-Dado una cotización creada por el agente de Google Chat
+Dado una cotización creada por el agente de chat
 Cuando se guarda
 Entonces tiene su ruta y su camión igual que las del formulario, y no solo costo y precio en la cabecera
 
@@ -86,7 +86,7 @@ Escenario: Instalación desde cero y migración de una base existente
 Dado una base vacía
 Cuando se ejecuta la instalación desde cero
 Entonces quedan 20 tablas, 2 vistas y la configuración inicial sembrada
-Y una base con el esquema viejo, migrada con el 0008, queda con el mismo esquema, sin perder sus datos y con un respaldo de las tablas que cambió
+Y una base con el esquema viejo, migrada con el 0009, queda con el mismo esquema, sin perder sus datos y con un respaldo de las tablas que cambió
 
 Escenario: El frontend de hoy sigue funcionando mientras sale el nuevo
 Dado el frontend actual enviando el formato plano viejo (una línea, un vehículo)
@@ -120,7 +120,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - [x] Redactar la propuesta con el diseño final, columna por columna, y las decisiones tomadas (`docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`).
 - [x] Documentar el impacto en el backend (`docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`).
 - [x] Escribir el script de instalación desde cero, los seeders y el ejecutador (`db/scripts/`, `db/seeder/`, `db/ejecutar-bd.ps1` y `.sh`).
-- [x] Escribir la migración para la base existente (`db/migrations_mssql/0008_reestructuracion_cotizaciones.sql`).
+- [x] Escribir la migración para la base existente (`db/migrations_mssql/0009_reestructuracion_cotizaciones.sql`).
 - [ ] **Visto bueno del DBA y de Duban a la propuesta**, dejando registrada aquí la decisión punto por punto (aprobado, aprobado con ajustes o rechazado). Este issue no se cierra sin eso.
 
 ### [HU-021.2] [Corrección con BD] Base de datos: validar y cerrar el esquema
@@ -131,14 +131,14 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 
 **Lo que ya se hizo (2026-10-08):** la instalación desde cero se corrió sobre `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos SAP y 2 roles, sin errores. Se restauraron los roles externos (`comercial` = 34, `gerente_comercial` = 31).
 
-- [ ] **Comparar** el esquema de `01_crear_esquema.sql` contra el de una base armada con las migraciones `0001` a `0008`, en dos bases vacías (diferencias en `INFORMATION_SCHEMA.COLUMNS`, restricciones e índices). Hoy solo se comparó contra la propuesta.
-- [ ] **Probar el `0008`** sobre una copia de una base con el esquema viejo (el `0001` a `0007` aplicados y con datos), nunca sobre la compartida. Verificar las consultas de control del propio script (costos que cuadran, cada cotización con ruta y cada ruta con camión).
+- [ ] **Comparar** el esquema de `01_crear_esquema.sql` contra el de una base armada con las migraciones `0001` a `0009`, en dos bases vacías (diferencias en `INFORMATION_SCHEMA.COLUMNS`, restricciones e índices). Hoy solo se comparó contra la propuesta.
+- [ ] **Probar el `0009`** sobre una copia de una base con el esquema viejo (el `0001` a `0007` aplicados y con datos), nunca sobre la compartida. Verificar las consultas de control del propio script (costos que cuadran, cada cotización con ruta y cada ruta con camión).
 - [ ] Probar el servicio `db-init` del `docker-compose.yml` (`docker compose up sqlserver db-init`). Está escrito pero no se ha ejecutado; `sqlcmd` de la imagen de SQL Server 2019 es una versión vieja y puede no aceptar alguna opción.
-- [ ] **Agregar el `CHECK` de `estadoEnvio`** (`sin_enviar`, `enviada`, `reenviada`) al `01_crear_esquema.sql` y al `0008`. Es la parte de corto plazo de HU-014.1: ni el esquema nuevo lo trae. En la base compartida ya recreada hay que agregarlo con un `ALTER` puntual.
+- [ ] **Agregar el `CHECK` de `estadoEnvio`** (`sin_enviar`, `enviada`, `reenviada`) al `01_crear_esquema.sql` y al `0009`. Es la parte de corto plazo de HU-014.1: ni el esquema nuevo lo trae. En la base compartida ya recreada hay que agregarlo con un `ALTER` puntual.
 - [ ] Conseguir el **`TrqType` de SAP para `DevolucionContenedor`** (negocio/SAP) y sembrarlo en `db/seeder/02_sap_mapeo_trqtype.sql`. No se inventa.
-- [ ] **Visto bueno del DBA** sobre `01_crear_esquema.sql` y `0008`, como los scripts anteriores.
+- [ ] **Visto bueno del DBA** sobre `01_crear_esquema.sql` y `0009`, como los scripts anteriores.
 - [ ] Decidir qué se hace con `db/migrations/` (Alembic, el stack viejo de Postgres). `deploy/docker-compose.swarm.yml` todavía levanta un Postgres y un orquestador; confirmar con quien llevó el despliegue si siguen en uso antes de archivar nada.
-- [ ] **Script de reversa del `0008`** en `db/migrations_mssql/rollback/` (como el del `0006`). Hoy no existe: la vuelta atrás sería manual, desde las tablas `Respaldo0008_*` que el propio script crea.
+- [ ] **Script de reversa del `0009`** en `db/migrations_mssql/rollback/` (como el del `0006`). Hoy no existe: la vuelta atrás sería manual, desde las tablas `Respaldo0009_*` que el propio script crea.
 - [ ] Regla permanente: **cada migración nueva `000N` se refleja también en `db/scripts/01_crear_esquema.sql`**, para que una instalación desde cero y una base migrada queden idénticas.
 
 ### [HU-021.3] [Corrección con BD] Dominio: rutas, camiones, mercancías y conexos
@@ -207,9 +207,9 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Asignado a:** Duban (Backend)
 **Parte de HU-021 (milestone). Depende de HU-021.3 y 021.4.** Detalle: `CAMBIOS_BACKEND` §3.6, §5.3 y §5.4. Estimado: 3 a 4 días.
 
-> **Se mejora con lo que se le pide a Nexo** (`docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`, §3). **N1** (campo de ruta en la línea): **no bloquea**, pero sin él el emparejamiento de camiones iguales de una misma ruta depende del orden de envío y el estado podría quedar en el camión equivocado; si Nexo lo acepta, la llave de emparejamiento lo usa. **N2** (horas por línea, opcional): mientras no exista, el encabezado lleva el mayor valor entre las rutas. **N3** (vehículo editable en la Mesa) y **N4** (confirmar línea sin vehículo con una prueba real): solo importan para los camiones que llegan sin vehículo.
+> **Se mejora con lo que se le pide a Nexo** (`docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`, §3). **N1** (campo de ruta en la línea): **no bloquea**, pero sin él el emparejamiento de camiones iguales de una misma ruta depende del orden de envío y el estado podría quedar en el camión equivocado; si Nexo lo acepta, la llave de emparejamiento lo usa. **N2** (horas por línea): **ya resuelta**, Nexo las acepta por línea (HU-013.11). **N3** (vehículo editable en la Mesa) y **N4** (confirmar línea sin vehículo con una prueba real): solo importan para los camiones que llegan sin vehículo.
 
-- [ ] `clsCosteoNexo.cs:340-356`: armar **una línea por camión**, con los datos de su ruta. El nombre del municipio se resuelve desde su id contra `GET /api/captura-solicitudes/municipios`. Sin `posiciones[]`: a Nexo le basta el peso del camión (ver `docs/conexion_nexo/PROXIMOS_ALCANCES.md`). Encabezado sin `ValorEstimado`/`Referencia`; horas = el mayor valor entre las rutas.
+- [ ] `clsCosteoNexo.cs:340-356`: armar **una línea por camión**, con los datos de su ruta. El nombre del municipio se resuelve desde su id contra `GET /api/captura-solicitudes/municipios`. Sin `posiciones[]`: a Nexo le basta el peso del camión (ver `docs/conexion_nexo/PROXIMOS_ALCANCES.md`). Encabezado sin `ValorEstimado`/`Referencia`. Las horas de cargue y descargue van **por línea** (cada camión lleva las de su ruta): Nexo ya las acepta en `CapturaLineaRequest` (HU-013.11, `0008_horas_por_linea`) y `QA` ya las guarda por línea.
 - [ ] **Emparejador nuevo** (`clsEmparejadorLineasNexo`): empareja camiones, no líneas de ruta. Es lo más frágil del cambio. Si Nexo agrega el campo de ruta, la llave lo usa; mientras tanto, origen y destino resueltos, vehículo, carrocería, peso y el orden de envío.
 - [ ] Polling (`clsPollingCosteoService`, `clsPrecioCosteoService`): registrar flete y retorno en el **camión**, asignar `LineaSolicitudNexoId` por camión, recalcular ruta y cabecera. Quitar `CosteoUltimaConsultaAt` y `CosteoId` (ahora `CotizacionNexoId`).
 - [ ] Leer el vehículo de cada línea cuando la Mesa de Costeo se lo asigna a una que iba vacía.
@@ -246,7 +246,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Parte de HU-021 (milestone). Depende de HU-021.4.** Se coordina con HU-014.4 (retirar el borrador obsoleto del tablero). Detalle: `CAMBIOS_BACKEND` §3.7 y §4.4. Estimado: 1 día.
 
 - [ ] `clsCotizacionMetrica`, `clsCalculadoraMetricas`, `clsMetricasRepository` (CTE del tablero, líneas 38-76): leer costo, margen y precio por ruta. Decidir cómo se cuenta una solicitud con rutas de varias líneas de negocio: recomendación, **seguir contando cotizaciones**, con el margen promedio ponderado por costo.
-- [ ] **Decidir con HU-014.4:** las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial` ya están adaptadas en `0008` y en `01_crear_esquema.sql`, pero HU-014.4 propone retirarlas junto con los endpoints obsoletos que las leen. Si HU-014.4 se hace primero, se quitan del esquema en vez de adaptarlas. HU-014.4 depende de que el tablero de HU-010 esté validado en producción.
+- [ ] **Decidir con HU-014.4:** las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial` ya están adaptadas en `0009` y en `01_crear_esquema.sql`, pero HU-014.4 propone retirarlas junto con los endpoints obsoletos que las leen. Si HU-014.4 se hace primero, se quitan del esquema en vez de adaptarlas. HU-014.4 depende de que el tablero de HU-010 esté validado en producción.
 
 ### [HU-021.11] [Corrección con BD] Contrato de la API (DTOs y `openapi.yaml`)
 **Labels:** `cotifly`, `backend`, `corrección-bd`
@@ -269,8 +269,8 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - [ ] Adaptar los ~65 archivos de prueba que usan los nombres y campos viejos. Los que más cambian: `clsEsquemaTests` (compara EF contra el esquema, con listas de columnas), `clsEnvioCosteoServiceTests`, `clsReSolicitudCosteoServiceTests`, `clsPrecioCosteoLineasTests`, `clsAjusteMargenCosteoServiceTests`, `clsServiciosConexosCosteoServiceTests`, `clsCotizacionTests`, `clsLineasSolicitudTests`, `clsSolicitudCosteoTests`, `clsPdfPliegoTests`.
 - [ ] Las pruebas con **SQL directo** fallan al correr, no al compilar: `Api.Tests/Web/*Endpoints*`, `clsMetricasTableroRepositoryTests`, `Aceptacion.Tests` (`clsPasosMetricas.cs:52`, `clsPasosAgente.cs:339`, `clsApiWebPruebas.cs:230`).
 - [ ] Quitar las aserciones de `CosteoUltimaConsultaAt` (`clsDerivacionEstadoCosteoTests.cs:73`, `clsPollingCosteoServiceTests.cs:55`) y rehacer el fixture `clsSolicitudCosteoMuestra`.
-- [ ] **Regla de las pruebas de esquema:** no agregar el `0008` a la cadena de las pruebas (Testcontainers) hasta que el backend esté adaptado. Cuando lo esté, pueden aplicar `db/scripts/01_crear_esquema.sql` en vez de `0001` a `0008`.
-- [ ] Pruebas nuevas: totales de la ruta, resumen de estados, emparejamiento de camiones (con empates), ruta con camión sin vehículo, adaptador del cubicador con un servidor falso, y migración de datos (`0008` contra una copia).
+- [ ] **Regla de las pruebas de esquema:** no agregar el `0009` a la cadena de las pruebas (Testcontainers) hasta que el backend esté adaptado. Cuando lo esté, pueden aplicar `db/scripts/01_crear_esquema.sql` en vez de `0001` a `0009`.
+- [ ] Pruebas nuevas: totales de la ruta, resumen de estados, emparejamiento de camiones (con empates), ruta con camión sin vehículo, adaptador del cubicador con un servidor falso, y migración de datos (`0009` contra una copia).
 - [ ] Prueba de punta a punta: formulario y licitación → cubicador → Nexo → polling → margen → PDF. **Depende del cubicador y de Nexo** (`docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`): hasta que el cubicador tenga `POST /recomendaciones` (C1), la prueba se hace con "una ruta = un camión" y un cubicador falso.
 
 ### [HU-021.13] [Corrección con BD] Reglas pendientes de la propuesta original de refactor (HU-002.1)
@@ -323,14 +323,14 @@ Lo que se le pide a **Nexo** (N1 a N4) y al **cubicador** (C1 a C6) está en `do
 |---|---|---|
 | Cubicador | C1 a C6: `POST /recomendaciones` y catálogos funcionando, peso por vehículo, no sobrescribir recomendaciones, mismos códigos que Nexo, `Bearer`, resultados que no son error | HU-021.5, 021.6, 021.12 |
 | Nexo | N1: campo de ruta en la línea (para emparejar camiones) | HU-021.7 |
-| Nexo | N2: horas por línea (opcional); N3: vehículo editable en la Mesa; N4: confirmar línea sin vehículo | HU-021.5, 021.7 |
+| Nexo | N3: vehículo editable en la Mesa; N4: confirmar línea sin vehículo. (N2, horas por línea, ya está resuelta: Nexo las acepta por línea desde HU-013.11) | HU-021.5, 021.7 |
 | Negocio / SAP | El `TrqType` de SAP para `DevolucionContenedor`. No se inventa: hay que pedirlo. | HU-021.2 |
-| DBA | Visto bueno de `01_crear_esquema.sql` y `0008` | HU-021.2 |
+| DBA | Visto bueno de `01_crear_esquema.sql` y `0009` | HU-021.2 |
 
 ## Riesgos
 
 1. **El emparejamiento con Nexo es lo más frágil.** Sin el campo de ruta, dos camiones iguales de la misma ruta solo se distinguen por el orden de envío; sus costos serían iguales, pero el estado podría mostrarse en el camión equivocado.
 2. **El cubicador todavía no existe en código.** La fase 4 depende de él.
-3. **El costo viejo no se puede desglosar exacto** al migrar con el `0008`: el flete se calcula como costo menos levante, y el retorno queda en 0.
+3. **El costo viejo no se puede desglosar exacto** al migrar con el `0009`: el flete se calcula como costo menos levante, y el retorno queda en 0.
 4. **Métricas:** una solicitud con rutas de varias líneas de negocio obliga a decidir cómo contarla (HU-021.10).
 5. **El contrato de la API cambia** (HU-021.11): hasta que el frontend nuevo esté listo, el backend tiene que aceptar el formato plano viejo, o el frontend actual deja de funcionar.

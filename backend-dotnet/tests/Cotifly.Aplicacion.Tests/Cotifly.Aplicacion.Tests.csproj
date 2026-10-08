@@ -18,7 +18,5 @@
   <ItemGroup>
     <!-- Payload de ejemplo del PDF portado del Python (#11). -->
     <None Include="..\fixtures\cotizacion\*.json" Link="fixtures\cotizacion\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <!-- Evento real de Google Chat portado del Python (#12 parte C). -->
-    <None Include="..\fixtures\chat\*.json" Link="fixtures\chat\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

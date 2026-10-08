@@ -329,8 +329,9 @@ public sealed class clsCosteoNexo(
     /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una en HU-005.5, N en una licitación, ADR-017):
     /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
     /// negocio de Nexo en cada línea y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
-    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y las horas de cargue y descargue del encabezado repetidas en
-    /// cada línea (G5: sin ellas Nexo aplica a la línea su valor por defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
+    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
+    /// (HU-013.11, filas de una licitación) o, si no las trae, las del encabezado (G5: sin ellas Nexo aplica a la línea su valor por
+    /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
     /// desplazamiento (G4). Los nulos no viajan.
     /// </summary>
     internal static object CuerpoCaptura(clsSolicitudNexo solicitud)
@@ -350,7 +351,7 @@ public sealed class clsCosteoNexo(
                 s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId, s.TipoVehiculo, s.Carroceria, s.Tipologia,
                 solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
-                s.CiudadLevanteContenedor, s.ValorAprovisionamiento, e.HorasCargue, e.HorasDescargue, s.PesoKg, s.ValorMercancia,
+                s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0
                     ? null
                     : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))]))]);

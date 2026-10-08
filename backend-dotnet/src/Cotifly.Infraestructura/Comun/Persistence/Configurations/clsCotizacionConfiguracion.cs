@@ -164,6 +164,8 @@ internal sealed class clsCotizacionLineaSolicitudConfiguracion : IEntityTypeConf
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_filaOrigen", "filaOrigen IS NULL OR filaOrigen >= 0");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_municipios",
                 "(origenMunicipioId IS NULL OR origenMunicipioId > 0) AND (destinoMunicipioId IS NULL OR destinoMunicipioId > 0)");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_horas",
+                "(horasCargue IS NULL OR (horasCargue >= 0 AND horasCargue <= 240)) AND (horasDescargue IS NULL OR (horasDescargue >= 0 AND horasDescargue <= 240))");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_montos", "(costo IS NULL OR costo >= 0) AND (precioFinal IS NULL OR precioFinal >= 0)");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_serviciosConexos_json", "serviciosConexos IS NULL OR ISJSON(serviciosConexos) = 1");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCosteo",
@@ -193,6 +195,8 @@ internal sealed class clsCotizacionLineaSolicitudConfiguracion : IEntityTypeConf
         builder.Property(l => l.ValorAprovisionamiento).Columna("valorAprovisionamiento", "decimal(18,2)");
         builder.Property(l => l.PesoKg).Columna("pesoKg", "decimal(12,2)");
         builder.Property(l => l.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
+        builder.Property(l => l.HorasCargue).Columna("horasCargue", "decimal(6,2)");
+        builder.Property(l => l.HorasDescargue).Columna("horasDescargue", "decimal(6,2)");
         builder.Property(l => l.LineaSolicitudNexoId).Columna("lineaSolicitudNexoId", "nvarchar(64)").HasMaxLength(64);
         builder.Property(l => l.EstadoCosteo).Columna("estadoCosteo", "nvarchar(30)").HasMaxLength(30)
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());

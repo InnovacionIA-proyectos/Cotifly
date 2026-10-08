@@ -23,6 +23,9 @@ public sealed class clsLicitacionWebRequest
     public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
+
+    /// <summary><c>notas</c> del encabezado de Nexo (máx. 2000, G7): nota para la Mesa, igual que en <c>SolicitudCosteoWeb</c>.</summary>
+    public string? Notas { get; init; }
     public string? Hoja { get; init; }
 
     /// <summary><c>COP</c> (por defecto) o <c>USD</c> (ADR-014 §5); otro valor o una cadena vacía es un error del reporte (campo <c>moneda</c>).</summary>
@@ -43,6 +46,7 @@ public sealed class clsLicitacionWebRequest
             Referencia = Referencia,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
+            Notas = Notas,
         },
         Hoja,
         [.. (Lineas ?? []).Select(l => l is null ? null! : new clsLineaLicitacionEntrada(l.Fila, l.ALinea()))],
@@ -56,6 +60,21 @@ public sealed class clsLineaLicitacionWebRequest
     public int? Fila { get; init; }
     public string? Origen { get; init; }
     public string? Destino { get; init; }
+
+    /// <summary>
+    /// <c>origenMunicipioId</c> (G6, HU-013.11): <c>id</c> de <c>GET /web/municipios</c> si el frontend ya lo resolvió. Sin él, Cotifly
+    /// lo resuelve por el texto de <see cref="Origen"/> en el catálogo de municipios de Nexo (ambiguo o sin coincidencia = error de la fila).
+    /// </summary>
+    public int? OrigenMunicipioId { get; init; }
+
+    /// <summary><c>destinoMunicipioId</c>: igual que <see cref="OrigenMunicipioId"/>, para el destino.</summary>
+    public int? DestinoMunicipioId { get; init; }
+
+    /// <summary>Horas de cargue de esta fila (G5); sin valor, las del encabezado.</summary>
+    public decimal? HorasCargue { get; init; }
+
+    /// <summary>Horas de descargue de esta fila (G5); sin valor, las del encabezado.</summary>
+    public decimal? HorasDescargue { get; init; }
     public string? TipoVehiculo { get; init; }
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
@@ -76,6 +95,10 @@ public sealed class clsLineaLicitacionWebRequest
     {
         Origen = Origen ?? string.Empty,
         Destino = Destino ?? string.Empty,
+        OrigenMunicipioId = OrigenMunicipioId,
+        DestinoMunicipioId = DestinoMunicipioId,
+        HorasCargue = HorasCargue,
+        HorasDescargue = HorasDescargue,
         TipoVehiculo = TipoVehiculo,
         Carroceria = Carroceria,
         Tipologia = Tipologia,

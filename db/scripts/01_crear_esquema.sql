@@ -3,7 +3,7 @@
    ============================================================================
    Crea el schema `dbo_cotifly` con TODAS sus tablas, llaves, restricciones, índices
    y vistas, ya en su forma final (la del diseño HU-021, docs/PROPUESTA_REESTRUCTURACION_
-   COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0008
+   COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0009
    aplicados en orden, pero en un solo paso.
 
    NO inserta datos: la configuración inicial (líneas de negocio, mapeo SAP, roles) la
@@ -22,7 +22,7 @@
    puede tener otra y no se le toca). Única excepción: TokensRefresco.tokenHash, que usa
    `Latin1_General_100_BIN2` (hexadecimal ASCII, comparación exacta).
 
-   Nombres de restricciones: son los mismos que deja una base migrada con el 0008. Por eso
+   Nombres de restricciones: son los mismos que deja una base migrada con el 0009. Por eso
    las tablas renombradas (CotizacionesSolicitud, CotizacionMercancias) conservan en sus
    restricciones los nombres `cotizaciones` y `cotizacionPosiciones`.
 
@@ -353,7 +353,8 @@ CREATE TABLE dbo_cotifly.CotizacionLineasSolicitud (
         AND (costoFinal IS NULL OR costoFinal >= 0)
         AND (precioFinalLinea IS NULL OR precioFinalLinea >= 0)),
     CONSTRAINT ck_cotizacionLineasSolicitud_horas CHECK (
-        (horasCargue IS NULL OR horasCargue >= 0) AND (horasDescargue IS NULL OR horasDescargue >= 0)),
+        (horasCargue IS NULL OR (horasCargue >= 0 AND horasCargue <= 240))
+        AND (horasDescargue IS NULL OR (horasDescargue >= 0 AND horasDescargue <= 240))),
     CONSTRAINT ck_cotizacionLineasSolicitud_origenMargen CHECK (
         origenMargen IS NULL OR origenMargen IN ('sap_tm', 'politica_linea', 'negociado'))
 );

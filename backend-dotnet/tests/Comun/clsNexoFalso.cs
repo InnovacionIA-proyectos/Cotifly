@@ -57,6 +57,23 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Descripciones de <c>GET /api/catalogos/lineas-negocio</c>.</summary>
     public List<string> LineasNegocio { get; } = ["PuertoAInterior", "InteriorAPuerto", "Nacional", "DevolucionContenedor", "Andino", "Licitaciones"];
 
+    /// <summary>
+    /// Catálogo de <c>GET /api/captura-solicitudes/municipios</c> (HU-013.11): resuelve las ciudades de <see cref="clsPliegoMuestra"/> y
+    /// trae "La Unión" en tres departamentos (el caso ambiguo).
+    /// </summary>
+    public List<(int Id, string? CodigoDane, string Municipio, string Departamento)> Municipios { get; } =
+    [
+        (76109, "76109", "Buenaventura", "Valle del Cauca"), (11001, "11001", "Bogotá, D.C.", "Bogotá, D.C."), (76001, "76001", "Cali", "Valle del Cauca"),
+        (13001, "13001", "Cartagena", "Bolívar"), (54001, "54001", "Cúcuta", "Norte de Santander"), (5001, "05001", "Medellín", "Antioquia"),
+        (50001, "50001", "Villavicencio", "Meta"), (66001, "66001", "Pereira", "Risaralda"), (17001, "17001", "Manizales", "Caldas"),
+        (47001, "47001", "Santa Marta", "Magdalena"), (73001, "73001", "Ibagué", "Tolima"), (41001, "41001", "Neiva", "Huila"),
+        (8001, "08001", "Barranquilla", "Atlántico"), (68001, "68001", "Bucaramanga", "Santander"), (76892, "76892", "Yumbo", "Valle del Cauca"),
+        (5400, "05400", "La Unión", "Antioquia"), (52399, "52399", "La Unión", "Nariño"), (76400, "76400", "La Unión", "Valle del Cauca"),
+    ];
+
+    /// <summary>Si tiene valor, <c>GET /api/captura-solicitudes/municipios</c> responde este estado.</summary>
+    public HttpStatusCode? MunicipiosFalla { get; set; }
+
     /// <summary>Si es mayor que cero, las siguientes N peticiones a <c>/api/catalogos/*</c> responden 503 (fallo transitorio).</summary>
     public int FallasCatalogos { get; set; }
 
@@ -276,6 +293,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
             {
                 ("GET", var r) when r.StartsWith("/api/catalogos/", StringComparison.Ordinal) => Catalogo(r["/api/catalogos/".Length..]),
                 ("GET", "/api/captura-solicitudes/clientes") => Clientes(request.RequestUri),
+                ("GET", "/api/captura-solicitudes/municipios") => MunicipiosFalla is { } fallaMunicipios
+                    ? Error(fallaMunicipios, "NEXO_CAIDO", "Municipios no disponibles (prueba).")
+                    : Json(HttpStatusCode.OK, Municipios.Select(m => new { id = m.Id, codigoDane = m.CodigoDane, municipio = m.Municipio, departamento = m.Departamento, pais = "Colombia" }).ToList()),
                 ("POST", "/api/captura-solicitudes/analizar-excel") => AnalisisFalla is { } fallaAnalisis
                     ? Error(fallaAnalisis, CodigoAnalisisFalla, "No se pudo leer el archivo Excel (prueba).")
                     : Json(HttpStatusCode.OK, Analisis),

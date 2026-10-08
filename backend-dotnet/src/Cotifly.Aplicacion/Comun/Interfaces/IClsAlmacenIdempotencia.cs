@@ -19,7 +19,7 @@ namespace Cotifly.Aplicacion.Comun.Interfaces;
 /// <item>Se purgan las claves vencidas y las fallidas que nadie está usando.</item>
 /// </list>
 /// Implementación vigente: en la memoria del proceso, válida mientras la API corre con <c>replicas: 1</c>
-/// (<c>infra/stack.dotnet.dokploy.yml</c>). Al escalar se crea una tabla con un script <c>0008</c> (ADR-018 §12).
+/// (<c>infra/stack.dotnet.dokploy.yml</c>). Al escalar se crea una tabla con el siguiente script libre, <c>0009</c> (ADR-018 §12; el <c>0008</c> es el de las horas por línea).
 /// </remarks>
 public interface IClsAlmacenIdempotencia
 {

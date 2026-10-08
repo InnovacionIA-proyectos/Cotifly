@@ -52,7 +52,7 @@ tenga listo su `POST /recomendaciones`.
 
 ## 2. Hallazgo importante: el flujo del agente de chat no crea líneas
 
-Las cotizaciones que crea el agente de Google Chat (`generar_pdf`) **no tienen filas en `CotizacionLineasSolicitud`**.
+Las cotizaciones que crea el agente de chat (`generar_pdf`; la integración con Google Chat se retiró en HU-013.9, el agente sigue en el chat web) **no tienen filas en `CotizacionLineasSolicitud`**.
 Su costo, margen y precio viven solo en la cabecera
 ([src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs:287-307](../backend-dotnet/src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs#L287-L307)).
 
@@ -277,7 +277,7 @@ que leen y escriben el JSON.
 
 ### 4.5 Script de migración
 
-`db/migrations_mssql/0008_reestructuracion_cotizaciones.sql`, con su reversa en `rollback/`. Mismo estilo de los
+`db/migrations_mssql/0009_reestructuracion_cotizaciones.sql`, con su reversa en `rollback/`. Mismo estilo de los
 anteriores: idempotente, con guardas `IF … IS NULL`, en `dbTarifario_Nexo_Pruebas`.
 
 **Orden:**
@@ -325,8 +325,10 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
     tipología, clase de viaje, clase de contenedor, contenedor, valor de la mercancía y el levante del camión.
   - **Del camión:** tipo de vehículo, carrocería y peso.
   - Sin `posiciones[]`.
-- **Encabezado:** pierde `ValorEstimado` y `Referencia`. Las horas son el mayor valor entre las rutas (regla de la
-  propuesta, §9).
+- **Encabezado:** pierde `ValorEstimado` y `Referencia`.
+- **Horas de cargue y descargue:** Nexo las acepta **por línea** en `CapturaLineaRequest` (HU-013.11, migración
+  `0008_horas_por_linea`), así que cada camión lleva las horas de su ruta. El backend de `QA` ya las guarda por línea;
+  esta HU solo las pasa de la cabecera a la ruta.
 - **Cuando Nexo agregue el campo de ruta:** se manda el id de la ruta de Cotifly en cada línea.
 - Los records del wire (636-648) y `Costeo/DTOs/clsSolicitudNexo.cs` (38-79) se ajustan a lo anterior.
 
@@ -483,7 +485,7 @@ Las tablas y campos que cambian aparecen en **unos 65 archivos de prueba**.
 - Emparejamiento de camiones con las líneas de Nexo, incluyendo empates.
 - Ruta con camión sin vehículo.
 - Adaptador del cubicador con un servidor falso.
-- Migración de datos: probar `0008` contra una copia de la base de pruebas.
+- Migración de datos: probar `0009` contra una copia de la base de pruebas.
 
 ---
 
@@ -530,7 +532,7 @@ Estimado de una persona con Claude Code. Es grueso, sacado de recorrer el códig
 
 | Fase | Qué | Días |
 |---|---|---|
-| 1 | Script `0008` + reversa, probado contra una copia de la base de pruebas | 2-3 |
+| 1 | Script `0009` + reversa, probado contra una copia de la base de pruebas | 2-3 |
 | 2 | Dominio: entidades nuevas, margen y totales en la ruta, reglas de §9 + sus pruebas | 3-4 |
 | 3 | EF, repositorios, SQL directo, health check | 2 |
 | 4 | Adaptador del cubicador + `GET /web/tipos-mercancia` | 2-3 |

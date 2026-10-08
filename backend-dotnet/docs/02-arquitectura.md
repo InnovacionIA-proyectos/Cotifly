@@ -1,6 +1,6 @@
 # 2. Arquitectura
 
-Clean Architecture de 4 capas en un monolito modular ([ADR-002](../specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)), con un agente de IA agnóstico al proveedor que solo redacta y elige herramientas ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md)) sobre un estado de conversación estructurado ([ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)). Un solo proceso, `Cotifly.Api`, empaquetado en un solo contenedor ([ADR-007](../specs/decisiones/ADR-007-contenedores-sin-docker-compose.md)).
+Clean Architecture de 4 capas en un monolito modular ([ADR-002](../specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)), con un pipeline determinista (formulario, Nexo, SAP y código) que cotiza y una IA agnóstica al proveedor que solo redacta textos y asiste sobre una cotización ya hecha ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md), [ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). El agente cotizador conversacional con estado estructurado ([ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y Google Chat se retiraron en HU-013.9 (#105). Un solo proceso, `Cotifly.Api`, empaquetado en un solo contenedor ([ADR-007](../specs/decisiones/ADR-007-contenedores-sin-docker-compose.md)).
 
 Contenido:
 
@@ -14,7 +14,7 @@ Contenido:
 - [2.8 PDF, correo y auditoría](#28-pdf-correo-y-auditoría)
 - [2.9 Identidad: login SSO con verificación doble](#29-identidad-login-sso-con-verificación-doble)
 - [2.10 API web](#210-api-web)
-- [2.11 Agente de IA, /web/chat y Google Chat](#211-agente-de-ia-webchat-y-google-chat)
+- [2.11 Asistente IA por folio (/web/chat)](#211-asistente-ia-por-folio-webchat)
 - [2.12 Turno de /web/chat de punta a punta](#212-turno-de-webchat-de-punta-a-punta)
 - [2.13 Validador de la respuesta del agente](#213-validador-de-la-respuesta-del-agente)
 - [2.14 Integración con Nexo](#214-integración-con-nexo)
@@ -27,7 +27,6 @@ flowchart LR
     subgraph clientepro[ClientePro]
         front[Módulo Angular de Cotifly<br/>HU-004]
     end
-    gchat[Google Chat]
     subgraph contenedor[Contenedor cotifly-api]
         api[Cotifly.Api<br/>ASP.NET Core 10]
     end
@@ -42,10 +41,7 @@ flowchart LR
     pdfs[(Volumen /data/pdfs)]
 
     comercial --> front
-    comercial --> gchat
     front -- "HTTPS /api/auth, /web, /pdfs" --> api
-    gchat -- "POST /chat/events con JWT de Google" --> api
-    api -- "spaces.messages.create" --> gchat
     api --> dbc
     api --> dbi
     api --> sap
@@ -55,7 +51,7 @@ flowchart LR
     api --> pdfs
 ```
 
-Nexo está conectado para la búsqueda de clientes (HU-005.2, [ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)), el catálogo de municipios (HU-005.13), los catálogos de flete (HU-005.3) y la cubicación rápida (HU-005.4), siempre que `Nexo__UrlBase` esté configurada ([2.14](#214-integración-con-nexo)). Siguen sin conectar el costeo de Nexo (HU-005.5 en adelante: `buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE`) y, mientras no se cargue `ConnectionStrings__Regional` en el despliegue, `DWCubosEBSSAP` (regional del comercial: adaptador y login listos desde #81). Grovity no se integra en este backend: el alta de prospectos del formulario reutiliza el componente de `clientepro-frontend` contra el backend de ClientePro (corrección del 2026-09-27 en ADR-005); solo haría falta un adaptador si se aprueba usarlo desde el agente. Detalle de cada dependencia en [03-infraestructura](03-infraestructura.md#35-servicios-externos).
+Nexo está conectado para la búsqueda de clientes (HU-005.2, [ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)), el catálogo de municipios (HU-005.13), los catálogos de flete (HU-005.3) y la cubicación rápida (HU-005.4), siempre que `Nexo__UrlBase` esté configurada ([2.14](#214-integración-con-nexo)). El costeo de Nexo tiene su propio flujo (ADR-015, [2.14](#214-integración-con-nexo)). Sigue sin conectar, mientras no se cargue `ConnectionStrings__Regional` en el despliegue, `DWCubosEBSSAP` (regional del comercial: adaptador y login listos desde #81). Grovity no se integra en este backend: el alta de prospectos del formulario reutiliza el componente de `clientepro-frontend` contra el backend de ClientePro (corrección del 2026-09-27 en ADR-005); el agente que lo habría usado se retiró en HU-013.9. Detalle de cada dependencia en [03-infraestructura](03-infraestructura.md#35-servicios-externos).
 
 ## 2.2 Capas
 
@@ -98,6 +94,7 @@ flowchart LR
         Margen
         Tarifas
         Clientes
+        Costeo
     end
     subgraph documentos[Documentos y envío]
         Pdf
@@ -113,11 +110,7 @@ flowchart LR
         Metricas
     end
     Agente --> Margen
-    Agente --> Precio
-    Agente --> Tarifas
-    Agente --> Clientes
-    Agente --> Pdf
-    Agente --> Correo
+    Agente --> Costeo
     Agente --> Cotizaciones
     Pdf --> Cotizaciones
     Pdf --> Margen
@@ -169,7 +162,7 @@ En los controllers la ruta siempre es explícita (`[Route("health")]`); nunca `[
 | `UsuariosWeb` (+ `idUsuarioExterno`, script 0002) | `Identidad/clsUsuarioWeb` | `IClsUsuarioWebRepository` |
 | `Roles`, `UsuariosRoles` (script 0002, #12) | `Identidad/clsRol`, `clsUsuarioRol` (+ `RolInterno`) | `IClsRolRepository` |
 | `TokensRefresco`, `TokensRevocados` (script 0002) | `Identidad/clsTokenRefresco`, `clsTokenRevocado` | `IClsTokenRefrescoRepository`, `IClsTokenRevocadoRepository` (#12) |
-| `Sesiones.estadoAgente` (JSON, script 0002) | `Agente/clsEstadoConversacion` (+ `clsCandidatoCliente`) | vía `clsSesion` |
+| `Sesiones.estadoAgente` (JSON, script 0002) | `Agente/clsEstadoConversacion` (desde HU-013.9 solo folio, id, versión y moneda; el JSON legado se lee ignorando los campos retirados) | vía `clsSesion` |
 | `dbsolucionesti.tblSAPUsuariosApp`, `tblSAPUsuarioRoles`, `tblSAPRoles` (solo lectura) | sin entidad de Dominio: filas internas de Infraestructura (sin `CLAVE`), DTOs `clsUsuarioExterno` y `clsRolExterno` en Aplicacion | `IClsAlmacenIdentidadExterno` (#12) |
 
 Los repositorios solo agregan o modifican en memoria; `IClsUnitOfWork.GuardarCambiosAsync` confirma todo en una transacción y traduce las violaciones de unicidad a `clsViolacionUnicidadException` con código de negocio (`uq_cotizaciones_folio` → `FOLIO_DUPLICADO`). `OrigenCliente` vive en `Clientes`.
@@ -187,18 +180,16 @@ Base de datos, scripts de esquema y permisos: [03-infraestructura](03-infraestru
 | `Margen/clsReglaMargen` | Dominio | Rango por método; ahora también lo usa `clsMargenAjuste` (con `markup` un ajuste ≥ 1 es válido), que además redondea ambos márgenes a 4 decimales (escala de la columna) antes de calcular la diferencia |
 | `Comun/clsCodigosError` | Dominio | Códigos del esquema `ErrorNegocio` (verificados contra `openapi.yaml`) |
 | `Precio/clsConversorMoneda` | Dominio | Monedas `COP` y `USD` (otra → `PRECIO_INVALIDO`), decimales por moneda (0 y 2) y `PesosADolares`: `round(precio_cop / trm, 2)` half-to-even sobre `decimal` (HU-012.2) |
-| `IClsPrecioService` / `clsPrecioService` → `clsSalidaPrecio` | Aplicacion | `calcular_precio`, salida `SalidaPrecio` `{precio, costo, margen, metodo, utilidad, moneda, trm_aplicada, precio_cop, trm_fuente}`. `CalcularAsync` calcula en pesos y, en USD, convierte con la TRM de `IClsProveedorTrm` para la fecha de `IClsCalendarioNegocio` (costo y utilidad siguen en COP; TRM caída → `TRM_NO_DISPONIBLE`, sin precio). `TrmDelDiaAsync` y `EnMoneda` los usa `registrar_ajuste_margen`, que consulta la TRM antes de registrar el ajuste |
-| `IClsMargenResolverService` / `clsMargenResolverService` → `clsMargenResuelto` (`Salida`: `clsSalidaMargen`) | Aplicacion | `obtener_margen`, mismo orden que el Python: línea → TrqType (`IClsSapMapeoRepository`, la organización específica gana al comodín) → si hay **BP** y TrqType, `IClsFuenteMargen` por (salesOrg, TrqType, BP) → `sap_tm`; sin BP no consulta SAP (ADR-004); sin BP, sin TrqType, sin registro o con la fuente no configurada → `politica_linea` con el motivo en `detalle`; sin política → `MARGEN_LINEA_DESCONOCIDA`; fuente configurada pero caída → `politica_linea` con el motivo "SAP TM no disponible" y un warning (decisión de #13; `MARGEN_FUENTE_NO_DISPONIBLE` solo si además la línea no tiene política). Devuelve además `LineaNegocioId`, `MargenPolitica` y `MetodoCalculo` para el estado (ADR-004) |
+| `IClsPrecioService` / `clsPrecioService` → `clsSalidaPrecio` | Aplicacion | Cálculo del precio (lo usan el costeo, el ajuste de margen y las propuestas del asistente; era `calcular_precio` del agente legado), salida `SalidaPrecio` `{precio, costo, margen, metodo, utilidad, moneda, trm_aplicada, precio_cop, trm_fuente}`. `CalcularAsync` calcula en pesos y, en USD, convierte con la TRM de `IClsProveedorTrm` para la fecha de `IClsCalendarioNegocio` (costo y utilidad siguen en COP; TRM caída → `TRM_NO_DISPONIBLE`, sin precio). `TrmDelDiaAsync` y `EnMoneda` los usaba `registrar_ajuste_margen` del agente legado (retirado en HU-013.9) |
+| `IClsMargenResolverService` / `clsMargenResolverService` → `clsMargenResuelto` (`Salida`: `clsSalidaMargen`) | Aplicacion | Margen sugerido (lo usan el envío del costeo, las licitaciones y el PDF; era `obtener_margen` del agente legado), mismo orden que el Python: línea → TrqType (`IClsSapMapeoRepository`, la organización específica gana al comodín) → si hay **BP** y TrqType, `IClsFuenteMargen` por (salesOrg, TrqType, BP) → `sap_tm`; sin BP no consulta SAP (ADR-004); sin BP, sin TrqType, sin registro o con la fuente no configurada → `politica_linea` con el motivo en `detalle`; sin política → `MARGEN_LINEA_DESCONOCIDA`; fuente configurada pero caída → `politica_linea` con el motivo "SAP TM no disponible" y un warning (decisión de #13; `MARGEN_FUENTE_NO_DISPONIBLE` solo si además la línea no tiene política). Devuelve además `LineaNegocioId`, `MargenPolitica` y `MetodoCalculo` para el estado (ADR-004) |
 | `IClsAjusteMargenService` / `clsAjusteMargenService` → `clsSalidaAjusteMargen` | Aplicacion | Margen negociado: redondea a 4 decimales y valida por método (`AJUSTE_MARGEN_INVALIDO`, código nuevo agregado a `ErrorNegocio`; `PRECIO_INVALIDO` queda solo para el cálculo de precio), registra `MargenAjustes` con el comercial (`usuarioId`) y la cotización (debe ser suya; si no, `AJUSTE_COTIZACION_INVALIDA`), devuelve origen `negociado` y, si viene costo, el precio con el margen manual (sin recalcular la política) |
 | `IClsFuenteMargen` (Strategy) / `clsOpcionesMargen` (`SapTm:SalesOrgDefault`, por defecto `50000005`) | Aplicacion | Puerto de SAP TM: devuelve el `Value` crudo (13.5 = 13,5 %) o `null`; el resolver lo divide por 100 una sola vez. Adaptadores `export_json` / `odata` en #13 (abajo) |
-| `IClsTarifaProvider` | Aplicacion | Puerto de `buscar_tarifa` (el tarifario de Drive se retiró; el costeo viene de Nexo, HU-005) |
 | `Precio/Interfaces/IClsProveedorTrm` → `clsTrm` | Aplicacion | TRM vigente en una fecha de negocio (HU-012.1, ADR-014): `{Valor, VigenciaDesde, VigenciaHasta, Fuente}` (`dolarapi` o `superfinanciera`) o `TRM_NO_DISPONIBLE`; nunca lanza por la fuente |
 | `Precio/Services/clsProveedorTrmDolarApi` | Infraestructura | Fuente principal (`Trm:UrlDolarApi`, por defecto `https://co.dolarapi.com/v1/trm`): valida `unidad = COP`, `nombre = TRM`, `valor` en [500, 20000] (4 decimales half-to-even) y a ±10 % de la última TRM conocida (`clsMemoriaTrm`), cuerpo ≤ 16 KB y `fechaActualizacion` del día pedido antes de las 12:00 en Bogotá (después puede ser la TRM de mañana); vigencia = el día pedido. Cliente con nombre `TrmDolarApi`, `clsResilienciaTrm` con `Trm:TiempoEsperaDolarApiSegundos`; fallo → `TRM_NO_DISPONIBLE` con un warning |
 | `Precio/Services/clsProveedorTrmConRespaldo` | Infraestructura | Cadena `Trm:Proveedor = dolarapi_con_respaldo` (por defecto): DolarApi y, solo si falla, la Superintendencia (warning con la fuente usada); las dos caídas → `TRM_NO_DISPONIBLE` con los dos motivos. Con `dolarapi` o `superfinanciera` se registra solo esa fuente |
 | `Precio/Services/clsProveedorTrmSuperfinanciera` | Infraestructura | Datos abiertos de la Superintendencia Financiera (`Trm:Url`, conjunto `32sa-8pi3`): SoQL `vigenciadesde <= F AND vigenciahasta >= F`, orden descendente, 1 fila, así los fines de semana y festivos reciben la TRM del rango que los cubre. Cliente con nombre `Trm` (`IHttpClientFactory`, se crea por consulta), resiliencia estándar con `Trm:TiempoEsperaSegundos` en total, un tercio por intento y 2 reintentos; fallo → `TRM_NO_DISPONIBLE` con un warning |
 | `Precio/Services/clsProveedorTrmEnCache` | Infraestructura | Decorador singleton registrado como `IClsProveedorTrm`, encima de la cadena: caché por fecha de negocio (America/Bogota): la primera TRM válida del día queda fija hasta las 00:00 del día siguiente (una fecha pasada, 6 horas), registra cada TRM en `clsMemoriaTrm`, consulta compartida por fecha (los simultáneos reciben el mismo resultado, también un fallo) y caché negativa de 20 s |
 | `Margen/Services/clsFuenteMargenNoConfigurada` | Infraestructura | Fuente con `SapTm:Modo` vacío (valor por defecto): `EstaConfigurada = false` y devuelve `null` (no lanza); el resolver usa la política con el detalle "SAP TM no configurado: se usa la política de la línea" |
-| `Tarifas/Services/clsTarifaProviderNoDisponible` | Infraestructura | Proveedor por defecto (`TryAdd`): `TARIFA_FUENTE_NO_DISPONIBLE`, "el costeo viene de Nexo (HU-005); mientras tanto el comercial ingresa el costo" |
 
 Diferencias deliberadas con el Python: la línea se resuelve sin tildes ni espacios (la collation `CI_AS` distingue tildes); los textos de `detalle` son los del Python (`(cliente nuevo)`, `(sin registro en SAP TM)`, `Margen propuesto SAP TM para cliente X en OPTN: 13.5%`, con el `Value` tal como llega de SAP, igual que el `f"{value}%"` del Python, corregido en #13) salvo el caso sin BP (`cliente nuevo: sin BP de SAP, no se consulta SAP TM`, ADR-004) y los de SAP no configurado o no disponible; los márgenes del ajuste y su diferencia se redondean a 4 decimales (escala de `DECIMAL(9,4)`) y no a 6; el margen negociado se valida por método (el Python no validaba, código `AJUSTE_MARGEN_INVALIDO`) y un motivo vacío se registra como `Ajuste manual del comercial`; empates exactos de medio peso (ver arriba).
 
@@ -233,7 +224,7 @@ Diferencias deliberadas con el Python:
 
 ## 2.8 PDF, correo y auditoría
 
-**PDF, Correo y Auditoría (#11, HU-003.5).** Port de `mcp_server/pdf/` (`armar_cotizacion.py`, `armar_multi.py`, `generador.py`), `shared/almacen_pdf.py`, `mcp_server/correo.py` y `mcp_server/auditoria.py`. Casos de uso listos para los endpoints de #12 (`enviar`, `correo/vista-previa`, `destinatarios-previos`, `usuario/telefono`, `seguimiento`) y para las herramientas del agente (`generar_pdf`, `enviar_correo`):
+**PDF, Correo y Auditoría (#11, HU-003.5).** Port de `mcp_server/pdf/` (`armar_cotizacion.py`, `armar_multi.py`, `generador.py`), `shared/almacen_pdf.py`, `mcp_server/correo.py` y `mcp_server/auditoria.py`. Casos de uso listos para los endpoints de #12 (`enviar`, `correo/vista-previa`, `destinatarios-previos`, `usuario/telefono`, `seguimiento`) y para las herramientas del agente legado (`generar_pdf`, `enviar_correo`, retiradas en HU-013.9):
 
 | Pieza | Capa | Qué hace |
 |---|---|---|
@@ -253,16 +244,16 @@ Diferencias deliberadas con el Python:
 | `IClsSeguimientoService` | Aplicacion (Cotizaciones) | Ganada/perdida con motivo (≤ 2000) y `marcadoAt`, solo del dueño. Sale de `IClsCotizacionRepository.MarcarSeguimientoAsync` (deuda de ADR-008) |
 | `IClsCalendarioNegocio` / `Comun/clsCalendarioNegocio` | Aplicacion / Infraestructura | Fecha de hoy en `Zona:ZonaHoraria` (el contenedor corre en UTC); la usa también el folio de #12 |
 
-Códigos nuevos en `ErrorNegocio` (`specs/openapi.yaml`): `FOLIO_DUPLICADO` (el Python versionaba el folio en silencio con `-v2`; en .NET el folio lo genera #12, ADR-011, y una colisión se informa), `CORREO_DESHABILITADO` y `CORREO_INVALIDO` (la herramienta `enviar_correo` lo devuelve tal cual).
+Códigos nuevos en `ErrorNegocio` (`specs/openapi.yaml`): `FOLIO_DUPLICADO` (el Python versionaba el folio en silencio con `-v2`; en .NET el folio lo genera #12, ADR-011, y una colisión se informa), `CORREO_DESHABILITADO` y `CORREO_INVALIDO`.
 
-**Coherencia de lo impreso (#11, ADR-003/ADR-004):** el folio es obligatorio en la entrada (lo genera el servidor; la `referencia` del payload se ignora). Con `PrecioFinal` en la trazabilidad, la tarifa impresa de cada fila y el precio calculado con costo y margen aplicado deben ser ese precio; filas y servicios conexos deben estar en la moneda de la cotización (HU-012.3). Si no, `PDF_PAYLOAD_INVALIDO`. El filtro de #12 sobrescribe los números del payload desde el estado (ADR-004). También se rechazan tarifas, costos y márgenes negativos, y `clsCotizacionPdfPayload.DesdeJson` devuelve `PDF_PAYLOAD_INVALIDO` (no lanza) ante JSON mal formado, tipos erróneos o sustitutos UTF-16 sueltos.
+**Coherencia de lo impreso (#11, ADR-003/ADR-004):** el folio es obligatorio en la entrada (lo genera el servidor; la `referencia` del payload se ignora). Con `PrecioFinal` en la trazabilidad, la tarifa impresa de cada fila y el precio calculado con costo y margen aplicado deben ser ese precio; filas y servicios conexos deben estar en la moneda de la cotización (HU-012.3). Si no, `PDF_PAYLOAD_INVALIDO`. Hasta HU-013.9 el filtro de inyección del agente legado sobrescribía los números del payload desde el estado (ADR-004). También se rechazan tarifas, costos y márgenes negativos, y `clsCotizacionPdfPayload.DesdeJson` devuelve `PDF_PAYLOAD_INVALIDO` (no lanza) ante JSON mal formado, tipos erróneos o sustitutos UTF-16 sueltos.
 
 
 La traducción de estos códigos a HTTP en `/web/*` está en [07-api](07-api.md#74-errores).
 
-El filtro de auditoría del agente no vuelve a auditar `generar_pdf`, `enviar_correo` ni `registrar_ajuste_margen` (ya los auditan sus decoradores; `clsAuditoriaService.HerramientasAuditadasPorCasoDeUso`).
+El filtro de auditoría del agente no vuelve a auditar `generar_pdf`, `enviar_correo` ni `registrar_ajuste_margen` (ya los auditan sus decoradores; `clsAuditoriaService.HerramientasAuditadasPorCasoDeUso`). Desde HU-013.9 ninguna herramienta del asistente llega a esos casos de uso.
 
-**Destinatarios previos:** hoy devuelve solo los del último envío exitoso del comercial al NIT (es lo que dice `openapi.yaml`); el backlog habla de "los correos ya usados", así que queda por confirmar si se quiere la unión de todos los envíos. Sin `Nexo__UrlBase` (o con Nexo caído), `buscar_cliente` responde `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (ADR-005), las cotizaciones del chat quedan con `nitCliente` nulo y no hay precarga.
+**Destinatarios previos:** hoy devuelve solo los del último envío exitoso del comercial al NIT (es lo que dice `openapi.yaml`); el backlog habla de "los correos ya usados", así que queda por confirmar si se quiere la unión de todos los envíos. Las cotizaciones que creó el chat legado sin cliente confirmado quedaron con `nitCliente` nulo y no tienen precarga.
 
 Diferencias deliberadas con el Python:
 - **Firma con datos reales:** nombre y correo de `UsuariosWeb` y "Cel" solo si `UsuariosWeb.telefono` tiene valor; el `comercial` del payload (LLM) solo aporta el cargo.
@@ -273,7 +264,7 @@ Diferencias deliberadas con el Python:
 - **Variante multi:** usa el prefijo `US$` de la moneda de cada fila (el `money()` de `armar_multi.py` lo ignoraba).
 - **Almacén:** la lectura por referencia solo toma el nombre del archivo (el Python leía cualquier ruta local existente guardada en `pdfPath`).
 - **Correo:** `estadoEnvio` pasa a `reenviada`; la deduplicación se serializa por cotización dentro del proceso; `wscorreos` y `smtp` no se portan hasta confirmar el transporte (D3); `Correo:Habilitado=false` por defecto responde `CORREO_DESHABILITADO` (el Python ocultaba la herramienta).
-- **Incluye itemizado:** con `servicios_conexos` se lista el flete (origen y destinos) y cada servicio con su precio. Nexo (HU-005) todavía no entrega el costeo desglosado por servicio: mientras tanto los envía el agente o el formulario, y sin ellos queda el texto estándar.
+- **Incluye itemizado:** con `servicios_conexos` se lista el flete (origen y destinos) y cada servicio con su precio. Nexo (HU-005) todavía no entrega el costeo desglosado por servicio: mientras tanto los envía el formulario, y sin ellos queda el texto estándar.
 
 ## 2.9 Identidad: login SSO con verificación doble
 
@@ -333,16 +324,16 @@ sequenceDiagram
     end
 ```
 
-El refresh (`POST /api/auth/refresh`) repite la verificación doble sin alta antes de rotar el token, y Google Chat la repite en cada turno. Cada petición protegida pasa por `JwtBearer` y por la revisión del `jti` en `clsCacheTokensRevocados` (`OnTokenValidated`).
+El refresh (`POST /api/auth/refresh`) repite la verificación doble sin alta antes de rotar el token (Google Chat la repetía en cada turno hasta su retiro en HU-013.9). Cada petición protegida pasa por `JwtBearer` y por la revisión del `jti` en `clsCacheTokensRevocados` (`OnTokenValidated`).
 
 ## 2.10 API web
 
-**API web `/web/*` (#12, parte B).** Todos los endpoints de `specs/openapi.yaml` salvo `/web/chat` y `/chat/events` (parte C). Controllers delgados: toman el usuario del token (`IClsContextoUsuario`) y delegan en los casos de uso; los errores pasan por una sola tabla (`clsRespuestasWeb`, abajo).
+**API web `/web/*` (#12, parte B).** Todos los endpoints de `specs/openapi.yaml` salvo `/web/chat` (parte C; `/chat/events` también era de la parte C y se retiró en HU-013.9). Controllers delgados: toman el usuario del token (`IClsContextoUsuario`) y delegan en los casos de uso; los errores pasan por una sola tabla (`clsRespuestasWeb`, abajo).
 
 | Pieza | Capa | Qué hace |
 |---|---|---|
 | `Cotizaciones/clsFolio` + `Cotizaciones/clsInicialesComercial` | Dominio | Folio del servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md), aceptada): `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (p. ej. `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-001-v2`). `Crear(fecha, iniciales, consecutivo, nit)` (iniciales de 2 letras A–Z, si no `FOLIO_INVALIDO`; NNN 001–999, si no `FOLIO_CONSECUTIVO_AGOTADO`; el NIT se guarda solo con sus dígitos, máximo 26 para que quepa `-v99` en 50 caracteres), `Desde(folio)` (interpreta el formato; un folio heredado como `PCN-DDMMAAAA` o sin iniciales conserva su base), `ConVersion(n)` (≥ 2, ≤ 50 caracteres). `clsInicialesComercial.Calcular(nombreCompleto, nombreUsuario)`: primera letra del primer nombre y del primer apellido (penúltima palabra con 3 o más), sin tildes, partículas (`de`, `del`, `la`, `las`, `los`, `y`), texto entre paréntesis o tras ` - ` ni iniciales abreviadas (`M.`); respaldo `nombreUsuario` sin dominio de correo; una palabra → sus 2 primeras letras; sin letras → `XX` |
-| `IClsGeneradorFolioService` / `clsGeneradorFolioService` | Aplicacion | `CrearConFolioNuevoAsync(usuario, nit, crear)` y `CrearNuevaVersionAsync(usuario, cotizacionId, crear)`: calcula el folio y ejecuta `crear` (agrega la cotización con `version = folio.Version` y guarda) dentro de `IClsCandadoTransaccional`. Iniciales del comercial desde `UsuariosWeb` (inexistente → `ERROR_INTERNO`). Fecha de `IClsCalendarioNegocio` (America/Bogota). Consecutivo = mayor `NNN` del día entre todos los folios base con esas iniciales (con y sin NIT, de cualquier comercial) + 1: nunca está tomado, no hay bucle de huecos. Versión = máxima de la familia (`{base}` y `{base}-vN`) + 1. Lo usa `generar_pdf` del agente (parte C) |
+| `IClsGeneradorFolioService` / `clsGeneradorFolioService` | Aplicacion | `CrearConFolioNuevoAsync(usuario, nit, crear)` y `CrearNuevaVersionAsync(usuario, cotizacionId, crear)`: calcula el folio y ejecuta `crear` (agrega la cotización con `version = folio.Version` y guarda) dentro de `IClsCandadoTransaccional`. Iniciales del comercial desde `UsuariosWeb` (inexistente → `ERROR_INTERNO`). Fecha de `IClsCalendarioNegocio` (America/Bogota). Consecutivo = mayor `NNN` del día entre todos los folios base con esas iniciales (con y sin NIT, de cualquier comercial) + 1: nunca está tomado, no hay bucle de huecos. Versión = máxima de la familia (`{base}` y `{base}-vN`) + 1. Lo usan el envío y la re-solicitud del costeo, la nueva versión y las licitaciones (hasta HU-013.9 también `generar_pdf` del agente legado) |
 | `IClsCandadoTransaccional` / `Comun/Persistence/clsCandadoTransaccionalSql` | Aplicacion / Infraestructura | Transacción `ReadCommitted` en el `DbContext` del ámbito + `sp_getapplock` (`Exclusive`, dueño `Transaction`, espera máxima 15 s → `TimeoutException`). Confirma si el resultado es exitoso; deshace (y limpia el `ChangeTracker`) si es un fallo o si lanza. No se anida. Recursos: `cotifly:folio:DDMMAAAA:INICIALES` (uno por iniciales y día) y `cotifly:folio-version:{base}` |
 | `IClsMisCotizacionesService`, `IClsNuevaVersionService` (+ `clsCotizacionResumen`, `clsDatosNuevaVersion`) | Aplicacion | Listado del comercial (máx. 100, JOIN con `MargenesPolitica` para `linea_negocio`, `pdf_url` con `clsUrlPdf`) y datos para prellenar una versión nueva (solo lectura) |
 | `IClsDescargaPdfService` | Aplicacion | `GET /pdfs/{archivo}`: nombre `^[A-Za-z0-9_-]+\.pdf$` que debe ser el PDF guardado de la cotización con ese folio; dueño, o `gerente_comercial` de la misma regional (si la regional del gerente es nula se niega: fail-closed, solo el dueño; auditoría de #12, F1). Todo acceso de alguien que no es el dueño, permitido o no, se audita (`descargar_pdf`) |
@@ -366,120 +357,97 @@ Decisiones de la parte B:
 - **Firma del JWT sin caché global de proveedores** (ajuste sobre la parte A): el emisor usa una sola clave y la validación desactiva `CacheSignatureProviders`. Con varias instancias de la API en un proceso (pruebas en paralelo) aparecían 401 intermitentes con tokens recién emitidos; el patrón coincide con la caché de proveedores de firma de Microsoft.IdentityModel. `OnAuthenticationFailed` deja una línea Information con el tipo y el mensaje del rechazo.
 - **HU-004.9, "el comercial solo ve líneas activas":** hoy no hay ningún endpoint de comercial que liste líneas (el catálogo del formulario no está en el contrato); cuando exista debe filtrar `isActive = 1`.
 
-## 2.11 Agente de IA, /web/chat y Google Chat
+## 2.11 Asistente IA por folio (/web/chat)
 
-**Agente de IA, `/web/chat` y Google Chat (#12, parte C, ADR-003, ADR-004, ADR-005, ADR-011).** Port de `orquestador/agente.py`, `prompt.py`, `sesiones.py`, `web.py` (`web_chat`, `_datos_de`), `webhook.py`, `gchat.py`, `worker.py`, `procesador.py`, `publicador.py`, `cards.py` y `alertas.py`, con las herramientas de `mcp_server/server.py` sobre los casos de uso de #10, #11 y #12:
+> **Historia.** Hasta HU-013.9 (#105) esta sección describía el agente cotizador legado (`clsAgenteRunner`, plugin `cotizador` con `buscar_cliente`, `buscar_tarifa`, `calcular_precio`, `generar_pdf`, `enviar_correo`..., filtro de inyección y slot filling de [ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y la integración con Google Chat (`POST /chat/events`, verificación del JWT de Google, cola, worker, publicador y tarjetas; [ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)), ambos de #12 parte C. Los dos se retiraron en HU-013.9: el webhook responde 404, `POST /web/chat` sin `folio` responde 400 `FOLIO_REQUERIDO` y la cotización la arman el formulario, Nexo y el código ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Las tablas `Sesiones` y `EventosConversacion` conservan esas conversaciones como auditoría (las de Google Chat con `spaceId` `spaces/...`).
+
+**Asistente por folio (HU-013.6, #102, ADR-018 §2b y §14; único agente desde HU-013.9).** `POST /web/chat` es el asistente de UNA cotización: exige `folio`, solo lee y propone, y ningún monto llega al modelo. La acción propuesta (cuerpo, endpoint, `row_version` y resumen con precios) la arma el servidor y la ejecuta el frontend cuando el comercial pulsa Confirmar. Conserva el loop manual de ADR-003 y el validador de #16.
 
 | Pieza | Capa | Qué hace |
 |---|---|---|
-| `Agente/Services/clsAgenteRunner` (`IClsAgenteRunner`) | Aplicacion | Turno del agente: sesión `spaceId`/`threadId` ligada al comercial (otro usuario → `NO_ENCONTRADO`, 404), mensaje registrado primero, prompt de sistema, historial con ventana, loop manual hasta `IA:MaxIteraciones` sobre `IChatClient` (sin `UseFunctionInvocation()`), cada herramienta con `kernel.InvokeAsync` (corren los filtros), `HERRAMIENTA_DESCONOCIDA` como resultado si el modelo pide una que no existe, respuesta final en una llamada aparte sin herramientas que pide y valida `IClsValidadorRespuestaAgente` (#16), eventos y estado guardados al final (la sesión se relee: el candado del folio puede limpiar el seguimiento de cambios). Devuelve `clsResultadoTurno` (texto, iteraciones, herramientas, salidas y, desde #16, la respuesta estructurada, los reintentos y si fue el respaldo) |
-| `Agente/Herramientas/clsHerramientasCotizador` | Aplicacion | Plugin `cotizador` de Semantic Kernel (`[KernelFunction]`): `buscar_cliente(nombre)`, `resolver_municipio(texto, campo)` (HU-005.13: `campo` es `origen` o `destino`, si no `MUNICIPIO_ARGUMENTO_INVALIDO` sin consultar Nexo; resuelve el texto contra el catálogo de municipios con `clsResolvedorMunicipios` y responde `coincidencia` `unica`, `varias` o `ninguna`, con el municipio o los candidatos por nombre, departamento y país, sin id ni código Dane; sin catálogo, `MUNICIPIOS_NO_DISPONIBLE`), `buscar_tarifa(lineaNegocio, origen, destino, tipoVehiculo?, tipoCarga?, pesoKg?)`, `obtener_margen(lineaNegocio, cliente?)`, `calcular_precio(costo, margen, metodo)`, `registrar_ajuste_margen(margenAplicado, motivo?)`, `generar_pdf(cotizacion)` (folio de `clsGeneradorFolioService`: nuevo, o versión nueva si la conversación ya generó una; trazabilidad desde el estado), `enviar_correo(para, asunto?, cuerpo?, cc?)` (solo se declara con `Correo:Habilitado=true`) y `consultar_cotizacion(folio?, cliente?)` (solo las del comercial). Devuelven `clsResultadoHerramienta`: la salida del contrato (`SalidaPrecio`, `SalidaMargen`, `SalidaPdf`...) o `{"error": {codigo, mensaje, detalle?}}` |
-| `Agente/Filtros/clsInyeccionEstadoFilter` | Aplicacion | `IFunctionInvocationFilter` (ADR-004 §4): sobrescribe `usuarioId`, `spaceId`, `threadId`, `nitCliente`, `origenCliente`, `bpCliente`, `lineaNegocioId`, `cotizacionId` y `folio` en todas las herramientas; el BP del estado es el cliente de `obtener_margen` (sin cliente confirmado, ninguno); margen y método del estado en `calcular_precio` (sin margen resuelto → `PRECIO_INVALIDO`) y el costo si vino de `buscar_tarifa`; referencia, costo y método en `registrar_ajuste_margen`; en `generar_pdf` exige la confirmación del turno y un cliente sin candidatos pendientes (`CONFIRMACION_REQUERIDA`) y un precio calculado, y reescribe el payload (línea canónica, método, cliente confirmado; cada fila con tarifa = precio final, costo y margen del estado y la moneda de la cotización; quita `referencia`, trazabilidad y servicios conexos); en `enviar_correo` exige la confirmación o que el comercial haya escrito los destinatarios. Con un origen o destino ambiguo sin elegir (HU-005.13) rechaza `buscar_tarifa`, `calcular_precio`, `registrar_ajuste_margen` y `generar_pdf` con `CONFIRMACION_REQUERIDA`; en `buscar_tarifa` pone el municipio verificado en su forma canónica `Municipio, Departamento` cuando el texto del modelo es ese municipio, y en `generar_pdf` pone el origen verificado en `tarifa.origen` y el destino verificado en la fila de `tarifa.filas` solo si hay una sola; no toca las `secciones` de una cotización multi ni los destinos de una tabla con varias filas (quedan con el texto del modelo). Si el LLM mandó otro valor, queda en el log |
-| `Agente/Filtros/clsAuditoriaHerramientaFilter` | Aplicacion | `EventosHerramienta` de cada herramienta con la entrada ya inyectada. No repite `generar_pdf`, `enviar_correo` ni `registrar_ajuste_margen` cuando llegaron a su caso de uso (los auditan sus decoradores, `HerramientasAuditadasPorCasoDeUso`), pero sí registra sus rechazos del orquestador. Va por fuera del filtro de inyección |
-| `Agente/Services/clsEstadoConversacionService` | Aplicacion | Único que cambia `clsEstadoConversacion` (ADR-004 §3). Con salidas exitosas: `buscar_cliente` exacta → NIT, nombre, origen y BP; varias (o ninguna) → candidatos; `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (Nexo sin configurar o caído) → el texto solo como referencia, sin NIT; `resolver_municipio` (HU-005.13) única → `OrigenMunicipio`/`DestinoMunicipio` y el texto canónico, varias → `CandidatosOrigen`/`CandidatosDestino` con el texto del comercial, ninguna → nada (solo descarta candidatos viejos), `MUNICIPIOS_NO_DISPONIBLE` → el texto libre sin bloquear; un cambio de origen o destino descarta costo, precio, previsualización y cotización en curso; `buscar_tarifa` → ruta y costo de la fuente (si la ruta ya no es la del municipio verificado, este deja de estarlo); `obtener_margen` → línea, id, márgenes y método (anula un precio anterior); `calcular_precio` → precio y previsualización pendiente; ajuste → `negociado`; `generar_pdf` → cotización, folio y versión. Con el mensaje del comercial: elección de un candidato por NIT, nombre o posición; elección de un municipio candidato por el departamento que nombra ("la de Nariño") o, si no hay otra lista pendiente, por posición o un "sí"; y confirmación explícita ("Confirmo", "sí", "dale"...) solo si hay una previsualización pendiente |
-| `Agente/Services/clsPromptSistema` + `Agente/Recursos/prompt_cotizador.md` | Aplicacion | Port de `SYSTEM_COTIZADOR` como recurso embebido, precedido de "# Contexto del comercial" (nombre y correo de `UsuariosWeb`, fecha de negocio) y "# Estado resuelto" (informativo; la fuente de verdad es el filtro). Corrige la contradicción del folio (el Python pedía una `referencia` "nunca PCN" que el MCP usaba como folio): el folio lo genera el servidor y el LLM no escribe números ni identificadores |
+| `Agente/Services/clsAsistenteFolioRunner` (`IClsAsistenteFolioRunner`) | Aplicacion | Turno del asistente: comercial del token y cotización del folio (no es suya → `COTIZACION_NO_ENCONTRADA`, 404 sin tocar la sesión ni el modelo), candado de la sesión, sesión `web/{sesion_id}` / `web/{sesion_id}/{folio}` ligada al comercial (otro usuario → `NO_ENCONTRADO`, 404), mensaje registrado primero, prompt de sistema, historial con ventana, loop manual hasta `IA:MaxIteraciones` sobre `IChatClient` (sin `UseFunctionInvocation()`), cada herramienta con `kernel.InvokeAsync` (corre el filtro de auditoría), `HERRAMIENTA_DESCONOCIDA` si el modelo pide una inexistente o retirada, respuesta final aparte validada por `IClsValidadorRespuestaAgente`. Solo guarda los eventos de la conversación y el estado de la sesión; nunca escribe datos de negocio. Devuelve `clsResultadoTurno` con la `AccionPropuesta` del turno |
+| `Agente/Herramientas/clsHerramientasAsistenteFolio` | Aplicacion | Plugin `asistente` de Semantic Kernel: `consultar_cotizacion` (estado, cliente, línea, ruta, moneda, márgenes como fracción y conexos, sin dinero), `proponer_ajuste_margen(margen, justificacion?)`, `proponer_re_solicitud(motivo, cambios de carga?, nuevaVersion?)` y `buscar_servicio_conexo(texto, cantidad?, servicioId?, lineaOrden?)`. La cotización sale del contexto, nunca de un argumento del LLM |
+| `Agente/Services/clsPropuestasAsistente` | Aplicacion | Arma la acción propuesta con código (`ajustar_margen` → `PUT .../costeo/margen`, `re_solicitar_costeo` → `POST .../costeo/re-solicitar`, `agregar_servicios_conexos` → `POST .../costeo/servicios-conexos`) con las mismas reglas del endpoint destino. El resumen con precios va en la respuesta y no vuelve al modelo |
+| `Agente/Services/clsContextoAsistenteFolio` | Aplicacion | Contexto del turno (uno por ámbito de DI): comercial, hilo (`ThreadId`), cotización validada, línea de negocio y propuesta. Lo leen las herramientas y el filtro de auditoría |
+| `Agente/Services/clsPromptAsistenteFolio` + `Agente/Recursos/prompt_asistente_folio.md` | Aplicacion | Prompt de sistema como recurso embebido, con el nombre del comercial, la fecha de negocio y el folio |
+| `Agente/Filtros/clsAuditoriaHerramientaFilter` | Aplicacion | `EventosHerramienta` de cada herramienta con la entrada del LLM, la salida que vio el modelo, el éxito, la duración y el hilo del contexto |
+| `Agente/Herramientas/clsEsquemaPortableHerramientas` | Aplicacion | Declaraciones de las herramientas con un JSON Schema portable entre proveedores (ADR-003 "Esquemas portables") |
 | `Agente/Services/clsVentanaHistorial` | Aplicacion | Ventana por tokens (~4 caracteres por token, `Sesiones:LimiteTokens`) que conserva el primer mensaje y el actual |
-| `Agente/Interfaces/IClsValidadorRespuestaAgente` + `Agente/Services/clsValidadorRespuestaAgente`, `clsReglasRespuestaAgente`; `Agente/DTOs/clsRespuestaAgenteEstructurada` | Aplicacion | Validador de la respuesta final (#16, HU-003.10, equivalente .NET de *Instructor*; ADR-003 "Implementación (#16)"): llamada final sin herramientas con `ChatResponseFormat.ForJsonSchema` (esquema `respuesta_agente` generado con `AIJsonUtilities`: `tipo` conversacional \| previsualizacion \| confirmacion_requerida \| error, `texto` 1–4000, `requiere_confirmacion`, `acciones_sugeridas` confirmar_pdf \| ajustar_margen o null) y validación manual (JSON completo, campos desconocidos o faltantes, tipos, enums, largos, coherencia, acciones con previsualización pendiente y herramienta declarada, montos y folios respaldados por las herramientas, el estado o el comercial). Un reintento con mensaje de corrección; si vuelve a fallar, respaldo `{tipo: error}` con `clsTextosAgente.RespuestaNoEstructurada` → en la web `RespuestaChat` con el PDF/precio/margen del turno si los hubo (texto de respaldo) o `200 {texto, error: true}` si no; en Chat texto sin botones. `IA:SoportaJsonSchema=false` o un proveedor que rechaza el esquema (HTTP 400/422 que nombra `response_format`/`json_schema`) → llamada sin formato con el esquema en la instrucción durante `IA:MinutosSinJsonSchema` y luego re-sonda. Medidor `Cotifly.Agente` por `IMeterFactory` (inválidas por motivo, reintentos, respaldos, esquema rechazado; `dotnet-counters monitor --process-id <pid> --counters Cotifly.Agente`, sin exportador: se evalúa en HU-006, ver [10-operacion](10-operacion.md#103-métricas)); logs solo con los códigos. `TryAdd` |
-| `Agente/Services/clsParserEventoChat`, `clsTarjetasChat`, `clsProcesadorEventoChat` | Aplicacion | Parseo de eventos clásicos y add-on (incluidos los clics en los botones de la tarjeta) y acuses; tarjetas de previsualización (botones "Confirmar y generar PDF" y "Ajustar margen"), del PDF (enlace firmado) y de alerta; procesamiento: identidad por `UsuariosWeb.email` (sin cuenta → "Ingresa primero a Cotifly desde ClientePro." y no se cotiza), turno, publicación en el hilo y aviso del fallo en el hilo |
-| `Clientes/Interfaces/IClsBuscadorClientes` / `Clientes/Services/clsBuscadorClientesNexo`, `clsBuscadorClientesNoDisponible` | Aplicacion / Infraestructura | Puerto de `buscar_cliente` (ADR-005) y de `GET /web/clientes?q=` (HU-005.2), con el `UsuariosWeb.id` del comercial (del estado de la conversación en el agente). `clsFabricaBuscadorClientes` elige el adaptador de Nexo si `Nexo__UrlBase` está configurada y, si no, el que responde `CLIENTE_BUSQUEDA_NO_DISPONIBLE` (`TryAdd`). Detalle en [2.14](#214-integración-con-nexo) |
-| `Pdf/Services/clsDescargaPdfFirmadaService` + `IClsFirmaUrlPdf` / `Pdf/Services/clsFirmaUrlPdfHmac` | Aplicacion / Infraestructura | `GET /pdfs/{archivo}?t=...` (ADR-011 §3): HMAC-SHA256 sobre archivo, comercial y vencimiento (`Pdf:MinutosUrlFirmada`, 15), comparación de tiempo constante; solo el dueño |
+| `Agente/Interfaces/IClsValidadorRespuestaAgente` + `Agente/Services/clsValidadorRespuestaAgente`, `clsReglasRespuestaAgente`; `Agente/DTOs/clsRespuestaAgenteEstructurada` | Aplicacion | Validador de la respuesta final (#16, HU-003.10, equivalente .NET de *Instructor*; ADR-003 "Implementación (#16)"). Detalle en [2.13](#213-validador-de-la-respuesta-del-agente). `TryAdd` |
+| `Dominio/Agente/clsEstadoConversacion` | Dominio | Estado de la sesión: solo `FolioEnProgreso`, `CotizacionId`, `Version` y `Moneda`, en `Sesiones.estadoAgente`. Lee el JSON legado del slot filling ignorando los campos retirados |
+| `Agente/Interfaces/IClsCandadoSesion` / `Agente/Services/clsCandadoSesionSql`, `clsBarridoSesionesHostedService` | Aplicacion / Infraestructura | Un turno a la vez por sesión (`sp_getapplock`, ver abajo) y archivo de las sesiones inactivas (`Sesiones:BarridoMinutos`, `Sesiones:TtlHoras`) |
 | `IA/Services/clsChatClientFactory`, `clsChatClientConRespaldo`, `clsLimitadorRpm` (+ `clsChatClientLimitado`, `clsChatClientNoConfigurado`) | Infraestructura | `IChatClient` por `IA:Proveedor` (ver [03-infraestructura](03-infraestructura.md)), respaldo ante 429, 5xx, red caída o tiempo agotado (`IA:Fallbacks`), límite de `IA:Rpm` y `UseLogging`; sin proveedor, un cliente que falla con un mensaje claro |
-| `Agente/Services/clsVerificadorJwtGoogleChat`, `clsTokenCuentaServicioGoogle`, `clsPublicadorGoogleChat`, `clsColaEventosChat`, `clsWorkerEventosChat`, `clsBarridoSesionesHostedService` | Infraestructura | JWT de Google (RS256 contra los certificados x509 de `chat@system.gserviceaccount.com`, en caché y releídos ante un `kid` nuevo; emisor y audiencia `GChat:ProjectNumber`); token OAuth de la cuenta de servicio (JWT-bearer, RFC 7523); `spaces.messages.create` con `REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`; cola `Channel<T>` acotada; worker con un ámbito por evento que sobrevive a los fallos y alerta a `GChat:SupportSpace`; barrido de sesiones inactivas |
-| `Agente/Controllers/clsChatWebController`, `clsChatEventosController`; `Pdf/Controllers/clsPdfController` | Api | `POST /web/chat` (política `Comercial`, límite `LimiteChat`, `sesion_id` validado, 404 si la sesión es de otro, 200 `{texto, error: true}` ante un fallo, con los textos del Python); `POST /chat/events` (anónimo, JWT de Google, acuse inmediato, 400 si no es JSON); `/pdfs` con Bearer o `?t=` |
+| `Agente/Controllers/clsChatWebController`; `Pdf/Controllers/clsPdfController` | Api | `POST /web/chat` (política `Comercial`, límite `LimiteChat`, `sesion_id` y `folio` validados, 400 `FOLIO_REQUERIDO` sin folio, 404 si la sesión o el folio son de otro, 200 `{texto, error: true}` ante un fallo); `/pdfs` solo con Bearer (la URL firmada `?t=` se retiró en HU-013.9) |
 
-Decisiones de la parte C:
+Decisiones vigentes de #12 parte C:
 - **Carpetas:** `Aplicacion/Agente/` suma `Herramientas/` (plugin de Semantic Kernel), `Filtros/` (`IFunctionInvocationFilter`) y `Recursos/` (prompt embebido) a las de la convención; Infraestructura suma `IA/Services/` (ADR-003: solo ahí se conocen los SDK de los proveedores).
-- **`KernelFunction` como declaración, no `AsAIFunction()`:** en Semantic Kernel 1.80 `KernelFunction.AsAIFunction()` está obsoleta ("usa la función directamente") y, usada como `AITool`, la función se llama `cotizador_<nombre>`. El runner declara al modelo `AIFunctionFactory.CreateDeclaration(nombre, descripción, esquema)` de cada `KernelFunction` (el modelo ve `buscar_tarifa`, como en el Python) y siempre ejecuta con `kernel.InvokeAsync`: solo declaración, nunca invocación automática.
+- **`KernelFunction` como declaración, no `AsAIFunction()`:** en Semantic Kernel 1.80 `KernelFunction.AsAIFunction()` está obsoleta y, usada como `AITool`, la función se llama `<plugin>_<nombre>`. El runner declara al modelo cada `KernelFunction` con su nombre corto (`clsEsquemaPortableHerramientas`) y siempre ejecuta con `kernel.InvokeAsync`: solo declaración, nunca invocación automática.
 - **Respuesta final en una llamada aparte, siempre** (ADR-003): el texto del loop se descarta y cada turno cuesta una llamada más, a cambio de un solo camino de validación (#16: JSON Schema, validación manual, un reintento y respaldo).
-- **Confirmación explícita por turno:** el PDF y el correo solo salen en el turno en que el comercial confirma una previsualización ya mostrada (o, para el correo, escribe los destinatarios). Un "sí" sin previsualización no confirma nada; elegir un cliente candidato no confirma el PDF.
-- **Costo:** mientras no haya Nexo (`buscar_tarifa` responde `TARIFA_FUENTE_NO_DISPONIBLE`), el costo que escribe el comercial llega del mensaje a `calcular_precio`; un costo de la fuente siempre gana. Margen y método nunca salen del LLM.
-- **Margen de referencia de un ajuste:** el que propuso `obtener_margen` (`MargenSugerido`, campo nuevo del estado junto con `FuenteCosto`); `Cotizaciones.margenPolitica` guarda la política de la línea.
-- **Servicios conexos en el chat:** se quitan del payload hasta que Nexo entregue sus precios (el LLM no pone números).
-- **Google Chat:** un hilo de otro comercial recibe "abre un hilo nuevo"; los clics en los botones de la tarjeta se vuelven "Confirmo" / "Quiero ajustar el margen." (el Python los ignoraba); `GChat:SaJson` acepta el JSON o la ruta al archivo (secreto de Docker).
-- **Sin Google.Apis.Auth:** el token de la cuenta de servicio y la verificación del JWT se hacen con `Microsoft.IdentityModel.JsonWebTokens` (ya presente). `Google.Apis.Auth` (Apache-2.0) arrastra Newtonsoft.Json y System.Management, y su `GoogleCredential.FromJson` está obsoleta.
-
-Correcciones de la validación y la auditoría de #12 (en el mismo PR):
-- **Costo manual escrito por el comercial:** `calcular_precio` solo acepta un costo que no viene de la fuente si el número aparece en el mensaje del turno (`clsNumerosDelMensaje`: `2.850.000`, `2,850,000`, `2,85 millones`...) o es el que el comercial ya dio antes; si no, `PRECIO_INVALIDO` pidiendo el costo.
-- **Destinatarios del correo:** sin confirmación, deben estar en el mensaje del turno; con "Confirmo", en algún mensaje del comercial en la conversación. Nunca de datos externos.
-- **Un turno a la vez por sesión:** `IClsCandadoSesion` / `clsCandadoSesionSql` (`sp_getapplock` con dueño `Session`, recurso `cotifly:sesion:{spaceId}:{threadId}`, conexión propia sin pool, espera `Sesiones:EsperaTurnoSegundos` = 3). Si otro turno sigue en curso: `/web/chat` responde 200 `{texto, error: true}` ("Todavía estoy respondiendo tu mensaje anterior...") y Google Chat publica ese texto en el hilo. Vale entre réplicas.
-- **Moneda (HU-012.2, ADR-014):** `moneda` (opcional, `COP`\|`USD`) en `MensajeWeb` es el selector del formulario: el runner la pone en el estado antes del turno (`ElegirMoneda`; si cambia, descarta el precio y la TRM) y el filtro la impone en `calcular_precio` y `registrar_ajuste_margen`. Sin selector (Google Chat), `ReconocerMensaje` toma la moneda que el comercial elija de forma explícita en cualquier mensaje y la conserva para los turnos siguientes; lo que pida el modelo no cuenta. Solo cuenta una frase de elección ("en dólares/USD/US$", "pásalo a dólares", "en pesos/COP", o un mensaje que es solo la moneda); no cuentan un monto ("US$1.200", "2.850.000 COP"), "dolarizado", la unidad del costo ("el costo en pesos es..."), una elección negada ("no en dólares") ni una pregunta ("¿cuál es la TRM del dólar hoy?"); con ambas, gana la que va tras "mejor"/"prefiero"/"ahora", o la última. La TRM nunca es un argumento: la consulta `clsPrecioService` y queda en el estado (`TrmAplicada`, `PrecioCop`, rango `TrmVigenciaDesde`/`TrmVigenciaHasta`) y en la trazabilidad del PDF. **TRM vencida:** si el comercial confirma cuando hoy (America/Bogota) ya está fuera del rango de vigencia, el runner recalcula el precio con la TRM vigente, avisa al modelo y deja una nueva previsualización por confirmar (si la TRM de hoy no está disponible, descarta el precio); el recálculo entra como una salida de `calcular_precio` del turno, así `RespuestaChat.precio` trae el nuevo precio (o `errores` el `TRM_NO_DISPONIBLE`); el filtro de `generar_pdf` también lo rechaza (`CONFIRMACION_REQUERIDA`). Una tarifa (`buscar_tarifa`) en otra moneda que COP se rechaza con `TARIFA_CONFIG_INVALIDA`: el costo siempre es en COP. El validador de la respuesta respalda en USD el precio en dólares, el equivalente en pesos, la utilidad en pesos y la TRM, nunca la resta del precio en USD menos el costo en COP.
-- **Nueva versión desde el frontend:** `cotizacion_origen_id` (opcional) en `MensajeWeb`; tras validar el dueño (`ObtenerPorIdDelUsuarioAsync`) siembra el estado (cotización, folio, cliente, línea, números) y `generar_pdf` crea `{folio base}-vN`. Solo en una sesión nueva o sin cotización en curso.
-- **Cotización en curso descartada:** si cambia el cliente (NIT o referencia), la línea o la ruta, el estado olvida `CotizacionId`, `FolioEnProgreso` y `Version`: la siguiente cotización es nueva, no una `-vN` de otra.
-- **Google Chat con verificación doble:** además del email, cada turno pasa por `IClsVerificadorIdentidad` (`permitirAlta: false`); si el rol externo ya no coincide con la asignación activa, "Ingresa primero a Cotifly desde ClientePro." y un evento `google_chat_identidad`.
-- **Production:** `GChat:VerificarJwt=false` no arranca, y con Google Chat configurado `Pdf:ClaveFirmaUrl` es obligatoria (`clsValidadorOpcionesGoogleChat`).
+- **Un turno a la vez por sesión:** `IClsCandadoSesion` / `clsCandadoSesionSql` (`sp_getapplock` con dueño `Session`, recurso `cotifly:sesion:{spaceId}:{threadId}`, conexión propia sin pool, espera `Sesiones:EsperaTurnoSegundos` = 3). Si otro turno sigue en curso, `/web/chat` responde 200 `{texto, error: true}` ("Todavía estoy respondiendo tu mensaje anterior..."). Vale entre réplicas.
 - **Contexto de `docker build`:** `.dockerignore` excluye `**/*.md`; la excepción `!src/**/Recursos/*.md` deja entrar el prompt embebido (sin ella, CS1566). `Cotifly.Arquitectura.Tests/clsContextoDockerTests` evalúa el `.dockerignore` real con las reglas de Docker contra cada `EmbeddedResource`/`None`/`Content` de los `.csproj` de `src/`: se eligió así (y no prohibir recursos `.md`) porque protege cualquier extensión y cualquier regla futura.
 - **Auditoría del login:** un rechazo por `rol_externo_cambio` (y los demás con usuario existente) lleva el id interno del usuario.
-
-Diferencias deliberadas con el Python:
-- El historial entre turnos sigue siendo de texto, pero lo resuelto viaja en el estado (ADR-004): el hallazgo del cliente perdido entre turnos queda cubierto por `chat_slot_filling.feature`.
-- El folio no lo escribe el LLM (ADR-011) y la `referencia` del payload se descarta.
-- La ventana del historial conserva también el mensaje actual; el Python podía descartarlo.
-- `enviar_correo` exige la confirmación o los destinatarios escritos por el comercial (el Python confiaba en el `confirmado_por` que mandaba el LLM).
-- `consultar_cotizacion` solo lista las cotizaciones del comercial (el Python ignoraba `comercial` y listaba todas).
+- **Campos obsoletos del contrato:** `cotizacion_origen_id` y `moneda` de `MensajeWeb` se aceptan y se ignoran; `precio`, `margen` y `pdf` de `RespuestaChat` siempre van en `null` (los llenaba el agente legado).
 
 ## 2.12 Turno de /web/chat de punta a punta
 
-Un mensaje del comercial en la consola web recorre la API, el candado de la sesión, el loop de herramientas con sus filtros y el validador de la respuesta final. Google Chat usa el mismo `IClsAgenteRunner` desde el worker (ver [04-flujo-del-sistema](04-flujo-del-sistema.md#46-google-chat)).
+Un mensaje del comercial en la consola web, sobre una cotización, recorre la API, el candado de la sesión, el loop de herramientas del asistente con su filtro de auditoría y el validador de la respuesta final.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant F as Frontend
     participant A as clsChatWebController
+    participant R as clsAsistenteFolioRunner
     participant K as Candado de sesión (sp_getapplock)
-    participant R as clsAgenteRunner
     participant M as IChatClient (proveedor LLM)
     participant FA as clsAuditoriaHerramientaFilter
-    participant FI as clsInyeccionEstadoFilter
-    participant H as Herramienta (KernelFunction)
-    participant U as Caso de uso
-    participant E as clsEstadoConversacionService
+    participant H as Herramienta del plugin asistente
+    participant P as clsPropuestasAsistente
     participant V as clsValidadorRespuestaAgente
     participant D as dbo_cotifly
-    F->>A: POST /web/chat {sesion_id, mensaje} + Bearer
-    Note over A: JwtBearer + jti revocado, política Comercial, LimiteChat, validación del cuerpo
-    A->>K: tomar cotifly:sesion:{space}:{thread} (espera 3 s)
+    F->>A: POST /web/chat {sesion_id, folio, mensaje} + Bearer
+    Note over A: JwtBearer + jti revocado, política Comercial, LimiteChat, validación del cuerpo (sin folio: 400 FOLIO_REQUERIDO)
+    A->>R: EjecutarTurnoAsync(comercial, web/{sesion_id}, web/{sesion_id}/{folio}, mensaje)
+    R->>D: cotización del folio del comercial (otra: 404, sin llamar al modelo)
+    R->>K: tomar cotifly:sesion:{space}:{thread} (espera 3 s)
     alt Otro turno en curso
         A-->>F: 200 {texto: "Todavía estoy respondiendo...", error: true}
     end
-    A->>R: EjecutarTurnoAsync(comercial, sesión, mensaje)
     R->>D: sesión del comercial (otra persona: 404) y mensaje registrado
-    R->>E: aplicar el mensaje (elección de candidato, confirmación explícita)
     loop hasta IA:MaxIteraciones
-        R->>M: historial con ventana + prompt de sistema + estado resuelto + declaraciones de herramientas
+        R->>M: historial con ventana + prompt del asistente + declaraciones de herramientas
         M-->>R: texto o llamadas a herramientas
         opt El modelo pide una herramienta
             R->>FA: kernel.InvokeAsync(herramienta, argumentos del LLM)
-            FA->>FI: siguiente filtro
-            FI->>FI: sobrescribe con el estado (usuario, hilo, NIT, BP, línea, margen, método, costo, folio) y exige confirmación para PDF y correo
-            FI->>H: argumentos inyectados
-            H->>U: caso de uso (margen, precio, PDF, correo...)
-            U->>D: lectura y escritura (el PDF y el correo auditan en su decorador)
-            U-->>H: salida del contrato o error estructurado
-            H-->>FA: resultado
-            FA->>D: EventosHerramienta (salvo las ya auditadas por su caso de uso)
+            FA->>H: argumentos
+            H->>D: lectura de la cotización del contexto (nunca escribe)
+            opt Herramienta de propuesta
+                H->>P: armar la acción (mismas reglas del endpoint destino)
+                P-->>H: propuesta al contexto (el resumen con precios no vuelve al modelo)
+            end
+            H-->>FA: resultado sin montos
+            FA->>D: EventosHerramienta
             FA-->>R: resultado
-            R->>E: actualizar el estado con la salida exitosa
         end
     end
     R->>V: llamada final sin herramientas con JSON Schema respuesta_agente
     V->>M: pedir la respuesta estructurada
     M-->>V: JSON
-    V->>V: esquema, coherencia, acciones y montos respaldados
+    V->>V: esquema, coherencia y montos respaldados
     opt Inválida
         V->>M: un reintento con mensaje de corrección
         Note over V: si vuelve a fallar: respaldo {tipo: error}
     end
     V-->>R: respuesta validada o respaldo
     R->>D: eventos de la conversación y estado (Sesiones.estadoAgente)
-    R-->>A: clsResultadoTurno
-    A-->>F: 200 RespuestaChat {texto, herramientas, precio, margen, pdf}
+    R-->>A: clsResultadoTurno + AccionPropuesta
+    A-->>F: 200 RespuestaChat {texto, herramientas, errores, accion_propuesta}
 ```
 
 Puntos de control del diagrama:
 
-- **Los números nunca salen del LLM.** El filtro de inyección reemplaza los argumentos con el estado de la conversación y el estado solo cambia con salidas exitosas de herramientas o con el mensaje del comercial (ADR-004).
-- **Confirmación humana.** `generar_pdf` y `enviar_correo` solo corren en el turno en que el comercial confirma una previsualización ya mostrada (o escribe los destinatarios).
+- **Ningún monto llega al modelo.** Las herramientas devuelven porcentajes, estados, rutas y nombres; el resumen con precios de la propuesta solo va al frontend.
+- **Confirmación humana.** El asistente no cambia datos: el frontend ejecuta la acción propuesta cuando el comercial pulsa Confirmar, contra el endpoint normal (con su `If-Match`).
 - **Un turno a la vez por conversación**, también entre réplicas (`sp_getapplock` con dueño de sesión).
 - **Fallos del proveedor** (429, 5xx, red, tiempo agotado) pasan primero por los respaldos de `IA:Fallbacks`; si se agotan, `/web/chat` responde 200 `{texto, error: true}`.
 
@@ -491,9 +459,9 @@ Equivalente .NET de *Instructor* (HU-003.10, #16; decisión en [ADR-003](../spec
 |---|---|
 | Esquema `respuesta_agente` | Generado con `AIJsonUtilities`: `tipo` (`conversacional`, `previsualizacion`, `confirmacion_requerida`, `error`), `texto` (1 a 4000 caracteres), `requiere_confirmacion` (booleano), `acciones_sugeridas` (`confirmar_pdf`, `ajustar_margen` o null). Sin propiedades adicionales |
 | Cómo se pide | Llamada final aparte, sin herramientas, con `ChatResponseFormat.ForJsonSchema`. Con `IA:SoportaJsonSchema=false`, o si el proveedor rechaza el esquema (HTTP 400/422 que nombra `response_format` o `json_schema`), el esquema va en la instrucción durante `IA:MinutosSinJsonSchema` y luego se vuelve a probar |
-| Validación manual | JSON completo; campos desconocidos, faltantes o repetidos; tipos y enums; largos; coherencia entre `tipo` y `requiere_confirmacion`; `previsualizacion` solo con precio y sin municipios por confirmar (HU-005.13, `previsualizacion_municipio_pendiente`); acciones solo con una previsualización pendiente y la herramienta declarada; montos y folios del texto respaldados por las herramientas del turno, el estado o lo que escribió el comercial |
+| Validación manual | JSON completo; campos desconocidos, faltantes o repetidos; tipos y enums; largos; coherencia entre `tipo` y `requiere_confirmacion`; `previsualizacion` nunca es válida (`previsualizacion_sin_precio`: el asistente no calcula precios); una acción sugerida exige su herramienta declarada, y ninguna del asistente lo es (sus propuestas van en `accion_propuesta`); montos del texto respaldados solo por las salidas de las herramientas del turno o por lo que escribió el comercial (el estado no tiene montos); folios respaldados por el estado, las herramientas o el comercial |
 | Reintento | Uno, con un mensaje de corrección que nombra el problema |
-| Respaldo | `{tipo: error}` con `clsTextosAgente.RespuestaNoEstructurada`. En la web: `RespuestaChat` con el PDF, el precio o el margen del turno si los hubo, o `200 {texto, error: true}` si no. En Google Chat: texto sin botones |
+| Respaldo | `{tipo: error}` con `clsTextosAgente.RespuestaNoEstructurada`. En la web: `RespuestaChat` con la acción propuesta del turno si la hubo (texto `clsTextosAgente.PropuestaSinTexto`), o `200 {texto, error: true}` si no |
 | Observabilidad | Medidor `Cotifly.Agente` (respuestas inválidas por motivo, reintentos, respaldos, esquema rechazado); logs solo con los códigos, nunca con el texto. Ver [10-operacion](10-operacion.md#103-métricas) |
 
 ```mermaid
@@ -515,19 +483,19 @@ La batería de textos del validador y sus límites conocidos están en [10-opera
 
 ## 2.14 Integración con Nexo
 
-Nexo entrega a Cotifly los datos del formulario de captura y la búsqueda de clientes del agente (HU-005.2, HU-005.3, HU-005.4 y HU-005.13; [ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)). El mapeo de campos está en [`docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`](../../docs/MAPEO_CAMPOS_NEXO_COTIFLY.md). Cada módulo tiene un puerto en Aplicacion, un adaptador de Nexo y uno "no disponible" en Infraestructura, y una fábrica que elige entre los dos al resolver según `Nexo:UrlBase`:
+Nexo entrega a Cotifly los datos del formulario de captura y la búsqueda de clientes (HU-005.2, HU-005.3, HU-005.4 y HU-005.13; [ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)). El mapeo de campos está en [`docs/MAPEO_CAMPOS_NEXO_COTIFLY.md`](../../docs/MAPEO_CAMPOS_NEXO_COTIFLY.md). Cada módulo tiene un puerto en Aplicacion, un adaptador de Nexo y uno "no disponible" en Infraestructura, y una fábrica que elige entre los dos al resolver según `Nexo:UrlBase`:
 
 | Módulo | Puerto (Aplicacion) | Adaptadores (Infraestructura) | Endpoint de Nexo | Expuesto en | Código si no está disponible |
 |---|---|---|---|---|---|
-| `Clientes` | `IClsBuscadorClientes` | `clsBuscadorClientesNexo` / `clsBuscadorClientesNoDisponible` (`clsFabricaBuscadorClientes`) | `GET /api/captura-solicitudes/clientes?q=` | `GET /web/clientes?q=` y la herramienta `buscar_cliente` | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
-| `Municipios` | `IClsMunicipiosProvider` | `clsMunicipiosNexo` (tras `clsMunicipiosEnCache`) / `clsMunicipiosNoDisponible` (`clsFabricaMunicipios`) | `GET /api/captura-solicitudes/municipios` | `GET /web/municipios` y la herramienta `resolver_municipio` | `MUNICIPIOS_NO_DISPONIBLE` |
+| `Clientes` | `IClsBuscadorClientes` | `clsBuscadorClientesNexo` / `clsBuscadorClientesNoDisponible` (`clsFabricaBuscadorClientes`) | `GET /api/captura-solicitudes/clientes?q=` | `GET /web/clientes?q=` y el envío del costeo (la herramienta `buscar_cliente` se retiró en HU-013.9) | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
+| `Municipios` | `IClsMunicipiosProvider` | `clsMunicipiosNexo` (tras `clsMunicipiosEnCache`) / `clsMunicipiosNoDisponible` (`clsFabricaMunicipios`) | `GET /api/captura-solicitudes/municipios` | `GET /web/municipios` (la herramienta `resolver_municipio` se retiró en HU-013.9; `clsResolvedorMunicipios` se conserva para la validación de licitaciones, #108) | `MUNICIPIOS_NO_DISPONIBLE` |
 | `CatalogosFlete` | `IClsCatalogosFleteProvider`, `IClsCatalogosMaestrosProvider` | `clsCatalogosFleteNexo` / `clsCatalogosFleteNoDisponible` (`clsFabricaCatalogosFlete`) sobre `clsCatalogosMaestrosNexo` con `clsCatalogosMaestrosEnCache` (`clsFabricaCatalogosMaestros`, HU-013.10) | `GET /api/catalogos/tipos-vehiculo`, `clases-viaje`, `clases-contenedor` y `lineas-negocio` | `GET /web/catalogos-flete` y la validación por código de `POST /web/solicitudes-costeo` (`clsValidadorCatalogosCaptura`) | `CATALOGOS_FLETE_NO_DISPONIBLE` |
 | `Cubicacion` | `IClsCubicacionProvider` | `clsCubicacionNexo` / `clsCubicacionNoDisponible` (`clsFabricaCubicacion`) | `POST /api/cubicacion` | `POST /web/cubicacion` | `CUBICACION_NO_DISPONIBLE` (y `CUBICACION_DEMASIADO_GRANDE` si Nexo responde 400) |
 | `Costeo` (ADR-015) | `IClsCosteoNexo` | `clsCosteoNexo` / `clsCosteoNexoNoDisponible` (`clsFabricaCosteoNexo`) | `POST /api/captura-solicitudes` (HU-005.5) | `POST /web/solicitudes-costeo` y `POST /web/cotizaciones/{folio}/costeo/reintentar` | `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `COSTEO_NEXO_RECHAZADA` (la cotización queda en `error_envio` con el motivo) |
 
 Comportamiento común (`clsDependenciasInfraestructura.AgregarBuscadorClientes`, `AgregarMunicipios`, `AgregarCatalogosFlete`, `AgregarCubicacion`):
 
-- **Sin token.** Nexo no tiene login propio: cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial (la misma fila de `tblSAPUsuariosApp` que usa el login de ClientePro). El puerto recibe el `UsuariosWeb.id` del token en `/web/*` o del estado de la conversación en el agente; nunca lo decide el llamante. Un comercial sin `idUsuarioExterno` recibe el código "no disponible" sin llamar a Nexo.
+- **Sin token.** Nexo no tiene login propio: cada petición lleva `X-Portal-Usuario-Id` con el `UsuariosWeb.idUsuarioExterno` del comercial (la misma fila de `tblSAPUsuariosApp` que usa el login de ClientePro). El puerto recibe el `UsuariosWeb.id` del token en `/web/*`; nunca lo decide el llamante. Un comercial sin `idUsuarioExterno` recibe el código "no disponible" sin llamar a Nexo.
 - **Un solo cliente HTTP con nombre `Nexo`** para los cuatro adaptadores de consulta (el costeo usa el suyo, ver abajo), con `RedactLoggedHeaders` (el encabezado no aparece en los logs) y la tubería estándar de resiliencia registrada una sola vez (`clsBuscadorClientesNexo.ConfigurarResiliencia`): 8 s en total, 3 s por intento, 2 reintentos con espera exponencial desde 200 ms y jitter, y cortocircuito con muestreo de 30 s. Registrarla por cada cliente tipado apilaría una tubería por adaptador.
 - **Nunca lanzan.** HTTP no exitoso, error de red, tiempo agotado, circuito abierto o JSON inválido devuelven el código "no disponible" del módulo (`clsResultado`), con una línea `Warning` por fallo que nombra el motivo y el detalle de la excepción en `Debug`. La cancelación de quien llama se propaga (no es una caída de Nexo).
 - **`TryAdd`:** un adaptador registrado antes (pruebas) se respeta.
@@ -555,7 +523,7 @@ Decisiones de las respuestas:
 
 - **Coincidencia exacta:** Nexo no distingue exacta de aproximada; hasta definirlo con su equipo (pendiente de ADR-005), `exacta=true` solo cuando hay un único candidato. Las filas sin `nitCliente`, `nombre` u `origen` se descartan.
 - **Campos omitidos:** municipios sin `nombreTarifasPlaza` ni `zonaTarificacion` (costeo interno); catálogos de flete sin `lineasNegocio` (Cotifly tiene su propio catálogo) y con "Carroseria" corregido a `tipos_carroceria`; cubicación sin `matrices` ni `sugerenciaFlota.disposiciones` (decisión de alcance).
-- **Municipios (HU-005.13):** el mapeo aprobado cambió el alcance de la issue: Nexo no expone `/departamentos` ni `/ciudades?departamento=&q=` (cascada), sino un solo catálogo sin filtro. La búsqueda la hace Cotifly (`Municipios/Services/clsResolvedorMunicipios`, sin tildes, mayúsculas ni signos, con `D.C.`/`DC`/`D C` iguales y el país al final ignorado): exacta por municipio o por municipio y departamento; con pista de departamento (`La Unión, Nariño`, `Cartagena, Bolívar`, `Cúcuta Norte de Santander`), donde de departamentos anidados gana el más largo; por palabra completa (`Cali` → `Santiago de Cali`, nunca `Calima` ni `California`), y entre varias por palabra, la única capital de departamento, Dane `XX001`, solo si el texto es el comienzo de su nombre y no es un componente genérico (`san`, `santa`, `puerto`, `villa`, `juan`...): `Cartagena` → `Cartagena de Indias`, no `Cartagena del Chairá`, mientras que `Santa`, `Juan` o `Puerto` se preguntan con la capital primera; por comienzo de palabra (4 letras o más) y, como último recurso, aproximada (siempre se confirma). Dos municipios con el mismo nombre exacto (`La Unión`, `Armenia`) siempre se preguntan. Hasta 8 candidatos, con el total. Como el catálogo cambia poco y el agente lo consulta en cada `resolver_municipio`, `clsMunicipiosEnCache` guarda la última respuesta exitosa en una foto singleton durante `Nexo:MinutosCacheMunicipios` (60 por defecto; 0 la desactiva; los fallos no se guardan; recarga de a una). La foto es la misma para todos los comerciales: Nexo devuelve el catálogo completo sin filtrar por usuario y no es un dato sensible.
+- **Municipios (HU-005.13):** el mapeo aprobado cambió el alcance de la issue: Nexo no expone `/departamentos` ni `/ciudades?departamento=&q=` (cascada), sino un solo catálogo sin filtro. La búsqueda la hace Cotifly (`Municipios/Services/clsResolvedorMunicipios`, sin tildes, mayúsculas ni signos, con `D.C.`/`DC`/`D C` iguales y el país al final ignorado): exacta por municipio o por municipio y departamento; con pista de departamento (`La Unión, Nariño`, `Cartagena, Bolívar`, `Cúcuta Norte de Santander`), donde de departamentos anidados gana el más largo; por palabra completa (`Cali` → `Santiago de Cali`, nunca `Calima` ni `California`), y entre varias por palabra, la única capital de departamento, Dane `XX001`, solo si el texto es el comienzo de su nombre y no es un componente genérico (`san`, `santa`, `puerto`, `villa`, `juan`...): `Cartagena` → `Cartagena de Indias`, no `Cartagena del Chairá`, mientras que `Santa`, `Juan` o `Puerto` se preguntan con la capital primera; por comienzo de palabra (4 letras o más) y, como último recurso, aproximada (siempre se confirma). Dos municipios con el mismo nombre exacto (`La Unión`, `Armenia`) siempre se preguntan. Hasta 8 candidatos, con el total. Como el catálogo cambia poco (y el agente legado lo consultaba en cada `resolver_municipio`, hasta HU-013.9), `clsMunicipiosEnCache` guarda la última respuesta exitosa en una foto singleton durante `Nexo:MinutosCacheMunicipios` (60 por defecto; 0 la desactiva; los fallos no se guardan; recarga de a una). La foto es la misma para todos los comerciales: Nexo devuelve el catálogo completo sin filtrar por usuario y no es un dato sensible.
 - **Cubicación:** centímetros y kilogramos; Cotifly nunca envía `unidadIds` (evalúa contra todo el catálogo estándar) ni `tipoMercancia`. Un 400 de Nexo (`CUBICACION_INVALIDA`, que no distingue el límite de bultos de las medidas inválidas) se traduce a `CUBICACION_DEMASIADO_GRANDE` con el `message` de Nexo, recortado a 400 caracteres, como detalle.
 
 ## 2.15 Licitaciones desde Excel y cotizaciones de varias líneas (HU-011, ADR-017)

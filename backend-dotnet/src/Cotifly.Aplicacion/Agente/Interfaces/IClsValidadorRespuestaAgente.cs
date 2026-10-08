@@ -25,7 +25,7 @@ public interface IClsValidadorRespuestaAgente
 }
 
 /// <summary>Datos del turno contra los que se valida la respuesta final (nada de esto sale del LLM).</summary>
-/// <param name="Estado">Estado resuelto al terminar el loop (costo, precio, folio, previsualización pendiente).</param>
+/// <param name="Estado">Estado de la conversación (el folio de la cotización: respalda los folios del texto; no tiene montos).</param>
 /// <param name="Salidas">Resultados de las herramientas del turno, en orden.</param>
 /// <param name="MensajesDelComercial">Mensajes del comercial en la conversación (un monto que él escribió puede repetirse).</param>
 /// <param name="HerramientasDeclaradas">Herramientas declaradas al modelo en el turno (una acción sugerida debe corresponder a una).</param>

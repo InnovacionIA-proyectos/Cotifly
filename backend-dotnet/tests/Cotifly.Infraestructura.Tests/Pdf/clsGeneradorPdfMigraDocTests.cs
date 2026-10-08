@@ -1,8 +1,11 @@
 using System.Text;
+using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Pdf.DTOs;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Infraestructura.Pdf.Services;
 using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Tests.Pdf;
 
@@ -252,6 +255,81 @@ public sealed class clsGeneradorPdfMigraDocTests
         var segundo = Generar(clsDocumentosPrueba.Nacional()).Lector;
 
         segundo.Paginas.Should().Equal(primero.Paginas);
+        segundo.Disposicion.Should().Equal(primero.Disposicion, "cada letra queda en la misma posición");
+    }
+
+    // #92, #95: PDFsharp-MigraDoc comparte estado global entre renders. Sin el candado del generador, renders simultáneos
+    // (peticiones concurrentes en producción, clases de prueba en paralelo) sacaban el mismo documento con otra maquetación:
+    // espacios medidos con la fuente de otro documento, palabras corridas y saltos de línea distintos.
+    [Fact]
+    public async Task LosRendersSimultaneosDanLaMismaMaquetacionQueUnRenderSolo()
+    {
+        var referencia = Generar(clsDocumentosPrueba.Nacional()).Lector;
+        var resultados = new System.Collections.Concurrent.ConcurrentBag<clsLectorPdf>();
+
+        await Parallel.ForAsync(0, 48, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(4, Environment.ProcessorCount) }, async (i, ct) =>
+        {
+            var documento = (i % 4) switch
+            {
+                0 => clsDocumentosPrueba.Nacional(),
+                1 => clsDocumentosPrueba.Multi(),
+                2 => clsDocumentosPrueba.Internacional(),
+                _ => clsDocumentosPrueba.Dolares(),
+            };
+            // Mitad por el puerto async (peticiones) y mitad por el render síncrono: comparten el mismo turno.
+            var pdf = i % 8 < 4 ? await _generador.GenerarAsync(documento, ct) : _generador.Generar(documento);
+            var lector = clsLectorPdf.Leer(pdf.Contenido);
+            if (i % 4 == 0)
+            {
+                resultados.Add(lector);
+            }
+        });
+
+        resultados.Should().HaveCount(12);
+        foreach (var lector in resultados)
+        {
+            lector.Paginas.Should().Equal(referencia.Paginas);
+            lector.Disposicion.Should().Equal(referencia.Disposicion, "un render concurrente no cambia la posición de ninguna letra");
+        }
+    }
+
+    // #92, #95: el turno de render tiene espera acotada; si no llega a tiempo, error transitorio y el generador sigue sano.
+    [Fact]
+    public async Task SiElTurnoDeRenderNoLlegaATiempoLanzaRenderOcupado()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var generador = new clsGeneradorPdfMigraDoc(
+            Options.Create(new clsOpcionesPdf { TiempoEsperaRenderSegundos = 1 }), NullLogger<clsGeneradorPdfMigraDoc>.Instance);
+
+        await clsGeneradorPdfMigraDoc.TurnoDeRender.WaitAsync(ct);
+        try
+        {
+            var generar = () => generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct);
+            (await generar.Should().ThrowAsync<clsRenderPdfOcupadoException>()).Which.Espera.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(900));
+        }
+        finally
+        {
+            clsGeneradorPdfMigraDoc.TurnoDeRender.Release();
+        }
+
+        (await generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct)).Paginas.Should().Be(3, "al liberarse el turno renderiza normal");
+    }
+
+    [Fact]
+    public async Task CancelarMientrasEsperaElTurnoNoRenderiza()
+    {
+        using var cancelacion = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        await clsGeneradorPdfMigraDoc.TurnoDeRender.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            var generar = _generador.GenerarAsync(clsDocumentosPrueba.Nacional(), cancelacion.Token);
+            await cancelacion.CancelAsync();
+            await ((Func<Task>)(() => generar)).Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally
+        {
+            clsGeneradorPdfMigraDoc.TurnoDeRender.Release();
+        }
     }
 
     [Fact]

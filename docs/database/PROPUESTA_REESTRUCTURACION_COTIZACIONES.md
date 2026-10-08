@@ -100,7 +100,7 @@ La cabecera de la solicitud: el cliente, el estado general, el PDF y el seguimie
 | `pdfPath` | NVARCHAR(MAX) | Ruta del PDF generado | Ya existía |
 | `pdfDesactualizado` | BIT | Si el PDF quedó viejo por un cambio posterior (distinto de "nunca se generó") | Ya existía |
 | `usuarioId` | UNIQUEIDENTIFIER | Comercial dueño | Ya existía |
-| `spaceId` / `threadId` | NVARCHAR(MAX) | Hilo de Google Chat de donde salió | Ya existía |
+| `spaceId` / `threadId` | NVARCHAR(MAX) | Hilo del chat de donde salió (columnas que quedan de cuando existía Google Chat) | Ya existía |
 | `ganada` | BIT | Si el cliente aceptó | Ya existía |
 | `motivoRechazo` | NVARCHAR(MAX) | Motivo cuando no se ganó | Ya existía |
 | `version` | INT | Versión de la cotización (v2+ reusa el folio con `-vN`) | Ya existía |
@@ -167,8 +167,8 @@ totales de costo, el margen y el precio.
 | `levanteContenedorDiferente` | BIT NOT NULL DEFAULT 0 | Si el contenedor se levanta en otra ciudad | Ya existía. Mismo cambio |
 | `ciudadDevolucionMunicipioId` | INT NULL | Municipio donde se devuelve el contenedor | Nueva. Reemplaza al texto `ciudadDevolucionContenedor` |
 | `ciudadLevanteMunicipioId` | INT NULL | Municipio donde se levanta el contenedor | Nueva. Reemplaza al texto `ciudadLevanteContenedor` |
-| `horasCargue` | DECIMAL(6,2) | Horas de cargue de la ruta | Nueva en la ruta, antes estaba en la cabecera |
-| `horasDescargue` | DECIMAL(6,2) | Horas de descargue de la ruta | Nueva en la ruta, antes estaba en la cabecera |
+| `horasCargue` | DECIMAL(6,2) | Horas de cargue de la ruta (0 a 240) | Ya existía en la línea (migración `0008_horas_por_linea`, HU-013.11); la cabecera deja de tenerlas |
+| `horasDescargue` | DECIMAL(6,2) | Horas de descargue de la ruta (0 a 240) | Ya existía en la línea (migración `0008_horas_por_linea`, HU-013.11); la cabecera deja de tenerlas |
 | `pesoKg` | DECIMAL(12,2) | Peso total que declaró el comercial para la ruta | Ya existía |
 | `valorMercancia` | DECIMAL(18,2) | Cuánto vale la mercancía de la ruta (no es un costo) | Ya existía |
 | `valorLevanteContenedor` | DECIMAL(18,2) NULL | Lo que vale **un** levante de contenedor en esta ruta. Lo digita el comercial y se copia a cada camión | Ya existía como `valorAprovisionamiento`, se renombra |
@@ -348,9 +348,8 @@ recalcula la ruta y la cabecera.
    iba vacía, Cotifly lo copia.
 8. **Cotifly recalcula** los totales de la ruta, su precio y el precio de la cabecera (§8).
 
-**Horas de cargue y descargue:** en Cotifly son por ruta, pero hoy Nexo las recibe una sola vez para toda la
-solicitud. Mientras Nexo no las reciba por línea, se le manda el **mayor** valor entre las rutas de la solicitud,
-para no quedarse corto en tiempo de planta (§12).
+**Horas de cargue y descargue:** son por ruta, y Nexo las acepta **por línea** en `CapturaLineaRequest` (HU-013.11,
+migración `0008_horas_por_linea`): cada camión lleva las horas de su ruta. La cabecera ya no las guarda.
 
 ---
 
@@ -374,8 +373,8 @@ Ya aplicado en el script `0001` de esta rama (falta reflejarlo en la base real):
 ## 11. Migración de los datos que ya existen
 
 La base es de pruebas (`dbTarifario_Nexo_Pruebas`), pero el script igual tiene que dejar los datos actuales
-consistentes. Lo hace `db/migrations_mssql/0008_reestructuracion_cotizaciones.sql`, en una sola transacción y
-después de respaldar las tablas que toca en tablas `Respaldo0008_*`:
+consistentes. Lo hace `db/migrations_mssql/0009_reestructuracion_cotizaciones.sql`, en una sola transacción y
+después de respaldar las tablas que toca en tablas `Respaldo0009_*`:
 
 0. **Las cotizaciones que no tienen línea** (las que crea el agente de chat) reciben una ruta 1 armada con los
    datos de su cabecera.
@@ -418,8 +417,8 @@ No son decisiones de diseño de Cotifly: hay que pedirlas o confirmarlas.
 **Con el equipo de Nexo:**
 3. **Un campo en la línea que identifique la ruta**, para que la Mesa de Costeo sepa qué líneas son la misma
    ruta partida en camiones. Puede ser solo para mostrar.
-4. **(Opcional) Recibir las horas de cargue y descargue por línea**, en vez de una sola vez por solicitud.
-   Mientras no exista, Cotifly manda el mayor valor (§9).
+4. ~~Recibir las horas de cargue y descargue por línea~~: **ya no hace falta pedirlo.** Nexo las acepta por línea
+   (HU-013.11) y Cotifly las manda por camión.
 
 **Con SAP / negocio:**
 5. **El `TrqType` de SAP para `DevolucionContenedor`**, para sembrarlo en `SapMapeoTrqType`. No se debe inventar.

@@ -154,21 +154,50 @@ public sealed class clsServiciosConexosNexo(clsCosteoNexo costeo) : IClsServicio
 
         if (agregando && detalle.StartsWith("HTTP 4", StringComparison.Ordinal) && !detalle.StartsWith("HTTP 401", StringComparison.Ordinal))
         {
-            return new clsErrorDominio(clsCodigosError.ConexoInvalido, MensajeConexoInvalido, CodigoNexo(detalle) ?? detalle);
+            return new clsErrorDominio(clsCodigosError.ConexoInvalido, MensajeConexoInvalido, SoloCodigo(detalle));
         }
 
         return new clsErrorDominio(clsCodigosError.NexoNoDisponible, MensajeNoDisponible, error.Codigo == clsCodigosError.CosteoNexoTiempoAgotado
             ? "Nexo no respondió a tiempo"
-            : detalle.Length == 0 ? error.Codigo : detalle);
+            : detalle.Length == 0 ? error.Codigo : SoloCodigo(detalle));
+    }
+
+    /// <summary>
+    /// Detalle de un error HTTP de Nexo sin su texto crudo (arrastre de #99 en #102): <c>HTTP 401 CODIGO: mensaje</c> → <c>CODIGO</c>, y
+    /// sin código de Nexo, solo <c>HTTP 401</c>. Los demás detalles (propios de Cotifly, sin texto de Nexo) quedan igual.
+    /// </summary>
+    public static string SoloCodigo(string detalle)
+    {
+        ArgumentNullException.ThrowIfNull(detalle);
+        if (!detalle.StartsWith("HTTP ", StringComparison.Ordinal))
+        {
+            return detalle;
+        }
+
+        return CodigoNexo(detalle) ?? string.Join(' ', detalle.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2)).TrimEnd(':');
     }
 
     /// <summary>El código de Nexo de un detalle <c>HTTP 404 CODIGO: mensaje</c> (<c>CODIGO</c>), o <c>null</c> si no trae.</summary>
+    /// <remarks>
+    /// Solo cuenta como código una sola palabra en MAYÚSCULAS (letras, dígitos y <c>_</c>, desde 3 caracteres) justo antes de los
+    /// dos puntos: <c>HTTP 400 Bad request</c> o <c>HTTP 400 El servicio: no existe</c> no traen código (nunca se toma una palabra suelta
+    /// del texto de Nexo).
+    /// </remarks>
     public static string? CodigoNexo(string detalle)
     {
         ArgumentNullException.ThrowIfNull(detalle);
-        var partes = detalle.Split(':', 2)[0].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return partes.Length >= 3 ? partes[2] : null;
+        var corte = detalle.IndexOf(':', StringComparison.Ordinal);
+        if (corte < 0)
+        {
+            return null;
+        }
+
+        var partes = detalle[..corte].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return partes.Length == 3 && partes[0] == "HTTP" && EsCodigo(partes[2]) ? partes[2] : null;
     }
+
+    private static bool EsCodigo(string texto) =>
+        texto.Length >= 3 && char.IsAsciiLetterUpper(texto[0]) && texto.All(c => char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c) || c == '_');
 
     private static DateOnly? Fecha(string? texto) =>
         texto is not null && DateOnly.TryParse(texto.Length >= 10 ? texto[..10] : texto, CultureInfo.InvariantCulture, out var fecha) ? fecha : null;
