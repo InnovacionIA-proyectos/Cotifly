@@ -57,10 +57,18 @@ public static class clsTextosAgente
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
 
+    /// <summary>
+    /// HU-013.16 (#126): el modelo pidió herramientas sin parar hasta <c>IA:MaxIteraciones</c> y el turno se cortó sin respuesta ni
+    /// propuesta. La pregunta del comercial y las herramientas que alcanzaron a correr quedan en la conversación.
+    /// </summary>
+    public const string MaxIteraciones =
+        "No pude completar tu solicitud: necesité demasiados pasos y la detuve. Reformúlala en un mensaje más corto o pide una cosa a la vez; la conversación no se pierde.";
+
     /// <summary>Texto para el comercial ante un fallo del turno.</summary>
     public static string ParaFallo(Exception error) => error switch
     {
         Exceptions.clsTurnoEnCursoException => TurnoEnCurso,
+        Exceptions.clsMaxIteracionesExcedidasException => MaxIteraciones,
         _ when EsLimiteDePeticiones(error) => LimiteModelo,
         _ => ErrorInterno,
     };

@@ -18,7 +18,8 @@ namespace Cotifly.Aplicacion.Agente.Services;
 /// <c>ChatResponseFormat.ForJsonSchema</c> sobre <see cref="clsRespuestaAgenteEstructurada"/> y una instrucción final con las
 /// reglas (en el modo sin esquema, también el esquema).</item>
 /// <item>Validación manual con <see cref="clsReglasRespuestaAgente"/> (forma, tipos, enums, largos, acciones, montos y folios).</item>
-/// <item>Si no valida: <b>un</b> reintento con la respuesta inválida y un mensaje de corrección que enumera los fallos.</item>
+/// <item>Si no valida: <b>un</b> reintento con la respuesta inválida y un mensaje de corrección que enumera los fallos (salvo con
+/// <see cref="clsContextoValidacionRespuesta.ReintentarSiFalla"/> en false: el asistente ya armó una propuesta, HU-013.16).</item>
 /// <item>Si vuelve a fallar: respaldo <c>{tipo: error, texto: clsTextosAgente.RespuestaNoEstructurada}</c>.</item>
 /// </list>
 /// Proveedores sin JSON Schema: <c>IA:SoportaJsonSchema=false</c> pide la respuesta sin formato (el esquema va en la instrucción).
@@ -87,7 +88,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         var correccion = new List<ChatMessage>();
         var motivos = new List<string>();
         var llamadas = 0;
-        for (var intento = 1; intento <= 2; intento++)
+        var intentos = contexto.ReintentarSiFalla ? 2 : 1;
+        for (var intento = 1; intento <= intentos; intento++)
         {
             var (crudo, hechas) = await PedirAsync(chat, mensajes, correccion, cancellationToken);
             llamadas += hechas;
@@ -105,8 +107,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
             }
 
             _logger.LogWarning(
-                "La respuesta final del agente no pasó la validación (intento {Intento} de 2): {Motivos}.", intento, string.Join(", ", codigos));
-            if (intento == 1)
+                "La respuesta final del agente no pasó la validación (intento {Intento} de {Intentos}): {Motivos}.", intento, intentos, string.Join(", ", codigos));
+            if (intento < intentos)
             {
                 _reintentos.Add(1);
                 correccion.Add(new ChatMessage(ChatRole.Assistant, Eco(crudo)));
@@ -115,8 +117,8 @@ public sealed class clsValidadorRespuestaAgente : IClsValidadorRespuestaAgente
         }
 
         _respaldos.Add(1);
-        _logger.LogWarning("La respuesta final del agente no se pudo validar tras el reintento; se responde el error controlado.");
-        return new clsRespuestaFinalAgente(clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada), llamadas, 1, true, motivos);
+        _logger.LogWarning("La respuesta final del agente no se pudo validar en {Intentos} intento(s); se responde el error controlado.", intentos);
+        return new clsRespuestaFinalAgente(clsRespuestaAgenteEstructurada.Respaldo(clsTextosAgente.RespuestaNoEstructurada), llamadas, intentos - 1, true, motivos);
     }
 
     /// <summary>Una llamada sin herramientas; con el esquema si el proveedor lo admite. Devuelve el texto y las llamadas hechas.</summary>

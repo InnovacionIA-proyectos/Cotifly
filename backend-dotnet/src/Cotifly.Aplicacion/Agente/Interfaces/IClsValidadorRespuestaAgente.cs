@@ -33,7 +33,15 @@ public sealed record clsContextoValidacionRespuesta(
     clsEstadoConversacion Estado,
     IReadOnlyList<clsResultadoHerramienta> Salidas,
     IReadOnlyList<string> MensajesDelComercial,
-    IReadOnlyCollection<string> HerramientasDeclaradas);
+    IReadOnlyCollection<string> HerramientasDeclaradas)
+{
+    /// <summary>
+    /// ¿Se reintenta una vez si la respuesta no valida? Por defecto true. HU-013.16 (#126): el asistente lo apaga cuando el turno ya
+    /// armó una propuesta, porque esa respuesta tiene su texto fijo del servidor (<c>clsTextosAgente.PropuestaSinTexto</c>) y el
+    /// reintento solo agregaba una llamada.
+    /// </summary>
+    public bool ReintentarSiFalla { get; init; } = true;
+}
 
 /// <summary>Resultado de <see cref="IClsValidadorRespuestaAgente.ObtenerRespuestaFinalAsync"/>.</summary>
 /// <param name="Respuesta">Respuesta validada, o el respaldo <c>{tipo: error}</c>.</param>

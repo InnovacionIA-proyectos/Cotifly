@@ -50,7 +50,7 @@ public static class clsChatClientFactory
         IChatClient cliente = cadena.Count == 1 ? cadena[0] : new clsChatClientConRespaldo(cadena, registros.CreateLogger<clsChatClientConRespaldo>());
         if (opciones.Rpm > 0)
         {
-            cliente = new clsChatClientLimitado(cliente, new clsLimitadorRpm(opciones.Rpm, tiempo));
+            cliente = new clsChatClientLimitado(cliente, new clsLimitadorRpm(opciones.Rpm, tiempo), registros.CreateLogger<clsChatClientLimitado>());
         }
 
         return new ChatClientBuilder(cliente).UseLogging(registros).Build();

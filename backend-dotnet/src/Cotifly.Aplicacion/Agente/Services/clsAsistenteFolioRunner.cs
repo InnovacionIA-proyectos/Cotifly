@@ -76,6 +76,7 @@ public sealed class clsAsistenteFolioRunner(
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitud.Mensaje);
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitud.Folio);
 
+        var medicion = new clsMedicionTurno();
         var usuario = solicitud.UsuarioId == Guid.Empty ? null : await usuarios.ObtenerPorIdAsync(solicitud.UsuarioId, cancellationToken);
         if (usuario is null)
         {
@@ -131,40 +132,90 @@ public sealed class clsAsistenteFolioRunner(
 
         var kernel = ConstruirKernel(out var funciones);
         var declaraciones = clsEsquemaPortableHerramientas.Declarar(funciones.Values);
+        medicion.Sumar(clsMedicionTurno.FasePreparacion, medicion.Total);
+        var turno = new clsDatosTurno(solicitud, kernel, funciones, declaraciones, mensajes, marcas, estado, mensajesDelComercial, medicion);
         try
         {
-            return await CorrerLoopAsync(solicitud, kernel, funciones, declaraciones, mensajes, marcas, estado, mensajesDelComercial, cancellationToken);
+            var resultado = await CorrerLoopAsync(turno, cancellationToken);
+            RegistrarDuracion(cotizacion.Folio, medicion, resultado, null);
+            return resultado;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            if (ex is clsMaxIteracionesExcedidasException)
+            {
+                logger.LogWarning(
+                    "El asistente de {Folio} pidió herramientas sin cerrar el turno: se cortó en {Maximo} iteraciones.", cotizacion.Folio, opcionesAgente.Value.MaxIteraciones);
+            }
+
             try
             {
-                await GuardarAsync(solicitud, estado, cancellationToken);
+                using (medicion.Medir(clsMedicionTurno.FaseGuardado))
+                {
+                    await GuardarAsync(solicitud, estado, cancellationToken);
+                }
             }
             catch (Exception guardado) when (guardado is not OperationCanceledException)
             {
                 logger.LogWarning(guardado, "No se pudo guardar el turno interrumpido del asistente de {Folio}.", cotizacion.Folio);
             }
 
+            RegistrarDuracion(cotizacion.Folio, medicion, null, ex.GetType().Name);
             throw;
         }
     }
 
-    private async Task<clsResultado<clsResultadoTurno>> CorrerLoopAsync(
-        clsSolicitudTurnoFolio solicitud,
-        Kernel kernel,
-        IReadOnlyDictionary<string, KernelFunction> funciones,
-        IList<AITool> declaraciones,
-        List<ChatMessage> mensajes,
-        clsMarcasTurno marcas,
-        clsEstadoConversacion estado,
-        IReadOnlyList<string> mensajesDelComercial,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Log de duración por fase del turno (HU-013.16, #126): total, preparación, llamadas al modelo con herramientas, herramientas,
+    /// respuesta final y guardado, más llamadas, iteraciones, cierre, reintentos del validador, tokens y modelos (un modelo distinto del
+    /// principal es un respaldo de <c>IA:Fallbacks</c>). La espera del limitador <c>IA:Rpm</c> va incluida en las llamadas y la registra
+    /// Infraestructura aparte. Sin textos del comercial ni del modelo.
+    /// </summary>
+    private void RegistrarDuracion(string folio, clsMedicionTurno medicion, clsResultadoTurno? turno, string? fallo)
     {
-        var maximo = opcionesAgente.Value.MaxIteraciones;
+        logger.LogInformation(
+            "Turno del asistente de {Folio}: {TotalMs} ms (preparación {PreparacionMs} ms; modelo con herramientas {ModeloMs} ms en {LlamadasModelo} llamadas; herramientas {HerramientasMs} ms; respuesta final {FinalMs} ms en {LlamadasFinal} llamadas; guardado {GuardadoMs} ms). Iteraciones {Iteraciones}, cierre {Cierre}, reintentos del validador {Reintentos}, respaldo {EsRespaldo}, propuesta {Propuesta}, tokens {TokensEntrada}/{TokensSalida}, modelos {Modelos}, fallo {Fallo}.",
+            folio,
+            Ms(medicion.Total),
+            Ms(medicion.Fase(clsMedicionTurno.FasePreparacion)),
+            Ms(medicion.Fase(clsMedicionTurno.FaseModelo)),
+            medicion.Llamadas(clsMedicionTurno.FaseModelo),
+            Ms(medicion.Fase(clsMedicionTurno.FaseHerramientas)),
+            Ms(medicion.Fase(clsMedicionTurno.FaseRespuestaFinal)),
+            medicion.Llamadas(clsMedicionTurno.FaseRespuestaFinal),
+            Ms(medicion.Fase(clsMedicionTurno.FaseGuardado)),
+            turno?.Iteraciones,
+            turno?.Cierre,
+            turno?.ReintentosRespuesta,
+            turno?.EsRespaldo,
+            turno?.AccionPropuesta?.Tipo,
+            medicion.TokensEntrada,
+            medicion.TokensSalida,
+            string.Join(",", medicion.Modelos),
+            fallo);
+    }
+
+    private static long Ms(TimeSpan duracion) => (long)Math.Round(duracion.TotalMilliseconds);
+
+    /// <summary>
+    /// Loop del turno (HU-013.16, #126: menos llamadas sin relajar ninguna regla). Cada ronda pide herramientas al modelo y las corre.
+    /// Termina cuando el modelo responde sin herramientas o, con <c>IA:PropuestaDirecta</c>, en cuanto una ronda arma una propuesta.
+    /// La respuesta sin herramientas se valida como respuesta final con las mismas reglas (<c>IA:RespuestaFinalEnLoop</c>): si pasa, no
+    /// hay llamada final aparte. Si no, o tras una propuesta, la llamada final la hace el validador, sin reintento si ya hay propuesta
+    /// (su respaldo es el texto fijo del servidor).
+    /// </summary>
+    private async Task<clsResultadoTurno> CorrerLoopAsync(clsDatosTurno turno, CancellationToken cancellationToken)
+    {
+        var opciones = opcionesAgente.Value;
+        var maximo = opciones.MaxIteraciones;
+        var mensajes = turno.Mensajes;
+        var solicitud = turno.Solicitud;
+        var chatLoop = turno.Medicion.Cliente(chat, clsMedicionTurno.FaseModelo);
         var invocadas = new List<string>();
         var salidas = new List<clsResultadoHerramienta>();
+        var contexto = new clsContextoValidacionRespuesta(turno.Estado, salidas, turno.MensajesDelComercial, turno.Funciones.Keys.ToList());
         string? detenerPor = null;
+        clsRespuestaAgenteEstructurada? enLoop = null;
         var iteraciones = 0;
 
         while (detenerPor is null)
@@ -175,11 +226,12 @@ public sealed class clsAsistenteFolioRunner(
             }
 
             iteraciones++;
-            var respuesta = await chat.GetResponseAsync(mensajes, Opciones(declaraciones), cancellationToken);
+            var respuesta = await chatLoop.GetResponseAsync(mensajes, Opciones(turno.Declaraciones), cancellationToken);
             var llamadas = respuesta.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().ToList();
             if (llamadas.Count == 0)
             {
                 detenerPor = respuesta.FinishReason?.Value ?? "stop";
+                enLoop = opciones.RespuestaFinalEnLoop ? RespuestaDelLoop(respuesta.Text, contexto) : null;
                 break;
             }
 
@@ -187,45 +239,111 @@ public sealed class clsAsistenteFolioRunner(
             AgregarEvento(solicitud, clsEventoConversacion.RolAsistente, Vacio(respuesta.Text), new
             {
                 invocaciones = llamadas.Select(l => new { nombre = l.Name, input = l.Arguments }).ToList(),
-            }, null, marcas.Siguiente());
+            }, null, turno.Marcas.Siguiente());
 
             var resultados = new List<AIContent>();
             var traza = new List<object>();
-            foreach (var llamada in llamadas)
+            using (turno.Medicion.Medir(clsMedicionTurno.FaseHerramientas))
             {
-                var resultado = await EjecutarAsync(kernel, funciones, llamada, cancellationToken);
-                salidas.Add(resultado);
-                if (funciones.ContainsKey(llamada.Name))
+                foreach (var llamada in llamadas)
                 {
-                    invocadas.Add(llamada.Name);
-                }
+                    var resultado = await EjecutarAsync(turno.Kernel, turno.Funciones, llamada, cancellationToken);
+                    salidas.Add(resultado);
+                    if (turno.Funciones.ContainsKey(llamada.Name))
+                    {
+                        invocadas.Add(llamada.Name);
+                    }
 
-                var paraModelo = resultado.ParaModelo();
-                resultados.Add(new FunctionResultContent(llamada.CallId, JsonSerializer.Serialize(paraModelo, clsJsonAplicacion.SnakeCase)));
-                traza.Add(new { nombre = llamada.Name, salida = paraModelo });
+                    var paraModelo = resultado.ParaModelo();
+                    resultados.Add(new FunctionResultContent(llamada.CallId, JsonSerializer.Serialize(paraModelo, clsJsonAplicacion.SnakeCase)));
+                    traza.Add(new { nombre = llamada.Name, salida = paraModelo });
+                }
             }
 
             mensajes.Add(new ChatMessage(ChatRole.Tool, resultados));
-            AgregarEvento(solicitud, clsEventoConversacion.RolHerramienta, null, new { resultados = traza }, null, marcas.Siguiente());
+            AgregarEvento(solicitud, clsEventoConversacion.RolHerramienta, null, new { resultados = traza }, null, turno.Marcas.Siguiente());
+            if (opciones.PropuestaDirecta && contextoFolio.Propuesta is not null)
+            {
+                detenerPor = CierrePropuesta;
+            }
         }
 
-        var final = await validador.ObtenerRespuestaFinalAsync(
-            chat,
-            mensajes,
-            new clsContextoValidacionRespuesta(estado, salidas, mensajesDelComercial, funciones.Keys.ToList()),
-            cancellationToken);
-        iteraciones += final.Llamadas;
+        clsRespuestaFinalAgente final;
+        string cierre;
+        if (enLoop is not null)
+        {
+            final = new clsRespuestaFinalAgente(enLoop, 0, 0, false, []);
+            cierre = CierreLoop;
+        }
+        else
+        {
+            using (turno.Medicion.Medir(clsMedicionTurno.FaseRespuestaFinal))
+            {
+                final = await validador.ObtenerRespuestaFinalAsync(
+                    turno.Medicion.Cliente(chat, clsMedicionTurno.FaseRespuestaFinal),
+                    mensajes,
+                    contexto with { ReintentarSiFalla = contextoFolio.Propuesta is null },
+                    cancellationToken);
+            }
 
-        AgregarEvento(solicitud, clsEventoConversacion.RolAsistente, final.Respuesta.Texto, null, null, marcas.Siguiente());
-        await GuardarAsync(solicitud, estado, cancellationToken);
+            cierre = CierreLlamadaFinal;
+        }
+
+        iteraciones += final.Llamadas;
+        AgregarEvento(solicitud, clsEventoConversacion.RolAsistente, final.Respuesta.Texto, null, null, turno.Marcas.Siguiente());
+        using (turno.Medicion.Medir(clsMedicionTurno.FaseGuardado))
+        {
+            await GuardarAsync(solicitud, turno.Estado, cancellationToken);
+        }
+
         return new clsResultadoTurno(final.Respuesta.Texto, iteraciones, invocadas, detenerPor, salidas)
         {
             Respuesta = final.Respuesta,
             EsRespaldo = final.EsRespaldo,
             ReintentosRespuesta = final.Reintentos,
             AccionPropuesta = contextoFolio.Propuesta,
+            Cierre = cierre,
         };
     }
+
+    /// <summary>Motivo de fin del loop cuando una ronda armó una propuesta (<c>IA:PropuestaDirecta</c>).</summary>
+    public const string CierrePropuesta = "propuesta";
+
+    /// <summary>La respuesta final salió de la última llamada del loop (<c>IA:RespuestaFinalEnLoop</c>).</summary>
+    public const string CierreLoop = "loop";
+
+    /// <summary>La respuesta final salió de la llamada final aparte del validador.</summary>
+    public const string CierreLlamadaFinal = "llamada_final";
+
+    /// <summary>
+    /// La respuesta sin herramientas validada como respuesta final, con las MISMAS reglas que la llamada final (forma, coherencia,
+    /// montos y folios). Null si no pasa: entonces la pide el validador, con su reintento. Solo registra los códigos de los fallos.
+    /// </summary>
+    private clsRespuestaAgenteEstructurada? RespuestaDelLoop(string? texto, clsContextoValidacionRespuesta contexto)
+    {
+        var validacion = clsReglasRespuestaAgente.Validar(texto, contexto);
+        if (validacion.EsValida)
+        {
+            return validacion.Respuesta;
+        }
+
+        logger.LogDebug(
+            "La respuesta sin herramientas del asistente no sirve como respuesta final ({Motivos}); se pide la llamada final.",
+            string.Join(", ", validacion.Fallos.Select(f => f.Codigo).Distinct(StringComparer.Ordinal)));
+        return null;
+    }
+
+    /// <summary>Lo que el loop necesita del turno (armado en <see cref="EjecutarTurnoAsync"/>).</summary>
+    private sealed record clsDatosTurno(
+        clsSolicitudTurnoFolio Solicitud,
+        Kernel Kernel,
+        IReadOnlyDictionary<string, KernelFunction> Funciones,
+        IList<AITool> Declaraciones,
+        List<ChatMessage> Mensajes,
+        clsMarcasTurno Marcas,
+        clsEstadoConversacion Estado,
+        IReadOnlyList<string> MensajesDelComercial,
+        clsMedicionTurno Medicion);
 
     /// <summary>Kernel del turno con el plugin <c>asistente</c> y el filtro de auditoría (entrada del LLM y salida sin montos).</summary>
     private Kernel ConstruirKernel(out IReadOnlyDictionary<string, KernelFunction> funciones)

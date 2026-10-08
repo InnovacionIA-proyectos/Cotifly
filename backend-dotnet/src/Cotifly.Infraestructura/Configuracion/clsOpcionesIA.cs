@@ -50,7 +50,10 @@ public sealed class clsOpcionesIA
     [MaxLength(500)]
     public string? Endpoint { get; set; }
 
-    /// <summary>Peticiones por minuto al proveedor (limitador local, evita el 429 de las capas gratuitas); 0 lo desactiva. Por defecto 8.</summary>
+    /// <summary>
+    /// Peticiones por minuto al proveedor (limitador local, evita el 429 de las capas gratuitas); 0 lo desactiva. Por defecto 8. Ventana
+    /// deslizante de 60 s (HU-013.16): las llamadas de un turno no se espacian mientras el minuto tenga cupo.
+    /// </summary>
     [Range(0, 100_000)]
     public int Rpm { get; set; } = 8;
 

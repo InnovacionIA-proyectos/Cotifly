@@ -2,6 +2,7 @@ using System.Net;
 using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.IA.Services;
 using Cotifly.Infraestructura.Tests.Configuracion;
+using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -189,26 +190,69 @@ public sealed class clsProveedoresIATests
         clsChatClientConRespaldo.EsRecuperable(new InvalidOperationException("argumento"), Ct).Should().BeFalse();
     }
 
-    // test del LimitadorRPM: la segunda llamada dentro del minuto espera el intervalo (60 / rpm).
+    // HU-013.16 (#126): ventana deslizante. Las llamadas seguidas de un turno pasan sin espera mientras el minuto tenga cupo; la que
+    // pasa del tope espera a que la más vieja salga de la ventana (antes: intervalo fijo de 60/rpm entre TODAS las llamadas).
     [Fact]
-    public async Task ElLimitadorEsperaElIntervaloEntreLlamadas()
+    public async Task ElLimitadorDejaPasarLasLlamadasDelMinutoYEsperaSoloAlPasarDelTope()
     {
         var tiempo = new clsTiempoFalso();
         var esperas = new List<TimeSpan>();
-        using var limitador = new clsLimitadorRpm(60, tiempo, (espera, _) =>
+        using var limitador = new clsLimitadorRpm(3, tiempo, (espera, _) =>
         {
             esperas.Add(espera);
             tiempo.Avanzar(espera);
             return Task.CompletedTask;
         });
 
-        await limitador.EsperarAsync(Ct);
-        await limitador.EsperarAsync(Ct);
-        tiempo.Avanzar(TimeSpan.FromSeconds(5));
-        await limitador.EsperarAsync(Ct);
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.Zero);
+        tiempo.Avanzar(TimeSpan.FromSeconds(2));
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.Zero);
+        tiempo.Avanzar(TimeSpan.FromSeconds(2));
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.Zero, "tres llamadas en 4 s caben en el minuto con IA:Rpm=3");
+        tiempo.Avanzar(TimeSpan.FromSeconds(6));
 
-        limitador.Intervalo.Should().Be(TimeSpan.FromSeconds(1));
-        esperas.Should().Equal(TimeSpan.FromSeconds(1));
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.FromSeconds(50), "la cuarta espera a que la primera salga de la ventana");
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.FromSeconds(2));
+        tiempo.Avanzar(TimeSpan.FromMinutes(2));
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.Zero, "pasado el minuto la ventana queda libre");
+
+        limitador.Rpm.Should().Be(3);
+        esperas.Should().Equal(TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task UnRelojQueNoAvanzaDuranteLaEsperaNoBloqueaElLimitador()
+    {
+        var tiempo = new clsTiempoFalso();
+        using var limitador = new clsLimitadorRpm(1, tiempo, (_, _) => Task.CompletedTask);
+
+        await limitador.EsperarAsync(Ct);
+        var espera = await limitador.EsperarAsync(Ct);
+        var otra = await limitador.EsperarAsync(Ct);
+
+        espera.Should().Be(TimeSpan.FromMinutes(1));
+        otra.Should().Be(TimeSpan.FromMinutes(1), "cada llamada espera su turno aunque el reloj no se mueva, sin quedarse bloqueada");
+    }
+
+    [Fact]
+    public async Task ElClienteLimitadoRegistraLaEsperaPorElRpm()
+    {
+        var tiempo = new clsTiempoFalso();
+        using var limitador = new clsLimitadorRpm(1, tiempo, (espera, _) =>
+        {
+            tiempo.Avanzar(espera);
+            return Task.CompletedTask;
+        });
+        var interno = Substitute.For<IChatClient>();
+        interno.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")));
+        var registro = new clsLoggerFalso<clsChatClientLimitado>();
+        using var cliente = new clsChatClientLimitado(interno, limitador, registro);
+
+        await cliente.GetResponseAsync([new ChatMessage(ChatRole.User, "hola")], cancellationToken: Ct);
+        await cliente.GetResponseAsync([new ChatMessage(ChatRole.User, "hola")], cancellationToken: Ct);
+
+        registro.Registros.Should().ContainSingle().Which.Mensaje.Should().Contain("esperó 60000 ms por IA:Rpm=1");
     }
 
     [Fact]
