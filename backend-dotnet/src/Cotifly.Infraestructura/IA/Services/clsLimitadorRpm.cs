@@ -25,18 +25,28 @@ public sealed class clsLimitadorRpm : IDisposable
     private readonly Func<TimeSpan, CancellationToken, Task> _esperar;
     private readonly SemaphoreSlim _candado = new(1, 1);
     private readonly Queue<DateTimeOffset> _llamadas = new();
+    private readonly TimeSpan _esperaMaxima;
 
-    public clsLimitadorRpm(int rpm, TimeProvider tiempo, Func<TimeSpan, CancellationToken, Task>? esperar = null)
+    /// <param name="esperaMaxima">
+    /// Tope de espera por cupo (HU-013.16, <c>IA:EsperaMaximaRpmSegundos</c>). Si la llamada tendría que esperar más, no espera:
+    /// lanza un 429 local y el canal responde el texto del límite (<c>clsTextosAgente.LimiteModelo</c>) en lugar de dejar al
+    /// comercial hasta 60 s sin respuesta. Null = sin tope.
+    /// </param>
+    public clsLimitadorRpm(int rpm, TimeProvider tiempo, Func<TimeSpan, CancellationToken, Task>? esperar = null, TimeSpan? esperaMaxima = null)
     {
         ArgumentNullException.ThrowIfNull(tiempo);
         ArgumentOutOfRangeException.ThrowIfNegative(rpm);
         _rpm = rpm;
         _tiempo = tiempo;
         _esperar = esperar ?? ((espera, ct) => Task.Delay(espera, tiempo, ct));
+        _esperaMaxima = esperaMaxima ?? TimeSpan.MaxValue;
     }
 
     /// <summary>Llamadas por minuto (0 = sin límite).</summary>
     public int Rpm => _rpm;
+
+    /// <summary>Tope de espera por cupo (<see cref="TimeSpan.MaxValue"/> = sin tope).</summary>
+    public TimeSpan EsperaMaxima => _esperaMaxima;
 
     /// <summary>Espera, si hace falta, a que haya cupo en la ventana y registra la llamada. Devuelve cuánto esperó.</summary>
     public async Task<TimeSpan> EsperarAsync(CancellationToken cancellationToken = default)
@@ -55,6 +65,14 @@ public sealed class clsLimitadorRpm : IDisposable
             if (_llamadas.Count >= _rpm)
             {
                 var espera = _llamadas.Peek() + Ventana - ahora;
+                if (espera > _esperaMaxima)
+                {
+                    throw new HttpRequestException(
+                        $"Límite local IA:Rpm={_rpm} agotado: la llamada tendría que esperar {(long)espera.TotalSeconds} s (tope {(long)_esperaMaxima.TotalSeconds} s).",
+                        null,
+                        System.Net.HttpStatusCode.TooManyRequests);
+                }
+
                 if (espera > TimeSpan.Zero)
                 {
                     await _esperar(espera, cancellationToken);

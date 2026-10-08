@@ -57,6 +57,14 @@ public sealed class clsOpcionesIA
     [Range(0, 100_000)]
     public int Rpm { get; set; } = 8;
 
+    /// <summary>
+    /// Segundos que una llamada espera, como máximo, a que el limitador <see cref="Rpm"/> tenga cupo (HU-013.16). Si tendría que esperar
+    /// más, el turno responde de inmediato el texto del límite de peticiones en lugar de dejar al comercial hasta 60 s sin respuesta.
+    /// Por defecto 20.
+    /// </summary>
+    [Range(1, 60)]
+    public int EsperaMaximaRpmSegundos { get; set; } = 20;
+
     /// <summary>Tiempo máximo de cada llamada al proveedor, en segundos. Por defecto 60.</summary>
     [Range(5, 600)]
     public int TimeoutSeg { get; set; } = 60;

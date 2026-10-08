@@ -627,7 +627,16 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 | `moneda` | `"COP"`, `"USD"` o null | No | Obsoleto: se acepta y se ignora desde #105 (la moneda va en el formulario). No enviarlo |
 
 - Respuesta 200 (`RespuestaChat`): `texto` (markdown simple, mostrarlo tal cual), `herramientas` (las del asistente: `consultar_cotizacion`, `proponer_ajuste_margen`, `proponer_re_solicitud`, `buscar_servicio_conexo`), `errores` (`[{herramienta, codigo}]`, lista vacía si no hubo) y `accion_propuesta` (o `null`). `precio`, `margen` y `pdf` siguen en el esquema como **obsoletos** y siempre llegan en `null`: no leerlos (`SalidaPrecio`, `SalidaMargen` y `SalidaPdf` eran del agente legado).
-- Un fallo del asistente o del proveedor de IA responde 200 `RespuestaChatError` `{texto, error: true}`: mostrar el texto como error.
+- Un fallo del asistente o del proveedor de IA responde 200 `RespuestaChatError` `{texto, error: true, codigo}`: mostrar el texto como error. Desde HU-013.16 (#126), `codigo` dice el motivo, para decidir qué mostrar sin leer el texto:
+
+  | `codigo` | Qué pasó | Qué ofrecer |
+  |---|---|---|
+  | `IA_NO_DISPONIBLE` | Fallaron todos los modelos de IA, el principal y los respaldos | Aviso de "asistente no disponible"; los botones del detalle siguen funcionando |
+  | `LIMITE_MODELO` | Límite de peticiones por minuto del proveedor o de Cotifly. Llega en menos de 20 s, sin esperar el cupo | Reenviar el mismo mensaje en unos segundos |
+  | `TURNO_EN_CURSO` | Otro mensaje de la misma conversación sigue en proceso | Esperar la respuesta anterior |
+  | `MAX_ITERACIONES` | El asistente necesitó demasiados pasos | Pedir una cosa a la vez |
+  | `RESPUESTA_NO_ESTRUCTURADA` | La respuesta del modelo no pasó la validación | Reenviar o reformular |
+  | `ERROR_INTERNO` | Cualquier otro fallo | Reintentar más tarde |
 - 404 `Sesión no encontrada.` si el `sesion_id` es de otro comercial; 404 `Cotización no encontrada o no es tuya.` si el folio no es suyo.
 
 ### 5.4 `GET /web/mis-cotizaciones`. En QA

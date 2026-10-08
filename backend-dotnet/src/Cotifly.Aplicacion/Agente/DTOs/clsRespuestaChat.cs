@@ -47,7 +47,12 @@ public sealed record clsErrorHerramienta(string Herramienta, string Codigo);
 /// Error controlado de <c>POST /web/chat</c> (<c>RespuestaChatError</c>): 200 con <c>error: true</c> y un texto legible
 /// (paridad con el Python; el frontend lo muestra tal cual).
 /// </summary>
-public sealed record clsRespuestaChatError(string Texto)
+/// <param name="Texto">Texto para el comercial.</param>
+/// <param name="Codigo">
+/// HU-013.16 (#126): motivo estable del error (<c>IA_NO_DISPONIBLE</c>, <c>LIMITE_MODELO</c>, <c>TURNO_EN_CURSO</c>,
+/// <c>MAX_ITERACIONES</c>, <c>RESPUESTA_NO_ESTRUCTURADA</c> o <c>ERROR_INTERNO</c>; ver <c>clsTextosAgente</c>).
+/// </param>
+public sealed record clsRespuestaChatError(string Texto, string Codigo)
 {
     public bool Error { get; } = true;
 }

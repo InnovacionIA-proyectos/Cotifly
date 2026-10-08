@@ -1,13 +1,17 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Exceptions;
 using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
+using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Tests.Costeo;
+using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Sesiones;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Agente;
 
@@ -92,6 +96,63 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _modelo.Llamadas.Should().HaveCount(3, "herramienta, respuesta sin herramientas y llamada final");
         resultado.Valor.Texto.Should().Be("Te propongo subir el margen al 18 %. Confírmalo con el botón.");
         resultado.Valor.AccionPropuesta.Should().NotBeNull();
+    }
+
+    // ---------- Lo que ve el modelo (auditoría de #126) ----------
+
+    // Las salidas de consultar_cotizacion y buscar_servicio_conexo no llevan descripciones, precios, costos, valores, totales ni TRM:
+    // ninguna clave con esos nombres (la búsqueda solo trae "total", el número de resultados) y ningún monto de la cotización.
+    [Fact]
+    public async Task LasSalidasQueVeElModeloNoTraenDescripcionesNiPrecios()
+    {
+        Registrar(ConCotizacionNexo(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio)));
+        _conexos.BuscarAsync(_ana.Id, "cargue", null, 1, Cotifly.Aplicacion.Agente.Herramientas.clsHerramientasAsistenteFolio.MaximoServicios, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPaginaServiciosConexos>.Exito(new clsPaginaServiciosConexos(1, 1, 10,
+                [new clsServicioConexoCatalogo("CX-9", "CAR-01", "Cargue", "logistico", "Unidad", "Buenaventura", "Bogotá", "BUN", "Ruta 1", "Grúa", null)])));
+        _modelo.Llamar("consultar_cotizacion", new { }).Llamar("buscar_servicio_conexo", new { texto = "cargue" }).CerrarEnLoop("Listo.");
+
+        await Runner().EjecutarTurnoAsync(Solicitud("Revisa la cotización y busca cargue"), Ct);
+
+        var consulta = _modelo.Llamadas[2].ResultadosHerramientas[0];
+        var busqueda = _modelo.Llamadas[2].ResultadosHerramientas[1];
+        foreach (var salida in new[] { consulta, busqueda })
+        {
+            using var documento = JsonDocument.Parse(salida);
+            Claves(documento.RootElement).Should().NotContain(c => ClaveProhibida().IsMatch(c), "ninguna clave de dinero ni descripción llega al modelo");
+            salida.Should().NotContain("2550000").And.NotContain("3000000").And.NotContain("100000").And.NotContain("85000");
+        }
+
+        using var servicios = JsonDocument.Parse(busqueda);
+        servicios.RootElement.GetProperty("servicios")[0].EnumerateObject().Select(p => p.Name)
+            .Should().BeEquivalentTo("id", "nombre", "codigo", "categoria", "unidad");
+    }
+
+    private static IEnumerable<string> Claves(JsonElement elemento) => elemento.ValueKind switch
+    {
+        JsonValueKind.Object => elemento.EnumerateObject().SelectMany(p => Claves(p.Value).Prepend(p.Name)),
+        JsonValueKind.Array => elemento.EnumerateArray().SelectMany(Claves),
+        _ => [],
+    };
+
+    [System.Text.RegularExpressions.GeneratedRegex("descripci|precio|costo|valor|_total|total_|trm|tarifa|utilidad", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ClaveProhibida();
+
+    [Fact]
+    public async Task ConPropuestaElTipoEsConfirmacionRequeridaYSinPropuestaNunca()
+    {
+        Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
+        _modelo.Llamar("proponer_ajuste_margen", new { margen = 0.18 }).ResponderFinal("Listo, ajusté la propuesta del margen.");
+
+        var conPropuesta = await Runner().EjecutarTurnoAsync(Solicitud("Súbelo al 18 %"), Ct);
+
+        conPropuesta.Valor.Respuesta.Tipo.Should().Be(TipoRespuestaAgente.ConfirmacionRequerida, "el modelo dijo conversacional, pero hay propuesta");
+        conPropuesta.Valor.Respuesta.RequiereConfirmacion.Should().BeTrue();
+
+        _modelo.CerrarEnLoop("¿Confirmas?", "confirmacion_requerida", true);
+        var sinPropuesta = await Runner().EjecutarTurnoAsync(Solicitud("¿Algo más?"), Ct);
+
+        sinPropuesta.Valor.Respuesta.Tipo.Should().Be(TipoRespuestaAgente.Conversacional, "sin propuesta no hay nada que confirmar");
+        sinPropuesta.Valor.Respuesta.RequiereConfirmacion.Should().BeFalse();
     }
 
     // ---------- Turnos concurrentes en la misma sesión ----------

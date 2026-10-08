@@ -298,13 +298,24 @@ public sealed class clsAsistenteFolioRunner(
 
         return new clsResultadoTurno(final.Respuesta.Texto, iteraciones, invocadas, detenerPor, salidas)
         {
-            Respuesta = final.Respuesta,
+            Respuesta = Coherente(final.Respuesta, contextoFolio.Propuesta is not null),
             EsRespaldo = final.EsRespaldo,
             ReintentosRespuesta = final.Reintentos,
             AccionPropuesta = contextoFolio.Propuesta,
             Cierre = cierre,
         };
     }
+
+    /// <summary>
+    /// El tipo de la respuesta lo decide el servidor, no el modelo (auditoría de #126): con una propuesta armada siempre es
+    /// <c>confirmacion_requerida</c> (el comercial la confirma con el botón) y sin propuesta nunca lo es (no hay nada que confirmar).
+    /// </summary>
+    private static clsRespuestaAgenteEstructurada Coherente(clsRespuestaAgenteEstructurada respuesta, bool hayPropuesta) =>
+        hayPropuesta && respuesta.Tipo != TipoRespuestaAgente.ConfirmacionRequerida
+            ? respuesta with { Tipo = TipoRespuestaAgente.ConfirmacionRequerida, RequiereConfirmacion = true, AccionesSugeridas = null }
+            : !hayPropuesta && respuesta.Tipo == TipoRespuestaAgente.ConfirmacionRequerida
+                ? respuesta with { Tipo = TipoRespuestaAgente.Conversacional, RequiereConfirmacion = false, AccionesSugeridas = null }
+                : respuesta;
 
     /// <summary>Motivo de fin del loop cuando una ronda armó una propuesta (<c>IA:PropuestaDirecta</c>).</summary>
     public const string CierrePropuesta = "propuesta";

@@ -113,6 +113,10 @@ public sealed class clsProveedoresIATests
     [InlineData(HttpStatusCode.TooManyRequests, true)]
     [InlineData(HttpStatusCode.ServiceUnavailable, true)]
     [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.NotFound, true)]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true)]
+    [InlineData(HttpStatusCode.UnprocessableEntity, false)]
     [InlineData(HttpStatusCode.BadRequest, false)]
     [InlineData(HttpStatusCode.Unauthorized, false)]
     public async Task ElRespaldoSoloActuaAnteLimitesYFallosDelServidor(HttpStatusCode estado, bool usaRespaldo)
@@ -163,6 +167,51 @@ public sealed class clsProveedoresIATests
         {
             await llamar.Should().ThrowAsync<InvalidOperationException>();
         }
+    }
+
+    // HU-013.16 (E2E de #126): el gateway caído respondía el 404 de Traefik y no se probaban los respaldos. Ahora el 404 pasa al
+    // siguiente modelo y, si fallan todos por indisponibilidad, el chat responde IA_NO_DISPONIBLE con su texto propio.
+    [Fact]
+    public async Task UnPrincipalCon404PruebaTodosLosRespaldosYSiFallanEsIaNoDisponible()
+    {
+        var modelos = Enumerable.Range(0, 3).Select(_ => Substitute.For<IChatClient>()).ToList();
+        modelos[0].GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("404 page not found", null, HttpStatusCode.NotFound));
+        modelos[1].GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("timeout", null, HttpStatusCode.RequestTimeout));
+        modelos[2].GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("caído", null, HttpStatusCode.BadGateway));
+        using var cliente = new clsChatClientConRespaldo(modelos, NullLogger<clsChatClientConRespaldo>.Instance);
+
+        var llamar = async () => await cliente.GetResponseAsync("hola", cancellationToken: Ct);
+
+        var error = (await llamar.Should().ThrowAsync<Cotifly.Aplicacion.Agente.Exceptions.clsIaNoDisponibleException>()).Which;
+        error.InnerException.Should().BeOfType<HttpRequestException>();
+        foreach (var modelo in modelos)
+        {
+            await modelo.Received(1).GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        }
+
+        Cotifly.Aplicacion.Agente.Services.clsTextosAgente.ParaFallo(error).Should().Be(Cotifly.Aplicacion.Agente.Services.clsTextosAgente.IaNoDisponible);
+        Cotifly.Aplicacion.Agente.Services.clsTextosAgente.CodigoDeFallo(error).Should().Be("IA_NO_DISPONIBLE");
+    }
+
+    [Fact]
+    public async Task UnSoloModeloCaidoTambienEsIaNoDisponibleYUn400DeContenidoNo()
+    {
+        var unico = Substitute.For<IChatClient>();
+        unico.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Service Unavailable", null, HttpStatusCode.ServiceUnavailable));
+        using var cliente = new clsChatClientConRespaldo([unico], NullLogger<clsChatClientConRespaldo>.Instance);
+        await ((Func<Task>)(async () => await cliente.GetResponseAsync("hola", cancellationToken: Ct)))
+            .Should().ThrowAsync<Cotifly.Aplicacion.Agente.Exceptions.clsIaNoDisponibleException>();
+
+        var contenido = Substitute.For<IChatClient>();
+        contenido.GetResponseAsync(Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("Invalid JSON payload", null, HttpStatusCode.BadRequest));
+        using var otro = new clsChatClientConRespaldo([contenido], NullLogger<clsChatClientConRespaldo>.Instance);
+        var error = (await ((Func<Task>)(async () => await otro.GetResponseAsync("hola", cancellationToken: Ct))).Should().ThrowAsync<HttpRequestException>()).Which;
+        Cotifly.Aplicacion.Agente.Services.clsTextosAgente.CodigoDeFallo(error).Should().Be("ERROR_INTERNO");
     }
 
     [Fact]
@@ -218,6 +267,34 @@ public sealed class clsProveedoresIATests
 
         limitador.Rpm.Should().Be(3);
         esperas.Should().Equal(TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(2));
+    }
+
+    // Auditoría de #126: con el tope de espera agotado no se espera hasta 60 s sin mensaje; sale un 429 local que el canal convierte
+    // en el texto del límite (clsTextosAgente.LimiteModelo). Una espera menor que el tope sí se hace.
+    [Fact]
+    public async Task SiElCupoTardaMasQueElTopeLaLlamadaFallaConUn429SinEsperar()
+    {
+        var tiempo = new clsTiempoFalso();
+        var esperas = new List<TimeSpan>();
+        using var limitador = new clsLimitadorRpm(1, tiempo, (espera, _) =>
+        {
+            esperas.Add(espera);
+            tiempo.Avanzar(espera);
+            return Task.CompletedTask;
+        }, TimeSpan.FromSeconds(20));
+
+        await limitador.EsperarAsync(Ct);
+        tiempo.Avanzar(TimeSpan.FromSeconds(30));
+        var agotado = async () => await limitador.EsperarAsync(Ct);
+
+        var error = (await agotado.Should().ThrowAsync<HttpRequestException>()).Which;
+        error.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        Cotifly.Aplicacion.Agente.Services.clsTextosAgente.ParaFallo(error).Should().Be(Cotifly.Aplicacion.Agente.Services.clsTextosAgente.LimiteModelo);
+        esperas.Should().BeEmpty();
+
+        tiempo.Avanzar(TimeSpan.FromSeconds(15));
+        (await limitador.EsperarAsync(Ct)).Should().Be(TimeSpan.FromSeconds(15), "15 s caben en el tope de 20 s");
+        limitador.EsperaMaxima.Should().Be(TimeSpan.FromSeconds(20));
     }
 
     [Fact]
