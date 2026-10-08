@@ -55,8 +55,8 @@ Son los de `CapturaLineaRequest` de Nexo, con los nombres que ya usa `POST /web/
 |---|---|---|---|---|
 | `origen` | string, hasta 150 | **Sí** | Municipio de `GET /web/municipios` (columna `municipio` de Nexo) | Ciudad de cargue |
 | `destino` | string, hasta 150 | **Sí** | Municipio de `GET /web/municipios` | Ciudad de descargue |
-| `tipo_vehiculo` | string, hasta 100 | No (propuesto: sí, sección 8) | `tipos_vehiculo` de `GET /web/catalogos-flete` (SICE-TAC: `2`, `2S3`, `3S3`, `CA`...) | Configuración del vehículo |
-| `carroceria` | string, hasta 100 | No | `tipos_carroceria` de `GET /web/catalogos-flete` (`FURGON`, `PLATAFORMA`...) | Tipo de carrocería |
+| `tipo_vehiculo` | — | **Retirado (HU-021.6, decisión 7)** | Ya no se mapea: el vehículo lo define el cubicador o la Mesa de Costeo de Nexo. Si llega, se ignora | — |
+| `carroceria` | — | **Retirado (HU-021.6, decisión 7)** | Ya no se mapea. Si llega, se ignora | — |
 | `tipologia` | string, hasta 50 | No | Fijo en el frontend: `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` | Naturaleza de la carga |
 | `clase_viaje` | string, hasta 50 | No | `clases_viaje` de `GET /web/catalogos-flete` (`Contenedor`, `Cupo`, `CargaSuelta`, `Extradimensionado`) | Define reglas condicionales |
 | `clase_contenedor` | string, hasta 20 | Condicional | `CNT20.IT/RE/ST`, `CNT40.HC/RE`; solo con `clase_viaje = Contenedor` | Tamaño del contenedor |
@@ -147,7 +147,7 @@ Mapeo que elige el comercial:
 | ITEM | (no se mapea) | Se conserva en la exportación |
 | CIUDAD ORIGEN | `origen` | Municipio del catálogo (`BUENAVENTURA`) |
 | CIUDAD DESTINO | `destino` | Municipio del catálogo (`BOGOTA, D.C.`) |
-| TIPO VEHÍCULO | `tipo_vehiculo` | "Tractomula" → `3S3`, "Sencillo" → `2` |
+| TIPO VEHÍCULO | (no se mapea, HU-021.6) | La Mesa de Costeo de Nexo define el vehículo |
 | TON | `peso_kg` | × 1000 |
 | VALOR MERCANCÍA | `valor_mercancia` | Número |
 | OBSERVACIONES | (no se mapea) | Se conserva en la exportación |
@@ -163,9 +163,9 @@ Cuerpo que envía el frontend (parte `licitacion` de `POST /web/licitaciones`; e
   "referencia": "Pliego 2026-04",
   "hoja": "Pliego 2026",
   "lineas": [
-    { "fila": 0, "origen": "BUENAVENTURA", "destino": "BOGOTA, D.C.", "tipo_vehiculo": "3S3", "tipologia": "CargaSeca", "peso_kg": 32000, "valor_mercancia": 150000000 },
-    { "fila": 1, "origen": "CALI", "destino": "CARTAGENA", "tipo_vehiculo": "3S3", "peso_kg": 28000, "valor_mercancia": 90000000 },
-    { "fila": 2, "origen": "CUCUTA", "destino": "BOGOTA, D.C.", "tipo_vehiculo": "2", "peso_kg": 8000, "valor_mercancia": 20000000 }
+    { "fila": 0, "origen": "BUENAVENTURA", "destino": "BOGOTA, D.C.", "tipologia": "CargaSeca", "peso_kg": 32000, "valor_mercancia": 150000000 },
+    { "fila": 1, "origen": "CALI", "destino": "CARTAGENA", "peso_kg": 28000, "valor_mercancia": 90000000 },
+    { "fila": 2, "origen": "CUCUTA", "destino": "BOGOTA, D.C.", "peso_kg": 8000, "valor_mercancia": 20000000 }
   ]
 }
 ```

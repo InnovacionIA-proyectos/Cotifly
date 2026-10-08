@@ -49,15 +49,22 @@ public sealed class clsLicitacionWebRequest
             Notas = Notas,
         },
         Hoja,
-        [.. (Lineas ?? []).Select(l => l is null ? null! : new clsLineaLicitacionEntrada(l.Fila, l.ALinea()))],
+        [.. (Lineas ?? []).Select(l => l is null ? null! : l.AEntrada())],
         archivo,
         Moneda);
 }
 
-/// <summary><c>LineaLicitacionWeb</c>: los campos destino del mapeo (los de <c>CapturaLineaRequest</c>) y la fila del análisis.</summary>
+/// <summary>
+/// <c>LineaLicitacionWeb</c>: los campos destino del mapeo (los de <c>CapturaLineaRequest</c>) y la fila del análisis. HU-021.6: cada
+/// fila es una ruta; puede traer su línea de negocio, los ids de las ciudades del contenedor, mercancías con <c>id_tipo_mercancia</c> y
+/// servicios conexos del catálogo de Nexo. Vehículo y carrocería ya no se mapean (decisión 7): si llegan, se ignoran.
+/// </summary>
 public sealed class clsLineaLicitacionWebRequest
 {
     public int? Fila { get; init; }
+
+    /// <summary>Línea de negocio de esta ruta; sin ella, la de la licitación.</summary>
+    public string? LineaNegocio { get; init; }
     public string? Origen { get; init; }
     public string? Destino { get; init; }
 
@@ -75,7 +82,11 @@ public sealed class clsLineaLicitacionWebRequest
 
     /// <summary>Horas de descargue de esta fila (G5); sin valor, las del encabezado.</summary>
     public decimal? HorasDescargue { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
     public string? TipoVehiculo { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -84,12 +95,23 @@ public sealed class clsLineaLicitacionWebRequest
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
+    public int? CiudadDevolucionMunicipioId { get; init; }
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
+    public int? CiudadLevanteMunicipioId { get; init; }
+
+    /// <summary>Valor de un levante del contenedor (nombre anterior: <see cref="ValorAprovisionamiento"/>; si llegan los dos, vale este).</summary>
+    public decimal? ValorLevanteContenedor { get; init; }
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>Mercancías de la ruta (nombre anterior: <see cref="Posiciones"/>; si llegan las dos, valen estas).</summary>
+    public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Posiciones { get; init; }
+    public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
+
+    public clsLineaLicitacionEntrada AEntrada() => new(Fila, ALinea(), LineaNegocio, clsConexoCapturaWebRequest.AEntradas(ServiciosConexos));
 
     public clsLineaSolicitudCosteo ALinea() => new()
     {
@@ -108,14 +130,14 @@ public sealed class clsLineaLicitacionWebRequest
         Consolidado = Consolidado,
         RetornaContenedor = RetornaContenedor,
         CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+        CiudadDevolucionMunicipioId = CiudadDevolucionMunicipioId,
         LevanteContenedorDiferente = LevanteContenedorDiferente,
         CiudadLevanteContenedor = CiudadLevanteContenedor,
-        ValorAprovisionamiento = ValorAprovisionamiento,
+        CiudadLevanteMunicipioId = CiudadLevanteMunicipioId,
+        ValorAprovisionamiento = ValorLevanteContenedor ?? ValorAprovisionamiento,
         PesoKg = PesoKg,
         ValorMercancia = ValorMercancia,
-        Posiciones = [.. (Posiciones ?? []).Select(p => p is null
-            ? null!
-            : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+        Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias ?? Posiciones),
     };
 }
 

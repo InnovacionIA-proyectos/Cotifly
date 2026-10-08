@@ -2,22 +2,29 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Cotifly.Api.Comun;
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Api.Costeo.DTOs;
 
 /// <summary>
-/// <c>SolicitudCosteoWeb</c> (snake_case por <see cref="Comun.clsJsonSnakeCaseAttribute"/>): el formulario ampliado de
-/// <c>POST /web/solicitudes-costeo</c>. Los límites los valida el dominio (<see cref="clsSolicitudCosteo.Validar"/>), no MVC, para
-/// responder <c>SOLICITUD_COSTEO_INVALIDA</c> con el campo exacto.
+/// <c>SolicitudCosteoWeb</c> (snake_case por <see cref="Comun.clsJsonSnakeCaseAttribute"/>): el formulario de
+/// <c>POST /web/solicitudes-costeo</c>. HU-021.6: el formulario captura <see cref="Rutas"/> (<c>RutaCapturaWeb</c>); los campos de
+/// ruta al nivel raíz son el formato plano anterior (una sola ruta, obsoleto) y se aceptan solo sin <c>rutas</c>. Los límites los valida
+/// el dominio, no MVC, para responder <c>SOLICITUD_COSTEO_INVALIDA</c> con todos los campos en <c>detalle.errores</c>.
 /// </summary>
 public sealed class clsSolicitudCosteoWebRequest
 {
     public string? Tipo { get; init; }
     public string? NitCliente { get; init; }
     public string? ClienteNombre { get; init; }
+
+    /// <summary>Línea de negocio por defecto de las rutas (cada ruta puede traer la suya).</summary>
     public string? LineaNegocio { get; init; }
+
+    /// <summary>HU-021.6: las rutas de la solicitud (al menos una). Sin ellas se lee el formato plano anterior como una sola ruta.</summary>
+    public IReadOnlyList<clsRutaCapturaWebRequest?>? Rutas { get; init; }
     /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
     [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
@@ -25,14 +32,21 @@ public sealed class clsSolicitudCosteoWebRequest
     public decimal? ValorEstimado { get; init; }
     /// <summary>Obsoleto (decisión 1 de HU-021): se acepta y se ignora. Lo retira el contrato de #138.</summary>
     public string? Referencia { get; init; }
+    /// <summary>Horas por defecto de las rutas (cada ruta puede traer las suyas).</summary>
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
     public string? Notas { get; init; }
+
+    // ---- Formato plano anterior (una ruta; obsoleto desde HU-021.6): solo se lee sin 'rutas'.
     public string? Origen { get; init; }
     public string? Destino { get; init; }
     public int? OrigenMunicipioId { get; init; }
     public int? DestinoMunicipioId { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
     public string? TipoVehiculo { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -41,31 +55,127 @@ public sealed class clsSolicitudCosteoWebRequest
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
+    public int? CiudadDevolucionMunicipioId { get; init; }
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
+    public int? CiudadLevanteMunicipioId { get; init; }
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
-    public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
+    public IReadOnlyList<clsPosicionCargaWebRequest?>? Posiciones { get; init; }
 
     /// <summary><c>COP</c> (por defecto) o <c>USD</c> (HU-013.7, ADR-014 §5); otro valor lo rechaza el caso de uso (<c>SOLICITUD_COSTEO_INVALIDA</c>).</summary>
     public string? Moneda { get; init; }
 
-    /// <summary>Entrada del caso de uso, o <c>SOLICITUD_COSTEO_INVALIDA</c> si falta el tipo o no es <c>spot</c>/<c>licitacion</c>.</summary>
-    public clsResultado<clsEntradaSolicitudCosteo> AEntrada()
+    /// <summary>
+    /// Entrada del caso de uso, o <c>SOLICITUD_COSTEO_INVALIDA</c> si falta el tipo o no es <c>spot</c>/<c>licitacion</c>, o si llegan
+    /// <c>rutas</c> y además campos de ruta del formato plano (ambiguo: no se sabe cuál vale).
+    /// </summary>
+    public clsResultado<clsEntradaCaptura> AEntrada()
     {
         if (!clsCodigoEnum.TryDesdeCodigo<TipoSolicitud>(Tipo, out var tipo))
         {
             return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "El campo 'tipo' es obligatorio y debe ser 'spot' o 'licitacion'.");
         }
 
-        var solicitud = new clsSolicitudCosteo
+        var encabezado = new clsEncabezadoSolicitudCosteo
         {
             Tipo = tipo,
             Deadline = Deadline,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
             Notas = Notas,
+        };
+
+        if (Rutas is null)
+        {
+            // Formato plano anterior: una sola ruta (con la línea de negocio del encabezado).
+            return new clsEntradaCaptura(NitCliente, ClienteNombre, LineaNegocio, encabezado, [new clsLineaLicitacionEntrada(null, LineaPlana())], Moneda);
+        }
+
+        if (TraeCamposPlanos)
+        {
+            return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
+                "Envía las rutas solo en 'rutas': los campos de ruta en la raíz (origen, destino, peso_kg, posiciones...) son del formato anterior.");
+        }
+
+        return new clsEntradaCaptura(NitCliente, ClienteNombre, LineaNegocio, encabezado, [.. Rutas.Select(r => r?.AEntrada())], Moneda);
+    }
+
+    private bool TraeCamposPlanos =>
+        Origen is not null || Destino is not null || OrigenMunicipioId is not null || DestinoMunicipioId is not null || PesoKg is not null
+        || ValorMercancia is not null || Posiciones is not null || Tipologia is not null || ClaseViaje is not null || ClaseContenedor is not null;
+
+    private clsLineaSolicitudCosteo LineaPlana() => new()
+    {
+        Origen = Origen ?? string.Empty,
+        Destino = Destino ?? string.Empty,
+        OrigenMunicipioId = OrigenMunicipioId,
+        DestinoMunicipioId = DestinoMunicipioId,
+        TipoVehiculo = TipoVehiculo,
+        Carroceria = Carroceria,
+        Tipologia = Tipologia,
+        ClaseViaje = ClaseViaje,
+        ClaseContenedor = ClaseContenedor,
+        Exclusivo = Exclusivo,
+        Consolidado = Consolidado,
+        RetornaContenedor = RetornaContenedor,
+        CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+        CiudadDevolucionMunicipioId = CiudadDevolucionMunicipioId,
+        LevanteContenedorDiferente = LevanteContenedorDiferente,
+        CiudadLevanteContenedor = CiudadLevanteContenedor,
+        CiudadLevanteMunicipioId = CiudadLevanteMunicipioId,
+        ValorAprovisionamiento = ValorAprovisionamiento,
+        PesoKg = PesoKg,
+        ValorMercancia = ValorMercancia,
+        Posiciones = clsPosicionCargaWebRequest.APosiciones(Posiciones),
+    };
+}
+
+/// <summary>
+/// <c>RutaCapturaWeb</c> (HU-021.6): una ruta del formulario. Origen y destino con su id de municipio de <c>GET /web/municipios</c>
+/// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
+/// nombre; igual las ciudades de devolución y de levante del contenedor. Sin vehículo ni carrocería (decisión 7).
+/// </summary>
+public sealed class clsRutaCapturaWebRequest
+{
+    /// <summary>Línea de negocio de la ruta; sin ella, la de la solicitud.</summary>
+    public string? LineaNegocio { get; init; }
+    public int? OrigenMunicipioId { get; init; }
+    public string? Origen { get; init; }
+    public int? DestinoMunicipioId { get; init; }
+    public string? Destino { get; init; }
+    public string? Tipologia { get; init; }
+    public string? ClaseViaje { get; init; }
+    public string? ClaseContenedor { get; init; }
+    public bool? Exclusivo { get; init; }
+    public bool? Consolidado { get; init; }
+    public bool? RetornaContenedor { get; init; }
+    public int? CiudadDevolucionMunicipioId { get; init; }
+    public string? CiudadDevolucionContenedor { get; init; }
+    public bool? LevanteContenedorDiferente { get; init; }
+    public int? CiudadLevanteMunicipioId { get; init; }
+    public string? CiudadLevanteContenedor { get; init; }
+    public decimal? HorasCargue { get; init; }
+    public decimal? HorasDescargue { get; init; }
+
+    /// <summary>Valor de UN levante del contenedor en la ruta (se copia a cada camión, decisión 4).</summary>
+    public decimal? ValorLevanteContenedor { get; init; }
+    public decimal? ValorMercancia { get; init; }
+    public decimal? PesoKg { get; init; }
+    public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
+    public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    public string? TipoVehiculo { get; init; }
+
+    /// <summary>Obsoleto (decisión 7 de HU-021): se acepta y se ignora con un aviso en el log.</summary>
+    public string? Carroceria { get; init; }
+
+    public clsLineaLicitacionEntrada AEntrada() => new(
+        null,
+        new clsLineaSolicitudCosteo
+        {
             Origen = Origen ?? string.Empty,
             Destino = Destino ?? string.Empty,
             OrigenMunicipioId = OrigenMunicipioId,
@@ -79,28 +189,52 @@ public sealed class clsSolicitudCosteoWebRequest
             Consolidado = Consolidado,
             RetornaContenedor = RetornaContenedor,
             CiudadDevolucionContenedor = CiudadDevolucionContenedor,
+            CiudadDevolucionMunicipioId = CiudadDevolucionMunicipioId,
             LevanteContenedorDiferente = LevanteContenedorDiferente,
             CiudadLevanteContenedor = CiudadLevanteContenedor,
-            ValorAprovisionamiento = ValorAprovisionamiento,
+            CiudadLevanteMunicipioId = CiudadLevanteMunicipioId,
+            ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
-            Posiciones = [.. (Posiciones ?? []).Select(p => p is null
-                ? null!
-                : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
-        };
-        return new clsEntradaSolicitudCosteo(NitCliente, ClienteNombre, LineaNegocio, solicitud, Moneda);
-    }
+            HorasCargue = HorasCargue,
+            HorasDescargue = HorasDescargue,
+            Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias),
+        },
+        LineaNegocio,
+        clsConexoCapturaWebRequest.AEntradas(ServiciosConexos));
 }
 
-/// <summary><c>PosicionCargaWeb</c>: un bulto en centímetros y kilogramos; <c>cantidad</c> por defecto 1.</summary>
+/// <summary><c>ConexoCapturaWeb</c> (HU-021.6): un servicio del catálogo de Nexo para la ruta; el precio lo pone Cotifly (costo de Nexo).</summary>
+public sealed class clsConexoCapturaWebRequest
+{
+    public string? IdServicioConexo { get; init; }
+    public decimal? Cantidad { get; init; }
+
+    public static IReadOnlyList<clsConexoCapturaEntrada?>? AEntradas(IReadOnlyList<clsConexoCapturaWebRequest?>? conexos) =>
+        conexos is null ? null : [.. conexos.Select(c => c is null ? null : new clsConexoCapturaEntrada(c.IdServicioConexo, c.Cantidad))];
+}
+
+/// <summary>
+/// <c>MercanciaWeb</c> / <c>PosicionCargaWeb</c>: una mercancía (bulto) en centímetros y kilogramos; <c>cantidad</c> por defecto 1.
+/// HU-021.6: <c>id_tipo_mercancia</c> (catálogo del cubicador) es obligatorio en una captura nueva y <c>nombre_mercancia</c> es la copia de su
+/// nombre (<c>descripcion</c> es el nombre anterior del mismo campo).
+/// </summary>
 public sealed class clsPosicionCargaWebRequest
 {
+    public Guid? IdTipoMercancia { get; init; }
+    public string? NombreMercancia { get; init; }
     public string? Descripcion { get; init; }
     public int Cantidad { get; init; } = 1;
     public decimal LargoCm { get; init; }
     public decimal AnchoCm { get; init; }
     public decimal AltoCm { get; init; }
     public decimal? PesoKg { get; init; }
+
+    public clsPosicionCarga APosicion() => new(NombreMercancia ?? Descripcion, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia);
+
+    /// <summary>Las mercancías del contrato como posiciones del dominio (un elemento <c>null</c> se conserva: lo reporta la validación).</summary>
+    public static IReadOnlyList<clsPosicionCarga> APosiciones(IReadOnlyList<clsPosicionCargaWebRequest?>? posiciones) =>
+        [.. (posiciones ?? []).Select(p => p is null ? null! : p.APosicion())];
 }
 
 /// <summary><c>SeleccionServiciosConexos</c>: ids de los servicios conexos del costeo que van en el PDF (los demás se excluyen).</summary>

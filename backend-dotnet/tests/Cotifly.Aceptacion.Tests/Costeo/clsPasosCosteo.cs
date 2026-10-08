@@ -329,17 +329,20 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         referencia = "OC-7788",
         origen = "Buenaventura",
         destino = "Bogotá D.C.",
-        tipo_vehiculo = "3S3",
-        carroceria = "PORTACONTENEDORES",
         clase_viaje = "Contenedor",
         clase_contenedor = "CNT40.HC",
         peso_kg = 28500,
+
+        // Formato plano anterior (una ruta, HU-021.6 lo conserva): los municipios se resuelven por nombre y cada mercancía lleva su tipo.
         posiciones = new object[]
         {
-            new { descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-            new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+            new { id_tipo_mercancia = TipoMercancia, descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
+            new { id_tipo_mercancia = TipoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
         },
     });
+
+    /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías del formulario (HU-021.6).</summary>
+    public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
 
     public void Dispose()
     {

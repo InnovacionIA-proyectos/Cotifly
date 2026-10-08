@@ -985,6 +985,25 @@ paths:
       tags: [web]
       summary: Crea la cotización con el formulario ampliado y la envía a costeo en Nexo
       description: |
+        **Captura por rutas (HU-021.6, #132, ADR-019).** El formulario trae `rutas` (`RutaCapturaWeb`, al menos una y hasta 100):
+        cada ruta con su línea de negocio (o la de la solicitud), origen y destino con **id de municipio obligatorio y copia del
+        nombre** (decisión 2), condiciones del contenedor con las ciudades de devolución y de levante también por id + nombre,
+        horas, `valor_levante_contenedor` (se copia a cada camión, decisión 4), valor de la mercancía, peso, mercancías con
+        `id_tipo_mercancia` obligatorio (catálogo del cubicador) y `servicios_conexos` del catálogo de Nexo (id y cantidad; el
+        precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y, mientras
+        no exista el cubicador (#133), **un camión sin vehículo ni carrocería con el peso total de la ruta**: la Mesa de Costeo de
+        Nexo elige el vehículo (decisión 7). A Nexo viaja una línea por camión.
+        - **Municipios:** con id y nombre se respetan; con solo el id el nombre se copia del catálogo de `GET /web/municipios`
+          (un id que no está es `MUNICIPIO_NO_ENCONTRADO`); con solo el nombre se resuelve con la regla determinista de HU-005.13 y
+          nunca se adivina (`MUNICIPIO_AMBIGUO` con los candidatos y su id, o `MUNICIPIO_NO_ENCONTRADO`).
+        - **Todos los errores juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[]` (`ruta` base 0 o `null` si es del
+          encabezado, `campo`, `codigo`, `mensaje`); `mensaje` es el del primero y `detalle.motivo` su código (o el del catálogo de
+          Nexo que no respondió).
+        - **Retirados:** `tipo_vehiculo` y `carroceria` (decisión 7) y `valor_estimado` y `referencia` (decisión 1) se aceptan y se
+          **ignoran** (el vehículo y la carrocería dejan un aviso en el log del servidor); el contrato completo lo cierra #138.
+        - **Formato plano anterior:** sin `rutas`, los campos de ruta en la raíz (`origen`, `destino`, `posiciones`...) se leen como
+          una sola ruta con las mismas reglas. Enviar `rutas` y campos de ruta en la raíz a la vez es `SOLICITUD_COSTEO_INVALIDA`.
+
         HU-005.5 (ADR-015). Crea la cotización del comercial (folio del servidor, ADR-011, con el NIT) con el
         formulario ampliado y sus posiciones en `estado_costeo = pendiente_envio`, la **confirma antes de llamar a
         Nexo** y luego envía `POST {Nexo:UrlBase}/api/captura-solicitudes` con una sola línea. El BP del cliente sale
@@ -1048,6 +1067,12 @@ paths:
             el campo), `MARGEN_LINEA_DESCONOCIDA` (la línea no existe o está inactiva) o `FOLIO_CONSECUTIVO_AGOTADO`.
             Con `moneda = USD` (HU-013.7): `TRM_NO_DISPONIBLE` si ninguna fuente de la TRM respondió; `moneda` con otro valor
             es `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra el campo `moneda`).
+            HU-021.6: `SOLICITUD_COSTEO_INVALIDA` trae TODOS los errores en `detalle.errores[]` (`ruta`, `campo`, `codigo`,
+            `mensaje`). Códigos por campo: los de `ErrorFilaLicitacion` (`LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`,
+            `VALOR_FUERA_DE_RANGO`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `CAMPO_NO_APLICA`,
+            `CODIGO_NO_CATALOGO`, `MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`, `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`) más
+            `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. `CAMPO_REQUERIDO` en
+            `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -1059,6 +1084,9 @@ paths:
           description: |
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
+            HU-021.6: `MUNICIPIOS_NO_DISPONIBLE` si alguna ruta necesita el catálogo de municipios (un municipio sin id, o con id y
+            sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`) si la ruta trae servicios conexos y no se
+            pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
           headers:
@@ -3881,11 +3909,28 @@ components:
         Posición de cubicaje (`clsCapturaPosicionRequest` de Nexo: `descripcion`, `cantidad`, `largoCm`, `anchoCm`,
         `altoCm`, `pesoKg`), en centímetros y kilogramos. `largo_cm`, `ancho_cm` y `alto_cm` son obligatorios (0,1 a
         999.999). `peso_kg` es opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
+
+        HU-021.6 (#132): es también la **mercancía** de una ruta (`RutaCapturaWeb.mercancias`, `LineaLicitacionWeb.mercancias`).
+        En una captura nueva `id_tipo_mercancia` (catálogo del cubicador) es **obligatorio** (`CAMPO_REQUERIDO` en
+        `mercancias[i].id_tipo_mercancia`) y `nombre_mercancia` es la copia de su nombre (`descripcion` es el nombre anterior del
+        mismo campo; si llegan los dos, vale `nombre_mercancia`). Mientras el desplegable de `GET /web/tipos-mercancia` no exista
+        (#133), el frontend envía el id que le entregue el cubicador.
       properties:
+        id_tipo_mercancia:
+          type: string
+          format: uuid
+          nullable: true
+          description: HU-021.6. Id del tipo de mercancía en el catálogo del cubicador; obligatorio en una captura nueva.
+        nombre_mercancia:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: HU-021.6. Copia del nombre del tipo de mercancía (se guarda en `CotizacionMercancias.nombreMercancia`).
         descripcion:
           type: string
           nullable: true
           maxLength: 200
+          description: Nombre anterior de `nombre_mercancia` (se acepta igual).
         cantidad:
           type: integer
           minimum: 1
@@ -3909,10 +3954,173 @@ components:
           minimum: 0
           maximum: 999999.99
 
+    ConexoCapturaWeb:
+      type: object
+      required: [id_servicio_conexo, cantidad]
+      description: |
+        HU-021.6 (#132, decisión 3): un servicio conexo del catálogo de Nexo (`GET /web/servicios-conexos`) pedido con la ruta. Cotifly
+        lo guarda con el **costo unitario de Nexo como precio** (`CotizacionServiciosConexos`) y lo suma al costo de la ruta; el costo
+        nunca se muestra. Un id que no está activo en el catálogo es `CONEXO_NO_ENCONTRADO`; el mismo servicio dos veces en la ruta,
+        `CONEXO_DUPLICADO`; más de 20 por ruta, `DEMASIADOS_CONEXOS`.
+      properties:
+        id_servicio_conexo:
+          type: string
+          maxLength: 64
+          description: Id del servicio en el catálogo de Nexo.
+        cantidad:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 99999.99
+          description: Unidades del servicio (hasta 2 decimales).
+
+    RutaCapturaWeb:
+      type: object
+      description: |
+        HU-021.6 (#132, ADR-019): una ruta del formulario por rutas. Lo que es igual para todos sus camiones: línea de negocio,
+        origen y destino (id de municipio obligatorio + copia del nombre, decisión 2), condiciones del contenedor (ciudades por id +
+        nombre), horas, levante, valor de la mercancía, peso, mercancías y conexos. **Sin vehículo ni carrocería** (decisión 7): la
+        ruta nace con un camión sin vehículo con su peso total y la Mesa de Costeo de Nexo lo resuelve (el cubicador, #133, los
+        recomendará). Mismos límites y reglas condicionales que `SolicitudCosteoWeb` (G3) y los mismos códigos de catálogo (G2).
+        `peso_kg` puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno).
+      properties:
+        linea_negocio:
+          type: string
+          nullable: true
+          description: Línea de negocio de Cotifly de la ruta (da su margen). Sin ella, la `linea_negocio` de la solicitud.
+        origen_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Id de `GET /web/municipios`. **Obligatorio**: si no viene, Cotifly lo resuelve por `origen` y si es ambiguo responde
+            `MUNICIPIO_AMBIGUO` con los candidatos (nunca adivina). Con el id y sin `origen`, el nombre se copia del catálogo.
+        origen:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre del municipio de origen (la columna `municipio` de `GET /web/municipios`).
+        destino_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Igual que `origen_municipio_id`, para el destino.
+        destino:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre del municipio de destino.
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Igual que `SolicitudCosteoWeb.tipologia`.
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Igual que `SolicitudCosteoWeb.clase_viaje` (catálogo maestro de Nexo).
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+          description: Igual que `SolicitudCosteoWeb.clase_contenedor` (G3).
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Id del municipio donde se devuelve el contenedor; con solo el nombre se resuelve igual que el origen.
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre de la ciudad de devolución.
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Id del municipio donde se levanta el contenedor; con solo el nombre se resuelve igual que el origen.
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre de la ciudad de levante.
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        valor_levante_contenedor:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: |
+            Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: Peso total de la ruta (es el del camión que se crea mientras no haya cubicador).
+        mercancias:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
+        servicios_conexos:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ConexoCapturaWeb'
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          deprecated: true
+          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora.
+        carroceria:
+          type: string
+          nullable: true
+          deprecated: true
+          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora.
+
     SolicitudCosteoWeb:
       type: object
-      required: [tipo, nit_cliente, linea_negocio, origen, destino]
+      required: [tipo, nit_cliente]
       description: |
+        **HU-021.6 (#132):** la solicitud se captura por `rutas` (`RutaCapturaWeb`). Los campos de ruta de la raíz (desde `origen`
+        hasta `posiciones`) son el **formato plano anterior** (una sola ruta): se aceptan solo sin `rutas` y con las mismas reglas
+        (id de municipio obligatorio o resoluble por nombre, mercancías con `id_tipo_mercancia`). `linea_negocio` es la de las
+        rutas que no traen la suya (en el formato plano, obligatoria). `tipo_vehiculo`, `carroceria`, `valor_estimado` y
+        `referencia` están retirados: se aceptan y se ignoran.
+
+
         Formulario ampliado (HU-005.3, mapeo aprobado en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
         el 2026-10-05 en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
         / `clsCapturaLineaRequest` de Nexo, con sus mismos límites. Cotifly lo reenvía a `POST /api/captura-solicitudes` en
@@ -3962,14 +4170,23 @@ components:
         valor_estimado:
           type: number
           nullable: true
-          minimum: 0
-          maximum: 9999999999999.99
-          description: Encabezado (`valorEstimado`), uno por solicitud; distinto de `valor_mercancia` (por línea).
+          deprecated: true
+          description: Retirado (decisión 1 de HU-021). Se acepta y se ignora; ya no viaja a Nexo.
         referencia:
           type: string
           nullable: true
-          maxLength: 200
-          description: Encabezado (`referencia`), la referencia u orden de compra del cliente (distinta de `notas`).
+          deprecated: true
+          description: Retirado (decisión 1 de HU-021). Se acepta y se ignora; ya no viaja a Nexo.
+        rutas:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 100
+          description: |
+            HU-021.6. Las rutas de la solicitud (una por fila del formulario). Sin `rutas` se lee el formato plano anterior (una
+            ruta con los campos de la raíz).
+          items:
+            $ref: '#/components/schemas/RutaCapturaWeb'
         notas:
           type: string
           nullable: true
@@ -3993,19 +4210,22 @@ components:
           description: Encabezado (`horasDescargue`). Igual que `horas_cargue`.
         origen:
           type: string
+          nullable: true
           maxLength: 150
-          description: Línea (`origen`). Municipio de `GET /web/municipios` (columna `municipio`).
+          description: Formato plano (una ruta). Línea (`origen`). Municipio de `GET /web/municipios` (columna `municipio`).
         destino:
           type: string
+          nullable: true
           maxLength: 150
-          description: Línea (`destino`). Municipio de `GET /web/municipios`.
+          description: Formato plano. Línea (`destino`). Municipio de `GET /web/municipios`.
         origen_municipio_id:
           type: integer
           nullable: true
           minimum: 1
           description: |
             Línea (`origenMunicipioId`; HU-013.10, G6). `id` del municipio de origen en `GET /web/municipios` (id de
-            `tbl_municipios` de Nexo): evita que Nexo resuelva la ruta por texto aproximado. Opcional; se guarda y se reenvía.
+            `tbl_municipios` de Nexo): evita que Nexo resuelva la ruta por texto aproximado. HU-021.6 (decisión 2): obligatorio;
+            si no viene, Cotifly lo resuelve por `origen` (sin adivinar). Se guarda y se reenvía.
         destino_municipio_id:
           type: integer
           nullable: true
@@ -4014,18 +4234,15 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          maxLength: 100
+          deprecated: true
           description: |
-            Línea (`tipoVehiculo`). Código SAP de Nexo (`2`, `2S3`, `3S3`...), SOLO del catálogo maestro
-            (`GET /api/catalogos/tipos-vehiculo`, el `valor` de `tipos_vehiculo` en `GET /web/catalogos-flete`). Otro texto es
-            400 `SOLICITUD_COSTEO_INVALIDA` (en Nexo crearía un tipo de vehículo duplicado).
+            Retirado (decisión 7 de HU-021, HU-021.6): el comercial ya no digita el vehículo; lo define el cubicador o la Mesa de
+            Costeo de Nexo. Se acepta y se ignora (queda un aviso en el log del servidor).
         carroceria:
           type: string
           nullable: true
-          maxLength: 100
-          description: |
-            Línea (`carroceria`). Código del catálogo (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`,
-            `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`); en código hasta que Nexo publique su catálogo.
+          deprecated: true
+          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora, igual que `tipo_vehiculo`.
         tipologia:
           type: string
           nullable: true
@@ -4066,6 +4283,11 @@ components:
           nullable: true
           maxLength: 150
           description: Línea (`ciudadDevolucionContenedor`), condicional a `retorna_contenedor`.
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-021.6 (decisión 2). Id de municipio de la ciudad de devolución (con solo el nombre, se resuelve).
         levante_contenedor_diferente:
           type: boolean
           nullable: true
@@ -4075,6 +4297,11 @@ components:
           nullable: true
           maxLength: 150
           description: Línea (`ciudadLevanteContenedor`), condicional a `levante_contenedor_diferente`.
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-021.6 (decisión 2). Id de municipio de la ciudad de levante (con solo el nombre, se resuelve).
         valor_aprovisionamiento:
           type: number
           nullable: true
@@ -4162,7 +4389,6 @@ components:
 
     LineaLicitacionWeb:
       type: object
-      required: [origen, destino]
       description: |
         Una línea mapeada por el frontend: los campos destino de `docs/conexion_nexo/HU-011-formato-excel-licitacion.md` §3 (los de
         `CapturaLineaRequest` de Nexo, con los límites de `SolicitudCosteoWeb`) y la `fila` del análisis.
@@ -4182,8 +4408,18 @@ components:
           Cotifly nunca elige entre candidatos. El texto se guarda y viaja tal como vino, junto al id.
         - **Horas (G5).** `horas_cargue`/`horas_descargue` de la fila, si vienen, viajan en esa línea; si no, las del encabezado.
 
+        HU-021.6 (#132, ADR-019): cada fila es una **ruta** con un camión sin vehículo (hasta el cubicador, #133). Puede traer su
+        `linea_negocio` (sin ella, la de la licitación), las ciudades de devolución y de levante por id + nombre (con solo el nombre
+        se resuelven como el origen), `mercancias` con `id_tipo_mercancia` obligatorio y `servicios_conexos` del catálogo de Nexo
+        (`ConexoCapturaWeb`). **`tipo_vehiculo` y `carroceria` se retiraron del mapeo del Excel** (decisión 7): si llegan, se
+        ignoran. Una fila con solo el id de municipio copia el nombre del catálogo.
+
         Los valores se guardan recortados y el primer envío, el reintento y la re-solicitud mandan exactamente lo guardado.
       properties:
+        linea_negocio:
+          type: string
+          nullable: true
+          description: HU-021.6. Línea de negocio de la ruta; sin ella, la `linea_negocio` de la licitación.
         fila:
           type: integer
           nullable: true
@@ -4227,12 +4463,13 @@ components:
         tipo_vehiculo:
           type: string
           nullable: true
-          maxLength: 100
-          description: Código del catálogo maestro de Nexo (`GET /web/catalogos-flete`), igual que en `SolicitudCosteoWeb`.
+          deprecated: true
+          description: Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora.
         carroceria:
           type: string
           nullable: true
-          maxLength: 100
+          deprecated: true
+          description: Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora.
         tipologia:
           type: string
           nullable: true
@@ -4258,6 +4495,11 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-021.6. Id de municipio de la ciudad de devolución; sin él se resuelve por el nombre.
         levante_contenedor_diferente:
           type: boolean
           nullable: true
@@ -4265,6 +4507,16 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-021.6. Id de municipio de la ciudad de levante; sin él se resuelve por el nombre.
+        valor_levante_contenedor:
+          type: number
+          nullable: true
+          minimum: 0
+          description: HU-021.6. Valor de un levante (nombre nuevo de `valor_aprovisionamiento`; si llegan los dos, vale este).
         valor_aprovisionamiento:
           type: number
           nullable: true
@@ -4278,12 +4530,25 @@ components:
           type: number
           nullable: true
           minimum: 0
+        mercancias:
+          type: array
+          nullable: true
+          maxItems: 200
+          description: HU-021.6. Mercancías de la ruta (nombre nuevo de `posiciones`; si llegan las dos, valen estas).
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
         posiciones:
           type: array
           nullable: true
           maxItems: 200
           items:
             $ref: '#/components/schemas/PosicionCargaWeb'
+        servicios_conexos:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ConexoCapturaWeb'
 
     LicitacionWeb:
       type: object
@@ -4377,10 +4642,15 @@ components:
           type: string
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
-                 CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO]
+                 CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, CONEXO_DUPLICADO, CONEXO_NO_ENCONTRADO,
+                 DEMASIADOS_CONEXOS]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
+            HU-021.6: `MUNICIPIO_*` también en `ciudad_devolucion_contenedor`/`ciudad_levante_contenedor` (y
+            `MUNICIPIO_NO_ENCONTRADO` en `*_municipio_id` si el id no está en el catálogo); `CAMPO_REQUERIDO` en
+            `origen_municipio_id`/`destino_municipio_id` y `mercancias[i].id_tipo_mercancia`; `CONEXO_DUPLICADO`,
+            `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`.
         mensaje:
           type: string
 

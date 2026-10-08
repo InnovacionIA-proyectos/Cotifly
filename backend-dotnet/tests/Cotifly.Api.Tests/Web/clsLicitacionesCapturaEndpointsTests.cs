@@ -54,9 +54,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
             .Select(e => (e.GetProperty("indice").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
             .Should().BeEquivalentTo(new[]
             {
-                (1, "tipo_vehiculo", "CODIGO_NO_CATALOGO"),
-                (2, "carroceria", "CODIGO_NO_CATALOGO"),
-                (2, "tipo_vehiculo", "CODIGO_NO_CATALOGO"),
+                // HU-021.6 (decisión 7): las filas 1 y 2 traen vehículo y carrocería fuera de catálogo, pero ya no se capturan: se ignoran.
                 (3, "tipologia", "CODIGO_NO_CATALOGO"),
                 (4, "clase_contenedor", "CAMPO_NO_APLICA"),
                 (5, "clase_contenedor", "CAMPO_REQUERIDO"),
@@ -65,7 +63,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
                 (8, "destino", "MUNICIPIO_NO_ENCONTRADO"),
                 (9, "clase_contenedor", "CAMPO_NO_APLICA"),
                 (9, "clase_viaje", "CODIGO_NO_CATALOGO"),
-            }, "las filas 0 y 10 son válidas (la 10 con la clase provisional CNT40.OP y espacios al borde)");
+            }, "las filas 0, 1, 2 y 10 son válidas (la 10 con la clase provisional CNT40.OP y espacios al borde)");
         json.GetProperty("errores").EnumerateArray().Select(e => e.GetProperty("indice").GetInt32()).Should().BeInAscendingOrder();
         _nexo.SolicitudesCreadas.Should().BeEmpty();
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{sesion.UsuarioId}'")).Should().Be("0");
@@ -107,7 +105,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         primera["origen"]!.GetValue<string>().Should().Be("BUENAVENTURA");
         primera["origenMunicipioId"]!.GetValue<int>().Should().Be(76109);
         primera["destinoMunicipioId"]!.GetValue<int>().Should().Be(11001);
-        primera["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        primera["tipoVehiculo"].Should().BeNull("HU-021 (decisión 7): el vehículo que llega en el pliego se ignora; lo define la Mesa de Costeo");
         primera["claseContenedor"]!.GetValue<string>().Should().Be("CNT40.FT");
         primera["horasCargue"]!.GetValue<decimal>().Should().Be(2m);
         primera["horasDescargue"]!.GetValue<decimal>().Should().Be(3.5m);
@@ -118,9 +116,10 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         segunda["horasDescargue"]!.GetValue<decimal>().Should().Be(6m);
         segunda["valorAprovisionamiento"]!.GetValue<decimal>().Should().Be(150_000m);
 
-        (await EscalarAsync("SELECT STRING_AGG(CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId, '|', l.horasCargue, '|', l.horasDescargue), ';') WITHIN GROUP (ORDER BY l.orden) "
+        (await EscalarAsync("SELECT STRING_AGG(CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId, '|', l.horasCargue, '|', l.horasDescargue, '|', l.ciudadLevanteMunicipioId, '|', l.ciudadLevanteNombre), ';') WITHIN GROUP (ORDER BY l.orden) "
             + $"FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
-            .Should().Be("76109|11001|2.00|3.50;52399|76001|4.00|6.00", "HU-021: la cabecera no guarda horas; la ruta guarda las que viajan");
+            .Should().Be("76109|11001|2.00|3.50||;52399|76001|4.00|6.00|76892|YUMBO",
+                "HU-021: la cabecera no guarda horas; la ruta guarda las que viajan y la ciudad de levante con su id y su nombre (HU-021.6)");
     }
 
     [Fact]
@@ -129,7 +128,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.CatalogosCaidos = HttpStatusCode.ServiceUnavailable;
 
-        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([Valida()]));
+        using var respuesta = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access, Cuerpo([Valida() with { clase_viaje = "Cupo" }]));
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(respuesta, "CATALOGOS_FLETE_NO_DISPONIBLE");
@@ -161,7 +160,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         _nexo.CatalogosCaidos = HttpStatusCode.ServiceUnavailable;
 
         using var respuesta = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
-            Cuerpo([Valida(), Valida() with { tipologia = "carga seca", clase_contenedor = "CNT40.HC" }]));
+            Cuerpo([Valida() with { clase_viaje = "Cupo" }, Valida() with { tipologia = "carga seca", clase_viaje = "Cupo", clase_contenedor = "CNT40.HC" }]));
 
         var json = await VerificarContratoAsync(respuesta, Ruta, HttpMethod.Post, HttpStatusCode.BadRequest);
         json.GetProperty("error").GetProperty("detalle").GetProperty("motivo").GetString().Should().Be("CATALOGOS_FLETE_NO_DISPONIBLE");
@@ -269,7 +268,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         public string destino { get; init; } = "BOGOTA, D.C.";
         public int? origen_municipio_id { get; init; }
         public int? destino_municipio_id { get; init; }
-        public string? tipo_vehiculo { get; init; } = "3S3";
+        public string? tipo_vehiculo { get; init; }
         public string? carroceria { get; init; }
         public string? tipologia { get; init; } = "CargaSeca";
         public string? clase_viaje { get; init; }

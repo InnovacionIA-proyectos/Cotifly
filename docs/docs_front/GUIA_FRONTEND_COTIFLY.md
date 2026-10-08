@@ -954,7 +954,47 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 
 Crea la cotización con el formulario ampliado (folio del servidor con el NIT) y la envía a Nexo. **Responde 201 aunque Nexo falle.**
 
-- Request (`SolicitudCosteoWeb`):
+#### 5.15.1 Captura por rutas (HU-021.6, #132). Cambio de contrato
+
+El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaWeb` en `openapi.yaml`). Cambios para la UI:
+
+- **Cada ruta** lleva: `linea_negocio` (si falta, la `linea_negocio` de la raíz), `origen_municipio_id` + `origen`, `destino_municipio_id` + `destino`, `tipologia`, `clase_viaje`, `clase_contenedor`, `exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_municipio_id` + `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`, `ciudad_levante_municipio_id` + `ciudad_levante_contenedor`, `horas_cargue`, `horas_descargue` (si faltan, las de la raíz), `valor_levante_contenedor` (antes `valor_aprovisionamiento`), `valor_mercancia`, `peso_kg`, `mercancias[]` y `servicios_conexos[]`.
+- **Municipios (decisión 2): enviar siempre el `id` y el nombre** que devolvió `GET /web/municipios` (también en las ciudades de devolución y levante). Si solo llega el id, el servidor copia el nombre; si solo llega el nombre, lo resuelve y, si es ambiguo, responde `MUNICIPIO_AMBIGUO` con los candidatos `(id N)` en el mensaje para que el comercial elija. Nunca adivina.
+- **Mercancías:** `{id_tipo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg}`. `id_tipo_mercancia` (uuid del catálogo del cubicador) es **obligatorio**; el desplegable `GET /web/tipos-mercancia` llega con #133.
+- **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo como precio (nunca se muestra) y lo suma al costo de la ruta. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
+- **Ya no se envían** `tipo_vehiculo` ni `carroceria` (decisión 7): quitar esos campos del formulario. Si llegan, se ignoran. Cada ruta nace con **un camión sin vehículo** con su peso total y la Mesa de Costeo de Nexo elige el vehículo (el cubicador, #133, lo recomendará). `valor_estimado` y `referencia` también se ignoran (decisión 1).
+- **Errores todos juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `error.detalle.errores[]` = `{ruta, campo, codigo, mensaje}` (`ruta` base 0, `null` si es de la raíz). Pintar cada error en su ruta y campo; `error.mensaje` es solo el primero.
+- **503 nuevos:** `MUNICIPIOS_NO_DISPONIBLE` (alguna ruta sin id o sin nombre y el catálogo de municipios caído) y `NEXO_NO_DISPONIBLE` (la ruta trae conexos y no se pudo leer su costo). Nada queda guardado; ofrecer Reintentar.
+- **Compatibilidad:** sin `rutas`, el formato plano de la tabla de abajo se sigue leyendo como **una** ruta, con las mismas reglas nuevas (id de municipio obligatorio o resoluble, `id_tipo_mercancia` en cada posición). Mandar `rutas` y campos de ruta en la raíz es 400.
+
+```json
+{
+  "tipo": "spot",
+  "nit_cliente": "9000472281",
+  "linea_negocio": "Nacional",
+  "deadline": "2026-10-03T17:00:00-05:00",
+  "rutas": [
+    {
+      "origen_municipio_id": 76892, "origen": "Yumbo",
+      "destino_municipio_id": 11001, "destino": "Bogotá, D.C.",
+      "tipologia": "CargaSeca", "clase_viaje": "Cupo", "peso_kg": 9000, "valor_mercancia": 180000000,
+      "mercancias": [
+        { "id_tipo_mercancia": "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50", "nombre_mercancia": "Estiba de cajas", "cantidad": 20,
+          "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 }
+      ],
+      "servicios_conexos": [ { "id_servicio_conexo": "3f2b…", "cantidad": 2 } ]
+    },
+    {
+      "linea_negocio": "Exportacion",
+      "origen_municipio_id": 5001, "origen": "Medellín",
+      "destino_municipio_id": 13001, "destino": "Cartagena",
+      "tipologia": "Contenedor", "clase_viaje": "Contenedor", "clase_contenedor": "CNT40.HC", "peso_kg": 24000
+    }
+  ]
+}
+```
+
+- Request anterior (`SolicitudCosteoWeb` plano, una ruta; se mantiene por compatibilidad):
 
 | Campo | Tipo | Obligatorio | Reglas y notas |
 |---|---|---|---|
@@ -967,8 +1007,8 @@ Crea la cotización con el formulario ampliado (folio del servidor con el NIT) y
 | `referencia` | string o null, hasta 200 | No | — |
 | `horas_cargue`, `horas_descargue` | number o null | No | 0 a 240, 2 decimales |
 | `origen`, `destino` | string, hasta 150 | Sí | Municipio del catálogo (`GET /web/municipios`) |
-| `tipo_vehiculo` | string o null, hasta 100 | No | Código SICE-TAC de Nexo (`2`, `2S3`, `3S3`...) |
-| `carroceria` | string o null, hasta 100 | No | `ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO` |
+| `tipo_vehiculo` | — | — | **Retirado (HU-021.6, decisión 7):** se ignora; no enviarlo |
+| `carroceria` | — | — | **Retirado (HU-021.6, decisión 7):** se ignora; no enviarlo |
 | `tipologia` | string o null, hasta 50 | No | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
 | `clase_viaje` | string o null, hasta 50 | No | `Contenedor`, `Cupo`, `CargaSuelta`, `Extradimensionado` |
 | `clase_contenedor` | string o null, hasta 20 | No | `CNT20.IT/RE/ST`, `CNT40.HC/RE` (condicional a `clase_viaje = Contenedor`) |
@@ -1513,16 +1553,22 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 - Request recomendado: `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y la parte `archivo` (el mismo Excel que se analizó; se guarda para la exportación de la sección 5.26). Sin archivo se puede enviar `application/json` con el `LicitacionWeb`.
 - `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `notas?` (nota para la Mesa de Nexo, HU-013.11), `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). **`linea_negocio` es una línea de Cotifly** (las de 5.20): da el margen de toda la licitación. "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly: responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo = "LINEA_DE_NEXO"` y `detalle.lineas_validas` (las líneas activas; cualquier otra línea desconocida trae también `lineas_validas`). UX: ofrecer un selector con las líneas de Cotifly, nunca texto libre (HU-013.15, #124; pregunta abierta a negocio en `docs/HU-013-preguntas-nexo.md`, 16). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos), `fila` (obligatoria con archivo, única) y, opcionales (HU-013.11, #108), `origen_municipio_id`, `destino_municipio_id`, `horas_cargue` y `horas_descargue` propias de la fila. El `tipo` lo pone el servidor (`licitacion`).
 
+**HU-021.6 (#132): cada fila es una ruta.** Cambios para el mapeo del pliego:
+
+- **Quitar del mapeo las columnas de tipo de vehículo y carrocería** (decisión 7): si llegan, se ignoran. Cada fila nace con un camión sin vehículo con su peso total; la Mesa de Costeo de Nexo elige el vehículo (el cubicador, #133, lo recomendará).
+- Cada fila puede traer su `linea_negocio` (sin ella, la de la licitación), `ciudad_devolucion_municipio_id`/`ciudad_levante_municipio_id` (sin ellas, se resuelve el nombre, como el origen), `valor_levante_contenedor` (nombre nuevo de `valor_aprovisionamiento`), `mercancias[]` (nombre nuevo de `posiciones`; cada una con `id_tipo_mercancia` **obligatorio**) y `servicios_conexos[]` (`{id_servicio_conexo, cantidad}`, ver 5.15.1).
+- Si una fila trae solo el id de municipio, el nombre se copia del catálogo. Errores nuevos en `errores[]`: `CAMPO_REQUERIDO` en `mercancias[i].id_tipo_mercancia`, `MUNICIPIO_*` en las ciudades del contenedor y `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS`.
+
 ```json
 {
   "nit_cliente": "9000472281",
   "linea_negocio": "Nacional",
   "deadline": "2026-10-20T17:00:00-05:00",
-  "referencia": "Pliego 2026-04",
   "hoja": "Pliego 2026",
   "lineas": [
-    { "fila": 0, "origen": "BUENAVENTURA", "destino": "BOGOTA, D.C.", "tipo_vehiculo": "3S3", "peso_kg": 32000 },
-    { "fila": 1, "origen": "CALI", "destino": "CARTAGENA", "tipo_vehiculo": "3S3", "peso_kg": 28000 }
+    { "fila": 0, "origen": "BUENAVENTURA", "destino": "BOGOTA, D.C.", "tipologia": "CargaSeca", "peso_kg": 32000 },
+    { "fila": 1, "linea_negocio": "Exportacion", "origen": "CALI", "destino": "CARTAGENA", "tipologia": "CargaSeca", "peso_kg": 28000,
+      "servicios_conexos": [ { "id_servicio_conexo": "3f2b…", "cantidad": 1 } ] }
   ]
 }
 ```
@@ -1545,7 +1591,7 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
   `indice` es la posición en `lineas[]` (`null` = error del encabezado). Los errores vienen ordenados: encabezado primero y luego por línea. Códigos: `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`, `LINEA_INCOMPLETA`, `CAMPO_REQUERIDO`, `CAMPO_DEMASIADO_LARGO`, `VALOR_FUERA_DE_RANGO`, `DEMASIADAS_POSICIONES`, `POSICION_INVALIDA`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`, `FILA_INVALIDA` y, desde HU-013.11 (#108), `CODIGO_NO_CATALOGO`, `CAMPO_NO_APLICA`, `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (ver "Reglas de captura por fila").
 - **Reglas de captura por fila (HU-013.11, #108).** Cada fila cumple las mismas reglas del formulario de 5.15, y todos los errores llegan juntos en `errores[]`:
-  - **Códigos de catálogo:** `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia` deben ser códigos de `GET /web/catalogos-flete`, con las mismas mayúsculas (`3s3` no es `3S3`). Texto libre del pliego (`Tractomula`, `carga seca`) da `CODIGO_NO_CATALOGO` en ese campo. Se aceptan las clases provisionales `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`. Los espacios al borde se recortan al guardar.
+  - **Códigos de catálogo:** `clase_viaje`, `clase_contenedor` y `tipologia` deben ser códigos de `GET /web/catalogos-flete`, con las mismas mayúsculas (`contenedor` no es `Contenedor`); `tipo_vehiculo` y `carroceria` ya no se mapean (HU-021.6). Texto libre del pliego (`Tractomula`, `carga seca`) da `CODIGO_NO_CATALOGO` en ese campo. Se aceptan las clases provisionales `CNT20.FT`, `CNT20.OP`, `CNT40.FT` y `CNT40.OP`. Los espacios al borde se recortan al guardar.
   - **Condicionales:** `clase_contenedor` es obligatoria con `clase_viaje = Contenedor` (`CAMPO_REQUERIDO`) y solo se admite con ella (`CAMPO_NO_APLICA`); `valor_aprovisionamiento` solo con una `ciudad_levante_contenedor` distinta del origen (`CAMPO_NO_APLICA`).
   - **Municipios:** si la fila no trae `origen_municipio_id`/`destino_municipio_id`, la API resuelve el texto de `origen`/`destino` en el catálogo de `GET /web/municipios` (sin tildes ni mayúsculas; acepta `Municipio, Departamento`). Una sola coincidencia: se usa su id. Varias, o solo una aproximada: `MUNICIPIO_AMBIGUO`, con los candidatos y su id en el `mensaje`. Ninguna: `MUNICIPIO_NO_ENCONTRADO`. **La API nunca elige entre candidatos.** Para corregir, el comercial elige el municipio y el frontend reenvía la fila con `origen_municipio_id` (o escribe `La Unión, Nariño`). Si el frontend ya resolvió los ids con `GET /web/municipios`, que los mande: se respetan y la API no consulta el catálogo.
   - **Horas por línea:** `horas_cargue`/`horas_descargue` de la fila viajan a Nexo en esa línea; sin ellas, viajan las del encabezado.
@@ -1718,7 +1764,7 @@ Responsabilidades del frontend, paso a paso:
 1. **Catálogos** (En QA): cargar `GET /web/municipios` y `GET /web/catalogos-flete` una vez por sesión. Si fallan (`*_NO_DISPONIBLE`), deshabilitar los selects afectados y ofrecer reintento.
 2. **Cliente** (En QA): autocompletado con `GET /web/clientes?q=`. Guardar `nit_cliente` y mostrar la etiqueta "Prospecto". Para prospectos, avisar que Nexo aún no los acepta (el envío quedará en `error_envio`), **Pendiente** con Nexo.
 3. **Origen y destino**: autocompletado sobre el catálogo plano. Validar que el valor salga del catálogo. El frontend actual guarda `"MUNICIPIO (DEPARTAMENTO)"` para nombres repetidos, y el backend reenvía `origen` y `destino` a Nexo tal cual. **A confirmar con Nexo** si acepta ese formato o solo el `municipio` exacto (o su `id`/`codigo_dane`). Hasta confirmarlo, enviar el valor `municipio` del catálogo.
-4. **Catálogos cerrados**: `tipo_vehiculo`, `carroceria` y `clase_viaje` desde `catalogos-flete` (mostrar `etiqueta`, enviar `valor`). `tipologia` y `clase_contenedor` hardcodeados con los códigos de la sección 5.15, en texto amigable.
+4. **Catálogos cerrados**: `clase_viaje` desde `catalogos-flete` (mostrar `etiqueta`, enviar `valor`). `tipologia` y `clase_contenedor` hardcodeados con los códigos de la sección 5.15, en texto amigable. **HU-021.6:** el formulario ya no pide `tipo_vehiculo` ni `carroceria` y se organiza por **rutas** (sección 5.15.1): cada ruta con su línea de negocio, municipios por id + nombre, mercancías con su tipo y servicios conexos.
 5. **Línea de negocio**: no existe un endpoint de líneas para el comercial (`GET /web/admin/lineas-negocio` responde 403 a `comercial`). Seguir con la lista hardcodeada y manejar `MARGEN_LINEA_DESCONOCIDA` (**Pendiente**).
 6. **Cubicación** (En QA, opcional): `POST /web/cubicacion` con las posiciones para sugerir el vehículo y la carrocería.
 7. **Validación en el cliente** antes de enviar: obligatorios (`tipo`, `nit_cliente`, `linea_negocio`, `origen`, `destino`), regla de peso (peso > 0 o posiciones con peso; 1 % de tolerancia), máximo 2 decimales, rangos, hasta 200 posiciones, condicionales de contenedor.

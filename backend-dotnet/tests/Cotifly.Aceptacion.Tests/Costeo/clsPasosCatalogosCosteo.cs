@@ -64,6 +64,25 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
     public Task CuandoEnviaConTipoDeVehiculo(string alias, string nit, string cotizacion, string tipo) =>
         EnviarAsync(alias, nit, cotizacion, f => f["tipo_vehiculo"] = tipo);
 
+    [When("{string} envía a costeo el formulario del cliente {string} como {string} con la clase de viaje {string}")]
+    public Task CuandoEnviaConClaseDeViaje(string alias, string nit, string cotizacion, string claseViaje) =>
+        EnviarAsync(alias, nit, cotizacion, f =>
+        {
+            f["clase_viaje"] = claseViaje;
+            if (claseViaje != "Contenedor")
+            {
+                f.Remove("clase_contenedor");
+            }
+        });
+
+    [Then("Nexo recibió la solicitud de {string} sin {word}")]
+    public void EntoncesNexoRecibioSinElCampo(string cotizacion, string campo)
+    {
+        costeo.Folio(cotizacion).Should().NotBeNullOrEmpty();
+        var alta = costeo.Nexo.UltimaAlta ?? throw new InvalidOperationException("Nexo no recibió ningún alta.");
+        alta["lineas"]![0]![campo].Should().BeNull();
+    }
+
     [When("{string} envía a costeo el formulario del cliente {string} como {string} con la tipología {string}")]
     public Task CuandoEnviaConTipologia(string alias, string nit, string cotizacion, string tipologia) =>
         EnviarAsync(alias, nit, cotizacion, f => f["tipologia"] = tipologia);
@@ -109,8 +128,6 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
             ["linea_negocio"] = "Importacion",
             ["origen"] = "Buenaventura",
             ["destino"] = "Bogotá D.C.",
-            ["tipo_vehiculo"] = "3S3",
-            ["carroceria"] = "PORTACONTENEDORES",
             ["tipologia"] = "Contenedor",
             ["clase_viaje"] = "Contenedor",
             ["clase_contenedor"] = "CNT40.HC",

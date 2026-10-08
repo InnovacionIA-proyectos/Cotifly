@@ -52,11 +52,23 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
     /// <summary><c>detalle.motivo</c> de una licitación guardada que ya no cumple las reglas de captura: se debe cargar de nuevo.</summary>
     public const string MotivoRequiereNuevaCarga = "LICITACION_REQUIERE_NUEVA_CARGA";
 
-    public async Task<clsFilasLicitacionValidadas> ValidarAsync(
+    public Task<clsFilasLicitacionValidadas> ValidarAsync(
         Guid usuarioId,
         IReadOnlyList<clsLineaLicitacionEntrada?> lineas,
         IReadOnlyList<clsErrorFilaLicitacion> erroresPrevios,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ValidarAsync(usuarioId, lineas, erroresPrevios, ciudades: true, cancellationToken);
+
+    /// <summary>
+    /// <paramref name="ciudades"/>: resuelve también las ciudades de devolución y de levante del contenedor (captura nueva, HU-021.6). Al
+    /// revalidar lo guardado no se les exige id (las rutas anteriores a HU-021 solo guardaron su nombre).
+    /// </summary>
+    private async Task<clsFilasLicitacionValidadas> ValidarAsync(
+        Guid usuarioId,
+        IReadOnlyList<clsLineaLicitacionEntrada?> lineas,
+        IReadOnlyList<clsErrorFilaLicitacion> erroresPrevios,
+        bool ciudades,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(erroresPrevios);
@@ -70,7 +82,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
         }
 
         var resultantes = lineas;
-        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas))
+        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas, ciudades))
         {
             var catalogo = await municipios.ObtenerAsync(usuarioId, cancellationToken);
             if (catalogo.EsFallo)
@@ -79,7 +91,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
             }
             else
             {
-                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor);
+                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor, ciudades);
                 resultantes = resueltas.Lineas;
                 errores.AddRange(resueltas.Errores);
             }
@@ -104,7 +116,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
             .Concat(entradas.SelectMany((l, i) => l!.Linea.Errores().Select(e => new clsErrorFilaLicitacion(i, l.Fila, e.Campo, e.Codigo, e.Mensaje))))
             .ToList();
 
-        var validadas = await ValidarAsync(usuarioId, entradas, previos, cancellationToken);
+        var validadas = await ValidarAsync(usuarioId, entradas, previos, ciudades: false, cancellationToken);
         if (validadas.Errores.Count > 0)
         {
             return RequiereNuevaCarga(folio, validadas.Errores);

@@ -11,6 +11,10 @@ public static class clsCotizacionMuestra
 {
     public static readonly DateTimeOffset Ahora = new(2026, 9, 28, 16, 0, 0, TimeSpan.Zero);
 
+    /// <summary>Cabecera sin rutas (en pesos), lista para <see cref="clsCotizacionSolicitud.RegistrarCaptura"/> (HU-021.6).</summary>
+    public static clsCotizacionSolicitud Cabecera(string folio = "PCN-AP-28092026-010") =>
+        clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, NitCliente = "900123456", ClienteNombre = "LONGYIN S.A.S." }).Valor;
+
     /// <summary>Formulario de una ruta y un camión, guardado (en <c>pendiente_envio</c>).</summary>
     public static clsCotizacionSolicitud Formulario(
         string folio = "PCN-AP-28092026-009", Guid? usuarioId = null, int? lineaNegocioId = 3, clsSolicitudCosteo? solicitud = null,
