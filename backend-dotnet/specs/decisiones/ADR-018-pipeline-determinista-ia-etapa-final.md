@@ -289,7 +289,34 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
   ORDER BY c.marcadoAt DESC;
   ```
 
-  Las filas con `motivoEstadoCosteo` nulo son las que repara el arranque. Las que tienen motivo se leyeron y no admiten precio (revisar el margen de la línea o las líneas sin flete con Nexo). Mientras una fila aparezca aquí, las métricas la cuentan sin valor: `valor_ganado_cop` queda subestimado.
+  Las filas con `motivoEstadoCosteo` nulo son las que repara el arranque.
+
+**Correcciones de la auditoría (#123).**
+
+- **Menos llamadas a Nexo.** En `pendiente_costeo`, la lectura previa se reutiliza como la foto que se aplica: también aporta el id de la cotización de Nexo, así que no hace falta "crear o recuperar". Solo se le pide el resultado a Nexo si esa lectura muestra la cotización **entregada**; si no, una `ganada` responde 409 `COTIZACION_NO_ENTREGADA` sin llamar al POST. En `autocosteo` sin precio, la foto se arma con la cotización entregada que devuelve el POST del resultado, siempre que todas las líneas ya tengan su id de Nexo. Solo si no hay ninguna de las dos se relee el costeo.
+- **Resultado ya definido en Nexo.** Puede pasar que Nexo acepte, el guardado en Cotifly falle y el comercial pida después el resultado contrario: Nexo responde `RESULTADO_YA_DEFINIDO`. Ante ese 409, Cotifly lee el resultado de Nexo (`POST /api/cotizaciones`, "crear o recuperar") y lo guarda con `versionNegocio`. Luego responde el 409 con `detalle` = `ganada`/`perdida` (el de Nexo) y un mensaje que lo dice. Nexo es la fuente de verdad del resultado y Cotifly queda igual. Si el comercial repite el mismo resultado, Nexo responde 200 (es idempotente) y el guardado local se completa.
+- **Lectura del alta con tiempo propio.** La lectura del costeo en la misma petición usa `CosteoNexo:LecturaInmediataSegundos` (6 s por defecto, de 1 a 30). Si no alcanza, responde `pendiente_costeo` y el polling sigue.
+- **Tope de la relectura.** El polling relee una cotización que solo espera precio (`clsCotizacion.RequiereRelecturaCosteo`: una `entregada` sin precio, o una con resultado registrado en Nexo sin costo leído). Después de `CosteoNexo:MaximoFallosRelectura` fallos seguidos (10 por defecto), deja el motivo y para; si además pasó la edad máxima y sigue en `pendiente_costeo`, la vence. Un 404 `SOLICITUD_NO_ENCONTRADA` la detiene en la primera consulta, como antes.
+- **`pendiente_costeo` con resultado y más de 72 h.** Se lee antes de vencerla: si Nexo la entregó, toma el precio; si sigue sin costeo, se vence después de leerla.
+- **`entregada` leída sin precio y sin explicación** (por ejemplo, Nexo no trajo la cotización en la foto). Queda con el motivo `clsLecturaCosteo.MotivoEntregadaSinPrecio`, así la reparación del arranque no la vuelve a agendar cada vez.
+
+**Perdida solo en Cotifly (#127, HU-013.17; decisión del usuario del 2026-10-08).** Si el cliente desiste antes de que Nexo costee, el comercial puede marcarla **perdida solo en Cotifly** con el mismo `POST .../resultado`:
+
+- **Cuándo aplica:**
+  - en `error_envio`;
+  - en `pendiente_costeo` si la lectura previa muestra que Nexo no tiene la cotización entregada, o si Nexo no responde.
+- **Reglas:**
+  - solo se admite `perdida`; una `ganada` responde 409 `COTIZACION_NO_ENTREGADA`;
+  - el `motivo` es obligatorio (400 `SEGUIMIENTO_INVALIDO`);
+  - `If-Match` es obligatorio: 428 sin él y 409 `CONFLICTO_CONCURRENCIA` si no coincide. Se guarda con `versionNegocio` y el 200 trae el `ETag` nuevo. En el resto de `/resultado`, `If-Match` sigue opcional por compatibilidad: si viene, se compara.
+- **Efectos:**
+  - no se envía a Nexo, porque allá no hay cotización entregada;
+  - el polling se detiene y no se reanuda. `clsCotizacion.RegistrarPerdidaSinCosteo` deja `ganada = 0`, `motivoRechazo` y `marcadoAt`; el estado de costeo no cambia; `motivoEstadoCosteo` queda con el prefijo "Perdida solo en Cotifly ...", que la distingue (`PerdidaSoloEnCotifly`).
+  - Si Nexo costea después, el resultado no cambia y el costeo no se lee.
+  - Cuenta en las métricas como perdida (`ganada = 0`), sin script nuevo.
+  - Queda en `EventosHerramienta` como `resultado_cotizacion_sin_costeo`.
+  - Un segundo intento responde 409 `RESULTADO_YA_DEFINIDO`. El reintento del envío ya no aplica, porque exige que no haya resultado.
+  - `/seguimiento` sigue respondiendo `USAR_RESULTADO_NEXO` en esos estados: el camino es `/resultado`. Las que tienen motivo se leyeron y no admiten precio (revisar el margen de la línea o las líneas sin flete con Nexo). Mientras una fila aparezca aquí, las métricas la cuentan sin valor: `valor_ganado_cop` queda subestimado.
 
 ## Alternativas consideradas
 

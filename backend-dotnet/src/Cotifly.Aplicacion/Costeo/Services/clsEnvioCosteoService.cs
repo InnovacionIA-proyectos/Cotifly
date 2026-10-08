@@ -407,7 +407,23 @@ public sealed class clsEnvioCosteoService(
     private async Task LeerCosteoInmediatoAsync(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, Guid usuarioId)
     {
         var version = cotizacion.VersionNegocio;
-        var consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, CancellationToken.None);
+
+        // Tiempo de espera corto y propio (CosteoNexo:LecturaInmediataSegundos): el alta ya esperó a Nexo; si no alcanza, el polling sigue.
+        clsResultado<clsCosteoConsultadoNexo> consulta;
+        using (var limite = new CancellationTokenSource(opciones.Value.LecturaInmediata))
+        {
+            try
+            {
+                consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, limite.Token);
+            }
+            catch (OperationCanceledException) when (limite.IsCancellationRequested)
+            {
+                logger.LogWarning("La lectura inmediata del costeo de {Folio} superó {Segundos} s: queda en pendiente_costeo y la completa el polling.",
+                    cotizacion.Folio, opciones.Value.LecturaInmediataSegundos);
+                return;
+            }
+        }
+
         if (consulta.EsFallo)
         {
             logger.LogWarning("No se pudo leer el costeo inmediato de {Folio} ({Codigo}): queda en pendiente_costeo y la completa el polling.",

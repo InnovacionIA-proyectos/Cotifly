@@ -198,6 +198,16 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     [Given("que Nexo no responde la consulta del costeo después de registrar el resultado")]
     public void DadoQueFallaLaRelectura() => _nexo.FallarConsultaTrasResultado = true;
 
+    /// <summary>
+    /// Estado de una fila de antes de la opción A (ADR-018 §17): <c>autocosteo</c> sin precio ni línea asociada a Nexo, así el
+    /// resultado necesita releer el costeo.
+    /// </summary>
+    [When("la cotización {string} está en autocosteo sin el costo leído")]
+    public Task CuandoAutocosteoSinCosto(string cotizacion) =>
+        clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'autocosteo', precioFinal = NULL, costo = NULL WHERE folio = '{Folio(cotizacion)}'; "
+            + $"UPDATE l SET lineaSolicitudNexoId = NULL FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId WHERE c.folio = '{Folio(cotizacion)}';");
+
     [When("Nexo vuelve a responder la consulta del costeo")]
     public void CuandoVuelveLaConsulta() => _nexo.FallarConsultaTrasResultado = false;
 
@@ -215,6 +225,28 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         var json = web.UltimoJson();
         json.GetProperty("estado_costeo").GetString().Should().Be(estado);
         json.GetProperty("precio_final").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    // HU-013.17 (#127): perdida solo en Cotifly cuando el cliente desiste antes del costeo.
+    [When("{string} marca {string} como perdida porque {string}")]
+    public async Task CuandoMarcaPerdidaSinCosteo(string alias, string cotizacion, string motivo)
+    {
+        await web.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{Folio(cotizacion)}/costeo", web.Sesion(alias).Access);
+        var etag = web.UltimoEtag;
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{Folio(cotizacion)}/resultado", web.Sesion(alias).Access,
+            clsApiWebPruebas.Json(new { resultado = "perdida", motivo }), etag);
+    }
+
+    [Then("Nexo no recibió ningún resultado de {string}")]
+    public async Task EntoncesNexoSinResultado(string cotizacion) =>
+        _nexo.Resultado((await Columna(cotizacion, "costeoId"))!).Should().Be("SinDefinir");
+
+    [Then("las métricas de {string} cuentan {int} perdida")]
+    public async Task EntoncesLasMetricasCuentanPerdidas(string alias, int perdidas)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        web.UltimoJson().GetProperty("indicadores").GetProperty("perdidas").GetInt32().Should().Be(perdidas);
     }
 
     [Then("las métricas de {string} cuentan {int} ganada por un valor de {int}")]

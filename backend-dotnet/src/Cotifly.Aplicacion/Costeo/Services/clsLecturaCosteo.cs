@@ -35,6 +35,20 @@ public static class clsLecturaCosteo
                 ? clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, 0, opciones)
                 : ahora + opciones.IntervaloInicial;
         var cambio = cotizacion.RegistrarConsultaCosteo(estado, foto.Cotizacion?.Id, ahora, siguiente);
-        return precioCosteo.Aplicar(cotizacion, lineas, foto, ahora) | cambio;
+        cambio = precioCosteo.Aplicar(cotizacion, lineas, foto, ahora) | cambio;
+
+        // Una entregada que se leyó y sigue sin precio (p. ej. Nexo no trajo la cotización) queda con motivo: así no parece "sin leer" y
+        // la reparación del arranque no la vuelve a agendar (ADR-018 §17).
+        if (estado == EstadoCosteo.Entregada && cotizacion.EntregadaSinPrecio && cotizacion.MotivoEstadoCosteo is null)
+        {
+            cotizacion.AdvertirCosteo(MotivoEntregadaSinPrecio);
+            cambio = true;
+        }
+
+        return cambio;
     }
+
+    /// <summary>Motivo de una entregada leída sin precio y sin otra explicación (Nexo no trajo la cotización o sus fletes).</summary>
+    public const string MotivoEntregadaSinPrecio =
+        "Nexo entregó la cotización pero no devolvió su costeo (cotización o fletes): no se calcula el precio. Revísala con el equipo de Nexo.";
 }

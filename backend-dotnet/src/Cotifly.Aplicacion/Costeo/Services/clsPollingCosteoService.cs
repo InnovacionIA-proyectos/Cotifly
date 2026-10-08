@@ -95,9 +95,10 @@ public sealed class clsPollingCosteoService(
             return ResultadoConsultaCosteo.NoReclamada;
         }
 
-        // HU-013.14: una entregada sin precio (resultado registrado antes de leer el costeo) se lee una vez más aunque sea terminal.
-        var relectura = cotizacion.EntregadaSinPrecio;
-        if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
+        // HU-013.14: una entregada sin precio, o una con resultado cuyo costo no se leyó, se lee aunque sea terminal o haya pasado la
+        // edad máxima. Una perdida solo en Cotifly (HU-013.17) ya no se consulta.
+        var relectura = cotizacion.RequiereRelecturaCosteo;
+        if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
         {
             cotizacion.DetenerPollingCosteo();
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
@@ -155,11 +156,38 @@ public sealed class clsPollingCosteoService(
         if (consulta.EsFallo)
         {
             var fallos = cotizacion.CosteoConsultasFallidas + 1;
-            // La relectura de una entregada sin precio sigue con espaciado aunque haya pasado la edad máxima: termina cuando Nexo responde.
+            // La relectura sigue con espaciado aunque haya pasado la edad máxima, hasta CosteoNexo:MaximoFallosRelectura (HU-013.14).
             cotizacion.RegistrarFalloConsultaCosteo(ahora, relectura
                 ? ahora + clsAgendaPollingCosteo.Espera(ahora, enviadaAt, fallos, config)
                 : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
-            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            var agotada = relectura && fallos >= config.MaximoFallosRelectura;
+            var cambioAgotada = false;
+            if (agotada)
+            {
+                cotizacion.DetenerPollingCosteo();
+                var motivo = $"No se pudo leer el costeo en Nexo tras {fallos} intentos ({consulta.Error.Codigo}): se dejó de consultar sin precio. "
+                    + "Revísala con el equipo de Nexo.";
+                cambioAgotada = clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config) && cotizacion.VencerPollingCosteo(motivo);
+                if (!cambioAgotada)
+                {
+                    cotizacion.AdvertirCosteo(motivo);
+                }
+
+                await VencerLineasAsync(cotizacion, cancellationToken);
+            }
+
+            if (agotada)
+            {
+                if (!await GuardarConVersionAsync(cotizacion, version, cambioNegocio: true))
+                {
+                    return ResultadoConsultaCosteo.Conflicto;
+                }
+            }
+            else
+            {
+                await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            }
+
             logger.LogWarning("Consulta del costeo en Nexo fallida para {Folio} ({Codigo}); fallos seguidos: {Fallos}.",
                 cotizacion.Folio, consulta.Error.Codigo, fallos);
             await auditoria.RegistrarAsync(
@@ -169,13 +197,21 @@ public sealed class clsPollingCosteoService(
                 exito: false,
                 (int)cronometro.ElapsedMilliseconds,
                 cotizacion.ThreadId);
-            return ResultadoConsultaCosteo.Error;
+            return agotada ? ResultadoConsultaCosteo.Detenida : ResultadoConsultaCosteo.Error;
         }
 
         // ADR-017: el estado, el costo y el precio se derivan también por línea (una licitación tiene N; HU-005.5, una). El precio se
         // aplica aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
         var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
         var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, lineas, consulta.Valor, ahora, config, precioCosteo);
+
+        // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla (HU-013.14).
+        if (relectura && cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
+        {
+            cambio |= cotizacion.VencerPollingCosteo(
+                $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
+            await VencerLineasAsync(cotizacion, cancellationToken);
+        }
         if (!await GuardarConVersionAsync(cotizacion, version, cambio))
         {
             // El precio se calculó con un margen que el comercial pudo cambiar entretanto: se descarta y se repite después.

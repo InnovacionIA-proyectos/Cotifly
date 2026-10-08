@@ -311,6 +311,76 @@ public sealed class clsPollingCosteoServiceTests
     }
 
     [Fact]
+    public async Task UnaRelecturaQueFallaSiempreSeDetieneTrasElTopeDeFallosConMotivo()
+    {
+        _opciones.MaximoFallosRelectura = 3;
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.RegistrarFalloConsultaCosteo(_reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.RegistrarFalloConsultaCosteo(_reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoRechazada, "No existe", "HTTP 404 COTIZACION_NO_ENCONTRADA"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull("no se consulta para siempre");
+        _cotizacion.MotivoEstadoCosteo.Should().Contain("3 intentos");
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+    }
+
+    [Fact]
+    public async Task UnaPendienteConResultadoPasadaLaEdadMaximaSeLeeAntesDeVencerla()
+    {
+        // La relectura del resultado falló y la cotización quedó en pendiente_costeo con resultado; pasan las 72 h.
+        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
+        _reloj.Avanzar(TimeSpan.FromHours(80));
+        NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Cambio);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada, "se leyó antes de vencerla");
+        _cotizacion.PrecioFinal.Should().Be(2_352_941m);
+    }
+
+    [Fact]
+    public async Task UnaPendienteConResultadoQueSigueSinCosteoSeVenceDespuesDeLeerla()
+    {
+        _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
+        _reloj.Avanzar(TimeSpan.FromHours(80));
+        NexoResponde(Foto("EnCosteo", conFlete: false));
+
+        await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        await _nexo.Received(1).ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>());
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnaEntregadaSinCotizacionEnLaFotoQuedaConMotivoYNoSeReagenda()
+    {
+        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        NexoResponde(new clsCosteoConsultadoNexo("Entregada", ["L1"], null));
+
+        await Servicio().ProcesarAsync(_pendiente, Ct);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        _cotizacion.PrecioFinal.Should().BeNull();
+        _cotizacion.MotivoEstadoCosteo.Should().Be(clsLecturaCosteo.MotivoEntregadaSinPrecio, "con motivo, la reparación del arranque no la vuelve a agendar");
+    }
+
+    [Fact]
+    public async Task UnaPerdidaSoloEnCotiflyNoSeConsultaANexo()
+    {
+        _cotizacion.RegistrarPerdidaSinCosteo("El cliente desistió", _reloj.AhoraUtc);
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Detenida);
+
+        await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
+        _cotizacion.Ganada.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LaReparacionAgendaLasEntregadasSinPrecioConElRelojDeLaAplicacion()
     {
         _cotizaciones.ReprogramarEntregadasSinPrecioAsync(_reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(3);

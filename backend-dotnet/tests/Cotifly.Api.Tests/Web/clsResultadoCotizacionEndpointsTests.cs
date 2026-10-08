@@ -170,6 +170,9 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
     {
         var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
         _nexo.Costear(solicitud, 2_550_000m);
+        // Fila de antes de la opción A: autocosteo sin precio ni líneas asociadas (el resultado tiene que releer el costeo).
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'autocosteo' WHERE folio = '{folio}'");
         _nexo.Entregar(solicitud);
         _nexo.FallarConsultaTrasResultado = true;
 
@@ -177,7 +180,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
 
         json.GetProperty("ganada").GetBoolean().Should().BeTrue("Nexo ya tiene el resultado");
-        json.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo", "sin leer el costo no se marca entregada");
+        json.GetProperty("estado_costeo").GetString().Should().Be("autocosteo", "sin leer el costo no se marca entregada");
         json.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
         (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
             .Should().Be("agendada", "el polling la completa");
@@ -209,6 +212,64 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|1|3000000|sin-agenda", "la relectura aplica el precio aunque pasó la edad máxima y ya tiene resultado");
         (await EscalarAsync(SqlDiagnosticoEntregadasSinPrecio + $" AND c.folio = '{folio}'")).Should().BeNull();
+    }
+
+    // HU-013.17 (#127): el cliente desiste antes del costeo; la perdida queda solo en Cotifly.
+    [Fact]
+    public async Task LaPerdidaSinCosteoQuedaSoloEnCotiflyConIfMatchYCuentaEnLasMetricas()
+    {
+        var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
+        var cuerpo = """{"resultado":"perdida","motivo":"El cliente desistió"}""";
+
+        using var sinIfMatch = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, cuerpo);
+        sinIfMatch.StatusCode.Should().Be((HttpStatusCode)428);
+
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var etag = costeo.Headers.ETag!.Tag;
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, cuerpo, ifMatch: etag);
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+
+        json.GetProperty("ganada").GetBoolean().Should().BeFalse();
+        json.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo");
+        json.GetProperty("motivo_estado_costeo").GetString().Should().StartWith("Perdida solo en Cotifly");
+        respuesta.Headers.ETag!.Tag.Should().NotBe(etag, "la versión de negocio subió");
+        _nexo.Resultado(solicitud).Should().Be("SinDefinir", "no se envía a Nexo");
+        _nexo.Peticiones.Should().NotContain(p => p.Url.AbsolutePath.EndsWith("/resultado", StringComparison.Ordinal));
+
+        using var repetida = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, cuerpo, ifMatch: etag);
+        repetida.StatusCode.Should().Be(HttpStatusCode.Conflict, "con el If-Match viejo es CONFLICTO_CONCURRENCIA");
+
+        _nexo.Costear(solicitud, 2_550_000m);
+        (await _api.ProcesarPollingAsync(folio)).Should().Be(0, "el polling quedó detenido");
+        (await EscalarAsync(SqlEstado(folio).Replace("CAST(CAST(precioFinal AS bigint) AS nvarchar(30))", "COALESCE(CAST(precioFinal AS nvarchar(30)), 'sin-precio')", StringComparison.Ordinal)))
+            .Should().Be("pendiente_costeo|0|sin-precio|sin-agenda", "si Nexo costea después, el resultado no cambia");
+        (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'resultado_cotizacion_sin_costeo' AND input LIKE '%{folio}%'"))
+            .Should().Be("1");
+
+        using var metricas = await _api.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", sesion.Access);
+        (await VerificarContratoAsync(metricas, "/web/metricas/comercial", HttpMethod.Get, HttpStatusCode.OK))
+            .GetProperty("indicadores").GetProperty("perdidas").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SiNexoYaTieneOtroResultadoCotiflyLoTomaYRespondeConflicto()
+    {
+        var (sesion, folio, solicitud) = await EnviarAsync(entregar: true);
+        using (var primera = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}"""))
+        {
+            primera.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // Simula que el guardado en Cotifly falló después del 200 de Nexo: Cotifly quedó sin resultado.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET ganada = NULL, marcadoAt = NULL WHERE folio = '{folio}'");
+
+        using var contraria = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"x"}""");
+
+        contraria.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await contraria.Content.ReadAsStringAsync(Ct)).Should().Contain("RESULTADO_YA_DEFINIDO").And.Contain("ganada");
+        _nexo.Resultado(solicitud).Should().Be("Ganada");
+        (await EscalarAsync($"SELECT CAST(ganada AS nvarchar(5)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("1", "Cotifly queda igual que Nexo");
     }
 
     /// <summary>La consulta de diagnóstico (solo lectura) documentada para el DBA en ADR-018 §17.</summary>

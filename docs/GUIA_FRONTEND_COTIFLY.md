@@ -798,6 +798,14 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 - Primero escribe en Nexo y, **solo si Nexo responde 200**, en Cotifly. En 409 y 503 no cambia nada local.
 - 200 `CotizacionResumen` (con `ganada` y `motivo_rechazo`; puede traer `estado_costeo` = `entregada` si Nexo la entregó en ese momento).
 - **Costeo no leído (#123, HU-013.14).** Si Nexo ya entregó y Cotifly todavía no lo había leído, la API relee el costeo al registrar el resultado y la respuesta trae `estado_costeo = entregada` **con** `precio_final`. Si esa relectura falla, el resultado queda registrado igual, `estado_costeo` conserva su valor (por ejemplo `pendiente_costeo`) y `precio_final` llega con el polling en segundos: seguir consultando `GET .../costeo` mientras `precio_final` sea `null`. Con resultado registrado, el PDF sigue la regla de ADR-018 §11 (`PDF_YA_ENVIADO`: versión nueva), ya no `COSTEO_NO_LISTO`.
+- **`RESULTADO_YA_DEFINIDO` con `detalle.motivo` (#123).** Si Nexo ya tenía otro resultado, Cotifly lo toma y responde 409 con `detalle.motivo` = `ganada`/`perdida` (el de Nexo). Mostrar el mensaje y recargar la cotización: Cotifly ya quedó con el resultado de Nexo.
+- **Perdida antes del costeo (#127, HU-013.17).** Si el cliente desiste mientras `estado_costeo` es `pendiente_costeo` o `error_envio`, ofrecer **solo** "Marcar perdida", con el motivo obligatorio, y enviar `If-Match` con el `ETag` de `GET .../costeo`:
+  - sin `If-Match`, 428; con uno viejo, 409 `CONFLICTO_CONCURRENCIA` (recargar);
+  - no se envía a Nexo y el polling se detiene: dejar de consultar;
+  - la respuesta trae `ganada = false` y `motivo_estado_costeo` empieza por "Perdida solo en Cotifly";
+  - el 200 trae el `ETag` nuevo;
+  - una "ganada" en esos estados es 409 `COTIZACION_NO_ENTREGADA`;
+  - en `pendiente_costeo`, si Nexo ya la entregó, la pérdida va a Nexo como siempre.
 - Errores: 400 `ErrorWeb` (`resultado` inválido o límites); 400 `ErrorNegocio` `COSTEO_NEXO_RECHAZADA` (otro 4xx de Nexo; código en `detalle.motivo`); 404 (no es tuya o Nexo no encuentra la cotización); 409 `COSTEO_NO_LISTO` (chat, descartada, vencida o no enviada), `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en `pendiente_envio`, o en `pendiente_costeo` si Nexo todavía no tiene el costo; desde #123 en `pendiente_costeo` primero se le pregunta a Nexo si ya costeó), `RESULTADO_YA_DEFINIDO`, `SOLICITUD_NO_TRANSICIONABLE`; 503 `COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`.
 - Re-marcar el **mismo** resultado en Nexo es idempotente; cambiarlo responde `RESULTADO_YA_DEFINIDO`. Deshabilitar los botones cuando `ganada` tenga valor.
 

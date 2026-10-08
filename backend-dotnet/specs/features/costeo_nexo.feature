@@ -119,12 +119,34 @@ Característica: Costeo de la cotización en Nexo
     Dado que Nexo no responde la consulta del costeo después de registrar el resultado
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y la cotización "C1" está en autocosteo sin el costo leído
     Y Nexo entrega la cotización de "C1"
     Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la respuesta trae el estado de costeo "pendiente_costeo" sin precio final
+    Y la respuesta trae el estado de costeo "autocosteo" sin precio final
     Y la cotización "C1" queda ganada "true" con el motivo "Mejor precio"
     Cuando Nexo vuelve a responder la consulta del costeo
     Y el polling consulta a Nexo
     Entonces "Mis cotizaciones" de "ana" muestra "C1" en "entregada" con el precio final 3000000
     Y la cotización "C1" ya no se consulta en Nexo
+
+  # HU-013.17 (#127) — El cliente desiste antes del costeo: perdida solo en Cotifly
+  Escenario: Si el cliente desiste antes del costeo la cotización queda perdida solo en Cotifly
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y "ana" marca "C1" como perdida porque "El cliente desistió"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
+    Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+    Y la cotización "C1" ya no se consulta en Nexo
+    Y Nexo no recibió ningún resultado de "C1"
+    Y las métricas de "ana" cuentan 1 perdida
+    Cuando Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y el polling consulta a Nexo
+    Entonces la cotización "C1" queda ganada "false" con el motivo "El cliente desistió"
+    Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
+
+  Escenario: Sin costeo de Nexo no se puede marcar ganada
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
+    Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
+    Y la cotización "C1" sigue sin resultado

@@ -1141,12 +1141,28 @@ paths:
         `estado_costeo` y `precio_final` en la misma escritura: la respuesta ya trae el precio. Si esa relectura falla,
         el resultado se registra igual (Nexo ya lo tiene), `estado_costeo` conserva su valor (nunca `entregada` sin
         precio) y el polling aplica el precio en segundos: el frontend sigue consultando `GET .../costeo` mientras
-        `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo: si Nexo ya tiene el
-        costo sigue igual; si no, 409 `COTIZACION_NO_ENTREGADA` sin pedirle el resultado a Nexo.
+        `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo y reutiliza esa lectura:
+        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` es 409 `COTIZACION_NO_ENTREGADA` y una
+        `perdida` queda solo en Cotifly (abajo).
+
+        **Resultado ya definido en Nexo (HU-013.14).** Si Nexo responde `RESULTADO_YA_DEFINIDO` (otro resultado quedó en
+        Nexo y no en Cotifly), Cotifly lee el resultado de Nexo, lo guarda y responde ese 409 con
+        `detalle.motivo` = `ganada`/`perdida` (el que tiene Nexo): Cotifly y Nexo quedan iguales.
+
+        **Perdida solo en Cotifly (HU-013.17, #127).** Si el cliente desiste antes del costeo, en `error_envio`, o en
+        `pendiente_costeo` cuando Nexo no tiene la cotización entregada, se admite **solo** `perdida`, con `motivo`
+        obligatorio (400 si falta) e `If-Match` obligatorio (428 sin él, 409 `CONFLICTO_CONCURRENCIA` si no coincide).
+        No se envía a Nexo, se detiene el polling y `motivo_estado_costeo` lo indica ("Perdida solo en Cotifly ...").
+        Si Nexo costea después, el resultado no cambia. Cuenta en las métricas como perdida y queda en la auditoría
+        (`resultado_cotizacion_sin_costeo`). Una `ganada` en esos estados es 409 `COTIZACION_NO_ENTREGADA`.
+
+        `If-Match` es opcional en el resto (compatibilidad); si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`. El 200
+        devuelve el `ETag` nuevo.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -1155,13 +1171,16 @@ paths:
               $ref: '#/components/schemas/ResultadoWeb'
       responses:
         '200':
-          description: Resultado registrado en Nexo y en Cotifly
+          description: Resultado registrado en Nexo y en Cotifly (o, en la perdida sin costeo, solo en Cotifly)
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`resultado` que no es `ganada`/`perdida` o `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
+          description: '`resultado` que no es `ganada`/`perdida`, `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) o `motivo` vacío en la perdida sin costeo (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
           content:
             application/json:
               schema:
@@ -1174,14 +1193,18 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: |
-            Sin cambio local. De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado
-            a Nexo si el costeo está en `pendiente_envio`, o en `pendiente_costeo` y Nexo todavía no tiene el costo) y
-            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO`
-            (chat, descartada o costeo vencido, que se marcan con `/seguimiento`; o todavía no enviada a Nexo)
+            Sin cambio local, salvo `RESULTADO_YA_DEFINIDO` de Nexo, que deja en Cotifly el resultado de Nexo (`detalle.motivo`).
+            De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en
+            `pendiente_envio`, y para una `ganada` en `error_envio` o en `pendiente_costeo` sin la entrega en Nexo) y
+            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
+            con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
+            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
         '503':
           description: '`COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: identidad o rol del comercial en Nexo, es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`; sin cambio local'
           content:
@@ -3425,7 +3448,7 @@ components:
           type: string
           nullable: true
           maxLength: 100
-          description: Se guarda en `motivo_rechazo` y se envía a Nexo.
+          description: Se guarda en `motivo_rechazo` y se envía a Nexo. Obligatorio en la perdida solo en Cotifly (HU-013.17).
         comentario:
           type: string
           nullable: true
