@@ -17,6 +17,7 @@
 2. **Nexo sí acepta las horas de cargue y descargue por línea**: se retira la petición N2 y la regla de mandar "el mayor valor". Afecta a HU-021.3 y 021.7.
 3. `QA` retiró la integración con Google Chat (HU-013.9): el agente sigue en el chat web. Afecta al escenario Gherkin de la milestone.
 4. El `0001` **no se edita** (es un script ya aplicado y las pruebas dependen de él): afecta a HU-021.2.
+5. Al probar el `0009` en una base real (HU-021.2) apareció un error: no se podía renombrar `filaOrigen` por su `CHECK`. Ya está corregido en el script. Además el `0009` y `01_crear_esquema.sql` ahora traen el `CHECK` de `estadoEnvio`.
 
 ---
 
@@ -137,14 +138,18 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 
 **Lo que ya se hizo (2026-10-08):** la instalación desde cero se corrió sobre `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos SAP y 2 roles, sin errores. Se restauraron los roles externos (`comercial` = 34, `gerente_comercial` = 31).
 
-- [ ] **Comparar** el esquema de `01_crear_esquema.sql` contra el de una base armada con las migraciones `0001` a `0009`, en dos bases vacías (diferencias en `INFORMATION_SCHEMA.COLUMNS`, restricciones e índices). Hoy solo se comparó contra la propuesta.
-- [ ] **Probar el `0009`** sobre una copia de una base con el esquema viejo (el `0001` a `0008` aplicados y con datos), nunca sobre la compartida. Verificar las consultas de control del propio script (costos que cuadran, cada cotización con ruta y cada ruta con camión).
-- [ ] Probar el servicio `db-init` del `docker-compose.yml` (`docker compose up sqlserver db-init`). Está escrito pero no se ha ejecutado; `sqlcmd` de la imagen de SQL Server 2019 es una versión vieja y puede no aceptar alguna opción.
-- [ ] **Agregar el `CHECK` de `estadoEnvio`** (`sin_enviar`, `enviada`, `reenviada`) al `01_crear_esquema.sql` y al `0009`. Es la parte de corto plazo de HU-014.1: ni el esquema nuevo lo trae. En la base compartida ya recreada hay que agregarlo con un `ALTER` puntual.
+**Pruebas hechas el 2026-10-08** en el SQL Server del `docker-compose.yml` (contenedor propio, no la base compartida):
+
+- [x] **Comparar** el esquema de `01_crear_esquema.sql` contra el de una base armada con las migraciones `0001` a `0009`, en dos bases vacías. Se compararon columnas (tipo, longitud, nulabilidad, defaults), `CHECK`, FK, índices y vistas: **idénticos**. Lo único que cambia es el orden de las columnas, inevitable cuando se migra con `ALTER`.
+- [x] **Probar el `0009`** sobre una base con el esquema viejo (`0001` a `0008`) y datos de prueba (cotización de chat sin rutas, cotización con 2 rutas y conexos, costo menor que el levante, costo vacío y la cotización de ITR). Los controles del script dan 0, los costos cuadran contra el respaldo, las vistas responden y lo borrado de ITR queda en `Respaldo0009_*`. **Encontró un error real**: `sp_rename` no puede renombrar `filaOrigen` mientras tenga encima su `CHECK` (`ck_cotizacionLineasSolicitud_filaOrigen`); corregido en el `0009` (se suelta el `CHECK`, se renombra y se recrea con el mismo nombre). Sin esa prueba el script habría fallado en cualquier base, vacía o con datos.
+- [x] Probar el servicio `db-init` del `docker-compose.yml` (`docker compose up sqlserver db-init`): terminó con código 0 y creó 20 tablas, 6 líneas de negocio, 5 mapeos SAP y 2 roles.
+- [x] **`CHECK` de `estadoEnvio`** (`sin_enviar`, `enviada`, `reenviada`) agregado al `01_crear_esquema.sql` y al `0009`. Probado: con un valor fuera de catálogo el `0009` se detiene con el error 50013 y no deja nada aplicado. **Pendiente solo** agregarlo con un `ALTER` puntual a la base compartida ya recreada (la instalación desde cero se hizo antes del cambio).
+- **Limitación conocida del `0009`**: si se vuelve a ejecutar sobre una base instalada desde cero (que ya trae el esquema final), imprime "ya está aplicado" y no cambia nada, pero después muestra errores de compilación `207` y `sqlcmd -b` sale con código 1. Sobre una base migrada con el propio `0009` sí sale limpio. Una instalación desde cero no debe correr migraciones, así que no bloquea.
 - [ ] Conseguir el **`TrqType` de SAP para `DevolucionContenedor`** (negocio/SAP) y sembrarlo en `db/seeder/02_sap_mapeo_trqtype.sql`. No se inventa.
 - [ ] **Visto bueno del DBA** sobre `01_crear_esquema.sql` y `0009`, como los scripts anteriores.
 - [ ] Decidir qué se hace con `db/migrations/` (Alembic, el stack viejo de Postgres). `deploy/docker-compose.swarm.yml` todavía levanta un Postgres y un orquestador; confirmar con quien llevó el despliegue si siguen en uso antes de archivar nada.
-- [ ] **Script de reversa del `0009`** en `db/migrations_mssql/rollback/` (como el del `0006`). Hoy no existe: la vuelta atrás sería manual, desde las tablas `Respaldo0009_*` que el propio script crea.
+- [x] **Reversa del `0009`: se descarta.** El `0009` queda solo como respaldo y no se sigue trabajando; la base nueva se arma con `01_crear_esquema.sql`. Si algún día se aplicara el `0009`, la vuelta atrás es restaurar el respaldo completo de la base (o las tablas `Respaldo0009_*` que el propio script crea).
+- [x] Probar que `01_crear_esquema.sql` se niega a correr dos veces (si ya hay tablas se salta el esquema) y que los seeders se pueden repetir sin duplicar: probado con `docker compose run --rm db-init` sobre una base ya instalada (20 tablas, 6 líneas, 5 mapeos, 2 roles, sin cambios).
 - [ ] Regla permanente: **cada migración nueva `000N` se refleja también en `db/scripts/01_crear_esquema.sql`**, para que una instalación desde cero y una base migrada queden idénticas. **Y no se edita una migración que ya está aplicada** (el `0001` al `0008` son de `QA` y de otros ambientes): un intento de cambiar el seeder del `0001` rompió las pruebas de integración del PR (`clsPasosAdmin`, `clsPasosMargen`, `clsPdfAdminMetricasEndpointsTests`, `clsEsquemaTests` esperan las 8 líneas de negocio originales). Los cambios van en un script nuevo.
 
 ### [HU-021.3] [Corrección con BD] Dominio: rutas, camiones, mercancías y conexos

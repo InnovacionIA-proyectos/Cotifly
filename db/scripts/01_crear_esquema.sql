@@ -280,6 +280,7 @@ CREATE TABLE dbo_cotifly.CotizacionesSolicitud (
     CONSTRAINT fk_cotizaciones_usuarioId FOREIGN KEY (usuarioId) REFERENCES dbo_cotifly.UsuariosWeb (id),
     CONSTRAINT ck_cotizaciones_origenCliente CHECK (origenCliente IS NULL OR origenCliente IN ('cliente', 'prospecto')),
     CONSTRAINT ck_cotizaciones_tipoSolicitud CHECK (tipoSolicitud IS NULL OR tipoSolicitud IN ('spot', 'licitacion')),
+    CONSTRAINT ck_cotizaciones_estadoEnvio CHECK (estadoEnvio IS NULL OR estadoEnvio IN ('sin_enviar', 'enviada', 'reenviada')),
     CONSTRAINT ck_cotizaciones_versionNegocio CHECK (versionNegocio >= 0),
     CONSTRAINT ck_cotizaciones_textosCotizacion_json CHECK (textosCotizacion IS NULL OR ISJSON(textosCotizacion) = 1),
     CONSTRAINT ck_cotizaciones_estadoCosteo CHECK (estadoCosteo IS NULL OR estadoCosteo IN

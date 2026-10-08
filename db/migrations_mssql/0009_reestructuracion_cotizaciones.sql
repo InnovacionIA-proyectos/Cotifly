@@ -47,7 +47,9 @@
        costeoUltimaConsultaAt y los conexos marcados como no incluidos.
 
    Todo corre en UNA transacción: si algo falla, no queda nada aplicado. Si ya se
-   aplicó, no hace nada.
+   aplicó, no hace nada. (Una base instalada desde cero con 01_crear_esquema.sql ya
+   trae este esquema y no debe correr migraciones: el script no cambia nada, pero
+   sqlcmd muestra errores 207 de compilación al omitir los lotes.)
 
    Requisitos: 0001 a 0007 aplicados; nivel de compatibilidad de la base >= 130 (usa
    OPENJSON).
@@ -491,6 +493,10 @@ EXEC #EliminarColumna N'CotizacionLineasSolicitud', N'lineaSolicitudNexoId';
 EXEC #EliminarColumna N'CotizacionLineasSolicitud', N'costo';             -- arrastra ck_cotizacionLineasSolicitud_montos
 EXEC #EliminarColumna N'CotizacionLineasSolicitud', N'serviciosConexos';
 
+-- SQL Server no renombra una columna con un CHECK encima: se suelta aquí y se recrea abajo con el mismo nombre.
+IF OBJECT_ID(N'dbo_cotifly.ck_cotizacionLineasSolicitud_filaOrigen', N'C') IS NOT NULL
+    ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud DROP CONSTRAINT ck_cotizacionLineasSolicitud_filaOrigen;
+
 EXEC sys.sp_rename N'dbo_cotifly.CotizacionLineasSolicitud.cotizacionId', N'cotizacionSolicitudId', N'COLUMN';
 EXEC sys.sp_rename N'dbo_cotifly.CotizacionLineasSolicitud.filaOrigen', N'rutaOrigenIndice', N'COLUMN';
 EXEC sys.sp_rename N'dbo_cotifly.CotizacionLineasSolicitud.precioFinal', N'precioFinalLinea', N'COLUMN';
@@ -513,6 +519,7 @@ IF OBJECT_ID(N'dbo_cotifly.ck_cotizacionLineasSolicitud_horas', N'C') IS NOT NUL
 ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud WITH CHECK ADD
     CONSTRAINT fk_cotizacionLineasSolicitud_lineaNegocioId FOREIGN KEY (lineaNegocioId)
         REFERENCES dbo_cotifly.MargenesPolitica (id),
+    CONSTRAINT ck_cotizacionLineasSolicitud_filaOrigen CHECK (rutaOrigenIndice IS NULL OR rutaOrigenIndice >= 0),
     CONSTRAINT ck_cotizacionLineasSolicitud_costos CHECK (
         (valorLevanteContenedor IS NULL OR valorLevanteContenedor >= 0)
         AND (costoFletesTotal IS NULL OR costoFletesTotal >= 0)
@@ -592,6 +599,15 @@ EXEC #EliminarColumna N'Cotizaciones', N'serviciosConexos';      -- arrastra ck_
 EXEC #EliminarColumna N'Cotizaciones', N'costeoUltimaConsultaAt';
 EXEC #EliminarColumna N'Cotizaciones', N'margenSugerido';
 EXEC #EliminarColumna N'Cotizaciones', N'origenMargenSugerido';  -- arrastra ck_cotizaciones_origenMargenSugerido
+
+-- CHECK de estadoEnvio (HU-014.1): un valor fuera de catálogo tumbaba "Mis cotizaciones" del usuario. Si alguna fila
+-- trae otro valor, el script se detiene (y deshace todo) en vez de crear la restricción sin validar.
+IF EXISTS (SELECT 1 FROM dbo_cotifly.Cotizaciones WHERE estadoEnvio IS NOT NULL AND estadoEnvio NOT IN ('sin_enviar', 'enviada', 'reenviada'))
+    THROW 50013, N'Cotizaciones.estadoEnvio tiene valores fuera de sin_enviar/enviada/reenviada: corríjalos antes de aplicar el 0009.', 1;
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_cotizaciones_estadoEnvio'
+               AND parent_object_id = OBJECT_ID(N'dbo_cotifly.Cotizaciones'))
+    ALTER TABLE dbo_cotifly.Cotizaciones
+        ADD CONSTRAINT ck_cotizaciones_estadoEnvio CHECK (estadoEnvio IS NULL OR estadoEnvio IN ('sin_enviar', 'enviada', 'reenviada'));
 
 -- Las FK de Correos, MargenAjustes, CotizacionArchivosLicitacion, CotizacionPdfsHistorial y
 -- CotizacionLineasSolicitud siguen apuntando a la tabla con su nombre nuevo.
