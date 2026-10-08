@@ -261,6 +261,12 @@ public static class clsCodigosError
     /// </summary>
     public const string ConflictoConcurrencia = "CONFLICTO_CONCURRENCIA";
 
+    /// <summary>
+    /// #125: otra operación retiene el candado del folio (<c>sp_getapplock</c>) más allá de los intentos configurados
+    /// (<c>CandadoSql</c>); nada se guardó y se puede reintentar (503). Código nuevo del backend .NET.
+    /// </summary>
+    public const string ServicioOcupado = "SERVICIO_OCUPADO";
+
     /// <summary>Falta <c>If-Match</c> en una mutación de la etapa final del costeo (428, ADR-018 §8). Código nuevo del backend .NET.</summary>
     public const string PrecondicionRequerida = "PRECONDICION_REQUERIDA";
 

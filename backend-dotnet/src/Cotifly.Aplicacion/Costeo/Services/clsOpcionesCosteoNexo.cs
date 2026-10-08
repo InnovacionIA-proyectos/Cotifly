@@ -45,6 +45,22 @@ public sealed class clsOpcionesCosteoNexo : IValidatableObject
     [Range(61, 3600)]
     public int ReclamoSegundos { get; set; } = 120;
 
+    /// <summary>
+    /// Tiempo máximo (s) de la lectura del costeo en la misma petición del alta, cuando Nexo ya costeó todas las líneas (HU-013.14,
+    /// ADR-018 §17). Si no alcanza, la cotización responde <c>pendiente_costeo</c> y el polling la completa.
+    /// </summary>
+    [Range(1, 30)]
+    public int LecturaInmediataSegundos { get; set; } = 6;
+
+    /// <summary>
+    /// Fallos seguidos con los que el polling deja de releer una cotización que solo se consulta para completar el precio (entregada
+    /// sin precio o con resultado registrado sin costo leído, HU-013.14): deja el motivo y para.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoFallosRelectura { get; set; } = 10;
+
+    public TimeSpan LecturaInmediata => TimeSpan.FromSeconds(LecturaInmediataSegundos);
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (IntervaloMaximoMinutos * 60 < IntervaloInicialSegundos)

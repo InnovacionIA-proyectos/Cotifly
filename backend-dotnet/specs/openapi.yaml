@@ -1000,8 +1000,14 @@ paths:
         Responde **201 aunque Nexo falle**: la cotización queda en `error_envio` con `motivo_estado_costeo`
         (tiempo agotado, rechazo 4xx con el código de Nexo, 5xx, red, cliente sin BP) y el comercial puede
         reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar` sin volver a llenar el formulario. Con
-        éxito queda en `pendiente_costeo` (o `autocosteo` si Nexo costeó la línea en la misma petición) y el polling
-        (HU-005.6) sigue su estado. `precio_final` es `null` hasta que el costeo pasa por el margen (HU-005.7).
+        éxito queda en `pendiente_costeo` y el polling (HU-005.6) sigue su estado. `precio_final` es `null` hasta que
+        el costeo pasa por el margen (HU-005.7).
+
+        **Costeo en la misma petición (HU-013.14, ADR-018 §17).** Si Nexo costea todas las líneas en el alta
+        (`fletesCalculados`), Cotifly lee el costo antes de responder y la cotización sale en `autocosteo` **con**
+        `precio_final`. Si esa lectura falla, sale en `pendiente_costeo` y el polling la completa. `autocosteo` nunca
+        sale sin precio, salvo que falte el margen, y entonces trae `motivo_estado_costeo`. Antes de HU-013.14 podía
+        salir `autocosteo` con `precio_final: null` hasta la primera consulta del polling. El enum no cambia.
 
         Es el ÚNICO camino para crear una cotización (ADR-018): el chat ya no crea cotizaciones.
 
@@ -1047,6 +1053,11 @@ paths:
           description: |
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
             comercial sin `idUsuarioExterno`) y no hay una copia de menos de `Nexo:HorasCatalogosVencidos`. Nada queda guardado.
+            `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
+            reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -1129,10 +1140,35 @@ paths:
         aunque estuviera en `autocosteo` o `pendiente_costeo`; es un estado válido. Desde su issue #171, Nexo exige que la
         cotización esté entregada y responde `COTIZACION_NO_ENTREGADA` si sigue en borrador (pendiente de confirmar con
         el equipo de Nexo). Solo el dueño.
+
+        **Costeo no aplicado (HU-013.14, ADR-018 §17).** Si la cotización todavía no tiene `precio_final` (Nexo
+        entregó y Cotifly aún no lo había leído), después del 200 de Nexo Cotifly relee el costeo y guarda resultado,
+        `estado_costeo` y `precio_final` en la misma escritura: la respuesta ya trae el precio. Si esa relectura falla,
+        el resultado se registra igual (Nexo ya lo tiene), `estado_costeo` conserva su valor (nunca `entregada` sin
+        precio) y el polling aplica el precio en segundos: el frontend sigue consultando `GET .../costeo` mientras
+        `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo y reutiliza esa lectura:
+        solo si Nexo ya la entregó le pide el resultado; si no, una `ganada` es 409 `COTIZACION_NO_ENTREGADA` y una
+        `perdida` queda solo en Cotifly (abajo).
+
+        **Resultado ya definido en Nexo (HU-013.14).** Si Nexo responde `RESULTADO_YA_DEFINIDO` (otro resultado quedó en
+        Nexo y no en Cotifly), Cotifly lee el resultado de Nexo, lo guarda y responde ese 409 con
+        `detalle.motivo` = `ganada`/`perdida` (el que tiene Nexo): Cotifly y Nexo quedan iguales.
+
+        **Perdida solo en Cotifly (HU-013.17, #127).** Si el cliente desiste antes del costeo, en `error_envio`, o en
+        `pendiente_costeo` cuando Nexo **confirma** que no tiene la cotización entregada (si Nexo no responde, 503
+        reintentable sin cambios), se admite **solo** `perdida`, con `motivo`
+        obligatorio (400 si falta) e `If-Match` obligatorio (428 sin él, 409 `CONFLICTO_CONCURRENCIA` si no coincide).
+        No se envía a Nexo, se detiene el polling y `motivo_estado_costeo` lo indica ("Perdida solo en Cotifly ...").
+        Si Nexo costea después, el resultado no cambia. Cuenta en las métricas como perdida y queda en la auditoría
+        (`resultado_cotizacion_sin_costeo`). Una `ganada` en esos estados es 409 `COTIZACION_NO_ENTREGADA`.
+
+        `If-Match` es opcional en el resto (compatibilidad); si viene y no coincide, 409 `CONFLICTO_CONCURRENCIA`. El 200
+        devuelve el `ETag` nuevo.
       security:
         - bearer: []
       parameters:
         - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -1141,13 +1177,16 @@ paths:
               $ref: '#/components/schemas/ResultadoWeb'
       responses:
         '200':
-          description: Resultado registrado en Nexo y en Cotifly
+          description: Resultado registrado en Nexo y en Cotifly (o, en la perdida sin costeo, solo en Cotifly)
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CotizacionResumen'
         '400':
-          description: '`resultado` que no es `ganada`/`perdida` o `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
+          description: '`resultado` que no es `ganada`/`perdida`, `motivo`/`comentario` fuera de los límites de Nexo (100 y 500) o `motivo` vacío en la perdida sin costeo (`ErrorWeb`); `COSTEO_NEXO_RECHAZADA` si Nexo responde otro 4xx (`ErrorNegocio`, código de Nexo en `detalle.motivo`); sin cambio local'
           content:
             application/json:
               schema:
@@ -1160,13 +1199,18 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: |
-            Sin cambio local. De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin llamar a Nexo si el
-            costeo no está en `autocosteo` ni `entregada`) y `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO`
-            (chat, descartada o costeo vencido, que se marcan con `/seguimiento`; o todavía no enviada a Nexo)
+            Sin cambio local, salvo `RESULTADO_YA_DEFINIDO` de Nexo, que deja en Cotifly el resultado de Nexo (`detalle.motivo`).
+            De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado a Nexo en
+            `pendiente_envio`, y para una `ganada` en `error_envio` o en `pendiente_costeo` sin la entrega en Nexo) y
+            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO` (chat, descartada o costeo vencido, que se marcan
+            con `/seguimiento`; o todavía no enviada a Nexo), `RESULTADO_YA_DEFINIDO` (ya tiene resultado sin costeo) y
+            `CONFLICTO_CONCURRENCIA` (`If-Match` que no coincide)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
         '503':
           description: '`COSTEO_NEXO_NO_DISPONIBLE` (también si Nexo responde 401/403: identidad o rol del comercial en Nexo, es configuración) o `COSTEO_NEXO_TIEMPO_AGOTADO`; sin cambio local'
           content:
@@ -1410,7 +1454,11 @@ paths:
           description: |
             Licitación (HU-013.11): `CATALOGOS_FLETE_NO_DISPONIBLE` (sin catálogo maestro de Nexo ni copia de 24 h para revalidar las
             filas guardadas) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila guardada sin id de municipio y el catálogo no responde). Nada
-            cambia ni se envía a Nexo.
+            cambia ni se envía a Nexo. `SERVICIO_OCUPADO` (#125) si el candado del folio de la versión `-vN` siguió ocupado tras
+            los reintentos: no se creó la versión.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -1969,7 +2017,11 @@ paths:
           description: |
             HU-013.11: `CATALOGOS_FLETE_NO_DISPONIBLE` (alguna fila trae `tipo_vehiculo` o `clase_viaje` y no hay catálogo maestro
             de Nexo ni una copia de menos de 24 h para validarlos) o `MUNICIPIOS_NO_DISPONIBLE` (alguna fila sin id de municipio y el
-            catálogo de municipios no responde). Nada se guarda.
+            catálogo de municipios no responde). Nada se guarda. `SERVICIO_OCUPADO` (#125) si el candado del folio siguió ocupado
+            tras los reintentos: nada se guarda y se puede reintentar.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -2295,6 +2347,13 @@ components:
       schema:
         type: string
       example: '"7"'
+    RetryAfter:
+      description: |
+        Solo con `SERVICIO_OCUPADO` (#125): segundos que conviene esperar antes de reintentar (siempre 1). Las demás causas del
+        503 no lo envían.
+      schema:
+        type: integer
+      example: 1
 
   responses:
     PrecondicionRequerida:
@@ -2440,7 +2499,8 @@ components:
                 `detalle` trae `accion = nueva_version` con el método, el endpoint y el cuerpo para crear `-vN`),
                 `PRECONDICION_REQUERIDA` (428: falta `If-Match`), `LINEA_SIN_COTIZACION_NEXO` (409: la línea no tiene
                 todavía línea en la cotización de Nexo) y `TEXTOS_EDITADOS` (409: redactar sobre textos editados por el
-                comercial sin `?sobrescribir=true`).
+                comercial sin `?sobrescribir=true`). `SERVICIO_OCUPADO` (503, #125: otra operación retiene el candado del
+                folio más allá de los reintentos; nada se guardó y se puede reintentar).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -2503,6 +2563,7 @@ components:
                 - PRECONDICION_REQUERIDA
                 - LINEA_SIN_COTIZACION_NEXO
                 - TEXTOS_EDITADOS
+                - SERVICIO_OCUPADO
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -2895,7 +2956,10 @@ components:
             reintentar); `pendiente_costeo` = alguna línea sin flete ("en costeo"); `autocosteo` = todas las líneas con
             flete y la cotización de Nexo en borrador; `entregada` = Nexo la entregó; `descartada` = Nexo descartó la
             solicitud; `costeo_vencido` = se agotó el tiempo máximo del polling sin costeo. "Costeado" = `autocosteo`
-            o `entregada` con `precio_final`.
+            o `entregada` con `precio_final`. Desde HU-013.14 (ADR-018 §17) `autocosteo` y `entregada` solo se exponen
+            cuando Cotifly ya leyó el costo de Nexo: sin `precio_final` significa que falta el margen (con
+            `motivo_estado_costeo`), no que el precio "va a llegar" (salvo filas de antes de HU-013.14 que el polling
+            repara al arrancar).
         motivo_estado_costeo:
           type: string
           nullable: true
@@ -3426,7 +3490,7 @@ components:
           type: string
           nullable: true
           maxLength: 100
-          description: Se guarda en `motivo_rechazo` y se envía a Nexo.
+          description: Se guarda en `motivo_rechazo` y se envía a Nexo. Obligatorio en la perdida solo en Cotifly (HU-013.17).
         comentario:
           type: string
           nullable: true
