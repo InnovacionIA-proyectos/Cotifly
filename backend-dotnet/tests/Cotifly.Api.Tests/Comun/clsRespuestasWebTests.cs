@@ -14,6 +14,7 @@ public sealed class clsRespuestasWebTests
     [InlineData(clsCodigosError.CorreoDeshabilitado, 503, "ErrorNegocio")]
     [InlineData(clsCodigosAplicacion.RegionalNoDisponible, 503, "ErrorNegocio")]
     [InlineData(clsCodigosError.PdfRenderNoDisponible, 503, "ErrorNegocio")]
+    [InlineData(clsCodigosError.ServicioOcupado, 503, "ErrorNegocio")]
     [InlineData(clsCodigosAplicacion.RegionalNoAsignada, 409, "ErrorNegocio")]
     [InlineData("USUARIO_NO_ENCONTRADO", 401, "ErrorWeb")]
     [InlineData(clsCodigosAplicacion.NoAutenticado, 401, "ErrorWeb")]
