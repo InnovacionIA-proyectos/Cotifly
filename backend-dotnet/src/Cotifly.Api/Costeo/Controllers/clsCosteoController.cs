@@ -175,9 +175,12 @@ public sealed class clsCosteoController(
 
         var valor = resultado.Valor;
         clsConcurrenciaHttp.EscribirEtag(Response, valor.RowVersion);
+
+        // HU-013.15 (#124): la respuesta avisa siempre (lista vacía si no había) los conexos del costeo anterior que se descartan.
+        var resumen = valor.Cotizacion with { ConexosDescartados = valor.ConexosDescartados ?? [] };
         return valor.VersionNueva
-            ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", valor.Cotizacion)
-            : Ok(valor.Cotizacion);
+            ? Created($"/web/cotizaciones/{valor.Cotizacion.Folio}/costeo", resumen)
+            : Ok(resumen);
     }
 
     /// <summary>

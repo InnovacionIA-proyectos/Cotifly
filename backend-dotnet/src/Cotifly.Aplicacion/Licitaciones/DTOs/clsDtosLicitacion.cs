@@ -8,8 +8,19 @@ namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 /// </summary>
 public sealed record clsAnalisisExcel(string Archivo, IReadOnlyList<clsHojaExcel> Hojas);
 
-/// <summary>Una hoja analizada. <paramref name="Filas"/> trae hasta 1000 filas; <paramref name="TotalFilas"/>, el total real.</summary>
-public sealed record clsHojaExcel(string Nombre, int FilaEncabezado, IReadOnlyList<string> Encabezados, IReadOnlyList<IReadOnlyList<string>> Filas, int TotalFilas);
+/// <summary>
+/// Una hoja analizada. <paramref name="Filas"/> trae hasta 1000 filas; <paramref name="TotalFilas"/>, el total real.
+/// <paramref name="FilasExcel"/> (HU-013.15, #124): el número de fila de Excel (base 1, encabezado incluido) de cada elemento de
+/// <paramref name="Filas"/>, el que ve el comercial en su archivo; lo calcula Cotifly con la misma regla de Nexo. <c>null</c> si no se
+/// pudo ubicar (la hoja no cuadra con el análisis de Nexo).
+/// </summary>
+public sealed record clsHojaExcel(
+    string Nombre,
+    int FilaEncabezado,
+    IReadOnlyList<string> Encabezados,
+    IReadOnlyList<IReadOnlyList<string>> Filas,
+    int TotalFilas,
+    IReadOnlyList<int>? FilasExcel = null);
 
 /// <summary>Archivo subido por el comercial (multipart): nombre y bytes.</summary>
 public sealed record clsArchivoSubido(string? Nombre, byte[] Contenido);
@@ -34,9 +45,11 @@ public sealed record clsEntradaLicitacion(
 
 /// <summary>
 /// Un error del reporte de validación (<c>ErrorFilaLicitacion</c>): <paramref name="Indice"/> es la posición en <c>lineas[]</c>
-/// (base 0; <c>null</c> si el error es del encabezado), <paramref name="Fila"/> la fila del análisis que mandó el frontend.
+/// (base 0; <c>null</c> si el error es del encabezado), <paramref name="Fila"/> la fila del análisis que mandó el frontend (índice
+/// base 0 en <c>hojas[h].filas</c>, técnico) y <paramref name="FilaExcel"/> (HU-013.15, #124) el número de fila de la hoja de Excel
+/// (base 1, encabezado incluido), el que ve el comercial: solo con el archivo adjunto y una <c>fila</c> que existe en la hoja.
 /// </summary>
-public sealed record clsErrorFilaLicitacion(int? Indice, int? Fila, string Campo, string Codigo, string Mensaje);
+public sealed record clsErrorFilaLicitacion(int? Indice, int? Fila, string Campo, string Codigo, string Mensaje, int? FilaExcel = null);
 
 /// <summary>
 /// Resultado de crear una licitación: la cotización creada, o un error de negocio (<see cref="Error"/>), o el reporte por fila
