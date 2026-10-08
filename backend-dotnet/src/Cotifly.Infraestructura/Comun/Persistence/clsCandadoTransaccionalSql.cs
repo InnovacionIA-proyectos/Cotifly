@@ -1,9 +1,12 @@
 using System.Data;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Infraestructura.Comun.Persistence;
 
@@ -13,13 +16,22 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// réplicas, y se libera solo al confirmar o deshacer. Lo que la operación guarde con la unidad de trabajo usa la misma
 /// transacción (EF Core la toma de <c>Database.CurrentTransaction</c>).
 /// </summary>
-public sealed class clsCandadoTransaccionalSql(clsCotiflyDbContext contexto) : IClsCandadoTransaccional
+/// <remarks>
+/// #125: la espera (<see cref="clsOpcionesCandadoSql"/>) es configurable y el límite del cliente no depende del reloj de pared
+/// (<see cref="clsAppLockSql"/>). Si el candado no se obtiene (tiempo agotado, interbloqueo o sin respuesta), la transacción se
+/// deshace —la operación todavía no corrió— y se reintenta con pausa creciente; agotados los intentos, el resultado es
+/// <c>SERVICIO_OCUPADO</c> (503), nunca una excepción. La operación corre una sola vez: sus fallos no se reintentan.
+/// </remarks>
+public sealed class clsCandadoTransaccionalSql(
+    clsCotiflyDbContext contexto,
+    IOptions<clsOpcionesCandadoSql> opciones,
+    TimeProvider tiempo,
+    ILogger<clsCandadoTransaccionalSql> logger) : IClsCandadoTransaccional
 {
-    /// <summary>Espera máxima por el candado. El folio se calcula en milisegundos; 15 s solo se alcanzan con la base degradada.</summary>
-    public static readonly TimeSpan EsperaMaxima = TimeSpan.FromSeconds(15);
-
     /// <summary>Largo máximo del nombre del recurso en <c>sp_getapplock</c>.</summary>
-    public const int LargoMaximoRecurso = 255;
+    public const int LargoMaximoRecurso = clsAppLockSql.LargoMaximoRecurso;
+
+    public const string MensajeOcupado = "Hay otra operación en curso sobre el mismo consecutivo. No se guardó nada: reintenta en unos segundos.";
 
     public async Task<clsResultado<TValor>> EjecutarAsync<TValor>(
         string recurso,
@@ -34,10 +46,84 @@ public sealed class clsCandadoTransaccionalSql(clsCotiflyDbContext contexto) : I
             throw new InvalidOperationException("Ya hay una transacción abierta en esta unidad de trabajo: el candado no se anida.");
         }
 
-        await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var configuracion = opciones.Value;
+        for (var intento = 1; ; intento++)
+        {
+            await using var transaccion = await contexto.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+            clsResultadoAppLock toma;
+            try
+            {
+                toma = await clsAppLockSql.TomarAsync(
+                    contexto.Database.GetDbConnection(), transaccion.GetDbTransaction(), recurso, "Transaction", Limites(configuracion), tiempo, cancellationToken);
+            }
+            catch
+            {
+                await DeshacerAsync(transaccion);
+                throw;
+            }
+
+            var codigo = toma.Codigo;
+            if (codigo >= clsAppLockSql.Concedido)
+            {
+                return await EjecutarConCandadoAsync(transaccion, operacion, cancellationToken);
+            }
+
+            // Sin candado la operación no corrió: deshacer solo cierra la transacción vacía.
+            await DeshacerAsync(transaccion);
+            if (codigo is null)
+            {
+                // El cliente canceló la solicitud: la conexión puede quedar a medias, así que se cierra y el intento siguiente abre otra.
+                await contexto.Database.CloseConnectionAsync();
+            }
+
+            if (codigo is not (null or clsAppLockSql.TiempoAgotado or clsAppLockSql.Cancelado or clsAppLockSql.Interbloqueo))
+            {
+                throw new InvalidOperationException($"sp_getapplock devolvió {codigo} para el candado '{recurso}'.");
+            }
+
+            if (intento >= configuracion.Intentos)
+            {
+                logger.LogWarning(
+                    "Candado {Recurso} no disponible tras {Intentos} intentos (último código {Codigo}): se responde {CodigoError}.",
+                    recurso, intento, codigo?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "sin respuesta", clsCodigosError.ServicioOcupado);
+                return new clsErrorDominio(clsCodigosError.ServicioOcupado, MensajeOcupado);
+            }
+
+            logger.LogInformation(
+                "Candado {Recurso} no disponible en el intento {Intento} (código {Codigo}); se reintenta.",
+                recurso, intento, codigo?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "sin respuesta");
+            await Task.Delay(Pausa(intento, configuracion.PausaBaseMilisegundos), tiempo, cancellationToken);
+        }
+    }
+
+    private static clsLimitesAppLock Limites(clsOpcionesCandadoSql configuracion) => new(
+        TimeSpan.FromMilliseconds(configuracion.EsperaMilisegundos),
+        TimeSpan.FromMilliseconds(configuracion.MargenRespuestaMilisegundos),
+        TimeSpan.FromMilliseconds(configuracion.GraciaCancelacionMilisegundos),
+        configuracion.ComandoSegundos);
+
+    /// <summary>Pausa antes del intento siguiente: base·2^(intento-1) más una variación aleatoria de hasta la mitad de la base.</summary>
+    public static TimeSpan Pausa(int intento, int pausaBaseMilisegundos)
+    {
+        if (pausaBaseMilisegundos <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var exponencial = pausaBaseMilisegundos * (1L << Math.Clamp(intento - 1, 0, 10));
+#pragma warning disable CA5394 // La variación solo separa reintentos simultáneos; no es seguridad.
+        var variacion = Random.Shared.Next(0, (pausaBaseMilisegundos / 2) + 1);
+#pragma warning restore CA5394
+        return TimeSpan.FromMilliseconds(exponencial + variacion);
+    }
+
+    private async Task<clsResultado<TValor>> EjecutarConCandadoAsync<TValor>(
+        IDbContextTransaction transaccion,
+        Func<CancellationToken, Task<clsResultado<TValor>>> operacion,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            await TomarCandadoAsync(transaccion, recurso, cancellationToken);
             var resultado = await operacion(cancellationToken);
             if (resultado.EsExitoso)
             {
@@ -54,30 +140,6 @@ public sealed class clsCandadoTransaccionalSql(clsCotiflyDbContext contexto) : I
         {
             await DeshacerAsync(transaccion);
             throw;
-        }
-    }
-
-    private async Task TomarCandadoAsync(IDbContextTransaction transaccion, string recurso, CancellationToken cancellationToken)
-    {
-        var conexion = contexto.Database.GetDbConnection();
-        await using var comando = conexion.CreateCommand();
-        comando.Transaction = transaccion.GetDbTransaction();
-        comando.CommandType = CommandType.StoredProcedure;
-        comando.CommandText = "sp_getapplock";
-        comando.CommandTimeout = (int)EsperaMaxima.TotalSeconds + 15;
-        comando.Parameters.Add(new SqlParameter("@Resource", SqlDbType.NVarChar, LargoMaximoRecurso) { Value = recurso });
-        comando.Parameters.Add(new SqlParameter("@LockMode", SqlDbType.VarChar, 32) { Value = "Exclusive" });
-        comando.Parameters.Add(new SqlParameter("@LockOwner", SqlDbType.VarChar, 32) { Value = "Transaction" });
-        comando.Parameters.Add(new SqlParameter("@LockTimeout", SqlDbType.Int) { Value = (int)EsperaMaxima.TotalMilliseconds });
-        var retorno = new SqlParameter("@Retorno", SqlDbType.Int) { Direction = ParameterDirection.ReturnValue };
-        comando.Parameters.Add(retorno);
-
-        await comando.ExecuteNonQueryAsync(cancellationToken);
-
-        // 0 = concedido; 1 = concedido tras esperar; negativo = tiempo agotado (-1), cancelado (-2), interbloqueo (-3) o error (-999).
-        if (retorno.Value is not int codigo || codigo < 0)
-        {
-            throw new TimeoutException($"No se obtuvo el candado '{recurso}' (sp_getapplock devolvió {retorno.Value}).");
         }
     }
 

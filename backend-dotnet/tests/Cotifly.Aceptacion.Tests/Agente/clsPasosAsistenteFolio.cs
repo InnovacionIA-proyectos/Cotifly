@@ -295,7 +295,7 @@ public sealed partial class clsPasosAsistenteFolio(clsContextoWeb web, clsPasosC
     }
 
     private static void Proponer(clsChatClientGuionizado modelo) =>
-        modelo.Responder(TextoPropuesta).ResponderFinal(TextoPropuesta, "confirmacion_requerida", true);
+        modelo.Proponer(TextoPropuesta);
 
     private async Task ChatAsync(string alias, string cuerpo)
     {

@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Cotifly.Aplicacion.Agente.Exceptions;
 using Cotifly.Aplicacion.Comun;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,12 @@ public sealed class clsChatClientConRespaldo : IChatClient
             {
                 _logger.LogWarning("Proveedor de IA {Indice} falló ({Tipo}, estado {Estado}); se prueba el respaldo {Siguiente}.", i, ex.GetType().Name, Estado(ex)?.ToString() ?? "sin estado", i + 1);
             }
+            catch (Exception ex) when (EsRecuperable(ex, cancellationToken) && Estado(ex) != 429)
+            {
+                // HU-013.16 (#126): fallaron todos por indisponibilidad (no por cuota): el chat responde IA_NO_DISPONIBLE.
+                _logger.LogWarning("Ningún proveedor de IA respondió: el último falló ({Tipo}, estado {Estado}).", ex.GetType().Name, Estado(ex)?.ToString() ?? "sin estado");
+                throw new clsIaNoDisponibleException($"Fallaron los {_clientes.Count} proveedores de IA configurados.", ex);
+            }
         }
     }
 
@@ -86,7 +93,9 @@ public sealed class clsChatClientConRespaldo : IChatClient
 
         if (Estado(error) is { } estado)
         {
-            return estado == 429 || estado >= 500 || (estado == 400 && SinCredenciales(error));
+            // HU-013.16 (#126): también un 404 (ruta o modelo inexistente; el gateway caído respondía el 404 de Traefik) y un 408. Un
+            // 400 de contenido no: el siguiente modelo recibiría la misma petición inválida.
+            return estado is 404 or 408 or 429 || estado >= 500 || (estado == 400 && SinCredenciales(error));
         }
 
         return error is HttpRequestException or TimeoutException or TaskCanceledException

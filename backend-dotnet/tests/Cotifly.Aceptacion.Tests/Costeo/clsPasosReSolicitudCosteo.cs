@@ -301,7 +301,25 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         costeo.Nexo.UltimaAlta!["notas"]!.GetValue<string>().Should()
             .EndWith($"Re-solicitud de {costeo.Folio(cotizacion)}; reemplaza la solicitud {_costeoIdLeido}.");
 
-    private string FolioNuevo => _folioNuevo ?? throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
+    // HU-013.15 (#124): conexos que la re-solicitud descarta (solo nombres) y nunca se vuelven a agregar en Nexo por su cuenta.
+    [Then("la respuesta avisa que se descartan los servicios conexos {string}")]
+    public void EntoncesSeDescartanLosConexos(string nombres)
+    {
+        var descartados = web.UltimoJson().GetProperty("conexos_descartados").EnumerateArray().Select(c => c.GetString()).ToList();
+        descartados.Should().Equal(nombres.Split(", "));
+        web.UltimoJson().GetProperty("conexos_descartados").GetRawText().Should().NotContainAny(["costo", "precio"]);
+    }
+
+    [Then("la respuesta no descarta servicios conexos")]
+    public void EntoncesNoSeDescartanConexos() =>
+        web.UltimoJson().GetProperty("conexos_descartados").GetArrayLength().Should().Be(0);
+
+    [Then("Nexo no recibió ninguna petición para agregar conexos")]
+    public void EntoncesNingunConexoAgregado() =>
+        costeo.Nexo.Peticiones.Where(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/conexos", StringComparison.Ordinal))
+            .Should().BeEmpty("Cotifly no vuelve a agregar en Nexo los conexos descartados (ADR-018 §5)");
+
+    private string FolioNuevo => _folioNuevo ??throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
 
     private Task ReSolicitarAsync(string alias, string cotizacion, JsonObject cuerpo, string? ifMatch) =>
         web.EnviarAsync(HttpMethod.Post, Ruta(cotizacion), web.Sesion(alias).Access, cuerpo.ToJsonString(), ifMatch);

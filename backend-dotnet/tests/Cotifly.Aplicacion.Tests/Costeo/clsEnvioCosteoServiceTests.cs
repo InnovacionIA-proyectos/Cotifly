@@ -44,6 +44,7 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m, mapeoLineasNexo: "PuertoAInterior").Valor;
     private readonly List<string> _eventos = [];
+    private readonly clsOpcionesCosteoNexo _opciones = new();
     private clsCotizacion? _creada;
     private IReadOnlyList<clsCotizacionPosicion> _posiciones = [];
 
@@ -160,12 +161,68 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
-    public async Task SiNexoYaCosteoLaLineaQuedaEnAutocosteo()
+    public async Task SiNexoYaCosteoLaLineaSeLeeElCostoEnLaMismaPeticionYQuedaEnAutocosteoConPrecio()
+    {
+        // HU-013.14 (opción A de ADR-018 §17): "autocosteo" nunca sale sin precio_final.
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsSolicitudCreadaNexo("sol-2", 1, 1, 0, false));
+        _nexo.ConsultarCosteoAsync(_ana, "sol-2", Arg.Any<CancellationToken>()).Returns(FotoCosteada(2_050_000m));
+        _unidad.GuardarCambiosSiVersionAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        cotizacion.PrecioFinal.Should().Be(2_500_000m, "2.050.000 / (1 - 0,18) con el margen de SAP TM");
+        cotizacion.CotizacionNexoId.Should().Be("COT-9");
+        cotizacion.CosteoSiguienteConsultaAt.Should().NotBeNull("en autocosteo el polling sigue hasta la entrega");
+        cotizacion.VersionNegocio.Should().Be(1, "el precio es un cambio de negocio");
+        await _unidad.Received(1).GuardarCambiosSiVersionAsync(cotizacion.Id, 0, Arg.Any<CancellationToken>());
+        _eventos.Should().Contain("guardar:pendiente_costeo", "el costeoId se guarda antes de leer el costo");
+    }
+
+    [Fact]
+    public async Task SiLaLecturaInmediataFallaQuedaEnPendienteCosteoSinPrometerPrecio()
     {
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsSolicitudCreadaNexo("sol-2", 1, 1, 0, false));
+        _nexo.ConsultarCosteoAsync(_ana, "sol-2", Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "Nexo caído"));
 
-        (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "sin leer el costo no se dice autocosteo");
+        resultado.Valor.PrecioFinal.Should().BeNull();
+        resultado.Valor.CosteoSiguienteConsultaAt.Should().NotBeNull("el polling la completa");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
+    public async Task SiLaLecturaInmediataSuperaSuTiempoQuedaEnPendienteCosteoParaElPolling()
+    {
+        _opciones.LecturaInmediataSegundos = 1;
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsSolicitudCreadaNexo("sol-2", 1, 1, 0, false));
+        _nexo.ConsultarCosteoAsync(_ana, "sol-2", Arg.Any<CancellationToken>()).Returns(async ci =>
+        {
+            await Task.Delay(Timeout.Infinite, ci.Arg<CancellationToken>());
+            return clsResultado<clsCosteoConsultadoNexo>.Exito(FotoCosteada(2_050_000m));
+        });
+
+        var cronometro = System.Diagnostics.Stopwatch.StartNew();
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        cronometro.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "la lectura tiene su propio tiempo de espera corto");
+        resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        resultado.Valor.PrecioFinal.Should().BeNull();
+        resultado.Valor.CosteoSiguienteConsultaAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SinCosteoEnLaMismaPeticionNoSeConsultaANexoAntesDelPolling()
+    {
+        await Servicio().EnviarAsync(_ana, Entrada(), Ct);
+
+        await _nexo.DidNotReceiveWithAnyArgs().ConsultarCosteoAsync(default, default!, Ct);
     }
 
     [Theory]
@@ -579,5 +636,11 @@ public sealed class clsEnvioCosteoServiceTests
 
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
-        Options.Create(new clsOpcionesCosteoNexo()), NullLogger<clsEnvioCosteoService>.Instance);
+        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance,
+        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(
+            Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>())));
+
+    /// <summary>Foto de Nexo con la única línea costeada (borrador, como el auto-costeo de la Biblioteca).</summary>
+    private static clsCosteoConsultadoNexo FotoCosteada(decimal flete) =>
+        new("EnCosteo", ["L1"], new clsCotizacionNexo("COT-9", clsCotizacionNexo.EstadoBorrador, "SinDefinir", [new clsLineaCosteoNexo("L1", flete, null, null)], []));
 }

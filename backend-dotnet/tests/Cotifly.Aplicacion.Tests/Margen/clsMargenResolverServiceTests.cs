@@ -328,4 +328,39 @@ public sealed class clsMargenResolverServiceTests
         resultado.Error.Detalle.Should().Be(clsMargenResolverService.DetalleLineaInactiva);
         resultado.Error.Mensaje.Should().Contain("inactiva");
     }
+
+    // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
+    [Fact]
+    public async Task LasLineasActivasSonLasDeCotiflyOrdenadasSinLasInactivas()
+    {
+        _lineas.Single(l => l.LineaNegocio == "ITR").Desactivar();
+
+        var activas = await Resolver().LineasActivasAsync(Ct);
+
+        activas.Should().Equal("Almacenamiento", "Almacenamiento3PL", "Distribucion", "Exportacion", "Importacion", "Internacional", "Nacional");
+    }
+
+    [Theory]
+    [InlineData("Licitaciones")]
+    [InlineData(" licitaciónes ")]
+    public void LaLineaLicitacionesDeNexoEnUnaLicitacionExplicaQueLineaUsar(string linea)
+    {
+        var error = clsMargenResolverService.LineaDesconocida(linea, ["Importacion", "Nacional"], esLicitacion: true);
+
+        error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
+        error.Detalle.Should().Be(clsMargenResolverService.DetalleLineaDeNexo);
+        error.Mensaje.Should().StartWith("'Licitaciones' es una línea de negocio del catálogo de Nexo, no de Cotifly")
+            .And.EndWith("Usa una de estas: Importacion, Nacional.");
+        error.Datos!["lineas_validas"].Should().BeEquivalentTo(new[] { "Importacion", "Nacional" });
+    }
+
+    [Fact]
+    public void OtraLineaDesconocidaDiceQueNoExisteYQueLineasUsar()
+    {
+        var error = clsMargenResolverService.LineaDesconocida(" Marítima ", ["Nacional"]);
+
+        error.Detalle.Should().BeNull();
+        error.Mensaje.Should().Be("La línea de negocio 'Marítima' no existe en Cotifly. Usa una de estas: Nacional.");
+        clsMargenResolverService.LineaDesconocida("Licitaciones", ["Nacional"]).Detalle.Should().BeNull("fuera de una licitación no se explica la línea de Nexo");
+    }
 }

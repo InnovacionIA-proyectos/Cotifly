@@ -105,6 +105,55 @@ public sealed class clsExcelLicitacionTests : IDisposable
         analisis.Error.Codigo.Should().Be(esperado);
     }
 
+    // HU-013.15 (#124): el 503 (y cualquier error de Nexo) lleva en el detalle solo el código de Nexo, nunca su texto crudo.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, "SESION_INVALIDA")]
+    [InlineData(HttpStatusCode.Forbidden, "SIN_PERMISO_CABINA_FLETES")]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "PAYLOAD_TOO_LARGE")]
+    [InlineData(HttpStatusCode.Conflict, "OTRO_CODIGO")]
+    public async Task ElDetalleDeUnErrorDeNexoLlevaSoloSuCodigo(HttpStatusCode estado, string codigoNexo)
+    {
+        _nexo.AnalisisFalla = estado;
+        _nexo.CodigoAnalisisFalla = codigoNexo;
+
+        var analisis = await Analizador().AnalizarAsync(_usuarioId, "pliego.xlsx", [1], Ct);
+
+        analisis.Error.Detalle.Should().Be(codigoNexo);
+    }
+
+    // HU-013.15 (#124): las filas con datos de todas las hojas en una sola lectura, con los números de fila de Excel.
+    [Fact]
+    public void LasFilasDeDatosPorHojaTraenLasFilasDelExcelDeCadaHojaConEncabezado()
+    {
+        var porHoja = _lector.FilasDeDatosPorHoja(clsPliegoMuestra.Excel(3), Ct);
+
+        porHoja.Valor.Keys.Should().Equal(clsPliegoMuestra.Hoja);
+        porHoja.Valor[clsPliegoMuestra.Hoja].Should().Equal(4, 5, 7);
+        _lector.FilasDeDatosPorHoja([1, 2, 3], Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+    }
+
+    [Fact]
+    public void UnaHojaQueNoSePuedeUbicarNoQuitaLasFilasDelExcelDeLasDemas()
+    {
+        using var libro = new XLWorkbook(new MemoryStream(clsPliegoMuestra.Excel(3)));
+        var rota = libro.Worksheets.Add("Combinadas");
+        for (var r = 1; r <= clsLectorExcelLicitacionClosedXml.MaximoCombinadas + 1; r++)
+        {
+            rota.Cell(r, 1).Value = "x";
+            rota.Range(r, 1, r, 2).Merge();
+        }
+
+        using var memoria = new MemoryStream();
+        libro.SaveAs(memoria);
+
+        var porHoja = _lector.FilasDeDatosPorHoja(memoria.ToArray(), Ct);
+
+        _lector.FilasDeDatos(memoria.ToArray(), "Combinadas", Ct).Error.Codigo.Should().Be(clsCodigosError.ExcelInvalido);
+        porHoja.EsExitoso.Should().BeTrue("una hoja con demasiadas combinadas solo queda fuera");
+        porHoja.Valor.Keys.Should().Equal(clsPliegoMuestra.Hoja);
+        porHoja.Valor[clsPliegoMuestra.Hoja].Should().Equal(4, 5, 7);
+    }
+
     [Fact]
     public async Task SinNexoConfiguradoNoSeLlama()
     {

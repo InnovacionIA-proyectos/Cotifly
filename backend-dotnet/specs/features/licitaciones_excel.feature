@@ -136,3 +136,37 @@ Característica: Licitaciones desde Excel
       | BUENAVENTURA | BOGOTA, D.C. | 76109               | 11001                | 3S3           | CargaSeca |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
     Y la línea 1 que recibió Nexo trae los municipios 76109 y 11001 sin horas propias
+
+  # HU-013.15 (#124) — Numeración de filas: la que ve el comercial en su Excel (número de fila de la hoja, encabezado incluido). La
+  # `fila` de cada línea sigue siendo el índice (base 0) en hojas[h].filas; los mensajes nunca lo muestran. Hallazgo E2E: "La fila 3
+  # no existe (3 filas con datos)" con fila = 3 contaba desde 0 en el campo y desde 1 en el mensaje.
+  Escenario: El análisis trae el número de fila del Excel de cada fila del pliego
+    Dado que Nexo analiza el pliego de 3 filas de la hoja "Pliego 2026"
+    Cuando "ana" analiza el pliego de 3 filas
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "AnalisisExcel" del contrato
+    Y la hoja "Pliego 2026" del análisis trae las filas del Excel 4, 5 y 7
+
+  Escenario: Los errores de las filas usan la numeración del Excel del comercial
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas, la última sin peso y una línea de más
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae estos errores con la fila del Excel:
+      | linea | codigo          | fila_excel |
+      | 2     | PESO_REQUERIDO  | 7          |
+      | 3     | FILA_INVALIDA   |            |
+    Y el mensaje del error de la línea 3 es "La línea 4 apunta a una fila que no está en la hoja 'Pliego 2026': la hoja tiene 3 filas con datos (de la fila 4 a la 7 del Excel)."
+    Y Nexo no recibió ninguna solicitud
+
+  # HU-013.15 (#124) — "Licitaciones" existe en el catálogo de líneas de Nexo pero no es una línea de Cotifly (no da margen).
+  Escenario: La línea "Licitaciones" de Nexo se rechaza con un error que dice qué líneas usar
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas y la línea de negocio "Licitaciones"
+    Entonces la respuesta tiene el estado 400 con el código de negocio "MARGEN_LINEA_DESCONOCIDA"
+    Y el detalle del error tiene el motivo "LINEA_DE_NEXO"
+    Y el detalle del error trae la línea válida "Nacional"
+    Y Nexo no recibió ninguna solicitud
+
+  # HU-013.15 (#124) — El detalle de un error de Nexo lleva solo su código, nunca su texto crudo (como el resto de los endpoints).
+  Escenario: Si Nexo rechaza la sesión el análisis responde 503 solo con el código de Nexo
+    Dado que Nexo responde 401 con el código "SESION_INVALIDA" al análisis del Excel
+    Cuando "ana" analiza el pliego de 3 filas
+    Entonces la respuesta tiene el estado 503 con el código de negocio "COSTEO_NEXO_NO_DISPONIBLE"
+    Y el detalle del error tiene el motivo "SESION_INVALIDA"

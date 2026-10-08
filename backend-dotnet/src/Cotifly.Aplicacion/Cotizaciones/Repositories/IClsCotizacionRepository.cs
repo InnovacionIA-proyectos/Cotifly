@@ -75,6 +75,13 @@ public interface IClsCotizacionRepository
     /// </summary>
     Task<bool> ReclamarConsultaCosteoAsync(Guid cotizacionId, DateTimeOffset esperada, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reparación de HU-013.14 (ADR-018 §17): agenda para <paramref name="ahora"/> la relectura de las cotizaciones en <c>entregada</c>
+    /// con <c>costeoId</c>, sin <c>precioFinal</c>, sin PDF, sin <c>motivoEstadoCosteo</c> y sin agenda. Escribe de inmediato y
+    /// devuelve cuántas agendó (idempotente: una agendada ya no cumple el filtro).
+    /// </summary>
+    Task<int> ReprogramarEntregadasSinPrecioAsync(DateTimeOffset ahora, CancellationToken cancellationToken = default);
+
     /// <summary>Cotización por id, sin filtro de dueño (uso interno del polling de Nexo).</summary>
     Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default);
 

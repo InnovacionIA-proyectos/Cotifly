@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
@@ -12,6 +13,10 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <param name="LineaNegocio">Nombre de la línea (JOIN con <c>MargenesPolitica</c> por <c>lineaNegocioId</c>).</param>
 /// <param name="PdfUrl"><c>{Pdf:BaseUrl}/pdfs/{archivo}</c>, o <c>null</c> si la cotización no tiene PDF.</param>
 /// <param name="TrmAplicada">TRM con que se convirtió el precio a USD (HU-012.2); 0 en COP.</param>
+/// <param name="ConexosDescartados">
+/// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-013.15, #124): nombres de los servicios conexos del costeo anterior
+/// que la cotización resultante ya no tiene (sin montos). En el resto de respuestas es <c>null</c> y no se serializa.
+/// </param>
 public sealed record clsCotizacionResumen(
     Guid Id,
     string Folio,
@@ -31,7 +36,8 @@ public sealed record clsCotizacionResumen(
     string? MotivoRechazo,
     string? PdfUrl,
     DateTimeOffset? CreatedAt,
-    decimal TrmAplicada = 0m)
+    decimal TrmAplicada = 0m,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ConexosDescartados = null)
 {
     /// <summary>Resumen de una cotización con el nombre de su línea y la base pública de los PDF.</summary>
     public static clsCotizacionResumen Desde(clsCotizacion cotizacion, string? lineaNegocio, string? baseUrlPdf)
