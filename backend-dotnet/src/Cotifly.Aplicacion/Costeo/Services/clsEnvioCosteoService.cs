@@ -65,8 +65,11 @@ public interface IClsEnvioCosteoService
 /// <item>Crea la cotización con folio del servidor (ADR-011, con el NIT), el formulario y sus posiciones en <c>pendiente_envio</c>, y
 /// confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
-/// <item>Envía a Nexo y guarda el resultado: <c>pendiente_costeo</c>/<c>autocosteo</c> con <c>costeoId</c> y la primera consulta del
-/// polling, o <c>error_envio</c> con el motivo. Cada intento queda en la auditoría (<c>enviar_costeo_nexo</c>).</item>
+/// <item>Envía a Nexo y guarda el resultado: <c>pendiente_costeo</c> con <c>costeoId</c> y la primera consulta del polling, o
+/// <c>error_envio</c> con el motivo. Cada intento queda en la auditoría (<c>enviar_costeo_nexo</c>).</item>
+/// <item>Si Nexo costeó todas las líneas en la misma petición (<c>fletesCalculados</c>), lee el costeo enseguida y aplica el precio
+/// con la regla del polling (HU-013.14, ADR-018 §17): la respuesta sale en <c>autocosteo</c> CON <c>precio_final</c>. Si esa lectura
+/// falla, queda en <c>pendiente_costeo</c> y el polling la completa: <c>autocosteo</c> nunca se expone sin haber leído el costo.</item>
 /// </list>
 /// </remarks>
 public sealed class clsEnvioCosteoService(
@@ -83,7 +86,8 @@ public sealed class clsEnvioCosteoService(
     IClsAuditoriaService auditoria,
     IClsReloj reloj,
     IOptions<clsOpcionesCosteoNexo> opciones,
-    ILogger<clsEnvioCosteoService> logger) : IClsEnvioCosteoService
+    ILogger<clsEnvioCosteoService> logger,
+    IClsPrecioCosteoService precioCosteo) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
@@ -355,8 +359,9 @@ public sealed class clsEnvioCosteoService(
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {
+            // HU-013.14: siempre "pendiente_costeo" hasta leer el costo; si Nexo ya costeó, la lectura inmediata (abajo) la promueve.
             var creada = resultado.Valor;
-            cotizacion.RegistrarEnvioCosteo(creada.Id, creada.CosteoCompleto, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+            cotizacion.RegistrarEnvioCosteo(creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
 
             // Cada línea arranca con el estado de la cotización; el polling deriva después el de cada una (ADR-017).
             foreach (var linea in entidades)
@@ -374,6 +379,10 @@ public sealed class clsEnvioCosteoService(
         {
             logger.LogWarning("La cotización {Folio} quedó en error_envio: {Codigo}.", cotizacion.Folio, resultado.Error.Codigo);
         }
+        else if (resultado.Valor.CosteoCompleto)
+        {
+            await LeerCosteoInmediatoAsync(cotizacion, entidades, usuarioId);
+        }
 
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
@@ -388,6 +397,34 @@ public sealed class clsEnvioCosteoService(
             resultado.EsExitoso,
             (int)cronometro.ElapsedMilliseconds,
             cotizacion.ThreadId);
+    }
+
+    /// <summary>
+    /// Nexo costeó todas las líneas en el alta (HU-013.14, opción A de ADR-018 §17): lee el costeo y aplica el precio con la regla del
+    /// polling, ya con el <c>costeoId</c> guardado (si el proceso muere aquí, el polling la retoma). Guarda con la versión de negocio;
+    /// si la lectura falla o el polling ganó la carrera, la cotización queda como está guardada y el polling la completa.
+    /// </summary>
+    private async Task LeerCosteoInmediatoAsync(clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, Guid usuarioId)
+    {
+        var version = cotizacion.VersionNegocio;
+        var consulta = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, CancellationToken.None);
+        if (consulta.EsFallo)
+        {
+            logger.LogWarning("No se pudo leer el costeo inmediato de {Folio} ({Codigo}): queda en pendiente_costeo y la completa el polling.",
+                cotizacion.Folio, consulta.Error.Codigo);
+            return;
+        }
+
+        if (clsLecturaCosteo.AplicarFoto(cotizacion, lineas, consulta.Valor, reloj.AhoraUtc, opciones.Value, precioCosteo))
+        {
+            cotizacion.IncrementarVersionNegocio();
+        }
+
+        if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None))
+        {
+            logger.LogInformation("La cotización {Folio} cambió durante el costeo inmediato: la completa el polling.", cotizacion.Folio);
+            await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
+        }
     }
 
     private async Task<clsResultado<clsSolicitudCreadaNexo>> ResolverClienteYEnviarAsync(

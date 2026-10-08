@@ -50,6 +50,13 @@ public interface IClsPollingCosteoService
     /// foto de Nexo no cambia nada; un fallo de Nexo nunca lanza.
     /// </summary>
     Task<ResultadoConsultaCosteo> ProcesarAsync(clsConsultaCosteoPendiente pendiente, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reparación de HU-013.14 (ADR-018 §17): agenda una relectura de las cotizaciones que quedaron en <c>entregada</c> sin precio, sin
+    /// PDF, sin motivo y sin agenda (el resultado se registró antes de que Cotifly leyera el costeo). El worker la llama al arrancar;
+    /// es idempotente. Devuelve cuántas agendó.
+    /// </summary>
+    Task<int> ReprogramarEntregadasSinPrecioAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsPollingCosteoService"/>.</summary>
@@ -88,7 +95,9 @@ public sealed class clsPollingCosteoService(
             return ResultadoConsultaCosteo.NoReclamada;
         }
 
-        if (!cotizacion.SeConsultaEnNexo || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
+        // HU-013.14: una entregada sin precio (resultado registrado antes de leer el costeo) se lee una vez más aunque sea terminal.
+        var relectura = cotizacion.EntregadaSinPrecio;
+        if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
         {
             cotizacion.DetenerPollingCosteo();
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
@@ -97,7 +106,7 @@ public sealed class clsPollingCosteoService(
 
         var anterior = cotizacion.EstadoCosteo;
         var version = cotizacion.VersionNegocio;
-        if (clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
+        if (!relectura && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
         {
             var vencio = cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
@@ -146,7 +155,10 @@ public sealed class clsPollingCosteoService(
         if (consulta.EsFallo)
         {
             var fallos = cotizacion.CosteoConsultasFallidas + 1;
-            cotizacion.RegistrarFalloConsultaCosteo(ahora, clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
+            // La relectura de una entregada sin precio sigue con espaciado aunque haya pasado la edad máxima: termina cuando Nexo responde.
+            cotizacion.RegistrarFalloConsultaCosteo(ahora, relectura
+                ? ahora + clsAgendaPollingCosteo.Espera(ahora, enviadaAt, fallos, config)
+                : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             logger.LogWarning("Consulta del costeo en Nexo fallida para {Folio} ({Codigo}); fallos seguidos: {Fallos}.",
                 cotizacion.Folio, consulta.Error.Codigo, fallos);
@@ -160,15 +172,10 @@ public sealed class clsPollingCosteoService(
             return ResultadoConsultaCosteo.Error;
         }
 
-        var foto = consulta.Valor;
-        var estado = clsDerivacionEstadoCosteo.Derivar(foto);
-        var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado) ? null : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, 0, config);
-        var cambio = cotizacion.RegistrarConsultaCosteo(estado, foto.Cotizacion?.Id, ahora, siguiente);
-
-        // ADR-017: el estado, el costo y el precio se derivan también por línea (una licitación tiene N; HU-005.5, una).
+        // ADR-017: el estado, el costo y el precio se derivan también por línea (una licitación tiene N; HU-005.5, una). El precio se
+        // aplica aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
         var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        var precio = precioCosteo.Aplicar(cotizacion, lineas, foto, ahora);
-        cambio |= precio;
+        var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, lineas, consulta.Valor, ahora, config, precioCosteo);
         if (!await GuardarConVersionAsync(cotizacion, version, cambio))
         {
             // El precio se calculó con un margen que el comercial pudo cambiar entretanto: se descarta y se repite después.
@@ -182,6 +189,17 @@ public sealed class clsPollingCosteoService(
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;
+    }
+
+    public async Task<int> ReprogramarEntregadasSinPrecioAsync(CancellationToken cancellationToken = default)
+    {
+        var agendadas = await cotizaciones.ReprogramarEntregadasSinPrecioAsync(reloj.AhoraUtc, cancellationToken);
+        if (agendadas > 0)
+        {
+            logger.LogWarning("{Agendadas} cotizaciones entregadas sin precio quedaron agendadas para releer su costeo en Nexo (HU-013.14).", agendadas);
+        }
+
+        return agendadas;
     }
 
     /// <summary>

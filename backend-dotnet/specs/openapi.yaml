@@ -1000,8 +1000,14 @@ paths:
         Responde **201 aunque Nexo falle**: la cotización queda en `error_envio` con `motivo_estado_costeo`
         (tiempo agotado, rechazo 4xx con el código de Nexo, 5xx, red, cliente sin BP) y el comercial puede
         reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar` sin volver a llenar el formulario. Con
-        éxito queda en `pendiente_costeo` (o `autocosteo` si Nexo costeó la línea en la misma petición) y el polling
-        (HU-005.6) sigue su estado. `precio_final` es `null` hasta que el costeo pasa por el margen (HU-005.7).
+        éxito queda en `pendiente_costeo` y el polling (HU-005.6) sigue su estado. `precio_final` es `null` hasta que
+        el costeo pasa por el margen (HU-005.7).
+
+        **Costeo en la misma petición (HU-013.14, ADR-018 §17).** Si Nexo costea todas las líneas en el alta
+        (`fletesCalculados`), Cotifly lee el costo antes de responder y la cotización sale en `autocosteo` **con**
+        `precio_final`. Si esa lectura falla, sale en `pendiente_costeo` y el polling la completa. `autocosteo` nunca
+        sale sin precio, salvo que falte el margen, y entonces trae `motivo_estado_costeo`. Antes de HU-013.14 podía
+        salir `autocosteo` con `precio_final: null` hasta la primera consulta del polling. El enum no cambia.
 
         Es el ÚNICO camino para crear una cotización (ADR-018): el chat ya no crea cotizaciones.
 
@@ -1129,6 +1135,14 @@ paths:
         aunque estuviera en `autocosteo` o `pendiente_costeo`; es un estado válido. Desde su issue #171, Nexo exige que la
         cotización esté entregada y responde `COTIZACION_NO_ENTREGADA` si sigue en borrador (pendiente de confirmar con
         el equipo de Nexo). Solo el dueño.
+
+        **Costeo no aplicado (HU-013.14, ADR-018 §17).** Si la cotización todavía no tiene `precio_final` (Nexo
+        entregó y Cotifly aún no lo había leído), después del 200 de Nexo Cotifly relee el costeo y guarda resultado,
+        `estado_costeo` y `precio_final` en la misma escritura: la respuesta ya trae el precio. Si esa relectura falla,
+        el resultado se registra igual (Nexo ya lo tiene), `estado_costeo` conserva su valor (nunca `entregada` sin
+        precio) y el polling aplica el precio en segundos: el frontend sigue consultando `GET .../costeo` mientras
+        `precio_final` sea `null`. En `pendiente_costeo`, Cotifly lee primero el costeo de Nexo: si Nexo ya tiene el
+        costo sigue igual; si no, 409 `COTIZACION_NO_ENTREGADA` sin pedirle el resultado a Nexo.
       security:
         - bearer: []
       parameters:
@@ -1160,8 +1174,9 @@ paths:
           $ref: '#/components/responses/NoEsTuya'
         '409':
           description: |
-            Sin cambio local. De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin llamar a Nexo si el
-            costeo no está en `autocosteo` ni `entregada`) y `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO`
+            Sin cambio local. De Nexo: `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA` (también sin pedirle el resultado
+            a Nexo si el costeo está en `pendiente_envio`, o en `pendiente_costeo` y Nexo todavía no tiene el costo) y
+            `SOLICITUD_NO_TRANSICIONABLE`. De Cotifly: `COSTEO_NO_LISTO`
             (chat, descartada o costeo vencido, que se marcan con `/seguimiento`; o todavía no enviada a Nexo)
           content:
             application/json:
@@ -2885,7 +2900,10 @@ components:
             reintentar); `pendiente_costeo` = alguna línea sin flete ("en costeo"); `autocosteo` = todas las líneas con
             flete y la cotización de Nexo en borrador; `entregada` = Nexo la entregó; `descartada` = Nexo descartó la
             solicitud; `costeo_vencido` = se agotó el tiempo máximo del polling sin costeo. "Costeado" = `autocosteo`
-            o `entregada` con `precio_final`.
+            o `entregada` con `precio_final`. Desde HU-013.14 (ADR-018 §17) `autocosteo` y `entregada` solo se exponen
+            cuando Cotifly ya leyó el costo de Nexo: sin `precio_final` significa que falta el margen (con
+            `motivo_estado_costeo`), no que el precio "va a llegar" (salvo filas de antes de HU-013.14 que el polling
+            repara al arrancar).
         motivo_estado_costeo:
           type: string
           nullable: true

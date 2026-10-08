@@ -256,6 +256,41 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **`GET /web/municipios` sigue respondiendo 400** con `MUNICIPIOS_NO_DISPONIBLE` (contrato vigente, el controlador lo fija). Conviene alinearlo a 503 como el resto de catálogos en una issue propia, junto con el frontend.
 - **Script `0008_horas_por_linea.sql`.** Horas de cargue y descargue por línea (G5). Orden de aplicación: 0006 → 0007 → 0008.
 
+### 17. Consistencia del costeo al entregar y al registrar el resultado (#123, HU-013.14)
+
+**Defecto (E2E del 2026-10-07, folio `PCN-9001234567-AP-07102026-004`).** El comercial marcó el resultado (`POST .../resultado`) cuando Nexo ya había entregado pero el polling aún no lo leía. El resultado pasaba `estado_costeo` a `entregada` (entrega implícita) y detenía el polling **sin leer el costo**. La cotización quedaba en `entregada`, con `precio_final` nulo para siempre, el PDF en 409 `COSTEO_NO_LISTO` y las métricas la contaban como ganada por 0. Además, el formulario respondía `autocosteo` con `precio_final: null` hasta la primera consulta del polling.
+
+**Regla: `autocosteo` y `entregada` solo se exponen después de que Cotifly leyó el costo de Nexo.** La lectura siempre aplica la misma regla del polling (`clsLecturaCosteo.AplicarFoto`): deriva el estado, guarda el id de la cotización de Nexo, agenda o detiene el polling y pone el precio con el margen guardado, también por línea.
+
+- **Resultado con el costeo no aplicado** (sin `precio_final` y sin PDF):
+  - Primero se escribe en Nexo, como antes.
+  - Si Nexo acepta, Cotifly **relee el costeo** y guarda el resultado, el estado y el precio **en una sola escritura** con `versionNegocio` (`GuardarCambiosSiVersionAsync`).
+  - Si la relectura falla, el resultado se registra igual, porque Nexo ya lo tiene. La cotización **conserva su estado de costeo** (nunca pasa a `entregada` sin haber leído el costo) y queda agendada para el polling en ese momento (`costeoSiguienteConsultaAt = ahora`), que aplica el precio en segundos.
+  - **Carrera con el polling:** si el polling guarda primero, el resultado recarga, encuentra el precio y no reaplica la foto. Si el resultado guarda primero, el polling pierde la versión y su siguiente lectura no cambia nada.
+  - Con el precio ya aplicado no se relee. La entrega implícita se mantiene: pasa a `entregada` y se detiene el polling.
+- **Resultado en `pendiente_costeo`.** El polling espacia sus consultas según la edad de la solicitud (hasta 15 min), así que Cotifly puede no haber visto todavía un costeo que Nexo ya completó o entregó. Antes de pedirle el resultado a Nexo, Cotifly lee el costeo:
+  - si Nexo ya tiene el costo, sigue la regla anterior;
+  - si no lo tiene, responde 409 `COTIZACION_NO_ENTREGADA` sin llamar al POST del resultado;
+  - si Nexo no responde, 503 sin cambio local.
+
+  Antes respondía 409 sin preguntar. `pendiente_envio` sigue sin llamar a Nexo.
+- **El polling aplica el precio aunque ya haya resultado.** El resultado no congela el precio; solo lo congela el PDF (§11).
+- **Opción A para el formulario (elegida).** Si la respuesta del alta (`POST /api/captura-solicitudes`) trae todas las líneas con flete (`fletesCalculados`, `costeoCompleto`), Cotifly lee el costeo en la misma petición y responde `autocosteo` **con** `precio_final`. Antes guarda el `costeoId`: si el proceso muere, el polling la retoma. La lectura cuesta un `GET /api/solicitudes/{id}` y un "crear o recuperar" `POST /api/cotizaciones`, los mismos que haría el polling 5 s después. Si la lectura falla, o el polling ganó la versión, la cotización queda en `pendiente_costeo` y el polling la promueve.
+  - Se descartó la **opción B** (un estado intermedio nuevo, p. ej. `costeado_sin_precio`). Exigía un script para el `CHECK` de `estadoCosteo`, ampliar el enum del contrato y cambiar el frontend, y solo cubría el hueco de pocos segundos que la opción A cierra sin cambios.
+  - **Compatibilidad:** el enum no cambia. El formulario ya no devuelve `autocosteo` sin precio: devuelve `autocosteo` con precio o `pendiente_costeo`. Un frontend que consulta mientras el estado sea `pendiente_costeo` no cambia. `autocosteo` sin precio solo aparece si falta el margen, y entonces lleva `motivo_estado_costeo`.
+- **Reparación de las afectadas.** Al arrancar, el worker del polling agenda una relectura (`IClsPollingCosteoService.ReprogramarEntregadasSinPrecioAsync`) de las cotizaciones que cumplen todo esto: `entregada`, con `costeoId`, sin `precioFinal`, sin PDF, sin `motivoEstadoCosteo` y sin agenda. El polling lee una vez cada `entregada` sin precio (`clsCotizacion.EntregadaSinPrecio`), aunque haya pasado la edad máxima de 72 h. Si Nexo no responde, reintenta con el espaciado máximo hasta leerla. Después vuelve a ser terminal. Es idempotente: una ya leída tiene precio o un motivo (sin margen, líneas sin flete) y no se vuelve a agendar. No hay script de datos.
+- **Diagnóstico para el DBA (solo lectura):**
+
+  ```sql
+  SELECT c.folio, c.usuarioId, c.costeoId, c.cotizacionNexoId, c.ganada, c.marcadoAt, c.costeoEnviadoAt,
+         c.costeoUltimaConsultaAt, c.costeoSiguienteConsultaAt, c.motivoEstadoCosteo
+  FROM dbo_cotifly.Cotizaciones c
+  WHERE c.estadoCosteo = 'entregada' AND c.costeoId IS NOT NULL AND c.precioFinal IS NULL AND c.pdfPath IS NULL
+  ORDER BY c.marcadoAt DESC;
+  ```
+
+  Las filas con `motivoEstadoCosteo` nulo son las que repara el arranque. Las que tienen motivo se leyeron y no admiten precio (revisar el margen de la línea o las líneas sin flete con Nexo). Mientras una fila aparezca aquí, las métricas la cuentan sin valor: `valor_ganado_cop` queda subestimado.
+
 ## Alternativas consideradas
 
 - **Mantener el chat como cotizador con más validaciones:** el LLM seguiría decidiendo cuándo calcular y generar el PDF, y el chat no recoge el formulario ampliado de Nexo. Se descarta: la fuente de verdad es el formulario.

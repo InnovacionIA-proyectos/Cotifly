@@ -96,3 +96,35 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" marca el resultado de "C1" como "perdida" con el motivo "Precio alto" y el comentario "-"
     Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
     Y la cotización "C1" sigue sin resultado
+
+  # HU-013.14 (ADR-018 §17) — Consistencia del costeo al entregar y al registrar el resultado
+  Escenario: Si Nexo costea en la misma petición el formulario ya responde con el precio
+    Dado que Nexo costea la solicitud en la misma petición del alta
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el estado de costeo "autocosteo" con el precio final 3000000
+
+  Escenario: Marcar ganada cuando Nexo ya entregó pero Cotifly no lo ha leído aplica el precio en la misma operación
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y Nexo entrega la cotización de "C1"
+    Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el estado de costeo "entregada" con el precio final 3000000
+    Y Nexo registró la cotización de "C1" como "Ganada"
+    Y la cotización "C1" ya no se consulta en Nexo
+    Y las métricas de "ana" cuentan 1 ganada por un valor de 3000000
+
+  Escenario: Si la relectura falla el resultado se registra y el precio llega con el polling
+    Dado que Nexo no responde la consulta del costeo después de registrar el resultado
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y Nexo costea la solicitud de "C1" con un flete de 2550000
+    Y Nexo entrega la cotización de "C1"
+    Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el estado de costeo "pendiente_costeo" sin precio final
+    Y la cotización "C1" queda ganada "true" con el motivo "Mejor precio"
+    Cuando Nexo vuelve a responder la consulta del costeo
+    Y el polling consulta a Nexo
+    Entonces "Mis cotizaciones" de "ana" muestra "C1" en "entregada" con el precio final 3000000
+    Y la cotización "C1" ya no se consulta en Nexo

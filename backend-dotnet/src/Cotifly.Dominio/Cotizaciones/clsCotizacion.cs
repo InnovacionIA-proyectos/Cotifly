@@ -511,6 +511,21 @@ public sealed class clsCotizacion
         && EstadoCosteo is Cotizaciones.EstadoCosteo.PendienteCosteo or Cotizaciones.EstadoCosteo.Autocosteo;
 
     /// <summary>
+    /// ¿Quedó en <c>entregada</c> sin precio y sin PDF? (HU-013.14, ADR-018 §17.) Es el rastro del defecto del resultado registrado
+    /// antes de que Cotifly leyera el costeo: el polling la vuelve a leer una vez (aunque <c>entregada</c> sea terminal y aunque haya
+    /// pasado la edad máxima) para aplicarle el precio. Una entregada que se leyó y no tiene precio deja el motivo en
+    /// <see cref="MotivoEstadoCosteo"/> (sin margen, líneas sin flete...).
+    /// </summary>
+    public bool EntregadaSinPrecio =>
+        CosteoId is not null && EstadoCosteo == Cotizaciones.EstadoCosteo.Entregada && PrecioFinal is null && PdfPath is null;
+
+    /// <summary>
+    /// Agenda una relectura del costeo en Nexo para <paramref name="cuando"/> (HU-013.14): el resultado se registró pero el costeo no se
+    /// pudo leer en la misma operación, así que el polling la completa. No cambia el estado ni la versión de negocio.
+    /// </summary>
+    public void ProgramarRelecturaCosteo(DateTimeOffset cuando) => CosteoSiguienteConsultaAt = cuando;
+
+    /// <summary>
     /// Resultado de una consulta del polling (HU-005.6): el estado derivado, el id de la cotización de Nexo, la última consulta y la
     /// siguiente (<c>null</c> = no se consulta más). Reinicia los fallos seguidos. Devuelve <c>true</c> si el estado cambió.
     /// </summary>

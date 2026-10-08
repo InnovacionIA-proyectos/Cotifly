@@ -191,6 +191,42 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         (await Columna(cotizacion, "motivoRechazo")).Should().BeNull();
     }
 
+    // HU-013.14 (ADR-018 §17): consistencia del costeo al entregar y al registrar el resultado.
+    [Given("que Nexo costea la solicitud en la misma petición del alta")]
+    public void DadoQueNexoAutoCostea() => _nexo.AutoCostear = true;
+
+    [Given("que Nexo no responde la consulta del costeo después de registrar el resultado")]
+    public void DadoQueFallaLaRelectura() => _nexo.FallarConsultaTrasResultado = true;
+
+    [When("Nexo vuelve a responder la consulta del costeo")]
+    public void CuandoVuelveLaConsulta() => _nexo.FallarConsultaTrasResultado = false;
+
+    [Then("la respuesta trae el estado de costeo {string} con el precio final {int}")]
+    public void EntoncesLaRespuestaConPrecio(string estado, int precio)
+    {
+        var json = web.UltimoJson();
+        json.GetProperty("estado_costeo").GetString().Should().Be(estado);
+        json.GetProperty("precio_final").GetDecimal().Should().Be(precio);
+    }
+
+    [Then("la respuesta trae el estado de costeo {string} sin precio final")]
+    public void EntoncesLaRespuestaSinPrecio(string estado)
+    {
+        var json = web.UltimoJson();
+        json.GetProperty("estado_costeo").GetString().Should().Be(estado);
+        json.GetProperty("precio_final").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Then("las métricas de {string} cuentan {int} ganada por un valor de {int}")]
+    public async Task EntoncesLasMetricasCuentan(string alias, int ganadas, int valor)
+    {
+        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", web.Sesion(alias).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var indicadores = web.UltimoJson().GetProperty("indicadores");
+        indicadores.GetProperty("ganadas").GetInt32().Should().Be(ganadas);
+        indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(valor);
+    }
+
     /// <summary>Nexo falso del escenario (lo usan los pasos del polling y del resultado).</summary>
     public clsNexoFalso Nexo => _nexo;
 

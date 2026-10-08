@@ -101,6 +101,12 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto) : ICls
         return filas == 1;
     }
 
+    public Task<int> ReprogramarEntregadasSinPrecioAsync(DateTimeOffset ahora, CancellationToken cancellationToken = default) =>
+        contexto.Cotizaciones
+            .Where(c => c.EstadoCosteo == EstadoCosteo.Entregada && c.CosteoId != null && c.PrecioFinal == null && c.PdfPath == null
+                        && c.MotivoEstadoCosteo == null && c.CosteoSiguienteConsultaAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.CosteoSiguienteConsultaAt, (DateTimeOffset?)ahora), cancellationToken);
+
     public Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         contexto.Cotizaciones.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 

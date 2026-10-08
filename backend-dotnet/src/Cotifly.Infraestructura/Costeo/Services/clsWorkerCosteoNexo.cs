@@ -28,6 +28,8 @@ public sealed class clsWorkerCosteoNexo(
             return;
         }
 
+        await RepararEntregadasSinPrecioAsync(ambitos, logger, stoppingToken);
+
         using var temporizador = new PeriodicTimer(TimeSpan.FromSeconds(opciones.Value.IntervaloTickSegundos));
         do
         {
@@ -45,6 +47,29 @@ public sealed class clsWorkerCosteoNexo(
             }
         }
         while (await temporizador.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Reparación de HU-013.14 (ADR-018 §17), una vez al arrancar: agenda la relectura de las cotizaciones que quedaron en
+    /// <c>entregada</c> sin precio. Un fallo se anota y no impide el polling.
+    /// </summary>
+    public static async Task RepararEntregadasSinPrecioAsync(IServiceScopeFactory ambitos, ILogger logger, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ambitos);
+        ArgumentNullException.ThrowIfNull(logger);
+        try
+        {
+            await using var ambito = ambitos.CreateAsyncScope();
+            await ambito.ServiceProvider.GetRequiredService<IClsPollingCosteoService>().ReprogramarEntregadasSinPrecioAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "No se pudo agendar la relectura de las cotizaciones entregadas sin precio; el polling sigue.");
+        }
     }
 
     /// <summary>

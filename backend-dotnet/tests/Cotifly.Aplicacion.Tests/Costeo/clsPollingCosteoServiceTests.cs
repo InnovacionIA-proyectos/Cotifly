@@ -262,6 +262,62 @@ public sealed class clsPollingCosteoServiceTests
         usd.Costo.Should().Be(2_000_000m, "el costo sigue en pesos");
     }
 
+    // HU-013.14 (ADR-018 §17): el precio que llega después del resultado y la reparación de las entregadas sin precio.
+    [Fact]
+    public async Task ElPrecioQueLlegaDespuesDelResultadoSeAplicaAunqueYaEsteGanada()
+    {
+        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Autocosteo, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
+        NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Cambio);
+
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        _cotizacion.PrecioFinal.Should().Be(2_352_941m, "el resultado no congela el precio: solo el PDF");
+        _cotizacion.Ganada.Should().BeTrue();
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnaEntregadaSinPrecioSeReleeUnaVezAunquePasaraLaEdadMaximaYTomaElPrecio()
+    {
+        _cotizacion.RegistrarMargenCosteo(0.15m, 0.15m, Cotifly.Dominio.Margen.OrigenMargen.PoliticaLinea, "margen");
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _cotizacion.MarcarSeguimiento(true, null, _reloj.AhoraUtc);
+        _cotizacion.EntregadaSinPrecio.Should().BeTrue("así la dejaba el defecto de HU-013.14");
+        _reloj.Avanzar(TimeSpan.FromHours(100));
+        NexoResponde(Foto("Entregada", conFlete: true, estadoCotizacion: "Entregada"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Cambio);
+
+        _cotizacion.PrecioFinal.Should().Be(2_352_941m);
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+        _cotizacion.CosteoSiguienteConsultaAt.Should().BeNull("leída una vez, entregada vuelve a ser terminal");
+        _cotizacion.EntregadaSinPrecio.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SiLaRelecturaDeUnaEntregadaSinPrecioFallaSeReintentaAunquePasaraLaEdadMaxima()
+    {
+        _cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _reloj.AhoraUtc, _pendiente.SiguienteConsultaAt);
+        _reloj.Avanzar(TimeSpan.FromHours(100));
+        _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"));
+
+        (await Servicio().ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Error);
+
+        _cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddMinutes(15), "con el espaciado máximo, sin abandonarla");
+        _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada);
+    }
+
+    [Fact]
+    public async Task LaReparacionAgendaLasEntregadasSinPrecioConElRelojDeLaAplicacion()
+    {
+        _cotizaciones.ReprogramarEntregadasSinPrecioAsync(_reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(3);
+
+        (await Servicio().ReprogramarEntregadasSinPrecioAsync(Ct)).Should().Be(3);
+    }
+
     private void NexoResponde(clsCosteoConsultadoNexo foto) =>
         _nexo.ConsultarCosteoAsync(_ana, "SOL-1", Arg.Any<CancellationToken>()).Returns(foto);
 

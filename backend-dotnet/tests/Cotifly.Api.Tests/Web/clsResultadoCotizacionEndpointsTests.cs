@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
@@ -118,6 +119,118 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(respuesta, "USAR_RESULTADO_NEXO");
         (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("null");
+    }
+
+    // HU-013.14 (ADR-018 §17): el resultado y el costeo nunca quedan inconsistentes, gane quien gane la carrera con el polling.
+    [Fact]
+    public async Task EntregadaEnNexoSinLeerYLuegoGanadaQuedaConPrecioPdfYMetrica()
+    {
+        var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
+        _nexo.Costear(solicitud, 2_550_000m);
+        _nexo.Entregar(solicitud);
+        (await EscalarAsync($"SELECT estadoCosteo FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("pendiente_costeo", "el polling aún no lo vio");
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+
+        json.GetProperty("ganada").GetBoolean().Should().BeTrue();
+        json.GetProperty("estado_costeo").GetString().Should().Be("entregada");
+        json.GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m, "se leyó y aplicó el costeo en la misma operación");
+        _nexo.Resultado(solicitud).Should().Be("Ganada");
+        (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|1|3000000|sin-agenda");
+
+        using var pdf = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
+        pdf.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(pdf, "PDF_YA_ENVIADO"); // regla del PDF (§11) con resultado; ya no COSTEO_NO_LISTO
+
+        using var metricas = await _api.EnviarAsync(HttpMethod.Get, "/web/metricas/comercial", sesion.Access);
+        var indicadores = (await VerificarContratoAsync(metricas, "/web/metricas/comercial", HttpMethod.Get, HttpStatusCode.OK)).GetProperty("indicadores");
+        indicadores.GetProperty("ganadas").GetInt32().Should().Be(1);
+        indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(3_000_000m, "la ganada cuenta con su precio, no en cero");
+    }
+
+    [Fact]
+    public async Task SiElPollingLeeLaEntregaPrimeroElResultadoConservaEsePrecioSinReleer()
+    {
+        var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
+        _nexo.Costear(solicitud, 2_550_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        var consultasAntes = Consultas(solicitud);
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"perdida","motivo":"Precio"}""");
+
+        (await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK)).GetProperty("precio_final").GetDecimal().Should().Be(3_000_000m);
+        Consultas(solicitud).Should().Be(consultasAntes, "con el precio ya aplicado no se relee el costeo");
+        (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|0|3000000|sin-agenda");
+    }
+
+    [Fact]
+    public async Task SiLaRelecturaFallaElPrecioLlegaConElPollingDespuesDelResultado()
+    {
+        var (sesion, folio, solicitud) = await EnviarSinPollingAsync();
+        _nexo.Costear(solicitud, 2_550_000m);
+        _nexo.Entregar(solicitud);
+        _nexo.FallarConsultaTrasResultado = true;
+
+        using var respuesta = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", sesion.Access, """{"resultado":"ganada"}""");
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+
+        json.GetProperty("ganada").GetBoolean().Should().BeTrue("Nexo ya tiene el resultado");
+        json.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo", "sin leer el costo no se marca entregada");
+        json.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
+        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
+            .Should().Be("agendada", "el polling la completa");
+
+        _nexo.FallarConsultaTrasResultado = false;
+        await _api.ProcesarPollingAsync(folio);
+
+        (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|1|3000000|sin-agenda", "el precio que llega después del resultado se aplica");
+    }
+
+    [Fact]
+    public async Task LasEntregadasQueQuedaronSinPrecioSeReparanConLaRelectura()
+    {
+        // Así quedaba una cotización con el defecto (antes de HU-013.14): entregada, ganada, sin precio y sin agenda.
+        var (_, folio, solicitud) = await EnviarSinPollingAsync();
+        _nexo.Costear(solicitud, 2_550_000m);
+        _nexo.Entregar(solicitud);
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.Cotizaciones SET estadoCosteo = 'entregada', ganada = 1, marcadoAt = SYSDATETIMEOFFSET(), costeoSiguienteConsultaAt = NULL, costeoEnviadoAt = DATEADD(HOUR, -100, SYSDATETIMEOFFSET()) WHERE folio = '{folio}'");
+        (await EscalarAsync(SqlDiagnosticoEntregadasSinPrecio + $" AND c.folio = '{folio}'")).Should().Be(folio, "la consulta de diagnóstico del DBA la encuentra");
+
+        await using (var ambito = _api.Factory.Services.CreateAsyncScope())
+        {
+            (await ambito.ServiceProvider.GetRequiredService<Aplicacion.Costeo.Services.IClsPollingCosteoService>().ReprogramarEntregadasSinPrecioAsync(Ct))
+                .Should().BeGreaterThanOrEqualTo(1);
+        }
+
+        await _api.ProcesarPollingAsync(folio);
+
+        (await EscalarAsync(SqlEstado(folio))).Should().Be("entregada|1|3000000|sin-agenda", "la relectura aplica el precio aunque pasó la edad máxima y ya tiene resultado");
+        (await EscalarAsync(SqlDiagnosticoEntregadasSinPrecio + $" AND c.folio = '{folio}'")).Should().BeNull();
+    }
+
+    /// <summary>La consulta de diagnóstico (solo lectura) documentada para el DBA en ADR-018 §17.</summary>
+    private const string SqlDiagnosticoEntregadasSinPrecio = """
+        SELECT c.folio FROM dbo_cotifly.Cotizaciones c
+        WHERE c.estadoCosteo = 'entregada' AND c.costeoId IS NOT NULL AND c.precioFinal IS NULL AND c.pdfPath IS NULL
+        """;
+
+    private static string SqlEstado(string folio) =>
+        "SELECT CONCAT(estadoCosteo, '|', CAST(ganada AS nvarchar(5)), '|', CAST(CAST(precioFinal AS bigint) AS nvarchar(30)), '|', "
+        + $"IIF(costeoSiguienteConsultaAt IS NULL, 'sin-agenda', 'agendada')) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'";
+
+    private int Consultas(string solicitud) =>
+        _nexo.Peticiones.Count(p => p.Metodo == HttpMethod.Get && p.Url.AbsolutePath.TrimEnd('/') == $"/api/solicitudes/{solicitud}");
+
+    /// <summary>Envía el formulario sin auto-costeo ni polling: queda en <c>pendiente_costeo</c>.</summary>
+    private async Task<(clsSesionPrueba Sesion, string Folio, string Solicitud)> EnviarSinPollingAsync()
+    {
+        var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, clsCosteoEndpointsTests.Formulario());
+        var json = await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+        return (sesion, json.GetProperty("folio").GetString()!, _nexo.SolicitudesCreadas[^1]);
     }
 
     private async Task<(clsSesionPrueba Sesion, string Folio, string Solicitud)> EnviarAsync(bool entregar)
