@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Cotifly.Aceptacion.Tests.Soporte;
+using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
 
 namespace Cotifly.Aceptacion.Tests.Web;
@@ -12,7 +13,9 @@ namespace Cotifly.Aceptacion.Tests.Web;
 /// </summary>
 public sealed class clsContextoWeb : IDisposable
 {
+    private readonly DateTimeOffset _horaBase = clsRelojFijable.HoraBase();
     private clsApiWebPruebas? _api;
+    private int _creadas;
 
     public clsApiWebPruebas Api => _api ?? throw new InvalidOperationException("Falta el paso 'Dado la API web de Cotifly'.");
 
@@ -37,6 +40,12 @@ public sealed class clsContextoWeb : IDisposable
 
     /// <summary>Encabezado <c>Location</c> de la última respuesta (201 de la versión nueva, HU-013.4), o <c>null</c>.</summary>
     public string? UltimaUbicacion { get; private set; }
+
+    /// <summary>
+    /// <c>createdAt</c> explícito y creciente para las cotizaciones de los pasos "tiene la cotización web" (#117): una por minuto desde
+    /// <see cref="clsRelojFijable.HoraBase"/>, así "la más reciente primero" sigue el orden del <c>.feature</c> y no el del reloj real.
+    /// </summary>
+    public DateTimeOffset SiguienteHoraCreacion() => _horaBase.AddMinutes(_creadas++);
 
     public void Iniciar(bool correoHabilitado) => _api = new clsApiWebPruebas(clsEntornoAceptacion.BaseDatos, correoHabilitado);
 

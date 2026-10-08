@@ -13,8 +13,9 @@ public interface IClsCandadoTransaccional
     /// Abre una transacción en la unidad de trabajo del ámbito, toma el candado <paramref name="recurso"/> (espera hasta que
     /// se libere) y ejecuta <paramref name="operacion"/>, que puede guardar con <see cref="IClsUnitOfWork"/> dentro de la misma
     /// transacción. Confirma si el resultado es exitoso y deshace si es un fallo o si la operación lanza.
+    /// Si el candado no se obtiene en los intentos configurados, devuelve <c>SERVICIO_OCUPADO</c> sin haber ejecutado
+    /// <paramref name="operacion"/> (#125); la operación corre como mucho una vez.
     /// </summary>
-    /// <exception cref="TimeoutException">El candado no se obtuvo en el tiempo máximo de espera.</exception>
     Task<clsResultado<TValor>> EjecutarAsync<TValor>(
         string recurso,
         Func<CancellationToken, Task<clsResultado<TValor>>> operacion,

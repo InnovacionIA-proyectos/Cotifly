@@ -29,9 +29,11 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
     {
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var primera = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
-        await Task.Delay(20, Ct);
-        var segunda = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222");
+        // Horas explícitas (#117): el reloj del contenedor de pruebas llega a saltar hacia atrás, así que una espera real no
+        // garantiza que la segunda quede con un createdAt posterior.
+        var hora = clsRelojFijable.HoraBase();
+        var primera = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222", creadaEn: hora);
+        var segunda = await Api.CrearCotizacionAsync(ana.UsuarioId, "900111222", creadaEn: hora.AddMinutes(1));
         var ajena = await Api.CrearCotizacionAsync(luis.UsuarioId, "800333444");
 
         using var respuesta = await Api.EnviarAsync(_get, "/web/mis-cotizaciones", ana.Access);
