@@ -798,6 +798,27 @@ public sealed class clsEnvioCosteoService(
                 continue;
             }
 
+            // HU-009 (#139, B1): un margen de SAP TM fuera de [0, 60 %] no se aplica a ciegas: la ruta usa el de la política de su línea y
+            // el de SAP queda marcado como anómalo (visible en GET .../costeo con un aviso). Vale para la captura, la licitación, la
+            // re-solicitud y la versión nueva, que pasan todas por aquí.
+            if (resuelto.Salida.Anomalo && origen == OrigenMargen.SapTm && resuelto.MargenPolitica is { } margenPolitica)
+            {
+                logger.LogWarning(
+                    "SAP TM propuso un margen anómalo ({MargenSap}) para la ruta {Orden} de la cotización {Folio}: se aplica el de la política de la línea ({MargenPolitica}).",
+                    resuelto.Salida.Margen, ruta.Orden, cotizacion.Folio, margenPolitica);
+                if (ruta.TieneMargenNegociado)
+                {
+                    ruta.RefrescarMargenSugerido(margenPolitica, margenPolitica, OrigenMargen.PoliticaLinea);
+                }
+                else
+                {
+                    ruta.RegistrarMargenCosteo(margenPolitica, margenPolitica, OrigenMargen.PoliticaLinea, resuelto.MetodoCalculo);
+                }
+
+                ruta.RegistrarMargenSapAnomalo(resuelto.Salida.Margen);
+                continue;
+            }
+
             // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
             // sugerido se refresca con SAP TM o la política, como referencia.
             if (ruta.TieneMargenNegociado)

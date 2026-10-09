@@ -99,6 +99,7 @@ public sealed class clsApiWebPruebas : IDisposable
     /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
     /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
     /// (HU-021.5, #133), <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
+    /// Con <paramref name="servicios"/>, reemplazos adicionales de DI (por ejemplo, una fuente de margen SAP TM fija, #139).
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
@@ -107,7 +108,8 @@ public sealed class clsApiWebPruebas : IDisposable
         HttpMessageHandler? dolarApi = null,
         HttpMessageHandler? superfinanciera = null,
         Microsoft.Extensions.AI.IChatClient? modelo = null,
-        HttpMessageHandler? cubicador = null)
+        HttpMessageHandler? cubicador = null,
+        Action<IServiceCollection>? servicios = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
@@ -146,6 +148,8 @@ public sealed class clsApiWebPruebas : IDisposable
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => superfinanciera);
             }
+
+            servicios?.Invoke(s);
         }));
     }
 

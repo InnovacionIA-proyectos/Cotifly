@@ -11,6 +11,8 @@ Rutas relativas a `backend-dotnet/`. `(n)` = métodos `[Fact]`/`[Theory]` de la 
 | Base (`7b585bf`) ×2 | 0 warnings, 0 errores | 621 | 1202 | 23 | 1031 (+2 omitidas `sap`) | 424 | 353 | 3654 | 0 / 0 |
 | Final (con las pruebas nuevas) ×3 | `--no-incremental`, 0 warnings, 0 errores | 621 | 1202 | 23 | 1032 (+2 omitidas `sap`) | 427 | 353 | 3658 | 0 / 0 / 0 |
 
+Tras las correcciones B1, D9 (y la revisión de D4), corrida completa: build 0 warnings; 625 + 1203 + 23 + 1032 (+2 `sap`) + 429 + 353 = **3665 ejecutadas, 0 fallos**; cobertura Dominio 97,45 %, total 97,23 %.
+
 Sin inestabilidad: las tres corridas finales dan los mismos conteos y ningún fallo intermitente.
 
 ### 1.1 Cobertura (corrida final 1, unitarias + integración + BDD unidas)
@@ -37,23 +39,23 @@ Sin inestabilidad: las tres corridas finales dan los mismos conteos y ningún fa
 | 5 | Envío a Nexo por camión | `clsEnvioCosteoService`, `clsCosteoNexo` | Sí | Sí | Sí | **Verde** | — |
 | 6 | Polling y emparejamiento | `clsPollingCosteoService`, `clsEmparejadorLineasNexo`, `clsWorkerCosteoNexo` | Sí | Sí | Sí | **Verde** | Mesa borra/cambia vehículo solo en unitarias |
 | 7 | Estados agregados camión → ruta → cabecera | `clsResumenEstadoCosteo`, `clsLineaSolicitud`, `clsCotizacionSolicitud` | Sí | Sí (nuevo) | Parcial | **Con huecos** | Prioridades y "NULL mezclado" solo unitarias; sin BDD de ruta mixta |
-| 8 | Margen por ruta y política SAP | `PUT .../costeo/margen` · `clsAjusteMargenCosteoService`, `clsMargenResolverService` | Sí | Sí | Sí | **Rojo** | **Bug B1**: el margen SAP anómalo se aplica sin marca (ver §5) |
+| 8 | Margen por ruta y política SAP | `PUT .../costeo/margen` · `clsAjusteMargenCosteoService`, `clsMargenResolverService` | Sí | Sí (+1 nuevo) | Sí | **Verde** | B1 corregido: un margen SAP anómalo usa la política y queda avisado (§6) |
 | 9 | Conexos (CRUD y envío diferido) | `GET /web/servicios-conexos`, `POST/PUT .../servicios-conexos` · `clsServiciosConexosCosteoService`, `clsEnvioConexosNexoService` | Sí | Sí | Sí | **Con huecos** | `clsEnvioConexosNexoService` sin unitarias; `envio_conexos_nexo.feature` con 1 escenario |
 | 10 | Levante | `clsLineaSolicitud`, `clsVehiculoLineaSolicitud.CopiarLevante` | Sí | Sí (nuevo) | No | **Con huecos** | Sin BDD; `CambiarValorLevante` sin endpoint |
 | 11 | TRM USD | `clsFijacionMonedaService`, `clsProveedorTrm*` | Sí | Sí | Sí | **Verde** | — |
 | 12 | PDF de una ruta, pliego y Excel | `POST .../costeo/pdf`, `GET /pdfs/{archivo}`, `GET /web/licitaciones/{folio}/excel` | Sí | Sí (+1 nuevo) | Sí | **Con huecos** | `pdf.feature` usa la vía vieja `IClsGenerarPdfService`; sin BDD de "una ruta, dos camiones" |
 | 13 | Textos IA sin montos | `POST .../costeo/textos/redactar`, `PUT .../costeo/textos` · `clsTextosCosteoService`, `clsRedactorCotizacionLlm` | Sí | Parcial | Sí | **Con huecos** | Endpoints `/costeo/textos*` sin prueba en Api.Tests |
 | 14 | Asistente que propone y confirma | `POST /web/chat` (folio) · `clsAsistenteFolioRunner`, `clsHerramientasAsistenteFolio` | Sí | Sí | Sí | **Con huecos** | Carrera de turnos sin prueba HTTP; `proponer_re_solicitud` sin ruta (D9) |
-| 15 | Re-solicitud y `-vN` | `POST .../costeo/re-solicitar`, `GET /web/cotizaciones/{id}/nueva-version` | Sí | Sí | Sí | **Verde** | — |
+| 15 | Re-solicitud y `-vN` | `POST .../costeo/re-solicitar`, `GET /web/cotizaciones/{id}/nueva-version` | Sí | Sí | Sí | **Verde** | D9 corregido (mensaje y motivo `VARIAS_RUTAS`); cambios de carga con varias rutas siguen sin soporte |
 | 16 | "Mis cotizaciones" | `GET /web/mis-cotizaciones` · `clsMisCotizacionesService` | Sí | Sí | Sí | **Verde** | — |
-| 17 | `/resultado` y `/seguimiento` | `POST .../resultado`, `POST .../seguimiento` | Sí | Sí | Sí | **Con huecos** | El 409 de Nexo sí escribe local (D4) |
+| 17 | `/resultado` y `/seguimiento` | `POST .../resultado`, `POST .../seguimiento` | Sí | Sí | Sí | **Verde** | D4 revisado: el 409 sincroniza el resultado de Nexo, como manda ADR-018 |
 | 18 | Métricas | `GET /web/metricas/{comercial,regional,actividad,ajustes-margen}` | Sí | Sí | Sí | **Con huecos** | `actividad` y `ajustes-margen` en borrador, sin BDD |
 | 19 | Concurrencia | `clsConcurrenciaHttp`, `GuardarCambiosSiVersionAsync`, `clsCandadoTransaccionalSql` (`sp_getapplock`) | Sí | Sí | Sí | **Con huecos** | `PUT .../servicios-conexos` y `POST .../costeo/pdf` sin BDD de 428/409; idempotencia solo en memoria |
 | 20 | Health/ready (0009 y 0010) | `GET /health`, `/health/ready` · `clsBaseDatosHealthCheck` | Sí | Sí | No | **Con huecos** | "falta 0009/0010" sin prueba HTTP; sin feature |
 | 21 | Correo | `POST .../enviar`, `.../correo/vista-previa`, `GET /web/clientes/{nit}/destinatarios-previos` | Sí | Sí (+1 nuevo) | Sí | **Verde** | — |
 | 22 | Admin de líneas | `GET/PUT /web/admin/lineas-negocio` | Sí | Sí | Sí | **Verde** | Servicio sin clase de prueba dedicada |
 
-**Totales:** 8 verdes, 13 con huecos, 1 en rojo (22 funcionalidades). Todas las pruebas existentes pasan; el rojo es por una regla de negocio incumplida, no por una prueba fallida.
+**Totales:** 10 verdes, 12 con huecos, 0 en rojo (22 funcionalidades). En la primera revisión eran 8, 13 y 1: el rojo era B1 (margen SAP anómalo), corregido en esta rama; D4 resultó conforme a ADR-018.
 
 ## 3. Detalle por funcionalidad (reglas y pruebas representativas)
 
@@ -103,7 +105,7 @@ Sin inestabilidad: las tres corridas finales dan los mismos conteos y ningún fa
 - **Unit.:** `clsMargenResolverServiceTests.cs::UnMargenSapAtipicoSeMarcaAnomalo` (25), `clsAjusteMargenCosteoServiceTests.cs::ConTresRutasElAjusteDeLaRutaDosSoloRecalculaEsaRutaYRegistraLaRutaReal` (16).
 - **Integ.:** `clsMargenFuentesSapIntegracionTests.cs::ConODataCaidoElResolverUsaLaPoliticaSinRomperLaCotizacion` (7), `clsMargenCosteoEndpointsTests.cs` (8), **nuevo** `clsRegistrosBdFlujoCompletoTests` (fila de `MargenAjustes` con `lineaSolicitudId`, `margenPolitica`, `diferencia`, `motivo` y usuario).
 - **BDD:** `margen.feature` (14), `margen_conexos_por_ruta.feature` (5), `ajuste_margen_costeo.feature` (17).
-- **Rojo:** el flag `Anomalo` se calcula en el resolver pero el flujo de costeo lo descarta (bug B1).
+- **B1 corregido (#139):** un margen SAP fuera de [0, 60 %] ya no se aplica: la ruta usa el de la política (`politica_linea`), el de SAP queda en `margenSAPSugerido` como marca, no cuenta como sugerido para la justificación y `GET .../costeo` trae `margen_sap_anomalo = true` y `aviso_margen`. Pruebas: `clsMargenConexosPorRutaTests.cs::UnMargenSapAnomaloQuedaMarcadoPeroNoSeAplicaNiEsElSugerido`, `::UnMargenSapDentroDelRangoNoSeMarcaAnomalo` (3 casos), `clsMargenSapAnomaloEndpointsTests.cs::UnMargenSapDe75NoSeAplicaLaRutaUsaLaPoliticaYQuedaAvisadoTambienEnLaVersionNueva` (captura y `-v2`) y `::EnLaLicitacionCadaRutaConMargenSapAnomaloUsaLaPolitica`.
 
 ### 9. Conexos (CRUD y envío diferido)
 - **Reglas:** catálogo de activos sin costo; agregar crea en Nexo pegado al primer camión; If-Match e Idempotency-Key; conexos capturados se envían una vez tras la entrega, con tope de reintentos (decisión 10).
@@ -216,12 +218,12 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 | AjustarMargenRuta | Comercial | `clsAjusteMargenCosteoService.AjustarAsync` | ruta + `MargenAjustes.lineaSolicitudId`, `ajustar_margen_costeo` | `margen_conexos_por_ruta.feature`, `clsRegistrosBdFlujoCompletoTests` | OK |
 | AgregarConexo / CambiarQuitarConexo | Comercial | `clsServiciosConexosCosteoService.AgregarAsync`, `clsCosteoCotizacionService.SeleccionarServiciosConexosAsync` | `CotizacionServiciosConexos`, `agregar_servicios_conexos`/`cambiar_servicios_conexos` | `servicios_conexos_nexo.feature`, `clsConexosPorRutaServiceTests` | OK |
 | EnviarConexosDiferidos | Sistema | `clsEnvioConexosNexoService.EnviarPendientesAsync` | `conexos_envio_nexo` | `clsEnvioConexosNexoEndpointsTests` | OK |
-| ReSolicitarCosteo / CrearNuevaVersion | Comercial | `clsReSolicitudCosteoService.ReSolicitarAsync`, `clsCotizacionSolicitud.CrearVersion` | `-vN`, `costeo_nexo_re_solicitud` | `resolicitar_costeo.feature` | Desviación D9 |
+| ReSolicitarCosteo / CrearNuevaVersion | Comercial | `clsReSolicitudCosteoService.ReSolicitarAsync`, `clsCotizacionSolicitud.CrearVersion` | `-vN`, `costeo_nexo_re_solicitud` | `resolicitar_costeo.feature` | OK (D9 corregido; ver §5.4) |
 | GenerarPdf | Comercial | `clsCosteoCotizacionService.GenerarPdfAsync` | `pdfPath`, `generar_pdf_costeo` | `clsRegistrosBdFlujoCompletoTests` | OK |
 | RedactarTextos / EditarTextos | IA / Comercial | `clsTextosCosteoService.RedactarAsync`, `EditarAsync` | `textosCotizacion` | `redaccion_cotizacion.feature` | OK |
 | ProponerAccion / Confirmar | IA → Comercial | `clsHerramientasAsistenteFolio`; confirmar = endpoint determinista | `Sesiones`, `EventosConversacion` | `asistente_folio.feature` | OK |
 | EnviarCorreo | Comercial | `clsCorreoService.EnviarAsync` | `Correos`, `estadoEnvio`, `enviar_correo` | `correo.feature`, `clsRegistrosBdFlujoCompletoTests` | OK |
-| MarcarResultado / MarcarSeguimiento | Comercial | `clsResultadoCotizacionService.MarcarAsync`, `clsSeguimientoService.MarcarAsync` | `ganada`, `motivoRechazo`, `resultado_cotizacion_nexo` | `costeo_nexo.feature`, `web_cotizaciones.feature` | Desviación D4, D5 |
+| MarcarResultado / MarcarSeguimiento | Comercial | `clsResultadoCotizacionService.MarcarAsync`, `clsSeguimientoService.MarcarAsync` | `ganada`, `motivoRechazo`, `resultado_cotizacion_nexo` | `costeo_nexo.feature`, `web_cotizaciones.feature` | OK (D4 revisado); D5 por decisión |
 | EditarLineaNegocioAdmin | Gerente | `clsLineasNegocioAdminService.ActualizarAsync` | `MargenesPolitica`, `admin_actualizar_linea_negocio` | `admin_lineas_negocio.feature` | OK |
 | FijarTrm | Sistema | `clsFijacionMonedaService`, `clsCotizacionSolicitud` | `trmAplicada` | `moneda_trm.feature` | OK |
 | Login / Refresh / Logout | Comercial | `clsLoginClienteProService`, `clsRefreshTokenService`, `clsLogoutService` | `UsuariosWeb`, tokens, `login_clientepro`/`refresh_sesion`/`logout` | `login_clientepro.feature`, `refresh_logout.feature` | OK |
@@ -240,12 +242,12 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 | TotalesRecalculados (der.) | `RecalcularTotales`, `RecalcularPrecio` | totales de la ruta, `precioFinal`, `costeoListoAt` | `clsRegistrosBdFlujoCompletoTests` | OK |
 | CosteoCompleto (autocosteo/entregada) / CosteoVencido | `clsDerivacionEstadoCosteo.Derivar`, `VencerPollingCosteo` | `estadoCosteo`, `costeo_nexo_estado` | `clsDerivacionEstadoCosteoTests`, `costeo_nexo.feature` | OK |
 | MargenAjustado | `AplicarMargenNegociado` | `MargenAjustes` con la ruta | `clsRegistrosBdFlujoCompletoTests` | OK |
-| MargenSapAnomalo (HU-009) | `clsMargenResolverService` calcula `Anomalo` | **nada** | `clsMargenResolverServiceTests::UnMargenSapAtipicoSeMarcaAnomalo` (solo el resolver) | **Desviación D2** |
+| MargenSapAnomalo (HU-009) | `clsMargenResolverService` calcula `Anomalo`; `clsEnvioCosteoService.ResolverMargenAsync` aplica la política y `clsLineaSolicitud.RegistrarMargenSapAnomalo` deja la marca | `margenSAPSugerido` (valor de SAP), `origenMargen = politica_linea`; `margen_sap_anomalo` y `aviso_margen` en `GET .../costeo` | `clsMargenSapAnomaloEndpointsTests` | OK (D2 corregido) |
 | ConexosCambiados | `CambiarConexos`, `AjustarConexosRuta` | `CotizacionServiciosConexos` | `clsConexosPorRutaServiceTests` | OK |
 | PdfInvalidado / PdfGenerado | `clsReglaPdfCosteo.InvalidarPdf`, `AsignarPdf` | `pdfDesactualizado`, `CotizacionPdfsHistorial` / `pdfPath` | `ajuste_margen_costeo.feature`, `pdf.feature` | OK |
 | CotizacionEnviada / Reenviada | `RegistrarEnvio` | `estadoEnvio` | `correo.feature`, `clsRegistrosBdFlujoCompletoTests` | OK |
 | NuevaVersionCreada | `CrearVersion` | fila `-vN` | `resolicitar_costeo.feature` | OK |
-| ResultadoRegistrado | `MarcarSeguimiento` | `ganada`, `motivoRechazo` ("No aplica" al ganar) | `clsResultadoCotizacionServiceTests` | Desviación D4 |
+| ResultadoRegistrado | `MarcarSeguimiento` | `ganada`, `motivoRechazo` ("No aplica" al ganar) | `clsResultadoCotizacionServiceTests` | OK (D4 revisado) |
 | PerdidaSoloEnCotifly | `RegistrarPerdidaSinCosteo` | `ganada = 0`, `resultado_cotizacion_sin_costeo` | `costeo_nexo.feature` | Sin evento en el modelo (D15) |
 | VersionNegocioIncrementada (der.) | `IncrementarVersionNegocio` | `versionNegocio` (ETag) | `clsRegistrosBdFlujoCompletoTests` | OK |
 
@@ -261,8 +263,8 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 | Etapa final exige If-Match (428/409) | `[clsRequiereIfMatch]` en 6 endpoints | 4 features, `clsRegistrosBdFlujoCompletoTests` | OK |
 | La IA nunca recibe montos | `clsRedactorCotizacionLlm`, `clsHerramientasAsistenteFolio.RutasSinMontos` | `redaccion_cotizacion.feature`, `asistente_folio.feature` | OK |
 | SAP caído/sin dato → `politica_linea` | `clsMargenResolverService.cs:79-133` | `margen.feature` | OK |
-| Margen SAP fuera de [0, 60 %] → marcado anómalo | se calcula y se descarta (`clsEnvioCosteoService.cs:795-809`) | — | **D2** |
-| Resultado solo con 200 de Nexo; 409 no cambia nada local | `clsResultadoCotizacionService.cs:268-280` sincroniza el de Nexo | `::SiNexoYaTieneOtroResultadoSeGuardaElDeNexo...` | D4 |
+| Margen SAP fuera de [0, 60 %] → marcado anómalo y no se aplica a ciegas | `clsEnvioCosteoService.ResolverMargenAsync` (captura, licitación, re-solicitud y `-vN` pasan por ahí) | `clsMargenSapAnomaloEndpointsTests` | OK (D2 corregido) |
+| Resultado solo con 200 de Nexo; con 409 `RESULTADO_YA_DEFINIDO` se guarda el de Nexo (ADR-018:298) | `clsResultadoCotizacionService.cs:268-280` | `::SiNexoYaTieneOtroResultadoSeGuardaElDeNexo...` | OK (D4 revisado) |
 | Resultado rechazado en `pendiente_costeo` | solo la ganada; la perdida se registra local (HU-013.17) | `costeo_nexo.feature` | D5 |
 | `estadoEnvio` → `reenviada` en el segundo envío | `RegistrarEnvio` | `correo.feature` | OK |
 | `motivoRechazo` = "No aplica" al ganar (HU-021.13) | `clsCotizacionSolicitud.MarcarSeguimiento` | `clsResultadoCotizacionEndpointsTests`, E2E | OK |
@@ -277,17 +279,17 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 
 ### 5.4 Desviaciones por severidad
 
-**Alta (1)**
-- **D2 / B1. Margen SAP anómalo sin marca.** `src/Cotifly.Aplicacion/Margen/Services/clsMargenResolverService.cs:97-105` calcula `anomaloSap`, pero `src/Cotifly.Aplicacion/Costeo/Services/clsEnvioCosteoService.cs:795-809` solo usa `Salida.Margen` y `Salida.Origen`: un margen SAP de, por ejemplo, 75 % se aplica a la ruta como `sap_tm` sin aviso ni registro. Incumple HU-009 ("queda marcado explícitamente como anómalo"). Latente mientras SAP OData no esté activo.
+**Alta (1, corregida)**
+- **D2 / B1. Margen SAP anómalo sin marca — CORREGIDO en #139.** Antes, `clsEnvioCosteoService.ResolverMargenAsync` descartaba el `Anomalo` de `clsMargenResolverService.cs:97-105` y aplicaba, por ejemplo, un 75 % de SAP como `sap_tm`. La HU-009 pide que "quede marcado explícitamente como anómalo, para que el equipo lo revise antes de confiar en él" (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:1215-1218`) y `margen.feature` ("Un margen de SAP TM fuera de [0, 60 %] se marca anómalo"). Ahora la ruta usa el margen de la política de su línea, el de SAP queda en `margenSAPSugerido` como marca (sin columna nueva), no cuenta como sugerido para la justificación, y `GET .../costeo` trae `margen_sap_anomalo` y `aviso_margen` (`specs/openapi.yaml`, `RutaCosteo`). Vale en la captura, la licitación, la re-solicitud y la `-vN` (todas pasan por `ResolverMargenAsync`).
 
-**Media (7)**
-- **D3.** Cubicador caído: por defecto se usa el respaldo y la solicitud sí va a Nexo (`clsOpcionesCubicador.cs:38`, `RespaldoSiFalla = true`), contra HU-021.5. Decisión pendiente en ADR-019; el respaldo solo queda en el log.
-- **D4.** El 409 `RESULTADO_YA_DEFINIDO` sí escribe el resultado de Nexo en Cotifly (`clsResultadoCotizacionService.cs:276-280`), con `motivoRechazo = NULL` en una perdida; HU-005.14 dice "no actualizar nada local".
-- **D5.** Resultado en `pendiente_costeo`: HU-021.13 dice rechazar; el código consulta Nexo y admite la perdida local (HU-013.17).
-- **D6.** Sin `TrqType` para `DevolucionContenedor` (`db/seeder/02_sap_mapeo_trqtype.sql`): esa línea nunca usa SAP. Depende de negocio.
-- **D7.** El CHECK de `estadoEnvio` y los nombres del `0010` siguen pendientes en la base compartida: sin ellos `/health/ready` responde "falta 0010".
-- **D8.** Restos del chat (#105): `clsGenerarPdfService` → `RegistrarCotizacionChat` → `clsLineaSolicitud.DelChat` crean ruta y camión (apagado por `Pdf:PermitirCotizacionChat=false`); `IClsGenerarPdfService` e `IClsAjusteMargenService` sin llamadores; las pruebas encienden el flag y `auditoria.feature` (1, 2, 4) y `pdf.feature` prueban esa vía muerta.
-- **D9.** Re-solicitud con cambios de carga y varias rutas se rechaza con un mensaje de "licitación" (`clsReSolicitudCosteoService.cs:307-311`); `proponer_re_solicitud` no recibe ruta.
+**Media**
+- **D3. Cubicador caído → respaldo.** **Decisión vigente mientras no exista el cubicador real** (`RespaldoSiFalla = true`, ADR-019). No se toca.
+- **D4. 409 `RESULTADO_YA_DEFINIDO` — REVISADO, sin cambio.** El código no escribe lo que mandó el comercial: lee el resultado de Nexo y guarda ese, con `versionNegocio`, y responde el 409 con el de Nexo. Es exactamente lo que decide **ADR-018 (línea 298, "Resultado ya definido en Nexo")**, que deja a Nexo como fuente de verdad; la frase "ningún cambio local" de ADR-015:87 y de HU-005.14 quedó superada por ADR-018 (y `specs/openapi.yaml:1332` ya lo dice). Pendiente solo de documentación: alinear ADR-015:87.
+- **D5. Perdida antes del costeo solo en Cotifly.** **Decisión del usuario** ("perdida antes del costeo solo en Cotifly", HU-013.17). No se toca.
+- **D6. `TrqType` de `DevolucionContenedor`.** **Externo** (negocio/SAP, vía Nexo). No se toca.
+- **D7. 0010 y CHECK de `estadoEnvio` en la base compartida.** **Externo** (DBA). No se toca.
+- **D8. Restos del chat (#105).** **Va a #146.** No se toca.
+- **D9. Re-solicitud con cambios de carga y varias rutas — CORREGIDO (mensaje).** `datos_carga` trae una sola carga sin ruta, así que con varias rutas sigue sin soporte; el mensaje ya no dice "licitación" para un formulario: "La cotización X tiene N rutas: los cambios de carga solo aplican a una cotización de una ruta…", con `detalle.motivo = VARIAS_RUTAS` (`LICITACION` se conserva para las licitaciones). Pruebas: `clsReSolicitudCosteoServiceTests.cs::UnaLicitacionNoAdmiteCambiosDeCarga` (formulario de 2 rutas) y `::UnaLicitacionDeVariasRutasNoAdmiteCambiosDeCargaYElMotivoLoDice`. Queda abierto que `proponer_re_solicitud` del asistente no recibe ruta.
 
 **Baja (9)**
 - **D1.** Constantes de herramientas del plugin legado en `src/Cotifly.Aplicacion/Agente/DTOs/clsTurno.cs:61-69` y mapeo a `generar_pdf`/`registrar_ajuste_margen` en `clsReglasRespuestaAgente.cs:101-102`.
@@ -298,14 +300,14 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 - **D14.** HU-021.7 decía "sin `posiciones[]`"; se envían con un único camión (adaptación en ADR-019).
 - **D15.** Herramientas de auditoría sin evento en las HU: `descargar_pdf`, `conexos_pendientes_nexo`, `conexos_envio_nexo`, `resultado_cotizacion_sin_costeo`, `costeo_nexo_consulta`, `editar_textos_costeo`, `redactar_textos_costeo`.
 - **D16.** El escenario de HU-021 "las cotizaciones del agente de chat tienen ruta y camión" quedó obsoleto con #105.
-- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md:118` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`.
+- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md:118` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`. ADR-015:87 dice "ningún cambio local" ante `RESULTADO_YA_DEFINIDO`, superado por ADR-018:298.
 
 Verificado sin desviación: "No aplica" al ganar, decisión 6, decisión 8, `conexos_descartados` rehecho, retiro de Google Chat (`clsRetiroGoogleChatTests`), "Mis cotizaciones" tolera filas malas.
 
 ## 6. Bugs
 
-| Id | Severidad | Archivo:línea | Reproducción |
+| Id | Severidad | Archivo:línea | Estado |
 |---|---|---|---|
-| B1 | Alta | `src/Cotifly.Aplicacion/Costeo/Services/clsEnvioCosteoService.cs:795-809` (descarta `clsSalidaMargen.Anomalo` de `clsMargenResolverService.cs:97-105`) | Configurar `SapTm:Modo` con una fuente que devuelva 75 para el BP del cliente → `POST /web/solicitudes-costeo` → la ruta queda con `margenAplicado = 0.75`, `origenMargen = sap_tm` y ninguna marca de anómalo en BD, respuesta ni auditoría |
+| B1 | Alta | `src/Cotifly.Aplicacion/Costeo/Services/clsEnvioCosteoService.cs` (`ResolverMargenAsync`) descartaba `clsSalidaMargen.Anomalo` de `clsMargenResolverService.cs:97-105` | **Corregido en #139.** Reproducción original: SAP TM devuelve 75 para el BP → `POST /web/solicitudes-costeo` → la ruta quedaba con `margenAplicado = 0.75` y `sap_tm` sin marca. Hoy queda `0.15`, `politica_linea`, `margenSAPSugerido = 0.75`, `margen_sap_anomalo = true` y `aviso_margen` (`clsMargenSapAnomaloEndpointsTests`) |
 
 Comportamientos observados que **no** son bugs (quedan documentados por las pruebas nuevas): el PDF de pliego y el Excel exportado muestran la tarifa por viaje de cada ruta **sin conexos** (el conexo va aparte con su precio), mientras `precio_final_linea` y "Mis cotizaciones" sí los incluyen; el nombre del municipio guardado es el del catálogo de Nexo ("Bogotá, D.C."), no el digitado; un camión sin retorno de Nexo guarda `costoRetornoContenedor = 0`; sin redactar ni editar textos, `textosCotizacion` queda en `NULL`.
