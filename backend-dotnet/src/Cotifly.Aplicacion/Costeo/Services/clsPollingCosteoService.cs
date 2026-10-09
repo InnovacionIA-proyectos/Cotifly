@@ -68,7 +68,8 @@ public sealed class clsPollingCosteoService(
     IClsReloj reloj,
     IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsPollingCosteoService> logger,
-    IClsPrecioCosteoService precioCosteo) : IClsPollingCosteoService
+    IClsPrecioCosteoService precioCosteo,
+    IClsEnvioConexosNexoService? envioConexos = null) : IClsPollingCosteoService
 {
     /// <summary>Evento de auditoría de cada cambio de estado detectado (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaCambioEstado = "costeo_nexo_estado";
@@ -237,6 +238,20 @@ public sealed class clsPollingCosteoService(
         if (cambio)
         {
             await AuditarCambioAsync(cotizacion, anterior, (int)cronometro.ElapsedMilliseconds);
+        }
+
+        // Decisión 10 (HU-021.9): con la cotización de Nexo ya leída (y la línea del primer camión de cada ruta emparejada), los conexos
+        // de las rutas que todavía no están en Nexo se envían una sola vez. Un fallo no frena el costeo: queda en el log.
+        if (envioConexos is not null && consulta.Valor.Cotizacion is { } cotizacionNexo)
+        {
+            try
+            {
+                await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "No se pudieron enviar a Nexo los conexos de {Folio}: se reintenta en el siguiente ciclo.", cotizacion.Folio);
+            }
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;

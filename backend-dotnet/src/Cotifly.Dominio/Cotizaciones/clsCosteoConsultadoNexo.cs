@@ -258,6 +258,13 @@ public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, 
     /// ruta (decisión 3), así que esta línea dice de qué ruta es. <c>null</c> si Nexo no lo trae.
     /// </summary>
     public string? CotizacionLineaId { get; init; }
+
+    /// <summary>
+    /// Servicio del catálogo de Nexo (<c>servicioConexoId</c>): el mismo id que guarda Cotifly en
+    /// <see cref="clsServicioConexoRuta.IdServicioConexo"/> para los conexos capturados con la ruta. Con él se sabe si un conexo de Cotifly
+    /// ya está en la cotización de Nexo (decisión 10, HU-021.9). <c>null</c> si Nexo no lo trae.
+    /// </summary>
+    public string? ServicioConexoId { get; init; }
 }
 
 /// <summary>

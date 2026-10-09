@@ -347,7 +347,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     public void EntoncesNingunConexoAgregado() =>
         costeo.Nexo.Peticiones.Count(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/conexos", StringComparison.Ordinal))
             .Should().Be(costeo.ConexosAgregadosPorLaPrueba,
-                "Cotifly no vuelve a agregar en Nexo los conexos que conserva (HU-021.9, ADR-019): solo están los que agregó la prueba");
+                "la re-solicitud no agrega conexos en Nexo en el acto (los manda el envío diferido del polling, decisión 10): solo están los que agregó la prueba");
 
     private string FolioNuevo => _folioNuevo ??throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
 

@@ -34,9 +34,9 @@ Característica: Re-solicitar el costeo a Nexo
     Y la respuesta no descarta servicios conexos
 
   # HU-021.9 (#136; rehace el aviso de #124 con la decisión 3): los conexos son filas de la ruta en Cotifly y Cotifly es su fuente. La
-  # re-solicitud los CONSERVA (siguen en el precio de su ruta con el mismo costo) y los avisa (solo nombres); no los vuelve a agregar en
-  # Nexo (Nexo no tiene DELETE ni idempotencia en el POST de conexos). conexos_descartados queda vacío por compatibilidad.
-  Escenario: Re-solicitar en el mismo folio conserva los servicios conexos y no los vuelve a agregar en Nexo
+  # re-solicitud los CONSERVA (siguen en el precio de su ruta con el mismo costo) y los avisa (solo nombres); no los agrega en Nexo en
+  # el acto: los manda una vez el envío diferido del polling (decisión 10) cuando Nexo costee. conexos_descartados queda vacío.
+  Escenario: Re-solicitar en el mismo folio conserva los servicios conexos y no los agrega en Nexo en el acto
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
     Y que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente pidió actualizar el valor"

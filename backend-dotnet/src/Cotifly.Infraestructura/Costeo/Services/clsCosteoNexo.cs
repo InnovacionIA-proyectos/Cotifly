@@ -296,6 +296,7 @@ public sealed class clsCosteoNexo(
                     conexos.Add(new clsConexoNexo(conexoId, Texto(conexo, "nombre"), Texto(conexo, "categoria") ?? "logistico", Decimal(conexo, "cantidad") ?? 1m, valor)
                     {
                         CotizacionLineaId = Texto(conexo, "cotizacionLineaId"),
+                        ServicioConexoId = Texto(conexo, "servicioConexoId"),
                     });
                 }
             }

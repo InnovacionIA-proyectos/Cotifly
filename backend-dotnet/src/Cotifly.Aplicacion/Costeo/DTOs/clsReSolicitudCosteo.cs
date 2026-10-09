@@ -27,7 +27,7 @@ public sealed record clsReSolicitudCosteo(
 {
     /// <summary>
     /// HU-021.9 (#136): nombres de los servicios conexos que la cotización resultante conserva (en el mismo folio) o copió de la original
-    /// (en la <c>-vN</c>), sin montos. Siguen en el precio de su ruta; la cotización nueva de Nexo no los tiene. <c>null</c> en una
+    /// (en la <c>-vN</c>), sin montos. Siguen en el precio de su ruta; a la cotización nueva de Nexo los manda una vez el envío diferido (decisión 10). <c>null</c> en una
     /// respuesta guardada antes de #136 (se responde vacía).
     /// </summary>
     public IReadOnlyList<string>? ConexosConservados { get; init; }

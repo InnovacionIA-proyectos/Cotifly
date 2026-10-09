@@ -370,7 +370,7 @@ public sealed class clsCotizacionSolicitud
     /// que corresponde.
     /// </summary>
     public IReadOnlyList<(clsVehiculoLineaSolicitud Camion, clsLineaSolicitudCosteo Linea)> LineasNexo() =>
-        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Select(v => (v, r.ALineaNexo(v))))];
+        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Where(v => r.VehiculosQueCuentan.Contains(v)).Select(v => (v, r.ALineaNexo(v))))];
 
     // ------------------------------------------------------------------ Envío y polling (HU-005.5, HU-005.6)
 

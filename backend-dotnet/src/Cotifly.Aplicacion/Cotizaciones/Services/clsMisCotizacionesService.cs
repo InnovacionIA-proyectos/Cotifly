@@ -42,11 +42,11 @@ public sealed class clsMisCotizacionesService(
     public async Task<clsCotizacionResumen> ResumirAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        // HU-021: la línea de negocio de la ruta 1, o "Varias" si sus rutas tienen líneas distintas.
-        var lineas = cotizacion.Rutas.Select(r => r.LineaNegocioId).Distinct().ToList();
+        // HU-021: la línea de negocio de las rutas, o "Varias" si tienen líneas distintas (una ruta sin línea no cuenta, HU-021.9).
+        var lineas = cotizacion.Rutas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().ToList();
         var nombre = lineas.Count > 1
             ? clsCotizacionConLinea.Varias
-            : cotizacion.PrimeraRuta?.LineaNegocioId is { } id ? (await politicas.ObtenerPorIdAsync(id, cancellationToken))?.LineaNegocio : null;
+            : lineas.Count == 1 ? (await politicas.ObtenerPorIdAsync(lineas[0], cancellationToken))?.LineaNegocio : null;
         return clsCotizacionResumen.Desde(cotizacion, nombre, opcionesPdf.Value.BaseUrl);
     }
 }

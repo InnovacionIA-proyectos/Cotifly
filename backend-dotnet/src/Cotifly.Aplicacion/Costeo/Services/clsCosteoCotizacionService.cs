@@ -656,10 +656,14 @@ public sealed class clsCosteoCotizacionService(
                 };
             })
             .ToList();
+        // Cabecera del pliego: la línea común, o "Varias" si las rutas tienen líneas distintas (cada sección lleva la de su ruta).
+        var lineasDeRutas = lineasPorId is null
+            ? []
+            : rutas.Select(r => clsLineasNegocioRutas.DeRuta(r, lineasPorId)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         return new clsCotizacionPdfPayload
         {
             Cliente = cotizacion.ClienteNombre,
-            LineaNegocio = lineaNegocio,
+            LineaNegocio = lineaNegocio ?? (lineasDeRutas.Count > 1 ? Cotizaciones.DTOs.clsCotizacionConLinea.Varias : lineasDeRutas.FirstOrDefault()),
             MetodoCalculo = cotizacion.PrimeraRuta?.MetodoCalculo,
             Asunto = clsTextosEstandar.AsuntoLicitacion(null, rutas.Count),
             Secciones = secciones,
@@ -809,8 +813,12 @@ public sealed class clsCosteoCotizacionService(
         var conexos = ConexosConPrecio(cotizacion, ruta);
         if (ruta.PrecioFinalLinea is { } total && conexos.Count > 0)
         {
+            // Tolerancia por moneda (HU-021.9): cada precio se redondea a la unidad de su moneda (1 peso en COP, 0,01 en USD), así que la
+            // diferencia entre la ruta y transporte + conexos es a lo sumo media unidad por redondeo: (n + 1) / 2 unidades con n conexos,
+            // que nunca pasa de n unidades. Una tolerancia de 1 por conexo en USD dejaba pasar un dólar entero por conexo.
             var ajustado = total - conexos.Sum(c => c.Precio);
-            if (Math.Abs(ajustado - transporte) <= conexos.Count)
+            var unidad = Dominio.Precio.clsConversorMoneda.EsPesos(cotizacion.Moneda) ? 1m : 0.01m;
+            if (Math.Abs(ajustado - transporte) <= conexos.Count * unidad)
             {
                 return ajustado;
             }

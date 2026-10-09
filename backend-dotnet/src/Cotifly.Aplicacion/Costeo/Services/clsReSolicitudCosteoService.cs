@@ -91,6 +91,7 @@ public sealed class clsReSolicitudCosteoService(
     IClsAuditoriaRepository registroAuditoria,
     IClsAuditoriaService auditoria,
     IClsPlanificadorCamiones planificador,
+    IClsCostosConexosNexo costosConexos,
     ILogger<clsReSolicitudCosteoService> logger) : IClsReSolicitudCosteoService
 {
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>, contrato).</summary>
@@ -230,11 +231,11 @@ public sealed class clsReSolicitudCosteoService(
     /// Regla de los servicios conexos al re-solicitar (HU-021.9, #136; rehace el aviso de #124 con la decisión 3 del 2026-10-08). Los
     /// conexos son filas de la ruta en Cotifly, con el costo de Nexo como precio, y Cotifly es su fuente: el precio al cliente sale de
     /// Cotifly. Por eso NO se descartan: en el mismo folio la ruta los conserva (solo se olvidan los costos de los camiones) y la versión
-    /// <c>-vN</c> los copia a la ruta del mismo orden, con el mismo costo unitario y la misma cantidad. En Nexo:
+    /// <c>-vN</c> los copia a la ruta del mismo orden, con la misma cantidad y el costo unitario del catálogo de hoy. En Nexo:
     /// <list type="bullet">
-    /// <item>la captura nueva es otra solicitud (y otra cotización) de Nexo, que empieza sin conexos; Cotifly no los vuelve a agregar por
-    /// su cuenta (el <c>POST</c> de conexos de Nexo no es idempotente y Nexo no tiene DELETE: un re-agregado automático repetido o a medias
-    /// los duplicaría), igual que con los conexos capturados con la ruta (#132);</item>
+    /// <item>la captura nueva es otra solicitud (y otra cotización) de Nexo, que empieza sin conexos; no se agregan en el momento: el
+    /// envío diferido de la decisión 10 (<see cref="IClsEnvioConexosNexoService"/>) los manda UNA vez desde el polling, cuando Nexo costea
+    /// la línea del primer camión vigente de la ruta, con la protección contra duplicados del POST incierto;</item>
     /// <item>la cotización anterior de Nexo queda como estaba (con los conexos que se le agregaron): no se puede borrar nada en ella, y la
     /// nota de la captura nueva dice que la reemplaza.</item>
     /// </list>
@@ -310,7 +311,7 @@ public sealed class clsReSolicitudCosteoService(
                     + "cotización de una línea (crea la versión con nueva_version y sin datos_carga).", "LICITACION");
             }
 
-            var cambios = SinVehiculo(pedidos);
+            var cambios = clsEnvioCosteoService.SinVehiculo(pedidos, logger);
             var anterior = lineas[0];
             encabezado = cambios.Aplicar(encabezado);
             lineas = [cambios.Aplicar(anterior)];
@@ -341,25 +342,6 @@ public sealed class clsReSolicitudCosteoService(
         }
 
         return new clsReSolicitudValidada(encabezado, lineas, politica, replanificar);
-    }
-
-    /// <summary>
-    /// Decisión 7 de HU-021: el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de Nexo). Si
-    /// <c>datos_carga</c> los trae (cliente con el contrato anterior), se ignoran con un aviso en el log, igual que en la captura.
-    /// </summary>
-    private clsCambiosCarga SinVehiculo(clsCambiosCarga cambios)
-    {
-        if (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria))
-        {
-            return cambios;
-        }
-
-        logger.LogWarning(
-            "datos_carga trae tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).");
-        var presentes = new HashSet<string>(cambios.Presentes, StringComparer.Ordinal);
-        presentes.Remove(clsCambiosCarga.CampoTipoVehiculo);
-        presentes.Remove(clsCambiosCarga.CampoCarroceria);
-        return cambios with { Presentes = presentes, TipoVehiculo = null, Carroceria = null };
     }
 
     /// <summary>
@@ -502,6 +484,26 @@ public sealed class clsReSolicitudCosteoService(
             throw new InvalidOperationException($"La cotización {original.Folio} tiene {originales.Count} rutas y se validaron {validada.Lineas.Count}.");
         }
 
+        // HU-021.9: la -vN es una cotización nueva: el costo unitario de sus conexos se refresca con el catálogo de Nexo (con caché), igual
+        // que en la captura. Sin catálogo no se crea nada (503, antes de reservar). Un conexo que el catálogo ya no trae (inactivo, o
+        // guardado con el id de Nexo) conserva su costo y queda un aviso en el log.
+        var idsConexos = originales.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo)
+            .Where(id => Guid.TryParse(id, out _)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var catalogo = new Dictionary<string, clsCostoConexoNexo>(StringComparer.OrdinalIgnoreCase);
+        if (idsConexos.Count > 0)
+        {
+            var costos = await costosConexos.CostosAsync(usuarioId, idsConexos, cancellationToken);
+            if (costos.EsFallo)
+            {
+                return costos.Error;
+            }
+
+            foreach (var (id, costo) in costos.Valor)
+            {
+                catalogo[id] = costo;
+            }
+        }
+
         var rutas = new List<clsRutaCapturada>(originales.Count);
         var replanificadas = new List<int>();
         for (var i = 0; i < originales.Count; i++)
@@ -510,7 +512,17 @@ public sealed class clsReSolicitudCosteoService(
             var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
             var vigentes = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id).ToList();
             IReadOnlyList<clsCamionPlaneado> camiones;
-            if (validada.Replanificar || vigentes.Count == 0)
+            if ((validada.Replanificar || vigentes.Count == 0) && linea.Posiciones.Any(p => p.IdTipoMercancia is null || p.IdTipoMercancia == Guid.Empty))
+            {
+                // Ruta migrada (o capturada antes de #132) con mercancías sin tipo del catálogo del cubicador: el cubicador no las puede
+                // cubicar. Respaldo: un camión sin vehículo con el peso de la ruta (lo resuelve la Mesa de Costeo de Nexo) y un aviso.
+                logger.LogWarning(
+                    "La ruta {Ruta} de {Folio} tiene mercancías sin id_tipo_mercancia: la versión nueva lleva un camión sin vehículo (respaldo) en vez de planificarlos.",
+                    ruta.Orden, original.Folio);
+                camiones = [new clsCamionPlaneado(null, null, clsPlanificadorCamionSinVehiculo.PesoTotal(linea))];
+                replanificadas.Add(ruta.Orden);
+            }
+            else if (validada.Replanificar || vigentes.Count == 0)
             {
                 var plan = await planificador.PlanificarAsync(usuarioId, linea, cancellationToken);
                 if (plan.EsFallo)
@@ -532,8 +544,19 @@ public sealed class clsReSolicitudCosteoService(
                 camiones = [.. vigentes.Select(v => new clsCamionPlaneado(v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo))];
             }
 
-            IReadOnlyList<clsCambioConexo> conexos = [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
-                .Select(c => new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad))];
+            var conexos = new List<clsCambioConexo>();
+            foreach (var c in ruta.Conexos.OrderBy(x => x.CreatedAt).ThenBy(x => x.IdServicioConexo, StringComparer.Ordinal))
+            {
+                if (catalogo.TryGetValue(c.IdServicioConexo, out var costo) && costo.CostoUnitario >= 0m)
+                {
+                    conexos.Add(new clsCambioConexo(c.IdServicioConexo, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad));
+                    continue;
+                }
+
+                logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está activo en el catálogo de Nexo: la versión nueva conserva su costo.",
+                    c.IdServicioConexo, ruta.Orden, original.Folio);
+                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
+            }
             rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos));
         }
 

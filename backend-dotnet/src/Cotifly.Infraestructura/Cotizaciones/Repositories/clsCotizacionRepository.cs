@@ -68,6 +68,56 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         }
     }
 
+    public void RegistrarEnvioConexosNexo(clsEnvioConexosNexo envio)
+    {
+        ArgumentNullException.ThrowIfNull(envio);
+        var entrada = JsonSerializer.Serialize(new
+        {
+            folio = envio.Folio,
+            solicitud_nexo_id = envio.SolicitudNexoId,
+            linea_solicitud_id = envio.LineaSolicitudId,
+        });
+        var salida = JsonSerializer.Serialize(new { intento = envio.Intento, estado = envio.Estado, conexos = envio.Conexos, conexos_nexo_previos = envio.PreviosNexo });
+        var evento = clsEventoHerramienta.Registrar(clsEnvioConexosNexo.Herramienta, entrada, salida, envio.Estado != clsEnvioConexosNexo.Fallido, 0);
+        contexto.EventosHerramienta.Add(evento.Valor);
+    }
+
+    public async Task<IReadOnlyList<clsEnvioConexosNexo>> ListarEnviosConexosNexoAsync(
+        string folio, string solicitudNexoId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folio);
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);
+        var marcaFolio = $"\"folio\":{JsonSerializer.Serialize(folio.Trim())}";
+        var marcaSolicitud = $"\"solicitud_nexo_id\":{JsonSerializer.Serialize(solicitudNexoId.Trim())}";
+        var eventos = await contexto.EventosHerramienta.AsNoTracking()
+            .Where(e => e.Herramienta == clsEnvioConexosNexo.Herramienta && e.Input != null && e.Input.Contains(marcaFolio) && e.Input.Contains(marcaSolicitud))
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync(cancellationToken);
+        var envios = new List<clsEnvioConexosNexo>(eventos.Count);
+        foreach (var evento in eventos)
+        {
+            try
+            {
+                var ruta = JsonNode.Parse(evento.Input!)?["linea_solicitud_id"]?.GetValue<Guid>();
+                var salida = evento.OutputResumen is { } texto ? JsonNode.Parse(texto) : null;
+                var intento = salida?["intento"]?.GetValue<int>();
+                var estado = salida?["estado"]?.GetValue<string>();
+                var conexos = salida?["conexos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList();
+                var previos = salida?["conexos_nexo_previos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+                if (ruta is { } id && intento is { } numero && estado is not null && conexos is not null)
+                {
+                    envios.Add(new clsEnvioConexosNexo(folio.Trim(), solicitudNexoId.Trim(), id, numero, estado, conexos, previos));
+                }
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+            {
+                // Un registro ilegible no se usa (queda en la tabla para revisarlo).
+            }
+        }
+
+        return envios;
+    }
+
     public async Task<IReadOnlyList<clsCotizacionPdfHistorial>> ListarHistorialPdfAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>
         await contexto.CotizacionPdfsHistorial
             .Where(h => h.CotizacionId == cotizacionId)
@@ -242,10 +292,12 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
                 return new clsCotizacionConLinea(c, null);
             }
 
+            // Una ruta sin línea de negocio no cuenta para "Varias" (HU-021.9).
             var primera = suyas[0];
-            var linea = suyas.Select(r => r.LineaNegocioId).Distinct().Count() > 1
+            var conLinea = suyas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().ToList();
+            var linea = conLinea.Count > 1
                 ? clsCotizacionConLinea.Varias
-                : primera.LineaNegocioId is { } lineaId ? lineasNegocio.GetValueOrDefault(lineaId) : null;
+                : conLinea.Count == 1 ? lineasNegocio.GetValueOrDefault(conLinea[0]) : null;
             return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen);
         })];
     }

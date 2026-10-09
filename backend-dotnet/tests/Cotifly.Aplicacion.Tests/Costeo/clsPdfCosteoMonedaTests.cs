@@ -121,6 +121,44 @@ public sealed class clsPdfCosteoMonedaTests
     }
 
     /// <summary>
+    /// Corrección del validador de #136, por el camino real de <c>GenerarPdfAsync</c> (payload, validador, constructor): un pliego con rutas
+    /// de dos líneas de negocio sale con la cabecera "Varias" y cada sección con la línea de su ruta (antes: PDF_PAYLOAD_INVALIDO "Falta
+    /// 'linea_negocio'").
+    /// </summary>
+    [Fact]
+    public async Task UnPliegoConRutasDeLineasDistintasSaleConCadaSeccionEnSuLinea()
+    {
+        var pliego = Preparada(clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-900555111-AP-05102026-012", usuarioId: _ana));
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(pliego.RutasOrdenadas[1], 7);
+        clsCotizacionMuestra.ConVersionNegocio(pliego, Version);
+        Registrada(pliego);
+        _politicas.ObtenerPorIdAsync(7, Arg.Any<CancellationToken>()).Returns(clsMargenPolitica.Crear("Exportacion", 0.15m).Valor);
+
+        var resultado = await Servicio().GenerarPdfAsync(_ana, pliego.Folio, Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : string.Empty);
+        _documento!.Variante.Should().Be(VarianteDocumento.Pliego);
+        _documento.Secciones.Select(s => s.Titulo).Should().Equal("RUTA 1: PLIEGO DE TRANSPORTE IMPORTACION", "RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION");
+        clsCosteoCotizacionService.PayloadPliego(pliego, null, "COP", new Dictionary<int, string> { [3] = "Importacion", [7] = "Exportacion" })
+            .LineaNegocio.Should().Be("Varias");
+    }
+
+    /// <summary>Corrección del auditor de #136: en USD la tarifa absorbe a lo sumo 0,01 por conexo, no un dólar entero.</summary>
+    [Fact]
+    public void EnDolaresLaTarifaSoloAbsorbeElRedondeoDeUnCentavoPorConexo()
+    {
+        var cotizacion = EnDolares();
+        var ruta = cotizacion.PrimeraRuta!;
+        clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta).Should().Be(750m);
+
+        ruta.FijarPrecio(ruta.PrecioFinalLinea!.Value + 0.5m); // una ruta que no cuadra por medio dólar (p. ej. migrada)
+        clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta).Should().Be(750m, "0,50 USD no es redondeo: la tarifa es el transporte calculado");
+
+        ruta.FijarPrecio(ruta.PrecioFinalLinea!.Value - 0.49m);
+        clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta).Should().Be(750.01m, "un centavo sí es redondeo y la tarifa lo absorbe");
+    }
+
+    /// <summary>
     /// Costeada en USD con la TRM 4.000 fijada: flete 2.550.000 COP al 15 % (750,00 USD) y el conexo Cargue de 85.000 (25,00 USD) en la
     /// ruta (HU-021: el precio de la ruta, 775,00 USD, incluye el conexo).
     /// </summary>

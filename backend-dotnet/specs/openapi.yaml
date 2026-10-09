@@ -1494,11 +1494,13 @@ paths:
           en el mismo folio y se copia a la `-vN`.
         - **Servicios conexos (HU-021.9, #136; rehace el aviso de #124 con la decisión 3).** Los conexos son filas de la ruta en
           Cotifly (costo de Nexo como precio) y Cotifly es su fuente: en el mismo folio **se conservan** en su ruta y la `-vN` **los
-          copia** con el mismo costo unitario y cantidad; siguen en el precio. La respuesta (200 o 201) trae siempre
-          `conexos_conservados` con sus nombres (sin montos; `[]` si no había) y el resumen de la propuesta del asistente lo
-          dice antes de confirmar; `conexos_descartados` queda en `[]` (obsoleto). Cotifly **no** los vuelve a agregar en la
-          cotización nueva de Nexo (Nexo no tiene DELETE ni idempotencia en el POST de conexos: un re-agregado automático
-          repetido o a medias los duplicaría), y la cotización anterior de Nexo queda como estaba. Un `error_envio` por un rechazo
+          copia** con la misma cantidad y el costo unitario del catálogo de Nexo de hoy; siguen en el precio. La respuesta (200 o
+          201) trae siempre `conexos_conservados` con sus nombres (sin montos; `[]` si no había) y el resumen de la propuesta del
+          asistente lo dice antes de confirmar; `conexos_descartados` queda en `[]` (obsoleto). La re-solicitud no los agrega en
+          Nexo en el acto: el envío diferido (decisión 10) los manda UNA vez a la cotización nueva de Nexo cuando el polling ve
+          costeada la línea del primer camión vigente de la ruta (Nexo no tiene DELETE ni idempotencia en ese POST: un envío
+          incierto se relee y nunca se repite a ciegas). La cotización anterior de Nexo queda como estaba. Un camión descartado en
+          Nexo no se reenvía (mismo folio) ni se copia (`-vN`). Un `error_envio` por un rechazo
           definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
           Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
           (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
@@ -3167,9 +3169,10 @@ components:
           description: |
             HU-021.9 (#136; rehace el aviso de #124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí,
             `[]` si no había): nombres de los servicios conexos que la cotización resultante conserva (mismo folio) o copió de la
-            original (`-vN`), sin montos. Siguen en el precio de su ruta, con el mismo costo unitario y cantidad (Cotifly es la
-            fuente de los conexos). Cotifly no los vuelve a agregar en la cotización nueva de Nexo; el frontend los muestra
-            como aviso informativo.
+            original (`-vN`), sin montos. Siguen en el precio de su ruta con la misma cantidad (Cotifly es la fuente de los
+            conexos; la `-vN` toma el costo unitario del catálogo de Nexo de hoy). A la cotización nueva de Nexo los manda una
+            sola vez el envío diferido (decisión 10) cuando Nexo costea la línea del primer camión vigente de la ruta. El
+            frontend los muestra como aviso informativo.
 
     MisCotizaciones:
       type: object

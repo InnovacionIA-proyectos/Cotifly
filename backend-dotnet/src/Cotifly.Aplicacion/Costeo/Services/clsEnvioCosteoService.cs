@@ -248,6 +248,27 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
+    /// La misma regla (decisión 7) sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9): <c>tipo_vehiculo</c> y
+    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura para que #138 la cambie en un solo sitio.
+    /// </summary>
+    public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(cambios);
+        ArgumentNullException.ThrowIfNull(logger);
+        if (!cambios.Presentes.Contains(clsCambiosCarga.CampoTipoVehiculo) && !cambios.Presentes.Contains(clsCambiosCarga.CampoCarroceria))
+        {
+            return cambios;
+        }
+
+        logger.LogWarning(
+            "datos_carga trae tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).");
+        var presentes = new HashSet<string>(cambios.Presentes, StringComparer.Ordinal);
+        presentes.Remove(clsCambiosCarga.CampoTipoVehiculo);
+        presentes.Remove(clsCambiosCarga.CampoCarroceria);
+        return cambios with { Presentes = presentes, TipoVehiculo = null, Carroceria = null };
+    }
+
+    /// <summary>
     /// Validaciones de forma del formulario por rutas que no dependen de catálogos (HU-021.6), todas juntas: cliente, moneda, encabezado,
     /// número de rutas, línea de negocio de cada ruta (o la del encabezado) y los límites de Nexo de cada ruta
     /// (<see cref="clsLineaSolicitudCosteo.Errores"/>).
@@ -422,13 +443,14 @@ public sealed class clsEnvioCosteoService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
-        if (rutas.All(r => r.Vehiculos.Count <= 1))
+        // HU-021.9: solo los camiones que viajan (un descartado en Nexo no se reenvía).
+        if (rutas.All(r => r.VehiculosQueCuentan.Count <= 1))
         {
             return null;
         }
 
         var nota = "Cotifly: una línea por camión, en este orden. "
-            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.Vehiculos.Count} {(r.Vehiculos.Count == 1 ? "camión" : "camiones")}."));
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.VehiculosQueCuentan.Count} {(r.VehiculosQueCuentan.Count == 1 ? "camión" : "camiones")}."));
         return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
     }
 

@@ -424,8 +424,22 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
   log (decisión 7). TRM del día y margen negociado copiado por ruta, como antes.
 - **Aviso de conexos (rehace #124):** la respuesta trae `conexos_conservados` (nombres, sin montos) y `conexos_descartados`
   queda en `[]` (obsoleto, se retira con #138). La propuesta del asistente dice "Se conservan los servicios conexos «…» con su
-  costo y siguen en el precio." Cotifly no los vuelve a agregar en la cotización nueva de Nexo (sin DELETE ni idempotencia en
-  Nexo); la cotización anterior de Nexo queda como estaba.
+  costo y siguen en el precio." La re-solicitud no los agrega en Nexo en el acto: los manda el envío diferido (abajo). La
+  cotización anterior de Nexo queda como estaba.
+- **Correcciones del validador y el auditor:** en el mismo folio un camión `descartada` no se reenvía (`ReiniciarCosteo`,
+  `LineasNexo` y los estados de la solicitud solo tocan los camiones que cuentan); la `-vN` refresca el costo unitario de los
+  conexos con el catálogo de Nexo (`IClsCostosConexosNexo`); una ruta migrada con mercancías sin `id_tipo_mercancia` lleva el
+  respaldo de un camión sin vehículo en vez de pasar por el planificador; `SinVehiculo` de `datos_carga` vive en
+  `clsEnvioCosteoService`; el pliego con rutas de varias líneas lleva "Varias" en la cabecera y el validador del payload solo
+  exige `linea_negocio` en el PDF de una tarifa; la tarifa absorbe el redondeo por moneda (1 peso o 0,01 USD por conexo); una ruta
+  sin línea no cuenta para "Varias".
+- **Envío diferido de conexos (decisión 10 del usuario, `clsEnvioConexosNexoService`).** Al final de cada consulta del polling
+  que trae la cotización de Nexo, los conexos de cada ruta que Nexo todavía no muestra se envían UNA vez a la línea del primer
+  camión vigente, cuando esa línea ya está costeada. Cada paso queda en `EventosHerramienta` (`conexos_envio_nexo`: `en_curso`
+  antes del POST, luego `enviado`, `fallido` o `incierto`), atado a `solicitudNexoId`: una re-solicitud o `-vN` los vuelve a enviar
+  una vez a su cotización nueva. Un POST incierto se relee y nunca se repite a ciegas; un fallo se reintenta en el siguiente ciclo y
+  no frena el costeo. El precio en Cotifly sigue siendo el costo del catálogo; la lectura de #135 no reimporta un conexo cuyo
+  `servicioConexoId` ya está en la ruta. El reclamo del polling evita que dos réplicas envíen a la vez.
 - **`DatosNuevaVersion`** gana `rutas[]` (`RutaNuevaVersion`: orden, línea de negocio, origen, destino y margen de cada ruta);
   `linea_negocio` de primer nivel es la de la ruta 1 o `Varias`.
 

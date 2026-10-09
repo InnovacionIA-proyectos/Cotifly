@@ -38,9 +38,10 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
         // son los de la ruta 1 (o "Varias" si las rutas tienen líneas distintas) y el costo es el total.
         var ruta = origen.PrimeraRuta;
         var nombres = await clsLineasNegocioRutas.NombresAsync(origen, politicas, cancellationToken);
-        var lineaNegocio = origen.Rutas.Select(r => r.LineaNegocioId).Distinct().Count() > 1
+        // Una ruta sin línea de negocio no cuenta para "Varias".
+        var lineaNegocio = origen.Rutas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().Count() > 1
             ? clsCotizacionConLinea.Varias
-            : ruta is null ? null : clsLineasNegocioRutas.DeRuta(ruta, nombres);
+            : clsLineasNegocioRutas.Comun(origen, nombres);
 
         return new clsDatosNuevaVersion(
             origen.Id,

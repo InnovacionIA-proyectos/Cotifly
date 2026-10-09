@@ -91,7 +91,9 @@ public static class clsLecturaCosteo
         var conocidos = pendientes!.Previos
             .Concat(cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return (ruta, [.. nexo.Conexos.Where(c => !conocidos.Contains(c.Id))]);
+        // Decisión 10 (HU-021.9): un conexo que Cotifly envió por su cuenta tiene en Nexo otro id de fila, pero su servicioConexoId es el
+        // id que ya está en la ruta: tampoco se importa (no se duplica).
+        return (ruta, [.. nexo.Conexos.Where(c => !conocidos.Contains(c.Id) && (c.ServicioConexoId is null || !conocidos.Contains(c.ServicioConexoId)))]);
     }
 
     /// <summary>Motivo de una entregada leída sin precio y sin otra explicación (Nexo no trajo la cotización o sus fletes).</summary>

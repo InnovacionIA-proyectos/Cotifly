@@ -37,13 +37,14 @@ public static class clsLineasNegocioRutas
     }
 
     /// <summary>
-    /// La línea de negocio de TODA la solicitud: la de sus rutas si todas tienen la misma, o <c>null</c> si tienen varias (o ninguna).
-    /// Es la que imprime el PDF en el título y en el asunto estándar; con varias, cada sección del pliego lleva la de su ruta.
+    /// La línea de negocio de TODA la solicitud: la de sus rutas si todas las que tienen línea tienen la misma (una ruta sin línea no
+    /// cuenta), o <c>null</c> si tienen varias (o ninguna). Es la que imprime el PDF en el título y en el asunto estándar; con varias,
+    /// cada sección del pliego lleva la de su ruta.
     /// </summary>
     public static string? Comun(clsCotizacionSolicitud cotizacion, IReadOnlyDictionary<int, string> nombres)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var distintas = cotizacion.RutasOrdenadas.Select(r => DeRuta(r, nombres)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var distintas = cotizacion.RutasOrdenadas.Select(r => DeRuta(r, nombres)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         return distintas.Count == 1 ? distintas[0] : null;
     }
 
