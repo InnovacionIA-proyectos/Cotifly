@@ -216,6 +216,34 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         (await ColumnaFolioAsync(FolioNuevo, "tipoVehiculo")).Should().Be(vehiculo);
     }
 
+    // HU-021.9 (#136): con el peso cambiado los camiones se vuelven a planificar (hasta el cubicador, uno sin vehículo) y el
+    // tipo_vehiculo de datos_carga se ignora (decisión 7).
+    [Then("la versión nueva queda en el estado de costeo {string} con el peso {int} en un camión sin vehículo")]
+    public async Task EntoncesLaVersionNuevaSinVehiculo(string estado, int peso)
+    {
+        (await ColumnaFolioAsync(FolioNuevo, "estadoCosteo")).Should().Be(estado);
+        decimal.Parse((await ColumnaFolioAsync(FolioNuevo, "pesoKg"))!, CultureInfo.InvariantCulture).Should().Be(peso);
+        (await ColumnaFolioAsync(FolioNuevo, "tipoVehiculo")).Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+                "SELECT COUNT(*) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+                + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{FolioNuevo}'"))
+            .Should().Be(1);
+    }
+
+    [Then("la ruta 1 de {string} conserva el conexo {string}")]
+    public async Task EntoncesLaRutaConservaElConexo(string cotizacion, string nombre) =>
+        (await ConexosDeLaRuta1Async(costeo.Folio(cotizacion), nombre)).Should().Be(1, "HU-021.9: los conexos de la ruta se conservan");
+
+    [Then("la ruta 1 de la versión nueva conserva el conexo {string}")]
+    public async Task EntoncesLaRutaDeLaVersionNuevaConservaElConexo(string nombre) =>
+        (await ConexosDeLaRuta1Async(FolioNuevo, nombre)).Should().Be(1, "HU-021.9: la versión nueva copia los conexos de cada ruta");
+
+    private static Task<int> ConexosDeLaRuta1Async(string folio, string nombre) =>
+        clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
+            + "JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}' AND l.orden = 1 AND s.nombreServicioConexo = N'{nombre}' AND s.precio > 0 AND s.cantidad > 0");
+
     [Then("la cotización {string} sigue en el estado de costeo {string} sin cambios")]
     public async Task EntoncesSinCambios(string cotizacion, string estado)
     {
@@ -301,13 +329,14 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
         costeo.Nexo.UltimaAlta!["notas"]!.GetValue<string>().Should()
             .EndWith($"Re-solicitud de {costeo.Folio(cotizacion)}; reemplaza la solicitud {_costeoIdLeido}.");
 
-    // HU-013.15 (#124): conexos que la re-solicitud descarta (solo nombres) y nunca se vuelven a agregar en Nexo por su cuenta.
-    [Then("la respuesta avisa que se descartan los servicios conexos {string}")]
-    public void EntoncesSeDescartanLosConexos(string nombres)
+
+    // HU-021.9 (#136; rehace #124): los conexos se conservan (siguen en el precio de su ruta) y se avisan solo con su nombre.
+    [Then("la respuesta avisa que se conservan los servicios conexos {string}")]
+    public void EntoncesSeConservanLosConexos(string nombres)
     {
-        var descartados = web.UltimoJson().GetProperty("conexos_descartados").EnumerateArray().Select(c => c.GetString()).ToList();
-        descartados.Should().Equal(nombres.Split(", "));
-        web.UltimoJson().GetProperty("conexos_descartados").GetRawText().Should().NotContainAny(["costo", "precio"]);
+        var conservados = web.UltimoJson().GetProperty("conexos_conservados").EnumerateArray().Select(c => c.GetString()).ToList();
+        conservados.Should().Equal(nombres.Split(", "));
+        web.UltimoJson().GetProperty("conexos_conservados").GetRawText().Should().NotContainAny(["costo", "precio"]);
     }
 
     [Then("la respuesta no descarta servicios conexos")]
@@ -318,7 +347,7 @@ public sealed class clsPasosReSolicitudCosteo(clsContextoWeb web, clsPasosCosteo
     public void EntoncesNingunConexoAgregado() =>
         costeo.Nexo.Peticiones.Count(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/conexos", StringComparison.Ordinal))
             .Should().Be(costeo.ConexosAgregadosPorLaPrueba,
-                "Cotifly no vuelve a agregar en Nexo los conexos descartados (ADR-018 §5); HU-021: solo están los que agregó la prueba");
+                "la re-solicitud no agrega conexos en Nexo en el acto (los manda el envío diferido del polling, decisión 10): solo están los que agregó la prueba");
 
     private string FolioNuevo => _folioNuevo ??throw new InvalidOperationException("Falta el paso que lee el folio de la versión nueva.");
 

@@ -33,14 +33,17 @@ Característica: Re-solicitar el costeo a Nexo
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
     Y la respuesta no descarta servicios conexos
 
-  # HU-013.15 (#124, ADR-018 §5): la captura nueva de Nexo empieza sin conexos. Cotifly avisa cuáles se descartan (solo nombres) y
-  # no los vuelve a agregar en Nexo: el comercial los agrega de nuevo cuando llegue el costeo nuevo.
-  Escenario: Re-solicitar en el mismo folio avisa los servicios conexos que se descartan y no los vuelve a agregar en Nexo
+  # HU-021.9 (#136; rehace el aviso de #124 con la decisión 3): los conexos son filas de la ruta en Cotifly y Cotifly es su fuente. La
+  # re-solicitud los CONSERVA (siguen en el precio de su ruta con el mismo costo) y los avisa (solo nombres); no los agrega en Nexo en
+  # el acto: los manda una vez el envío diferido del polling (decisión 10) cuando Nexo costee. conexos_descartados queda vacío.
+  Escenario: Re-solicitar en el mismo folio conserva los servicios conexos y no los agrega en Nexo en el acto
     Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
     Y que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
     Cuando "ana" re-solicita el costeo de "C1" con el motivo "El cliente pidió actualizar el valor"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la respuesta avisa que se descartan los servicios conexos "Cargue"
+    Y la respuesta avisa que se conservan los servicios conexos "Cargue"
+    Y la respuesta no descarta servicios conexos
+    Y la ruta 1 de "C1" conserva el conexo "Cargue"
     Y Nexo no recibió ninguna petición para agregar conexos
 
   Escenario: Con cambios de carga se crea una versión nueva y la anterior se conserva
@@ -52,7 +55,9 @@ Característica: Re-solicitar el costeo a Nexo
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y el encabezado Location apunta al costeo de la versión nueva
-    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 y el vehículo "2S3"
+    # HU-021.9: el peso cambió, así que los camiones se vuelven a planificar (hasta el cubicador, uno sin vehículo con el peso de la
+    # ruta); el tipo_vehiculo de datos_carga se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
+    Y la versión nueva queda en el estado de costeo "pendiente_costeo" con el peso 28400 en un camión sin vehículo
     Y la cotización "C1" sigue en el estado de costeo "costeo_vencido" sin cambios
     Y Nexo recibió la solicitud de la versión nueva con el peso 28400
 
@@ -74,6 +79,17 @@ Característica: Re-solicitar el costeo a Nexo
     Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
     Y la versión nueva tiene el margen aplicado "0.18" con el origen "negociado"
 
+  # HU-021.9 (#136): la versión nueva copia cada ruta con sus conexos (mismo costo y cantidad) y la original conserva los suyos.
+  Escenario: La versión nueva copia los servicios conexos de la original
+    Dado que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
+    Y que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
+    Cuando "ana" re-solicita el costeo de "C1" con el motivo "Nueva versión" y nueva_version "true"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae el folio de "C1" con el sufijo "-v2" y la versión 2
+    Y la respuesta avisa que se conservan los servicios conexos "Cargue"
+    Y la ruta 1 de la versión nueva conserva el conexo "Cargue"
+    Y la ruta 1 de "C1" conserva el conexo "Cargue"
+    Y Nexo no recibió ninguna petición para agregar conexos
   # Decisión del usuario (2026-10-06): la versión nueva es una cotización nueva; copia la moneda y fija la TRM del día.
   # HU-013.7 (#103): "U1" se crea con el formulario en USD; la caché fija una TRM por día, así que la TRM de su día de creación se
   # simula cambiando solo la TRM guardada.

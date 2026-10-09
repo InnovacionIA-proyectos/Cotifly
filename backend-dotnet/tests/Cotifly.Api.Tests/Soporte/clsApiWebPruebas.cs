@@ -97,7 +97,8 @@ public sealed class clsApiWebPruebas : IDisposable
     /// API con <c>Nexo:UrlBase</c> apuntando al Nexo falso (ADR-015): los clientes HTTP <c>Nexo</c> (búsquedas) y <c>NexoCosteo</c>
     /// (costeo) usan <paramref name="nexo"/> como manejador primario, sin salir a la red. Con <paramref name="dolarApi"/> y
     /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
-    /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real.
+    /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
+    /// (HU-021.5, #133), <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
@@ -105,11 +106,18 @@ public sealed class clsApiWebPruebas : IDisposable
         IDictionary<string, string?>? extra = null,
         HttpMessageHandler? dolarApi = null,
         HttpMessageHandler? superfinanciera = null,
-        Microsoft.Extensions.AI.IChatClient? modelo = null)
+        Microsoft.Extensions.AI.IChatClient? modelo = null,
+        HttpMessageHandler? cubicador = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
         var valores = new Dictionary<string, string?> { ["Nexo:UrlBase"] = clsNexoFalso.UrlBase, ["CosteoNexo:Habilitado"] = "false" };
+        if (cubicador is not null)
+        {
+            valores["Cubicador:UrlBase"] = clsCubicadorFalso.UrlBase;
+            valores["Cubicador:ApiKey"] = clsCubicadorFalso.ApiKey;
+        }
+
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
         {
             valores[clave] = valor;
@@ -119,6 +127,11 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             s.AddHttpClient("Nexo").ConfigurePrimaryHttpMessageHandler(() => nexo);
             s.AddHttpClient("NexoCosteo").ConfigurePrimaryHttpMessageHandler(() => nexo);
+            if (cubicador is not null)
+            {
+                s.AddHttpClient(Cotifly.Infraestructura.Cubicacion.Services.clsCubicadorHttp.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => cubicador);
+            }
+
             if (dolarApi is not null)
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmDolarApi.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => dolarApi);
@@ -247,6 +260,26 @@ public sealed class clsApiWebPruebas : IDisposable
         var resultado = await ambito.ServiceProvider.GetRequiredService<Aplicacion.Costeo.Services.IClsPollingCosteoService>().ProcesarAsync(
             new Aplicacion.Cotizaciones.DTOs.clsConsultaCosteoPendiente(cotizacionId, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)), CancellationToken.None);
         return resultado == Aplicacion.Costeo.Services.ResultadoConsultaCosteo.NoReclamada ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Dos (o más) réplicas del worker procesan a la vez la misma cotización vencida en la agenda, cada una en su propio ámbito de DI
+    /// (HU-021.9: el reclamo de la agenda deja pasar a una sola). Devuelve el resultado de cada una.
+    /// </summary>
+    public async Task<IReadOnlyList<Aplicacion.Costeo.Services.ResultadoConsultaCosteo>> ProcesarPollingEnParaleloAsync(string folio, int replicas)
+    {
+        var folioSql = folio.Replace("'", "''", StringComparison.Ordinal);
+        await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET costeoSiguienteConsultaAt = '2000-01-01T00:00:00+00:00' WHERE folio = N'{folioSql}' AND costeoSiguienteConsultaAt IS NOT NULL;");
+        var id = await clsBaseDatosPruebas.EscalarAsync<Guid>(_baseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folioSql}';");
+        var pendiente = new Aplicacion.Cotizaciones.DTOs.clsConsultaCosteoPendiente(id, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        return await Task.WhenAll(Enumerable.Range(0, replicas).Select(async _ =>
+        {
+            await using var ambito = Factory.Services.CreateAsyncScope();
+            return await ambito.ServiceProvider.GetRequiredService<Aplicacion.Costeo.Services.IClsPollingCosteoService>()
+                .ProcesarAsync(pendiente, CancellationToken.None);
+        }));
     }
 
     /// <summary>Registra en <c>Correos</c> un envío exitoso de la cotización (para los destinatarios previos).</summary>

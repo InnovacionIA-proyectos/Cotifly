@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Dominio.Cotizaciones;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -11,6 +12,9 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <list type="bullet">
 /// <item>Filas nuevas: <c>CreatedAt</c> (si la entidad no trae uno) y <c>UpdatedAt</c>.</item>
 /// <item>Filas modificadas: <c>UpdatedAt</c>.</item>
+/// <item>Camiones nuevos (HU-021.5): <c>CreatedAt</c> + <see cref="clsVehiculoLineaSolicitud.OrdenCreacion"/> ×
+/// <see cref="clsVehiculoLineaSolicitud.DesfaseCreacion"/>, para que los camiones de una ruta creados juntos se lean en el orden de la
+/// recomendación del cubicador (el esquema no tiene columna de orden; deuda para un script ≥ 0011).</item>
 /// </list>
 /// Aplica a toda entidad que tenga esas propiedades (se detectan en el modelo EF, sin interfaces en Dominio).
 /// </summary>
@@ -47,7 +51,8 @@ public sealed class clsMarcasTiempoInterceptor(IClsReloj reloj) : SaveChangesInt
             switch (entrada.State)
             {
                 case EntityState.Added:
-                    AsignarSiVacio(entrada, PropiedadCreatedAt, ahora);
+                    AsignarSiVacio(entrada, PropiedadCreatedAt,
+                        entrada.Entity is clsVehiculoLineaSolicitud camion ? ahora + (camion.OrdenCreacion * clsVehiculoLineaSolicitud.DesfaseCreacion) : ahora);
                     Asignar(entrada, PropiedadUpdatedAt, ahora);
                     break;
                 case EntityState.Modified:

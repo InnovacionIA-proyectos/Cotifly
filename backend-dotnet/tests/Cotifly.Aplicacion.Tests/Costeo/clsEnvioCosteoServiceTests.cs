@@ -7,6 +7,8 @@ using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Cubicacion.DTOs;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
@@ -825,7 +827,7 @@ public sealed class clsEnvioCosteoServiceTests
     public async Task SiElPlanificadorDeCamionesFallaNoSeGuardaNada()
     {
         var planificador = Substitute.For<IClsPlanificadorCamiones>();
-        planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        planificador.PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.CubicacionNoDisponible, "no se pudo calcular los vehículos"));
         var servicio = new clsEnvioCosteoService(
             _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
@@ -835,6 +837,46 @@ public sealed class clsEnvioCosteoServiceTests
         (await servicio.CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")), Ct)).Error.Codigo
             .Should().Be(clsCodigosError.CubicacionNoDisponible);
         _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ConElCubicadorLaRutaTieneUnCamionPorRecomendacionYLaMercanciaElNombreDelCatalogo()
+    {
+        // HU-021.5 (#133): la ruta viaja al cubicador con el id que tendrá al guardarse y cada fila de la recomendación es un camión.
+        var cubicador = Cubicador();
+        Guid? rutaEnviada = null;
+        cubicador.RecomendarAsync(Arg.Do<Guid>(id => rutaEnviada = id), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsRecomendacionCubicador([
+                new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado),
+                new clsVehiculoRecomendado(Guid.NewGuid(), null, null, 12_500m, clsResultadosRecomendacion.SinSeleccionAutomatica),
+            ]));
+
+        var guardada = (await ServicioCon(cubicador).CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")), Ct)).Valor.PrimeraRuta!;
+
+        guardada.Id.Should().Be(rutaEnviada!.Value, "IdLineaSolicitud del cubicador = el id de la ruta");
+        guardada.VehiculosOrdenados.Select(v => (v.TipoVehiculo, v.Carroceria, v.PesoKg))
+            .Should().Equal(("3S3", "FURGON", 16_000m), (null, null, 12_500m));
+        guardada.VehiculosOrdenados.Should().OnlyContain(v => v.IdRecomendacionVehiculo != null, "C3: se guarda el id exacto de la recomendación");
+        guardada.MercanciasOrdenadas.Should().NotBeEmpty().And.OnlyContain(m => m.NombreMercancia == "Café en estibas");
+    }
+
+    [Fact]
+    public async Task UnTipoDeMercanciaQueNoEstaEnElCatalogoDelCubicadorSeRechazaYSinCatalogoSeConservaElNombre()
+    {
+        var conCatalogo = Cubicador();
+        conCatalogo.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador(Guid.NewGuid(), "Otra")]));
+        var caido = Cubicador();
+        caido.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+
+        var rechazada = await ServicioCon(conCatalogo).CapturarAsync(_ana, Captura(ruta), Ct);
+        var guardada = (await ServicioCon(caido).CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
+
+        CodigosDe(rechazada.Error).Should().OnlyContain(c => c == clsCodigosLineaSolicitud.TipoMercanciaInexistente).And.NotBeEmpty();
+        guardada.MercanciasOrdenadas.Select(m => m.NombreMercancia)
+            .Should().Equal(ruta.Linea.Posiciones.Select(p => p.Descripcion?.Trim() is { Length: > 0 } d ? d : null));
     }
 
     [Fact]
@@ -943,6 +985,26 @@ public sealed class clsEnvioCosteoServiceTests
         typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.Id))!.SetValue(politica, id);
         return politica;
     }
+
+    /// <summary>Cubicador configurado con el catálogo de la muestra y una recomendación de un camión.</summary>
+    private static IClsCubicador Cubicador()
+    {
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+        cubicador.RespaldoSiFalla.Returns(true);
+        cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador(clsSolicitudCosteoMuestra.TipoMercancia, "Café en estibas")]));
+        cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsRecomendacionCubicador([new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 28_500m, clsResultadosRecomendacion.Seleccionado)]));
+        return cubicador;
+    }
+
+    private clsEnvioCosteoService ServicioCon(IClsCubicador cubicador) => new(
+        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
+        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+        new clsCapturaRutasService(_filas, _costosConexos,
+            new clsPlanificadorCamionesCubicador(NullLogger<clsPlanificadorCamionesCubicador>.Instance, cubicador),
+            NullLogger<clsCapturaRutasService>.Instance, cubicador));
 
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,

@@ -68,7 +68,8 @@ public sealed class clsPollingCosteoService(
     IClsReloj reloj,
     IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsPollingCosteoService> logger,
-    IClsPrecioCosteoService precioCosteo) : IClsPollingCosteoService
+    IClsPrecioCosteoService precioCosteo,
+    IClsEnvioConexosNexoService? envioConexos = null) : IClsPollingCosteoService
 {
     /// <summary>Evento de auditoría de cada cambio de estado detectado (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaCambioEstado = "costeo_nexo_estado";
@@ -114,6 +115,28 @@ public sealed class clsPollingCosteoService(
         }
 
         var relectura = cotizacion.RequiereRelecturaCosteo;
+
+        // Decisión 10 (HU-021.9): una cotización que ya no se consulta (entregada en la misma consulta en que falló el envío de conexos)
+        // vuelve a la agenda SOLO para reintentar ese envío: no se vuelve a costear ni se tocan montos ni la versión de negocio.
+        if (!(cotizacion.SeConsultaEnNexo || relectura) && !cotizacion.PerdidaSoloEnCotifly && envioConexos is not null
+            && cotizacion.UsuarioId is { } duenoConexos && cotizacion.CotizacionNexoId is not null
+            && await envioConexos.TieneReintentosAsync(cotizacion, cancellationToken))
+        {
+            var reintento = await envioConexos.ReintentarAsync(cotizacion, duenoConexos, CancellationToken.None);
+            if (reintento.PorReintentar > 0)
+            {
+                // Con los conexos en espera (Nexo sin responder antes del POST) el reintento se espacia 5, 15 y 60 min (#136).
+                cotizacion.ProgramarRelecturaCosteo(ahora + (reintento.EsperaReintento ?? config.IntervaloReintentoConexos));
+            }
+            else
+            {
+                cotizacion.DetenerPollingCosteo();
+            }
+
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            return reintento.PorReintentar > 0 ? ResultadoConsultaCosteo.SinCambio : ResultadoConsultaCosteo.Detenida;
+        }
+
         if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
         {
             cotizacion.DetenerPollingCosteo();
@@ -237,6 +260,28 @@ public sealed class clsPollingCosteoService(
         if (cambio)
         {
             await AuditarCambioAsync(cotizacion, anterior, (int)cronometro.ElapsedMilliseconds);
+        }
+
+        // Decisión 10 (HU-021.9): con la cotización de Nexo ya leída (y la línea del primer camión de cada ruta emparejada), los conexos
+        // de las rutas que todavía no están en Nexo se envían una sola vez. Un fallo no frena el costeo: queda en el log.
+        if (envioConexos is not null && consulta.Valor.Cotizacion is { } cotizacionNexo)
+        {
+            try
+            {
+                var envio = await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
+
+                // Si el polling se detuvo en esta consulta (entregada, descartada o vencida) y quedaron conexos por reintentar, la
+                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos).
+                if (envio.PorReintentar > 0 && cotizacion.CosteoSiguienteConsultaAt is null)
+                {
+                    cotizacion.ProgramarRelecturaCosteo(ahora + (envio.EsperaReintento ?? config.IntervaloReintentoConexos));
+                    await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "No se pudieron enviar a Nexo los conexos de {Folio}: se reintenta en el siguiente ciclo.", cotizacion.Folio);
+            }
         }
 
         return cambio ? ResultadoConsultaCosteo.Cambio : ResultadoConsultaCosteo.SinCambio;

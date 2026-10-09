@@ -37,6 +37,15 @@ public interface IClsCotizacionRepository
     Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Decisión 10 (HU-021.9): agrega un registro del envío diferido de conexos a Nexo (<see cref="clsEnvioConexosNexo"/>) en
+    /// <c>EventosHerramienta</c>; se escribe al guardar la unidad de trabajo.
+    /// </summary>
+    void RegistrarEnvioConexosNexo(clsEnvioConexosNexo envio);
+
+    /// <summary>Los registros de <see cref="RegistrarEnvioConexosNexo"/> del folio y la solicitud de Nexo, del más antiguo al más reciente.</summary>
+    Task<IReadOnlyList<clsEnvioConexosNexo>> ListarEnviosConexosNexoAsync(string folio, string solicitudNexoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// PDF invalidados de la cotización, del más antiguo al más reciente (vacía si no hay). Quedan en la unidad de trabajo: al
     /// regenerar el PDF se actualiza la referencia del archivo archivado.
     /// </summary>

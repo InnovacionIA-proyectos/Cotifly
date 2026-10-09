@@ -385,6 +385,21 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
 - Los bloques del PDF (`clsBloqueTarifa.cs`, `clsBloquePortada.cs`) solo consumen el DTO. Cambian si cambia su
   forma.
 
+**Implementado en HU-021.9 (#136):**
+- **PDF de una ruta:** origen, destino, los camiones que cuentan agrupados (`Camiones()`: "2 × 3S3 - FURGON (20000 KG)"; sin
+  vehículo, "Vehículo por definir"; un camión `descartada` no se imprime) y la tarifa del transporte; los conexos aparte, con
+  tarifa + conexos = `precioFinalLinea`.
+- **Pliego:** `EsPliego` = más de una ruta (una licitación de una fila sale con el PDF de una ruta). Una sección por ruta
+  (`RUTA n: PLIEGO DE TRANSPORTE {línea de la ruta}`, origen, destino, camiones y tarifa) y el resumen de siempre; con más de 20
+  rutas (`UmbralRutasCompacto`) solo el resumen. El título y el asunto llevan la línea de negocio de la solicitud solo si todas
+  las rutas tienen la misma (`clsLineasNegocioRutas.Comun`).
+- **Validación del total (`ValidarTotal`, una ruta y pliego):** la solicitud tiene rutas, todas tienen precio y `precioFinal` =
+  Σ `precioFinalLinea` (con los conexos); si no, `COSTEO_NO_LISTO`. El total impreso del pliego sigue siendo Σ tarifas, sin
+  conexos (cuadra con el Excel).
+- **`Vista()`:** `RutaCosteo` gana `linea_negocio_id`, `peso_kg`, `camiones[]` (`CamionCosteo`: vehículo, carrocería, peso,
+  estado; sin costos ni ids de Nexo), `vehiculos` (el texto del PDF) y `mercancias[]` (`MercanciaCosteo`).
+- La nota de la TRM mínima en USD no cambia.
+
 ### 5.8 Re-solicitud y nueva versión
 
 - **`clsReSolicitudCosteoService.cs`**:
@@ -397,6 +412,44 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
 - **`Cotizaciones/Services/clsNuevaVersionService.cs`** (36-51) y **`clsDatosNuevaVersion`**
   (`Cotizaciones/DTOs/clsCotizacionResumen.cs:76-89`): copian por ruta.
 
+**Implementado en HU-021.9 (#136):**
+- **Mismo folio:** `PrepararReSolicitud` olvida los costos de Nexo de los camiones y el precio; la ruta conserva su margen
+  ajustado (decisión del 2026-10-06) y **sus conexos** (decisión 3).
+- **`-vN`:** se arma con `RegistrarCaptura(..., reglasCaptura: false)` (lo guardado ya se revalidó; las rutas migradas no tienen
+  los ids de la captura nueva): cada ruta con su línea de negocio (antes todas tomaban la de la ruta 1), su fila del pliego, sus
+  mercancías, sus camiones vigentes (los `descartada` no) y sus conexos (mismo costo unitario y cantidad). Si `datos_carga`
+  cambia el peso o las mercancías (`CambiaLaCarga`: con el mismo valor no cuenta), los camiones se borran y se piden de nuevo a
+  `IClsPlanificadorCamiones` (#133 cambia su implementación por el cubicador); el plan se hace antes de reservar, así que un
+  error del planificador no reserva ni crea nada. `tipo_vehiculo` y `carroceria` de `datos_carga` se ignoran con un aviso en el
+  log (decisión 7). TRM del día y margen negociado copiado por ruta, como antes.
+- **Aviso de conexos (rehace #124):** la respuesta trae `conexos_conservados` (nombres, sin montos) y `conexos_descartados`
+  queda en `[]` (obsoleto, se retira con #138). La propuesta del asistente dice "Se conservan los servicios conexos «…» con su
+  costo y siguen en el precio." La re-solicitud no los agrega en Nexo en el acto: los manda el envío diferido (abajo). La
+  cotización anterior de Nexo queda como estaba.
+- **Correcciones del validador y el auditor:** en el mismo folio un camión `descartada` no se reenvía (`ReiniciarCosteo`,
+  `LineasNexo` y los estados de la solicitud solo tocan los camiones que cuentan); la `-vN` refresca el costo unitario de los
+  conexos con el catálogo de Nexo (`IClsCostosConexosNexo`); una ruta migrada con mercancías sin `id_tipo_mercancia` lleva el
+  respaldo de un camión sin vehículo en vez de pasar por el planificador; `SinVehiculo` de `datos_carga` vive en
+  `clsEnvioCosteoService`; el pliego con rutas de varias líneas lleva "Varias" en la cabecera y el validador del payload solo
+  exige `linea_negocio` en el PDF de una tarifa; la tarifa absorbe el redondeo por moneda (1 peso o 0,01 USD por conexo); una ruta
+  sin línea no cuenta para "Varias".
+- **Envío diferido de conexos (decisión 10 del usuario, `clsEnvioConexosNexoService`).** Al final de cada consulta del polling
+  que trae la cotización de Nexo, los conexos de cada ruta que Nexo todavía no muestra se envían UNA vez a la línea del primer
+  camión vigente, cuando esa línea ya está costeada. Cada paso queda en `EventosHerramienta` (`conexos_envio_nexo`: `en_curso`
+  antes del POST, luego `enviado`, `fallido` o `incierto`), atado a `solicitudNexoId`: una re-solicitud o `-vN` los vuelve a enviar
+  una vez a su cotización nueva. Un POST incierto se relee y nunca se repite a ciegas; un fallo se reintenta en el siguiente ciclo y
+  no frena el costeo. El precio en Cotifly sigue siendo el costo del catálogo; la lectura de #135 no reimporta un conexo cuyo
+  `servicioConexoId` ya está en la ruta. El reclamo del polling evita que dos réplicas envíen a la vez. Si la cotización queda
+  entregada en la misma consulta en que falla el envío, vuelve a la agenda solo para reintentarlo (sin costear ni tocar montos)
+  hasta `CosteoNexo:MaximoReintentosConexos`; al tope queda `fallido_definitivo`. `GET .../costeo` muestra `estado_nexo` por conexo
+  y `aviso_conexos_nexo` por ruta (incierto o fallido definitivo). `idServicioConexo` guarda el id del catálogo (capturados, `-vN`)
+  o el de la fila de Nexo (agregados con el POST o importados): a Nexo siempre viaja el del catálogo, resuelto por id o por nombre
+  (`clsResolutorConexosCatalogo`); uno ya presente en esa solicitud no se reenvía; uno que el catálogo respondió sin encontrar queda
+  `fallido_definitivo` y sale del lote antes del POST (todo o nada); si el catálogo no responde queda `en_espera` (no consume
+  intentos: el tope cuenta solo POST rechazados). Deuda: columna para el id del catálogo en un script ≥ 0011 (revisión de @scalderon-bs).
+- **`DatosNuevaVersion`** gana `rutas[]` (`RutaNuevaVersion`: orden, línea de negocio, origen, destino y margen de cada ruta);
+  `linea_negocio` de primer nivel es la de la ruta 1 o `Varias`.
+
 ### 5.9 Otros servicios
 
 - **`clsTextosCosteoService.cs`** (81-82, 199-204): los textos del PDF toman línea de negocio, origen, destino y
@@ -404,6 +457,12 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
 - **`clsResultadoCotizacionService.cs`** (75, 152): `CosteoId` → `SolicitudNexoId` (columna `solicitudNexoId` del 0010; es el id de la SOLICITUD de Nexo, no `CotizacionNexoId`, ADR-019).
 - **`clsMisCotizacionesService.cs`** (45) y **`clsCotizacionResumen.cs`** (46-50): margen y origen del margen
   pasan a ser de la ruta (ver §4.2).
+
+**Implementado en HU-021.9 (#136):** los textos toman la línea de negocio de las rutas (`clsLineasNegocioRutas`: la IA recibe
+las de todas las rutas; el estándar, la común), el origen y el destino de cada ruta y el vehículo de sus camiones vigentes, sin
+respaldo a la cabecera. "Mis cotizaciones" (lista y resumen) muestra la línea de la ruta 1 o `Varias`, y el margen y su origen
+de la ruta 1 (el de cada ruta está en el costeo). El resultado ya usa `CotizacionNexoId` para marcar en Nexo y `SolicitudNexoId`
+para leer la solicitud (lo dejó el núcleo, #130/#131; verificado).
 - **Agente** (`clsEstadoConversacionService.cs:123-149`, `clsAgenteRunner.cs:120`): ver §2.
 - **Correo:** solo el nombre de la tabla.
 
@@ -428,6 +487,28 @@ HTTP con Polly en `Infraestructura`, y una versión "no disponible" cuando no es
   líneas van a la Mesa.
 - **Si el cubicador no responde,** la captura falla con un error claro ("no se pudo calcular los vehículos"). No se
   manda nada a Nexo sin camiones.
+
+**Implementado en #133 (HU-021.5, 2026-10-08), probado solo contra un cubicador falso** (el real no tiene aún los endpoints, C1):
+
+- `IClsCubicador` (`RecomendarAsync(rutaId, mercancías)`, `ListarTiposMercanciaAsync()`, `EstaConfigurado`, `RespaldoSiFalla`),
+  `clsCubicadorHttp` (cliente `"Cubicador"`, sin reintento del POST, `Bearer`, contrato provisional en su comentario y en ADR-019),
+  `clsCubicadorNoDisponible` y `clsFabricaCubicador`. Opciones `Cubicador:UrlBase`, `Cubicador:ApiKey`,
+  `Cubicador:TiempoEsperaSegundos` (15), `Cubicador:MinutosCacheCatalogos` (30) y `Cubicador:RespaldoSiFalla` (true).
+- `clsPlanificadorCamionesCubicador` reemplaza a `clsPlanificadorCamionSinVehiculo` como `IClsPlanificadorCamiones`: un camión por
+  fila con vehículo, carrocería, peso total (C2) e `idRecomendacionVehiculo` (C3); "sin selección" → camión vacío; "condicionada" →
+  se envía todo. El id de la ruta se fija antes de guardar (`clsRutaCapturada.RutaId`) porque es el `IdLineaSolicitud`.
+- **Cambio de regla (coordinador, 2026-10-08):** mientras el cubicador no exista, **el respaldo es el camino por defecto**: sin
+  configurar, o si falla con `Cubicador:RespaldoSiFalla = true`, la ruta queda con un camión sin vehículo y el peso total (y un
+  warning). La regla de arriba ("la captura falla") se activa con `Cubicador:RespaldoSiFalla = false` (503 `CUBICADOR_NO_DISPONIBLE`).
+- `GET /web/tipos-mercancia` (caché, 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador). En la captura, con el catálogo, el nombre de la
+  mercancía se copia de él y un id desconocido es `TIPO_MERCANCIA_INEXISTENTE`; sin catálogo se conserva lo que manda el cliente.
+- Con varios camiones las posiciones no viajan a Nexo (regla de #134): repartirlas exige la Tabla 8 del cubicador. La nota a la Mesa
+  (`notas`) lo avisa.
+- Correcciones de la revisión: el orden de los camiones es el de la recomendación (desfase determinista de `createdAt`; deuda: columna
+  de orden en un script ≥ 0011); solo una caída corta el cubicador para el resto de la captura; las rutas sin `id_tipo_mercancia` van
+  al respaldo sin llamarlo; warning `CUBICADOR_RESPALDO` y contador `cotifly.cubicador.respaldos`; una sola lectura del catálogo por
+  captura; presupuesto de tiempo por captura (`Cubicador:PresupuestoCapturaSegundos`); el 503 no expone el detalle interno. Las
+  recomendaciones que quedan en el cubicador si la captura no se guarda están documentadas en ADR-019.
 
 ---
 

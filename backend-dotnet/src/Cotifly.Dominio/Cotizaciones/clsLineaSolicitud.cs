@@ -129,7 +129,7 @@ public sealed class clsLineaSolicitud
 
     /// <summary>Camiones en un orden estable (creación y luego id): el primero lleva los conexos en Nexo (decisión 3).</summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosOrdenados =>
-        [.. _vehiculos.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id)];
+        [.. _vehiculos.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id)];
 
     /// <summary>Mercancías en su orden de captura.</summary>
     public IReadOnlyList<clsMercancia> MercanciasOrdenadas => [.. _mercancias.OrderBy(m => m.Orden)];
@@ -141,11 +141,12 @@ public sealed class clsLineaSolicitud
     /// <summary>
     /// Ruta nueva a partir de una línea de la captura ya validada (<see cref="clsLineaSolicitudCosteo.Errores"/> vacía). Las horas son las
     /// de la línea o, si no trae, las del <paramref name="encabezado"/> (la cabecera ya no las guarda). Copia las mercancías; los camiones
-    /// los agrega quien crea la ruta (<see cref="AgregarVehiculo"/>).
+    /// los agrega quien crea la ruta (<see cref="AgregarVehiculo"/>). <paramref name="id"/> fija el id de la ruta (el que ya conoce el
+    /// cubicador, HU-021.5); sin él, uno nuevo.
     /// </summary>
     public static clsLineaSolicitud Desde(
         Guid cotizacionSolicitudId, int orden, int? rutaOrigenIndice, int? lineaNegocioId, clsLineaSolicitudCosteo linea,
-        clsEncabezadoSolicitudCosteo? encabezado = null)
+        clsEncabezadoSolicitudCosteo? encabezado = null, Guid? id = null)
     {
         ArgumentNullException.ThrowIfNull(linea);
         ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
@@ -156,7 +157,7 @@ public sealed class clsLineaSolicitud
 
         var ruta = new clsLineaSolicitud
         {
-            Id = Guid.NewGuid(),
+            Id = id is { } fijo && fijo != Guid.Empty ? fijo : Guid.NewGuid(),
             CotizacionSolicitudId = cotizacionSolicitudId,
             Orden = orden,
             RutaOrigenIndice = rutaOrigenIndice,
@@ -230,7 +231,8 @@ public sealed class clsLineaSolicitud
     /// </summary>
     public clsVehiculoLineaSolicitud AgregarVehiculo(string? tipoVehiculo, string? carroceria, decimal? pesoKg, Guid? idRecomendacionVehiculo = null)
     {
-        var camion = clsVehiculoLineaSolicitud.Crear(Id, tipoVehiculo, carroceria, pesoKg, ValorLevanteContenedor, idRecomendacionVehiculo);
+        var camion = clsVehiculoLineaSolicitud.Crear(
+            Id, tipoVehiculo, carroceria, pesoKg, ValorLevanteContenedor, idRecomendacionVehiculo, _vehiculos.Count + 1);
         _vehiculos.Add(camion);
         SumarCostos();
         return camion;
@@ -294,7 +296,7 @@ public sealed class clsLineaSolicitud
             Carroceria = camion.Carroceria,
             PesoKg = camion.PesoKg,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = _vehiculos.Count == 1 ? linea.Posiciones : [],
+            Posiciones = VehiculosQueCuentan.Count == 1 ? linea.Posiciones : [],
         };
     }
 
@@ -323,8 +325,9 @@ public sealed class clsLineaSolicitud
     /// </summary>
     internal bool RegistrarEstadoCamiones(EstadoCosteo estado)
     {
+        // HU-021.9: un camión descartado en Nexo sigue descartado (no viaja en un reenvío); si lo están todos, cuentan todos.
         var cambio = false;
-        foreach (var camion in _vehiculos)
+        foreach (var camion in VehiculosQueCuentan)
         {
             cambio |= camion.RegistrarEstado(estado);
         }
@@ -361,11 +364,13 @@ public sealed class clsLineaSolicitud
 
     /// <summary>
     /// Re-solicitud en el mismo folio (HU-013.4): sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
-    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>.
+    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>. HU-021.9: los
+    /// camiones <c>descartada</c> en Nexo (la Mesa borró su línea) siguen descartados y no se reenvían, igual que en la <c>-vN</c>; si lo
+    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>).
     /// </summary>
     internal void ReiniciarCosteo()
     {
-        foreach (var camion in _vehiculos)
+        foreach (var camion in VehiculosQueCuentan)
         {
             camion.ReiniciarCosteo();
             camion.RegistrarEstado(Cotizaciones.EstadoCosteo.PendienteEnvio);

@@ -234,9 +234,11 @@ public sealed class clsCotizacionSolicitud
     /// cubicador) y sus conexos (precio = costo unitario de Nexo, decisión 3), y recalcula sus totales (los conexos ya suman al costo
     /// de la ruta; sin flete no hay precio). Todo queda en <c>pendiente_envio</c>. Las líneas deben venir validadas
     /// (<see cref="clsLineaSolicitudCosteo.Errores"/> y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> vacías): si no, lanza.
-    /// Devuelve las rutas creadas.
+    /// <paramref name="reglasCaptura"/> en <c>false</c> = copia de rutas ya guardadas (versión <c>-vN</c> de la re-solicitud, HU-021.9):
+    /// solo se exigen los límites de Nexo, porque las rutas migradas no tienen los ids que pide la captura nueva. Devuelve las rutas creadas.
     /// </summary>
-    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas)
+    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(
+        clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas, bool reglasCaptura = true)
     {
         ArgumentNullException.ThrowIfNull(encabezado);
         ArgumentNullException.ThrowIfNull(rutas);
@@ -258,7 +260,7 @@ public sealed class clsCotizacionSolicitud
         foreach (var (capturada, i) in rutas.Select((r, i) => (r, i)))
         {
             ArgumentNullException.ThrowIfNull(capturada);
-            if (capturada.Linea.Errores().Concat(capturada.Linea.ErroresCaptura()).FirstOrDefault() is { } error)
+            if (capturada.Linea.Errores().Concat(reglasCaptura ? capturada.Linea.ErroresCaptura() : []).FirstOrDefault() is { } error)
             {
                 throw new ArgumentException($"Ruta {i + 1}: {error.Mensaje}", nameof(rutas));
             }
@@ -274,7 +276,8 @@ public sealed class clsCotizacionSolicitud
         foreach (var capturada in rutas)
         {
             var orden = _rutas.Count == 0 ? 1 : _rutas.Max(r => r.Orden) + 1;
-            var ruta = clsLineaSolicitud.Desde(Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado);
+            var ruta = clsLineaSolicitud.Desde(
+                Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado, capturada.RutaId);
             foreach (var camion in capturada.Camiones)
             {
                 ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);
@@ -368,7 +371,7 @@ public sealed class clsCotizacionSolicitud
     /// que corresponde.
     /// </summary>
     public IReadOnlyList<(clsVehiculoLineaSolicitud Camion, clsLineaSolicitudCosteo Linea)> LineasNexo() =>
-        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Select(v => (v, r.ALineaNexo(v))))];
+        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Where(v => r.VehiculosQueCuentan.Contains(v)).Select(v => (v, r.ALineaNexo(v))))];
 
     // ------------------------------------------------------------------ Envío y polling (HU-005.5, HU-005.6)
 
@@ -969,7 +972,7 @@ public sealed class clsCotizacionSolicitud
         }
 
         // Decisión del usuario (2026-10-08, #135): el ajuste es ruta por ruta y solo ESA ruta necesita precio; las demás pueden seguir en
-        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarPliego / SinCosteo). La ruta debe venir del costeo de Nexo
+        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarTotal). La ruta debe venir del costeo de Nexo
         // (autocosteo o entregada): una cotización del chat anterior a HU-013 no se ajusta por aquí.
         if (!ruta.TienePrecio || ruta.EstadoCosteo is not { } estadoRuta || !clsDerivacionEstadoCosteo.TieneCosteo(estadoRuta))
         {
