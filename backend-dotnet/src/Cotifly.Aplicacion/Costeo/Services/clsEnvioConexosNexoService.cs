@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -18,9 +19,26 @@ public interface IClsEnvioConexosNexoService
     /// <summary>
     /// Envía UNA sola vez, a la línea del primer camión vigente de cada ruta, los conexos de la ruta que todavía no están en la cotización
     /// de Nexo <paramref name="cotizacionNexo"/> (la que acaba de leer el polling). Nunca lanza por Nexo: un fallo queda en el log y se
-    /// reintenta en el siguiente ciclo, salvo que el POST haya sido incierto. Devuelve cuántos conexos quedaron enviados en esta llamada.
+    /// reintenta (hasta <c>CosteoNexo:MaximoReintentosConexos</c>), salvo que el POST haya sido incierto.
     /// </summary>
-    Task<int> EnviarPendientesAsync(clsCotizacionSolicitud cotizacion, clsCotizacionNexo? cotizacionNexo, Guid usuarioId, CancellationToken cancellationToken = default);
+    Task<clsResultadoEnvioConexos> EnviarPendientesAsync(
+        clsCotizacionSolicitud cotizacion, clsCotizacionNexo? cotizacionNexo, Guid usuarioId, CancellationToken cancellationToken = default);
+
+    /// <summary>¿Tiene conexos con un envío <see cref="clsEnvioConexosNexo.Fallido"/> por reintentar (por debajo del tope)?</summary>
+    Task<bool> TieneReintentosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reintento de una cotización que el polling ya no consulta (entregada en la misma consulta en que falló el envío): lee SOLO la
+    /// cotización de Nexo (<c>GET /api/cotizaciones/{id}</c>, sin costeo ni montos de Cotifly) y vuelve a intentar los fallidos. Si la
+    /// lectura falla cuenta como un intento fallido.
+    /// </summary>
+    Task<clsResultadoEnvioConexos> ReintentarAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Estado visible del envío de cada conexo, por ruta y por id (<see cref="EstadoVisible"/>), para el costeo. Vacío si la cotización no
+    /// tiene solicitud de Nexo.
+    /// </summary>
+    Task<IReadOnlyDictionary<(Guid Ruta, string Conexo), string>> EstadosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -32,8 +50,10 @@ public interface IClsEnvioConexosNexoService
 /// <item><b>Sin duplicados.</b> Un conexo que la cotización de Nexo ya muestra (por <c>servicioConexoId</c> o por su id) no se envía y
 /// queda como enviado. Antes del POST se guarda <see cref="clsEnvioConexosNexo.EnCurso"/> con los conexos que Nexo ya tenía (el mismo
 /// criterio del registro de #135): si el proceso muere a mitad, el siguiente ciclo lo trata como incierto y no repite el POST. Un POST
-/// incierto (sin respuesta) se relee: si Nexo lo muestra queda enviado; si no, queda <see cref="clsEnvioConexosNexo.Incierto"/> y no se
-/// vuelve a enviar (Nexo no tiene DELETE ni idempotencia en ese POST) hasta que una lectura lo muestre.</item>
+/// incierto (sin respuesta) se relee: si Nexo lo muestra queda enviado; si no, queda <see cref="clsEnvioConexosNexo.Incierto"/>, no se
+/// vuelve a enviar (Nexo no tiene DELETE ni idempotencia en ese POST) y el costeo lo muestra para que se revise en Nexo.</item>
+/// <item><b>Tope.</b> Tras <c>CosteoNexo:MaximoReintentosConexos</c> intentos fallidos queda
+/// <see cref="clsEnvioConexosNexo.FallidoDefinitivo"/> (warning y visible en el costeo).</item>
 /// <item><b>Primer camión vigente.</b> Van pegados a la línea del primer camión no descartado de la ruta (decisión 3); mientras esa línea
 /// no esté en la cotización de Nexo, se espera.</item>
 /// <item><b>El precio no cambia.</b> En Cotifly el conexo sigue con el costo del catálogo de Nexo que se guardó en la ruta; la lectura no lo
@@ -46,38 +66,147 @@ public sealed class clsEnvioConexosNexoService(
     IClsCotizacionRepository cotizaciones,
     IClsServiciosConexosNexo nexo,
     IClsUnitOfWork unidadTrabajo,
+    IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsEnvioConexosNexoService> logger) : IClsEnvioConexosNexoService
 {
-    public async Task<int> EnviarPendientesAsync(
+    /// <summary>Estados que ve el comercial en <c>servicios_conexos[].estado_nexo</c>.</summary>
+    public const string VisiblePendiente = "pendiente";
+
+    public const string VisibleEnviado = "enviado";
+    public const string VisibleIncierto = "incierto";
+    public const string VisibleFallidoDefinitivo = "fallido_definitivo";
+
+    public async Task<clsResultadoEnvioConexos> EnviarPendientesAsync(
         clsCotizacionSolicitud cotizacion, clsCotizacionNexo? cotizacionNexo, Guid usuarioId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         if (cotizacionNexo is null || cotizacion.SolicitudNexoId is not { } solicitud || cotizacion.CotizacionNexoId is not { } cotizacionNexoId
             || cotizacion.Rutas.All(r => r.Conexos.Count == 0))
         {
-            return 0;
+            return clsResultadoEnvioConexos.Nada;
         }
 
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
         var enviados = 0;
+        var porReintentar = 0;
         foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0))
         {
-            enviados += await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
+            var resultado = await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
                 [.. registros.Where(r => r.LineaSolicitudId == ruta.Id)]);
+            enviados += resultado.Enviados;
+            porReintentar += resultado.PorReintentar;
         }
 
-        return enviados;
+        return new clsResultadoEnvioConexos(enviados, porReintentar);
     }
 
-    private async Task<int> EnviarRutaAsync(
+    public async Task<bool> TieneReintentosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if (cotizacion.SolicitudNexoId is not { } solicitud || cotizacion.Rutas.All(r => r.Conexos.Count == 0))
+        {
+            return false;
+        }
+
+        var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
+        return cotizacion.Rutas.Any(r =>
+        {
+            var estados = Estados([.. registros.Where(x => x.LineaSolicitudId == r.Id)]);
+            return r.Conexos.Any(c => estados.GetValueOrDefault(c.IdServicioConexo) == clsEnvioConexosNexo.Fallido);
+        });
+    }
+
+    public async Task<clsResultadoEnvioConexos> ReintentarAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        if (cotizacion.CotizacionNexoId is not { } cotizacionNexoId || cotizacion.SolicitudNexoId is not { } solicitud)
+        {
+            return clsResultadoEnvioConexos.Nada;
+        }
+
+        var leida = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, CancellationToken.None);
+        if (leida.EsExitoso)
+        {
+            return await EnviarPendientesAsync(cotizacion, leida.Valor, usuarioId, cancellationToken);
+        }
+
+        // Sin la cotización de Nexo no se puede saber si llegaron: cuenta como un intento fallido de los que esperaban reintento.
+        logger.LogWarning("No se pudo leer la cotización de Nexo de {Folio} para reintentar sus conexos ({Codigo}).", cotizacion.Folio, leida.Error.Codigo);
+        var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
+        var porReintentar = 0;
+        foreach (var ruta in cotizacion.RutasOrdenadas)
+        {
+            var propios = registros.Where(r => r.LineaSolicitudId == ruta.Id).ToList();
+            var estados = Estados(propios);
+            var fallidos = ruta.Conexos.Select(c => c.IdServicioConexo)
+                .Where(id => estados.GetValueOrDefault(id) == clsEnvioConexosNexo.Fallido).ToList();
+            if (fallidos.Count == 0)
+            {
+                continue;
+            }
+
+            var intento = propios.Count == 0 ? 1 : propios.Max(r => r.Intento) + 1;
+            cotizaciones.RegistrarEnvioConexosNexo(new clsEnvioConexosNexo(
+                cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.Fallido, fallidos, []));
+            var agotados = AlTope([.. propios, new clsEnvioConexosNexo(cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.Fallido, fallidos, [])], fallidos);
+            if (agotados.Count > 0)
+            {
+                Definitivo(cotizacion, solicitud, ruta, intento + 1, agotados);
+            }
+
+            porReintentar += fallidos.Count - agotados.Count;
+        }
+
+        await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+        return new clsResultadoEnvioConexos(0, porReintentar);
+    }
+
+    public async Task<IReadOnlyDictionary<(Guid Ruta, string Conexo), string>> EstadosAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var visibles = new Dictionary<(Guid, string), string>();
+        if (cotizacion.SolicitudNexoId is not { } solicitud || cotizacion.Rutas.All(r => r.Conexos.Count == 0))
+        {
+            return visibles;
+        }
+
+        var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
+        foreach (var ruta in cotizacion.Rutas)
+        {
+            var estados = Estados([.. registros.Where(r => r.LineaSolicitudId == ruta.Id)]);
+            foreach (var conexo in ruta.Conexos)
+            {
+                visibles[(ruta.Id, conexo.IdServicioConexo)] = EstadoVisible(estados.GetValueOrDefault(conexo.IdServicioConexo));
+            }
+        }
+
+        return visibles;
+    }
+
+    /// <summary>
+    /// Estado que ve el comercial: <c>enviado</c>; <c>incierto</c> (POST sin respuesta que Nexo no muestra, o cortado a mitad: hay que
+    /// revisar Nexo, no se reintenta solo); <c>fallido_definitivo</c> (se agotaron los reintentos); <c>pendiente</c> (todavía no se envía o
+    /// se reintentará).
+    /// </summary>
+    public static string EstadoVisible(string? estado) => estado switch
+    {
+        clsEnvioConexosNexo.Enviado => VisibleEnviado,
+        clsEnvioConexosNexo.Incierto or clsEnvioConexosNexo.EnCurso => VisibleIncierto,
+        clsEnvioConexosNexo.FallidoDefinitivo => VisibleFallidoDefinitivo,
+        _ => VisiblePendiente,
+    };
+
+    private async Task<clsResultadoEnvioConexos> EnviarRutaAsync(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, clsCotizacionNexo cotizacionNexo, string cotizacionNexoId, string solicitud,
         Guid usuarioId, IReadOnlyList<clsEnvioConexosNexo> registros)
     {
         var intento = registros.Count == 0 ? 0 : registros.Max(r => r.Intento);
         var estados = Estados(registros);
         var conexos = ruta.Conexos.Where(c => Guid.TryParse(c.IdServicioConexo, out _)).ToList();
+        var guardar = false;
 
-        // Los que Nexo ya muestra quedan enviados (también los inciertos que la lectura confirmó).
+        // Los que Nexo ya muestra quedan enviados (también los inciertos o definitivos que una lectura confirmó).
         var confirmados = conexos
             .Where(c => EstaEnNexo(cotizacion, ruta, cotizacionNexo, c.IdServicioConexo)
                         && estados.GetValueOrDefault(c.IdServicioConexo) != clsEnvioConexosNexo.Enviado)
@@ -87,6 +216,7 @@ public sealed class clsEnvioConexosNexoService(
         {
             intento++;
             cotizaciones.RegistrarEnvioConexosNexo(Registro(cotizacion, solicitud, ruta, intento, clsEnvioConexosNexo.Enviado, confirmados, cotizacionNexo));
+            guardar = true;
         }
 
         var bloqueados = conexos
@@ -100,22 +230,35 @@ public sealed class clsEnvioConexosNexoService(
                 ruta.Orden, cotizacion.Folio, string.Join(", ", bloqueados.Select(c => c.IdServicioConexo)));
         }
 
-        var pendientes = conexos
+        var candidatos = conexos
             .Where(c => !confirmados.Contains(c.IdServicioConexo) && !bloqueados.Contains(c)
                         && estados.GetValueOrDefault(c.IdServicioConexo) is null or clsEnvioConexosNexo.Fallido)
             .ToList();
+
+        // Tope de intentos fallidos: quedan fallido_definitivo (warning y visible en el costeo).
+        var agotados = AlTope(registros, [.. candidatos.Select(c => c.IdServicioConexo)]);
+        if (agotados.Count > 0)
+        {
+            intento++;
+            Definitivo(cotizacion, solicitud, ruta, intento, agotados);
+            guardar = true;
+        }
+
+        var pendientes = candidatos.Where(c => !agotados.Contains(c.IdServicioConexo, StringComparer.OrdinalIgnoreCase)).ToList();
         var lineaId = pendientes.Count == 0
             ? null
             : clsServiciosConexosCosteoService.LineaDeNexo(cotizacionNexo, clsServiciosConexosCosteoService.PrimerCamion(ruta));
         if (lineaId is null)
         {
             // Nada que enviar, o la línea del primer camión vigente todavía no está en la cotización de Nexo: se espera al siguiente ciclo.
-            if (confirmados.Count > 0)
+            if (guardar)
             {
                 await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             }
 
-            return 0;
+            // Sin la línea no hay a dónde enviarlos: no cuenta como reintento (la cotización que el polling sigue consultando lo intenta
+            // cuando la línea aparezca).
+            return clsResultadoEnvioConexos.Nada;
         }
 
         // El intento queda guardado ANTES del POST (que no es idempotente): si el proceso muere a mitad, nadie lo repite a ciegas.
@@ -128,12 +271,19 @@ public sealed class clsEnvioConexosNexoService(
             usuarioId, cotizacionNexoId, [.. pendientes.Select(c => new clsConexoParaNexo(lineaId, c.IdServicioConexo, c.Cantidad))], CancellationToken.None);
         if (agregado.EsFallo)
         {
-            // Nexo no lo aplicó: se reintenta en el siguiente ciclo.
-            cotizaciones.RegistrarEnvioConexosNexo(Registro(cotizacion, solicitud, ruta, intento, clsEnvioConexosNexo.Fallido, ids, cotizacionNexo));
+            // Nexo no lo aplicó: se reintenta en el siguiente ciclo (o queda definitivo si llegó al tope).
+            var fallido = Registro(cotizacion, solicitud, ruta, intento, clsEnvioConexosNexo.Fallido, ids, cotizacionNexo);
+            cotizaciones.RegistrarEnvioConexosNexo(fallido);
+            var alTope = AlTope([.. registros, fallido], ids);
+            if (alTope.Count > 0)
+            {
+                Definitivo(cotizacion, solicitud, ruta, intento + 1, alTope);
+            }
+
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             logger.LogWarning("No se pudieron enviar a Nexo los conexos de la ruta {Ruta} de {Folio} ({Codigo}); se reintenta en el siguiente ciclo.",
                 ruta.Orden, cotizacion.Folio, agregado.Error.Codigo);
-            return 0;
+            return new clsResultadoEnvioConexos(0, ids.Count - alTope.Count);
         }
 
         var enviados = ids;
@@ -160,7 +310,24 @@ public sealed class clsEnvioConexosNexoService(
         }
 
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
-        return enviados.Count;
+        return new clsResultadoEnvioConexos(enviados.Count, 0);
+    }
+
+    /// <summary>Los conexos de <paramref name="ids"/> que ya tienen <c>MaximoReintentosConexos</c> intentos fallidos.</summary>
+    private List<string> AlTope(IReadOnlyList<clsEnvioConexosNexo> registros, IReadOnlyList<string> ids)
+    {
+        var maximo = opciones.Value.MaximoReintentosConexos;
+        return [.. ids.Where(id => registros.Count(r => r.Estado == clsEnvioConexosNexo.Fallido
+            && r.Conexos.Contains(id, StringComparer.OrdinalIgnoreCase)) >= maximo)];
+    }
+
+    private void Definitivo(clsCotizacionSolicitud cotizacion, string solicitud, clsLineaSolicitud ruta, int intento, IReadOnlyList<string> ids)
+    {
+        cotizaciones.RegistrarEnvioConexosNexo(new clsEnvioConexosNexo(
+            cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.FallidoDefinitivo, ids, []));
+        logger.LogWarning(
+            "Los conexos de la ruta {Ruta} de {Folio} no llegaron a Nexo tras {Maximo} intentos ({Conexos}): quedan fallido_definitivo. Revísalos en Nexo.",
+            ruta.Orden, cotizacion.Folio, opciones.Value.MaximoReintentosConexos, string.Join(", ", ids));
     }
 
     /// <summary>

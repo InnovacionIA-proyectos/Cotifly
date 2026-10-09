@@ -63,7 +63,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     [Fact]
     public async Task UnPostInciertoSeReleeYNoSeDuplica()
     {
-        var (_, folio) = await CapturarAsync();
+        var (sesion, folio) = await CapturarAsync();
         var solicitud = _nexo.SolicitudesCreadas[^1];
         _nexo.CostearLinea(solicitud, 0, 1_000_000m);
         _nexo.CortarRespuestaConexos = true;       // Nexo aplica el conexo y la respuesta no llega
@@ -74,6 +74,11 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle();
         (await EventosAsync(folio, "incierto")).Should().Be(1, "sin confirmación queda incierto: no se reenvía a ciegas");
 
+        // Observable: el costeo muestra el conexo incierto y el aviso para revisarlo en Nexo.
+        var incierta = (await RutasAsync(sesion, folio)).Single();
+        incierta.GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("incierto");
+        incierta.GetProperty("aviso_conexos_nexo").GetString().Should().Contain("Revisa en la cotización de Nexo").And.Contain("Cargue en puerto");
+
         _nexo.CortarRespuestaConexos = false;
         await _api.ProcesarPollingAsync(folio);
         await _api.ProcesarPollingAsync(folio);
@@ -81,7 +86,74 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle("la lectura del polling lo muestra en Nexo: queda enviado sin otro POST");
         (await EventosAsync(folio, "enviado")).Should().Be(1);
         (await ConexosEnRutaAsync(folio)).Should().Be(1, "no se duplica en Cotifly");
+        var confirmada = (await RutasAsync(sesion, folio)).Single();
+        confirmada.GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("enviado");
+        confirmada.GetProperty("aviso_conexos_nexo").ValueKind.Should().Be(JsonValueKind.Null);
     }
+
+    /// <summary>
+    /// La Mesa entrega en la misma consulta en que falla el envío: la cotización vuelve a la agenda solo para reintentar los conexos (sin
+    /// volver a costear) y, cuando Nexo responde, llegan una sola vez; después sale de la agenda.
+    /// </summary>
+    [Fact]
+    public async Task EntregadaEnLaMismaConsultaElEnvioFallidoSeReintentaSoloParaLosConexos()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        _nexo.ConexosFalla = HttpStatusCode.Forbidden; /* Nexo no lo aplica (un 5xx seria incierto) */
+
+        await _api.ProcesarPollingAsync(folio);
+
+        (await EventosAsync(folio, "fallido")).Should().Be(1);
+        (await AgendadaAsync(folio)).Should().BeTrue("entregada, pero con conexos por reintentar vuelve a la agenda");
+        var precio = (await RutasAsync(sesion, folio)).Single().GetProperty("precio_final_linea").GetDecimal();
+
+        _nexo.ConexosFalla = null;
+        await _api.ProcesarPollingAsync(folio);
+
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Count.Should().Be(2, "el fallido y el reintento");
+        _nexo.CotizacionDe(solicitud).Should().NotBeNull();
+        (await EventosAsync(folio, "enviado")).Should().Be(1);
+        (await AgendadaAsync(folio)).Should().BeFalse("sin nada por reintentar sale de la agenda");
+        var ruta = (await RutasAsync(sesion, folio)).Single();
+        ruta.GetProperty("precio_final_linea").GetDecimal().Should().Be(precio, "el reintento no vuelve a costear ni toca montos");
+        ruta.GetProperty("estado_costeo").GetString().Should().Be("entregada");
+        (await _api.ProcesarPollingAsync(folio)).Should().Be(0, "ya no está en la agenda");
+    }
+
+    [Fact]
+    public async Task AlTopeDeReintentosQuedaFallidoDefinitivoVisibleYSaleDeLaAgenda()
+    {
+        using var nexo = new clsNexoFalso()
+            .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
+            .ConServicioConexo(Cargue, "CAR-01", "Cargue en puerto", "logistico", "UND", 150_000m);
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, nexo,
+            extra: new Dictionary<string, string?> { ["CosteoNexo:MaximoReintentosConexos"] = "2" });
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var respuesta = await api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, Formulario());
+        var folio = (await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = nexo.SolicitudesCreadas[^1];
+        nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        nexo.Entregar(solicitud);
+        nexo.ConexosFalla = HttpStatusCode.Forbidden; /* Nexo no lo aplica (un 5xx seria incierto) */
+
+        await api.ProcesarPollingAsync(folio);
+        await api.ProcesarPollingAsync(folio);
+        await api.ProcesarPollingAsync(folio);
+
+        nexo.PeticionesConexos(nexo.CotizacionDe(solicitud)!).Count.Should().Be(2, "tope de 2 intentos");
+        (await EventosAsync(folio, "fallido_definitivo")).Should().Be(1);
+        (await AgendadaAsync(folio)).Should().BeFalse();
+        using var costeo = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var ruta = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK)).GetProperty("rutas")[0];
+        ruta.GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("fallido_definitivo");
+        ruta.GetProperty("aviso_conexos_nexo").GetString().Should().Contain("Revisa en la cotización de Nexo");
+    }
+
+    private Task<bool> AgendadaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<bool>(_entorno.BaseDatos.CadenaCotifly,
+        $"SELECT CAST(IIF(costeoSiguienteConsultaAt IS NULL, 0, 1) AS bit) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
 
     [Fact]
     public async Task ConElPrimerCamionDescartadoVanAlSiguienteCamionVigente()

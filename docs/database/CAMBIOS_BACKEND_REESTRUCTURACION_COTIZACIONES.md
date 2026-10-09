@@ -439,7 +439,10 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
   antes del POST, luego `enviado`, `fallido` o `incierto`), atado a `solicitudNexoId`: una re-solicitud o `-vN` los vuelve a enviar
   una vez a su cotización nueva. Un POST incierto se relee y nunca se repite a ciegas; un fallo se reintenta en el siguiente ciclo y
   no frena el costeo. El precio en Cotifly sigue siendo el costo del catálogo; la lectura de #135 no reimporta un conexo cuyo
-  `servicioConexoId` ya está en la ruta. El reclamo del polling evita que dos réplicas envíen a la vez.
+  `servicioConexoId` ya está en la ruta. El reclamo del polling evita que dos réplicas envíen a la vez. Si la cotización queda
+  entregada en la misma consulta en que falla el envío, vuelve a la agenda solo para reintentarlo (sin costear ni tocar montos)
+  hasta `CosteoNexo:MaximoReintentosConexos`; al tope queda `fallido_definitivo`. `GET .../costeo` muestra `estado_nexo` por conexo
+  y `aviso_conexos_nexo` por ruta (incierto o fallido definitivo). Los conexos migrados sin UUID no se envían.
 - **`DatosNuevaVersion`** gana `rutas[]` (`RutaNuevaVersion`: orden, línea de negocio, origen, destino y margen de cada ruta);
   `linea_negocio` de primer nivel es la de la ruta 1 o `Varias`.
 

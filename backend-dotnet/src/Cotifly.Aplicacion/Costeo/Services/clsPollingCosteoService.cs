@@ -115,6 +115,27 @@ public sealed class clsPollingCosteoService(
         }
 
         var relectura = cotizacion.RequiereRelecturaCosteo;
+
+        // Decisión 10 (HU-021.9): una cotización que ya no se consulta (entregada en la misma consulta en que falló el envío de conexos)
+        // vuelve a la agenda SOLO para reintentar ese envío: no se vuelve a costear ni se tocan montos ni la versión de negocio.
+        if (!(cotizacion.SeConsultaEnNexo || relectura) && !cotizacion.PerdidaSoloEnCotifly && envioConexos is not null
+            && cotizacion.UsuarioId is { } duenoConexos && cotizacion.CotizacionNexoId is not null
+            && await envioConexos.TieneReintentosAsync(cotizacion, cancellationToken))
+        {
+            var reintento = await envioConexos.ReintentarAsync(cotizacion, duenoConexos, CancellationToken.None);
+            if (reintento.PorReintentar > 0)
+            {
+                cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloReintentoConexos);
+            }
+            else
+            {
+                cotizacion.DetenerPollingCosteo();
+            }
+
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            return reintento.PorReintentar > 0 ? ResultadoConsultaCosteo.SinCambio : ResultadoConsultaCosteo.Detenida;
+        }
+
         if (!(cotizacion.SeConsultaEnNexo || relectura) || cotizacion.PerdidaSoloEnCotifly || cotizacion.UsuarioId is not { } usuarioId || cotizacion.CosteoEnviadoAt is not { } enviadaAt)
         {
             cotizacion.DetenerPollingCosteo();
@@ -246,7 +267,15 @@ public sealed class clsPollingCosteoService(
         {
             try
             {
-                await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
+                var envio = await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
+
+                // Si el polling se detuvo en esta consulta (entregada, descartada o vencida) y quedaron conexos por reintentar, la
+                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos).
+                if (envio.PorReintentar > 0 && cotizacion.CosteoSiguienteConsultaAt is null)
+                {
+                    cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloReintentoConexos);
+                    await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

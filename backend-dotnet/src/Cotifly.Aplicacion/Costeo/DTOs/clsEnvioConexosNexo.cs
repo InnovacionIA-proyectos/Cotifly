@@ -38,4 +38,19 @@ public sealed record clsEnvioConexosNexo(
 
     /// <summary>Nexo no lo aplicó (rechazo o error antes de enviar): el siguiente ciclo lo vuelve a intentar.</summary>
     public const string Fallido = "fallido";
+
+    /// <summary>
+    /// Llegó al tope de intentos fallidos (<c>CosteoNexo:MaximoReintentosConexos</c>): no se vuelve a intentar; queda un warning y el
+    /// costeo lo muestra para que el comercial o la Mesa lo revisen en Nexo.
+    /// </summary>
+    public const string FallidoDefinitivo = "fallido_definitivo";
+}
+
+/// <summary>
+/// Resultado de una pasada del envío diferido: cuántos conexos quedaron enviados y cuántos quedaron <see cref="clsEnvioConexosNexo.Fallido"/>
+/// por debajo del tope (el polling vuelve a agendar la cotización para reintentarlos aunque ya esté entregada).
+/// </summary>
+public sealed record clsResultadoEnvioConexos(int Enviados, int PorReintentar)
+{
+    public static readonly clsResultadoEnvioConexos Nada = new(0, 0);
 }

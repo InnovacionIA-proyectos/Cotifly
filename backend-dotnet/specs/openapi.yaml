@@ -3783,6 +3783,16 @@ components:
           type: integer
           nullable: true
           description: HU-021.8. Ruta a la que pertenece el conexo (`rutas[].linea_orden`).
+        estado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, enviado, incierto, fallido_definitivo, null]
+          description: |
+            Decisión 10 (HU-021.9, #136). Estado del envío diferido del conexo a la cotización de Nexo: `pendiente` (se envía cuando
+            Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
+            su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
+            reintentos: revisar en Nexo). Solo en `GET .../costeo`; `null` en las respuestas de las mutaciones, antes de enviar la
+            solicitud a Nexo y en un conexo migrado sin id del catálogo (no se envía).
 
     RutaCosteo:
       type: object
@@ -3816,6 +3826,12 @@ components:
           description: HU-021.9. Las mercancías de la ruta, en su orden.
           items:
             $ref: '#/components/schemas/MercanciaCosteo'
+        aviso_conexos_nexo:
+          type: string
+          nullable: true
+          description: |
+            Decisión 10 (HU-021.9). Aviso cuando algún conexo de la ruta quedó `incierto` o `fallido_definitivo` en su envío a Nexo
+            (el comercial o la Mesa deben revisarlo en Nexo); `null` si no hay nada que revisar. Solo en `GET .../costeo`.
         linea_orden:
           type: integer
           minimum: 1
