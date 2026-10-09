@@ -83,7 +83,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             var auxiliar = new clsBaseAuxiliarPruebas(CadenaMaster, nombre, ConBase(CadenaMaster, nombre));
             try
             {
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{nombre}];");
+                await CrearBaseAsync(CadenaMaster, nombre);
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
                 if (conSeeders)
                 {
@@ -115,13 +115,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         CadenaCotifly = ConBase(CadenaMaster, NombreBase);
         CadenaIdentidad = ConBase(CadenaMaster, NombreBaseIdentidad);
 
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreBase}];");
+        await CrearBaseAsync(CadenaMaster, NombreBase);
         foreach (var script in Scripts)
         {
             await EjecutarScriptAsync(CadenaCotifly, RutaScript(script));
         }
 
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreBaseIdentidad}];");
+        await CrearBaseAsync(CadenaMaster, NombreBaseIdentidad);
         await EjecutarAsync(CadenaIdentidad, $"""
             CREATE TABLE dbo.tblSAPUsuariosApp (
                 ID                  NUMERIC(18,0) NOT NULL PRIMARY KEY,
@@ -221,7 +221,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaSolo0001 is null)
             {
                 const string NombreAuxiliar = "dbSolo0001_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 var script = (await File.ReadAllTextAsync(RutaScript(Scripts[0])))
                     .Replace($"USE {NombreBase};", $"USE [{NombreAuxiliar}];", StringComparison.OrdinalIgnoreCase);
@@ -249,7 +249,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaConCiudades is null)
             {
                 const string NombreAuxiliar = "dbCiudades_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 foreach (var nombre in Scripts)
                 {
@@ -283,7 +283,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaDirectorio is null)
             {
                 const string NombreAuxiliar = "DWCubosEBSSAP";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 await EjecutarAsync(cadena, """
                     CREATE TABLE dbo.DimEjecutivo (
@@ -319,7 +319,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaSin0004 is null)
             {
                 const string NombreAuxiliar = "dbSin0004_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 foreach (var nombre in Scripts.Take(3))
                 {
@@ -408,7 +408,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts)
     {
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{nombre}];");
+        await CrearBaseAsync(CadenaMaster, nombre);
         var cadena = ConBase(CadenaMaster, nombre);
         foreach (var script in Scripts.Take(scripts))
         {
@@ -434,6 +434,35 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             TrustServerCertificate = true,
             CommandTimeout = TiempoMaximoOrdenSeg,
         }.ConnectionString;
+
+    /// <summary>Intentos de <see cref="CrearBaseAsync"/> ante el bloqueo de <c>model</c>.</summary>
+    public const int IntentosCrearBase = 5;
+
+    /// <summary>
+    /// <c>CREATE DATABASE</c> con reintentos. SQL Server copia <c>model</c> para crear cada base y toma un candado exclusivo
+    /// sobre ella: si varios fixtures (o bases auxiliares de clases que corren en paralelo) crean bases a la vez en el mismo
+    /// contenedor, alguno falla con el error 1807 ("Could not obtain exclusive lock on database 'model'"). Visto en el CI
+    /// (#147). Reintenta solo ese error, con espera creciente y algo de azar; cualquier otro error se propaga.
+    /// </summary>
+    public static async Task CrearBaseAsync(string cadenaMaster, string nombre)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                await EjecutarAsync(cadenaMaster, $"CREATE DATABASE [{nombre}];");
+                return;
+            }
+            catch (SqlException ex) when (intento < IntentosCrearBase && EsBloqueoDeModel(ex))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds((500 * (1 << (intento - 1))) + Random.Shared.Next(0, 500)));
+            }
+        }
+    }
+
+    private static bool EsBloqueoDeModel(SqlException ex) =>
+        ex.Errors.Cast<SqlError>().Any(e => e.Number == 1807)
+        || ex.Message.Contains("exclusive lock on database 'model'", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Ejecuta un lote T-SQL.</summary>
     public static async Task EjecutarAsync(string cadena, string sql)
