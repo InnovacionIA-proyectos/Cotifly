@@ -135,11 +135,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
         });
 
     /// <summary>La Mesa de Nexo costea solo la línea <paramref name="indice"/> (base 0) de una solicitud de varias líneas (HU-011).</summary>
-    public void CostearLinea(string solicitudId, int indice, decimal flete) =>
+    public void CostearLinea(string solicitudId, int indice, decimal flete, decimal? retorno = null) =>
         Con(solicitudId, s =>
         {
             s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
-            s.Cotizacion.Fletes[indice] = (flete, null, null);
+            s.Cotizacion.Fletes[indice] = (flete, null, retorno);
             s.Estado = "EnCosteo";
         });
 

@@ -56,6 +56,12 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     private string? _cadenaSin0005;
     private string? _cadenaSin0006;
 
+    /// <summary>
+    /// Si es <c>true</c>, la base principal se arma con <c>db/scripts/01_crear_esquema.sql</c> y los seeders de <c>db/seeder/</c> (instalación
+    /// desde cero, como la base compartida desde el 2026-10-08) en vez de las migraciones 0001 a 0010 (HU-021.12, #139).
+    /// </summary>
+    public bool InstalacionDesdeCero { get; init; }
+
     /// <summary>Cadena a <c>dbTarifario_Nexo_Pruebas</c> con el esquema aplicado.</summary>
     public string CadenaCotifly { get; private set; } = string.Empty;
 
@@ -116,9 +122,21 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         CadenaIdentidad = ConBase(CadenaMaster, NombreBaseIdentidad);
 
         await CrearBaseAsync(CadenaMaster, NombreBase);
-        foreach (var script in Scripts)
+        if (InstalacionDesdeCero)
         {
-            await EjecutarScriptAsync(CadenaCotifly, RutaScript(script));
+            // HU-021.12 (#139, regla de las pruebas de esquema): el esquema vigente de la base compartida, sin migraciones.
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
+            foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
+            {
+                await EjecutarScriptAsync(CadenaCotifly, seeder);
+            }
+        }
+        else
+        {
+            foreach (var script in Scripts)
+            {
+                await EjecutarScriptAsync(CadenaCotifly, RutaScript(script));
+            }
         }
 
         await CrearBaseAsync(CadenaMaster, NombreBaseIdentidad);
