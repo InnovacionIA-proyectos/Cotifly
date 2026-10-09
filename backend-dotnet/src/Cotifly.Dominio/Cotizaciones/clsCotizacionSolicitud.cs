@@ -678,6 +678,23 @@ public sealed class clsCotizacionSolicitud
     public bool AsignarLineaNexo(Guid camionId, string lineaSolicitudNexoId) => Camion(camionId).AsignarLineaNexo(lineaSolicitudNexoId);
 
     /// <summary>
+    /// La Mesa de Costeo borró en Nexo la línea del camión <paramref name="camionId"/> (#134): el camión queda <c>descartada</c>, sin línea
+    /// ni costos de Nexo, y su ruta resume el estado sin él. Los totales los recalcula la siguiente <see cref="AplicarFotoNexo"/>.
+    /// Devuelve si cambió.
+    /// </summary>
+    public bool DescartarCamionSinLineaEnNexo(Guid camionId)
+    {
+        var camion = Camion(camionId);
+        if (!camion.DescartarPorLineaBorrada())
+        {
+            return false;
+        }
+
+        _rutas.First(r => r.Id == camion.LineaSolicitudId).ResumirEstado(SolicitudNexoId is not null);
+        return true;
+    }
+
+    /// <summary>
     /// Aplica una lectura de Nexo a los camiones (HU-005.6): a cada uno su estado y, si <see cref="clsCosteoCamionNexo.ConCostos"/>, el
     /// flete, el retorno y el vehículo que puso la Mesa de Costeo. Después cada ruta resume su estado y, si algún camión cambió de costos,
     /// se recalculan los totales y el precio de las rutas y de la solicitud (siempre: nadie toca los camiones por fuera). Con PDF el

@@ -37,7 +37,9 @@ Nexo no tiene que hacer nada para recibir esto: sigue siendo `POST /api/captura-
 
 Cotifly le enviará una línea por camión, y los camiones de una misma ruta comparten todo menos el vehículo. Al volver el costeo (`GET /api/solicitudes/{id}`), Cotifly tiene que saber **qué línea de Nexo corresponde a qué camión suyo**. Hoy lo hace por contenido (origen, destino, vehículo, carrocería, peso), y si dos camiones son iguales solo los distingue el orden.
 
-**Petición:** aceptar en `CapturaLineaRequest` un campo **opcional** que identifique la ruta (por ejemplo `rutaId`, texto de hasta 64 caracteres), guardarlo en `tbl_lineas_solicitud` y devolverlo junto a cada línea en `GET /api/solicitudes/{id}`.
+**Petición:** aceptar en `CapturaLineaRequest` un campo **opcional** que identifique la ruta, `referenciaRuta` (texto de hasta 64 caracteres; Cotifly manda el GUID de su ruta), guardarlo en `tbl_lineas_solicitud` y devolverlo junto a cada línea en `GET /api/solicitudes/{id}`. No se propone `rutaId` porque `LineaCosteoDto.rutaId` ya existe en Nexo (es su catálogo de rutas origen-destino).
+
+**Estado en Cotifly (HU-021.7, #134):** listo del lado de Cotifly y apagado (`Nexo:EnviarReferenciaRuta = false`) hasta que Nexo lo acepte, porque su `CapturaLineaRequest` declara `additionalProperties: false` y no tiene ningún campo de texto libre por línea donde ponerlo. Sin N1, Cotifly empareja por contenido, asigna en orden estable los camiones idénticos de una misma ruta y pone en `notas` del encabezado cuántas líneas son de cada ruta, para la Mesa.
 
 **Para qué le sirve a Nexo:** la Mesa de Costeo podría mostrar agrupadas las líneas de una misma ruta. Cotifly lo usa solo para emparejar.
 
@@ -106,7 +108,7 @@ En Nexo el vehículo es **una sola combinación** del catálogo (tipo + carrocer
 Sin nada de lo anterior, Cotifly funciona así:
 
 - **Sin el cubicador (C1):** una ruta = un camión, con el vehículo digitado como hoy.
-- **Sin N1:** empareja los camiones de una ruta por contenido y orden de envío. Los costos no se cruzan (camiones iguales cuestan lo mismo), pero el estado de cada uno sí podría quedar en el camión equivocado.
+- **Sin N1:** empareja los camiones de una ruta por contenido y, los idénticos, en orden estable (HU-021.7, #134). Los costos no se cruzan (camiones iguales cuestan lo mismo), pero el estado de cada uno sí podría quedar en el camión equivocado. Dos rutas con el mismo contenido no se emparejan por orden: quedan sin asociar y sin precio hasta revisarlas con Nexo.
 - **Sin N3:** el admin de fletes pone el precio de una línea sin vehículo.
 
 ## 6. Preguntas abiertas para Nexo

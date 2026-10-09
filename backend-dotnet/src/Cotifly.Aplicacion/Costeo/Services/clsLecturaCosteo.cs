@@ -29,12 +29,13 @@ public static class clsLecturaCosteo
         // HU-021: primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
         var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto, ahora);
 
-        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a la ruta 1 y se quita la marca.
+        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a su ruta (la del camión cuya línea los lleva,
+        // #134; si no se sabe, la ruta 1) y se quita la marca. Fuera de esa marca el polling no importa conexos (decisión 3).
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
         if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo && cotizacion.PrimeraRuta is { } ruta)
         {
-            var faltantes = nexo.Conexos.Where(c => ruta.Conexos.All(r => !string.Equals(r.IdServicioConexo, c.Id, StringComparison.OrdinalIgnoreCase)));
-            var importados = clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, faltantes, ahora);
+            var faltantes = nexo.Conexos.Where(c => cotizacion.Rutas.All(r => r.Conexos.All(x => !string.Equals(x.IdServicioConexo, c.Id, StringComparison.OrdinalIgnoreCase))));
+            var importados = clsServiciosConexosCosteoService.ImportarConexosPorRuta(cotizacion, nexo, faltantes, ruta, ahora);
             cambio |= importados.EsFallo || importados.Valor > 0;
         }
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);

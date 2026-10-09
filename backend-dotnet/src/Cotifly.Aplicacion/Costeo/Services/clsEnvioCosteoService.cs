@@ -388,6 +388,51 @@ public sealed class clsEnvioCosteoService(
     }
 
     /// <summary>
+    /// La política (<c>MargenesPolitica</c>) de cada línea de negocio de las rutas, leída una vez por línea (#134); <paramref name="conocida"/>
+    /// no se vuelve a leer. Una línea que ya no existe queda en <c>null</c>.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<int, clsMargenPolitica?>> PoliticasDeRutasAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? conocida)
+    {
+        var resultado = new Dictionary<int, clsMargenPolitica?>();
+        foreach (var lineaId in cotizacion.RutasOrdenadas.Select(r => r.LineaNegocioId).OfType<int>().Distinct())
+        {
+            resultado[lineaId] = lineaId == conocida?.Id ? conocida : await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None);
+        }
+
+        return resultado;
+    }
+
+    /// <summary><c>mapeoLineasNexo</c> de la línea de negocio de la ruta del camión, o <c>null</c> si la ruta no tiene o no se conoce.</summary>
+    private static string? MapeoNexo(clsCotizacionSolicitud cotizacion, clsVehiculoLineaSolicitud camion, IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta) =>
+        cotizacion.Rutas.FirstOrDefault(r => r.Id == camion.LineaSolicitudId)?.LineaNegocioId is { } lineaId
+            ? politicasRuta.GetValueOrDefault(lineaId)?.MapeoLineasNexo
+            : null;
+
+    /// <summary>Largo máximo de <see cref="NotaCamionesPorRuta"/> (el resto de <c>notas</c> es del comercial).</summary>
+    public const int LargoMaximoNotaCamiones = 500;
+
+    /// <summary>
+    /// Nota para la Mesa de Costeo cuando alguna ruta viaja partida en varios camiones (#134): Nexo no tiene un campo de ruta por línea
+    /// (N1), así que el encabezado dice cuántas líneas son de cada ruta, TODAS en su orden (también las de un camión), p. ej.
+    /// <c>"Cotifly: una línea por camión, en este orden. Ruta 1 (Buenaventura → Bogotá D.C.): 3 camiones. Ruta 2 (Cali → Yumbo): 1
+    /// camión."</c>. <c>null</c> si todas las rutas tienen un solo camión (cada línea es una ruta: no hay nada que agrupar). Recortada a
+    /// <see cref="LargoMaximoNotaCamiones"/>.
+    /// </summary>
+    public static string? NotaCamionesPorRuta(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var rutas = cotizacion.RutasOrdenadas;
+        if (rutas.All(r => r.Vehiculos.Count <= 1))
+        {
+            return null;
+        }
+
+        var nota = "Cotifly: una línea por camión, en este orden. "
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.Vehiculos.Count} {(r.Vehiculos.Count == 1 ? "camión" : "camiones")}."));
+        return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
+    }
+
+    /// <summary>
     /// Las rutas guardadas como líneas de la captura (en orden, cada una con sus mercancías y el vehículo de su camión): lo que se
     /// revalida con las reglas de la captura antes de reenviar (HU-021, "una ruta y un camión").
     /// </summary>
@@ -538,9 +583,18 @@ public sealed class clsEnvioCosteoService(
     {
         var cronometro = Stopwatch.StartNew();
 
-        // HU-021 (CAMBIOS_BACKEND §5.3): una línea por camión, ruta por ruta y en orden.
-        IReadOnlyList<clsLineaSolicitudCosteo> lineas = [.. cotizacion.LineasNexo().Select(l => l.Linea)];
-        var resultado = await ResolverClienteYEnviarAsync(cotizacion, encabezado, lineas, politica, usuarioId, CancellationToken.None);
+        // HU-021 (CAMBIOS_BACKEND §5.3, #134): una línea por camión, ruta por ruta y en orden, cada una con los datos de su ruta y de su
+        // camión. Sin vehículo (sin selección automática) la línea viaja igual y la resuelve la Mesa: la solicitud nunca se parte. Mientras
+        // Nexo no tenga el campo de ruta por línea (N1), la nota del encabezado le dice a la Mesa qué líneas son la misma ruta.
+        // Cada línea lleva la línea de negocio de Nexo de SU ruta (#134); `politica` (la de la ruta 1 o la del formulario) solo evita volver a
+        // leerla y sirve de respaldo para una ruta sin línea de negocio.
+        var politicasRuta = await PoliticasDeRutasAsync(cotizacion, politica);
+        IReadOnlyList<clsLineaSolicitudCosteo> lineas = [.. cotizacion.LineasNexo().Select(l => l.Linea with
+        {
+            LineaNegocioNexo = MapeoNexo(cotizacion, l.Camion, politicasRuta) ?? politica?.MapeoLineasNexo,
+        })];
+        var conNota = ConNota(encabezado, NotaCamionesPorRuta(cotizacion));
+        var resultado = await ResolverClienteYEnviarAsync(cotizacion, conNota, lineas, politica, politicasRuta, usuarioId, CancellationToken.None);
         var ahora = reloj.AhoraUtc;
         if (resultado.EsExitoso)
         {
@@ -568,7 +622,13 @@ public sealed class clsEnvioCosteoService(
 
         await auditoria.RegistrarAsync(
             HerramientaAuditoria,
-            new { folio = cotizacion.Folio, reintento, linea_negocio_nexo = politica?.MapeoLineasNexo, lineas = lineas.Count },
+            new
+            {
+                folio = cotizacion.Folio,
+                reintento,
+                linea_negocio_nexo = string.Join(", ", lineas.Select(l => l.LineaNegocioNexo).OfType<string>().Distinct(StringComparer.Ordinal)),
+                lineas = lineas.Count,
+            },
             new
             {
                 estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
@@ -630,6 +690,7 @@ public sealed class clsEnvioCosteoService(
         clsEncabezadoSolicitudCosteo encabezado,
         IReadOnlyList<clsLineaSolicitudCosteo> lineas,
         clsMargenPolitica? politica,
+        IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta,
         Guid usuarioId,
         CancellationToken cancellationToken)
     {
@@ -666,7 +727,7 @@ public sealed class clsEnvioCosteoService(
                 + "crear la solicitud. Pendiente de confirmar con el equipo de Nexo cómo enviar prospectos.");
         }
 
-        await ResolverMargenAsync(cotizacion, politica, bp, cancellationToken);
+        await ResolverMargenAsync(cotizacion, politica, politicasRuta, bp, cancellationToken);
 
         var cliente = bp is not null ? clsClienteNexo.PorBp(bp) : clsClienteNexo.PorId(clienteId!.Value);
         return await nexo.EnviarSolicitudAsync(usuarioId, new clsSolicitudNexo(cliente, encabezado, lineas, politica?.MapeoLineasNexo), cancellationToken);
@@ -678,14 +739,14 @@ public sealed class clsEnvioCosteoService(
     /// aplicarlo cuando llegue el costeo; si no se puede resolver, el polling lo advierte y nunca muestra el costo sin margen. Un margen
     /// negociado (re-solicitud, HU-013.4) no se pisa, falle o no la resolución.
     /// </summary>
-    private async Task ResolverMargenAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, string? bp, CancellationToken cancellationToken)
+    private async Task ResolverMargenAsync(
+        clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, IReadOnlyDictionary<int, clsMargenPolitica?> politicasRuta, string? bp,
+        CancellationToken cancellationToken)
     {
         var resueltos = new Dictionary<int, Margen.DTOs.clsMargenResuelto?>();
         foreach (var ruta in cotizacion.RutasOrdenadas)
         {
-            var deRuta = ruta.LineaNegocioId is { } lineaId && lineaId != politica?.Id
-                ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken)
-                : politica;
+            var deRuta = ruta.LineaNegocioId is { } lineaId ? politicasRuta.GetValueOrDefault(lineaId) : politica;
             if (deRuta is null)
             {
                 continue;

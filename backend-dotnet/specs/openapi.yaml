@@ -998,8 +998,8 @@ paths:
           id. Sin id, el nombre se resuelve con la regla determinista de HU-005.13 y nunca se adivina (`MUNICIPIO_AMBIGUO` con los
           candidatos y su id, o `MUNICIPIO_NO_ENCONTRADO`). Por eso toda captura consulta el catálogo de municipios (con caché):
           si no responde, 503 `MUNICIPIOS_NO_DISPONIBLE`.
-        - **Varias líneas de negocio:** se aceptan. Hasta integrar #134 (línea por camión), a Nexo viaja la línea de negocio de la
-          ruta 1; el margen sí es el de cada ruta.
+        - **Varias líneas de negocio:** se aceptan. Cada camión viaja a Nexo con la línea de negocio de su ruta y el margen es el
+          de cada ruta.
         - **Todos los errores juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[]` (`ruta` base 0 o `null` si es del
           encabezado, `campo`, `codigo`, `mensaje`); `mensaje` es el del primero y `detalle.motivo` su código (o el del catálogo de
           Nexo que no respondió).
