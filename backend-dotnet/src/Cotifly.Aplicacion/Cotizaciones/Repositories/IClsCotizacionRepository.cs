@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Dominio.Cotizaciones;
 
@@ -25,6 +26,15 @@ public interface IClsCotizacionRepository
 
     /// <summary>Agrega un PDF invalidado al historial (script 0006, ADR-018 §11); se escribe al guardar.</summary>
     void AgregarHistorialPdf(clsCotizacionPdfHistorial historial);
+
+    /// <summary>
+    /// HU-021.8 (#135): guarda los conexos de Nexo previos a un POST de conexos incierto y la ruta pedida (<see cref="clsConexosPendientesNexo"/>),
+    /// en la misma unidad de trabajo que la marca de conexos pendientes. Se guarda en <c>EventosHerramienta</c> (sin columna nueva).
+    /// </summary>
+    void RegistrarConexosPendientesNexo(clsConexosPendientesNexo pendientes);
+
+    /// <summary>El último registro de <see cref="RegistrarConexosPendientesNexo"/> del folio, o <c>null</c> si no hay.</summary>
+    Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// PDF invalidados de la cotización, del más antiguo al más reciente (vacía si no hay). Quedan en la unidad de trabajo: al

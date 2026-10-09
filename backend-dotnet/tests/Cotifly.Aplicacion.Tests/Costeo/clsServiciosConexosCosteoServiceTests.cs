@@ -291,6 +291,10 @@ public sealed class clsServiciosConexosCosteoServiceTests
         // se guarda la marca ConexosPendientesDeLeer con la versión reservada (antes no se guardaba nada sin PDF).
         _cotizacion.ConexosPendientesDeLeer.Should().BeTrue();
         _cotizacion.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1");
+
+        // HU-021.8 (#135): con la marca se guardan la ruta pedida y los conexos que Nexo YA tenía antes del POST (CX-1).
+        _cotizaciones.Received(1).RegistrarConexosPendientesNexo(Arg.Is<clsConexosPendientesNexo>(p =>
+            p.Folio == _cotizacion.Folio && p.LineaSolicitudId == _cotizacion.PrimeraRuta!.Id && p.Previos.SequenceEqual(new[] { "CX-1" })));
         await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 

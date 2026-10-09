@@ -1294,16 +1294,26 @@ paths:
     put:
       operationId: ajustarMargenCosteo
       tags: [web]
-      summary: Ajusta el margen de la cotización y recalcula el precio del flete y de los conexos
-      x-issue: '#98 (HU-013.2; entrega el script 0006)'
+      summary: Ajusta el margen de UNA ruta de la cotización y recalcula el precio de esa ruta y el total
+      x-issue: '#98 (HU-013.2; entrega el script 0006); por ruta desde #135 (HU-021.8)'
       description: |
         HU-013.2 (ADR-018 §3). Es el endpoint que ejecuta el botón de ajuste de margen y el Confirmar de la acción
         propuesta `ajustar_margen` del asistente.
 
+        **Por ruta (HU-021.8, #135, ADR-019 decisión 6).** El margen es de cada ruta. El cuerpo dice a qué ruta aplica con
+        `linea_orden` o `linea_solicitud_id` (los de `rutas[]` de `CosteoCotizacion`). Si la cotización tiene una sola ruta se
+        puede omitir; con varias y sin indicarla, 400 `RUTA_REQUERIDA` con `detalle.rutas` (orden, id, origen y destino de cada
+        una, sin montos) y nada cambia. Una ruta que no es de la cotización (o un orden y un id de rutas distintas): 400
+        `RUTA_INEXISTENTE`. Solo se recalculan esa ruta (`rutas[].precio_final_linea`) y el total (`precio_final`); las demás
+        rutas no cambian. La justificación se exige contra el sugerido DE ESA RUTA (`rutas[].margen_sugerido`: SAP TM o, si no
+        hay, la política de su línea) y `MargenAjustes.lineaSolicitudId` guarda la ruta ajustada.
+
         - `margen` es libre entre 0 y 0,99 (fracción: 0.18 = 18 %). Fuera de rango: 400 `AJUSTE_MARGEN_INVALIDO`.
         - `justificacion` es **obligatoria** si `margen` queda por debajo del margen sugerido (`margen_sugerido` del
           costeo: SAP TM con el BP o la política de la línea). Sin ella: 400 `JUSTIFICACION_REQUERIDA`.
-        - Solo con costo disponible (`autocosteo` o `entregada` con `precio_final`; si no, 409 `COSTEO_NO_LISTO`).
+        - Solo con precio en la RUTA ajustada (si no, 409 `COSTEO_NO_LISTO`). Decisión del usuario (#135): el ajuste es ruta por ruta
+          y las demás rutas pueden seguir en costeo; entonces `precio_final` queda en `null` hasta que todas tengan precio, y el PDF
+          sigue exigiendo todas las rutas con precio.
         - **Regla del PDF (ADR-018 §11):** si la cotización ya se envió al cliente (`estado_envio` distinto de
           `sin_enviar`) o tiene resultado, 409 `PDF_YA_ENVIADO` (la `detalle` indica crear la versión `-vN`). Si no, se
           permite aunque haya PDF: el PDF actual queda invalidado (`pdf_url = null`, `pdf_desactualizado = true`, el
@@ -1330,9 +1340,10 @@ paths:
             example:
               margen: 0.12
               justificacion: "Cliente estratégico; competencia cotizó 8 % por debajo."
+              linea_orden: 2
       responses:
         '200':
-          description: Margen ajustado y precios recalculados
+          description: Margen de la ruta ajustado y precios recalculados (esa ruta y el total)
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
@@ -1341,19 +1352,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/CosteoCotizacion'
         '400':
-          description: '`AJUSTE_MARGEN_INVALIDO` (fuera de 0 a 0,99) o `JUSTIFICACION_REQUERIDA` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido'
+          description: '`AJUSTE_MARGEN_INVALIDO` (fuera de 0 a 0,99), `JUSTIFICACION_REQUERIDA` (con `detalle.margen_sugerido`, `detalle.linea_orden` y `detalle.linea_solicitud_id` de la ruta), `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido'
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
-              example:
-                error:
-                  codigo: JUSTIFICACION_REQUERIDA
-                  mensaje: "El margen 12 % queda por debajo del sugerido (15 %): escribe la justificación."
-                  detalle:
-                    margen_sugerido: 0.15
+              examples:
+                justificacion:
+                  value:
+                    error:
+                      codigo: JUSTIFICACION_REQUERIDA
+                      mensaje: "El margen 12 % queda por debajo del sugerido (15 %): escribe la justificación."
+                      detalle:
+                        margen_sugerido: 0.15
+                        linea_orden: 1
+                        linea_solicitud_id: "5b1f6a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b"
+                ruta_requerida:
+                  value:
+                    error:
+                      codigo: RUTA_REQUERIDA
+                      mensaje: "La cotización PCN-L1 tiene 2 rutas: indica a cuál aplica (linea_orden o linea_solicitud_id)."
+                      detalle:
+                        rutas:
+                          - linea_orden: 1
+                            linea_solicitud_id: "5b1f6a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b"
+                            origen: Buenaventura
+                            destino: Bogotá
+                          - linea_orden: 2
+                            linea_solicitud_id: "7c2e6b2f-3d4e-4f60-9b0c-1d2e3f4a5b6c"
+                            origen: Buenaventura
+                            destino: Cali
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '404':
@@ -1590,16 +1620,23 @@ paths:
         2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
            conexo con `IClsPrecioService` y los deja `incluido = true`.
 
-        - `items` de 1 a 20 (vacío o más de 20: 400 `ErrorWeb` por el esquema, sin llamar a Nexo), cada uno con
-          `linea_orden`, `servicio_id` del catálogo (`GET /web/servicios-conexos`) y `cantidad` de 0,01 a 999.999,99. Una
-          `linea_orden` que no existe en la cotización: 400 `CONEXO_INVALIDO` sin llamar a Nexo.
+        - `items` de 1 a 20 (vacío o más de 20: 400 `ErrorWeb` por el esquema, sin llamar a Nexo), cada uno con la ruta
+          (`linea_orden` o `linea_solicitud_id`), `servicio_id` del catálogo (`GET /web/servicios-conexos`) y `cantidad` de 0,01
+          a 999.999,99. Una ruta que no existe en la cotización: 400 `CONEXO_INVALIDO` sin llamar a Nexo.
+        - **Por ruta (HU-021.8, #135, decisión 3).** Los conexos son filas de la ruta (`CotizacionServiciosConexos`) con el
+          costo unitario de Nexo (valor base del catálogo × cantidad, que Nexo calcula) y la ruta les aplica SU margen. Sin
+          ruta en los items, la única de la cotización; con varias rutas y sin indicarla, 400 `RUTA_REQUERIDA` con
+          `detalle.rutas`. Todos los items de una petición deben ser de la misma ruta (si no, 400 `ErrorWeb`): los conexos
+          nuevos que devuelve Nexo no dicen su línea y se guardan en la ruta pedida. En Nexo se pegan a la línea del PRIMER
+          camión de la ruta. Solo se recalculan esa ruta y el total.
         - Una línea que existe pero todavía no tiene línea en la cotización de Nexo (sin flete, o sin el id de la línea de
           la cotización de Nexo guardado): 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. #99 debe guardar ese id
           (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo`
           (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`) al leer la cotización.
         - Solo con costeo disponible (409 `COSTEO_NO_LISTO`). Regla del PDF (ADR-018 §11): ya enviada o con resultado, 409
           `PDF_YA_ENVIADO`; si no, invalida el PDF actual (`pdf_desactualizado`). Una licitación responde 409
-          `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (su PDF de pliego no imprime conexos, ADR-017 §6).
+          `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION` (ADR-017 §6); una solicitud del formulario con varias rutas
+          sí admite conexos, por ruta (HU-021.8).
         - Nexo 400 o 404 del servicio: 400 `CONEXO_INVALIDO` (el código de Nexo en `detalle.motivo`); 403:
           `NEXO_SIN_PERMISO`; caído o sin respuesta: 503 `NEXO_NO_DISPONIBLE`. En todos esos casos no se agrega nada en
           Cotifly, pero la versión ya se reservó (ver el punto siguiente): el `ETag` cambió y hay que recargar el costeo. En
@@ -1646,7 +1683,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CosteoCotizacion'
         '400':
-          description: '`CONEXO_INVALIDO` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido o no cumple el esquema (`items` vacío o con más de 20)'
+          description: '`CONEXO_INVALIDO` o `RUTA_REQUERIDA` (`ErrorNegocio`); `ErrorWeb` si el cuerpo no es JSON válido o no cumple el esquema (`items` vacío o con más de 20, o de rutas distintas)'
           content:
             application/json:
               schema:
@@ -1680,17 +1717,31 @@ paths:
     put:
       operationId: seleccionarServiciosConexos
       tags: [web]
-      summary: Elige qué servicios conexos del costeo se incluyen en el precio y en el PDF
+      summary: Quita servicios conexos de una ruta o cambia su cantidad
+      x-issue: 'HU-005.7; por ruta desde #135 (HU-021.8)'
       description: |
-        HU-005.7. `incluidos` son los ids de `servicios_conexos` que van en el PDF; los demás quedan excluidos. Solo
-        mientras la cotización tenga precio. Solo el dueño.
+        HU-005.7; por ruta desde HU-021.8 (#135, ADR-019 decisión 3). Los conexos son filas de la ruta
+        (`CotizacionServiciosConexos`): no hay "excluidos". Dos formas, y debe venir exactamente una (las dos juntas o ninguna: 400 `ErrorWeb`; `{"linea_orden": 2}` solo NO borra nada):
+
+        - **`conexos`** (nueva): la lista de los conexos que deben QUEDAR en la ruta indicada (`linea_orden` o
+          `linea_solicitud_id`; sin ruta, la única de la cotización, y con varias 400 `RUTA_REQUERIDA`), cada uno con su `id`
+          (`servicios_conexos[].id`) y su `cantidad` nueva (0,01 a 999.999,99, hasta 2 decimales). Los que no vienen se
+          **quitan**: se BORRA su fila. A los demás se les cambia la cantidad con el mismo costo unitario de Nexo. Un `id` que no
+          es conexo de esa ruta: 400 `SOLICITUD_COSTEO_INVALIDA` (para agregar uno nuevo se usa el `POST`).
+        - **`incluidos`** (HU-005.7): los ids que se conservan, sin cambiar cantidades; los demás se quitan. Con ruta, solo en esa
+          ruta; sin ruta, en todas (compatibilidad).
+
+        Después del cambio se recalculan la ruta (`costoServiciosConexos`, su costo final y su precio con su margen) y el total.
+        Cada conexo quitado o con cantidad nueva queda en la auditoría (`EventosHerramienta`, herramienta
+        `cambiar_servicios_conexos`, sin montos). Solo mientras la cotización tenga precio. Solo el dueño.
 
         Desde HU-013.2 (ADR-018 §11, #98, script `0006`): con PDF ya generado se permite e invalida el PDF
         (`pdf_url = null`, `pdf_desactualizado = true`, el anterior queda en el historial) en lugar de responder
         `PDF_YA_GENERADO`; ya enviada o con resultado responde 409 `PDF_YA_ENVIADO` (con la `detalle` para crear `-vN`).
-        La misma selección vigente responde 200 sin invalidar nada. `If-Match` es obligatorio (428
-        `PRECONDICION_REQUERIDA`; 409 `CONFLICTO_CONCURRENCIA` si no coincide) y la respuesta trae `ETag`.
-        Excluir un conexo no lo borra en Nexo (no hay DELETE de conexos, pregunta abierta con Nexo).
+        La misma selección (y las mismas cantidades) responde 200 sin invalidar nada ni subir la versión. `If-Match` es
+        obligatorio (428 `PRECONDICION_REQUERIDA`; 409 `CONFLICTO_CONCURRENCIA` si no coincide) y la respuesta trae `ETag`.
+        Quitar un conexo o cambiar su cantidad no cambia la cotización de Nexo (no hay DELETE de conexos): Cotifly es la fuente
+        de los conexos (decisión 3) y los manda a Nexo con la ruta en el siguiente envío.
       security:
         - bearer: []
       parameters:
@@ -1702,9 +1753,21 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SeleccionServiciosConexos'
+            examples:
+              por_ruta:
+                summary: La ruta 2 conserva un conexo con cantidad 1 (los demás se quitan)
+                value:
+                  linea_orden: 2
+                  conexos:
+                    - id: "CX-1"
+                      cantidad: 1
+              incluidos:
+                summary: Compatibilidad HU-005.7 (sin ruta, en todas las rutas)
+                value:
+                  incluidos: ["CX-1"]
       responses:
         '200':
-          description: Selección guardada
+          description: Conexos de la ruta guardados
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
@@ -1713,7 +1776,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CosteoCotizacion'
         '400':
-          description: '`SOLICITUD_COSTEO_INVALIDA`: algún id no es un servicio conexo del costeo'
+          description: '`SOLICITUD_COSTEO_INVALIDA` (algún id no es un conexo del costeo o de la ruta), `RUTA_REQUERIDA` o `RUTA_INEXISTENTE` (`ErrorNegocio`); `ErrorWeb` si la forma no es válida (las dos formas juntas, cantidad fuera de rango o id repetido)'
           content:
             application/json:
               schema:
@@ -2538,7 +2601,10 @@ components:
                 `PRECONDICION_REQUERIDA` (428: falta `If-Match`), `LINEA_SIN_COTIZACION_NEXO` (409: la línea no tiene
                 todavía línea en la cotización de Nexo) y `TEXTOS_EDITADOS` (409: redactar sobre textos editados por el
                 comercial sin `?sobrescribir=true`). `SERVICIO_OCUPADO` (503, #125: otra operación retiene el candado del
-                folio más allá de los reintentos; nada se guardó y se puede reintentar).
+                folio más allá de los reintentos; nada se guardó y se puede reintentar). `RUTA_REQUERIDA` (400, HU-021.8 #135: la
+                cotización tiene varias rutas y el ajuste de margen o el cambio de conexos no dice a cuál aplica; `detalle.rutas`
+                trae `linea_orden`, `linea_solicitud_id`, `origen` y `destino` de cada una, sin montos) y `RUTA_INEXISTENTE` (400:
+                la ruta indicada no es de la cotización, o `linea_orden` y `linea_solicitud_id` no son la misma ruta).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -2603,6 +2669,8 @@ components:
                 - LINEA_SIN_COTIZACION_NEXO
                 - TEXTOS_EDITADOS
                 - SERVICIO_OCUPADO
+                - RUTA_REQUERIDA
+                - RUTA_INEXISTENTE
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -3563,11 +3631,59 @@ components:
           type: number
         incluido:
           type: boolean
-          description: Si va en el precio y en el PDF (por defecto sí).
+          description: "Si va en el precio y en el PDF (HU-021, siempre `true`: un conexo de la ruta va en el precio y en el PDF)."
+        linea_orden:
+          type: integer
+          nullable: true
+          description: HU-021.8. Ruta a la que pertenece el conexo (`rutas[].linea_orden`).
+
+    RutaCosteo:
+      type: object
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos]
+      description: |
+        HU-021.8 (#135). Una ruta del costeo, sin costos. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
+        conexos (`PUT`/`POST .../costeo/servicios-conexos`) dicen a qué ruta aplican con `linea_orden` o `linea_solicitud_id`.
+      properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+        linea_solicitud_id:
+          type: string
+          format: uuid
+        origen:
+          type: string
+          nullable: true
+        destino:
+          type: string
+          nullable: true
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+        precio_final_linea:
+          type: number
+          nullable: true
+          description: Precio de la ruta (fletes + retorno + levante + conexos, con el margen de la ruta); `null` sin costeo.
+        margen_aplicado:
+          type: number
+          nullable: true
+          description: Margen de la ruta (fracción); `null` mientras la ruta no tenga precio.
+        margen_sugerido:
+          type: number
+          nullable: true
+          description: Sugerido de la ruta (`margenSAPSugerido` o, si no hay, `margenPoliticaSugerido`). Por debajo, el ajuste exige justificación.
+        origen_margen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+        servicios_conexos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServicioConexoCosteo'
 
     CosteoCotizacion:
       type: object
-      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url]
+      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url, rutas]
       properties:
         folio:
           type: string
@@ -3592,6 +3708,9 @@ components:
         margen_aplicado:
           type: number
           nullable: true
+          description: |
+            Margen de la RUTA 1 (compatibilidad, HU-021.8 #135). El margen es por ruta: usar `rutas[].margen_aplicado`. Con varias
+            rutas, ajustar sin indicar la ruta responde 400 `RUTA_REQUERIDA`.
         moneda:
           type: string
           example: COP
@@ -3606,6 +3725,7 @@ components:
           type: number
           nullable: true
           description: |
+            Sugerido de la RUTA 1 (compatibilidad, HU-021.8 #135; el de cada ruta está en `rutas[].margen_sugerido`).
             HU-013.2. Margen sugerido de la cotización (fracción): SAP TM con el BP o la política de la línea, resuelto al
             enviarla, y guardado en `Cotizaciones.margenSugerido` con su origen (script 0006); el ajuste del comercial no lo
             cambia (cada fila de `MargenAjustes` lo copia en `margenPolitica`). Por debajo de él, el ajuste exige
@@ -3632,21 +3752,68 @@ components:
           type: string
           nullable: true
           description: '#98 (script 0006). Versión de negocio (opaca), mismo valor que el encabezado `ETag`; va en `If-Match`.'
+        rutas:
+          type: array
+          description: |
+            HU-021.8 (#135). Las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos.
+            `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad).
+          items:
+            $ref: '#/components/schemas/RutaCosteo'
 
     SeleccionServiciosConexos:
       type: object
-      required: [incluidos]
+      description: |
+        HU-005.7; por ruta desde HU-021.8 (#135). `conexos` (los que quedan en la ruta, con su cantidad) o `incluidos` (los
+        ids que se conservan): exactamente uno de los dos (ninguno o los dos: 400 `ErrorWeb`; `incluidos: []` quita todos). La
+        ruta con `linea_orden` o `linea_solicitud_id`. Los ids se comparan sin distinguir mayúsculas.
       properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+          nullable: true
+        linea_solicitud_id:
+          type: string
+          format: uuid
+          nullable: true
+        conexos:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/CantidadConexoWeb'
         incluidos:
           type: array
+          nullable: true
           items:
             type: string
+
+    CantidadConexoWeb:
+      type: object
+      required: [id, cantidad]
+      description: HU-021.8. Un conexo que queda en la ruta, con su cantidad nueva.
+      properties:
+        id:
+          type: string
+          description: '`servicios_conexos[].id` del costeo.'
+        cantidad:
+          type: number
+          minimum: 0.01
+          maximum: 999999.99
 
     AjusteMargenWeb:
       type: object
       required: [margen]
-      description: HU-013.2. Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/margen`.
+      description: HU-013.2; por ruta desde HU-021.8 (#135). Cuerpo de `PUT /web/cotizaciones/{folio}/costeo/margen`.
       properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: HU-021.8. Ruta a la que aplica (`rutas[].linea_orden`); opcional si la cotización tiene una sola.
+        linea_solicitud_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: HU-021.8. Ruta a la que aplica por su id (`rutas[].linea_solicitud_id`); alternativa a `linea_orden`.
         margen:
           type: number
           minimum: 0
@@ -3657,8 +3824,8 @@ components:
           nullable: true
           maxLength: 500
           description: |
-            Obligatoria (no vacía) si `margen` es menor que `margen_sugerido`; se guarda en `MargenAjustes.motivo`. Por
-            encima del sugerido es opcional.
+            Obligatoria (no vacía) si `margen` es menor que el `margen_sugerido` de la ruta; se guarda en
+            `MargenAjustes.motivo`. Por encima del sugerido es opcional.
 
     DatosCargaWeb:
       type: object
@@ -3768,7 +3935,7 @@ components:
 
     ConexoAgregarWeb:
       type: object
-      required: [linea_orden, servicio_id, cantidad]
+      required: [servicio_id, cantidad]
       description: |
         Un conexo para una LÍNEA de la cotización. En Nexo el conexo se asocia a una línea de una cotización ya costeada
         (`clsConexoItemRequest.lineaId`, obligatorio): el backend traduce `linea_orden` a la línea de solicitud de Cotifly
@@ -3778,7 +3945,13 @@ components:
         linea_orden:
           type: integer
           minimum: 1
-          description: '`orden` de la línea (1 en una cotización del formulario, que tiene una sola).'
+          description: |
+            `orden` de la ruta (`rutas[].linea_orden`). Opcional si la cotización tiene una sola ruta (HU-021.8); con varias,
+            obligatoria (o `linea_solicitud_id`).
+        linea_solicitud_id:
+          type: string
+          format: uuid
+          description: HU-021.8. La ruta por su id (`rutas[].linea_solicitud_id`); alternativa a `linea_orden`.
         servicio_id:
           type: string
           format: uuid

@@ -14,6 +14,10 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 /// <param name="Folio">Folio de la cotización, si ya existe.</param>
 /// <param name="TrqType">TrqType de la línea, solo informativo para la salida.</param>
 /// <param name="ThreadId">Hilo de la conversación, solo para la auditoría (#11).</param>
+/// <param name="LineaSolicitudId">
+/// Ruta de la cotización a la que aplica el ajuste (HU-021.8, #135): se guarda en <c>MargenAjustes.lineaSolicitudId</c>. Sin ella, la
+/// única ruta de la cotización; con varias, <c>RUTA_REQUERIDA</c>.
+/// </param>
 public sealed record clsEntradaAjusteMargen(
     decimal MargenPolitica,
     decimal MargenAplicado,
@@ -24,4 +28,5 @@ public sealed record clsEntradaAjusteMargen(
     Guid? CotizacionId = null,
     string? Folio = null,
     string? TrqType = null,
-    string? ThreadId = null);
+    string? ThreadId = null,
+    Guid? LineaSolicitudId = null);

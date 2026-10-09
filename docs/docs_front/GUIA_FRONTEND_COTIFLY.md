@@ -1110,12 +1110,24 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 - 404 si no es tuya.
 - **HU-021:** el total es `precio_final` (ya incluye los conexos). **No** sumarle el `precio` de los conexos. Todos los conexos que llegan están incluidos (`incluido` siempre es true): excluir uno lo quita de la ruta.
+- **HU-021.8 (#135): `rutas[]`.** Cada ruta (`RutaCosteo`) trae `linea_orden`, `linea_solicitud_id`, `origen`, `destino`, `estado_costeo`, `precio_final_linea`, `margen_aplicado`, `margen_sugerido`, `origen_margen` y sus `servicios_conexos` (cada conexo trae también `linea_orden`). El margen es **por ruta**: mostrar el margen y el sugerido de cada ruta y usar su `linea_orden` (o `linea_solicitud_id`) en el ajuste de margen y en los conexos (sección 5.18.1). `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad). Nunca trae costos.
 
 ### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En PR #76
 
 - Request: `{"incluidos": ["<id>", "<id>"]}`: los ids que van en el precio y en el PDF. Los demás quedan excluidos. `[]` excluye todos.
 - 200 `CosteoCotizacion` actualizado. 400 `SOLICITUD_COSTEO_INVALIDA` (algún id no es del costeo). 404. 409 `COSTEO_NO_LISTO` (sin precio) o `PDF_YA_GENERADO`.
 - Solo mientras haya precio y no haya PDF. Enviar la lista completa en cada cambio (reemplaza la anterior). Riesgo conocido: si el polling actualiza el costeo en el mismo instante, la selección puede perderse (ADR-015). Refrescar con la respuesta.
+
+### 5.18.1 Margen y conexos por ruta (HU-021.8, #135). Implementado
+
+La cotización tiene una o varias rutas y cada una tiene su margen y sus conexos (ADR-019, decisiones 3 y 6).
+
+- **Ajuste de margen:** `PUT /web/cotizaciones/{folio}/costeo/margen` con `{"margen": 0.18, "justificacion": null, "linea_orden": 2}` (o `"linea_solicitud_id": "<uuid>"` en lugar de `linea_orden`). Con una sola ruta, la ruta es opcional. Con varias y sin indicarla: **400 `RUTA_REQUERIDA`** con `detalle.rutas` (`linea_orden`, `linea_solicitud_id`, `origen`, `destino`): mostrar un selector de ruta y repetir. Una ruta que no es de la cotización: 400 `RUTA_INEXISTENTE`. La justificación es obligatoria por debajo del `margen_sugerido` **de esa ruta** (`rutas[].margen_sugerido`); el 400 `JUSTIFICACION_REQUERIDA` trae `detalle.margen_sugerido`, `detalle.linea_orden` y `detalle.linea_solicitud_id`. Solo cambian esa ruta (`rutas[].precio_final_linea`) y `precio_final`. El ajuste es ruta por ruta: solo la ruta ajustada necesita precio (si otra sigue en costeo, `precio_final` queda en `null` hasta que todas lo tengan; el PDF exige todas).
+- **Conexos de una ruta:** `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` con `{"linea_orden": 2, "conexos": [{"id": "<servicios_conexos[].id>", "cantidad": 1}]}`: la lista es lo que **queda** en la ruta. Los que no vienen se **quitan** (se borra la fila; para volver a tenerlo, agregarlo de nuevo con el `POST`) y a los demás se les cambia la cantidad (0,01 a 999.999,99, hasta 2 decimales). `incluidos` sigue funcionando (sin ruta, en todas las rutas). Debe venir exactamente uno de los dos: juntos o ninguno (por ejemplo, solo `{"linea_orden": 2}`) responde 400 `ErrorWeb` y no borra nada. Los ids se comparan sin distinguir mayúsculas. Un id que no es de esa ruta: 400 `SOLICITUD_COSTEO_INVALIDA`. Cada cambio queda auditado.
+- **Nexo no tiene DELETE de conexos:** lo que se quita o cambia en Cotifly no se borra ni cambia en la cotización de Nexo. El precio al cliente es el de Cotifly.
+- **Agregar conexos:** en `POST .../costeo/servicios-conexos`, cada item lleva la ruta (`linea_orden` o `linea_solicitud_id`; opcional con una sola ruta, 400 `RUTA_REQUERIDA` con varias). Todos los items de un clic deben ser de la misma ruta. Las licitaciones siguen sin admitir conexos (409 `ESTADO_NO_PERMITE`).
+- **Concurrencia y PDF:** como siempre, `If-Match` obligatorio (428/409) y el `ETag` nuevo en la respuesta. Sin enviar, el PDF vigente queda invalidado (`pdf_desactualizado`); enviada o con resultado, 409 `PDF_YA_ENVIADO` con la llamada para crear la versión `-vN`. Sin cambios (mismo margen o mismas cantidades), 200 sin tocar nada.
+- **Asistente:** la acción propuesta `ajustar_margen` trae `linea_orden` en el `cuerpo`: enviarlo tal cual al Confirmar. Si la cotización tiene varias rutas y el comercial no dijo cuál, el asistente pregunta antes de proponer.
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En PR #76
 
@@ -2193,7 +2205,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | Endpoint | Para qué | Issue |
 |---|---|---|
 | `POST /web/solicitudes-costeo` + `moneda` (`COP` o `USD`) | **Implementado (#103).** Formulario en dólares con la TRM fijada al crear; sin TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada. Ver 5.15 | #103 (HU-013.7) |
-| `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?}` | **Implementado (#98).** Ajuste de margen de 0 a 0,99, con `If-Match` obligatorio. La justificación es obligatoria por debajo de `margen_sugerido` (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2) |
+| `PUT /web/cotizaciones/{folio}/costeo/margen` `{margen, justificacion?, linea_orden?, linea_solicitud_id?}` | **Implementado (#98; por ruta en #135).** Ajuste de margen de 0 a 0,99 de UNA ruta, con `If-Match` obligatorio. Con varias rutas y sin indicarla, 400 `RUTA_REQUERIDA` (sección 5.18.1). La justificación es obligatoria por debajo del `margen_sugerido` de la ruta (400 `JUSTIFICACION_REQUERIDA` con `detalle.margen_sugerido`). Responde `CosteoCotizacion` con los precios recalculados y el `ETag` nuevo | #98 (HU-013.2), #135 (HU-021.8) |
 | `GET /web/servicios-conexos?q=&categoria=&page=&page_size=` | **Implementado (#99).** Buscador del catálogo de Nexo: solo servicios activos y nunca su costo. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` `{items: [{linea_orden, servicio_id, cantidad}]}` | **Implementado (#99).** Agrega conexos en Nexo; vuelven con precio e incluidos. `If-Match` obligatorio e `Idempotency-Key` opcional. Ver abajo | #99 (HU-013.3) |
 | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` `{motivo, datos_carga?, nueva_version?}` | **Implementado (#100).** Botón "Cotizar costo": 200 con el mismo folio, o 201 con la versión `-vN` (y `Location`) si cambia la carga o con `nueva_version: true`. `If-Match` obligatorio e `Idempotency-Key` recomendada. Ver "Cotizar costo" abajo | #100 (HU-013.4) |
@@ -2214,7 +2226,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - **503 con `detalle.agregado_en_nexo = "desconocido"`:** Nexo no respondió y no se pudo confirmar si agregó el conexo. Avisar "No sabemos si el conexo se agregó; revisa el costeo en unos minutos" y no ofrecer reintentar hasta recargar el costeo.
 - **Versión reservada:** de dos peticiones con el mismo `If-Match`, solo una llega a Nexo; la otra recibe 409 `CONFLICTO_CONCURRENCIA`. Si Nexo falla después de reservar, el `ETag` ya cambió: recargar el costeo antes de reintentar.
 - **Doble clic:** con la misma `Idempotency-Key`, la segunda petición devuelve la misma respuesta (mismo cuerpo y `ETag`) sin repetir el POST en Nexo. La misma clave con otro cuerpo responde 400. Generar una clave nueva para cada intención del usuario, no para cada reintento de red.
-- Excluir un conexo sigue siendo `PUT .../servicios-conexos` y no lo borra en Nexo.
+- Quitar un conexo o cambiar su cantidad es `PUT .../servicios-conexos` por ruta (sección 5.18.1); no lo borra en Nexo (Cotifly es la fuente de los conexos).
 
 **"Cotizar costo" (`re-solicitar`, implementado en #100).** Nexo no tiene "reabrir": Cotifly hace una captura nueva en Nexo con lo guardado y guarda el id de la solicitud nueva.
 
@@ -2249,7 +2261,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 
    | `tipo` | `metodo` y `endpoint` | `cuerpo` |
    |---|---|---|
-   | `ajustar_margen` | `PUT /web/cotizaciones/{folio}/costeo/margen` | `{"margen": 0.18, "justificacion": null}` |
+   | `ajustar_margen` | `PUT /web/cotizaciones/{folio}/costeo/margen` | `{"margen": 0.18, "justificacion": null, "linea_orden": 1}` |
    | `re_solicitar_costeo` | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` | `{"motivo": "...", "datos_carga": {"peso_kg": 28000}, "nueva_version": true}` (sin `datos_carga` si no cambia la carga) |
    | `agregar_servicios_conexos` | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` | `{"items": [{"linea_orden": 1, "servicio_id": "<id>", "cantidad": 2}]}` |
 

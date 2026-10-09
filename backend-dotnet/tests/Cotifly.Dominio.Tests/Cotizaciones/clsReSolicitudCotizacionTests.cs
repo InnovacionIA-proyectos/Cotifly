@@ -142,7 +142,7 @@ public sealed class clsReSolicitudCotizacionTests
     {
         var original = Enviada();
         Costear(original, 2_550_000m);
-        original.AplicarMargenNegociado(0.22m, DateTimeOffset.UnixEpoch);
+        original.AplicarMargenNegociado(1, 0.22m, DateTimeOffset.UnixEpoch);
 
         var nueva = original.CrearVersion(clsFolio.Desde(original.Folio).Valor.ConVersion(2).Valor, 0m).Valor;
         nueva.RegistrarSolicitudCosteo(Solicitud(), 3);

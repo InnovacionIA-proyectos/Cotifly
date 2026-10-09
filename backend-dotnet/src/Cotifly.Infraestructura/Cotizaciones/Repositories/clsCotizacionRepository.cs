@@ -1,4 +1,8 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Dominio.Auditoria;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Dominio.Cotizaciones;
@@ -28,6 +32,40 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     {
         ArgumentNullException.ThrowIfNull(historial);
         contexto.CotizacionPdfsHistorial.Add(historial);
+    }
+
+    public void RegistrarConexosPendientesNexo(clsConexosPendientesNexo pendientes)
+    {
+        ArgumentNullException.ThrowIfNull(pendientes);
+        var entrada = JsonSerializer.Serialize(new { folio = pendientes.Folio, linea_solicitud_id = pendientes.LineaSolicitudId });
+        var salida = JsonSerializer.Serialize(new { conexos_nexo_previos = pendientes.Previos });
+        var evento = clsEventoHerramienta.Registrar(clsConexosPendientesNexo.Herramienta, entrada, salida, true, 0);
+        contexto.EventosHerramienta.Add(evento.Valor);
+    }
+
+    public async Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folio);
+        var marca = $"\"folio\":{JsonSerializer.Serialize(folio.Trim())}";
+        var evento = await contexto.EventosHerramienta.AsNoTracking()
+            .Where(e => e.Herramienta == clsConexosPendientesNexo.Herramienta && e.Input != null && e.Input.Contains(marca))
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (evento?.Input is not { } input || evento.OutputResumen is not { } output)
+        {
+            return null;
+        }
+
+        try
+        {
+            var ruta = JsonNode.Parse(input)?["linea_solicitud_id"]?.GetValue<Guid>();
+            var previos = JsonNode.Parse(output)?["conexos_nexo_previos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList();
+            return ruta is { } id && previos is not null ? new clsConexosPendientesNexo(folio.Trim(), id, previos) : null;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<clsCotizacionPdfHistorial>> ListarHistorialPdfAsync(Guid cotizacionId, CancellationToken cancellationToken = default) =>

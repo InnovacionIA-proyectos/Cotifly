@@ -100,7 +100,7 @@ public sealed class clsConcurrenciaCotizacionTests(clsBaseDatosPruebas baseDatos
         var ajustado = await ConsultarAsync(async s =>
         {
             var propia = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct);
-            propia!.AplicarMargenNegociado(0.18m, Reloj.AhoraUtc).EsExitoso.Should().BeTrue();
+            propia!.AplicarMargenNegociado(1, 0.18m, Reloj.AhoraUtc).EsExitoso.Should().BeTrue();
             propia.IncrementarVersionNegocio();
             return await s.GetRequiredService<IClsUnitOfWork>().GuardarCambiosSiVersionAsync(propia.Id, 0, Ct);
         });

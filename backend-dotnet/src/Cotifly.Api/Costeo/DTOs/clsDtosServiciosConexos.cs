@@ -10,8 +10,12 @@ public sealed record clsAgregarServiciosConexosWebRequest(IReadOnlyList<clsConex
 {
     /// <summary>Entrada del caso de uso, en el mismo orden (<c>null</c> si no vino <c>items</c>).</summary>
     public IReadOnlyList<clsConexoAgregarEntrada>? AEntrada() =>
-        Items is null ? null : [.. Items.Select(i => i is null ? null! : new clsConexoAgregarEntrada(i.LineaOrden, i.ServicioId, i.Cantidad))];
+        Items is null ? null : [.. Items.Select(i => i is null ? null! : new clsConexoAgregarEntrada(i.LineaOrden, i.ServicioId, i.Cantidad, i.LineaSolicitudId))];
 }
 
-/// <summary><c>ConexoAgregarWeb</c>: <c>linea_orden</c> (1 en una cotización del formulario), <c>servicio_id</c> del catálogo y <c>cantidad</c>.</summary>
-public sealed record clsConexoAgregarWebRequest(int? LineaOrden, string? ServicioId, decimal? Cantidad);
+/// <summary>
+/// <c>ConexoAgregarWeb</c>: la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; opcional si la cotización tiene una sola, HU-021.8),
+/// <c>servicio_id</c> del catálogo y <c>cantidad</c>. <c>linea_solicitud_id</c> se lee como texto para responder 400 <c>ErrorWeb</c>
+/// con un mensaje claro si no es un UUID.
+/// </summary>
+public sealed record clsConexoAgregarWebRequest(int? LineaOrden, string? ServicioId, decimal? Cantidad, string? LineaSolicitudId = null);

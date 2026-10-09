@@ -451,6 +451,26 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 Los endpoints de margen y de conexos (`/costeo/margen`, `/costeo/servicios-conexos`) conservan la ruta, pero su
 cuerpo agrega la ruta.
 
+### 7.1 Margen y conexos por ruta: guía para el frontend (HU-021.8, #135, implementado)
+
+- `GET .../costeo` trae `rutas[]` (`RutaCosteo`, siempre presente): `linea_orden`, `linea_solicitud_id`, origen, destino,
+  estado, `precio_final_linea`, `margen_aplicado`, `margen_sugerido`, `origen_margen` y sus `servicios_conexos`. **El
+  `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1** (compatibilidad): con varias
+  rutas, mostrar los de cada ruta.
+- `PUT .../costeo/margen` lleva `linea_orden` (o `linea_solicitud_id`). Con una sola ruta es opcional; **con varias rutas y sin
+  ruta responde 400 `RUTA_REQUERIDA`** con `detalle.rutas` (sin montos): mostrar un selector y repetir. `RUTA_INEXISTENTE` si la
+  ruta no es de la cotización. La justificación se exige contra el sugerido de ESA ruta. **El ajuste es ruta por ruta: solo la
+  ruta ajustada necesita precio**; si otras siguen en costeo, `precio_final` queda en `null` hasta que todas lo tengan, y el PDF
+  exige todas las rutas con precio.
+- `PUT .../costeo/servicios-conexos`: `{linea_orden, conexos: [{id, cantidad}]}` deja en la ruta exactamente esos conexos
+  (quitar = borrar la fila; cambiar la cantidad conserva el costo unitario de Nexo) o `{incluidos: [...]}` (compatibilidad). Debe
+  venir exactamente una de las dos: `{"linea_orden": 2}` solo responde 400 y no borra nada. Los ids se comparan sin distinguir
+  mayúsculas. Cada cambio queda auditado.
+- `POST .../costeo/servicios-conexos`: cada item lleva la ruta; todos los items de un clic son de la misma ruta.
+- **Divergencia con Nexo:** Nexo no tiene DELETE de conexos. Lo que se quita (o cuya cantidad se cambia) en Cotifly **no se
+  borra ni se cambia en la cotización de Nexo**: Cotifly es la fuente de los conexos (decisión 3) y el precio al cliente sale
+  de Cotifly. La cotización de Nexo puede seguir mostrando el conexo quitado.
+
 ---
 
 ## 8. Pruebas

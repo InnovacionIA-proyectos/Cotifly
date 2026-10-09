@@ -215,7 +215,11 @@ public sealed class clsPollingCosteoService(
 
         // ADR-017 y HU-021: el estado y el costo se derivan por camión, el precio por ruta y el total en la solicitud. El precio se aplica
         // aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF congela el precio.
-        var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, ahora, config, precioCosteo);
+        // HU-021.8 (#135): con conexos pendientes de leer, la ruta pedida y los conexos que Nexo ya tenía antes del POST.
+        var pendientes = cotizacion.ConexosPendientesDeLeer
+            ? await cotizaciones.ObtenerConexosPendientesNexoAsync(cotizacion.Folio, CancellationToken.None)
+            : null;
+        var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, ahora, config, precioCosteo, pendientes);
 
         // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla (HU-013.14).
         if (relectura && cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
