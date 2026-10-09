@@ -442,7 +442,10 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
   `servicioConexoId` ya está en la ruta. El reclamo del polling evita que dos réplicas envíen a la vez. Si la cotización queda
   entregada en la misma consulta en que falla el envío, vuelve a la agenda solo para reintentarlo (sin costear ni tocar montos)
   hasta `CosteoNexo:MaximoReintentosConexos`; al tope queda `fallido_definitivo`. `GET .../costeo` muestra `estado_nexo` por conexo
-  y `aviso_conexos_nexo` por ruta (incierto o fallido definitivo). Los conexos migrados sin UUID no se envían.
+  y `aviso_conexos_nexo` por ruta (incierto o fallido definitivo). `idServicioConexo` guarda el id del catálogo (capturados, `-vN`)
+  o el de la fila de Nexo (agregados con el POST o importados): a Nexo siempre viaja el del catálogo, resuelto por id o por nombre
+  (`clsResolutorConexosCatalogo`); uno ya presente en esa solicitud no se reenvía; uno sin id resoluble queda `fallido_definitivo` y
+  sale del lote antes del POST (todo o nada). Deuda: columna para el id del catálogo en un script ≥ 0011 (revisión de @scalderon-bs).
 - **`DatosNuevaVersion`** gana `rutas[]` (`RutaNuevaVersion`: orden, línea de negocio, origen, destino y margen de cada ruta);
   `linea_negocio` de primer nivel es la de la ruta 1 o `Varias`.
 

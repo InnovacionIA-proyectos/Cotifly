@@ -979,9 +979,7 @@ public sealed class clsCosteoCotizacionService(
             ? conexos
             : [.. conexos.Select(c => c with
             {
-                // Un conexo migrado sin id del catálogo (no UUID) no se envía a Nexo: sin estado.
-                EstadoNexo = !Guid.TryParse(c.Id, out _) ? null
-                    : estadosNexo.TryGetValue((ruta.Id, c.Id), out var estado) ? estado : clsEnvioConexosNexoService.VisiblePendiente,
+                EstadoNexo = estadosNexo.TryGetValue((ruta.Id, c.Id), out var estado) ? estado : clsEnvioConexosNexoService.VisiblePendiente,
             })];
 
     private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");

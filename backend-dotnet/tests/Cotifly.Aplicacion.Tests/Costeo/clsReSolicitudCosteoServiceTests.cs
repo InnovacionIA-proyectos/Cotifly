@@ -42,6 +42,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
     private readonly IClsPlanificadorCamiones _planificador = Substitute.For<IClsPlanificadorCamiones>();
     private readonly IClsCostosConexosNexo _costos = Substitute.For<IClsCostosConexosNexo>();
+    private readonly IClsServiciosConexosNexo _catalogoNexo = Substitute.For<IClsServiciosConexosNexo>();
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m).Valor;
     private readonly List<string> _eventos = [];
@@ -78,6 +79,12 @@ public sealed class clsReSolicitudCosteoServiceTests
         _folios.CrearNuevaVersionAsync(_ana, _cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
                 clsFolio.Desde(_cotizacion.Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
+
+        // Catálogo de conexos de Nexo vacío por defecto (cada prueba agrega lo que necesita).
+        _costos.CostosAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(new Dictionary<string, clsCostoConexoNexo>()));
+        _catalogoNexo.BuscarAsync(Arg.Any<Guid>(), Arg.Any<clsFiltroCatalogoConexos>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPaginaCatalogoConexosNexo>.Exito(new clsPaginaCatalogoConexosNexo(0, [])));
 
         // El planificador por defecto (hasta el cubicador, #133): un camión sin vehículo con el peso total de la ruta.
         _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
@@ -337,6 +344,34 @@ public sealed class clsReSolicitudCosteoServiceTests
         _agregada.RutasOrdenadas[1].Conexos.Single().Precio.Should().Be(42_500m, "CX-9 no es un id del catálogo: conserva su costo");
         licitacion.RutasOrdenadas[0].Conexos.Single().Precio.Should().Be(10_000m, "la original no cambia");
         await _costos.Received(1).CostosAsync(_ana, Arg.Is<IReadOnlyCollection<string>>(ids => ids.Count == 1 && ids.Contains(id)), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Corrección de la segunda validación de #136: un conexo agregado con el POST (o importado de Nexo) está guardado con el id de la FILA
+    /// de la cotización anterior de Nexo. La -vN lo copia con el id del CATÁLOGO, resuelto por su nombre, y si el mismo servicio ya estaba
+    /// capturado en la ruta, se suman las cantidades en una sola fila.
+    /// </summary>
+    [Fact]
+    public async Task LaVersionNuevaCopiaLosConexosConElIdDelCatalogoAunqueEsteGuardadoElDeLaFilaDeNexo()
+    {
+        var licitacion = VencidaDeDosRutas();
+        var catalogo = Guid.NewGuid().ToString("D");
+        var filaNexo = Guid.NewGuid().ToString("D");
+        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(catalogo, "Cargue en puerto", 150_000m, 1m);   // capturado (#132)
+        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(filaNexo, "Cargue en puerto", 150_000m, 2m);   // agregado con el POST
+        _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                ci.ArgAt<IReadOnlyCollection<string>>(1).Where(id => id == catalogo)
+                    .ToDictionary(id => id, id => new clsCostoConexoNexo(id, "Cargue en puerto", 160_000m)))));
+        _catalogoNexo.BuscarAsync(_ana, Arg.Is<clsFiltroCatalogoConexos>(f => f.Q == "Cargue en puerto"), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPaginaCatalogoConexosNexo>.Exito(new clsPaginaCatalogoConexosNexo(1,
+                [new clsServicioConexoNexo(catalogo, "CAR-01", "Cargue en puerto", "logistico", "UND", null, null, null, null, null, null, true)])));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var copiado = _agregada!.RutasOrdenadas[0].Conexos.Should().ContainSingle().Subject;
+        (copiado.IdServicioConexo, copiado.Cantidad, copiado.Precio).Should().Be((catalogo, 3m, 160_000m), "id y costo del catálogo; 1 + 2 unidades");
     }
 
     [Fact]
@@ -725,7 +760,7 @@ public sealed class clsReSolicitudCosteoServiceTests
 
     private clsReSolicitudCosteoService Servicio() =>
         new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria,
-            _planificador, _costos, NullLogger<clsReSolicitudCosteoService>.Instance);
+            _planificador, new clsResolutorConexosCatalogo(_costos, _catalogoNexo), NullLogger<clsReSolicitudCosteoService>.Instance);
 
     /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
     private static IClsValidadorFilasLicitacion FilasQuePasan()

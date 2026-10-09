@@ -77,7 +77,14 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             solicitud_nexo_id = envio.SolicitudNexoId,
             linea_solicitud_id = envio.LineaSolicitudId,
         });
-        var salida = JsonSerializer.Serialize(new { intento = envio.Intento, estado = envio.Estado, conexos = envio.Conexos, conexos_nexo_previos = envio.PreviosNexo });
+        var salida = JsonSerializer.Serialize(new
+        {
+            intento = envio.Intento,
+            estado = envio.Estado,
+            conexos = envio.Conexos,
+            conexos_catalogo = envio.ConexosCatalogo,
+            conexos_nexo_previos = envio.PreviosNexo,
+        });
         var evento = clsEventoHerramienta.Registrar(clsEnvioConexosNexo.Herramienta, entrada, salida, envio.Estado != clsEnvioConexosNexo.Fallido, 0);
         contexto.EventosHerramienta.Add(evento.Valor);
     }
@@ -104,9 +111,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
                 var estado = salida?["estado"]?.GetValue<string>();
                 var conexos = salida?["conexos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList();
                 var previos = salida?["conexos_nexo_previos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
+                var catalogo = salida?["conexos_catalogo"] is JsonArray ids ? ids.Select(n => n!.GetValue<string>()).ToList() : null;
                 if (ruta is { } id && intento is { } numero && estado is not null && conexos is not null)
                 {
-                    envios.Add(new clsEnvioConexosNexo(folio.Trim(), solicitudNexoId.Trim(), id, numero, estado, conexos, previos));
+                    envios.Add(new clsEnvioConexosNexo(folio.Trim(), solicitudNexoId.Trim(), id, numero, estado, conexos, previos) { ConexosCatalogo = catalogo });
                 }
             }
             catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)

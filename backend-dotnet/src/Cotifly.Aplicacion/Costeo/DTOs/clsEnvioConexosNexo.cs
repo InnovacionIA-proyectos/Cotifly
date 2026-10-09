@@ -22,6 +22,12 @@ public sealed record clsEnvioConexosNexo(
     public const string Herramienta = "conexos_envio_nexo";
 
     /// <summary>
+    /// En el registro <see cref="EnCurso"/>: el id del CATÁLOGO de Nexo con que viajó cada conexo (mismo orden que <see cref="Conexos"/>).
+    /// El id guardado en la ruta puede ser el de una fila de otra cotización de Nexo; con este se confirma después un envío incierto.
+    /// </summary>
+    public IReadOnlyList<string>? ConexosCatalogo { get; init; }
+
+    /// <summary>
     /// Se va a hacer el POST: se guarda ANTES de llamar a Nexo, en su propia transacción. Si el proceso muere a mitad del POST, el
     /// siguiente ciclo lo encuentra sin resultado y lo trata como <see cref="Incierto"/> (nunca repite el POST a ciegas).
     /// </summary>

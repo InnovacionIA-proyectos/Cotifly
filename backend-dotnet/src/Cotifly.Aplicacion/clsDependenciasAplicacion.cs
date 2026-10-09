@@ -82,6 +82,7 @@ public static class clsDependenciasAplicacion
 
         // Decisión 10 (HU-021.9): envío diferido de los conexos de las rutas a la cotización de Nexo, desde el polling.
         servicios.AddScoped<IClsEnvioConexosNexoService, clsEnvioConexosNexoService>();
+        servicios.AddScoped<IClsResolutorConexosCatalogo, clsResolutorConexosCatalogo>();
 
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador por defecto crea un camión sin vehículo por ruta; la integración con el cubicador (#133) registra el suyo antes.

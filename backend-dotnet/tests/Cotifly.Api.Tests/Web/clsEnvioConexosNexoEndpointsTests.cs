@@ -22,8 +22,12 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     private readonly clsEntornoApiWeb _entorno;
     private readonly clsNexoFalso _nexo = new clsNexoFalso()
         .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
-        .ConServicioConexo(Cargue, "CAR-01", "Cargue en puerto", "logistico", "UND", 150_000m);
+        .ConServicioConexo(Cargue, "CAR-01", "Cargue en puerto", "logistico", "UND", 150_000m)
+        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m);
+    private const string Almacenamiento = "1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e7f8";
     private readonly clsApiWebPruebas _api;
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public clsEnvioConexosNexoEndpointsTests(clsEntornoApiWeb entorno)
     {
@@ -150,6 +154,117 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         var ruta = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK)).GetProperty("rutas")[0];
         ruta.GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("fallido_definitivo");
         ruta.GetProperty("aviso_conexos_nexo").GetString().Should().Contain("Revisa en la cotización de Nexo");
+    }
+
+    /// <summary>
+    /// Corrección de la segunda validación de #136: un conexo agregado con el POST queda guardado con el id de la FILA de la cotización de
+    /// Nexo. En esa misma solicitud no se reenvía (ya está); en la solicitud nueva de la re-solicitud (mismo folio) y en la -vN viaja con el
+    /// id del CATÁLOGO, junto con el capturado, en un solo POST que Nexo acepta.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnaMezclaDeConexoCapturadoYAgregadoLlegaConElIdDelCatalogoALaSolicitudNueva(bool versionNueva)
+    {
+        var (sesion, folio) = await ConAgregadoYEntregadaAsync();
+        var anterior = _nexo.SolicitudesCreadas[^1];
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(anterior)!).Should().HaveCount(2, "el capturado (envío diferido) y el agregado a mano; ninguno se reenvía");
+
+        var folioNuevo = await ReSolicitarAsync(sesion, folio, versionNueva);
+        var nueva = _nexo.SolicitudesCreadas[^1];
+        nueva.Should().NotBe(anterior);
+        _nexo.CostearLinea(nueva, 0, 1_100_000m);
+        await _api.ProcesarPollingAsync(folioNuevo);
+
+        var items = _nexo.PeticionesConexos(_nexo.CotizacionDe(nueva)!).Should().ContainSingle().Subject["items"]!.AsArray();
+        items.Select(i => i!["servicioConexoId"]!.GetValue<string>()).Should().BeEquivalentTo([Cargue, Almacenamiento], "siempre el id del catálogo");
+        (await EventosAsync(folioNuevo, "fallido")).Should().Be(0, "Nexo aceptó el lote");
+        var ruta = (await RutasAsync(sesion, folioNuevo)).Single();
+        ruta.GetProperty("servicios_conexos").EnumerateArray().Select(c => c.GetProperty("estado_nexo").GetString()).Should().OnlyContain(e => e == "enviado");
+    }
+
+    /// <summary>
+    /// Un conexo importado cuyo nombre ya no está en el catálogo de Nexo no tiene id del catálogo: queda fallido_definitivo con su aviso y
+    /// sale del lote, así el POST (todo o nada) del conexo válido llega a Nexo.
+    /// </summary>
+    [Fact]
+    public async Task UnConexoQueYaNoEstaEnElCatalogoNoTumbaAlValido()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "INSERT INTO dbo_cotifly.CotizacionServiciosConexos (id, lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad, createdAt, updatedAt) "
+            + "SELECT NEWID(), l.id, CONVERT(nvarchar(64), NEWID()), N'Servicio retirado del catálogo', 50000, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET() "
+            + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}'");
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+
+        await _api.ProcesarPollingAsync(folio);
+        await _api.ProcesarPollingAsync(folio);
+
+        var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
+        item["servicioConexoId"]!.GetValue<string>().Should().Be(Cargue, "el válido llega aunque el otro no se pueda resolver");
+        (await EventosAsync(folio, "fallido_definitivo")).Should().Be(1);
+        var ruta = (await RutasAsync(sesion, folio)).Single();
+        var estados = ruta.GetProperty("servicios_conexos").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("nombre").GetString()!, c => c.GetProperty("estado_nexo").GetString());
+        estados["Cargue en puerto"].Should().Be("enviado");
+        estados["Servicio retirado del catálogo"].Should().Be("fallido_definitivo");
+        ruta.GetProperty("aviso_conexos_nexo").GetString().Should().Contain("Servicio retirado del catálogo");
+    }
+
+    /// <summary>
+    /// Captura con el Cargue, Nexo costea (el polling envía el Cargue), el comercial agrega el Almacenamiento con el POST (queda con el id de
+    /// la fila de Nexo) y la Mesa entrega: la cotización queda entregada, lista para re-solicitar.
+    /// </summary>
+    private async Task<(clsSesionPrueba Sesion, string Folio)> ConAgregadoYEntregadaAsync()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(sesion, folio));
+        agregar.StatusCode.Should().Be(HttpStatusCode.OK, await agregar.Content.ReadAsStringAsync(Ct));
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+                "SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
+                + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND s.idServicioConexo <> '{Almacenamiento}' "
+                + $"AND s.idServicioConexo <> '{Cargue}'"))
+            .Should().Be(1, "el agregado con el POST queda con el id de la fila de Nexo, no el del catálogo");
+
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+        return (sesion, folio);
+    }
+
+    private async Task<string> ReSolicitarAsync(clsSesionPrueba sesion, string folio, bool versionNueva)
+    {
+        using var respuesta = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", sesion.Access,
+            clsApiWebPruebas.Json(new { motivo = "Actualizar el costo", nueva_version = versionNueva }), await EtagAsync(sesion, folio));
+        var json = await VerificarContratoAsync(respuesta, "/web/cotizaciones/{folio}/costeo/re-solicitar", _post,
+            versionNueva ? HttpStatusCode.Created : HttpStatusCode.OK);
+        json.GetProperty("conexos_conservados").EnumerateArray().Select(c => c.GetString()).Should().BeEquivalentTo(["Cargue en puerto", "Almacenamiento"]);
+        return json.GetProperty("folio").GetString()!;
+    }
+
+    private async Task<string?> EtagAsync(clsSesionPrueba sesion, string folio)
+    {
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        return costeo.Headers.ETag?.Tag;
+    }
+
+    private async Task<HttpResponseMessage> ConVersionAsync(HttpMethod metodo, string ruta, string token, string cuerpo, string? ifMatch)
+    {
+        using var peticion = new HttpRequestMessage(metodo, ruta);
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        if (ifMatch is not null)
+        {
+            peticion.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
+        return await _api.Cliente.SendAsync(peticion, Ct);
     }
 
     private Task<bool> AgendadaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<bool>(_entorno.BaseDatos.CadenaCotifly,

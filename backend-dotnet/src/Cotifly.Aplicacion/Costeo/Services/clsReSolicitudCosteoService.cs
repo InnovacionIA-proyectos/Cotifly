@@ -91,7 +91,7 @@ public sealed class clsReSolicitudCosteoService(
     IClsAuditoriaRepository registroAuditoria,
     IClsAuditoriaService auditoria,
     IClsPlanificadorCamiones planificador,
-    IClsCostosConexosNexo costosConexos,
+    IClsResolutorConexosCatalogo resolutorConexos,
     ILogger<clsReSolicitudCosteoService> logger) : IClsReSolicitudCosteoService
 {
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>, contrato).</summary>
@@ -484,24 +484,22 @@ public sealed class clsReSolicitudCosteoService(
             throw new InvalidOperationException($"La cotización {original.Folio} tiene {originales.Count} rutas y se validaron {validada.Lineas.Count}.");
         }
 
-        // HU-021.9: la -vN es una cotización nueva: el costo unitario de sus conexos se refresca con el catálogo de Nexo (con caché), igual
-        // que en la captura. Sin catálogo no se crea nada (503, antes de reservar). Un conexo que el catálogo ya no trae (inactivo, o
-        // guardado con el id de Nexo) conserva su costo y queda un aviso en el log.
-        var idsConexos = originales.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo)
-            .Where(id => Guid.TryParse(id, out _)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var catalogo = new Dictionary<string, clsCostoConexoNexo>(StringComparer.OrdinalIgnoreCase);
-        if (idsConexos.Count > 0)
+        // HU-021.9: la -vN es una cotización nueva: cada conexo se copia con el id y el costo unitario del CATÁLOGO de Nexo de hoy, igual
+        // que en la captura. Un conexo agregado con el POST o importado desde Nexo está guardado con el id de la fila de la cotización
+        // anterior de Nexo: se resuelve por id o por nombre (clsResolutorConexosCatalogo). Sin catálogo no se crea nada (503, antes de
+        // reservar). Uno que no se puede resolver conserva lo guardado (con un aviso en el log) y el envío diferido lo deja
+        // fallido_definitivo, visible en el costeo.
+        var conexosOriginales = originales.SelectMany(r => r.Conexos).Select(c => (c.IdServicioConexo, c.Nombre)).ToList();
+        IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo = new Dictionary<string, clsCostoConexoNexo>();
+        if (conexosOriginales.Count > 0)
         {
-            var costos = await costosConexos.CostosAsync(usuarioId, idsConexos, cancellationToken);
-            if (costos.EsFallo)
+            var resueltos = await resolutorConexos.ResolverAsync(usuarioId, conexosOriginales, cancellationToken);
+            if (resueltos.EsFallo)
             {
-                return costos.Error;
+                return resueltos.Error;
             }
 
-            foreach (var (id, costo) in costos.Valor)
-            {
-                catalogo[id] = costo;
-            }
+            catalogo = resueltos.Valor;
         }
 
         var rutas = new List<clsRutaCapturada>(originales.Count);
@@ -549,14 +547,23 @@ public sealed class clsReSolicitudCosteoService(
             {
                 if (catalogo.TryGetValue(c.IdServicioConexo, out var costo) && costo.CostoUnitario >= 0m)
                 {
-                    conexos.Add(new clsCambioConexo(c.IdServicioConexo, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad));
+                    // Con el id del catálogo; dos filas del mismo servicio (capturada y agregada en Nexo) se suman en una, con su cantidad.
+                    var previo = conexos.FindIndex(x => string.Equals(x.IdServicioConexo, costo.Id, StringComparison.OrdinalIgnoreCase));
+                    if (previo >= 0)
+                    {
+                        conexos[previo] = conexos[previo] with { Cantidad = conexos[previo].Cantidad + c.Cantidad };
+                        continue;
+                    }
+
+                    conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad));
                     continue;
                 }
 
-                logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está activo en el catálogo de Nexo: la versión nueva conserva su costo.",
+                logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está en el catálogo de Nexo (ni por id ni por nombre): la versión nueva conserva lo guardado.",
                     c.IdServicioConexo, ruta.Orden, original.Folio);
                 conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
             }
+
             rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos));
         }
 
