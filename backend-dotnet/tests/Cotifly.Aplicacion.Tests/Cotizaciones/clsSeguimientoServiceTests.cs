@@ -119,6 +119,12 @@ public sealed class clsSeguimientoServiceTests
         var resultado = await Servicio().MarcarAsync(_ana, "PCN-N1", true, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.UsarResultadoNexo);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?>
+        {
+            ["metodo"] = "POST",
+            ["endpoint"] = "/web/cotizaciones/PCN-N1/resultado",
+            ["requiere_if_match"] = true,
+        }, "HU-021.13: el frontend no tiene que adivinar el endpoint");
         enNexo.Ganada.Should().BeNull();
         await _unidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
     }

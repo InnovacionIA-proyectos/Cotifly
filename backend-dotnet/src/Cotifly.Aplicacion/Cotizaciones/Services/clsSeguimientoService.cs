@@ -48,8 +48,18 @@ public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones,
         {
             // En el flujo de costeo de Nexo: marcarla solo en Cotifly desincronizaría el resultado (HU-005.14). Las del chat, las
             // descartadas y las de costeo vencido sí se marcan aquí (Nexo no les acepta resultado).
+            // HU-021.13: el detalle dice al frontend a dónde ir, sin que tenga que adivinarlo (HU-019.1).
+            var ruta = $"/web/cotizaciones/{cotizacion.Folio}/resultado";
             return new clsErrorDominio(clsCodigosError.UsarResultadoNexo,
-                $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST /web/cotizaciones/{cotizacion.Folio}/resultado.");
+                $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST {ruta} (con If-Match).")
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["metodo"] = "POST",
+                    ["endpoint"] = ruta,
+                    ["requiere_if_match"] = true,
+                },
+            };
         }
 
         cotizacion.MarcarSeguimiento(ganada, motivoRechazo, reloj.AhoraUtc);

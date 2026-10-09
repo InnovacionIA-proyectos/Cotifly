@@ -195,9 +195,21 @@ public sealed class clsResultadoCotizacionServiceTests
     public async Task UnResultadoInvalidoEs400SinLlamarANexo(string? resultado)
     {
         (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, resultado, null, null, Ct)).Error.Codigo.Should().Be(clsSeguimientoService.CodigoSeguimientoInvalido);
-        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", new string('m', 101), null, Ct)).Error.Codigo.Should().Be(clsSeguimientoService.CodigoSeguimientoInvalido);
+        (await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "perdida", new string('m', 101), null, Ct)).Error.Codigo.Should().Be(clsSeguimientoService.CodigoSeguimientoInvalido);
 
         await _nexo.DidNotReceiveWithAnyArgs().MarcarResultadoAsync(default, default!, default!, Ct);
+    }
+
+    [Fact]
+    public async Task UnaGanadaConMotivoDeMasDe100CaracteresNoSeRechazaYNoLeLlegaANexo()
+    {
+        // HU-021.13: en una ganada el motivo no se guarda ("No aplica"), así que su largo no se valida; a Nexo no se le envía (no cabe).
+        var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", new string('m', 101), "Nota", Ct);
+
+        resultado.Valor.Ganada.Should().BeTrue();
+        _cotizacion.MotivoRechazo.Should().Be(clsCotizacionSolicitud.MotivoRechazoNoAplica);
+        await _nexo.Received(1).MarcarResultadoAsync(_ana, "COT-1",
+            Arg.Is<clsResultadoNexo>(r => r.Ganada && r.Motivo == null && r.Comentario == "Nota"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
