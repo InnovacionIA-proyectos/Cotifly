@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Cotifly.Api.Comun;
 using Cotifly.Api.Costeo.DTOs;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Cotizaciones;
@@ -19,10 +20,20 @@ public sealed class clsLicitacionWebRequest
     /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
     [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
-    /// <summary>Obsoleto (decisión 1 de HU-021): se acepta y se ignora; deja de enviarse a Nexo. Lo retira el contrato de #138.</summary>
+    /// <summary>
+    /// Retirado del contrato (decisión 1 de HU-021, #138): ya no está en <c>openapi.yaml</c>. Si un frontend anterior lo manda, se ignora
+    /// sin error y queda un aviso en el log (<see cref="CamposRetirados"/>).
+    /// </summary>
+    [clsCampoRetirado("decisión 1 de HU-021")]
     public decimal? ValorEstimado { get; init; }
-    /// <summary>Obsoleto (decisión 1 de HU-021): se acepta y se ignora. Lo retira el contrato de #138.</summary>
+
+    /// <summary>Retirado del contrato (decisión 1 de HU-021, #138): igual que <see cref="ValorEstimado"/>.</summary>
+    [clsCampoRetirado("decisión 1 de HU-021")]
     public string? Referencia { get; init; }
+
+    /// <summary>Nombres snake_case de los campos retirados que llegaron (para el aviso del log).</summary>
+    public IReadOnlyList<string> CamposRetirados() =>
+        [.. new[] { (ValorEstimado is not null, "valor_estimado"), (Referencia is not null, "referencia") }.Where(c => c.Item1).Select(c => c.Item2)];
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 

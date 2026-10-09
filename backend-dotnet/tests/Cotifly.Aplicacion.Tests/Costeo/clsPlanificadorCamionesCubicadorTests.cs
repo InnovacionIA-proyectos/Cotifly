@@ -1,6 +1,7 @@
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
+using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Pruebas.Comun;
@@ -230,6 +231,47 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         {
             Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
         };
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LaBanderaDeRespaldoDecideSiElVehiculoDelClienteSeConservaOSeIgnora(bool aceptar)
+    {
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (apagada por defecto, decisión 7).
+        var logger = new clsLoggerFalso<clsPlanificadorCamionesCubicadorTests>();
+        var rutas = new List<clsLineaLicitacionEntrada?> { new(null, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }), null };
+
+        var resultado = clsEnvioCosteoService.SinVehiculo(rutas, logger, aceptar);
+
+        resultado[0]!.Linea.TipoVehiculo.Should().Be(aceptar ? "3S3" : null);
+        resultado[0]!.Linea.Carroceria.Should().Be(aceptar ? "FURGON" : null);
+        resultado[1].Should().BeNull();
+        logger.Registros.Should().ContainSingle(r => r.Nivel == (aceptar ? LogLevel.Information : LogLevel.Warning));
+    }
+
+    [Fact]
+    public async Task ElCamionDelRespaldoLlevaElVehiculoDeLaRutaSoloSiLaBanderaLoConservo()
+    {
+        _cubicador.EstaConfigurado.Returns(false);
+        var conVehiculo = Ruta() with { TipoVehiculo = " 3S3 ", Carroceria = "FURGON" };
+
+        var camiones = (await Planificador().PlanificarAsync(_usuario, _rutaId, conVehiculo, Ct)).Valor;
+        var sinVehiculo = (await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct)).Valor;
+
+        camiones.Should().Equal(new clsCamionPlaneado("3S3", "FURGON", PesoRuta));
+        sinVehiculo.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+    }
+
+    [Fact]
+    public async Task ConLaRecomendacionDelCubicadorElVehiculoDeLaRutaNoSeUsa()
+    {
+        var id = Guid.NewGuid();
+        Responder(new clsVehiculoRecomendado(id, "2S2", "ESTACAS", 12_500m, clsResultadosRecomendacion.Seleccionado));
+
+        var camiones = (await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }, Ct)).Valor;
+
+        camiones.Should().Equal([new clsCamionPlaneado("2S2", "ESTACAS", 12_500m, id)], "si el cubicador recomienda, manda el cubicador");
+    }
 
     private void Responder(params clsVehiculoRecomendado[] filas) =>
         _cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())

@@ -277,6 +277,40 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task ConLaBanderaDeRespaldoElVehiculoDelClienteVaEnElCamionDelRespaldo()
+    {
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (HU-021-FE.2) mientras no hay cubicador. El vehículo se valida contra el
+        // catálogo de Nexo y va en el único camión del respaldo; con la bandera apagada (por defecto) se ignora (prueba anterior).
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "true" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        _nexo.UltimaAlta!["lineas"]![0]!["carroceria"]!.GetValue<string>().Should().Be("FURGON");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND v.tipoVehiculo = '3S3' AND v.carroceria = 'FURGON' AND v.pesoKg = 28500.5"))
+            .Should().Be(1, "un solo camión, el del respaldo, con el vehículo del cliente y el peso total de la ruta");
+    }
+
+    [Fact]
+    public async Task ConLaBanderaDeRespaldoUnVehiculoFueraDelCatalogoEsCodigoNoCatalogo()
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "true" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"Tractomula\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        envio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(envio, "SOLICITUD_COSTEO_INVALIDA");
+        _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post, "nunca se envía texto libre a Nexo");
+    }
+
+    [Fact]
     public async Task ElRequestANexoLlevaNotasMunicipiosHorasPorLineaYElDeadlineEnHoraDeBogota()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

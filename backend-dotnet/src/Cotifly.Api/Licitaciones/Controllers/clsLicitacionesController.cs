@@ -18,7 +18,8 @@ namespace Cotifly.Api.Licitaciones.Controllers;
 [Route("web")]
 public sealed class clsLicitacionesController(
     IClsContextoUsuario usuario,
-    IClsLicitacionService licitaciones) : clsControladorWebBase(usuario)
+    IClsLicitacionService licitaciones,
+    ILogger<clsLicitacionesController> logger) : clsControladorWebBase(usuario)
 {
     public const string ParteArchivo = "archivo";
     public const string ParteLicitacion = "licitacion";
@@ -83,6 +84,7 @@ public sealed class clsLicitacionesController(
             return Error(new clsErrorDominio(clsCodigosError.ArchivoDemasiadoGrande, "El archivo supera el máximo de 9,9 MB (10 MB con el envío)."));
         }
 
+        clsCamposRetirados.Registrar(logger, "POST /web/licitaciones", cuerpo.CamposRetirados());
         var resultado = await licitaciones.CrearAsync(UsuarioId, cuerpo.AEntrada(archivo), cancellationToken);
         if (resultado.Errores.Count > 0 && resultado.Error is { } invalida)
         {
