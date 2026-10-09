@@ -92,7 +92,7 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         var json = await VerificarContratoAsync(respuesta, "/web/admin/lineas-negocio", _get, HttpStatusCode.OK);
 
         json.EnumerateArray().Select(l => l.GetProperty("linea_negocio").GetString()).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "Almacenamiento", "Almacenamiento3PL", "ITR"]);
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR
     }
 
     [Fact]
@@ -178,8 +178,8 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         await Api.CrearCotizacionAsync(luis.UsuarioId);
         await Api.CrearCotizacionAsync(sinRegional.UsuarioId);
         await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
             """);
 
         var deAna = await ActividadAsync(ana.Access);
@@ -205,9 +205,9 @@ public sealed class clsPdfAdminMetricasEndpointsTests(clsEntornoApiWeb entorno)
         var deAna = await Api.CrearCotizacionAsync(ana.UsuarioId);
         var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId);
         await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
-            VALUES (NEWID(), '{deAna.Id}', '{deAna.Folio}', 0.15, 0.12, -0.03, N'Cliente estratégico', '{ana.UsuarioId}', SYSDATETIMEOFFSET()),
-                   (NEWID(), '{deLuis.Id}', '{deLuis.Folio}', 0.15, 0.10, -0.05, N'Competencia', '{luis.UsuarioId}', SYSDATETIMEOFFSET());
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), '{deAna.Id}', (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{deAna.Id}'), '{deAna.Folio}', 0.15, 0.12, -0.03, N'Cliente estratégico', '{ana.UsuarioId}', SYSDATETIMEOFFSET()),
+                   (NEWID(), '{deLuis.Id}', (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{deLuis.Id}'), '{deLuis.Folio}', 0.15, 0.10, -0.05, N'Competencia', '{luis.UsuarioId}', SYSDATETIMEOFFSET());
             """);
 
         using var respuesta = await Api.EnviarAsync(_get, "/web/metricas/ajustes-margen", ana.Access);

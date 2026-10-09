@@ -34,11 +34,13 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             var cotizacion = await web.Api.CrearCotizacionAsync(usuarioId, conPdf: false);
             web.Cotizaciones[fila["cotizacion"]] = cotizacion;
             await clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, $"""
-                UPDATE dbo_cotifly.Cotizaciones
+                UPDATE dbo_cotifly.CotizacionesSolicitud
                 SET moneda = N'{fila["moneda"]}', trmAplicada = {Numero(fila["trm"]) ?? "0"}, precioFinal = {Numero(fila["precio"]) ?? "NULL"},
-                    costo = {Numero(fila["costo"]) ?? "NULL"}, margenAplicado = {Numero(fila["margen"]) ?? "NULL"},
                     ganada = {Resultado(fila["resultado"])}, createdAt = '{fila["creada"]}T12:00:00-05:00'
                 WHERE id = '{cotizacion.Id}';
+                UPDATE dbo_cotifly.CotizacionLineasSolicitud
+                SET costoFinal = {Numero(fila["costo"]) ?? "NULL"}, margenAplicado = {Numero(fila["margen"]) ?? "NULL"}
+                WHERE cotizacionSolicitudId = '{cotizacion.Id}';
                 """);
         }
     }
@@ -49,11 +51,15 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
         web.Sesion(alias).Should().NotBeNull();
         var original = web.Cotizacion(cotizacion);
         return clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.Cotizaciones (id, folio, lineaNegocioId, usuarioId, costo, margenPolitica, margenAplicado, metodoCalculo,
-                precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
-            SELECT NEWID(), CONCAT(folio, N'-v{version}'), lineaNegocioId, usuarioId, {costo}, margenPolitica, margenAplicado, metodoCalculo,
-                {precio}, moneda, trmAplicada, N'sin_enviar', NULL, {version}, DATEADD(DAY, 1, createdAt), SYSDATETIMEOFFSET()
-            FROM dbo_cotifly.Cotizaciones WHERE id = '{original.Id}';
+            DECLARE @nueva UNIQUEIDENTIFIER = NEWID();
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
+            SELECT @nueva, CONCAT(folio, N'-v{version}'), usuarioId, {precio}, moneda, trmAplicada, N'sin_enviar', NULL, {version},
+                DATEADD(DAY, 1, createdAt), SYSDATETIMEOFFSET()
+            FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{original.Id}';
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, margenPoliticaSugerido, margenAplicado,
+                metodoCalculo, precioFinalLinea)
+            SELECT @nueva, orden, lineaNegocioId, {costo}, margenPoliticaSugerido, margenAplicado, metodoCalculo, {precio}
+            FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{original.Id}';
             """);
     }
 

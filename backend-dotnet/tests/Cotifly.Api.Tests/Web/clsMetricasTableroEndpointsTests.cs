@@ -134,11 +134,11 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     {
         var cotizacion = await Api.CrearCotizacionAsync(usuarioId, conPdf: false);
         await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones
+            UPDATE dbo_cotifly.CotizacionesSolicitud
             SET moneda = N'{moneda}', trmAplicada = {clsApiWebPruebas.Numero(trm)}, precioFinal = {clsApiWebPruebas.Numero(precio)},
-                costo = {clsApiWebPruebas.Numero(costo)}, ganada = {(ganada is null ? "NULL" : ganada.Value ? "1" : "0")},
-                createdAt = '{creada}T12:00:00-05:00'
+                ganada = {(ganada is null ? "NULL" : ganada.Value ? "1" : "0")}, createdAt = '{creada}T12:00:00-05:00'
             WHERE id = '{cotizacion.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = {clsApiWebPruebas.Numero(costo)} WHERE cotizacionSolicitudId = '{cotizacion.Id}';
             """);
         return cotizacion;
     }
@@ -146,10 +146,14 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     /// <summary>Versión nueva (fila con el folio <c>-vN</c>) de <paramref name="original"/>, ganada y con otro precio.</summary>
     private Task NuevaVersionAsync(clsCotizacionPrueba original, int version, decimal precio, string creada) =>
         clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.Cotizaciones (id, folio, lineaNegocioId, usuarioId, costo, margenPolitica, margenAplicado, metodoCalculo,
-                precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
-            SELECT NEWID(), CONCAT(folio, N'-v{version}'), lineaNegocioId, usuarioId, costo, margenPolitica, margenAplicado, metodoCalculo,
-                {clsApiWebPruebas.Numero(precio)}, moneda, trmAplicada, N'sin_enviar', 1, {version}, '{creada}T12:00:00-05:00', SYSDATETIMEOFFSET()
-            FROM dbo_cotifly.Cotizaciones WHERE id = '{original.Id}';
+            DECLARE @nueva UNIQUEIDENTIFIER = NEWID();
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, moneda, trmAplicada, estadoEnvio, ganada, version, createdAt, updatedAt)
+            SELECT @nueva, CONCAT(folio, N'-v{version}'), usuarioId, {clsApiWebPruebas.Numero(precio)}, moneda, trmAplicada, N'sin_enviar', 1, {version},
+                '{creada}T12:00:00-05:00', SYSDATETIMEOFFSET()
+            FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{original.Id}';
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, margenPoliticaSugerido, margenAplicado,
+                metodoCalculo, precioFinalLinea)
+            SELECT @nueva, orden, lineaNegocioId, costoFinal, margenPoliticaSugerido, margenAplicado, metodoCalculo, {clsApiWebPruebas.Numero(precio)}
+            FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{original.Id}';
             """);
 }

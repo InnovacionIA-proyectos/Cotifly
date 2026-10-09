@@ -40,7 +40,7 @@ internal sealed class clsSapMapeoTrqTypeConfiguracion : IEntityTypeConfiguration
     }
 }
 
-/// <summary><c>dbo_cotifly.MargenAjustes</c> (script 0001 §5).</summary>
+/// <summary><c>dbo_cotifly.MargenAjustes</c> (script 0001 §5; 0009: la ruta ajustada, HU-021).</summary>
 internal sealed class clsMargenAjusteConfiguracion : IEntityTypeConfiguration<clsMargenAjuste>
 {
     public void Configure(EntityTypeBuilder<clsMargenAjuste> builder)
@@ -49,6 +49,7 @@ internal sealed class clsMargenAjusteConfiguracion : IEntityTypeConfiguration<cl
         builder.HasKey(a => a.Id).HasName("pk_margenAjustes");
         builder.Property(a => a.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(a => a.CotizacionId).Columna("cotizacionId", "uniqueidentifier");
+        builder.Property(a => a.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(a => a.Folio).Columna("folio", TipoTexto);
         builder.Property(a => a.MargenPolitica).Columna("margenPolitica", "decimal(9,4)");
         builder.Property(a => a.MargenAplicado).Columna("margenAplicado", "decimal(9,4)");
@@ -58,7 +59,10 @@ internal sealed class clsMargenAjusteConfiguracion : IEntityTypeConfiguration<cl
         builder.Property(a => a.CreatedAt).Fecha("createdAt");
 
         builder.HasIndex(a => a.CotizacionId).HasDatabaseName("ix_margenAjustes_cotizacionId");
-        builder.HasOne<clsCotizacion>().WithMany().HasForeignKey(a => a.CotizacionId)
+        builder.HasIndex(a => a.LineaSolicitudId).HasDatabaseName("ix_margenAjustes_lineaSolicitudId").HasFilter("[lineaSolicitudId] IS NOT NULL");
+        builder.HasOne<clsLineaSolicitud>().WithMany().HasForeignKey(a => a.LineaSolicitudId)
+            .HasConstraintName("fk_margenAjustes_lineaSolicitudId").OnDelete(DeleteBehavior.NoAction);
+        builder.HasOne<clsCotizacionSolicitud>().WithMany().HasForeignKey(a => a.CotizacionId)
             .HasConstraintName("fk_margenAjustes_cotizacionId").OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<clsUsuarioWeb>().WithMany().HasForeignKey(a => a.UsuarioId)
             .HasConstraintName("fk_margenAjustes_usuarioId").OnDelete(DeleteBehavior.NoAction);

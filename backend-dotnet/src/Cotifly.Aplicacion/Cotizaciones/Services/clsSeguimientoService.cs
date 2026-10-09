@@ -15,7 +15,7 @@ public interface IClsSeguimientoService
     /// <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial (el endpoint responde 404);
     /// <see cref="clsSeguimientoService.CodigoSeguimientoInvalido"/> si el motivo supera 2000 caracteres (400).
     /// </summary>
-    Task<clsResultado<clsCotizacion>> MarcarAsync(Guid usuarioId, string folio, bool? ganada, string? motivoRechazo, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(Guid usuarioId, string folio, bool? ganada, string? motivoRechazo, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -28,7 +28,7 @@ public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones,
     public const string CodigoSeguimientoInvalido = "SEGUIMIENTO_INVALIDO";
     public const int MaxMotivoRechazo = 2000;
 
-    public async Task<clsResultado<clsCotizacion>> MarcarAsync(Guid usuarioId, string folio, bool? ganada, string? motivoRechazo, CancellationToken cancellationToken = default)
+    public async Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(Guid usuarioId, string folio, bool? ganada, string? motivoRechazo, CancellationToken cancellationToken = default)
     {
         if (motivoRechazo is { Length: > MaxMotivoRechazo })
         {

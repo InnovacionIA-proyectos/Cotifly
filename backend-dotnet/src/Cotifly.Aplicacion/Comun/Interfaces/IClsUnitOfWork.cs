@@ -9,7 +9,10 @@ namespace Cotifly.Aplicacion.Comun.Interfaces;
 /// </summary>
 public interface IClsUnitOfWork
 {
-    /// <summary>Confirma los cambios pendientes y devuelve cuántas filas se escribieron.</summary>
+    /// <summary>
+    /// Confirma los cambios pendientes y devuelve cuántas filas se escribieron. Sin una transacción abierta, si SQL Server elige el
+    /// guardado como víctima de un interbloqueo (1205) se repite hasta tres veces (HU-021, ADR-019).
+    /// </summary>
     /// <exception cref="clsViolacionUnicidadException">
     /// Una restricción única rechazó el cambio (ej. <c>uq_cotizaciones_folio</c> → <c>FOLIO_DUPLICADO</c>).
     /// Tras la excepción los cambios pendientes se descartan.
@@ -23,7 +26,7 @@ public interface IClsUnitOfWork
     /// cambios pendientes. Devuelve <c>false</c> sin escribir nada (y descarta los cambios pendientes) si la versión cambió entretanto,
     /// si la cotización no existe o si SQL Server eligió esta transacción como víctima de un interbloqueo (1205): el llamador responde
     /// <c>CONFLICTO_CONCURRENCIA</c> o reintenta después. Subir la versión es responsabilidad del caso de uso
-    /// (<c>clsCotizacion.IncrementarVersionNegocio</c>).
+    /// (<c>clsCotizacionSolicitud.IncrementarVersionNegocio</c>).
     /// </summary>
     /// <exception cref="clsViolacionUnicidadException">Igual que <see cref="GuardarCambiosAsync"/>.</exception>
     Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default);

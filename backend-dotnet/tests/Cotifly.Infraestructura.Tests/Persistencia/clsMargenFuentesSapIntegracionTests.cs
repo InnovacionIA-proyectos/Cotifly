@@ -25,12 +25,9 @@ public sealed class clsMargenFuentesSapIntegracionTests(clsBaseDatosPruebas base
         { "Exportacion", "704", null },
         { "Internacional", "1123", null },
         { "Distribucion", "2044", null },
-        { "Almacenamiento", "3301", "50000010" },
-        { "Almacenamiento3PL", "3302", "50000010" },
-        { "ITR", "4110", null },
+        { "Nacional", "15927", "50000010" },
         { "Nacional", "5000", null },
         { "Importacion", "5001", null },
-        { "Almacenamiento", "3301", null },
         { "Nacional", "99999", null },
         { "Nacional", null, null },
     };

@@ -3,7 +3,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Códigos por campo del reporte de validación de una licitación (HU-011.2, <c>docs/HU-011-formato-excel-licitacion.md</c> §5).
+/// Códigos por campo del reporte de validación de una licitación (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).
 /// Espejo de <c>CapturarSolicitudValidador</c> y de los atributos de <c>CapturaLineaRequest</c> de Nexo; viajan en
 /// <c>errores[].codigo</c>, no como <c>ErrorNegocio</c>.
 /// </summary>
@@ -45,8 +45,6 @@ public sealed record clsEncabezadoSolicitudCosteo
 {
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
-    public decimal? ValorEstimado { get; init; }
-    public string? Referencia { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
 
@@ -57,9 +55,7 @@ public sealed record clsEncabezadoSolicitudCosteo
     public IReadOnlyList<clsErrorCampo> Errores()
     {
         var errores = new List<clsErrorCampo>();
-        clsLineaSolicitudCosteo.Largo(errores, "referencia", Referencia, clsSolicitudCosteo.LargoReferencia);
         clsLineaSolicitudCosteo.Largo(errores, "notas", Notas, clsSolicitudCosteo.LargoNotas);
-        clsLineaSolicitudCosteo.Rango(errores, "valor_estimado", ValorEstimado, 0m, clsSolicitudCosteo.MaximoValor);
         clsLineaSolicitudCosteo.Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         clsLineaSolicitudCosteo.Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
         return errores;

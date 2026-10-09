@@ -306,6 +306,11 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    desplegar la versión que lo incluye:** sin él, `/health/ready` responde `503` con `falta 0004`, Traefik no manda
    tráfico a la tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5). Cada script nuevo
    `000N` sigue la misma regla: primero la migración, después la imagen.
+   **Desde HU-021 (#130/#131, ADR-019) la precondición es `0001`–`0010`:** el `0009` (rutas y camiones) ya está aplicado
+   en la base compartida de QA; el `0010` (`0010_nombres_municipio.sql`, idempotente y no destructivo, pendiente de
+   revisión de scalderon-bs) se aplica después del `0009` y antes de la imagen que lo usa. Sin él, `/health/ready`
+   responde `503 falta 0010`; sin el `0009`, `503 falta 0009`. Una base nueva se puede instalar con
+   `db/scripts/01_crear_esquema.sql` (equivale a `0001`–`0010`) y los seeders.
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).

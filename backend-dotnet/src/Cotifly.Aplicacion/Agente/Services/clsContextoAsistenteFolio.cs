@@ -11,7 +11,7 @@ namespace Cotifly.Aplicacion.Agente.Services;
 /// </summary>
 public sealed class clsContextoAsistenteFolio
 {
-    private clsCotizacion? _cotizacion;
+    private clsCotizacionSolicitud? _cotizacion;
 
     public Guid UsuarioId { get; private set; }
 
@@ -19,7 +19,7 @@ public sealed class clsContextoAsistenteFolio
     public string ThreadId { get; private set; } = string.Empty;
 
     /// <summary>Cotización de la conversación (cargada y validada por el runner antes del loop).</summary>
-    public clsCotizacion Cotizacion => _cotizacion ?? throw new InvalidOperationException("El contexto del asistente no se inició.");
+    public clsCotizacionSolicitud Cotizacion => _cotizacion ?? throw new InvalidOperationException("El contexto del asistente no se inició.");
 
     /// <summary>Nombre de la línea de negocio (<c>MargenPoliticas.lineaNegocio</c>), o <c>null</c>.</summary>
     public string? LineaNegocio { get; private set; }
@@ -29,7 +29,7 @@ public sealed class clsContextoAsistenteFolio
 
     public bool Iniciado => _cotizacion is not null;
 
-    public void Iniciar(Guid usuarioId, clsCotizacion cotizacion, string? lineaNegocio, string threadId)
+    public void Iniciar(Guid usuarioId, clsCotizacionSolicitud cotizacion, string? lineaNegocio, string threadId)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentException.ThrowIfNullOrWhiteSpace(threadId);

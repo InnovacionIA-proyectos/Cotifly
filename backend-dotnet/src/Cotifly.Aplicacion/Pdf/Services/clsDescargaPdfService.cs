@@ -87,7 +87,7 @@ public sealed partial class clsDescargaPdfService(
         return contenido is null ? NoEncontrado() : new clsArchivoPdf(archivo, contenido);
     }
 
-    private async Task<bool> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacion cotizacion, CancellationToken cancellationToken)
+    private async Task<bool> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
         var gerente = await usuarios.ObtenerPorIdAsync(gerenteId, cancellationToken);
         if (gerente is null)

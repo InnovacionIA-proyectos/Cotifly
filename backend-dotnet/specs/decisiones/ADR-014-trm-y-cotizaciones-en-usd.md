@@ -6,7 +6,7 @@
 
 ## Contexto
 
-HU-012 pide cotizar en dólares con la TRM del día. Las reglas del backlog (`docs/HU_Backlog_Cotifly_ClientePro.md`, HU-012) son:
+HU-012 pide cotizar en dólares con la TRM del día. Las reglas del backlog (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`, HU-012) son:
 
 - si `moneda="USD"`, el precio se convierte con la TRM del día de la cotización y esa TRM queda guardada en `Cotizaciones.trmAplicada`;
 - con `moneda="COP"`, `trmAplicada` es 0 y nunca `null`;

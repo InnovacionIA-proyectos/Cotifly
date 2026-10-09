@@ -1,6 +1,7 @@
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Cotifly.Pruebas.Comun;
 
 namespace Cotifly.Dominio.Tests.Cotizaciones;
 
@@ -51,10 +52,7 @@ public sealed class clsAjusteMargenCotizacionTests
     [Fact]
     public void SinCostoDisponibleNoSeAjusta()
     {
-        var pendiente = clsCotizacion.Crear(new clsDatosCotizacion
-        {
-            Folio = "PCN-2", MargenPolitica = 0.15m, MargenAplicado = 0.15m, MetodoCalculo = "margen", EstadoCosteo = EstadoCosteo.PendienteCosteo,
-        }).Valor;
+        var pendiente = clsCotizacionMuestra.Costeada(flete: null);
 
         pendiente.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
         pendiente.TieneCostoDisponible.Should().BeFalse();
@@ -79,16 +77,19 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada(sugeridoSap: 0.20m);
 
-        cotizacion.AplicarMargenNegociado(0.25m).Should().BeTrue();
+        cotizacion.AplicarMargenNegociado(0.25m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
 
-        cotizacion.MargenAplicado.Should().Be(0.25m);
-        cotizacion.OrigenMargen.Should().Be(OrigenMargen.Negociado);
-        cotizacion.MargenSugerido.Should().Be(0.20m, "el sugerido (SAP TM) se conserva");
-        cotizacion.OrigenMargenSugerido.Should().Be(OrigenMargen.SapTm, "el ajuste no pierde la fuente del sugerido");
-        cotizacion.MargenPolitica.Should().Be(0.15m, "el ajuste no sobrescribe margenPolitica");
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.MargenAplicado.Should().Be(0.25m);
+        ruta.OrigenMargen.Should().Be(OrigenMargen.Negociado);
+        ruta.SugeridoVigente.Should().Be(0.20m, "el sugerido (SAP TM) se conserva");
+        ruta.OrigenMargenSugerido.Should().Be(OrigenMargen.SapTm, "el ajuste no pierde la fuente del sugerido");
+        ruta.MargenPoliticaSugerido.Should().Be(0.15m, "el ajuste no sobrescribe el margen de la política");
+        ruta.PrecioFinalLinea.Should().Be(3_400_000m, "2.550.000 / (1 - 0,25): el precio de la ruta se recalcula con el margen nuevo");
+        cotizacion.PrecioFinal.Should().Be(3_400_000m, "la cabecera suma sus rutas");
 
-        cotizacion.AplicarMargenNegociado(0.22m).Should().BeTrue();
-        cotizacion.MargenSugerido.Should().Be(0.20m, "un segundo ajuste no pisa el sugerido");
+        cotizacion.AplicarMargenNegociado(0.22m, clsCotizacionMuestra.Ahora).Valor.Should().BeTrue();
+        ruta.SugeridoVigente.Should().Be(0.20m, "un segundo ajuste no pisa el sugerido");
         cotizacion.ValidarAjusteMargen(0.18m, null)!.Codigo.Should().Be(clsCodigosError.JustificacionRequerida, "la regla usa el sugerido de SAP TM");
     }
 
@@ -97,9 +98,9 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada();
 
-        cotizacion.AplicarMargenNegociado(0.15m).Should().BeFalse();
+        cotizacion.AplicarMargenNegociado(0.15m, clsCotizacionMuestra.Ahora).Valor.Should().BeFalse();
 
-        cotizacion.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
+        cotizacion.PrimeraRuta!.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
     }
 
     [Fact]
@@ -107,9 +108,9 @@ public sealed class clsAjusteMargenCotizacionTests
     {
         var cotizacion = Costeada();
 
-        cotizacion.AplicarMargenNegociado(0.123456m);
+        cotizacion.AplicarMargenNegociado(0.123456m, clsCotizacionMuestra.Ahora);
 
-        cotizacion.MargenAplicado.Should().Be(0.1235m);
+        cotizacion.PrimeraRuta!.MargenAplicado.Should().Be(0.1235m);
     }
 
     [Fact]
@@ -143,11 +144,12 @@ public sealed class clsAjusteMargenCotizacionTests
     [Fact]
     public void ElSugeridoYSuOrigenSeFijanAlRegistrarElMargenDelCosteo()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-3" }).Valor;
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
 
-        cotizacion.RegistrarMargenCosteo(0.15m, 0.21m, OrigenMargen.SapTm, "margen");
+        ruta.RegistrarMargenCosteo(0.15m, 0.21m, OrigenMargen.SapTm, "margen");
 
-        (cotizacion.MargenSugerido, cotizacion.OrigenMargenSugerido, cotizacion.MargenPolitica).Should().Be((0.21m, OrigenMargen.SapTm, 0.15m));
+        (ruta.SugeridoVigente, ruta.OrigenMargenSugerido, ruta.MargenSAPSugerido, ruta.MargenPoliticaSugerido)
+            .Should().Be((0.21m, OrigenMargen.SapTm, 0.21m, 0.15m), "el margen de SAP TM es el sugerido; el de la política queda como referencia");
     }
 
     [Fact]
@@ -189,15 +191,6 @@ public sealed class clsAjusteMargenCotizacionTests
             .Should().Be(clsCodigosError.JustificacionRequerida);
     }
 
-    private static clsCotizacion Costeada(decimal? sugeridoSap = null) => clsCotizacion.Crear(new clsDatosCotizacion
-    {
-        Folio = "PCN-1",
-        Costo = 2_550_000m,
-        PrecioFinal = 3_000_000m,
-        MargenPolitica = 0.15m,
-        MargenAplicado = sugeridoSap ?? 0.15m,
-        OrigenMargen = sugeridoSap is null ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm,
-        MetodoCalculo = "margen",
-        EstadoCosteo = EstadoCosteo.Autocosteo,
-    }).Valor;
+    private static clsCotizacionSolicitud Costeada(decimal? sugeridoSap = null) =>
+        clsCotizacionMuestra.Costeada(margen: sugeridoSap ?? 0.15m, origen: sugeridoSap is null ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm);
 }

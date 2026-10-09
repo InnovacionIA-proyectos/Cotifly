@@ -17,7 +17,7 @@ public interface IClsMisCotizacionesService
     Task<clsMisCotizaciones> ListarAsync(Guid usuarioId, CancellationToken cancellationToken = default);
 
     /// <summary>Resumen (<c>CotizacionResumen</c>) de una cotización ya autorizada, con el nombre de su línea.</summary>
-    Task<clsCotizacionResumen> ResumirAsync(clsCotizacion cotizacion, CancellationToken cancellationToken = default);
+    Task<clsCotizacionResumen> ResumirAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsMisCotizacionesService"/>.</summary>
@@ -35,14 +35,18 @@ public sealed class clsMisCotizacionesService(
 
         var filas = await cotizaciones.ListarConLineaPorUsuarioAsync(usuarioId, IClsCotizacionRepository.LimitePorDefecto, cancellationToken);
         var baseUrl = opcionesPdf.Value.BaseUrl;
-        var resumen = filas.Select(f => clsCotizacionResumen.Desde(f.Cotizacion, f.LineaNegocio, baseUrl)).ToList();
+        var resumen = filas.Select(f => clsCotizacionResumen.Desde(f.Cotizacion, f.LineaNegocio, baseUrl, f.MargenAplicado, f.OrigenMargen)).ToList();
         return new clsMisCotizaciones(resumen.Count, resumen);
     }
 
-    public async Task<clsCotizacionResumen> ResumirAsync(clsCotizacion cotizacion, CancellationToken cancellationToken = default)
+    public async Task<clsCotizacionResumen> ResumirAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var linea = cotizacion.LineaNegocioId is { } id ? await politicas.ObtenerPorIdAsync(id, cancellationToken) : null;
-        return clsCotizacionResumen.Desde(cotizacion, linea?.LineaNegocio, opcionesPdf.Value.BaseUrl);
+        // HU-021: la línea de negocio de la ruta 1, o "Varias" si sus rutas tienen líneas distintas.
+        var lineas = cotizacion.Rutas.Select(r => r.LineaNegocioId).Distinct().ToList();
+        var nombre = lineas.Count > 1
+            ? clsCotizacionConLinea.Varias
+            : cotizacion.PrimeraRuta?.LineaNegocioId is { } id ? (await politicas.ObtenerPorIdAsync(id, cancellationToken))?.LineaNegocio : null;
+        return clsCotizacionResumen.Desde(cotizacion, nombre, opcionesPdf.Value.BaseUrl);
     }
 }

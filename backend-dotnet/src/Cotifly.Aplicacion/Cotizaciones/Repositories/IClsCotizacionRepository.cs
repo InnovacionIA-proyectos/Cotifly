@@ -4,7 +4,8 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Cotizaciones.Repositories;
 
 /// <summary>
-/// Puerto de persistencia de cotizaciones (<c>Cotizaciones</c>). Los métodos "DelUsuario" aplican el
+/// Puerto de persistencia de las solicitudes (<c>CotizacionesSolicitud</c> y su agregado: rutas, camiones, mercancías y conexos; HU-021,
+/// ADR-019). Los métodos <c>Obtener*</c> devuelven la cabecera con TODO su agregado, seguido por la unidad de trabajo. Los métodos "DelUsuario" aplican el
 /// aislamiento por comercial (ADR-009): si la cotización no es del usuario, devuelven <c>null</c>
 /// igual que si no existiera (el endpoint responde 404).
 /// </summary>
@@ -16,23 +17,11 @@ public interface IClsCotizacionRepository
     /// <summary>Límite de <see cref="ListarPorUsuarioAsync"/> (contrato: máximo 100).</summary>
     const int LimitePorDefecto = 100;
 
-    /// <summary>Agrega una cotización nueva (se escribe al guardar la unidad de trabajo).</summary>
-    void Agregar(clsCotizacion cotizacion);
-
-    /// <summary>Agrega las posiciones de cubicaje de una cotización (script 0004, HU-005.8); se escriben al guardar.</summary>
-    void AgregarPosiciones(IEnumerable<clsCotizacionPosicion> posiciones);
-
-    /// <summary>Posiciones de cubicaje de la cotización, en el orden del formulario (vacía si no tiene).</summary>
-    Task<IReadOnlyList<clsCotizacionPosicion>> ListarPosicionesAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
-
-    /// <summary>Agrega las líneas de la solicitud de Nexo de una cotización (script 0005, ADR-017); se escriben al guardar.</summary>
-    void AgregarLineas(IEnumerable<clsCotizacionLineaSolicitud> lineas);
-
     /// <summary>
-    /// Líneas de la solicitud de la cotización, en orden (vacía si la cotización es anterior al 0005 o no pasó por Nexo). Quedan
-    /// en la unidad de trabajo: el polling las actualiza y guarda con la cotización.
+    /// Agrega una solicitud nueva CON su agregado (rutas, camiones, mercancías y conexos, HU-021): todo se escribe al guardar la unidad
+    /// de trabajo.
     /// </summary>
-    Task<IReadOnlyList<clsCotizacionLineaSolicitud>> ListarLineasAsync(Guid cotizacionId, CancellationToken cancellationToken = default);
+    void Agregar(clsCotizacionSolicitud cotizacion);
 
     /// <summary>Agrega un PDF invalidado al historial (script 0006, ADR-018 §11); se escribe al guardar.</summary>
     void AgregarHistorialPdf(clsCotizacionPdfHistorial historial);
@@ -77,38 +66,40 @@ public interface IClsCotizacionRepository
 
     /// <summary>
     /// Reparación de HU-013.14 (ADR-018 §17): agenda para <paramref name="ahora"/> la relectura de las cotizaciones en <c>entregada</c>
-    /// con <c>costeoId</c>, sin <c>precioFinal</c>, sin PDF, sin <c>motivoEstadoCosteo</c> y sin agenda. Escribe de inmediato y
+    /// con <c>solicitudNexoId</c>, sin <c>precioFinal</c>, sin PDF, sin <c>motivoEstadoCosteo</c> y sin agenda. Escribe de inmediato y
     /// devuelve cuántas agendó (idempotente: una agendada ya no cumple el filtro).
     /// </summary>
     Task<int> ReprogramarEntregadasSinPrecioAsync(DateTimeOffset ahora, CancellationToken cancellationToken = default);
 
     /// <summary>Cotización por id, sin filtro de dueño (uso interno del polling de Nexo).</summary>
-    Task<clsCotizacion?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<clsCotizacionSolicitud?> ObtenerPorIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>Cotización por folio, sin filtro de dueño (uso interno de herramientas del agente).</summary>
-    Task<clsCotizacion?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
+    Task<clsCotizacionSolicitud?> ObtenerPorFolioAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>Cotización por folio solo si es del usuario.</summary>
-    Task<clsCotizacion?> ObtenerPorFolioDelUsuarioAsync(string folio, Guid usuarioId, CancellationToken cancellationToken = default);
+    Task<clsCotizacionSolicitud?> ObtenerPorFolioDelUsuarioAsync(string folio, Guid usuarioId, CancellationToken cancellationToken = default);
 
     /// <summary>Cotización por id solo si es del usuario (ej. <c>GET /web/cotizaciones/{id}/nueva-version</c>).</summary>
-    Task<clsCotizacion?> ObtenerPorIdDelUsuarioAsync(Guid id, Guid usuarioId, CancellationToken cancellationToken = default);
+    Task<clsCotizacionSolicitud?> ObtenerPorIdDelUsuarioAsync(Guid id, Guid usuarioId, CancellationToken cancellationToken = default);
 
     /// <summary>¿Existe ya una cotización con ese folio? (folio único, <c>uq_cotizaciones_folio</c>).</summary>
     Task<bool> ExisteFolioAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Vuelve a leer de la base los valores de una cotización ya cargada en esta unidad de trabajo (descarta lo que tenía en
-    /// memoria). Lo usa el envío de correo dentro de su candado, para calcular <c>estadoEnvio</c> sobre el valor vigente.
+    /// Vuelve a leer de la base los valores de una cotización ya cargada (cabecera, rutas, camiones, mercancías y conexos que tiene en
+    /// memoria) y la deja seguida por la unidad de trabajo, descartando lo que tenía. Lo usan el correo (dentro de su candado) y los flujos
+    /// que reintentan después de un conflicto de versión.
     /// </summary>
-    Task RecargarAsync(clsCotizacion cotizacion, CancellationToken cancellationToken = default);
+    Task RecargarAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
 
-    /// <summary>Cotizaciones del comercial, de la más reciente a la más antigua, hasta <paramref name="limite"/>.</summary>
-    Task<IReadOnlyList<clsCotizacion>> ListarPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
+    /// <summary>Cabeceras de las cotizaciones del comercial (sin el agregado), de la más reciente a la más antigua, hasta <paramref name="limite"/>.</summary>
+    Task<IReadOnlyList<clsCotizacionSolicitud>> ListarPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Igual que <see cref="ListarPorUsuarioAsync"/>, con el nombre de la línea de negocio (JOIN con <c>MargenesPolitica</c>)
-    /// para <c>GET /web/mis-cotizaciones</c>. Solo las del comercial.
+    /// Igual que <see cref="ListarPorUsuarioAsync"/> (sin el agregado), con la línea de negocio y el margen de la ruta 1 (o "Varias" si
+    /// sus rutas tienen distintas líneas, HU-021) para <c>GET /web/mis-cotizaciones</c>. Solo las del comercial. Una fila con un código
+    /// fuera de catálogo no tumba la lista: se omite (HU-014.1).
     /// </summary>
     Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
 

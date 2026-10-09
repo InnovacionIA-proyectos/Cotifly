@@ -93,8 +93,8 @@ public sealed class clsCorreoRepositoryTests(clsBaseDatosPruebas baseDatos) : cl
         otroCliente.Should().BeNull();
     }
 
-    private static clsCotizacion ConNit(Guid usuarioId, string nit) =>
-        clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = usuarioId, NitCliente = nit }).Valor;
+    private static clsCotizacionSolicitud ConNit(Guid usuarioId, string nit) =>
+        clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico(), UsuarioId = usuarioId, NitCliente = nit }).Valor;
 
     private Task AgregarAsync(clsCorreo correo) =>
         EnAmbitoAsync(s =>

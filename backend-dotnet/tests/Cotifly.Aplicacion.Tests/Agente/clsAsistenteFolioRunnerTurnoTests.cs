@@ -119,7 +119,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         {
             using var documento = JsonDocument.Parse(salida);
             Claves(documento.RootElement).Should().NotContain(c => ClaveProhibida().IsMatch(c), "ninguna clave de dinero ni descripción llega al modelo");
-            salida.Should().NotContain("2550000").And.NotContain("3000000").And.NotContain("100000").And.NotContain("85000");
+            salida.Should().NotContain("2550000").And.NotContain("3100000").And.NotContain("100000").And.NotContain("85000");
         }
 
         using var servicios = JsonDocument.Parse(busqueda);

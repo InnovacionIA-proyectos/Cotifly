@@ -66,8 +66,8 @@ public sealed class clsCosteoNexoTests : IDisposable
         raiz.GetProperty("clienteBp").GetString().Should().Be("15927");
         raiz.GetProperty("tipo").GetString().Should().Be("spot", "Nexo valida el tipo en minúscula");
         raiz.GetProperty("deadline").GetDateTimeOffset().Should().Be(clsSolicitudCosteoMuestra.Deadline);
-        raiz.GetProperty("valorEstimado").GetDecimal().Should().Be(12_000_000m);
-        raiz.GetProperty("referencia").GetString().Should().Be("OC-7788");
+        raiz.TryGetProperty("valorEstimado", out _).Should().BeFalse("decisión 1 de HU-021: valor estimado y referencia dejan de enviarse a Nexo");
+        raiz.TryGetProperty("referencia", out _).Should().BeFalse();
         raiz.GetProperty("horasDescargue").GetDecimal().Should().Be(6.5m);
         raiz.TryGetProperty("clienteId", out _).Should().BeFalse("los nulos no viajan");
         raiz.TryGetProperty("modalidad", out _).Should().BeFalse("la modalidad no aplica en Cotifly (mapeo aprobado)");

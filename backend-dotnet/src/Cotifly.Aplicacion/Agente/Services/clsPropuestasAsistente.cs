@@ -27,12 +27,12 @@ public sealed record clsCambiosCargaAsistente(
 
 /// <summary>
 /// Arma las acciones propuestas del asistente (HU-013.6, #102, ADR-018 §2b) con código, nunca con el LLM. Las reglas son las MISMAS
-/// del endpoint destino, sin copias: margen con <see cref="clsCotizacion.ValidarAjusteMargen"/>; conexos con
+/// del endpoint destino, sin copias: margen con <see cref="clsCotizacionSolicitud.ValidarAjusteMargen"/>; conexos con
 /// <see cref="clsServiciosConexosCosteoService.Validar"/> y <see cref="clsServiciosConexosCosteoService.ValidarPrecondiciones"/>; la
 /// re-solicitud la valida antes el caso de uso (<c>IClsReSolicitudCosteoService.ValidarAsync</c>, que necesita la base y el catálogo).
 /// Arma el cuerpo exacto del contrato, pone el endpoint con el folio de la conversación y el <c>row_version</c> vigente, y redacta el
 /// <c>resumen</c> con plantilla, con los textos del LLM (justificación, motivo) entre comillas para que el comercial vea lo que confirma. La vista previa del precio usa el mismo recálculo del ajuste
-/// (<see cref="clsAjusteMargenCosteoService.Recalcular(IClsPrecioService, clsCotizacion, IReadOnlyList{clsCotizacionLineaSolicitud}, decimal)"/>,
+/// (<see cref="clsAjusteMargenCosteoService.Recalcular(clsCotizacionSolicitud, decimal)"/>,
 /// sobre <see cref="clsPrecioMonedaCosteo"/>) SIN cambiar la cotización. Los errores no traen montos: su mensaje va al LLM.
 /// </summary>
 public static class clsPropuestasAsistente
@@ -54,33 +54,32 @@ public static class clsPropuestasAsistente
     /// (<c>AJUSTE_MARGEN_INVALIDO</c>, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>JUSTIFICACION_REQUERIDA</c>) y
     /// <c>AJUSTE_MARGEN_INVALIDO</c> si ya es el margen vigente.
     /// </summary>
-    public static clsResultado<clsAccionPropuesta> AjustarMargen(
-        IClsPrecioService precios, clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, decimal margen, string? justificacion)
+    public static clsResultado<clsAccionPropuesta> AjustarMargen(clsCotizacionSolicitud cotizacion, decimal margen, string? justificacion)
     {
-        ArgumentNullException.ThrowIfNull(precios);
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
+        var lineas = cotizacion.Rutas;
         if (cotizacion.ValidarAjusteMargen(margen, justificacion) is { } invalido)
         {
             return invalido;
         }
 
         var nuevo = clsMargenAjuste.RedondearMargen(margen);
-        var anterior = cotizacion.MargenAplicado;
-        if (anterior == nuevo)
+        var anterior = cotizacion.PrimeraRuta?.MargenAplicado;
+        if (cotizacion.Rutas.All(r => r.MargenAplicado == nuevo))
         {
             return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido, $"El margen ya es {Porcentaje(nuevo)}: no hay nada que ajustar.");
         }
 
-        var recalculo = clsAjusteMargenCosteoService.Recalcular(precios, cotizacion, lineas, nuevo);
+        var recalculo = clsAjusteMargenCosteoService.Recalcular(cotizacion, nuevo);
         if (recalculo.EsFallo)
         {
             // El mensaje del módulo de precio puede nombrar valores: al LLM solo va el código y un texto fijo.
             return new clsErrorDominio(recalculo.Error.Codigo, "No se pudo calcular la vista previa del precio con ese margen. Pide al comercial que lo ajuste desde el detalle de la cotización.");
         }
 
-        var moneda = cotizacion.Moneda ?? clsCotizacion.MonedaPesos;
-        var concepto = lineas.Count > 1 ? "el precio total" : "el precio del flete";
+        var moneda = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos;
+        var conConexos = cotizacion.Rutas.Any(r => r.Conexos.Count > 0);
+        var concepto = lineas.Count > 1 || conConexos ? "el precio total" : "el precio del flete";
         var limpia = clsMargenAjuste.LimpiarJustificacion(justificacion);
         var resumen = $"Ajustar el margen de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: {concepto} pasa de "
                       + $"{clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, moneda)} a {clsFormatoMoneda.Formatear(recalculo.Valor.PrecioFinal, moneda)} {moneda}.";
@@ -89,7 +88,7 @@ public static class clsPropuestasAsistente
             resumen += $" Justificación: {Cita(limpia)}.";
         }
 
-        if (clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Count > 0)
+        if (conConexos)
         {
             resumen += " Los servicios conexos se recalculan con el mismo margen.";
         }
@@ -118,7 +117,7 @@ public static class clsPropuestasAsistente
     /// <c>re_solicitar_costeo</c> → <c>POST .../costeo/re-solicitar</c> <c>{motivo, datos_carga?, nueva_version}</c>, para una
     /// <paramref name="entrada"/> que ya pasó la validación del caso de uso (motivo, estado, catálogo y reglas de la captura).
     /// </summary>
-    public static clsAccionPropuesta ReSolicitar(clsCotizacion cotizacion, clsEntradaReSolicitudCosteo entrada, clsCambiosCargaAsistente cambios)
+    public static clsAccionPropuesta ReSolicitar(clsCotizacionSolicitud cotizacion, clsEntradaReSolicitudCosteo entrada, clsCambiosCargaAsistente cambios)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(entrada);
@@ -160,10 +159,9 @@ public static class clsPropuestasAsistente
     /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
     /// </summary>
     public static clsResultado<clsAccionPropuesta> AgregarConexo(
-        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, clsServicioConexoCatalogo servicio, decimal cantidad, int lineaOrden)
+        clsCotizacionSolicitud cotizacion, clsServicioConexoCatalogo servicio, decimal cantidad, int lineaOrden)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(servicio);
         var items = clsServiciosConexosCosteoService.Validar([new clsConexoAgregarEntrada(lineaOrden, servicio.Id, cantidad)]);
         if (items.EsFallo)
@@ -171,7 +169,7 @@ public static class clsPropuestasAsistente
             return items.Error;
         }
 
-        if (clsServiciosConexosCosteoService.ValidarPrecondiciones(cotizacion, lineas, items.Valor) is { } noPermitido)
+        if (clsServiciosConexosCosteoService.ValidarPrecondiciones(cotizacion, items.Valor) is { } noPermitido)
         {
             return noPermitido;
         }
@@ -185,7 +183,7 @@ public static class clsPropuestasAsistente
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["items"] = new[] { item } };
         var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
         var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Id}» a la línea {lineaOrden} en Nexo. "
-                      + $"Nexo calcula su valor y Cotifly le aplica el margen de {Porcentaje(cotizacion.MargenAplicado)}; queda incluido en el PDF."
+                      + $"Nexo calcula su valor y Cotifly le aplica el margen de {Porcentaje(cotizacion.Rutas.FirstOrDefault(r => r.Orden == lineaOrden)?.MargenAplicado)}; queda incluido en el PDF."
                       + SufijoPdf(cotizacion);
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAgregarServiciosConexos, MetodoPost, RutaServiciosConexos(cotizacion.Folio), cuerpo, Recortar(resumen),
@@ -207,7 +205,7 @@ public static class clsPropuestasAsistente
         return $"/web/cotizaciones/{Uri.EscapeDataString(folio.Trim())}";
     }
 
-    private static string SufijoPdf(clsCotizacion cotizacion) =>
+    private static string SufijoPdf(clsCotizacionSolicitud cotizacion) =>
         cotizacion.PdfPath is null ? string.Empty : " El PDF actual queda desactualizado y se debe regenerar.";
 
     private static Dictionary<string, object?>? DatosCarga(clsCambiosCargaAsistente cambios)

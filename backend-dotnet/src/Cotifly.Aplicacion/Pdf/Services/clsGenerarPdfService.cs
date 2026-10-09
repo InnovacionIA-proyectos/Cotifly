@@ -92,7 +92,7 @@ public sealed partial class clsGenerarPdfService(
                       ?? clsTextoSeguro.LimpiarLinea(payload.MetodoCalculo)
                       ?? clsTextoSeguro.LimpiarLinea(politica.MetodoCalculo)
                       ?? clsReglaMargen.MetodoMargen).ToLowerInvariant();
-        var moneda = (clsTextoSeguro.LimpiarLinea(traza.Moneda) ?? clsCotizacion.MonedaPesos).ToUpperInvariant();
+        var moneda = (clsTextoSeguro.LimpiarLinea(traza.Moneda) ?? clsCotizacionSolicitud.MonedaPesos).ToUpperInvariant();
 
         var cotizacion = CrearCotizacion(entrada, traza, folio!, politica, metodo, moneda);
         if (cotizacion.EsFallo)
@@ -173,11 +173,11 @@ public sealed partial class clsGenerarPdfService(
                 "Falta el folio de la cotización: lo genera el servidor (ADR-011) y llega en la entrada; la 'referencia' del payload no se usa.");
         }
 
-        if (folio.Length > clsCotizacion.LargoMaximoFolio || !ExpresionFolio().IsMatch(folio))
+        if (folio.Length > clsCotizacionSolicitud.LargoMaximoFolio || !ExpresionFolio().IsMatch(folio))
         {
             return new clsErrorDominio(
                 clsCodigosError.PdfPayloadInvalido,
-                $"El folio '{folio}' no es válido: máximo {clsCotizacion.LargoMaximoFolio} caracteres entre letras, números, '-' y '_'.");
+                $"El folio '{folio}' no es válido: máximo {clsCotizacionSolicitud.LargoMaximoFolio} caracteres entre letras, números, '-' y '_'.");
         }
 
         return null;
@@ -264,7 +264,7 @@ public sealed partial class clsGenerarPdfService(
         return null;
     }
 
-    private static clsResultado<clsCotizacion> CrearCotizacion(
+    private static clsResultado<clsCotizacionSolicitud> CrearCotizacion(
         clsEntradaGenerarPdf entrada, clsTrazabilidadCotizacion traza, string folio, clsMargenPolitica politica, string metodo, string moneda)
     {
         OrigenMargen? origenMargen = null;
@@ -289,29 +289,32 @@ public sealed partial class clsGenerarPdfService(
             origenCliente = origen;
         }
 
-        var creada = clsCotizacion.Crear(new clsDatosCotizacion
+        if (clsCotizacionSolicitud.ValidarCotizacionChat(traza.Costo, traza.MargenPolitica, traza.MargenAplicado, metodo, traza.PrecioFinal) is { } invalida)
+        {
+            return Invalido(invalida.Mensaje);
+        }
+
+        var creada = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             Version = entrada.Version,
-            LineaNegocioId = politica.Id,
             ClienteNombre = clsTextoSeguro.LimpiarLinea(entrada.Cotizacion.Cliente),
             NitCliente = clsTextoSeguro.LimpiarLinea(traza.NitCliente),
             OrigenCliente = origenCliente,
-            CosteoId = clsTextoSeguro.LimpiarLinea(traza.CosteoId),
-            Costo = traza.Costo,
-            MargenPolitica = traza.MargenPolitica,
-            MargenAplicado = traza.MargenAplicado,
-            OrigenMargen = origenMargen,
-            MetodoCalculo = metodo,
-            PrecioFinal = traza.PrecioFinal,
             Moneda = moneda,
             TrmAplicada = traza.TrmAplicada,
             UsuarioId = entrada.UsuarioId,
             SpaceId = clsTextoSeguro.LimpiarLinea(entrada.SpaceId),
             ThreadId = clsTextoSeguro.LimpiarLinea(entrada.ThreadId),
         });
+        if (creada.EsFallo)
+        {
+            return Invalido(creada.Error.Mensaje);
+        }
 
-        return creada.EsExitoso ? creada : Invalido(creada.Error.Mensaje);
+        // HU-021 (CAMBIOS_BACKEND §2): el chat también crea una ruta (línea de negocio, margen y precio) y un camión (costo del flete).
+        creada.Valor.RegistrarCotizacionChat(politica.Id, traza.Costo, traza.MargenPolitica, traza.MargenAplicado, origenMargen, metodo, traza.PrecioFinal);
+        return creada;
     }
 
     private string UrlPdf(string nombre) => clsUrlPdf.Construir(opciones.Value.BaseUrl, nombre);

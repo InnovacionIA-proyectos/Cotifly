@@ -150,7 +150,7 @@ public sealed class clsCorreoService(
         return new clsSalidaEnvioCorreo(Enviado: true, messageId, registrado);
     }
 
-    private Task<clsCotizacion?> BuscarCotizacionAsync(clsEntradaEnviarCorreo entrada, CancellationToken cancellationToken)
+    private Task<clsCotizacionSolicitud?> BuscarCotizacionAsync(clsEntradaEnviarCorreo entrada, CancellationToken cancellationToken)
     {
         if (entrada.CotizacionId is { } id && id != Guid.Empty)
         {
@@ -158,11 +158,11 @@ public sealed class clsCorreoService(
         }
 
         return string.IsNullOrWhiteSpace(entrada.Folio)
-            ? Task.FromResult<clsCotizacion?>(null)
+            ? Task.FromResult<clsCotizacionSolicitud?>(null)
             : cotizaciones.ObtenerPorFolioDelUsuarioAsync(entrada.Folio, entrada.UsuarioId, cancellationToken);
     }
 
-    private async Task<bool> RegistrarEnviadoAsync(clsCotizacion cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string messageId)
+    private async Task<bool> RegistrarEnviadoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string messageId)
     {
         try
         {
@@ -183,7 +183,7 @@ public sealed class clsCorreoService(
     /// El correo no salió: vuelve al estado de envío anterior (y sube la versión, porque el estado cambió). Si otra escritura cambió la
     /// versión entretanto (el polling), recarga y reintenta; ningún ajuste puede colarse porque la cotización figura enviada.
     /// </summary>
-    private async Task DeshacerReservaAsync(clsCotizacion cotizacion, EstadoEnvio? estadoAnterior)
+    private async Task DeshacerReservaAsync(clsCotizacionSolicitud cotizacion, EstadoEnvio? estadoAnterior)
     {
         for (var intento = 0; intento < 3; intento++)
         {
@@ -212,7 +212,7 @@ public sealed class clsCorreoService(
         logger.LogError("No se pudo deshacer la reserva del envío de la cotización {Folio}: queda marcada como enviada.", cotizacion.Folio);
     }
 
-    private async Task RegistrarFallidoAsync(clsCotizacion cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string error)
+    private async Task RegistrarFallidoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<string> para, IReadOnlyList<string> cc, string asunto, Guid usuarioId, string error)
     {
         try
         {
@@ -227,7 +227,7 @@ public sealed class clsCorreoService(
     }
 
     /// <summary>Nombre del adjunto: el del archivo guardado (<c>PCN-...pdf</c>) o, si no se puede leer de la referencia, el folio.</summary>
-    public static string NombreAdjunto(clsCotizacion cotizacion)
+    public static string NombreAdjunto(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var nombre = string.IsNullOrWhiteSpace(cotizacion.PdfPath) ? null : Path.GetFileName(cotizacion.PdfPath.Replace('\\', '/'));

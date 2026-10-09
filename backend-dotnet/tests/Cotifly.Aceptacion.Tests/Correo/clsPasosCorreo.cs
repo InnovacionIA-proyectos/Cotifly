@@ -165,7 +165,7 @@ public sealed class clsPasosCorreo(clsContextoEscenario contexto)
         var ruta = conPdf
             ? await contexto.ConsultarAsync(s => s.GetRequiredService<IClsAlmacenPdf>().GuardarNuevoAsync(folio + ".pdf", "%PDF-1.4 cotización de prueba"u8.ToArray()))
             : $"/data/pdfs/{folio}.pdf";
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio,
             UsuarioId = Usuario(nombreUsuario),

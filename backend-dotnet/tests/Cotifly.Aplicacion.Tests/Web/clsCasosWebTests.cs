@@ -194,9 +194,9 @@ public sealed class clsCasosWebTests
 
     private clsDescargaPdfService Descarga(IClsContextoUsuario usuario) => new(usuario, _cotizaciones, _usuarios, _almacen, _auditoria);
 
-    private clsCotizacion CotizacionConPdf(string folio, Guid dueno)
+    private clsCotizacionSolicitud CotizacionConPdf(string folio, Guid dueno)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = dueno, PdfPath = $"/data/pdfs/{folio}.pdf" }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = folio, UsuarioId = dueno, PdfPath = $"/data/pdfs/{folio}.pdf" }).Valor;
         _cotizaciones.ObtenerPorFolioAsync(folio, Arg.Any<CancellationToken>()).Returns(cotizacion);
         _almacen.LeerPorReferenciaAsync(cotizacion.PdfPath, Arg.Any<CancellationToken>()).Returns([1, 2, 3]);
         return cotizacion;

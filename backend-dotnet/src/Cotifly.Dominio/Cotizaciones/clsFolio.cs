@@ -37,7 +37,7 @@ public sealed partial record clsFolio
     /// Máximo de dígitos del NIT: el que deja caber hasta la versión 99 en los 50 caracteres de <c>Cotizaciones.folio</c>
     /// (50 − 24 = 26; un NIT colombiano tiene 9 o 10).
     /// </summary>
-    public const int LargoMaximoNit = clsCotizacion.LargoMaximoFolio - LargoSinNit;
+    public const int LargoMaximoNit = clsCotizacionSolicitud.LargoMaximoFolio - LargoSinNit;
 
     private clsFolio(string folioBase, int version, DateOnly? fecha, int? consecutivo, string? nitCliente, string? iniciales)
     {
@@ -116,7 +116,7 @@ public sealed partial record clsFolio
     public static clsResultado<clsFolio> Desde(string? folio)
     {
         var valor = folio?.Trim();
-        if (string.IsNullOrEmpty(valor) || valor.Length > clsCotizacion.LargoMaximoFolio || !ExpresionCaracteres().IsMatch(valor))
+        if (string.IsNullOrEmpty(valor) || valor.Length > clsCotizacionSolicitud.LargoMaximoFolio || !ExpresionCaracteres().IsMatch(valor))
         {
             return new clsErrorDominio(CodigoInvalido, "El folio no es válido.");
         }
@@ -156,8 +156,8 @@ public sealed partial record clsFolio
         }
 
         var nuevo = new clsFolio(Base, version, Fecha, Consecutivo, NitCliente, Iniciales);
-        return nuevo.Valor.Length > clsCotizacion.LargoMaximoFolio
-            ? new clsErrorDominio(CodigoInvalido, $"El folio de la versión {version} supera {clsCotizacion.LargoMaximoFolio} caracteres.")
+        return nuevo.Valor.Length > clsCotizacionSolicitud.LargoMaximoFolio
+            ? new clsErrorDominio(CodigoInvalido, $"El folio de la versión {version} supera {clsCotizacionSolicitud.LargoMaximoFolio} caracteres.")
             : nuevo;
     }
 

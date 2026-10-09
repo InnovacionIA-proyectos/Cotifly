@@ -38,7 +38,7 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | [4. Flujo del sistema](docs/04-flujo-del-sistema.md) | Login, nueva cotización, mis cotizaciones, margen, correo, estados y procesos en segundo plano |
 | [5. Stack](docs/05-stack.md) | Tecnologías, paquetes NuGet con versión y licencia, imágenes |
 | [6. Ejecución local](docs/06-ejecucion-local.md) | Scripts de entorno local, build y pruebas en el SDK, imagen, IDE |
-| [7. API](docs/07-api.md) | Endpoints, autenticación, errores, ejemplos y límites (el detalle está en `specs/openapi.yaml` y `docs/CONTRATO_API_WEB.md`) |
+| [7. API](docs/07-api.md) | Endpoints, autenticación, errores, ejemplos y límites (el detalle está en `specs/openapi.yaml` y `docs/docs_front/CONTRATO_API_WEB.md`) |
 | [8. Testing](docs/08-testing.md) | Pirámide, proyectos, traits, comandos, Testcontainers, Reqnroll, cobertura, CI y paridad con el Python |
 | [9. Estructura del proyecto](docs/09-estructura-del-proyecto.md) | Árbol de carpetas y dónde va cada cosa |
 | [10. Operación](docs/10-operacion.md) | Salud, logs, métricas, depuración sin shell, riesgos, decisiones pendientes, activación y problemas frecuentes |

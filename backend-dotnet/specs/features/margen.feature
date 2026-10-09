@@ -1,7 +1,7 @@
 # language: es
 # HU-003.4 (#10) y HU-003.7 (#13) — Resolución del margen y margen negociado (ADR-004, ADR-008, ADR-010).
 # Casos de tests/test_margen.py del Python contra SQL Server 2019 (Testcontainers) con la semilla del script
-# 0001 (8 líneas al 15 %, TrqType OPTN…OPSC) y la muestra de SAP TM del Python
+# 0001 (HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR y agrega DevolucionContenedor) y la muestra de SAP TM del Python
 # (tests/fixtures/sap/rentab_cliente_muestra.json) como fuente en memoria. Los escenarios "se lee en modo" usan los
 # adaptadores reales de #13 (export_json sobre la muestra, odata contra un SAP falso sin red que responde con la
 # misma muestra). Márgenes entre comillas (fracción decimal con punto).
@@ -43,8 +43,8 @@ Característica: Resolución del margen de una cotización
       | Importacion | 5001 | 0.999  | OPIM |
 
   Escenario: Se respeta la organización de ventas
-    Cuando pido el margen de la línea "Almacenamiento" para el BP "3301" en la organización "50000010"
-    Entonces el margen es "0.15" con origen "sap_tm" y TrqType "OHUB"
+    Cuando pido el margen de la línea "Nacional" para el BP "15927" en la organización "50000005"
+    Entonces el margen es "0.135" con origen "sap_tm" y TrqType "OPTN"
 
   Esquema del escenario: La línea se reconoce sin importar tildes, mayúsculas ni espacios
     Cuando pido el margen de la línea "<escrita>" sin BP
@@ -54,8 +54,8 @@ Característica: Resolución del margen de una cotización
       | escrita            | linea             | trq  |
       | Distribución       | Distribucion      | OPDS |
       | IMPORTACIÓN        | Importacion       | OPIM |
-      | almacenamiento3pl  | Almacenamiento3PL | OH3P |
-      | ALMACENAMIENTO 3PL | Almacenamiento3PL | OH3P |
+      | nacional           | Nacional          | OPTN |
+      |   EXPORTACIÓN      | Exportacion       | OPEX |
 
   Escenario: Una línea desconocida se rechaza
     Cuando pido el margen de la línea "Aérea" para el BP "15927"

@@ -31,18 +31,15 @@ public sealed class clsPdfCosteoConcurrenciaTests
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsMargenPoliticaRepository _politicas = Substitute.For<IClsMargenPoliticaRepository>();
     private readonly Guid _ana = Guid.NewGuid();
-    private readonly clsCotizacion _cotizacion;
+    private readonly clsCotizacionSolicitud _cotizacion;
 
     public clsPdfCosteoConcurrenciaTests()
     {
+        // HU-021: la costeada ya viene del formulario (ruta 1 con la línea de negocio 3) y enviada a Nexo.
         _cotizacion = clsAjusteMargenCosteoServiceTests.Costeada(_ana, "PCN-900555111-AP-05102026-009");
-        _cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
-        _cotizacion.RegistrarEnvioCosteo("SOL-1", true, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         _cotizacion.ActualizarClienteDelCatalogo("CLIENTE S.A.S.", null);
-        typeof(clsCotizacion).GetProperty(nameof(clsCotizacion.LineaNegocioId))!.SetValue(_cotizacion, 3);
         _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Importacion", 0.15m).Valor);
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(_cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(_cotizacion);
-        _cotizaciones.ListarLineasAsync(_cotizacion.Id, Arg.Any<CancellationToken>()).Returns([]);
         _usuarios.ObtenerPorIdAsync(_ana, Arg.Any<CancellationToken>())
             .Returns(clsUsuarioWeb.Crear("ana", "Ana Pérez", "ana@boterosoto.com.co", "Occidente", DateTimeOffset.UnixEpoch).Valor);
         _generador.GenerarAsync(Arg.Any<clsDocumentoCotizacion>(), Arg.Any<CancellationToken>()).Returns(new clsPdfGenerado([1, 2, 3], 1));

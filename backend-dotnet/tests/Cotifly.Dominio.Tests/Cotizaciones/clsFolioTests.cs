@@ -50,7 +50,7 @@ public sealed class clsFolioTests
 
     [Fact]
     public void ElNitMaximoSeCalculaParaQueQuepaUnaVersionDeDosDigitos() =>
-        clsFolio.LargoMaximoNit.Should().Be(clsCotizacion.LargoMaximoFolio - "PCN--XX-DDMMAAAA-NNN-v99".Length).And.Be(26);
+        clsFolio.LargoMaximoNit.Should().Be(clsCotizacionSolicitud.LargoMaximoFolio - "PCN--XX-DDMMAAAA-NNN-v99".Length).And.Be(26);
 
     [Fact]
     public void UnNitMasLargoQueElMaximoNoCabeEnElFolio() =>
@@ -63,7 +63,7 @@ public sealed class clsFolioTests
         var folio = clsFolio.Crear(_fecha, "DG", 999, nit).Valor.ConVersion(99).Valor;
 
         folio.Valor.Should().Be($"PCN-{nit}-DG-25092026-999-v99");
-        folio.Valor.Length.Should().Be(clsCotizacion.LargoMaximoFolio);
+        folio.Valor.Length.Should().Be(clsCotizacionSolicitud.LargoMaximoFolio);
         clsFolio.Desde(folio.Valor).Valor.NitCliente.Should().Be(nit);
     }
 

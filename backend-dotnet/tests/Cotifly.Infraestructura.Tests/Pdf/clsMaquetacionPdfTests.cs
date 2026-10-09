@@ -101,8 +101,8 @@ public sealed class clsMaquetacionPdfTests
     {
         if (variante == "Pliego")
         {
-            var (cotizacion, lineas) = clsPdfPliegoTests.Pliego(3);
-            return clsPdfPliegoTests.Generar(cotizacion, lineas).Lector;
+            var (cotizacion, _) = clsPdfPliegoTests.Pliego(3);
+            return clsPdfPliegoTests.Generar(cotizacion).Lector;
         }
 
         clsDocumentoCotizacion documento = variante switch

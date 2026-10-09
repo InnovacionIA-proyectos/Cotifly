@@ -10,9 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Cotifly.Infraestructura.Tests.Persistencia;
 
 /// <summary>
-/// Filas del tablero de HU-010.1 (ADR-016 §2) sobre SQL Server real: una por cadena <c>(usuarioId, folio base)</c> con los valores
-/// de la versión vigente, el periodo por la primera creación de la cadena, el resultado más reciente de la cadena, los campos de
-/// moneda, el resumen de <c>MargenAjustes</c> y las columnas opcionales del script 0004 solo si el esquema las tiene.
+/// Filas del tablero de HU-010.1 (ADR-016 Â§2) sobre SQL Server real: una por cadena <c>(usuarioId, folio base)</c> con los valores
+/// de la versiÃ³n vigente, el periodo por la primera creaciÃ³n de la cadena, el resultado mÃ¡s reciente de la cadena, los campos de
+/// moneda, el resumen de <c>MargenAjustes</c> y las ciudades de la ruta 1 solo si el esquema las tiene (0010). HU-021 (decisiÃ³n 8): los
+/// conteos son por cotizaciÃ³n; el costo es la suma de sus rutas y el margen, el promedio de sus rutas ponderado por costo.
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
@@ -33,19 +34,21 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         await GuardarAsync(v1);
         await GuardarAsync(suelta);
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET createdAt = '2026-01-10T12:00:00-05:00' WHERE id IN ('{v1.Id}', '{suelta.Id}');
-            INSERT INTO dbo_cotifly.Cotizaciones (id, folio, usuarioId, precioFinal, costo, version, createdAt, updatedAt)
-            VALUES (NEWID(), N'{folio}-v2', '{ana}', 2000000, 1500000, 2, '2026-02-10T12:00:00-05:00', SYSDATETIMEOFFSET());
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET createdAt = '2026-01-10T12:00:00-05:00' WHERE id IN ('{v1.Id}', '{suelta.Id}');
+            DECLARE @v2 UNIQUEIDENTIFIER = NEWID();
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, version, createdAt, updatedAt)
+            VALUES (@v2, N'{folio}-v2', '{ana}', 2000000, 2, '2026-02-10T12:00:00-05:00', SYSDATETIMEOFFSET());
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, precioFinalLinea) VALUES (@v2, 1, 1500000, 2000000);
             """);
 
         var enero = await ListarAsync([ana], _enero, _febrero);
         var febrero = await ListarAsync([ana], _febrero, _marzo);
 
-        enero.Filas.Should().HaveCount(2, "rehacer una cotización no la mueve del mes en que se creó");
+        enero.Filas.Should().HaveCount(2, "rehacer una cotizaciÃ³n no la mueve del mes en que se creÃ³");
         var cadena = enero.Filas.Single(f => f.Versiones == 2);
         cadena.Should().BeEquivalentTo(new { PrecioFinal = 2_000_000m, Costo = 1_500_000m, CreatedAt = new DateTimeOffset(2026, 1, 10, 12, 0, 0, _bogota) });
         cadena.CreatedAtVigente.Should().Be(new DateTimeOffset(2026, 2, 10, 12, 0, 0, _bogota));
-        febrero.Filas.Should().BeEmpty("la v2 no abre una cotización nueva en febrero");
+        febrero.Filas.Should().BeEmpty("la v2 no abre una cotizaciÃ³n nueva en febrero");
     }
 
     [Fact]
@@ -56,7 +59,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         var folio = FolioUnico();
         await GuardarAsync(NuevaCotizacion(ana, folio));
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.Cotizaciones (id, folio, usuarioId, precioFinal, version, createdAt, updatedAt) VALUES
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, version, createdAt, updatedAt) VALUES
                 (NEWID(), N'{folio}-v3', '{ana}', 3, 3, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET()),
                 (NEWID(), N'{folio}-v2', '{ana}', 2, 2, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET()),
                 (NEWID(), N'{FolioUnico()}-v2', '{luis}', 9, 2, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
@@ -65,7 +68,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         var datos = await ListarAsync([ana, luis], Reloj.AhoraUtc.AddYears(-1), Reloj.AhoraUtc.AddYears(1));
 
         datos.Filas.Select(f => (f.UsuarioId, f.PrecioFinal, f.Versiones)).Should().BeEquivalentTo(
-            [(ana, (decimal?)3m, 3), (luis, (decimal?)9m, 1)], "la v2 suelta de luis es la única de su cadena");
+            [(ana, (decimal?)3m, 3), (luis, (decimal?)9m, 1)], "la v2 suelta de luis es la Ãºnica de su cadena");
     }
 
     [Theory]
@@ -82,15 +85,15 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         await GuardarAsync(v1);
         static string Fecha(string? valor) => valor is null ? "NULL" : $"'{valor}'";
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET ganada = {ganadaV1}, marcadoAt = {Fecha(marcadoV1)} WHERE id = '{v1.Id}';
-            INSERT INTO dbo_cotifly.Cotizaciones (id, folio, usuarioId, precioFinal, version, ganada, marcadoAt, createdAt, updatedAt)
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET ganada = {ganadaV1}, marcadoAt = {Fecha(marcadoV1)} WHERE id = '{v1.Id}';
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, usuarioId, precioFinal, version, ganada, marcadoAt, createdAt, updatedAt)
             VALUES (NEWID(), N'{folio}-v2', '{ana}', 2000000, 2, {ganadaV2}, {Fecha(marcadoV2)}, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
             """);
 
         var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddYears(-1), Reloj.AhoraUtc.AddYears(1))).Filas.Should().ContainSingle().Subject;
 
         fila.Ganada.Should().Be(esperado);
-        fila.PrecioFinal.Should().Be(2_000_000m, "los valores son de la versión vigente");
+        fila.PrecioFinal.Should().Be(2_000_000m, "los valores son de la versiÃ³n vigente");
     }
 
     [Fact]
@@ -100,7 +103,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET moneda = N'USD', trmAplicada = 4000.5, precioFinal = 1000, ganada = 1,
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET moneda = N'USD', trmAplicada = 4000.5, precioFinal = 1000, ganada = 1,
                 costeoListoAt = DATEADD(HOUR, 2, createdAt) WHERE id = '{cotizacion.Id}';
             INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
             VALUES (NEWID(), '{cotizacion.Id}', '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'A', '{ana}', SYSDATETIMEOFFSET()),
@@ -130,36 +133,38 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     }
 
     [Fact]
-    public async Task SinLasColumnasDelScript0004NoHayCiudadesNiDeadline()
+    public async Task SinLosNombresDeMunicipioDel0010NoHayCiudades()
     {
-        // La base compartida ya tiene el 0004 (y el modelo EF lo mapea): la fila se inserta con SQL en la base auxiliar sin él.
-        var cadena = await BaseDatos.CadenaSin0004Async();
+        // HU-021: las ciudades son los nombres de la ruta 1 (0010). La base compartida ya tiene el 0010 (y el modelo EF lo mapea): la fila
+        // se inserta con SQL en una base auxiliar que llega hasta el 0009.
+        await using var sin0010 = await BaseDatos.CrearBaseConScriptsAsync("dbMetricasSin0010", clsBaseDatosPruebas.Scripts.Length - 1);
+        var cadena = sin0010.Cadena;
         var ana = Guid.NewGuid();
         var creada = Reloj.AhoraUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
         await clsBaseDatosPruebas.EjecutarAsync(cadena, $"""
             INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario, regional) VALUES ('{ana}', N'u{ana:N}', N'Antioquia');
-            INSERT INTO dbo_cotifly.Cotizaciones (folio, usuarioId, createdAt) VALUES (N'{FolioUnico()}', '{ana}', '{creada}');
+            INSERT INTO dbo_cotifly.CotizacionesSolicitud (folio, usuarioId, createdAt) VALUES (N'{FolioUnico()}', '{ana}', '{creada}');
             """);
         await using var proveedor = clsServiciosPruebas.Crear(cadena, Reloj);
 
-        async Task<clsDatosMetricas> ListarSin0004Async(IReadOnlyCollection<Guid> usuarios)
+        async Task<clsDatosMetricas> ListarSin0010Async(IReadOnlyCollection<Guid> usuarios)
         {
             await using var ambito = proveedor.CreateAsyncScope();
             return await ambito.ServiceProvider.GetRequiredService<IClsMetricasRepository>()
                 .ListarCotizacionesAsync(usuarios, Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1), Ct);
         }
 
-        var datos = await ListarSin0004Async([ana]);
-        var sinUsuarios = await ListarSin0004Async([]);
+        var datos = await ListarSin0010Async([ana]);
+        var sinUsuarios = await ListarSin0010Async([]);
 
         datos.CiudadesDisponibles.Should().BeFalse();
-        datos.DeadlineDisponible.Should().BeFalse();
+        datos.DeadlineDisponible.Should().BeTrue("deadline sigue en la cabecera");
         datos.Filas.Should().ContainSingle().Which.Should().BeEquivalentTo(new { Destino = (string?)null, Deadline = (DateTimeOffset?)null });
         sinUsuarios.Filas.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task ConLasColumnasDelScript0004TraeOrigenDestinoYDeadline()
+    public async Task ConLosNombresDeMunicipioTraeElOrigenYElDestinoDeLaRutaUnoYElDeadline()
     {
         var cadena = await BaseDatos.CadenaConCiudadesAsync();
         await using var proveedor = clsServiciosPruebas.Crear(cadena, Reloj);
@@ -173,7 +178,8 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
         }
 
         await clsBaseDatosPruebas.EjecutarAsync(cadena,
-            $"UPDATE dbo_cotifly.Cotizaciones SET origen = N'MEDELLIN', destino = N'BOGOTA D.C.', deadline = '2026-09-20T18:00:00-05:00' WHERE id = '{cotizacion.Id}';");
+            $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET origenNombre = N'MEDELLIN', destinoNombre = N'BOGOTA D.C.' WHERE cotizacionSolicitudId = '{cotizacion.Id}'; "
+            + $"UPDATE dbo_cotifly.CotizacionesSolicitud SET deadline = '2026-09-20T18:00:00-05:00' WHERE id = '{cotizacion.Id}';");
 
         await using var consulta = proveedor.CreateAsyncScope();
         var datos = await consulta.ServiceProvider.GetRequiredService<IClsMetricasRepository>()
@@ -187,6 +193,23 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
             Destino = "BOGOTA D.C.",
             Deadline = (DateTimeOffset?)new DateTimeOffset(2026, 9, 20, 18, 0, 0, _bogota),
         });
+    }
+
+    [Fact]
+    public async Task ElCostoSumaLasRutasYElMargenEsElPromedioPonderadoPorCosto()
+    {
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = 1000000, margenAplicado = 0.10 WHERE cotizacionSolicitudId = '{cotizacion.Id}';
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, costoFinal, margenAplicado) VALUES ('{cotizacion.Id}', 2, 3000000, 0.20);
+            """);
+
+        var fila = (await ListarAsync([ana], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1))).Filas.Should().ContainSingle("se cuenta la cotizaciÃ³n, no sus rutas").Subject;
+
+        fila.Costo.Should().Be(4_000_000m);
+        fila.MargenAplicado.Should().Be(0.175m, "(0,10 Ã— 1.000.000 + 0,20 Ã— 3.000.000) / 4.000.000");
     }
 
     [Fact]

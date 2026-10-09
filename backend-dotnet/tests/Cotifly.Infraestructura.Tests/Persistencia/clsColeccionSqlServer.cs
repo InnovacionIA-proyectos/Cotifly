@@ -101,28 +101,28 @@ public abstract class clsPruebaIntegracion : IAsyncDisposable
         return usuario.Id;
     }
 
-    /// <summary>Cotización válida en memoria (sin guardar).</summary>
-    protected static clsCotizacion NuevaCotizacion(Guid? usuarioId, string? folio = null, decimal precio = 1_500_000m) =>
-        clsCotizacion.Crear(new clsDatosCotizacion
+    /// <summary>
+    /// Cotización válida en memoria (sin guardar), como la del chat (HU-021): cabecera, una ruta con la línea de negocio 1, el margen y
+    /// el precio, y un camión con el costo del flete.
+    /// </summary>
+    protected static clsCotizacionSolicitud NuevaCotizacion(Guid? usuarioId, string? folio = null, decimal precio = 1_500_000m)
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = folio ?? FolioUnico(),
             UsuarioId = usuarioId,
-            LineaNegocioId = 1,
             ClienteNombre = "Cliente de prueba S.A.S.",
             NitCliente = "900123456",
             OrigenCliente = OrigenCliente.Cliente,
-            Costo = 1_275_000m,
-            MargenPolitica = 0.15m,
-            MargenAplicado = 0.15m,
-            OrigenMargen = OrigenMargen.PoliticaLinea,
-            MetodoCalculo = "margen",
-            PrecioFinal = precio,
             SpaceId = "web/prueba",
             ThreadId = "web/prueba",
         }).Valor;
+        cotizacion.RegistrarCotizacionChat(1, 1_275_000m, 0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen", precio);
+        return cotizacion;
+    }
 
     /// <summary>Guarda una cotización en un ámbito propio.</summary>
-    protected Task GuardarAsync(clsCotizacion cotizacion) =>
+    protected Task GuardarAsync(clsCotizacionSolicitud cotizacion) =>
         EnAmbitoAsync(s =>
         {
             s.GetRequiredService<IClsCotizacionRepository>().Agregar(cotizacion);

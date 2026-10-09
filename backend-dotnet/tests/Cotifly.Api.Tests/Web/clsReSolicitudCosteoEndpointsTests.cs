@@ -86,10 +86,11 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         var vista = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK);
         vista.GetProperty("pdf_desactualizado").GetBoolean().Should().BeTrue();
         (await ColumnaAsync(folio, "costo")).Should().BeNull("el costo anterior solo queda en la auditoría");
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPdfsHistorial h JOIN dbo_cotifly.Cotizaciones c ON c.id = h.cotizacionId "
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPdfsHistorial h JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = h.cotizacionId "
             + $"WHERE c.folio = '{folio}' AND h.motivo = 're_solicitud'")).Should().Be(1);
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.Cotizaciones c ON c.id = l.cotizacionId "
-            + $"WHERE c.folio = '{folio}' AND (l.costo IS NOT NULL OR l.lineaSolicitudNexoId IS NOT NULL)")).Should().Be(0, "la línea olvida el costeo anterior");
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}' AND (l.costoFinal IS NOT NULL OR EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "WHERE v.lineaSolicitudId = l.id AND (v.costoFlete IS NOT NULL OR v.lineaSolicitudNexoId IS NOT NULL)))")).Should().Be(0, "la ruta y sus camiones olvidan el costeo anterior");
     }
 
     [Fact]
@@ -112,7 +113,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         (await ColumnaAsync(folioNuevo, "pesoKg")).Should().StartWith("28400");
         (await ColumnaAsync(folioNuevo, "tipoVehiculo")).Should().Be("2S3");
         (await ColumnaAsync(folioNuevo, "carroceria")).Should().Be("PORTACONTENEDORES", "lo que no cambia se copia de la original");
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p JOIN dbo_cotifly.Cotizaciones c ON c.id = p.cotizacionId WHERE c.folio = '{folioNuevo}'"))
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = lp.cotizacionSolicitudId WHERE c.folio = '{folioNuevo}'"))
             .Should().Be(2);
         _nexo.UltimaAlta!["lineas"]![0]!["peso"]!.GetValue<decimal>().Should().Be(28400m);
         (await ColumnaAsync(folio, "estadoCosteo")).Should().Be("costeo_vencido", "la original conserva su costeo");
@@ -171,7 +172,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
 
         cuerpos[1].Should().Be(cuerpos[0], "la repetición devuelve la respuesta de la primera");
         _nexo.SolicitudesCreadas.Should().HaveCount(altasAntes + 1, "Nexo recibe una sola captura");
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}' OR folio LIKE '{folio}-v%'")).Should().Be(2);
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}' OR folio LIKE '{folio}-v%'")).Should().Be(2);
 
         using var otroCuerpo = await ReSolicitarAsync(sesion, folio, """{"motivo":"Otro","datos_carga":{"peso_kg":28450}}""", etag, clave);
         otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo es un error del cliente");
@@ -198,7 +199,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         estados.Count(e => e == HttpStatusCode.Created).Should().Be(1, string.Join(",", estados));
         estados.Count(e => e == HttpStatusCode.Conflict).Should().Be(3, "las demás pierden la reserva de la versión de la original");
         _nexo.SolicitudesCreadas.Should().HaveCount(altas + 1, "un solo POST a Nexo");
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE folio LIKE '{folio}-v%'")).Should().Be(1);
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio LIKE '{folio}-v%'")).Should().Be(1);
     }
 
     [Fact]
@@ -243,7 +244,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
     {
         var (sesion, folio) = await EntregadaAsync();
         await clsBaseDatosPruebas.EjecutarAsync(_baseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE folio = '{folio}'");
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'enviada' WHERE folio = '{folio}'");
         var etag = await EtagAsync(sesion, folio);
 
         using var mismo = await ReSolicitarAsync(sesion, folio, """{"motivo":"Actualizar"}""", etag);
@@ -281,7 +282,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
         _nexo.SolicitudesCreadas.Should().HaveCount(altas);
-        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE folio LIKE '{folio}-v%'")).Should().Be(0);
+        (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio LIKE '{folio}-v%'")).Should().Be(0);
     }
 
     /// <summary>Cotización enviada, costeada (2.550.000) y entregada por Nexo.</summary>
@@ -327,8 +328,22 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         return await _api.Cliente.SendAsync(peticion, Ct);
     }
 
-    private Task<string?> ColumnaAsync(string folio, string columna) =>
-        EscalarAsync<string>($"SELECT CAST({columna} AS nvarchar(max)) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'");
+    /// <summary>
+    /// Una columna de la cotización <paramref name="folio"/>. HU-021: el costo es el de la ruta 1 y la carga (peso, vehículo, carrocería),
+    /// la de su primer camión; el resto, de la cabecera.
+    /// </summary>
+    private Task<string?> ColumnaAsync(string folio, string columna)
+    {
+        var expresion = columna switch
+        {
+            "costo" => "l.costoFinal",
+            "pesoKg" or "tipoVehiculo" or "carroceria" => $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY v.createdAt, v.id)",
+            "costeoId" => "c.solicitudNexoId",
+            _ => $"c.{columna}",
+        };
+        return EscalarAsync<string>($"SELECT CAST({expresion} AS nvarchar(max)) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"LEFT JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id AND l.orden = 1 WHERE c.folio = '{folio}'");
+    }
 
     private Task<string?> AuditoriaAsync(string folio) =>
         EscalarAsync<string>("SELECT STRING_AGG(CONCAT(input, '|', outputResumen), ';') FROM dbo_cotifly.EventosHerramienta "

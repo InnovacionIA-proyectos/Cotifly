@@ -31,6 +31,9 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\db\migrations_mssql\*.sql" Link="migrations_mssql\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Reversas de los scripts (0006 en adelante): las pruebas de esquema las aplican en una base aislada. -->
     <None Include="$(MSBuildThisFileDirectory)..\..\db\migrations_mssql\rollback\*.sql" Link="migrations_mssql\rollback\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- HU-021: instalación desde cero (db/scripts/01_crear_esquema.sql) y sus seeders, para compararla con la cadena de migraciones. -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\db\scripts\*.sql" Link="scripts_bd\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\db\seeder\*.sql" Link="scripts_bd\seeder\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Datos de prueba portados del Python: muestra de RentabClienteSet de SAP TM (#13) y payload del PDF (#11, ejemplo-solicitud.json). -->
     <None Include="$(MSBuildThisFileDirectory)fixtures\**\*.json" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Pliego de 300 líneas de Nexo (HU-011): paridad de la detección de filas con el analizador de Nexo. -->

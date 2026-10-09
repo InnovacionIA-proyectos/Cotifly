@@ -23,8 +23,8 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
         await GuardarAsync(reenviada);
         await GuardarAsync(NuevaCotizacion(ana));
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
-            UPDATE dbo_cotifly.Cotizaciones SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'enviada' WHERE id = '{enviada.Id}';
+            UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoEnvio = 'reenviada' WHERE id = '{reenviada.Id}';
             INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
             VALUES (NEWID(), '{enviada.Id}', '{enviada.Folio}', 0.15, 0.12, -0.03, N'Ajuste', '{ana}', SYSDATETIMEOFFSET());
             """);
@@ -67,10 +67,14 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
         var ana = await CrearUsuarioAsync();
         var cotizacion = NuevaCotizacion(ana);
         await GuardarAsync(cotizacion);
+        // HU-021: la línea de negocio del ajuste es la de la ruta ajustada (MargenAjustes.lineaSolicitudId, 0009).
         await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
-            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
-            VALUES (NEWID(), '{cotizacion.Id}', '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'A', '{ana}', SYSDATETIMEOFFSET()),
-                   (NEWID(), '{cotizacion.Id}', '{cotizacion.Folio}', 0.15, 0.10, -0.05, N'B', '{ana}', SYSDATETIMEOFFSET());
+            DECLARE @ruta UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{cotizacion.Id}' AND orden = 1);
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud
+               SET lineaNegocioId = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Nacional') WHERE id = @ruta;
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), '{cotizacion.Id}', @ruta, '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'A', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), '{cotizacion.Id}', @ruta, '{cotizacion.Folio}', 0.15, 0.10, -0.05, N'B', '{ana}', SYSDATETIMEOFFSET());
             """);
 
         var filas = await Repositorio(r => r.ListarAjustesMargenAsync(clsAlcanceMetricas.DelUsuario(ana), Ct));

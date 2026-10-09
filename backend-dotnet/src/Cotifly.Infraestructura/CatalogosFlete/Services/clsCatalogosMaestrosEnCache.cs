@@ -42,7 +42,7 @@ public sealed class clsCacheCatalogosMaestros
 /// <item><b>Vencida</b>: se consulta Nexo. Si Nexo falla y la foto tiene menos de <c>Nexo:HorasCatalogosVencidos</c> (24 por
 /// defecto), se sirve la foto vencida y se registra un warning: los catálogos maestros cambian poco y un código que era válido hace
 /// unas horas lo sigue siendo. Pasado ese límite, o sin foto, responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> (nunca se ofrece ni se
-/// envía texto libre: ver ADR-018 y <c>docs/HU-013-preguntas-nexo.md</c> G2).</item>
+/// envía texto libre: ver ADR-018 y <c>docs/conexion_nexo/HU-013-preguntas-nexo.md</c> G2).</item>
 /// <item><b>Una consulta a la vez</b> y <b>sin caché negativa</b>, igual que <c>clsMunicipiosEnCache</c>: un fallo por un comercial
 /// sin <c>idUsuarioExterno</c> no deja sin catálogos a los demás.</item>
 /// <item><b>Solo fotos completas:</b> se guarda una respuesta exitosa con tipos de vehículo y clases de viaje no vacíos.</item>

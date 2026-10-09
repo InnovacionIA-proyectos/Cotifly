@@ -1,6 +1,6 @@
 # ADR-017 — Licitaciones desde Excel y cotizaciones de varias líneas
 
-- **Estado:** Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
+- **Estado:** Reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones). Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
 - **Fecha:** 2026-10-01
 - **Issue / HU:** #46 (HU-011.1), #47 (HU-011.2), #48 (HU-011.3) y #49 (HU-011.5). Amplía ADR-015 (costeo en Nexo, que dejó la deuda "HU-011 multi-línea"). Relacionada con ADR-006 (PDF), ADR-008 (esquema solo por scripts), ADR-011 (folio) y ADR-014 (TRM y USD).
 - **Nota de numeración:** ADR-016 es la de métricas (HU-010.1); esta queda como ADR-017.
@@ -17,7 +17,7 @@
 ### 1. Formato del Excel (HU-011.1, #46)
 
 - **Cotifly no impone plantilla.** Reutiliza el flujo de Nexo de analizar y mapear: el comercial sube el pliego, Cotifly reenvía el archivo al análisis de Nexo, el frontend mapea las columnas a los campos destino y envía las líneas ya mapeadas. Cualquier plantilla de cliente sirve sin cambios de código.
-- Los campos destino son los de `CapturaLineaRequest` de Nexo, con los nombres y límites de `POST /web/solicitudes-costeo`; el encabezado (cliente, línea de negocio, `deadline`, `valor_estimado`, `referencia`, horas) lo llena el comercial. El detalle completo (tipos, obligatoriedad, catálogos, validación por fila, columnas de la exportación y un ejemplo) está en `docs/HU-011-formato-excel-licitacion.md`.
+- Los campos destino son los de `CapturaLineaRequest` de Nexo, con los nombres y límites de `POST /web/solicitudes-costeo`; el encabezado (cliente, línea de negocio, `deadline`, `valor_estimado`, `referencia`, horas) lo llena el comercial. El detalle completo (tipos, obligatoriedad, catálogos, validación por fila, columnas de la exportación y un ejemplo) está en `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`.
 - La validación por fila replica `CapturarSolicitudValidador` de Nexo y se ejecuta entera antes de guardar: el reporte trae todas las filas con error (índice, fila, campo y código), no solo la primera.
 
 ### 2. Modelo multi-línea (HU-011.2, #47): script 0005
@@ -51,7 +51,7 @@
 - Los cuerpos se leen a mano (no `[FromForm]`) para que la sesión se valide antes que el tipo de contenido; límite de cuerpo propio de 12 MB (`SeguridadHttp:LimiteCuerpoLicitacionBytes`, 413 al pasarlo). Mismos roles y aislamiento por dueño que el resto de `/web/*`.
 - **Lectura acotada del Excel** (`clsLectorExcelLicitacionClosedXml`): una celda lejana (`XFD3000`) o una combinada enorme (`A2:XFD1048576`) hacían recorrer o expandir millones de celdas (segundos y GB de memoria, o el proceso caído). Ahora solo se leen las celdas con contenido de las primeras 200 columnas, las combinadas se consultan como rangos recortados (sin expandirlas; más de 10.000 es `EXCEL_INVALIDO`), se ubican como máximo 1000 filas con datos y se respeta la cancelación. En un pliego normal el resultado es idéntico al de Nexo (prueba de paridad con el pliego de 300 líneas de Nexo y un oráculo copiado de su `ExcelSolicitudesAdapter`).
 - **ClosedXML 0.104.2**, la misma versión de Nexo (sin vulnerabilidades conocidas en OSV al 2026-10-01): la detección de encabezados depende de `RangeUsed` y del formato de las celdas, así que usar la misma versión evita diferencias sutiles. Si Nexo sube de versión, se sube aquí y se corre la prueba de paridad.
-- **Doble envío:** dos `POST /web/licitaciones` iguales crean dos licitaciones (y dos solicitudes en Nexo). No se implementa `Idempotency-Key` en esta iteración: exigiría una tabla nueva de claves por usuario (otro cambio de esquema para el DBA) y coordinarla entre réplicas, para un caso que el frontend evita bloqueando el botón mientras la petición está en curso (hasta unos 30 s). Queda como **responsabilidad documentada del frontend** (`docs/GUIA_FRONTEND_COTIFLY.md` §5.24); si aparecen duplicados en producción, se agrega el encabezado con su tabla.
+- **Doble envío:** dos `POST /web/licitaciones` iguales crean dos licitaciones (y dos solicitudes en Nexo). No se implementa `Idempotency-Key` en esta iteración: exigiría una tabla nueva de claves por usuario (otro cambio de esquema para el DBA) y coordinarla entre réplicas, para un caso que el frontend evita bloqueando el botón mientras la petición está en curso (hasta unos 30 s). Queda como **responsabilidad documentada del frontend** (`docs/docs_front/GUIA_FRONTEND_COTIFLY.md` §5.24); si aparecen duplicados en producción, se agrega el encabezado con su tabla.
 
 ### 5. Exportación del Excel con resultados (HU-011.3, #48)
 

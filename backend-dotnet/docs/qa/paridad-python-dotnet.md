@@ -27,7 +27,7 @@ Decididas por el equipo y documentadas; si aparecen, se marcan como "esperada" c
 | Costo | Tarifario de Google Drive | Retirado: el costeo viene de Nexo (HU-005); mientras tanto el comercial escribe el costo | Plan de migración |
 | Margen del LLM | El LLM podía mandar margen o cliente | El estado de la conversación manda (ADR-004): el LLM no pone números | ADR-004 |
 | Estado de envío en un reenvío | Quedaba `enviada` | `reenviada` | #11 |
-| Endpoints `/web/*` salvo `/web/chat` | Responden 501 desde HU-002.2 | Implementados según el contrato | `docs/CONTRATO_API_WEB.md` |
+| Endpoints `/web/*` salvo `/web/chat` | Responden 501 desde HU-002.2 | Implementados según el contrato | `docs/docs_front/CONTRATO_API_WEB.md` |
 | Texto del agente | Redacción libre | Validada contra un esquema; con respaldo controlado | ADR-003, HU-003.10 |
 
 Lista completa por módulo: secciones "Diferencias deliberadas con el Python" de [02-arquitectura](../02-arquitectura.md).
@@ -85,7 +85,7 @@ Comparación del PDF: páginas, orden de los bloques, textos estándar, bloques 
 
 ## 5. Endpoints `/web/*` con Postman
 
-Los "5 endpoints `/web/*`" de HU-003.9 son los que consumía `chat.html` en el Python y que congeló HU-004.1: `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento`. En el contrato actual `/web/login` ya no existe: lo reemplaza `POST /api/auth/login-clientepro` (login SSO, ADR-009), que se prueba en su lugar (WEB-01). Los otros cuatro conservan ruta y forma (con los renombres de HU-002.2 documentados en `docs/CONTRATO_API_WEB.md` §7). El contrato actual tiene además endpoints nuevos, fuera de esta tabla (ver el final de la sección).
+Los "5 endpoints `/web/*`" de HU-003.9 son los que consumía `chat.html` en el Python y que congeló HU-004.1: `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento`. En el contrato actual `/web/login` ya no existe: lo reemplaza `POST /api/auth/login-clientepro` (login SSO, ADR-009), que se prueba en su lugar (WEB-01). Los otros cuatro conservan ruta y forma (con los renombres de HU-002.2 documentados en `docs/docs_front/CONTRATO_API_WEB.md` §7). El contrato actual tiene además endpoints nuevos, fuera de esta tabla (ver el final de la sección).
 
 Contra el backend .NET, confirmar código de estado y forma de la respuesta contra [`specs/openapi.yaml`](../../specs/openapi.yaml):
 

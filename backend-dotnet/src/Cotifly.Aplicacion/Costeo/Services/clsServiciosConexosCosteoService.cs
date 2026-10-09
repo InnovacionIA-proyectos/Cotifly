@@ -10,7 +10,6 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Pdf.Services;
-using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Options;
@@ -49,15 +48,12 @@ public interface IClsServiciosConexosCosteoService
 /// <summary>
 /// Implementación de <see cref="IClsServiciosConexosCosteoService"/>.
 /// <list type="bullet">
-/// <item><b>Línea de Nexo.</b> <c>linea_orden</c> → la línea de Cotifly (<c>CotizacionLineasSolicitud.orden</c>) → su
-/// <c>lineaSolicitudNexoId</c> (guardado por el polling) → la línea de la cotización de Nexo con ese <c>lineaSolicitudId</c>, cuyo id
-/// (<see cref="clsLineaCosteoNexo.Id"/>) se lee de Nexo justo antes de agregar (<c>GET /api/cotizaciones/{id}</c>). Así el
-/// <c>lineaId</c> que viaja siempre es el vigente en Nexo y no hace falta una columna nueva: si Nexo recrea las líneas de su
-/// cotización, el id guardado quedaría viejo.</item>
-/// <item><b>Precio.</b> Cada conexo de la cotización de Nexo pasa por <see cref="clsPrecioMonedaCosteo"/> (la función común del
-/// polling y del ajuste: margen y método de la cotización, moneda y TRM fijada). Los que ya estaban conservan si el comercial los
-/// incluye; los nuevos quedan incluidos. El JSON resultante es el mismo que arma el polling, así que la siguiente consulta no lo
-/// cambia.</item>
+/// <item><b>Línea de Nexo.</b> <c>linea_orden</c> → la ruta de Cotifly (<c>CotizacionLineasSolicitud.orden</c>) → su PRIMER camión
+/// (decisión 3 del 2026-10-08: los conexos de la ruta viajan pegados a la línea de su primer camión) → su <c>lineaSolicitudNexoId</c>
+/// (guardado por el polling) → la línea de la cotización de Nexo con ese <c>lineaSolicitudId</c>, cuyo id se lee de Nexo justo antes de
+/// agregar (<c>GET /api/cotizaciones/{id}</c>).</item>
+/// <item><b>Precio.</b> Los conexos que Nexo agregó quedan como filas de la ruta (<c>CotizacionServiciosConexos</c>, HU-021) con su
+/// costo unitario de Nexo y su cantidad; la ruta los suma a su costo final y les aplica su margen (el precio de la ruta los incluye).</item>
 /// <item><b>Concurrencia.</b> La versión se RESERVA en la base (sube y se guarda con el <c>If-Match</c>) antes del POST a Nexo: solo
 /// una de varias peticiones simultáneas llega a Nexo; las demás reciben <c>CONFLICTO_CONCURRENCIA</c>. Los precios se guardan después
 /// con la versión reservada. Todo 2xx de Nexo es efecto; sin respuesta, <c>agregado_en_nexo = "desconocido"</c>.</item>
@@ -66,7 +62,6 @@ public interface IClsServiciosConexosCosteoService
 public sealed class clsServiciosConexosCosteoService(
     IClsCotizacionRepository cotizaciones,
     IClsServiciosConexosNexo nexo,
-    IClsPrecioService precios,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
     IOptions<clsOpcionesPdf> opcionesPdf,
@@ -251,20 +246,18 @@ public sealed class clsServiciosConexosCosteoService(
     /// margen (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>), línea inexistente (<c>CONEXO_INVALIDO</c>) y línea sin
     /// cotización de Nexo (<c>LINEA_SIN_COTIZACION_NEXO</c>). <c>null</c> si pasa.
     /// </summary>
-    public static clsErrorDominio? ValidarPrecondiciones(
-        clsCotizacion cotizacion, IReadOnlyList<clsCotizacionLineaSolicitud> lineas, IReadOnlyList<clsConexoValidado> items)
+    public static clsErrorDominio? ValidarPrecondiciones(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsConexoValidado> items)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(items);
-        if (clsCosteoCotizacionService.EsPliego(cotizacion, lineas))
+        if (clsCosteoCotizacionService.EsPliego(cotizacion))
         {
             // ADR-017 §6 y ADR-018 §4: el PDF de pliego no imprime conexos; las licitaciones no los admiten en esta iteración.
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
                 $"La cotización {cotizacion.Folio} es una licitación: no admite servicios conexos en esta iteración.", MotivoLicitacion);
         }
 
-        if (!cotizacion.TieneCostoDisponible || cotizacion.MargenAplicado is null || cotizacion.MetodoCalculo is null)
+        if (!cotizacion.TieneCostoDisponible || cotizacion.Rutas.Any(r => r.MargenAplicado is null || r.MetodoCalculo is null))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
                 $"La cotización {cotizacion.Folio} todavía no tiene el costeo de Nexo con margen aplicado: espera el costeo para agregar conexos.");
@@ -275,15 +268,15 @@ public sealed class clsServiciosConexosCosteoService(
             return entregada;
         }
 
-        // linea_orden → línea de Cotifly. Una cotización anterior al 0005 (sin filas de línea) solo tiene la línea 1.
-        var porOrden = lineas.ToDictionary(l => l.Orden);
-        if (items.FirstOrDefault(i => lineas.Count == 0 ? i.LineaOrden != 1 : !porOrden.ContainsKey(i.LineaOrden)) is { } inexistente)
+        // linea_orden → ruta de Cotifly (HU-021).
+        var porOrden = cotizacion.Rutas.ToDictionary(r => r.Orden);
+        if (items.FirstOrDefault(i => !porOrden.ContainsKey(i.LineaOrden)) is { } inexistente)
         {
             return new clsErrorDominio(clsCodigosError.ConexoInvalido,
                 $"La línea {inexistente.LineaOrden} no existe en la cotización {cotizacion.Folio}.", "LINEA_INEXISTENTE");
         }
 
-        if (items.FirstOrDefault(i => lineas.Count > 0 && porOrden[i.LineaOrden].LineaSolicitudNexoId is null) is { } sinNexo)
+        if (items.FirstOrDefault(i => PrimerCamion(porOrden[i.LineaOrden])?.LineaSolicitudNexoId is null) is { } sinNexo)
         {
             return SinLineaNexo(cotizacion, sinNexo.LineaOrden);
         }
@@ -291,22 +284,24 @@ public sealed class clsServiciosConexosCosteoService(
         return cotizacion.CotizacionNexoId is null && items.Count > 0 ? SinLineaNexo(cotizacion, items[0].LineaOrden) : null;
     }
 
+    /// <summary>Primer camión de la ruta: el que lleva los conexos en Nexo (decisión 3).</summary>
+    private static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta) => ruta.VehiculosOrdenados.FirstOrDefault();
+
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, int Agregados, bool PdfInvalidado)> AgregarAsync(
-        clsCotizacion cotizacion, Guid usuarioId, IReadOnlyList<clsConexoValidado> items, int versionEsperada, CancellationToken cancellationToken)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<clsConexoValidado> items, int versionEsperada, CancellationToken cancellationToken)
     {
         if (!cotizacion.TieneVersion(versionEsperada))
         {
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), 0, false);
         }
 
-        var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, cancellationToken) ?? [];
-        if (ValidarPrecondiciones(cotizacion, lineas, items) is { } noPermitido)
+        if (ValidarPrecondiciones(cotizacion, items) is { } noPermitido)
         {
             return (noPermitido, 0, false);
         }
 
         var cotizacionNexoId = cotizacion.CotizacionNexoId!;
-        var porOrden = lineas.ToDictionary(l => l.Orden);
+        var porOrden = cotizacion.Rutas.ToDictionary(r => r.Orden);
 
         // El id de la línea de la cotización de Nexo se lee de Nexo justo antes de agregar (ver el resumen de la clase).
         var actual = await nexo.LeerCotizacionAsync(usuarioId, cotizacionNexoId, cancellationToken);
@@ -318,7 +313,7 @@ public sealed class clsServiciosConexosCosteoService(
         var paraNexo = new List<clsConexoParaNexo>();
         foreach (var item in items)
         {
-            var lineaId = LineaDeNexo(actual.Valor, lineas.Count == 0 ? null : porOrden[item.LineaOrden]);
+            var lineaId = LineaDeNexo(actual.Valor, PrimerCamion(porOrden[item.LineaOrden]));
             if (lineaId is null)
             {
                 return (SinLineaNexo(cotizacion, item.LineaOrden), 0, false);
@@ -366,14 +361,17 @@ public sealed class clsServiciosConexosCosteoService(
             return await SinRelecturaAsync(cotizacion, usuarioId, reservada, agregado.Valor.Seguro ? (object)true : AgregadoDesconocido, detalleRelectura);
         }
 
-        var conexos = ConexosConPrecio(cotizacion, cotizacionNexo);
-        if (conexos.EsFallo)
+        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de la ruta (costo unitario de Nexo y cantidad) y la ruta
+        // recalcula su costo final y su precio con su margen.
+        var ruta = porOrden[items[0].LineaOrden];
+        var importados = ImportarConexos(cotizacion, ruta, NuevosConexos(actual.Valor, cotizacionNexo), cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
+        if (importados.EsFallo)
         {
-            return (AgregadoEnNexo(conexos.Error, true), 0, false);
+            return (AgregadoEnNexo(importados.Error, true), 0, false);
         }
 
-        var anteriores = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).Count;
-        cotizacion.SeleccionarServiciosConexos(clsServiciosConexosJson.Escribir(conexos.Valor));
+        var agregados = importados.Valor;
+
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         if (!await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None))
         {
@@ -381,16 +379,39 @@ public sealed class clsServiciosConexosCosteoService(
             return (AgregadoEnNexo(clsReglaPdfCosteo.Conflicto(cotizacion.Folio), true), 0, false);
         }
 
-        return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), Math.Max(0, conexos.Valor.Count - anteriores), pdfInvalidado);
+        return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), agregados, pdfInvalidado);
     }
 
     /// <summary>¿La cotización releída tiene conexos que no estaban antes del POST? (confirma un efecto incierto).</summary>
-    public static bool TieneConexosNuevos(clsCotizacionNexo antes, clsCotizacionNexo despues)
+    public static bool TieneConexosNuevos(clsCotizacionNexo antes, clsCotizacionNexo despues) => NuevosConexos(antes, despues).Count > 0;
+
+    /// <summary>Conexos de <paramref name="despues"/> que no estaban en <paramref name="antes"/> (por id de Nexo).</summary>
+    public static IReadOnlyList<clsConexoNexo> NuevosConexos(clsCotizacionNexo antes, clsCotizacionNexo despues)
     {
         ArgumentNullException.ThrowIfNull(antes);
         ArgumentNullException.ThrowIfNull(despues);
         var previos = antes.Conexos.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return despues.Conexos.Any(c => !previos.Contains(c.Id));
+        return [.. despues.Conexos.Where(c => !previos.Contains(c.Id))];
+    }
+
+    /// <summary>
+    /// Guarda <paramref name="conexos"/> de Nexo como filas de la ruta (HU-021): costo unitario = <c>valorAplicado ÷ cantidad</c> (el mismo
+    /// criterio del 0009), la cantidad y el nombre. Un conexo que ya estaba se actualiza. La raíz recalcula siempre los totales y el precio
+    /// (<see cref="clsCotizacionSolicitud.CambiarConexos"/>). Devuelve cuántos agregó o cambió, o el error del módulo de precio.
+    /// </summary>
+    public static clsResultado<int> ImportarConexos(
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IEnumerable<clsConexoNexo> conexos, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(ruta);
+        ArgumentNullException.ThrowIfNull(conexos);
+        var cambios = conexos.Where(c => c.ValorAplicado >= 0m).Select(conexo =>
+        {
+            var cantidad = conexo.Cantidad > 0m ? decimal.Round(conexo.Cantidad, 2) : 1m;
+            var precio = decimal.Round(conexo.ValorAplicado / cantidad, 2, MidpointRounding.ToEven);
+            return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad);
+        }).ToList();
+        return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
     }
 
     /// <summary>
@@ -400,10 +421,13 @@ public sealed class clsServiciosConexosCosteoService(
     /// una cotización con PDF) con la versión ya reservada; sin PDF el polling recoge el conexo en su siguiente consulta.
     /// </summary>
     private async Task<(clsResultado<clsCosteoCotizacion>, int, bool)> SinRelecturaAsync(
-        clsCotizacion cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle)
     {
-        var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones)
-                            && await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None);
+        // HU-021: el polling ya no importa los conexos de Nexo (Cotifly es la fuente, decisión 3) salvo con esta marca: la siguiente
+        // lectura del costeo trae a la ruta 1 los conexos de Nexo que falten y la quita.
+        cotizacion.MarcarConexosPendientesDeLeer();
+        var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
+        pdfInvalidado = await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None) && pdfInvalidado;
         var mensaje = agregado is true
             ? "Nexo agregó el servicio conexo pero no se pudo leer de nuevo la cotización: aparecerá con su precio en la siguiente actualización. No lo vuelvas a agregar."
             : "Nexo no respondió y no se sabe si agregó el servicio conexo: revisa el costeo en unos minutos antes de volver a agregarlo.";
@@ -411,50 +435,19 @@ public sealed class clsServiciosConexosCosteoService(
     }
 
     /// <summary>
-    /// Conexos de la cotización de Nexo con su precio (<see cref="clsPrecioMonedaCosteo"/>), en el orden de Nexo y con la misma forma
-    /// que el polling. Conservan <c>incluido</c> los que ya estaban; los nuevos quedan incluidos.
+    /// <c>lineaId</c> de Nexo para un camión de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>. Sin
+    /// camión, la única línea de la cotización de Nexo. <c>null</c> si no hay (sin flete o sin id).
     /// </summary>
-    public clsResultado<IReadOnlyList<clsServicioConexoCosteo>> ConexosConPrecio(clsCotizacion cotizacion, clsCotizacionNexo nexoCotizacion)
+    public static string? LineaDeNexo(clsCotizacionNexo cotizacion, clsVehiculoLineaSolicitud? camion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        ArgumentNullException.ThrowIfNull(nexoCotizacion);
-        if (cotizacion.MargenAplicado is not { } margen || cotizacion.MetodoCalculo is not { } metodo)
-        {
-            return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {cotizacion.Folio} no tiene margen resuelto.");
-        }
-
-        var anteriores = clsServiciosConexosJson.Leer(cotizacion.ServiciosConexos).ToDictionary(s => s.Id, StringComparer.Ordinal);
-        var conexos = new List<clsServicioConexoCosteo>();
-        foreach (var conexo in nexoCotizacion.Conexos)
-        {
-            var precio = clsPrecioMonedaCosteo.Calcular(precios, cotizacion, conexo.ValorAplicado, margen, metodo);
-            if (precio.EsFallo)
-            {
-                return precio.Error;
-            }
-
-            conexos.Add(new clsServicioConexoCosteo(
-                conexo.Id, conexo.Nombre, conexo.Categoria, conexo.Cantidad, conexo.ValorAplicado, precio.Valor,
-                anteriores.TryGetValue(conexo.Id, out var anterior) ? anterior.Incluido : true));
-        }
-
-        return clsResultado<IReadOnlyList<clsServicioConexoCosteo>>.Exito(conexos);
-    }
-
-    /// <summary>
-    /// <c>lineaId</c> de Nexo para una línea de Cotifly: el id de la línea de la cotización de Nexo con su <c>lineaSolicitudId</c>. Sin
-    /// filas de línea (antes del 0005), la única línea de la cotización de Nexo. <c>null</c> si no hay (sin flete o sin id).
-    /// </summary>
-    public static string? LineaDeNexo(clsCotizacionNexo cotizacion, clsCotizacionLineaSolicitud? linea)
-    {
-        ArgumentNullException.ThrowIfNull(cotizacion);
-        IReadOnlyList<clsLineaCosteoNexo> candidatas = linea is null
+        IReadOnlyList<clsLineaCosteoNexo> candidatas = camion is null
             ? cotizacion.Lineas
-            : [.. cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, linea.LineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase))];
+            : [.. cotizacion.Lineas.Where(l => string.Equals(l.LineaSolicitudId, camion.LineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase))];
         return candidatas.Count == 1 && !string.IsNullOrWhiteSpace(candidatas[0].Id) ? candidatas[0].Id!.Trim() : null;
     }
 
-    private static clsErrorDominio SinLineaNexo(clsCotizacion cotizacion, int orden) => new(clsCodigosError.LineaSinCotizacionNexo,
+    private static clsErrorDominio SinLineaNexo(clsCotizacionSolicitud cotizacion, int orden) => new(clsCodigosError.LineaSinCotizacionNexo,
         $"La línea {orden} de la cotización {cotizacion.Folio} todavía no tiene línea en la cotización de Nexo: espera su costeo para agregarle conexos.");
 
     /// <summary>

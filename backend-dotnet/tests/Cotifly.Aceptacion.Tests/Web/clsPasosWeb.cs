@@ -67,7 +67,7 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     public async Task EntoncesSigueIgual(string cotizacion)
     {
         var estado = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.Cotizaciones WHERE id = '{web.Cotizacion(cotizacion).Id}'");
+            $"SELECT CONCAT(estadoEnvio, '|', COALESCE(CAST(ganada AS nvarchar(5)), 'null')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{web.Cotizacion(cotizacion).Id}'");
         estado.Should().Be("sin_enviar|null");
     }
 

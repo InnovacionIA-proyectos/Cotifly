@@ -45,8 +45,7 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m, mapeoLineasNexo: "PuertoAInterior").Valor;
     private readonly List<string> _eventos = [];
     private readonly clsOpcionesCosteoNexo _opciones = new();
-    private clsCotizacion? _creada;
-    private IReadOnlyList<clsCotizacionPosicion> _posiciones = [];
+    private clsCotizacionSolicitud? _creada;
 
     public clsEnvioCosteoServiceTests()
     {
@@ -55,15 +54,13 @@ public sealed class clsEnvioCosteoServiceTests
         _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>()).Returns(
             new Cotifly.Aplicacion.Margen.DTOs.clsMargenResuelto(
                 new Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen(0.18m, "sap_tm", "ZIMP", false, "SAP TM"), "Importacion", 3, 0.15m, "margen"));
-        _folios.CrearConFolioNuevoAsync(_ana, Nit, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacion>>>>(), Arg.Any<CancellationToken>())
+        _folios.CrearConFolioNuevoAsync(_ana, Nit, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var folio = clsFolio.Crear(new DateOnly(2026, 9, 28), "AP", 1, Nit).Valor;
-                return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacion>>>>()(folio, CancellationToken.None);
+                return ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(folio, CancellationToken.None);
             });
-        _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacion>())).Do(ci => _creada = ci.Arg<clsCotizacion>());
-        _cotizaciones.When(r => r.AgregarPosiciones(Arg.Any<IEnumerable<clsCotizacionPosicion>>()))
-            .Do(ci => _posiciones = [.. ci.Arg<IEnumerable<clsCotizacionPosicion>>()]);
+        _cotizaciones.When(r => r.Agregar(Arg.Any<clsCotizacionSolicitud>())).Do(ci => _creada = ci.Arg<clsCotizacionSolicitud>());
         _unidad.GuardarCambiosAsync(Arg.Any<CancellationToken>()).Returns(ci =>
         {
             _eventos.Add($"guardar:{(_creada?.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : "-")}");
@@ -75,7 +72,7 @@ public sealed class clsEnvioCosteoServiceTests
             return new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false);
         });
         ClienteEnCatalogo(new clsClienteEncontrado("900.123.456", "LONGYIN S.A.S.", "cliente", "15927"));
-        _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsMonedaFijada(clsCotizacion.MonedaPesos, 0m));
+        _monedas.FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new clsMonedaFijada(clsCotizacionSolicitud.MonedaPesos, 0m));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -90,12 +87,17 @@ public sealed class clsEnvioCosteoServiceTests
         cotizacion.Folio.Should().Be("PCN-900123456-AP-28092026-001", "el folio lo pone el servidor con el NIT (ADR-011)");
         cotizacion.UsuarioId.Should().Be(_ana);
         cotizacion.NitCliente.Should().Be(Nit);
-        cotizacion.CosteoId.Should().Be("sol-1");
+        cotizacion.SolicitudNexoId.Should().Be("sol-1");
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
         cotizacion.CosteoEnviadoAt.Should().Be(_reloj.AhoraUtc);
         cotizacion.CosteoSiguienteConsultaAt.Should().Be(_reloj.AhoraUtc.AddSeconds(5));
         cotizacion.PrecioFinal.Should().BeNull("el costo de Nexo todavía no pasó por el margen");
-        _posiciones.Should().HaveCount(2);
+
+        // HU-021: la cabecera se guarda con su agregado: la ruta 1 con sus dos mercancías y un camión, también en pendiente_costeo.
+        _creada.Should().BeSameAs(cotizacion);
+        var ruta = cotizacion.Rutas.Should().ContainSingle().Subject;
+        ruta.Mercancias.Should().HaveCount(2);
+        ruta.Vehiculos.Should().ContainSingle().Which.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
     }
 
     [Fact]
@@ -115,10 +117,13 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
 
-        cotizacion.MargenAplicado.Should().Be(0.18m);
-        cotizacion.MargenPolitica.Should().Be(0.15m);
-        cotizacion.OrigenMargen.Should().Be(OrigenMargen.SapTm);
-        cotizacion.MetodoCalculo.Should().Be("margen");
+        // HU-021: el margen es de la ruta (de su línea de negocio).
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.MargenAplicado.Should().Be(0.18m);
+        ruta.MargenPoliticaSugerido.Should().Be(0.15m);
+        ruta.MargenSAPSugerido.Should().Be(0.18m);
+        ruta.OrigenMargen.Should().Be(OrigenMargen.SapTm);
+        ruta.MetodoCalculo.Should().Be("margen");
         cotizacion.PrecioFinal.Should().BeNull("sin costeo no hay precio");
         await _margen.Received(1).ResolverAsync(
             Arg.Is<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(e => e.BpCliente == "15927" && e.LineaNegocio == "Importacion"), Arg.Any<CancellationToken>());
@@ -139,7 +144,7 @@ public sealed class clsEnvioCosteoServiceTests
         var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), peticion.Token)).Valor;
 
         tokensNexo.Should().ContainSingle().Which.CanBeCanceled.Should().BeFalse("el alta no se ata a la conexión del cliente");
-        cotizacion.CosteoId.Should().Be("sol-9");
+        cotizacion.SolicitudNexoId.Should().Be("sol-9");
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "no queda en pendiente_envio sin costeoId (un reintento duplicaría la solicitud)");
         await _unidad.Received().GuardarCambiosAsync(CancellationToken.None);
         await _buscador.Received(1).BuscarAsync(_ana, Nit, Arg.Is<CancellationToken>(t => !t.CanBeCanceled));
@@ -149,8 +154,13 @@ public sealed class clsEnvioCosteoServiceTests
     public async Task ElReintentoVuelveAValidarLoGuardadoAntesDeReenviar()
     {
         var cotizacion = await CotizacionEnErrorAsync();
-        _cotizaciones.ListarPosicionesAsync(cotizacion.Id, Arg.Any<CancellationToken>())
-            .Returns([.. clsCotizacionPosicion.Desde(cotizacion.Id, [new clsPosicionCarga(null, 1, 10m, 10m, 10m, 1m)])]);
+
+        // HU-021: las mercancías guardadas son de la ruta (se leen con el agregado); se simula una fila que ya no cuadra con el peso.
+        var ruta = cotizacion.PrimeraRuta!;
+        var mercancias = (List<clsMercancia>)typeof(clsLineaSolicitud)
+            .GetField("_mercancias", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(ruta)!;
+        mercancias.Clear();
+        mercancias.AddRange(clsMercancia.DesdeCaptura(ruta.Id, [new clsPosicionCarga(null, 1, 10m, 10m, 10m, 1m)]));
         _nexo.ClearReceivedCalls();
 
         var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
@@ -398,7 +408,7 @@ public sealed class clsEnvioCosteoServiceTests
         invalido.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         linea.Error.Codigo.Should().Be(clsCodigosError.MargenLineaDesconocida);
         _eventos.Should().BeEmpty();
-        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacion>(default, default, default!, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
     }
 
     [Fact]
@@ -421,10 +431,12 @@ public sealed class clsEnvioCosteoServiceTests
         var resultado = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
 
         resultado.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
-        resultado.Valor.CosteoId.Should().Be("sol-1");
+        resultado.Valor.SolicitudNexoId.Should().Be("sol-1");
         resultado.Valor.MotivoEstadoCosteo.Should().BeNull();
+        // HU-021 (decisión 1): referencia y valor_estimado ya no viajan a Nexo; lo guardado (mercancías y ruta) sí.
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
-            Arg.Is<clsSolicitudNexo>(s => s.Solicitud.Posiciones.Count == 2 && s.Solicitud.Referencia == "OC-7788"), Arg.Any<CancellationToken>());
+            Arg.Is<clsSolicitudNexo>(s => s.Solicitud.Posiciones.Count == 2 && s.Solicitud.Origen == "Buenaventura" && s.Solicitud.PesoKg == 28_500.5m),
+            Arg.Any<CancellationToken>());
         await _cotizaciones.Received(1).RecargarAsync(cotizacion, Arg.Any<CancellationToken>());
     }
 
@@ -454,8 +466,8 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnPendienteDeEnvioRecienteNoSeReintentaPorqueElEnvioOriginalPuedeSeguirEnCurso()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-P1", UsuarioId = _ana }).Valor;
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-P1", UsuarioId = _ana }).Valor;
+        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), _politica.Id);
         Registrada(cotizacion);
 
         cotizacion.PuedeReenviarCosteo(cotizacion.UpdatedAt.AddMinutes(1)).Should().BeFalse();
@@ -468,7 +480,7 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var motivo = clsEnvioCosteoService.Motivo(new clsErrorDominio("X", new string('m', 900), new string('d', 900)));
 
-        motivo.Length.Should().Be(clsCotizacion.LargoMaximoMotivoCosteo);
+        motivo.Length.Should().Be(clsCotizacionSolicitud.LargoMaximoMotivoCosteo);
     }
 
     [Fact]
@@ -476,7 +488,7 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
 
-        cotizacion.Moneda.Should().Be(clsCotizacion.MonedaPesos);
+        cotizacion.Moneda.Should().Be(clsCotizacionSolicitud.MonedaPesos);
         cotizacion.TrmAplicada.Should().Be(0m);
         await _monedas.Received(1).FijarAsync(null, Arg.Any<CancellationToken>());
     }
@@ -507,7 +519,7 @@ public sealed class clsEnvioCosteoServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.TrmNoDisponible);
         _eventos.Should().BeEmpty();
-        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacion>(default, default, default!, Ct);
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
         await _buscador.DidNotReceiveWithAnyArgs().BuscarAsync(default, default!, Ct);
         await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
     }
@@ -545,7 +557,7 @@ public sealed class clsEnvioCosteoServiceTests
         await _monedas.Received(1).FijarAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
-    private async Task<clsCotizacion> CotizacionEnErrorAsync()
+    private async Task<clsCotizacionSolicitud> CotizacionEnErrorAsync()
     {
         _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"), new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false));
@@ -555,10 +567,9 @@ public sealed class clsEnvioCosteoServiceTests
         return cotizacion;
     }
 
-    private void Registrada(clsCotizacion cotizacion)
+    private void Registrada(clsCotizacionSolicitud cotizacion)
     {
         _cotizaciones.ObtenerPorFolioDelUsuarioAsync(cotizacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(cotizacion);
-        _cotizaciones.ListarPosicionesAsync(cotizacion.Id, Arg.Any<CancellationToken>()).Returns(_posiciones);
     }
 
     private void ClienteEnCatalogo(clsClienteEncontrado candidato) =>
@@ -579,12 +590,14 @@ public sealed class clsEnvioCosteoServiceTests
                 .Returns(new clsErrorDominio(clsCodigosError.MargenFuenteNoDisponible, "SAP TM caído"));
         }
 
-        await Servicio().EnviarGuardadaAsync(cotizacion, _lineasNegociada, [], _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");
+        await Servicio().EnviarGuardadaAsync(cotizacion, _politica, _ana, "Re-solicitud de F; reemplaza la solicitud sol-1.");
 
-        cotizacion.MargenAplicado.Should().Be(0.22m);
-        cotizacion.OrigenMargen.Should().Be(OrigenMargen.Negociado);
-        cotizacion.MargenSugerido.Should().Be(resolucionFalla ? 0.15m : 0.18m, "el sugerido se refresca con SAP TM como referencia");
-        cotizacion.OrigenMargenSugerido.Should().Be(resolucionFalla ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm);
+        // HU-021: el margen negociado y su sugerido son de la ruta.
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.MargenAplicado.Should().Be(0.22m);
+        ruta.OrigenMargen.Should().Be(OrigenMargen.Negociado);
+        ruta.SugeridoVigente.Should().Be(resolucionFalla ? 0.15m : 0.18m, "el sugerido se refresca con SAP TM como referencia");
+        ruta.OrigenMargenSugerido.Should().Be(resolucionFalla ? OrigenMargen.PoliticaLinea : OrigenMargen.SapTm);
         await _nexo.Received(1).EnviarSolicitudAsync(_ana,
             Arg.Is<clsSolicitudNexo>(s => s.Encabezado.Notas!.EndsWith("Re-solicitud de F; reemplaza la solicitud sol-1.", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
@@ -604,23 +617,18 @@ public sealed class clsEnvioCosteoServiceTests
         clsEnvioCosteoService.ConNota(encabezado, null).Should().Be(encabezado);
     }
 
-    private IReadOnlyList<clsCotizacionLineaSolicitud> _lineasNegociada = [];
-
-    private clsCotizacion Negociada(decimal margen)
+    /// <summary>Solicitud guardada (ruta 1 con la política al 15 %) cuyo margen ajustó el comercial a <paramref name="margen"/>.</summary>
+    private clsCotizacionSolicitud Negociada(decimal margen)
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
         {
             Folio = "PCN-900123456-AP-28092026-001",
             UsuarioId = _ana,
             NitCliente = Nit,
-            MargenPolitica = 0.15m,
-            MargenAplicado = margen,
-            OrigenMargen = OrigenMargen.Negociado,
-            MetodoCalculo = "margen",
         }).Valor;
-        var solicitud = clsSolicitudCosteoMuestra.Crear();
-        cotizacion.RegistrarSolicitudCosteo(solicitud);
-        _lineasNegociada = clsCotizacionLineaSolicitud.Desde(cotizacion.Id, [solicitud.ALinea()]);
+        var ruta = cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), _politica.Id);
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        ruta.AplicarMargenNegociado(margen).Should().BeTrue();
         return cotizacion;
     }
 
@@ -636,9 +644,7 @@ public sealed class clsEnvioCosteoServiceTests
 
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
-        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance,
-        new clsPrecioCosteoService(new Cotifly.Aplicacion.Precio.Services.clsPrecioService(
-            Substitute.For<Cotifly.Aplicacion.Precio.Interfaces.IClsProveedorTrm>(), Substitute.For<IClsCalendarioNegocio>())));
+        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService());
 
     /// <summary>Foto de Nexo con la única línea costeada (borrador, como el auto-costeo de la Biblioteca).</summary>
     private static clsCosteoConsultadoNexo FotoCosteada(decimal flete) =>

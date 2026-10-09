@@ -118,7 +118,7 @@ public sealed class clsPasosPdf(clsContextoEscenario contexto)
         var (cotizacion, lineaLeida) = await contexto.ConsultarAsync(async s =>
         {
             var leida = await s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(folio);
-            var politica = await s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorIdAsync(leida!.LineaNegocioId!.Value);
+            var politica = await s.GetRequiredService<IClsMargenPoliticaRepository>().ObtenerPorIdAsync(leida!.PrimeraRuta!.LineaNegocioId!.Value);
             return (leida, politica?.LineaNegocio);
         });
 

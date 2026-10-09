@@ -87,8 +87,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-Usuario-Id");
 
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(costeoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionPosiciones p WHERE p.cotizacionId = c.id)) FROM dbo_cotifly.Cotizaciones c WHERE folio = '{json.GetProperty("folio").GetString()}'");
-        fila.Should().Be($"{_nexo.SolicitudesCreadas[^1]}|pendiente_costeo|2");
+            $"SELECT CONCAT(solicitudNexoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId WHERE lp.cotizacionSolicitudId = c.id)) FROM dbo_cotifly.CotizacionesSolicitud c WHERE folio = '{json.GetProperty("folio").GetString()}'");
+        fila.Should().Be($"{_nexo.SolicitudesCreadas[^1]}|pendiente_costeo|2", "HU-021: el id de la solicitud de Nexo va en solicitudNexoId (0010)");
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(respuesta, codigo);
         _nexo.Peticiones.Count.Should().Be(antes, "sin formulario válido no se llama a Nexo");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(envio, "CATALOGOS_FLETE_NO_DISPONIBLE");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
-            $"SELECT COUNT(*) FROM dbo_cotifly.Cotizaciones WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
     [Fact]
@@ -230,8 +230,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         linea["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
 
         (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
-            "SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.Cotizaciones c "
-            + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionId = c.id WHERE c.folio = '{folio}'"))
+            "SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id WHERE c.folio = '{folio}'"))
             .Should().Be("Cita previa en puerto|76109|11001", "el reintento reenvía lo guardado");
     }
 
@@ -254,7 +254,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         Canonico(altas[0]).Should().Be(Canonico(altas[1]), "el primer envío y el reintento mandan lo guardado");
         using var primero = JsonDocument.Parse(altas[0]);
         primero.RootElement.GetProperty("lineas")[0].GetProperty("tipoVehiculo").GetString().Should().Be("3S3");
-        primero.RootElement.GetProperty("referencia").GetString().Should().Be("OC-7788");
+        primero.RootElement.TryGetProperty("referencia", out _).Should().BeFalse("HU-021 (decisión 1): la referencia se acepta y se ignora");
     }
 
     [Fact]

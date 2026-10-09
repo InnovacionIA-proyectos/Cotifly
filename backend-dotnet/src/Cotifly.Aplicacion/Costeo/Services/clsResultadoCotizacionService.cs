@@ -24,7 +24,7 @@ public interface IClsResultadoCotizacionService
     /// <c>COSTEO_NEXO_NO_DISPONIBLE</c>/<c>COSTEO_NEXO_TIEMPO_AGOTADO</c> (503, sin cambio local). Si el costeo no estaba aplicado,
     /// lo relee y aplica el precio en la misma escritura del resultado (HU-013.14, ADR-018 §17). Sin <c>If-Match</c>.
     /// </summary>
-    Task<clsResultado<clsCotizacion>> MarcarAsync(
+    Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(
         Guid usuarioId, string folio, string? resultado, string? motivo, string? comentario, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -33,7 +33,7 @@ public interface IClsResultadoCotizacionService
     /// La perdida solo en Cotifly (HU-013.17: <c>pendiente_costeo</c> sin costeo en Nexo o <c>error_envio</c>) la exige
     /// (<c>PRECONDICION_REQUERIDA</c>).
     /// </summary>
-    Task<clsResultado<clsCotizacion>> MarcarAsync(
+    Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(
         Guid usuarioId, string folio, string? resultado, string? motivo, string? comentario, int? versionEsperada, CancellationToken cancellationToken = default);
 }
 
@@ -72,11 +72,11 @@ public sealed class clsResultadoCotizacionService(
     public const int LargoMaximoMotivo = 100;
     public const int LargoMaximoComentario = 500;
 
-    public Task<clsResultado<clsCotizacion>> MarcarAsync(
+    public Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(
         Guid usuarioId, string folio, string? resultado, string? motivo, string? comentario, CancellationToken cancellationToken = default) =>
         MarcarAsync(usuarioId, folio, resultado, motivo, comentario, versionEsperada: null, cancellationToken);
 
-    public async Task<clsResultado<clsCotizacion>> MarcarAsync(
+    public async Task<clsResultado<clsCotizacionSolicitud>> MarcarAsync(
         Guid usuarioId, string folio, string? resultado, string? motivo, string? comentario, int? versionEsperada, CancellationToken cancellationToken = default)
     {
         var ganada = resultado?.Trim().ToLowerInvariant() switch
@@ -120,13 +120,20 @@ public sealed class clsResultadoCotizacionService(
                 $"La cotización {cotizacion.Folio} ya tiene resultado registrado: crea una versión nueva para cambiarla.");
         }
 
+        // ADR-019 (Riesgo 2): "en Nexo" sin el id de la solicitud (migrada sin respaldo) se trata como un envío fallido: queda en
+        // error_envio con SOLICITUD_NEXO_DESCONOCIDA y la perdida va solo en Cotifly (#127); la ganada pide reintentar el envío.
+        if (cotizacion.Ganada is null && cotizacion.SolicitudNexoDesconocida)
+        {
+            cotizacion.MarcarSolicitudNexoDesconocida();
+        }
+
         // HU-013.17: Nexo no recibió la solicitud; si el cliente desistió, la perdida queda solo en Cotifly.
         if (cotizacion.EstadoCosteo == EstadoCosteo.ErrorEnvio)
         {
             return await RegistrarPerdidaSinCosteoAsync(cotizacion, ganada.Value, motivo, versionEsperada);
         }
 
-        if (cotizacion.CosteoId is null)
+        if (cotizacion.SolicitudNexoId is null)
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo,
                 $"La cotización {cotizacion.Folio} todavía no está en Nexo: reintenta el envío antes de marcar el resultado.");
@@ -145,7 +152,7 @@ public sealed class clsResultadoCotizacionService(
         clsCosteoConsultadoNexo? previa = null;
         if (cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo)
         {
-            var lectura = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId, cancellationToken);
+            var lectura = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.SolicitudNexoId, cancellationToken);
             if (lectura.EsFallo)
             {
                 // Sin la respuesta de Nexo no se sabe si ya entregó: nada se registra (ni la perdida solo en Cotifly, que dejaría a
@@ -209,7 +216,7 @@ public sealed class clsResultadoCotizacionService(
     /// Perdida solo en Cotifly (HU-013.17, ADR-018 §17): solo <c>perdida</c>, con motivo y con <c>If-Match</c>. Detiene el polling, sube
     /// la versión de negocio y queda en la auditoría. Cuenta en las métricas como cualquier perdida (<c>ganada = 0</c>).
     /// </summary>
-    private async Task<clsResultado<clsCotizacion>> RegistrarPerdidaSinCosteoAsync(clsCotizacion cotizacion, bool ganada, string? motivo, int? versionEsperada)
+    private async Task<clsResultado<clsCotizacionSolicitud>> RegistrarPerdidaSinCosteoAsync(clsCotizacionSolicitud cotizacion, bool ganada, string? motivo, int? versionEsperada)
     {
         if (ganada)
         {
@@ -250,10 +257,10 @@ public sealed class clsResultadoCotizacionService(
     /// Nexo respondió <c>RESULTADO_YA_DEFINIDO</c>: lee el resultado que tiene Nexo y, si es distinto del de Cotifly, lo guarda (con la
     /// versión de negocio). Responde siempre el 409, con <c>detalle</c> = <c>ganada</c>/<c>perdida</c> (el de Nexo).
     /// </summary>
-    private async Task<clsResultado<clsCotizacion>> SincronizarResultadoDeNexoAsync(
-        clsCotizacion cotizacion, Guid usuarioId, int versionLeida, bool pedido, clsErrorDominio rechazo, Stopwatch cronometro)
+    private async Task<clsResultado<clsCotizacionSolicitud>> SincronizarResultadoDeNexoAsync(
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, int versionLeida, bool pedido, clsErrorDominio rechazo, Stopwatch cronometro)
     {
-        var leida = await nexo.ObtenerCotizacionAsync(usuarioId, cotizacion.CosteoId!, CancellationToken.None);
+        var leida = await nexo.ObtenerCotizacionAsync(usuarioId, cotizacion.SolicitudNexoId!, CancellationToken.None);
         bool? deNexo = leida.EsExitoso
             ? leida.Valor.Resultado.Trim().ToLowerInvariant() switch { "ganada" => true, "perdida" => false, _ => null }
             : null;
@@ -292,7 +299,7 @@ public sealed class clsResultadoCotizacionService(
     /// <c>null</c> si no hace falta o si la relectura falló.
     /// </summary>
     private async Task<(clsCosteoConsultadoNexo? Foto, string? Origen)> FotoParaAplicarAsync(
-        clsCotizacion cotizacion, Guid usuarioId, clsCosteoConsultadoNexo? previa, clsCotizacionNexo marcada)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, clsCosteoConsultadoNexo? previa, clsCotizacionNexo marcada)
     {
         if (!RequiereLectura(cotizacion))
         {
@@ -306,21 +313,22 @@ public sealed class clsResultadoCotizacionService(
 
         if (string.Equals(marcada.Estado, clsCotizacionNexo.EstadoEntregada, StringComparison.OrdinalIgnoreCase) && marcada.Lineas.Count > 0)
         {
-            var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, CancellationToken.None) ?? [];
-            if (lineas.Count > 0 && lineas.All(l => l.LineaSolicitudNexoId is not null))
+            // HU-021: si todos los camiones ya tienen su línea de Nexo, la respuesta del resultado basta como foto.
+            var camiones = cotizacion.Vehiculos;
+            if (camiones.Count > 0 && camiones.All(c => c.LineaSolicitudNexoId is not null))
             {
                 return (new clsCosteoConsultadoNexo(
-                    clsCosteoConsultadoNexo.SolicitudEntregada, [.. lineas.OrderBy(l => l.Orden).Select(l => l.LineaSolicitudNexoId!)], marcada),
+                    clsCosteoConsultadoNexo.SolicitudEntregada, [.. camiones.Select(c => c.LineaSolicitudNexoId!)], marcada),
                     "respuesta_resultado");
             }
         }
 
-        var lectura = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.CosteoId!, CancellationToken.None);
+        var lectura = await nexo.ConsultarCosteoAsync(usuarioId, cotizacion.SolicitudNexoId!, CancellationToken.None);
         return lectura.EsExitoso ? (lectura.Valor, "relectura") : (null, "relectura_fallida");
     }
 
     /// <summary>¿Falta aplicar el costeo? Sin precio y sin PDF (con PDF el precio de la versión ya quedó fijo).</summary>
-    private static bool RequiereLectura(clsCotizacion cotizacion) => cotizacion.PrecioFinal is null && cotizacion.PdfPath is null;
+    private static bool RequiereLectura(clsCotizacionSolicitud cotizacion) => cotizacion.PrecioFinal is null && cotizacion.PdfPath is null;
 
     /// <summary>
     /// Guarda el resultado que Nexo ya aceptó subiendo la versión de negocio, con <c>GuardarCambiosSiVersionAsync</c> sobre la versión
@@ -332,7 +340,7 @@ public sealed class clsResultadoCotizacionService(
     /// que se sincroniza.
     /// </summary>
     private async Task RegistrarResultadoAsync(
-        clsCotizacion cotizacion, int versionLeida, bool ganada, string? motivo, clsCotizacionNexo nexoMarcada, clsCosteoConsultadoNexo? foto)
+        clsCotizacionSolicitud cotizacion, int versionLeida, bool ganada, string? motivo, clsCotizacionNexo nexoMarcada, clsCosteoConsultadoNexo? foto)
     {
         var version = versionLeida;
         for (var intento = 0; intento < 3; intento++)
@@ -349,9 +357,8 @@ public sealed class clsResultadoCotizacionService(
             {
                 if (foto is not null)
                 {
-                    // Misma regla que el polling: estado, agenda y precio (también por línea, ADR-017) con el margen guardado.
-                    var lineas = await cotizaciones.ListarLineasAsync(cotizacion.Id, CancellationToken.None) ?? [];
-                    clsLecturaCosteo.AplicarFoto(cotizacion, lineas, foto, ahora, opciones.Value, precioCosteo);
+                    // Misma regla que el polling: estado, agenda y precio (por camión y por ruta, ADR-017, HU-021) con el margen guardado.
+                    clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, opciones.Value, precioCosteo);
                 }
                 else
                 {
@@ -363,7 +370,7 @@ public sealed class clsResultadoCotizacionService(
                 && cotizacion.EstadoCosteo != EstadoCosteo.Entregada)
             {
                 // Entrega implícita (o entrega que el polling aún no vio) con el precio ya aplicado: válida, no una inconsistencia.
-                cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, nexoMarcada.Id, ahora, siguiente: null);
+                cotizacion.RegistrarEntregaImplicita(nexoMarcada.Id);
             }
 
             cotizacion.IncrementarVersionNegocio();
@@ -377,13 +384,13 @@ public sealed class clsResultadoCotizacionService(
     }
 
     private async Task<clsResultado<clsCotizacionNexo>> MarcarEnNexoAsync(
-        clsCotizacion cotizacion, Guid usuarioId, bool ganada, string? motivo, string? comentario, CancellationToken cancellationToken)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, bool ganada, string? motivo, string? comentario, CancellationToken cancellationToken)
     {
         var cotizacionNexoId = cotizacion.CotizacionNexoId;
         if (cotizacionNexoId is null)
         {
             // El polling todavía no la vio: "crear o recuperar" la cotización de Nexo de la solicitud.
-            var recuperada = await nexo.ObtenerCotizacionAsync(usuarioId, cotizacion.CosteoId!, cancellationToken);
+            var recuperada = await nexo.ObtenerCotizacionAsync(usuarioId, cotizacion.SolicitudNexoId!, cancellationToken);
             if (recuperada.EsFallo)
             {
                 return recuperada.Error;
@@ -398,10 +405,10 @@ public sealed class clsResultadoCotizacionService(
             usuarioId, cotizacionNexoId, new clsResultadoNexo(ganada, Normalizar(motivo), Normalizar(comentario)), cancellationToken);
     }
 
-    private static clsErrorDominio NoEntregada(clsCotizacion cotizacion) => new(clsCodigosError.CotizacionNoEntregada,
+    private static clsErrorDominio NoEntregada(clsCotizacionSolicitud cotizacion) => new(clsCodigosError.CotizacionNoEntregada,
         $"La cotización {cotizacion.Folio} todavía no tiene el costeo entregado por Nexo: no se puede marcar el resultado.");
 
-    private static clsErrorDominio Conflicto(clsCotizacion cotizacion) => new(clsCodigosError.ConflictoConcurrencia,
+    private static clsErrorDominio Conflicto(clsCotizacionSolicitud cotizacion) => new(clsCodigosError.ConflictoConcurrencia,
         $"La cotización {cotizacion.Folio} cambió desde que la leíste: recárgala y vuelve a intentarlo.");
 
     private static string? Normalizar(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();

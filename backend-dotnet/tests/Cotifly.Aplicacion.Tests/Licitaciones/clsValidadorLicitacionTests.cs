@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Tests.Licitaciones;
 
-/// <summary>Reporte por fila de una licitación (HU-011.2, <c>docs/HU-011-formato-excel-licitacion.md</c> §5).</summary>
+/// <summary>Reporte por fila de una licitación (HU-011.2, <c>docs/conexion_nexo/HU-011-formato-excel-licitacion.md</c> §5).</summary>
 public sealed class clsValidadorLicitacionTests
 {
     private static readonly clsArchivoSubido _archivo = new("pliego.xlsx", [1]);

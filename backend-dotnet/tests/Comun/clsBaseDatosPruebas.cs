@@ -6,8 +6,9 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c>, <c>0002</c>, <c>0003</c> y <c>0004</c> partidos por
-/// <c>GO</c>, y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c> partidos por <c>GO</c> (HU-021: el 0009
+/// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
+/// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
 /// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
 /// <c>dbo_cotifly.Roles</c> a los roles externos de prueba (<see cref="RolExternoComercial"/>,
@@ -26,8 +27,14 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     [
         "0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql", "0004_costeo_nexo.sql",
         "0005_lineas_solicitud.sql", "0006_textos_y_concurrencia.sql", "0007_captura_nexo_campos.sql",
-        "0008_horas_por_linea.sql",
+        "0008_horas_por_linea.sql", "0009_reestructuracion_cotizaciones.sql", "0010_nombres_municipio.sql",
     ];
+
+    /// <summary>Scripts hasta el esquema anterior a HU-021 (0001 a 0008): para probar el 0009 sobre filas del esquema viejo.</summary>
+    public const int ScriptsAntesDeHu021 = 8;
+
+    /// <summary>Script de instalación desde cero (<c>db/scripts/01_crear_esquema.sql</c>).</summary>
+    public const string ScriptInstalacion = "01_crear_esquema.sql";
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
     public const int RolExternoComercial = 34;
@@ -60,6 +67,46 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     public static string RutaScript(string nombre) => Path.Combine(AppContext.BaseDirectory, "migrations_mssql", nombre);
 
+    /// <summary>Ruta de un script de <c>db/scripts/</c> (o de <c>db/seeder/</c> con <c>seeder/</c> delante) copiado a la salida.</summary>
+    public static string RutaScriptInstalacion(string nombre) => Path.Combine(AppContext.BaseDirectory, "scripts_bd", nombre);
+
+    /// <summary>
+    /// Base auxiliar nueva instalada desde cero con <c>db/scripts/01_crear_esquema.sql</c> (sin migraciones) y, si
+    /// <paramref name="conSeeders"/>, los seeders de <c>db/seeder/</c>. Usarla con <c>await using</c>.
+    /// </summary>
+    public async Task<clsBaseAuxiliarPruebas> CrearBaseInstaladaAsync(string prefijo, bool conSeeders = false)
+    {
+        await _candado.WaitAsync();
+        try
+        {
+            var nombre = $"{prefijo}_{Guid.NewGuid():N}"[..40];
+            var auxiliar = new clsBaseAuxiliarPruebas(CadenaMaster, nombre, ConBase(CadenaMaster, nombre));
+            try
+            {
+                await CrearBaseAsync(CadenaMaster, nombre);
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
+                if (conSeeders)
+                {
+                    foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
+                    {
+                        await EjecutarScriptAsync(auxiliar.Cadena, seeder);
+                    }
+                }
+
+                return auxiliar;
+            }
+            catch
+            {
+                await auxiliar.DisposeAsync();
+                throw;
+            }
+        }
+        finally
+        {
+            _candado.Release();
+        }
+    }
+
     public async ValueTask InitializeAsync()
     {
         await _contenedor.StartAsync();
@@ -68,13 +115,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         CadenaCotifly = ConBase(CadenaMaster, NombreBase);
         CadenaIdentidad = ConBase(CadenaMaster, NombreBaseIdentidad);
 
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreBase}];");
+        await CrearBaseAsync(CadenaMaster, NombreBase);
         foreach (var script in Scripts)
         {
             await EjecutarScriptAsync(CadenaCotifly, RutaScript(script));
         }
 
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreBaseIdentidad}];");
+        await CrearBaseAsync(CadenaMaster, NombreBaseIdentidad);
         await EjecutarAsync(CadenaIdentidad, $"""
             CREATE TABLE dbo.tblSAPUsuariosApp (
                 ID                  NUMERIC(18,0) NOT NULL PRIMARY KEY,
@@ -174,7 +221,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaSolo0001 is null)
             {
                 const string NombreAuxiliar = "dbSolo0001_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 var script = (await File.ReadAllTextAsync(RutaScript(Scripts[0])))
                     .Replace($"USE {NombreBase};", $"USE [{NombreAuxiliar}];", StringComparison.OrdinalIgnoreCase);
@@ -191,8 +238,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     }
 
     /// <summary>
-    /// Base auxiliar con 0001 a 0004 (el 0004 trae <c>origen</c>/<c>destino</c>/<c>deadline</c> de <c>Cotizaciones</c>): para probar la
-    /// concentración por ciudad de HU-010.1 con filas propias, sin ensuciar la base compartida. Se crea una vez por contenedor.
+    /// Base auxiliar con todos los scripts (HU-021: las ciudades son <c>origenNombre</c>/<c>destinoNombre</c> de la ruta, del 0010): para
+    /// probar la concentración por ciudad de HU-010.1 con filas propias, sin ensuciar la base compartida. Se crea una vez por contenedor.
     /// </summary>
     public async Task<string> CadenaConCiudadesAsync()
     {
@@ -202,7 +249,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaConCiudades is null)
             {
                 const string NombreAuxiliar = "dbCiudades_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 foreach (var nombre in Scripts)
                 {
@@ -236,7 +283,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaDirectorio is null)
             {
                 const string NombreAuxiliar = "DWCubosEBSSAP";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 await EjecutarAsync(cadena, """
                     CREATE TABLE dbo.DimEjecutivo (
@@ -272,7 +319,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             if (_cadenaSin0004 is null)
             {
                 const string NombreAuxiliar = "dbSin0004_Pruebas";
-                await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{NombreAuxiliar}];");
+                await CrearBaseAsync(CadenaMaster, NombreAuxiliar);
                 var cadena = ConBase(CadenaMaster, NombreAuxiliar);
                 foreach (var nombre in Scripts.Take(3))
                 {
@@ -361,7 +408,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
 
     private async Task<string> CrearBaseSinCandadoAsync(string nombre, int scripts)
     {
-        await EjecutarAsync(CadenaMaster, $"CREATE DATABASE [{nombre}];");
+        await CrearBaseAsync(CadenaMaster, nombre);
         var cadena = ConBase(CadenaMaster, nombre);
         foreach (var script in Scripts.Take(scripts))
         {
@@ -387,6 +434,35 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             TrustServerCertificate = true,
             CommandTimeout = TiempoMaximoOrdenSeg,
         }.ConnectionString;
+
+    /// <summary>Intentos de <see cref="CrearBaseAsync"/> ante el bloqueo de <c>model</c>.</summary>
+    public const int IntentosCrearBase = 5;
+
+    /// <summary>
+    /// <c>CREATE DATABASE</c> con reintentos. SQL Server copia <c>model</c> para crear cada base y toma un candado exclusivo
+    /// sobre ella: si varios fixtures (o bases auxiliares de clases que corren en paralelo) crean bases a la vez en el mismo
+    /// contenedor, alguno falla con el error 1807 ("Could not obtain exclusive lock on database 'model'"). Visto en el CI
+    /// (#147). Reintenta solo ese error, con espera creciente y algo de azar; cualquier otro error se propaga.
+    /// </summary>
+    public static async Task CrearBaseAsync(string cadenaMaster, string nombre)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                await EjecutarAsync(cadenaMaster, $"CREATE DATABASE [{nombre}];");
+                return;
+            }
+            catch (SqlException ex) when (intento < IntentosCrearBase && EsBloqueoDeModel(ex))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds((500 * (1 << (intento - 1))) + Random.Shared.Next(0, 500)));
+            }
+        }
+    }
+
+    private static bool EsBloqueoDeModel(SqlException ex) =>
+        ex.Errors.Cast<SqlError>().Any(e => e.Number == 1807)
+        || ex.Message.Contains("exclusive lock on database 'model'", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Ejecuta un lote T-SQL.</summary>
     public static async Task EjecutarAsync(string cadena, string sql)

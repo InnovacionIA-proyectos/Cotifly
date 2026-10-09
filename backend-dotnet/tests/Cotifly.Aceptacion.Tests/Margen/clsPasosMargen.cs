@@ -23,7 +23,7 @@ public sealed class clsPasosMargen(clsContextoEscenario contexto)
     {
         var lineas = await contexto.ConsultarAsync(s => s.GetRequiredService<IClsMargenPoliticaRepository>().ListarAsync());
         lineas.Select(l => l.LineaNegocio).Should().Contain(
-            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "Almacenamiento", "Almacenamiento3PL", "ITR"]);
+            ["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]); // HU-021: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR
     }
 
     [Given("la fuente SAP TM con la muestra de rentabilidad por cliente")]

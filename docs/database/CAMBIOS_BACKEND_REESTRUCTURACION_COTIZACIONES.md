@@ -54,7 +54,7 @@ tenga listo su `POST /recomendaciones`.
 
 Las cotizaciones que crea el agente de chat (`generar_pdf`; la integración con Google Chat se retiró en HU-013.9, el agente sigue en el chat web) **no tienen filas en `CotizacionLineasSolicitud`**.
 Su costo, margen y precio viven solo en la cabecera
-([src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs:287-307](../backend-dotnet/src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs#L287-L307)).
+([src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs:287-307](../../backend-dotnet/src/Cotifly.Aplicacion/Pdf/Services/clsGenerarPdfService.cs#L287-L307)).
 
 Como esas columnas salen de la cabecera, el flujo del chat tiene que crear también **una ruta y un camión**:
 - La ruta, con la línea de negocio, el margen y el precio.
@@ -88,10 +88,10 @@ tabla, o renombrarla a `clsCotizacionSolicitud`. Recomendación: **dejar el nomb
 | `RegistrarSolicitudCosteo` (326-359) | Copia los campos de la línea 1 a la cabecera | Se elimina el espejo |
 | `RegistrarSolicitudLicitacion` (366-383), `EncabezadoSolicitud` (386-397) | Encabezado con `ValorEstimado`, `Referencia`, horas | Quitar los campos eliminados. Las horas salen de las rutas |
 | `SolicitudCosteo(posiciones)` (403-438) | Reconstruye la solicitud de filas viejas desde la cabecera | Se elimina: después de la migración todas las cotizaciones tienen rutas |
-| `RegistrarEnvioCosteo` (484), `SeConsultaEnNexo` (509) | Usan `CosteoId` | Usar `CotizacionNexoId` |
+| `RegistrarEnvioCosteo` (484), `SeConsultaEnNexo` (509) | Usan `CosteoId` | Usar `SolicitudNexoId` (columna `solicitudNexoId` del 0010; es el id de la SOLICITUD de Nexo, no `CotizacionNexoId`, ADR-019) |
 | Polling (517-539) | Escribe `CosteoUltimaConsultaAt` | Quitar esa escritura |
 | `RegistrarMargenCosteo` (564-582), `RegistrarPrecioCosteo` (589-600), `SeleccionarServiciosConexos` (610) | Margen, costo, precio y conexos de la cotización | Pasan a la ruta. La cabecera solo suma `precioFinal` |
-| `PrepararReSolicitud` (744-757) | Limpia costo, precio, conexos, `CosteoId` | Limpia `CotizacionNexoId` y el precio. Las rutas y camiones se limpian aparte |
+| `PrepararReSolicitud` (744-757) | Limpia costo, precio, conexos, `CosteoId` | Limpia `SolicitudNexoId`, `CotizacionNexoId` y el precio. Las rutas y camiones se limpian aparte |
 | `CrearVersion` / `TieneMargenNegociado` (766-796) | Copian línea de negocio y margen | La copia se hace por ruta |
 | `RefrescarMargenSugerido` (802-812) | Margen sugerido de la cotización | Pasa a la ruta |
 
@@ -337,7 +337,7 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
 - **`clsCosteoNexo.cs`** (118-171, 274-300): la lectura de `lineas[]` no cambia. Se agrega leer el vehículo de cada
   línea, para el caso en que la Mesa se lo pone a una que iba vacía.
 - **`clsPollingCosteoService.cs`**:
-  - 119: `CosteoId` → `CotizacionNexoId`.
+  - 119: `CosteoId` → `SolicitudNexoId` (columna `solicitudNexoId` del 0010; es el id de la SOLICITUD de Nexo, no `CotizacionNexoId`, ADR-019).
   - 166: se quita la escritura de `CosteoUltimaConsultaAt`.
   - 169/212: se trabaja con camiones.
   - 230: la auditoría guarda precios por ruta.
@@ -401,7 +401,7 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
 
 - **`clsTextosCosteoService.cs`** (81-82, 199-204): los textos del PDF toman línea de negocio, origen, destino y
   vehículo de las rutas y camiones. Se quita el respaldo a la cabecera.
-- **`clsResultadoCotizacionService.cs`** (75, 152): `CosteoId` → `CotizacionNexoId`.
+- **`clsResultadoCotizacionService.cs`** (75, 152): `CosteoId` → `SolicitudNexoId` (columna `solicitudNexoId` del 0010; es el id de la SOLICITUD de Nexo, no `CotizacionNexoId`, ADR-019).
 - **`clsMisCotizacionesService.cs`** (45) y **`clsCotizacionResumen.cs`** (46-50): margen y origen del margen
   pasan a ser de la ruta (ver §4.2).
 - **Agente** (`clsEstadoConversacionService.cs:123-149`, `clsAgenteRunner.cs:120`): ver §2.

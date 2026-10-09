@@ -72,7 +72,7 @@ public sealed partial class clsPasosMonedaCosteo(clsContextoWeb web, clsPasosCos
     {
         (await costeo.Columna(cotizacion, "moneda")).Should().Be("USD", "la moneda la fija el formulario, no la prueba");
         await clsBaseDatosPruebas.EjecutarAsync(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
-            $"UPDATE dbo_cotifly.Cotizaciones SET trmAplicada = {Decimal(trm).ToString(CultureInfo.InvariantCulture)} "
+            $"UPDATE dbo_cotifly.CotizacionesSolicitud SET trmAplicada = {Decimal(trm).ToString(CultureInfo.InvariantCulture)} "
             + $"WHERE folio = '{costeo.Folio(cotizacion)}'");
     }
 

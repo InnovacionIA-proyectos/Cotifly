@@ -27,19 +27,58 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida.Should().NotBeNull();
         leida!.Id.Should().Be(original.Id);
         leida.UsuarioId.Should().Be(usuarioId);
-        leida.LineaNegocioId.Should().Be(1);
         leida.NitCliente.Should().Be("900123456");
         leida.OrigenCliente.Should().Be(OrigenCliente.Cliente);
-        leida.Costo.Should().Be(1_275_000m);
-        leida.MargenAplicado.Should().Be(0.15m);
-        leida.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
         leida.PrecioFinal.Should().Be(1_500_000m);
+
+        // HU-021: la línea de negocio, el margen y el costo viven en la ruta; el flete, en su camión.
+        var ruta = leida.Rutas.Should().ContainSingle().Subject;
+        (ruta.LineaNegocioId, ruta.MargenAplicado, ruta.OrigenMargen, ruta.CostoFinal, ruta.PrecioFinalLinea)
+            .Should().Be(((int?)1, (decimal?)0.15m, (OrigenMargen?)OrigenMargen.PoliticaLinea, (decimal?)1_275_000m, (decimal?)1_500_000m));
+        ruta.Vehiculos.Should().ContainSingle().Which.CostoFlete.Should().Be(1_275_000m);
         leida.Moneda.Should().Be("COP");
         leida.TrmAplicada.Should().Be(0m);
         leida.Version.Should().Be(1);
         leida.EstadoEnvio.Should().Be(EstadoEnvio.SinEnviar);
         leida.CreatedAt.Should().Be(Reloj.AhoraUtc);
         leida.UpdatedAt.Should().Be(Reloj.AhoraUtc);
+    }
+
+    /// <summary>
+    /// HU-021 (corrección del núcleo): recargar reconstruye las colecciones desde la base. Una fila que otro proceso borró desaparece (y
+    /// el guardado siguiente no la reinserta) y una que otro proceso agregó aparece.
+    /// </summary>
+    [Fact]
+    public async Task RecargarReconstruyeElAgregadoYNoReinsertaLasFilasQueOtroProcesoBorro()
+    {
+        var cotizacion = NuevaCotizacion(null);
+        cotizacion.CambiarConexos(1, [new clsCambioConexo("CX-1", "Cargue", 10_000m, 1m), new clsCambioConexo("CX-2", "Escolta", 5_000m, 1m)], Reloj.AhoraUtc);
+        await GuardarAsync(cotizacion);
+
+        await using var ambito = NuevoAmbito();
+        var repositorio = ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>();
+        var leida = (await repositorio.ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+        leida.PrimeraRuta!.Conexos.Should().HaveCount(2);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DELETE s FROM dbo_cotifly.CotizacionServiciosConexos s
+              JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId
+             WHERE l.cotizacionSolicitudId = '{cotizacion.Id}' AND s.idServicioConexo = N'CX-1';
+            INSERT INTO dbo_cotifly.CotizacionServiciosConexos (lineaSolicitudId, idServicioConexo, nombreServicioConexo, precio, cantidad)
+            SELECT id, N'CX-3', N'Precinto', 1000, 1 FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{cotizacion.Id}';
+            """);
+
+        await repositorio.RecargarAsync(leida, Ct);
+
+        leida.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().BeEquivalentTo(["CX-2", "CX-3"]);
+        leida.RegistrarEnvio();
+        await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT STRING_AGG(s.idServicioConexo, ',') WITHIN GROUP (ORDER BY s.idServicioConexo) FROM dbo_cotifly.CotizacionServiciosConexos s "
+                + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("CX-2,CX-3", "la fila borrada no se reinserta");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                $"SELECT estadoEnvio FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{cotizacion.Id}'"))
+            .Should().Be("enviada", "el cambio después de recargar sí se guarda");
     }
 
     [Fact]
@@ -50,7 +89,8 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         await GuardarAsync(cotizacion);
 
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(origenCliente, '|', origenMargen, '|', estadoEnvio) FROM dbo_cotifly.Cotizaciones WHERE id = '{cotizacion.Id}'");
+            $"SELECT CONCAT(c.origenCliente, '|', l.origenMargen, '|', c.estadoEnvio) FROM dbo_cotifly.CotizacionesSolicitud c "
+            + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id WHERE c.id = '{cotizacion.Id}'");
 
         fila.Should().Be("cliente|politica_linea|enviada");
     }
@@ -98,7 +138,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         await FluentActions.Awaiting(() => unidad.GuardarCambiosAsync(Ct)).Should().ThrowAsync<clsViolacionUnicidadException>();
 
         repo.Agregar(otra);
-        (await unidad.GuardarCambiosAsync(Ct)).Should().Be(1);
+        (await unidad.GuardarCambiosAsync(Ct)).Should().Be(3, "la cabecera, su ruta y su camión (HU-021)");
     }
 
     [Fact]
@@ -210,61 +250,49 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     }
 
     [Fact]
-    public async Task LaSolicitudDeCosteoYSusPosicionesSeGuardanYSeReconstruyenSinPerderDatos()
+    public async Task LaSolicitudDeCosteoConSuRutaCamionYMercanciasSeGuardaYSeReconstruyeSinPerderDatos()
     {
         var solicitud = clsSolicitudCosteoMuestra.Crear();
-        var cotizacion = NuevaCotizacion(await CrearUsuarioAsync());
-        cotizacion.RegistrarSolicitudCosteo(solicitud);
+        var cotizacion = Formulario(await CrearUsuarioAsync());
 
-        await EnAmbitoAsync(s =>
-        {
-            var repo = s.GetRequiredService<IClsCotizacionRepository>();
-            repo.Agregar(cotizacion);
-            repo.AgregarPosiciones(clsCotizacionPosicion.Desde(cotizacion.Id, solicitud.Posiciones));
-            return Task.CompletedTask;
-        });
-
-        var (leida, posiciones) = await ConsultarAsync(async s =>
-        {
-            var repo = s.GetRequiredService<IClsCotizacionRepository>();
-            return (await repo.ObtenerPorFolioAsync(cotizacion.Folio, Ct), await repo.ListarPosicionesAsync(cotizacion.Id, Ct));
-        });
+        await GuardarAsync(cotizacion);
+        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
 
         leida!.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
-        posiciones.Select(p => p.Orden).Should().Equal(1, 2);
-        leida.SolicitudCosteo(posiciones).Should().BeEquivalentTo(solicitud, "reenviar a Nexo no debe exigir volver a llenar el formulario");
+        var ruta = leida.Rutas.Should().ContainSingle().Subject;
+        ruta.MercanciasOrdenadas.Select(p => p.Orden).Should().Equal(1, 2);
+        ruta.Vehiculos.Should().ContainSingle().Which.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
+        clsSolicitudCosteo.Desde(leida.EncabezadoSolicitud!, ruta.ALinea()).Should().BeEquivalentTo(
+            solicitud with { RetornaContenedor = solicitud.RetornaContenedor ?? false, LevanteContenedorDiferente = solicitud.LevanteContenedorDiferente ?? false },
+            "reenviar a Nexo no debe exigir volver a llenar el formulario");
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
-            $"SELECT CONCAT(tipoSolicitud, '|', estadoCosteo, '|', claseContenedor, '|', pesoKg) FROM dbo_cotifly.Cotizaciones WHERE id = '{cotizacion.Id}'");
-        fila.Should().Be("spot|pendiente_envio|CNT40.HC|28500.50");
+            "SELECT CONCAT(c.tipoSolicitud, '|', c.estadoCosteo, '|', l.claseContenedor, '|', l.pesoKg, '|', l.origenNombre, '|', l.ciudadDevolucionNombre, '|', v.tipoVehiculo, '|', v.estadoCosteo) "
+            + "FROM dbo_cotifly.CotizacionesSolicitud c JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id "
+            + $"JOIN dbo_cotifly.CotizacionVehiculosLineaSolicitud v ON v.lineaSolicitudId = l.id WHERE c.id = '{cotizacion.Id}'");
+        fila.Should().Be("spot|pendiente_envio|CNT40.HC|28500.50|Buenaventura|Buenaventura|3S3|pendiente_envio");
     }
 
     [Fact]
-    public async Task UnaCotizacionSinFormularioAmpliadoNoTienePosicionesNiSolicitudDeCosteo()
+    public async Task UnaCotizacionDelChatTieneSuRutaSinMercanciasNiSolicitudDeCosteo()
     {
         var cotizacion = NuevaCotizacion(null);
         await GuardarAsync(cotizacion);
 
-        var (leida, posiciones) = await ConsultarAsync(async s =>
-        {
-            var repo = s.GetRequiredService<IClsCotizacionRepository>();
-            return (await repo.ObtenerPorFolioAsync(cotizacion.Folio, Ct), await repo.ListarPosicionesAsync(cotizacion.Id, Ct));
-        });
+        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
 
-        posiciones.Should().BeEmpty();
-        leida!.EstadoCosteo.Should().BeNull("las cotizaciones del chat con costo manual no pasan por Nexo");
-        leida.SolicitudCosteo(posiciones).Should().BeNull();
+        leida!.Rutas.Should().ContainSingle().Which.Mercancias.Should().BeEmpty();
+        leida.EstadoCosteo.Should().BeNull("las cotizaciones del chat con costo manual no pasan por Nexo");
+        leida.EncabezadoSolicitud.Should().BeNull();
         leida.CosteoConsultasFallidas.Should().Be(0);
     }
 
     [Fact]
     public async Task LaAgendaDelPollingTraeSoloLasVencidasYElReclamoLaTomaUnaSolaVez()
     {
-        var vencida = NuevaCotizacion(null);
-        vencida.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        var vencida = Formulario(null);
         var agenda = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
         vencida.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, agenda, agenda);
-        var futura = NuevaCotizacion(null);
-        futura.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        var futura = Formulario(null);
         futura.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50));
         await GuardarAsync(vencida);
         await GuardarAsync(futura);
@@ -289,8 +317,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     [Fact]
     public async Task ElReclamoDeReenvioSoloGanaConElUpdatedAtLeidoYLaDejaPendienteDeEnvio()
     {
-        var cotizacion = NuevaCotizacion(null);
-        cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear());
+        var cotizacion = Formulario(null);
         cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
         await GuardarAsync(cotizacion);
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct));
@@ -312,7 +339,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
     [Fact]
     public async Task UnaCotizacionEnDolaresGuardaLaTrmConCuatroDecimales()
     {
-        var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = FolioUnico(), Moneda = "USD", TrmAplicada = 4123.4567m }).Valor;
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico(), Moneda = "USD", TrmAplicada = 4123.4567m }).Valor;
         await GuardarAsync(cotizacion);
 
         var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorFolioAsync(cotizacion.Folio, Ct));
@@ -320,4 +347,8 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida!.Moneda.Should().Be("USD");
         leida.TrmAplicada.Should().Be(4123.4567m);
     }
+
+    /// <summary>Formulario de una ruta y un camión (HU-021) con folio único, sin guardar.</summary>
+    private static clsCotizacionSolicitud Formulario(Guid? usuarioId) =>
+        clsCotizacionMuestra.Formulario(folio: FolioUnico(), usuarioId: usuarioId, lineaNegocioId: 1);
 }

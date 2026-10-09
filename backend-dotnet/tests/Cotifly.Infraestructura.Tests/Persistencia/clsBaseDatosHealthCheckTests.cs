@@ -78,53 +78,71 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
         resultado.Description.Should().Be("esquema incompleto: falta 0002");
     }
 
+    // HU-021: la sonda se rehízo desde el modelo EF. Una base con el esquema anterior a la reestructuración (cualquiera de 0004 a
+    // 0008) tiene la tabla Cotizaciones y no CotizacionesSolicitud: le falta el 0009.
     [Fact]
-    public async Task ConUnaBaseSinEl0005EsUnhealthyPorEsquemaIncompleto()
-    {
-        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0005Async());
-
-        resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0005", "el modelo EF ya mapea CotizacionLineasSolicitud y el Excel de licitaciones");
-    }
-
-    [Fact]
-    public async Task ConUnaBaseSinEl0006EsUnhealthyPorEsquemaIncompleto()
-    {
-        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0006Async());
-
-        resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0006", "el modelo EF ya mapea versionNegocio, el margen sugerido, pdfDesactualizado y el historial de PDF");
-    }
-
-    [Fact]
-    public async Task ConUnaBaseSinEl0007EsUnhealthyPorEsquemaIncompleto()
-    {
-        await using var sin0007 = await baseDatos.CrearBaseConScriptsAsync("dbSin0007", 6);
-
-        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0007.Cadena);
-
-        resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0007", "el modelo EF ya mapea notas y los ids de municipio");
-    }
-
-    [Fact]
-    public async Task ConUnaBaseSinEl0008EsUnhealthyPorEsquemaIncompleto()
-    {
-        await using var sin0008 = await baseDatos.CrearBaseConScriptsAsync("dbSin0008", 7);
-
-        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0008.Cadena);
-
-        resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0008", "el modelo EF ya mapea las horas por línea");
-    }
-
-    [Fact]
-    public async Task ConUnaBaseSinEl0004EsUnhealthyPorEsquemaIncompleto()
+    public async Task ConUnaBaseSinEl0004EsUnhealthyPorqueLeFaltaLaReestructuracion()
     {
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(await baseDatos.CadenaSin0004Async());
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
-        resultado.Description.Should().Be("esquema incompleto: falta 0004", "el modelo EF de Cotizaciones ya mapea las columnas del 0004");
+        resultado.Description.Should().Be(clsBaseDatosHealthCheck.DescripcionEsquemaSin0009);
+    }
+
+    [Fact]
+    public async Task ConElEsquemaAnteriorAHu021EsUnhealthyPorqueLeFaltaEl0009()
+    {
+        await using var viejo = await baseDatos.CrearBaseConScriptsAsync("dbSin0009", clsBaseDatosPruebas.ScriptsAntesDeHu021);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(viejo.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0009", "el modelo EF mapea CotizacionesSolicitud, las rutas y los camiones");
+    }
+
+    [Fact]
+    public async Task ConEl0009PeroSinEl0010EsUnhealthyPorqueLeFaltaEl0010()
+    {
+        await using var sin0010 = await baseDatos.CrearBaseConScriptsAsync("dbSin0010", clsBaseDatosPruebas.Scripts.Length - 1);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0010.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0010", "el modelo EF mapea los nombres de municipio, solicitudNexoId y el nombre del conexo");
+    }
+
+    [Fact]
+    public async Task UnaBaseInstaladaDesdeCeroConElScriptDeInstalacionEsHealthy()
+    {
+        await using var instalada = await baseDatos.CrearBaseInstaladaAsync("dbSaludInstalada", conSeeders: true);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(instalada.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task SinElCheckDeEstadoEnvioEsUnhealthyPorqueLeFaltaEl0010()
+    {
+        await using var sinCheck = await baseDatos.CrearBaseInstaladaAsync("dbSaludSinCheck");
+        await clsBaseDatosPruebas.EjecutarAsync(sinCheck.Cadena, "ALTER TABLE dbo_cotifly.CotizacionesSolicitud DROP CONSTRAINT ck_cotizaciones_estadoEnvio;");
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sinCheck.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(clsBaseDatosHealthCheck.DescripcionEsquemaSin0010, "el 0010 crea el CHECK si falta");
+    }
+
+    [Fact]
+    public async Task SiFaltaOtraColumnaDelModeloLaNombra()
+    {
+        await using var incompleta = await baseDatos.CrearBaseInstaladaAsync("dbSaludIncompleta");
+        await clsBaseDatosPruebas.EjecutarAsync(incompleta.Cadena, "ALTER TABLE dbo_cotifly.CotizacionVehiculosLineaSolicitud DROP COLUMN idRecomendacionVehiculo;");
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(incompleta.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(clsBaseDatosHealthCheck.PrefijoEsquemaIncompleto + "CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo");
     }
 
     [Fact]

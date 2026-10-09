@@ -92,6 +92,10 @@ public sealed record clsCambiosCarga
             ValorAprovisionamiento = Valor(CampoValorAprovisionamiento, ValorAprovisionamiento, linea.ValorAprovisionamiento),
             PesoKg = Valor(CampoPesoKg, PesoKg, linea.PesoKg),
             ValorMercancia = Valor(CampoValorMercancia, ValorMercancia, linea.ValorMercancia),
+
+            // HU-021: las horas son de la ruta (la cabecera ya no las guarda).
+            HorasCargue = Valor(CampoHorasCargue, HorasCargue, linea.HorasCargue),
+            HorasDescargue = Valor(CampoHorasDescargue, HorasDescargue, linea.HorasDescargue),
             Posiciones = Presentes.Contains(CampoPosiciones) ? Posiciones ?? [] : linea.Posiciones,
         };
     }

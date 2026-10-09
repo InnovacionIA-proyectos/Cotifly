@@ -34,7 +34,7 @@ public sealed class clsPollingCosteoEndpointsTests : IDisposable
 
         var fila = await FilaAsync(sesion, folio);
         fila.GetProperty("estado_costeo").GetString().Should().Be("autocosteo");
-        (await EscalarAsync($"SELECT CONCAT(cotizacionNexoId, '|', costeoConsultasFallidas, '|', IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con')) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
+        (await EscalarAsync($"SELECT CONCAT(cotizacionNexoId, '|', costeoConsultasFallidas, '|', IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
             .Should().Be($"{_nexo.CotizacionDe(_nexo.SolicitudesCreadas[^1])}|0|con");
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'costeo_nexo_estado' AND exito = 1 AND input LIKE '%{folio}%'"))
             .Should().Be("1");
@@ -50,7 +50,7 @@ public sealed class clsPollingCosteoEndpointsTests : IDisposable
         await _api.ProcesarPollingAsync(folio);
 
         (await FilaAsync(sesion, folio)).GetProperty("estado_costeo").GetString().Should().Be("entregada");
-        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("sin");
+        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("sin");
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class clsPollingCosteoEndpointsTests : IDisposable
         await _api.ProcesarPollingAsync(folio);
 
         (await FilaAsync(sesion, folio)).GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo");
-        (await EscalarAsync($"SELECT CONCAT(costeoConsultasFallidas, '|', IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con')) FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'"))
+        (await EscalarAsync($"SELECT CONCAT(costeoConsultasFallidas, '|', IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
             .Should().Be("1|con");
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'costeo_nexo_consulta' AND exito = 0 AND input LIKE '%{folio}%'"))
             .Should().Be("1");
@@ -84,7 +84,7 @@ public sealed class clsPollingCosteoEndpointsTests : IDisposable
         var fila = await FilaAsync(sesion, folio);
         fila.GetProperty("estado_costeo").GetString().Should().Be("costeo_vencido");
         fila.GetProperty("motivo_estado_costeo").GetString().Should().Contain("ya no reconoce");
-        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("sin");
+        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("sin");
         (await EscalarAsync($"SELECT CAST(COUNT(*) AS nvarchar(10)) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'costeo_nexo_consulta' AND outputResumen LIKE '%HTTP 404%' AND input LIKE '%{folio}%'"))
             .Should().Be("1");
     }
@@ -98,7 +98,7 @@ public sealed class clsPollingCosteoEndpointsTests : IDisposable
         await _api.ProcesarPollingAsync(folio);
 
         (await FilaAsync(sesion, folio)).GetProperty("estado_costeo").GetString().Should().Be("descartada");
-        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.Cotizaciones WHERE folio = '{folio}'")).Should().Be("sin");
+        (await EscalarAsync($"SELECT IIF(costeoSiguienteConsultaAt IS NULL, 'sin', 'con') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("sin");
     }
 
     [Fact]
