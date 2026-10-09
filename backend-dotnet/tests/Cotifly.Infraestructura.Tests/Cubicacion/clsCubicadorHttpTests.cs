@@ -215,6 +215,23 @@ public sealed class clsCubicadorHttpTests : IDisposable
     }
 
     [Fact]
+    public async Task UnCatalogoColgadoSeCortaEnSuTopePropioYNoEnElTiempoDeLaTuberia()
+    {
+        _cubicador.TiposMercancia.Add((_tipoCafe, "Café en estibas"));
+        _cubicador.DemoraCatalogo = TimeSpan.FromSeconds(60);
+        var valores = Configurado();
+        valores["Cubicador:TiempoMaximoCatalogoSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+        var resultado = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().ListarTiposMercanciaAsync(Ct);
+
+        reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "el tope del catálogo (1 s) gana al de la tubería (3 × 15 s + 2 s)");
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        resultado.Error.Detalle.Should().Contain("tiempo máximo del catálogo");
+    }
+
+    [Fact]
     public void ElTiempoTotalDejaCaberLosReintentosDelGet()
     {
         var intento = TimeSpan.FromSeconds(15);

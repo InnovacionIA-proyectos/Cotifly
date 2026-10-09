@@ -43,4 +43,11 @@ public sealed class clsOpcionesCubicador
     /// </summary>
     [Range(1, 3600)]
     public int PresupuestoCapturaSegundos { get; set; } = 60;
+
+    /// <summary>
+    /// Tope total (segundos, reintentos incluidos) de <c>GET /tipos-mercancia</c>. Agotado, el catálogo cuenta como no disponible: la
+    /// captura conserva el nombre que mandó el cliente y <c>GET /web/tipos-mercancia</c> responde 503. Por defecto 10.
+    /// </summary>
+    [Range(1, 120)]
+    public int TiempoMaximoCatalogoSegundos { get; set; } = 10;
 }

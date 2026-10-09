@@ -103,7 +103,23 @@ public sealed class clsCubicadorHttp(
             return clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(enCache);
         }
 
-        var respuesta = await EnviarAsync(HttpMethod.Get, "/tipos-mercancia", null, cancellationToken);
+        // Tope propio del catálogo (Cubicador:TiempoMaximoCatalogoSegundos, reintentos incluidos): un catálogo colgado no retiene la
+        // captura el tiempo total de la tubería; agotado, cuenta como no disponible (la captura conserva el nombre del cliente).
+        clsResultado<JsonDocument> respuesta;
+        using (var tope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            tope.CancelAfter(TimeSpan.FromSeconds(opciones.Value.TiempoMaximoCatalogoSegundos));
+            try
+            {
+                respuesta = await EnviarAsync(HttpMethod.Get, "/tipos-mercancia", null, tope.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return NoDisponible(
+                    $"tiempo máximo del catálogo agotado ({opciones.Value.TiempoMaximoCatalogoSegundos.ToString(CultureInfo.InvariantCulture)} s)", caida: true);
+            }
+        }
+
         if (respuesta.EsFallo)
         {
             return respuesta.Error;

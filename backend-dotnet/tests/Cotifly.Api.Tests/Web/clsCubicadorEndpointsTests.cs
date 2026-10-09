@@ -137,6 +137,26 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task UnCatalogoColgadoNoRetieneLaCapturaYSeConservaElNombreDelCliente()
+    {
+        _cubicador.DemoraCatalogo = TimeSpan.FromSeconds(60);
+        var api = Api(new Dictionary<string, string?> { ["Cubicador:TiempoMaximoCatalogoSegundos"] = "1" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15), "el catálogo se corta en 1 s y se lee una sola vez por captura");
+        (await CamionesAsync(folio)).Should().Equal(["1|3S3|FURGON|28000.00|R"], "las recomendaciones siguen funcionando");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            "SELECT TOP 1 m.nombreMercancia FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
+            .Should().Be("Estiba de café", "sin catálogo se conserva el nombre que mandó el cliente");
+        _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Get).Should().Be(1, "una sola lectura del catálogo por captura");
+    }
+
+    [Fact]
     public async Task SinRespaldoUnCubicadorCaidoNoGuardaNiEnviaNada()
     {
         _cubicador.Caido = HttpStatusCode.ServiceUnavailable;

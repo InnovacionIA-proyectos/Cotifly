@@ -39,6 +39,9 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, cada petición espera este tiempo antes de responder (para probar el tiempo agotado).</summary>
     public TimeSpan? Demora { get; set; }
 
+    /// <summary>Si tiene valor, solo <c>GET /tipos-mercancia</c> espera este tiempo (catálogo colgado).</summary>
+    public TimeSpan? DemoraCatalogo { get; set; }
+
     /// <summary>
     /// Filas de la recomendación de cada ruta (<c>idTipoMercancia</c> y demás datos de la petición en el argumento). Por defecto, un
     /// vehículo <c>SELECCIONADO</c> (<c>3S3</c> / <c>FURGON</c>) con la suma de los pesos de las mercancías.
@@ -85,6 +88,11 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
         var ruta = request.RequestUri!.AbsolutePath;
         if (request.Method == HttpMethod.Get && ruta.EndsWith("/tipos-mercancia", StringComparison.Ordinal))
         {
+            if (DemoraCatalogo is { } colgado)
+            {
+                await Task.Delay(colgado, cancellationToken);
+            }
+
             return Json(HttpStatusCode.OK, JsonSerializer.Serialize(TiposMercancia.Select(t => new { id = t.Id, nombre = t.Nombre })));
         }
 
