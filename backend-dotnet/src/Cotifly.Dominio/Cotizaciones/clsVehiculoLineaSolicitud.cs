@@ -105,14 +105,38 @@ public sealed class clsVehiculoLineaSolicitud
         PesoKg = pesoKg is < 0m ? throw new ArgumentOutOfRangeException(nameof(pesoKg), "El peso no puede ser negativo.") : pesoKg;
     }
 
-    /// <summary>La Mesa de Costeo de Nexo le puso vehículo a una línea que iba vacía: se copia (solo si el camión no tenía).</summary>
+    /// <summary>
+    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió. Lo que
+    /// Nexo trae manda; un valor vacío de Nexo no borra el de Cotifly, y la misma sigla con otras mayúsculas no cuenta como cambio.
+    /// Devuelve <c>true</c> si cambió.
+    /// </summary>
     internal bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
     {
         var antes = (TipoVehiculo, Carroceria);
-        TipoVehiculo ??= Normalizar(tipoVehiculo);
-        Carroceria ??= Normalizar(carroceria);
+        TipoVehiculo = Elegir(TipoVehiculo, tipoVehiculo);
+        Carroceria = Elegir(Carroceria, carroceria);
         return antes != (TipoVehiculo, Carroceria);
     }
+
+    /// <summary>
+    /// La Mesa de Costeo borró en Nexo la línea de este camión (#134): ya no se va a costear. El camión pierde el id de la línea y los
+    /// costos de Nexo (el levante, de Cotifly, se conserva) y queda <see cref="Cotizaciones.EstadoCosteo.Descartada"/>: se ignora en el
+    /// estado y en los totales de su ruta, no recibe conexos y el polling no lo vuelve a leer. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    internal bool DescartarPorLineaBorrada()
+    {
+        if (LineaSolicitudNexoId is null && EstadoCosteo == Cotizaciones.EstadoCosteo.Descartada)
+        {
+            return false;
+        }
+
+        ReiniciarCosteo();
+        EstadoCosteo = Cotizaciones.EstadoCosteo.Descartada;
+        return true;
+    }
+
+    private static string? Elegir(string? actual, string? deNexo) =>
+        Normalizar(deNexo) is { } nuevo && !string.Equals(nuevo, actual, StringComparison.OrdinalIgnoreCase) ? nuevo : actual;
 
     /// <summary>Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud.</summary>
     internal bool RegistrarEstado(EstadoCosteo estado)

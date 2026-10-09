@@ -346,7 +346,7 @@ public sealed class clsCosteoNexo(
     /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una por camión, ruta por ruta; HU-021, ADR-019). Sin
     /// <c>valorEstimado</c> ni <c>referencia</c> (decisión 1 del 2026-10-08: se eliminan y dejan de enviarse a Nexo):
     /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
-    /// negocio de Nexo en cada línea y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
+    /// negocio de Nexo de la ruta de cada línea (#134; si no la trae, la de la solicitud) y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
     /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
     /// (HU-013.11, filas de una licitación) o, si no las trae, las del encabezado (G5: sin ellas Nexo aplica a la línea su valor por
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
@@ -367,7 +367,7 @@ public sealed class clsCosteoNexo(
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s => new clsCapturaLineaWire(
                 s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId, s.TipoVehiculo, s.Carroceria, s.Tipologia,
-                solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
+                s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0

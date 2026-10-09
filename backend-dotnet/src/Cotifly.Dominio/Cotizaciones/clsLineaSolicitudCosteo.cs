@@ -111,6 +111,12 @@ public sealed record clsLineaSolicitudCosteo
     /// </summary>
     public Guid? RutaId { get; init; }
 
+    /// <summary>
+    /// Línea de negocio de Nexo de la ruta (<c>lineaNegocio</c> de <c>CapturaLineaRequest</c>, #134): la llena el envío con el
+    /// <c>mapeoLineasNexo</c> de la línea de negocio de SU ruta. <c>null</c> = la de la solicitud. No la captura el comercial.
+    /// </summary>
+    public string? LineaNegocioNexo { get; init; }
+
     /// <summary>Suma <c>cantidad × pesoKg</c> de las posiciones con peso (la misma de Nexo).</summary>
     public decimal SumaPesoPosiciones => Posiciones.Where(p => p?.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 

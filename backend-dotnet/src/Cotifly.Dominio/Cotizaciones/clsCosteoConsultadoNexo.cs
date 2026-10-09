@@ -62,7 +62,8 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
 /// <item><b>Pares seguros.</b> Un camión y una línea que solo se pueden emparejar entre sí se asocian primero.</item>
 /// <item><b>Empates.</b> Los camiones IDÉNTICOS de la misma ruta (misma llave) son intercambiables: valen lo mismo en Nexo. Si sus líneas
 /// candidatas no las puede reclamar ningún otro camión, se asignan en orden estable: los camiones en el orden de envío (el de la lista
-/// <c>camiones</c>) y las líneas por su id de Nexo (ordinal), así dos lecturas iguales dan la misma asignación. El riesgo que queda (sin
+/// <c>camiones</c>) y las líneas por su id de Nexo (ordinal), así dos lecturas iguales dan la misma asignación. Sin la referencia N1, solo
+/// si hay exactamente una línea candidata por camión: una de más puede ser la huérfana de otra ruta igual y cruzaría el costo. El riesgo que queda (sin
 /// N1) es que el ESTADO de dos camiones idénticos se cruce; el costo no, porque son iguales.</item>
 /// <item><b>Sin asociar.</b> Camiones iguales de rutas DISTINTAS (que pueden costar distinto por datos que no viajan en la línea), datos
 /// que se contradicen o un camión sin candidato quedan sin asociar: sin precio y con motivo.</item>
@@ -76,6 +77,14 @@ public static class clsEmparejadorLineasNexo
     /// ya tienen dueño (no se reasignan).
     /// </summary>
     public static IReadOnlyDictionary<Guid, string> Emparejar(
+        IReadOnlyList<clsCamionParaEmparejar> camiones, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null) =>
+        EmparejarConDetalle(camiones, nexo, yaAsignados).Pares;
+
+    /// <summary>
+    /// Como <see cref="Emparejar"/>, con lo que quedó pendiente para avisarlo (#134): las líneas de Nexo sin dueño (huérfanas: de un camión
+    /// descartado, sobrantes o de una ruta que no se pudo asociar) y los empates que no se resolvieron porque sus candidatas no cuadran.
+    /// </summary>
+    public static clsEmparejamiento EmparejarConDetalle(
         IReadOnlyList<clsCamionParaEmparejar> camiones, IReadOnlyList<clsLineaSolicitudNexo> nexo, IReadOnlySet<string>? yaAsignados = null)
     {
         ArgumentNullException.ThrowIfNull(camiones);
@@ -83,15 +92,17 @@ public static class clsEmparejadorLineasNexo
         var libres = nexo.Where(n => yaAsignados is null || !yaAsignados.Contains(n.Id)).OrderBy(n => n.Id, StringComparer.Ordinal).ToList();
         var pendientes = camiones.ToList();
         var resultado = new Dictionary<Guid, string>();
+        var empates = new List<string>();
         bool avanzo;
         do
         {
             // Cada vuelta asocia al menos un par; un empate resuelto puede volver seguros otros pares.
-            avanzo = AsociarSeguros(pendientes, libres, resultado) || ResolverEmpate(pendientes, libres, resultado);
+            empates.Clear();
+            avanzo = AsociarSeguros(pendientes, libres, resultado) || ResolverEmpate(pendientes, libres, resultado, empates);
         }
         while (avanzo && pendientes.Count > 0 && libres.Count > 0);
 
-        return resultado;
+        return new clsEmparejamiento(resultado, [.. libres.Select(l => l.Id)], [.. pendientes.Select(c => c.Id)], empates);
     }
 
     /// <summary>Asocia los pares únicos en ambos sentidos. Devuelve si asoció alguno.</summary>
@@ -115,15 +126,27 @@ public static class clsEmparejadorLineasNexo
 
     /// <summary>
     /// Resuelve el primer grupo de camiones idénticos de una misma ruta (en orden de envío) cuyas líneas candidatas no puede reclamar
-    /// ningún otro camión: las asigna en orden estable. Devuelve si asoció alguno.
+    /// ningún otro camión: las asigna en orden estable. Sin la referencia de ruta de Nexo (N1) en todas las candidatas, solo si hay
+    /// EXACTAMENTE una candidata por camión: una candidata de más puede ser la línea huérfana de otra ruta con el mismo origen y destino (un
+    /// camión descartado o sobrante) y tomarla cruzaría el costo entre rutas; ese empate queda sin resolver y se avisa en
+    /// <paramref name="empates"/>. Devuelve si asoció alguno.
     /// </summary>
-    private static bool ResolverEmpate(List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado)
+    private static bool ResolverEmpate(
+        List<clsCamionParaEmparejar> pendientes, List<clsLineaSolicitudNexo> libres, Dictionary<Guid, string> resultado, List<string> empates)
     {
         foreach (var grupo in pendientes.GroupBy(Firma).Select(g => g.ToList()))
         {
             var candidatos = libres.Where(n => Coincide(grupo[0], n)).ToList();
             if (candidatos.Count == 0 || pendientes.Except(grupo).Any(otro => candidatos.Any(n => Coincide(otro, n))))
             {
+                continue;
+            }
+
+            var conReferencia = grupo[0].RutaId is { } rutaId
+                                && candidatos.All(n => Guid.TryParse(n.ReferenciaRuta, out var referencia) && referencia == rutaId);
+            if (!conReferencia && candidatos.Count != grupo.Count)
+            {
+                empates.Add($"{grupo.Count} camiones idénticos de la ruta {grupo[0].Origen} → {grupo[0].Destino} con {candidatos.Count} líneas candidatas en Nexo");
                 continue;
             }
 
@@ -195,6 +218,14 @@ public static class clsEmparejadorLineasNexo
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 }
+
+/// <summary>
+/// Resultado del emparejamiento (#134): los pares camión → línea de Nexo, las líneas de Nexo que quedaron sin dueño, los camiones sin
+/// asociar y los empates que no se resolvieron (texto para el aviso).
+/// </summary>
+public sealed record clsEmparejamiento(
+    IReadOnlyDictionary<Guid, string> Pares, IReadOnlyList<string> LineasSinDueno, IReadOnlyList<Guid> CamionesSinAsociar,
+    IReadOnlyList<string> EmpatesSinResolver);
 
 /// <summary><c>CotizacionDto</c> de Nexo reducido a lo que usa Cotifly.</summary>
 /// <param name="Estado"><c>Borrador</c> | <c>Entregada</c>.</param>

@@ -284,8 +284,15 @@ public sealed class clsServiciosConexosCosteoService(
         return cotizacion.CotizacionNexoId is null && items.Count > 0 ? SinLineaNexo(cotizacion, items[0].LineaOrden) : null;
     }
 
-    /// <summary>Primer camión de la ruta: el que lleva los conexos en Nexo (decisión 3).</summary>
-    private static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta) => ruta.VehiculosOrdenados.FirstOrDefault();
+    /// <summary>
+    /// Primer camión VIGENTE de la ruta, en el orden estable: el que lleva los conexos en Nexo (decisión 3). Un camión descartado (también
+    /// el que perdió su línea porque la Mesa la borró, #134) no recibe conexos: van al siguiente.
+    /// </summary>
+    public static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        return ruta.VehiculosOrdenados.FirstOrDefault(v => v.EstadoCosteo != EstadoCosteo.Descartada);
+    }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, int Agregados, bool PdfInvalidado)> AgregarAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<clsConexoValidado> items, int versionEsperada, CancellationToken cancellationToken)

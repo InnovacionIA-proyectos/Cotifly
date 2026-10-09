@@ -604,6 +604,27 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task CadaLineaViajaConLaLineaDeNegocioDeSuRutaYUnaPorCamion()
+    {
+        // #134: la línea de negocio de Nexo viaja por línea, la de SU ruta; antes viajaba la de la ruta 1 en todas.
+        var nacional = clsMargenPolitica.Crear("Nacional", 0.2m, mapeoLineasNexo: "Nacional").Valor;
+        _politicas.ObtenerPorIdAsync(7, Arg.Any<CancellationToken>()).Returns(nacional);
+        var cotizacion = Negociada(0.22m);
+        cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", null, 8_000m);
+        cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "Cali", Destino = "Yumbo", PesoKg = 5_000m, TipoVehiculo = "2" }, 1, 7);
+        clsSolicitudNexo? enviada = null;
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Do<clsSolicitudNexo>(s => enviada = s), Arg.Any<CancellationToken>())
+            .Returns(new clsSolicitudCreadaNexo("sol-1", 3, 0, 3, false));
+
+        await Servicio().EnviarGuardadaAsync(cotizacion, _politica, _ana);
+
+        enviada!.Lineas.Should().HaveCount(3, "una línea por camión");
+        enviada.Lineas.Select(l => (l.Origen, l.LineaNegocioNexo)).Should().Equal(
+            ("Buenaventura", "PuertoAInterior"), ("Buenaventura", "PuertoAInterior"), ("Cali", "Nacional"));
+        enviada.Encabezado.Notas.Should().Contain("Ruta 1 (Buenaventura → Bogotá D.C.): 2 camiones. Ruta 2 (Cali → Yumbo): 1 camión.");
+    }
+
+    [Fact]
     public void LaNotaDeTrazabilidadSeAgregaALasNotasSinSobrepasarElLimite()
     {
         var encabezado = clsSolicitudCosteoMuestra.Crear().Encabezado;

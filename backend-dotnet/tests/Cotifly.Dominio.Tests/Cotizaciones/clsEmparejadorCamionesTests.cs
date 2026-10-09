@@ -158,6 +158,91 @@ public sealed class clsEmparejadorCamionesTests
         pares[camiones[1].Id].Should().Be("N2", "N1 ya tiene dueño");
     }
 
+    [Fact]
+    public void UnaLineaHuerfanaDeOtraRutaIgualNoSeLaLlevaElCamionDeLaOtraRuta()
+    {
+        // Regresión (#134, validador): la ruta 1 tenía un 2S2 de 8 t que se descartó antes de asociarse, así que su línea quedó huérfana en
+        // Nexo; la ruta 2 (mismo origen y destino) tiene un 2S2 de 8 t. Antes la ruta 2 se quedaba con la primera por id (la de la ruta 1).
+        var cotizacion = Solicitud(2);
+        var rutas = cotizacion.RutasOrdenadas;
+        var deLaRuta2 = clsCamionParaEmparejar.Desde(rutas[1], rutas[1].Vehiculos[0]);
+        clsLineaSolicitudNexo[] nexo = [Linea("A-huerfana-ruta1", rutas[0], 10_000m, "3S3", null), Linea("B-ruta2", rutas[1], 10_000m, "3S3", null)];
+
+        var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle([deLaRuta2], nexo);
+
+        emparejamiento.Pares.Should().BeEmpty("con una candidata de más no se sabe cuál es la suya: se avisa en vez de cruzar el costo");
+        emparejamiento.EmpatesSinResolver.Should().ContainSingle().Which.Should().Contain("2 líneas candidatas");
+        emparejamiento.LineasSinDueno.Should().BeEquivalentTo(new[] { "A-huerfana-ruta1", "B-ruta2" });
+        emparejamiento.CamionesSinAsociar.Should().Equal(deLaRuta2.Id);
+
+        // Con la referencia de ruta de Nexo (N1) sí se sabe.
+        var conReferencia = clsEmparejadorLineasNexo.EmparejarConDetalle([deLaRuta2],
+            [nexo[0] with { ReferenciaRuta = rutas[0].Id.ToString() }, nexo[1] with { ReferenciaRuta = rutas[1].Id.ToString() }]);
+        conReferencia.Pares[deLaRuta2.Id].Should().Be("B-ruta2");
+        conReferencia.LineasSinDueno.Should().Equal("A-huerfana-ruta1");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void FuzzConLineasHuerfanasNuncaCruzaUnaLineaDeOtraRuta(int semilla)
+    {
+        // Rutas con el MISMO origen y destino, camiones de pocos tipos (muchos empates) y algunos descartados antes de asociarse, cuyas
+        // líneas quedan huérfanas en Nexo. Cada línea sabe de qué ruta salió: ningún camión puede quedarse con una de otra ruta.
+        var azar = new Random(semilla);
+        var cruces = 0;
+        var asociados = 0;
+        for (var vuelta = 0; vuelta < 200; vuelta++)
+        {
+            var tipos = new (string? Vehiculo, decimal Peso)[] { ("3S3", 10_000m), ("2S2", 8_000m), (null, 8_000m) };
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-FUZZ" }).Valor;
+            var numeroRutas = azar.Next(1, 4);
+            cotizacion.RegistrarSolicitudLicitacion(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Licitacion },
+                [.. Enumerable.Range(0, numeroRutas).Select(_ =>
+                {
+                    var tipo = tipos[azar.Next(tipos.Length)];
+                    return LineaCaptura((tipo.Vehiculo, null, tipo.Peso));
+                })],
+                [.. Enumerable.Range(0, numeroRutas).Select(i => (int?)i)], 3);
+            foreach (var ruta in cotizacion.RutasOrdenadas)
+            {
+                for (var extra = azar.Next(0, 4); extra > 0; extra--)
+                {
+                    var tipo = tipos[azar.Next(tipos.Length)];
+                    ruta.AgregarVehiculo(tipo.Vehiculo, null, tipo.Peso);
+                }
+            }
+
+            var dueno = new Dictionary<string, Guid>();
+            var lineas = new List<clsLineaSolicitudNexo>();
+            var vigentes = new List<clsCamionParaEmparejar>();
+            foreach (var ruta in cotizacion.RutasOrdenadas)
+            {
+                foreach (var camion in ruta.VehiculosOrdenados)
+                {
+                    var id = Guid.NewGuid().ToString();
+                    dueno[id] = ruta.Id;
+                    lineas.Add(Linea(id, ruta, camion.PesoKg!.Value, camion.TipoVehiculo, null));
+                    if (azar.Next(4) != 0)
+                    {
+                        vigentes.Add(clsCamionParaEmparejar.Desde(ruta, camion)); // uno de cada cuatro se descarta: su línea queda huérfana
+                    }
+                }
+            }
+
+            var barajadas = lineas.OrderBy(_ => azar.Next()).ToList();
+            var pares = clsEmparejadorLineasNexo.EmparejarConDetalle(vigentes, barajadas).Pares;
+            asociados += pares.Count;
+            cruces += pares.Count(p => dueno[p.Value] != vigentes.Single(c => c.Id == p.Key).RutaId);
+        }
+
+        cruces.Should().Be(0);
+        asociados.Should().BeGreaterThan(0, "el fuzz también asocia");
+    }
+
     // ------------------------------------------------------------------ Apoyo
 
     /// <summary>Ruta 1 (Buenaventura → Bogotá) con un camión por cada (vehículo, carrocería, peso), en ese orden de creación.</summary>

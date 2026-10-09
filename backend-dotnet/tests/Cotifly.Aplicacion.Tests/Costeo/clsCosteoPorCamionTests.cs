@@ -97,6 +97,42 @@ public sealed class clsCosteoPorCamionTests
     }
 
     [Fact]
+    public void SiLaMesaCambiaElVehiculoEnNexoSeActualizaElCamion()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m), ("2S2", 8_000m));
+        Aplicar(cotizacion, Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2S2", 8_000m, "N-b", 600_000m)]));
+
+        // Ya asociados, la Mesa cambia el 3S3 por un 2S3 (con carrocería) y el 2S2 vuelve con otras mayúsculas.
+        Aplicar(cotizacion, Foto("EnCosteo", [("2S3", 10_000m, "N-a", 1_000_000m), ("2s2", 8_000m, "N-b", 600_000m)], carroceriaMesa: ("N-a", "FURGON")));
+
+        var cambiado = cotizacion.Vehiculos.Single(v => v.LineaSolicitudNexoId == "N-a");
+        (cambiado.TipoVehiculo, cambiado.Carroceria).Should().Be(("2S3", "FURGON"));
+        cotizacion.Vehiculos.Single(v => v.LineaSolicitudNexoId == "N-b").TipoVehiculo.Should().Be("2S2", "la misma sigla no es un cambio");
+    }
+
+    [Fact]
+    public void SiLaMesaBorraLaLineaEnNexoElCamionQuedaDescartadoYNoFrenaNiRecibeConexos()
+    {
+        // #134: un camión cuya línea ya no está en la solicitud de Nexo no se queda para siempre en pendiente_costeo: pasa a descartada,
+        // sin línea ni costos de Nexo, y los conexos de la ruta van al siguiente camión.
+        var cotizacion = Ruta(("3S3", 10_000m), ("2S2", 8_000m));
+        Aplicar(cotizacion, Foto("EnCosteo", [("3S3", 10_000m, "N-a", 1_000_000m), ("2S2", 8_000m, "N-b", 1_550_000m)]));
+        var primero = cotizacion.PrimeraRuta!.VehiculosOrdenados[0];
+        var segundo = cotizacion.PrimeraRuta!.VehiculosOrdenados[1];
+        var quedan = (Vehiculo: segundo.TipoVehiculo!, Peso: segundo.PesoKg!.Value, Id: segundo.LineaSolicitudNexoId!);
+
+        Aplicar(cotizacion, Foto("EnCosteo", [(quedan.Vehiculo, quedan.Peso, quedan.Id, 2_550_000m)])).Should().BeTrue();
+
+        (primero.EstadoCosteo, primero.LineaSolicitudNexoId, primero.CostoFlete).Should().Be(((EstadoCosteo?)EstadoCosteo.Descartada, (string?)null, (decimal?)null));
+        cotizacion.PrimeraRuta!.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        cotizacion.PrecioFinal.Should().Be(3_000_000m, "solo cuenta el camión que sigue en Nexo");
+        clsServiciosConexosCosteoService.PrimerCamion(cotizacion.PrimeraRuta!).Should().BeSameAs(segundo, "el descartado no recibe conexos");
+        clsPrecioCosteoService.CamionesConLineaBorrada(cotizacion, Foto("EnCosteo", [(quedan.Vehiculo, quedan.Peso, quedan.Id, 1m)])).Should().BeEmpty();
+        clsPrecioCosteoService.CamionesConLineaBorrada(cotizacion, new clsCosteoConsultadoNexo("Descartada", [], null)).Should().BeEmpty(
+            "una solicitud descartada (o una foto sin líneas) no borra líneas");
+    }
+
+    [Fact]
     public void SiTodosEstanDescartadosSeLeenTodos()
     {
         var cotizacion = Ruta(("3S3", 10_000m), ("2S2", 8_000m));
@@ -139,7 +175,9 @@ public sealed class clsCosteoPorCamionTests
         var cotizacion = Ruta(("3S3", 10_000m), ("3S3", 10_000m), ("2", 4_000m));
         cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "Cali", Destino = "Yumbo", PesoKg = 5_000m }, 1, 3);
 
-        clsEnvioCosteoService.NotaCamionesPorRuta(cotizacion).Should().Be("Cotifly: una línea por camión. Ruta 1 (Buenaventura → Bogotá, D.C.): 3 camiones.");
+        clsEnvioCosteoService.NotaCamionesPorRuta(cotizacion).Should().Be(
+            "Cotifly: una línea por camión, en este orden. Ruta 1 (Buenaventura → Bogotá, D.C.): 3 camiones. Ruta 2 (Cali → Yumbo): 1 camión.",
+            "nombra todas las rutas, también las de un camión");
     }
 
     // ------------------------------------------------------------------ Apoyo
