@@ -23,6 +23,12 @@ public interface IClsCubicador
     bool RespaldoSiFalla { get; }
 
     /// <summary>
+    /// <c>Cubicador:PresupuestoCapturaSegundos</c>: tiempo máximo de llamadas al cubicador en una misma captura (una licitación hace un
+    /// POST por fila). Pasado, las rutas restantes no lo llaman: van al respaldo o, sin <see cref="RespaldoSiFalla"/>, la captura falla.
+    /// </summary>
+    TimeSpan PresupuestoCaptura { get; }
+
+    /// <summary>
     /// <c>POST /recomendaciones</c> con <c>IdLineaSolicitud</c> = <paramref name="rutaId"/>, <c>OrigenSistema = COTIFLY</c> y las
     /// mercancías de la ruta. Devuelve un registro por vehículo recomendado (al menos uno) o <c>CUBICADOR_NO_DISPONIBLE</c>. Un POST
     /// nunca se reintenta automáticamente.

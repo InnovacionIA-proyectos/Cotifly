@@ -69,6 +69,8 @@ public sealed class clsCubicadorHttp(
 
     public bool RespaldoSiFalla => opciones.Value.RespaldoSiFalla;
 
+    public TimeSpan PresupuestoCaptura => TimeSpan.FromSeconds(opciones.Value.PresupuestoCapturaSegundos);
+
     public async Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
         Guid rutaId, IReadOnlyList<clsMercanciaCubicador> mercancias, CancellationToken cancellationToken = default)
     {
@@ -149,13 +151,14 @@ public sealed class clsCubicadorHttp(
     }
 
     /// <summary>
-    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> en total y por intento, reintentos solo para métodos
-    /// seguros (GET) y el circuito con una ventana de al menos el doble del intento (lo exige la tubería estándar).
+    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento; en total, lo que caben el intento y los
+    /// <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>; un POST no se reintenta, así que
+    /// su límite real es el del intento). El circuito con una ventana de al menos el doble del intento (lo exige la tubería estándar).
     /// </summary>
     public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, TimeSpan tiempo)
     {
         ArgumentNullException.ThrowIfNull(resiliencia);
-        resiliencia.TotalRequestTimeout.Timeout = tiempo;
+        resiliencia.TotalRequestTimeout.Timeout = TiempoTotal(tiempo);
         resiliencia.AttemptTimeout.Timeout = tiempo;
         resiliencia.Retry.MaxRetryAttempts = ReintentosLectura;
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
@@ -164,6 +167,9 @@ public sealed class clsCubicadorHttp(
         resiliencia.Retry.DisableForUnsafeHttpMethods();
         resiliencia.CircuitBreaker.SamplingDuration = tiempo * 2 > TimeSpan.FromSeconds(30) ? tiempo * 2 : TimeSpan.FromSeconds(30);
     }
+
+    /// <summary>Límite total de una petición: el intento más los reintentos de un GET y sus esperas (300 ms, 600 ms y holgura del jitter).</summary>
+    public static TimeSpan TiempoTotal(TimeSpan intento) => (intento * (ReintentosLectura + 1)) + TimeSpan.FromSeconds(2);
 
     private async Task<clsResultado<JsonDocument>> EnviarAsync(HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
     {
@@ -187,12 +193,18 @@ public sealed class clsCubicadorHttp(
             if (respuesta.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 logger.LogError("El cubicador respondió {Estado} a {Metodo} {Ruta}: revisar Cubicador:ApiKey.", (int)respuesta.StatusCode, metodo, ruta);
-                return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible, $"HTTP {(int)respuesta.StatusCode}");
+                // La llave no vale para ninguna ruta: se trata como caída (las demás rutas de la captura no vuelven a llamar).
+                return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible, $"HTTP {(int)respuesta.StatusCode}")
+                {
+                    Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
+                };
             }
 
             if (!respuesta.IsSuccessStatusCode)
             {
-                return NoDisponible($"HTTP {(int)respuesta.StatusCode} ({respuesta.StatusCode}) en {metodo} {ruta}");
+                // 5xx (o cualquier otro no exitoso que no sea 4xx) es una caída; un 4xx es un rechazo de la petición.
+                return NoDisponible($"HTTP {(int)respuesta.StatusCode} ({respuesta.StatusCode}) en {metodo} {ruta}",
+                    caida: (int)respuesta.StatusCode is < 400 or >= 500);
             }
 
             if (respuesta.Content.Headers.ContentLength is { } largo && largo > LimiteBytes)
@@ -212,11 +224,12 @@ public sealed class clsCubicadorHttp(
         }
         catch (Exception ex) when (ex is OperationCanceledException or Polly.Timeout.TimeoutRejectedException)
         {
-            return NoDisponible($"tiempo agotado en {metodo} {ruta}", ex);
+            return NoDisponible($"tiempo agotado en {metodo} {ruta}", ex, caida: true);
         }
         catch (Exception ex) when (ex is HttpRequestException or ExecutionRejectedException or IOException)
         {
-            return NoDisponible(ex is Polly.CircuitBreaker.BrokenCircuitException ? "circuito abierto tras fallos repetidos" : $"error de red en {metodo} {ruta}", ex);
+            return NoDisponible(ex is Polly.CircuitBreaker.BrokenCircuitException ? "circuito abierto tras fallos repetidos" : $"error de red en {metodo} {ruta}", ex,
+                caida: true);
         }
         catch (JsonException ex)
         {
@@ -318,7 +331,11 @@ public sealed class clsCubicadorHttp(
         return memoria;
     }
 
-    private clsErrorDominio NoDisponible(string motivo, Exception? causa = null)
+    /// <summary>
+    /// Error <c>CUBICADOR_NO_DISPONIBLE</c> con el motivo en <see cref="clsErrorDominio.Detalle"/> (solo para el log: quien lo expone por
+    /// HTTP lo quita) y, si es una caída, la marca <see cref="clsErroresCubicador.ClaveCaida"/>.
+    /// </summary>
+    private clsErrorDominio NoDisponible(string motivo, Exception? causa = null, bool caida = false)
     {
         logger.LogWarning("Cubicador no disponible ({Motivo}).", motivo);
         if (causa is not null)
@@ -326,7 +343,10 @@ public sealed class clsCubicadorHttp(
             logger.LogDebug(causa, "Detalle del fallo del cubicador ({Motivo}).", motivo);
         }
 
-        return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible, motivo);
+        return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible, motivo)
+        {
+            Datos = caida ? new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true } : null,
+        };
     }
 
     // --- Forma de la petición de POST /recomendaciones (camelCase; contrato provisional, C1) ---

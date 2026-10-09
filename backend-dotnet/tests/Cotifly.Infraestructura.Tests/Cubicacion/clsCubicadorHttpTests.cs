@@ -113,6 +113,8 @@ public sealed class clsCubicadorHttpTests : IDisposable
         resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
         resultado.Error.Detalle.Should().Contain(((int)estado).ToString(System.Globalization.CultureInfo.InvariantCulture))
             .And.NotContain(clsCubicadorFalso.ApiKey);
+        clsErroresCubicador.EsCaida(resultado.Error).Should().Be(estado != HttpStatusCode.BadRequest,
+            "un 5xx (o la llave rechazada) es una caída; un 400 es un rechazo de esa petición");
     }
 
     [Fact]
@@ -209,6 +211,15 @@ public sealed class clsCubicadorHttpTests : IDisposable
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
         resultado.Error.Detalle.Should().Contain("tiempo agotado");
+        clsErroresCubicador.EsCaida(resultado.Error).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ElTiempoTotalDejaCaberLosReintentosDelGet()
+    {
+        var intento = TimeSpan.FromSeconds(15);
+
+        clsCubicadorHttp.TiempoTotal(intento).Should().BeGreaterThan(intento * (clsCubicadorHttp.ReintentosLectura + 1));
     }
 
     public void Dispose()

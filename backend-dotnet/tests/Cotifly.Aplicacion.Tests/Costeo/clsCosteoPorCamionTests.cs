@@ -176,7 +176,8 @@ public sealed class clsCosteoPorCamionTests
         cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "Cali", Destino = "Yumbo", PesoKg = 5_000m }, 1, 3);
 
         clsEnvioCosteoService.NotaCamionesPorRuta(cotizacion).Should().Be(
-            "Cotifly: una línea por camión, en este orden. Ruta 1 (Buenaventura → Bogotá, D.C.): 3 camiones. Ruta 2 (Cali → Yumbo): 1 camión.",
+            "Cotifly: una línea por camión, en este orden. Ruta 1 (Buenaventura → Bogotá, D.C.): 3 camiones. Ruta 2 (Cali → Yumbo): 1 camión. "
+            + clsEnvioCosteoService.AvisoSinPosiciones,
             "nombra todas las rutas, también las de un camión");
     }
 

@@ -60,6 +60,12 @@ public sealed class clsCapturaRutasService(
     /// <summary>Cantidad máxima de un conexo (Nexo la maneja con 2 decimales).</summary>
     public const decimal CantidadMaximaConexo = 99_999.99m;
 
+    /// <summary>¿Ya se leyó el catálogo del cubicador en esta captura? (HU-021.5: una sola lectura, con éxito o sin él.)</summary>
+    private bool _catalogoLeido;
+
+    /// <summary>El catálogo de tipos de mercancía leído en esta captura (<c>null</c> si no estuvo disponible).</summary>
+    private IReadOnlyDictionary<Guid, string>? _catalogo;
+
     /// <summary>Campo del id de municipio → campo del nombre: si el nombre ya tiene un error, el id no se reporta otra vez.</summary>
     private static readonly IReadOnlyDictionary<string, string> _nombreDelId = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -239,6 +245,14 @@ public sealed class clsCapturaRutasService(
             return null;
         }
 
+        // Una sola lectura por captura (el servicio es por petición): la validación y la preparación comparten el resultado, también el
+        // fallo, para no pagar dos veces los reintentos con el catálogo caído.
+        if (_catalogoLeido)
+        {
+            return _catalogo;
+        }
+
+        _catalogoLeido = true;
         var catalogo = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
         if (catalogo.EsFallo)
         {
@@ -253,6 +267,7 @@ public sealed class clsCapturaRutasService(
             porId.TryAdd(tipo.Id, tipo.Nombre);
         }
 
+        _catalogo = porId;
         return porId;
     }
 

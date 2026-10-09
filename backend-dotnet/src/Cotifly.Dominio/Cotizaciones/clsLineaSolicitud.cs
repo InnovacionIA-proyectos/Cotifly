@@ -129,7 +129,7 @@ public sealed class clsLineaSolicitud
 
     /// <summary>Camiones en un orden estable (creación y luego id): el primero lleva los conexos en Nexo (decisión 3).</summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosOrdenados =>
-        [.. _vehiculos.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id)];
+        [.. _vehiculos.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id)];
 
     /// <summary>Mercancías en su orden de captura.</summary>
     public IReadOnlyList<clsMercancia> MercanciasOrdenadas => [.. _mercancias.OrderBy(m => m.Orden)];
@@ -231,7 +231,8 @@ public sealed class clsLineaSolicitud
     /// </summary>
     public clsVehiculoLineaSolicitud AgregarVehiculo(string? tipoVehiculo, string? carroceria, decimal? pesoKg, Guid? idRecomendacionVehiculo = null)
     {
-        var camion = clsVehiculoLineaSolicitud.Crear(Id, tipoVehiculo, carroceria, pesoKg, ValorLevanteContenedor, idRecomendacionVehiculo);
+        var camion = clsVehiculoLineaSolicitud.Crear(
+            Id, tipoVehiculo, carroceria, pesoKg, ValorLevanteContenedor, idRecomendacionVehiculo, _vehiculos.Count + 1);
         _vehiculos.Add(camion);
         SumarCostos();
         return camion;

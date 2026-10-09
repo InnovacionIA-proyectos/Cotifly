@@ -209,6 +209,9 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
         builder.Property(v => v.CreatedAt).Fecha("createdAt");
         builder.Property(v => v.UpdatedAt).Fecha("updatedAt");
 
+        // HU-021.5: el orden del camión en su ruta no tiene columna; el interceptor lo lleva a createdAt (deuda: script ≥ 0011).
+        builder.Ignore(v => v.OrdenCreacion);
+
         builder.HasIndex(v => v.LineaSolicitudId).HasDatabaseName("ix_cotizacionVehiculosLineaSolicitud_lineaSolicitudId");
     }
 }

@@ -20,6 +20,7 @@ public sealed class clsTiposMercanciaController(IClsContextoUsuario usuario, ICl
     public async Task<IActionResult> Listar(CancellationToken cancellationToken)
     {
         var resultado = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
-        return resultado.Coincidir<IActionResult>(t => Ok(t), Error);
+        // El detalle del fallo (estado HTTP, ruta del cubicador) queda en el log del adaptador; al cliente solo va el código y el mensaje.
+        return resultado.Coincidir<IActionResult>(t => Ok(t), e => Error(new Dominio.Comun.clsErrorDominio(e.Codigo, e.Mensaje)));
     }
 }

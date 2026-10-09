@@ -59,8 +59,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             .Which!["idTipoMercancia"]!.GetValue<string>().Should().Be(TipoCafe);
 
         // Un camión por fila, con el vehículo, la carrocería, el peso (C2) y el id de la recomendación (C3); la mercancía con el nombre del catálogo.
-        // Los camiones de una ruta se guardan juntos: su orden es estable (createdAt, id) pero no necesariamente el del cubicador.
-        (await CamionesAsync(folio)).Should().BeEquivalentTo(["1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R"]);
+        // En el orden de la recomendación (la fila 1 es el primer camión: recibe los conexos de la ruta, decisión 10).
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(m.nombreMercancia, ',') FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
@@ -69,8 +69,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Envío por camión (#134): una línea por camión con su vehículo y su peso.
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Select(l => (l["tipoVehiculo"]!.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().BeEquivalentTo([("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m)]);
-        lineas[^1]["tipoVehiculo"]!.GetValue<string>().Should().Be("2", "las rutas viajan en orden");
+            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m));
 
         // Emparejamiento (#134) con las líneas barajadas: cada camión recibe el flete de su línea.
         var solicitud = _nexo.SolicitudesCreadas[^1];
@@ -100,7 +99,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        (await CamionesAsync(folio)).Should().BeEquivalentTo(["1|||16000.00|R", "1|3S3|FURGON|12000.00|R"]);
+        (await CamionesAsync(folio)).Should().Equal("1|||16000.00|R", "1|3S3|FURGON|12000.00|R");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         lineas.Should().HaveCount(2, "la solicitud se envía completa a la Mesa de Costeo de Nexo");
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
@@ -148,6 +147,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(envio, "CUBICADOR_NO_DISPONIBLE");
+        (await envio.Content.ReadAsStringAsync(Ct)).Should().NotContain("HTTP").And.NotContain("/recomendaciones", "el detalle interno solo va al log");
         _nexo.UltimaAlta.Should().BeNull("sin camiones no se manda nada a Nexo");
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'"))

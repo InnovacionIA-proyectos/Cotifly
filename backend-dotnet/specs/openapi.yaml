@@ -1177,6 +1177,8 @@ paths:
             HU-021.5: `CUBICADOR_NO_DISPONIBLE` solo con `Cubicador:RespaldoSiFalla = false`, si el cubicador configurado no pudo
             recomendar los vehículos de una ruta ("no se pudo calcular los vehículos"); nada queda guardado ni se envía a Nexo. Con el
             valor por defecto (`true`) la ruta sigue con un camión sin vehículo.
+            También si se agota `Cubicador:PresupuestoCapturaSegundos` (una licitación hace un POST por fila). El 503 no trae el detalle
+            interno (estado HTTP, ruta del cubicador): queda en el log con el evento `CUBICADOR_RESPALDO`.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
           headers:

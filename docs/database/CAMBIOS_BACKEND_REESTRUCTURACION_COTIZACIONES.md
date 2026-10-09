@@ -443,7 +443,13 @@ HTTP con Polly en `Infraestructura`, y una versión "no disponible" cuando no es
   warning). La regla de arriba ("la captura falla") se activa con `Cubicador:RespaldoSiFalla = false` (503 `CUBICADOR_NO_DISPONIBLE`).
 - `GET /web/tipos-mercancia` (caché, 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador). En la captura, con el catálogo, el nombre de la
   mercancía se copia de él y un id desconocido es `TIPO_MERCANCIA_INEXISTENTE`; sin catálogo se conserva lo que manda el cliente.
-- Con varios camiones las posiciones no viajan a Nexo (regla de #134): repartirlas exige la Tabla 8 del cubicador.
+- Con varios camiones las posiciones no viajan a Nexo (regla de #134): repartirlas exige la Tabla 8 del cubicador. La nota a la Mesa
+  (`notas`) lo avisa.
+- Correcciones de la revisión: el orden de los camiones es el de la recomendación (desfase determinista de `createdAt`; deuda: columna
+  de orden en un script ≥ 0011); solo una caída corta el cubicador para el resto de la captura; las rutas sin `id_tipo_mercancia` van
+  al respaldo sin llamarlo; warning `CUBICADOR_RESPALDO` y contador `cotifly.cubicador.respaldos`; una sola lectura del catálogo por
+  captura; presupuesto de tiempo por captura (`Cubicador:PresupuestoCapturaSegundos`); el 503 no expone el detalle interno. Las
+  recomendaciones que quedan en el cubicador si la captura no se guarda están documentadas en ADR-019.
 
 ---
 

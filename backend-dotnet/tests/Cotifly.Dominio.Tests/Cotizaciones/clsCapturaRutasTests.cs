@@ -104,6 +104,8 @@ public sealed class clsCapturaRutasTests
 
         rutas[0].Id.Should().Be(rutaId);
         rutas[0].Vehiculos.Select(v => v.IdRecomendacionVehiculo).Should().Equal(recomendacion, null);
+        rutas[0].VehiculosOrdenados.Select(v => (v.OrdenCreacion, v.PesoKg)).Should().Equal([(1, (decimal?)16_000m), (2, (decimal?)12_500m)],
+            "sin persistir (createdAt igual) los camiones quedan en el orden de la recomendación, no en el de su id");
         rutas[1].Id.Should().NotBe(Guid.Empty).And.NotBe(rutaId, "sin id fijado la ruta recibe uno nuevo");
     }
 

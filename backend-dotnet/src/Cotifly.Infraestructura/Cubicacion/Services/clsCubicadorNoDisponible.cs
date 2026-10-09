@@ -17,6 +17,8 @@ public sealed class clsCubicadorNoDisponible : IClsCubicador
 
     public bool RespaldoSiFalla => true;
 
+    public TimeSpan PresupuestoCaptura => TimeSpan.Zero;
+
     public Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
         Guid rutaId, IReadOnlyList<clsMercanciaCubicador> mercancias, CancellationToken cancellationToken = default) =>
         Task.FromResult<clsResultado<clsRecomendacionCubicador>>(NoDisponible());

@@ -41,6 +41,24 @@ public sealed record clsVehiculoRecomendado(
     public bool Condicionada => string.Equals(Resultado, clsResultadosRecomendacion.Condicionada, StringComparison.Ordinal);
 }
 
+/// <summary>
+/// Clasificación de los errores del cubicador (HU-021.5, #133): una <b>caída</b> (tiempo agotado, 5xx, red, circuito abierto) se marca
+/// en <see cref="Dominio.Comun.clsErrorDominio.Datos"/> con <c>caida = true</c>; un rechazo (4xx) o una respuesta ilegible no. El
+/// planificador solo deja de llamar al cubicador en el resto de la captura ante una caída.
+/// </summary>
+public static class clsErroresCubicador
+{
+    /// <summary>Clave de <see cref="Dominio.Comun.clsErrorDominio.Datos"/> que marca una caída.</summary>
+    public const string ClaveCaida = "caida";
+
+    /// <summary>¿El error es una caída del cubicador (no un rechazo ni una respuesta inválida)?</summary>
+    public static bool EsCaida(Dominio.Comun.clsErrorDominio error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        return error.Datos is { } datos && datos.TryGetValue(ClaveCaida, out var valor) && valor is true;
+    }
+}
+
 /// <summary>Respuesta de <c>POST /recomendaciones</c> del cubicador para una ruta: un registro por vehículo recomendado.</summary>
 public sealed record clsRecomendacionCubicador(IReadOnlyList<clsVehiculoRecomendado> Vehiculos);
 

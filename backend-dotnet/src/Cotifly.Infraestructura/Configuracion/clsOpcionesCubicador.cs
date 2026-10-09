@@ -36,4 +36,11 @@ public sealed class clsOpcionesCubicador
     /// <c>false</c> la captura falla con <c>CUBICADOR_NO_DISPONIBLE</c> y no se guarda ni se envía nada a Nexo (regla de la issue #133).
     /// </summary>
     public bool RespaldoSiFalla { get; set; } = true;
+
+    /// <summary>
+    /// Tiempo máximo de llamadas al cubicador en una misma captura (segundos; una licitación hace un POST por fila). Pasado, las rutas
+    /// restantes no lo llaman: van al respaldo o, con <see cref="RespaldoSiFalla"/> = <c>false</c>, la captura falla con 503. Por defecto 60.
+    /// </summary>
+    [Range(1, 3600)]
+    public int PresupuestoCapturaSegundos { get; set; } = 60;
 }

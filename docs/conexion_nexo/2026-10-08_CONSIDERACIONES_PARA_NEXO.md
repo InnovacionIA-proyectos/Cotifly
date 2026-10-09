@@ -107,7 +107,8 @@ En Nexo el vehículo es **una sola combinación** del catálogo (tipo + carrocer
 
 Sin nada de lo anterior, Cotifly funciona así:
 
-- **Sin el cubicador (C1):** una ruta = un camión, con el vehículo digitado como hoy.
+- **Sin el cubicador (C1):** una ruta = un camión sin vehículo ni carrocería (la Mesa los elige, decisión 7) con el peso total de la ruta. La integración (#133) ya está hecha y probada contra un cubicador falso; se activa con `Cubicador:UrlBase` y `Cubicador:ApiKey`.
+- **Con el cubicador y varios camiones en una ruta:** cada camión viaja como una línea con su vehículo y **su peso**, pero **sin posiciones** (mercancías): repartirlas por camión exige la Tabla 8 (mercancías por vehículo) que el cubicador aún no publica. La nota del encabezado (`notas`) se lo avisa a la Mesa: "Las rutas con varios camiones viajan sin el detalle de mercancías: cada línea lleva el peso de su camión."
 - **Sin N1:** empareja los camiones de una ruta por contenido y, los idénticos, en orden estable (HU-021.7, #134). Los costos no se cruzan (camiones iguales cuestan lo mismo), pero el estado de cada uno sí podría quedar en el camión equivocado. Dos rutas con el mismo contenido no se emparejan por orden: quedan sin asociar y sin precio hasta revisarlas con Nexo.
 - **Sin N3:** el admin de fletes pone el precio de una línea sin vehículo.
 
