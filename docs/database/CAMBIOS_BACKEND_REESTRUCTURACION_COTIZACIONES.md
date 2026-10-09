@@ -444,8 +444,9 @@ Necesita el visto bueno de scalderon-bs y del DBA antes de correrlo, igual que l
   hasta `CosteoNexo:MaximoReintentosConexos`; al tope queda `fallido_definitivo`. `GET .../costeo` muestra `estado_nexo` por conexo
   y `aviso_conexos_nexo` por ruta (incierto o fallido definitivo). `idServicioConexo` guarda el id del catálogo (capturados, `-vN`)
   o el de la fila de Nexo (agregados con el POST o importados): a Nexo siempre viaja el del catálogo, resuelto por id o por nombre
-  (`clsResolutorConexosCatalogo`); uno ya presente en esa solicitud no se reenvía; uno sin id resoluble queda `fallido_definitivo` y
-  sale del lote antes del POST (todo o nada). Deuda: columna para el id del catálogo en un script ≥ 0011 (revisión de @scalderon-bs).
+  (`clsResolutorConexosCatalogo`); uno ya presente en esa solicitud no se reenvía; uno que el catálogo respondió sin encontrar queda
+  `fallido_definitivo` y sale del lote antes del POST (todo o nada); si el catálogo no responde queda `en_espera` (no consume
+  intentos: el tope cuenta solo POST rechazados). Deuda: columna para el id del catálogo en un script ≥ 0011 (revisión de @scalderon-bs).
 - **`DatosNuevaVersion`** gana `rutas[]` (`RutaNuevaVersion`: orden, línea de negocio, origen, destino y margen de cada ruta);
   `linea_negocio` de primer nivel es la de la ruta 1 o `Varias`.
 

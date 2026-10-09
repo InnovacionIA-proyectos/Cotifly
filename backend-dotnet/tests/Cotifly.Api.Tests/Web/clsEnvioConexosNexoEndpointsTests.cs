@@ -214,6 +214,49 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
     }
 
     /// <summary>
+    /// Corrección de la tercera validación de #136: una caída del catálogo de conexos de Nexo no consume intentos ni deja nada
+    /// fallido_definitivo. En la solicitud nueva de una re-solicitud viajan el Cargue (id del catálogo, en la caché) y el Almacenamiento
+    /// (guardado con el id de la fila de Nexo: se resuelve por nombre). Con el catálogo caído 10 ciclos, el Cargue llega igual y el
+    /// Almacenamiento espera (una sola fila en_espera); cuando el catálogo vuelve, llega. Cada uno, una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task UnaCaidaDelCatalogoNoConsumeIntentosYTodoLlegaUnaSolaVezAlRecuperarse()
+    {
+        var (sesion, folio) = await ConAgregadoYEntregadaAsync();
+        var folioNuevo = await ReSolicitarAsync(sesion, folio, versionNueva: false);
+        var nueva = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(nueva, 0, 1_100_000m);
+
+        _nexo.CatalogoFalla = HttpStatusCode.ServiceUnavailable;
+        for (var ciclo = 0; ciclo < 10; ciclo++)
+        {
+            await _api.ProcesarPollingAsync(folioNuevo);
+        }
+
+        var cotizacionNueva = _nexo.CotizacionDe(nueva)!;
+        ServiciosEnviados(cotizacionNueva).Should().Equal([Cargue], "el que ya trae el id del catálogo no depende de la búsqueda por nombre");
+        (await EventosAsync(folioNuevo, "fallido")).Should().Be(0, "sin POST no hay intento fallido");
+        (await EventosAsync(folioNuevo, "fallido_definitivo")).Should().Be(0);
+        (await EventosAsync(folioNuevo, "en_espera")).Should().Be(1, "una sola fila mientras dura la espera");
+        var enCaida = (await RutasAsync(sesion, folioNuevo)).Single().GetProperty("servicios_conexos").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("nombre").GetString()!, c => c.GetProperty("estado_nexo").GetString());
+        enCaida["Cargue en puerto"].Should().Be("enviado");
+        enCaida["Almacenamiento"].Should().Be("pendiente");
+
+        _nexo.CatalogoFalla = null;
+        await _api.ProcesarPollingAsync(folioNuevo);
+        await _api.ProcesarPollingAsync(folioNuevo);
+
+        ServiciosEnviados(cotizacionNueva).Should().BeEquivalentTo([Cargue, Almacenamiento], "cada uno llega una sola vez");
+        (await EventosAsync(folioNuevo, "fallido_definitivo")).Should().Be(0);
+        (await RutasAsync(sesion, folioNuevo)).Single().GetProperty("servicios_conexos").EnumerateArray()
+            .Select(c => c.GetProperty("estado_nexo").GetString()).Should().OnlyContain(e => e == "enviado");
+    }
+
+    private List<string> ServiciosEnviados(string cotizacionNexo) =>
+        [.. _nexo.PeticionesConexos(cotizacionNexo).SelectMany(p => p["items"]!.AsArray()).Select(i => i!["servicioConexoId"]!.GetValue<string>())];
+
+    /// <summary>
     /// Captura con el Cargue, Nexo costea (el polling envía el Cargue), el comercial agrega el Almacenamiento con el POST (queda con el id de
     /// la fila de Nexo) y la Mesa entrega: la cotización queda entregada, lista para re-solicitar.
     /// </summary>

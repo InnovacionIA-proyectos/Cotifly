@@ -494,12 +494,12 @@ public sealed class clsReSolicitudCosteoService(
         if (conexosOriginales.Count > 0)
         {
             var resueltos = await resolutorConexos.ResolverAsync(usuarioId, conexosOriginales, cancellationToken);
-            if (resueltos.EsFallo)
+            if (resueltos.SinCatalogo.Count > 0 && resueltos.ErrorCatalogo is { } sinCatalogo)
             {
-                return resueltos.Error;
+                return sinCatalogo;
             }
 
-            catalogo = resueltos.Valor;
+            catalogo = resueltos.Resueltos;
         }
 
         var rutas = new List<clsRutaCapturada>(originales.Count);

@@ -11,7 +11,8 @@ namespace Cotifly.Aplicacion.Costeo.DTOs;
 /// <param name="SolicitudNexoId">Solicitud de Nexo a cuya cotización se envían.</param>
 /// <param name="LineaSolicitudId">Ruta de Cotifly.</param>
 /// <param name="Intento">Número del intento en la ruta (1, 2...).</param>
-/// <param name="Estado"><see cref="EnCurso"/>, <see cref="Enviado"/>, <see cref="Incierto"/> o <see cref="Fallido"/>.</param>
+/// <param name="Estado"><see cref="EnCurso"/>, <see cref="Enviado"/>, <see cref="Incierto"/>, <see cref="Fallido"/>, <see cref="EnEspera"/>
+/// o <see cref="FallidoDefinitivo"/>.</param>
 /// <param name="Conexos">Ids de los conexos de la ruta (<c>IdServicioConexo</c>) a los que aplica el registro.</param>
 /// <param name="PreviosNexo">Ids de los conexos que la cotización de Nexo ya tenía antes del POST (como el registro de #135).</param>
 public sealed record clsEnvioConexosNexo(
@@ -42,8 +43,18 @@ public sealed record clsEnvioConexosNexo(
     /// </summary>
     public const string Incierto = "incierto";
 
-    /// <summary>Nexo no lo aplicó (rechazo o error antes de enviar): el siguiente ciclo lo vuelve a intentar.</summary>
+    /// <summary>
+    /// Nexo rechazó el POST de conexos (no lo aplicó): el siguiente ciclo lo vuelve a intentar. Es lo ÚNICO que cuenta para el tope
+    /// <c>CosteoNexo:MaximoReintentosConexos</c>.
+    /// </summary>
     public const string Fallido = "fallido";
+
+    /// <summary>
+    /// No se intentó el POST porque Nexo no respondió antes (el catálogo de conexos o la lectura de la cotización: tiempo agotado, red o
+    /// 5xx): se espera al siguiente ciclo. NO cuenta como intento ni lleva a <see cref="FallidoDefinitivo"/>. Se guarda una sola vez
+    /// mientras dure la espera (sin una fila por ciclo).
+    /// </summary>
+    public const string EnEspera = "en_espera";
 
     /// <summary>
     /// Llegó al tope de intentos fallidos (<c>CosteoNexo:MaximoReintentosConexos</c>): no se vuelve a intentar; queda un warning y el
@@ -54,7 +65,8 @@ public sealed record clsEnvioConexosNexo(
 
 /// <summary>
 /// Resultado de una pasada del envío diferido: cuántos conexos quedaron enviados y cuántos quedaron <see cref="clsEnvioConexosNexo.Fallido"/>
-/// por debajo del tope (el polling vuelve a agendar la cotización para reintentarlos aunque ya esté entregada).
+/// por debajo del tope o <see cref="clsEnvioConexosNexo.EnEspera"/> (el polling vuelve a agendar la cotización para reintentarlos aunque ya
+/// esté entregada).
 /// </summary>
 public sealed record clsResultadoEnvioConexos(int Enviados, int PorReintentar)
 {
