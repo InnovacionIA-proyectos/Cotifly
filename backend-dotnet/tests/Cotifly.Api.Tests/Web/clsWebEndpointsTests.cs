@@ -88,13 +88,13 @@ public sealed class clsWebEndpointsTests(clsEntornoApiWeb entorno)
 
         using var perdida = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivo_rechazo = "Precio alto" }));
         var json = await VerificarContratoAsync(perdida, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
-        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = true, motivoRechazo = "no se lee" }));
+        using var camel = await Api.EnviarAsync(_post, ruta, ana.Access, clsApiWebPruebas.Json(new { ganada = false, motivoRechazo = "no se lee" }));
         var jsonCamel = await VerificarContratoAsync(camel, "/web/cotizaciones/{folio}/seguimiento", _post, HttpStatusCode.OK);
 
         json.GetProperty("ganada").GetBoolean().Should().BeFalse();
         json.GetProperty("motivo_rechazo").GetString().Should().Be("Precio alto");
         json.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
-        jsonCamel.GetProperty("ganada").GetBoolean().Should().BeTrue();
+        jsonCamel.GetProperty("ganada").GetBoolean().Should().BeFalse();
         jsonCamel.GetProperty("motivo_rechazo").ValueKind.Should().Be(JsonValueKind.Null, "el cuerpo de /web/* se lee en snake_case: motivoRechazo no existe");
     }
 

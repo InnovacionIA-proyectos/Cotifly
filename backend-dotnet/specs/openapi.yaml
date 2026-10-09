@@ -1209,7 +1209,8 @@ paths:
       description: |
         HU-005.14 (ADR-015 §6); reemplaza a `/seguimiento` para las cotizaciones que pasaron por Nexo. Dos escrituras:
         primero `POST /api/cotizaciones/{id}/resultado` de Nexo (`{id}` = la cotización de Nexo de la solicitud) y,
-        **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` (= `motivo`) en Cotifly. `comentario` se reenvía a
+        **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` en Cotifly (perdida: `motivo`; ganada: `"No aplica"`,
+        HU-021.13; a Nexo se le envía `motivo` tal como llega). `comentario` se reenvía a
         Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`) o Nexo caído
         (`503`) no cambian nada local; el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor.
 
@@ -3127,6 +3128,9 @@ components:
         motivo_rechazo:
           type: string
           nullable: true
+          description: |
+            HU-021.13 (propuesta de refactor de BD §2.1): `"No aplica"` si está ganada, el motivo del comercial si está perdida
+            y `null` solo mientras no tiene resultado (`ganada = null`).
         pdf_url:
           type: string
           nullable: true
@@ -3204,6 +3208,7 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+          description: Solo se guarda con `ganada = false`. Con `ganada = true` queda `"No aplica"` y con `ganada = null`, vacío (HU-021.13).
 
     LineaNegocio:
       type: object

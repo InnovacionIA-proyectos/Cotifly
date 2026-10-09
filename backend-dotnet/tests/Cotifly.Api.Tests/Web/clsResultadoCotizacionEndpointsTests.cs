@@ -88,7 +88,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         segunda.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(segunda, "RESULTADO_YA_DEFINIDO");
         (await EscalarAsync($"SELECT CONCAT(CAST(ganada AS nvarchar(5)), '|', COALESCE(motivoRechazo, '-')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
-            .Should().Be("1|-");
+            .Should().Be("1|No aplica");
     }
 
     [Fact]

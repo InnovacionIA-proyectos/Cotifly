@@ -20,8 +20,9 @@ public interface IClsSeguimientoService
 
 /// <summary>
 /// Implementación de <see cref="IClsSeguimientoService"/>. La regla vivía en <c>IClsCotizacionRepository.MarcarSeguimientoAsync</c>
-/// (portada así de <c>shared/repos.py</c>); pasa a caso de uso por la deuda de ADR-008. Igual que el Python, guarda
-/// <c>ganada</c> y el motivo tal como llegan (un <c>ganada = null</c> deja la cotización sin resultado).
+/// (portada así de <c>shared/repos.py</c>); pasa a caso de uso por la deuda de ADR-008. Guarda <c>ganada</c> tal como llega
+/// (un <c>ganada = null</c> deja la cotización sin resultado) y el motivo según la regla de HU-021.13 que aplica el dominio
+/// (<see cref="clsCotizacionSolicitud.MarcarSeguimiento"/>): ganada → <c>"No aplica"</c>, perdida → el motivo, sin resultado → vacío.
 /// </summary>
 public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones, IClsUnitOfWork unidadTrabajo, IClsReloj reloj) : IClsSeguimientoService
 {

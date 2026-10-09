@@ -87,7 +87,7 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "Cliente frecuente"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y Nexo registró la cotización de "C1" como "Ganada"
-    Y la cotización "C1" queda ganada "true" con el motivo "Mejor precio"
+    Y la cotización "C1" queda ganada "true" con el motivo "No aplica"
 
   Escenario: Si Nexo rechaza el resultado no cambia nada en Cotifly
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
@@ -124,7 +124,7 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae el estado de costeo "autocosteo" sin precio final
-    Y la cotización "C1" queda ganada "true" con el motivo "Mejor precio"
+    Y la cotización "C1" queda ganada "true" con el motivo "No aplica"
     Cuando Nexo vuelve a responder la consulta del costeo
     Y el polling consulta a Nexo
     Entonces "Mis cotizaciones" de "ana" muestra "C1" en "entregada" con el precio final 3000000

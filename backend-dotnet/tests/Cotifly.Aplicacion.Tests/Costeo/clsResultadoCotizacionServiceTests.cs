@@ -44,12 +44,12 @@ public sealed class clsResultadoCotizacionServiceTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task ConElOkDeNexoSeGuardaGanadaYElMotivoPeroNoElComentario()
+    public async Task ConElOkDeNexoSeGuardaGanadaConMotivoNoAplicaYANexoVanElMotivoYElComentario()
     {
         var resultado = await Servicio().MarcarAsync(_ana, _cotizacion.Folio, "ganada", "Mejor precio", "Nota interna", Ct);
 
         resultado.Valor.Ganada.Should().BeTrue();
-        _cotizacion.MotivoRechazo.Should().Be("Mejor precio");
+        _cotizacion.MotivoRechazo.Should().Be(clsCotizacionSolicitud.MotivoRechazoNoAplica, "HU-021.13: una ganada no guarda motivo de rechazo");
         _cotizacion.MarcadoAt.Should().Be(_reloj.AhoraUtc);
         await _nexo.Received(1).MarcarResultadoAsync(_ana, "COT-1",
             Arg.Is<clsResultadoNexo>(r => r.Ganada && r.Motivo == "Mejor precio" && r.Comentario == "Nota interna"), Arg.Any<CancellationToken>());
