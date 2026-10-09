@@ -240,12 +240,17 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
-    public void SinCosteoEnAlgunaRutaNoSeAjusta()
+    public void SoloLaRutaAjustadaNecesitaPrecio()
     {
         var cotizacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m]);
         cotizacion.AgregarRuta(new clsLineaSolicitudCosteo { Origen = "A", Destino = "B", PesoKg = 1m }, 1, 3);
 
-        cotizacion.ValidarAjusteMargen(1, 0.20m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        // Decisión del usuario (#135): el ajuste es ruta por ruta; la ruta 2 sin costeo no bloquea el de la ruta 1.
+        cotizacion.ValidarAjusteMargen(1, 0.20m, null).Should().BeNull();
+        cotizacion.ValidarAjusteMargen(2, 0.20m, null)!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        cotizacion.AplicarMargenNegociado(1, 0.20m, _ahora).Valor.Should().BeTrue();
+        cotizacion.RutasOrdenadas[0].PrecioFinalLinea.Should().Be(1_250_000m);
+        cotizacion.PrecioFinal.Should().BeNull("la cabecera solo tiene precio con todas las rutas costeadas");
     }
 
     // ------------------------------------------------------------------ Chat, mercancías y re-solicitud

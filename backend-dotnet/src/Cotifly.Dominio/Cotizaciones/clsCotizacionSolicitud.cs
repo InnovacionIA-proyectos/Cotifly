@@ -688,6 +688,8 @@ public sealed class clsCotizacionSolicitud
     /// El comercial cambia el valor de UN levante de contenedor de la ruta <paramref name="ordenRuta"/> (decisión 4): se guarda en la
     /// ruta, se copia a cada camión y se recalculan esa ruta y la cabecera. Solo mientras la cotización no se haya entregado al cliente
     /// (<c>PDF_YA_ENVIADO</c>, ADR-018 §11). Devuelve si cambió, o el error.
+    /// <para><b>Sin llamadores en esta rama</b> (solo sus pruebas): hoy el levante cambia en la versión nueva de la re-solicitud, que crea
+    /// los camiones con la copia. Lo conecta #132 (HU-021.6, edición de la ruta en la captura).</para>
     /// </summary>
     public clsResultado<bool> CambiarValorLevante(int ordenRuta, decimal? valor, DateTimeOffset ahora)
     {
@@ -862,8 +864,8 @@ public sealed class clsCotizacionSolicitud
 
     /// <summary>
     /// Invariantes del ajuste de margen de la ruta <paramref name="ordenRuta"/> (ADR-018 §3 y §11, por ruta desde HU-021.8): forma
-    /// (<c>AJUSTE_MARGEN_INVALIDO</c>), ruta de la cotización (<c>RUTA_INEXISTENTE</c>), costo disponible en la solicitud y en esa ruta
-    /// (<c>COSTEO_NO_LISTO</c>), regla del PDF (<c>PDF_YA_ENVIADO</c>) y justificación si queda por debajo del sugerido DE ESA RUTA
+    /// (<c>AJUSTE_MARGEN_INVALIDO</c>), ruta de la cotización (<c>RUTA_INEXISTENTE</c>), precio en ESA ruta (<c>COSTEO_NO_LISTO</c>;
+    /// las demás rutas no lo necesitan), regla del PDF (<c>PDF_YA_ENVIADO</c>) y justificación si queda por debajo del sugerido DE ESA RUTA
     /// (<c>JUSTIFICACION_REQUERIDA</c>).
     /// </summary>
     public clsErrorDominio? ValidarAjusteMargen(int ordenRuta, decimal margen, string? justificacion)
@@ -879,8 +881,10 @@ public sealed class clsCotizacionSolicitud
             return new clsErrorDominio(clsCodigosError.RutaInexistente, $"La cotización {Folio} no tiene la ruta {ordenRuta}.");
         }
 
-        // El precio total de la solicitud debe existir: todas sus rutas con precio (la cabecera es su suma, §9.1).
-        if (!TieneCostoDisponible || _rutas.Any(r => !r.TienePrecio))
+        // Decisión del usuario (2026-10-08, #135): el ajuste es ruta por ruta y solo ESA ruta necesita precio; las demás pueden seguir en
+        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarPliego / SinCosteo). La ruta debe venir del costeo de Nexo
+        // (autocosteo o entregada): una cotización del chat anterior a HU-013 no se ajusta por aquí.
+        if (!ruta.TienePrecio || ruta.EstadoCosteo is not { } estadoRuta || !clsDerivacionEstadoCosteo.TieneCosteo(estadoRuta))
         {
             return new clsErrorDominio(clsCodigosError.CosteoNoListo, $"La cotización {Folio} todavía no tiene el costeo de Nexo con margen aplicado.");
         }

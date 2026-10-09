@@ -147,6 +147,26 @@ public sealed class clsAjusteMargenServiceTests
     }
 
     [Fact]
+    public async Task ConUnaCotizacionDeUnaRutaElAjusteGuardaEsaRuta()
+    {
+        // HU-021.8 (#135): MargenAjustes.lineaSolicitudId apunta a la ruta real (la única de la cotización, o la indicada).
+        var cotizacion = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Costeada(folio: "PCN-RUTA-1", usuarioId: _usuario);
+        _cotizaciones.ObtenerPorIdDelUsuarioAsync(cotizacion.Id, _usuario, Arg.Any<CancellationToken>()).Returns(Task.FromResult<clsCotizacionSolicitud?>(cotizacion));
+        clsMargenAjuste? agregado = null;
+        _ajustes.When(a => a.Agregar(Arg.Any<clsMargenAjuste>())).Do(ci => agregado = ci.Arg<clsMargenAjuste>());
+
+        var sinRuta = await Servicio().RegistrarAsync(new clsEntradaAjusteMargen(0.15m, 0.18m, _usuario, CotizacionId: cotizacion.Id), Ct);
+        var ajena = await Servicio().RegistrarAsync(
+            new clsEntradaAjusteMargen(0.15m, 0.18m, _usuario, CotizacionId: cotizacion.Id, LineaSolicitudId: Guid.NewGuid()), Ct);
+        var sinCotizacion = await Servicio().RegistrarAsync(new clsEntradaAjusteMargen(0.15m, 0.18m, _usuario, LineaSolicitudId: Guid.NewGuid()), Ct);
+
+        sinRuta.EsExitoso.Should().BeTrue();
+        agregado!.LineaSolicitudId.Should().Be(cotizacion.PrimeraRuta!.Id);
+        ajena.Error.Codigo.Should().Be(clsCodigosError.RutaInexistente);
+        sinCotizacion.Error.Codigo.Should().Be(clsCodigosError.AjusteCotizacionInvalida);
+    }
+
+    [Fact]
     public async Task SinMotivoSeRegistraElMotivoPorDefecto()
     {
         clsMargenAjuste? agregado = null;

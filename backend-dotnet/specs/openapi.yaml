@@ -1279,7 +1279,9 @@ paths:
         - `margen` es libre entre 0 y 0,99 (fracción: 0.18 = 18 %). Fuera de rango: 400 `AJUSTE_MARGEN_INVALIDO`.
         - `justificacion` es **obligatoria** si `margen` queda por debajo del margen sugerido (`margen_sugerido` del
           costeo: SAP TM con el BP o la política de la línea). Sin ella: 400 `JUSTIFICACION_REQUERIDA`.
-        - Solo con costo disponible (`autocosteo` o `entregada` con `precio_final`; si no, 409 `COSTEO_NO_LISTO`).
+        - Solo con precio en la RUTA ajustada (si no, 409 `COSTEO_NO_LISTO`). Decisión del usuario (#135): el ajuste es ruta por ruta
+          y las demás rutas pueden seguir en costeo; entonces `precio_final` queda en `null` hasta que todas tengan precio, y el PDF
+          sigue exigiendo todas las rutas con precio.
         - **Regla del PDF (ADR-018 §11):** si la cotización ya se envió al cliente (`estado_envio` distinto de
           `sin_enviar`) o tiene resultado, 409 `PDF_YA_ENVIADO` (la `detalle` indica crear la versión `-vN`). Si no, se
           permite aunque haya PDF: el PDF actual queda invalidado (`pdf_url = null`, `pdf_desactualizado = true`, el
@@ -1687,7 +1689,7 @@ paths:
       x-issue: 'HU-005.7; por ruta desde #135 (HU-021.8)'
       description: |
         HU-005.7; por ruta desde HU-021.8 (#135, ADR-019 decisión 3). Los conexos son filas de la ruta
-        (`CotizacionServiciosConexos`): no hay "excluidos". Dos formas, excluyentes (las dos juntas: 400 `ErrorWeb`):
+        (`CotizacionServiciosConexos`): no hay "excluidos". Dos formas, y debe venir exactamente una (las dos juntas o ninguna: 400 `ErrorWeb`; `{"linea_orden": 2}` solo NO borra nada):
 
         - **`conexos`** (nueva): la lista de los conexos que deben QUEDAR en la ruta indicada (`linea_orden` o
           `linea_solicitud_id`; sin ruta, la única de la cotización, y con varias 400 `RUTA_REQUERIDA`), cada uno con su `id`
@@ -3648,7 +3650,7 @@ components:
 
     CosteoCotizacion:
       type: object
-      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url]
+      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url, rutas]
       properties:
         folio:
           type: string
@@ -3673,6 +3675,9 @@ components:
         margen_aplicado:
           type: number
           nullable: true
+          description: |
+            Margen de la RUTA 1 (compatibilidad, HU-021.8 #135). El margen es por ruta: usar `rutas[].margen_aplicado`. Con varias
+            rutas, ajustar sin indicar la ruta responde 400 `RUTA_REQUERIDA`.
         moneda:
           type: string
           example: COP
@@ -3687,6 +3692,7 @@ components:
           type: number
           nullable: true
           description: |
+            Sugerido de la RUTA 1 (compatibilidad, HU-021.8 #135; el de cada ruta está en `rutas[].margen_sugerido`).
             HU-013.2. Margen sugerido de la cotización (fracción): SAP TM con el BP o la política de la línea, resuelto al
             enviarla, y guardado en `Cotizaciones.margenSugerido` con su origen (script 0006); el ajuste del comercial no lo
             cambia (cada fila de `MargenAjustes` lo copia en `margenPolitica`). Por debajo de él, el ajuste exige
@@ -3725,7 +3731,8 @@ components:
       type: object
       description: |
         HU-005.7; por ruta desde HU-021.8 (#135). `conexos` (los que quedan en la ruta, con su cantidad) o `incluidos` (los
-        ids que se conservan), no los dos. La ruta con `linea_orden` o `linea_solicitud_id`.
+        ids que se conservan): exactamente uno de los dos (ninguno o los dos: 400 `ErrorWeb`; `incluidos: []` quita todos). La
+        ruta con `linea_orden` o `linea_solicitud_id`. Los ids se comparan sin distinguir mayúsculas.
       properties:
         linea_orden:
           type: integer

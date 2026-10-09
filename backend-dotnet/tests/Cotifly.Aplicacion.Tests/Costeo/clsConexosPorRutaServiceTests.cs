@@ -139,6 +139,29 @@ public sealed class clsConexosPorRutaServiceTests
     }
 
     [Fact]
+    public async Task IncluidosComparaLosIdsConElMismoCriterioQueLaValidacion()
+    {
+        // H1 (#135): "cx-2" pasa la validación (sin distinguir mayúsculas) y por eso CONSERVA "CX-2"; antes lo validaba y lo borraba.
+        var resultado = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
+            new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), ["cx-2"], null), Version, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _cotizacion.RutasOrdenadas[1].Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-2");
+    }
+
+    [Fact]
+    public async Task SinIncluidosNiConexosRespondeSolicitudInvalidaYNoBorraNada()
+    {
+        // H2 (#135): {"linea_orden": 2} sin 'incluidos' ni 'conexos' no vacía la ruta.
+        var resultado = await Servicio().SeleccionarServiciosConexosAsync(_ana, "PCN-L1",
+            new clsCambioServiciosConexos(clsRutaIndicada.DeOrden(2), null, null), Version, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
+        _cotizacion.RutasOrdenadas[1].Conexos.Should().HaveCount(2);
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+    }
+
+    [Fact]
     public async Task LasMismasCantidadesNoInvalidanElPdfNiSubenLaVersion()
     {
         _cotizacion.AsignarPdf("PCN-L1.pdf");

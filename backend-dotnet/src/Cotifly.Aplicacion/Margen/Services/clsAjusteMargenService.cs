@@ -21,6 +21,9 @@ namespace Cotifly.Aplicacion.Margen.Services;
 /// (<c>lineaSolicitudId</c>: la indicada o la única; HU-021.8, #135).</item>
 /// </list>
 /// Nada se guarda si alguna validación falla.
+/// <para><b>Sin llamadores en producción</b> (auditoría de #135): era la herramienta <c>registrar_ajuste_margen</c> del agente legado,
+/// retirado en HU-013.9 (#105); queda registrado en DI y cubierto por sus pruebas. El ajuste vigente es
+/// <c>clsAjusteMargenCosteoService</c> (<c>PUT .../costeo/margen</c>). Candidato a retirarse.</para>
 /// </summary>
 public sealed class clsAjusteMargenService(
     IClsMargenAjusteRepository ajustes,

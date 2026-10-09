@@ -358,7 +358,10 @@ public sealed class clsResultadoCotizacionService(
                 if (foto is not null)
                 {
                     // Misma regla que el polling: estado, agenda y precio (por camión y por ruta, ADR-017, HU-021) con el margen guardado.
-                    clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, opciones.Value, precioCosteo);
+                    var pendientes = cotizacion.ConexosPendientesDeLeer
+                        ? await cotizaciones.ObtenerConexosPendientesNexoAsync(cotizacion.Folio, CancellationToken.None)
+                        : null;
+                    clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, opciones.Value, precioCosteo, pendientes);
                 }
                 else
                 {

@@ -402,7 +402,9 @@ public sealed class clsServiciosConexosCosteoService(
 
         if (cotizacionNexo is null)
         {
-            return await SinRelecturaAsync(cotizacion, usuarioId, reservada, agregado.Valor.Seguro ? (object)true : AgregadoDesconocido, detalleRelectura);
+            return await SinRelecturaAsync(
+                cotizacion, usuarioId, reservada, agregado.Valor.Seguro ? (object)true : AgregadoDesconocido, detalleRelectura,
+                new clsConexosPendientesNexo(cotizacion.Folio, ruta.Id, [.. actual.Valor.Conexos.Select(c => c.Id)]));
         }
 
         // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de LA ruta pedida (costo unitario de Nexo y cantidad) y
@@ -464,11 +466,13 @@ public sealed class clsServiciosConexosCosteoService(
     /// una cotización con PDF) con la versión ya reservada; sin PDF el polling recoge el conexo en su siguiente consulta.
     /// </summary>
     private async Task<(clsResultado<clsCosteoCotizacion>, int, bool)> SinRelecturaAsync(
-        clsCotizacionSolicitud cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle)
+        clsCotizacionSolicitud cotizacion, Guid usuarioId, int reservada, object agregado, string? detalle, clsConexosPendientesNexo pendientes)
     {
-        // HU-021: el polling ya no importa los conexos de Nexo (Cotifly es la fuente, decisión 3) salvo con esta marca: la siguiente
-        // lectura del costeo trae a la ruta 1 los conexos de Nexo que falten y la quita.
+        // HU-021: el polling ya no importa los conexos de Nexo (Cotifly es la fuente, decisión 3) salvo con esta marca. HU-021.8 (#135):
+        // junto a la marca, y en la misma transacción, se guardan la ruta pedida y los ids que Nexo ya tenía ANTES del POST: la siguiente
+        // lectura trae a ESA ruta solo los conexos nuevos (nunca uno que el comercial quitó en Cotifly ni uno de otra ruta).
         cotizacion.MarcarConexosPendientesDeLeer();
+        cotizaciones.RegistrarConexosPendientesNexo(pendientes);
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         pdfInvalidado = await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, reservada, CancellationToken.None) && pdfInvalidado;
         var mensaje = agregado is true

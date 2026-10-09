@@ -252,11 +252,17 @@ public sealed class clsCosteoCotizacionService(
             return Invalida("Envía 'conexos' (la ruta con sus cantidades) o 'incluidos' (los que se conservan), no los dos.");
         }
 
+        if (cambio.Conexos is null && cambio.Incluidos is null)
+        {
+            // Sin ninguna de las dos formas no se adivina: un cuerpo como {"linea_orden": 2} no borra los conexos de la ruta.
+            return Invalida("Envía 'conexos' (la ruta con sus cantidades) o 'incluidos' (los que se conservan; [] los quita todos).");
+        }
+
         var indicada = cambio.Ruta.LineaOrden is not null || cambio.Ruta.LineaSolicitudId is not null;
         if (cambio.Conexos is null && !indicada)
         {
             // HU-005.7: 'incluidos' sin ruta conserva esos ids en TODAS las rutas.
-            var incluidos = cambio.Incluidos ?? [];
+            var incluidos = cambio.Incluidos!;
             var todos = cotizacion.Rutas.SelectMany(r => r.Conexos).ToList();
             if (Ajenos(incluidos, todos) is { Count: > 0 } desconocidos)
             {
@@ -286,7 +292,7 @@ public sealed class clsCosteoCotizacionService(
             return clsResultado<IReadOnlyList<(clsLineaSolicitud, IReadOnlyDictionary<string, decimal>)>>.Exito([(ruta, Conservar(ruta, incluidos))]);
         }
 
-        var cantidades = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var cantidades = new Dictionary<string, decimal>(ComparadorIdConexo);
         for (var i = 0; i < cambio.Conexos.Count; i++)
         {
             var item = cambio.Conexos[i];
@@ -315,18 +321,24 @@ public sealed class clsCosteoCotizacionService(
         return clsResultado<IReadOnlyList<(clsLineaSolicitud, IReadOnlyDictionary<string, decimal>)>>.Exito([(ruta, cantidades)]);
     }
 
+    /// <summary>
+    /// Un solo criterio para comparar ids de conexos en la validación y en la aplicación: <see cref="StringComparer.OrdinalIgnoreCase"/>
+    /// (el mismo del dominio, <c>clsLineaSolicitud.AjustarConexos</c>). Así un id que pasa la validación es el mismo que se conserva.
+    /// </summary>
+    public static readonly StringComparer ComparadorIdConexo = StringComparer.OrdinalIgnoreCase;
+
     private static List<string> Ajenos(IEnumerable<string> ids, IEnumerable<clsServicioConexoRuta> conexos)
     {
-        var propios = conexos.Select(c => c.IdServicioConexo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var propios = conexos.Select(c => c.IdServicioConexo).ToHashSet(ComparadorIdConexo);
         return [.. ids.Where(id => !propios.Contains(id))];
     }
 
     /// <summary>Los conexos de la ruta que están en <paramref name="incluidos"/>, con su cantidad actual (los demás se quitan).</summary>
     private static IReadOnlyDictionary<string, decimal> Conservar(clsLineaSolicitud ruta, IReadOnlyCollection<string> incluidos)
     {
-        var conservar = incluidos.ToHashSet(StringComparer.Ordinal);
+        var conservar = incluidos.ToHashSet(ComparadorIdConexo);
         return ruta.Conexos.Where(c => conservar.Contains(c.IdServicioConexo))
-            .ToDictionary(c => c.IdServicioConexo, c => c.Cantidad, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(c => c.IdServicioConexo, c => c.Cantidad, ComparadorIdConexo);
     }
 
     private static clsErrorDominio NoDeLaRuta(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IEnumerable<string> ids) =>

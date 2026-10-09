@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
@@ -19,7 +20,8 @@ public static class clsLecturaCosteo
         clsCosteoConsultadoNexo foto,
         DateTimeOffset ahora,
         clsOpcionesCosteoNexo opciones,
-        IClsPrecioCosteoService precioCosteo)
+        IClsPrecioCosteoService precioCosteo,
+        clsConexosPendientesNexo? pendientes = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
@@ -29,14 +31,18 @@ public static class clsLecturaCosteo
         // HU-021: primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
         var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto, ahora);
 
-        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a la ruta 1 y se quita la marca.
+        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a la ruta pedida y se quita la marca.
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
-        if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo && cotizacion.PrimeraRuta is { } ruta)
+        if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo)
         {
-            var faltantes = nexo.Conexos.Where(c => ruta.Conexos.All(r => !string.Equals(r.IdServicioConexo, c.Id, StringComparison.OrdinalIgnoreCase)));
-            var importados = clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, faltantes, ahora);
-            cambio |= importados.EsFallo || importados.Valor > 0;
+            var nuevos = ConexosNuevos(cotizacion, nexo, pendientes);
+            if (nuevos.Ruta is { } ruta && nuevos.Conexos.Count > 0)
+            {
+                var importados = clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, nuevos.Conexos, ahora);
+                cambio |= importados.EsFallo || importados.Valor > 0;
+            }
         }
+
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);
         var estado = cotizacion.Rutas.Count == 0 ? estadoNexo : cotizacion.ResumirRutas() ?? estadoNexo;
         var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado)
@@ -61,6 +67,29 @@ public static class clsLecturaCosteo
         }
 
         return cambio;
+    }
+
+    /// <summary>
+    /// Los conexos de la cotización de Nexo que se importan con la marca de pendientes (HU-021.8, #135): solo los que NO estaban en Nexo
+    /// antes del POST incierto (<see cref="clsConexosPendientesNexo.Previos"/>) ni están ya en alguna ruta, y van a la ruta pedida. Un
+    /// conexo que el comercial quitó en Cotifly sigue en Nexo (no hay DELETE) pero estaba en los previos: no vuelve. Sin el registro de
+    /// pendientes (o si la ruta ya no existe) no se importa nada.
+    /// </summary>
+    public static (clsLineaSolicitud? Ruta, IReadOnlyList<clsConexoNexo> Conexos) ConexosNuevos(
+        clsCotizacionSolicitud cotizacion, clsCotizacionNexo nexo, clsConexosPendientesNexo? pendientes)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(nexo);
+        var ruta = pendientes is null ? null : cotizacion.Rutas.FirstOrDefault(r => r.Id == pendientes.LineaSolicitudId);
+        if (ruta is null)
+        {
+            return (null, []);
+        }
+
+        var conocidos = pendientes!.Previos
+            .Concat(cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return (ruta, [.. nexo.Conexos.Where(c => !conocidos.Contains(c.Id))]);
     }
 
     /// <summary>Motivo de una entregada leída sin precio y sin otra explicación (Nexo no trajo la cotización o sus fletes).</summary>
