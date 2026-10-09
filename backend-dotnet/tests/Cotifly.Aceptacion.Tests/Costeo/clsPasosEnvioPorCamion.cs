@@ -76,9 +76,10 @@ public sealed class clsPasosEnvioPorCamion(clsPasosCosteo costeo)
     [Then("la nota que recibió Nexo menciona {string}")]
     public void EntoncesLaNota(string texto) => Alta()["notas"]!.GetValue<string>().Should().Contain(texto);
 
-    [Then("una de las líneas que recibió Nexo no lleva vehículo ni carrocería")]
-    public void EntoncesUnaLineaVacia() =>
-        Lineas().Should().ContainSingle(l => l["tipoVehiculo"] == null && l["carroceria"] == null, "la línea sin vehículo viaja igual y la resuelve la Mesa");
+    [Then("ninguna de las líneas que recibió Nexo lleva vehículo ni carrocería")]
+    public void EntoncesLineasSinVehiculo() =>
+        Lineas().Should().OnlyContain(l => l["tipoVehiculo"] == null && l["carroceria"] == null,
+            "decisión 7 (#132): el camión de la captura nace sin vehículo y la línea viaja igual para que la resuelva la Mesa");
 
     [Then("cada camión de {string} quedó asociado a una línea distinta de Nexo")]
     public async Task EntoncesCadaCamionAsociado(string cotizacion)

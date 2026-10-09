@@ -25,9 +25,9 @@ Característica: Envío a Nexo por camión y emparejamiento de sus líneas
       | 2        |            | 4000    |
     Y Nexo vuelve a responder
     Y "ana" reintenta el envío a costeo de "C1"
-    Entonces Nexo recibió 3 líneas de "Buenaventura" a "Bogotá D.C.", una por camión y sin posiciones
+    Entonces Nexo recibió 3 líneas de "Buenaventura" a "Bogotá, D.C.", una por camión y sin posiciones
     Y las líneas que recibió Nexo llevan los pesos "28500, 8000, 4000"
-    Y la nota que recibió Nexo menciona "Ruta 1 (Buenaventura → Bogotá D.C.): 3 camiones."
+    Y la nota que recibió Nexo menciona "Ruta 1 (Buenaventura → Bogotá, D.C.): 3 camiones."
     Cuando Nexo devuelve las líneas de la solicitud en orden aleatorio
     Y Nexo costea la línea del camión de 28500 kg de "C1" con un flete de 1275000
     Y Nexo costea la línea del camión de 8000 kg de "C1" con un flete de 850000
@@ -43,7 +43,7 @@ Característica: Envío a Nexo por camión y emparejamiento de sus líneas
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Y la ruta 1 de "C1" lleva además estos camiones:
       | vehiculo | carroceria        | peso_kg |
-      | 3S3      | PORTACONTENEDORES | 28500   |
+      |          |                   | 28500   |
     Y Nexo vuelve a responder
     Y "ana" reintenta el envío a costeo de "C1"
     Y Nexo devuelve las líneas de la solicitud en orden aleatorio
@@ -64,7 +64,7 @@ Característica: Envío a Nexo por camión y emparejamiento de sus líneas
       |          |            | 4000    |
     Y Nexo vuelve a responder
     Y "ana" reintenta el envío a costeo de "C1"
-    Entonces una de las líneas que recibió Nexo no lleva vehículo ni carrocería
+    Entonces ninguna de las líneas que recibió Nexo lleva vehículo ni carrocería
     Cuando la Mesa de Nexo le pone el vehículo "2S2" con la carrocería "ESTACAS" a la línea del camión de 4000 kg de "C1"
     Y Nexo costea la línea del camión de 28500 kg de "C1" con un flete de 2125000
     Y Nexo costea la línea del camión de 4000 kg de "C1" con un flete de 425000
