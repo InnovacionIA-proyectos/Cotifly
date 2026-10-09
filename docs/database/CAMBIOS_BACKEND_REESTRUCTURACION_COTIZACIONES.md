@@ -488,6 +488,28 @@ HTTP con Polly en `Infraestructura`, y una versión "no disponible" cuando no es
 - **Si el cubicador no responde,** la captura falla con un error claro ("no se pudo calcular los vehículos"). No se
   manda nada a Nexo sin camiones.
 
+**Implementado en #133 (HU-021.5, 2026-10-08), probado solo contra un cubicador falso** (el real no tiene aún los endpoints, C1):
+
+- `IClsCubicador` (`RecomendarAsync(rutaId, mercancías)`, `ListarTiposMercanciaAsync()`, `EstaConfigurado`, `RespaldoSiFalla`),
+  `clsCubicadorHttp` (cliente `"Cubicador"`, sin reintento del POST, `Bearer`, contrato provisional en su comentario y en ADR-019),
+  `clsCubicadorNoDisponible` y `clsFabricaCubicador`. Opciones `Cubicador:UrlBase`, `Cubicador:ApiKey`,
+  `Cubicador:TiempoEsperaSegundos` (15), `Cubicador:MinutosCacheCatalogos` (30) y `Cubicador:RespaldoSiFalla` (true).
+- `clsPlanificadorCamionesCubicador` reemplaza a `clsPlanificadorCamionSinVehiculo` como `IClsPlanificadorCamiones`: un camión por
+  fila con vehículo, carrocería, peso total (C2) e `idRecomendacionVehiculo` (C3); "sin selección" → camión vacío; "condicionada" →
+  se envía todo. El id de la ruta se fija antes de guardar (`clsRutaCapturada.RutaId`) porque es el `IdLineaSolicitud`.
+- **Cambio de regla (coordinador, 2026-10-08):** mientras el cubicador no exista, **el respaldo es el camino por defecto**: sin
+  configurar, o si falla con `Cubicador:RespaldoSiFalla = true`, la ruta queda con un camión sin vehículo y el peso total (y un
+  warning). La regla de arriba ("la captura falla") se activa con `Cubicador:RespaldoSiFalla = false` (503 `CUBICADOR_NO_DISPONIBLE`).
+- `GET /web/tipos-mercancia` (caché, 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador). En la captura, con el catálogo, el nombre de la
+  mercancía se copia de él y un id desconocido es `TIPO_MERCANCIA_INEXISTENTE`; sin catálogo se conserva lo que manda el cliente.
+- Con varios camiones las posiciones no viajan a Nexo (regla de #134): repartirlas exige la Tabla 8 del cubicador. La nota a la Mesa
+  (`notas`) lo avisa.
+- Correcciones de la revisión: el orden de los camiones es el de la recomendación (desfase determinista de `createdAt`; deuda: columna
+  de orden en un script ≥ 0011); solo una caída corta el cubicador para el resto de la captura; las rutas sin `id_tipo_mercancia` van
+  al respaldo sin llamarlo; warning `CUBICADOR_RESPALDO` y contador `cotifly.cubicador.respaldos`; una sola lectura del catálogo por
+  captura; presupuesto de tiempo por captura (`Cubicador:PresupuestoCapturaSegundos`); el 503 no expone el detalle interno. Las
+  recomendaciones que quedan en el cubicador si la captura no se guarda están documentadas en ADR-019.
+
 ---
 
 ## 7. API y contrato con el frontend

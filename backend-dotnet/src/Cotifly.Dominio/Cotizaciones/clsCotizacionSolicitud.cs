@@ -276,7 +276,8 @@ public sealed class clsCotizacionSolicitud
         foreach (var capturada in rutas)
         {
             var orden = _rutas.Count == 0 ? 1 : _rutas.Max(r => r.Orden) + 1;
-            var ruta = clsLineaSolicitud.Desde(Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado);
+            var ruta = clsLineaSolicitud.Desde(
+                Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado, capturada.RutaId);
             foreach (var camion in capturada.Camiones)
             {
                 ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);

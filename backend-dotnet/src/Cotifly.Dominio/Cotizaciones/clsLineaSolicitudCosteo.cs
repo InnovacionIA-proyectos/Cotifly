@@ -44,6 +44,9 @@ public static class clsCodigosLineaSolicitud
 
     /// <summary>HU-021.6: la ruta pide más servicios conexos de los admitidos.</summary>
     public const string DemasiadosConexos = "DEMASIADOS_CONEXOS";
+
+    /// <summary>HU-021.5 (#133): el <c>id_tipo_mercancia</c> no está en el catálogo del cubicador (<c>GET /web/tipos-mercancia</c>).</summary>
+    public const string TipoMercanciaInexistente = "TIPO_MERCANCIA_INEXISTENTE";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>

@@ -508,7 +508,10 @@ public sealed class clsReSolicitudCosteoService(
         {
             var ruta = originales[i];
             var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
-            var vigentes = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id).ToList();
+            // En el orden estable de la ruta (createdAt con el desfase de OrdenCreacion, #133): el primero lleva los conexos (decisión 3).
+            var vigentes = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id).ToList();
+            // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
+            var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
             if ((validada.Replanificar || vigentes.Count == 0) && linea.Posiciones.Any(p => p.IdTipoMercancia is null || p.IdTipoMercancia == Guid.Empty))
             {
@@ -522,7 +525,7 @@ public sealed class clsReSolicitudCosteoService(
             }
             else if (validada.Replanificar || vigentes.Count == 0)
             {
-                var plan = await planificador.PlanificarAsync(usuarioId, linea, cancellationToken);
+                var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
                 if (plan.EsFallo)
                 {
                     return plan.Error;
@@ -564,7 +567,7 @@ public sealed class clsReSolicitudCosteoService(
                 conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
             }
 
-            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos));
+            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId));
         }
 
         return new clsRutasVersion(rutas, replanificadas);

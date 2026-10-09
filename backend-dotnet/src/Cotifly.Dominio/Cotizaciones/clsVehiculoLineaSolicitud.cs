@@ -48,6 +48,17 @@ public sealed class clsVehiculoLineaSolicitud
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// Posición del camión en su ruta al crearlo (1 = el primero; la fila de la recomendación del cubicador, HU-021.5). No es una
+    /// columna (el esquema no tiene orden de camión, deuda para un script ≥ 0011): sirve para ordenar los camiones nuevos antes de
+    /// guardarlos y la persistencia la convierte en un desfase determinista de <see cref="CreatedAt"/> (<see cref="DesfaseCreacion"/>), así
+    /// que leídos de la base quedan en el mismo orden. Leído de la base vale 0.
+    /// </summary>
+    public int OrdenCreacion { get; private set; }
+
+    /// <summary>Desfase de <see cref="CreatedAt"/> por cada posición de <see cref="OrdenCreacion"/> (1 ms: lo conserva <c>datetimeoffset</c>).</summary>
+    public static readonly TimeSpan DesfaseCreacion = TimeSpan.FromMilliseconds(1);
+
     /// <summary>¿Nexo ya le puso flete? (<c>autocosteo</c> o <c>entregada</c> con flete.)</summary>
     public bool TieneCosteo => CostoFlete is not null && EstadoCosteo is { } estado && clsDerivacionEstadoCosteo.TieneCosteo(estado);
 
@@ -59,7 +70,8 @@ public sealed class clsVehiculoLineaSolicitud
     /// si no aplica). Vehículo y carrocería pueden venir vacíos (sin selección automática del cubicador).
     /// </summary>
     internal static clsVehiculoLineaSolicitud Crear(
-        Guid lineaSolicitudId, string? tipoVehiculo, string? carroceria, decimal? pesoKg, decimal? levante, Guid? idRecomendacionVehiculo)
+        Guid lineaSolicitudId, string? tipoVehiculo, string? carroceria, decimal? pesoKg, decimal? levante, Guid? idRecomendacionVehiculo,
+        int ordenCreacion = 0)
     {
         if (pesoKg is < 0m || levante is < 0m)
         {
@@ -75,6 +87,7 @@ public sealed class clsVehiculoLineaSolicitud
             Carroceria = Normalizar(carroceria),
             PesoKg = pesoKg,
             CostoLevanteContenedor = levante ?? 0m,
+            OrdenCreacion = ordenCreacion,
         };
     }
 

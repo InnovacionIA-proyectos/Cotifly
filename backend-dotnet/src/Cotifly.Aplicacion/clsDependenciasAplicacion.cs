@@ -85,9 +85,11 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsResolutorConexosCatalogo, clsResolutorConexosCatalogo>();
 
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
-        // planificador por defecto crea un camión sin vehículo por ruta; la integración con el cubicador (#133) registra el suyo antes.
+        // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra
+        // Infraestructura) y, sin cubicador o si falla, un camión sin vehículo por ruta (respaldo). Scoped: recuerda en la petición que el
+        // cubicador falló. TryAdd: un planificador registrado antes (pruebas) se respeta.
         servicios.AddScoped<IClsCapturaRutasService, clsCapturaRutasService>();
-        servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionSinVehiculo>();
+        servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionesCubicador>();
 
         // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
         // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.

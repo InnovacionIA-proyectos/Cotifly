@@ -87,8 +87,8 @@ public sealed class clsReSolicitudCosteoServiceTests
             .Returns(clsResultado<clsPaginaCatalogoConexosNexo>.Exito(new clsPaginaCatalogoConexosNexo(0, [])));
 
         // El planificador por defecto (hasta el cubicador, #133): un camión sin vehículo con el peso total de la ruta.
-        _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
-            .Returns(ci => new clsPlanificadorCamionSinVehiculo().PlanificarAsync(ci.ArgAt<Guid>(0), ci.ArgAt<clsLineaSolicitudCosteo>(1)));
+        _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new clsPlanificadorCamionSinVehiculo().PlanificarAsync(ci.ArgAt<Guid>(0), ci.ArgAt<Guid>(1), ci.ArgAt<clsLineaSolicitudCosteo>(2)));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -224,7 +224,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(((string?)null, (string?)null, 28_400m));
         // Las mercancías de la muestra no tienen id_tipo_mercancia (filas anteriores a #132): el cubicador no las puede cubicar y va el
         // respaldo de un camión sin vehículo con el peso de la ruta (corrección del auditor de #136).
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
         resultado.Valor.RutasReplanificadas.Should().Equal(1);
         await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _politica, _ana, Arg.Any<string?>());
@@ -258,7 +258,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         r2.Conexos.Should().ContainSingle(c => c.IdServicioConexo == "CX-9" && c.Nombre == "Escolta" && c.Precio == 42_500m && c.Cantidad == 2m);
         r2.CostoServiciosConexos.Should().Be(85_000m, "el conexo copiado suma al costo de su ruta");
         r1.Conexos.Should().BeEmpty();
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
         resultado.Valor.RutasReplanificadas.Should().BeEmpty();
         resultado.Valor.ConexosConservados.Should().Equal("Escolta");
     }
@@ -401,7 +401,7 @@ public sealed class clsReSolicitudCosteoServiceTests
             Posiciones = mercancias,
             PesoKg = 14_250m,
         };
-        _planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _planificador.PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito([new clsCamionPlaneado("2S3", "FURGON", 8_000m), new clsCamionPlaneado(null, null, 6_250m)]));
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
@@ -411,7 +411,8 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.Mercancias.Should().ContainSingle().Which.Cantidad.Should().Be(10);
         // Sin persistencia createdAt es el mismo: el orden estable cae en el id (aleatorio), así que se compara sin orden.
         ruta.Vehiculos.Select(v => (v.TipoVehiculo, v.PesoKg)).Should().BeEquivalentTo([("2S3", (decimal?)8_000m), ((string?)null, (decimal?)6_250m)]);
-        await _planificador.Received(1).PlanificarAsync(_ana,
+        // El cubicador recibe el id de la ruta NUEVA (idLineaSolicitud, #133): el mismo con el que se guarda en la -vN.
+        await _planificador.Received(1).PlanificarAsync(_ana, ruta.Id,
             Arg.Is<clsLineaSolicitudCosteo>(l => l.Posiciones.Count == 1 && l.PesoKg == 14_250m), Arg.Any<CancellationToken>());
         ruta.Conexos.Should().ContainSingle(c => c.Nombre == "Cargue", "los conexos de la ruta se copian aunque cambie la carga");
         _cotizacion.PrimeraRuta.Vehiculos.Should().HaveCount(2, "la original no cambia");
@@ -433,7 +434,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         var ruta = _agregada!.Rutas.Should().ContainSingle().Subject;
         ruta.HorasCargue.Should().Be(8m);
         ruta.Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3", "sin cambios de peso ni de mercancías el camión se copia");
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
     }
 
     [Fact]
@@ -445,7 +446,7 @@ public sealed class clsReSolicitudCosteoServiceTests
             PesoKg = 28_400m,
             Posiciones = clsSolicitudCosteoMuestra.CrearCaptura().Posiciones,
         };
-        _planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _planificador.PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio("CUBICADOR_NO_DISPONIBLE", "No se pudo calcular los vehículos."));
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
