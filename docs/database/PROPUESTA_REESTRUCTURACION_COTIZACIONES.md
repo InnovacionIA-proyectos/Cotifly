@@ -184,6 +184,10 @@ totales de costo, el margen y el precio.
 | `metodoCalculo` | NVARCHAR(20) | Método de `MargenesPolitica` vigente al calcular | Nueva en la ruta, antes estaba en la cabecera |
 | `precioFinalLinea` | DECIMAL(18,2) | Precio al cliente de la ruta: `costoFinal` con el margen aplicado | Ya existía como `precioFinal`, se renombra |
 | `estadoCosteo` | NVARCHAR(30) | Estado del costeo de la ruta: resumen de sus camiones (§8) | Ya existía |
+| `idRecomendacion` | UNIQUEIDENTIFIER NULL | Corrida del cubicador de la que salieron los camiones de la ruta, para volver a consultarla | Nueva (`02_alter_cubicador.sql`, HU-023.3) |
+| `resultadoCubicacion` | NVARCHAR(30) NULL | Qué respondió el cubicador: `ASIGNADO` o `SIN_SELECCION_AUTOMATICA` | Nueva (`02`) |
+| `motivoSinSeleccion` | NVARCHAR(40) NULL | Por qué no pudo escoger: `EXTRADIMENSIONADO`, `SIN_CANDIDATOS_DIMENSIONALES`, `SUPERA_K_MAX` o `SIN_CARROCERIA_COMPATIBLE`. Solo con `SIN_SELECCION_AUTOMATICA` | Nueva (`02`) |
+| `condicionada` | BIT NOT NULL DEFAULT 0 | La ruta va a la Mesa de Costeo porque tiene mercancía condicionada. Cuáles mercancías la causan lo dice el catálogo del cubicador (`condicionadaCubicacion`) | Nueva (`02`) |
 | `createdAt` / `updatedAt` | DATETIMEOFFSET | Auditoría | Ya existía |
 
 ### 4.2 Lo que sale de la ruta
@@ -225,6 +229,9 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 | `costoLevanteContenedor` | DECIMAL(18,2) NULL | Levante de este camión. Es una copia del `valorLevanteContenedor` de la ruta | Nueva |
 | `lineaSolicitudNexoId` | NVARCHAR(64) NULL | Id de la línea de Nexo que corresponde a este camión | Nueva en esta tabla, antes estaba en la línea |
 | `estadoCosteo` | NVARCHAR(30) NULL | Estado del costeo de este camión en Nexo | Nueva |
+| `volumenTotalM3` | DECIMAL(12,3) NULL | Volumen que lleva el camión, según el cubicador | Nueva (`02_alter_cubicador.sql`, HU-023.3) |
+| `porcentajeLlenadoVolumen` | DECIMAL(5,2) NULL | Qué tan lleno va por volumen (0 a 100) | Nueva (`02`) |
+| `porcentajeLlenadoPeso` | DECIMAL(5,2) NULL | Qué tan lleno va por peso (0 a 100) | Nueva (`02`) |
 | `createdAt` / `updatedAt` | DATETIMEOFFSET | Auditoría | Nueva |
 
 ### 5.2 Notas
@@ -252,7 +259,7 @@ Lo que el comercial declara que va a mandar en la ruta. Es lo que se le envía a
 | `id` | UNIQUEIDENTIFIER | Identificador de la fila | Ya existía |
 | `lineaSolicitudId` | UNIQUEIDENTIFIER NOT NULL | Ruta a la que pertenece. FK a `CotizacionLineasSolicitud` | Ya existía. Deja de aceptar vacío |
 | `orden` | INT | Orden en que se capturó dentro de la ruta | Ya existía |
-| `idTipoMercancia` | UNIQUEIDENTIFIER | Id del tipo de mercancía en el catálogo del cubicador (`tiposMercancia`). Es lo que se le manda al cubicador | Nueva |
+| `codigoMercancia` | NVARCHAR(64) NULL | Código estable del tipo de mercancía en el catálogo del cubicador (por ejemplo `BEBIDAS`). Es lo que se le manda al cubicador. `NULL` en las filas viejas; el backend lo exige en las nuevas | Nueva (`02_alter_cubicador.sql`, HU-023.3). Reemplaza a `idTipoMercancia` (uuid), que se quitó |
 | `nombreMercancia` | NVARCHAR(200) | Nombre de la mercancía, copiado del catálogo al escogerla en el desplegable | Ya existía como `descripcion`, se renombra |
 | `cantidad` | INT | Unidades | Ya existía |
 | `largoCm` / `anchoCm` / `altoCm` | DECIMAL(10,2) | Medidas de la unidad, en cm | Ya existía |
@@ -270,7 +277,7 @@ El comercial declara las mercancías de la ruta **antes** de saber cuántos cami
 cubicador. El reparto ("el camión 1 lleva 10 cajas de naranja y 30 de aguacate") lo guarda el cubicador en su
 Tabla 8 (`recomendacionVehiculoMercancia`). Cotifly no lo copia: a Nexo le basta el peso total de cada camión.
 
-**Qué se guarda de la mercancía.** `idTipoMercancia` (el que se manda al cubicador) y `nombreMercancia` (copia). No hay un código estable aparte: si el cubicador resiembra su catálogo y hay que re-cubicar una cotización vieja, se busca la mercancía por nombre y, si no hay una coincidencia única, el comercial la vuelve a escoger. El histórico no se afecta porque el nombre, las medidas y el peso ya están copiados.
+**Qué se guarda de la mercancía (actualizado el 2026-10-09, contrato del cubicador).** `codigoMercancia` (el código estable que se manda al cubicador, por ejemplo `BEBIDAS`) y `nombreMercancia` (copia). El código no cambia aunque el cubicador resiembre su catálogo, así que una cotización vieja se puede volver a cubicar con el mismo código. Si el código ya no está en el catálogo, el comercial vuelve a escoger la mercancía. El histórico no se afecta porque el nombre, las medidas y el peso ya están copiados. (Antes se guardaba el uuid `idTipoMercancia`; lo reemplazó `scripts/02_alter_cubicador.sql`.)
 
 ---
 
@@ -332,10 +339,12 @@ recalcula la ruta y la cabecera.
    contenedor, horas, valor del levante, conexos y mercancías (escogidas del catálogo del cubicador, con medidas y
    cantidad).
 2. **Cotifly le pide la recomendación al cubicador**, una vez por ruta: `POST /recomendaciones` con
-   `IdLineaSolicitud` = id de la ruta, `OrigenSistema = COTIFLY` y las mercancías (`idTipoMercancia`, medidas,
+   `IdLineaSolicitud` = id de la ruta, `OrigenSistema = COTIFLY` y las mercancías (`codigoMercancia`, medidas,
    cantidad, peso).
 3. **Cotifly crea un camión por cada vehículo recomendado** (Tabla 7 del cubicador): código del vehículo,
-   carrocería, peso y el id de la recomendación. A cada camión le copia el valor del levante de la ruta.
+   carrocería, peso, volumen, los dos porcentajes de llenado y el id de la recomendación. A cada camión le copia el
+   valor del levante de la ruta. En la ruta guarda el id de la corrida, el resultado, el motivo si no hubo selección y
+   si es condicionada.
 4. **Cotifly le manda la solicitud completa a Nexo, con una línea por camión.** Cada línea lleva:
    - Los datos de su ruta: origen y destino (el nombre del municipio, resuelto desde su id), tipología, clase de
      viaje, condiciones del contenedor, valor de la mercancía, levante.
@@ -486,6 +495,10 @@ erDiagram
         decimal margenAplicado
         decimal precioFinalLinea
         nvarchar estadoCosteo "resumen de sus camiones"
+        uniqueidentifier idRecomendacion "corrida del cubicador"
+        nvarchar resultadoCubicacion "ASIGNADO o SIN_SELECCION_AUTOMATICA"
+        nvarchar motivoSinSeleccion
+        bit condicionada
     }
 
     CotizacionVehiculosLineaSolicitud {
@@ -500,12 +513,15 @@ erDiagram
         decimal costoLevanteContenedor
         nvarchar lineaSolicitudNexoId
         nvarchar estadoCosteo
+        decimal volumenTotalM3
+        decimal porcentajeLlenadoVolumen "0 a 100"
+        decimal porcentajeLlenadoPeso "0 a 100"
     }
 
     CotizacionMercancias {
         uniqueidentifier id PK
         uniqueidentifier lineaSolicitudId FK
-        uniqueidentifier idTipoMercancia "catálogo del cubicador"
+        nvarchar codigoMercancia "código del catálogo del cubicador"
         nvarchar nombreMercancia
         int cantidad
         decimal pesoKg

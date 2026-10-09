@@ -7,18 +7,18 @@
 #     -s  servidor (ej. localhost,1433)              -d  base de datos (ej. dbCotifly)
 #     -u  usuario de SQL Server (sin -u: autenticación de Windows, solo sirve fuera de Linux/Docker)
 #     -p  contraseña (o variable SQLCMDPASSWORD)     -c  crea la base si no existe
-#     -e  solo el esquema (sin seeders)              -r  solo los seeders (el esquema ya existe)
-#     -a  automático: si dbo_cotifly ya tiene tablas, se salta el esquema y solo corre los seeders
+#     -e  solo el esquema y sus ajustes (sin seeders) -r  solo los seeders (el esquema ya existe)
+#     -a  automático: si dbo_cotifly ya tiene tablas, se salta la creación y corre ajustes y seeders
 #         (sirve para correrlo en cada arranque de un contenedor sin que falle la segunda vez)
 #     -y  no pedir confirmación
 #
 # Pasos, deteniéndose en el primer error: (1) crear la base (-c), (2) scripts/01_crear_esquema.sql,
-# (3) seeder/*.sql en orden de nombre. Solo para una instalación desde cero: si dbo_cotifly ya tiene
+# (3) scripts/02_*.sql en adelante (ajustes con ALTER, se pueden repetir), (4) seeder/*.sql en orden de nombre. Solo para una instalación desde cero: si dbo_cotifly ya tiene
 # tablas, el paso 2 se detiene sin tocar nada. No hay servidor ni base por defecto, a propósito.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVIDOR="" BASE="" USUARIO="" CREAR=0 SOLO_ESQUEMA=0 SOLO_SEEDER=0 AUTO=0 SI=0
+SERVIDOR="" BASE="" USUARIO="" CREAR=0 SOLO_ESQUEMA=0 SOLO_SEEDER=0 AUTO=0 SI=0 SALTAR_CREACION=0
 
 while getopts "s:d:u:p:ceray" opt; do
   case $opt in
@@ -68,14 +68,23 @@ fi
 if (( AUTO && ! SOLO_SEEDER && ! SOLO_ESQUEMA )); then
   tablas=$("$SQLCMD" "${COMUNES[@]}" -d "$BASE" -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly';" | tr -d '[:space:]')
   if [[ $tablas =~ ^[0-9]+$ ]] && (( tablas > 0 )); then
-    echo "dbo_cotifly ya tiene $tablas tablas: se salta el esquema y solo se corren los seeders."
-    SOLO_SEEDER=1
+    echo "dbo_cotifly ya tiene $tablas tablas: se salta la creación del esquema y se corren los ajustes y los seeders."
+    SALTAR_CREACION=1
   fi
 fi
 
-if (( ! SOLO_SEEDER )); then
+if (( ! SOLO_SEEDER && ! SALTAR_CREACION )); then
   paso "Crear el esquema dbo_cotifly (scripts/01_crear_esquema.sql)"
   "$SQLCMD" "${COMUNES[@]}" -d "$BASE" -i "$DIR/scripts/01_crear_esquema.sql"
+fi
+
+# Ajustes al esquema (02 en adelante): cada uno revisa si su cambio ya está, así que se pueden repetir.
+if (( ! SOLO_SEEDER )); then
+  for archivo in "$DIR"/scripts/*.sql; do
+    [[ $(basename "$archivo") == 01_crear_esquema.sql ]] && continue
+    paso "Ajustar el esquema: scripts/$(basename "$archivo")"
+    "$SQLCMD" "${COMUNES[@]}" -d "$BASE" -i "$archivo"
+  done
 fi
 
 if (( ! SOLO_ESQUEMA )); then
