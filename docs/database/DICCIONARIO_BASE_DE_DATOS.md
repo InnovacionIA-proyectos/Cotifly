@@ -35,7 +35,7 @@ Motor: **PostgreSQL 16**. Acceso: SQLAlchemy 2.x + Alembic (`shared/models.py` =
 > desactivado (sin `email`/`nombre` en `usuarios_web` no hay cómo identificar a nadie), y
 > con él `mis-cotizaciones`, `enviar` y `seguimiento` de la Consola web. Cotizar por Google
 > Chat no se vio afectado. Detalle completo de la decisión:
-> `docs/HU_Backlog_Cotifly_ClientePro.md` (`[HU-002.2]`).
+> `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (`[HU-002.2]`).
 
 ## 2. Cómo se llena (flujo de una cotización)
 

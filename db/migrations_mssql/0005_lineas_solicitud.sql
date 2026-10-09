@@ -5,7 +5,7 @@
    backend-dotnet/specs/decisiones/ADR-008 (EF Core Database First: el esquema
    SOLO cambia con scripts `db/migrations_mssql/000N_*.sql`; no hay migraciones
    EF). Diseño: backend-dotnet/specs/decisiones/ADR-017 (amplía ADR-015). Formato
-   del Excel: docs/HU-011-formato-excel-licitacion.md.
+   del Excel: docs/conexion_nexo/HU-011-formato-excel-licitacion.md.
 
    *** PENDIENTE DE APROBACIÓN — igual que el 0002, el 0003 y el 0004, no ejecutar
        en tbsdatacenter sin el visto bueno de scalderon-bs y del DBA ***

@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # HU-002.4 (2026-09-22): driver ODBC 17 (no 18 -- exige TLS por defecto, rompe
-# contra instancias sin certificado propio, ver docs/ESQUEMA_OBJETIVO_SQLSERVER.md
+# contra instancias sin certificado propio, ver docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md
 # §7) + unixodbc-dev, requeridos por pyodbc para hablar con SQL Server. python:3.12-
 # slim es Debian 12 (bookworm) al momento de escribir esto -- si la base cambia de
 # versión de Debian, ajustar la ruta de packages.microsoft.com/config/debian/.

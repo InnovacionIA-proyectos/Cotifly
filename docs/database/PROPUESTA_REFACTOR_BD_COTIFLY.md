@@ -14,7 +14,7 @@ incluyendo las 3 FK candidatas de §2.9 con su evidencia SQL. Los datos provisio
 `margenes_politica`/`mapeo_trqtype` no se bloquean con una validación previa de Gerencia
 Comercial: quedan como están y se ajustan directamente desde el panel admin (§2.7) una vez
 entregada la app. Registro completo de la decisión en
-`docs/HU_Backlog_Cotifly_ClientePro.md` (checklist de `[HU-002.1]`). §2.8 y §3 siguen
+`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (checklist de `[HU-002.1]`). §2.8 y §3 siguen
 marcadas como fuera de este alcance, pendientes de convertirse en HU(s) separadas.
 
 ## 0. Bloqueadores
@@ -112,7 +112,7 @@ es bloqueante, pero se deja anotado para no perder el matiz.
 | Acción | Detalle |
 |---|---|
 | Eliminar | `origen`, `destino` — ya estan incluidas en las tablas de Nexo, por línea de solicitud |
-| Eliminar | `payload` (jsonb) — sin consumidor real (auditoría previa, `docs/DICCIONARIO_BASE_DE_DATOS.md`); el PDF generado ya es el artefacto definitivo (`pdf_path`). Se elimina también para no arrastrar la migración JSONB→texto de SQL Server (§3.2) sobre un dato que nadie usa |
+| Eliminar | `payload` (jsonb) — sin consumidor real (auditoría previa, `docs/database/DICCIONARIO_BASE_DE_DATOS.md`); el PDF generado ya es el artefacto definitivo (`pdf_path`). Se elimina también para no arrastrar la migración JSONB→texto de SQL Server (§3.2) sobre un dato que nadie usa |
 | Mantener | `space_id`/`thread_id` — aunque hoy nadie los lee desde esta tabla puntual, se conservan como trazabilidad barata ("de qué conversación salió esta cotización"), a diferencia de `payload` sí tienen valor de auditoría futuro y costo cero de mantener |
 | Agregar | `costeo_id` — referencia a `cotizaciones.Id` en la BD de Nexo |
 | Modificar | `folio` — complementar con BP del cliente u otro identificador más representativo (formato exacto pendiente de definir) |
@@ -323,7 +323,7 @@ Además:
 > es el **corto**, `MargenesPolitica` (sin el prefijo `tbl`, retirado también en
 > HU-002.3) — no `lineasNegocioMargenesPolitica`/`LineasNegocioMargenesPolitica` como
 > dice esta sección y el resto de este documento. Ya está así en
-> `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` y en `docs/ESQUEMA_OBJETIVO_SQLSERVER.md`.
+> `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` y en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`.
 > El resto del contenido de §2.7 (columnas, decisiones de diseño) sigue vigente, solo
 > cambia el nombre de la tabla.
 
@@ -580,7 +580,7 @@ identificadores).
     `shared/sheets_sync.py` la usa para el tablero de Looker.
   - **`v_ajustes_margen_por_comercial`** → **también se mantiene y se reescribe**
     (decisión revisada 2026-09-22). Aunque no la consulta código alguno hoy
-    (confirmado en la auditoría de `docs/DICCIONARIO_BASE_DE_DATOS.md`), es una
+    (confirmado en la auditoría de `docs/database/DICCIONARIO_BASE_DE_DATOS.md`), es una
     métrica valiosa para Gerencia (cuánto se desvía cada comercial de la política
     de margen) y el ajuste que necesita es **barato**: solo agregar 2 `JOIN`
     locales — a `usuariosWeb` (mostrar nombre en vez del `id`) y a

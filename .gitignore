@@ -12,10 +12,11 @@ __pycache__/
 .ruff_cache/
 
 # Tarifarios de prueba ficticios (armados en sesión local para probar buscar_tarifa
-# sin Drive real, ver docs/DICCIONARIO_BASE_DE_DATOS.md). No son datos reales de
+# sin Drive real, ver docs/database/DICCIONARIO_BASE_DE_DATOS.md). No son datos reales de
 # Botero Soto: no se suben al repo. tarifario_nacional_2026-07.csv sí es fixture
 # real del proyecto y sigue trackeado.
 tests/fixtures/tarifas/tarifario_distribucion_2026-07.csv
 tests/fixtures/tarifas/tarifario_exportacion_2026-07.csv
 tests/fixtures/tarifas/tarifario_importacion_2026-07.csv
 tests/fixtures/tarifas/tarifario_internacional_2026-07.csv
+docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md

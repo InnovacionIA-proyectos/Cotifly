@@ -6,7 +6,7 @@
 # (LLM_API_KEY, GCHAT_PROJECT_NUMBER, MCP_AUTH_TOKEN) se leen del archivo .env.
 #
 # HU-002.4 (2026-09-22): swap Postgres -> SQL Server 2019 (§3.4 de la propuesta,
-# docs/PROPUESTA_REFACTOR_BD_COTIFLY.md). Es un contenedor LOCAL propio (usuario
+# docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md). Es un contenedor LOCAL propio (usuario
 # `sa`, credenciales locales) -- no tiene relación con la instancia corporativa
 # `tbsdatacenter`/`dbTarifario_Nexo_Pruebas` usada para el esquema real (HU-002.3).
 # Alcance de este cambio: solo config (compose/Dockerfiles/pyproject.toml) -- NO se
@@ -15,10 +15,13 @@
 # `make_interval`), así que mcp/orquestador NO van a levantar contra este servicio
 # tal como están hoy -- decisión aceptada porque HU-003 reemplaza este backend
 # Python por completo (reescribir esa capa acá sería trabajo desechable).
-# Falta además un paso manual de una sola vez que este compose no resuelve:
-# `CREATE DATABASE bd_cotifly;` (a diferencia de Postgres, la imagen de SQL
-# Server no crea la base automáticamente vía variable de entorno). Nombre nuevo
-# a propósito: "botcotizador" es el nombre viejo del proyecto (Bot Cotizador).
+# La base `bd_cotifly` (nombre nuevo a propósito: "botcotizador" es el nombre viejo
+# del proyecto) la crea e inicializa el servicio `db-init` de más abajo, que corre
+# db/ejecutar-bd.sh una vez que SQL Server está sano: crea la base, el esquema
+# dbo_cotifly y los seeders. Es seguro correrlo en cada `docker compose up`: si el
+# esquema ya existe, solo repasa los seeders (idempotentes).
+# OJO: el esquema es el de .NET (db/scripts/01_crear_esquema.sql), NO el de los
+# modelos de Python (shared/models.py), así que mcp/orquestador siguen sin poder usarlo.
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2019-latest
@@ -39,6 +42,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # Corre una vez y termina (restart: "no"): crea la base bd_cotifly, el esquema y los seeders.
+  # La clave de `sa` la lee sqlcmd de SQLCMDPASSWORD. La carpeta db/ va montada de solo lectura.
+  # Opciones: -c crea la base si falta, -a salta el esquema si ya existe (así no falla al reiniciar), -y no pregunta.
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD:-Bot_Cotizador_2019!}
+    volumes:
+      - ./db:/db:ro
+    entrypoint: ["/bin/bash", "/db/ejecutar-bd.sh", "-s", "sqlserver", "-d", "bd_cotifly", "-u", "sa", "-c", "-a", "-y"]
+    restart: "no"
 
   minio:
     image: quay.io/minio/minio:latest
