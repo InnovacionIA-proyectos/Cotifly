@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
@@ -64,7 +65,7 @@ public sealed class clsCapturaRutasService(
     private bool _catalogoLeido;
 
     /// <summary>El catálogo de tipos de mercancía leído en esta captura (<c>null</c> si no estuvo disponible).</summary>
-    private IReadOnlyDictionary<Guid, string>? _catalogo;
+    private IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>? _catalogo;
 
     /// <summary>Campo del id de municipio → campo del nombre: si el nombre ya tiene un error, el id no se reporta otra vez.</summary>
     private static readonly IReadOnlyDictionary<string, string> _nombreDelId = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -236,7 +237,7 @@ public sealed class clsCapturaRutasService(
     /// Catálogo de tipos de mercancía del cubicador por id, o <c>null</c> si no hay cubicador configurado, ninguna mercancía trae tipo o
     /// el catálogo no respondió (queda un warning: la captura conserva lo actual).
     /// </summary>
-    private async Task<IReadOnlyDictionary<Guid, string>?> TiposMercanciaAsync(
+    private async Task<IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>?> TiposMercanciaAsync(
         IEnumerable<clsLineaSolicitudCosteo?> lineas, CancellationToken cancellationToken)
     {
         if (cubicador is not { EstaConfigurado: true }
@@ -261,10 +262,14 @@ public sealed class clsCapturaRutasService(
             return null;
         }
 
-        var porId = new Dictionary<Guid, string>();
+        // HU-023.1 (#156): el catálogo ya es por código; el uuid (si el cubicador lo publica) solo traduce el id_tipo_mercancia anterior.
+        var porId = new Dictionary<Guid, clsTipoMercanciaCubicador>();
         foreach (var tipo in catalogo.Valor)
         {
-            porId.TryAdd(tipo.Id, tipo.Nombre);
+            if (tipo.Id is { } id)
+            {
+                porId.TryAdd(id, tipo);
+            }
         }
 
         _catalogo = porId;
@@ -276,7 +281,7 @@ public sealed class clsCapturaRutasService(
     /// municipio y el vehículo; un nombre distinto del cliente se ignora y queda en el log). Sin catálogo o sin el id, la mercancía queda
     /// como llegó.
     /// </summary>
-    private clsLineaSolicitudCosteo ConNombresDelCatalogo(clsLineaSolicitudCosteo linea, IReadOnlyDictionary<Guid, string>? tipos)
+    private clsLineaSolicitudCosteo ConNombresDelCatalogo(clsLineaSolicitudCosteo linea, IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>? tipos)
     {
         if (tipos is null || linea.Posiciones.Count == 0)
         {
@@ -286,19 +291,20 @@ public sealed class clsCapturaRutasService(
         var distintos = 0;
         var posiciones = linea.Posiciones.Select(clsPosicionCarga (p) =>
         {
-            if (p is null || p.IdTipoMercancia is not { } id || !tipos.TryGetValue(id, out var nombre) || string.IsNullOrWhiteSpace(nombre))
+            if (p is null || p.IdTipoMercancia is not { } id || !tipos.TryGetValue(id, out var tipo) || string.IsNullOrWhiteSpace(tipo.Nombre))
             {
                 return p!;
             }
 
-            var copia = nombre.Trim();
+            var copia = tipo.Nombre.Trim();
             copia = copia.Length > clsPosicionCarga.LargoDescripcion ? copia[..clsPosicionCarga.LargoDescripcion] : copia;
             if (!string.IsNullOrWhiteSpace(p.Descripcion) && !string.Equals(p.Descripcion.Trim(), copia, StringComparison.Ordinal))
             {
                 distintos++;
             }
 
-            return p with { Descripcion = copia };
+            // HU-023.1: el código del catálogo es lo que viaja al cubicador (POST /recomendaciones).
+            return p with { Descripcion = copia, CodigoMercancia = tipo.Codigo };
         }).ToList();
         if (distintos > 0)
         {

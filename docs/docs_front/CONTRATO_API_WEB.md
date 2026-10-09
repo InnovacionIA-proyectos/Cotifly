@@ -296,7 +296,10 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 409 | `USAR_RESULTADO_NEXO` | `/seguimiento` | `detalle` = `{metodo, endpoint, requiere_if_match}`. |
 | 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas. |
 | 503 | `MUNICIPIOS_NO_DISPONIBLE` | Captura y licitación | El catálogo de municipios no respondió. Nada se guarda. |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`; captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
+| 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
+| 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación (solo con `Cubicador:RespaldoSiFalla = false`) | HU-023.1: el cubicador rechazó la llave de Cotifly. No es la sesión del comercial: no cerrar sesión. |
+| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. |
 | 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. |
 
 ### 8.3 Crear la solicitud: `POST /web/solicitudes-costeo`
@@ -405,15 +408,23 @@ Error 400 con todos los errores juntos (nada queda guardado):
 }
 ```
 
-### 8.4 Catálogo de mercancías: `GET /web/tipos-mercancia`
+### 8.4 Catálogos del cubicador: `GET /web/tipos-mercancia`, `/web/tipos-carroceria` y `/web/tipos-vehiculo`
+
+HU-023.1 (#156). El desplegable de mercancías usa `codigo` (lo que viaja al cubicador) y solo ofrece las `activo = true`; puede avisar
+de las `condicionada_cubicacion = true` con su `comentario_condicion`. `id` está obsoleto (solo traduce el `id_tipo_mercancia`
+anterior).
 
 <!-- respuesta: GET /web/tipos-mercancia 200 -->
 ```json
 [
-  { "id": "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50", "nombre": "Estiba de café" },
-  { "id": "9a7b3c2d-1e0f-4a8b-8c5d-2e3f4a5b6c7d", "nombre": "Tambor de químicos" }
+  { "codigo": "CAFE_EN_ESTIBAS", "nombre": "Estiba de café", "categoria": "GENERAL", "cubicable": true, "condicionada_cubicacion": false, "comentario_condicion": null, "activo": true, "id": "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50" },
+  { "codigo": "QUIMICOS", "nombre": "Tambor de químicos", "categoria": "PELIGROSA", "cubicable": true, "condicionada_cubicacion": true, "comentario_condicion": "Requiere aprobación de AdminTarifas", "activo": true, "id": null }
 ]
 ```
+
+`GET /web/tipos-carroceria` devuelve `[{codigo, nombre, activo}]` y `GET /web/tipos-vehiculo` `[{codigo, nombre, carrocerias, activo}]`:
+el nombre del vehículo que se muestra en pantalla y en el PDF sale de este último por el código del camión (Cotifly no lo guarda).
+Mientras el cubicador no publique `GET /tipos-vehiculo` (petición P1), responde 503 `CUBICADOR_NO_DISPONIBLE`: mostrar el código.
 
 ### 8.5 Licitación: `POST /web/licitaciones`
 
@@ -690,6 +701,6 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
 |---|---|
 | Formato plano de `POST /web/solicitudes-costeo` (una ruta en la raíz, `deprecated`) | Cuando salga HU-021-FE |
 | `conexos_descartados` en la respuesta de re-solicitar (siempre `[]`, `deprecated`) | Cuando salga HU-021-FE |
-| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`) | Cuando exista el cubicador (C1) |
+| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, aceptan los códigos del cubicador, HU-023.1) | Cuando exista el cubicador (C1) |
 | `incluidos` en `PUT .../costeo/servicios-conexos` (compatibilidad de HU-005.7) | Sin fecha |
 | `valor_estimado` y `referencia` en la petición: ya no están en el contrato, pero si llegan se ignoran sin error | Sin fecha |

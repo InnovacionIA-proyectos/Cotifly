@@ -1,5 +1,6 @@
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
@@ -48,32 +49,45 @@ public sealed record clsValidacionCatalogoLineas(IReadOnlyList<IReadOnlyList<cls
 /// <summary>Implementación de <see cref="IClsValidadorCatalogosCaptura"/>.</summary>
 /// <remarks>
 /// <list type="bullet">
-/// <item><b>En código</b> (no van a Nexo): <c>carroceria</c> (<see cref="clsCatalogosCaptura.Carrocerias"/>), <c>tipologia</c>
-/// (enum de 7 valores) y <c>clase_contenedor</c> (5 códigos más la lista provisional de extradimensionado, G15, más las
-/// descripciones de <c>GET /api/catalogos/clases-contenedor</c> si la copia está en memoria).</item>
-/// <item><b>Catálogo maestro de Nexo</b> (con caché): <c>tipo_vehiculo</c> (<c>codigo</c> de <c>tipos-vehiculo</c>) y
-/// <c>clase_viaje</c> (<c>descripcion</c> de <c>clases-viaje</c>). Solo se consulta si alguno de los dos viene.</item>
+/// <item><b>Catálogos del cubicador</b> (HU-023.1, #156, con caché): <c>tipo_vehiculo</c> (<c>GET /tipos-vehiculo</c>, P1) y
+/// <c>carroceria</c> (<c>GET /tipos-carroceria</c>) aceptan los códigos activos del cubicador (<c>2S2</c>, <c>CAMA_BAJA</c>...). Si el
+/// código no está ahí (o el cubicador no está configurado o no responde), se valida como el vehículo digitado del respaldo: contra el
+/// catálogo maestro de Nexo (vehículo) o la lista fija <see cref="clsCatalogosCaptura.Carrocerias"/> (carrocería).</item>
+/// <item><b>En código</b>: <c>tipologia</c> (enum de 7 valores) y la lista provisional de extradimensionado de <c>clase_contenedor</c>
+/// (G15, hasta que Nexo la formalice).</item>
+/// <item><b>Catálogo maestro de Nexo</b> (con caché): <c>tipo_vehiculo</c> que no es del cubicador (<c>codigo</c> de
+/// <c>tipos-vehiculo</c>), <c>clase_viaje</c> (<c>descripcion</c> de <c>clases-viaje</c>) y <c>clase_contenedor</c> (<c>descripcion</c>
+/// de <c>clases-contenedor</c>; HU-023.1 quitó la lista fija de 5 códigos, lo que le quedaba a HU-015.1). Solo se consulta si hace
+/// falta.</item>
 /// <item>Comparación exacta (ordinal): <c>3s3</c> no es <c>3S3</c>. Un valor con espacios al borde se compara recortado, igual que
 /// lo guarda la cotización.</item>
 /// </list>
 /// </remarks>
-public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider maestros, ILogger<clsValidadorCatalogosCaptura> logger)
+public sealed class clsValidadorCatalogosCaptura(
+    IClsCatalogosMaestrosProvider maestros, ILogger<clsValidadorCatalogosCaptura> logger, IClsCubicador? cubicador = null)
     : IClsValidadorCatalogosCaptura
 {
+    /// <summary>Códigos activos de vehículo del cubicador leídos en esta petición (<c>null</c> dentro = no disponibles).</summary>
+    private (IReadOnlySet<string>? Codigos, bool Leido) _vehiculosCubicador;
+
+    /// <summary>Códigos activos de carrocería del cubicador leídos en esta petición.</summary>
+    private (IReadOnlySet<string>? Codigos, bool Leido) _carroceriasCubicador;
+
     public const string MensajeSinCatalogo =
-        "No se pudo validar el tipo de vehículo o la clase de viaje contra los catálogos de Nexo: intenta de nuevo más tarde.";
+        "No se pudo validar el tipo de vehículo, la clase de viaje o la clase de contenedor contra los catálogos de Nexo: intenta de nuevo más tarde.";
 
     public async Task<clsErrorDominio?> ValidarAsync(Guid usuarioId, clsLineaSolicitudCosteo linea, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(linea);
 
-        // Primero lo que se valida en código: si ya falla, no hace falta consultar el catálogo maestro de Nexo.
-        if (ErroresEnCodigo(linea) is [var local, ..])
+        // Primero lo que se valida en código o con los catálogos del cubicador: si ya falla, no hace falta consultar Nexo.
+        var cubicadorCodigos = await CodigosCubicadorAsync([linea], cancellationToken);
+        if (ErroresEnCodigo(linea, cubicadorCodigos) is [var local, ..])
         {
             return AErrorDominio(local);
         }
 
-        if (!UsaCatalogoMaestro(linea))
+        if (!UsaCatalogoMaestro(linea, cubicadorCodigos))
         {
             return null;
         }
@@ -84,7 +98,12 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             return catalogos.Error;
         }
 
-        return ErroresMaestros(linea, catalogos.Valor) is [var maestro, ..] ? AErrorDominio(maestro) : null;
+        if (SinClasesContenedor(linea, catalogos.Valor))
+        {
+            return ClasesContenedorNoDisponibles();
+        }
+
+        return ErroresMaestros(linea, catalogos.Valor, cubicadorCodigos) is [var maestro, ..] ? AErrorDominio(maestro) : null;
     }
 
     public async Task<clsValidacionCatalogoLineas> ValidarLineasAsync(
@@ -93,7 +112,8 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
         ArgumentNullException.ThrowIfNull(lineas);
         clsCatalogosMaestros? catalogos = null;
         clsErrorDominio? noDisponible = null;
-        if (lineas.Any(l => l is not null && UsaCatalogoMaestro(l)))
+        var cubicadorCodigos = await CodigosCubicadorAsync(lineas, cancellationToken);
+        if (lineas.Any(l => l is not null && UsaCatalogoMaestro(l, cubicadorCodigos)))
         {
             var obtenidos = await ObtenerMaestrosAsync(usuarioId, cancellationToken);
             if (obtenidos.EsFallo)
@@ -103,17 +123,21 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             else
             {
                 catalogos = obtenidos.Valor;
+                if (lineas.Any(l => l is not null && SinClasesContenedor(l, obtenidos.Valor)))
+                {
+                    noDisponible = ClasesContenedorNoDisponibles();
+                }
             }
         }
 
         IReadOnlyList<IReadOnlyList<clsErrorCampo>> errores = [.. lineas.Select(l => l is null
             ? (IReadOnlyList<clsErrorCampo>)[]
-            : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos)])];
+            : [.. ErroresEnCodigo(l, cubicadorCodigos), .. catalogos is null ? [] : ErroresMaestros(l, catalogos, cubicadorCodigos)])];
         return new clsValidacionCatalogoLineas(errores, noDisponible);
     }
 
-    /// <summary>Tipología, carrocería y clase de contenedor: catálogos en código (más las descripciones de la copia en memoria).</summary>
-    private List<clsErrorCampo> ErroresEnCodigo(clsLineaSolicitudCosteo linea)
+    /// <summary>Tipología (enum) y carrocería (catálogo del cubicador o, para el vehículo digitado del respaldo, la lista fija).</summary>
+    private static List<clsErrorCampo> ErroresEnCodigo(clsLineaSolicitudCosteo linea, clsCodigosCubicador cubicadorCodigos)
     {
         var errores = new List<clsErrorCampo>();
         if (Recortar(linea.Tipologia) is { } tipologia && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Tipologias, tipologia))
@@ -121,25 +145,26 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             errores.Add(NoEsCodigo("tipologia", tipologia, string.Join(", ", clsCatalogosCaptura.Tipologias)));
         }
 
-        if (Recortar(linea.Carroceria) is { } carroceria && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Carrocerias, carroceria))
+        if (Recortar(linea.Carroceria) is { } carroceria && cubicadorCodigos.Carrocerias?.Contains(carroceria) != true
+            && !clsCatalogosCaptura.Contiene(clsCatalogosCaptura.Carrocerias, carroceria))
         {
-            errores.Add(NoEsCodigo("carroceria", carroceria, string.Join(", ", clsCatalogosCaptura.Carrocerias)));
-        }
-
-        if (Recortar(linea.ClaseContenedor) is { } claseContenedor && !EsClaseContenedor(claseContenedor))
-        {
-            errores.Add(NoEsCodigo("clase_contenedor", claseContenedor,
-                string.Join(", ", clsCatalogosCaptura.ClasesContenedor.Concat(clsCatalogosCaptura.ClasesContenedorProvisionales))));
+            errores.Add(NoEsCodigo("carroceria", carroceria, cubicadorCodigos.Carrocerias is { Count: > 0 } delCubicador
+                ? string.Join(", ", delCubicador.Order(StringComparer.Ordinal))
+                : string.Join(", ", clsCatalogosCaptura.Carrocerias)));
         }
 
         return errores;
     }
 
-    /// <summary>Tipo de vehículo (<c>codigo</c>) y clase de viaje (<c>descripcion</c>) contra el catálogo maestro de Nexo.</summary>
-    private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos)
+    /// <summary>
+    /// Tipo de vehículo que no es del cubicador (<c>codigo</c>), clase de viaje (<c>descripcion</c>) y clase de contenedor
+    /// (<c>descripcion</c> de <c>clases-contenedor</c>, o la lista provisional G15) contra el catálogo maestro de Nexo.
+    /// </summary>
+    private static List<clsErrorCampo> ErroresMaestros(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos, clsCodigosCubicador cubicadorCodigos)
     {
         var errores = new List<clsErrorCampo>();
-        if (Recortar(linea.TipoVehiculo) is { } tipoVehiculo && !EnCatalogo(catalogos.TiposVehiculo, tipoVehiculo))
+        if (Recortar(linea.TipoVehiculo) is { } tipoVehiculo && cubicadorCodigos.Vehiculos?.Contains(tipoVehiculo) != true
+            && !EnCatalogo(catalogos.TiposVehiculo, tipoVehiculo))
         {
             errores.Add(NoEsCodigo("tipo_vehiculo", tipoVehiculo, null));
         }
@@ -149,11 +174,90 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             errores.Add(NoEsCodigo("clase_viaje", claseViaje, null));
         }
 
+        if (Recortar(linea.ClaseContenedor) is { } claseContenedor && !EsProvisional(claseContenedor) && catalogos.ClasesContenedor.Count > 0
+            && !EnCatalogo(catalogos.ClasesContenedor, claseContenedor))
+        {
+            errores.Add(NoEsCodigo("clase_contenedor", claseContenedor,
+                string.Join(", ", catalogos.ClasesContenedor.Select(c => c.Valor).Concat(clsCatalogosCaptura.ClasesContenedorProvisionales))));
+        }
+
         return errores;
     }
 
-    private static bool UsaCatalogoMaestro(clsLineaSolicitudCosteo linea) =>
-        Recortar(linea.TipoVehiculo) is not null || Recortar(linea.ClaseViaje) is not null;
+    private static bool UsaCatalogoMaestro(clsLineaSolicitudCosteo linea, clsCodigosCubicador cubicadorCodigos) =>
+        (Recortar(linea.TipoVehiculo) is { } tipo && cubicadorCodigos.Vehiculos?.Contains(tipo) != true)
+        || Recortar(linea.ClaseViaje) is not null
+        || (Recortar(linea.ClaseContenedor) is { } clase && !EsProvisional(clase));
+
+    /// <summary>
+    /// ¿La línea trae una clase de contenedor que hay que validar con Nexo y la copia del catálogo maestro llegó sin
+    /// <c>clases-contenedor</c>? (Es un catálogo opcional de Nexo: si falló, llega vacío.) Sin él no se valida: la captura no sigue
+    /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>), porque ya no hay lista fija de respaldo y nunca se manda texto libre a Nexo.
+    /// </summary>
+    private static bool SinClasesContenedor(clsLineaSolicitudCosteo linea, clsCatalogosMaestros catalogos) =>
+        catalogos.ClasesContenedor.Count == 0 && Recortar(linea.ClaseContenedor) is { } clase && !EsProvisional(clase);
+
+    private clsErrorDominio ClasesContenedorNoDisponibles()
+    {
+        logger.LogWarning("El catálogo de clases de contenedor de Nexo llegó vacío: la clase de contenedor no se puede validar y se rechaza.");
+        return new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, MensajeSinCatalogo);
+    }
+
+    private static bool EsProvisional(string claseContenedor) =>
+        clsCatalogosCaptura.Contiene(clsCatalogosCaptura.ClasesContenedorProvisionales, claseContenedor);
+
+    /// <summary>
+    /// Los códigos activos de vehículo y de carrocería del cubicador (solo si alguna línea trae <c>tipo_vehiculo</c> o <c>carroceria</c>
+    /// y el cubicador está configurado). Un catálogo que no responde queda en <c>null</c> (se valida con el respaldo) con un aviso en el
+    /// log. Se lee una vez por petición.
+    /// </summary>
+    private async Task<clsCodigosCubicador> CodigosCubicadorAsync(IEnumerable<clsLineaSolicitudCosteo?> lineas, CancellationToken cancellationToken)
+    {
+        var lista = lineas.OfType<clsLineaSolicitudCosteo>().ToList();
+        var pideVehiculo = lista.Any(l => Recortar(l.TipoVehiculo) is not null);
+        var pideCarroceria = lista.Any(l => Recortar(l.Carroceria) is not null);
+        if (cubicador is not { EstaConfigurado: true } || (!pideVehiculo && !pideCarroceria))
+        {
+            return new clsCodigosCubicador(null, null);
+        }
+
+        if (pideVehiculo && !_vehiculosCubicador.Leido)
+        {
+            HashSet<string>? vehiculos = null;
+            var catalogo = await cubicador.ListarTiposVehiculoAsync(cancellationToken);
+            if (catalogo.EsFallo)
+            {
+                logger.LogInformation("El catálogo de vehículos del cubicador no está disponible ({Codigo}): tipo_vehiculo se valida contra Nexo.", catalogo.Error.Codigo);
+            }
+            else
+            {
+                vehiculos = catalogo.Valor.Where(v => v.Activo).Select(v => v.Codigo).ToHashSet(StringComparer.Ordinal);
+            }
+
+            _vehiculosCubicador = (vehiculos, true);
+        }
+
+        if (pideCarroceria && !_carroceriasCubicador.Leido)
+        {
+            HashSet<string>? carrocerias = null;
+            var catalogo = await cubicador.ListarTiposCarroceriaAsync(cancellationToken);
+            if (catalogo.EsFallo)
+            {
+                logger.LogInformation("El catálogo de carrocerías del cubicador no está disponible ({Codigo}): carroceria se valida con la lista fija.", catalogo.Error.Codigo);
+            }
+            else
+            {
+                carrocerias = catalogo.Valor.Where(c => c.Activo).Select(c => c.Codigo).ToHashSet(StringComparer.Ordinal);
+            }
+
+            _carroceriasCubicador = (carrocerias, true);
+        }
+
+        return new clsCodigosCubicador(_vehiculosCubicador.Codigos, _carroceriasCubicador.Codigos);
+    }
+
+    /// <summary>Códigos activos del cubicador (<c>null</c> = catálogo no disponible o no consultado).</summary>
+    private sealed record clsCodigosCubicador(IReadOnlySet<string>? Vehiculos, IReadOnlySet<string>? Carrocerias);
 
     private async Task<clsResultado<clsCatalogosMaestros>> ObtenerMaestrosAsync(Guid usuarioId, CancellationToken cancellationToken)
     {
@@ -188,11 +292,6 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
             mapeo, politica!.LineaNegocio);
         return false;
     }
-
-    private bool EsClaseContenedor(string valor) =>
-        clsCatalogosCaptura.Contiene(clsCatalogosCaptura.ClasesContenedor, valor)
-        || clsCatalogosCaptura.Contiene(clsCatalogosCaptura.ClasesContenedorProvisionales, valor)
-        || (maestros.UltimaCopia is { } copia && EnCatalogo(copia.ClasesContenedor, valor));
 
     private static bool EnCatalogo(IReadOnlyList<clsOpcionCatalogo> catalogo, string valor) =>
         catalogo.Any(o => string.Equals(o.Valor, valor, StringComparison.Ordinal));

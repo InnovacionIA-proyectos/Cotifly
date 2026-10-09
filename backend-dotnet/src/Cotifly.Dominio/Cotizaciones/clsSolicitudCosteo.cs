@@ -223,12 +223,17 @@ public sealed record clsSolicitudCosteo
 
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
 /// <remarks>
-/// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c> e <paramref name="IdTipoMercancia"/> es el tipo del catálogo del
-/// cubicador (HU-021: obligatorio cuando la captura lo pida, #132).
+/// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c>. <paramref name="CodigoMercancia"/> es el código estable del
+/// catálogo del cubicador (HU-023: lo que viaja en <c>POST /recomendaciones</c>). <paramref name="IdTipoMercancia"/> es el uuid del
+/// catálogo que mandaba el contrato anterior (HU-021.5); durante la transición se traduce al código con el catálogo.
 /// </remarks>
 public sealed record clsPosicionCarga(
-    string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null)
+    string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null,
+    string? CodigoMercancia = null)
 {
+    /// <summary>Largo máximo de <see cref="CodigoMercancia"/> (<c>CotizacionMercancias.codigoMercancia NVARCHAR(64)</c>, script 02).</summary>
+    public const int LargoCodigoMercancia = 64;
+
     public const int LargoDescripcion = 200;
     public const int CantidadMaxima = 100_000;
     public const decimal MedidaMinima = 0.1m;
@@ -240,6 +245,7 @@ public sealed record clsPosicionCarga(
         var codigo = clsSolicitudCosteo.CodigoError;
         return clsValidacion.Primero(
             clsValidacion.LargoMaximo(codigo, $"posiciones[{numero}].descripcion", Descripcion, LargoDescripcion),
+            clsValidacion.LargoMaximo(codigo, $"posiciones[{numero}].codigo_mercancia", CodigoMercancia, LargoCodigoMercancia),
             Cantidad is < 1 or > CantidadMaxima
                 ? new clsErrorDominio(codigo, $"La cantidad de la posición {numero} debe estar entre 1 y {CantidadMaxima}.")
                 : null,

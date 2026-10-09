@@ -57,4 +57,14 @@ public static class clsSolicitudCosteoMuestra
 
     /// <summary>La primera ruta de <see cref="CrearCaptura"/> como línea de la captura, con la ciudad de devolución resuelta.</summary>
     public static clsLineaSolicitudCosteo RutaCaptura() => CrearCaptura().ALinea() with { CiudadDevolucionMunicipioId = 76109 };
+
+    /// <summary>Código (HU-023) del tipo de mercancía <see cref="TipoMercancia"/> en el catálogo del cubicador.</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
+
+    /// <summary><see cref="RutaCaptura"/> con el <c>codigoMercancia</c> de cada mercancía (HU-023.1: lo que viaja al cubicador).</summary>
+    public static clsLineaSolicitudCosteo RutaConCodigos()
+    {
+        var ruta = RutaCaptura();
+        return ruta with { Posiciones = [.. ruta.Posiciones.Select(p => p with { CodigoMercancia = CodigoMercancia })] };
+    }
 }

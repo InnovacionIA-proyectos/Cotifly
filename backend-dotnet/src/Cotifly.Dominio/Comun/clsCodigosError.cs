@@ -323,4 +323,30 @@ public static class clsCodigosError
     /// backend .NET.
     /// </summary>
     public const string CubicadorNoDisponible = "CUBICADOR_NO_DISPONIBLE";
+
+    /// <summary>
+    /// HU-023.1 (#156): el cubicador respondió 200 pero la respuesta no cumple el contrato (por ejemplo <c>ASIGNADO</c> con un vehículo
+    /// sin peso, volumen, porcentajes o códigos; un resultado o un motivo desconocido; un porcentaje fuera de 0 a 100). Se rechaza para no
+    /// guardar datos incompletos (el fallo silencioso): no se guarda nada y nunca va al respaldo. 503.
+    /// </summary>
+    public const string CubicadorRespuestaInvalida = "CUBICADOR_RESPUESTA_INVALIDA";
+
+    /// <summary>
+    /// HU-023.1 (#156): el cubicador rechazó la llave de Cotifly (401 <c>NO_AUTORIZADO</c> del contrato). Es un problema de configuración
+    /// de Cotifly (<c>Cubicador:ApiKey</c>), no de la sesión del comercial: 503, nunca 401. Cuenta como caída (va al respaldo con
+    /// <c>Cubicador:RespaldoSiFalla</c>).
+    /// </summary>
+    public const string CubicadorNoAutorizado = "CUBICADOR_NO_AUTORIZADO";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, la ruta no trae mercancías (<c>MERCANCIAS_REQUERIDAS</c>). 400.</summary>
+    public const string MercanciasRequeridas = "MERCANCIAS_REQUERIDAS";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, un <c>codigoMercancia</c> no está en su catálogo (<c>MERCANCIA_DESCONOCIDA</c>). 400.</summary>
+    public const string MercanciaDesconocida = "MERCANCIA_DESCONOCIDA";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, la mercancía no se puede cubicar (<c>MERCANCIA_NO_CUBICABLE</c>). 400.</summary>
+    public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
+
+    /// <summary>HU-023.1 (#156): 400 del cubicador, medidas o peso inválidos (<c>DIMENSIONES_INVALIDAS</c>). 400.</summary>
+    public const string DimensionesInvalidas = "DIMENSIONES_INVALIDAS";
 }

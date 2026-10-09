@@ -1140,6 +1140,8 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | `valor_estimado` y `referencia` fuera del contrato (decisión 1); `Licitacion` ya no trae `referencia` | Dejar de enviarlos y de leerlos |
 | Municipios con id obligatorio; 503 `MUNICIPIOS_NO_DISPONIBLE` si el catálogo no responde | Enviar siempre el id; ofrecer Reintentar |
 | Mercancías con `id_tipo_mercancia` (`GET /web/tipos-mercancia`; 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador) | Desplegable del catálogo |
+| HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
+| HU-023.1: la captura puede responder 400 `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` (el cubicador rechazó una ruta) y 503 `CUBICADOR_RESPUESTA_INVALIDA` o `CUBICADOR_NO_AUTORIZADO` | Mostrar `error.mensaje` (trae el detalle del cubicador); no se guardó nada. `CUBICADOR_NO_AUTORIZADO` no es la sesión: no cerrar sesión |
 | Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
 | `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Mostrar el aviso; no reintentar desde el frontend |
 | `/seguimiento` responde 409 `USAR_RESULTADO_NEXO` con `detalle.metodo`, `detalle.endpoint` y `detalle.requiere_if_match` | Llamar a `/resultado` con `If-Match` |

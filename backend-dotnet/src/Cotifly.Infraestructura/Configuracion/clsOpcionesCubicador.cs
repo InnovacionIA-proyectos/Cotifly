@@ -14,7 +14,7 @@ public sealed class clsOpcionesCubicador
 
     /// <summary>
     /// Raíz del API del cubicador, sin barra final (ej. <c>https://cubicador.boterosoto.com.co/api</c>): el código agrega
-    /// <c>/recomendaciones</c> y <c>/tipos-mercancia</c>. Vacía = cubicador no configurado.
+    /// <c>/recomendaciones</c>, <c>/tipos-mercancia</c>, <c>/tipos-carroceria</c> y <c>/tipos-vehiculo</c>. Vacía = cubicador no configurado.
     /// </summary>
     public string? UrlBase { get; set; }
 
@@ -22,9 +22,12 @@ public sealed class clsOpcionesCubicador
     [clsSecreto(Opcional = true)]
     public string? ApiKey { get; set; }
 
-    /// <summary>Límite de cada petición al cubicador (segundos). Un POST nunca se reintenta. Por defecto 15.</summary>
+    /// <summary>
+    /// Límite de cada petición al cubicador (segundos). Un POST nunca se reintenta. Por defecto 30 (HU-023.1: el objetivo del cubicador
+    /// es 10 s por respuesta).
+    /// </summary>
     [Range(1, 120)]
-    public int TiempoEsperaSegundos { get; set; } = 15;
+    public int TiempoEsperaSegundos { get; set; } = 30;
 
     /// <summary>Minutos que se reutiliza en memoria el catálogo de tipos de mercancía (solo respuestas exitosas). <c>0</c> la desactiva. Por defecto 30.</summary>
     [Range(0, 1440)]
@@ -50,4 +53,12 @@ public sealed class clsOpcionesCubicador
     /// </summary>
     [Range(1, 120)]
     public int TiempoMaximoCatalogoSegundos { get; set; } = 10;
+
+    /// <summary>
+    /// Ruta del endpoint de salud del cubicador bajo <see cref="UrlBase"/> (petición P7, por ejemplo <c>/health</c>). Vacía (por
+    /// defecto, mientras el cubicador no lo publique) = <c>/health/ready</c> no consulta el cubicador. Con valor, la sonda
+    /// <c>cubicador</c> hace un GET liviano: si falla y <see cref="RespaldoSiFalla"/> es <c>false</c>, Cotifly no está listo; con el
+    /// respaldo encendido solo queda un warning (la captura sigue con camiones sin vehículo).
+    /// </summary>
+    public string? RutaSalud { get; set; }
 }

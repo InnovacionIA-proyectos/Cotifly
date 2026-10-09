@@ -510,6 +510,14 @@ HTTP con Polly en `Infraestructura`, y una versión "no disponible" cuando no es
   captura; presupuesto de tiempo por captura (`Cubicador:PresupuestoCapturaSegundos`); el 503 no expone el detalle interno. Las
   recomendaciones que quedan en el cubicador si la captura no se guarda están documentadas en ADR-019.
 
+**Actualizado en HU-023.1 (#156, 2026-10-09), ADR-020:** el contrato provisional quedó reemplazado por el del cubicador. La petición
+lleva `codigoMercancia` (no el uuid), `claseViajeSeleccionada` y `usuarioId`; la respuesta es por ruta (`resultado` `ASIGNADO` o
+`SIN_SELECCION_AUTOMATICA` con su motivo, `condicionada`, `vehiculos[]` completos con volumen y porcentajes de llenado, advertencias y
+extradimensión). Una respuesta incompleta es `CUBICADOR_RESPUESTA_INVALIDA` y nunca va al respaldo; los 400 del contrato se traducen
+con el mismo código; la llave rechazada es `CUBICADOR_NO_AUTORIZADO`; el tiempo de espera pasa a 30 s. Nuevos
+`GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo`; la validación acepta los códigos de vehículo y carrocería del cubicador; la
+lista fija de clases de contenedor se quitó (se valida contra Nexo). Sonda `cubicador` en `/health/ready` con `Cubicador:RutaSalud`.
+
 ---
 
 ## 7. API y contrato con el frontend

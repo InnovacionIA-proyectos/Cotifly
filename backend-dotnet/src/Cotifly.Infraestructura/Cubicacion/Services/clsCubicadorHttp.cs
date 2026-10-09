@@ -16,38 +16,56 @@ using Polly;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Cubicador en vivo (HU-021.5, #133; <c>CAMBIOS_BACKEND</c> §6), mismo patrón que <c>clsCosteoNexo</c>: cliente HTTP propio
+/// Cubicador en vivo (HU-021.5, #133, con el contrato de HU-023.1, #156), mismo patrón que <c>clsCosteoNexo</c>: cliente HTTP propio
 /// (<see cref="NombreCliente"/>), <b>sin reintentar los POST</b>, opciones validadas (<see cref="clsOpcionesCubicador"/>) y todo vía
 /// <see cref="clsResultado{TValor}"/>. Rutas bajo <c>{Cubicador:UrlBase}</c>:
 /// <list type="bullet">
-/// <item><c>POST /recomendaciones</c> con <c>{idLineaSolicitud, origenSistema: "COTIFLY", mercancias: [{idTipoMercancia, cantidad, largoCm,
-/// anchoCm, altoCm, pesoKg}]}</c>; responde las filas de su Tabla 7 (<c>{idRecomendacionVehiculo, tipoVehiculo, carroceria, pesoTotalKg,
-/// resultado, motivo}</c>), como arreglo o dentro de <c>recomendaciones</c>.</item>
-/// <item><c>GET /tipos-mercancia</c>: <c>[{id, nombre}]</c> (o dentro de <c>items</c>), con la caché de <see cref="clsCacheTiposMercancia"/>.</item>
+/// <item><c>POST /recomendaciones</c> con <c>{idLineaSolicitud, origenSistema: "COTIFLY", claseViajeSeleccionada?, usuarioId,
+/// mercancias: [{codigoMercancia, cantidad, largoCm, anchoCm, altoCm, pesoKg}]}</c>; responde <c>{idRecomendacion, resultado,
+/// motivoSinSeleccion, condicionada, mercanciasCondicionadas[], vehiculos[], advertencias[], extradimension}</c>.</item>
+/// <item><c>GET /tipos-mercancia</c>, <c>GET /tipos-carroceria</c> y <c>GET /tipos-vehiculo</c> (P1), con caché
+/// (<see cref="clsCacheCatalogoCubicador{TFila}"/>).</item>
 /// </list>
-/// <b>Contrato provisional:</b> el cubicador aún no tiene estos endpoints (C1); los nombres salen del diseño
-/// (<c>PLAN-IMPLEMENTACION-MOTOR-SELECCION-VEHICULOS.md</c>) y la lectura acepta los alias razonables (<c>id</c>, <c>pesoKg</c>,
-/// <c>descripcion</c>...). Reconfirmar al publicarse.
 /// </summary>
 /// <remarks>
-/// Autenticación <c>Authorization: Bearer {Cubicador:ApiKey}</c> (C5). Errores: sin configurar, 4xx, 5xx, red, circuito abierto, tiempo
-/// agotado, respuesta demasiado grande o JSON inválido → <c>CUBICADOR_NO_DISPONIBLE</c> con el motivo en el detalle; una línea de
-/// warning por fallo, sin la llave ni la traza (401/403 dejan una línea de error: revisar la llave). La cancelación del llamador se
-/// propaga.
+/// <list type="bullet">
+/// <item><b>Contra el fallo silencioso</b> (<see cref="Validar"/>): con <c>ASIGNADO</c> cada vehículo debe traer
+/// <c>idRecomendacionVehiculo</c>, <c>codigoVehiculo</c>, <c>codigoCarroceria</c>, <c>pesoTotalKg</c>, <c>volumenTotalM3</c>,
+/// <c>porcentajeLlenadoVolumen</c> y <c>porcentajeLlenadoPeso</c>; un resultado o un motivo desconocido, un porcentaje fuera de 0 a 100 o
+/// un código de más de <see cref="LargoCodigo"/> caracteres también rechazan la respuesta con <c>CUBICADOR_RESPUESTA_INVALIDA</c>.</item>
+/// <item><b>Errores</b>: 400 con <c>{codigo, mensaje}</c> del contrato → el mismo código en <c>clsCodigosError</c> (rechazo, no caída);
+/// 401/403 → <c>CUBICADOR_NO_AUTORIZADO</c> (caída: revisar la llave); 404, 5xx, red, circuito abierto y tiempo agotado →
+/// <c>CUBICADOR_NO_DISPONIBLE</c> (caída); otro 4xx → <c>CUBICADOR_NO_DISPONIBLE</c> (rechazo). Una línea de warning por fallo, sin la
+/// llave ni la traza. La cancelación del llamador se propaga.</item>
+/// <item><b>Observabilidad</b>: el resultado de cada recomendación queda en un log informativo con la ruta, el resultado, el motivo, la
+/// marca de condicionada y el número de vehículos (sin datos del cliente).</item>
+/// </list>
 /// </remarks>
 public sealed class clsCubicadorHttp(
     HttpClient http,
     IOptions<clsOpcionesCubicador> opciones,
-    clsCacheTiposMercancia cache,
+    clsCacheCatalogoCubicador<clsTipoMercanciaCubicador> cacheMercancias,
+    clsCacheCatalogoCubicador<clsTipoCarroceriaCubicador> cacheCarrocerias,
+    clsCacheCatalogoCubicador<clsTipoVehiculoCubicador> cacheVehiculos,
     ILogger<clsCubicadorHttp> logger) : IClsCubicador
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del cubicador (las pruebas le cambian el manejador primario).</summary>
     public const string NombreCliente = "Cubicador";
 
-    /// <summary>Valor de <c>OrigenSistema</c> en <c>POST /recomendaciones</c>.</summary>
-    public const string OrigenSistema = "COTIFLY";
+    /// <summary>Valor de <c>origenSistema</c> en <c>POST /recomendaciones</c>.</summary>
+    public const string OrigenSistema = clsPeticionRecomendacion.OrigenSistema;
+
+    public const string RutaRecomendaciones = "/recomendaciones";
+    public const string RutaTiposMercancia = "/tipos-mercancia";
+    public const string RutaTiposCarroceria = "/tipos-carroceria";
+    public const string RutaTiposVehiculo = "/tipos-vehiculo";
 
     public const string MensajeNoDisponible = "El cubicador no está disponible en este momento: intenta de nuevo más tarde.";
+
+    public const string MensajeRespuestaInvalida =
+        "El cubicador respondió algo incompleto o fuera del contrato: no se guardó nada. Intenta de nuevo o avisa a soporte.";
+
+    public const string MensajeNoAutorizado = "El cubicador rechazó la llave de Cotifly: avisa a soporte (Cubicador:ApiKey).";
 
     /// <summary>Reintentos de las consultas GET (los POST no se reintentan nunca).</summary>
     public const int ReintentosLectura = 2;
@@ -55,8 +73,26 @@ public sealed class clsCubicadorHttp(
     /// <summary>Tamaño máximo de una respuesta del cubicador.</summary>
     public const long LimiteBytes = 1024 * 1024;
 
-    /// <summary>Filas máximas que se leen de una respuesta (recomendación o catálogo).</summary>
+    /// <summary>Filas máximas que se leen de una respuesta (vehículos o catálogo).</summary>
     public const int MaximoFilas = 5_000;
+
+    /// <summary>Largo máximo de un código del cubicador (vehículo, carrocería o mercancía; columnas de 64 a 100 caracteres).</summary>
+    public const int LargoCodigo = 64;
+
+    /// <summary>Largo máximo del mensaje del cubicador que se copia en un error para el comercial.</summary>
+    public const int LargoMensajeCubicador = 300;
+
+    /// <summary>Peso máximo de un vehículo (kg), el mismo tope que la captura.</summary>
+    public const decimal MaximoPesoKg = 999_999_999m;
+
+    /// <summary>Mensajes de Cotifly de los rechazos 400 del contrato (el código del cubicador se conserva tal cual).</summary>
+    public static readonly IReadOnlyDictionary<string, string> Rechazos = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [clsCodigosError.MercanciasRequeridas] = "El cubicador necesita al menos una mercancía en la ruta.",
+        [clsCodigosError.MercanciaDesconocida] = "El cubicador no reconoce una de las mercancías (codigo_mercancia): escógela del catálogo.",
+        [clsCodigosError.MercanciaNoCubicable] = "Una de las mercancías no se puede cubicar: revisa el tipo de mercancía.",
+        [clsCodigosError.DimensionesInvalidas] = "El cubicador rechazó las medidas o el peso de una mercancía: revísalos.",
+    };
 
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
@@ -72,90 +108,193 @@ public sealed class clsCubicadorHttp(
     public TimeSpan PresupuestoCaptura => TimeSpan.FromSeconds(opciones.Value.PresupuestoCapturaSegundos);
 
     public async Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
-        Guid rutaId, IReadOnlyList<clsMercanciaCubicador> mercancias, CancellationToken cancellationToken = default)
+        clsPeticionRecomendacion peticion, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(mercancias);
+        ArgumentNullException.ThrowIfNull(peticion);
         var cuerpo = new clsRecomendacionWire(
-            rutaId.ToString("D"),
+            peticion.IdLineaSolicitud,
             OrigenSistema,
-            [.. mercancias.Select(m => new clsMercanciaWire(m.IdTipoMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))]);
-        var respuesta = await EnviarAsync(HttpMethod.Post, "/recomendaciones", cuerpo, cancellationToken);
+            string.IsNullOrWhiteSpace(peticion.ClaseViajeSeleccionada) ? null : peticion.ClaseViajeSeleccionada.Trim(),
+            string.IsNullOrWhiteSpace(peticion.UsuarioId) ? null : peticion.UsuarioId.Trim(),
+            [.. peticion.Mercancias.Select(m => new clsMercanciaWire(m.CodigoMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))]);
+        var respuesta = await EnviarAsync(HttpMethod.Post, RutaRecomendaciones, cuerpo, cancellationToken);
         if (respuesta.EsFallo)
         {
             return respuesta.Error;
         }
 
         using var documento = respuesta.Valor;
-        var filas = Filas(documento.RootElement, "recomendaciones", "vehiculos");
-        if (filas is null)
+        var leida = Validar(documento.RootElement);
+        if (leida.EsFallo)
         {
-            return NoDisponible("respuesta de la recomendación sin filas");
+            logger.LogWarning("El cubicador respondió una recomendación inválida para {IdLineaSolicitud} ({Motivo}): se rechaza y no se guarda nada.",
+                peticion.IdLineaSolicitud, leida.Error.Detalle);
+            return leida.Error;
         }
 
-        return new clsRecomendacionCubicador([.. filas.Take(MaximoFilas).Select(Vehiculo)]);
+        var r = leida.Valor;
+        logger.LogInformation(
+            "Recomendación del cubicador para {IdLineaSolicitud}: {Resultado} (motivo {Motivo}, condicionada {Condicionada}, {Vehiculos} vehículo(s), {Advertencias} advertencia(s)).",
+            peticion.IdLineaSolicitud, r.Resultado, r.MotivoSinSeleccion ?? "-", r.Condicionada, r.Vehiculos.Count, r.Advertencias.Count);
+        return r;
     }
 
-    public async Task<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>> ListarTiposMercanciaAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Lee y valida la respuesta de <c>POST /recomendaciones</c> contra el contrato. Público para las pruebas del contrato; el detalle del
+    /// error (qué campo faltó) va en <see cref="clsErrorDominio.Detalle"/>, solo para el log.
+    /// </summary>
+    public static clsResultado<clsRecomendacionCubicador> Validar(JsonElement raiz)
     {
-        var minutos = opciones.Value.MinutosCacheCatalogos;
-        if (minutos > 0 && cache.Obtener() is { } enCache)
+        if (raiz.ValueKind != JsonValueKind.Object)
         {
-            return clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(enCache);
+            return Invalida("la respuesta no es un objeto");
         }
 
-        // Tope propio del catálogo (Cubicador:TiempoMaximoCatalogoSegundos, reintentos incluidos): un catálogo colgado no retiene la
-        // captura el tiempo total de la tubería; agotado, cuenta como no disponible (la captura conserva el nombre del cliente).
-        clsResultado<JsonDocument> respuesta;
-        using (var tope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        var resultado = Texto(raiz, "resultado")?.Trim().ToUpperInvariant();
+        if (resultado is null || !clsResultadosRecomendacion.Todos.Contains(resultado))
         {
-            tope.CancelAfter(TimeSpan.FromSeconds(opciones.Value.TiempoMaximoCatalogoSegundos));
-            try
+            return Invalida($"resultado desconocido '{Recortar(resultado)}'");
+        }
+
+        Guid? idRecomendacion = null;
+        if (Texto(raiz, "idRecomendacion") is { } idTexto)
+        {
+            if (!Guid.TryParse(idTexto, out var guid) || guid == Guid.Empty)
             {
-                respuesta = await EnviarAsync(HttpMethod.Get, "/tipos-mercancia", null, tope.Token);
+                return Invalida("idRecomendacion no es un uuid");
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+
+            idRecomendacion = guid;
+        }
+
+        var motivo = Texto(raiz, "motivoSinSeleccion")?.Trim().ToUpperInvariant();
+        var asignado = resultado == clsResultadosRecomendacion.Asignado;
+        if (asignado && motivo is not null)
+        {
+            return Invalida("ASIGNADO con motivoSinSeleccion");
+        }
+
+        if (!asignado && (motivo is null || !clsMotivosSinSeleccion.Todos.Contains(motivo)))
+        {
+            return Invalida($"SIN_SELECCION_AUTOMATICA con motivo desconocido '{Recortar(motivo)}'");
+        }
+
+        var vehiculos = new List<clsVehiculoRecomendado>();
+        if (asignado)
+        {
+            if (Propiedad(raiz, "vehiculos") is not { ValueKind: JsonValueKind.Array } arreglo || arreglo.GetArrayLength() == 0)
             {
-                return NoDisponible(
-                    $"tiempo máximo del catálogo agotado ({opciones.Value.TiempoMaximoCatalogoSegundos.ToString(CultureInfo.InvariantCulture)} s)", caida: true);
+                return Invalida("ASIGNADO sin vehiculos");
+            }
+
+            if (arreglo.GetArrayLength() > MaximoFilas)
+            {
+                return Invalida("demasiados vehiculos");
+            }
+
+            var indice = 0;
+            foreach (var fila in arreglo.EnumerateArray())
+            {
+                var vehiculo = Vehiculo(fila, indice++);
+                if (vehiculo.EsFallo)
+                {
+                    return vehiculo.Error;
+                }
+
+                vehiculos.Add(vehiculo.Valor);
             }
         }
 
-        if (respuesta.EsFallo)
-        {
-            return respuesta.Error;
-        }
+        var condicionada = Propiedad(raiz, "condicionada") is { } marca && marca.ValueKind is JsonValueKind.True;
+        return new clsRecomendacionCubicador(
+            idRecomendacion,
+            resultado,
+            asignado ? null : motivo,
+            condicionada,
+            [.. Arreglo(raiz, "mercanciasCondicionadas").Select(MercanciaCondicionada).OfType<clsMercanciaCondicionada>()],
+            vehiculos,
+            [.. Arreglo(raiz, "advertencias").Select(Advertencia).OfType<clsAdvertenciaCubicador>()],
+            Extradimension(Propiedad(raiz, "extradimension")));
+    }
 
-        using var documento = respuesta.Valor;
-        var filas = Filas(documento.RootElement, "items", "tiposMercancia");
-        if (filas is null)
+    public Task<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>> ListarTiposMercanciaAsync(CancellationToken cancellationToken = default) =>
+        LeerCatalogoAsync(RutaTiposMercancia, "tipos de mercancía", cacheMercancias, ["items", "tiposMercancia"], fila =>
         {
-            return NoDisponible("catálogo de tipos de mercancía sin filas");
-        }
+            var codigo = Codigo(fila, "codigoMercancia", "codigo");
+            var nombre = Texto(fila, "nombre", "nombreMercancia", "descripcion")?.Trim();
+            if (codigo is null || string.IsNullOrEmpty(nombre))
+            {
+                return null;
+            }
 
-        var tipos = new List<clsTipoMercanciaCubicador>();
-        var vistos = new HashSet<Guid>();
-        foreach (var fila in filas.Take(MaximoFilas))
-        {
             var id = Texto(fila, "id", "idTipoMercancia");
-            var nombre = Texto(fila, "nombre", "descripcion", "nombreMercancia");
-            if (Guid.TryParse(id, out var guid) && guid != Guid.Empty && !string.IsNullOrWhiteSpace(nombre) && vistos.Add(guid))
+            return new clsTipoMercanciaCubicador(
+                codigo,
+                nombre,
+                Texto(fila, "categoria")?.Trim(),
+                Booleano(fila, true, "cubicable"),
+                Booleano(fila, false, "condicionadaCubicacion", "condicionada"),
+                Texto(fila, "comentarioCondicion")?.Trim(),
+                Booleano(fila, true, "activo"),
+                Guid.TryParse(id, out var guid) && guid != Guid.Empty ? guid : null);
+        }, t => t.Codigo, t => t.Nombre, cancellationToken);
+
+    public Task<clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>> ListarTiposCarroceriaAsync(CancellationToken cancellationToken = default) =>
+        LeerCatalogoAsync(RutaTiposCarroceria, "carrocerías", cacheCarrocerias, ["items", "tiposCarroceria"], fila =>
+        {
+            var codigo = Codigo(fila, "codigoCarroceria", "codigo");
+            return codigo is null
+                ? null
+                : new clsTipoCarroceriaCubicador(
+                    codigo, Texto(fila, "nombre", "nombreCarroceria", "descripcion")?.Trim() is { Length: > 0 } n ? n : codigo,
+                    Booleano(fila, true, "activo"));
+        }, t => t.Codigo, t => t.Nombre, cancellationToken);
+
+    public Task<clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>> ListarTiposVehiculoAsync(CancellationToken cancellationToken = default) =>
+        LeerCatalogoAsync(RutaTiposVehiculo, "tipos de vehículo", cacheVehiculos, ["items", "tiposVehiculo"], fila =>
+        {
+            var codigo = Codigo(fila, "codigoVehiculo", "codigo");
+            if (codigo is null)
             {
-                tipos.Add(new clsTipoMercanciaCubicador(guid, nombre.Trim()));
+                return null;
             }
-        }
 
-        if (tipos.Count == 0)
+            var carrocerias = Arreglo(fila, "carrocerias", "carroceriasCompatibles")
+                .Select(c => c.ValueKind == JsonValueKind.String ? Recortar(c.GetString()) : Codigo(c, "codigoCarroceria", "codigo"))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            return new clsTipoVehiculoCubicador(
+                codigo, Texto(fila, "nombreVehiculo", "nombre", "descripcion")?.Trim() is { Length: > 0 } n ? n : codigo, carrocerias,
+                Booleano(fila, true, "activo"));
+        }, t => t.Codigo, t => t.Nombre, cancellationToken);
+
+    /// <summary>
+    /// GET liviano a <c>{UrlBase}{Cubicador:RutaSalud}</c> (petición P7) para la sonda de <c>/health/ready</c>: <c>null</c> si responde
+    /// 2xx; si no, el motivo (sin la llave). Sin <c>RutaSalud</c> no consulta y responde <c>null</c>.
+    /// </summary>
+    public async Task<string?> VerificarSaludAsync(CancellationToken cancellationToken = default)
+    {
+        if (!EstaConfigurado || string.IsNullOrWhiteSpace(opciones.Value.RutaSalud))
         {
-            return NoDisponible("catálogo de tipos de mercancía vacío");
+            return null;
         }
 
-        IReadOnlyList<clsTipoMercanciaCubicador> lista = [.. tipos.OrderBy(t => t.Nombre, StringComparer.CurrentCultureIgnoreCase)];
-        if (minutos > 0)
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(_urlBase!, opciones.Value.RutaSalud.Trim()));
+        peticion.Headers.Authorization = new AuthenticationHeaderValue("Bearer", opciones.Value.ApiKey!.Trim());
+        try
         {
-            cache.Guardar(lista, TimeSpan.FromMinutes(minutos));
+            using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            return respuesta.IsSuccessStatusCode ? null : $"HTTP {(int)respuesta.StatusCode}";
         }
-
-        return clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(lista);
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException or ExecutionRejectedException or IOException)
+        {
+            return ex is OperationCanceledException or Polly.Timeout.TimeoutRejectedException ? "tiempo agotado" : "error de red";
+        }
     }
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/</c>.</summary>
@@ -187,6 +326,65 @@ public sealed class clsCubicadorHttp(
     /// <summary>Límite total de una petición: el intento más los reintentos de un GET y sus esperas (300 ms, 600 ms y holgura del jitter).</summary>
     public static TimeSpan TiempoTotal(TimeSpan intento) => (intento * (ReintentosLectura + 1)) + TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Un catálogo con caché (<c>Cubicador:MinutosCacheCatalogos</c>) y tope propio (<c>Cubicador:TiempoMaximoCatalogoSegundos</c>,
+    /// reintentos incluidos): filas sin código se descartan, los códigos repetidos quedan una vez y se ordena por nombre.
+    /// </summary>
+    private async Task<clsResultado<IReadOnlyList<TFila>>> LeerCatalogoAsync<TFila>(
+        string ruta, string nombre, clsCacheCatalogoCubicador<TFila> cache, string[] contenedores, Func<JsonElement, TFila?> mapear,
+        Func<TFila, string> codigo, Func<TFila, string> orden, CancellationToken cancellationToken)
+        where TFila : class
+    {
+        var minutos = opciones.Value.MinutosCacheCatalogos;
+        if (minutos > 0 && cache.Obtener() is { } enCache)
+        {
+            return clsResultado<IReadOnlyList<TFila>>.Exito(enCache);
+        }
+
+        clsResultado<JsonDocument> respuesta;
+        using (var tope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            tope.CancelAfter(TimeSpan.FromSeconds(opciones.Value.TiempoMaximoCatalogoSegundos));
+            try
+            {
+                respuesta = await EnviarAsync(HttpMethod.Get, ruta, null, tope.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return NoDisponible(
+                    $"tiempo máximo del catálogo agotado ({opciones.Value.TiempoMaximoCatalogoSegundos.ToString(CultureInfo.InvariantCulture)} s) en GET {ruta}",
+                    caida: true);
+            }
+        }
+
+        if (respuesta.EsFallo)
+        {
+            return respuesta.Error;
+        }
+
+        using var documento = respuesta.Valor;
+        var filas = Filas(documento.RootElement, contenedores);
+        if (filas is null)
+        {
+            return NoDisponible($"catálogo de {nombre} sin filas");
+        }
+
+        var vistos = new HashSet<string>(StringComparer.Ordinal);
+        var lista = filas.Take(MaximoFilas).Select(mapear).OfType<TFila>().Where(f => vistos.Add(codigo(f))).ToList();
+        if (lista.Count == 0)
+        {
+            return NoDisponible($"catálogo de {nombre} vacío");
+        }
+
+        IReadOnlyList<TFila> ordenada = [.. lista.OrderBy(orden, StringComparer.CurrentCultureIgnoreCase)];
+        if (minutos > 0)
+        {
+            cache.Guardar(ordenada, TimeSpan.FromMinutes(minutos));
+        }
+
+        return clsResultado<IReadOnlyList<TFila>>.Exito(ordenada);
+    }
+
     private async Task<clsResultado<JsonDocument>> EnviarAsync(HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
     {
         if (!EstaConfigurado)
@@ -210,29 +408,29 @@ public sealed class clsCubicadorHttp(
             {
                 logger.LogError("El cubicador respondió {Estado} a {Metodo} {Ruta}: revisar Cubicador:ApiKey.", (int)respuesta.StatusCode, metodo, ruta);
                 // La llave no vale para ninguna ruta: se trata como caída (las demás rutas de la captura no vuelven a llamar).
-                return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible, $"HTTP {(int)respuesta.StatusCode}")
+                return new clsErrorDominio(clsCodigosError.CubicadorNoAutorizado, MensajeNoAutorizado, $"HTTP {(int)respuesta.StatusCode}")
                 {
                     Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
                 };
             }
 
+            if (respuesta.StatusCode == HttpStatusCode.BadRequest)
+            {
+                return await RechazoAsync(respuesta, metodo, ruta, cancellationToken);
+            }
+
             if (!respuesta.IsSuccessStatusCode)
             {
-                // 5xx (o cualquier otro no exitoso que no sea 4xx) es una caída; un 4xx es un rechazo de la petición.
-                return NoDisponible($"HTTP {(int)respuesta.StatusCode} ({respuesta.StatusCode}) en {metodo} {ruta}",
-                    caida: (int)respuesta.StatusCode is < 400 or >= 500);
+                // 404 (la ruta no existe todavía: el cubicador no la ha publicado), 5xx y 503 son caídas; otro 4xx es un rechazo.
+                var estado = (int)respuesta.StatusCode;
+                return NoDisponible($"HTTP {estado} ({respuesta.StatusCode}) en {metodo} {ruta}",
+                    caida: estado is < 400 or >= 500 or 404 or 408 or 429);
             }
 
-            if (respuesta.Content.Headers.ContentLength is { } largo && largo > LimiteBytes)
-            {
-                return NoDisponible($"respuesta demasiado grande ({largo.ToString(CultureInfo.InvariantCulture)} bytes)");
-            }
-
-            await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
-            using var acotado = await LeerAcotadoAsync(flujo, LimiteBytes, cancellationToken);
-            return acotado is null
+            var documento = await LeerJsonAsync(respuesta, cancellationToken);
+            return documento is null
                 ? NoDisponible($"respuesta de más de {LimiteBytes.ToString(CultureInfo.InvariantCulture)} bytes")
-                : await JsonDocument.ParseAsync(acotado, cancellationToken: cancellationToken);
+                : documento;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -247,11 +445,146 @@ public sealed class clsCubicadorHttp(
             return NoDisponible(ex is Polly.CircuitBreaker.BrokenCircuitException ? "circuito abierto tras fallos repetidos" : $"error de red en {metodo} {ruta}", ex,
                 caida: true);
         }
+        catch (JsonException ex) when (ruta == RutaRecomendaciones)
+        {
+            logger.LogDebug(ex, "JSON inválido en la recomendación del cubicador.");
+            return Invalida("JSON inválido");
+        }
         catch (JsonException ex)
         {
             return NoDisponible("JSON inválido", ex);
         }
     }
+
+    /// <summary>
+    /// Un 400 del cubicador: con <c>{codigo, mensaje}</c> de uno de los rechazos del contrato (<see cref="Rechazos"/>), ese código con el
+    /// mensaje de Cotifly y el del cubicador; si no, <c>CUBICADOR_NO_DISPONIBLE</c> (rechazo, no caída).
+    /// </summary>
+    private async Task<clsErrorDominio> RechazoAsync(HttpResponseMessage respuesta, HttpMethod metodo, string ruta, CancellationToken cancellationToken)
+    {
+        string? codigo = null;
+        string? mensaje = null;
+        try
+        {
+            using var documento = await LeerJsonAsync(respuesta, cancellationToken);
+            if (documento?.RootElement is { ValueKind: JsonValueKind.Object } raiz)
+            {
+                var error = Propiedad(raiz, "error") is { ValueKind: JsonValueKind.Object } anidado ? anidado : raiz;
+                codigo = Texto(error, "codigo", "code")?.Trim().ToUpperInvariant();
+                mensaje = Recortar(Texto(error, "mensaje", "message"));
+            }
+        }
+        catch (JsonException)
+        {
+            // Cuerpo ilegible: se trata como rechazo genérico.
+        }
+
+        if (codigo is not null && Rechazos.TryGetValue(codigo, out var propio))
+        {
+            logger.LogWarning("El cubicador rechazó {Metodo} {Ruta} con {Codigo}.", metodo, ruta, codigo);
+            var texto = mensaje is null ? propio : $"{propio} Detalle del cubicador: {(mensaje.Length > LargoMensajeCubicador ? mensaje[..LargoMensajeCubicador] : mensaje)}";
+            return new clsErrorDominio(codigo, texto, $"HTTP 400 {codigo} en {metodo} {ruta}");
+        }
+
+        return NoDisponible($"HTTP 400 ({codigo ?? "sin código"}) en {metodo} {ruta}");
+    }
+
+    private static async Task<JsonDocument?> LeerJsonAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)
+    {
+        if (respuesta.Content.Headers.ContentLength is { } largo && largo > LimiteBytes)
+        {
+            return null;
+        }
+
+        await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
+        using var acotado = await LeerAcotadoAsync(flujo, LimiteBytes, cancellationToken);
+        return acotado is null ? null : await JsonDocument.ParseAsync(acotado, cancellationToken: cancellationToken);
+    }
+
+    private static clsResultado<clsVehiculoRecomendado> Vehiculo(JsonElement fila, int indice)
+    {
+        if (fila.ValueKind != JsonValueKind.Object)
+        {
+            return Invalida($"vehiculos[{indice}] no es un objeto");
+        }
+
+        var faltan = new List<string>();
+        var id = Texto(fila, "idRecomendacionVehiculo");
+        if (!Guid.TryParse(id, out var guid) || guid == Guid.Empty)
+        {
+            faltan.Add("idRecomendacionVehiculo");
+        }
+
+        var vehiculo = Codigo(fila, "codigoVehiculo");
+        var carroceria = Codigo(fila, "codigoCarroceria");
+        var peso = Numero(fila, "pesoTotalKg");
+        var volumen = Numero(fila, "volumenTotalM3");
+        var llenadoVolumen = Numero(fila, "porcentajeLlenadoVolumen");
+        var llenadoPeso = Numero(fila, "porcentajeLlenadoPeso");
+        foreach (var (campo, valor) in new (string, object?)[]
+                 {
+                     ("codigoVehiculo", vehiculo), ("codigoCarroceria", carroceria), ("pesoTotalKg", peso), ("volumenTotalM3", volumen),
+                     ("porcentajeLlenadoVolumen", llenadoVolumen), ("porcentajeLlenadoPeso", llenadoPeso),
+                 })
+        {
+            if (valor is null)
+            {
+                faltan.Add(campo);
+            }
+        }
+
+        if (faltan.Count > 0)
+        {
+            return Invalida($"vehiculos[{indice}] sin {string.Join(", ", faltan)}");
+        }
+
+        if (peso is not > 0m || peso > MaximoPesoKg)
+        {
+            return Invalida($"vehiculos[{indice}].pesoTotalKg fuera de rango");
+        }
+
+        if (volumen < 0m || volumen > 999_999_999m)
+        {
+            return Invalida($"vehiculos[{indice}].volumenTotalM3 fuera de rango");
+        }
+
+        if (llenadoVolumen is < 0m or > 100m || llenadoPeso is < 0m or > 100m)
+        {
+            return Invalida($"vehiculos[{indice}] con un porcentaje de llenado fuera de 0 a 100");
+        }
+
+        return new clsVehiculoRecomendado(
+            guid, vehiculo!, carroceria!, Math.Round(peso!.Value, 2), Math.Round(volumen!.Value, 3), Math.Round(llenadoVolumen!.Value, 2),
+            Math.Round(llenadoPeso!.Value, 2), Texto(fila, "nombreVehiculo")?.Trim() is { Length: > 0 } nombre ? nombre : null);
+    }
+
+    private static clsMercanciaCondicionada? MercanciaCondicionada(JsonElement fila) => fila.ValueKind switch
+    {
+        JsonValueKind.String when Recortar(fila.GetString()) is { } codigo => new clsMercanciaCondicionada(codigo, null),
+        JsonValueKind.Object when Codigo(fila, "codigoMercancia", "codigo") is { } codigo =>
+            new clsMercanciaCondicionada(codigo, Recortar(Texto(fila, "comentarioCondicion", "comentario", "mensaje"))),
+        _ => null,
+    };
+
+    private static clsAdvertenciaCubicador? Advertencia(JsonElement fila) => fila.ValueKind switch
+    {
+        JsonValueKind.String when Recortar(fila.GetString()) is { } mensaje => new clsAdvertenciaCubicador(null, mensaje),
+        JsonValueKind.Object when Recortar(Texto(fila, "mensaje", "descripcion", "detalle")) is { } mensaje =>
+            new clsAdvertenciaCubicador(Recortar(Texto(fila, "codigo", "tipo")), mensaje),
+        JsonValueKind.Object when Recortar(Texto(fila, "codigo", "tipo")) is { } codigo => new clsAdvertenciaCubicador(codigo, codigo),
+        _ => null,
+    };
+
+    private static clsExtradimensionCubicador? Extradimension(JsonElement? valor) => valor switch
+    {
+        { ValueKind: JsonValueKind.True } => new clsExtradimensionCubicador(true, [], null),
+        { ValueKind: JsonValueKind.False } => new clsExtradimensionCubicador(false, [], null),
+        { ValueKind: JsonValueKind.Object } objeto => new clsExtradimensionCubicador(
+            Booleano(objeto, true, "extradimensionado", "aplica", "es"),
+            [.. Arreglo(objeto, "dimensiones", "dimensionesExcedidas").Select(d => d.ValueKind == JsonValueKind.String ? Recortar(d.GetString()) : null).OfType<string>()],
+            Recortar(Texto(objeto, "detalle", "mensaje", "descripcion"))),
+        _ => null,
+    };
 
     /// <summary>Las filas de la respuesta: el arreglo raíz o el de la primera propiedad de <paramref name="contenedores"/> que lo traiga.</summary>
     private static List<JsonElement>? Filas(JsonElement raiz, params string[] contenedores)
@@ -272,24 +605,8 @@ public sealed class clsCubicadorHttp(
         return null;
     }
 
-    private static clsVehiculoRecomendado Vehiculo(JsonElement fila)
-    {
-        var tipo = Texto(fila, "tipoVehiculo", "codigoVehiculo", "vehiculo");
-        var resultado = Texto(fila, "resultado", "estado")?.Trim().ToUpperInvariant();
-        if (string.IsNullOrEmpty(resultado))
-        {
-            resultado = string.IsNullOrWhiteSpace(tipo) ? clsResultadosRecomendacion.SinSeleccionAutomatica : clsResultadosRecomendacion.Seleccionado;
-        }
-
-        var id = Texto(fila, "idRecomendacionVehiculo", "id");
-        return new clsVehiculoRecomendado(
-            Guid.TryParse(id, out var guid) && guid != Guid.Empty ? guid : null,
-            tipo,
-            Texto(fila, "carroceria", "tipoCarroceria", "codigoCarroceria"),
-            Numero(fila, "pesoTotalKg", "pesoKg", "peso"),
-            resultado,
-            Texto(fila, "motivo", "mensaje"));
-    }
+    private static IEnumerable<JsonElement> Arreglo(JsonElement objeto, params string[] nombres) =>
+        Propiedad(objeto, nombres) is { ValueKind: JsonValueKind.Array } arreglo ? arreglo.EnumerateArray().Take(MaximoFilas).ToList() : [];
 
     /// <summary>La primera de <paramref name="nombres"/> presente en <paramref name="objeto"/>, sin distinguir mayúsculas.</summary>
     private static JsonElement? Propiedad(JsonElement objeto, params string[] nombres)
@@ -320,12 +637,24 @@ public sealed class clsCubicadorHttp(
         _ => null,
     };
 
+    /// <summary>Un código: texto no vacío de hasta <see cref="LargoCodigo"/> caracteres, recortado; si no, <c>null</c>.</summary>
+    private static string? Codigo(JsonElement objeto, params string[] nombres) =>
+        Recortar(Texto(objeto, nombres)) is { Length: <= LargoCodigo } codigo ? codigo : null;
+
     private static decimal? Numero(JsonElement objeto, params string[] nombres) => Propiedad(objeto, nombres) switch
     {
         { ValueKind: JsonValueKind.Number } valor when valor.TryGetDecimal(out var numero) => numero,
-        { ValueKind: JsonValueKind.String } valor when decimal.TryParse(valor.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var numero) => numero,
         _ => null,
     };
+
+    private static bool Booleano(JsonElement objeto, bool omision, params string[] nombres) => Propiedad(objeto, nombres) switch
+    {
+        { ValueKind: JsonValueKind.True } => true,
+        { ValueKind: JsonValueKind.False } => false,
+        _ => omision,
+    };
+
+    private static string? Recortar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 
     private static async Task<MemoryStream?> LeerAcotadoAsync(Stream flujo, long limite, CancellationToken cancellationToken)
     {
@@ -347,6 +676,10 @@ public sealed class clsCubicadorHttp(
         return memoria;
     }
 
+    /// <summary><c>CUBICADOR_RESPUESTA_INVALIDA</c> con el motivo en <see cref="clsErrorDominio.Detalle"/> (solo para el log).</summary>
+    private static clsErrorDominio Invalida(string motivo) =>
+        new(clsCodigosError.CubicadorRespuestaInvalida, MensajeRespuestaInvalida, motivo);
+
     /// <summary>
     /// Error <c>CUBICADOR_NO_DISPONIBLE</c> con el motivo en <see cref="clsErrorDominio.Detalle"/> (solo para el log: quien lo expone por
     /// HTTP lo quita) y, si es una caída, la marca <see cref="clsErroresCubicador.ClaveCaida"/>.
@@ -365,9 +698,10 @@ public sealed class clsCubicadorHttp(
         };
     }
 
-    // --- Forma de la petición de POST /recomendaciones (camelCase; contrato provisional, C1) ---
+    // --- Forma de la petición de POST /recomendaciones (camelCase, contrato de HU-023) ---
 
-    private sealed record clsRecomendacionWire(string IdLineaSolicitud, string OrigenSistema, IReadOnlyList<clsMercanciaWire> Mercancias);
+    private sealed record clsRecomendacionWire(
+        string IdLineaSolicitud, string OrigenSistema, string? ClaseViajeSeleccionada, string? UsuarioId, IReadOnlyList<clsMercanciaWire> Mercancias);
 
-    private sealed record clsMercanciaWire(Guid? IdTipoMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+    private sealed record clsMercanciaWire(string CodigoMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 }

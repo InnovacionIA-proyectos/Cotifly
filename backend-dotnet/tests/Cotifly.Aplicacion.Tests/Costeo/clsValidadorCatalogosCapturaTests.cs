@@ -1,6 +1,8 @@
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
+using Cotifly.Aplicacion.Cubicacion.DTOs;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
@@ -11,8 +13,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// HU-013.10 (#106, G2, G11 y G15): solo códigos de catálogo hacia Nexo. Tipo de vehículo y clase de viaje contra el catálogo maestro
-/// de Nexo; carrocería, tipología y clase de contenedor en código (con la lista provisional de extradimensionado).
+/// HU-013.10 (#106, G2, G11 y G15): solo códigos de catálogo hacia Nexo. Tipo de vehículo, clase de viaje y clase de contenedor contra el
+/// catálogo maestro de Nexo (HU-023.1, #156: sin la lista fija de clases de contenedor, solo la provisional de extradimensionado);
+/// carrocería y tipología en código. HU-023.1: los códigos de vehículo y de carrocería del cubicador se aceptan contra su catálogo.
 /// </summary>
 public sealed class clsValidadorCatalogosCapturaTests
 {
@@ -21,7 +24,7 @@ public sealed class clsValidadorCatalogosCapturaTests
     private static readonly clsCatalogosMaestros _catalogos = new(
         [new("2S3", "Tractocamión 2 ejes, semi 3"), new("3S3", "Tractocamión 3 ejes, semi 3")],
         [new("Contenedor", "Contenedor"), new("Cupo", "Cupo"), new("Carga Suelta", "Carga Suelta"), new("Extradimensionado", "Extradimensionado")],
-        [new("CNT45.XX", "CNT45.XX")],
+        [new("CNT40.HC", "CNT40.HC"), new("CNT45.XX", "CNT45.XX")],
         [new("Oferta de Expedición Puerto a interior", "Oferta de Expedición Puerto a interior"), new("Nacional", "Nacional")]);
 
     private readonly IClsCatalogosMaestrosProvider _maestros = Substitute.For<IClsCatalogosMaestrosProvider>();
@@ -75,11 +78,71 @@ public sealed class clsValidadorCatalogosCapturaTests
         (await Validador().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = clase }, Ct)).Should().BeNull();
 
     [Fact]
-    public async Task UnaClaseDeContenedorDelCatalogoMaestroEnMemoriaSeAcepta()
+    public async Task UnaClaseDeContenedorSeValidaContraElCatalogoMaestroDeNexoYNoContraUnaListaFija()
     {
-        _maestros.UltimaCopia.Returns(_catalogos);
-
+        // HU-023.1 (#156; lo que le quedaba a HU-015.1): CNT45.XX solo existe en el catálogo de Nexo; CNT20.RE era de la lista fija.
         (await Validador().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = "CNT45.XX" }, Ct)).Should().BeNull();
+        (await Validador().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = "CNT20.RE" }, Ct))!.Mensaje.Should().Contain("clase_contenedor");
+    }
+
+    [Fact]
+    public async Task SinElCatalogoDeClasesDeContenedorDeNexoNoSeAceptaTextoLibre()
+    {
+        // clases-contenedor es un catálogo opcional de Nexo: si falló, llega vacío y ya no hay lista fija de respaldo.
+        _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsCatalogosMaestros>.Exito(_catalogos with { ClasesContenedor = [] }));
+
+        var una = await Validador().ValidarAsync(_usuarioId, Linea(), Ct);
+        var filas = await Validador().ValidarLineasAsync(_usuarioId, [Linea(), Linea() with { ClaseContenedor = "CNT40.OP" }], Ct);
+
+        una!.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        filas.NoDisponible!.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
+        filas.Errores.Should().OnlyContain(e => e.Count == 0);
+    }
+
+    [Fact]
+    public async Task UnaClaseDeContenedorProvisionalNoConsultaNexo()
+    {
+        var linea = Linea() with { TipoVehiculo = null, ClaseViaje = null, ClaseContenedor = "CNT40.OP" };
+
+        (await Validador().ValidarAsync(_usuarioId, linea, Ct)).Should().BeNull();
+        await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
+    }
+
+    [Fact]
+    public async Task LosCodigosDeVehiculoYCarroceriaDelCubicadorSeAceptanSinConsultarNexoPorElVehiculo()
+    {
+        var cubicador = Cubicador();
+        var linea = Linea() with { TipoVehiculo = "C2", Carroceria = "CAMA_BAJA", ClaseViaje = null, ClaseContenedor = null };
+
+        (await Validador(cubicador).ValidarAsync(_usuarioId, linea, Ct)).Should().BeNull();
+        await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
+    }
+
+    [Fact]
+    public async Task UnCodigoInactivoODesconocidoDelCubicadorCaeAlRespaldoDeNexoYDeLaListaFija()
+    {
+        var cubicador = Cubicador();
+
+        var inactivo = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "C9" }, Ct);
+        var respaldo = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "2S3", Carroceria = "VOLCO" }, Ct);
+        var carroceria = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { Carroceria = "TOLVA" }, Ct);
+
+        inactivo!.Mensaje.Should().Contain("tipo_vehiculo");
+        respaldo.Should().BeNull("el vehículo digitado del respaldo se valida contra Nexo y la lista fija");
+        carroceria!.Mensaje.Should().Contain("carroceria").And.Contain("CAMA_BAJA", "las opciones son las del cubicador");
+    }
+
+    [Fact]
+    public async Task SinCatalogosDelCubicadorSeValidaConElRespaldo()
+    {
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+        cubicador.ListarTiposVehiculoAsync(Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
+        cubicador.ListarTiposCarroceriaAsync(Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
+
+        (await Validador(cubicador).ValidarAsync(_usuarioId, Linea(), Ct)).Should().BeNull();
+        (await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { Carroceria = "CAMA_BAJA" }, Ct))!.Mensaje.Should().Contain("carroceria");
     }
 
     [Fact]
@@ -137,8 +200,8 @@ public sealed class clsValidadorCatalogosCapturaTests
         {
             [],
             [("carroceria", clsCodigosLineaSolicitud.CodigoNoCatalogo), ("tipo_vehiculo", clsCodigosLineaSolicitud.CodigoNoCatalogo)],
-            [("tipologia", clsCodigosLineaSolicitud.CodigoNoCatalogo), ("clase_contenedor", clsCodigosLineaSolicitud.CodigoNoCatalogo),
-                ("clase_viaje", clsCodigosLineaSolicitud.CodigoNoCatalogo)],
+            [("tipologia", clsCodigosLineaSolicitud.CodigoNoCatalogo), ("clase_viaje", clsCodigosLineaSolicitud.CodigoNoCatalogo),
+                ("clase_contenedor", clsCodigosLineaSolicitud.CodigoNoCatalogo)],
             [],
             [],
         }, o => o.WithStrictOrdering());
@@ -156,7 +219,7 @@ public sealed class clsValidadorCatalogosCapturaTests
 
         resultado.NoDisponible!.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
         resultado.Errores[0].Should().BeEmpty("el tipo de vehículo depende del catálogo de Nexo: no se puede juzgar");
-        resultado.Errores[1].Select(e => e.Campo).Should().Equal("tipologia", "clase_contenedor");
+        resultado.Errores[1].Select(e => e.Campo).Should().Equal(["tipologia"], "la clase de contenedor también depende del catálogo de Nexo (HU-023.1)");
     }
 
     [Fact]
@@ -173,5 +236,22 @@ public sealed class clsValidadorCatalogosCapturaTests
 
     private static clsLineaSolicitudCosteo Linea() => clsSolicitudCosteoMuestra.Crear().ALinea();
 
-    private clsValidadorCatalogosCaptura Validador() => new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
+    private clsValidadorCatalogosCaptura Validador(IClsCubicador? cubicador = null) =>
+        new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance, cubicador);
+
+    /// <summary>Cubicador con <c>C2</c> y <c>2S2</c> activos, <c>C9</c> inactivo y las carrocerías <c>CAMA_BAJA</c> y <c>FURGON</c>.</summary>
+    private static IClsCubicador Cubicador()
+    {
+        var cubicador = Substitute.For<IClsCubicador>();
+        cubicador.EstaConfigurado.Returns(true);
+        cubicador.ListarTiposVehiculoAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>.Exito(
+        [
+            new clsTipoVehiculoCubicador("C2", "Sencillo", ["FURGON"], true),
+            new clsTipoVehiculoCubicador("2S2", "Tractocamión 2S2", ["CAMA_BAJA"], true),
+            new clsTipoVehiculoCubicador("C9", "Retirado", [], false),
+        ]));
+        cubicador.ListarTiposCarroceriaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>.Exito(
+            [new clsTipoCarroceriaCubicador("CAMA_BAJA", "Cama baja", true), new clsTipoCarroceriaCubicador("FURGON", "Furgón", true)]));
+        return cubicador;
+    }
 }
