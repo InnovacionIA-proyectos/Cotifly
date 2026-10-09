@@ -615,8 +615,11 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     public async Task ElSeedDel0001ConElCambioDeCatalogoDel0009DejaLasSeisLineasDeNexo()
     {
         // HU-021 §10: el 0009 retira Almacenamiento, Almacenamiento3PL e ITR (sin equivalente en Nexo) y agrega DevolucionContenedor.
-        var lineas = await LeerAsync("SELECT lineaNegocio FROM dbo_cotifly.MargenesPolitica", r => r.GetString(0));
-        var mapeos = await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
+        // Base propia con todas las migraciones: la compartida recibe en paralelo líneas y mapeos temporales de otras pruebas
+        // (p. ej. clsMargenRepositoryTests), y aquí se verifica el catálogo exacto que deja el seed (#147, CI inestable).
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSeedLineas", clsBaseDatosPruebas.Scripts.Length);
+        var lineas = await LeerAsync("SELECT lineaNegocio FROM dbo_cotifly.MargenesPolitica", r => r.GetString(0), baseAislada.Cadena);
+        var mapeos = await clsBaseDatosPruebas.EscalarAsync<int>(baseAislada.Cadena,
             "SELECT COUNT(*) FROM dbo_cotifly.SapMapeoTrqType WHERE salesOrg = ''");
 
         lineas.Should().BeEquivalentTo(["Nacional", "Distribucion", "Importacion", "Exportacion", "Internacional", "DevolucionContenedor"]);
