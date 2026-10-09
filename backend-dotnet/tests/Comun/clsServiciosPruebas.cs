@@ -31,6 +31,9 @@ public static class clsServiciosPruebas
             // Los PDFs de las pruebas van a una carpeta temporal propia, nunca a /data/pdfs (#11).
             ["Pdf:StorageDir"] = CarpetaPdfsTemporal(),
 
+            // HU-021.6: las pruebas del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
+            ["Pdf:PermitirCotizacionChat"] = "true",
+
             // La TRM (HU-012.1) nunca sale a la red: sin un manejador falso, las dos fuentes apuntan a hosts de prueba inexistentes.
             ["Trm:Url"] = clsTrmFalso.Url,
             ["Trm:UrlDolarApi"] = clsDolarApiFalso.Url,

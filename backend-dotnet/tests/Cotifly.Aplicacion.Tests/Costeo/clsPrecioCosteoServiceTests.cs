@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
@@ -45,7 +46,8 @@ public sealed class clsPrecioCosteoServiceTests
         cotizacion.PrecioFinal.Should().Be(2_352_941m);
 
         cotizacion.MarcarConexosPendientesDeLeer();
-        Aplicar(cotizacion, Foto(2_000_000m, conexos: conexos), _ahora.AddHours(1)).Should().BeTrue();
+        var pendientes = new clsConexosPendientesNexo(cotizacion.Folio, cotizacion.PrimeraRuta!.Id, []);
+        Aplicar(cotizacion, Foto(2_000_000m, conexos: conexos), _ahora.AddHours(1), pendientes).Should().BeTrue();
 
         cotizacion.ConexosPendientesDeLeer.Should().BeFalse("la lectura quita la marca");
         cotizacion.PrimeraRuta.Conexos.Select(c => (c.IdServicioConexo, c.Precio, c.Cantidad)).Should().BeEquivalentTo(
@@ -120,8 +122,59 @@ public sealed class clsPrecioCosteoServiceTests
         cotizacion.PrecioFinal.Should().Be(2_000_000m);
     }
 
-    private bool Aplicar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora) =>
-        clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, new clsOpcionesCosteoNexo(), _servicio);
+    private bool Aplicar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora, clsConexosPendientesNexo? pendientes = null) =>
+        clsLecturaCosteo.AplicarFoto(cotizacion, foto, ahora, new clsOpcionesCosteoNexo(), _servicio, pendientes);
+
+    // ------------------------------------------------------------------ Regresión #135: reimportación de conexos
+
+    [Fact]
+    public void ConLaMarcaSoloSeImportanLosConexosNuevosYUnQuitadoEnCotiflyNoVuelve()
+    {
+        // CX-1 estaba en Nexo antes del POST incierto y el comercial lo quitó en Cotifly (Nexo no tiene DELETE y lo conserva); CX-2 es
+        // el que agregó el POST incierto.
+        var cotizacion = Cotizacion();
+        Aplicar(cotizacion, Foto(2_000_000m), _ahora);
+        IReadOnlyList<clsConexoNexo> enNexo = [new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 170_000m), new clsConexoNexo("CX-2", "Seguro", "adicional", 1m, 85_000m)];
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        Aplicar(cotizacion, Foto(2_000_000m, conexos: enNexo), _ahora.AddHours(1),
+            new clsConexosPendientesNexo(cotizacion.Folio, cotizacion.PrimeraRuta!.Id, ["CX-1"]));
+
+        cotizacion.PrimeraRuta.Conexos.Select(c => c.IdServicioConexo).Should().Equal(["CX-2"], "CX-1 se quitó en Cotifly y no vuelve");
+        cotizacion.ConexosPendientesDeLeer.Should().BeFalse();
+
+        // Una segunda lectura (sin marca) no duplica nada.
+        Aplicar(cotizacion, Foto(2_000_000m, conexos: enNexo), _ahora.AddHours(2));
+        cotizacion.PrimeraRuta.Conexos.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void LosConexosNuevosVanALaRutaPedidaYLosDeOtraRutaNoSeDuplicanEnLaRuta1()
+    {
+        var cotizacion = clsCotizacionMuestra.LicitacionCosteada([850_000m, 1_700_000m]);
+        clsCotizacionMuestra.ConConexo(cotizacion, "CX-1", "Cargue", 85_000m, 1m, orden: 2);
+        var segunda = cotizacion.RutasOrdenadas[1];
+        IReadOnlyList<clsConexoNexo> enNexo = [new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 85_000m), new clsConexoNexo("CX-9", "Escolta", "adicional", 1m, 42_500m)];
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        Aplicar(cotizacion, clsCotizacionMuestra.Foto([850_000m, 1_700_000m], conexos: enNexo), _ahora.AddHours(1),
+            new clsConexosPendientesNexo(cotizacion.Folio, segunda.Id, []));
+
+        cotizacion.RutasOrdenadas[0].Conexos.Should().BeEmpty("nada se duplica en la ruta 1");
+        segunda.Conexos.Select(c => c.IdServicioConexo).Should().BeEquivalentTo(["CX-1", "CX-9"]);
+    }
+
+    [Fact]
+    public void ConLaMarcaPeroSinElRegistroDePendientesNoSeImportaNada()
+    {
+        var cotizacion = Cotizacion();
+        cotizacion.MarcarConexosPendientesDeLeer();
+
+        Aplicar(cotizacion, Foto(2_000_000m, conexos: [new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 170_000m)]), _ahora);
+
+        cotizacion.PrimeraRuta!.Conexos.Should().BeEmpty("sin saber qué tenía Nexo antes no se arriesga a reimportar un conexo quitado");
+        cotizacion.ConexosPendientesDeLeer.Should().BeFalse();
+    }
 
     /// <summary>Formulario enviado a Nexo (pendiente de costeo) con el margen de la política resuelto en la ruta (o sin margen).</summary>
     private static clsCotizacionSolicitud Cotizacion(bool conMargen = true)

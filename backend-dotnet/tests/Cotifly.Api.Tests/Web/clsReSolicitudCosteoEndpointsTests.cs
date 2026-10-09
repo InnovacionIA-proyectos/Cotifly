@@ -112,7 +112,8 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         respuesta.Headers.ETag.Should().NotBeNull();
         (await ColumnaAsync(folioNuevo, "pesoKg")).Should().StartWith("28400");
         (await ColumnaAsync(folioNuevo, "tipoVehiculo")).Should().Be("2S3");
-        (await ColumnaAsync(folioNuevo, "carroceria")).Should().Be("PORTACONTENEDORES", "lo que no cambia se copia de la original");
+        (await ColumnaAsync(folioNuevo, "tipologia")).Should().Be("Contenedor", "lo que no cambia se copia de la original");
+        (await ColumnaAsync(folioNuevo, "carroceria")).Should().BeNull("HU-021.6: la original nació sin carrocería (la define la Mesa de Costeo)");
         (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = lp.cotizacionSolicitudId WHERE c.folio = '{folioNuevo}'"))
             .Should().Be(2);
         _nexo.UltimaAlta!["lineas"]![0]!["peso"]!.GetValue<decimal>().Should().Be(28400m);
@@ -337,6 +338,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         var expresion = columna switch
         {
             "costo" => "l.costoFinal",
+            "tipologia" => "l.tipologia",
             "pesoKg" or "tipoVehiculo" or "carroceria" => $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY v.createdAt, v.id)",
             "costeoId" => "c.solicitudNexoId",
             _ => $"c.{columna}",

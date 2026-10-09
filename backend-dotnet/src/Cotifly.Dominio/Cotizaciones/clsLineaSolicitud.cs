@@ -171,8 +171,10 @@ public sealed class clsLineaSolicitud
             Exclusivo = linea.Exclusivo,
             Consolidado = linea.Consolidado,
             RetornaContenedor = linea.RetornaContenedor ?? false,
+            CiudadDevolucionMunicipioId = linea.CiudadDevolucionMunicipioId,
             CiudadDevolucionNombre = NombreMunicipio(linea.CiudadDevolucionContenedor),
             LevanteContenedorDiferente = linea.LevanteContenedorDiferente ?? false,
+            CiudadLevanteMunicipioId = linea.CiudadLevanteMunicipioId,
             CiudadLevanteNombre = NombreMunicipio(linea.CiudadLevanteContenedor),
             HorasCargue = linea.HorasCargue ?? encabezado?.HorasCargue,
             HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue,
@@ -256,8 +258,10 @@ public sealed class clsLineaSolicitud
             Consolidado = Consolidado,
             RetornaContenedor = RetornaContenedor,
             CiudadDevolucionContenedor = CiudadDevolucionNombre,
+            CiudadDevolucionMunicipioId = CiudadDevolucionMunicipioId,
             LevanteContenedorDiferente = LevanteContenedorDiferente,
             CiudadLevanteContenedor = CiudadLevanteNombre,
+            CiudadLevanteMunicipioId = CiudadLevanteMunicipioId,
             ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
@@ -270,8 +274,9 @@ public sealed class clsLineaSolicitud
     /// <summary>
     /// Línea que viaja a Nexo por <paramref name="camion"/> (una línea por camión, <c>CAMBIOS_BACKEND</c> §5.3): los datos de la ruta
     /// (origen y destino por nombre e id, condiciones, horas, valor de la mercancía) y los del camión (vehículo, carrocería, peso y su
-    /// levante como <c>valorAprovisionamiento</c>). Las mercancías viajan como posiciones solo si la ruta tiene un único camión: con
-    /// varios, a Nexo le basta el peso de cada uno (el reparto lo sabe el cubicador).
+    /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
+    /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
+    /// reparto lo sabe el cubicador).
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -284,6 +289,7 @@ public sealed class clsLineaSolicitud
         var linea = ALinea();
         return linea with
         {
+            RutaId = Id,
             TipoVehiculo = camion.TipoVehiculo,
             Carroceria = camion.Carroceria,
             PesoKg = camion.PesoKg,
@@ -515,6 +521,65 @@ public sealed class clsLineaSolicitud
         }
 
         return quitados;
+    }
+
+    /// <summary>
+    /// Deja exactamente los conexos de <paramref name="cantidades"/> (id → cantidad nueva): quita los demás y cambia la cantidad de los
+    /// que siguen (mismo precio unitario). No recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.AjustarConexosRuta"/>.
+    /// Un id que no es conexo de la ruta lanza (el caso de uso lo valida antes). Devuelve los movimientos, en el orden de los conexos.
+    /// </summary>
+    internal IReadOnlyList<clsMovimientoConexo> AjustarConexos(IReadOnlyDictionary<string, decimal> cantidades)
+    {
+        ArgumentNullException.ThrowIfNull(cantidades);
+        if (cantidades.Keys.FirstOrDefault(id => _conexos.All(c => !string.Equals(c.IdServicioConexo, id, StringComparison.OrdinalIgnoreCase))) is { } ajeno)
+        {
+            throw new ArgumentException($"El conexo {ajeno} no es de la ruta {Orden}.", nameof(cantidades));
+        }
+
+        var movimientos = new List<clsMovimientoConexo>();
+        foreach (var conexo in _conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal).ToList())
+        {
+            var cantidad = cantidades.FirstOrDefault(p => string.Equals(p.Key, conexo.IdServicioConexo, StringComparison.OrdinalIgnoreCase));
+            if (cantidad.Key is null)
+            {
+                _conexos.Remove(conexo);
+                movimientos.Add(new clsMovimientoConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Cantidad, null));
+                continue;
+            }
+
+            var anterior = conexo.Cantidad;
+            if (conexo.Actualizar(null, conexo.Precio, cantidad.Value))
+            {
+                movimientos.Add(new clsMovimientoConexo(conexo.IdServicioConexo, conexo.Nombre, anterior, cantidad.Value));
+            }
+        }
+
+        return movimientos;
+    }
+
+    /// <summary>
+    /// Cambia el valor de UN levante de la ruta y lo copia a cada camión (decisión 4). No recalcula: desde fuera se usa
+    /// <see cref="clsCotizacionSolicitud.CambiarValorLevante"/>. Devuelve <c>true</c> si cambió.
+    /// </summary>
+    internal bool CambiarValorLevante(decimal? valor)
+    {
+        if (valor is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(valor), "El valor del levante no puede ser negativo.");
+        }
+
+        if (ValorLevanteContenedor == valor)
+        {
+            return false;
+        }
+
+        ValorLevanteContenedor = valor;
+        foreach (var camion in _vehiculos)
+        {
+            camion.CopiarLevante(valor);
+        }
+
+        return true;
     }
 
     // ------------------------------------------------------------------ Margen (ex clsCotizacion, HU-013.2, ADR-018 §3)

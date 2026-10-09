@@ -81,6 +81,43 @@ public sealed class clsServiciosConexosCosteoServiceTests
     }
 
     [Fact]
+    public async Task ConVariosCamionesElConexoViajaPegadoALaLineaDelPrimerCamionDeLaRuta()
+    {
+        // HU-021.7 (#134, decisión 3): la ruta 1 viaja a Nexo como tres líneas (una por camión); el conexo va con el lineaId de la línea de
+        // la cotización de Nexo del PRIMER camión (orden estable), después del costeo, con la versión reservada.
+        var ruta = _cotizacion.PrimeraRuta!;
+        ruta.AgregarVehiculo("3S3", null, 10_000m);
+        ruta.AgregarVehiculo("2S2", null, 8_000m);
+        var ordenados = ruta.VehiculosOrdenados;
+        var lineasNexo = new List<clsLineaCosteoNexo>();
+        for (var i = 0; i < ordenados.Count; i++)
+        {
+            if (ordenados[i].LineaSolicitudNexoId is null)
+            {
+                ordenados[i].AsignarLineaNexo($"LS-N{i}"); // el camión original ya tiene LS-1
+            }
+
+            ordenados[i].RegistrarCosteo(EstadoCosteo.Autocosteo, 1_000_000m, null);
+            lineasNexo.Add(new clsLineaCosteoNexo(ordenados[i].LineaSolicitudNexoId, 1_000_000m, null, null, $"LC-{ordenados[i].LineaSolicitudNexoId}"));
+        }
+
+        _cotizacion.RecalcularTotales(clsCotizacionMuestra.Ahora).EsExitoso.Should().BeTrue();
+        lineasNexo.Reverse(); // Nexo devuelve las líneas en cualquier orden
+        var nexo = new clsCotizacionNexo(CotizacionNexo, "Borrador", "SinDefinir", lineasNexo, [new clsConexoNexo("CX-1", "Cargue", "logistico", 1m, 85_000m)]);
+        _nexo.LeerCotizacionAsync(_ana, CotizacionNexo, Arg.Any<CancellationToken>()).Returns(Ok(nexo));
+        var primera = $"LC-{ordenados[0].LineaSolicitudNexoId}";
+        PostResponde(new clsAgregadoNexo(true, nexo with { Conexos = [.. nexo.Conexos, _cx2 with { CotizacionLineaId = primera }] }));
+
+        var resultado = await Servicio().AgregarAsync(_ana, _cotizacion.Folio, [Item(1, Almacenamiento, 2m)], Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        await _nexo.Received(1).AgregarAsync(_ana, CotizacionNexo, Arg.Is<IReadOnlyList<clsConexoParaNexo>>(i => i.Count == 1 && i[0].LineaId == primera),
+            Arg.Any<CancellationToken>());
+        ruta.Conexos.Select(c => c.IdServicioConexo).Should().Contain("CX-2", "el conexo vuelve a la ruta del camión que lo lleva");
+        resultado.Valor.RowVersion.Should().Be("8", "la versión reservada antes del POST");
+    }
+
+    [Fact]
     public async Task LoQueGuardaNoLoCambiaLaSiguienteConsultaDelPollingParaNoSubirLaVersion()
     {
         // HU-021: el JSON de conexos ya no existe; lo equivalente es que la siguiente lectura del costeo con los mismos conexos en Nexo no
@@ -254,6 +291,10 @@ public sealed class clsServiciosConexosCosteoServiceTests
         // se guarda la marca ConexosPendientesDeLeer con la versión reservada (antes no se guardaba nada sin PDF).
         _cotizacion.ConexosPendientesDeLeer.Should().BeTrue();
         _cotizacion.PrimeraRuta!.Conexos.Select(c => c.IdServicioConexo).Should().Equal("CX-1");
+
+        // HU-021.8 (#135): con la marca se guardan la ruta pedida y los conexos que Nexo YA tenía antes del POST (CX-1).
+        _cotizaciones.Received(1).RegistrarConexosPendientesNexo(Arg.Is<clsConexosPendientesNexo>(p =>
+            p.Folio == _cotizacion.Folio && p.LineaSolicitudId == _cotizacion.PrimeraRuta!.Id && p.Previos.SequenceEqual(new[] { "CX-1" })));
         await _unidad.Received(1).GuardarCambiosSiVersionAsync(_cotizacion.Id, Version + 1, Arg.Any<CancellationToken>());
     }
 

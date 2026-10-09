@@ -441,7 +441,11 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var raiz = salida.RootElement;
         raiz.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "folio", "version", "estado_costeo", "estado_envio", "tiene_resultado", "tiene_pdf", "pdf_desactualizado", "cliente", "linea_negocio",
-            "origen", "destino", "tipo_vehiculo", "moneda", "margen_actual", "margen_sugerido", "origen_margen", "conexos");
+            "origen", "destino", "tipo_vehiculo", "moneda", "margen_actual", "margen_sugerido", "origen_margen", "conexos", "numero_rutas", "rutas");
+        // HU-021.8 (#135): cada ruta solo con porcentajes, origen, destino, vehículo y conexos (nombre y cantidad).
+        raiz.GetProperty("rutas")[0].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            "linea_orden", "origen", "destino", "tipo_vehiculo", "margen_actual", "margen_sugerido", "origen_margen", "conexos");
+        raiz.GetProperty("rutas")[0].GetProperty("conexos")[0].EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("nombre", "cantidad");
         raiz.GetProperty("margen_actual").GetDecimal().Should().Be(0.15m);
         raiz.GetProperty("margen_sugerido").GetDecimal().Should().Be(0.15m);
         raiz.GetProperty("estado_costeo").GetString().Should().Be("autocosteo");

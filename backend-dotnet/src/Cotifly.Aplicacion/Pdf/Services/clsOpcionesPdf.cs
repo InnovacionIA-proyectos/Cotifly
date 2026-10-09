@@ -24,4 +24,12 @@ public sealed class clsOpcionesPdf
     /// </summary>
     [Range(1, 600)]
     public int TiempoEsperaRenderSegundos { get; set; } = 30;
+
+    /// <summary>
+    /// <c>Pdf__PermitirCotizacionChat</c> (por defecto <c>false</c>, HU-021.6): habilita <c>clsGenerarPdfService</c>, el camino legado que
+    /// crea una cotización "del chat" sin municipios (se salta la decisión 2 de HU-021). Desde ADR-018 la única creación es el formulario
+    /// (<c>POST /web/solicitudes-costeo</c>) y el asistente solo propone; apagado responde <c>COTIZACION_CHAT_RETIRADA</c>. Solo las
+    /// pruebas del render del PDF legado lo encienden.
+    /// </summary>
+    public bool PermitirCotizacionChat { get; set; }
 }

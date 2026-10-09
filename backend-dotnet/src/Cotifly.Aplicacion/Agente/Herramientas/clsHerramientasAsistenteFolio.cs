@@ -36,13 +36,18 @@ public sealed class clsHerramientasAsistenteFolio(
     public const string MensajePropuesta =
         "Propuesta lista. El comercial verá un resumen con los valores calculados por el sistema y un botón Confirmar: explícale en una o dos frases qué hará, sin escribir valores en dinero, y pídele que la revise y la confirme. Tú no la ejecutas.";
 
+    /// <summary>Instrucción cuando la cotización tiene varias rutas y el comercial no dijo a cuál aplica la acción (HU-021.8, decisión 6).</summary>
+    public const string MensajePreguntarRuta =
+        "La cotización tiene varias rutas y el comercial no dijo a cuál aplica. Muéstrale las rutas (número, origen y destino, sin valores en dinero) y pregúntale cuál; después vuelve a llamar con su lineaOrden. No supongas la ruta.";
+
     [KernelFunction(clsNombresHerramientas.ConsultarCotizacion)]
-    [Description("Consulta la cotización de esta conversación: estado del costeo y del envío, cliente, línea, ruta, moneda, márgenes (actual y sugerido, como fracción) y servicios conexos (nombre, cantidad, si van en el PDF). Nunca trae valores en dinero.")]
+    [Description("Consulta la cotización de esta conversación: estado del costeo y del envío, cliente, línea, moneda y sus rutas (linea_orden, origen, destino, márgenes actual y sugerido como fracción, y servicios conexos con nombre y cantidad). Nunca trae valores en dinero.")]
     public Task<clsResultadoHerramienta> ConsultarCotizacionAsync(CancellationToken cancellationToken = default)
     {
         var cotizacion = contexto.Cotizacion;
 
-        // HU-021: ruta, margen y conexos de la ruta 1 (el asistente propone el margen por ruta con #136).
+        // HU-021: los campos de primer nivel son los de la ruta 1 (compatibilidad); cada ruta trae los suyos en `rutas` (HU-021.8, #135):
+        // solo porcentajes, origen y destino, nunca montos.
         var lineas = cotizacion.RutasOrdenadas;
         var ruta = cotizacion.PrimeraRuta;
         var salida = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -61,51 +66,82 @@ public sealed class clsHerramientasAsistenteFolio(
             ["tipo_vehiculo"] = ruta?.VehiculosOrdenados.FirstOrDefault()?.TipoVehiculo,
             ["moneda"] = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             ["margen_actual"] = ruta?.MargenAplicado,
-            ["margen_sugerido"] = cotizacion.SugeridoVigente,
+            ["margen_sugerido"] = ruta?.SugeridoVigente,
             ["origen_margen"] = ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             ["conexos"] = cotizacion.RutasOrdenadas.SelectMany(r => r.Conexos)
                 .Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre ?? c.IdServicioConexo, ["cantidad"] = c.Cantidad, ["incluido"] = true })
                 .ToList(),
+            ["numero_rutas"] = lineas.Count,
+            ["rutas"] = RutasSinMontos(cotizacion),
         };
-        if (lineas.Count > 1)
-        {
-            // Licitación o varias líneas: cada ruta con su orden (para proponer un conexo a una línea).
-            salida["rutas"] = lineas.OrderBy(l => l.Orden)
-                .Select(l => new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["linea_orden"] = l.Orden,
-                    ["origen"] = l.OrigenNombre,
-                    ["destino"] = l.DestinoNombre,
-                    ["tipo_vehiculo"] = l.VehiculosOrdenados.FirstOrDefault()?.TipoVehiculo,
-                })
-                .ToList();
-        }
 
         return Task.FromResult(clsResultadoHerramienta.Exito(clsNombresHerramientas.ConsultarCotizacion, salida));
     }
 
+    /// <summary>
+    /// Las rutas como las ve el modelo (HU-021.8, #135): orden, origen, destino, vehículo, márgenes (fracción) y conexos (nombre y
+    /// cantidad). NUNCA montos: ni precio, ni costo, ni levante, ni valores de los conexos.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyDictionary<string, object?>> RutasSinMontos(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return [.. cotizacion.RutasOrdenadas.Select(l => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["linea_orden"] = l.Orden,
+            ["origen"] = l.OrigenNombre,
+            ["destino"] = l.DestinoNombre,
+            ["tipo_vehiculo"] = l.VehiculosOrdenados.FirstOrDefault()?.TipoVehiculo,
+            ["margen_actual"] = l.MargenAplicado,
+            ["margen_sugerido"] = l.SugeridoVigente,
+            ["origen_margen"] = l.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
+            ["conexos"] = l.Conexos.Select(c => new Dictionary<string, object?>(StringComparer.Ordinal) { ["nombre"] = c.Nombre ?? c.IdServicioConexo, ["cantidad"] = c.Cantidad }).ToList(),
+        })];
+    }
+
+    /// <summary>Respuesta que hace PREGUNTAR la ruta (sin propuesta): las rutas sin montos y la instrucción.</summary>
+    private static clsResultadoHerramienta PreguntarRuta(string herramienta, clsCotizacionSolicitud cotizacion) =>
+        clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["propuesta"] = null,
+            ["requiere_ruta"] = true,
+            ["rutas"] = RutasSinMontos(cotizacion),
+            ["mensaje"] = MensajePreguntarRuta,
+        });
+
     [KernelFunction(clsNombresHerramientas.ProponerAjusteMargen)]
-    [Description("Propone ajustar el margen de esta cotización. No lo aplica: el comercial lo confirma con un botón. El margen va como fracción (0.18 = 18 %), entre 0 y 0.99. Por debajo del margen sugerido la justificación es obligatoria: pídesela al comercial antes de proponer.")]
+    [Description("Propone ajustar el margen de UNA ruta de esta cotización. No lo aplica: el comercial lo confirma con un botón. El margen va como fracción (0.18 = 18 %), entre 0 y 0.99. Por debajo del margen sugerido de esa ruta la justificación es obligatoria: pídesela al comercial antes de proponer. Si la cotización tiene varias rutas y el comercial no dijo cuál, pregúntale antes (sin valores en dinero).")]
     public Task<clsResultadoHerramienta> ProponerAjusteMargenAsync(
         [Description("Margen nuevo como fracción (0.18 = 18 %).")] decimal margen,
         [Description("Justificación del comercial (obligatoria si el margen queda por debajo del sugerido).")] string? justificacion = null,
+        [Description("Ruta a la que aplica (linea_orden de consultar_cotizacion). Obligatoria si la cotización tiene varias rutas.")] int? lineaOrden = null,
         CancellationToken cancellationToken = default)
     {
         var herramienta = clsNombresHerramientas.ProponerAjusteMargen;
         var cotizacion = contexto.Cotizacion;
-        var propuesta = clsPropuestasAsistente.AjustarMargen(cotizacion, margen, justificacion);
+
+        // HU-021.8 (decisión 6): con varias rutas y sin indicación, el asistente pregunta cuál; nunca supone la ruta 1.
+        if (lineaOrden is null && cotizacion.Rutas.Count > 1)
+        {
+            return Task.FromResult(PreguntarRuta(herramienta, cotizacion));
+        }
+
+        var propuesta = clsPropuestasAsistente.AjustarMargen(cotizacion, margen, justificacion, lineaOrden);
         if (propuesta.EsFallo)
         {
             return Task.FromResult(clsResultadoHerramienta.Fallo(herramienta, SinDatos(propuesta.Error)));
         }
 
         contexto.Proponer(propuesta.Valor);
+        var ruta = cotizacion.ResolverRuta(lineaOrden, null).Valor;
         return Task.FromResult(clsResultadoHerramienta.Exito(herramienta, new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["propuesta"] = clsAccionPropuesta.TipoAjustarMargen,
-            ["margen_actual"] = cotizacion.PrimeraRuta?.MargenAplicado,
+            ["linea_orden"] = ruta.Orden,
+            ["origen"] = ruta.OrigenNombre,
+            ["destino"] = ruta.DestinoNombre,
+            ["margen_actual"] = ruta.MargenAplicado,
             ["margen_propuesto"] = propuesta.Valor.Cuerpo["margen"],
-            ["margen_sugerido"] = cotizacion.SugeridoVigente,
+            ["margen_sugerido"] = ruta.SugeridoVigente,
             ["con_justificacion"] = propuesta.Valor.Cuerpo["justificacion"] is not null,
             ["mensaje"] = MensajePropuesta,
         }));
@@ -157,7 +193,7 @@ public sealed class clsHerramientasAsistenteFolio(
         [Description("Texto a buscar en el nombre o el código del servicio (hasta 100 caracteres).")] string texto,
         [Description("Cantidad a agregar (0.01 a 999999.99), solo si el comercial pidió agregarlo.")] decimal? cantidad = null,
         [Description("Id del servicio elegido de una búsqueda anterior, si había varios.")] string? servicioId = null,
-        [Description("Línea de la cotización (1 en una cotización del formulario).")] int lineaOrden = 1,
+        [Description("Ruta a la que se agrega (linea_orden de consultar_cotizacion). Obligatoria si la cotización tiene varias rutas.")] int? lineaOrden = null,
         CancellationToken cancellationToken = default)
     {
         var herramienta = clsNombresHerramientas.BuscarServicioConexo;
@@ -198,6 +234,15 @@ public sealed class clsHerramientasAsistenteFolio(
         }
 
         var cotizacion = contexto.Cotizacion;
+        if (lineaOrden is null && cotizacion.Rutas.Count > 1)
+        {
+            // HU-021.8: los conexos son de una ruta; con varias, se pregunta cuál (la búsqueda ya está en la salida).
+            salida["requiere_ruta"] = true;
+            salida["rutas"] = RutasSinMontos(cotizacion);
+            salida["mensaje"] = MensajePreguntarRuta;
+            return clsResultadoHerramienta.Exito(herramienta, salida);
+        }
+
         var propuesta = clsPropuestasAsistente.AgregarConexo(cotizacion, elegido, valor, lineaOrden);
         if (propuesta.EsFallo)
         {

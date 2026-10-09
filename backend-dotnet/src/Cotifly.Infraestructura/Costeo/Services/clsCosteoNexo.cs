@@ -72,13 +72,15 @@ public sealed class clsCosteoNexo(
 
     private readonly string? _urlBase = string.IsNullOrWhiteSpace(opciones.Value.UrlBase) ? null : opciones.Value.UrlBase.Trim().TrimEnd('/');
 
+    private readonly bool _enviarReferenciaRuta = opciones.Value.EnviarReferenciaRuta;
+
     public bool EstaConfigurado => _urlBase is not null;
 
     public async Task<clsResultado<clsSolicitudCreadaNexo>> EnviarSolicitudAsync(
         Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(solicitud);
-        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud), cancellationToken);
+        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud, _enviarReferenciaRuta), cancellationToken);
         if (respuesta.EsFallo)
         {
             // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo, salvo la
@@ -140,13 +142,12 @@ public sealed class clsCosteoNexo(
         List<clsLineaSolicitudNexo> contenidoLineas;
         using (var documento = solicitud.Valor)
         {
-            // lineas[] de primer nivel (LineaCosteoDto): el contenido de cada línea para asociarla por contenido (ADR-017 §3).
+            // lineas[] de primer nivel (LineaCosteoDto): el contenido de cada línea para asociarla por contenido (ADR-017 §3, #134).
             contenidoLineas = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("lineas", out var d)
                       && d.ValueKind == JsonValueKind.Array
                 ? [.. d.EnumerateArray()
                     .Where(x => Texto(x, "lineaId") is not null)
-                    .Select(x => new clsLineaSolicitudNexo(Texto(x, "lineaId")!, Texto(x, "ruta"), Texto(x, "tipologia"), Decimal(x, "peso"),
-                        Texto(x, "tipoVehiculo"), Texto(x, "carroceria")))]
+                    .Select(LeerLineaSolicitud)]
                 : [];
             var cabecera = documento.RootElement.ValueKind == JsonValueKind.Object && documento.RootElement.TryGetProperty("solicitud", out var s)
                 ? s
@@ -292,13 +293,29 @@ public sealed class clsCosteoNexo(
             {
                 if (Texto(conexo, "id") is { } conexoId && Decimal(conexo, "valorAplicado") is { } valor)
                 {
-                    conexos.Add(new clsConexoNexo(conexoId, Texto(conexo, "nombre"), Texto(conexo, "categoria") ?? "logistico", Decimal(conexo, "cantidad") ?? 1m, valor));
+                    conexos.Add(new clsConexoNexo(conexoId, Texto(conexo, "nombre"), Texto(conexo, "categoria") ?? "logistico", Decimal(conexo, "cantidad") ?? 1m, valor)
+                    {
+                        CotizacionLineaId = Texto(conexo, "cotizacionLineaId"),
+                    });
                 }
             }
         }
 
         return new clsCotizacionNexo(id, Texto(raiz, "estado") ?? clsCotizacionNexo.EstadoBorrador, Texto(raiz, "resultado") ?? "SinDefinir", lineas, conexos);
     }
+
+    /// <summary>
+    /// Una línea de <c>lineas[]</c> de <c>SolicitudCosteoDto</c> (<c>LineaCosteoDto</c>). La ruta <c>"Origen → Destino"</c> viaja en
+    /// <c>ruta</c>; el swagger de Nexo QA (2026-10-08) la publica como <c>clsRuta</c> (renombre de su DTO), así que se aceptan los dos
+    /// nombres. <c>referenciaRuta</c> es el id de la ruta de Cotifly cuando Nexo implemente N1 (no es su <c>rutaId</c>, que es de su
+    /// catálogo de rutas).
+    /// </summary>
+    internal static clsLineaSolicitudNexo LeerLineaSolicitud(JsonElement linea) =>
+        new(Texto(linea, "lineaId") ?? string.Empty, Texto(linea, "ruta") ?? Texto(linea, "clsRuta"), Texto(linea, "tipologia"), Decimal(linea, "peso"),
+            Texto(linea, "tipoVehiculo"), Texto(linea, "carroceria"))
+        {
+            ReferenciaRuta = Texto(linea, "referenciaRuta"),
+        };
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c> (la base no lleva <c>/api</c>).</summary>
     public static Uri ConstruirUrl(string urlBase, string ruta)
@@ -329,13 +346,15 @@ public sealed class clsCosteoNexo(
     /// <c>CapturaSolicitudRequest</c> de Nexo (camelCase) con sus líneas en orden (una por camión, ruta por ruta; HU-021, ADR-019). Sin
     /// <c>valorEstimado</c> ni <c>referencia</c> (decisión 1 del 2026-10-08: se eliminan y dejan de enviarse a Nexo):
     /// <c>tipo</c> en minúscula (<c>spot</c> | <c>licitacion</c>, como lo valida Nexo), el cliente por BP o por id (G14), la línea de
-    /// negocio de Nexo en cada línea y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
+    /// negocio de Nexo de la ruta de cada línea (#134; si no la trae, la de la solicitud) y los catálogos con el código de Nexo tal cual. HU-013.10: <c>notas</c> en el encabezado (G7),
     /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
     /// (HU-013.11, filas de una licitación) o, si no las trae, las del encabezado (G5: sin ellas Nexo aplica a la línea su valor por
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
-    /// desplazamiento (G4). Los nulos no viajan.
+    /// desplazamiento (G4). Los nulos no viajan. Con <paramref name="enviarReferenciaRuta"/> (<c>Nexo:EnviarReferenciaRuta</c>, petición N1
+    /// de #134) cada línea lleva <c>referenciaRuta</c> = el id de su ruta de Cotifly; apagado por defecto porque Nexo aún no tiene ese
+    /// campo en <c>CapturaLineaRequest</c> (su swagger declara <c>additionalProperties: false</c>) ni otro de texto libre por línea.
     /// </summary>
-    internal static object CuerpoCaptura(clsSolicitudNexo solicitud)
+    internal static object CuerpoCaptura(clsSolicitudNexo solicitud, bool enviarReferenciaRuta = false)
     {
         var e = solicitud.Encabezado;
         return new clsCapturaSolicitudWire(
@@ -348,12 +367,13 @@ public sealed class clsCosteoNexo(
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s => new clsCapturaLineaWire(
                 s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId, s.TipoVehiculo, s.Carroceria, s.Tipologia,
-                solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
+                s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0
                     ? null
-                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))]))]);
+                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+                enviarReferenciaRuta ? s.RutaId?.ToString("D") : null))]);
     }
 
     /// <summary>
@@ -635,7 +655,7 @@ public sealed class clsCosteoNexo(
         string? Tipologia, string? LineaNegocio, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
         bool? RetornaContenedor, string? CiudadDevolucionContenedor, bool? LevanteContenedorDiferente, string? CiudadLevanteContenedor,
         decimal? ValorAprovisionamiento, decimal? HorasCargue, decimal? HorasDescargue, decimal? Peso, decimal? ValorMercancia,
-        IReadOnlyList<clsCapturaPosicionWire>? Posiciones);
+        IReadOnlyList<clsCapturaPosicionWire>? Posiciones, string? ReferenciaRuta);
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 

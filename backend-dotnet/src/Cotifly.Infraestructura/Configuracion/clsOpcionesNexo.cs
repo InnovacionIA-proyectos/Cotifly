@@ -21,6 +21,14 @@ public sealed class clsOpcionesNexo
     public string? UrlBase { get; set; }
 
     /// <summary>
+    /// ¿Cada línea de <c>POST /api/captura-solicitudes</c> lleva <c>referenciaRuta</c> (el id de la ruta de Cotifly)? Es la petición N1
+    /// a Nexo (#134, <c>docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md</c> §3): se enciende cuando Nexo acepte el campo en
+    /// <c>CapturaLineaRequest</c> y lo devuelva en <c>GET /api/solicitudes/{id}</c>. Por defecto <c>false</c>: hoy Nexo no lo tiene y su
+    /// swagger declara <c>additionalProperties: false</c>, así que mandarlo antes podría hacer que rechace el alta.
+    /// </summary>
+    public bool EnviarReferenciaRuta { get; set; }
+
+    /// <summary>
     /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta
     /// en cada <c>resolver_municipio</c>). Solo se guardan respuestas exitosas; <c>0</c> desactiva la caché. Por defecto 60.
     /// </summary>

@@ -439,6 +439,7 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 | DTO / endpoint | Cambio |
 |---|---|
 | `Costeo/DTOs/clsDtosCosteo.cs` 15-91 `clsSolicitudCosteoWebRequest` | Hoy es plano: una línea, un vehículo. Pasa a tener una lista de rutas. Cada ruta trae línea de negocio, municipios, condiciones, horas, valor del levante, mercancías (`idTipoMercancia`, nombre, medidas, cantidad, peso) y conexos. **Sin vehículo ni carrocería** |
+| HU-021.6 (#132, hecho) | `POST /web/solicitudes-costeo` recibe `rutas[]` (`RutaCapturaWeb`). El **formato plano anterior** (una ruta en la raíz) queda **obsoleto** (`deprecated` en `openapi.yaml`) y solo se acepta sin `rutas`; **se retira en #138**. Con `rutas`, un campo plano en la raíz es 400 con `detalle.errores` |
 | `clsDtosCosteo.cs` 96-103 (posición) | `descripcion` → `nombreMercancia`, y se agrega `idTipoMercancia` |
 | `clsDtosCosteo.cs` 107, 113 (conexos, margen) | La petición dice a qué ruta aplica (`lineaSolicitudId`) |
 | `clsDtosCosteo.cs` 146-225 `clsDatosCargaWebRequest` | La re-solicitud dice qué ruta cambia |
@@ -449,6 +450,26 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 
 Los endpoints de margen y de conexos (`/costeo/margen`, `/costeo/servicios-conexos`) conservan la ruta, pero su
 cuerpo agrega la ruta.
+
+### 7.1 Margen y conexos por ruta: guía para el frontend (HU-021.8, #135, implementado)
+
+- `GET .../costeo` trae `rutas[]` (`RutaCosteo`, siempre presente): `linea_orden`, `linea_solicitud_id`, origen, destino,
+  estado, `precio_final_linea`, `margen_aplicado`, `margen_sugerido`, `origen_margen` y sus `servicios_conexos`. **El
+  `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1** (compatibilidad): con varias
+  rutas, mostrar los de cada ruta.
+- `PUT .../costeo/margen` lleva `linea_orden` (o `linea_solicitud_id`). Con una sola ruta es opcional; **con varias rutas y sin
+  ruta responde 400 `RUTA_REQUERIDA`** con `detalle.rutas` (sin montos): mostrar un selector y repetir. `RUTA_INEXISTENTE` si la
+  ruta no es de la cotización. La justificación se exige contra el sugerido de ESA ruta. **El ajuste es ruta por ruta: solo la
+  ruta ajustada necesita precio**; si otras siguen en costeo, `precio_final` queda en `null` hasta que todas lo tengan, y el PDF
+  exige todas las rutas con precio.
+- `PUT .../costeo/servicios-conexos`: `{linea_orden, conexos: [{id, cantidad}]}` deja en la ruta exactamente esos conexos
+  (quitar = borrar la fila; cambiar la cantidad conserva el costo unitario de Nexo) o `{incluidos: [...]}` (compatibilidad). Debe
+  venir exactamente una de las dos: `{"linea_orden": 2}` solo responde 400 y no borra nada. Los ids se comparan sin distinguir
+  mayúsculas. Cada cambio queda auditado.
+- `POST .../costeo/servicios-conexos`: cada item lleva la ruta; todos los items de un clic son de la misma ruta.
+- **Divergencia con Nexo:** Nexo no tiene DELETE de conexos. Lo que se quita (o cuya cantidad se cambia) en Cotifly **no se
+  borra ni se cambia en la cotización de Nexo**: Cotifly es la fuente de los conexos (decisión 3) y el precio al cliente sale
+  de Cotifly. La cotización de Nexo puede seguir mostrando el conexo quitado.
 
 ---
 

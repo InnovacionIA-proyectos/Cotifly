@@ -289,6 +289,19 @@ public static class clsCodigosError
     public const string LineaSinCotizacionNexo = "LINEA_SIN_COTIZACION_NEXO";
 
     /// <summary>
+    /// HU-021.8 (#135, decisión 6): la cotización tiene varias rutas y la petición (margen o conexos) no dice a cuál aplica; 400 con
+    /// <c>detalle.rutas</c> (<c>linea_orden</c>, <c>linea_solicitud_id</c>, origen y destino de cada una, sin montos). Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string RutaRequerida = "RUTA_REQUERIDA";
+
+    /// <summary>
+    /// HU-021.8 (#135): la ruta indicada (<c>linea_orden</c> o <c>linea_solicitud_id</c>) no es de la cotización, o las dos no son la
+    /// misma ruta; 400, sin cambios. Código nuevo del backend .NET.
+    /// </summary>
+    public const string RutaInexistente = "RUTA_INEXISTENTE";
+
+    /// <summary>
     /// HU-013 (ADR-018 §4 y §5): el estado o el tipo de la cotización no permite la acción (una licitación no admite conexos, con
     /// <c>detalle.motivo = LICITACION</c>; re-solicitar con un costeo en curso); 409. Código nuevo del backend .NET.
     /// </summary>
@@ -299,4 +312,7 @@ public static class clsCodigosError
     /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
     /// </summary>
     public const string FolioRequerido = "FOLIO_REQUERIDO";
+
+    /// <summary>HU-021.6: crear una cotización desde el chat está retirado (<c>Pdf:PermitirCotizacionChat = false</c>).</summary>
+    public const string CotizacionChatRetirada = "COTIZACION_CHAT_RETIRADA";
 }

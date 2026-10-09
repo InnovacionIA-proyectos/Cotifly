@@ -197,6 +197,51 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task PorRutaElMargenYLosConexosIndicanLaRutaYQuitarUnConexoQuedaAuditado()
+    {
+        // HU-021.8 (#135): una sola ruta (la ruta es opcional); el margen y los conexos dicen la ruta con linea_orden o su id.
+        var (sesion, folio) = await CosteadaAsync();
+        using var costeo = await _api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var vista = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK);
+        var ruta = vista.GetProperty("rutas").EnumerateArray().Single();
+        ruta.GetProperty("linea_orden").GetInt32().Should().Be(1);
+        ruta.GetProperty("precio_final_linea").GetDecimal().Should().Be(3_200_000m);
+        var rutaId = ruta.GetProperty("linea_solicitud_id").GetString()!;
+        var conexo = ruta.GetProperty("servicios_conexos")[0].GetProperty("id").GetString()!;
+
+        using var otraRuta = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access,
+            """{"margen":0.18,"linea_orden":2}""", costeo.Headers.ETag?.Tag);
+        otraRuta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(otraRuta, "RUTA_INEXISTENTE");
+
+        using var margen = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access,
+            clsApiWebPruebas.Json(new { margen = 0.18m, linea_solicitud_id = rutaId }), costeo.Headers.ETag?.Tag);
+        var ajustado = await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        ajustado.GetProperty("rutas")[0].GetProperty("margen_aplicado").GetDecimal().Should().Be(0.18m);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{folio}' AND lineaSolicitudId = '{rutaId}'"))
+            .Should().Be(1, "el ajuste guarda la ruta real");
+
+        using var cantidad = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { linea_orden = 1, conexos = new[] { new { id = conexo, cantidad = 2 } } }), margen.Headers.ETag?.Tag);
+        var conDos = await VerificarContratoAsync(cantidad, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        conDos.GetProperty("servicios_conexos")[0].GetProperty("cantidad").GetDecimal().Should().Be(2m);
+        conDos.GetProperty("precio_final").GetDecimal().Should().Be(3_524_390m, "(2.550.000 + 2 × 170.000) / (1 - 0,18)");
+
+        using var quitar = await EnviarConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            """{"conexos":[]}""", cantidad.Headers.ETag?.Tag);
+        var sinConexos = await VerificarContratoAsync(quitar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _put, HttpStatusCode.OK);
+        sinConexos.GetProperty("servicios_conexos").GetArrayLength().Should().Be(0);
+        sinConexos.GetProperty("precio_final").GetDecimal().Should().Be(3_109_756m);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos WHERE lineaSolicitudId = '{rutaId}'"))
+            .Should().Be(0, "quitar un conexo borra su fila");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Configuracion("ConnectionStrings:Cotifly"),
+            $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = 'cambiar_servicios_conexos' AND exito = 1 AND input LIKE '%{folio}%'"))
+            .Should().Be(2, "cada cambio de conexos queda auditado");
+    }
+
+    [Fact]
     public async Task VariasConsultasDelPollingSinCambiosNoInvalidanElEtag()
     {
         var (sesion, folio) = await CosteadaAsync();

@@ -69,6 +69,43 @@ public sealed class clsServiciosConexosNexoTests
     }
 
     [Fact]
+    public async Task LosCostosDeLaCapturaRecorrenElCatalogoDeActivosHastaEncontrarLosIdsPedidos()
+    {
+        // HU-021.6 (decisión 3): Nexo no tiene GET por id; el costo unitario se lee de las páginas del catálogo de activos.
+        var primera = string.Join(',', Enumerable.Range(0, clsCostosConexosNexo.TamanoPagina).Select(i =>
+            $$"""{"id":"S-{{i}}","tipoServicio":"Servicio {{i}}","costoUnitario":{{1000 + i}},"activo":true}"""));
+        var nexo = new clsNexoClientesFalso()
+            .Responder(HttpStatusCode.OK, $$"""{"items":[{{primera}}],"total":102}""")
+            .Responder(HttpStatusCode.OK, """{"items":[{"id":"S-100","tipoServicio":"Cargue","costoUnitario":150000,"activo":true},{"id":"S-101","costoUnitario":9,"activo":false}],"total":102}""");
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+
+        var costos = await ambito.ServiceProvider.GetRequiredService<IClsCostosConexosNexo>().CostosAsync(_usuarioId, ["s-7", "S-100", "S-101", "NO-EXISTE"], Ct);
+
+        nexo.Peticiones.Should().HaveCount(2);
+        nexo.Peticiones.Select(p => p.Url.Query).Should().AllSatisfy(q => q.Should().Contain("soloActivos=true").And.Contain($"pageSize={clsCostosConexosNexo.TamanoPagina}"));
+        nexo.Peticiones[1].Url.Query.Should().Contain("page=2");
+        costos.Valor.Keys.Should().BeEquivalentTo(["S-7", "S-100"], "un servicio inactivo o inexistente no viene: lo reporta la captura");
+        costos.Valor["S-100"].Should().Be(new clsCostoConexoNexo("S-100", "Cargue", 150_000m));
+        costos.Valor["s-7"].CostoUnitario.Should().Be(1007m);
+    }
+
+    [Fact]
+    public async Task LosCostosDeLaCapturaTraducenLosErroresDeNexoYSinUrlBaseNoEstanDisponibles()
+    {
+        var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.Forbidden);
+        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
+        using var ambito = proveedor.CreateScope();
+        using var sinNexo = Proveedor(new() { ["Nexo:UrlBase"] = null }, new clsNexoClientesFalso());
+        using var ambitoSinNexo = sinNexo.CreateScope();
+
+        (await ambito.ServiceProvider.GetRequiredService<IClsCostosConexosNexo>().CostosAsync(_usuarioId, ["S-1"], Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.NexoSinPermiso);
+        (await ambitoSinNexo.ServiceProvider.GetRequiredService<IClsCostosConexosNexo>().CostosAsync(_usuarioId, ["S-1"], Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.NexoNoDisponible);
+    }
+
+    [Fact]
     public async Task AgregarEnviaLineaIdServicioYCantidadSinValorAplicadoYNoSeReintenta()
     {
         var nexo = new clsNexoClientesFalso().Responder(HttpStatusCode.ServiceUnavailable).Responder(HttpStatusCode.OK, """{"id":"COT-1"}""");

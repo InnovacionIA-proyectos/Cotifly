@@ -64,4 +64,4 @@ public sealed record clsPaginaServiciosConexos(int Total, int Page, int PageSize
 /// Un item de <c>POST /web/cotizaciones/{folio}/costeo/servicios-conexos</c> tal como llega (<c>ConexoAgregarWeb</c>); lo valida
 /// <c>clsServiciosConexosCosteoService</c>.
 /// </summary>
-public sealed record clsConexoAgregarEntrada(int? LineaOrden, string? ServicioId, decimal? Cantidad);
+public sealed record clsConexoAgregarEntrada(int? LineaOrden, string? ServicioId, decimal? Cantidad, string? LineaSolicitudId = null);

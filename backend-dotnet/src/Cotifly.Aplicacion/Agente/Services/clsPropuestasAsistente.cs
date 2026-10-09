@@ -50,27 +50,36 @@ public static class clsPropuestasAsistente
     public static string RutaServiciosConexos(string folio) => $"{Base(folio)}/costeo/servicios-conexos";
 
     /// <summary>
-    /// <c>ajustar_margen</c> → <c>PUT .../costeo/margen</c> <c>{margen, justificacion}</c>. Errores: los del dominio
-    /// (<c>AJUSTE_MARGEN_INVALIDO</c>, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>JUSTIFICACION_REQUERIDA</c>) y
-    /// <c>AJUSTE_MARGEN_INVALIDO</c> si ya es el margen vigente.
+    /// <c>ajustar_margen</c> → <c>PUT .../costeo/margen</c> <c>{margen, justificacion, linea_orden}</c> sobre la ruta
+    /// <paramref name="lineaOrden"/> (HU-021.8, #135; sin ella, la única ruta). Errores: los de la ruta (<c>RUTA_REQUERIDA</c> con varias
+    /// rutas y sin <paramref name="lineaOrden"/>, <c>RUTA_INEXISTENTE</c>), los del dominio (<c>AJUSTE_MARGEN_INVALIDO</c>,
+    /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>JUSTIFICACION_REQUERIDA</c> contra el sugerido de ESA ruta) y
+    /// <c>AJUSTE_MARGEN_INVALIDO</c> si ya es el margen vigente de la ruta.
     /// </summary>
-    public static clsResultado<clsAccionPropuesta> AjustarMargen(clsCotizacionSolicitud cotizacion, decimal margen, string? justificacion)
+    public static clsResultado<clsAccionPropuesta> AjustarMargen(
+        clsCotizacionSolicitud cotizacion, decimal margen, string? justificacion, int? lineaOrden = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var lineas = cotizacion.Rutas;
-        if (cotizacion.ValidarAjusteMargen(margen, justificacion) is { } invalido)
+        var resuelta = cotizacion.ResolverRuta(lineaOrden, null);
+        if (resuelta.EsFallo)
+        {
+            return resuelta.Error;
+        }
+
+        var ruta = resuelta.Valor;
+        if (cotizacion.ValidarAjusteMargen(ruta.Orden, margen, justificacion) is { } invalido)
         {
             return invalido;
         }
 
         var nuevo = clsMargenAjuste.RedondearMargen(margen);
-        var anterior = cotizacion.PrimeraRuta?.MargenAplicado;
-        if (cotizacion.Rutas.All(r => r.MargenAplicado == nuevo))
+        var anterior = ruta.MargenAplicado;
+        if (anterior == nuevo)
         {
             return new clsErrorDominio(clsCodigosError.AjusteMargenInvalido, $"El margen ya es {Porcentaje(nuevo)}: no hay nada que ajustar.");
         }
 
-        var recalculo = clsAjusteMargenCosteoService.Recalcular(cotizacion, nuevo);
+        var recalculo = clsAjusteMargenCosteoService.Recalcular(cotizacion, ruta, nuevo);
         if (recalculo.EsFallo)
         {
             // El mensaje del módulo de precio puede nombrar valores: al LLM solo va el código y un texto fijo.
@@ -78,11 +87,26 @@ public static class clsPropuestasAsistente
         }
 
         var moneda = cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos;
-        var conConexos = cotizacion.Rutas.Any(r => r.Conexos.Count > 0);
-        var concepto = lineas.Count > 1 || conConexos ? "el precio total" : "el precio del flete";
+        var conConexos = ruta.Conexos.Count > 0;
         var limpia = clsMargenAjuste.LimpiarJustificacion(justificacion);
-        var resumen = $"Ajustar el margen de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: {concepto} pasa de "
+        string resumen;
+        if (cotizacion.Rutas.Count > 1)
+        {
+            // HU-021.8: solo cambia la ruta elegida; el total cambia por ella.
+            resumen = $"Ajustar el margen de la ruta {ruta.Orden} ({ruta.Ruta}) de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: su precio pasa de "
+                      + $"{clsFormatoMoneda.Formatear(recalculo.Valor.PrecioRutaAnterior, moneda)} a {clsFormatoMoneda.Formatear(recalculo.Valor.PrecioRuta, moneda)} {moneda}"
+                      + (recalculo.Valor.PrecioFinal is { } total
+                          ? $" y el total, de {clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, moneda)} a {clsFormatoMoneda.Formatear(total, moneda)} {moneda}."
+                          : ".")
+                      + " Las demás rutas no cambian.";
+        }
+        else
+        {
+            var concepto = conConexos ? "el precio total" : "el precio del flete";
+            resumen = $"Ajustar el margen de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: {concepto} pasa de "
                       + $"{clsFormatoMoneda.Formatear(cotizacion.PrecioFinal, moneda)} a {clsFormatoMoneda.Formatear(recalculo.Valor.PrecioFinal, moneda)} {moneda}.";
+        }
+
         if (limpia is not null)
         {
             resumen += $" Justificación: {Cita(limpia)}.";
@@ -98,6 +122,7 @@ public static class clsPropuestasAsistente
         {
             ["margen"] = nuevo,
             ["justificacion"] = limpia,
+            ["linea_orden"] = ruta.Orden,
         };
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAjustarMargen, MetodoPut, RutaMargen(cotizacion.Folio), cuerpo, Recortar(resumen), clsCosteoCotizacionService.VersionEtag(cotizacion));
@@ -154,12 +179,13 @@ public static class clsPropuestasAsistente
     }
 
     /// <summary>
-    /// <c>agregar_servicios_conexos</c> → <c>POST .../costeo/servicios-conexos</c> <c>{items: [{linea_orden, servicio_id, cantidad}]}</c>.
-    /// Errores: los del endpoint antes de llamar a Nexo (<c>SOLICITUD_INVALIDA</c> por la forma, <c>ESTADO_NO_PERMITE</c>,
-    /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
+    /// <c>agregar_servicios_conexos</c> → <c>POST .../costeo/servicios-conexos</c> <c>{items: [{linea_orden, servicio_id, cantidad}]}</c>
+    /// sobre la ruta <paramref name="lineaOrden"/> (sin ella, la única ruta; HU-021.8). Errores: los del endpoint antes de llamar a Nexo
+    /// (<c>SOLICITUD_INVALIDA</c> por la forma, <c>ESTADO_NO_PERMITE</c>, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>,
+    /// <c>RUTA_REQUERIDA</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
     /// </summary>
     public static clsResultado<clsAccionPropuesta> AgregarConexo(
-        clsCotizacionSolicitud cotizacion, clsServicioConexoCatalogo servicio, decimal cantidad, int lineaOrden)
+        clsCotizacionSolicitud cotizacion, clsServicioConexoCatalogo servicio, decimal cantidad, int? lineaOrden)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(servicio);
@@ -174,16 +200,18 @@ public static class clsPropuestasAsistente
             return noPermitido;
         }
 
+        var ruta = clsServiciosConexosCosteoService.RutaDe(cotizacion, items.Valor).Valor;
+
         var item = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["linea_orden"] = lineaOrden,
+            ["linea_orden"] = ruta.Orden,
             ["servicio_id"] = items.Valor[0].ServicioId,
             ["cantidad"] = cantidad,
         };
         var cuerpo = new Dictionary<string, object?>(StringComparer.Ordinal) { ["items"] = new[] { item } };
         var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
-        var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Id}» a la línea {lineaOrden} en Nexo. "
-                      + $"Nexo calcula su valor y Cotifly le aplica el margen de {Porcentaje(cotizacion.Rutas.FirstOrDefault(r => r.Orden == lineaOrden)?.MargenAplicado)}; queda incluido en el PDF."
+        var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Id}» a la ruta {ruta.Orden} en Nexo. "
+                      + $"Nexo calcula su valor y Cotifly le aplica el margen de la ruta ({Porcentaje(ruta.MargenAplicado)}); queda incluido en el PDF."
                       + SufijoPdf(cotizacion);
         return new clsAccionPropuesta(
             clsAccionPropuesta.TipoAgregarServiciosConexos, MetodoPost, RutaServiciosConexos(cotizacion.Folio), cuerpo, Recortar(resumen),
