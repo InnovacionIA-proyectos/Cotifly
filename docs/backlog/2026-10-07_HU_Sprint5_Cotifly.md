@@ -1,206 +1,139 @@
-# Sprint 5 — Cotifly (HUs de backend y frontend)
+# Sprint 5 — Cotifly (HUs de backend y cierre)
 
-> **Fecha de redacción:** 2026-10-07. Documento vivo: se va completando a medida que se van confirmando más hallazgos/pedidos para este sprint — no es la versión final todavía.
-> **Fuente:** `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` (hallazgos encontrados probando en vivo contra `tbsdatacenter`/`dbTarifario_Nexo_Pruebas`, 2026-09-29 a 2026-10-05) + deuda técnica detectada aparte.
-> **Convención:** sigue el mismo formato de `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (Historia / Contexto / checklist con `[ ]`), numeración continúa desde HU-013 (la de `ADR-018`, ya construida) — estas son todas nuevas, HU-014 en adelante.
+> **Fecha de redacción:** 2026-10-07. **Versión final consolidada:** 2026-10-08.
+> **Fuente:** `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` (hallazgos de pruebas en vivo, 2026-09-29 a 2026-10-05) más la deuda técnica detectada aparte.
+> **Convención:** mismo formato de `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`. Numeración desde HU-014 (la de `ADR-018` es HU-013).
+> **Solo backend:** este documento no tiene HU de frontend. Lo que el Sprint 5 necesita del frontend está en `docs/backlog/2026-10-08_HU_Correccion_BD_Frontend_Cotifly.md`.
+
+**El Sprint 5 va DESPUÉS de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU.
 
 ---
 
-## Revisión del 2026-10-08: qué aplica después de la reestructuración de la base de datos
+## Resumen: 5 issues de backend (antes 14)
 
-**El Sprint 5 va DESPUÉS de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU. Se revisó cada HU de abajo contra ese esquema:
+Los 14 issues originales se agruparon por tema para no abrir tantos. La numeración conserva la del primer miembro de cada grupo.
 
-| HU | Estado | Qué cambia | Depende de |
+| Issue | Repo | Reúne | Depende de |
 |---|---|---|---|
-| 014.1 `estadoEnvio` sin `CHECK` | **Aplica, se absorbe en HU-021** | El `CHECK` entra al esquema (HU-021.2) y la tolerancia de filas malas se hace al reescribir la consulta (HU-021.4) | HU-021.2, 021.4 |
-| 014.2 Cotización de prueba de Duban | **Ya no aplica** | La base compartida se borró y recreó; la pregunta perdió sentido. Pasa a "Descartado" | — |
-| 014.3 Commitear el header `X-Portal-clsUsuario-Id` | **Aplica** | La lista creció a 6 archivos (se sumó el análisis de Excel) y siguen sin commit | — |
-| 014.4 Retirar el borrador de métricas | **Aplica, coordinar** | Las vistas ya se adaptaron al esquema nuevo; si esto se hace primero, se quitan en vez de adaptarlas | HU-010, HU-021.10 |
-| 015.1 Catálogo de tipo de vehículo / clase de viaje | **Aplica con cambios** | El comercial ya no escoge vehículo ni carrocería: salen del cubicador. Sigue haciendo falta la clase de viaje | HU-021.5, 021.6 |
-| 015.2 Clase de contenedor | **Aplica** | Sin cambios: `claseContenedor` sigue en la ruta | HU-021.4 |
-| 015.3 Servicios conexos | **Aplica con cambios** | Los conexos se guardan por ruta en una tabla (HU-021.8). Aquí queda enviar la selección a Nexo | HU-021.8 |
-| 016.1 Listado regional | **Aplica** | El listado se construye sobre la estructura nueva | HU-021.4, 021.9 |
-| 017.1 Margen promedio | **Aplica con cambios** | El margen ahora es por ruta; el promedio se calcula sobre rutas | HU-021.8, 021.10 |
-| 018.1 Campos en "Ver detalle" | **Aplica, reformulada** | Origen, destino, peso y valor ya no están en la cabecera: son de cada ruta | HU-021.9, 021.11 |
-| 018.2 Catálogo de referencia | **Aplica** | "Nivel línea" pasa a ruta y camión | HU-021.11 |
-| 019.1 Ganada/perdida motivo + comentario | **Aplica, corregida** | Revisar a qué endpoint llama el frontend (ver la nota en la HU) | HU-021.13 |
-| 020.1 Exportar Excel | **Aplica** | El contenido por ruta y camión | HU-021.9 |
+| **[HU-014.3]** Deuda técnica de backend: header definitivo y retiro del borrador de métricas | `Cotifly` | antes 014.3 y 014.4 | HU-010 validada; coordinar con HU-021.7 y 021.10 |
+| **[HU-015.1]** Catálogos y servicios conexos de Nexo: verificar y cerrar | `Cotifly` | antes 015.1, 015.2 y 015.3 | HU-021.8 |
+| **[HU-016.1]** Gerente Comercial: listado regional y margen promedio | `Cotifly` | antes 016.1 y 017.1 | HU-021.4, 021.9, 021.10 |
+| **[HU-018.1]** "Ver detalle": campos nuevos, ganada/perdida y exportar Excel | `Cotifly` | antes 018.1, 019.1 y 020.1 | HU-021.9, 021.11, 021.13 |
+| **[HU-022.1]** Cierre: limpiar el código viejo y dejar la documentación profesional | `Cotifly` | — | **al final de todo** |
+
+**Ya no son issues** (se muestran abajo, en "Qué pasó con cada HU original"): HU-014.1 (absorbida en HU-021.2 y 021.4), HU-014.2 (descartada), HU-015.4 y HU-018.2 (notas).
 
 ---
 
-## HU-014 — Deuda técnica y correcciones de backend
+## HU-014 — Deuda técnica de backend
 
 > **Repo:** `Cotifly` · **Asignado a:** Duban (Backend)
 
-### [HU-014.1] `estadoEnvio` sin `CHECK` en BD: un solo valor inválido tumba TODO "Mis cotizaciones" del usuario
-
-**Labels:** `backend`, `bug`
-**Síntoma:** `GET /web/mis-cotizaciones` respondió `500` para un usuario con una sola cotización con un valor fuera de catálogo (`estadoEnvio = 'pendiente'`, insertado por error en datos de prueba).
-
-- [ ] **Causa:** `clsCotizacionRepository.ListarConLineaPorUsuarioAsync` (`src/Cotifly.Infraestructura/Cotizaciones/Repositories/clsCotizacionRepository.cs:109`) trae TODAS las cotizaciones del usuario en una sola consulta materializada. El mapeo de EF Core (`clsConvertidorCodigoEnum<TEnum>`) lanza `ArgumentException` sin capturar si el código no está en el enum (`EstadoEnvio`/`EstadoCosteo`) — la excepción no se maneja en ningún punto de la cadena, así que se propaga como `500` y bloquea la consulta completa para ese usuario, no solo la fila mala.
-- [ ] **Por qué importa:** `estadoCosteo` ya tiene `CHECK` en BD desde el 0004 (`ck_cotizaciones_estadoCosteo`), pero `estadoEnvio` sigue sin ninguno — nada impide hoy que una fila quede fuera de `sin_enviar`/`enviada`/`reenviada` y tumbe el módulo para ese comercial.
-- [ ] Corto plazo: agregar un `CHECK` para `estadoEnvio` igual al patrón de `ck_cotizaciones_estadoCosteo`. **Revisión 2026-10-08:** el esquema nuevo (`db/scripts/01_crear_esquema.sql`) tampoco lo trae. Se hace dentro de **HU-021.2**, en el script de instalación y en el `0009`; en la base compartida ya recreada, con un `ALTER` puntual.
-- [ ] Mediano plazo: que `ListarConLineaPorUsuarioAsync` (o el converter) no deje que una fila con un código inesperado tumbe las demás — tolerar y loguear en vez de lanzar, o mapear fila por fila en vez de una proyección que materializa todo de una. **Revisión 2026-10-08:** esa consulta se reescribe en **HU-021.4**; hacer esto ahí.
-
-### [HU-014.2] Confirmar contra qué base insertó Duban su cotización de prueba
-
-**Labels:** `backend`, `investigacion`
-> **Ya no aplica (2026-10-08).** La base compartida se borró y recreó con el esquema nuevo, y esa cotización ya no existe en ningún lado. Las pruebas de ahora en adelante se hacen con datos nuevos creados por el flujo nuevo. Se deja el texto original por trazabilidad.
-
-- ~~La cotización de prueba que Duban insertó manualmente para probar "Mis cotizaciones" no apareció en `dbo_cotifly.Cotizaciones` de `tbsdatacenter`/`dbTarifario_Nexo_Pruebas` (la base real compartida) — confirmar contra qué servidor/base la insertó, para descartar una segunda base "de pruebas" desincronizada dando vueltas.~~
-
-### [HU-014.3] Commitear como definitivo el ajuste del header `X-Portal-clsUsuario-Id`
-
-**Labels:** `backend`, `tarea-tecnica`
-**Decisión (2026-10-05):** Nexo no va a corregir el nombre del header de su lado (bug admitido en `CONTRATO.md §7`, discrepancia #1) — el ajuste queda **permanente** en Cotifly, no es un parche a revertir.
-
-- [ ] El ajuste (`"X-Portal-Usuario-Id"` → `"X-Portal-clsUsuario-Id"`) ya está aplicado en el código de los adaptadores de Nexo y los comentarios ya no dicen "revertir cuando lo arreglen". **Son 6 archivos** (a 2026-10-08): `clsBuscadorClientesNexo.cs`, `clsCatalogosMaestrosNexo.cs` (antes `clsCatalogosFleteNexo.cs`), `clsCosteoNexo.cs` (dos sitios), `clsCubicacionNexo.cs`, `clsMunicipiosNexo.cs` y `clsAnalizadorExcelNexo.cs`.
-- [ ] **Falta:** commitear estos cambios como definitivos — hoy siguen sin commitear en la rama de trabajo (se dejaron fuera del commit de la reestructuración a propósito, para que los commitee Duban). Ojo con `clsCosteoNexo.cs`: HU-021.7 lo reescribe; conviene commitear esto **antes** para no mezclar los dos cambios.
-- [ ] Cuando el cubicador entre (HU-021.5), su adaptador **no** usa este header: autentica con `Authorization: Bearer <CUBICADOR_API_KEY>`.
-
-### [HU-014.4] Retirar el borrador obsoleto del tablero de métricas (`/actividad`, `/ajustes-margen`)
-
+### [HU-014.3] Deuda técnica de backend: header definitivo y retiro del borrador de métricas
 **Labels:** `backend`, `tarea-tecnica`, `deuda-tecnica`
-**Depende de que HU-010 (tablero real, `/web/metricas/comercial` y `/regional`) esté validado en producción sin depender de esto.**
+**Reúne** las antiguas HU-014.3 y HU-014.4. Son dos tareas pequeñas e independientes: se pueden hacer en cualquier orden, pero la primera va **antes de HU-021.7**.
 
-`GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` fueron el primer borrador del tablero, antes del diseño final de HU-010.1. Ya están marcados `(obsoleto)` en el propio código (`clsMetricasController.cs`) y `clientepro-frontend` no los consume en ningún lado (confirmado por búsqueda en el repo).
+**Parte A — Commitear como definitivo el header `X-Portal-clsUsuario-Id`.**
+Decisión (2026-10-05): Nexo no va a corregir el nombre del header de su lado (bug admitido en `CONTRATO.md §7`, discrepancia #1). El ajuste queda **permanente** en Cotifly.
 
-- [ ] Confirmar que ningún consumidor externo (Postman guardado, script, otro servicio) sigue llamando estos dos endpoints.
-- [ ] Retirar los endpoints `Actividad`/`AjustesMargen` de `clsMetricasController.cs`.
-- [ ] Retirar `ListarActividadAsync`/`ListarAjustesMargenAsync` de `IClsMetricasRepository`/`clsMetricasRepository.cs`, y los DTOs `clsActividadComercial`/`clsAjustesMargenComercial`.
-- [ ] Retirar las vistas `vActividadPorComercial` (creada en 0001, redefinida en 0003) y `vAjustesMargenPorComercial` (creada en 0006) con un script `000N_retirar_vistas_actividad.sql` — no destructivo sobre datos (son vistas). **Revisión 2026-10-08:** las dos vistas ya se redefinieron en `0009` y en `01_crear_esquema.sql` para el esquema nuevo (`vAjustesMargenPorComercial` saca la línea de negocio de la ruta del ajuste). Si esta HU se hace **antes** de HU-021.10, se quitan de ambos scripts en vez de adaptarlas; si se hace después, el script de retiro cubre también la instalación desde cero.
-- [ ] Actualizar `docs/docs_front/CONTRATO_API_WEB.md`/`specs/openapi.yaml` quitando ambas rutas.
+- [ ] El ajuste (`"X-Portal-Usuario-Id"` → `"X-Portal-clsUsuario-Id"`) ya está aplicado y los comentarios ya no dicen "revertir". **Son 6 archivos** (a 2026-10-08): `clsBuscadorClientesNexo.cs`, `clsCatalogosMaestrosNexo.cs`, `clsCosteoNexo.cs` (dos sitios), `clsCubicacionNexo.cs`, `clsMunicipiosNexo.cs` y `clsAnalizadorExcelNexo.cs`.
+- [ ] **Falta commitearlos como definitivos.** Siguen sin commit a propósito, para que los commitee Duban. Ojo con `clsCosteoNexo.cs`: HU-021.7 lo reescribe, así que conviene commitear esto **antes** para no mezclar los dos cambios.
+- [ ] Cuando el cubicador entre (HU-021.5), su adaptador **no** usa este header: autentica con `Authorization: Bearer <CUBICADOR_API_KEY>`.
+- [ ] Al comitear, aprovechar el mismo commit para corregir las rutas de documentos viejas dentro de `backend-dotnet/` (punto 11 de los pendientes de Duban, 28 archivos).
+
+**Parte B — Retirar el borrador obsoleto del tablero de métricas (`/actividad`, `/ajustes-margen`).**
+**Depende de que HU-010 (tablero real, `/web/metricas/comercial` y `/regional`) esté validado en producción sin depender de esto.** Estos dos endpoints fueron el primer borrador del tablero; ya están marcados `(obsoleto)` en el código (`clsMetricasController.cs`) y `clientepro-frontend` no los consume.
+
+- [ ] Confirmar que ningún consumidor externo (Postman guardado, script, otro servicio) sigue llamándolos.
+- [ ] Retirar los endpoints `Actividad` y `AjustesMargen` de `clsMetricasController.cs`.
+- [ ] Retirar `ListarActividadAsync` y `ListarAjustesMargenAsync` de `IClsMetricasRepository`/`clsMetricasRepository.cs`, y los DTOs `clsActividadComercial` y `clsAjustesMargenComercial`.
+- [ ] Retirar las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial` con un script nuevo **`0010_retirar_vistas_actividad.sql`**, y quitarlas también de `db/scripts/01_crear_esquema.sql` (regla: toda migración nueva se refleja en el 01). El `0009` queda como respaldo y no se toca. Si esta tarea se hace **antes** de HU-021.10, se quitan en vez de adaptarlas.
+- [ ] Actualizar `docs/docs_front/CONTRATO_API_WEB.md` y `specs/openapi.yaml` quitando ambas rutas.
 
 ---
 
 ## HU-015 — Catálogos y servicios conexos: usar las fuentes correctas de Nexo
 
 > **Repo:** `Cotifly` · **Asignado a:** Duban (Backend)
-> **Contexto general:** revisando qué le falta a Cotifly para que toda la información del formulario de "Nueva cotización" se cree correctamente en las tablas de Nexo (no solo se calcule/muestre localmente), se comparó `CONTRATO.md` de Nexo (incluido lo nuevo bajo `/api/catalogos/*`) contra lo que Cotifly implementaba hasta el 2026-10-05.
 
-### [HU-015.1] Migrar tipo de vehículo / clase de viaje al catálogo maestro de Nexo
+### [HU-015.1] Catálogos y servicios conexos de Nexo: verificar y cerrar
+**Labels:** `backend`, `integración`
+**Reúne** las antiguas HU-015.1, 015.2 y 015.3. **Es un issue de verificación primero**: una revisión del código (2026-10-08) encontró que buena parte ya está hecha, y el pull de QA del 2026-10-07 trajo HU-013.3 y HU-013.10 (#106).
 
-**Labels:** `backend`
-- [ ] Cotifly los traía de `GET /api/biblioteca-sap-historico/filtros` (pensado para filtrar histórico de tarifas, no un catálogo maestro) en vez de `GET /api/catalogos/tipos-vehiculo` y `GET /api/catalogos/clases-viaje`.
-- [ ] **Nota 2026-10-07:** el pull de QA de esa fecha ya trajo la corrección (`clsCatalogosMaestrosNexo.cs`/`clsCatalogosFleteNexo.cs` reescritos, HU-013.10 #106) — **verificar si esta issue ya quedó resuelta** antes de abrirla, puede que solo falte confirmar en QA.
-- [ ] Confirmar con Duban si existe un catálogo maestro equivalente para **carrocería**, o si ese campo se queda en `biblioteca-sap-historico/filtros` por ahora.
-- [ ] **Revisión 2026-10-08 — cambia el alcance.** Con el cubicador (HU-021.5) el comercial **ya no escoge** tipo de vehículo ni carrocería: salen de la recomendación y se guardan por camión. Entonces este catálogo solo sigue haciendo falta para la **clase de viaje** (que sí es de la ruta) y, si se deja, para que el admin de fletes corrija un camión que quedó sin vehículo. Reformular esta issue a "clase de viaje contra `GET /api/catalogos/clases-viaje`" y dejar vehículo y carrocería para el acuerdo de códigos entre Nexo y el cubicador (en Nexo el vehículo es una sola combinación del catálogo: tipo + carrocería + rango de peso, `tbl_configuraciones_vehiculo`).
+**Contexto original (2026-10-05):** Cotifly no usaba las fuentes correctas de Nexo para que la información del formulario se cree en sus tablas: traía tipo de vehículo y clase de viaje de `GET /api/biblioteca-sap-historico/filtros` (pensado para filtrar histórico), usaba un catálogo propio de clase de contenedor, y no enviaba a Nexo la selección de conexos del comercial.
 
-### [HU-015.2] Conectar clase de contenedor al catálogo real de Nexo
+**Lo que ya existe en el código (verificado el 2026-10-08, sin confirmar que cubra todo):**
+`clsCatalogosMaestrosNexo` y su DTO (`/api/catalogos/tipos-vehiculo`, `/clases-viaje`, `/clases-contenedor`, `/lineas-negocio`), `clsServiciosConexosNexo` y `clsServiciosConexosController` (catálogo `GET /api/servicios-conexos`).
 
-**Labels:** `backend`
-- [ ] Cotifly usa un catálogo **hardcodeado propio** (`ClaseContenedor.cs` en el backend, `clase-contenedor.catalogo.ts` en el frontend) — nunca llama a `GET /api/catalogos/clases-contenedor`. Si Nexo agrega/renombra/retira un valor, Cotifly queda desincronizado sin enterarse.
-
-### [HU-015.3] Servicios conexos: catálogo disponible + enviar la selección del comercial a Nexo
-
-**Labels:** `backend`
-**La más importante de este grupo.** `clsCosteoNexo.cs` solo **lee** los conexos que ya traiga la cotización (`LeerCotizacion`, a partir de `POST /api/cotizaciones`), pero Cotifly no tiene forma de:
-
-- [ ] Traer el catálogo de servicios conexos disponibles — `GET /api/servicios-conexos` (paginado, `Roles: Todos`).
-- [ ] Enviar la selección del comercial de vuelta a Nexo — `POST /api/cotizaciones/{id}/conexos` (`Roles: Comercial, CoordinadorFletes, Admin`; body `{ items: [{ servicioConexoId, cantidad?, valorAplicado? }] }`).
-- [ ] Sin esto, la elección del comercial se calcula/guarda solo localmente — la cotización real en las tablas de Nexo queda sin esos conexos (afecta reportes/biblioteca de tarifas ganadas/auditoría del lado de Nexo).
-- [ ] **Nota 2026-10-07:** el pull de esa fecha trajo `clsServiciosConexosNexo.cs`/`clsServiciosConexosController.cs` nuevos (HU-013.3) — **verificar si esta issue ya quedó resuelta** antes de abrirla.
-- [ ] **Revisión 2026-10-08:** cómo se **guardan** los conexos en Cotifly cambia: dejan de ser un JSON en la cabecera y la línea y pasan a una tabla por **ruta**, con su cantidad (HU-021.8). Eso no es parte de esta issue. Aquí queda lo que ya estaba: traer el catálogo y **enviar la selección a Nexo**. Como Nexo guarda los conexos pegados a una línea (que para él es un camión), los de una ruta se envían pegados a la línea del primer camión de esa ruta.
-
-### [HU-015.4] (nota, no issue) Línea de negocio — confirmar si conviene pasar a catálogo en vivo
-
-Esto está bien resuelto hoy: Cotifly usa su propio catálogo (`MargenesPolitica`) con un mapeo manual al código de Nexo (`LineaNegocioNexo`). Vale la pena preguntarle a Duban si ahora conviene consumir `GET /api/catalogos/lineas-negocio` en vivo en vez de mantener el mapeo a mano — no es un bug, es mantenimiento.
+- [ ] **Verificar y cerrar tipo de vehículo y clase de viaje.** Con el cubicador (HU-021.5) el comercial **ya no escoge** vehículo ni carrocería: salen de la recomendación y se guardan por camión. Solo hace falta la **clase de viaje** (es de la ruta), contra `GET /api/catalogos/clases-viaje`. Vehículo y carrocería quedan para el acuerdo de códigos entre Nexo y el cubicador (en Nexo el vehículo es una sola combinación del catálogo: tipo + carrocería + rango de peso, `tbl_configuraciones_vehiculo`). La pregunta de si existe un catálogo de **carrocería** en Nexo se cierra con eso.
+- [ ] **Clase de contenedor.** Confirmar que el backend ya valida contra `GET /api/catalogos/clases-contenedor` y que no queda el catálogo propio hardcodeado (`ClaseContenedor.cs`). Si queda, quitarlo.
+- [ ] **Servicios conexos: enviar la selección a Nexo.** Verificar si ya existe `POST /api/cotizaciones/{id}/conexos` (`Roles: Comercial, CoordinadorFletes, Admin`; body `{ items: [{ servicioConexoId, cantidad?, valorAplicado? }] }`). Sin esto, la elección del comercial queda solo en Cotifly y la cotización real en Nexo sale sin conexos (afecta reportes, biblioteca de tarifas ganadas y auditoría de Nexo).
+- [ ] **Cómo se guardan los conexos en Cotifly** cambia (tabla por ruta, no JSON en la cabecera) y es parte de **HU-021.8**, no de este issue. Aquí queda lo que ya estaba: el catálogo y **enviar la selección a Nexo**. Como Nexo guarda los conexos pegados a una línea (para él, un camión), los de una ruta se envían pegados a la línea del **primer camión** de esa ruta; ese mismo punto está en HU-021.8, así que **se hace una sola vez, allá**.
+- [ ] Si todo lo anterior ya estaba hecho, **cerrar el issue** dejando anotado qué se verificó.
 
 ---
 
-## HU-016 — Listado de cotizaciones por regional (Gerente Comercial)
+## HU-016 — Gerente Comercial: listado regional y margen promedio
 
 > **Repo:** `Cotifly` · **Asignado a:** Duban (Backend)
 
-### [HU-016.1] Endpoint `GET /web/cotizaciones/regional`
-
-**Labels:** `backend`
-La vista de Gerente Comercial "Todas las cotizaciones" (frontend) necesita un listado fila por fila de las cotizaciones de los comerciales de su regional, pero hoy no existe:
-
-- [ ] `GET /web/mis-cotizaciones` solo trae las del propio usuario (`clsCotizacionesController.cs:22`).
-- [ ] `GET /web/metricas/regional` es **agregado** (`clsMetricasRegional`), no un listado fila por fila.
-- [ ] Construir `GET /web/cotizaciones/regional` (mismo patrón de nombre y política `GerenteComercial` que ya usa `/web/metricas/regional`).
-- [ ] Reusar `clsRegionalUsuarioService.ListarMiembrosAsync(regional)` (ya la usa el tablero de métricas) + un método nuevo en `IClsCotizacionRepository` (`ListarPorUsuariosAsync(IReadOnlyCollection<Guid> usuarioIds, ...)`) que filtre `WHERE usuarioId IN (...)` — no reconstruir la resolución de regional desde cero.
-- [ ] **Revisión 2026-10-08:** se construye **después** de HU-021.4 y 021.9, sobre el repositorio y el resumen nuevos. La línea de negocio de una fila sale de la ruta 1 de la solicitud (o "Varias"), y el precio es el `precioFinal` de la cabecera.
-
----
-
-## HU-017 — "Margen promedio" en Mis Cotizaciones: redefinir contra qué se compara
-
-> **Repos:** `Cotifly` + `clientepro-frontend` · **Pendiente de decisión de negocio antes de construir**
-
-### [HU-017.1] Decidir y construir la comparación correcta de margen
-
+### [HU-016.1] Gerente Comercial: listado regional y margen promedio
 **Labels:** `backend`, `producto`
-La card "Margen promedio" (Comercial) muestra un "± desviación" que casi siempre sale vacío (`—`). No es un bug de datos faltantes — es el comportamiento diseñado:
+**Reúne** las antiguas HU-016.1 y HU-017.1. Las dos tocan lo que ve el comercial y su gerente en el tablero y el listado, y las dos se construyen sobre el resumen nuevo de HU-021.
 
-- [ ] `DesviacionPromedioMargen` (`clsCalculadoraMetricas.cs`) promedia `MargenAjustes.diferencia`, tabla que solo se escribe cuando el comercial **negocia explícitamente** un margen distinto (documentado así a propósito en ADR-016). Si el comercial siempre acepta el margen propuesto, la tabla queda vacía para él.
-- [ ] **Lo que negocio quiere (pedido explícito de Sara, 2026-10-05):** comparar el margen aplicado promedio contra el **promedio de los márgenes de política de todas las líneas** (`MargenesPolitica.margen`), no contra los ajustes negociados. Verde si está por encima, rojo si está por debajo.
-- [ ] **Opción A (más segura):** endpoint nuevo accesible para Comercial que liste `MargenesPolitica` (línea, margen) de las líneas activas, para que el frontend calcule el promedio/desviación. Hoy el único que expone esto (`GET /web/admin/lineas-negocio`) está protegido con política `GerenteComercial` — no hay ADR que declare esto confidencial para Comercial (de hecho ya se filtra uno por uno vía el chat, herramienta `obtener_margen`); el bloqueo actual parece ser de alcance administrativo, no de confidencialidad.
-- [ ] **Opción B (más riesgosa):** cambiar la definición de `DesviacionPromedioMargen` en el backend — ADR-016 ya la define a propósito como "solo ajustes negociados", podría afectar otros reportes que dependen de esa definición.
-- [ ] Decidir con negocio cuál opción tomar antes de construir.
-- [ ] **Revisión 2026-10-08:** el margen aplicado ahora es **por ruta** (`CotizacionLineasSolicitud.margenAplicado`) y los ajustes también (`MargenAjustes.lineaSolicitudId`). "Margen aplicado promedio" de un comercial se calcula sobre sus rutas, no sobre sus cotizaciones. Con la Opción B, recordar que `DesviacionPromedioMargen` pasa a leer por ruta (HU-021.10).
+**Parte A — Endpoint `GET /web/cotizaciones/regional`.**
+La vista de Gerente Comercial "Todas las cotizaciones" necesita un listado fila por fila de las cotizaciones de los comerciales de su regional. Hoy no existe: `GET /web/mis-cotizaciones` solo trae las del propio usuario y `GET /web/metricas/regional` es agregado.
 
----
+- [ ] Construir `GET /web/cotizaciones/regional` (mismo patrón de nombre y política `GerenteComercial` que `/web/metricas/regional`).
+- [ ] Reusar `clsRegionalUsuarioService.ListarMiembrosAsync(regional)` y un método nuevo en `IClsCotizacionRepository` (`ListarPorUsuariosAsync(IReadOnlyCollection<Guid> usuarioIds, ...)`) que filtre `WHERE usuarioId IN (...)`; no reconstruir la resolución de regional.
+- [ ] Se construye **después de HU-021.4 y 021.9**, sobre el repositorio y el resumen nuevos. La línea de negocio de una fila sale de la ruta 1 de la solicitud (o "Varias"), y el precio es el `precioFinal` de la cabecera.
 
-## HU-018 — Enriquecer "Ver detalle" de una cotización
+**Parte B — "Margen promedio" en "Mis cotizaciones": contra qué se compara.** *(Pendiente de decisión de negocio antes de construir.)*
+La tarjeta muestra un "± desviación" que casi siempre sale vacío (`—`). No es un dato que falte: `DesviacionPromedioMargen` (`clsCalculadoraMetricas.cs`) promedia `MargenAjustes.diferencia`, tabla que solo se escribe cuando el comercial **negocia** un margen distinto (documentado así en ADR-016).
 
-> **Repos:** `Cotifly` (018.1) + `clientepro-frontend` (consumo) · **Contexto:** se revisó `administracion_embarqa_nexo` (página `mesa-costeo`) como referencia de lo que el negocio probablemente espera ver.
-
-### [HU-018.1] Ganancia rápida: exponer 4 campos que ya existen en BD pero el DTO no los expone
-
-**Labels:** `backend`
-`GET /web/mis-cotizaciones` (y "Ver detalle", que reusa la misma fila) usa `clsCotizacionResumen`, que **no incluye** `deadline`, `origen`, `destino`, `pesoKg` ni `valorMercancia` — aunque ya existen en `clsCotizacion` (desde el 0004) y **ya se exponen** en `GET /web/cotizaciones/{id}/nueva-version` → `clsDatosNuevaVersion`. El dato ya está, solo falta copiarlo al DTO de la lista/detalle.
-
-- [ ] Agregar esos 4 campos a `clsCotizacionResumen` (o al contrato `CotizacionResumen`) — alimenta de una vez `/web/mis-cotizaciones`, `/seguimiento`, `/resultado`, `/web/solicitudes-costeo` y `/costeo/reintentar`.
-- [ ] **Reformulada el 2026-10-08.** Con el esquema nuevo, `origen`, `destino`, `pesoKg` y `valorMercancia` **ya no están en la cabecera**: son de cada **ruta** (origen y destino como id de municipio, que hay que resolver a nombre con el catálogo de Nexo). Solo `deadline` sigue en la cabecera. Lo que se expone es: `deadline` + un resumen de las rutas (origen → destino, peso, valor de la mercancía, y los camiones que lleva cada una). Se construye junto con el resumen nuevo de **HU-021.9** y el contrato de la API de **HU-021.11**; no tiene sentido hacerlo antes, porque el DTO se reescribe. La parte del frontend ("Ver detalle") se redacta aparte.
-- [ ] `scoreUrgencia` sigue genuinamente bloqueado (no existe en el backend, pendiente del contrato de Nexo para consultarlo por solicitud, ver ADR-016). Nota aparte: Nexo sí devuelve `scorePrioridad` al **crear** la solicitud (`POST /api/captura-solicitudes` → `CapturaResultDto`), pero Cotifly lo descarta hoy (`clsSolicitudCreadaNexo`) — capturarlo ahí sería una ganancia más chica y ya desbloqueada, distinta de "consultarlo después por solicitud".
-
-### [HU-018.2] (catálogo de referencia, no construir todo de una — priorizar con negocio)
-
-Lo que Nexo ya muestra en su "Mesa de Costeo" que Cotifly no muestra:
-
-- **Nivel solicitud:** cliente, tipo, modalidad, deadline, valor estimado, probabilidad de cierre, `scorePrioridad`, estado, fecha de captura, notas.
-- **Nivel línea:** ruta, tipología, peso, tipo de vehículo, carrocería, posiciones — Cotifly ya lo captura, el detalle no lo vuelve a mostrar. **(2026-10-08)** En el esquema nuevo esto se reparte: la **ruta** tiene origen, destino, tipología, peso y mercancías; el **camión** tiene vehículo, carrocería y los costos de Nexo.
-- **Transparencia del costeo (lo más rico, lo que más se aleja de Cotifly hoy):** piso SICE-TAC desglosado, 3 fuentes candidatas lado a lado (SICE-TAC/plaza/histórico SAP, cada una con detalle y coincidencias), propuesta final con justificación en texto, histórico de tarifas de la ruta con vigencia. Cotifly hoy solo recibe un precio final — **falta confirmar con Duban si Nexo ya manda este desglose y se descarta, o si hay que pedirlo aparte.**
-- **Servicios conexos:** lista con etiqueta de alcance (General/en N de M líneas/Individual) — cubierto por HU-015.3.
-- **Cubicaje/vehículo sugerido:** un resumen compacto basta (el desglose 3D es herramienta de trabajo aparte).
-- **Auditoría de quién hizo qué:** tampoco existe en el propio Nexo — si se quiere en Cotifly, no hay patrón que copiar, hay que diseñarlo desde cero.
-
-**Prioridad sugerida:** 018.1 primero (bajo costo, ya resuelto el "por qué"); el desglose de costeo depende de confirmar si Nexo ya manda esos datos; el resto es telón de fondo para cuando negocio priorice.
+- [ ] **Lo que negocio quiere** (pedido explícito de Sara, 2026-10-05): comparar el margen aplicado promedio contra el **promedio de los márgenes de política de todas las líneas** (`MargenesPolitica.margen`). Verde si está por encima, rojo si está por debajo.
+- [ ] **Opción A (más segura):** endpoint nuevo accesible para Comercial que liste `MargenesPolitica` (línea y margen) de las líneas activas, para que el cliente calcule el promedio. Hoy `GET /web/admin/lineas-negocio` exige la política `GerenteComercial`; no hay ADR que declare esos márgenes confidenciales para el Comercial (ya se filtran uno por uno por el chat, herramienta `obtener_margen`).
+- [ ] **Opción B (más riesgosa):** cambiar la definición de `DesviacionPromedioMargen`. ADR-016 la define a propósito como "solo ajustes negociados"; podría afectar otros reportes.
+- [ ] **Decidir con negocio cuál opción antes de construir.**
+- [ ] **Con el esquema nuevo:** el margen aplicado ahora es **por ruta** (`CotizacionLineasSolicitud.margenAplicado`) y los ajustes también (`MargenAjustes.lineaSolicitudId`). El margen promedio de un comercial se calcula sobre sus rutas y no sobre sus cotizaciones. **Si es promedio simple o ponderado por costo no está decidido**: el pendiente original hablaba de un promedio simple y HU-021.10 recomienda ponderar por costo. Confirmar con negocio antes de construir.
 
 ---
 
-## HU-019 — Ganada/Perdida: motivo + comentario separados (como pedía la HU original)
+## HU-018 — "Ver detalle" de una cotización
 
-> **Repos:** `Cotifly` + `clientepro-frontend` · **Pendiente de decisión de negocio**
+> **Repo:** `Cotifly` · **Asignado a:** Duban (Backend)
 
-### [HU-019.1] Separar motivo (lista predefinida) de comentario (texto libre)
+### [HU-018.1] "Ver detalle": campos nuevos, ganada/perdida y exportar Excel
+**Labels:** `backend`, `producto`, `investigacion`
+**Reúne** las antiguas HU-018.1, 019.1 y 020.1. Las tres son lo que se ve y se hace desde "Ver detalle". **Se construye sobre HU-021.9 y HU-021.11** (el DTO se reescribe allá) y sobre HU-021.13.
 
-**Labels:** `backend`, `frontend`, `producto`
-`POST /web/cotizaciones/{folio}/seguimiento` ya funciona, pero el cuerpo es `{ ganada, motivo_rechazo }` — un solo campo de texto libre.
+**Parte A — Campos del detalle y desglose del costeo.**
+- [ ] **Los campos del detalle ya no se agregan al DTO viejo.** El DTO `clsCotizacionResumen` (que no traía `deadline`, `origen`, `destino`, `pesoKg` ni `valorMercancia`) se reescribe en **HU-021.9 y HU-021.11**: `origen`, `destino`, `pesoKg` y `valorMercancia` pasan a ser de cada **ruta** (origen y destino como id de municipio, resueltos a nombre con el catálogo de Nexo) y solo `deadline` sigue en la cabecera. Esto **se hace allá**; aquí solo se verifica que el detalle expone `deadline` y el resumen de las rutas (origen → destino, peso, valor y camiones).
+- [ ] Capturar `scorePrioridad` cuando Nexo responde al **crear** la solicitud (`POST /api/captura-solicitudes` → `CapturaResultDto`), que hoy se descarta (`clsSolicitudCreadaNexo`). Es una ganancia pequeña y ya desbloqueada. Consultarlo después por solicitud (`scoreUrgencia`) sigue **bloqueado** por el contrato de Nexo (ADR-016).
+- [ ] **Investigar con Duban** si Nexo ya manda el desglose del costeo (piso SICE-TAC con horas y vigencia, 3 fuentes candidatas lado a lado, propuesta final con su justificación, tarifas históricas de la ruta) y Cotifly lo descarta, o si hay que pedírselo aparte. Hoy Cotifly solo recibe un precio final. **No construir de una vez**: priorizar con negocio (ver "Referencia" abajo).
 
-> **Corrección 2026-10-08 — verificar antes de construir.** Revisando el backend, para las cotizaciones **del flujo de Nexo** `/seguimiento` las rechaza con `USAR_RESULTADO_NEXO` (`clsSeguimientoService.cs:46-52`) y el camino correcto es `POST /web/cotizaciones/{folio}/resultado` (`clsResultadoCotizacionService.cs`), que primero llama a Nexo y solo guarda local si Nexo responde 200. El frontend marca ganada/perdida con `/seguimiento` (`detalle-cotizacion.component.ts`). **Confirmar a cuál llama de verdad:** si es `/seguimiento`, el botón ya falla para las cotizaciones del flujo de Nexo y eso es un bug aparte, anterior a esta HU. Esta HU debe construirse sobre `/resultado`. Además, `motivoRechazo` debe quedar en "No aplica" cuando se marca ganada (regla de la propuesta original, pendiente en HU-021.13). La HU-004.5 original pedía 2 campos: **motivo** (lista predefinida, se persiste en Cotifly y se envía a Nexo) y **comentario** (texto libre, solo a Nexo). Nunca se terminó de construir — ni el contrato (`SeguimientoWebHttp` solo tiene `motivo_rechazo`) ni el frontend (`detalle-cotizacion.component.html` es un único `<textarea>`).
+**Parte B — Ganada/perdida: motivo + comentario separados.** *(Pendiente de decisión de negocio.)*
+`POST /web/cotizaciones/{folio}/seguimiento` funciona, pero su cuerpo es `{ ganada, motivo_rechazo }`, un solo texto libre. La HU-004.5 original pedía dos campos: **motivo** (lista predefinida, se guarda en Cotifly y se envía a Nexo) y **comentario** (texto libre, solo a Nexo). Nunca se terminó.
 
-- [ ] Referencia: el frontend de Nexo (`mesa-costeo-page.component.ts`) ya tiene la lista de motivos predefinidos para perder: `Valor muy alto`, `Flete fuera de rango de plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido`, `Otro` — más un comentario libre aparte. Cotifly podría alinearse a esta misma lista.
-- [ ] **Decidir con negocio:** ¿vale la pena construir motivo+comentario separados, o el texto libre actual es suficiente?
-- [ ] Si se decide construir: agregar `comentario` a `SeguimientoWebHttp` (backend) + select de motivos + textarea de comentario (frontend).
+- [ ] **Verificar antes de construir a qué endpoint llama el frontend.** Para las cotizaciones del flujo de Nexo, `/seguimiento` las rechaza con `USAR_RESULTADO_NEXO` (`clsSeguimientoService.cs:46-52`) y el camino correcto es `POST /web/cotizaciones/{folio}/resultado` (`clsResultadoCotizacionService.cs`), que primero llama a Nexo y solo guarda local si Nexo responde 200. El frontend marca con `/seguimiento` (`detalle-cotizacion.component.ts`). Si de verdad llama a `/seguimiento`, el botón ya falla para esas cotizaciones y es un **bug aparte, anterior a esto**. Esta parte se construye sobre `/resultado`.
+- [ ] `motivoRechazo` debe quedar en "No aplica" cuando se marca ganada (regla de la propuesta original, **HU-021.13**).
+- [ ] **Decidir con negocio:** ¿se construyen motivo y comentario separados, o basta el texto libre? La lista de Nexo (`mesa-costeo-page.component.ts`): `Valor muy alto`, `Flete fuera de rango de plaza`, `Cliente desistió del servicio`, `Tiempo de respuesta vencido`, `Otro`.
+- [ ] Si se construye: agregar `comentario` a `SeguimientoWebHttp` (backend).
 
----
+**Parte C — Exportar Excel.**
+El botón "Exportar Excel" de "Ver detalle" sigue deshabilitado ("Próximamente"), sin endpoint. Nexo sí lo tiene funcional en su "Mesa de Costeo", pero no se investigó qué exporta.
 
-## HU-020 — "Exportar Excel" en Ver Detalle
+- [ ] Investigar qué exporta Nexo y contra qué endpoint, antes de construir el lado de Cotifly.
+- [ ] Definir el contrato: ¿la misma información del PDF, un desglose, algo más? Con el esquema nuevo el desglose es **por ruta, con sus camiones**.
+- [ ] **Reusar la exportación de licitaciones** (`clsLicitacionService`, que HU-021.6 rehace para el esquema nuevo) antes de construir una nueva.
 
-> **Repos:** `Cotifly` + `clientepro-frontend`
-
-### [HU-020.1] Investigar y construir la exportación a Excel
-
-**Labels:** `backend`, `frontend`, `investigacion`
-El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próximamente"`), placeholder desde que se construyó la pantalla — sin endpoint de backend. El frontend de Nexo sí tiene este botón funcional en su "Mesa de Costeo" (junto a "Descargar PDF"), pero no se investigó a fondo qué exporta ni contra qué endpoint.
-
-- [ ] Investigar qué exporta exactamente Nexo y contra qué endpoint, antes de construir el lado de Cotifly.
-- [ ] Definir el contrato: ¿la misma info del PDF, un desglose por línea, algo más?
-- [ ] Construir el endpoint correspondiente en Cotifly + el consumo en frontend.
-- [ ] **Revisión 2026-10-08:** el desglose "por línea" pasa a ser **por ruta, con sus camiones**. Ya existe una exportación de licitaciones (`clsLicitacionService`, que HU-021.6 rehace para el esquema nuevo): revisar si esa se reutiliza antes de construir una nueva.
+**Referencia (no construir de una vez; priorizar con negocio): lo que la "Mesa de Costeo" de Nexo ya muestra y Cotifly no.**
+- *Nivel solicitud:* cliente, tipo, modalidad, deadline, valor estimado, probabilidad de cierre, `scorePrioridad`, estado, fecha de captura, notas.
+- *Nivel línea:* ruta, tipología, peso, vehículo, carrocería, posiciones. En el esquema nuevo se reparte: la **ruta** tiene origen, destino, tipología, peso y mercancías; el **camión** tiene vehículo, carrocería y los costos de Nexo.
+- *Transparencia del costeo:* ver el desglose de la Parte A.
+- *Servicios conexos:* lista con etiqueta de alcance (General / en N de M líneas / Individual); cubierto por HU-015.1 y HU-021.8.
+- *Cubicaje y vehículo sugerido:* un resumen compacto basta; el desglose 3D es una herramienta de trabajo aparte.
+- *Auditoría de quién hizo qué:* tampoco existe en el propio Nexo; si se quiere en Cotifly, hay que diseñarla desde cero.
 
 ---
 
@@ -210,7 +143,7 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 
 ### [HU-022.1] Limpiar el código viejo y dejar la documentación profesional
 
-**Contexto:** al borrar Alembic (HU-021.2) apareció que el stack viejo en Python y su infraestructura de Postgres siguen en el repo sin usarse (hallazgo en el punto 12 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`). Además, buena parte de la documentación describe ese stack o el esquema anterior. HU-021.14 pone los documentos al día con el esquema nuevo; esta HU los deja **profesionales** y quita lo que sobra.
+**Contexto:** al borrar Alembic (HU-021.2) apareció que el stack viejo en Python y su infraestructura de Postgres siguen en el repo sin usarse (punto 12 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`). Además, buena parte de la documentación describe ese stack o el esquema anterior. HU-021.14 pone los documentos al día con el esquema nuevo; esta HU los deja **profesionales** y quita lo que sobra.
 
 - [ ] **Evaluar qué quedó viejo y sin uso** (Python viejo, Alembic, Postgres, servicios de compose, scripts y pruebas del stack viejo) con un inventario: qué existe, quién lo usa y si está en algún ambiente.
 - [ ] **Borrar por partes** y comprobar después de cada una que el backend compila, las pruebas pasan y el despliegue sigue sano.
@@ -219,28 +152,44 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 - [ ] **Un solo lugar por tema** (esquema, API, despliegue, integración con Nexo y el cubicador, backlog) y un índice claro en `docs/README.md` y en el `README.md` de la raíz.
 - [ ] **Estilo uniforme**: mismos encabezados, fecha y dueño, idioma y tono; sin texto de trabajo, tachados ni notas de sesión.
 - [ ] **HU y notas de trabajo** (`docs/backlog/`): dejar las vigentes y archivar o borrar las cerradas.
-- [ ] Revisar que **todos los enlaces y rutas** funcionen (incluye las 28 referencias de `backend-dotnet/`, punto 11 de los pendientes de Duban).
+- [ ] Revisar que **todos los enlaces y rutas** funcionen (incluye las 28 referencias de `backend-dotnet/`, si no se corrigieron ya en HU-014.3).
 - [ ] Revisión final por alguien que **no** haya escrito el documento: ¿se entiende sin contexto?
 
 ---
 
-## Sin incluir / descartado
+## Qué pasó con cada HU original
 
-- El manejo del prefijo de dominio (`boterosoto\usuario`) en el mecanismo de regional (`clsDirectorioEjecutivosDimEjecutivo`, PR #83) se revisó y **se ve correcto** — no se incluye como pendiente salvo que aparezca un caso raro concreto en pruebas reales.
-- Nada sobre el envío de correo (`Correo:Habilitado`) — es config/credenciales del relay SMTP corporativo, no una corrección de código.
+| HU original | Qué pasó | Dónde está ahora |
+|---|---|---|
+| 014.1 `estadoEnvio` sin `CHECK` | **Absorbida.** El `CHECK` está hecho (HU-021.2) y la tolerancia de filas malas se hace al reescribir la consulta (HU-021.4) | HU-021.2 y 021.4 |
+| 014.2 Cotización de prueba de Duban | **Descartada.** La base compartida se borró y recreó | — |
+| 014.3 Header `X-Portal-clsUsuario-Id` | Agrupada | HU-014.3, parte A |
+| 014.4 Retirar el borrador de métricas | Agrupada | HU-014.3, parte B |
+| 015.1 Catálogo de vehículo y clase de viaje | Agrupada, con alcance reducido a clase de viaje | HU-015.1 |
+| 015.2 Clase de contenedor | Agrupada | HU-015.1 |
+| 015.3 Servicios conexos | Agrupada; guardar en tabla por ruta es HU-021.8 | HU-015.1 y HU-021.8 |
+| 015.4 Línea de negocio en vivo | **Nota, no issue.** Cotifly usa `MargenesPolitica` con un mapeo manual al código de Nexo (`LineaNegocioNexo`); está bien. Preguntarle a Duban si conviene consumir `GET /api/catalogos/lineas-negocio` en vivo, es mantenimiento | — |
+| 016.1 Listado regional | Agrupada | HU-016.1, parte A |
+| 017.1 Margen promedio | Agrupada | HU-016.1, parte B |
+| 018.1 Campos del detalle | Agrupada; el DTO se reescribe en HU-021.9 y 021.11 | HU-018.1, parte A |
+| 018.2 Catálogo de referencia | **Nota, no issue** | HU-018.1, "Referencia" |
+| 019.1 Ganada/perdida | Agrupada | HU-018.1, parte B |
+| 020.1 Exportar Excel | Agrupada | HU-018.1, parte C |
 
-- **HU-014.2** (la cotización de prueba de Duban en la base compartida): ya no aplica desde el 2026-10-08, ver la tabla de arriba.
+## Sin incluir
 
-## Orden sugerido para el Sprint 5
+- El manejo del prefijo de dominio (`boterosoto\usuario`) en el mecanismo de regional (`clsDirectorioEjecutivosDimEjecutivo`, PR #83) se revisó y **se ve correcto**; no se incluye salvo que aparezca un caso concreto en pruebas reales.
+- Nada sobre el envío de correo (`Correo:Habilitado`): es configuración y credenciales del relay SMTP corporativo, no una corrección de código.
+
+## Orden sugerido
 
 1. **Primero HU-021 ([Corrección con BD])**, completa o al menos hasta HU-021.4: sin eso no hay backend funcionando.
-2. HU-014.3 (commitear el header) **antes** de HU-021.7, para no mezclar dos cambios en `clsCosteoNexo.cs`.
-3. HU-014.1 y 014.4, que ya están absorbidas o coordinadas con HU-021.
-4. HU-015.1, 015.2 y 015.3, sobre la estructura nueva.
-5. HU-016, 017, 018, 019 y 020, que dependen de los DTOs y el resumen nuevos (HU-021.9 y 021.11). HU-019.1 y la verificación de `/seguimiento` contra `/resultado` se pueden adelantar: son independientes de la estructura.
-
-6. **HU-022 al final de todo**: la limpieza del código viejo y la documentación profesional se hacen cuando el resto esté terminado.
+2. **HU-014.3, parte A** (commitear el header) **antes** de HU-021.7, para no mezclar dos cambios en `clsCosteoNexo.cs`.
+3. **HU-015.1** (verificar y cerrar) puede hacerse en cualquier momento después de HU-021.4; el envío de conexos a Nexo va junto con HU-021.8.
+4. **HU-016.1** y **HU-018.1**, que dependen del resumen y los DTO nuevos (HU-021.9 y 021.11). La verificación de `/seguimiento` contra `/resultado` (HU-018.1, parte B) se puede adelantar: es independiente de la estructura.
+5. **HU-014.3, parte B** (retirar el borrador de métricas) después de HU-010 validada; si va antes de HU-021.10, se quitan las vistas en vez de adaptarlas.
+6. **HU-022.1 al final de todo**: la limpieza del código viejo y la documentación profesional se hacen cuando el resto esté terminado.
 
 ## Pendiente de agregar
 
-- Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (lo que se le pide a Nexo y al cubicador; no son issues) y, para el `TrqType`, en HU-021.2 de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.
+Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (no son issues) y, para el `TrqType`, en HU-021.2 de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.

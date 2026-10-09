@@ -8,7 +8,7 @@
 3. Numeración: **HU-021** (la rama de la propuesta se llama `118-hu-0211-...`). El Sprint 5 (`docs/backlog/2026-10-07_HU_Sprint5_Cotifly.md`) empieza en HU-014 y se hace **después** de esta.
 4. **Repo donde se crean los issues (1):** [`InnovacionIA-proyectos/Cotifly`](https://github.com/InnovacionIA-proyectos/Cotifly), HU-021.1 a 021.14. No se crea ningún issue en `NEXO`, `clientepro-frontend` ni `administracion_embarqa_nexo`: **este documento es solo backend y base de datos de Cotifly**, y las HU del frontend se redactan aparte. Lo que se le pide a Nexo y al cubicador **no son issues**: está en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`, y las HU que dependen de eso lo dicen en su nota "Depende de".
 5. `> **HU en Notion:**` queda con un placeholder: crear la HU en Notion y pegar el link real.
-6. **Sprint:** Sprint 5, pero se hace **antes** que HU-014 a HU-020. **Épica:** E1 — Migración de Backend y Datos (la de HU-002 y HU-003: esta HU corrige lo que ellas dejaron).
+6. **Sprint:** Sprint 5, pero se hace **antes** que HU-014 a HU-018 y HU-022. **Épica:** E1 — Migración de Backend y Datos (la de HU-002 y HU-003: esta HU corrige lo que ellas dejaron).
 7. Roles del equipo (fijos): **Duban** = Backend, **Sara** = Frontend y Datos, **Kevin** = QA. Aquí Sara aparece solo como Datos.
 8. Todos los issues llevan el prefijo **[Corrección con BD]** en el título y el label `corrección-bd`.
 
@@ -182,7 +182,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 - [ ] Repositorios: posiciones y líneas por ruta; métodos nuevos para camiones y conexos; "Mis cotizaciones" con la línea de negocio de la ruta 1 (o "Varias").
 - [ ] **SQL directo que EF no detecta**: `clsUnitOfWork.cs:68` (`SELECT versionNegocio FROM ...Cotizaciones`), `clsBaseDatosHealthCheck.cs:41-54` (agregar un nivel que verifique las tablas nuevas), `clsMetricasRepository.cs:24-28 y 38-76`, los scripts de `scripts/sql/` y `scripts/respaldo/` que nombran las tablas viejas.
 - [ ] **Correo** (solo cambia el nombre de la tabla a la que apuntan): `clsCorreoConfiguracion.cs:34` (FK de `Correos` a la cotización), `clsCorreoRepository.cs:34` (subconsulta `cotizacionesDelCliente`, la que usa `GET /web/clientes/{nit}/destinatarios-previos`), y las FK de `CotizacionArchivosLicitacion` y `CotizacionPdfsHistorial` (`clsCotizacionConfiguracion.cs:229 y 252`). Probar que los destinatarios previos siguen apareciendo.
-- [ ] Tolerar en `ListarConLineaPorUsuarioAsync` una fila con un código inesperado en vez de tumbar toda la consulta (es la parte de mediano plazo de HU-014.1; se hace aquí porque la consulta se reescribe de todos modos).
+- [ ] Tolerar en `ListarConLineaPorUsuarioAsync` una fila con un código inesperado en vez de tumbar toda la consulta (es la parte de mediano plazo de la antigua HU-014.1, absorbida aquí; se hace aquí porque la consulta se reescribe de todos modos).
 
 ### [HU-021.5] [Corrección con BD] Integración con el cubicador
 **Labels:** `cotifly`, `backend`, `integración`, `corrección-bd`
@@ -260,10 +260,10 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Labels:** `cotifly`, `backend`, `corrección-bd`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
-**Parte de HU-021 (milestone). Depende de HU-021.4.** Se coordina con HU-014.4 (retirar el borrador obsoleto del tablero). Detalle: `CAMBIOS_BACKEND` §3.7 y §4.4. Estimado: 1 día.
+**Parte de HU-021 (milestone). Depende de HU-021.4.** Se coordina con HU-014.3, parte B (retirar el borrador obsoleto del tablero). Detalle: `CAMBIOS_BACKEND` §3.7 y §4.4. Estimado: 1 día.
 
-- [ ] `clsCotizacionMetrica`, `clsCalculadoraMetricas`, `clsMetricasRepository` (CTE del tablero, líneas 38-76): leer costo, margen y precio por ruta. Decidir cómo se cuenta una solicitud con rutas de varias líneas de negocio: recomendación, **seguir contando cotizaciones**, con el margen promedio ponderado por costo.
-- [ ] **Decidir con HU-014.4:** las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial` ya están adaptadas en `0009` y en `01_crear_esquema.sql`, pero HU-014.4 propone retirarlas junto con los endpoints obsoletos que las leen. Si HU-014.4 se hace primero, se quitan del esquema en vez de adaptarlas. HU-014.4 depende de que el tablero de HU-010 esté validado en producción.
+- [ ] `clsCotizacionMetrica`, `clsCalculadoraMetricas`, `clsMetricasRepository` (CTE del tablero, líneas 38-76): leer costo, margen y precio por ruta. Decidir cómo se cuenta una solicitud con rutas de varias líneas de negocio: recomendación, **seguir contando cotizaciones**, con el margen promedio ponderado por costo (**es una recomendación, no un acuerdo**: el pendiente original hablaba de un promedio simple; confirmar con negocio).
+- [ ] **Decidir con HU-014.3 (parte B):** las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial` ya están adaptadas en `0009` y en `01_crear_esquema.sql`, pero HU-014.3 (parte B) propone retirarlas junto con los endpoints obsoletos que las leen. Si HU-014.3 (parte B) se hace primero, se quitan del esquema en vez de adaptarlas. HU-014.3 (parte B) depende de que el tablero de HU-010 esté validado en producción.
 
 ### [HU-021.11] [Corrección con BD] Contrato de la API (DTOs y `openapi.yaml`)
 **Labels:** `cotifly`, `backend`, `corrección-bd`
@@ -272,7 +272,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Parte de HU-021 (milestone). Depende de HU-021.6 a 021.9.** Detalle: `CAMBIOS_BACKEND` §7. Estimado: 1 a 2 días.
 **El frontend no está en este documento:** sus HU se redactan aparte. Este contrato rompe el que usa el frontend de hoy, por eso se recomienda mantener el formato viejo mientras tanto (último punto de la lista).
 
-- [ ] `clsSolicitudCosteoWebRequest` pasa de una línea plana a una lista de rutas (línea de negocio, municipios por id, condiciones, horas, valor del levante, mercancías con `idTipoMercancia`, conexos), sin vehículo ni carrocería. Posiciones con `nombreMercancia` e `idTipoMercancia`.
+- [ ] `clsSolicitudCosteoWebRequest` pasa de una línea plana a una lista de rutas (línea de negocio, municipios por id, condiciones, horas, valor del levante, mercancías con `idTipoMercancia`, conexos). **Vehículo y carrocería: opcionales por ruta** mientras el cubicador no exista (el frontend los conserva como respaldo detrás de una bandera, HU-021-FE.2); cuando el cubicador salga, el backend los ignora o los rechaza. Hoy el frontend no usa este endpoint (usa `POST /web/chat`, una línea por llamada); `POST /web/solicitudes-costeo` ya existe pero acepta una ruta por llamada, y aquí se amplía a una lista. Posiciones con `nombreMercancia` e `idTipoMercancia`.
 - [ ] `GET /web/cotizaciones/{folio}/costeo` devuelve rutas con sus camiones, mercancías, conexos, totales, margen y precio. Las peticiones de margen y conexos dicen a qué ruta aplican. `clsDtosLicitacionWeb`: sin vehículo, con mercancías.
 - [ ] Actualizar `specs/openapi.yaml` y `docs/docs_front/CONTRATO_API_WEB.md`.
 - [ ] Mientras el frontend nuevo no esté listo, aceptar el formato plano viejo convirtiéndolo a "una ruta, un camión" (1 día más). Quitarlo cuando el frontend nuevo salga.
@@ -298,7 +298,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 
 **Pendiente de verdad:**
 - [ ] **`motivoRechazo` = "No aplica" cuando se marca ganada** (§2.1: no se deja `null`; solo queda vacío mientras no se ha marcado ningún resultado). Hoy `clsCotizacion.cs:662-667` (`MarcarSeguimiento`) guarda el motivo tal cual, y `clsSeguimientoService.cs:54` y `clsResultadoCotizacionService.cs:127` lo pasan sin tocar.
-- [ ] **`CHECK` de `estadoEnvio`**: es el mismo punto de HU-021.2 / HU-014.1; se anota aquí para no perderlo.
+- [ ] **`CHECK` de `estadoEnvio`**: es el mismo punto de HU-021.2 y de la antigua HU-014.1 (absorbida); se anota aquí para no perderlo.
 
 **A verificar:**
 - [ ] El frontend marca ganada/perdida contra `POST /web/cotizaciones/{folio}/seguimiento`, pero para las cotizaciones del flujo de Nexo el backend las rechaza ahí con `USAR_RESULTADO_NEXO` (`clsSeguimientoService.cs:46-52`) y espera `POST /web/cotizaciones/{folio}/resultado` (`clsResultadoCotizacionService.cs`). Confirmar a cuál llama el frontend. Si es `/seguimiento`, el botón falla para esas cotizaciones. Afecta a HU-019.1.

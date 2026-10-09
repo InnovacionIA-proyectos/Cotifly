@@ -16,7 +16,7 @@ Los documentos están separados por tema. La base de datos en sí (scripts, seed
 |---|---|---|
 | 2026-09-21 | `2026-09-21_HU_Backlog_Cotifly_ClientePro.md` | El backlog original: HU-001 a HU-013 |
 | 2026-09-29 | `2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` | Hallazgos de las pruebas en vivo para Duban. **Git lo ignora a propósito** (no viaja en los commits) |
-| 2026-10-07 | `2026-10-07_HU_Sprint5_Cotifly.md` | Sprint 5: HU-014 a HU-020 |
+| 2026-10-07 | `2026-10-07_HU_Sprint5_Cotifly.md` | Sprint 5: 5 issues de backend (HU-014.3, 015.1, 016.1, 018.1 y 022.1) |
 | 2026-10-08 | `2026-10-08_HU_Correccion_BD_Cotifly.md` | **[Corrección con BD]**, HU-021: se hace antes del Sprint 5 |
 
 Un documento nuevo de HU lleva en `backlog/` la fecha de su creación como prefijo, y se agrega a esta tabla.
