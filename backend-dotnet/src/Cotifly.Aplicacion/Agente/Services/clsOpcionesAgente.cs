@@ -14,7 +14,10 @@ public sealed class clsOpcionesAgente
     [Range(256, 200_000)]
     public int MaxTokens { get; set; } = 4096;
 
-    /// <summary>Llamadas al modelo con herramientas por turno antes de cortar (evita bucles). Por defecto 12.</summary>
+    /// <summary>
+    /// Llamadas al modelo con herramientas por turno antes de cortar (evita bucles): al pasarlas el turno termina con
+    /// <c>clsMaxIteracionesExcedidasException</c> y el comercial recibe <c>clsTextosAgente.MaxIteraciones</c>. Por defecto 12.
+    /// </summary>
     [Range(1, 50)]
     public int MaxIteraciones { get; set; } = 12;
 
@@ -39,6 +42,19 @@ public sealed class clsOpcionesAgente
     /// validación manual los sigue exigiendo).
     /// </summary>
     public bool JsonSchemaEstricto { get; set; }
+
+    /// <summary>
+    /// HU-013.16 (#126): si la ronda de herramientas armó una propuesta, el turno pasa directo a la respuesta final, sin otra llamada
+    /// con herramientas (una propuesta por mensaje). Ahorra una llamada al modelo en los turnos de propuesta. Por defecto true.
+    /// </summary>
+    public bool PropuestaDirecta { get; set; } = true;
+
+    /// <summary>
+    /// HU-013.16 (#126): la respuesta del modelo sin herramientas que cierra el loop se valida como respuesta final (mismas reglas de
+    /// <c>clsReglasRespuestaAgente</c>: forma, montos y folios). Si pasa, no se hace la llamada final aparte; si no, se hace como
+    /// siempre. El prompt pide ese JSON al terminar. Ahorra una llamada por turno. Por defecto true.
+    /// </summary>
+    public bool RespuestaFinalEnLoop { get; set; } = true;
 }
 
 /// <summary>

@@ -1,43 +1,65 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
+using System.Text;
 
 namespace Cotifly.Aplicacion.Agente.Herramientas;
 
 /// <summary>
-/// Números que escribió el comercial en su mensaje (auditoría de #12, riesgo 5): un costo manual solo se acepta si aparece aquí. Lee
-/// los formatos habituales en Colombia: <c>2.850.000</c>, <c>2,850,000</c>, <c>2850000</c>, <c>$2.850.000</c>, <c>2'850.000</c>,
-/// <c>2.850.000,50</c> y <c>2,85 millones</c> / <c>2.85 M</c>.
+/// Valores posibles de un número escrito en un texto, según sus separadores. Es la base del filtro de montos del asistente
+/// (<c>clsReglasRespuestaAgente.Montos</c>): de él depende que el modelo no escriba un monto que nada respalda (ADR-018 §2b, HU-013.16).
+/// Lee los formatos habituales en Colombia y los que puede devolver un modelo:
+/// <c>2.850.000</c>, <c>2,850,000</c>, <c>2850000</c>, <c>2'850.000</c>, <c>2’850.000</c>, <c>2 850 000</c> (espacio normal, duro o
+/// fino), <c>2.850.000,50</c>, <c>2,850,000.50</c> y dígitos de otros sistemas (<c>３.４００</c>), que se pasan a ASCII.
 /// </summary>
-public static partial class clsNumerosDelMensaje
+/// <remarks>
+/// Cada ambigüedad de separadores da un candidato (<c>2.850</c> puede ser 2850 o 2,85): el validador acepta el monto si
+/// <b>alguno</b> coincide con un respaldo, y lo rechaza si ninguno coincide. Un número que no se puede leer no da candidatos, y el
+/// validador lo trata como un monto sin respaldo (nunca lo deja pasar). Hasta HU-013.9 la clase también leía un mensaje entero para
+/// el costo manual del agente cotizador legado (<c>Numeros</c>/<c>Contiene</c>); ese uso se retiró con el agente (#105).
+/// </remarks>
+public static class clsNumerosDelMensaje
 {
-    /// <summary>¿El mensaje contiene <paramref name="valor"/> en alguno de los formatos?</summary>
-    public static bool Contiene(string? mensaje, decimal valor) => Numeros(mensaje).Contains(valor);
+    /// <summary>Separadores de miles que se ignoran: apóstrofo recto y tipográfico, y los espacios normal, duro y fino.</summary>
+    private static readonly char[] _separadoresMiles = ['\'', '’', ' ', ' ', ' ', ' '];
 
-    /// <summary>Valores posibles de cada número del mensaje (cada ambigüedad de separadores da varios candidatos).</summary>
-    public static IReadOnlySet<decimal> Numeros(string? mensaje)
+    /// <summary>Valores posibles de un número suelto (sin sufijo de millones ni de miles), sin repetidos y en orden.</summary>
+    public static IReadOnlyList<decimal> CandidatosDe(string? numero)
     {
-        var valores = new HashSet<decimal>();
-        if (string.IsNullOrWhiteSpace(mensaje))
+        var candidatos = new List<decimal>();
+        if (string.IsNullOrWhiteSpace(numero))
         {
-            return valores;
+            return candidatos;
         }
 
-        foreach (Match coincidencia in ExpresionNumero().Matches(mensaje))
+        var texto = Normalizar(numero.Trim());
+        foreach (var candidato in Candidatos(texto))
         {
-            var texto = coincidencia.Groups["n"].Value.Replace("'", string.Empty, StringComparison.Ordinal);
-            var millones = coincidencia.Groups["m"].Success;
-            foreach (var candidato in Candidatos(texto))
+            if (!candidatos.Contains(candidato))
             {
-                valores.Add(millones ? candidato * 1_000_000m : candidato);
+                candidatos.Add(candidato);
             }
         }
 
-        return valores;
+        return candidatos;
     }
 
-    /// <summary>Valores posibles de un número suelto (sin sufijo de millones); los apóstrofos de miles se ignoran.</summary>
-    internal static IEnumerable<decimal> CandidatosDe(string numero) =>
-        Candidatos(numero.Replace("'", string.Empty, StringComparison.Ordinal).Replace("’", string.Empty, StringComparison.Ordinal));
+    /// <summary>Quita los separadores de miles que no son punto ni coma y pasa cualquier dígito Unicode a ASCII.</summary>
+    private static string Normalizar(string numero)
+    {
+        var texto = new StringBuilder(numero.Length);
+        foreach (var caracter in numero)
+        {
+            if (Array.IndexOf(_separadoresMiles, caracter) >= 0)
+            {
+                continue;
+            }
+
+            texto.Append(char.IsDigit(caracter) && caracter is < '0' or > '9'
+                ? (char)('0' + (int)char.GetNumericValue(caracter))
+                : caracter);
+        }
+
+        return texto.ToString();
+    }
 
     private static IEnumerable<decimal> Candidatos(string texto)
     {
@@ -62,7 +84,4 @@ public static partial class clsNumerosDelMensaje
 
     private static decimal? Parsear(string texto) =>
         decimal.TryParse(texto, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var valor) ? valor : null;
-
-    [GeneratedRegex(@"(?<n>\d[\d.,']*\d|\d)\s*(?<m>millones|millón|millon|mill|mm|m)?\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex ExpresionNumero();
 }

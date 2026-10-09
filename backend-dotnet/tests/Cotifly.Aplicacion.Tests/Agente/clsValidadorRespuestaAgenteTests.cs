@@ -108,7 +108,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
                 clsResultadoHerramienta.Exito("calcular_precio", new clsSalidaPrecio(3_294_798m, 2_850_000m, 0.135m, "margen", 444_798m)),
                 clsResultadoHerramienta.Exito("buscar_tarifa", new Dictionary<string, object> { ["costo"] = 1200m, ["moneda"] = "USD" }),
             ],
-            mensajes.Length == 0 ? ["Cotiza Nacional YUMBO a BUN, costo 2.850.000"] : mensajes,
+            mensajes.Length == 0 ? ["Cotiza Nacional YUMBO a BUN, costo 2.850.000; precio $3.294.798 y tarifa USD 1.200"] : mensajes,
             _declaradas);
 
     private static string Json(string texto, string tipo = "conversacional", bool requiere = false, params string[] acciones) =>
@@ -365,7 +365,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     {
         Codigos(clsReglasRespuestaAgente.Validar(Json("Aquí va la previsualización.", "previsualizacion", true), SinDatos()))
             .Should().Equal(clsReglasRespuestaAgente.PrevisualizacionSinPrecio);
-        Codigos(clsReglasRespuestaAgente.Validar(Json("El precio final es $3.352.941. ¿Confirmas?", "previsualizacion", true), ConPrecio()))
+        Codigos(clsReglasRespuestaAgente.Validar(Json("El precio final es $3.352.941. ¿Confirmas?", "previsualizacion", true), ConPrecio("el precio es $3.352.941")))
             .Should().Equal(clsReglasRespuestaAgente.PrevisualizacionSinPrecio);
     }
 
@@ -397,8 +397,8 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     [InlineData("El margen de la política es 13,5 % y el costo 2,85 millones de pesos.")]
     [InlineData("La tarifa se cotiza a 30 días y 34 toneladas.")]
     [InlineData("¿Confirmas para generar el PDF, o quieres ajustar el margen?")]
-    public void LosMontosRespaldadosPorLasHerramientasElEstadoOElComercialPasan(string texto) =>
-        clsReglasRespuestaAgente.Validar(Json(texto), ConPrecio("Cotiza Nacional YUMBO a BUN, costo 2.850.000")).Fallos.Should().BeEmpty();
+    public void LosMontosQueElComercialEscribioComoDineroPasan(string texto) =>
+        clsReglasRespuestaAgente.Validar(Json(texto), ConPrecio("Cotiza Nacional YUMBO a BUN, costo 2.850.000; el sistema me dio precio $3.352.941 y utilidad $502.941")).Fallos.Should().BeEmpty();
 
     [Theory]
     [InlineData("El precio final es $3.500.000.")]
@@ -412,7 +412,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         var validacion = clsReglasRespuestaAgente.Validar(Json(texto), ConPrecio());
 
         Codigos(validacion).Should().Equal(clsReglasRespuestaAgente.MontoNoRespaldado);
-        validacion.Fallos[0].Detalle.Should().Contain("no aparece en las salidas de las herramientas");
+        validacion.Fallos[0].Detalle.Should().Contain("no lo escribió el comercial como dinero");
     }
 
     // HU-013.9 (#105): el estado ya no guarda montos, así que un precio de un turno anterior no queda respaldado.
@@ -479,14 +479,14 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
     }
 
     [Fact]
-    public void LasCadenasDeDigitosDeLasSalidasRespaldan()
+    public void NingunaSalidaDeHerramientaRespaldaUnMontoNiConSusCadenasDeDigitos()
     {
         var contexto = Bateria() with
         {
             Salidas = [clsResultadoHerramienta.Exito("consultar_cotizacion", new Dictionary<string, object> { ["valor_registrado"] = "3100000" })],
         };
 
-        clsReglasRespuestaAgente.Validar(Json("El valor registrado era $3.100.000."), contexto).Fallos.Should().BeEmpty();
+        Codigos(clsReglasRespuestaAgente.Validar(Json("El valor registrado era $3.100.000."), contexto)).Should().Equal(clsReglasRespuestaAgente.MontoNoRespaldado);
     }
 
     [Fact]
@@ -538,7 +538,7 @@ public sealed class clsValidadorRespuestaAgenteTests : IDisposable
         const string Invalida = "{\"tipo\": \"conversacional\", \"texto\": \"El precio es $3.500.000\", \"requiere_confirmacion\": \"no\"}";
         _modelo.Responder(Invalida).ResponderFinal("El precio final es $3.352.941.");
 
-        var final = await _validador.ObtenerRespuestaFinalAsync(_modelo, [new(ChatRole.User, "Cotiza")], ConPrecio(), Ct);
+        var final = await _validador.ObtenerRespuestaFinalAsync(_modelo, [new(ChatRole.User, "Cotiza")], ConPrecio("el sistema me dio el precio $3.352.941"), Ct);
 
         final.EsRespaldo.Should().BeFalse();
         final.Llamadas.Should().Be(2);

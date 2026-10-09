@@ -57,11 +57,42 @@ public static class clsTextosAgente
     /// <summary>Otro mensaje de la misma conversación todavía se está procesando (candado por sesión).</summary>
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
 
+    /// <summary>
+    /// HU-013.16 (#126): el modelo pidió herramientas sin parar hasta <c>IA:MaxIteraciones</c> y el turno se cortó sin respuesta ni
+    /// propuesta. La pregunta del comercial y las herramientas que alcanzaron a correr quedan en la conversación.
+    /// </summary>
+    public const string MaxIteraciones =
+        "No pude completar tu solicitud: necesité demasiados pasos y la detuve. Reformúlala en un mensaje más corto o pide una cosa a la vez; la conversación no se pierde.";
+
+    /// <summary>HU-013.16 (#126): todos los modelos de IA fallaron por indisponibilidad (no por el límite de peticiones).</summary>
+    public const string IaNoDisponible =
+        "El asistente de IA no está disponible en este momento. Inténtalo en unos minutos; mientras tanto puedes ajustar la cotización desde su detalle.";
+
+    // Códigos de RespuestaChatError.codigo (HU-013.16): el frontend decide qué mostrar sin leer el texto.
+    public const string CodigoIaNoDisponible = "IA_NO_DISPONIBLE";
+    public const string CodigoLimiteModelo = "LIMITE_MODELO";
+    public const string CodigoTurnoEnCurso = "TURNO_EN_CURSO";
+    public const string CodigoMaxIteraciones = "MAX_ITERACIONES";
+    public const string CodigoErrorInterno = "ERROR_INTERNO";
+    public const string CodigoRespuestaNoEstructurada = "RESPUESTA_NO_ESTRUCTURADA";
+
     /// <summary>Texto para el comercial ante un fallo del turno.</summary>
     public static string ParaFallo(Exception error) => error switch
     {
         Exceptions.clsTurnoEnCursoException => TurnoEnCurso,
+        Exceptions.clsMaxIteracionesExcedidasException => MaxIteraciones,
         _ when EsLimiteDePeticiones(error) => LimiteModelo,
+        Exceptions.clsIaNoDisponibleException => IaNoDisponible,
         _ => ErrorInterno,
+    };
+
+    /// <summary>Código de <c>RespuestaChatError</c> para un fallo del turno (el mismo criterio que <see cref="ParaFallo"/>).</summary>
+    public static string CodigoDeFallo(Exception error) => error switch
+    {
+        Exceptions.clsTurnoEnCursoException => CodigoTurnoEnCurso,
+        Exceptions.clsMaxIteracionesExcedidasException => CodigoMaxIteraciones,
+        _ when EsLimiteDePeticiones(error) => CodigoLimiteModelo,
+        Exceptions.clsIaNoDisponibleException => CodigoIaNoDisponible,
+        _ => CodigoErrorInterno,
     };
 }

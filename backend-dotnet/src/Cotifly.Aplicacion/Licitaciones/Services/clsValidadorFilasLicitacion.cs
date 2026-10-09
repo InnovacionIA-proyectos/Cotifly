@@ -126,6 +126,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
         {
             ["indice"] = e.Indice,
             ["fila"] = e.Fila,
+            ["fila_excel"] = e.FilaExcel,
             ["campo"] = e.Campo,
             ["codigo"] = e.Codigo,
             ["mensaje"] = e.Mensaje,

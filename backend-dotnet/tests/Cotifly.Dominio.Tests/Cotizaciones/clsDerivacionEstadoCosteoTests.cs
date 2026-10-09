@@ -105,6 +105,51 @@ public sealed class clsDerivacionEstadoCosteoTests
         cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
     }
 
+    [Fact]
+    public void UnaEntregadaSinPrecioNiPdfQuedaMarcadaParaRelecturaHastaQueTengaPrecio()
+    {
+        // HU-013.14 (ADR-018 §17): el rastro del resultado registrado antes de leer el costeo.
+        var cotizacion = Enviada();
+        cotizacion.EntregadaSinPrecio.Should().BeFalse("pendiente_costeo todavía no es entregada");
+
+        cotizacion.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _ahora, null);
+        cotizacion.EntregadaSinPrecio.Should().BeTrue();
+        cotizacion.SeConsultaEnNexo.Should().BeFalse("entregada sigue siendo terminal para el polling normal");
+
+        cotizacion.ProgramarRelecturaCosteo(_ahora.AddSeconds(1));
+        cotizacion.CosteoSiguienteConsultaAt.Should().Be(_ahora.AddSeconds(1));
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Entregada, "agendar la relectura no cambia el estado");
+        cotizacion.VersionNegocio.Should().Be(0, "ni la versión de negocio");
+
+        cotizacion.RegistrarPrecioCosteo(1_000_000m, 1_176_471m, null, _ahora);
+        cotizacion.EntregadaSinPrecio.Should().BeFalse();
+    }
+
+    [Fact]
+    public void LaPerdidaSinCosteoQuedaSoloEnCotiflyDetieneElPollingYNoSeRepite()
+    {
+        // HU-013.17 (#127): el cliente desistió antes del costeo de Nexo.
+        var cotizacion = Enviada();
+        cotizacion.AdmitePerdidaSinCosteo.Should().BeTrue();
+
+        cotizacion.RegistrarPerdidaSinCosteo("  El cliente desistió ", _ahora);
+
+        cotizacion.Ganada.Should().BeFalse();
+        cotizacion.MotivoRechazo.Should().Be("El cliente desistió");
+        cotizacion.MarcadoAt.Should().Be(_ahora);
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        cotizacion.CosteoSiguienteConsultaAt.Should().BeNull();
+        cotizacion.PerdidaSoloEnCotifly.Should().BeTrue();
+        cotizacion.MotivoEstadoCosteo.Should().StartWith(clsCotizacion.PrefijoPerdidaSoloEnCotifly);
+        cotizacion.RequiereRelecturaCosteo.Should().BeFalse();
+        cotizacion.AdmitePerdidaSinCosteo.Should().BeFalse("ya tiene resultado");
+        cotizacion.Invoking(c => c.RegistrarPerdidaSinCosteo("otra", _ahora)).Should().Throw<InvalidOperationException>();
+
+        var entregada = Enviada();
+        entregada.RegistrarConsultaCosteo(EstadoCosteo.Entregada, "COT-1", _ahora, null);
+        entregada.Invoking(c => c.RegistrarPerdidaSinCosteo("x", _ahora)).Should().Throw<InvalidOperationException>("con costeo entregado va a Nexo");
+    }
+
     private static clsCotizacion Enviada()
     {
         var cotizacion = clsCotizacion.Crear(new clsDatosCotizacion { Folio = "PCN-DG-28092026-001" }).Valor;

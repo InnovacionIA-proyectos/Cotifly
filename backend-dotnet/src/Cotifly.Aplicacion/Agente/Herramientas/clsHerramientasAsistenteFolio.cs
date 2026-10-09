@@ -144,6 +144,9 @@ public sealed class clsHerramientasAsistenteFolio(
             ["cambios_de_carga"] = propuesta.Cuerpo.TryGetValue("datos_carga", out var datos) && datos is IReadOnlyDictionary<string, object?> campos
                 ? campos.Keys.ToList()
                 : [],
+
+            // HU-013.15 (#124): solo los nombres (sin montos) de los conexos que la re-solicitud descarta, para que el modelo lo avise.
+            ["conexos_descartados"] = clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Select(clsPropuestasAsistente.NombreConexo).ToList(),
             ["mensaje"] = MensajePropuesta,
         });
     }

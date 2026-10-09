@@ -20,4 +20,10 @@ public interface IClsMargenResolverService
     /// <c>null</c> si la línea no existe en <c>MargenesPolitica</c>.
     /// </summary>
     Task<clsMargenPolitica?> ResolverLineaAsync(string? lineaNegocio, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nombres de las líneas de negocio ACTIVAS de Cotifly (<c>MargenesPolitica</c>), en orden: las que se pueden elegir para cotizar.
+    /// Las usa el error <c>MARGEN_LINEA_DESCONOCIDA</c> de las licitaciones para decir qué líneas usar (HU-013.15, #124).
+    /// </summary>
+    Task<IReadOnlyList<string>> LineasActivasAsync(CancellationToken cancellationToken = default);
 }
