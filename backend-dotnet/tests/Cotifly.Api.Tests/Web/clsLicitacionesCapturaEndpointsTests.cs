@@ -102,7 +102,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         var alta = JsonNode.Parse(altas[1])!;
         alta["notas"]!.GetValue<string>().Should().Be("Cita previa");
         var primera = alta["lineas"]![0]!;
-        primera["origen"]!.GetValue<string>().Should().Be("BUENAVENTURA");
+        primera["origen"]!.GetValue<string>().Should().Be("Buenaventura", "HU-021.6: el nombre se copia del catálogo de municipios");
         primera["origenMunicipioId"]!.GetValue<int>().Should().Be(76109);
         primera["destinoMunicipioId"]!.GetValue<int>().Should().Be(11001);
         primera["tipoVehiculo"].Should().BeNull("HU-021 (decisión 7): el vehículo que llega en el pliego se ignora; lo define la Mesa de Costeo");
@@ -118,7 +118,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
 
         (await EscalarAsync("SELECT STRING_AGG(CONCAT(l.origenMunicipioId, '|', l.destinoMunicipioId, '|', l.horasCargue, '|', l.horasDescargue, '|', l.ciudadLevanteMunicipioId, '|', l.ciudadLevanteNombre), ';') WITHIN GROUP (ORDER BY l.orden) "
             + $"FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
-            .Should().Be("76109|11001|2.00|3.50||;52399|76001|4.00|6.00|76892|YUMBO",
+            .Should().Be("76109|11001|2.00|3.50||;52399|76001|4.00|6.00|76892|Yumbo",
                 "HU-021: la cabecera no guarda horas; la ruta guarda las que viajan y la ciudad de levante con su id y su nombre (HU-021.6)");
     }
 
@@ -137,7 +137,7 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task SinCatalogoDeMunicipiosNoSeGuardaSalvoQueLasFilasTraiganSusIds()
+    public async Task SinCatalogoDeMunicipiosNoSeGuardaNiConLosIdsDeLasFilas()
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.MunicipiosFalla = HttpStatusCode.ServiceUnavailable;
@@ -147,10 +147,12 @@ public sealed class clsLicitacionesCapturaEndpointsTests : IDisposable
         await VerificarErrorNegocioAsync(sinIds, "MUNICIPIOS_NO_DISPONIBLE");
         _nexo.SolicitudesCreadas.Should().BeEmpty();
 
+        // HU-021.6 (decisión 2): el nombre se copia del catálogo por el id, así que con ids tampoco se guarda sin catálogo.
         using var conIds = await _api.EnviarAsync(HttpMethod.Post, Ruta, sesion.Access,
             Cuerpo([Valida() with { origen_municipio_id = 76109, destino_municipio_id = 11001 }]));
-        await VerificarContratoAsync(conIds, Ruta, HttpMethod.Post, HttpStatusCode.Created);
-        _nexo.UltimaAlta!["lineas"]![0]!["origenMunicipioId"]!.GetValue<int>().Should().Be(76109);
+        conIds.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(conIds, "MUNICIPIOS_NO_DISPONIBLE");
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
     }
 
     [Fact]

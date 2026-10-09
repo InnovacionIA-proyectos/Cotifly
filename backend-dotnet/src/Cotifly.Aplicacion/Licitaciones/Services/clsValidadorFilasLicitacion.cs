@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -46,7 +47,8 @@ public sealed record clsFilasLicitacionValidadas(
     IReadOnlyList<clsLineaLicitacionEntrada> Lineas, IReadOnlyList<clsErrorFilaLicitacion> Errores, clsErrorDominio? NoDisponible);
 
 /// <summary>Implementación de <see cref="IClsValidadorFilasLicitacion"/>.</summary>
-public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura catalogos, IClsMunicipiosProvider municipios)
+public sealed class clsValidadorFilasLicitacion(
+    IClsValidadorCatalogosCaptura catalogos, IClsMunicipiosProvider municipios, ILogger<clsValidadorFilasLicitacion>? logger = null)
     : IClsValidadorFilasLicitacion
 {
     /// <summary><c>detalle.motivo</c> de una licitación guardada que ya no cumple las reglas de captura: se debe cargar de nuevo.</summary>
@@ -57,17 +59,18 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
         IReadOnlyList<clsLineaLicitacionEntrada?> lineas,
         IReadOnlyList<clsErrorFilaLicitacion> erroresPrevios,
         CancellationToken cancellationToken = default) =>
-        ValidarAsync(usuarioId, lineas, erroresPrevios, ciudades: true, cancellationToken);
+        ValidarAsync(usuarioId, lineas, erroresPrevios, captura: true, cancellationToken);
 
     /// <summary>
-    /// <paramref name="ciudades"/>: resuelve también las ciudades de devolución y de levante del contenedor (captura nueva, HU-021.6). Al
-    /// revalidar lo guardado no se les exige id (las rutas anteriores a HU-021 solo guardaron su nombre).
+    /// <paramref name="captura"/>: captura nueva (HU-021.6, decisión 2): resuelve también las ciudades del contenedor, verifica cada id
+    /// contra el catálogo y copia el nombre del catálogo (un nombre distinto del cliente se ignora y queda en el log). Al revalidar lo
+    /// guardado solo se resuelven el origen y el destino sin id (las rutas anteriores a HU-021 solo guardaron el nombre de las ciudades).
     /// </summary>
     private async Task<clsFilasLicitacionValidadas> ValidarAsync(
         Guid usuarioId,
         IReadOnlyList<clsLineaLicitacionEntrada?> lineas,
         IReadOnlyList<clsErrorFilaLicitacion> erroresPrevios,
-        bool ciudades,
+        bool captura,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(lineas);
@@ -82,7 +85,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
         }
 
         var resultantes = lineas;
-        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas, ciudades))
+        if (clsMunicipiosLicitacion.NecesitaCatalogo(lineas, captura))
         {
             var catalogo = await municipios.ObtenerAsync(usuarioId, cancellationToken);
             if (catalogo.EsFallo)
@@ -91,7 +94,13 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
             }
             else
             {
-                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor, ciudades);
+                var avisos = new List<string>();
+                var resueltas = clsMunicipiosLicitacion.Resolver(lineas, catalogo.Valor, captura, avisos);
+                foreach (var aviso in avisos)
+                {
+                    logger?.LogWarning("Municipio de la captura: {Aviso}", aviso);
+                }
+
                 resultantes = resueltas.Lineas;
                 errores.AddRange(resueltas.Errores);
             }
@@ -116,7 +125,7 @@ public sealed class clsValidadorFilasLicitacion(IClsValidadorCatalogosCaptura ca
             .Concat(entradas.SelectMany((l, i) => l!.Linea.Errores().Select(e => new clsErrorFilaLicitacion(i, l.Fila, e.Campo, e.Codigo, e.Mensaje))))
             .ToList();
 
-        var validadas = await ValidarAsync(usuarioId, entradas, previos, ciudades: false, cancellationToken);
+        var validadas = await ValidarAsync(usuarioId, entradas, previos, captura: false, cancellationToken);
         if (validadas.Errores.Count > 0)
         {
             return RequiereNuevaCarga(folio, validadas.Errores);

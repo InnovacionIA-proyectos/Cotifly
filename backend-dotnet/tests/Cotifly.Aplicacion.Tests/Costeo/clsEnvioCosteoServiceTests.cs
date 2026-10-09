@@ -826,6 +826,81 @@ public sealed class clsEnvioCosteoServiceTests
         sinLinea.Error.Mensaje.Should().Contain("linea_negocio");
     }
 
+    [Fact]
+    public async Task ElNombreDelMunicipioSiempreSaleDelCatalogoYUnIdInexistenteSeRechaza()
+    {
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(Ruta(11001, "Medellín", 76109, "Cali")), Ct)).Valor.PrimeraRuta!;
+        var inexistente = await Servicio().CapturarAsync(_ana, Captura(Ruta(99999, "Bogotá", 11001, "Bogotá")), Ct);
+
+        (guardada.OrigenNombre, guardada.DestinoNombre).Should().Be(("Bogotá, D.C.", "Buenaventura"), "un nombre distinto del cliente se ignora (decisión 2)");
+        CodigosDe(inexistente.Error).Should().Equal(clsCodigosLineaSolicitud.MunicipioInexistente);
+        ((IEnumerable<IReadOnlyDictionary<string, object?>>)inexistente.Error.Datos!["errores"]!).Single()["campo"].Should().Be("origen_municipio_id");
+    }
+
+    [Fact]
+    public async Task UnConexoQueNoEstaEnElCatalogoLlegaJuntoConLosDemasErrores()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(new Dictionary<string, clsCostoConexoNexo>()));
+        var ruta = Ruta(null, "La Unión", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-9", 1m)] };
+
+        var resultado = await Servicio().CapturarAsync(_ana, Captura(ruta), Ct);
+
+        CodigosDe(resultado.Error).Should().BeEquivalentTo([clsCodigosLineaSolicitud.MunicipioAmbiguo, clsCodigosLineaSolicitud.ConexoNoEncontrado]);
+    }
+
+    [Fact]
+    public async Task ElReintentoNoVuelveACotizarLosConexos()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                new Dictionary<string, clsCostoConexoNexo> { ["SC-1"] = new("SC-1", "Cargue", 150_000m) }));
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"), new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false));
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-1", 2m)] };
+        var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor;
+        Registrada(cotizacion);
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+        _costosConexos.ClearReceivedCalls();
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        reintento.Valor.PrimeraRuta!.Conexos.Should().ContainSingle().Which.Precio.Should().Be(150_000m, "el precio es el costo de Nexo al capturar");
+        await _costosConexos.DidNotReceiveWithAnyArgs().CostosAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElReintentoDeUnFormularioMigradoSinIdsLosResuelvePorElNombre()
+    {
+        // HU-021.6: una cotización anterior a la decisión 2 (sin ids de municipio) no viaja a Nexo sin ellos.
+        var cotizacion = clsCotizacionMuestra.Formulario(usuarioId: _ana);
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        Registrada(cotizacion);
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        (cotizacion.PrimeraRuta!.OrigenMunicipioId, cotizacion.PrimeraRuta.DestinoMunicipioId).Should().Be(((int?)76109, (int?)11001));
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana,
+            Arg.Is<clsSolicitudNexo>(s => s.Lineas[0].OrigenMunicipioId == 76109 && s.Lineas[0].DestinoMunicipioId == 11001), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElReintentoDeUnFormularioMigradoConUnMunicipioAmbiguoNoViajaANexo()
+    {
+        var cotizacion = clsCotizacionMuestra.Formulario(usuarioId: _ana, solicitud: clsSolicitudCosteoMuestra.Crear() with { Origen = "La Unión" });
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        Registrada(cotizacion);
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        CodigosDe(reintento.Error).Should().Equal(clsCodigosLineaSolicitud.MunicipioAmbiguo);
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
     private static clsEntradaCaptura Captura(params clsLineaLicitacionEntrada[] rutas) =>
         new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.CrearCaptura().Encabezado, rutas);
 

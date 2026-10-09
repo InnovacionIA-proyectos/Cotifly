@@ -33,6 +33,9 @@ public static class clsCodigosLineaSolicitud
     /// <summary>G6 (HU-013.11): el texto del origen o destino no coincide con ningún municipio del catálogo de Nexo.</summary>
     public const string MunicipioNoEncontrado = "MUNICIPIO_NO_ENCONTRADO";
 
+    /// <summary>HU-021.6 (decisión 2): el id de municipio que llegó no existe en el catálogo de municipios de Nexo.</summary>
+    public const string MunicipioInexistente = "MUNICIPIO_INEXISTENTE";
+
     /// <summary>HU-021.6: la ruta pide dos veces el mismo servicio conexo (la cantidad ya dice cuántos son).</summary>
     public const string ConexoDuplicado = "CONEXO_DUPLICADO";
 

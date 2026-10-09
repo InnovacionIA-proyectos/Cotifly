@@ -185,14 +185,29 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     public async Task SinNexoConfiguradoUnFormularioSinCatalogosDeNexoQuedaEnErrorEnvio()
     {
         var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        // HU-021.6: con el id y el nombre de cada municipio no hace falta el catálogo de municipios de Nexo.
+        // HU-021.6 (decisión 2): aun con el id y el nombre, el nombre se copia del catálogo: sin Nexo no hay captura.
         var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","origen_municipio_id":76001,"destino":"Bogotá","destino_municipio_id":11001,"peso_kg":1000}""";
 
         using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
-        var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
-        json.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
-        json.GetProperty("motivo_estado_costeo").GetString().Should().Contain("catálogo de Nexo");
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "MUNICIPIOS_NO_DISPONIBLE");
+    }
+
+    [Fact]
+    public async Task ConRutasLosCamposPlanosEnLaRaizSonErroresYNoSeDescartan()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"rutas\":", "\"ciudad_devolucion_contenedor\":\"Cali\",\"peso_kg\":1,\"rutas\":", StringComparison.Ordinal);
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().BeEquivalentTo([("ciudad_devolucion_contenedor", "CAMPO_NO_APLICA"), ("peso_kg", "CAMPO_NO_APLICA")]);
     }
 
     [Fact]

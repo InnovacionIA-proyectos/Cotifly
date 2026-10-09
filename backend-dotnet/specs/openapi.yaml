@@ -993,9 +993,13 @@ paths:
         precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y, mientras
         no exista el cubicador (#133), **un camión sin vehículo ni carrocería con el peso total de la ruta**: la Mesa de Costeo de
         Nexo elige el vehículo (decisión 7). A Nexo viaja una línea por camión.
-        - **Municipios:** con id y nombre se respetan; con solo el id el nombre se copia del catálogo de `GET /web/municipios`
-          (un id que no está es `MUNICIPIO_NO_ENCONTRADO`); con solo el nombre se resuelve con la regla determinista de HU-005.13 y
-          nunca se adivina (`MUNICIPIO_AMBIGUO` con los candidatos y su id, o `MUNICIPIO_NO_ENCONTRADO`).
+        - **Municipios:** el nombre que se guarda **siempre sale del catálogo** de `GET /web/municipios` por el id (un nombre
+          distinto que mande el cliente se ignora y queda en el log); un id que no existe es `MUNICIPIO_INEXISTENTE` en el campo del
+          id. Sin id, el nombre se resuelve con la regla determinista de HU-005.13 y nunca se adivina (`MUNICIPIO_AMBIGUO` con los
+          candidatos y su id, o `MUNICIPIO_NO_ENCONTRADO`). Por eso toda captura consulta el catálogo de municipios (con caché):
+          si no responde, 503 `MUNICIPIOS_NO_DISPONIBLE`.
+        - **Varias líneas de negocio:** se aceptan. Hasta integrar #134 (línea por camión), a Nexo viaja la línea de negocio de la
+          ruta 1; el margen sí es el de cada ruta.
         - **Todos los errores juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[]` (`ruta` base 0 o `null` si es del
           encabezado, `campo`, `codigo`, `mensaje`); `mensaje` es el del primero y `detalle.motivo` su código (o el del catálogo de
           Nexo que no respondió).
@@ -2588,6 +2592,7 @@ components:
                 - NEXO_SIN_PERMISO
                 - CONFLICTO_CONCURRENCIA
                 - FOLIO_REQUERIDO
+                - COTIZACION_CHAT_RETIRADA
                 - ESTADO_NO_PERMITE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
@@ -3960,7 +3965,8 @@ components:
       description: |
         HU-021.6 (#132, decisión 3): un servicio conexo del catálogo de Nexo (`GET /web/servicios-conexos`) pedido con la ruta. Cotifly
         lo guarda con el **costo unitario de Nexo como precio** (`CotizacionServiciosConexos`) y lo suma al costo de la ruta; el costo
-        nunca se muestra. Un id que no está activo en el catálogo es `CONEXO_NO_ENCONTRADO`; el mismo servicio dos veces en la ruta,
+        nunca se muestra. El precio guardado es el costo de Nexo **al momento de capturar** (el catálogo se lee con una caché de 5
+        minutos); el reintento y el polling no vuelven a cotizar los conexos. `CONEXO_NO_ENCONTRADO` llega junto con los demás errores. Un id que no está activo en el catálogo es `CONEXO_NO_ENCONTRADO`; el mismo servicio dos veces en la ruta,
         `CONEXO_DUPLICADO`; más de 20 por ruta, `DEMASIADOS_CONEXOS`.
       properties:
         id_servicio_conexo:
@@ -4115,7 +4121,9 @@ components:
       required: [tipo, nit_cliente]
       description: |
         **HU-021.6 (#132):** la solicitud se captura por `rutas` (`RutaCapturaWeb`). Los campos de ruta de la raíz (desde `origen`
-        hasta `posiciones`) son el **formato plano anterior** (una sola ruta): se aceptan solo sin `rutas` y con las mismas reglas
+        hasta `posiciones`, marcados `deprecated`) son el **formato plano anterior** (una sola ruta), **obsoleto: se retira en #138**.
+        Se aceptan solo sin `rutas` (con `rutas`, cada campo plano que llegue es 400 `SOLICITUD_COSTEO_INVALIDA` con
+        `CAMPO_NO_APLICA` en `detalle.errores`) y con las mismas reglas
         (id de municipio obligatorio o resoluble por nombre, mercancías con `id_tipo_mercancia`). `linea_negocio` es la de las
         rutas que no traen la suya (en el formato plano, obligatoria). `tipo_vehiculo`, `carroceria`, `valor_estimado` y
         `referencia` están retirados: se aceptan y se ignoran.
@@ -4209,16 +4217,19 @@ components:
           maximum: 240
           description: Encabezado (`horasDescargue`). Igual que `horas_cargue`.
         origen:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 150
           description: Formato plano (una ruta). Línea (`origen`). Municipio de `GET /web/municipios` (columna `municipio`).
         destino:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 150
           description: Formato plano. Línea (`destino`). Municipio de `GET /web/municipios`.
         origen_municipio_id:
+          deprecated: true
           type: integer
           nullable: true
           minimum: 1
@@ -4227,6 +4238,7 @@ components:
             `tbl_municipios` de Nexo): evita que Nexo resuelva la ruta por texto aproximado. HU-021.6 (decisión 2): obligatorio;
             si no viene, Cotifly lo resuelve por `origen` (sin adivinar). Se guarda y se reenvía.
         destino_municipio_id:
+          deprecated: true
           type: integer
           nullable: true
           minimum: 1
@@ -4244,6 +4256,7 @@ components:
           deprecated: true
           description: Retirado (decisión 7 de HU-021). Se acepta y se ignora, igual que `tipo_vehiculo`.
         tipologia:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 50
@@ -4251,6 +4264,7 @@ components:
             Línea (`tipologia`; en Nexo solo existe a nivel de LÍNEA, no por posición). Enum de Nexo de 7 valores:
             `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca`.
         clase_viaje:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 50
@@ -4258,6 +4272,7 @@ components:
             Línea (`claseViaje`). `descripcion` del catálogo maestro de Nexo (`GET /api/catalogos/clases-viaje`: `Contenedor`,
             `Cupo`, `Carga Suelta`, `Extradimensionado`). Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
         clase_contenedor:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 20
@@ -4267,42 +4282,51 @@ components:
             nacional (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, G15) o una `descripcion` de
             `GET /api/catalogos/clases-contenedor`. Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
         exclusivo:
+          deprecated: true
           type: boolean
           nullable: true
           description: Línea (`exclusivo`).
         consolidado:
+          deprecated: true
           type: boolean
           nullable: true
           description: Línea (`consolidado`).
         retorna_contenedor:
+          deprecated: true
           type: boolean
           nullable: true
           description: Línea (`retornaContenedor`). Nexo lo fuerza a `true` si viene `ciudad_devolucion_contenedor`.
         ciudad_devolucion_contenedor:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 150
           description: Línea (`ciudadDevolucionContenedor`), condicional a `retorna_contenedor`.
         ciudad_devolucion_municipio_id:
+          deprecated: true
           type: integer
           nullable: true
           minimum: 1
           description: HU-021.6 (decisión 2). Id de municipio de la ciudad de devolución (con solo el nombre, se resuelve).
         levante_contenedor_diferente:
+          deprecated: true
           type: boolean
           nullable: true
           description: Línea (`levanteContenedorDiferente`). Nexo lo fuerza a `true` si la ciudad de levante difiere del origen.
         ciudad_levante_contenedor:
+          deprecated: true
           type: string
           nullable: true
           maxLength: 150
           description: Línea (`ciudadLevanteContenedor`), condicional a `levante_contenedor_diferente`.
         ciudad_levante_municipio_id:
+          deprecated: true
           type: integer
           nullable: true
           minimum: 1
           description: HU-021.6 (decisión 2). Id de municipio de la ciudad de levante (con solo el nombre, se resuelve).
         valor_aprovisionamiento:
+          deprecated: true
           type: number
           nullable: true
           minimum: 0
@@ -4311,6 +4335,7 @@ components:
             Línea (`valorAprovisionamiento`). Solo con una `ciudad_levante_contenedor` distinta del origen (G3; Nexo lo
             descarta en otro caso): sin ella es 400 `SOLICITUD_COSTEO_INVALIDA`.
         peso_kg:
+          deprecated: true
           type: number
           nullable: true
           minimum: 0
@@ -4319,12 +4344,14 @@ components:
             Línea (`peso`). Obligatorio (> 0) si las posiciones no aportan peso; si ambos vienen, deben coincidir con
             `sum(cantidad × posiciones[].peso_kg)` dentro del 1 % (`PESO_REQUERIDO` / `PESO_INCONSISTENTE`).
         valor_mercancia:
+          deprecated: true
           type: number
           nullable: true
           minimum: 0
           maximum: 9999999999999.99
           description: Línea (`valorMercancia`).
         posiciones:
+          deprecated: true
           type: array
           maxItems: 200
           default: []
@@ -4642,13 +4669,13 @@ components:
           type: string
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
-                 CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, CONEXO_DUPLICADO, CONEXO_NO_ENCONTRADO,
-                 DEMASIADOS_CONEXOS]
+                 CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
+                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
             HU-021.6: `MUNICIPIO_*` también en `ciudad_devolucion_contenedor`/`ciudad_levante_contenedor` (y
-            `MUNICIPIO_NO_ENCONTRADO` en `*_municipio_id` si el id no está en el catálogo); `CAMPO_REQUERIDO` en
+            `MUNICIPIO_INEXISTENTE` en `*_municipio_id` si el id no está en el catálogo); `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` y `mercancias[i].id_tipo_mercancia`; `CONEXO_DUPLICADO`,
             `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`.
         mensaje:

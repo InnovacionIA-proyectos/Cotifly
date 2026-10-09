@@ -23,10 +23,26 @@ Característica: Captura de la solicitud de costeo por rutas
       | Exportacion   | 5001                | Medellín     | 13001                | Cartagena | 12500 |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la solicitud "C1" tiene estas rutas guardadas:
-      | orden | linea_negocio | origen       | destino   | camiones | peso_camion | vehiculo |
-      | 1     | Importacion   | Buenaventura | Bogotá    | 1        | 28000.00    |          |
-      | 2     | Exportacion   | Medellín     | Cartagena | 1        | 12500.00    |          |
+      | orden | linea_negocio | origen       | destino      | camiones | peso_camion | vehiculo |
+      | 1     | Importacion   | Buenaventura | Bogotá, D.C. | 1        | 28000.00    |          |
+      | 2     | Exportacion   | Medellín     | Cartagena    | 1        | 12500.00    |          |
     Y Nexo recibió una solicitud con 2 líneas sin tipo de vehículo
+
+  Escenario: El nombre del municipio siempre sale del catálogo y un id que no existe se rechaza
+    Cuando "ana" envía a costeo la solicitud "C1" del cliente "900555111" con estas rutas:
+      | linea_negocio | origen_municipio_id | origen   | destino_municipio_id | destino | peso_kg |
+      | Importacion   | 11001               | Medellín | 76109                | Cali    | 28000   |
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y la solicitud "C1" tiene estas rutas guardadas:
+      | orden | linea_negocio | origen       | destino      | camiones | peso_camion | vehiculo |
+      | 1     | Importacion   | Bogotá, D.C. | Buenaventura | 1        | 28000.00    |          |
+    Cuando "ana" envía a costeo la solicitud "C2" del cliente "900555111" con estas rutas:
+      | linea_negocio | origen_municipio_id | destino_municipio_id | peso_kg |
+      | Importacion   | 99999               | 11001                | 28000   |
+    Entonces la respuesta tiene el estado 400 con el código de negocio "SOLICITUD_COSTEO_INVALIDA"
+    Y el error trae exactamente estos errores por ruta:
+      | ruta | campo               | codigo                |
+      | 0    | origen_municipio_id | MUNICIPIO_INEXISTENTE |
 
   Escenario: Con solo el id del municipio el nombre se copia del catálogo de Nexo
     Cuando "ana" envía a costeo la solicitud "C1" del cliente "900555111" con estas rutas:

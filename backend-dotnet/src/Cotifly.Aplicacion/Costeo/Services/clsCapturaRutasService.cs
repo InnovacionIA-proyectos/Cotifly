@@ -111,8 +111,39 @@ public sealed class clsCapturaRutasService(
             }
         }
 
-        return validadas with { Errores = [.. errores.OrderBy(e => e.Indice ?? -1)] };
+        // Los conexos que no están en el catálogo de Nexo se reportan junto con los demás errores (la lectura queda en la caché de 5 min
+        // del adaptador y PrepararAsync la reutiliza). Sin Nexo, 503 como cualquier catálogo caído.
+        var noDisponible = validadas.NoDisponible;
+        var conexosMalFormados = errores
+            .Where(e => e.Indice is not null && e.Campo.StartsWith("servicios_conexos", StringComparison.Ordinal))
+            .Select(e => e.Indice!.Value)
+            .ToHashSet();
+        var pedidos = validadas.Lineas
+            .SelectMany((r, i) => (r?.Conexos ?? []).Select((c, j) => (Ruta: i, Fila: r?.Fila, Indice: j, Id: c?.IdServicioConexo?.Trim())))
+            .Where(c => !conexosMalFormados.Contains(c.Ruta) && !string.IsNullOrEmpty(c.Id))
+            .ToList();
+        if (pedidos.Count > 0)
+        {
+            var costos = await costosConexos.CostosAsync(usuarioId, [.. pedidos.Select(p => p.Id!).Distinct(StringComparer.OrdinalIgnoreCase)], cancellationToken);
+            if (costos.EsFallo)
+            {
+                noDisponible ??= costos.Error;
+            }
+            else
+            {
+                var encontrados = new Dictionary<string, clsCostoConexoNexo>(costos.Valor, StringComparer.OrdinalIgnoreCase);
+                errores.AddRange(pedidos
+                    .Where(p => !encontrados.TryGetValue(p.Id!, out var costo) || costo.CostoUnitario < 0m)
+                    .Select(p => ConexoNoEncontrado(p.Ruta, p.Fila, p.Indice, p.Id!)));
+            }
+        }
+
+        return validadas with { Errores = [.. errores.OrderBy(e => e.Indice ?? -1)], NoDisponible = noDisponible };
     }
+
+    private static clsErrorFilaLicitacion ConexoNoEncontrado(int ruta, int? fila, int indice, string id) =>
+        new(ruta, fila, $"servicios_conexos[{indice}].id_servicio_conexo", clsCodigosLineaSolicitud.ConexoNoEncontrado,
+            $"El servicio conexo '{id}' no está activo en el catálogo de Nexo (GET /web/servicios-conexos).");
 
     public async Task<clsRutasPreparadas> PrepararAsync(
         Guid usuarioId, IReadOnlyList<clsRutaPorPreparar> rutas, CancellationToken cancellationToken = default)
@@ -148,8 +179,7 @@ public sealed class clsCapturaRutasService(
                 var id = pedidos[c]!.IdServicioConexo!.Trim();
                 if (!costos.TryGetValue(id, out var costo) || costo.CostoUnitario < 0m)
                 {
-                    errores.Add(new clsErrorFilaLicitacion(i, entrada.Fila, $"servicios_conexos[{c}].id_servicio_conexo", clsCodigosLineaSolicitud.ConexoNoEncontrado,
-                        $"El servicio conexo '{id}' no está activo en el catálogo de Nexo (GET /web/servicios-conexos)."));
+                    errores.Add(ConexoNoEncontrado(i, entrada.Fila, c, id));
                     continue;
                 }
 

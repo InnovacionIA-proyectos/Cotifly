@@ -30,7 +30,7 @@ Característica: Redacción del asunto y la introducción de la cotización
   Escenario: La IA nunca recibe costos, margen ni precios
     Dado que el modelo responde el asunto "Cotización transporte Buenaventura - Bogotá" y una introducción válida
     Cuando "ana" pide redactar los textos de "C1"
-    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Importacion", "Buenaventura", "Bogotá D.C." y la moneda "COP"
+    Entonces el mensaje enviado al modelo menciona el cliente, la línea "Importacion", "Buenaventura", "Bogotá, D.C." y la moneda "COP"
     Y el mensaje enviado al modelo no contiene "2550000", "3000000" ni "0.15"
 
   Escenario: Si la IA tarda más de 15 segundos se usa el texto estándar

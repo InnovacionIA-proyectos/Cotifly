@@ -65,6 +65,78 @@ public sealed class clsCostosConexosNexo(clsCosteoNexo costeo) : IClsCostosConex
     }
 }
 
+/// <summary>
+/// Copia en memoria (singleton) de los costos de conexos leídos del catálogo de Nexo: cada servicio vale <see cref="Vigencia"/> (5 min).
+/// Solo se guardan los servicios encontrados; uno que no estaba se vuelve a buscar en la siguiente captura.
+/// </summary>
+public sealed class clsAlmacenCostosConexos
+{
+    public static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(5);
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (clsCostoConexoNexo Costo, DateTimeOffset LeidoAt)> _costos =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public bool Leer(string id, DateTimeOffset ahora, out clsCostoConexoNexo costo)
+    {
+        if (_costos.TryGetValue(id, out var guardado) && ahora - guardado.LeidoAt < Vigencia)
+        {
+            costo = guardado.Costo;
+            return true;
+        }
+
+        costo = null!;
+        return false;
+    }
+
+    public void Guardar(clsCostoConexoNexo costo, DateTimeOffset ahora) => _costos[costo.Id] = (costo, ahora);
+}
+
+/// <summary>
+/// Caché de <see cref="IClsCostosConexosNexo"/> (HU-021.6): la validación y la preparación de una misma captura, y las capturas seguidas,
+/// no vuelven a recorrer el catálogo de Nexo durante 5 minutos. El precio que se guarda en la ruta es el costo de Nexo al momento de
+/// capturar; el reintento y el polling no vuelven a cotizar los conexos.
+/// </summary>
+public sealed class clsCostosConexosEnCache(IClsCostosConexosNexo interno, clsAlmacenCostosConexos almacen, Aplicacion.Comun.Interfaces.IClsReloj reloj)
+    : IClsCostosConexosNexo
+{
+    public async Task<clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>> CostosAsync(
+        Guid usuarioId, IReadOnlyCollection<string> ids, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var ahora = reloj.AhoraUtc;
+        var resultado = new Dictionary<string, clsCostoConexoNexo>(StringComparer.OrdinalIgnoreCase);
+        var faltantes = new List<string>();
+        foreach (var id in ids.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (almacen.Leer(id, ahora, out var costo))
+            {
+                resultado[costo.Id] = costo;
+            }
+            else
+            {
+                faltantes.Add(id);
+            }
+        }
+
+        if (faltantes.Count > 0)
+        {
+            var leidos = await interno.CostosAsync(usuarioId, faltantes, cancellationToken);
+            if (leidos.EsFallo)
+            {
+                return leidos.Error;
+            }
+
+            foreach (var costo in leidos.Valor.Values)
+            {
+                almacen.Guardar(costo, ahora);
+                resultado[costo.Id] = costo;
+            }
+        }
+
+        return clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(resultado);
+    }
+}
+
 /// <summary>Costos de conexos cuando Nexo no está configurado (<c>Nexo:UrlBase</c> vacía): siempre <c>NEXO_NO_DISPONIBLE</c>.</summary>
 public sealed class clsCostosConexosNoDisponible : IClsCostosConexosNexo
 {

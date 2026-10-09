@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Cotifly.Api.Comun;
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
@@ -93,18 +94,51 @@ public sealed class clsSolicitudCosteoWebRequest
             return new clsEntradaCaptura(NitCliente, ClienteNombre, LineaNegocio, encabezado, [new clsLineaLicitacionEntrada(null, LineaPlana())], Moneda);
         }
 
-        if (TraeCamposPlanos)
+        if (CamposPlanos() is { Count: > 0 } planos)
         {
-            return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
-                "Envía las rutas solo en 'rutas': los campos de ruta en la raíz (origen, destino, peso_kg, posiciones...) son del formato anterior.");
+            // Nunca se descartan en silencio: cada campo de ruta en la raíz es un error en detalle.errores.
+            return clsEnvioCosteoService.ErrorCaptura(
+                [.. planos.Select(c => new clsErrorFilaLicitacion(null, null, c, clsCodigosLineaSolicitud.CampoNoAplica,
+                    $"El campo '{c}' es del formato anterior (una ruta en la raíz): con 'rutas' va dentro de cada ruta."))],
+                null, 1);
         }
 
         return new clsEntradaCaptura(NitCliente, ClienteNombre, LineaNegocio, encabezado, [.. Rutas.Select(r => r?.AEntrada())], Moneda);
     }
 
-    private bool TraeCamposPlanos =>
-        Origen is not null || Destino is not null || OrigenMunicipioId is not null || DestinoMunicipioId is not null || PesoKg is not null
-        || ValorMercancia is not null || Posiciones is not null || Tipologia is not null || ClaseViaje is not null || ClaseContenedor is not null;
+    /// <summary>Campos de ruta del formato plano que llegaron en la raíz (snake_case del contrato).</summary>
+    private List<string> CamposPlanos()
+    {
+        var campos = new List<string>();
+        void Si(bool viene, string campo)
+        {
+            if (viene)
+            {
+                campos.Add(campo);
+            }
+        }
+
+        Si(Origen is not null, "origen");
+        Si(Destino is not null, "destino");
+        Si(OrigenMunicipioId is not null, "origen_municipio_id");
+        Si(DestinoMunicipioId is not null, "destino_municipio_id");
+        Si(Tipologia is not null, "tipologia");
+        Si(ClaseViaje is not null, "clase_viaje");
+        Si(ClaseContenedor is not null, "clase_contenedor");
+        Si(Exclusivo is not null, "exclusivo");
+        Si(Consolidado is not null, "consolidado");
+        Si(RetornaContenedor is not null, "retorna_contenedor");
+        Si(CiudadDevolucionContenedor is not null, "ciudad_devolucion_contenedor");
+        Si(CiudadDevolucionMunicipioId is not null, "ciudad_devolucion_municipio_id");
+        Si(LevanteContenedorDiferente is not null, "levante_contenedor_diferente");
+        Si(CiudadLevanteContenedor is not null, "ciudad_levante_contenedor");
+        Si(CiudadLevanteMunicipioId is not null, "ciudad_levante_municipio_id");
+        Si(ValorAprovisionamiento is not null, "valor_aprovisionamiento");
+        Si(PesoKg is not null, "peso_kg");
+        Si(ValorMercancia is not null, "valor_mercancia");
+        Si(Posiciones is not null, "posiciones");
+        return campos;
+    }
 
     private clsLineaSolicitudCosteo LineaPlana() => new()
     {

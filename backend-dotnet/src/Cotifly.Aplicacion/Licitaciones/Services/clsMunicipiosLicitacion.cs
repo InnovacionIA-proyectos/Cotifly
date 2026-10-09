@@ -6,19 +6,18 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// Ids y nombres de municipio de Nexo de las rutas de una captura (G6 de HU-013.11; HU-021.6, decisión 2: id obligatorio y copia del
-/// nombre). Lo usan las licitaciones y el formulario. Nexo resuelve el texto por coincidencia aproximada si no recibe el id; por eso
-/// Cotifly lo resuelve antes de guardar, con el catálogo de <c>GET /web/municipios</c> (con caché) y la misma regla determinista de
-/// <see cref="clsResolvedorMunicipios"/>, y nunca adivina:
+/// Ids y nombres de municipio de Nexo de las rutas (G6 de HU-013.11; HU-021.6, decisión 2: id obligatorio y copia del nombre). Lo usan
+/// las licitaciones y el formulario, con el catálogo de <c>GET /web/municipios</c> (con caché) y la regla determinista de
+/// <see cref="clsResolvedorMunicipios"/>. Nunca adivina. Dos modos:
 /// <list type="bullet">
-/// <item>Con id y nombre, se respetan y no se consulta el catálogo (el frontend los tomó de <c>GET /web/municipios</c>).</item>
-/// <item>Solo el id: el nombre se copia del catálogo; un id que no está en el catálogo es <c>MUNICIPIO_NO_ENCONTRADO</c>.</item>
-/// <item>Solo el nombre: una sola coincidencia no aproximada (<see cref="CoincidenciaMunicipio.Unica"/>) da el id; varias, o una
-/// aproximada, <c>MUNICIPIO_AMBIGUO</c> con los candidatos; ninguna, <c>MUNICIPIO_NO_ENCONTRADO</c>.</item>
+/// <item><b>Captura nueva</b> (<c>captura = true</c>): origen, destino y las dos ciudades del contenedor. Con id, el id debe estar en el
+/// catálogo (si no, <c>MUNICIPIO_INEXISTENTE</c> en el campo del id) y el nombre SIEMPRE se copia del catálogo; un nombre distinto que
+/// mande el cliente se ignora y queda en <c>avisos</c>. Sin id, el nombre se resuelve: una sola coincidencia no aproximada
+/// (<see cref="CoincidenciaMunicipio.Unica"/>) da el id y el nombre del catálogo; varias, o una aproximada, <c>MUNICIPIO_AMBIGUO</c>
+/// con los candidatos; ninguna, <c>MUNICIPIO_NO_ENCONTRADO</c>.</item>
+/// <item><b>Revalidación de lo guardado</b> (<c>captura = false</c>, reintento y re-solicitud): solo el origen y el destino sin id se
+/// resuelven por el nombre guardado (que no se cambia); un id guardado se respeta sin consultar el catálogo.</item>
 /// </list>
-/// Con <c>ciudades</c> se resuelven también la ciudad de devolución y la de levante del contenedor (captura nueva, HU-021.6); al
-/// revalidar lo guardado solo el origen y el destino (las ciudades guardadas antes de HU-021 no traen id y no se les exige). El texto
-/// que trae la fila no se cambia: se guarda y viaja tal como vino (recortado), junto al id.
 /// </summary>
 public static class clsMunicipiosLicitacion
 {
@@ -33,20 +32,25 @@ public static class clsMunicipiosLicitacion
         new("ciudad_levante_contenedor", "ciudad_levante_municipio_id", l => l.CiudadLevanteContenedor, l => l.CiudadLevanteMunicipioId, true),
     ];
 
-    /// <summary>¿Alguna fila necesita el catálogo (un municipio con nombre y sin id, o con id y sin nombre)?</summary>
-    public static bool NecesitaCatalogo(IReadOnlyList<clsLineaLicitacionEntrada?> lineas, bool ciudades = false)
+    /// <summary>
+    /// ¿Alguna fila necesita el catálogo? En una captura nueva, cualquier municipio que venga (por id o por nombre: el nombre siempre
+    /// sale del catálogo); al revalidar, solo un origen o destino con nombre y sin id.
+    /// </summary>
+    public static bool NecesitaCatalogo(IReadOnlyList<clsLineaLicitacionEntrada?> lineas, bool captura = false)
     {
         ArgumentNullException.ThrowIfNull(lineas);
-        return lineas.Any(l => l?.Linea is { } linea
-            && _campos.Any(c => (ciudades || !c.EsCiudad) && (PorResolver(c.Texto(linea), c.Id(linea)) || SinNombre(c.Texto(linea), c.Id(linea)))));
+        return lineas.Any(l => l?.Linea is { } linea && _campos.Any(c => captura
+            ? c.Id(linea) is > 0 || PorResolver(c.Texto(linea), null)
+            : !c.EsCiudad && PorResolver(c.Texto(linea), c.Id(linea))));
     }
 
     /// <summary>
     /// Las líneas con los ids y nombres resueltos (las que no necesitan nada quedan iguales) y los errores por fila de lo que no se
-    /// pudo resolver. Un mismo texto se resuelve una sola vez por captura.
+    /// pudo resolver. Un mismo texto se resuelve una sola vez. En <paramref name="avisos"/> (si viene) quedan los nombres que mandó el
+    /// cliente y se reemplazaron por los del catálogo.
     /// </summary>
     public static (IReadOnlyList<clsLineaLicitacionEntrada?> Lineas, IReadOnlyList<clsErrorFilaLicitacion> Errores) Resolver(
-        IReadOnlyList<clsLineaLicitacionEntrada?> lineas, IReadOnlyList<clsMunicipio> catalogo, bool ciudades = false)
+        IReadOnlyList<clsLineaLicitacionEntrada?> lineas, IReadOnlyList<clsMunicipio> catalogo, bool captura = false, ICollection<string>? avisos = null)
     {
         ArgumentNullException.ThrowIfNull(lineas);
         ArgumentNullException.ThrowIfNull(catalogo);
@@ -64,20 +68,28 @@ public static class clsMunicipiosLicitacion
             }
 
             var fila = entrada.Fila;
+            string? NombreCatalogo(int id) =>
+                porId.TryGetValue(id, out var m) && !string.IsNullOrWhiteSpace(m.Municipio) ? m.Municipio.Trim() : null;
+
             (int? Id, string? Texto) Resolver(clsCampo campo)
             {
                 var texto = campo.Texto(linea);
                 var id = campo.Id(linea);
-                if (SinNombre(texto, id))
+                if (captura && id is > 0)
                 {
-                    if (porId.TryGetValue(id!.Value, out var municipio) && !string.IsNullOrWhiteSpace(municipio.Municipio))
+                    if (NombreCatalogo(id.Value) is not { } nombre)
                     {
-                        return (id, municipio.Municipio.Trim());
+                        errores.Add(new clsErrorFilaLicitacion(i, fila, campo.CampoId, clsCodigosLineaSolicitud.MunicipioInexistente,
+                            $"El id de municipio {id} de '{campo.Nombre}' no existe en el catálogo de municipios de Nexo (GET /web/municipios)."));
+                        return (id, texto);
                     }
 
-                    errores.Add(new clsErrorFilaLicitacion(i, fila, campo.CampoId, clsCodigosLineaSolicitud.MunicipioNoEncontrado,
-                        $"El id de municipio {id} de '{campo.Nombre}' no está en el catálogo de municipios de Nexo (GET /web/municipios)."));
-                    return (id, texto);
+                    if (!string.IsNullOrWhiteSpace(texto) && clsResolvedorMunicipios.Clave(texto) != clsResolvedorMunicipios.Clave(nombre))
+                    {
+                        avisos?.Add($"Fila {i + 1}, {campo.Nombre}: se ignoró el nombre '{texto.Trim()}' y se copió '{nombre}' del municipio {id}.");
+                    }
+
+                    return (id, nombre);
                 }
 
                 if (!PorResolver(texto, id))
@@ -94,7 +106,7 @@ public static class clsMunicipiosLicitacion
 
                 if (resolucion.Resuelto is { } resuelto)
                 {
-                    return (resuelto.Id, texto);
+                    return (resuelto.Id, captura ? NombreCatalogo(resuelto.Id) ?? resuelto.Municipio : texto);
                 }
 
                 errores.Add(Error(i, fila, campo, clave, resolucion));
@@ -103,8 +115,8 @@ public static class clsMunicipiosLicitacion
 
             var origen = Resolver(_campos[0]);
             var destino = Resolver(_campos[1]);
-            var devolucion = ciudades ? Resolver(_campos[2]) : (linea.CiudadDevolucionMunicipioId, linea.CiudadDevolucionContenedor);
-            var levante = ciudades ? Resolver(_campos[3]) : (linea.CiudadLevanteMunicipioId, linea.CiudadLevanteContenedor);
+            var devolucion = captura ? Resolver(_campos[2]) : (linea.CiudadDevolucionMunicipioId, linea.CiudadDevolucionContenedor);
+            var levante = captura ? Resolver(_campos[3]) : (linea.CiudadLevanteMunicipioId, linea.CiudadLevanteContenedor);
             var nueva = linea with
             {
                 OrigenMunicipioId = origen.Id,
@@ -125,9 +137,6 @@ public static class clsMunicipiosLicitacion
     /// <summary>Texto presente y dentro del largo de Nexo (si no, ya es un error de la fila), sin id.</summary>
     private static bool PorResolver(string? texto, int? id) =>
         id is null && !string.IsNullOrWhiteSpace(texto) && texto.Trim().Length <= clsSolicitudCosteo.LargoCiudad;
-
-    /// <summary>Id válido sin nombre: el nombre se copia del catálogo.</summary>
-    private static bool SinNombre(string? texto, int? id) => id is > 0 && string.IsNullOrWhiteSpace(texto);
 
     private static clsErrorFilaLicitacion Error(int indice, int? fila, clsCampo campo, string texto, clsResolucionMunicipio resolucion)
     {

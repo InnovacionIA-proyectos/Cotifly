@@ -434,6 +434,19 @@ public sealed class clsEnvioCosteoService(
         {
             return invalida;
         }
+        else if (lineas.Any(l => l.OrigenMunicipioId is null || l.DestinoMunicipioId is null))
+        {
+            // HU-021.6 (decisión 2): un formulario migrado sin id de origen o destino los resuelve por el nombre guardado, igual que la
+            // licitación (nunca adivina); si no se puede, error claro y nada viaja a Nexo.
+            var resuelta = await filasLicitacion.RevalidarGuardadasAsync(
+                usuarioId, cotizacion.Folio, encabezado, lineas, [.. cotizacion.RutasOrdenadas.Select(r => r.RutaOrigenIndice)], cancellationToken);
+            if (resuelta.EsFallo)
+            {
+                return ErrorDeFormulario(resuelta.Error);
+            }
+
+            revalidadas = resuelta.Valor;
+        }
 
         // Reclamo optimista: de dos reintentos simultáneos solo uno envía (el otro vería otro updatedAt).
         if (!await cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, ahora, cancellationToken))
@@ -452,6 +465,25 @@ public sealed class clsEnvioCosteoService(
         var politica = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
         await EnviarANexoAsync(cotizacion, encabezado, politica, usuarioId, reintento: true);
         return cotizacion;
+    }
+
+    /// <summary>
+    /// El error de la revalidación de filas (<c>LICITACION_INVALIDA</c>, que nombra la licitación) como error del formulario:
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> con el primer error de la ruta y todos en <c>detalle.errores</c>. Un catálogo caído pasa igual.
+    /// </summary>
+    public static clsErrorDominio ErrorDeFormulario(clsErrorDominio error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        if (error.Codigo != clsCodigosError.LicitacionInvalida
+            || error.Datos?.GetValueOrDefault("errores") is not IReadOnlyList<IReadOnlyDictionary<string, object?>> { Count: > 0 } filas)
+        {
+            return error;
+        }
+
+        IReadOnlyList<clsErrorFilaLicitacion> errores = [.. filas.Select(f => new clsErrorFilaLicitacion(
+            f.GetValueOrDefault("indice") as int?, null, f.GetValueOrDefault("campo") as string ?? string.Empty,
+            f.GetValueOrDefault("codigo") as string ?? string.Empty, f.GetValueOrDefault("mensaje") as string ?? string.Empty))];
+        return ErrorCaptura(errores, null, errores.Count);
     }
 
     /// <summary>

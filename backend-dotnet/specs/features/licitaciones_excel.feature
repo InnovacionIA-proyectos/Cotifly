@@ -130,13 +130,24 @@ Característica: Licitaciones desde Excel
     Y Nexo no recibió ninguna solicitud
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 
-  Escenario: Sin catálogo de municipios una licitación con los ids de cada fila se crea igual
+  # HU-021.6 (decisión 2): el nombre del municipio siempre se copia del catálogo por su id, así que sin catálogo tampoco se guarda.
+  Escenario: Sin catálogo de municipios una licitación con los ids de cada fila tampoco se guarda
     Dado que el catálogo de municipios de Nexo no responde
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
       | origen       | destino      | origen_municipio_id | destino_municipio_id | tipologia |
       | BUENAVENTURA | BOGOTA, D.C. | 76109               | 11001                | CargaSeca |
-    Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
-    Y la línea 1 que recibió Nexo trae los municipios 76109 y 11001 sin horas propias
+    Entonces la respuesta tiene el estado 503 con el código de negocio "MUNICIPIOS_NO_DISPONIBLE"
+    Y Nexo no recibió ninguna solicitud
+
+  Escenario: El nombre del municipio se copia del catálogo y un id que no existe se rechaza
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen   | destino | origen_municipio_id | destino_municipio_id | tipologia |
+      | Medellín | Cali    | 11001               | 99999                | CargaSeca |
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae exactamente estos errores:
+      | linea | campo                | codigo                |
+      | 0     | destino_municipio_id | MUNICIPIO_INEXISTENTE |
+    Y Nexo no recibió ninguna solicitud
 
   # HU-013.15 (#124) — Numeración de filas: la que ve el comercial en su Excel (número de fila de la hoja, encabezado incluido). La
   # `fila` de cada línea sigue siendo el índice (base 0) en hojas[h].filas; los mensajes nunca lo muestran. Hallazgo E2E: "La fila 3
