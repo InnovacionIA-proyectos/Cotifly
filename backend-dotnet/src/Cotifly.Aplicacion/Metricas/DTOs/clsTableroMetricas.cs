@@ -9,17 +9,20 @@ public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = n
 public sealed record clsPeriodoMetricas(DateOnly Desde, DateOnly Hasta, string ZonaHoraria);
 
 /// <summary><c>GET /web/metricas/comercial</c> (esquema <c>MetricasComercial</c>).</summary>
+/// <param name="PorLineaNegocio">Apertura por línea de negocio, por ruta (HU-021.10, decisión 8).</param>
 public sealed record clsMetricasComercial(
     clsPeriodoMetricas Periodo,
     Guid UsuarioId,
     clsIndicadoresMetricas Indicadores,
-    IReadOnlyList<clsPuntoSerieMensual> SerieMensual);
+    IReadOnlyList<clsPuntoSerieMensual> SerieMensual,
+    IReadOnlyList<clsMetricaLineaNegocio> PorLineaNegocio);
 
 /// <summary>Un usuario de la regional con su rol y sus indicadores (esquema <c>ComercialRegional</c>).</summary>
 /// <param name="Rol"><c>comercial</c>, <c>gerente_comercial</c> o <c>null</c>: rol interno asignado en <c>UsuariosRoles</c> (ADR-009).</param>
 public sealed record clsComercialRegional(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto, string? Rol, clsIndicadoresMetricas Indicadores);
 
 /// <summary><c>GET /web/metricas/regional</c> (esquema <c>MetricasRegional</c>).</summary>
+/// <param name="PorLineaNegocio">Apertura por línea de negocio, por ruta, de la regional o del comercial filtrado (HU-021.10).</param>
 public sealed record clsMetricasRegional(
     clsPeriodoMetricas Periodo,
     string Regional,
@@ -29,7 +32,8 @@ public sealed record clsMetricasRegional(
     int LineasNegocioActivas,
     IReadOnlyList<clsComercialRegional> Comerciales,
     IReadOnlyList<clsPuntoSerieMensual> SerieMensual,
-    clsConcentracionCiudades ConcentracionCiudades);
+    clsConcentracionCiudades ConcentracionCiudades,
+    IReadOnlyList<clsMetricaLineaNegocio> PorLineaNegocio);
 
 /// <summary>
 /// Cotizaciones (una por cadena de versiones) de los comerciales pedidos cuya primera creación cae en el periodo, y si el esquema

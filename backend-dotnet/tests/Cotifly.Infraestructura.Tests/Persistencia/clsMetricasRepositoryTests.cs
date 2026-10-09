@@ -88,6 +88,38 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
         fila.NombreCompleto.Should().Be("Comercial de prueba");
     }
 
+    [Fact]
+    public async Task LosAjustesDeUnaCotizacionConRutasDeDosLineasVanALaLineaDeSuRutaYLaActividadLaCuentaUnaVez()
+    {
+        // HU-021.10 (#137): verificación de las vistas que redefinió el 0009 (no hace falta un 0011). La línea del ajuste es la de SU ruta
+        // (MargenAjustes.lineaSolicitudId → CotizacionLineasSolicitud.lineaNegocioId), y vActividadPorComercial cuenta cotizaciones, no rutas.
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud SET lineaNegocioId = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Nacional')
+            WHERE cotizacionSolicitudId = @id AND orden = 1;
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId) VALUES
+                (@id, 2, (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Importacion')),
+                (@id, 3, (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Importacion'));
+            DECLARE @r1 UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id AND orden = 1);
+            DECLARE @r2 UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id AND orden = 2);
+            DECLARE @r3 UNIQUEIDENTIFIER = (SELECT id FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = @id AND orden = 3);
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), @id, @r1, N'{cotizacion.Folio}', 0.15, 0.12, -0.03, N'A', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), @id, @r2, N'{cotizacion.Folio}', 0.15, 0.20, 0.05, N'B', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), @id, @r3, N'{cotizacion.Folio}', 0.15, 0.10, -0.05, N'C', '{ana}', SYSDATETIMEOFFSET());
+            """);
+
+        var ajustes = await Repositorio(r => r.ListarAjustesMargenAsync(clsAlcanceMetricas.DelUsuario(ana), Ct));
+        var actividad = await Repositorio(r => r.ListarActividadAsync(clsAlcanceMetricas.DelUsuario(ana), Ct));
+
+        ajustes.Select(f => (f.LineaNegocio, f.NumAjustes, f.DiferenciaPromedio, f.NumAjustesBajoSugerido)).Should().BeEquivalentTo(
+            [("Importacion", 2, (decimal?)0m, 1), ("Nacional", 1, (decimal?)-0.03m, 1)]);
+        actividad.Should().ContainSingle().Which.Should().BeEquivalentTo(new { NumCotizaciones = 1, NumAjustes = 3 }, "tres rutas, una cotización");
+    }
+
     private Task<IReadOnlyList<T>> Repositorio<T>(Func<IClsMetricasRepository, Task<IReadOnlyList<T>>> consulta) =>
         ConsultarAsync(s => consulta(s.GetRequiredService<IClsMetricasRepository>()));
 }

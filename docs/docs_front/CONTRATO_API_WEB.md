@@ -104,7 +104,8 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 | `pendientes_por_cotizar` | Sin precio y sin resultado |
 | `conversion` | ganadas / cantidad (definición del backlog); `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
-| `margen_promedio` | Promedio simple de `margenAplicado` (0.15 = 15 %) |
+| `margen_promedio` | Promedio simple del margen de cada cotización (0.15 = 15 %); el de una cotización es el de sus rutas ponderado por costo |
+| `margen_ponderado` | Por ruta, sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de todas las rutas con costo > 0 y precio > 0 (HU-021.10) |
 | `costeo_total` / `costeo_ganadas` | SUM(`costo`) en COP, de todas / de las ganadas |
 | `valor_cotizado_cop` | SUM(`valor_cop`) |
 | `valor_ganado_cop` | SUM(`valor_cop`) de las ganadas: valor cotizado de lo ganado, **no dinero recaudado**. Rotularlo "Valor ganado (COP)", también en el mapa |
@@ -126,12 +127,13 @@ Identidades para QA:
 - `concentracion_ciudades.por_destino` (municipio de destino, el que usa el mapa) y `por_origen` traen cantidad, ganadas y valor por municipio, con el texto del catálogo de Nexo.
   - `disponible` es `false` hasta que se aplique el script 0004 (columnas `origen`/`destino`).
   - Las cotizaciones sin ciudad cuentan en `sin_destino`/`sin_origen`.
-  - Una solicitud de varias líneas cuenta solo la ciudad de la cabecera.
+  - Una solicitud de varias rutas cuenta una vez, con la ciudad de su ruta 1.
 
-**Estado vacío.** Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios y la serie en 0.
+**Rutas (HU-021.10, #137; decisión 8).** Los conteos (`cantidad`, `ganadas`, `perdidas`…) son por cotización: una cotización con 3 rutas de 3 líneas de negocio cuenta 1. Los valores salen de sus rutas: `costo` = suma del `costoFinal` de las rutas (ya incluye los servicios conexos). `por_linea_negocio[]` (en `/comercial` y `/regional`) abre por línea de negocio **por ruta**: `cotizaciones`/`ganadas`/`perdidas` son cotizaciones distintas con al menos una ruta de la línea (la suma de la apertura puede superar `cantidad`), `rutas`, `costeo_total`/`costeo_ganadas`, `valor_cotizado_cop`/`valor_ganado_cop` (precio de cada ruta en COP, USD × TRM redondeado por ruta), `ganancias`, `margen_ponderado`, `ajustes_margen` y `desviacion_promedio_margen` (ajustes de esas rutas). Esquema `MetricaLineaNegocio`; fórmulas en ADR-016 §10.
+
+**Estado vacío.** Un comercial sin cotizaciones recibe 200 con ceros, `null` en los promedios, la serie en 0 y `por_linea_negocio` vacía.
 
 **Todavía no incluido:**
-- Los servicios conexos (ADR-015) no se suman a precio ni costo; se integran después de #42.
 - El "score de urgencia" de Nexo no está en el contrato. Se agregará como campo nuevo de `indicadores` (cambio compatible) cuando Nexo publique su contrato.
 
 ### 3.2 Crear una cotización: `POST /web/solicitudes-costeo` (HU-005.5, HU-013.10)

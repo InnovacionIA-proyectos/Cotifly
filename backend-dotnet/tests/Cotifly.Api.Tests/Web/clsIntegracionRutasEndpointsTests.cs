@@ -118,6 +118,89 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
             .Should().Be(1, "el ajuste queda registrado en la ruta 2");
     }
 
+    [Fact]
+    public async Task LasMetricasDeLaCadenaCompletaCuentanPorCotizacionYSumanPorRutaSinElCamionDescartado()
+    {
+        // HU-021.10 (#137) sobre #132, #134 y #135: dos rutas de distinta línea, la ruta 2 con un camión descartado y un conexo
+        // capturado más otro agregado, y un ajuste de margen solo en la ruta 2.
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, tipoVehiculo, carroceria, pesoKg, costoLevanteContenedor, "
+            + "estadoCosteo, createdAt, updatedAt) "
+            + "SELECT NEWID(), l.id, N'2S2', N'FURGON', 6000, ISNULL(l.valorLevanteContenedor, 0), "
+            + "(SELECT TOP 1 v.estadoCosteo FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id), "
+            + "DATEADD(SECOND, 1, SYSDATETIMEOFFSET()), SYSDATETIMEOFFSET() "
+            + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}' AND l.orden = 2");
+        _nexo.AltaFalla = null;
+        using var reintento = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/reintentar", ana.Access);
+        reintento.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // El camión de 12500 kg de la ruta 2 queda descartado ANTES de leer el costeo: su flete (800.000) no debe sumar.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE v SET estadoCosteo = 'descartada' FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}' AND l.orden = 2 AND v.pesoKg = 12500");
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.CostearLinea(solicitud, 1, 800_000m);
+        _nexo.CostearLinea(solicitud, 2, 500_000m);
+        await _api.ProcesarPollingAsync(folio);
+
+        using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", ana.Access,
+            clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 2, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(ana, folio));
+        agregar.StatusCode.Should().Be(HttpStatusCode.OK, await agregar.Content.ReadAsStringAsync(Ct));
+        using var margen = await ConVersionAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", ana.Access,
+            """{"margen":0.30,"linea_orden":2}""", await EtagAsync(ana, folio));
+        var costeo = await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK);
+        var rutas = costeo.GetProperty("rutas").EnumerateArray().OrderBy(r => r.GetProperty("linea_orden").GetInt32()).ToList();
+        var precio1 = rutas[0].GetProperty("precio_final_linea").GetDecimal();
+        var precio2 = rutas[1].GetProperty("precio_final_linea").GetDecimal();
+
+        // Costos de las rutas en la base: ruta 1 = flete; ruta 2 = flete del camión vigente + conexos (150.000 + 120.000), sin el descartado.
+        var costos = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT STRING_AGG(CAST(CAST(l.costoFinal AS decimal(18,2)) AS nvarchar(30)), '|') WITHIN GROUP (ORDER BY l.orden) "
+            + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
+            + $"WHERE c.folio = '{folio}'");
+        costos.Should().Be("1000000.00|770000.00", "el camión descartado no suma y los conexos sí");
+        precio2.Should().Be(1_100_000m, "770.000 / (1 − 0,30): el precio de la ruta incluye los conexos");
+        precio1.Should().BeApproximately(1_176_470.59m, 0.5m, "1.000.000 / (1 − 0,15)");
+        costeo.GetProperty("precio_final").GetDecimal().Should().Be(precio1 + precio2);
+
+        using var respuesta = await _api.EnviarAsync(_get, "/web/metricas/comercial?desde=2026-01-01&hasta=2026-12-31", ana.Access);
+        var metricas = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+        var indicadores = metricas.GetProperty("indicadores");
+        indicadores.GetProperty("cantidad").GetInt32().Should().Be(1, "decisión 8: dos rutas de dos líneas son UNA cotización");
+        indicadores.GetProperty("pendientes_por_cotizar").GetInt32().Should().Be(0);
+        indicadores.GetProperty("sin_resultado").GetInt32().Should().Be(1);
+        indicadores.GetProperty("costeo_total").GetDecimal().Should().Be(1_770_000m);
+        indicadores.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(precio1 + precio2);
+        indicadores.GetProperty("ajustes_margen").GetInt32().Should().Be(1);
+        var ponderado = Math.Round((precio1 + precio2 - 1_770_000m) / (precio1 + precio2), 4, MidpointRounding.ToEven);
+        indicadores.GetProperty("margen_ponderado").GetDecimal().Should().Be(ponderado, "Σ(precio − costo) / Σ precio de las rutas");
+
+        var lineas = metricas.GetProperty("por_linea_negocio").EnumerateArray()
+            .ToDictionary(l => l.GetProperty("linea_negocio").GetString()!, l => l);
+        lineas.Keys.Should().BeEquivalentTo(["Importacion", "Exportacion"]);
+        var importacion = lineas["Importacion"];
+        importacion.GetProperty("cotizaciones").GetInt32().Should().Be(1);
+        importacion.GetProperty("rutas").GetInt32().Should().Be(1);
+        importacion.GetProperty("costeo_total").GetDecimal().Should().Be(1_000_000m);
+        importacion.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(precio1);
+        importacion.GetProperty("margen_ponderado").GetDecimal().Should().Be(Math.Round((precio1 - 1_000_000m) / precio1, 4, MidpointRounding.ToEven));
+        importacion.GetProperty("ajustes_margen").GetInt32().Should().Be(0, "el ajuste fue en la ruta 2");
+        var exportacion = lineas["Exportacion"];
+        exportacion.GetProperty("cotizaciones").GetInt32().Should().Be(1);
+        exportacion.GetProperty("costeo_total").GetDecimal().Should().Be(770_000m);
+        exportacion.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(1_100_000m);
+        exportacion.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.3m, "(1.100.000 − 770.000) / 1.100.000");
+        exportacion.GetProperty("ajustes_margen").GetInt32().Should().Be(1);
+        exportacion.GetProperty("desviacion_promedio_margen").GetDecimal().Should().Be(0.15m, "0,30 negociado − 0,15 sugerido de la ruta 2");
+    }
+
     /// <summary>Dos rutas de distinta línea de negocio (Importacion y Exportacion); la ruta 2 captura un conexo del catálogo de Nexo.</summary>
     private static string Formulario() => clsApiWebPruebas.Json(new
     {

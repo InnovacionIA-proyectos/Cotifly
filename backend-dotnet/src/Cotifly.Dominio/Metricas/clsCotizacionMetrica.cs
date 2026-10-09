@@ -24,10 +24,13 @@ public sealed record clsCotizacionMetrica
     /// <summary>Filas (versiones) de la cadena.</summary>
     public int Versiones { get; init; } = 1;
 
-    /// <summary>Costo en COP de la versión vigente (nunca se convierte).</summary>
+    /// <summary>
+    /// Costo en COP de la versión vigente (nunca se convierte): la suma del <c>costoFinal</c> de sus rutas, <c>null</c> si alguna no lo
+    /// tiene (HU-021).
+    /// </summary>
     public decimal? Costo { get; init; }
 
-    /// <summary>Precio de la versión vigente en su moneda.</summary>
+    /// <summary>Precio de la versión vigente en su moneda (la cabecera: suma del <c>precioFinalLinea</c> de sus rutas).</summary>
     public decimal? PrecioFinal { get; init; }
 
     public string? Moneda { get; init; }
@@ -35,6 +38,7 @@ public sealed record clsCotizacionMetrica
     /// <summary>TRM con que se cotizó en USD; 0 en COP.</summary>
     public decimal TrmAplicada { get; init; }
 
+    /// <summary>Margen de la cotización: el de sus rutas ponderado por <c>costoFinal</c> (sin costo, el promedio simple).</summary>
     public decimal? MargenAplicado { get; init; }
 
     /// <summary>
@@ -64,6 +68,12 @@ public sealed record clsCotizacionMetrica
     /// <summary>Suma de <c>ABS(MargenAjustes.diferencia)</c>.</summary>
     public decimal? SumaDiferenciasAbsolutas { get; init; }
 
+    /// <summary>
+    /// Rutas de la versión vigente (HU-021.10, decisión 8), ordenadas por <c>orden</c>: de ellas salen el margen ponderado y la apertura
+    /// por línea de negocio. <see cref="Costo"/> y <see cref="MargenAplicado"/> ya las resumen para la cotización.
+    /// </summary>
+    public IReadOnlyList<clsRutaMetrica> Rutas { get; init; } = [];
+
     /// <summary><c>true</c> si la moneda es COP o no se informó (el esquema la pone en COP por defecto).</summary>
     public bool EsPesos => string.IsNullOrWhiteSpace(Moneda) || string.Equals(Moneda.Trim(), MonedaPesos, StringComparison.OrdinalIgnoreCase);
 
@@ -72,11 +82,18 @@ public sealed record clsCotizacionMetrica
     /// (half-to-even). Sin precio, o en otra moneda sin TRM, es <c>null</c> (no suma dinero). No es el <c>precio_cop</c> de ADR-014
     /// (precio en pesos recalculado del costo y el margen antes de convertir): puede diferir unos pesos.
     /// </summary>
-    public decimal? ValorCop => PrecioFinal switch
+    public decimal? ValorCop => ACop(PrecioFinal);
+
+    /// <summary>
+    /// <paramref name="precio"/> (de la cotización o de una de sus rutas, en la moneda de la cotización) en COP con la regla de
+    /// <see cref="ValorCop"/>. Una ruta en USD se redondea por sí sola, así que la suma de las rutas puede diferir unos centavos del
+    /// <see cref="ValorCop"/> de la cabecera.
+    /// </summary>
+    public decimal? ACop(decimal? precio) => precio switch
     {
         null => null,
-        { } precio when EsPesos => precio,
-        { } precio when TrmAplicada > 0m => Math.Round(precio * TrmAplicada, 2, MidpointRounding.ToEven),
+        { } valor when EsPesos => valor,
+        { } valor when TrmAplicada > 0m => Math.Round(valor * TrmAplicada, 2, MidpointRounding.ToEven),
         _ => null,
     };
 }

@@ -61,7 +61,8 @@
 | `pendientes_por_cotizar` | Sin precio y sin resultado |
 | `conversion` | ganadas / cantidad (backlog HU-010: "#ganadas / #totales"); `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
-| `margen_promedio` | Promedio simple de `margenAplicado` (fracción) de las que lo tienen |
+| `margen_promedio` | Promedio simple del margen de cada cotización (fracción) de las que lo tienen. Desde HU-021 el margen de una cotización es el de sus rutas ponderado por `costoFinal` (sección 10) |
+| `margen_ponderado` | Por ruta (sección 10), sobre el precio: Σ(precio de la ruta en COP − `costoFinal`) / Σ precio de la ruta en COP, de todas las rutas con costo > 0 y precio > 0 |
 | `costeo_total` | SUM(`costo`) en COP de todo el universo |
 | `costeo_ganadas` | SUM(`costo`) en COP de las ganadas |
 | `valor_cotizado_cop` | SUM(`valor_cop`) |
@@ -85,7 +86,7 @@ Otras reglas:
 - **Ajuste respecto al pedido inicial del coordinador:** se pidió `conversion` = ganadas / (ganadas + perdidas) y `conversion_sobre_total` = ganadas / cantidad. El backlog define "% de conversión (#ganadas / #totales)" y la regla de ADR es que el backlog manda: `conversion` es ganadas / cantidad y la otra se llama `conversion_sobre_cerradas`.
 - Fracciones con 4 decimales, montos con 2, horas con 2; siempre half-to-even (`MidpointRounding.ToEven`).
 - El cálculo es una regla pura de dominio (`Cotifly.Dominio.Metricas.clsCalculadoraMetricas`). El repositorio trae una fila por cadena: `ROW_NUMBER` para la vigente, `MIN(createdAt) OVER` para el periodo, `OUTER APPLY TOP 1` para el resultado y `OUTER APPLY` sobre `MargenAjustes` por `cotizacionId` (índice del 0002) para los ajustes. La calculadora agrega esas filas.
-- **Servicios conexos (ADR-015):** no se suman todavía a precio ni costo; se integran después de #42.
+- **Servicios conexos (ADR-015):** no se suman todavía a precio ni costo; se integran después de #42. **Desde HU-021** ya están dentro del `costoFinal` de cada ruta (sección 10).
 
 ### 5. Periodo
 
@@ -126,7 +127,7 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 - Se agrupa por el municipio de **destino** (`por_destino`: dónde se entrega la carga, la vista del mapa) y también por el de origen (`por_origen`), con cantidad, ganadas, valor cotizado y valor ganado en COP. El texto es el del catálogo de municipios de Nexo, tal como se guardó; el frontend lo ubica en el mapa.
 - Las columnas `origen`/`destino` son del 0004. La consulta comprueba si existen (`COL_LENGTH`); sin ellas, `disponible = false` y las listas van vacías. Así esta rama funciona sobre `QA` hoy y el mapa se llena solo cuando se aplique el 0004, sin tocar el código.
 - Las cotizaciones del chat no guardan ciudades: cuentan en `sin_destino` / `sin_origen`.
-- **Solicitudes de varias líneas:** cuentan solo la ciudad de la cabecera de la cotización (`Cotizaciones.origen`/`destino`); las líneas adicionales (HU-011, `CotizacionLineasSolicitud`) no se desglosan todavía.
+- **Solicitudes de varias líneas:** cuentan solo la ciudad de la cabecera de la cotización (`Cotizaciones.origen`/`destino`); las líneas adicionales (HU-011, `CotizacionLineasSolicitud`) no se desglosan todavía. **Desde HU-021** la ciudad es la de la **ruta 1** (`origenNombre`/`destinoNombre` del 0010) y la cotización cuenta una vez.
 - El "dinero" del mapa es `valor_ganado_cop` (valor cotizado de las ganadas), no dinero recaudado.
 
 ### 8. Deadline vencido y score de urgencia (Nexo)
@@ -137,6 +138,32 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 ### 9. Borradores
 
 `/web/metricas/actividad` y `/ajustes-margen` siguen funcionando igual y quedan `deprecated: true` en el contrato. Se retirarán cuando el frontend use los nuevos.
+
+- **HU-021.10 (#137) y HU-014.4:** HU-014.4 (retirar estos borradores y sus vistas) depende de que el tablero de HU-010 esté validado en producción, y todavía no lo está. Por eso #137 **conserva** las vistas: `vAjustesMargenPorComercial` y `vActividadPorComercial` ya las redefinió el `0009` (y `01_crear_esquema.sql`) para el esquema de rutas, y #137 las verificó con pruebas de integración. No hace falta un script `0011`. Cuando se haga HU-014.4, su script de retiro (`000N_retirar_vistas_actividad.sql`) cubre también la instalación desde cero.
+
+### 10. Rutas: conteos por cotización, valores por ruta (HU-021.10, #137)
+
+Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tiene una o varias rutas (`CotizacionLineasSolicitud`), cada una con su línea de negocio, su costo, su margen y su precio.
+
+- **Conteos por cotización.** `cantidad`, `ganadas`, `perdidas`, `sin_resultado`, `pendientes_por_cotizar`, `cotizaciones_usd`, la serie mensual y la concentración por ciudad cuentan **cotizaciones** (cadenas, sección 2). Una cotización con tres rutas de tres líneas de negocio cuenta **1**.
+- **Valores de la cotización a partir de sus rutas** (versión vigente):
+  - `costo` = Σ `costoFinal` de sus rutas (fletes + retorno + levante + conexos); `null` si alguna ruta no lo tiene. Los servicios conexos ya están dentro.
+  - `precioFinal` = el de la cabecera, que el dominio mantiene como Σ `precioFinalLinea`.
+  - margen de la cotización = Σ(`margenAplicado` × `costoFinal`) / Σ `costoFinal` de sus rutas con margen y costo > 0; sin costo, el promedio simple.
+- **`margen_ponderado`** (indicador nuevo) = margen agregado **sobre el precio**, porque el margen se calcula sobre el precio: Σ(`valor_cop(ruta)` − `costoFinal`) / Σ `valor_cop(ruta)` de **todas las rutas del universo** con costo > 0 y precio > 0 (`valor_cop(ruta)`: el precio de la ruta en COP, abajo). No se pondera por costo: Σ(margen × costo) / Σ costo da otro número cuando las rutas tienen márgenes distintos. `margen_promedio` se conserva (promedio simple por cotización) para no romper el contrato.
+- **Apertura por línea de negocio** (`por_linea_negocio`, en `/comercial` y en `/regional`, con el mismo filtro que `indicadores`): una fila por línea de las rutas (`null` = rutas sin línea).
+  - `cotizaciones`, `ganadas`, `perdidas` = cotizaciones **distintas** con al menos una ruta de la línea; el resultado es el de la cotización. La cotización de tres líneas aparece en las tres filas: **la suma de la apertura puede superar `cantidad`** (no es una partición).
+  - `rutas` = rutas de la línea.
+  - `costeo_total` = Σ `costoFinal` de esas rutas; `costeo_ganadas` = lo mismo en cotizaciones ganadas. Σ de la apertura = `costeo_total` de los indicadores cuando todas las rutas tienen costo.
+  - `valor_cotizado_cop` = Σ `valor_cop` de cada ruta, con `valor_cop(ruta)` = `precioFinalLinea` en COP o `round(precioFinalLinea × trmAplicada, 2)` (half-to-even, TRM de su cotización) en otra moneda; `valor_ganado_cop` = lo mismo en cotizaciones ganadas. Por el redondeo por ruta, en USD la suma de la apertura puede diferir **unos centavos** del `valor_cotizado_cop` de los indicadores (que redondea el precio de la cabecera).
+  - `ganancias` = Σ(`valor_cop(ruta)` − `costoFinal`) de las rutas de cotizaciones ganadas con precio y costo. **La suma de `ganancias` de la apertura puede superar la del indicador:** el indicador deja fuera la cotización completa si a una de sus rutas le falta el costo (su `costo` es `null`), mientras que la apertura deja fuera solo esa ruta.
+  - `margen_ponderado` = la fórmula de arriba sobre las rutas de la línea.
+- **Datos migrados por el `0009`:** el `0009` guardó `costoFinal` **con** los servicios conexos y `precioFinalLinea` **sin** ellos (el precio viejo no los incluía). En esas rutas, hasta que el backend las recalcule (cualquier cambio de camión, conexo o margen recalcula la ruta), `ganancias` y `margen_ponderado` por línea pueden salir **subestimados o negativos**. Las cotizaciones creadas después de HU-021 no tienen el problema.
+- **Diferencia conocida con las vistas legadas (HU-014.4):** `vAjustesMargenPorComercial` (que lee `/web/metricas/ajustes-margen`, obsoleto) agrupa un ajuste sin ruta (`lineaSolicitudId` NULL) en la línea `NULL`, mientras que el tablero lo asigna a la ruta 1 de su cotización. No se corrige la vista (haría falta un script `0011` para un endpoint que HU-014.4 va a retirar).
+  - `ajustes_margen` y `desviacion_promedio_margen` = los `MargenAjustes` de esas rutas (`lineaSolicitudId`). Un ajuste sin ruta, o con una ruta que no es de su cotización, cuenta en la ruta 1 (la de menor `orden`), igual que la migración del `0009`. Así cada ajuste cuenta en una sola ruta y la suma por rutas es igual a los ajustes de la cotización.
+  - Orden: `valor_cotizado_cop` descendente, luego el nombre; la fila sin línea al final.
+- **Implementación:** el repositorio hace una segunda consulta con las rutas de las versiones vigentes (`OPENJSON` de ids, `OUTER APPLY` a `MargenAjustes`) y la calculadora de dominio agrega (`clsCalculadoraMetricas.PorLineaNegocio`). No hace falta un cambio de esquema.
+- **Alternativa descartada: contar rutas.** Inflaría `cantidad` y la conversión con cada ruta de una licitación (una solicitud de 20 rutas ganada no son 20 cotizaciones ganadas).
 
 ## Alternativas consideradas
 
@@ -169,6 +196,7 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 | Llenar `UsuariosWeb.regional` de quien no esté en `DimEjecutivo` (plantilla en `docs/10-operacion.md`) | DBA con Gerencia Comercial |
 | Validar las definiciones: versión vigente vs. todas las versiones, `conversion` sobre el total, `costeo_total` sobre todo el universo, `ganancias` solo de ganadas y periodo por defecto (año en curso) | Gerencia Comercial (Sara / scalderon-bs) |
 | Contrato de Nexo para el "score de urgencia" por solicitud (el deadline vencido ya se calcula con el 0004) | Equipo de Nexo |
-| Integrar los servicios conexos (ADR-015) en precio y costo del tablero | Duban, después de #42 |
+| ~~Integrar los servicios conexos (ADR-015) en precio y costo del tablero~~: resuelto con HU-021 (están en `costoFinal` de la ruta) | Duban |
+| Validar con Gerencia Comercial la apertura por línea de negocio (sección 10) y si `margen_promedio` debe pasar a ser el ponderado por ruta | Gerencia Comercial (Sara / scalderon-bs) |
 | ~~Pasar la descarga de PDF ajenos y `LoginResponse.ubicacion` a `IClsRegionalUsuario`~~: resuelto en #81 con la columna refrescada en cada login (sección 6, "Convergencia"). "Mis cotizaciones" del gerente lee la columna | Duban (HU-004.5) |
 | Aplicar el 0004 para que el mapa por ciudad y `deadline_vencidas` tengan datos | DBA (ADR-015) |

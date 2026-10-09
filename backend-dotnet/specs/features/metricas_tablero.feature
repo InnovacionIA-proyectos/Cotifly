@@ -72,6 +72,28 @@ Característica: Tablero de métricas del comercial y del gerente comercial
       | ganadas  | 1     |
     Y la serie mensual tiene el mes "2026-04" con 2 cotizaciones y 1 ganadas
 
+  # HU-021.10 (#137), decisión 8: los conteos son por cotización; los valores y la apertura por línea de negocio, por ruta.
+  # Las cotizaciones de los antecedentes tienen una ruta "Nacional".
+  Escenario: Una cotización ganada con rutas de tres líneas de negocio cuenta una vez y se abre por ruta
+    Dado que la cotización "A1" tiene estas rutas:
+      | orden | linea       | costo  | precio | margen |
+      | 1     | Nacional    | 300000 | 350000 | 0.1429 |
+      | 2     | Importacion | 250000 | 300000 | 0.1667 |
+      | 3     | Exportacion | 300000 | 350000 | 0.1429 |
+    Cuando "ana" consulta sus métricas del "2026-01-01" al "2026-12-31"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y los indicadores son:
+      | campo              | valor   |
+      | cantidad           | 4       |
+      | ganadas            | 2       |
+      | costeo_total       | 5950000 |
+      | valor_ganado_cop   | 5000000 |
+    Y la apertura por línea de negocio es:
+      | linea       | cotizaciones | ganadas | rutas | costeo_total | valor_cotizado_cop | ganancias |
+      | Nacional    | 4            | 2       | 4     | 5400000      |                    |           |
+      | Importacion | 1            | 1       | 1     | 250000       | 300000             | 50000     |
+      | Exportacion | 1            | 1       | 1     | 300000       | 350000             | 50000     |
+
   Escenario: Fechas inválidas responden 400
     Cuando "ana" consulta sus métricas del "2026-12-31" al "2026-01-01"
     Entonces la respuesta tiene el estado 400 con un ErrorWeb

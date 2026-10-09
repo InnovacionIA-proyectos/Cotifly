@@ -48,6 +48,42 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
     }
 
     [Fact]
+    public async Task UnaCotizacionGanadaConTresRutasDeDistintasLineasCuentaUnaVezYSeAbrePorRutaEnLaApertura()
+    {
+        // HU-021.10 (#137), decisión 8: conteos por cotización; valores y apertura por línea de negocio, por ruta (USD con su TRM).
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await CrearAsync(ana.UsuarioId, "USD", 1_300.34m, 4_000.5m, 1_000_000m, true, "2026-05-05");
+        await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
+            DECLARE @id UNIQUEIDENTIFIER = '{cotizacion.Id}';
+            UPDATE dbo_cotifly.CotizacionLineasSolicitud
+               SET lineaNegocioId = (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Nacional'), precioFinalLinea = 500.01, margenAplicado = 0.25
+             WHERE cotizacionSolicitudId = @id AND orden = 1;
+            INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (cotizacionSolicitudId, orden, lineaNegocioId, costoFinal, precioFinalLinea, margenAplicado) VALUES
+                (@id, 2, (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Importacion'), 1000000, 500.00, 0.20),
+                (@id, 3, (SELECT id FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = N'Exportacion'), 1000000, 300.33, 0.10);
+            """);
+
+        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/comercial?{Periodo}", ana.Access);
+        var json = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+
+        var indicadores = json.GetProperty("indicadores");
+        indicadores.GetProperty("cantidad").GetInt32().Should().Be(1, "tres rutas, una cotización");
+        indicadores.GetProperty("ganadas").GetInt32().Should().Be(1);
+        indicadores.GetProperty("costeo_total").GetDecimal().Should().Be(3_000_000m, "la suma del costo de las rutas");
+        indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(5_202_010.17m, "1.300,34 USD × 4.000,5");
+        indicadores.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.4233m, "(5.202.010,16 − 3.000.000) / 5.202.010,16, con el precio de cada ruta en COP");
+        var apertura = json.GetProperty("por_linea_negocio").EnumerateArray()
+            .Select(l => (l.GetProperty("linea_negocio").GetString(), l.GetProperty("cotizaciones").GetInt32(), l.GetProperty("ganadas").GetInt32(),
+                l.GetProperty("valor_cotizado_cop").GetDecimal(), l.GetProperty("costeo_total").GetDecimal()))
+            .ToList();
+        // 500,01 × 4.000,5 = 2.000.290,005 → 2.000.290,00; 500 × 4.000,5 = 2.000.250; 300,33 × 4.000,5 = 1.201.470,165 → 1.201.470,16.
+        apertura.Should().Equal(
+            ("Nacional", 1, 1, 2_000_290.00m, 1_000_000m),
+            ("Importacion", 1, 1, 2_000_250.00m, 1_000_000m),
+            ("Exportacion", 1, 1, 1_201_470.16m, 1_000_000m));
+    }
+
+    [Fact]
     public async Task UnComercialSinCotizacionesRecibeCerosYPromediosNulos()
     {
         var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
