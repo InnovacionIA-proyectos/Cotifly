@@ -79,7 +79,7 @@ public sealed class clsCalculadoraMetricasRutasTests
     }
 
     [Fact]
-    public void ElMargenPonderadoEsPorRutaYPesaElCosto()
+    public void ElMargenPonderadoEsSobreElPrecioDeTodasLasRutas()
     {
         var filas = new[]
         {
@@ -90,8 +90,8 @@ public sealed class clsCalculadoraMetricasRutasTests
 
         var indicadores = clsCalculadoraMetricas.Indicadores(filas, _ahora, deadlineDisponible: false);
 
-        // (0,1667 × 1M + 0,20 × 2M + 0,0909 × 3M + 0,10 × 4M) / 10M = 1,2394 / 10 = 0,12394; la ruta sin costo no pesa.
-        indicadores.MargenPonderado.Should().Be(0.1239m);
+        // Σ(precio − costo) / Σ precio = (11,4M − 10M) / 11,4M = 0,122807…; la ruta sin costo ni precio no entra.
+        indicadores.MargenPonderado.Should().Be(0.1228m);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class clsCalculadoraMetricasRutasTests
             ValorCotizadoCop = 4_700_000m,
             ValorGanadoCop = 2_300_000m,
             Ganancias = 300_000m,
-            MargenPonderado = (decimal?)0.175m,
+            MargenPonderado = (decimal?)0.1489m, // (4,7M − 4M) / 4,7M
         });
         apertura[1].Should().BeEquivalentTo(new { LineaNegocioId = (int?)null, LineaNegocio = (string?)null, Cotizaciones = 1, Rutas = 1, ValorCotizadoCop = 0m },
             "las rutas sin línea van al final");

@@ -90,8 +90,9 @@ tags:
         `precioFinal` de la cabecera = SUM(`precioFinalLinea`), y el margen de la cotización = promedio de sus rutas
         ponderado por `costoFinal`. La apertura por línea de negocio (`por_linea_negocio`) es por ruta.
       - `margen_promedio` = promedio simple del margen de cada cotización (el de sus rutas ponderado por costo).
-      - `margen_ponderado` = SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de TODAS las rutas del universo
-        con margen y costo > 0 (una ruta grande pesa más que una pequeña). `null` si no hay ninguna.
+      - `margen_ponderado` = margen agregado sobre el precio: SUM(`valor_cop` de la ruta − `costoFinal`) / SUM(`valor_cop`
+        de la ruta) de TODAS las rutas del universo con costo > 0 y precio > 0 (el precio de la ruta en COP, USD × TRM).
+        `null` si no hay ninguna.
       - `costeo_total` = SUM(`costo`) en COP de todas; `costeo_ganadas` = SUM(`costo`) de las ganadas.
       - `valor_cotizado_cop` = SUM(`valor_cop`); `valor_ganado_cop` = SUM(`valor_cop`) de las ganadas. Es el valor
         cotizado de las ganadas, NO dinero recaudado: en la UI, "Valor ganado (COP)".
@@ -3199,8 +3200,9 @@ components:
           type: number
           nullable: true
           description: |
-            Por ruta (HU-021, decisión 8): SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de todas las rutas
-            del universo con margen y costo > 0 (4 decimales). `null` si no hay ninguna.
+            Por ruta (HU-021, decisión 8), margen sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) /
+            SUM(precio de la ruta en COP) de todas las rutas del universo con costo > 0 y precio > 0 (4 decimales).
+            `null` si no hay ninguna.
         costeo_total:
           type: number
           description: SUM(`costo`) en COP de todas (el costo nunca se convierte). El costo de una cotización es la suma del `costoFinal` de sus rutas.
@@ -3354,7 +3356,7 @@ components:
         margen_ponderado:
           type: number
           nullable: true
-          description: SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de las rutas de la línea con margen y costo > 0. `null` si ninguna.
+          description: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de las rutas de la línea con costo > 0 y precio > 0. `null` si ninguna.
         ajustes_margen:
           type: integer
           description: '`MargenAjustes` de esas rutas (`lineaSolicitudId`; un ajuste sin ruta cuenta en la ruta 1 de su cotización).'

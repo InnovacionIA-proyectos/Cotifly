@@ -62,7 +62,7 @@
 | `conversion` | ganadas / cantidad (backlog HU-010: "#ganadas / #totales"); `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
 | `margen_promedio` | Promedio simple del margen de cada cotización (fracción) de las que lo tienen. Desde HU-021 el margen de una cotización es el de sus rutas ponderado por `costoFinal` (sección 10) |
-| `margen_ponderado` | Por ruta (sección 10): Σ(`margenAplicado` × `costoFinal`) / Σ `costoFinal` de todas las rutas con margen y costo > 0 |
+| `margen_ponderado` | Por ruta (sección 10), sobre el precio: Σ(precio de la ruta en COP − `costoFinal`) / Σ precio de la ruta en COP, de todas las rutas con costo > 0 y precio > 0 |
 | `costeo_total` | SUM(`costo`) en COP de todo el universo |
 | `costeo_ganadas` | SUM(`costo`) en COP de las ganadas |
 | `valor_cotizado_cop` | SUM(`valor_cop`) |
@@ -150,14 +150,16 @@ Decisión 8 del 2026-10-08 (HU-021): una solicitud (`CotizacionesSolicitud`) tie
   - `costo` = Σ `costoFinal` de sus rutas (fletes + retorno + levante + conexos); `null` si alguna ruta no lo tiene. Los servicios conexos ya están dentro.
   - `precioFinal` = el de la cabecera, que el dominio mantiene como Σ `precioFinalLinea`.
   - margen de la cotización = Σ(`margenAplicado` × `costoFinal`) / Σ `costoFinal` de sus rutas con margen y costo > 0; sin costo, el promedio simple.
-- **`margen_ponderado`** (indicador nuevo) = la misma fórmula sobre **todas las rutas del universo**: una ruta de 4 millones pesa cuatro veces más que una de 1 millón, sin importar en qué cotización esté. `margen_promedio` se conserva (promedio simple por cotización) para no romper el contrato.
+- **`margen_ponderado`** (indicador nuevo) = margen agregado **sobre el precio**, porque el margen se calcula sobre el precio: Σ(`valor_cop(ruta)` − `costoFinal`) / Σ `valor_cop(ruta)` de **todas las rutas del universo** con costo > 0 y precio > 0 (`valor_cop(ruta)`: el precio de la ruta en COP, abajo). No se pondera por costo: Σ(margen × costo) / Σ costo da otro número cuando las rutas tienen márgenes distintos. `margen_promedio` se conserva (promedio simple por cotización) para no romper el contrato.
 - **Apertura por línea de negocio** (`por_linea_negocio`, en `/comercial` y en `/regional`, con el mismo filtro que `indicadores`): una fila por línea de las rutas (`null` = rutas sin línea).
   - `cotizaciones`, `ganadas`, `perdidas` = cotizaciones **distintas** con al menos una ruta de la línea; el resultado es el de la cotización. La cotización de tres líneas aparece en las tres filas: **la suma de la apertura puede superar `cantidad`** (no es una partición).
   - `rutas` = rutas de la línea.
   - `costeo_total` = Σ `costoFinal` de esas rutas; `costeo_ganadas` = lo mismo en cotizaciones ganadas. Σ de la apertura = `costeo_total` de los indicadores cuando todas las rutas tienen costo.
   - `valor_cotizado_cop` = Σ `valor_cop` de cada ruta, con `valor_cop(ruta)` = `precioFinalLinea` en COP o `round(precioFinalLinea × trmAplicada, 2)` (half-to-even, TRM de su cotización) en otra moneda; `valor_ganado_cop` = lo mismo en cotizaciones ganadas. Por el redondeo por ruta, en USD la suma de la apertura puede diferir **unos centavos** del `valor_cotizado_cop` de los indicadores (que redondea el precio de la cabecera).
-  - `ganancias` = Σ(`valor_cop(ruta)` − `costoFinal`) de las rutas de cotizaciones ganadas con precio y costo.
+  - `ganancias` = Σ(`valor_cop(ruta)` − `costoFinal`) de las rutas de cotizaciones ganadas con precio y costo. **La suma de `ganancias` de la apertura puede superar la del indicador:** el indicador deja fuera la cotización completa si a una de sus rutas le falta el costo (su `costo` es `null`), mientras que la apertura deja fuera solo esa ruta.
   - `margen_ponderado` = la fórmula de arriba sobre las rutas de la línea.
+- **Datos migrados por el `0009`:** el `0009` guardó `costoFinal` **con** los servicios conexos y `precioFinalLinea` **sin** ellos (el precio viejo no los incluía). En esas rutas, hasta que el backend las recalcule (cualquier cambio de camión, conexo o margen recalcula la ruta), `ganancias` y `margen_ponderado` por línea pueden salir **subestimados o negativos**. Las cotizaciones creadas después de HU-021 no tienen el problema.
+- **Diferencia conocida con las vistas legadas (HU-014.4):** `vAjustesMargenPorComercial` (que lee `/web/metricas/ajustes-margen`, obsoleto) agrupa un ajuste sin ruta (`lineaSolicitudId` NULL) en la línea `NULL`, mientras que el tablero lo asigna a la ruta 1 de su cotización. No se corrige la vista (haría falta un script `0011` para un endpoint que HU-014.4 va a retirar).
   - `ajustes_margen` y `desviacion_promedio_margen` = los `MargenAjustes` de esas rutas (`lineaSolicitudId`). Un ajuste sin ruta, o con una ruta que no es de su cotización, cuenta en la ruta 1 (la de menor `orden`), igual que la migración del `0009`. Así cada ajuste cuenta en una sola ruta y la suma por rutas es igual a los ajustes de la cotización.
   - Orden: `valor_cotizado_cop` descendente, luego el nombre; la fila sin línea al final.
 - **Implementación:** el repositorio hace una segunda consulta con las rutas de las versiones vigentes (`OPENJSON` de ids, `OUTER APPLY` a `MargenAjustes`) y la calculadora de dominio agrega (`clsCalculadoraMetricas.PorLineaNegocio`). No hace falta un cambio de esquema.

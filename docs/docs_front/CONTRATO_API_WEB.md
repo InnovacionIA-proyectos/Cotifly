@@ -105,7 +105,7 @@ Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agrega
 | `conversion` | ganadas / cantidad (definición del backlog); `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | ganadas / (ganadas + perdidas); `null` si no hay cerradas |
 | `margen_promedio` | Promedio simple del margen de cada cotización (0.15 = 15 %); el de una cotización es el de sus rutas ponderado por costo |
-| `margen_ponderado` | Por ruta: SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de todas las rutas con margen y costo > 0 (HU-021.10) |
+| `margen_ponderado` | Por ruta, sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de todas las rutas con costo > 0 y precio > 0 (HU-021.10) |
 | `costeo_total` / `costeo_ganadas` | SUM(`costo`) en COP, de todas / de las ganadas |
 | `valor_cotizado_cop` | SUM(`valor_cop`) |
 | `valor_ganado_cop` | SUM(`valor_cop`) de las ganadas: valor cotizado de lo ganado, **no dinero recaudado**. Rotularlo "Valor ganado (COP)", también en el mapa |

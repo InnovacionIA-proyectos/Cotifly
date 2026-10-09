@@ -71,7 +71,7 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         indicadores.GetProperty("ganadas").GetInt32().Should().Be(1);
         indicadores.GetProperty("costeo_total").GetDecimal().Should().Be(3_000_000m, "la suma del costo de las rutas");
         indicadores.GetProperty("valor_ganado_cop").GetDecimal().Should().Be(5_202_010.17m, "1.300,34 USD × 4.000,5");
-        indicadores.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.1833m, "(0,25 + 0,20 + 0,10) / 3 con el mismo costo");
+        indicadores.GetProperty("margen_ponderado").GetDecimal().Should().Be(0.4233m, "(5.202.010,16 − 3.000.000) / 5.202.010,16, con el precio de cada ruta en COP");
         var apertura = json.GetProperty("por_linea_negocio").EnumerateArray()
             .Select(l => (l.GetProperty("linea_negocio").GetString(), l.GetProperty("cotizaciones").GetInt32(), l.GetProperty("ganadas").GetInt32(),
                 l.GetProperty("valor_cotizado_cop").GetDecimal(), l.GetProperty("costeo_total").GetDecimal()))

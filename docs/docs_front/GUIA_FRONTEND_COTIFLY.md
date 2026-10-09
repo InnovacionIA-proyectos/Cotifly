@@ -1179,7 +1179,7 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `conversion` | number o null | ganadas / cantidad (definición del backlog, "#ganadas / #totales"). `null` si cantidad = 0 |
 | `conversion_sobre_cerradas` | number o null | ganadas / (ganadas + perdidas). `null` si no hay cerradas |
 | `margen_promedio` | number o null | Promedio simple del margen de cada cotización (fracción, 0.15 = 15 %) de las que lo tienen; el de una cotización es el de sus rutas ponderado por costo. `null` si ninguna |
-| `margen_ponderado` | number o null | **Por ruta** (HU-021): SUM(`margenAplicado` × `costoFinal`) / SUM(`costoFinal`) de todas las rutas con margen y costo > 0. Una ruta grande pesa más. `null` si ninguna |
+| `margen_ponderado` | number o null | **Por ruta** (HU-021), margen sobre el precio: SUM(precio de la ruta en COP − `costoFinal`) / SUM(precio de la ruta en COP) de todas las rutas con costo > 0 y precio > 0. `null` si ninguna |
 | `costeo_total` | number | SUM(`costo`) en COP de **todas** |
 | `costeo_ganadas` | number | SUM(`costo`) en COP de las ganadas |
 | `valor_cotizado_cop` | number | SUM(`valor_cop`) |
@@ -1196,7 +1196,7 @@ Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPoliti
 
 **Identidades para QA** (#52): `cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar` (siempre), y `ganancias = valor_ganado_cop − costeo_ganadas` cuando todas las ganadas tienen precio y costo y ninguna en USD tiene TRM 0.
 
-**Redondeo:** half-to-even. Fracciones (`conversion`, `conversion_sobre_cerradas`, `margen_promedio`, `desviacion_promedio_margen`, `desviacion_promedio_margen_abs`) con 4 decimales (la desviación con signo puede ser negativa). Montos en COP con **2 decimales** (a diferencia del resto de la API, donde COP es entero, porque `precioFinal × trmAplicada` produce centavos). Horas con 2 decimales.
+**Redondeo:** half-to-even. Fracciones (`conversion`, `conversion_sobre_cerradas`, `margen_promedio`, `margen_ponderado`, `desviacion_promedio_margen`, `desviacion_promedio_margen_abs`) con 4 decimales (la desviación con signo puede ser negativa). Montos en COP con **2 decimales** (a diferencia del resto de la API, donde COP es entero, porque `precioFinal × trmAplicada` produce centavos). Horas con 2 decimales.
 
 **Rutas (HU-021.10, #137; decisión 8 del 2026-10-08).** Una cotización puede tener varias rutas, cada una con su línea de negocio.
 
@@ -1213,10 +1213,13 @@ Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPoliti
 | `costeo_total`, `costeo_ganadas` | number | SUM(`costoFinal`) de esas rutas (las de cotizaciones ganadas, en el segundo) |
 | `valor_cotizado_cop`, `valor_ganado_cop` | number | SUM del precio de cada ruta en COP (USD × TRM de su cotización, redondeado **por ruta**). En USD la suma de la apertura puede diferir unos centavos de `indicadores.valor_cotizado_cop` |
 | `ganancias` | number | SUM(valor en COP − costo) de las rutas de cotizaciones ganadas con precio y costo |
-| `margen_ponderado` | number o null | Como el indicador, sobre las rutas de esa línea |
+| `margen_ponderado` | number o null | Como el indicador (sobre el precio), con las rutas de esa línea |
 | `ajustes_margen`, `desviacion_promedio_margen` | int / number o null | Ajustes de margen de esas rutas (un ajuste sin ruta cuenta en la ruta 1) |
 
 Orden: `valor_cotizado_cop` descendente, luego el nombre. Lista vacía si no hay cotizaciones.
+
+- La suma de `ganancias` de la apertura **puede superar** `indicadores.ganancias`: el indicador deja fuera la cotización completa si a una de sus rutas le falta el costo, y la apertura deja fuera solo esa ruta.
+- En las cotizaciones migradas por el `0009`, `costoFinal` incluye los conexos y `precioFinalLinea` no; hasta que se recalculen, sus `ganancias` y `margen_ponderado` por línea pueden salir bajos o negativos (ADR-016 §10).
 
 **Fuera de alcance por ahora:** ninguno de los dos pendientes anteriores sigue abierto: los servicios conexos ya están en el costo de la ruta y las solicitudes de varias rutas se abren en `por_linea_negocio`.
 

@@ -17,8 +17,8 @@ public sealed record clsIndicadoresMetricas
     public decimal? MargenPromedio { get; init; }
 
     /// <summary>
-    /// Por ruta (HU-021, decisión 8): Σ(<c>margenAplicado</c> × <c>costoFinal</c>) / Σ <c>costoFinal</c> de las rutas con margen y costo
-    /// &gt; 0, 4 decimales; <c>null</c> si no hay ninguna.
+    /// Por ruta (HU-021, decisión 8), margen sobre el precio: Σ(precio en COP − <c>costoFinal</c>) / Σ precio en COP de las rutas con costo
+    /// y precio &gt; 0, 4 decimales; <c>null</c> si no hay ninguna.
     /// </summary>
     public decimal? MargenPonderado { get; init; }
 

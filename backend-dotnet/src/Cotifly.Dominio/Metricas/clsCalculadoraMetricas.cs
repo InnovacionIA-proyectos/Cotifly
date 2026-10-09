@@ -50,7 +50,7 @@ public static class clsCalculadoraMetricas
             Conversion = Fraccion(ganadas.Count, universo.Count),
             ConversionSobreCerradas = Fraccion(ganadas.Count, ganadas.Count + perdidas),
             MargenPromedio = margenes.Count == 0 ? null : Redondear(margenes.Average(), DecimalesFraccion),
-            MargenPonderado = MargenPonderadoDe(universo.SelectMany(f => f.Rutas)),
+            MargenPonderado = MargenPonderadoDe(universo.SelectMany(f => f.Rutas.Select(r => (f, r)))),
             CosteoTotal = Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
             CosteoGanadas = Redondear(ganadas.Sum(f => f.Costo ?? 0m), DecimalesMonto),
             ValorCotizadoCop = Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
@@ -138,7 +138,7 @@ public static class clsCalculadoraMetricas
     /// <item><c>costeo_total</c> = Σ <c>costoFinal</c>; <c>valor_cotizado_cop</c> = Σ <c>precioFinalLinea</c> en COP con la TRM de su
     /// cotización (<see cref="clsCotizacionMetrica.ACop"/>, redondeado por ruta); las de ganadas, solo las rutas de cotizaciones
     /// ganadas; <c>ganancias</c> = Σ(valor en COP − costo) de esas rutas con precio y costo;</item>
-    /// <item><c>margen_ponderado</c> = Σ(margen × costo) / Σ costo de las rutas con margen y costo &gt; 0;</item>
+    /// <item><c>margen_ponderado</c> = Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo y precio &gt; 0;</item>
     /// <item><c>ajustes_margen</c> y <c>desviacion_promedio_margen</c> = los <c>MargenAjustes</c> de esas rutas.</item>
     /// </list>
     /// Orden: <c>valor_cotizado_cop</c> descendente, luego el nombre; las rutas sin línea al final.
@@ -172,7 +172,7 @@ public static class clsCalculadoraMetricas
                             .Where(x => x.Valor.HasValue && x.Costo.HasValue)
                             .Sum(x => x.Valor!.Value - x.Costo!.Value),
                         DecimalesMonto),
-                    MargenPonderadoDe(g.Select(x => x.Ruta)),
+                    MargenPonderadoDe(g),
                     g.Sum(x => x.Ruta.NumAjustes),
                     numDiferencias == 0 ? null : Redondear(g.Sum(x => x.Ruta.SumaDiferencias ?? 0m) / numDiferencias, DecimalesFraccion));
             })
@@ -202,12 +202,19 @@ public static class clsCalculadoraMetricas
             .OrderByDescending(c => c.Cantidad)
             .ThenBy(c => c.Ciudad, StringComparer.OrdinalIgnoreCase)];
 
-    /// <summary>Σ(margen × costo) / Σ costo de las rutas con margen y costo &gt; 0 (4 decimales); <c>null</c> si no hay ninguna.</summary>
-    private static decimal? MargenPonderadoDe(IEnumerable<clsRutaMetrica> rutas)
+    /// <summary>
+    /// Margen agregado sobre el precio: Σ(precio en COP − costo) / Σ precio en COP de las rutas con costo &gt; 0 y precio &gt; 0 (4 decimales);
+    /// <c>null</c> si no hay ninguna. El precio de la ruta se pasa a COP con la TRM de su cotización (<see cref="clsCotizacionMetrica.ACop"/>),
+    /// porque el costo siempre está en COP.
+    /// </summary>
+    private static decimal? MargenPonderadoDe(IEnumerable<(clsCotizacionMetrica Cotizacion, clsRutaMetrica Ruta)> rutas)
     {
-        var conPeso = rutas.Where(r => r.MargenAplicado.HasValue && r.Costo > 0m).ToList();
-        var peso = conPeso.Sum(r => r.Costo!.Value);
-        return peso == 0m ? null : Redondear(conPeso.Sum(r => r.MargenAplicado!.Value * r.Costo!.Value) / peso, DecimalesFraccion);
+        var validas = rutas
+            .Select(x => (Precio: x.Cotizacion.ACop(x.Ruta.PrecioFinal), x.Ruta.Costo))
+            .Where(x => x.Costo > 0m && x.Precio > 0m)
+            .ToList();
+        var precio = validas.Sum(x => x.Precio!.Value);
+        return precio == 0m ? null : Redondear((precio - validas.Sum(x => x.Costo!.Value)) / precio, DecimalesFraccion);
     }
 
     private static decimal? Fraccion(int numerador, int denominador) =>
