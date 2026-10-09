@@ -26,6 +26,13 @@ Característica: Consola web del comercial
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la respuesta trae ganada "false" y motivo_rechazo "Precio alto"
 
+  # HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivo_rechazo en null, lo deja en "No aplica".
+  Escenario: Marcar una cotización como ganada deja el motivo de rechazo en "No aplica"
+    Dado que "ana" tiene la cotización web "A1" del cliente "900111222" con su PDF
+    Cuando "ana" marca la cotización "A1" como ganada "true" con el motivo "Cualquier texto"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
+    Y la respuesta trae ganada "true" y motivo_rechazo "No aplica"
+
   Escenario: Un motivo de rechazo de más de 2000 caracteres se rechaza
     Dado que "ana" tiene la cotización web "A1" del cliente "900111222" con su PDF
     Cuando "ana" marca la cotización "A1" como ganada "false" con un motivo de 2001 caracteres

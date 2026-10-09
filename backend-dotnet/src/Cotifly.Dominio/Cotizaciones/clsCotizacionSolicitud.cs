@@ -1044,11 +1044,24 @@ public sealed class clsCotizacionSolicitud
     /// <summary>¿La cotización pertenece al comercial? (aislamiento por dueño, ADR-009).</summary>
     public bool EsDe(Guid usuarioId) => UsuarioId == usuarioId;
 
-    /// <summary>Marca la cotización como ganada o perdida.</summary>
+    /// <summary>Valor de <c>motivoRechazo</c> de una cotización ganada (propuesta de refactor de BD §2.1, HU-021.13).</summary>
+    public const string MotivoRechazoNoAplica = "No aplica";
+
+    /// <summary>
+    /// Marca la cotización como ganada o perdida. Regla de la propuesta §2.1 (HU-021.13): ganada deja <c>motivoRechazo</c> en
+    /// <see cref="MotivoRechazoNoAplica"/> (no <c>null</c>), perdida guarda el motivo recibido y sin resultado (<c>ganada = null</c>)
+    /// queda vacío. Es la única puerta de escritura del motivo, así que cubre <c>/seguimiento</c>, <c>/resultado</c> y la
+    /// sincronización desde Nexo. A Nexo se le sigue enviando el motivo tal como llega (su contrato no cambia).
+    /// </summary>
     public void MarcarSeguimiento(bool? ganada, string? motivoRechazo, DateTimeOffset cuando)
     {
         Ganada = ganada;
-        MotivoRechazo = clsValidacion.Normalizar(motivoRechazo);
+        MotivoRechazo = ganada switch
+        {
+            true => MotivoRechazoNoAplica,
+            false => clsValidacion.Normalizar(motivoRechazo),
+            null => null,
+        };
         MarcadoAt = cuando;
     }
 

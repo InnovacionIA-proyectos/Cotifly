@@ -419,7 +419,10 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`USAR_RESULTADO_NEXO`: la cotización pasó por Nexo; usar `POST /web/cotizaciones/{folio}/resultado`'
+          description: |
+            `USAR_RESULTADO_NEXO`: la cotización pasó por Nexo; usar `POST /web/cotizaciones/{folio}/resultado` con `If-Match`.
+            HU-021.13: `detalle` lo dice sin que el frontend lo deduzca: `metodo` (`POST`), `endpoint`
+            (`/web/cotizaciones/{folio}/resultado` con el folio real) y `requiere_if_match` (`true`).
           content:
             application/json:
               schema:
@@ -1258,7 +1261,8 @@ paths:
       description: |
         HU-005.14 (ADR-015 §6); reemplaza a `/seguimiento` para las cotizaciones que pasaron por Nexo. Dos escrituras:
         primero `POST /api/cotizaciones/{id}/resultado` de Nexo (`{id}` = la cotización de Nexo de la solicitud) y,
-        **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` (= `motivo`) en Cotifly. `comentario` se reenvía a
+        **solo si Nexo responde 200**, `ganada` y `motivo_rechazo` en Cotifly (perdida: `motivo`; ganada: `"No aplica"`,
+        HU-021.13; a Nexo se le envía `motivo` tal como llega). `comentario` se reenvía a
         Nexo y no se guarda en Cotifly. `409` de Nexo (`RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`) o Nexo caído
         (`503`) no cambian nada local; el frontend puede deshabilitar el botón cuando `ganada` ya tiene valor.
 
@@ -3198,6 +3202,9 @@ components:
         motivo_rechazo:
           type: string
           nullable: true
+          description: |
+            HU-021.13 (propuesta de refactor de BD §2.1): `"No aplica"` si está ganada, el motivo del comercial si está perdida
+            y `null` solo mientras no tiene resultado (`ganada = null`).
         pdf_url:
           type: string
           nullable: true
@@ -3286,6 +3293,7 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+          description: Solo se guarda con `ganada = false`. Con `ganada = true` queda `"No aplica"` y con `ganada = null`, vacío (HU-021.13).
 
     LineaNegocio:
       type: object
@@ -3816,8 +3824,10 @@ components:
         motivo:
           type: string
           nullable: true
-          maxLength: 100
-          description: Se guarda en `motivo_rechazo` y se envía a Nexo. Obligatorio en la perdida solo en Cotifly (HU-013.17).
+          description: |
+            Perdida: máximo 100 caracteres (límite de Nexo, si no 400); se guarda en `motivo_rechazo` y se envía a Nexo. Obligatorio
+            en la perdida solo en Cotifly (HU-013.17). Ganada (HU-021.13): no se valida el largo ni se guarda (`motivo_rechazo` queda
+            `"No aplica"`); a Nexo se envía solo si tiene 100 caracteres o menos.
         comentario:
           type: string
           nullable: true

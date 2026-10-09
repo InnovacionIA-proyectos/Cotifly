@@ -626,6 +626,17 @@ La misma regla sirve para ruta ← camiones y para cabecera ← rutas:
 Así, una ruta con un camión autocosteado y otro en la Mesa queda `pendiente_costeo`. Una con uno `autocosteo` y
 otro `entregada` queda `entregada`.
 
+### 9.3 `motivoRechazo` según el resultado (HU-021.13, #140, implementado)
+
+**Regla (propuesta de refactor §2.1).** `clsCotizacionSolicitud.MarcarSeguimiento` es la única puerta de escritura del motivo:
+- ganada → `"No aplica"`;
+- perdida → el motivo del comercial;
+- sin resultado (`ganada = null`) → `NULL`.
+
+**Aplica desde este cambio en adelante.** Las cotizaciones ganadas que ya están guardadas con `motivoRechazo` en `NULL` (o con el texto que se escribió antes) **no se corrigen**. No hay backfill en ningún script `000N`.
+
+**Datos históricos.** Corregirlos queda como script **opcional** para el DBA, solo si negocio lo pide. Sería un `UPDATE dbo_cotifly.CotizacionesSolicitud SET motivoRechazo = N'No aplica' WHERE ganada = 1 AND (motivoRechazo IS NULL OR motivoRechazo <> N'No aplica')`, con respaldo previo y su cabecera de aprobación. Mientras no se corra, los reportes que lean `motivoRechazo` de ganadas antiguas pueden ver `NULL` o texto libre.
+
 ---
 
 ## 10. Orden de trabajo sugerido

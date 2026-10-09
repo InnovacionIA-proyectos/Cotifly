@@ -133,6 +133,46 @@ public sealed class clsCotizacionTests
         cotizacion.MarcadoAt.Should().Be(_ahora);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Mejor precio")]
+    public void MarcarGanadaDejaElMotivoDeRechazoEnNoAplica(string? motivo)
+    {
+        // HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivoRechazo en null.
+        var cotizacion = Nueva();
+
+        cotizacion.MarcarSeguimiento(true, motivo, _ahora);
+
+        cotizacion.Ganada.Should().BeTrue();
+        cotizacion.MotivoRechazo.Should().Be(clsCotizacionSolicitud.MotivoRechazoNoAplica).And.Be("No aplica");
+        cotizacion.MarcadoAt.Should().Be(_ahora);
+    }
+
+    [Fact]
+    public void ElMotivoDeRechazoSoloQuedaVacioSinResultado()
+    {
+        var cotizacion = Nueva();
+        cotizacion.MotivoRechazo.Should().BeNull("una cotización nueva no tiene resultado");
+
+        cotizacion.MarcarSeguimiento(true, null, _ahora);
+        cotizacion.MarcarSeguimiento(null, "Precio alto", _ahora);
+
+        cotizacion.Ganada.Should().BeNull();
+        cotizacion.MotivoRechazo.Should().BeNull();
+    }
+
+    [Fact]
+    public void PasarDeGanadaAPerdidaGuardaElMotivoDelComercial()
+    {
+        var cotizacion = Nueva();
+        cotizacion.MarcarSeguimiento(true, null, _ahora);
+
+        cotizacion.MarcarSeguimiento(false, "Precio alto", _ahora);
+
+        cotizacion.MotivoRechazo.Should().Be("Precio alto");
+    }
+
     [Fact]
     public void EsDeSoloEsVerdaderoParaSuDueno()
     {

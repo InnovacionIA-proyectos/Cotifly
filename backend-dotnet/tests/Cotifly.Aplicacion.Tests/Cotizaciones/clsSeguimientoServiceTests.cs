@@ -43,6 +43,30 @@ public sealed class clsSeguimientoServiceTests
         await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Mejor precio")]
+    public async Task MarcarGanadaDejaElMotivoEnNoAplica(string? motivo)
+    {
+        // HU-021.13 (propuesta de refactor de BD §2.1): ganada no deja motivoRechazo en null.
+        var resultado = await Servicio().MarcarAsync(_ana, "PCN-S1", true, motivo, Ct);
+
+        resultado.Valor.Ganada.Should().BeTrue();
+        _cotizacion.MotivoRechazo.Should().Be(clsCotizacionSolicitud.MotivoRechazoNoAplica);
+        await _unidadTrabajo.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QuitarElResultadoDejaElMotivoVacio()
+    {
+        await Servicio().MarcarAsync(_ana, "PCN-S1", false, "Precio alto", Ct);
+
+        await Servicio().MarcarAsync(_ana, "PCN-S1", null, "Precio alto", Ct);
+
+        _cotizacion.Ganada.Should().BeNull();
+        _cotizacion.MotivoRechazo.Should().BeNull("solo queda vacío mientras no hay resultado");
+    }
+
     [Fact]
     public async Task OtroComercialNoPuedeMarcarla()
     {
@@ -95,6 +119,12 @@ public sealed class clsSeguimientoServiceTests
         var resultado = await Servicio().MarcarAsync(_ana, "PCN-N1", true, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.UsarResultadoNexo);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?>
+        {
+            ["metodo"] = "POST",
+            ["endpoint"] = "/web/cotizaciones/PCN-N1/resultado",
+            ["requiere_if_match"] = true,
+        }, "HU-021.13: el frontend no tiene que adivinar el endpoint");
         enNexo.Ganada.Should().BeNull();
         await _unidadTrabajo.DidNotReceiveWithAnyArgs().GuardarCambiosAsync(Ct);
     }

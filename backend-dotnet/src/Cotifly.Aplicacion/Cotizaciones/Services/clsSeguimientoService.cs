@@ -20,8 +20,9 @@ public interface IClsSeguimientoService
 
 /// <summary>
 /// Implementación de <see cref="IClsSeguimientoService"/>. La regla vivía en <c>IClsCotizacionRepository.MarcarSeguimientoAsync</c>
-/// (portada así de <c>shared/repos.py</c>); pasa a caso de uso por la deuda de ADR-008. Igual que el Python, guarda
-/// <c>ganada</c> y el motivo tal como llegan (un <c>ganada = null</c> deja la cotización sin resultado).
+/// (portada así de <c>shared/repos.py</c>); pasa a caso de uso por la deuda de ADR-008. Guarda <c>ganada</c> tal como llega
+/// (un <c>ganada = null</c> deja la cotización sin resultado) y el motivo según la regla de HU-021.13 que aplica el dominio
+/// (<see cref="clsCotizacionSolicitud.MarcarSeguimiento"/>): ganada → <c>"No aplica"</c>, perdida → el motivo, sin resultado → vacío.
 /// </summary>
 public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones, IClsUnitOfWork unidadTrabajo, IClsReloj reloj) : IClsSeguimientoService
 {
@@ -47,8 +48,18 @@ public sealed class clsSeguimientoService(IClsCotizacionRepository cotizaciones,
         {
             // En el flujo de costeo de Nexo: marcarla solo en Cotifly desincronizaría el resultado (HU-005.14). Las del chat, las
             // descartadas y las de costeo vencido sí se marcan aquí (Nexo no les acepta resultado).
+            // HU-021.13: el detalle dice al frontend a dónde ir, sin que tenga que adivinarlo (HU-019.1).
+            var ruta = $"/web/cotizaciones/{cotizacion.Folio}/resultado";
             return new clsErrorDominio(clsCodigosError.UsarResultadoNexo,
-                $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST /web/cotizaciones/{cotizacion.Folio}/resultado.");
+                $"La cotización {cotizacion.Folio} está en Nexo: marca el resultado con POST {ruta} (con If-Match).")
+            {
+                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["metodo"] = "POST",
+                    ["endpoint"] = ruta,
+                    ["requiere_if_match"] = true,
+                },
+            };
         }
 
         cotizacion.MarcarSeguimiento(ganada, motivoRechazo, reloj.AhoraUtc);

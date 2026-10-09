@@ -40,7 +40,9 @@ public interface IClsResultadoCotizacionService
 /// <summary>Implementación de <see cref="IClsResultadoCotizacionService"/>.</summary>
 /// <remarks>
 /// <para><b><c>comentario</c></b> se reenvía a Nexo tal cual y no se persiste en Cotifly (decisión de la HU-005.14); solo
-/// <c>motivo</c> queda en <c>motivoRechazo</c>. Límites de Nexo: <c>motivo</c> 100 y <c>comentario</c> 500 caracteres.</para>
+/// <c>motivo</c> queda en <c>motivoRechazo</c> en una perdida (en una ganada queda <c>"No aplica"</c>, HU-021.13). Límites de Nexo:
+/// <c>motivo</c> 100 y <c>comentario</c> 500 caracteres. El límite del motivo solo se valida en una perdida: en una ganada un
+/// motivo más largo no se rechaza ni se envía a Nexo (no se guarda en ningún lado).</para>
 /// <para><b>Entrega implícita.</b> Si Nexo entrega la cotización al marcar el resultado (lo hacía antes de su issue #171), la
 /// respuesta trae <c>Entregada</c> y <c>estado_costeo</c> salta a <c>entregada</c> aunque estuviera en <c>autocosteo</c> o
 /// <c>pendiente_costeo</c>: es un estado válido, no una inconsistencia.</para>
@@ -88,6 +90,12 @@ public sealed class clsResultadoCotizacionService(
         if (ganada is null)
         {
             return Invalido("El campo 'resultado' es obligatorio y debe ser 'ganada' o 'perdida'.");
+        }
+
+        // HU-021.13: en una ganada el motivo no se guarda ("No aplica"), así que su largo no se valida; a Nexo solo va si cabe.
+        if (ganada.Value && motivo is { Length: > LargoMaximoMotivo })
+        {
+            motivo = null;
         }
 
         if (motivo is { Length: > LargoMaximoMotivo } || comentario is { Length: > LargoMaximoComentario })

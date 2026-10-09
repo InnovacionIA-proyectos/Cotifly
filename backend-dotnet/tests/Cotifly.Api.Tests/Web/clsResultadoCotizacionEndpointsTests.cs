@@ -88,7 +88,7 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
         segunda.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(segunda, "RESULTADO_YA_DEFINIDO");
         (await EscalarAsync($"SELECT CONCAT(CAST(ganada AS nvarchar(5)), '|', COALESCE(motivoRechazo, '-')) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'"))
-            .Should().Be("1|-");
+            .Should().Be("1|No aplica");
     }
 
     [Fact]
@@ -118,6 +118,15 @@ public sealed class clsResultadoCotizacionEndpointsTests : IDisposable
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(respuesta, "USAR_RESULTADO_NEXO");
+        using (var error = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+        {
+            // HU-021.13: el detalle trae a dónde ir y que exige If-Match.
+            var detalle = error.RootElement.GetProperty("error").GetProperty("detalle");
+            detalle.GetProperty("metodo").GetString().Should().Be("POST");
+            detalle.GetProperty("endpoint").GetString().Should().Be($"/web/cotizaciones/{folio}/resultado");
+            detalle.GetProperty("requiere_if_match").GetBoolean().Should().BeTrue();
+        }
+
         (await EscalarAsync($"SELECT COALESCE(CAST(ganada AS nvarchar(5)), 'null') FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be("null");
     }
 

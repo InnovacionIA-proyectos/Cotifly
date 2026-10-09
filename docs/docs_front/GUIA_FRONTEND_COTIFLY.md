@@ -463,7 +463,7 @@ sequenceDiagram
 }
 ```
 
-- `detalle` es opcional. Cuando viene, siempre tiene la forma `{"motivo": "<texto>"}` (a veces un código de Nexo, a veces una explicación).
+- `detalle` es opcional. Por lo general tiene la forma `{"motivo": "<texto>"}` (a veces un código de Nexo, a veces una explicación). Algunos códigos agregan datos estructurados; por ejemplo, `USAR_RESULTADO_NEXO` trae `{metodo, endpoint, requiere_if_match}` (HU-021.13).
 - Para distinguirlas en TypeScript: `typeof body.error === 'string'` es `ErrorWeb`; `typeof body.error === 'object'` es `ErrorNegocio`.
 
 ```typescript
@@ -488,7 +488,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST /web/solicitudes-costeo` (En PR #74) | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
 | `POST .../costeo/reintentar` (En PR #74) | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
 | `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` (En PR #76) | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
-| `POST .../resultado` (En PR #77) | 400 (`resultado` inválido, `motivo` de más de 100, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
+| `POST .../resultado` (En PR #77) | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
 | `GET /web/metricas/comercial` (PR de #45) | 400 (fechas), 401 | — |
 | `GET /web/metricas/regional` (PR de #45) | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
@@ -554,7 +554,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En PR #77 |
 | `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | PR de #45 |
 | `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | PR de #45 |
-| `USAR_RESULTADO_NEXO` | 409 en `/seguimiento` | Cotización del flujo de Nexo: hay que usar `/resultado` | Error de programación del frontend: enrutar el botón a `/resultado` (sección 6.5) | En PR #77 |
+| `USAR_RESULTADO_NEXO` | 409 en `/seguimiento` | Cotización del flujo de Nexo: hay que usar `/resultado`. Desde HU-021.13, `detalle` = `{"metodo": "POST", "endpoint": "/web/cotizaciones/{folio}/resultado", "requiere_if_match": true}` con el folio real | Error de programación del frontend: enrutar el botón a `/resultado` con `If-Match` (sección 6.5). Como respaldo se puede reintentar contra `detalle.endpoint` | En PR #77; `detalle` en #140 |
 
 Códigos internos que el frontend solo ve como texto en un `ErrorWeb` 400: `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO` y `SEGUIMIENTO_INVALIDO`.
 
@@ -1865,6 +1865,12 @@ Tabla de acciones por fila (con las dos pilas fusionadas):
 | Reintentar envío a Nexo | `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` antiguo, y `ganada` null | `/costeo/reintentar` |
 | Ver costeo y conexos | `estado_costeo` con valor | `GET /costeo` |
 | Nueva versión | Cotizaciones del chat | `GET /nueva-version` y luego `/web/chat` con `cotizacion_origen_id` |
+
+**Ganada/perdida de las cotizaciones de Nexo (HU-021.13, #140; alimenta HU-019.1).**
+- Las cotizaciones de Nexo (`estado_costeo` distinto de `null`, `descartada` y `costeo_vencido`) se marcan **solo** con `POST /web/cotizaciones/{folio}/resultado` y `If-Match` (el `ETag` de la última lectura). El cuerpo es `{resultado: "ganada" | "perdida", motivo, comentario}`.
+- Desde #105 la creación es solo por formulario, así que **casi todas** las cotizaciones nuevas están en este caso. Hoy ClientePro (`detalle-cotizacion` → `actualizarSeguimiento`) llama a `/seguimiento` y recibe 409 `USAR_RESULTADO_NEXO`. Ese 409 trae en `detalle` el `metodo`, el `endpoint` exacto y `requiere_if_match`.
+- `/seguimiento` queda solo para `estado_costeo` en `null`, `descartada` o `costeo_vencido`.
+- `motivo_rechazo` de la respuesta: `"No aplica"` en una ganada, el motivo en una perdida y `null` solo mientras no hay resultado. En una ganada el largo del `motivo` no se valida, porque no se guarda.
 
 Notas:
 

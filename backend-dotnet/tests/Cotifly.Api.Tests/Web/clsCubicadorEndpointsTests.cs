@@ -20,6 +20,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     private const string TipoCafe = clsCosteoEndpointsTests.TipoMercancia;
     private static readonly HttpMethod _get = HttpMethod.Get;
     private static readonly HttpMethod _post = HttpMethod.Post;
+    private static readonly HttpMethod _put = HttpMethod.Put;
     private readonly clsEntornoApiWeb _entorno;
     private const string Cargue = "SC-CARGUE-CUB";
     private const string Almacenamiento = "7a2d3b0f-4c8e-4d66-8b1f-2e3a4b5c6d7e";
@@ -286,6 +287,139 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         tipos.EnumerateArray().Last().GetProperty("id").GetString().Should().Be(TipoCafe);
         await VerificarContratoAsync(sinCubicador, "/web/tipos-mercancia", _get, HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(sinCubicador, "CUBICADOR_NO_DISPONIBLE");
+    }
+
+    /// <summary>
+    /// Escenario E2E de la cadena HU-021 integrada (#132 a #137, #133, #136 y #140) con el Nexo falso y el cubicador falso: dos rutas (la 1
+    /// con tres recomendaciones y un conexo capturado; la 2 con el respaldo), envío por camión con la línea de negocio de cada ruta, polling
+    /// con emparejamiento, conexo diferido a la fila 1, margen en la ruta 2, PDF de pliego, re-solicitud -vN con los camiones en orden y
+    /// los conexos con el id del catálogo, resultado ganada y métricas.
+    /// </summary>
+    [Fact]
+    public async Task LaCadenaCompletaConElCubicadorLlegaDeLaCapturaALaVersionNuevaGanadaYSusMetricas()
+    {
+        // 1. Captura: la ruta 1 (28000 kg) recibe tres recomendaciones; para la 2 el cubicador responde sin filas (respuesta inválida:
+        // respaldo solo de esa ruta, un camión sin vehículo con su peso).
+        _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
+            ? [clsCubicadorFalso.Fila("3S3", "FURGON", 12_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 9_000m), clsCubicadorFalso.Fila("2", "FURGON", 7_000m)]
+            : [];
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true, conexo: true));
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        string[] camionesEsperados = ["1|3S3|FURGON|12000.00|R", "1|2S3|ESTACAS|9000.00|R", "1|2|FURGON|7000.00|R", "2|||12500.00|-"];
+        (await CamionesAsync(folio)).Should().Equal(camionesEsperados);
+
+        // 2. Envío por camión: una línea por camión, en orden, con la lineaNegocio de Nexo de su ruta.
+        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>(), l["lineaNegocio"]!.GetValue<string>()))
+            .Should().Equal(("3S3", 12_000m, "PuertoAInterior"), ("2S3", 9_000m, "PuertoAInterior"), ("2", 7_000m, "PuertoAInterior"),
+                ((string?)null, 12_500m, "InteriorAPuerto"));
+
+        // 3. Polling con las líneas barajadas: cada camión recibe el flete de SU línea.
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.SemillaOrdenLineas = 20261009;
+        await CostearPorPesoAsync(api, folio, solicitud, lineas);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            "SELECT STRING_AGG(CONCAT(CAST(v.pesoKg AS nvarchar(20)), '=', CAST(v.costoFlete AS nvarchar(20))), ',') WITHIN GROUP (ORDER BY v.pesoKg) "
+            + DeLosCamiones(folio)))
+            .Should().Be("7000.00=500000.00,9000.00=800000.00,12000.00=1000000.00,12500.00=600000.00");
+
+        // 4. Conexo diferido (decisión 10): el capturado llega una vez a la línea del primer camión vigente, la fila 1 del cubicador.
+        var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
+        item["servicioConexoId"]!.GetValue<string>().Should().Be(Cargue);
+        item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, Indice(lineas, 12_000m)));
+
+        // 5. Margen solo en la ruta 2.
+        var rutas = await RutasAsync(api, ana, folio);
+        var precioRuta1 = rutas[0].GetProperty("precio_final_linea").GetDecimal();
+        using var margen = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", ana.Access,
+            """{"margen":0.30,"linea_orden":2}""", await EtagAsync(api, ana, folio));
+        var ajustado = (await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK))
+            .GetProperty("rutas").EnumerateArray().OrderBy(r => r.GetProperty("linea_orden").GetInt32()).ToList();
+        ajustado[0].GetProperty("precio_final_linea").GetDecimal().Should().Be(precioRuta1, "la ruta 1 no se toca");
+        ajustado[1].GetProperty("margen_aplicado").GetDecimal().Should().Be(0.30m);
+        ajustado[1].GetProperty("precio_final_linea").GetDecimal().Should().Be(857_143m, "600.000 / (1 − 0,30)");
+
+        // 6. PDF de pliego: dos rutas de dos líneas de negocio.
+        using var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access);
+        await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
+        using var descarga = await api.EnviarAsync(_get, $"/pdfs/{folio}.pdf", ana.Access);
+        descarga.StatusCode.Should().Be(HttpStatusCode.OK);
+        var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
+        // La cabecera "Varias" es el payload del pliego (sin texto propio en el documento); cada sección lleva la línea de su ruta.
+        texto.Should().Contain("licitación (2 rutas)").And.Contain("RUTA 1: PLIEGO DE TRANSPORTE IMPORTACION")
+            .And.Contain("RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION").And.Contain("1 × 3S3 - FURGON, 1 × 2S3 -", "los tres camiones de la ruta 1 en el orden del cubicador");
+
+        // 7. La Mesa entrega y el comercial pide una versión nueva: conserva los tres camiones en orden y el respaldo, y los conexos viajan
+        // con el id del catálogo a la línea del primer camión.
+        _nexo.Entregar(solicitud);
+        await api.ProcesarPollingAsync(folio);
+        using var reSolicitud = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
+            clsApiWebPruebas.Json(new { motivo = "Actualizar el costo", nueva_version = true }), await EtagAsync(api, ana, folio));
+        var folioNuevo = (await VerificarContratoAsync(reSolicitud, "/web/cotizaciones/{folio}/costeo/re-solicitar", _post, HttpStatusCode.Created))
+            .GetProperty("folio").GetString()!;
+        folioNuevo.Should().Be(folio + "-v2");
+        (await CamionesAsync(folioNuevo)).Should().Equal(camionesEsperados);
+        var nueva = _nexo.SolicitudesCreadas[^1];
+        nueva.Should().NotBe(solicitud);
+        var lineasNuevas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineasNuevas.Select(l => l["peso"]!.GetValue<decimal>()).Should().Equal(12_000m, 9_000m, 7_000m, 12_500m);
+        await CostearPorPesoAsync(api, folioNuevo, nueva, lineasNuevas);
+        var itemNuevo = _nexo.PeticionesConexos(_nexo.CotizacionDe(nueva)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
+        itemNuevo["servicioConexoId"]!.GetValue<string>().Should().Be(Cargue, "el id del catálogo de Nexo");
+        itemNuevo["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(nueva, Indice(lineasNuevas, 12_000m)));
+
+        // 8. Ganada por /resultado: motivo "No aplica" (#140).
+        _nexo.Entregar(nueva);
+        await api.ProcesarPollingAsync(folioNuevo);
+        using var resultado = await api.EnviarAsync(_post, $"/web/cotizaciones/{folioNuevo}/resultado", ana.Access, """{"resultado":"ganada"}""");
+        var marcada = await VerificarContratoAsync(resultado, "/web/cotizaciones/{folio}/resultado", _post, HttpStatusCode.OK);
+        marcada.GetProperty("ganada").GetBoolean().Should().BeTrue();
+        marcada.GetProperty("motivo_rechazo").GetString().Should().Be("No aplica");
+
+        // 9. Métricas: una cadena (dos versiones) ganada; valores de la vigente, por ruta y línea de negocio.
+        var rutasNuevas = await RutasAsync(api, ana, folioNuevo);
+        var precio1 = rutasNuevas[0].GetProperty("precio_final_linea").GetDecimal();
+        var precio2 = rutasNuevas[1].GetProperty("precio_final_linea").GetDecimal();
+        precio2.Should().Be(857_143m, "la -vN conserva el margen negociado de la ruta 2");
+        using var respuesta = await api.EnviarAsync(_get, "/web/metricas/comercial?desde=2026-01-01&hasta=2026-12-31", ana.Access);
+        var metricas = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+        var indicadores = metricas.GetProperty("indicadores");
+        indicadores.GetProperty("cantidad").GetInt32().Should().Be(1, "la -v2 es la misma cadena");
+        indicadores.GetProperty("versiones").GetInt32().Should().Be(2);
+        indicadores.GetProperty("ganadas").GetInt32().Should().Be(1);
+        indicadores.GetProperty("costeo_total").GetDecimal().Should().Be(3_050_000m, "2.300.000 de fletes + 150.000 del conexo en la ruta 1 y 600.000 en la ruta 2");
+        indicadores.GetProperty("costeo_ganadas").GetDecimal().Should().Be(3_050_000m);
+        indicadores.GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(precio1 + precio2);
+        var porLinea = metricas.GetProperty("por_linea_negocio").EnumerateArray().ToDictionary(l => l.GetProperty("linea_negocio").GetString()!, l => l);
+        porLinea.Keys.Should().BeEquivalentTo(["Importacion", "Exportacion"]);
+        porLinea["Importacion"].GetProperty("rutas").GetInt32().Should().Be(1, "tres camiones son una ruta");
+        porLinea["Importacion"].GetProperty("costeo_total").GetDecimal().Should().Be(2_450_000m);
+        porLinea["Importacion"].GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(precio1);
+        porLinea["Exportacion"].GetProperty("costeo_total").GetDecimal().Should().Be(600_000m);
+        porLinea["Exportacion"].GetProperty("valor_cotizado_cop").GetDecimal().Should().Be(precio2);
+        porLinea["Exportacion"].GetProperty("margen_ponderado").GetDecimal().Should().Be(0.3m, "(857.143 − 600.000) / 857.143");
+    }
+
+    private static int Indice(IReadOnlyList<JsonNode> lineas, decimal peso) => lineas.ToList().FindIndex(l => l["peso"]!.GetValue<decimal>() == peso);
+
+    /// <summary>La Mesa costea cada línea por su peso (12000 → 1.000.000, 9000 → 800.000, 7000 → 500.000, 12500 → 600.000) y corre el polling.</summary>
+    private async Task CostearPorPesoAsync(clsApiWebPruebas api, string folio, string solicitud, IReadOnlyList<JsonNode> lineas)
+    {
+        foreach (var (peso, flete) in new[] { (12_000m, 1_000_000m), (9_000m, 800_000m), (7_000m, 500_000m), (12_500m, 600_000m) })
+        {
+            _nexo.CostearLinea(solicitud, Indice(lineas, peso), flete);
+        }
+
+        await api.ProcesarPollingAsync(folio);
+    }
+
+    private static async Task<List<JsonElement>> RutasAsync(clsApiWebPruebas api, clsSesionPrueba sesion, string folio)
+    {
+        using var costeo = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var json = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK);
+        return [.. json.GetProperty("rutas").EnumerateArray().OrderBy(r => r.GetProperty("linea_orden").GetInt32())];
     }
 
     public void Dispose()
