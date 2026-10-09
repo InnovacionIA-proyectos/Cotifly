@@ -929,6 +929,41 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/tipos-mercancia:
+    get:
+      operationId: listarTiposMercancia
+      tags: [web]
+      summary: Catálogo de tipos de mercancía del cubicador
+      description: |
+        HU-021.5 (#133). Pasa el catálogo `GET /tipos-mercancia` del cubicador para el desplegable de mercancías del formulario:
+        el `id` es el `id_tipo_mercancia` que se manda en cada mercancía de `POST /web/solicitudes-costeo` (y que viaja al cubicador
+        en `POST /recomendaciones`); el `nombre` es el que Cotifly guarda como `nombre_mercancia` (copia). Ordenado por nombre.
+        Se reutiliza en memoria `Cubicador:MinutosCacheCatalogos` (30 por defecto; solo respuestas exitosas). Autenticación con el
+        cubicador: `Authorization: Bearer {Cubicador:ApiKey}`. **Contrato provisional**: el cubicador aún no publica este endpoint
+        (C1 de `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`).
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Catálogo completo de tipos de mercancía
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TipoMercancia'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '503':
+          description: |
+            `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía, el valor por defecto mientras
+            no exista) o no respondió. El formulario puede seguir con los tipos que ya conoce: sin catálogo, la captura conserva el
+            nombre que manda el cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/catalogos-flete:
     get:
       operationId: obtenerCatalogosFlete
@@ -1029,9 +1064,17 @@ paths:
         nombre** (decisión 2), condiciones del contenedor con las ciudades de devolución y de levante también por id + nombre,
         horas, `valor_levante_contenedor` (se copia a cada camión, decisión 4), valor de la mercancía, peso, mercancías con
         `id_tipo_mercancia` obligatorio (catálogo del cubicador) y `servicios_conexos` del catálogo de Nexo (id y cantidad; el
-        precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y, mientras
-        no exista el cubicador (#133), **un camión sin vehículo ni carrocería con el peso total de la ruta**: la Mesa de Costeo de
-        Nexo elige el vehículo (decisión 7). A Nexo viaja una línea por camión.
+        precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y sus
+        camiones según el **cubicador** (HU-021.5, #133): manda la ruta a `POST /recomendaciones` del cubicador (`IdLineaSolicitud` =
+        id de la ruta, `OrigenSistema = COTIFLY`, y por mercancía `idTipoMercancia`, medidas, cantidad y peso) y crea **un camión por
+        fila** de la respuesta con su vehículo, su carrocería, su peso total y el id de la recomendación. "Sin selección automática"
+        deja el camión sin vehículo ni carrocería (lo resuelve la Mesa de Costeo de Nexo, decisión 7) y una mercancía "condicionada"
+        no parte ni bloquea nada: la solicitud se envía completa. **Respaldo:** sin cubicador configurado (hoy), sin mercancías o si
+        el cubicador falla (con `Cubicador:RespaldoSiFalla = true`, el valor por defecto), la ruta queda con **un camión sin vehículo
+        ni carrocería con el peso total de la ruta**, como antes. A Nexo viaja una línea por camión.
+        - **Mercancías:** con el catálogo del cubicador disponible (`GET /web/tipos-mercancia`), `nombre_mercancia` se copia del
+          catálogo por `id_tipo_mercancia` (un nombre distinto del cliente se ignora) y un id que no está en el catálogo es
+          `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia`. Sin catálogo se guarda el nombre que manda el cliente.
         - **Municipios:** el nombre que se guarda **siempre sale del catálogo** de `GET /web/municipios` por el id (un nombre
           distinto que mande el cliente se ignora y queda en el log); un id que no existe es `MUNICIPIO_INEXISTENTE` en el campo del
           id. Sin id, el nombre se resuelve con la regla determinista de HU-005.13 y nunca se adivina (`MUNICIPIO_AMBIGUO` con los
@@ -1116,6 +1159,7 @@ paths:
             `CODIGO_NO_CATALOGO`, `MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`, `LINEAS_REQUERIDAS`, `DEMASIADAS_LINEAS`) más
             `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
+            HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia` si el id no está en el catálogo del cubicador.
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -1130,6 +1174,9 @@ paths:
             HU-021.6: `MUNICIPIOS_NO_DISPONIBLE` si alguna ruta necesita el catálogo de municipios (un municipio sin id, o con id y
             sin nombre) y Nexo no responde; `NEXO_NO_DISPONIBLE` (o 403 `NEXO_SIN_PERMISO`) si la ruta trae servicios conexos y no se
             pudo leer su costo en el catálogo de Nexo. Nada queda guardado.
+            HU-021.5: `CUBICADOR_NO_DISPONIBLE` solo con `Cubicador:RespaldoSiFalla = false`, si el cubicador configurado no pudo
+            recomendar los vehículos de una ruta ("no se pudo calcular los vehículos"); nada queda guardado ni se envía a Nexo. Con el
+            valor por defecto (`true`) la ruta sigue con un camión sin vehículo.
             `SERVICIO_OCUPADO` (#125): el candado del folio siguió ocupado tras los reintentos; nada queda guardado, se puede
             reintentar.
           headers:
@@ -2613,6 +2660,8 @@ components:
                 `error_envio` definitivo, no se reintenta), `COSTEO_NO_REINTENTABLE` (409: la
                 cotización no está en `error_envio` ni en `pendiente_envio`), `COSTEO_NO_LISTO` (409: la cotización todavía no
                 tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene PDF, se cambia con una versión nueva).
+                Cubicador (HU-021.5, #133): `CUBICADOR_NO_DISPONIBLE` (503 en `GET /web/tipos-mercancia` sin cubicador o sin
+                respuesta, y en `POST /web/solicitudes-costeo` y `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`).
                 Resultado en Nexo (HU-005.14), con el mismo código de Nexo: `RESULTADO_YA_DEFINIDO` y
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
                 sobre una cotización que pasó por Nexo).
@@ -2698,6 +2747,7 @@ components:
                 - CONFLICTO_CONCURRENCIA
                 - FOLIO_REQUERIDO
                 - COTIZACION_CHAT_RETIRADA
+                - CUBICADOR_NO_DISPONIBLE
                 - ESTADO_NO_PERMITE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
@@ -3662,6 +3712,19 @@ components:
           type: string
           nullable: true
           description: BP de Nexo; nunca se muestra al comercial (solo se usa internamente para consultar SAP TM).
+
+    TipoMercancia:
+      type: object
+      required: [id, nombre]
+      description: HU-021.5 (#133). Un tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`).
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Id del cubicador; es el `id_tipo_mercancia` de cada mercancía de la captura.
+        nombre:
+          type: string
+          description: Nombre que Cotifly guarda como `nombre_mercancia` (copia).
 
     Municipio:
       type: object
@@ -4960,14 +5023,15 @@ components:
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
-                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS]
+                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
             HU-021.6: `MUNICIPIO_*` también en `ciudad_devolucion_contenedor`/`ciudad_levante_contenedor` (y
             `MUNICIPIO_INEXISTENTE` en `*_municipio_id` si el id no está en el catálogo); `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` y `mercancias[i].id_tipo_mercancia`; `CONEXO_DUPLICADO`,
-            `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`.
+            `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`. HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en
+            `mercancias[i].id_tipo_mercancia` (el id no está en el catálogo del cubicador).
         mensaje:
           type: string
 

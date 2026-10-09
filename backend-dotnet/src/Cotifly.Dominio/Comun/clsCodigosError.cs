@@ -315,4 +315,12 @@ public static class clsCodigosError
 
     /// <summary>HU-021.6: crear una cotización desde el chat está retirado (<c>Pdf:PermitirCotizacionChat = false</c>).</summary>
     public const string CotizacionChatRetirada = "COTIZACION_CHAT_RETIRADA";
+
+    /// <summary>
+    /// HU-021.5 (#133): el cubicador no pudo recomendar los vehículos (sin configurar, caído, sin respuesta a tiempo, respuesta inválida
+    /// o rechazo) o su catálogo de tipos de mercancía no está disponible (<c>GET /web/tipos-mercancia</c>); 503. En la captura solo llega
+    /// al cliente con <c>Cubicador:RespaldoSiFalla = false</c>: por defecto la ruta sigue con un camión sin vehículo. Código nuevo del
+    /// backend .NET.
+    /// </summary>
+    public const string CubicadorNoDisponible = "CUBICADOR_NO_DISPONIBLE";
 }

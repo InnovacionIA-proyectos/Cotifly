@@ -1,4 +1,5 @@
 using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Dominio.Comun;
@@ -16,7 +17,8 @@ public interface IClsCapturaRutasService
     /// <summary>
     /// Todas las validaciones que dependen de catálogos o que solo aplican a una captura nueva, acumuladas sobre
     /// <paramref name="erroresPrevios"/> (los de forma y rango que ya calculó el llamador): forma de los conexos, códigos de catálogo,
-    /// municipios (origen, destino y ciudades del contenedor: id y nombre, nunca adivina) y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/>.
+    /// municipios (origen, destino y ciudades del contenedor: id y nombre, nunca adivina), <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/>
+    /// y, con el catálogo del cubicador disponible, que cada <c>id_tipo_mercancia</c> exista (<c>TIPO_MERCANCIA_INEXISTENTE</c>, HU-021.5).
     /// Devuelve las rutas con los municipios resueltos, todos los errores (encabezado primero, luego por ruta) y, si un catálogo de Nexo
     /// no respondió, ese error.
     /// </summary>
@@ -27,8 +29,9 @@ public interface IClsCapturaRutasService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Arma las rutas ya validadas: sus conexos con el costo unitario del catálogo de Nexo como precio (decisión 3) y sus camiones
-    /// (<see cref="IClsPlanificadorCamiones"/>). Un conexo que no está en el catálogo es un error de su ruta
+    /// Arma las rutas ya validadas: el id de cada ruta (viaja al cubicador), el nombre de cada mercancía copiado del catálogo del cubicador
+    /// por su <c>id_tipo_mercancia</c> (HU-021.5; sin catálogo, el que mandó el cliente), sus conexos con el costo unitario del catálogo de
+    /// Nexo como precio (decisión 3) y sus camiones (<see cref="IClsPlanificadorCamiones"/>). Un conexo que no está en el catálogo es un error de su ruta
     /// (<c>CONEXO_NO_ENCONTRADO</c>); Nexo caído o el planificador sin respuesta son <see cref="clsRutasPreparadas.Error"/>.
     /// </summary>
     Task<clsRutasPreparadas> PrepararAsync(
@@ -48,7 +51,8 @@ public sealed class clsCapturaRutasService(
     IClsValidadorFilasLicitacion filas,
     IClsCostosConexosNexo costosConexos,
     IClsPlanificadorCamiones planificador,
-    ILogger<clsCapturaRutasService> logger) : IClsCapturaRutasService
+    ILogger<clsCapturaRutasService> logger,
+    IClsCubicador? cubicador = null) : IClsCapturaRutasService
 {
     /// <summary>Máximo de servicios conexos por ruta.</summary>
     public const int MaximoConexosPorRuta = 20;
@@ -111,6 +115,26 @@ public sealed class clsCapturaRutasService(
             }
         }
 
+        // HU-021.5: con el catálogo del cubicador disponible, un tipo de mercancía que no está en él es un error de su ruta. Sin catálogo
+        // (cubicador sin configurar o caído) no se exige: la captura conserva el nombre que mandó el cliente.
+        var tipos = await TiposMercanciaAsync(validadas.Lineas.Select(r => r?.Linea), cancellationToken);
+        if (tipos is not null)
+        {
+            for (var i = 0; i < validadas.Lineas.Count; i++)
+            {
+                var posiciones = validadas.Lineas[i]?.Linea?.Posiciones ?? [];
+                for (var m = 0; m < posiciones.Count; m++)
+                {
+                    if (posiciones[m]?.IdTipoMercancia is { } id && id != Guid.Empty && !tipos.ContainsKey(id))
+                    {
+                        errores.Add(new clsErrorFilaLicitacion(i, validadas.Lineas[i]?.Fila, $"mercancias[{m}].id_tipo_mercancia",
+                            clsCodigosLineaSolicitud.TipoMercanciaInexistente,
+                            $"El tipo de mercancía '{id}' de la mercancía {m + 1} no está en el catálogo del cubicador (GET /web/tipos-mercancia)."));
+                    }
+                }
+            }
+        }
+
         // Los conexos que no están en el catálogo de Nexo se reportan junto con los demás errores (la lectura queda en la caché de 5 min
         // del adaptador y PrepararAsync la reutiliza). Sin Nexo, 503 como cualquier catálogo caído.
         var noDisponible = validadas.NoDisponible;
@@ -167,11 +191,13 @@ public sealed class clsCapturaRutasService(
             costos = new Dictionary<string, clsCostoConexoNexo>(leidos.Valor, StringComparer.OrdinalIgnoreCase);
         }
 
+        var tipos = await TiposMercanciaAsync(rutas.Select(r => r.Ruta.Linea), cancellationToken);
         var errores = new List<clsErrorFilaLicitacion>();
         var preparadas = new List<clsRutaCapturada>(rutas.Count);
         for (var i = 0; i < rutas.Count; i++)
         {
             var (entrada, lineaNegocioId, indiceOrigen) = rutas[i];
+            var linea = ConNombresDelCatalogo(entrada.Linea, tipos);
             var conexos = new List<clsCambioConexo>();
             var pedidos = entrada.Conexos ?? [];
             for (var c = 0; c < pedidos.Count; c++)
@@ -186,17 +212,85 @@ public sealed class clsCapturaRutasService(
                 conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre, costo.CostoUnitario, pedidos[c]!.Cantidad!.Value));
             }
 
-            var camiones = await planificador.PlanificarAsync(usuarioId, entrada.Linea, cancellationToken);
+            var rutaId = Guid.NewGuid();
+            var camiones = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
             if (camiones.EsFallo)
             {
                 logger.LogWarning("No se pudieron planificar los camiones de la ruta {Ruta} ({Codigo}): no se guarda la captura.", i + 1, camiones.Error.Codigo);
                 return new clsRutasPreparadas([], [], camiones.Error);
             }
 
-            preparadas.Add(new clsRutaCapturada(entrada.Linea, lineaNegocioId, indiceOrigen, camiones.Valor, conexos));
+            preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, camiones.Valor, conexos, rutaId));
         }
 
         return errores.Count > 0 ? new clsRutasPreparadas([], errores, null) : new clsRutasPreparadas(preparadas, [], null);
+    }
+
+    /// <summary>
+    /// Catálogo de tipos de mercancía del cubicador por id, o <c>null</c> si no hay cubicador configurado, ninguna mercancía trae tipo o
+    /// el catálogo no respondió (queda un warning: la captura conserva lo actual).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>?> TiposMercanciaAsync(
+        IEnumerable<clsLineaSolicitudCosteo?> lineas, CancellationToken cancellationToken)
+    {
+        if (cubicador is not { EstaConfigurado: true }
+            || !lineas.Any(l => l?.Posiciones.Any(p => p?.IdTipoMercancia is { } id && id != Guid.Empty) == true))
+        {
+            return null;
+        }
+
+        var catalogo = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
+        if (catalogo.EsFallo)
+        {
+            logger.LogWarning("El catálogo de tipos de mercancía del cubicador no está disponible ({Detalle}): se conservan los nombres que mandó el cliente.",
+                catalogo.Error.Detalle ?? catalogo.Error.Codigo);
+            return null;
+        }
+
+        var porId = new Dictionary<Guid, string>();
+        foreach (var tipo in catalogo.Valor)
+        {
+            porId.TryAdd(tipo.Id, tipo.Nombre);
+        }
+
+        return porId;
+    }
+
+    /// <summary>
+    /// La línea con el nombre de cada mercancía copiado del catálogo del cubicador por su <c>id_tipo_mercancia</c> (copia, como el
+    /// municipio y el vehículo; un nombre distinto del cliente se ignora y queda en el log). Sin catálogo o sin el id, la mercancía queda
+    /// como llegó.
+    /// </summary>
+    private clsLineaSolicitudCosteo ConNombresDelCatalogo(clsLineaSolicitudCosteo linea, IReadOnlyDictionary<Guid, string>? tipos)
+    {
+        if (tipos is null || linea.Posiciones.Count == 0)
+        {
+            return linea;
+        }
+
+        var distintos = 0;
+        var posiciones = linea.Posiciones.Select(clsPosicionCarga (p) =>
+        {
+            if (p is null || p.IdTipoMercancia is not { } id || !tipos.TryGetValue(id, out var nombre) || string.IsNullOrWhiteSpace(nombre))
+            {
+                return p!;
+            }
+
+            var copia = nombre.Trim();
+            copia = copia.Length > clsPosicionCarga.LargoDescripcion ? copia[..clsPosicionCarga.LargoDescripcion] : copia;
+            if (!string.IsNullOrWhiteSpace(p.Descripcion) && !string.Equals(p.Descripcion.Trim(), copia, StringComparison.Ordinal))
+            {
+                distintos++;
+            }
+
+            return p with { Descripcion = copia };
+        }).ToList();
+        if (distintos > 0)
+        {
+            logger.LogInformation("{Mercancias} mercancía(s) traen un nombre distinto del catálogo del cubicador: se guarda el del catálogo.", distintos);
+        }
+
+        return linea with { Posiciones = posiciones };
     }
 
     /// <summary>

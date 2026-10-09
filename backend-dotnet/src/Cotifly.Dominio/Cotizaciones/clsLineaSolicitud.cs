@@ -141,11 +141,12 @@ public sealed class clsLineaSolicitud
     /// <summary>
     /// Ruta nueva a partir de una línea de la captura ya validada (<see cref="clsLineaSolicitudCosteo.Errores"/> vacía). Las horas son las
     /// de la línea o, si no trae, las del <paramref name="encabezado"/> (la cabecera ya no las guarda). Copia las mercancías; los camiones
-    /// los agrega quien crea la ruta (<see cref="AgregarVehiculo"/>).
+    /// los agrega quien crea la ruta (<see cref="AgregarVehiculo"/>). <paramref name="id"/> fija el id de la ruta (el que ya conoce el
+    /// cubicador, HU-021.5); sin él, uno nuevo.
     /// </summary>
     public static clsLineaSolicitud Desde(
         Guid cotizacionSolicitudId, int orden, int? rutaOrigenIndice, int? lineaNegocioId, clsLineaSolicitudCosteo linea,
-        clsEncabezadoSolicitudCosteo? encabezado = null)
+        clsEncabezadoSolicitudCosteo? encabezado = null, Guid? id = null)
     {
         ArgumentNullException.ThrowIfNull(linea);
         ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
@@ -156,7 +157,7 @@ public sealed class clsLineaSolicitud
 
         var ruta = new clsLineaSolicitud
         {
-            Id = Guid.NewGuid(),
+            Id = id is { } fijo && fijo != Guid.Empty ? fijo : Guid.NewGuid(),
             CotizacionSolicitudId = cotizacionSolicitudId,
             Orden = orden,
             RutaOrigenIndice = rutaOrigenIndice,
