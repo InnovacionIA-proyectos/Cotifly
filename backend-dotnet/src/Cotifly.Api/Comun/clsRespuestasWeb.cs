@@ -91,7 +91,8 @@ public static class clsRespuestasWeb
             clsCodigosAplicacion.SinPermiso => new ObjectResult(new clsErrorWeb(clsErrorWeb.MensajeSinPermiso)) { StatusCode = StatusCodes.Status403Forbidden },
             clsCodigosError.CorreoDeshabilitado or clsCodigosError.CosteoNexoNoDisponible or clsCodigosError.CosteoNexoTiempoAgotado
                 or clsCodigosAplicacion.RegionalNoDisponible or clsCodigosError.CatalogosFleteNoDisponible or clsCodigosError.NexoNoDisponible
-                or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible =>
+                or clsCodigosError.MunicipiosNoDisponible or clsCodigosError.PdfRenderNoDisponible
+                or clsCodigosError.CubicadorNoDisponible =>
                 new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosAplicacion.RegionalNoAsignada => new ConflictObjectResult(clsErrorNegocioWeb.Desde(error)),
             clsCodigosError.NexoSinPermiso => new ObjectResult(clsErrorNegocioWeb.Desde(error)) { StatusCode = StatusCodes.Status403Forbidden },

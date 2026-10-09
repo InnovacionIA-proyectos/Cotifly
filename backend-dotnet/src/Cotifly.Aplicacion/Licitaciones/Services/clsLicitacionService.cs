@@ -278,7 +278,7 @@ public sealed class clsLicitacionService(
         politicasPorRuta.AddRange(entradas.Select(l => porNombre[(l.LineaNegocio ?? entrada.LineaNegocio)!.Trim()]));
         var politica = porNombre[entrada.LineaNegocio!.Trim()];
 
-        // HU-021.6: conexos con el costo del catálogo de Nexo y un camión por ruta (sin vehículo hasta el cubicador, #133).
+        // HU-021.6: conexos con el costo del catálogo de Nexo y los camiones de cada ruta (cubicador, #133, con presupuesto de tiempo; o respaldo).
         var preparadas = await captura.PrepararAsync(
             usuarioId, [.. entradas.Select((l, i) => new clsRutaPorPreparar(l, politicasPorRuta[i].Id, l.Fila))], cancellationToken);
         if (preparadas.Error is { } errorPreparacion)

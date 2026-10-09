@@ -38,7 +38,8 @@ public interface IClsEnvioCosteoService
     /// Captura por rutas (HU-021.6): valida TODO junto (<c>SOLICITUD_COSTEO_INVALIDA</c> con <c>detalle.errores</c>: cliente, moneda,
     /// encabezado, y por ruta línea de negocio, límites de Nexo, códigos de catálogo, municipios con id obligatorio, mercancías con
     /// <c>id_tipo_mercancia</c> y conexos del catálogo de Nexo), resuelve la línea de negocio de cada ruta (<c>MARGEN_LINEA_DESCONOCIDA</c>),
-    /// crea la cotización con sus rutas, un camión sin vehículo por ruta (hasta el cubicador, #133) y sus conexos con el costo de Nexo, la
+    /// crea la cotización con sus rutas, sus camiones (uno por vehículo que recomiende el cubicador, #133, o uno sin vehículo de respaldo) y
+    /// sus conexos con el costo de Nexo, la
     /// confirma y la envía a Nexo como en <see cref="EnviarAsync"/>. 503 si un catálogo de Nexo no responde (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>,
     /// <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> para los conexos): nada se guarda.
     /// </summary>
@@ -70,7 +71,8 @@ public interface IClsEnvioCosteoService
 /// <item>Fija la moneda y, en USD, la TRM del día (HU-013.7, ADR-014 §5, <see cref="IClsFijacionMonedaService"/>): sin TRM no se guarda
 /// nada ni se llama a Nexo. El polling, el ajuste de margen y el PDF convierten con esa TRM fijada; el reintento la conserva.</item>
 /// <item>Crea la solicitud con folio del servidor (ADR-011, con el NIT): la cabecera y cada ruta con su línea de negocio, sus mercancías,
-/// sus conexos (costo de Nexo) y los camiones de <see cref="IClsPlanificadorCamiones"/> (uno sin vehículo hasta el cubicador, #133), en
+/// sus conexos (costo de Nexo) y los camiones de <see cref="IClsPlanificadorCamiones"/> (uno por vehículo recomendado por el cubicador,
+/// #133; uno sin vehículo de respaldo si el cubicador no está configurado o falla), en
 /// <c>pendiente_envio</c>, y confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
 /// <item>Envía a Nexo y guarda el resultado: <c>pendiente_costeo</c> con <c>costeoId</c> y la primera consulta del polling, o
@@ -162,7 +164,7 @@ public sealed class clsEnvioCosteoService(
 
         var politica = politicasPorRuta[0];
 
-        // Conexos con el costo del catálogo de Nexo y camiones del planificador (sin vehículo hasta el cubicador, #133).
+        // Conexos con el costo del catálogo de Nexo y camiones del planificador (los del cubicador o, de respaldo, uno sin vehículo; #133).
         var preparadas = await capturaRutas.PrepararAsync(
             usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken);
         if (preparadas.Error is { } errorPreparacion)
@@ -408,6 +410,13 @@ public sealed class clsEnvioCosteoService(
             ? politicasRuta.GetValueOrDefault(lineaId)?.MapeoLineasNexo
             : null;
 
+    /// <summary>
+    /// Aviso de la nota a la Mesa (HU-021.5, #133): las líneas de una ruta con varios camiones viajan sin posiciones (repartir las
+    /// mercancías por camión exige la Tabla 8 del cubicador); cada una lleva el peso de su camión.
+    /// </summary>
+    public const string AvisoSinPosiciones =
+        "Las rutas con varios camiones viajan sin el detalle de mercancías: cada línea lleva el peso de su camión.";
+
     /// <summary>Largo máximo de <see cref="NotaCamionesPorRuta"/> (el resto de <c>notas</c> es del comercial).</summary>
     public const int LargoMaximoNotaCamiones = 500;
 
@@ -415,7 +424,8 @@ public sealed class clsEnvioCosteoService(
     /// Nota para la Mesa de Costeo cuando alguna ruta viaja partida en varios camiones (#134): Nexo no tiene un campo de ruta por línea
     /// (N1), así que el encabezado dice cuántas líneas son de cada ruta, TODAS en su orden (también las de un camión), p. ej.
     /// <c>"Cotifly: una línea por camión, en este orden. Ruta 1 (Buenaventura → Bogotá D.C.): 3 camiones. Ruta 2 (Cali → Yumbo): 1
-    /// camión."</c>. <c>null</c> si todas las rutas tienen un solo camión (cada línea es una ruta: no hay nada que agrupar). Recortada a
+    /// camión."</c>, más el aviso <see cref="AvisoSinPosiciones"/> (#133: con varios camiones las mercancías no viajan por línea).
+    /// <c>null</c> si todas las rutas tienen un solo camión (cada línea es una ruta: no hay nada que agrupar). Recortada a
     /// <see cref="LargoMaximoNotaCamiones"/>.
     /// </summary>
     public static string? NotaCamionesPorRuta(clsCotizacionSolicitud cotizacion)
@@ -428,7 +438,8 @@ public sealed class clsEnvioCosteoService(
         }
 
         var nota = "Cotifly: una línea por camión, en este orden. "
-            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.Vehiculos.Count} {(r.Vehiculos.Count == 1 ? "camión" : "camiones")}."));
+            + string.Join(" ", rutas.Select(r => $"Ruta {r.Orden} ({r.Ruta}): {r.Vehiculos.Count} {(r.Vehiculos.Count == 1 ? "camión" : "camiones")}."))
+            + " " + AvisoSinPosiciones;
         return nota.Length <= LargoMaximoNotaCamiones ? nota : nota[..(LargoMaximoNotaCamiones - 1)] + "…";
     }
 

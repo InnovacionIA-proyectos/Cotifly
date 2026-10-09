@@ -100,6 +100,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesTrm>(configuracion, clsOpcionesTrm.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
+        servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -121,6 +123,7 @@ public static class clsDependenciasInfraestructura
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
         AgregarCubicacion(servicios);
+        AgregarCubicador(servicios);
         AgregarCosteo(servicios);
 
         AgregarPdfYCorreo(servicios);
@@ -334,6 +337,36 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<clsCubicacionNoDisponible>();
         servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
+    }
+
+    /// <summary>
+    /// Cubicador (HU-021.5, #133) elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
+    /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
+    /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: el tiempo de <c>Cubicador:TiempoEsperaSegundos</c>, sin
+    /// reintentar los POST y sin registrar cabeceras (la llave viaja en <c>Authorization</c>). Los eventos de Polly de cada intento bajan a
+    /// Debug, como en SAP TM. El catálogo de tipos de mercancía se guarda en <see cref="clsCacheTiposMercancia"/> (singleton). TryAdd: un
+    /// adaptador registrado antes (pruebas) se respeta.
+    /// </summary>
+    private static void AgregarCubicador(IServiceCollection servicios)
+    {
+        servicios.TryAddScoped<clsCubicadorNoDisponible>();
+        servicios.TryAddSingleton<clsCacheTiposMercancia>();
+        var tuberia = servicios.AddHttpClient<clsCubicadorHttp>(clsCubicadorHttp.NombreCliente)
+            .RedactLoggedHeaders(_ => true)
+            .AddStandardResilienceHandler();
+        servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
+            .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
+                clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos)));
+        servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
+
+        servicios.Configure<TelemetryOptions>(telemetria =>
+        {
+            var anterior = telemetria.SeverityProvider;
+            telemetria.SeverityProvider = argumentos =>
+                argumentos.Source.PipelineName?.StartsWith(clsCubicadorHttp.NombreCliente + "-", StringComparison.Ordinal) == true
+                    ? ResilienceEventSeverity.Debug
+                    : anterior?.Invoke(argumentos) ?? argumentos.Event.Severity;
+        });
     }
 
     /// <summary>
