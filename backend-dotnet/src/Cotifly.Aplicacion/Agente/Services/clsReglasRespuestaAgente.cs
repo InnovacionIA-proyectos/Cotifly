@@ -41,13 +41,21 @@ public sealed record clsValidacionRespuesta(clsRespuestaAgenteEstructurada? Resp
 /// por folio no calcula precios, así que una previsualizacion nunca es válida (HU-013.9: el agente cotizador legado, el único que
 /// previsualizaba, se retiró); una acción sugerida exige su herramienta declarada en el turno (ninguna del asistente lo es: las
 /// propuestas van en <c>accion_propuesta</c>, que arma el servidor).</item>
-/// <item>Montos (<see cref="Montos"/>): con moneda (<c>$</c>, <c>COP</c>, <c>USD</c>, <c>US$</c>, pesos, dólares), con sufijo de
-/// millones (<c>millones</c>, <c>mill</c>, <c>M</c>, <c>MM</c>), con separadores de miles de 1.000.000 o más, o de 1.000 o más en
-/// la ventana de 40 caracteres tras "precio", "costo", "utilidad", "tarifa", "valor", "total", "flete", "descuento", "IVA",
-/// "cobr…" o "pag…" (todos los números de la ventana). Se descartan fechas, años sueltos tras una palabra clave, números tras
-/// NIT/tel/teléfono/cel/celular/cédula/CC/folio/llamar y los seguidos de kg/ton/toneladas/km/%. Cada monto debe coincidir,
-/// redondeado a pesos, con un número de las salidas de las herramientas del turno (o una cadena de solo dígitos) o con un monto
-/// que el comercial escribió como dinero. El estado de la conversación no respalda montos: no los tiene.</item>
+/// <item>Montos (<see cref="Montos"/>): con moneda (<c>$</c>, <c>COP</c>, <c>USD</c>, <c>US$</c>, <c>EUR</c>, <c>€</c>, pesos,
+/// dólares, euros), con sufijo de millones (<c>millones</c>, <c>mill</c>, <c>M</c>, <c>MM</c>), de miles de millones (<c>mil
+/// millones</c>) o de miles (<c>mil</c>, <c>k</c>), con separadores de miles (punto, coma, apóstrofo o espacio normal, duro o fino)
+/// de 1.000.000 o más, de 1.000 o más en la ventana de 40 caracteres tras "precio", "costo", "cuesta", "utilidad", "tarifa", "valor",
+/// "vale", "total", "flete", "descuento", "IVA", "TRM", "tasa", "tipo de cambio", "monto", "importe", "presupuesto", "cobr…" o
+/// "pag…" (todos los números de la ventana), y en letras ("tres millones", "dos mil quinientos pesos", HU-013.16). Los dígitos de
+/// otros sistemas (<c>３</c>) se leen como ASCII y un número ilegible es un monto sin respaldo. Se descartan fechas, años sueltos tras
+/// una palabra clave, números tras NIT/tel/teléfono/cel/celular/cédula/CC/folio/llamar, los seguidos de una unidad (kg, ton, km,
+/// metros, días, horas, vehículos, posiciones, viajes, %) y las cifras dentro de un código (<c>3S3</c>, <c>900.047.228-1</c>), de un
+/// radicado u orden o de una fecha con puntos. Con una palabra de dinero justo antes ("precio 950") cualquier cifra es monto. Todo
+/// se lee sobre <see cref="Normalizar"/> (dígitos Unicode, separadores de ancho completo y números partidos por espacios o saltos de
+/// línea). Desde HU-013.16 (#126) <b>ninguna salida de herramienta respalda un monto</b> (no le entregan montos al modelo): un monto
+/// solo pasa si su valor es EXACTAMENTE el de uno que el comercial escribió como dinero, si está en letras y el comercial escribió el
+/// mismo texto, o si no lleva marca de dinero y es parte de un texto completo de las salidas que el modelo repite ("3M Colombia").
+/// El estado de la conversación no respalda montos: no los tiene.</item>
 /// <item>Folios: todo <c>PCN-…</c> de <c>texto</c> debe aparecer en el estado, en las salidas de las herramientas o en los mensajes
 /// del comercial.</item>
 /// </list>
@@ -487,33 +495,74 @@ public static partial class clsReglasRespuestaAgente
 
     private static void ValidarRespaldo(string texto, clsContextoValidacionRespuesta contexto, List<clsFalloValidacion> fallos)
     {
-        var (numeros, cadenas) = Respaldos(contexto);
+        var respaldos = Respaldos(contexto);
 
         foreach (Match folio in ExpresionFolio().Matches(texto))
         {
-            if (!cadenas.Any(c => c.Contains(folio.Value, StringComparison.OrdinalIgnoreCase)))
+            if (!respaldos.Cadenas.Any(c => c.Contains(folio.Value, StringComparison.OrdinalIgnoreCase)))
             {
                 fallos.Add(new(FolioNoRespaldado,
                     $"El folio '{folio.Value}' no aparece en las salidas de las herramientas ni en el estado; el folio lo genera el servidor, no lo inventes."));
             }
         }
 
+        var normalizado = Normalizar(texto);
         foreach (var monto in Montos(texto))
         {
-            if (!monto.Candidatos.Any(c => numeros.Any(n => Coinciden(c, n))))
+            if (!Respaldado(monto, respaldos, normalizado))
             {
                 fallos.Add(new(MontoNoRespaldado,
-                    $"El monto '{monto.Fragmento}' no aparece en las salidas de las herramientas ni en el estado resuelto; usa solo los valores que calculó el servidor, tal cual."));
+                    $"El monto '{monto.Fragmento}' no lo escribió el comercial como dinero; tú no conoces montos: remite al resumen del sistema y no escribas valores en dinero."));
             }
         }
     }
 
-    /// <summary>Un monto de dinero encontrado en un texto: el fragmento tal cual y sus valores posibles (según los separadores).</summary>
-    public sealed record clsMonto(string Fragmento, IReadOnlyList<decimal> Candidatos);
+    /// <summary>
+    /// Un monto de dinero encontrado en un texto: el fragmento (del texto normalizado), sus valores posibles según los separadores, su
+    /// posición en el texto normalizado y si lleva marca de dinero (moneda o palabra de dinero). Un monto en letras ("tres millones") o
+    /// un número que no se puede leer no tiene candidatos.
+    /// </summary>
+    public sealed record clsMonto(string Fragmento, IReadOnlyList<decimal> Candidatos)
+    {
+        /// <summary>Posición del fragmento en <see cref="Normalizar"/> del texto.</summary>
+        public int Inicio { get; init; }
+
+        /// <summary>¿Lleva moneda o palabra de dinero? Entonces solo lo respalda un monto que el comercial escribió como dinero.</summary>
+        public bool ConMarca { get; init; }
+    }
 
     /// <summary>
-    /// Montos de dinero de un texto (reglas en el resumen de la clase). Los folios <c>PCN-…</c> se quitan antes: sus dígitos no son
-    /// montos. Se usa para el texto del modelo y para los mensajes del comercial (solo lo que él escribió como dinero respalda).
+    /// Texto normalizado para leer cifras (HU-013.16, #126): dígitos Unicode a ASCII, separadores de ancho completo y árabes a punto o
+    /// coma, y sin los espacios ni saltos de línea que parten un número (<c>$ 1 . 400 . 000</c>, <c>3⏎400⏎000</c>,
+    /// <c>3 400 000</c>). Los folios <c>PCN-…</c> se cubren con espacios del mismo largo (sus dígitos no son montos).
+    /// </summary>
+    public static string Normalizar(string? texto)
+    {
+        if (string.IsNullOrEmpty(texto))
+        {
+            return string.Empty;
+        }
+
+        var caracteres = new System.Text.StringBuilder(texto.Length);
+        foreach (var caracter in texto)
+        {
+            caracteres.Append(caracter switch
+            {
+                _ when char.IsDigit(caracter) && caracter is < '0' or > '9' => (char)('0' + (int)char.GetNumericValue(caracter)),
+                '，' or '٫' or '،' => ',',
+                '．' or '٬' => '.',
+                _ => caracter,
+            });
+        }
+
+        var unido = ExpresionEspacioDeMiles().Replace(ExpresionEspacioJuntoASeparador().Replace(caracteres.ToString(), string.Empty), ".");
+        return ExpresionFolio().Replace(unido, m => new string(' ', m.Length));
+    }
+
+    /// <summary>
+    /// Montos de dinero de un texto (reglas en el resumen de la clase), leídos sobre <see cref="Normalizar"/>. Se usa para el texto del
+    /// modelo, para los mensajes del comercial (solo lo que él escribió como dinero respalda) y en los textos que redacta la IA para el
+    /// PDF (<c>clsReglasTextosCotizacion</c>).
     /// </summary>
     public static IReadOnlyList<clsMonto> Montos(string? texto)
     {
@@ -523,56 +572,86 @@ public static partial class clsReglasRespuestaAgente
             return montos;
         }
 
-        var limpio = ExpresionFolio().Replace(texto, " ");
+        var limpio = Normalizar(texto);
         foreach (Match coincidencia in ExpresionNumero().Matches(limpio))
         {
-            var numero = coincidencia.Groups["n"].Value;
-            var inicio = coincidencia.Index;
-            var finNumero = inicio + numero.Length;
-            var fin = inicio + coincidencia.Length;
-            var previo = inicio > 0 ? limpio[inicio - 1] : ' ';
-            var siguiente = finNumero < limpio.Length ? limpio[finNumero] : ' ';
-            if (previo is '/' or '-' || siguiente is '/')
+            if (Monto(limpio, coincidencia) is { } monto)
             {
-                continue; // fechas (25/09/2026) y sufijos de códigos (900.047.228-1)
+                montos.Add(monto);
             }
+        }
 
-            var antes = Ventana(limpio, inicio);
-            var despues = limpio[fin..Math.Min(limpio.Length, fin + 20)];
-            if (ExpresionContextoNoMonetario().IsMatch(antes) || ExpresionUnidad().IsMatch(despues))
+        // HU-013.16 (#126): montos en letras. Con unidad ("tres millones", "dos mil quinientos pesos") siempre; sin unidad
+        // ("doscientos mil") solo si llevan "mil" y van tras una palabra de dinero ("el flete queda en doscientos mil").
+        foreach (Match enLetras in ExpresionMontoEnLetras().Matches(limpio))
+        {
+            var conUnidad = enLetras.Groups["u"].Success;
+            if (conUnidad || (ExpresionMilEnLetras().IsMatch(enLetras.Value) && ExpresionPalabraDinero().IsMatch(Ventana(limpio, enLetras.Index))))
             {
-                continue;
-            }
-
-            var monedaAntes = ExpresionMonedaAntes().Match(antes);
-            var conMoneda = monedaAntes.Success || ExpresionMonedaDespues().IsMatch(despues);
-            if (char.IsLetter(previo) && !conMoneda)
-            {
-                continue; // parte de un código (v2, A1...)
-            }
-
-            var millones = coincidencia.Groups["m"].Success;
-            var candidatos = clsNumerosDelMensaje.CandidatosDe(numero).Select(c => millones ? c * 1_000_000m : c).Distinct().ToList();
-            if (candidatos.Count == 0)
-            {
-                continue;
-            }
-
-            // Sin separadores y con 9 cifras o más, sin moneda: un NIT o un teléfono, no un precio.
-            var identificador = numero.All(char.IsDigit) && numero.Length >= 9;
-            var esMonto = conMoneda
-                || millones
-                || (!identificador && ExpresionMillonesAgrupados().IsMatch(numero))
-                || (!identificador && !EsAnio(numero) && candidatos.Any(c => c >= 1000m) && ExpresionPalabraDinero().IsMatch(antes));
-            if (esMonto)
-            {
-                var desde = monedaAntes.Success ? inicio - monedaAntes.Length : inicio;
-                montos.Add(new clsMonto(limpio[desde..fin].Trim(), candidatos));
+                montos.Add(new clsMonto(enLetras.Value.Trim(), []) { Inicio = enLetras.Index, ConMarca = true });
             }
         }
 
         return montos;
     }
+
+    /// <summary>El monto de una coincidencia de <see cref="ExpresionNumero"/>, o null si el número no es dinero.</summary>
+    private static clsMonto? Monto(string limpio, Match coincidencia)
+    {
+        var numero = coincidencia.Groups["n"].Value;
+        var inicio = coincidencia.Index;
+        var finNumero = inicio + numero.Length;
+        var fin = inicio + coincidencia.Length;
+        var previo = inicio > 0 ? limpio[inicio - 1] : ' ';
+        var anterior = inicio > 1 ? limpio[inicio - 2] : ' ';
+        var siguiente = finNumero < limpio.Length ? limpio[finNumero] : ' ';
+
+        // Fechas (25/09/2026, 08.10.2026) y sufijos de códigos (900.047.228-1, ABC-12). Un signo menos suelto ("de -150.000") sí se revisa.
+        if (previo == '/' || siguiente == '/' || (previo == '-' && char.IsLetterOrDigit(anterior)) || ExpresionFechaConPuntos().IsMatch(numero))
+        {
+            return null;
+        }
+
+        var antes = Ventana(limpio, inicio);
+        var despues = limpio[fin..Math.Min(limpio.Length, fin + 20)];
+        if (ExpresionContextoNoMonetario().IsMatch(antes) || ExpresionUnidad().IsMatch(despues))
+        {
+            return null;
+        }
+
+        var monedaAntes = ExpresionMonedaAntes().Match(antes);
+        var conMoneda = monedaAntes.Success || ExpresionMonedaDespues().IsMatch(despues);
+        var multiplicador = Multiplicador(coincidencia);
+        if (!conMoneda && (char.IsLetter(previo) || (multiplicador == 1m && char.IsLetter(siguiente))))
+        {
+            return null; // parte de un código (v2, A1, 3S3, 2S2...)
+        }
+
+        var candidatos = clsNumerosDelMensaje.CandidatosDe(numero).Select(c => c * multiplicador).Distinct().ToList();
+
+        // Sin separadores y con 9 cifras o más, sin moneda: un NIT o un teléfono, no un precio.
+        var identificador = numero.All(char.IsAsciiDigit) && numero.Length >= 9;
+        var palabraJusto = ExpresionPalabraDineroJusto().IsMatch(antes);
+        var palabraVentana = !identificador && !EsAnio(numero) && (candidatos.Count == 0 || candidatos.Any(c => c >= 1000m))
+            && ExpresionPalabraDinero().IsMatch(antes);
+        var conMarca = conMoneda || (!identificador && !EsAnio(numero) && palabraJusto) || palabraVentana;
+        var esMonto = conMarca || multiplicador > 1m || (!identificador && ExpresionMillonesAgrupados().IsMatch(numero));
+        if (!esMonto)
+        {
+            return null;
+        }
+
+        // Un número que no se puede leer queda sin candidatos: nunca tiene respaldo numérico.
+        var desde = monedaAntes.Success ? inicio - monedaAntes.Length : inicio;
+        return new clsMonto(limpio[desde..fin].Trim(), candidatos) { Inicio = desde, ConMarca = conMarca };
+    }
+
+    /// <summary>Millones (<c>millones</c>, <c>M</c>, <c>MM</c>), miles de millones (<c>mil millones</c>) o miles (<c>mil</c>, <c>k</c>).</summary>
+    private static decimal Multiplicador(Match coincidencia) =>
+        coincidencia.Groups["mm"].Success ? 1_000_000_000m
+        : coincidencia.Groups["m"].Success ? 1_000_000m
+        : coincidencia.Groups["k"].Success ? 1_000m
+        : 1m;
 
     /// <summary>Los 40 caracteres antes del número, sin pasar del inicio de la frase (<c>. </c>, <c>;</c>, <c>?</c>, <c>!</c>, salto).</summary>
     private static string Ventana(string texto, int posicion)
@@ -584,13 +663,75 @@ public static partial class clsReglasRespuestaAgente
     }
 
     /// <summary>
-    /// Números y textos que respaldan un monto o un folio: salidas de herramientas (y sus cadenas de solo dígitos), el folio del
-    /// estado y los montos que el comercial escribió como dinero.
+    /// ¿Algo respalda el monto? (HU-013.16, #126). Las herramientas del asistente nunca le entregan montos al modelo, así que ningún
+    /// campo de sus salidas respalda dinero (antes, <c>"version": 1</c> o <c>"cantidad": 2</c> dejaban pasar "$1" o "USD 2"):
+    /// <list type="bullet">
+    /// <item>Un número respalda solo si uno de sus valores posibles es <b>exactamente</b> (sin redondear) el de un monto que el
+    /// comercial escribió como dinero (moneda, sufijo, palabra de dinero o millones agrupados), normalizado igual.</item>
+    /// <item>Un monto en letras, si el comercial escribió ese mismo texto.</item>
+    /// <item>Un número SIN marca de dinero ("3M") pasa si forma parte de un texto completo de las salidas que el modelo repite tal
+    /// cual ("3M Colombia"). Con marca ("el precio es 3M") nunca.</item>
+    /// </list>
     /// </summary>
-    private static (HashSet<decimal> Numeros, List<string> Cadenas) Respaldos(clsContextoValidacionRespuesta contexto)
+    private static bool Respaldado(clsMonto monto, clsRespaldos respaldos, string normalizado)
     {
-        var numeros = new HashSet<decimal>();
+        if (monto.Candidatos.Any(c => respaldos.MontosDelComercial.Any(n => n == c)))
+        {
+            return true;
+        }
+
+        if (monto.Candidatos.Count == 0 && !monto.Fragmento.Any(char.IsDigit))
+        {
+            return EstaLiteral(monto.Fragmento, respaldos.MensajesDelComercial);
+        }
+
+        return !monto.ConMarca && DentroDeUnTextoDeHerramienta(monto, respaldos.TextosHerramientas, normalizado);
+    }
+
+    /// <summary>¿El fragmento aparece como palabra completa (sin distinguir mayúsculas) en alguno de los textos?</summary>
+    private static bool EstaLiteral(string fragmento, IReadOnlyList<string> textos)
+    {
+        var patron = $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(fragmento)}(?![\p{{L}}\p{{N}}])";
+        return textos.Any(t => Regex.IsMatch(t, patron, RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)));
+    }
+
+    /// <summary>¿El monto está dentro de una aparición, en el texto del modelo, de un texto completo de las salidas que lo contiene?</summary>
+    private static bool DentroDeUnTextoDeHerramienta(clsMonto monto, IReadOnlyList<string> textosHerramientas, string normalizado)
+    {
+        var finMonto = monto.Inicio + monto.Fragmento.Length;
+        foreach (var texto in textosHerramientas)
+        {
+            if (texto.Length <= monto.Fragmento.Length || texto.Length > 200 || !EstaLiteral(monto.Fragmento, [texto]))
+            {
+                continue;
+            }
+
+            for (var desde = normalizado.IndexOf(texto, StringComparison.OrdinalIgnoreCase); desde >= 0;
+                 desde = normalizado.IndexOf(texto, desde + 1, StringComparison.OrdinalIgnoreCase))
+            {
+                if (desde <= monto.Inicio && finMonto <= desde + texto.Length)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Lo que respalda un monto o un folio en la respuesta final.</summary>
+    /// <param name="MontosDelComercial">Valores de los montos que el comercial escribió como dinero (sin redondear).</param>
+    /// <param name="Cadenas">Textos que respaldan un folio: el folio del estado, las salidas de las herramientas y los mensajes del comercial.</param>
+    /// <param name="TextosHerramientas">Textos de las salidas de las herramientas, normalizados (nunca traen montos).</param>
+    /// <param name="MensajesDelComercial">Mensajes del comercial normalizados (respaldan un monto en letras que él escribió).</param>
+    private sealed record clsRespaldos(List<decimal> MontosDelComercial, List<string> Cadenas, List<string> TextosHerramientas, List<string> MensajesDelComercial);
+
+    /// <summary>Respaldos del turno: montos que el comercial escribió como dinero, textos de las salidas y el folio del estado.</summary>
+    private static clsRespaldos Respaldos(clsContextoValidacionRespuesta contexto)
+    {
+        var montos = new List<decimal>();
         var cadenas = new List<string>();
+        var textosHerramientas = new List<string>();
         var estado = contexto.Estado;
         if (!string.IsNullOrWhiteSpace(estado.FolioEnProgreso))
         {
@@ -600,64 +741,48 @@ public static partial class clsReglasRespuestaAgente
         foreach (var salida in contexto.Salidas)
         {
             var modelo = salida.ParaModelo();
-            Recolectar(JsonSerializer.SerializeToElement(modelo, modelo.GetType(), clsJsonAplicacion.SnakeCase), numeros, cadenas);
+            Recolectar(JsonSerializer.SerializeToElement(modelo, modelo.GetType(), clsJsonAplicacion.SnakeCase), textosHerramientas);
         }
 
+        cadenas.AddRange(textosHerramientas);
+        var mensajes = new List<string>();
         foreach (var mensaje in contexto.MensajesDelComercial)
         {
             foreach (var monto in Montos(mensaje))
             {
-                numeros.UnionWith(monto.Candidatos);
+                montos.AddRange(monto.Candidatos);
             }
 
             cadenas.Add(mensaje);
+            mensajes.Add(Normalizar(mensaje));
         }
 
-        return (numeros, cadenas);
+        return new clsRespaldos(montos, cadenas, textosHerramientas.Select(Normalizar).ToList(), mensajes);
     }
 
-    private static void AgregarDigitos(string? texto, HashSet<decimal> numeros)
-    {
-        if (!string.IsNullOrWhiteSpace(texto) && texto.Length <= 28 && texto.All(char.IsDigit)
-            && decimal.TryParse(texto, NumberStyles.None, CultureInfo.InvariantCulture, out var valor))
-        {
-            numeros.Add(valor);
-        }
-    }
-
-    private static void Recolectar(JsonElement elemento, HashSet<decimal> numeros, List<string> cadenas)
+    private static void Recolectar(JsonElement elemento, List<string> cadenas)
     {
         switch (elemento.ValueKind)
         {
             case JsonValueKind.Object:
                 foreach (var propiedad in elemento.EnumerateObject())
                 {
-                    Recolectar(propiedad.Value, numeros, cadenas);
+                    Recolectar(propiedad.Value, cadenas);
                 }
 
                 break;
             case JsonValueKind.Array:
                 foreach (var item in elemento.EnumerateArray())
                 {
-                    Recolectar(item, numeros, cadenas);
+                    Recolectar(item, cadenas);
                 }
 
                 break;
-            case JsonValueKind.Number when elemento.TryGetDecimal(out var numero):
-                numeros.Add(numero);
-                break;
             case JsonValueKind.String:
-                var cadena = elemento.GetString()!;
-                cadenas.Add(cadena);
-                AgregarDigitos(cadena, numeros);
+                cadenas.Add(elemento.GetString()!);
                 break;
         }
     }
-
-    /// <summary>Mismo valor redondeado a pesos (el LLM puede omitir centavos, nunca cambiar el valor).</summary>
-    private static bool Coinciden(decimal escrito, decimal respaldo) =>
-        Math.Round(escrito, 2, MidpointRounding.ToEven) == Math.Round(respaldo, 2, MidpointRounding.ToEven)
-        || (escrito == decimal.Truncate(escrito) && escrito == Math.Round(respaldo, 0, MidpointRounding.ToEven));
 
     private static bool EsAnio(string numero) =>
         numero.Length == 4 && int.TryParse(numero, NumberStyles.None, CultureInfo.InvariantCulture, out var anio) && anio is >= 2000 and <= 2100;
@@ -721,27 +846,55 @@ public static partial class clsReglasRespuestaAgente
     [GeneratedRegex(@"(?<![0-9A-Za-z-])PCN-[0-9A-Za-z]+(?:-[0-9A-Za-z]+)*", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionFolio();
 
-    // Un número (con separadores de miles o decimales) y, opcional, el sufijo de millones: millones/millón/mill sin distinguir
-    // mayúsculas, M/MM solo en mayúscula (una "m" suelta puede ser metros).
-    [GeneratedRegex(@"(?<!\d)(?<n>\d(?:[\d.,'’]*\d)?)(?:\s?(?<m>(?i:millones|millón|millon|mill)|MM|M)(?![A-Za-zÀ-ÿ]))?", RegexOptions.CultureInvariant, 1000)]
+    // Un número (con separadores de miles o decimales; miles también con espacio normal, duro o fino: "3 109 756", HU-013.16) y,
+    // opcional, el sufijo: "mil millones" (mm); millones/millón/mill sin distinguir mayúsculas o M/MM solo en mayúscula (m; una "m"
+    // suelta puede ser metros); o miles (k): "mil" sin distinguir mayúsculas, k o K.
+    [GeneratedRegex(@"(?<!\d)(?<n>\d{1,3}(?:[    ]\d{3}(?!\d))+(?:[.,]\d{1,2}(?!\d))?|\d(?:[\d.,'’]*\d)?)(?:\s?(?:(?<mm>(?i:mil\s+millones))|(?<m>(?i:millones|millón|millon|mill)|MM|M)|(?<k>(?i:mil)|k|K))(?![A-Za-zÀ-ÿ]))?", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionNumero();
 
-    [GeneratedRegex(@"(?:\$|(?<![A-Za-z])(?:COP|USD|US\$))\s?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    // Montos en letras (HU-013.16): números escritos con palabras seguidos de millón/millones o de una moneda ("tres millones",
+    // "dos mil quinientos pesos", "medio millón de dólares"). "mil" sin moneda no basta: "mil gracias" no es dinero. Tras una cifra
+    // ("3 mil millones") no se cuenta: ese monto ya lo lee ExpresionNumero con su sufijo.
+    [GeneratedRegex(@"(?<!\p{L})(?<!\p{N}\s*)(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\p{L}+|veinte|veinti\p{L}+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|medio)(?:\s+(?:y\s+)?(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieci\p{L}+|veinte|veinti\p{L}+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscient[oa]s|trescient[oa]s|cuatrocient[oa]s|quinient[oa]s|seiscient[oa]s|setecient[oa]s|ochocient[oa]s|novecient[oa]s|mil|medio))*(?:\s+(?:de\s+)?(?<u>mill[oó]n(?:es)?|pesos|d[oó]lares|euros|USD|COP))?(?!\p{L})", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionMontoEnLetras();
+
+    [GeneratedRegex(@"(?:\$|€|(?<![A-Za-z])(?:COP|USD|US\$|EUR))\s?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionMonedaAntes();
 
-    [GeneratedRegex(@"\A\s?(?:de\s)?(?:COP|USD|pesos|d[oó]lares)(?![A-Za-z])", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\A\s?(?:de\s)?(?:COP|USD|EUR|€|pesos|d[oó]lares|euros)(?![A-Za-z])", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionMonedaDespues();
 
-    [GeneratedRegex(@"\A\d{1,3}(?:[.,'’]\d{3}){2,}(?:[.,]\d{1,2})?\z", RegexOptions.CultureInvariant, 1000)]
+    [GeneratedRegex(@"\A\d{1,3}(?:[.,'’    ]\d{3}){2,}(?:[.,]\d{1,2})?\z", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ExpresionMillonesAgrupados();
 
-    [GeneratedRegex(@"\b(?:precios?|costos?|utilidad(?:es)?|tarifas?|valor(?:es)?|total(?:es)?|fletes?|descuentos?|iva|trm|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\b(?:precios?|costos?|cuest\w*|utilidad(?:es)?|tarifas?|valor(?:es)?|vale|valdr\w*|total(?:es)?|fletes?|descuentos?|iva|trm|tasa|tipo de cambio|montos?|importes?|presupuestos?|cobr\w*|pag\w*)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionPalabraDinero();
 
-    [GeneratedRegex(@"\b(?:NIT|tel|tel[eé]fono|cel|celular|c[eé]dula|CC|folio|llam\w*|whatsapp|m[oó]vil)\b[^\d]{0,15}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    [GeneratedRegex(@"\b(?:NIT|tel|tel[eé]fono|cel|celular|c[eé]dula|CC|folio|llam\w*|whatsapp|m[oó]vil|radicados?|orden(?:es)?(?: de compra)?|pedidos?|factura|consecutivo|gu[ií]a|n[°º]|no\.)(?![\p{L}])[^\d]{0,15}\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionContextoNoMonetario();
 
-    [GeneratedRegex(@"\A\s?(?:%|(?:kg|kgs|kilos?|ton|tons|toneladas?|km|m2|m3|d[ií]as?|horas?|veh[ií]culos?|unidades)(?![A-Za-zÀ-ÿ]))", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    // HU-013.16 (#126): espacios o saltos de línea que parten un número ("$ 1 . 400 . 000", "3⏎400⏎000", "1⏎400.000"). Solo antes de
+    // un separador o de un grupo de tres dígitos, para no pegar cifras sueltas de una lista.
+    [GeneratedRegex(@"(?<=\d)\s+(?=[.,]\s*\d{3}(?!\d))|(?<=\d\s*[.,])\s+(?=\d{3}(?!\d))", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionEspacioJuntoASeparador();
+
+    // Un espacio (o salto) como separador de miles ("3 400 000") se vuelve punto: así cuenta como millones agrupados.
+    [GeneratedRegex(@"(?<=\d)\s+(?=\d{3}(?!\d))", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionEspacioDeMiles();
+
+    // Fecha con puntos o guiones (08.10.2026, 8-10-26): no es un monto aunque vaya tras "total".
+    [GeneratedRegex(@"\A\d{1,2}[.\-]\d{1,2}[.\-](?:\d{2}|\d{4})\z", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ExpresionFechaConPuntos();
+
+    // Palabra de dinero JUSTO antes del número ("precio 950", "el valor queda en 3,4"): cualquier cifra es un monto, aunque sea menor
+    // que 1.000. Entre la palabra y el número solo caben conectores cortos.
+    [GeneratedRegex(@"\b(?:precios?|costos?|cuest\w*|tarifas?|valor(?:es)?|vale|valdr\w*|total(?:es)?|fletes?|montos?|importes?|trm|cobr\w*|pag(?:o|os|a|an|ar|ue|ar[ií]a|ar[aá]))\b(?:\s+(?:es|de|del|en|el|la|final|total|unitario|nuevo|queda\w*|ser[ií]a|ser[aá]|sale|saldr\w*|unos?|aprox\w*|son|por))*\s*[:=]?\s*\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionPalabraDineroJusto();
+
+    [GeneratedRegex(@"(?<!\p{L})mil(?!\p{L})", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ExpresionMilEnLetras();
+
+    [GeneratedRegex(@"\A\s?(?:%|(?:kg|kgs|kilos?|kilogramos?|ton|tons|toneladas?|km|kil[oó]metros?|metros?|m2|m3|d[ií]as?|horas?|veh[ií]culos?|unidades|posiciones|viajes?|cargues?|descargues?|servicios?)(?![A-Za-zÀ-ÿ]))", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ExpresionUnidad();
 
     [GeneratedRegex(@"[;!?¿¡\n]|\.\s", RegexOptions.CultureInvariant, 1000)]

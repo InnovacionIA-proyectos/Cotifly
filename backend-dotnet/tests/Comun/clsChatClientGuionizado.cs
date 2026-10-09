@@ -50,6 +50,19 @@ public sealed class clsChatClientGuionizado : IChatClient
     /// </summary>
     public clsChatClientGuionizado Cerrar(string texto) => Responder(texto).ResponderFinal(texto);
 
+    /// <summary>
+    /// Cierra un turno que armó una propuesta: con <c>IA:PropuestaDirecta</c> (HU-013.16) el runner pasa directo a la llamada final, que
+    /// recibe esta respuesta estructurada de tipo <c>confirmacion_requerida</c>.
+    /// </summary>
+    public clsChatClientGuionizado Proponer(string texto) => ResponderFinal(texto, "confirmacion_requerida", true);
+
+    /// <summary>
+    /// Cierra el turno en la misma llamada del loop (HU-013.16, <c>IA:RespuestaFinalEnLoop</c>): la respuesta sin herramientas ya es
+    /// el JSON válido de la respuesta final, así que no hay llamada final aparte.
+    /// </summary>
+    public clsChatClientGuionizado CerrarEnLoop(string texto, string tipo = "conversacional", bool requiereConfirmacion = false) =>
+        ResponderFinal(texto, tipo, requiereConfirmacion);
+
     /// <summary>Respuesta de la llamada final con el JSON de <see cref="JsonFinal"/>.</summary>
     public clsChatClientGuionizado ResponderFinal(string texto, string tipo = "conversacional", bool requiereConfirmacion = false, params string[] acciones) =>
         Responder(JsonFinal(texto, tipo, requiereConfirmacion, acciones));

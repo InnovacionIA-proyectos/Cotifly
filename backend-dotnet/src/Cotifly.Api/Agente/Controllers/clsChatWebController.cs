@@ -86,13 +86,13 @@ public sealed partial class clsChatWebController(
 
             var turno = resultado.Valor;
             return turno.EsRespaldo && turno.AccionPropuesta is null
-                ? Ok(new clsRespuestaChatError(turno.Texto))
+                ? Ok(new clsRespuestaChatError(turno.Texto, clsTextosAgente.CodigoRespuestaNoEstructurada))
                 : Ok(clsRespuestaChat.DesdeAsistente(turno, clsTextosAgente.PropuestaSinTexto));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             logger.LogError(ex, "Fallo procesando el turno del asistente de la sesión {Sesion}.", hilo);
-            return Ok(new clsRespuestaChatError(clsTextosAgente.ParaFallo(ex)));
+            return Ok(new clsRespuestaChatError(clsTextosAgente.ParaFallo(ex), clsTextosAgente.CodigoDeFallo(ex)));
         }
     }
 

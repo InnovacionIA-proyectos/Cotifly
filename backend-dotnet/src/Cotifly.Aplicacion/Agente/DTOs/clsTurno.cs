@@ -14,7 +14,8 @@ public sealed record clsSolicitudTurnoFolio(string Mensaje, string SpaceId, stri
 /// <param name="Texto">Respuesta final para el comercial (redactada en la llamada final sin herramientas y validada).</param>
 /// <param name="Iteraciones">Llamadas al modelo del turno (incluida la llamada final).</param>
 /// <param name="HerramientasInvocadas">Herramientas ejecutadas, en orden (las inexistentes que pidió el modelo no cuentan).</param>
-/// <param name="DetenerPor">Motivo de fin del loop que informó el proveedor (<c>stop</c>, <c>length</c>...).</param>
+/// <param name="DetenerPor">Motivo de fin del loop que informó el proveedor (<c>stop</c>, <c>length</c>...), o <c>propuesta</c> si una ronda
+/// de herramientas armó una propuesta y el turno pasó directo a la respuesta final (HU-013.16).</param>
 /// <param name="Salidas">Resultado de cada herramienta pedida, en orden (incluye las rechazadas y las inexistentes).</param>
 public sealed record clsResultadoTurno(
     string Texto,
@@ -43,6 +44,12 @@ public sealed record clsResultadoTurno(
     /// Acción que el asistente por folio PROPUSO en el turno (HU-013.6, #102), armada por el servidor, o <c>null</c>.
     /// </summary>
     public clsAccionPropuesta? AccionPropuesta { get; init; }
+
+    /// <summary>
+    /// HU-013.16 (#126): de dónde salió la respuesta final: <c>loop</c> (la respuesta sin herramientas ya era válida),
+    /// <c>llamada_final</c> (la llamada aparte del validador) o <c>null</c> en un turno que no llegó a cerrarse.
+    /// </summary>
+    public string? Cierre { get; init; }
 }
 
 /// <summary>

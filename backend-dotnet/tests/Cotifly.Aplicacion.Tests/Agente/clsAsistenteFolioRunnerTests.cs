@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Cotifly.Aplicacion.Agente.DTOs;
 using Cotifly.Aplicacion.Agente.Herramientas;
+using Cotifly.Aplicacion.Agente.Interfaces;
 using Cotifly.Aplicacion.Agente.Services;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -102,10 +103,16 @@ public sealed partial class clsAsistenteFolioRunnerTests
         var cotizacion = Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
         _modelo.Llamar("consultar_cotizacion", new { })
             .Llamar("proponer_ajuste_margen", new { margen = 0.18 })
-            .Responder("Te propongo subir el margen al 18 %.")
-            .ResponderFinal("Te propongo subir el margen al 18 %. Revisa el resumen y confírmalo con el botón.", "confirmacion_requerida", true);
+            .Proponer("Te propongo subir el margen al 18 %. Revisa el resumen y confírmalo con el botón.");
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Súbele el margen al 18 %"), Ct);
+
+        // HU-013.16: tras la propuesta el turno va directo a la llamada final (sin herramientas): 3 llamadas, no 4.
+        _modelo.Llamadas.Should().HaveCount(3);
+        _modelo.Llamadas[2].Herramientas.Should().BeEmpty();
+        resultado.Valor.DetenerPor.Should().Be(clsAsistenteFolioRunner.CierrePropuesta);
+        resultado.Valor.Cierre.Should().Be(clsAsistenteFolioRunner.CierreLlamadaFinal);
+        resultado.Valor.Respuesta.Tipo.Should().Be(TipoRespuestaAgente.ConfirmacionRequerida);
 
         var accion = resultado.Valor.AccionPropuesta!;
         accion.Tipo.Should().Be("ajustar_margen");
@@ -144,7 +151,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     {
         Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
         _modelo.Llamar("proponer_ajuste_margen", new { margen = 0.12, justificacion = "El cliente tiene una oferta más baja" })
-            .Cerrar("Te propongo bajar el margen al 12 %.");
+            .Proponer("Te propongo bajar el margen al 12 %.");
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Bájalo al 12 %, tiene otra oferta"), Ct);
 
@@ -160,7 +167,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     {
         var cotizacion = Registrar(Vencida());
         _modelo.Llamar("proponer_re_solicitud", new { motivo = "El cliente cambió el peso", pesoKg = 28000 })
-            .Cerrar("Te propongo volver a pedir el flete con 28 toneladas.");
+            .Proponer("Te propongo volver a pedir el flete con 28 toneladas.");
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Ahora son 28 toneladas, vuelve a pedirlo"), Ct);
 
@@ -199,7 +206,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     public async Task LaReSolicitudSinCambiosEnElMismoFolioCitaElMotivo()
     {
         Registrar(Vencida());
-        _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Cerrar("Te propongo volver a pedir el flete.");
+        _modelo.Llamar("proponer_re_solicitud", new { motivo = "Nexo no respondió a tiempo" }).Proponer("Te propongo volver a pedir el flete.");
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Vuelve a pedirlo"), Ct);
 
@@ -327,7 +334,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
         _conexos.BuscarAsync(_ana.Id, "almacenamiento", null, 1, clsHerramientasAsistenteFolio.MaximoServicios, Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPaginaServiciosConexos>.Exito(
                 new clsPaginaServiciosConexos(1, 1, 10, [new clsServicioConexoCatalogo(IdServicio, "ALM-01", "Almacenamiento", "logistico", "Día", null, null, null, null, null, null)])));
-        _modelo.Llamar("buscar_servicio_conexo", new { texto = "almacenamiento", cantidad = 2 }).Cerrar("Te propongo agregar dos días de almacenamiento.");
+        _modelo.Llamar("buscar_servicio_conexo", new { texto = "almacenamiento", cantidad = 2 }).Proponer("Te propongo agregar dos días de almacenamiento.");
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Agrégale dos días de almacenamiento"), Ct);
 
@@ -443,14 +450,14 @@ public sealed partial class clsAsistenteFolioRunnerTests
     {
         Registrar(clsAjusteMargenCosteoServiceTests.Costeada(_ana.Id, Folio));
         _modelo.Llamar("proponer_ajuste_margen", new { margen = 0.18 })
-            .Responder("listo")
-            .ResponderFinal("El precio queda en $3.200.000.", "confirmacion_requerida", true)
             .ResponderFinal("El precio queda en $3.200.000.", "confirmacion_requerida", true);
 
         var resultado = await Runner().EjecutarTurnoAsync(Solicitud("Súbelo al 18 %"), Ct);
 
         resultado.Valor.EsRespaldo.Should().BeTrue("un monto que nada respalda nunca llega al comercial");
         resultado.Valor.AccionPropuesta.Should().NotBeNull();
+        _modelo.Llamadas.Should().HaveCount(2, "con propuesta no hay reintento: su respaldo es el texto fijo del servidor (HU-013.16)");
+        resultado.Valor.ReintentosRespuesta.Should().Be(0);
         clsRespuestaChat.DesdeAsistente(resultado.Valor, clsTextosAgente.PropuestaSinTexto).Texto.Should().Be(clsTextosAgente.PropuestaSinTexto);
     }
 
@@ -486,7 +493,7 @@ public sealed partial class clsAsistenteFolioRunnerTests
     private void GuionCompleto() =>
         _modelo.Llamar("consultar_cotizacion", new { })
             .Llamar("proponer_ajuste_margen", new { margen = 0.18 })
-            .Cerrar("Te propongo subir el margen al 18 %. Revisa el resumen y confírmalo.");
+            .Proponer("Te propongo subir el margen al 18 %. Revisa el resumen y confírmalo.");
 
     /// <summary>
     /// Ningún mensaje que recibió el modelo (sistema, historial, llamadas, resultados de herramientas, instrucción final) contiene los
@@ -569,17 +576,22 @@ public sealed partial class clsAsistenteFolioRunnerTests
 
     private clsSolicitudTurnoFolio Solicitud(string mensaje) => new(mensaje, Espacio, _hilo, _ana.Id, Folio);
 
-    private clsAsistenteFolioRunner Runner()
+    private clsAsistenteFolioRunner Runner(
+        clsOpcionesAgente? opcionesAgente = null,
+        IClsCandadoSesion? candado = null,
+        IChatClient? modelo = null,
+        clsOpcionesSesiones? opcionesSesiones = null,
+        Microsoft.Extensions.Logging.ILogger<clsAsistenteFolioRunner>? logger = null)
     {
         _contextoFolio = new clsContextoAsistenteFolio();
         var precios = new clsPrecioService(Substitute.For<IClsProveedorTrm>(), _calendario);
-        var opcionesAgente = new clsOpcionesAgente();
+        opcionesAgente ??= new clsOpcionesAgente();
         return new clsAsistenteFolioRunner(
-            _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
+            modelo ?? _modelo, _sesiones, _usuarios, _cotizaciones, _politicas, _unidad, _reloj, _calendario,
             new clsValidadorRespuestaAgente(Options.Create(opcionesAgente), NullLogger<clsValidadorRespuestaAgente>.Instance, new clsFabricaMedidoresPrueba(), _reloj),
-            _auditoria, new clsCandadoSesionFalso(), _contextoFolio,
+            _auditoria, candado ?? new clsCandadoSesionFalso(), _contextoFolio,
             new clsHerramientasAsistenteFolio(_contextoFolio, _cotizaciones, precios, _conexos, _reSolicitud),
-            Options.Create(opcionesAgente), Options.Create(new clsOpcionesSesiones()), NullLogger<clsAsistenteFolioRunner>.Instance);
+            Options.Create(opcionesAgente), Options.Create(opcionesSesiones ?? new clsOpcionesSesiones()), logger ?? NullLogger<clsAsistenteFolioRunner>.Instance);
     }
 
     [GeneratedRegex(@"(?<=\d)[.,](?=\d)", RegexOptions.CultureInvariant)]
