@@ -328,8 +328,15 @@ public sealed class clsServiciosConexosCosteoService(
             : ruta;
     }
 
-    /// <summary>Primer camión de la ruta: el que lleva los conexos en Nexo (decisión 3).</summary>
-    private static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta) => ruta.VehiculosOrdenados.FirstOrDefault();
+    /// <summary>
+    /// Primer camión VIGENTE de la ruta, en el orden estable: el que lleva los conexos en Nexo (decisión 3). Un camión descartado (también
+    /// el que perdió su línea porque la Mesa la borró, #134) no recibe conexos: van al siguiente.
+    /// </summary>
+    public static clsVehiculoLineaSolicitud? PrimerCamion(clsLineaSolicitud ruta)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        return ruta.VehiculosOrdenados.FirstOrDefault(v => v.EstadoCosteo != EstadoCosteo.Descartada);
+    }
 
     private async Task<(clsResultado<clsCosteoCotizacion> Resultado, int Agregados, bool PdfInvalidado)> AgregarAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, IReadOnlyList<clsConexoValidado> items, int versionEsperada, CancellationToken cancellationToken)
@@ -407,9 +414,11 @@ public sealed class clsServiciosConexosCosteoService(
                 new clsConexosPendientesNexo(cotizacion.Folio, ruta.Id, [.. actual.Valor.Conexos.Select(c => c.Id)]));
         }
 
-        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de LA ruta pedida (costo unitario de Nexo y cantidad) y
-        // esa ruta y la cabecera se recalculan con el margen de la ruta (HU-021.8).
-        var importados = ImportarConexos(cotizacion, ruta, NuevosConexos(actual.Valor, cotizacionNexo), cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
+        // HU-021: los conexos que Nexo agregó en esta petición quedan como filas de SU ruta (la del camión cuya línea los lleva, #134; si no
+        // se sabe, la ruta pedida, HU-021.8) con el costo unitario de Nexo y la cantidad, y esa ruta y la cabecera se recalculan con el
+        // margen de la ruta.
+        var importados = ImportarConexosPorRuta(
+            cotizacion, cotizacionNexo, NuevosConexos(actual.Valor, cotizacionNexo), ruta, cotizacion.CosteoListoAt ?? cotizacion.UpdatedAt);
         if (importados.EsFallo)
         {
             return (AgregadoEnNexo(importados.Error, true), 0, false);
@@ -457,6 +466,50 @@ public sealed class clsServiciosConexosCosteoService(
             return new clsCambioConexo(conexo.Id, conexo.Nombre ?? conexo.Categoria, precio, cantidad);
         }).ToList();
         return cotizacion.CambiarConexos(ruta.Orden, cambios, ahora);
+    }
+
+    /// <summary>
+    /// Ruta de Cotifly de un conexo de Nexo (#134): los conexos viajan pegados a la línea del primer camión de su ruta (decisión 3), así
+    /// que <c>cotizacionLineaId</c> → la línea de la cotización de Nexo → su <c>lineaSolicitudId</c> → el camión con ese
+    /// <c>lineaSolicitudNexoId</c> → su ruta. <c>null</c> si no se puede seguir la cadena (Nexo no trae la línea o el camión no está asociado).
+    /// </summary>
+    public static clsLineaSolicitud? RutaDelConexo(clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo, clsConexoNexo conexo)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cotizacionNexo);
+        ArgumentNullException.ThrowIfNull(conexo);
+        var lineaSolicitud = cotizacionNexo.Lineas
+            .FirstOrDefault(l => conexo.CotizacionLineaId is not null && string.Equals(l.Id, conexo.CotizacionLineaId, StringComparison.OrdinalIgnoreCase))
+            ?.LineaSolicitudId;
+        return lineaSolicitud is null
+            ? null
+            : cotizacion.Rutas.FirstOrDefault(r => r.Vehiculos.Any(v => string.Equals(v.LineaSolicitudNexoId, lineaSolicitud, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>
+    /// Importa <paramref name="conexos"/> de Nexo, cada uno a su ruta (<see cref="RutaDelConexo"/>) o, si no se puede saber, a
+    /// <paramref name="porDefecto"/>. Devuelve cuántos agregó o cambió, o el primer error del módulo de precio.
+    /// </summary>
+    public static clsResultado<int> ImportarConexosPorRuta(
+        clsCotizacionSolicitud cotizacion, clsCotizacionNexo cotizacionNexo, IEnumerable<clsConexoNexo> conexos, clsLineaSolicitud porDefecto, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(cotizacionNexo);
+        ArgumentNullException.ThrowIfNull(conexos);
+        ArgumentNullException.ThrowIfNull(porDefecto);
+        var total = 0;
+        foreach (var grupo in conexos.GroupBy(c => RutaDelConexo(cotizacion, cotizacionNexo, c) ?? porDefecto).OrderBy(g => g.Key.Orden))
+        {
+            var importados = ImportarConexos(cotizacion, grupo.Key, grupo, ahora);
+            if (importados.EsFallo)
+            {
+                return importados.Error;
+            }
+
+            total += importados.Valor;
+        }
+
+        return total;
     }
 
     /// <summary>

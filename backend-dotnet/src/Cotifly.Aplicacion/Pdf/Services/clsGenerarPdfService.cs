@@ -51,6 +51,13 @@ public sealed partial class clsGenerarPdfService(
             throw new ArgumentException("generar_pdf exige el comercial autenticado (usuarioId).", nameof(entrada));
         }
 
+        // HU-021.6: la cotización "del chat" (sin municipios) se salta la decisión 2; apagada por defecto (Pdf:PermitirCotizacionChat).
+        if (!opciones.Value.PermitirCotizacionChat)
+        {
+            return new clsErrorDominio(clsCodigosError.CotizacionChatRetirada,
+                "Crear cotizaciones desde el chat está retirado: créala con el formulario de costeo (POST /web/solicitudes-costeo).");
+        }
+
         var payload = entrada.Cotizacion;
         var folio = clsTextoSeguro.LimpiarLinea(entrada.Folio);
         var errorFolio = ValidarFolio(folio);

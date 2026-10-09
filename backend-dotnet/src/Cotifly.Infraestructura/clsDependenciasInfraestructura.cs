@@ -359,6 +359,17 @@ public static class clsDependenciasInfraestructura
                 ? sp.GetRequiredService<clsServiciosConexosNoDisponible>()
                 : new clsServiciosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()));
 
+        // Costo unitario de los conexos del catálogo para capturarlos con la ruta (HU-021.6, decisión 3): mismo cliente y misma identidad.
+        // Con caché en memoria de 5 minutos (clsAlmacenCostosConexos): el precio guardado es el costo de Nexo al capturar.
+        servicios.TryAddSingleton<clsAlmacenCostosConexos>();
+        servicios.TryAddScoped<Aplicacion.Costeo.Interfaces.IClsCostosConexosNexo>(sp =>
+            string.IsNullOrWhiteSpace(sp.GetRequiredService<IOptions<clsOpcionesNexo>>().Value.UrlBase)
+                ? new clsCostosConexosNoDisponible()
+                : new clsCostosConexosEnCache(
+                    new clsCostosConexosNexo(sp.GetRequiredService<clsCosteoNexo>()),
+                    sp.GetRequiredService<clsAlmacenCostosConexos>(),
+                    sp.GetRequiredService<Aplicacion.Comun.Interfaces.IClsReloj>()));
+
         // Licitaciones (HU-011, ADR-017): el análisis del Excel va a Nexo por el mismo cliente NexoCosteo (POST sin reintentos);
         // sin Nexo:UrlBase responde COSTEO_NEXO_NO_DISPONIBLE. La lectura del original es local (ClosedXML).
         servicios.TryAddScoped<Licitaciones.Services.clsAnalizadorExcelNoDisponible>();

@@ -143,6 +143,19 @@ public sealed class clsNexoFalso : HttpMessageHandler
             s.Estado = "EnCosteo";
         });
 
+    /// <summary>
+    /// Si tiene valor, <c>GET /api/solicitudes/{id}</c> devuelve las líneas barajadas con esta semilla (como Nexo, sin <c>OrderBy</c>);
+    /// sin valor, al revés del orden de captura (HU-021.7, #134).
+    /// </summary>
+    public int? SemillaOrdenLineas { get; set; }
+
+    /// <summary>
+    /// La Mesa de Costeo le pone vehículo y carrocería a la línea <paramref name="indice"/> (base 0) que llegó vacía (petición N3 a Nexo):
+    /// <c>GET /api/solicitudes/{id}</c> los devuelve en esa línea.
+    /// </summary>
+    public void AsignarVehiculo(string solicitudId, int indice, string tipoVehiculo, string? carroceria) =>
+        Con(solicitudId, s => s.Lineas[indice] = s.Lineas[indice] with { TipoVehiculo = tipoVehiculo, Carroceria = carroceria });
+
     /// <summary>Ids de las líneas de la solicitud en Nexo, en el orden de captura.</summary>
     public IReadOnlyList<string> LineasDe(string solicitudId)
     {
@@ -382,7 +395,10 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 l?["tipologia"]?.GetValue<string>(),
                 l?["peso"]?.GetValue<decimal>(),
                 l?["tipoVehiculo"]?.GetValue<string>(),
-                l?["carroceria"]?.GetValue<string>())));
+                l?["carroceria"]?.GetValue<string>())
+            {
+                ReferenciaRuta = l?["referenciaRuta"]?.GetValue<string>(),
+            }));
         }
 
         while (solicitud.Lineas.Count < numero)
@@ -460,6 +476,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 peso = s.Lineas[i].Peso,
                 tipoVehiculo = s.Lineas[i].TipoVehiculo,
                 carroceria = s.Lineas[i].Carroceria,
+                // N1 (#134): Nexo devolvería la referencia de la ruta de Cotifly si la recibió.
+                referenciaRuta = s.Lineas[i].ReferenciaRuta,
             }).ToArray(),
         });
     }
@@ -676,10 +694,26 @@ public sealed class clsNexoFalso : HttpMessageHandler
     private static HttpResponseMessage Error(HttpStatusCode estado, string codigo, string mensaje) =>
         Json(estado, new { code = codigo, message = mensaje, timestamp = DateTimeOffset.UtcNow });
 
-    /// <summary>Índices de las líneas en el orden en que las devuelve el falso: al revés del de captura.</summary>
-    private static IEnumerable<int> Indices(clsSolicitudFalsa s) => Enumerable.Range(0, s.LineaIds.Count).Reverse();
+    /// <summary>
+    /// Índices de las líneas en el orden en que las devuelve el falso: barajados con <see cref="SemillaOrdenLineas"/> o, sin semilla, al
+    /// revés del de captura.
+    /// </summary>
+    private IEnumerable<int> Indices(clsSolicitudFalsa s)
+    {
+        var indices = Enumerable.Range(0, s.LineaIds.Count).ToArray();
+        if (SemillaOrdenLineas is not { } semilla)
+        {
+            return Enumerable.Reverse(indices);
+        }
 
-    private sealed record clsLineaFalsa(string Origen, string Destino, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria);
+        new Random(semilla).Shuffle(indices);
+        return indices;
+    }
+
+    private sealed record clsLineaFalsa(string Origen, string Destino, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria)
+    {
+        public string? ReferenciaRuta { get; init; }
+    }
 
     private sealed class clsSolicitudFalsa(string id, int orden, IReadOnlyList<string> lineaIds)
     {

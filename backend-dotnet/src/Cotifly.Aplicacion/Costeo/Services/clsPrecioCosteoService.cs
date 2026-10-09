@@ -1,4 +1,6 @@
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
 
@@ -26,9 +28,14 @@ public interface IClsPrecioCosteoService
     bool AplicarPrecio(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora);
 }
 
-/// <summary>Implementación de <see cref="IClsPrecioCosteoService"/>.</summary>
-public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
+/// <summary>
+/// Implementación de <see cref="IClsPrecioCosteoService"/>. Deja en el log (warning) las líneas de Nexo sin dueño, los empates que no se
+/// resolvieron y los camiones cuya línea borró la Mesa (#134).
+/// </summary>
+public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logger = null) : IClsPrecioCosteoService
 {
+    private readonly ILogger _logger = logger ?? NullLogger<clsPrecioCosteoService>.Instance;
+
     public const string MotivoSinMargen =
         "Nexo ya costeó la solicitud, pero la cotización no tiene margen resuelto: no se calcula el precio. Reenvíala o revisa la línea de negocio.";
 
@@ -42,48 +49,87 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
 
     /// <summary>
     /// Asigna a cada camión sin id su línea de Nexo por CONTENIDO (<see cref="clsEmparejadorLineasNexo"/>; ADR-017 §3: Nexo no garantiza
-    /// el orden de <c>solicitud.lineas[]</c>). Con un camión en Cotifly y una línea en Nexo se asocian directamente, como en HU-005.5.
-    /// Devuelve cuántos camiones siguen sin asociar.
+    /// el orden de <c>solicitud.lineas[]</c>), con los empates de camiones idénticos de una ruta resueltos en el orden de envío (#134).
+    /// Con un camión en Cotifly y una línea en Nexo se asocian directamente, como en HU-005.5. Los camiones <c>descartada</c> no
+    /// participan (regla del núcleo, ADR-019). Devuelve cuántos camiones vigentes siguen sin asociar.
     /// </summary>
-    public static int AsociarCamionesNexo(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
+    public static int AsociarCamionesNexo(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto) => Asociar(cotizacion, foto).SinAsociar;
+
+    /// <summary><see cref="AsociarCamionesNexo"/> con el detalle del emparejamiento (<c>null</c> si no hizo falta el emparejador).</summary>
+    private static (int SinAsociar, clsEmparejamiento? Detalle) Asociar(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
-        var camiones = cotizacion.Vehiculos;
+
+        // En el orden en que viajaron a Nexo (ruta por ruta, camión por camión): es el orden estable de los empates.
+        var camiones = Vigentes(cotizacion);
         var pendientes = camiones.Where(c => c.LineaSolicitudNexoId is null).ToList();
         if (pendientes.Count == 0 || foto.LineasSolicitud.Count == 0)
         {
-            return pendientes.Count;
+            return (pendientes.Count, null);
         }
 
         if (camiones.Count == 1 && foto.LineasSolicitud.Count == 1)
         {
             cotizacion.AsignarLineaNexo(camiones[0].Id, foto.LineasSolicitud[0]);
-            return 0;
+            return (0, null);
         }
 
         var porCamion = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (Ruta: r, Camion: v))).ToDictionary(x => x.Camion.Id);
-        var asignados = camiones.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var asignados = cotizacion.Vehiculos.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
         var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c)).ToList();
-        foreach (var (camionId, nexoId) in clsEmparejadorLineasNexo.Emparejar(candidatos, detalle, asignados))
+        var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(candidatos, detalle, asignados);
+        foreach (var (camionId, nexoId) in emparejamiento.Pares)
         {
             cotizacion.AsignarLineaNexo(camionId, nexoId);
         }
 
-        return camiones.Count(c => c.LineaSolicitudNexoId is null);
+        return (camiones.Count(c => c.LineaSolicitudNexoId is null), emparejamiento);
+    }
+
+    /// <summary>
+    /// Camiones cuya línea borró la Mesa en Nexo (#134): tenían <c>lineaSolicitudNexoId</c> y esa línea ya no está en la solicitud. Pasan a
+    /// <c>descartada</c> (sin línea ni costos de Nexo): así no quedan para siempre en <c>pendiente_costeo</c>, no frenan el precio de su
+    /// ruta y los conexos van al siguiente camión. Solo con una foto que trae líneas y una solicitud no descartada. Devuelve esos camiones.
+    /// </summary>
+    public static IReadOnlyList<clsVehiculoLineaSolicitud> CamionesConLineaBorrada(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(foto);
+        if (foto.LineasSolicitud.Count == 0
+            || string.Equals(foto.EstadoSolicitud, clsCosteoConsultadoNexo.SolicitudDescartada, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var vigentes = foto.LineasSolicitud.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return [.. cotizacion.Vehiculos.Where(c => c.LineaSolicitudNexoId is { } id && !vigentes.Contains(id))];
     }
 
     public bool ActualizarCamiones(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
-        AsociarCamionesNexo(cotizacion, foto);
+        var borradas = false;
+        foreach (var camion in CamionesConLineaBorrada(cotizacion, foto))
+        {
+            _logger.LogWarning("La línea {Linea} de Nexo del camión {Camion} (cotización {Folio}) ya no está en la solicitud: el camión queda descartado.",
+                camion.LineaSolicitudNexoId, camion.Id, cotizacion.Folio);
+            borradas |= cotizacion.DescartarCamionSinLineaEnNexo(camion.Id);
+        }
+
+        var (_, emparejamiento) = Asociar(cotizacion, foto);
+        if (emparejamiento is not null)
+        {
+            Avisar(cotizacion, emparejamiento);
+        }
 
         // Con PDF el precio de la versión se conserva: los camiones solo actualizan su estado (ADR-015 §5). La raíz aplica la lectura,
-        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado).
+        // resume las rutas y recalcula los totales (ADR-019: nadie cambia los camiones por fuera del agregado). Un camión descartado no
+        // se lee (regla del núcleo): sigue descartado, sin línea de Nexo, y no cuenta en el estado ni en los totales de su ruta.
         var conPdf = cotizacion.PdfPath is not null;
-        var lecturas = cotizacion.Vehiculos.Select(camion =>
+        var lecturas = Vigentes(cotizacion).Select(camion =>
         {
             var estado = clsDerivacionEstadoCosteo.DerivarLinea(foto, camion.LineaSolicitudNexoId);
             if (conPdf)
@@ -105,14 +151,14 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
 
         // Un error del módulo de precio lo reporta AplicarPrecio (que vuelve a recalcular): aquí cuenta como cambio.
         var aplicado = cotizacion.AplicarFotoNexo(lecturas, ahora);
-        return aplicado.EsFallo || aplicado.Valor;
+        return borradas || aplicado.EsFallo || aplicado.Valor;
     }
 
     public bool AplicarPrecio(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(foto);
-        var camiones = cotizacion.Vehiculos;
+        var camiones = Vigentes(cotizacion);
         var varios = camiones.Count > 1;
         var sinAsociar = camiones.Count(c => c.LineaSolicitudNexoId is null);
         if (cotizacion.PdfPath is not null)
@@ -171,6 +217,33 @@ public sealed class clsPrecioCosteoService : IClsPrecioCosteoService
         foto.Cotizacion is not null
         && cotizacion.Vehiculos.Any(c => clsDerivacionEstadoCosteo.CostosCamion(foto, c.LineaSolicitudNexoId) is { } costos
                                          && (costos.Flete != c.CostoFlete || costos.Retorno != (c.CostoRetornoContenedor ?? 0m)));
+
+    /// <summary>Una línea de warning por cada línea de Nexo sin dueño y por cada empate sin resolver (#134).</summary>
+    private void Avisar(clsCotizacionSolicitud cotizacion, clsEmparejamiento emparejamiento)
+    {
+        foreach (var linea in emparejamiento.LineasSinDueno)
+        {
+            _logger.LogWarning("La línea {Linea} de la solicitud de Nexo de la cotización {Folio} quedó sin camión de Cotifly.", linea, cotizacion.Folio);
+        }
+
+        foreach (var empate in emparejamiento.EmpatesSinResolver)
+        {
+            _logger.LogWarning("Empate sin resolver en la cotización {Folio}: {Empate}. Quedan sin asociar para no cruzar costos entre rutas.",
+                cotizacion.Folio, empate);
+        }
+    }
+
+    /// <summary>
+    /// Camiones que lee el polling, en el orden de envío: todos menos los <c>descartada</c> (regla del núcleo, ADR-019), salvo que todos lo
+    /// estén (entonces se leen todos, como cuentan en la ruta).
+    /// </summary>
+    public static IReadOnlyList<clsVehiculoLineaSolicitud> Vigentes(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var todos = cotizacion.Vehiculos;
+        var vigentes = todos.Where(c => c.EstadoCosteo != EstadoCosteo.Descartada).ToList();
+        return vigentes.Count > 0 ? vigentes : todos;
+    }
 
     private static clsLineaSolicitudNexo? Detalle(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId) =>
         lineaSolicitudNexoId is null

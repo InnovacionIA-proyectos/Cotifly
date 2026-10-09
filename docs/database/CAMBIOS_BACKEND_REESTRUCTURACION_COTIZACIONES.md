@@ -439,6 +439,7 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 | DTO / endpoint | Cambio |
 |---|---|
 | `Costeo/DTOs/clsDtosCosteo.cs` 15-91 `clsSolicitudCosteoWebRequest` | Hoy es plano: una línea, un vehículo. Pasa a tener una lista de rutas. Cada ruta trae línea de negocio, municipios, condiciones, horas, valor del levante, mercancías (`idTipoMercancia`, nombre, medidas, cantidad, peso) y conexos. **Sin vehículo ni carrocería** |
+| HU-021.6 (#132, hecho) | `POST /web/solicitudes-costeo` recibe `rutas[]` (`RutaCapturaWeb`). El **formato plano anterior** (una ruta en la raíz) queda **obsoleto** (`deprecated` en `openapi.yaml`) y solo se acepta sin `rutas`; **se retira en #138**. Con `rutas`, un campo plano en la raíz es 400 con `detalle.errores` |
 | `clsDtosCosteo.cs` 96-103 (posición) | `descripcion` → `nombreMercancia`, y se agrega `idTipoMercancia` |
 | `clsDtosCosteo.cs` 107, 113 (conexos, margen) | La petición dice a qué ruta aplica (`lineaSolicitudId`) |
 | `clsDtosCosteo.cs` 146-225 `clsDatosCargaWebRequest` | La re-solicitud dice qué ruta cambia |

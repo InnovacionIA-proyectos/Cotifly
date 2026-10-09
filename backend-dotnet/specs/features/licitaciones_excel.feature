@@ -73,20 +73,19 @@ Característica: Licitaciones desde Excel
   # contenedor y aprovisionamiento (G3), ids de municipio resueltos sin adivinar (G6) y horas por línea (G5).
   Escenario: Las filas con texto libre, reglas de contenedor rotas y municipios sin resolver se reportan todas juntas
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
-      | origen       | destino      | tipo_vehiculo | tipologia  | clase_viaje  | clase_contenedor | valor_aprovisionamiento |
-      | BUENAVENTURA | BOGOTA, D.C. | 3S3           | CargaSeca  |              |                  |                         |
-      | CALI         | CARTAGENA    | 3s3           | CargaSeca  |              |                  |                         |
-      | CUCUTA       | BOGOTA, D.C. | Tractomula    | carga seca |              |                  |                         |
-      | BUENAVENTURA | CALI         | 3S3           | Contenedor | Contenedor   |                  |                         |
-      | CALI         | CARTAGENA    | 3S3           | CargaSeca  | Carga Suelta | CNT40.HC         | 150000                  |
-      | La Unión     | CALI         | 3S3           | CargaSeca  |              |                  |                         |
-      | CALI         | Macondo      | 3S3           | CargaSeca  |              |                  |                         |
+      | origen       | destino      | tipologia  | clase_viaje  | clase_contenedor | valor_aprovisionamiento |
+      | BUENAVENTURA | BOGOTA, D.C. | CargaSeca  |              |                  |                         |
+      | CALI         | CARTAGENA    | CargaSeca  | Barco        |                  |                         |
+      | CUCUTA       | BOGOTA, D.C. | carga seca |              |                  |                         |
+      | BUENAVENTURA | CALI         | Contenedor | Contenedor   |                  |                         |
+      | CALI         | CARTAGENA    | CargaSeca  | Carga Suelta | CNT40.HC         | 150000                  |
+      | La Unión     | CALI         | CargaSeca  |              |                  |                         |
+      | CALI         | Macondo      | CargaSeca  |              |                  |                         |
     Entonces la respuesta tiene el estado 400 con el reporte de la licitación
     Y el reporte trae exactamente estos errores:
       | linea | campo                   | codigo                  |
-      | 1     | tipo_vehiculo           | CODIGO_NO_CATALOGO      |
+      | 1     | clase_viaje             | CODIGO_NO_CATALOGO      |
       | 2     | tipologia               | CODIGO_NO_CATALOGO      |
-      | 2     | tipo_vehiculo           | CODIGO_NO_CATALOGO      |
       | 3     | clase_contenedor        | CAMPO_REQUERIDO         |
       | 4     | clase_contenedor        | CAMPO_NO_APLICA         |
       | 4     | valor_aprovisionamiento | CAMPO_NO_APLICA         |
@@ -96,18 +95,18 @@ Característica: Licitaciones desde Excel
 
   Escenario: Las clases de contenedor provisionales de extradimensionado se aceptan en las filas
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
-      | origen       | destino      | tipo_vehiculo | tipologia  | clase_viaje | clase_contenedor |
-      | BUENAVENTURA | BOGOTA, D.C. | 3S3           | Contenedor | Contenedor  | CNT40.FT         |
-      | BUENAVENTURA | CALI         | 3S3           | Contenedor | Contenedor  | CNT20.OP         |
+      | origen       | destino      | tipologia  | clase_viaje | clase_contenedor |
+      | BUENAVENTURA | BOGOTA, D.C. | Contenedor | Contenedor  | CNT40.FT         |
+      | BUENAVENTURA | CALI         | Contenedor | Contenedor  | CNT20.OP         |
     Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
     Y la línea 2 que recibió Nexo trae "claseContenedor" igual a "CNT20.OP"
 
   Escenario: Nexo recibe por línea los ids de municipio y las horas, y el reintento manda lo mismo
     Dado que Nexo responde 503 al alta de solicitudes
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
-      | origen           | destino      | tipo_vehiculo | tipologia | horas_cargue | horas_descargue |
-      | BUENAVENTURA     | BOGOTA, D.C. | 3S3           | CargaSeca | 2            | 3.5             |
-      | La Unión, Nariño | CALI         | 3S3           | CargaSeca |              |                 |
+      | origen           | destino      | tipologia | horas_cargue | horas_descargue |
+      | BUENAVENTURA     | BOGOTA, D.C. | CargaSeca | 2            | 3.5             |
+      | La Unión, Nariño | CALI         | CargaSeca |              |                 |
     Entonces la licitación "L1" queda en el estado "error_envio"
     Cuando Nexo vuelve a responder
     Y "ana" reintenta el envío de la licitación "L1"
@@ -118,7 +117,9 @@ Característica: Licitaciones desde Excel
 
   Escenario: Sin catálogo maestro de Nexo la licitación no se guarda
     Cuando Nexo deja de responder
-    Y "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Y "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen       | destino      | tipologia | clase_viaje |
+      | BUENAVENTURA | BOGOTA, D.C. | CargaSeca | Cupo        |
     Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
     Y Nexo no recibió ninguna solicitud
 
@@ -129,13 +130,24 @@ Característica: Licitaciones desde Excel
     Y Nexo no recibió ninguna solicitud
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 
-  Escenario: Sin catálogo de municipios una licitación con los ids de cada fila se crea igual
+  # HU-021.6 (decisión 2): el nombre del municipio siempre se copia del catálogo por su id, así que sin catálogo tampoco se guarda.
+  Escenario: Sin catálogo de municipios una licitación con los ids de cada fila tampoco se guarda
     Dado que el catálogo de municipios de Nexo no responde
     Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
-      | origen       | destino      | origen_municipio_id | destino_municipio_id | tipo_vehiculo | tipologia |
-      | BUENAVENTURA | BOGOTA, D.C. | 76109               | 11001                | 3S3           | CargaSeca |
-    Entonces la respuesta tiene el estado 201 y cumple el esquema "Licitacion" del contrato
-    Y la línea 1 que recibió Nexo trae los municipios 76109 y 11001 sin horas propias
+      | origen       | destino      | origen_municipio_id | destino_municipio_id | tipologia |
+      | BUENAVENTURA | BOGOTA, D.C. | 76109               | 11001                | CargaSeca |
+    Entonces la respuesta tiene el estado 503 con el código de negocio "MUNICIPIOS_NO_DISPONIBLE"
+    Y Nexo no recibió ninguna solicitud
+
+  Escenario: El nombre del municipio se copia del catálogo y un id que no existe se rechaza
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con estas filas:
+      | origen   | destino | origen_municipio_id | destino_municipio_id | tipologia |
+      | Medellín | Cali    | 11001               | 99999                | CargaSeca |
+    Entonces la respuesta tiene el estado 400 con el reporte de la licitación
+    Y el reporte trae exactamente estos errores:
+      | linea | campo                | codigo                |
+      | 0     | destino_municipio_id | MUNICIPIO_INEXISTENTE |
+    Y Nexo no recibió ninguna solicitud
 
   # HU-013.15 (#124) — Numeración de filas: la que ve el comercial en su Excel (número de fila de la hoja, encabezado incluido). La
   # `fila` de cada línea sigue siendo el índice (base 0) en hojas[h].filas; los mensajes nunca lo muestran. Hallazgo E2E: "La fila 3

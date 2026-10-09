@@ -312,4 +312,7 @@ public static class clsCodigosError
     /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
     /// </summary>
     public const string FolioRequerido = "FOLIO_REQUERIDO";
+
+    /// <summary>HU-021.6: crear una cotización desde el chat está retirado (<c>Pdf:PermitirCotizacionChat = false</c>).</summary>
+    public const string CotizacionChatRetirada = "COTIZACION_CHAT_RETIRADA";
 }

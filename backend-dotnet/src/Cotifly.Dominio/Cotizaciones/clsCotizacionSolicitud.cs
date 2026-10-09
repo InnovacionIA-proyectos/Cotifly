@@ -229,6 +229,76 @@ public sealed class clsCotizacionSolicitud
     }
 
     /// <summary>
+    /// Captura por rutas (HU-021.6, formulario y licitación): guarda el encabezado y, por cada ruta en orden, la ruta con su línea de
+    /// negocio, sus mercancías, sus camiones (<see cref="clsRutaCapturada.Camiones"/>, al menos uno: sin vehículo mientras no haya
+    /// cubicador) y sus conexos (precio = costo unitario de Nexo, decisión 3), y recalcula sus totales (los conexos ya suman al costo
+    /// de la ruta; sin flete no hay precio). Todo queda en <c>pendiente_envio</c>. Las líneas deben venir validadas
+    /// (<see cref="clsLineaSolicitudCosteo.Errores"/> y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> vacías): si no, lanza.
+    /// Devuelve las rutas creadas.
+    /// </summary>
+    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        ArgumentNullException.ThrowIfNull(rutas);
+        if (_rutas.Count > 0)
+        {
+            throw new InvalidOperationException($"La cotización {Folio} ya tiene rutas.");
+        }
+
+        if (rutas.Count == 0)
+        {
+            throw new ArgumentException("La captura debe traer al menos una ruta.", nameof(rutas));
+        }
+
+        if (encabezado.Errores() is { Count: > 0 } erroresEncabezado)
+        {
+            throw new ArgumentException(erroresEncabezado[0].Mensaje, nameof(encabezado));
+        }
+
+        foreach (var (capturada, i) in rutas.Select((r, i) => (r, i)))
+        {
+            ArgumentNullException.ThrowIfNull(capturada);
+            if (capturada.Linea.Errores().Concat(capturada.Linea.ErroresCaptura()).FirstOrDefault() is { } error)
+            {
+                throw new ArgumentException($"Ruta {i + 1}: {error.Mensaje}", nameof(rutas));
+            }
+
+            if (capturada.Camiones is not { Count: > 0 })
+            {
+                throw new ArgumentException($"Ruta {i + 1}: debe tener al menos un camión.", nameof(rutas));
+            }
+        }
+
+        RegistrarEncabezado(encabezado);
+        var creadas = new List<clsLineaSolicitud>(rutas.Count);
+        foreach (var capturada in rutas)
+        {
+            var orden = _rutas.Count == 0 ? 1 : _rutas.Max(r => r.Orden) + 1;
+            var ruta = clsLineaSolicitud.Desde(Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado);
+            foreach (var camion in capturada.Camiones)
+            {
+                ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);
+            }
+
+            foreach (var conexo in capturada.Conexos ?? [])
+            {
+                ruta.AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+            }
+
+            _rutas.Add(ruta);
+            creadas.Add(ruta);
+        }
+
+        RegistrarEstadoSolicitud(Cotizaciones.EstadoCosteo.PendienteEnvio);
+        foreach (var ruta in creadas)
+        {
+            ruta.RecalcularTotales(Moneda, TrmAplicada);
+        }
+
+        return creadas;
+    }
+
+    /// <summary>
     /// Cotización del agente (chat, sin Nexo, <c>CAMBIOS_BACKEND</c> §2): una ruta con la línea de negocio, el margen y el precio, y un
     /// camión con el costo del flete. Sin estado de costeo.
     /// </summary>
@@ -606,6 +676,23 @@ public sealed class clsCotizacionSolicitud
     public bool AsignarLineaNexo(Guid camionId, string lineaSolicitudNexoId) => Camion(camionId).AsignarLineaNexo(lineaSolicitudNexoId);
 
     /// <summary>
+    /// La Mesa de Costeo borró en Nexo la línea del camión <paramref name="camionId"/> (#134): el camión queda <c>descartada</c>, sin línea
+    /// ni costos de Nexo, y su ruta resume el estado sin él. Los totales los recalcula la siguiente <see cref="AplicarFotoNexo"/>.
+    /// Devuelve si cambió.
+    /// </summary>
+    public bool DescartarCamionSinLineaEnNexo(Guid camionId)
+    {
+        var camion = Camion(camionId);
+        if (!camion.DescartarPorLineaBorrada())
+        {
+            return false;
+        }
+
+        _rutas.First(r => r.Id == camion.LineaSolicitudId).ResumirEstado(SolicitudNexoId is not null);
+        return true;
+    }
+
+    /// <summary>
     /// Aplica una lectura de Nexo a los camiones (HU-005.6): a cada uno su estado y, si <see cref="clsCosteoCamionNexo.ConCostos"/>, el
     /// flete, el retorno y el vehículo que puso la Mesa de Costeo. Después cada ruta resume su estado y, si algún camión cambió de costos,
     /// se recalculan los totales y el precio de las rutas y de la solicitud (siempre: nadie toca los camiones por fuera). Con PDF el
@@ -688,8 +775,8 @@ public sealed class clsCotizacionSolicitud
     /// El comercial cambia el valor de UN levante de contenedor de la ruta <paramref name="ordenRuta"/> (decisión 4): se guarda en la
     /// ruta, se copia a cada camión y se recalculan esa ruta y la cabecera. Solo mientras la cotización no se haya entregado al cliente
     /// (<c>PDF_YA_ENVIADO</c>, ADR-018 §11). Devuelve si cambió, o el error.
-    /// <para><b>Sin llamadores en esta rama</b> (solo sus pruebas): hoy el levante cambia en la versión nueva de la re-solicitud, que crea
-    /// los camiones con la copia. Lo conecta #132 (HU-021.6, edición de la ruta en la captura).</para>
+    /// <para><b>Sin llamadores en producción</b> (solo sus pruebas): hoy el levante cambia en la versión nueva de la re-solicitud, que crea
+    /// los camiones con la copia. La captura por rutas (#132, integrada) solo copia el levante al crear los camiones y no edita rutas.</para>
     /// </summary>
     public clsResultado<bool> CambiarValorLevante(int ordenRuta, decimal? valor, DateTimeOffset ahora)
     {

@@ -31,14 +31,16 @@ public static class clsLecturaCosteo
         // HU-021: primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
         var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto, ahora);
 
-        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): se traen a la ruta pedida y se quita la marca.
+        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): solo los nuevos del registro de pendientes (#135), cada
+        // uno a su ruta (la del camión cuya línea los lleva, #134; si no se sabe, la ruta pedida) y se quita la marca. Fuera de esa marca el
+        // polling no importa conexos (decisión 3).
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
         if (importarConexos && cotizacion.PdfPath is null && foto.Cotizacion is { } nexo)
         {
             var nuevos = ConexosNuevos(cotizacion, nexo, pendientes);
             if (nuevos.Ruta is { } ruta && nuevos.Conexos.Count > 0)
             {
-                var importados = clsServiciosConexosCosteoService.ImportarConexos(cotizacion, ruta, nuevos.Conexos, ahora);
+                var importados = clsServiciosConexosCosteoService.ImportarConexosPorRuta(cotizacion, nexo, nuevos.Conexos, ruta, ahora);
                 cambio |= importados.EsFallo || importados.Valor > 0;
             }
         }

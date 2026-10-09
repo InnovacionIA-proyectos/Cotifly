@@ -21,7 +21,7 @@ Característica: Re-solicitar el costeo a Nexo
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
     Y la cotización "C1" conserva su folio y su versión 1
-    Y Nexo recibió una segunda solicitud de "Buenaventura" a "Bogotá D.C." con el BP "15927" y 2 posiciones
+    Y Nexo recibió una segunda solicitud de "Buenaventura" a "Bogotá, D.C." con el BP "15927" y 2 posiciones
     Y la re-solicitud de "C1" queda en la auditoría con el motivo "El costeo venció" y el usuario "ana"
     Y Nexo recibió en las notas la re-solicitud de "C1" que reemplaza su solicitud anterior
     Y la cotización "C1" vuelve a consultarse en Nexo

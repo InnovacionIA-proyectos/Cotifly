@@ -171,8 +171,10 @@ public sealed class clsLineaSolicitud
             Exclusivo = linea.Exclusivo,
             Consolidado = linea.Consolidado,
             RetornaContenedor = linea.RetornaContenedor ?? false,
+            CiudadDevolucionMunicipioId = linea.CiudadDevolucionMunicipioId,
             CiudadDevolucionNombre = NombreMunicipio(linea.CiudadDevolucionContenedor),
             LevanteContenedorDiferente = linea.LevanteContenedorDiferente ?? false,
+            CiudadLevanteMunicipioId = linea.CiudadLevanteMunicipioId,
             CiudadLevanteNombre = NombreMunicipio(linea.CiudadLevanteContenedor),
             HorasCargue = linea.HorasCargue ?? encabezado?.HorasCargue,
             HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue,
@@ -256,8 +258,10 @@ public sealed class clsLineaSolicitud
             Consolidado = Consolidado,
             RetornaContenedor = RetornaContenedor,
             CiudadDevolucionContenedor = CiudadDevolucionNombre,
+            CiudadDevolucionMunicipioId = CiudadDevolucionMunicipioId,
             LevanteContenedorDiferente = LevanteContenedorDiferente,
             CiudadLevanteContenedor = CiudadLevanteNombre,
+            CiudadLevanteMunicipioId = CiudadLevanteMunicipioId,
             ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
@@ -270,8 +274,9 @@ public sealed class clsLineaSolicitud
     /// <summary>
     /// Línea que viaja a Nexo por <paramref name="camion"/> (una línea por camión, <c>CAMBIOS_BACKEND</c> §5.3): los datos de la ruta
     /// (origen y destino por nombre e id, condiciones, horas, valor de la mercancía) y los del camión (vehículo, carrocería, peso y su
-    /// levante como <c>valorAprovisionamiento</c>). Las mercancías viajan como posiciones solo si la ruta tiene un único camión: con
-    /// varios, a Nexo le basta el peso de cada uno (el reparto lo sabe el cubicador).
+    /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
+    /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
+    /// reparto lo sabe el cubicador).
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -284,6 +289,7 @@ public sealed class clsLineaSolicitud
         var linea = ALinea();
         return linea with
         {
+            RutaId = Id,
             TipoVehiculo = camion.TipoVehiculo,
             Carroceria = camion.Carroceria,
             PesoKg = camion.PesoKg,
