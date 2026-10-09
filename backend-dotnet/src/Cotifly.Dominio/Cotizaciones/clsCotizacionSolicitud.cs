@@ -231,6 +231,76 @@ public sealed class clsCotizacionSolicitud
     }
 
     /// <summary>
+    /// Captura por rutas (HU-021.6, formulario y licitación): guarda el encabezado y, por cada ruta en orden, la ruta con su línea de
+    /// negocio, sus mercancías, sus camiones (<see cref="clsRutaCapturada.Camiones"/>, al menos uno: sin vehículo mientras no haya
+    /// cubicador) y sus conexos (precio = costo unitario de Nexo, decisión 3), y recalcula sus totales (los conexos ya suman al costo
+    /// de la ruta; sin flete no hay precio). Todo queda en <c>pendiente_envio</c>. Las líneas deben venir validadas
+    /// (<see cref="clsLineaSolicitudCosteo.Errores"/> y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> vacías): si no, lanza.
+    /// Devuelve las rutas creadas.
+    /// </summary>
+    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas)
+    {
+        ArgumentNullException.ThrowIfNull(encabezado);
+        ArgumentNullException.ThrowIfNull(rutas);
+        if (_rutas.Count > 0)
+        {
+            throw new InvalidOperationException($"La cotización {Folio} ya tiene rutas.");
+        }
+
+        if (rutas.Count == 0)
+        {
+            throw new ArgumentException("La captura debe traer al menos una ruta.", nameof(rutas));
+        }
+
+        if (encabezado.Errores() is { Count: > 0 } erroresEncabezado)
+        {
+            throw new ArgumentException(erroresEncabezado[0].Mensaje, nameof(encabezado));
+        }
+
+        foreach (var (capturada, i) in rutas.Select((r, i) => (r, i)))
+        {
+            ArgumentNullException.ThrowIfNull(capturada);
+            if (capturada.Linea.Errores().Concat(capturada.Linea.ErroresCaptura()).FirstOrDefault() is { } error)
+            {
+                throw new ArgumentException($"Ruta {i + 1}: {error.Mensaje}", nameof(rutas));
+            }
+
+            if (capturada.Camiones is not { Count: > 0 })
+            {
+                throw new ArgumentException($"Ruta {i + 1}: debe tener al menos un camión.", nameof(rutas));
+            }
+        }
+
+        RegistrarEncabezado(encabezado);
+        var creadas = new List<clsLineaSolicitud>(rutas.Count);
+        foreach (var capturada in rutas)
+        {
+            var orden = _rutas.Count == 0 ? 1 : _rutas.Max(r => r.Orden) + 1;
+            var ruta = clsLineaSolicitud.Desde(Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado);
+            foreach (var camion in capturada.Camiones)
+            {
+                ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);
+            }
+
+            foreach (var conexo in capturada.Conexos ?? [])
+            {
+                ruta.AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+            }
+
+            _rutas.Add(ruta);
+            creadas.Add(ruta);
+        }
+
+        RegistrarEstadoSolicitud(Cotizaciones.EstadoCosteo.PendienteEnvio);
+        foreach (var ruta in creadas)
+        {
+            ruta.RecalcularTotales(Moneda, TrmAplicada);
+        }
+
+        return creadas;
+    }
+
+    /// <summary>
     /// Cotización del agente (chat, sin Nexo, <c>CAMBIOS_BACKEND</c> §2): una ruta con la línea de negocio, el margen y el precio, y un
     /// camión con el costo del flete. Sin estado de costeo.
     /// </summary>

@@ -26,6 +26,9 @@ public sealed class clsContextoEscenario : IDisposable
         {
             ["Pdf:StorageDir"] = clsServiciosPruebas.CarpetaPdfsTemporal(),
 
+            // HU-021.6: los escenarios del PDF legado (cotización "del chat") lo encienden; en producción está apagado.
+            ["Pdf:PermitirCotizacionChat"] = "true",
+
             // La TRM (HU-012.1) nunca sale a la red: los adaptadores reales consultan las fuentes falsas del escenario. Por defecto solo la
             // Superintendencia; los escenarios de DolarApi eligen el proveedor con UsarProveedorTrm.
             ["Trm:Url"] = clsTrmFalso.Url,

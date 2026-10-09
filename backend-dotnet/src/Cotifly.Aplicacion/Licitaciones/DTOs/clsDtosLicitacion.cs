@@ -25,8 +25,19 @@ public sealed record clsHojaExcel(
 /// <summary>Archivo subido por el comercial (multipart): nombre y bytes.</summary>
 public sealed record clsArchivoSubido(string? Nombre, byte[] Contenido);
 
-/// <summary>Una línea mapeada por el frontend: los campos de <c>CapturaLineaRequest</c> y la fila del Excel de donde salió.</summary>
-public sealed record clsLineaLicitacionEntrada(int? Fila, clsLineaSolicitudCosteo Linea);
+/// <summary>
+/// Una ruta de la captura (fila de una licitación o ruta del formulario, HU-021.6): los campos de <c>CapturaLineaRequest</c>, la fila
+/// del Excel de donde salió (<c>null</c> en el formulario), su línea de negocio (<c>null</c> = la del encabezado) y sus servicios
+/// conexos del catálogo de Nexo (id y cantidad; el precio se toma del catálogo, decisión 3).
+/// </summary>
+public sealed record clsLineaLicitacionEntrada(
+    int? Fila,
+    clsLineaSolicitudCosteo Linea,
+    string? LineaNegocio = null,
+    IReadOnlyList<clsConexoCapturaEntrada?>? Conexos = null);
+
+/// <summary>Un servicio conexo pedido en la captura de una ruta (HU-021.6, decisión 3): el id del catálogo de Nexo y la cantidad.</summary>
+public sealed record clsConexoCapturaEntrada(string? IdServicioConexo, decimal? Cantidad);
 
 /// <summary>
 /// Entrada de <c>POST /web/licitaciones</c> (HU-011.2, ADR-017): el cliente (NIT del buscador), la línea de negocio de Cotifly, el

@@ -116,9 +116,10 @@ public sealed class clsCosteoController(
     }
 
     /// <summary>
-    /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>,
-    /// <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503 <c>CATALOGOS_FLETE_NO_DISPONIBLE</c> si no se pudo validar
-    /// contra los catálogos maestros de Nexo (nada queda guardado).
+    /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>
+    /// (con todos los errores en <c>detalle.errores</c>, HU-021.6), <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503
+    /// <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> (conexos) si no se pudo validar
+    /// contra los catálogos de Nexo (nada queda guardado).
     /// </summary>
     [HttpPost("solicitudes-costeo")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status201Created)]
@@ -133,7 +134,7 @@ public sealed class clsCosteoController(
             return Error(entrada.Error);
         }
 
-        var resultado = await envio.EnviarAsync(UsuarioId, entrada.Valor, cancellationToken);
+        var resultado = await envio.CapturarAsync(UsuarioId, entrada.Valor, cancellationToken);
         return resultado.EsFallo
             ? Error(resultado.Error)
             : StatusCode(StatusCodes.Status201Created, await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));

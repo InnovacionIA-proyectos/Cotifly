@@ -82,7 +82,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         json.GetProperty("archivo_nombre").GetString().Should().Be("pliego.xlsx");
         var alta = _nexo.UltimaAlta!;
         alta["tipo"]!.GetValue<string>().Should().Be("licitacion");
-        alta["lineas"]!.AsArray().Select(l => l!["origen"]!.GetValue<string>()).Should().Equal("BUENAVENTURA", "CALI", "CUCUTA");
+        alta["lineas"]!.AsArray().Select(l => l!["origen"]!.GetValue<string>()).Should().Equal("Buenaventura", "Cali", "Cúcuta");
         (await EscalarAsync($"SELECT CONCAT(COUNT(*), '|', MIN(l.estadoCosteo), '|', SUM(l.rutaOrigenIndice)) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be("3|pendiente_costeo|3");
         (await EscalarAsync($"SELECT CONCAT(c.tipoSolicitud, '|', a.tamanoBytes, '|', a.hoja) FROM dbo_cotifly.CotizacionesSolicitud c JOIN dbo_cotifly.CotizacionArchivosLicitacion a ON a.cotizacionId = c.id WHERE c.folio = '{folio}'"))
@@ -305,7 +305,7 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
 
         texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)").And.Contain("$4.529.412");
-        texto.Should().Contain("CARTAGENA").And.Contain("$1.176.471").And.Contain("$2.352.941").And.Contain("$1.000.000");
+        texto.Should().ContainEquivalentOf("Cartagena").And.Contain("$1.176.471").And.Contain("$2.352.941").And.Contain("$1.000.000");
         texto.Should().NotContain("$850.000").And.NotContain("$2.000.000", "los fletes de Nexo nunca van al PDF");
     }
 
@@ -323,7 +323,8 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         using var descarga = await _api.EnviarAsync(HttpMethod.Get, ruta, sesion.Access);
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Texto;
 
-        texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.Contain("$1.176.474", "la licitación de una línea sale como pliego con su ruta");
+        texto.Should().ContainEquivalentOf("Buenaventura").And.ContainEquivalentOf("Bogotá, D.C.").And.Contain("$1.176.474",
+            "la licitación de una línea sale como pliego con su ruta (HU-021.6: con el nombre del catálogo de municipios)");
         texto.Should().NotContain("$1.000.003", "el flete de Nexo nunca va al PDF");
     }
 

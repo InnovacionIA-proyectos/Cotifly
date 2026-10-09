@@ -8,6 +8,7 @@ using Cotifly.Aplicacion.Licitaciones.Validators;
 using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -59,7 +60,8 @@ public sealed class clsLicitacionService(
     IClsExportadorExcelLicitacion exportador,
     IClsReloj reloj,
     IClsFijacionMonedaService monedas,
-    IClsValidadorFilasLicitacion filasLicitacion) : IClsLicitacionService
+    IClsCapturaRutasService captura,
+    ILogger<clsLicitacionService> logger) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -201,6 +203,9 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.LicitacionInvalida, "El tipo de una licitación es 'licitacion'."));
         }
 
+        // HU-021 (decisión 7): vehículo y carrocería ya no se mapean del Excel; si llegan, se ignoran con un aviso en el log.
+        entrada = entrada with { Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger).Select(l => l!)] };
+
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.
         IReadOnlyList<int>? filasExcel = null;
         if (entrada.Archivo is { } archivo)
@@ -237,24 +242,53 @@ public sealed class clsLicitacionService(
 
         var entradas = validadas.Lineas;
 
-        var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
-        if (politica is null)
+        // HU-021.6: cada fila puede traer su línea de negocio; sin ella, la del encabezado.
+        var porNombre = new Dictionary<string, Dominio.Margen.clsMargenPolitica>(StringComparer.OrdinalIgnoreCase);
+        var politicasPorRuta = new List<Dominio.Margen.clsMargenPolitica>(entradas.Count);
+        foreach (var nombre in entradas.Select(l => (l.LineaNegocio ?? entrada.LineaNegocio)!.Trim()).Prepend(entrada.LineaNegocio!.Trim()))
         {
-            // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
-            return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaDesconocida(
-                entrada.LineaNegocio!, await margen.LineasActivasAsync(cancellationToken) ?? [], esLicitacion: true));
+            if (porNombre.ContainsKey(nombre))
+            {
+                continue;
+            }
+
+            var resuelta = await margen.ResolverLineaAsync(nombre, cancellationToken);
+            if (resuelta is null)
+            {
+                // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
+                return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaDesconocida(
+                    nombre, await margen.LineasActivasAsync(cancellationToken) ?? [], esLicitacion: true));
+            }
+
+            if (!resuelta.Activa)
+            {
+                // HU-013.15 (#124): también aquí el error trae las líneas que sí se pueden usar.
+                return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio) with
+                {
+                    Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["lineas_validas"] = await margen.LineasActivasAsync(cancellationToken) ?? [],
+                    },
+                });
+            }
+
+            porNombre[nombre] = resuelta;
         }
 
-        if (!politica.Activa)
+        politicasPorRuta.AddRange(entradas.Select(l => porNombre[(l.LineaNegocio ?? entrada.LineaNegocio)!.Trim()]));
+        var politica = porNombre[entrada.LineaNegocio!.Trim()];
+
+        // HU-021.6: conexos con el costo del catálogo de Nexo y un camión por ruta (sin vehículo hasta el cubicador, #133).
+        var preparadas = await captura.PrepararAsync(
+            usuarioId, [.. entradas.Select((l, i) => new clsRutaPorPreparar(l, politicasPorRuta[i].Id, l.Fila))], cancellationToken);
+        if (preparadas.Error is { } errorPreparacion)
         {
-            // HU-013.15 (#124): también aquí el error trae las líneas que sí se pueden usar.
-            return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(politica.LineaNegocio) with
-            {
-                Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["lineas_validas"] = await margen.LineasActivasAsync(cancellationToken) ?? [],
-                },
-            });
+            return clsResultadoLicitacion.Fallo(errorPreparacion);
+        }
+
+        if (preparadas.Errores.Count > 0)
+        {
+            return clsResultadoLicitacion.Invalida(clsValidadorLicitacion.ConFilaExcel(preparadas.Errores, filasExcel));
         }
 
         // ADR-014 §5: en USD la TRM del día de creación queda fija en la licitación; el polling convierte cada precio con ella.
@@ -282,10 +316,9 @@ public sealed class clsLicitacionService(
                 return cotizacion.Error;
             }
 
-            // HU-021: una ruta por fila (rutaOrigenIndice = fila del Excel) con su línea de negocio, sus mercancías y un camión.
+            // HU-021.6: una ruta por fila (rutaOrigenIndice = fila del Excel) con su línea de negocio, mercancías, camión y conexos.
             var id = cotizacion.Valor.Id;
-            cotizacion.Valor.RegistrarSolicitudLicitacion(
-                entrada.Encabezado, [.. entradas.Select(l => l.Linea)], [.. entradas.Select(l => l.Fila)], politica.Id);
+            cotizacion.Valor.RegistrarCaptura(entrada.Encabezado, preparadas.Rutas);
             cotizaciones.Agregar(cotizacion.Valor);
             if (entrada.Archivo is { } original)
             {
@@ -322,7 +355,7 @@ public sealed class clsLicitacionService(
         IReadOnlyList<clsLineaLicitacionEntrada?> lineas = entrada.Lineas ?? [];
         return lineas.Count is 0 or > clsValidadorLicitacion.MaximoLineas
             ? new clsFilasLicitacionValidadas([], errores, null)
-            : await filasLicitacion.ValidarAsync(usuarioId, lineas, errores, cancellationToken);
+            : await captura.ValidarAsync(usuarioId, lineas, errores, cancellationToken);
     }
 
     public async Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)

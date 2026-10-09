@@ -55,12 +55,15 @@ public static class clsPliegoMuestra
         return memoria.ToArray();
     }
 
-    /// <summary>Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego.</summary>
+    /// <summary>
+    /// Líneas mapeadas (objetos anónimos snake_case) de las <paramref name="filas"/> filas del pliego. HU-021.6 (decisión 7): la columna
+    /// del tipo de vehículo del Excel ya no se mapea (el vehículo lo define el cubicador o la Mesa de Costeo de Nexo).
+    /// </summary>
     public static object[] Lineas(int filas = 3) =>
         [.. Enumerable.Range(0, filas).Select(i =>
         {
-            var (origen, destino, vehiculo, toneladas) = Ruta(i);
-            return (object)new { fila = i, origen, destino, tipo_vehiculo = vehiculo, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m };
+            var (origen, destino, _, toneladas) = Ruta(i);
+            return (object)new { fila = i, origen, destino, tipologia = "CargaSeca", peso_kg = toneladas * 1000m, valor_mercancia = 50_000_000m };
         })];
 
     /// <summary>JSON de <c>POST /web/licitaciones</c> con las líneas dadas.</summary>

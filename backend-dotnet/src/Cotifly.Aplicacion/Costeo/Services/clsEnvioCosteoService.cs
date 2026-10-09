@@ -6,6 +6,7 @@ using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
@@ -34,6 +35,16 @@ public interface IClsEnvioCosteoService
     Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Captura por rutas (HU-021.6): valida TODO junto (<c>SOLICITUD_COSTEO_INVALIDA</c> con <c>detalle.errores</c>: cliente, moneda,
+    /// encabezado, y por ruta línea de negocio, límites de Nexo, códigos de catálogo, municipios con id obligatorio, mercancías con
+    /// <c>id_tipo_mercancia</c> y conexos del catálogo de Nexo), resuelve la línea de negocio de cada ruta (<c>MARGEN_LINEA_DESCONOCIDA</c>),
+    /// crea la cotización con sus rutas, un camión sin vehículo por ruta (hasta el cubicador, #133) y sus conexos con el costo de Nexo, la
+    /// confirma y la envía a Nexo como en <see cref="EnviarAsync"/>. 503 si un catálogo de Nexo no responde (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c>,
+    /// <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> para los conexos): nada se guarda.
+    /// </summary>
+    Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reenvía la solicitud guardada. <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial;
     /// <c>COSTEO_NO_REINTENTABLE</c> si no está en <c>error_envio</c> ni en un <c>pendiente_envio</c> abandonado. Una licitación se
     /// revalida completa con las reglas de captura (HU-013.11, <see cref="IClsValidadorFilasLicitacion.RevalidarGuardadasAsync"/>): si una
@@ -53,12 +64,14 @@ public interface IClsEnvioCosteoService
 /// <summary>Implementación de <see cref="IClsEnvioCosteoService"/>.</summary>
 /// <remarks>
 /// <list type="number">
-/// <item>Valida el formulario (mismos límites que Nexo), exige el NIT y resuelve la línea en <c>MargenesPolitica</c>.</item>
+/// <item>Valida el formulario por rutas (HU-021.6, <see cref="IClsCapturaRutasService"/>: mismos límites que Nexo, códigos de catálogo,
+/// municipios con id obligatorio, mercancías con su tipo y conexos), todos los errores juntos, exige el NIT y resuelve la línea de
+/// negocio de cada ruta en <c>MargenesPolitica</c>.</item>
 /// <item>Fija la moneda y, en USD, la TRM del día (HU-013.7, ADR-014 §5, <see cref="IClsFijacionMonedaService"/>): sin TRM no se guarda
 /// nada ni se llama a Nexo. El polling, el ajuste de margen y el PDF convierten con esa TRM fijada; el reintento la conserva.</item>
-/// <item>Crea la solicitud con folio del servidor (ADR-011, con el NIT): la cabecera y la ruta 1 con su línea de negocio, sus mercancías
-/// y un camión con el vehículo del formulario (HU-021, "una ruta y un camión" hasta el cubicador), en <c>pendiente_envio</c>, y confirma
-/// la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
+/// <item>Crea la solicitud con folio del servidor (ADR-011, con el NIT): la cabecera y cada ruta con su línea de negocio, sus mercancías,
+/// sus conexos (costo de Nexo) y los camiones de <see cref="IClsPlanificadorCamiones"/> (uno sin vehículo hasta el cubicador, #133), en
+/// <c>pendiente_envio</c>, y confirma la transacción: lo que llenó el comercial nunca se pierde aunque Nexo no responda.</item>
 /// <item>Resuelve el BP en el catálogo de Nexo por el NIT (ADR-005 §4: el BP solo sale del catálogo y no se persiste).</item>
 /// <item>Envía a Nexo y guarda el resultado: <c>pendiente_costeo</c> con <c>costeoId</c> y la primera consulta del polling, o
 /// <c>error_envio</c> con el motivo. Cada intento queda en la auditoría (<c>enviar_costeo_nexo</c>).</item>
@@ -82,54 +95,85 @@ public sealed class clsEnvioCosteoService(
     IClsReloj reloj,
     IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsEnvioCosteoService> logger,
-    IClsPrecioCosteoService precioCosteo) : IClsEnvioCosteoService
+    IClsPrecioCosteoService precioCosteo,
+    IClsCapturaRutasService capturaRutas) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
 
-    public async Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Solicitud);
+        return CapturarAsync(usuarioId, clsEntradaCaptura.Desde(entrada), cancellationToken);
+    }
+
+    public async Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        ArgumentNullException.ThrowIfNull(entrada.Encabezado);
+        ArgumentNullException.ThrowIfNull(entrada.Rutas);
         if (usuarioId == Guid.Empty)
         {
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "El envío a costeo exige el comercial autenticado.");
         }
 
+        var rutas = SinVehiculo(entrada.Rutas, logger);
         var nit = entrada.NitCliente?.Trim();
-        var error = string.IsNullOrEmpty(nit)
-            ? Invalida("El campo 'nit_cliente' es obligatorio: elige el cliente en el buscador.")
-            : nit.Length > clsEntradaSolicitudCosteo.LargoMaximoNit
-                ? Invalida($"El campo 'nit_cliente' supera {clsEntradaSolicitudCosteo.LargoMaximoNit} caracteres.")
-                : entrada.ClienteNombre is { Length: > clsEntradaSolicitudCosteo.LargoMaximoNombre }
-                    ? Invalida($"El campo 'cliente_nombre' supera {clsEntradaSolicitudCosteo.LargoMaximoNombre} caracteres.")
-                    : string.IsNullOrWhiteSpace(entrada.LineaNegocio)
-                        ? Invalida("El campo 'linea_negocio' es obligatorio.")
-                        : ValidarMoneda(entrada.Moneda) ?? entrada.Solicitud.Validar();
-        if (error is not null)
+
+        // HU-021.6: todas las validaciones juntas (encabezado y cada ruta); el error trae el primero y detalle.errores trae todos.
+        var validadas = await capturaRutas.ValidarAsync(usuarioId, rutas, ErroresFormulario(entrada, rutas), cancellationToken);
+        if (validadas.Errores.Count > 0)
         {
-            return error;
+            return ErrorCaptura(validadas.Errores, validadas.NoDisponible?.Codigo, rutas.Count);
         }
 
-        // G2 (HU-013.10): solo códigos de catálogo; sin catálogo maestro utilizable se rechaza antes de guardar (nunca texto libre).
-        if (await catalogos.ValidarAsync(usuarioId, entrada.Solicitud.ALinea(), cancellationToken) is { } noCatalogo)
+        if (validadas.NoDisponible is { } noDisponible)
         {
-            return noCatalogo;
+            return noDisponible;
         }
 
-        var politica = await margen.ResolverLineaAsync(entrada.LineaNegocio, cancellationToken);
-        if (politica is null)
+        // La línea de negocio es de cada ruta (la del encabezado si la ruta no trae).
+        var politicasPorRuta = new List<clsMargenPolitica>(validadas.Lineas.Count);
+        var porNombre = new Dictionary<string, clsMargenPolitica>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ruta in validadas.Lineas)
         {
-            return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, $"La línea de negocio '{entrada.LineaNegocio!.Trim()}' no existe en Cotifly.");
+            var nombre = (ruta.LineaNegocio ?? entrada.LineaNegocio)!.Trim();
+            if (!porNombre.TryGetValue(nombre, out var deRuta))
+            {
+                var resuelta = await margen.ResolverLineaAsync(nombre, cancellationToken);
+                if (resuelta is null)
+                {
+                    return new clsErrorDominio(clsCodigosError.MargenLineaDesconocida, $"La línea de negocio '{nombre}' no existe en Cotifly.");
+                }
+
+                if (!resuelta.Activa)
+                {
+                    return clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio);
+                }
+
+                // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
+                catalogos.RevisarMapeoLineaNexo(resuelta);
+                porNombre[nombre] = deRuta = resuelta;
+            }
+
+            politicasPorRuta.Add(deRuta);
         }
 
-        if (!politica.Activa)
+        var politica = politicasPorRuta[0];
+
+        // Conexos con el costo del catálogo de Nexo y camiones del planificador (sin vehículo hasta el cubicador, #133).
+        var preparadas = await capturaRutas.PrepararAsync(
+            usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken);
+        if (preparadas.Error is { } errorPreparacion)
         {
-            return clsMargenResolverService.LineaInactiva(politica.LineaNegocio);
+            return errorPreparacion;
         }
 
-        // G11: advertencia (no bloquea) si el mapeo a la línea de Nexo no está en su catálogo de líneas de negocio.
-        catalogos.RevisarMapeoLineaNexo(politica);
+        if (preparadas.Errores.Count > 0)
+        {
+            return ErrorCaptura(preparadas.Errores, null, rutas.Count);
+        }
 
         // HU-013.7 (ADR-014 §5): en USD la TRM del día de creación queda fija ANTES de guardar; sin TRM no se guarda ni se envía nada.
         var fijada = await monedas.FijarAsync(entrada.Moneda, cancellationToken);
@@ -138,7 +182,7 @@ public sealed class clsEnvioCosteoService(
             return fijada.Error;
         }
 
-        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit, async (folio, ct) =>
+        var creada = await folios.CrearConFolioNuevoAsync<clsCotizacionSolicitud>(usuarioId, nit!, async (folio, ct) =>
         {
             var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
             {
@@ -155,8 +199,8 @@ public sealed class clsEnvioCosteoService(
                 return cotizacion.Error;
             }
 
-            // HU-021: la cabecera, la ruta 1 (línea de negocio y mercancías) y su camión, en una sola escritura.
-            cotizacion.Valor.RegistrarSolicitudCosteo(entrada.Solicitud, politica.Id);
+            // HU-021.6: la cabecera y cada ruta con su línea de negocio, mercancías, camiones y conexos, en una sola escritura.
+            cotizacion.Valor.RegistrarCaptura(entrada.Encabezado, preparadas.Rutas);
             cotizaciones.Agregar(cotizacion.Valor);
             await unidadTrabajo.GuardarCambiosAsync(ct);
             return cotizacion.Valor;
@@ -167,11 +211,139 @@ public sealed class clsEnvioCosteoService(
         }
 
         // Desde aquí, sin el token de la petición (ver EnviarANexoAsync). Se envía lo GUARDADO (normalizado: textos recortados), no la
-        // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo (G2: " 3S3 " nunca llega con espacios).
+        // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo.
         // HU-021: las horas viajan en cada línea (la ruta las guarda); la cabecera no las tiene, así el reintento manda lo mismo.
-        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Solicitud.Encabezado;
+        var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Encabezado;
         await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
         return creada.Valor;
+    }
+
+    /// <summary>
+    /// Decisión 7 de HU-021 (HU-021.6): el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de
+    /// Nexo). Si una ruta los trae (cliente con el contrato anterior), se ignoran y queda un aviso en el log; la captura sigue.
+    /// </summary>
+    public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(rutas);
+        ArgumentNullException.ThrowIfNull(logger);
+        var ignoradas = 0;
+        var limpias = rutas.Select(r =>
+        {
+            if (r?.Linea is not { } linea || (linea.TipoVehiculo is null && linea.Carroceria is null))
+            {
+                return r;
+            }
+
+            ignoradas++;
+            return r with { Linea = linea with { TipoVehiculo = null, Carroceria = null } };
+        }).ToList();
+        if (ignoradas > 0)
+        {
+            logger.LogWarning(
+                "{Rutas} ruta(s) traen tipo_vehiculo o carroceria: se ignoran (HU-021, decisión 7: los define el cubicador o la Mesa de Costeo de Nexo).",
+                ignoradas);
+        }
+
+        return limpias;
+    }
+
+    /// <summary>
+    /// Validaciones de forma del formulario por rutas que no dependen de catálogos (HU-021.6), todas juntas: cliente, moneda, encabezado,
+    /// número de rutas, línea de negocio de cada ruta (o la del encabezado) y los límites de Nexo de cada ruta
+    /// (<see cref="clsLineaSolicitudCosteo.Errores"/>).
+    /// </summary>
+    public static IReadOnlyList<clsErrorFilaLicitacion> ErroresFormulario(clsEntradaCaptura entrada, IReadOnlyList<clsLineaLicitacionEntrada?> rutas)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        ArgumentNullException.ThrowIfNull(rutas);
+        var errores = new List<clsErrorFilaLicitacion>();
+        void Encabezado(string campo, string codigo, string mensaje) => errores.Add(new clsErrorFilaLicitacion(null, null, campo, codigo, mensaje));
+
+        var nit = entrada.NitCliente?.Trim();
+        if (string.IsNullOrEmpty(nit))
+        {
+            Encabezado("nit_cliente", clsCodigosLineaSolicitud.CampoRequerido, "El campo 'nit_cliente' es obligatorio: elige el cliente en el buscador.");
+        }
+        else if (nit.Length > clsEntradaSolicitudCosteo.LargoMaximoNit)
+        {
+            Encabezado("nit_cliente", clsCodigosLineaSolicitud.CampoDemasiadoLargo, $"El campo 'nit_cliente' supera {clsEntradaSolicitudCosteo.LargoMaximoNit} caracteres.");
+        }
+
+        if (entrada.ClienteNombre is { Length: > clsEntradaSolicitudCosteo.LargoMaximoNombre })
+        {
+            Encabezado("cliente_nombre", clsCodigosLineaSolicitud.CampoDemasiadoLargo, $"El campo 'cliente_nombre' supera {clsEntradaSolicitudCosteo.LargoMaximoNombre} caracteres.");
+        }
+
+        if (ValidarMoneda(entrada.Moneda) is { } moneda)
+        {
+            Encabezado("moneda", clsCodigosLineaSolicitud.ValorFueraDeRango, moneda.Mensaje);
+        }
+
+        foreach (var error in entrada.Encabezado.Errores())
+        {
+            Encabezado(error.Campo, error.Codigo, error.Mensaje);
+        }
+
+        if (rutas.Count == 0)
+        {
+            Encabezado("rutas", clsCodigosLineaSolicitud.LineasRequeridas, "La solicitud debe traer al menos una ruta.");
+            return errores;
+        }
+
+        if (rutas.Count > clsEntradaCaptura.MaximoRutas)
+        {
+            Encabezado("rutas", clsCodigosLineaSolicitud.DemasiadasLineas, $"Una solicitud admite máximo {clsEntradaCaptura.MaximoRutas} rutas (llegaron {rutas.Count}).");
+            return errores;
+        }
+
+        var lineaPorDefecto = !string.IsNullOrWhiteSpace(entrada.LineaNegocio);
+        for (var i = 0; i < rutas.Count; i++)
+        {
+            var indice = i;
+            if (rutas[i]?.Linea is not { } linea)
+            {
+                errores.Add(new clsErrorFilaLicitacion(i, null, "rutas", clsCodigosLineaSolicitud.LineaIncompleta, $"La ruta {i + 1} está vacía."));
+                continue;
+            }
+
+            if (!lineaPorDefecto && string.IsNullOrWhiteSpace(rutas[i]!.LineaNegocio))
+            {
+                errores.Add(new clsErrorFilaLicitacion(i, null, "linea_negocio", clsCodigosLineaSolicitud.CampoRequerido, "El campo 'linea_negocio' es obligatorio."));
+            }
+
+            errores.AddRange(linea.Errores().Select(e => new clsErrorFilaLicitacion(indice, null, e.Campo, e.Codigo, e.Mensaje)));
+        }
+
+        return errores;
+    }
+
+    /// <summary>
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> con TODOS los errores en <c>detalle.errores</c> (<c>ruta</c> = índice base 0 de la ruta, o
+    /// <c>null</c> si es del encabezado; <c>campo</c>, <c>codigo</c> y <c>mensaje</c>). El mensaje es el del primero (con su ruta si hay
+    /// varias) y <c>detalle.motivo</c> su código, o el del catálogo de Nexo que no respondió (lo que dependía de él se valida al volver a
+    /// enviarla).
+    /// </summary>
+    public static clsErrorDominio ErrorCaptura(IReadOnlyList<clsErrorFilaLicitacion> errores, string? catalogoNoDisponible, int rutas)
+    {
+        ArgumentNullException.ThrowIfNull(errores);
+        var primero = errores[0];
+        var mensaje = rutas > 1 && primero.Indice is { } indice ? $"Ruta {indice + 1}: {primero.Mensaje}" : primero.Mensaje;
+        if (errores.Count > 1)
+        {
+            mensaje += $" (y {errores.Count - 1} error(es) más en detalle.errores)";
+        }
+
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> lista = [.. errores.Select(e => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["ruta"] = e.Indice,
+            ["campo"] = e.Campo,
+            ["codigo"] = e.Codigo,
+            ["mensaje"] = e.Mensaje,
+        })];
+        return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, mensaje, catalogoNoDisponible ?? primero.Codigo)
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["errores"] = lista },
+        };
     }
 
     public Task EnviarGuardadaAsync(clsCotizacionSolicitud cotizacion, clsMargenPolitica? politica, Guid usuarioId, string? notaTrazabilidad = null)
@@ -262,6 +434,19 @@ public sealed class clsEnvioCosteoService(
         {
             return invalida;
         }
+        else if (lineas.Any(l => l.OrigenMunicipioId is null || l.DestinoMunicipioId is null))
+        {
+            // HU-021.6 (decisión 2): un formulario migrado sin id de origen o destino los resuelve por el nombre guardado, igual que la
+            // licitación (nunca adivina); si no se puede, error claro y nada viaja a Nexo.
+            var resuelta = await filasLicitacion.RevalidarGuardadasAsync(
+                usuarioId, cotizacion.Folio, encabezado, lineas, [.. cotizacion.RutasOrdenadas.Select(r => r.RutaOrigenIndice)], cancellationToken);
+            if (resuelta.EsFallo)
+            {
+                return ErrorDeFormulario(resuelta.Error);
+            }
+
+            revalidadas = resuelta.Valor;
+        }
 
         // Reclamo optimista: de dos reintentos simultáneos solo uno envía (el otro vería otro updatedAt).
         if (!await cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, ahora, cancellationToken))
@@ -280,6 +465,25 @@ public sealed class clsEnvioCosteoService(
         var politica = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, CancellationToken.None) : null;
         await EnviarANexoAsync(cotizacion, encabezado, politica, usuarioId, reintento: true);
         return cotizacion;
+    }
+
+    /// <summary>
+    /// El error de la revalidación de filas (<c>LICITACION_INVALIDA</c>, que nombra la licitación) como error del formulario:
+    /// <c>SOLICITUD_COSTEO_INVALIDA</c> con el primer error de la ruta y todos en <c>detalle.errores</c>. Un catálogo caído pasa igual.
+    /// </summary>
+    public static clsErrorDominio ErrorDeFormulario(clsErrorDominio error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        if (error.Codigo != clsCodigosError.LicitacionInvalida
+            || error.Datos?.GetValueOrDefault("errores") is not IReadOnlyList<IReadOnlyDictionary<string, object?>> { Count: > 0 } filas)
+        {
+            return error;
+        }
+
+        IReadOnlyList<clsErrorFilaLicitacion> errores = [.. filas.Select(f => new clsErrorFilaLicitacion(
+            f.GetValueOrDefault("indice") as int?, null, f.GetValueOrDefault("campo") as string ?? string.Empty,
+            f.GetValueOrDefault("codigo") as string ?? string.Empty, f.GetValueOrDefault("mensaje") as string ?? string.Empty))];
+        return ErrorCaptura(errores, null, errores.Count);
     }
 
     /// <summary>

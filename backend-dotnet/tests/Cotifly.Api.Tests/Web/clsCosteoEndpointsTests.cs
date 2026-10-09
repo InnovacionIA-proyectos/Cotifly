@@ -30,6 +30,13 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>Cuerpo <c>SolicitudCosteoWeb</c> completo (snake_case escrito a mano, como lo manda el frontend).</summary>
+    /// <summary>Tipo de mercancía del catálogo del cubicador que llevan las mercancías del formulario de prueba.</summary>
+    public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
+
+    /// <summary>
+    /// Formulario por rutas (HU-021.6, <c>RutaCapturaWeb</c>): una ruta Buenaventura → Bogotá con los ids de municipio del Nexo falso y
+    /// mercancías con su tipo. Sin vehículo ni carrocería (decisión 7); <c>valor_estimado</c> y <c>referencia</c> se aceptan y se ignoran.
+    /// </summary>
     public static string Formulario(string nit = Nit, string linea = "Importacion") => clsApiWebPruebas.Json(new
     {
         tipo = "spot",
@@ -41,26 +48,31 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         referencia = "OC-7788",
         horas_cargue = 4,
         horas_descargue = 6.5,
-        origen = "Buenaventura",
-        destino = "Bogotá D.C.",
-        tipo_vehiculo = "3S3",
-        carroceria = "PORTACONTENEDORES",
-        tipologia = "Contenedor",
-        clase_viaje = "Contenedor",
-        clase_contenedor = "CNT40.HC",
-        exclusivo = true,
-        consolidado = false,
-        retorna_contenedor = true,
-        ciudad_devolucion_contenedor = "Buenaventura",
-        levante_contenedor_diferente = false,
-        ciudad_levante_contenedor = (string?)null,
-        valor_aprovisionamiento = (decimal?)null,
-        peso_kg = 28500.5,
-        valor_mercancia = 250000000,
-        posiciones = new object[]
+        rutas = new object[]
         {
-            new { descripcion = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-            new { largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+            new
+            {
+                origen_municipio_id = 76109,
+                origen = "Buenaventura",
+                destino_municipio_id = 11001,
+                destino = "Bogotá D.C.",
+                tipologia = "Contenedor",
+                clase_viaje = "Contenedor",
+                clase_contenedor = "CNT40.HC",
+                exclusivo = true,
+                consolidado = false,
+                retorna_contenedor = true,
+                ciudad_devolucion_municipio_id = 76109,
+                ciudad_devolucion_contenedor = "Buenaventura",
+                levante_contenedor_diferente = false,
+                peso_kg = 28500.5,
+                valor_mercancia = 250000000,
+                mercancias = new object[]
+                {
+                    new { id_tipo_mercancia = TipoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
+                    new { id_tipo_mercancia = TipoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+                },
+            },
         },
     });
 
@@ -157,13 +169,14 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     public async Task UnFormularioInvalidoEs400ConErrorNegocioYNoSeGuardaNada(string cuerpo, string codigo)
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var antes = _nexo.Peticiones.Count;
+        int Altas() => _nexo.Peticiones.Count(p => p.Metodo == _post);
+        var antes = Altas();
 
         using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await VerificarErrorNegocioAsync(respuesta, codigo);
-        _nexo.Peticiones.Count.Should().Be(antes, "sin formulario válido no se llama a Nexo");
+        Altas().Should().Be(antes, "sin formulario válido no se envía nada a Nexo (HU-021.6: solo se consultan sus catálogos para validar)");
         (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
@@ -172,17 +185,48 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     public async Task SinNexoConfiguradoUnFormularioSinCatalogosDeNexoQuedaEnErrorEnvio()
     {
         var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000}""";
+        // HU-021.6 (decisión 2): aun con el id y el nombre, el nombre se copia del catálogo: sin Nexo no hay captura.
+        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","origen_municipio_id":76001,"destino":"Bogotá","destino_municipio_id":11001,"peso_kg":1000}""";
 
         using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
-        var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
-        json.GetProperty("estado_costeo").GetString().Should().Be("error_envio");
-        json.GetProperty("motivo_estado_costeo").GetString().Should().Contain("catálogo de Nexo");
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "MUNICIPIOS_NO_DISPONIBLE");
     }
 
     [Fact]
-    public async Task SinNexoConfiguradoUnTipoDeVehiculoNoSePuedeValidarYNoSeGuarda()
+    public async Task ConRutasLosCamposPlanosEnLaRaizSonErroresYNoSeDescartan()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"rutas\":", "\"ciudad_devolucion_contenedor\":\"Cali\",\"peso_kg\":1,\"rutas\":", StringComparison.Ordinal);
+
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString()))
+            .Should().BeEquivalentTo([("ciudad_devolucion_contenedor", "CAMPO_NO_APLICA"), ("peso_kg", "CAMPO_NO_APLICA")]);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoUnMunicipioSinIdNoSePuedeResolverYNoSeGuarda()
+    {
+        // HU-021.6 (decisión 2): el id es obligatorio; sin catálogo de municipios no se adivina ni se guarda texto suelto.
+        var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = """{"tipo":"spot","nit_cliente":"900555111","linea_negocio":"Importacion","origen":"Cali","destino":"Bogotá","peso_kg":1000}""";
+
+        using var envio = await _entorno.ApiSinCorreo.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "MUNICIPIOS_NO_DISPONIBLE");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoUnaClaseDeViajeNoSePuedeValidarYNoSeGuarda()
     {
         var ana = await _entorno.ApiSinCorreo.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -195,17 +239,41 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task UnTipoDeVehiculoFueraDelCatalogoMaestroEs400YNoLlegaANexo()
+    public async Task UnaClaseDeViajeFueraDelCatalogoMaestroEs400ConTodosLosErroresYNoLlegaANexo()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario()
+            .Replace("\"clase_viaje\":\"Contenedor\"", "\"clase_viaje\":\"Barco\"", StringComparison.Ordinal)
+            .Replace("\"destino_municipio_id\":11001,\"destino\":\"Bogot\\u00E1 D.C.\"", "\"destino\":\"La Uni\\u00F3n\"", StringComparison.Ordinal);
+        cuerpo.Should().Contain("La Uni", "el reemplazo del destino debe aplicarse (System.Text.Json escapa las tildes)");
 
-        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario().Replace("\"3S3\"", "\"Tractomula\"", StringComparison.Ordinal));
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await respuesta.Content.ReadAsStringAsync(Ct)).Should().Contain("tipo_vehiculo");
         await VerificarErrorNegocioAsync(respuesta, "SOLICITUD_COSTEO_INVALIDA");
+        using var json = JsonDocument.Parse(await respuesta.Content.ReadAsStringAsync(Ct));
+        var errores = json.RootElement.GetProperty("error").GetProperty("detalle").GetProperty("errores").EnumerateArray()
+            .Select(e => (e.GetProperty("ruta").GetInt32(), e.GetProperty("campo").GetString(), e.GetProperty("codigo").GetString())).ToList();
+        errores.Should().BeEquivalentTo([(0, "clase_contenedor", "CAMPO_NO_APLICA"), (0, "clase_viaje", "CODIGO_NO_CATALOGO"), (0, "destino", "MUNICIPIO_AMBIGUO")],
+            "HU-021.6: todos los errores de la captura llegan juntos y el municipio ambiguo nunca se adivina");
         _nexo.Peticiones.Should().NotContain(p => p.Metodo == _post, "nunca se envía texto libre a Nexo");
-        _nexo.Peticiones.Should().Contain(p => p.Url.AbsolutePath == "/api/catalogos/tipos-vehiculo");
+    }
+
+    [Fact]
+    public async Task ElVehiculoYLaCarroceriaQueLleganSeIgnoranYElCamionVaSinVehiculo()
+    {
+        // HU-021 (decisión 7): un cliente con el contrato anterior que todavía manda vehículo y carrocería no falla.
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"].Should().BeNull("la Mesa de Costeo de Nexo define el vehículo");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND v.tipoVehiculo IS NULL AND v.pesoKg = 28500.5"))
+            .Should().Be(1, "un camión sin vehículo con el peso total de la ruta");
     }
 
     [Fact]
@@ -213,7 +281,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cuerpo = Formulario()
-            .Replace("\"deadline\":\"2026-10-15T17:00:00-05:00\"", "\"deadline\":\"2026-10-15\",\"notas\":\"Cita previa en puerto\",\"origen_municipio_id\":76109,\"destino_municipio_id\":11001", StringComparison.Ordinal);
+            .Replace("\"deadline\":\"2026-10-15T17:00:00-05:00\"", "\"deadline\":\"2026-10-15\",\"notas\":\"Cita previa en puerto\"", StringComparison.Ordinal);
 
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
         var json = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
@@ -227,7 +295,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         linea["destinoMunicipioId"]!.GetValue<int>().Should().Be(11001);
         linea["horasCargue"]!.GetValue<decimal>().Should().Be(4m);
         linea["horasDescargue"]!.GetValue<decimal>().Should().Be(6.5m);
-        linea["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        linea["tipoVehiculo"].Should().BeNull("HU-021: el comercial ya no digita el vehículo (decisión 7)");
 
         (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
             "SELECT CONCAT(c.notas, '|', l.origenMunicipioId, '|', l.destinoMunicipioId) FROM dbo_cotifly.CotizacionesSolicitud c "
@@ -240,7 +308,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
-        var cuerpo = Formulario().Replace("\"3S3\"", "\" 3S3 \"", StringComparison.Ordinal).Replace("\"OC-7788\"", "\"  OC-7788 \"", StringComparison.Ordinal);
+        var cuerpo = Formulario().Replace("\"CNT40.HC\"", "\" CNT40.HC \"", StringComparison.Ordinal).Replace("\"OC-7788\"", "\"  OC-7788 \"", StringComparison.Ordinal);
 
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
@@ -253,7 +321,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         // Mismo contenido; solo puede cambiar la escala de los decimales (12000000 en memoria, 12000000.00 al releer DECIMAL(18,2)).
         Canonico(altas[0]).Should().Be(Canonico(altas[1]), "el primer envío y el reintento mandan lo guardado");
         using var primero = JsonDocument.Parse(altas[0]);
-        primero.RootElement.GetProperty("lineas")[0].GetProperty("tipoVehiculo").GetString().Should().Be("3S3");
+        primero.RootElement.GetProperty("lineas")[0].GetProperty("claseContenedor").GetString().Should().Be("CNT40.HC");
         primero.RootElement.TryGetProperty("referencia", out _).Should().BeFalse("HU-021 (decisión 1): la referencia se acepta y se ignora");
     }
 
