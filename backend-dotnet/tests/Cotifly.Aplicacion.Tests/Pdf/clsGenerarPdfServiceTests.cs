@@ -31,7 +31,7 @@ public sealed class clsGenerarPdfServiceTests
     private readonly IClsAlmacenPdf _almacen = Substitute.For<IClsAlmacenPdf>();
     private readonly IClsUnitOfWork _unidadTrabajo = Substitute.For<IClsUnitOfWork>();
     private readonly IClsCalendarioNegocio _calendario = Substitute.For<IClsCalendarioNegocio>();
-    private readonly clsOpcionesPdf _opciones = new();
+    private readonly clsOpcionesPdf _opciones = new() { PermitirCotizacionChat = true };
     private readonly clsUsuarioWeb _usuario;
     private readonly clsMargenPolitica _nacional = clsMargenPolitica.Crear("Nacional", 0.15m).Valor;
     private clsDocumentoCotizacion? _documento;
@@ -56,6 +56,19 @@ public sealed class clsGenerarPdfServiceTests
 
     private clsEntradaGenerarPdf Entrada(clsCotizacionPdfPayload? payload = null, string folio = "PCN-19032026", clsTrazabilidadCotizacion? traza = null) =>
         new(_usuario.Id, payload ?? clsEjemploPdf.Payload(), folio, Trazabilidad: traza, SpaceId: "web/s-1", ThreadId: "web/s-1");
+
+    [Fact]
+    public async Task PorDefectoCrearUnaCotizacionDesdeElChatEstaRetiradoYNoGuardaNada()
+    {
+        // HU-021.6: la cotización "del chat" no tiene municipios (decisión 2); la única creación es el formulario (ADR-018).
+        _opciones.PermitirCotizacionChat = new clsOpcionesPdf().PermitirCotizacionChat;
+
+        var resultado = await Servicio().GenerarAsync(Entrada(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CotizacionChatRetirada);
+        _agregada.Should().BeNull();
+        await _generador.DidNotReceiveWithAnyArgs().GenerarAsync(default!, Ct);
+    }
 
     // test_generar_pdf_dod_via_mcp + test_generar_pdf_persiste_trazabilidad_completa
     [Fact]

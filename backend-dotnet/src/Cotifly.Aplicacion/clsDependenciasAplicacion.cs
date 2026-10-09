@@ -80,6 +80,11 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsServiciosConexosCosteoService, clsServiciosConexosCosteoService>();
         servicios.AddScoped<IClsReSolicitudCosteoService, clsReSolicitudCosteoService>();
 
+        // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
+        // planificador por defecto crea un camión sin vehículo por ruta; la integración con el cubicador (#133) registra el suyo antes.
+        servicios.AddScoped<IClsCapturaRutasService, clsCapturaRutasService>();
+        servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionSinVehiculo>();
+
         // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
         // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.
         servicios.AddScoped<Redaccion.Services.IClsRedaccionCotizacionService, Redaccion.Services.clsRedaccionCotizacionService>();

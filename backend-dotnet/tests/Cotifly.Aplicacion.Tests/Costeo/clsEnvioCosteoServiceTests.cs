@@ -7,9 +7,12 @@ using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Margen.Services;
+using Cotifly.Aplicacion.Municipios.DTOs;
+using Cotifly.Aplicacion.Municipios.Interfaces;
 using Cotifly.Dominio.Clientes;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
@@ -36,7 +39,9 @@ public sealed class clsEnvioCosteoServiceTests
     private readonly IClsBuscadorClientes _buscador = Substitute.For<IClsBuscadorClientes>();
     private readonly IClsCosteoNexo _nexo = Substitute.For<IClsCosteoNexo>();
     private readonly IClsValidadorCatalogosCaptura _catalogos = Substitute.For<IClsValidadorCatalogosCaptura>();
-    private readonly IClsValidadorFilasLicitacion _filas = FilasQuePasan();
+    private readonly IClsMunicipiosProvider _municipios = Substitute.For<IClsMunicipiosProvider>();
+    private readonly IClsCostosConexosNexo _costosConexos = Substitute.For<IClsCostosConexosNexo>();
+    private readonly IClsValidadorFilasLicitacion _filas;
     private readonly IClsUnitOfWork _unidad = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
@@ -49,6 +54,16 @@ public sealed class clsEnvioCosteoServiceTests
 
     public clsEnvioCosteoServiceTests()
     {
+        // HU-021.6: el validador real de las rutas, con catálogos que dejan pasar y el catálogo de municipios del Nexo falso.
+        _filas = new clsValidadorFilasLicitacion(_catalogos, _municipios);
+        _catalogos.ValidarLineasAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new clsValidacionCatalogoLineas([.. ci.ArgAt<IReadOnlyList<clsLineaSolicitudCosteo>>(1).Select(_ => (IReadOnlyList<clsErrorCampo>)[])], null));
+        _municipios.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsMunicipio>>.Exito(
+            [
+                new clsMunicipio(76109, "76109", "Buenaventura", "Valle del Cauca", "Colombia"), new clsMunicipio(11001, "11001", "Bogotá, D.C.", "Bogotá, D.C.", "Colombia"),
+                new clsMunicipio(5001, "05001", "Medellín", "Antioquia", "Colombia"), new clsMunicipio(76001, "76001", "Cali", "Valle del Cauca", "Colombia"),
+                new clsMunicipio(5400, "05400", "La Unión", "Antioquia", "Colombia"), new clsMunicipio(52399, "52399", "La Unión", "Nariño", "Colombia"),
+            ]));
         _margen.ResolverLineaAsync("Importación", Arg.Any<CancellationToken>()).Returns(_politica);
         _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(_politica);
         _margen.ResolverAsync(Arg.Any<Cotifly.Aplicacion.Margen.DTOs.clsEntradaMargen>(), Arg.Any<CancellationToken>()).Returns(
@@ -276,7 +291,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnFormularioQueNexoRechazariaPorPesoNoSeGuarda()
     {
-        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.Crear() with { PesoKg = 10_000m } }, Ct);
+        var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.CrearCaptura() with { PesoKg = 10_000m } }, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         resultado.Error.Detalle.Should().Be(clsSolicitudCosteo.PesoInconsistente);
@@ -314,13 +329,14 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnValorQueNoEsCodigoDeCatalogoNoSeGuardaNiLlegaANexo()
     {
-        _catalogos.ValidarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
-            .Returns(new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida, "El campo 'tipo_vehiculo' debe ser un código del catálogo"));
+        _catalogos.ValidarLineasAsync(_ana, Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsValidacionCatalogoLineas(
+                [[new clsErrorCampo("clase_viaje", clsCodigosLineaSolicitud.CodigoNoCatalogo, "El campo 'clase_viaje' debe ser un código del catálogo")]], null));
 
         var resultado = await Servicio().EnviarAsync(_ana, Entrada(), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
-        resultado.Error.Mensaje.Should().Contain("tipo_vehiculo");
+        resultado.Error.Mensaje.Should().Contain("clase_viaje");
         _eventos.Should().BeEmpty();
         await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
     }
@@ -328,8 +344,8 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task SinCatalogoMaestroDisponibleNoSeGuardaNada()
     {
-        _catalogos.ValidarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
-            .Returns(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "sin catálogo"));
+        _catalogos.ValidarLineasAsync(_ana, Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsValidacionCatalogoLineas([[]], new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "sin catálogo")));
 
         (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Error.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
         _eventos.Should().BeEmpty();
@@ -402,7 +418,7 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task UnFormularioInvalidoOUnaLineaDesconocidaNoGuardanNada()
     {
-        var invalido = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.Crear() with { Destino = "" } }, Ct);
+        var invalido = await Servicio().EnviarAsync(_ana, Entrada() with { Solicitud = clsSolicitudCosteoMuestra.CrearCaptura() with { Destino = "", DestinoMunicipioId = null } }, Ct);
         var linea = await Servicio().EnviarAsync(_ana, Entrada() with { LineaNegocio = "Marítimo" }, Ct);
 
         invalido.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
@@ -575,7 +591,7 @@ public sealed class clsEnvioCosteoServiceTests
     private void ClienteEnCatalogo(clsClienteEncontrado candidato) =>
         _buscador.BuscarAsync(_ana, Nit, Arg.Any<CancellationToken>()).Returns(new clsResultadoBusquedaClientes(true, [candidato]));
 
-    private static clsEntradaSolicitudCosteo Entrada() => new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.Crear());
+    private static clsEntradaSolicitudCosteo Entrada() => new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.CrearCaptura());
 
     [Theory]
     [InlineData(false)]
@@ -653,19 +669,285 @@ public sealed class clsEnvioCosteoServiceTests
         return cotizacion;
     }
 
-    /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
-    private static IClsValidadorFilasLicitacion FilasQuePasan()
+    // ------------------------------------------------------------------ HU-021.6: captura por rutas
+
+    [Fact]
+    public async Task CadaRutaSeGuardaConSuLineaDeNegocioYUnCamionSinVehiculoConElPesoTotal()
     {
-        var filas = Substitute.For<IClsValidadorFilasLicitacion>();
-        filas.RevalidarGuardadasAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<clsEncabezadoSolicitudCosteo>(),
-                Arg.Any<IReadOnlyList<clsLineaSolicitudCosteo>>(), Arg.Any<IReadOnlyList<int?>>(), Arg.Any<CancellationToken>())
-            .Returns(ci => clsResultado<IReadOnlyList<clsLineaSolicitudCosteo>>.Exito(ci.ArgAt<IReadOnlyList<clsLineaSolicitudCosteo>>(3)));
-        return filas;
+        var exportacion = ConId(clsMargenPolitica.Crear("Exportacion", 0.12m).Valor, 7);
+        ConId(_politica, 3);
+        _margen.ResolverLineaAsync("Exportación", Arg.Any<CancellationToken>()).Returns(exportacion);
+        var segunda = Ruta(5001, "Medellín", 76109, "Buenaventura", "Exportación") with
+        {
+            Linea = Ruta(5001, "Medellín", 76109, "Buenaventura").Linea with { PesoKg = null },
+        };
+
+        var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."), segunda), Ct)).Valor;
+
+        var rutas = cotizacion.RutasOrdenadas;
+        rutas.Should().HaveCount(2);
+        rutas[0].LineaNegocioId.Should().Be(3, "sin línea propia, la ruta usa la de la solicitud");
+        rutas[1].LineaNegocioId.Should().Be(7);
+        rutas[1].RutaOrigenIndice.Should().Be(1, "en el formulario el índice de origen es la posición de la ruta");
+        var camion = rutas[0].Vehiculos.Should().ContainSingle().Subject;
+        camion.TipoVehiculo.Should().BeNull("el vehículo lo define la Mesa de Costeo de Nexo hasta que exista el cubicador (decisión 7)");
+        camion.Carroceria.Should().BeNull();
+        camion.PesoKg.Should().Be(28_500.5m);
+        rutas[1].Vehiculos.Should().ContainSingle().Which.PesoKg.Should().Be(28_500m, "sin peso declarado, el camión lleva la suma de las mercancías");
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana, Arg.Is<clsSolicitudNexo>(s => s.Lineas.Count == 2), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElVehiculoYLaCarroceriaQueLleganSeIgnoran()
+    {
+        var conVehiculo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        conVehiculo = conVehiculo with { Linea = conVehiculo.Linea with { TipoVehiculo = "3S3", Carroceria = "FURGON" } };
+
+        var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(conVehiculo), Ct)).Valor;
+
+        var camion = cotizacion.PrimeraRuta!.Vehiculos.Should().ContainSingle().Subject;
+        camion.TipoVehiculo.Should().BeNull();
+        camion.Carroceria.Should().BeNull();
+        await _catalogos.Received().ValidarLineasAsync(_ana,
+            Arg.Is<IReadOnlyList<clsLineaSolicitudCosteo>>(l => l.All(x => x.TipoVehiculo == null && x.Carroceria == null)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConSoloElIdElNombreDelMunicipioSeCopiaDelCatalogoYLasCiudadesDelContenedorSeResuelven()
+    {
+        var ruta = Ruta(76109, null, 11001, null);
+        ruta = ruta with
+        {
+            Linea = ruta.Linea with
+            {
+                CiudadDevolucionContenedor = "Buenaventura", CiudadDevolucionMunicipioId = null, CiudadLevanteMunicipioId = 76001, LevanteContenedorDiferente = true,
+            },
+        };
+
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
+
+        guardada.OrigenMunicipioId.Should().Be(76109);
+        guardada.OrigenNombre.Should().Be("Buenaventura");
+        guardada.DestinoNombre.Should().Be("Bogotá, D.C.");
+        guardada.CiudadDevolucionMunicipioId.Should().Be(76109, "la ciudad por nombre se resuelve con el catálogo");
+        guardada.CiudadDevolucionNombre.Should().Be("Buenaventura");
+        guardada.CiudadLevanteMunicipioId.Should().Be(76001);
+        guardada.CiudadLevanteNombre.Should().Be("Cali", "con solo el id el nombre se copia del catálogo");
+    }
+
+    [Fact]
+    public async Task TodosLosErroresDeLasRutasLleganJuntosYNoSeGuardaNada()
+    {
+        var sinTipo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        sinTipo = sinTipo with { Linea = sinTipo.Linea with { Posiciones = [new clsPosicionCarga("Cajas", 1, 10m, 10m, 10m, 28_500.5m)] } };
+        var ambigua = Ruta(null, "La Unión", 11001, "Bogotá D.C.");
+        var sinLinea = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        sinLinea = sinLinea with { Linea = sinLinea.Linea with { PesoKg = null, Posiciones = [] } };
+
+        var resultado = await Servicio().CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        resultado.Error.Mensaje.Should().StartWith("Ruta 1:").And.Contain("detalle.errores");
+        var errores = ((IEnumerable<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["errores"]!).ToList();
+        errores.Select(e => ((int?)e["ruta"], (string)e["campo"]!, (string)e["codigo"]!)).Should().BeEquivalentTo(
+        [
+            ((int?)0, "mercancias[0].id_tipo_mercancia", clsCodigosLineaSolicitud.CampoRequerido),
+            ((int?)1, "origen", clsCodigosLineaSolicitud.MunicipioAmbiguo),
+            ((int?)2, "peso_kg", clsCodigosLineaSolicitud.PesoRequerido),
+        ]);
+        ((string)errores[1]["mensaje"]!).Should().Contain("id 5400").And.Contain("id 52399", "nunca adivina: devuelve los candidatos");
+        _eventos.Should().BeEmpty();
+        await _folios.DidNotReceiveWithAnyArgs().CrearConFolioNuevoAsync<clsCotizacionSolicitud>(default, default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task SinCatalogoDeMunicipiosNoSeGuardaNada()
+    {
+        _municipios.ObtenerAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.MunicipiosNoDisponible, "caído"));
+
+        var resultado = await Servicio().CapturarAsync(_ana, Captura(Ruta(null, "Buenaventura", 11001, "Bogotá D.C.")), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LosConexosSeGuardanConLaRutaConElCostoDelCatalogoDeNexoComoPrecio()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                new Dictionary<string, clsCostoConexoNexo> { ["SC-1"] = new("SC-1", "Cargue", 150_000m) }));
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada(" SC-1 ", 2m)] };
+
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
+
+        var conexo = guardada.Conexos.Should().ContainSingle().Subject;
+        conexo.IdServicioConexo.Should().Be("SC-1");
+        conexo.Nombre.Should().Be("Cargue");
+        conexo.Precio.Should().Be(150_000m, "el precio del conexo es el costo de Nexo (decisión 3)");
+        conexo.Cantidad.Should().Be(2m);
+        guardada.CostoServiciosConexos.Should().Be(300_000m);
+        guardada.PrecioFinalLinea.Should().BeNull("sin flete no hay precio");
+    }
+
+    [Fact]
+    public async Task UnConexoQueNoEstaEnElCatalogoOMalFormadoEsUnErrorDeSuRuta()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(new Dictionary<string, clsCostoConexoNexo>()));
+        var desconocido = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-9", 1m)] };
+        var repetido = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with
+        {
+            Conexos = [new clsConexoCapturaEntrada("SC-1", 1m), new clsConexoCapturaEntrada("sc-1", 0m)],
+        };
+
+        var noEncontrado = await Servicio().CapturarAsync(_ana, Captura(desconocido), Ct);
+        var malFormado = await Servicio().CapturarAsync(_ana, Captura(repetido), Ct);
+
+        noEncontrado.Error.Detalle.Should().Be(clsCodigosLineaSolicitud.ConexoNoEncontrado);
+        CodigosDe(malFormado.Error).Should().Equal(clsCodigosLineaSolicitud.ConexoDuplicado, clsCodigosLineaSolicitud.ValorFueraDeRango);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SiNexoNoRespondeLosCostosDeLosConexosNoSeGuardaNada()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.NexoNoDisponible, "caído"));
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-1", 1m)] };
+
+        (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Error.Codigo.Should().Be(clsCodigosError.NexoNoDisponible);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SiElPlanificadorDeCamionesFallaNoSeGuardaNada()
+    {
+        var planificador = Substitute.For<IClsPlanificadorCamiones>();
+        planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CubicacionNoDisponible, "no se pudo calcular los vehículos"));
+        var servicio = new clsEnvioCosteoService(
+            _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
+            Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+            new clsCapturaRutasService(_filas, _costosConexos, planificador, NullLogger<clsCapturaRutasService>.Instance));
+
+        (await servicio.CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")), Ct)).Error.Codigo
+            .Should().Be(clsCodigosError.CubicacionNoDisponible);
+        _eventos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UnaSolicitudSinRutasOSinLineaDeNegocioSeRechaza()
+    {
+        var sinRutas = await Servicio().CapturarAsync(_ana, Captura(), Ct);
+        var sinLinea = await Servicio().CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")) with { LineaNegocio = null }, Ct);
+
+        CodigosDe(sinRutas.Error).Should().Equal(clsCodigosLineaSolicitud.LineasRequeridas);
+        sinLinea.Error.Mensaje.Should().Contain("linea_negocio");
+    }
+
+    [Fact]
+    public async Task ElNombreDelMunicipioSiempreSaleDelCatalogoYUnIdInexistenteSeRechaza()
+    {
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(Ruta(11001, "Medellín", 76109, "Cali")), Ct)).Valor.PrimeraRuta!;
+        var inexistente = await Servicio().CapturarAsync(_ana, Captura(Ruta(99999, "Bogotá", 11001, "Bogotá")), Ct);
+
+        (guardada.OrigenNombre, guardada.DestinoNombre).Should().Be(("Bogotá, D.C.", "Buenaventura"), "un nombre distinto del cliente se ignora (decisión 2)");
+        CodigosDe(inexistente.Error).Should().Equal(clsCodigosLineaSolicitud.MunicipioInexistente);
+        ((IEnumerable<IReadOnlyDictionary<string, object?>>)inexistente.Error.Datos!["errores"]!).Single()["campo"].Should().Be("origen_municipio_id");
+    }
+
+    [Fact]
+    public async Task UnConexoQueNoEstaEnElCatalogoLlegaJuntoConLosDemasErrores()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(new Dictionary<string, clsCostoConexoNexo>()));
+        var ruta = Ruta(null, "La Unión", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-9", 1m)] };
+
+        var resultado = await Servicio().CapturarAsync(_ana, Captura(ruta), Ct);
+
+        CodigosDe(resultado.Error).Should().BeEquivalentTo([clsCodigosLineaSolicitud.MunicipioAmbiguo, clsCodigosLineaSolicitud.ConexoNoEncontrado]);
+    }
+
+    [Fact]
+    public async Task ElReintentoNoVuelveACotizarLosConexos()
+    {
+        _costosConexos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                new Dictionary<string, clsCostoConexoNexo> { ["SC-1"] = new("SC-1", "Cargue", 150_000m) }));
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, "caído"), new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false));
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.") with { Conexos = [new clsConexoCapturaEntrada("SC-1", 2m)] };
+        var cotizacion = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor;
+        Registrada(cotizacion);
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+        _costosConexos.ClearReceivedCalls();
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        reintento.Valor.PrimeraRuta!.Conexos.Should().ContainSingle().Which.Precio.Should().Be(150_000m, "el precio es el costo de Nexo al capturar");
+        await _costosConexos.DidNotReceiveWithAnyArgs().CostosAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task ElReintentoDeUnFormularioMigradoSinIdsLosResuelvePorElNombre()
+    {
+        // HU-021.6: una cotización anterior a la decisión 2 (sin ids de municipio) no viaja a Nexo sin ellos.
+        var cotizacion = clsCotizacionMuestra.Formulario(usuarioId: _ana);
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        Registrada(cotizacion);
+        _cotizaciones.ReclamarReenvioCosteoAsync(cotizacion.Id, cotizacion.UpdatedAt, _reloj.AhoraUtc, Arg.Any<CancellationToken>()).Returns(true);
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        (cotizacion.PrimeraRuta!.OrigenMunicipioId, cotizacion.PrimeraRuta.DestinoMunicipioId).Should().Be(((int?)76109, (int?)11001));
+        await _nexo.Received(1).EnviarSolicitudAsync(_ana,
+            Arg.Is<clsSolicitudNexo>(s => s.Lineas[0].OrigenMunicipioId == 76109 && s.Lineas[0].DestinoMunicipioId == 11001), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ElReintentoDeUnFormularioMigradoConUnMunicipioAmbiguoNoViajaANexo()
+    {
+        var cotizacion = clsCotizacionMuestra.Formulario(usuarioId: _ana, solicitud: clsSolicitudCosteoMuestra.Crear() with { Origen = "La Unión" });
+        cotizacion.RegistrarErrorEnvioCosteo("Nexo caído");
+        Registrada(cotizacion);
+
+        var reintento = await Servicio().ReintentarAsync(_ana, cotizacion.Folio, Ct);
+
+        reintento.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        CodigosDe(reintento.Error).Should().Equal(clsCodigosLineaSolicitud.MunicipioAmbiguo);
+        await _nexo.DidNotReceiveWithAnyArgs().EnviarSolicitudAsync(default, default!, Ct);
+    }
+
+    private static clsEntradaCaptura Captura(params clsLineaLicitacionEntrada[] rutas) =>
+        new(Nit, "Longyin", "Importación", clsSolicitudCosteoMuestra.CrearCaptura().Encabezado, rutas);
+
+    /// <summary>Ruta de la muestra de captura con otro origen y destino (id y nombre; <c>null</c> = no viene).</summary>
+    private static clsLineaLicitacionEntrada Ruta(int? origenId, string? origen, int? destinoId, string? destino, string? linea = null) =>
+        new(null, clsSolicitudCosteoMuestra.RutaCaptura() with
+        {
+            OrigenMunicipioId = origenId,
+            Origen = origen ?? string.Empty,
+            DestinoMunicipioId = destinoId,
+            Destino = destino ?? string.Empty,
+        }, linea);
+
+    private static IEnumerable<string> CodigosDe(clsErrorDominio error) =>
+        ((IEnumerable<IReadOnlyDictionary<string, object?>>)error.Datos!["errores"]!).Select(e => (string)e["codigo"]!);
+
+    private static clsMargenPolitica ConId(clsMargenPolitica politica, int id)
+    {
+        typeof(clsMargenPolitica).GetProperty(nameof(clsMargenPolitica.Id))!.SetValue(politica, id);
+        return politica;
     }
 
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
-        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService());
+        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+        new clsCapturaRutasService(_filas, _costosConexos, new clsPlanificadorCamionSinVehiculo(), NullLogger<clsCapturaRutasService>.Instance));
 
     /// <summary>Foto de Nexo con la única línea costeada (borrador, como el auto-costeo de la Biblioteca).</summary>
     private static clsCosteoConsultadoNexo FotoCosteada(decimal flete) =>

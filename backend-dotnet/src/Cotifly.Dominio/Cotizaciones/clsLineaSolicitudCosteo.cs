@@ -32,6 +32,18 @@ public static class clsCodigosLineaSolicitud
 
     /// <summary>G6 (HU-013.11): el texto del origen o destino no coincide con ningún municipio del catálogo de Nexo.</summary>
     public const string MunicipioNoEncontrado = "MUNICIPIO_NO_ENCONTRADO";
+
+    /// <summary>HU-021.6 (decisión 2): el id de municipio que llegó no existe en el catálogo de municipios de Nexo.</summary>
+    public const string MunicipioInexistente = "MUNICIPIO_INEXISTENTE";
+
+    /// <summary>HU-021.6: la ruta pide dos veces el mismo servicio conexo (la cantidad ya dice cuántos son).</summary>
+    public const string ConexoDuplicado = "CONEXO_DUPLICADO";
+
+    /// <summary>HU-021.6: el servicio conexo no está (activo) en el catálogo de Nexo.</summary>
+    public const string ConexoNoEncontrado = "CONEXO_NO_ENCONTRADO";
+
+    /// <summary>HU-021.6: la ruta pide más servicios conexos de los admitidos.</summary>
+    public const string DemasiadosConexos = "DEMASIADOS_CONEXOS";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -85,9 +97,21 @@ public sealed record clsLineaSolicitudCosteo
     public bool? Exclusivo { get; init; }
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
+
+    /// <summary>Nombre del municipio donde se devuelve el contenedor (copia, decisión 2 de HU-021).</summary>
     public string? CiudadDevolucionContenedor { get; init; }
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de devolución del contenedor (HU-021.6, decisión 2).</summary>
+    public int? CiudadDevolucionMunicipioId { get; init; }
+
     public bool? LevanteContenedorDiferente { get; init; }
+
+    /// <summary>Nombre del municipio donde se levanta el contenedor (copia, decisión 2 de HU-021).</summary>
     public string? CiudadLevanteContenedor { get; init; }
+
+    /// <summary>Id de <c>tbl_municipios</c> de Nexo de la ciudad de levante del contenedor (HU-021.6, decisión 2).</summary>
+    public int? CiudadLevanteMunicipioId { get; init; }
+
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
@@ -128,10 +152,30 @@ public sealed record clsLineaSolicitudCosteo
     public IReadOnlyList<clsErrorCampo> Errores()
     {
         var errores = new List<clsErrorCampo>();
-        Obligatorio(errores, "origen", Origen, clsSolicitudCosteo.LargoCiudad);
-        Obligatorio(errores, "destino", Destino, clsSolicitudCosteo.LargoCiudad);
+
+        // HU-021.6 (decisión 2): con el id de municipio el nombre no es obligatorio (se copia del catálogo de Nexo al resolverlo).
+        if (OrigenMunicipioId is null)
+        {
+            Obligatorio(errores, "origen", Origen, clsSolicitudCosteo.LargoCiudad);
+        }
+        else
+        {
+            Largo(errores, "origen", Origen, clsSolicitudCosteo.LargoCiudad);
+        }
+
+        if (DestinoMunicipioId is null)
+        {
+            Obligatorio(errores, "destino", Destino, clsSolicitudCosteo.LargoCiudad);
+        }
+        else
+        {
+            Largo(errores, "destino", Destino, clsSolicitudCosteo.LargoCiudad);
+        }
+
         IdMunicipio(errores, "origen_municipio_id", OrigenMunicipioId);
         IdMunicipio(errores, "destino_municipio_id", DestinoMunicipioId);
+        IdMunicipio(errores, "ciudad_devolucion_municipio_id", CiudadDevolucionMunicipioId);
+        IdMunicipio(errores, "ciudad_levante_municipio_id", CiudadLevanteMunicipioId);
         Largo(errores, "tipo_vehiculo", TipoVehiculo, clsSolicitudCosteo.LargoCatalogo);
         Largo(errores, "carroceria", Carroceria, clsSolicitudCosteo.LargoCatalogo);
         Largo(errores, "tipologia", Tipologia, clsSolicitudCosteo.LargoCorto);
@@ -202,12 +246,81 @@ public sealed record clsLineaSolicitudCosteo
                 $"El campo 'clase_contenedor' es obligatorio con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}."));
         }
 
-        var levanteDistinto = !string.IsNullOrWhiteSpace(CiudadLevanteContenedor)
-            && !string.Equals(CiudadLevanteContenedor.Trim(), Origen?.Trim(), StringComparison.OrdinalIgnoreCase);
-        if (ValorAprovisionamiento is not null && !levanteDistinto)
+        if (ValorAprovisionamiento is not null && !LevanteDistintoDelOrigen)
         {
             errores.Add(new clsErrorCampo("valor_aprovisionamiento", clsCodigosLineaSolicitud.CampoNoAplica,
                 "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen."));
+        }
+
+        return errores;
+    }
+
+    /// <summary>
+    /// ¿El contenedor se levanta en una ciudad distinta del origen? Con los dos ids se comparan los ids; si no, los nombres
+    /// recortados (sin distinguir mayúsculas). Una ciudad de levante que solo trae el id y un origen que solo trae el nombre (o al
+    /// revés) cuentan como distintos: la comparación definitiva se hace con los ids ya resueltos.
+    /// </summary>
+    public bool LevanteDistintoDelOrigen
+    {
+        get
+        {
+            var levante = string.IsNullOrWhiteSpace(CiudadLevanteContenedor) ? null : CiudadLevanteContenedor.Trim();
+            if (CiudadLevanteMunicipioId is null && levante is null)
+            {
+                return false;
+            }
+
+            if (CiudadLevanteMunicipioId is { } idLevante && OrigenMunicipioId is { } idOrigen)
+            {
+                return idLevante != idOrigen;
+            }
+
+            var origen = string.IsNullOrWhiteSpace(Origen) ? null : Origen.Trim();
+            return levante is null || origen is null || !string.Equals(levante, origen, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Reglas que solo aplican a una captura NUEVA (formulario o licitación, HU-021.6), después de resolver los municipios. No se aplican
+    /// al revalidar lo guardado (rutas migradas o anteriores a estas reglas):
+    /// <list type="bullet">
+    /// <item>decisión 2: el origen y el destino llevan su id de municipio (<c>CAMPO_REQUERIDO</c> en <c>origen_municipio_id</c> /
+    /// <c>destino_municipio_id</c>); una ciudad de devolución o de levante con nombre lleva también su id;</item>
+    /// <item>cada mercancía lleva el tipo del catálogo del cubicador (<c>mercancias[i].id_tipo_mercancia</c>, <c>CAMPO_REQUERIDO</c>).</item>
+    /// </list>
+    /// </summary>
+    public IReadOnlyList<clsErrorCampo> ErroresCaptura()
+    {
+        var errores = new List<clsErrorCampo>();
+        void Requerido(string campo, string mensaje) => errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.CampoRequerido, mensaje));
+
+        if (OrigenMunicipioId is null)
+        {
+            Requerido("origen_municipio_id", "El origen debe llevar su id de municipio de Nexo (GET /web/municipios).");
+        }
+
+        if (DestinoMunicipioId is null)
+        {
+            Requerido("destino_municipio_id", "El destino debe llevar su id de municipio de Nexo (GET /web/municipios).");
+        }
+
+        if (CiudadDevolucionMunicipioId is null && !string.IsNullOrWhiteSpace(CiudadDevolucionContenedor))
+        {
+            Requerido("ciudad_devolucion_municipio_id", "La ciudad de devolución del contenedor debe llevar su id de municipio de Nexo.");
+        }
+
+        if (CiudadLevanteMunicipioId is null && !string.IsNullOrWhiteSpace(CiudadLevanteContenedor))
+        {
+            Requerido("ciudad_levante_municipio_id", "La ciudad de levante del contenedor debe llevar su id de municipio de Nexo.");
+        }
+
+        for (var i = 0; i < Posiciones.Count; i++)
+        {
+            if (Posiciones[i] is { } mercancia && (mercancia.IdTipoMercancia is null || mercancia.IdTipoMercancia == Guid.Empty))
+            {
+                Requerido($"mercancias[{i}].id_tipo_mercancia",
+                    $"La mercancía {i + 1} debe traer el tipo de mercancía del catálogo del cubicador (id_tipo_mercancia).");
+            }
         }
 
         return errores;

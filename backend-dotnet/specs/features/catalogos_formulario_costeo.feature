@@ -28,24 +28,29 @@ Característica: Solo códigos de catálogo en el formulario de costeo
     Y Nexo recibió la consulta de "/api/catalogos/tipos-vehiculo" y de "/api/catalogos/clases-viaje"
     Y Nexo no recibió la consulta de "/api/biblioteca-sap-historico/filtros"
 
-  Escenario: Un tipo de vehículo del catálogo viaja a Nexo con su código tal cual
-    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "3S3"
+  Escenario: Una clase de viaje del catálogo viaja a Nexo con su código tal cual
+    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
-    Y Nexo recibió la solicitud de "C1" con el tipoVehiculo "3S3"
+    Y Nexo recibió la solicitud de "C1" con el claseViaje "Contenedor"
 
-  Esquema del escenario: Un tipo de vehículo que no es código de catálogo se rechaza y no llega a Nexo
-    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "<texto>"
+  # HU-021.6 (decisión 7 de HU-021): el comercial ya no digita vehículo ni carrocería; los define el cubicador o la Mesa de Costeo.
+  Escenario: El tipo de vehículo que llega en el formulario se ignora y la línea viaja sin vehículo
+    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "Tractomula"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió la solicitud de "C1" sin tipoVehiculo
+
+  Esquema del escenario: Una clase de viaje que no es código de catálogo se rechaza y no llega a Nexo
+    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "<texto>"
     Entonces la respuesta tiene el estado 400 con el código de negocio "SOLICITUD_COSTEO_INVALIDA"
-    Y el mensaje del error menciona "tipo_vehiculo"
+    Y el mensaje del error menciona "clase_viaje"
     Y Nexo no recibió solicitudes
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 
     Ejemplos:
-      | texto                       |
-      | Tractomula                  |
-      | tractocamión 3 ejes semi 3  |
-      | 3s3                         |
-      | 3S3 refrigerado             |
+      | texto                  |
+      | Barco                  |
+      | contenedor             |
+      | Contenedor refrigerado |
 
   Escenario: Una tipología fuera del enum de Nexo se rechaza
     Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la tipología "Mercancía general"
@@ -64,7 +69,7 @@ Característica: Solo códigos de catálogo en el formulario de costeo
 
   Escenario: Con el catálogo maestro caído y sin copia en memoria la solicitud no se guarda ni llega a Nexo
     Cuando Nexo deja de responder
-    Y "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "3S3"
+    Y "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor"
     Entonces la respuesta tiene el estado 503 con el código de negocio "CATALOGOS_FLETE_NO_DISPONIBLE"
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 

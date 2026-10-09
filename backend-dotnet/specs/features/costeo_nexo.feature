@@ -16,7 +16,7 @@ Característica: Costeo de la cotización en Nexo
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
-    Y Nexo recibió la solicitud de "Buenaventura" a "Bogotá D.C." con el BP "15927" y 2 posiciones
+    Y Nexo recibió la solicitud de "Buenaventura" a "Bogotá, D.C." con el BP "15927" y 2 posiciones
 
   Escenario: Si Nexo no responde la cotización no se pierde y se reintenta sin volver a llenar el formulario
     Dado que Nexo responde 503 al alta de solicitudes
@@ -27,7 +27,7 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" reintenta el envío a costeo de "C1"
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
-    Y Nexo recibió la solicitud de "Buenaventura" a "Bogotá D.C." con el BP "15927" y 2 posiciones
+    Y Nexo recibió la solicitud de "Buenaventura" a "Bogotá, D.C." con el BP "15927" y 2 posiciones
 
   Escenario: Una cotización que ya llegó a Nexo no se reenvía
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
