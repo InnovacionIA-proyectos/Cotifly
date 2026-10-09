@@ -253,6 +253,55 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
             .Select(c => c.GetProperty("estado_nexo").GetString()).Should().OnlyContain(e => e == "enviado");
     }
 
+    /// <summary>
+    /// La espera por el catálogo tiene tope (<c>CosteoNexo:EsperaMaximaCatalogoConexosHoras</c>, 24 h por defecto). Con el reloj falso:
+    /// entregada en la misma consulta y con el catálogo caído, el Cargue espera; el reintento se espacia 5 y luego 15 min, y pasadas 24 h
+    /// desde el inicio de la espera queda fallido_definitivo, visible en el costeo, y la cotización sale de la agenda. Nunca hubo un POST.
+    /// </summary>
+    [Fact]
+    public async Task UnaEsperaPorElCatalogoMasLargaQueElTopeQuedaFallidoDefinitivoYSaleDeLaAgenda()
+    {
+        var (sesion, folio) = await CapturarAsync();
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        _nexo.CatalogoFalla = HttpStatusCode.ServiceUnavailable;
+
+        // Una hora después de capturar: la caché del catálogo (5 min) ya venció, así que el Cargue también depende del catálogo.
+        var inicio = DateTimeOffset.UtcNow.AddHours(1);
+        using (clsRelojFijable.Fijar(inicio))
+        {
+            await _api.ProcesarPollingAsync(folio);
+        }
+
+        (await EventosAsync(folio, "en_espera")).Should().Be(1);
+        (await SiguienteConsultaAsync(folio)).Should().BeCloseTo(inicio + TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1), "primer espaciado: 5 min");
+
+        using (clsRelojFijable.Fijar(inicio + TimeSpan.FromMinutes(10)))
+        {
+            await _api.ProcesarPollingAsync(folio);
+        }
+
+        (await SiguienteConsultaAsync(folio)).Should().BeCloseTo(inicio + TimeSpan.FromMinutes(25), TimeSpan.FromSeconds(1), "segundo espaciado: 15 min");
+        (await EventosAsync(folio, "en_espera")).Should().Be(1, "la espera sigue en la misma fila");
+
+        using (clsRelojFijable.Fijar(inicio + TimeSpan.FromHours(25)))
+        {
+            await _api.ProcesarPollingAsync(folio);
+        }
+
+        (await EventosAsync(folio, "fallido_definitivo")).Should().Be(1);
+        (await EventosAsync(folio, "fallido")).Should().Be(0, "nunca hubo un POST rechazado");
+        (await AgendadaAsync(folio)).Should().BeFalse("con el tope vencido sale de la agenda");
+        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().BeEmpty();
+        var ruta = (await RutasAsync(sesion, folio)).Single();
+        ruta.GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("fallido_definitivo");
+        ruta.GetProperty("aviso_conexos_nexo").GetString().Should().Contain("Cargue en puerto");
+    }
+
+    private Task<DateTimeOffset> SiguienteConsultaAsync(string folio) => clsBaseDatosPruebas.EscalarAsync<DateTimeOffset>(_entorno.BaseDatos.CadenaCotifly,
+        $"SELECT costeoSiguienteConsultaAt FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+
     private List<string> ServiciosEnviados(string cotizacionNexo) =>
         [.. _nexo.PeticionesConexos(cotizacionNexo).SelectMany(p => p["items"]!.AsArray()).Select(i => i!["servicioConexoId"]!.GetValue<string>())];
 

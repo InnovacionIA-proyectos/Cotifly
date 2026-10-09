@@ -72,8 +72,12 @@ public sealed class clsEnvioConexosNexoService(
     IClsResolutorConexosCatalogo resolutor,
     IClsUnitOfWork unidadTrabajo,
     IOptions<clsOpcionesCosteoNexo> opciones,
+    IClsReloj reloj,
     ILogger<clsEnvioConexosNexoService> logger) : IClsEnvioConexosNexoService
 {
+    /// <summary>Espaciado del reintento mientras un conexo está <see cref="clsEnvioConexosNexo.EnEspera"/>: 5, 15 y 60 minutos (máximo).</summary>
+    public static readonly TimeSpan[] EsperasCatalogo = [TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(60)];
+
     /// <summary>Estados que ve el comercial en <c>servicios_conexos[].estado_nexo</c>.</summary>
     public const string VisiblePendiente = "pendiente";
 
@@ -92,17 +96,14 @@ public sealed class clsEnvioConexosNexoService(
         }
 
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
-        var enviados = 0;
-        var porReintentar = 0;
+        var total = clsResultadoEnvioConexos.Nada;
         foreach (var ruta in cotizacion.RutasOrdenadas.Where(r => r.Conexos.Count > 0))
         {
-            var resultado = await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
-                [.. registros.Where(r => r.LineaSolicitudId == ruta.Id)]);
-            enviados += resultado.Enviados;
-            porReintentar += resultado.PorReintentar;
+            total = total.Mas(await EnviarRutaAsync(cotizacion, ruta, cotizacionNexo, cotizacionNexoId, solicitud, usuarioId,
+                [.. registros.Where(r => r.LineaSolicitudId == ruta.Id)]));
         }
 
-        return new clsResultadoEnvioConexos(enviados, porReintentar);
+        return total;
     }
 
     public async Task<bool> TieneReintentosAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
@@ -142,15 +143,21 @@ public sealed class clsEnvioConexosNexoService(
         logger.LogWarning("No se pudo leer la cotización de Nexo de {Folio} para reintentar sus conexos ({Codigo}): se espera al siguiente ciclo.",
             cotizacion.Folio, leida.Error.Codigo);
         var registros = await cotizaciones.ListarEnviosConexosNexoAsync(cotizacion.Folio, solicitud, cancellationToken);
-        var porReintentar = 0;
+        var total = clsResultadoEnvioConexos.Nada;
         var guardar = false;
         foreach (var ruta in cotizacion.RutasOrdenadas)
         {
             var propios = registros.Where(r => r.LineaSolicitudId == ruta.Id).ToList();
             var estados = Estados(propios);
             var pendientes = ruta.Conexos.Select(c => c.IdServicioConexo).Where(id => PorReintentar(estados.GetValueOrDefault(id))).ToList();
-            porReintentar += pendientes.Count;
-            guardar |= Esperar(cotizacion, solicitud, ruta, estados, propios.Count == 0 ? 1 : propios.Max(r => r.Intento) + 1, pendientes);
+            if (pendientes.Count == 0)
+            {
+                continue;
+            }
+
+            var espera = Esperar(cotizacion, solicitud, ruta, propios, estados, propios.Count == 0 ? 1 : propios.Max(r => r.Intento) + 1, pendientes);
+            guardar |= espera.Guardo;
+            total = total.Mas(new clsResultadoEnvioConexos(0, espera.Quedan) { EsperaReintento = espera.Reintento });
         }
 
         if (guardar)
@@ -158,7 +165,7 @@ public sealed class clsEnvioConexosNexoService(
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         }
 
-        return new clsResultadoEnvioConexos(0, porReintentar);
+        return total;
     }
 
     public async Task<IReadOnlyDictionary<(Guid Ruta, string Conexo), string>> EstadosAsync(
@@ -295,10 +302,12 @@ public sealed class clsEnvioConexosNexoService(
                 ruta.Orden, cotizacion.Folio, resolucion.ErrorCatalogo?.Codigo, string.Join(", ", enEspera));
         }
 
-        if (yaEstan.Count > 0 || irresolubles.Count > 0 || enEspera.Any(id => estados.GetValueOrDefault(id) != clsEnvioConexosNexo.EnEspera))
+        // La espera tiene tope (CosteoNexo:EsperaMaximaCatalogoConexosHoras): pasado, el conexo queda fallido_definitivo.
+        var espera = enEspera.Count == 0 ? (Quedan: 0, Reintento: (TimeSpan?)null, Guardo: false)
+            : Esperar(cotizacion, solicitud, ruta, registros, estados, intento + 1, enEspera);
+        if (yaEstan.Count > 0 || irresolubles.Count > 0 || espera.Guardo)
         {
-            intento++;
-            _ = Esperar(cotizacion, solicitud, ruta, estados, intento, enEspera);
+            intento++;   // el mismo número con que Esperar registró
             if (yaEstan.Count > 0)
             {
                 cotizaciones.RegistrarEnvioConexosNexo(Registro(cotizacion, solicitud, ruta, intento, clsEnvioConexosNexo.Enviado, yaEstan, cotizacionNexo));
@@ -316,12 +325,13 @@ public sealed class clsEnvioConexosNexoService(
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
         }
 
+        var enEsperaResultado = new clsResultadoEnvioConexos(0, espera.Quedan) { EsperaReintento = espera.Reintento };
         var pendientes = porEnviar
             .Where(c => !yaEstan.Contains(c.IdServicioConexo) && !irresolubles.Contains(c.IdServicioConexo) && !enEspera.Contains(c.IdServicioConexo))
             .ToList();
         if (pendientes.Count == 0)
         {
-            return new clsResultadoEnvioConexos(yaEstan.Count, enEspera.Count);
+            return new clsResultadoEnvioConexos(yaEstan.Count, 0).Mas(enEsperaResultado);
         }
 
         // El intento queda guardado ANTES del POST (que no es idempotente): si el proceso muere a mitad, nadie lo repite a ciegas.
@@ -350,7 +360,7 @@ public sealed class clsEnvioConexosNexoService(
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             logger.LogWarning("No se pudieron enviar a Nexo los conexos de la ruta {Ruta} de {Folio} ({Codigo}); se reintenta en el siguiente ciclo.",
                 ruta.Orden, cotizacion.Folio, agregado.Error.Codigo);
-            return new clsResultadoEnvioConexos(0, ids.Count - alTope.Count + enEspera.Count);
+            return new clsResultadoEnvioConexos(0, ids.Count - alTope.Count).Mas(enEsperaResultado);
         }
 
         var enviados = ids;
@@ -379,7 +389,7 @@ public sealed class clsEnvioConexosNexoService(
         }
 
         await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
-        return new clsResultadoEnvioConexos(enviados.Count, enEspera.Count);
+        return new clsResultadoEnvioConexos(enviados.Count, 0).Mas(enEsperaResultado);
     }
 
     /// <summary>El id del catálogo con que viajó <paramref name="id"/> en su último intento (registro en curso), o <c>null</c>.</summary>
@@ -398,23 +408,65 @@ public sealed class clsEnvioConexosNexoService(
     }
 
     /// <summary>
-    /// Deja <see cref="clsEnvioConexosNexo.EnEspera"/> los conexos de <paramref name="ids"/> que todavía no lo están (una sola fila por
-    /// espera, no una por ciclo). ¿Registró algo?
+    /// Nexo no respondió antes del POST para los conexos de <paramref name="ids"/>: los que todavía no esperan quedan
+    /// <see cref="clsEnvioConexosNexo.EnEspera"/> desde ahora (una sola fila por espera, no una por ciclo); los que llevan más de
+    /// <c>CosteoNexo:EsperaMaximaCatalogoConexosHoras</c> esperando quedan <see cref="clsEnvioConexosNexo.FallidoDefinitivo"/> (warning y
+    /// aviso en el costeo). Devuelve cuántos siguen esperando, la espera hasta el siguiente reintento (<see cref="EsperaReintento"/>) y si
+    /// registró algo (con el número <paramref name="intento"/>).
     /// </summary>
-    private bool Esperar(
-        clsCotizacionSolicitud cotizacion, string solicitud, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string> estados, int intento,
-        IReadOnlyList<string> ids)
+    private (int Quedan, TimeSpan? Reintento, bool Guardo) Esperar(
+        clsCotizacionSolicitud cotizacion, string solicitud, clsLineaSolicitud ruta, IReadOnlyList<clsEnvioConexosNexo> registros,
+        IReadOnlyDictionary<string, string> estados, int intento, IReadOnlyList<string> ids)
     {
-        var nuevos = ids.Where(id => estados.GetValueOrDefault(id) != clsEnvioConexosNexo.EnEspera).ToList();
-        if (nuevos.Count == 0)
+        var ahora = reloj.AhoraUtc;
+        var maxima = opciones.Value.EsperaMaximaCatalogoConexos;
+        var desde = ids.ToDictionary(
+            id => id,
+            id => estados.GetValueOrDefault(id) == clsEnvioConexosNexo.EnEspera ? EsperaDesde(registros, id) ?? ahora : ahora,
+            StringComparer.OrdinalIgnoreCase);
+        var vencidos = ids.Where(id => ahora - desde[id] >= maxima).ToList();
+        var nuevos = ids.Where(id => estados.GetValueOrDefault(id) != clsEnvioConexosNexo.EnEspera && !vencidos.Contains(id)).ToList();
+        if (nuevos.Count > 0)
         {
-            return false;
+            cotizaciones.RegistrarEnvioConexosNexo(new clsEnvioConexosNexo(
+                cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.EnEspera, nuevos, []) { EsperaDesde = ahora });
         }
 
-        cotizaciones.RegistrarEnvioConexosNexo(new clsEnvioConexosNexo(
-            cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.EnEspera, nuevos, []));
-        return true;
+        if (vencidos.Count > 0)
+        {
+            cotizaciones.RegistrarEnvioConexosNexo(new clsEnvioConexosNexo(
+                cotizacion.Folio, solicitud, ruta.Id, intento, clsEnvioConexosNexo.FallidoDefinitivo, vencidos, []));
+            logger.LogWarning(
+                "Los conexos de la ruta {Ruta} de {Folio} llevan más de {Horas} h esperando a que Nexo responda (catálogo de conexos o cotización) ({Conexos}): quedan fallido_definitivo. Revísalos en Nexo.",
+                ruta.Orden, cotizacion.Folio, opciones.Value.EsperaMaximaCatalogoConexosHoras, string.Join(", ", vencidos));
+        }
+
+        var siguen = ids.Except(vencidos, StringComparer.OrdinalIgnoreCase).ToList();
+        TimeSpan? reintento = siguen.Count == 0 ? null : EsperaReintento(siguen.Min(id => ahora - desde[id]));
+        return (siguen.Count, reintento, nuevos.Count > 0 || vencidos.Count > 0);
     }
+
+    /// <summary>Espaciado del reintento según cuánto lleva la espera: 5 min, luego 15 y luego 60 (máximo).</summary>
+    public static TimeSpan EsperaReintento(TimeSpan transcurrido)
+    {
+        var acumulado = TimeSpan.Zero;
+        foreach (var espera in EsperasCatalogo)
+        {
+            acumulado += espera;
+            if (transcurrido < acumulado)
+            {
+                return espera;
+            }
+        }
+
+        return EsperasCatalogo[^1];
+    }
+
+    /// <summary>Cuándo empezó la espera vigente de <paramref name="id"/>: el registro en espera más reciente que lo incluye.</summary>
+    private static DateTimeOffset? EsperaDesde(IReadOnlyList<clsEnvioConexosNexo> registros, string id) =>
+        registros
+            .Where(r => r.Estado == clsEnvioConexosNexo.EnEspera && r.Conexos.Contains(id, StringComparer.OrdinalIgnoreCase))
+            .MaxBy(r => r.Intento)?.EsperaDesde;
 
     /// <summary>Los conexos de <paramref name="ids"/> que ya tienen <c>MaximoReintentosConexos</c> POST rechazados por Nexo.</summary>
     private List<string> AlTope(IReadOnlyList<clsEnvioConexosNexo> registros, IReadOnlyList<string> ids)

@@ -72,6 +72,16 @@ public sealed class clsOpcionesCosteoNexo : IValidatableObject
 
     public TimeSpan IntervaloReintentoConexos => TimeSpan.FromMinutes(IntervaloReintentoConexosMinutos);
 
+    /// <summary>
+    /// HU-021.9 (#136): horas que un conexo puede seguir <c>en_espera</c> (el catálogo de conexos o la cotización de Nexo no responden
+    /// antes del POST), contadas desde el inicio de la espera. Pasadas, queda <c>fallido_definitivo</c> con su aviso y la cotización sale
+    /// de la agenda. Mientras espera, el reintento de una cotización entregada se espacia 5, 15 y 60 minutos (máximo).
+    /// </summary>
+    [Range(1, 720)]
+    public int EsperaMaximaCatalogoConexosHoras { get; set; } = 24;
+
+    public TimeSpan EsperaMaximaCatalogoConexos => TimeSpan.FromHours(EsperaMaximaCatalogoConexosHoras);
+
     public TimeSpan LecturaInmediata => TimeSpan.FromSeconds(LecturaInmediataSegundos);
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

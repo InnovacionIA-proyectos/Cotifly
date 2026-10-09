@@ -29,6 +29,12 @@ public sealed record clsEnvioConexosNexo(
     public IReadOnlyList<string>? ConexosCatalogo { get; init; }
 
     /// <summary>
+    /// En el registro <see cref="EnEspera"/>: cuándo empezó la espera (reloj de la aplicación). Con él se aplica
+    /// <c>CosteoNexo:EsperaMaximaCatalogoConexosHoras</c> y el espaciado del reintento.
+    /// </summary>
+    public DateTimeOffset? EsperaDesde { get; init; }
+
+    /// <summary>
     /// Se va a hacer el POST: se guarda ANTES de llamar a Nexo, en su propia transacción. Si el proceso muere a mitad del POST, el
     /// siguiente ciclo lo encuentra sin resultado y lo trata como <see cref="Incierto"/> (nunca repite el POST a ciegas).
     /// </summary>
@@ -71,4 +77,24 @@ public sealed record clsEnvioConexosNexo(
 public sealed record clsResultadoEnvioConexos(int Enviados, int PorReintentar)
 {
     public static readonly clsResultadoEnvioConexos Nada = new(0, 0);
+
+    /// <summary>
+    /// Si TODOS los pendientes están <see cref="clsEnvioConexosNexo.EnEspera"/>: la espera hasta el siguiente reintento (5, 15 o 60 min
+    /// según cuánto lleva la espera). <c>null</c>: el intervalo normal (<c>CosteoNexo:IntervaloReintentoConexosMinutos</c>).
+    /// </summary>
+    public TimeSpan? EsperaReintento { get; init; }
+
+    /// <summary>Suma dos pasadas (rutas): con un fallido por reintentar manda el intervalo normal; si no, la espera más corta.</summary>
+    public clsResultadoEnvioConexos Mas(clsResultadoEnvioConexos otro)
+    {
+        ArgumentNullException.ThrowIfNull(otro);
+        var normal = (PorReintentar > 0 && EsperaReintento is null) || (otro.PorReintentar > 0 && otro.EsperaReintento is null);
+        TimeSpan? espera = normal ? null : (EsperaReintento, otro.EsperaReintento) switch
+        {
+            ({ } a, { } b) => a < b ? a : b,
+            ({ } a, null) => a,
+            (null, var b) => b,
+        };
+        return new clsResultadoEnvioConexos(Enviados + otro.Enviados, PorReintentar + otro.PorReintentar) { EsperaReintento = espera };
+    }
 }

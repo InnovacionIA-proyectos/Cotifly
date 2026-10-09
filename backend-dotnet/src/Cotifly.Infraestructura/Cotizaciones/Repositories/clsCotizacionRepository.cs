@@ -84,8 +84,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             conexos = envio.Conexos,
             conexos_catalogo = envio.ConexosCatalogo,
             conexos_nexo_previos = envio.PreviosNexo,
+            espera_desde = envio.EsperaDesde,
         });
-        var evento = clsEventoHerramienta.Registrar(clsEnvioConexosNexo.Herramienta, entrada, salida, envio.Estado != clsEnvioConexosNexo.Fallido, 0);
+        var evento = clsEventoHerramienta.Registrar(clsEnvioConexosNexo.Herramienta, entrada, salida,
+            envio.Estado is not (clsEnvioConexosNexo.Fallido or clsEnvioConexosNexo.EnEspera), 0);
         contexto.EventosHerramienta.Add(evento.Valor);
     }
 
@@ -112,9 +114,14 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
                 var conexos = salida?["conexos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList();
                 var previos = salida?["conexos_nexo_previos"]?.AsArray().Select(n => n!.GetValue<string>()).ToList() ?? [];
                 var catalogo = salida?["conexos_catalogo"] is JsonArray ids ? ids.Select(n => n!.GetValue<string>()).ToList() : null;
+                var esperaDesde = salida?["espera_desde"] is JsonValue desde ? desde.GetValue<DateTimeOffset>() : (DateTimeOffset?)null;
                 if (ruta is { } id && intento is { } numero && estado is not null && conexos is not null)
                 {
-                    envios.Add(new clsEnvioConexosNexo(folio.Trim(), solicitudNexoId.Trim(), id, numero, estado, conexos, previos) { ConexosCatalogo = catalogo });
+                    envios.Add(new clsEnvioConexosNexo(folio.Trim(), solicitudNexoId.Trim(), id, numero, estado, conexos, previos)
+                    {
+                        ConexosCatalogo = catalogo,
+                        EsperaDesde = esperaDesde,
+                    });
                 }
             }
             catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)

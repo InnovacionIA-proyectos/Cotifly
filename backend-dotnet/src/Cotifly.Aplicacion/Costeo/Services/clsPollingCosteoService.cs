@@ -125,7 +125,8 @@ public sealed class clsPollingCosteoService(
             var reintento = await envioConexos.ReintentarAsync(cotizacion, duenoConexos, CancellationToken.None);
             if (reintento.PorReintentar > 0)
             {
-                cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloReintentoConexos);
+                // Con los conexos en espera (Nexo sin responder antes del POST) el reintento se espacia 5, 15 y 60 min (#136).
+                cotizacion.ProgramarRelecturaCosteo(ahora + (reintento.EsperaReintento ?? config.IntervaloReintentoConexos));
             }
             else
             {
@@ -273,7 +274,7 @@ public sealed class clsPollingCosteoService(
                 // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos).
                 if (envio.PorReintentar > 0 && cotizacion.CosteoSiguienteConsultaAt is null)
                 {
-                    cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloReintentoConexos);
+                    cotizacion.ProgramarRelecturaCosteo(ahora + (envio.EsperaReintento ?? config.IntervaloReintentoConexos));
                     await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
                 }
             }
