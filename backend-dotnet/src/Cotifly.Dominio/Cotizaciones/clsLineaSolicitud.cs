@@ -296,7 +296,7 @@ public sealed class clsLineaSolicitud
             Carroceria = camion.Carroceria,
             PesoKg = camion.PesoKg,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = _vehiculos.Count == 1 ? linea.Posiciones : [],
+            Posiciones = VehiculosQueCuentan.Count == 1 ? linea.Posiciones : [],
         };
     }
 
@@ -325,8 +325,9 @@ public sealed class clsLineaSolicitud
     /// </summary>
     internal bool RegistrarEstadoCamiones(EstadoCosteo estado)
     {
+        // HU-021.9: un camión descartado en Nexo sigue descartado (no viaja en un reenvío); si lo están todos, cuentan todos.
         var cambio = false;
-        foreach (var camion in _vehiculos)
+        foreach (var camion in VehiculosQueCuentan)
         {
             cambio |= camion.RegistrarEstado(estado);
         }
@@ -363,11 +364,13 @@ public sealed class clsLineaSolicitud
 
     /// <summary>
     /// Re-solicitud en el mismo folio (HU-013.4): sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
-    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>.
+    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>. HU-021.9: los
+    /// camiones <c>descartada</c> en Nexo (la Mesa borró su línea) siguen descartados y no se reenvían, igual que en la <c>-vN</c>; si lo
+    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>).
     /// </summary>
     internal void ReiniciarCosteo()
     {
-        foreach (var camion in _vehiculos)
+        foreach (var camion in VehiculosQueCuentan)
         {
             camion.ReiniciarCosteo();
             camion.RegistrarEstado(Cotizaciones.EstadoCosteo.PendienteEnvio);

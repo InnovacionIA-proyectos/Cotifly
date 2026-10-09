@@ -1,3 +1,4 @@
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
@@ -33,9 +34,14 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
         var folio = clsFolio.Desde(origen.Folio);
         var folioBase = folio.EsExitoso ? folio.Valor.Base : origen.Folio;
         var maxima = await cotizaciones.ObtenerVersionMaximaAsync(folioBase, cancellationToken);
-        // HU-021: la línea de negocio, el costo y el margen son de las rutas; se muestran los de la ruta 1 y el costo total.
+        // HU-021.9 (#136): la línea de negocio y el margen son de cada ruta (la versión nueva los copia por ruta). Los de primer nivel
+        // son los de la ruta 1 (o "Varias" si las rutas tienen líneas distintas) y el costo es el total.
         var ruta = origen.PrimeraRuta;
-        var linea = ruta?.LineaNegocioId is { } id ? await politicas.ObtenerPorIdAsync(id, cancellationToken) : null;
+        var nombres = await clsLineasNegocioRutas.NombresAsync(origen, politicas, cancellationToken);
+        // Una ruta sin línea de negocio no cuenta para "Varias".
+        var lineaNegocio = origen.Rutas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().Count() > 1
+            ? clsCotizacionConLinea.Varias
+            : clsLineasNegocioRutas.Comun(origen, nombres);
 
         return new clsDatosNuevaVersion(
             origen.Id,
@@ -44,12 +50,24 @@ public sealed class clsNuevaVersionService(IClsCotizacionRepository cotizaciones
             origen.ClienteNombre,
             origen.NitCliente,
             origen.OrigenCliente is { } origenCliente ? clsCodigoEnum.ACodigo(origenCliente) : null,
-            linea?.LineaNegocio,
+            lineaNegocio,
             origen.CostoFinal,
             ruta?.MargenPoliticaSugerido,
             ruta?.MargenAplicado,
             ruta?.OrigenMargen is { } origenMargen ? clsCodigoEnum.ACodigo(origenMargen) : null,
             ruta?.MetodoCalculo,
-            origen.Moneda);
+            origen.Moneda)
+        {
+            Rutas = [.. origen.RutasOrdenadas.Select(r => new clsRutaNuevaVersion(
+                r.Orden,
+                r.LineaNegocioId,
+                clsLineasNegocioRutas.DeRuta(r, nombres),
+                r.OrigenNombre,
+                r.DestinoNombre,
+                r.MargenPoliticaSugerido,
+                r.MargenAplicado,
+                r.OrigenMargen is { } origenRuta ? clsCodigoEnum.ACodigo(origenRuta) : null,
+                r.MetodoCalculo))],
+        };
     }
 }

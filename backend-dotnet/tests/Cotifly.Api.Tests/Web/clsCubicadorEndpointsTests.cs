@@ -136,8 +136,11 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var agregar = await ConVersionAsync(api, _post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", ana.Access,
             clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 1, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(api, ana, folio));
         await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
-        _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Single()!["lineaId"]!
-            .GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, Indice(12_000m)), "decisión 3: el primer camión es la fila 1 del cubicador");
+        // El capturado llegó con el envío diferido del polling (decisión 10, #136) y el agregado con el POST: los dos a la fila 1.
+        var items = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).SelectMany(p => p["items"]!.AsArray()).Select(i => i!).ToList();
+        items.Select(i => i["servicioConexoId"]!.GetValue<string>()).Should().BeEquivalentTo([Cargue, Almacenamiento]);
+        var fila1 = _nexo.LineaCotizacionDe(solicitud, Indice(12_000m));
+        items.Select(i => i["lineaId"]!.GetValue<string>()).Should().Equal([fila1, fila1], "decisión 3: el primer camión es la fila 1 del cubicador");
 
         // Métricas por ruta (#137): una cotización, una ruta, costo = 3 fletes + 2 conexos.
         var ruta = await RutaAsync(api, ana, folio);

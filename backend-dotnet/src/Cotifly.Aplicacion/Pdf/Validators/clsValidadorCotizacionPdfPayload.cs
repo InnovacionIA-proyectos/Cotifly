@@ -36,7 +36,9 @@ public static class clsValidadorCotizacionPdfPayload
             return Error("Falta el payload de la cotización.");
         }
 
-        if (clsTextoSeguro.LimpiarLinea(payload.LineaNegocio) is null)
+        // HU-021.9 (#136): un pliego (con secciones) puede tener rutas de varias líneas de negocio; cada sección lleva la suya en su título,
+        // así que la línea de la cabecera solo se exige en el PDF de una tarifa (de ella salen el subtítulo y la imagen de la línea).
+        if (clsTextoSeguro.LimpiarLinea(payload.LineaNegocio) is null && payload.Secciones is not { Count: > 0 })
         {
             return Error("Falta 'linea_negocio'.");
         }

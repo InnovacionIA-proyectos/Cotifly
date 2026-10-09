@@ -16,7 +16,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 
 /// <summary>
 /// PDF de pliego (HU-011.5, ADR-017 §6) renderizado con PDFsharp-MigraDoc y leído con PdfPig: resumen con todas las rutas y el
-/// total sin conexos, tablas por origen (o solo el resumen en pliegos grandes), solo los servicios conexos incluidos, nunca costos,
+/// total sin conexos, una sección por ruta (HU-021.9; o solo el resumen en pliegos grandes), los servicios conexos aparte, nunca costos,
 /// el encabezado del resumen en cada página y pliegos de hasta 1000 rutas. En USD, la nota de TRM mínima (ADR-014 §5).
 /// </summary>
 public sealed class clsPdfPliegoTests
@@ -67,7 +67,7 @@ public sealed class clsPdfPliegoTests
     /// <summary>El mismo camino de <c>clsCosteoCotizacionService.GenerarAsync</c>: validación del pliego, payload, documento y render.</summary>
     internal static (clsLectorPdf Lector, int Paginas) Generar(clsCotizacionSolicitud cotizacion)
     {
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, "COP").Should().BeNull();
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
         clsValidadorCotizacionPdfPayload.Validar(payload, clsCosteoCotizacionService.MaximoLineasPliego, clsCosteoCotizacionService.MaximoLineasPliego).Should().BeNull();
         var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), "COP", 0m).Valor;
@@ -160,16 +160,58 @@ public sealed class clsPdfPliegoTests
         }
     }
 
+    /// <summary>HU-021.9 (#136): el pliego trae una sección por ruta (en su orden), con su origen, su destino, sus camiones y su tarifa.</summary>
     [Fact]
-    public void LasRutasSeAgrupanPorOrigenEnLasTablasDeTarifa()
+    public void ElPliegoTraeUnaSeccionPorRutaConSuPrecioYSusCamiones()
     {
         var (cotizacion, lineas) = Pliego(12);
 
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "COP");
 
-        payload.Secciones!.Select(s => s.Origen).Should().OnlyHaveUniqueItems().And.Contain(["BUENAVENTURA", "BOGOTA, D.C."]);
-        payload.Secciones!.Sum(s => s.Filas!.Count).Should().Be(12);
-        payload.Secciones!.SelectMany(s => s.Filas!).Select(f => f.Tarifa).Should().BeEquivalentTo(lineas.Select(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)));
+        payload.Secciones.Should().HaveCount(12).And.OnlyContain(s => s.Filas!.Count == 1);
+        payload.Secciones!.Select(s => s.Titulo).Should().Equal(lineas.Select(l => $"RUTA {l.Orden}: PLIEGO DE TRANSPORTE NACIONAL"));
+        payload.Secciones!.Select(s => s.Origen).Should().Equal(lineas.Select(l => l.OrigenNombre));
+        payload.Secciones!.Select(s => s.Filas![0].Destino).Should().Equal(lineas.Select(l => l.DestinoNombre));
+        payload.Secciones!.Select(s => s.Filas![0].VehiculoPeso).Should().Equal(lineas.Select(clsCosteoCotizacionService.Camiones));
+        payload.Secciones!.Select(s => s.Filas![0].Tarifa).Should().Equal(lineas.Select(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)));
+    }
+
+    /// <summary>HU-021.9: con rutas de varias líneas de negocio, cada sección lleva la de su ruta.</summary>
+    [Fact]
+    public void CadaSeccionDelPliegoLlevaLaLineaDeNegocioDeSuRuta()
+    {
+        var (cotizacion, lineas) = Pliego(3);
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(lineas[2], 7);
+        var nombres = new Dictionary<int, string> { [1] = "Nacional", [7] = "Contenedores" };
+
+        var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, null, "COP", nombres);
+
+        payload.Secciones!.Select(s => s.Titulo).Should().Equal(
+            "RUTA 1: PLIEGO DE TRANSPORTE NACIONAL", "RUTA 2: PLIEGO DE TRANSPORTE NACIONAL", "RUTA 3: PLIEGO DE TRANSPORTE CONTENEDORES");
+        clsLineasNegocioRutas.Comun(cotizacion, nombres).Should().BeNull("las rutas tienen líneas distintas");
+    }
+
+    /// <summary>
+    /// HU-021.9: un pliego de 3 rutas renderizado: cada ruta en su sección con su precio, el resumen con el total sin conexos, los conexos
+    /// aparte, y tarifas + conexos = precio final (Σ precioFinalLinea).
+    /// </summary>
+    [Fact]
+    public void UnPliegoDeTresRutasImprimeCadaRutaConSuPrecioYCuadraConElTotal()
+    {
+        var (cotizacion, lineas) = Pliego(3);
+
+        var texto = System.Text.RegularExpressions.Regex.Replace(Generar(cotizacion).Lector.Texto, @"\s+", " ");
+
+        foreach (var linea in lineas)
+        {
+            texto.Should().Contain($"RUTA {linea.Orden}: PLIEGO DE TRANSPORTE NACIONAL");
+            texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, linea)!.Value, "COP"));
+        }
+
+        var tarifas = lineas.Sum(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)!.Value);
+        var conexos = lineas.SelectMany(l => clsCosteoCotizacionService.ConexosConPrecio(cotizacion, l)).Sum(c => c.Precio);
+        (tarifas + conexos).Should().Be(cotizacion.PrecioFinal, "precioFinal = Σ precioFinalLinea, con los conexos");
+        texto.Should().Contain(clsFormatoMoneda.Formatear(tarifas, "COP")).And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS)");
     }
 
     [Fact]
@@ -207,12 +249,14 @@ public sealed class clsPdfPliegoTests
     }
 
     [Fact]
-    public void VeintiunOrigenesSalenCompactos()
+    public void VeintiunaRutasSalenCompactas()
     {
-        var (cotizacion, lineas) = Pliego(21, i => ($"ORIGEN {i}", "BOGOTA, D.C."));
+        var (cotizacion, _) = Pliego(21, i => ($"ORIGEN {i}", "BOGOTA, D.C."));
+        var (veinte, _) = Pliego(20);
 
-        clsCosteoCotizacionService.EsPliegoCompacto(cotizacion).Should().BeTrue();
-        Generar(cotizacion).Lector.Texto.Should().Contain("ORIGEN 20");
+        clsCosteoCotizacionService.EsPliegoCompacto(cotizacion).Should().BeTrue("una sección por ruta: más de 20 secciones no caben");
+        clsCosteoCotizacionService.EsPliegoCompacto(veinte).Should().BeFalse();
+        Generar(cotizacion).Lector.Texto.Should().Contain("ORIGEN 20").And.NotContain("RUTA 21: PLIEGO");
     }
 
     [Fact]
@@ -224,14 +268,102 @@ public sealed class clsPdfPliegoTests
         Generar(cotizacion).Lector.Texto.Replace(" ", string.Empty, StringComparison.Ordinal).Should().Contain("FINALD5");
     }
 
+    /// <summary>HU-021.9 (#136): <c>EsPliego</c> = "tiene más de una ruta"; una licitación de una fila sale con el PDF de una ruta.</summary>
     [Fact]
-    public void UnaLicitacionDeUnaLineaTambienSaleComoPliegoConSuRuta()
+    public void UnaLicitacionDeUnaLineaSaleConElPdfDeUnaRuta()
     {
         var (cotizacion, lineas) = Pliego(1);
 
         lineas.Should().ContainSingle();
-        clsCosteoCotizacionService.EsPliego(cotizacion).Should().BeTrue("toda licitación sale como pliego, aunque tenga una sola ruta");
-        Generar(cotizacion).Lector.Texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.Contain("TOTAL DEL PLIEGO (1 RUTAS");
+        clsCosteoCotizacionService.EsPliego(cotizacion).Should().BeFalse("el pliego es para más de una ruta");
+        clsCosteoCotizacionService.EsPliego(Pliego(2).Cotizacion).Should().BeTrue();
+        var texto = GenerarRuta(cotizacion, "COP", 0m);
+        texto.Should().Contain("BUENAVENTURA").And.Contain("BOGOTA").And.NotContain("TOTAL DEL PLIEGO");
+        texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, lineas[0])!.Value, "COP"));
+    }
+
+    /// <summary>
+    /// HU-021.9: el PDF de una ruta con dos camiones iguales los agrupa ("2 × 3S3 - FURGON") con el peso total, imprime la tarifa del
+    /// transporte y los conexos aparte: tarifa + conexos = precio de la ruta = precio final. Nunca los costos.
+    /// </summary>
+    [Fact]
+    public void ElPdfDeUnaRutaConDosCamionesLosAgrupaYCuadraConElPrecio()
+    {
+        var (cotizacion, ruta) = RutaConDosCamiones();
+
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP").Should().BeNull();
+        var texto = GenerarRuta(cotizacion, "COP", 0m);
+
+        clsCosteoCotizacionService.Camiones(ruta).Should().Be("2 × 3S3 - FURGON (20000 KG)");
+        texto.Should().Contain("2 × 3S3 - FURGON (20000", "la celda puede partirse en dos renglones junto a la tarifa");
+        var tarifa = clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value;
+        var conexo = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta).Single().Precio;
+        (tarifa + conexo).Should().Be(ruta.PrecioFinalLinea!.Value).And.Be(cotizacion.PrecioFinal!.Value);
+        texto.Should().Contain(clsFormatoMoneda.Formatear(tarifa, "COP")).And.Contain("Cargue y descargue").And.Contain(clsFormatoMoneda.Formatear(conexo, "COP"));
+        foreach (var camion in ruta.Vehiculos)
+        {
+            texto.Should().NotContain(clsFormatoMoneda.Formatear(camion.CostoFlete!.Value, "COP"), "el costo de Nexo nunca va al PDF");
+        }
+    }
+
+    /// <summary>HU-021.9 + ADR-014 §5: el PDF de una ruta en USD imprime la tarifa en US$ y la nota de TRM mínima tal como estaba.</summary>
+    [Fact]
+    public void ElPdfDeUnaRutaEnDolaresLlevaLaNotaDeTrmMinima()
+    {
+        var (cotizacion, ruta) = RutaConDosCamiones("USD", 3273.49m);
+
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "USD").Should().BeNull();
+        var texto = GenerarRuta(cotizacion, "USD", 3273.49m);
+
+        texto.Should().Contain(clsFormatoMoneda.Formatear(clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value, "USD"));
+        texto.Should().Contain(
+            "Esta cotización está bajo una TRM mínima de $3.273,49 y es de resaltar que la tarifa puede variar de acuerdo al "
+            + "comportamiento de la misma a la fecha de elaboración de la CPI.");
+    }
+
+    /// <summary>HU-021.9: el PDF exige todas las rutas con precio (el ajuste de margen es por ruta, el PDF no).</summary>
+    [Fact]
+    public void SinPrecioEnAlgunaRutaElPdfEsCosteoNoListo()
+    {
+        var (cotizacion, lineas) = Pliego(3);
+        lineas[1].FijarPrecio(null);
+        cotizacion.RecalcularPrecio(_ahora);
+
+        var error = clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP")!;
+
+        error.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        error.Mensaje.Should().Contain("ruta 2");
+    }
+
+    /// <summary>Formulario de una ruta con dos camiones 3S3 FURGON (10.000 kg cada uno) costeados y el conexo "Cargue y descargue".</summary>
+    private static (clsCotizacionSolicitud Cotizacion, clsLineaSolicitud Ruta) RutaConDosCamiones(string moneda = "COP", decimal trm = 0m)
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion
+        {
+            Folio = "PCN-900555111-AP-01102026-002", ClienteNombre = "AGENCIA DE ADUANAS JF", NitCliente = "900555111", Moneda = moneda, TrmAplicada = trm,
+        }).Valor;
+        cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
+        [
+            new clsRutaCapturada(clsSolicitudCosteoMuestra.RutaCaptura() with { PesoKg = 20_000m, Posiciones = [] }, 1, 0,
+                [new clsCamionPlaneado("3S3", "FURGON", 10_000m), new clsCamionPlaneado("3S3", "FURGON", 10_000m)],
+                [new clsCambioConexo("CX-1", "Cargue y descargue", 170_007m, 1m)]),
+        ]);
+        cotizacion.RegistrarEnvioCosteo("SOL-2", false, _ahora, _ahora);
+        var ruta = cotizacion.PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        clsCotizacionMuestra.AplicarCosteo(cotizacion, [1_000_007m, 1_000_007m], EstadoCosteo.Autocosteo, null);
+        return (cotizacion, ruta);
+    }
+
+    /// <summary>El camino de <c>GenerarAsync</c> para una ruta: payload de la ruta, documento y render; devuelve el texto (espacios normalizados).</summary>
+    private static string GenerarRuta(clsCotizacionSolicitud cotizacion, string moneda, decimal trm)
+    {
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, moneda).Should().BeNull();
+        var payload = clsCosteoCotizacionService.Payload(cotizacion, "Nacional", moneda);
+        clsValidadorCotizacionPdfPayload.Validar(payload).Should().BeNull();
+        var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 1), moneda, trm).Valor;
+        var pdf = _generador.Generar(documento);
+        return System.Text.RegularExpressions.Regex.Replace(clsLectorPdf.Leer(pdf.Contenido).Texto, @"\s+", " ");
     }
 
     // ADR-014 §5: el pliego en USD sale con las tarifas en US$ y la nota de TRM mínima con la TRM aplicada de la licitación.
@@ -240,7 +372,7 @@ public sealed class clsPdfPliegoTests
     {
         var (cotizacion, lineas) = Pliego(3);
 
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, "USD").Should().BeNull();
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "USD").Should().BeNull();
         var payload = clsCosteoCotizacionService.PayloadPliego(cotizacion, "Nacional", "USD");
         var documento = clsConstructorDocumentoCotizacion.Construir(payload, cotizacion.Folio, _firma, new DateOnly(2026, 10, 5), "USD", 3273.49m).Valor;
         var pdf = _generador.Generar(clsCosteoCotizacionService.DocumentoPliego(documento, cotizacion, "USD"));
@@ -276,6 +408,6 @@ public sealed class clsPdfPliegoTests
         var (cotizacion, lineas) = Pliego(3);
         lineas[0].FijarPrecio(1m);
 
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, "COP")!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "COP")!.Codigo.Should().Be(clsCodigosError.CosteoNoListo);
     }
 }

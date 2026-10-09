@@ -98,8 +98,8 @@ public sealed class clsPrecioCosteoLineasTests
         // HU-021: el conexo es de la ruta (la lectura del costeo no lo importa): su precio sale con el margen de la ruta en USD.
         clsCotizacionMuestra.ConConexo(cotizacion, "CX", "Cargue", 170_000m);
         clsCosteoCotizacionService.ConexosConPrecio(cotizacion, cotizacion.PrimeraRuta!).Should().ContainSingle().Which.Precio.Should().Be(61.10m);
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, "USD").Should().BeNull("el pliego en USD ya no se rechaza");
-        clsCosteoCotizacionService.ValidarPliego(cotizacion, " ")!.Codigo.Should().Be(Cotifly.Dominio.Comun.clsCodigosError.PdfPayloadInvalido,
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, "USD").Should().BeNull("el pliego en USD ya no se rechaza");
+        clsCosteoCotizacionService.ValidarTotal(cotizacion, " ")!.Codigo.Should().Be(Cotifly.Dominio.Comun.clsCodigosError.PdfPayloadInvalido,
             "sin moneda es un error de dominio, no una excepción");
     }
 

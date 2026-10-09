@@ -283,6 +283,29 @@ public sealed class clsTextosCosteoServiceTests
             .Should().Be(new clsTextosBase("presentación oferta de servicios de Transporte Nacional", string.Join("\n\n", clsTextosEstandar.TarifaUnica.Intro)));
     }
 
+    /// <summary>
+    /// HU-021.9 (#136): la línea de negocio, las rutas y los vehículos salen de las rutas y sus camiones, sin respaldo a la cabecera: con
+    /// rutas de dos líneas la IA recibe las dos, y el estándar (pliego) no lleva línea. Nunca montos.
+    /// </summary>
+    [Fact]
+    public async Task LaIaRecibeLasLineasDeNegocioYLosVehiculosDeLasRutas()
+    {
+        var pliego = clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-900555111-AP-05102026-030", usuarioId: _ana);
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(pliego.RutasOrdenadas[1], 7);
+        clsCotizacionMuestra.ConVersionNegocio(pliego, Version);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(pliego.Folio, _ana, Arg.Any<CancellationToken>()).Returns(pliego);
+        _unidad.GuardarCambiosSiVersionAsync(pliego.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
+        _politicas.ObtenerPorIdAsync(3, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Nacional", 0.15m).Valor);
+        _politicas.ObtenerPorIdAsync(7, Arg.Any<CancellationToken>()).Returns(Cotifly.Dominio.Margen.clsMargenPolitica.Crear("Contenedores", 0.12m).Valor);
+
+        (await Servicio().RedactarAsync(_ana, pliego.Folio, false, Version, Ct)).EsExitoso.Should().BeTrue();
+
+        await _redaccion.Received(1).RedactarAsync(
+            Arg.Is<clsContextoRedaccion>(c => c.LineaNegocio == "Nacional, Contenedores" && c.TipoVehiculo == "3S3" && c.Rutas.Count == 2),
+            new clsTextosBase(clsTextosEstandar.AsuntoLicitacion(null, 2), string.Join("\n\n", clsTextosEstandar.MultiSeccion.Intro)),
+            Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task LaRedaccionSeAuditaDespuesDeGuardarConLaHuellaYLaVersionDelPrompt()
     {

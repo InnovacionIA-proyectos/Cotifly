@@ -115,17 +115,17 @@ Característica: Asistente IA sobre una cotización (folio)
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
     Y la cotización "C1" queda en el estado de costeo "pendiente_costeo"
 
-  # HU-013.15 (#124): el comercial ve en el resumen, ANTES de confirmar, qué conexos se descartan (solo nombres, sin montos).
-  Escenario: La propuesta de re-solicitar en el mismo folio avisa los servicios conexos que se descartan
+  # HU-021.9 (#136; rehace #124): el comercial ve en el resumen, ANTES de confirmar, qué conexos se conservan (solo nombres, sin montos).
+  Escenario: La propuesta de re-solicitar en el mismo folio avisa los servicios conexos que se conservan
     Dado que Nexo costeó la solicitud de "C1" con el conexo "Cargue" de 85000
     Y que Nexo costeó la solicitud de "C1" con un flete de 2550000 y la entregó
     Y que el modelo propone re-solicitar el costeo con el motivo "El cliente pidió actualizar el flete" sin cambios de carga
     Cuando "ana" escribe en el chat "Vuelve a pedir el costo a Nexo" sobre el folio de "C1"
     Entonces la acción propuesta es "re_solicitar_costeo" con "POST" al endpoint de re-solicitud de "C1"
-    Y el resumen de la acción propuesta menciona "Se descartan los servicios conexos «Cargue»"
+    Y el resumen de la acción propuesta menciona "Se conservan los servicios conexos «Cargue» con su costo y siguen en el precio."
     Cuando "ana" confirma la acción propuesta
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CotizacionResumen" del contrato
-    Y la respuesta avisa que se descartan los servicios conexos "Cargue"
+    Y la respuesta avisa que se conservan los servicios conexos "Cargue"
     Y Nexo no recibió ninguna petición para agregar conexos
 
   Escenario: Si el modelo intenta una herramienta retirada no se ejecuta

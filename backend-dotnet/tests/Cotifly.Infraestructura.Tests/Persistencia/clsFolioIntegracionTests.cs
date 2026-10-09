@@ -3,6 +3,7 @@ using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -202,6 +203,29 @@ public sealed class clsFolioIntegracionTests(clsBaseDatosPruebas baseDatos) : cl
         var filas = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ListarConLineaPorUsuarioAsync(ana, 100, Ct));
 
         filas.Select(f => (f.Cotizacion.Folio, f.LineaNegocio)).Should().Equal((sinLinea.Folio, (string?)null), (conLinea.Folio, "Nacional"));
+    }
+
+    /// <summary>
+    /// HU-021.9 (#136): con rutas de líneas de negocio distintas, "Mis cotizaciones" dice "Varias"; el margen y su origen son los de la
+    /// ruta 1 (los de cada ruta están en el costeo). Contra SQL Server real.
+    /// </summary>
+    [Fact]
+    public async Task ElListadoDiceVariasConRutasDeLineasDistintasYTraeElMargenDeLaRuta1()
+    {
+        var ana = await CrearUsuarioAsync();
+        var varias = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Licitacion(2, FolioUnico(), ana, lineaNegocioId: 1);
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(varias.RutasOrdenadas[1], 3);
+        varias.RutasOrdenadas[0].RegistrarMargenCosteo(0.15m, 0.18m, OrigenMargen.SapTm, "margen");
+        varias.RutasOrdenadas[1].RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        var una = Cotifly.Pruebas.Comun.clsCotizacionMuestra.Licitacion(2, FolioUnico(), ana, lineaNegocioId: 3);
+        await GuardarAsync(varias);
+        await GuardarAsync(una);
+
+        var filas = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ListarConLineaPorUsuarioAsync(ana, 100, Ct));
+
+        var deVarias = filas.Single(f => f.Cotizacion.Id == varias.Id);
+        (deVarias.LineaNegocio, deVarias.MargenAplicado, deVarias.OrigenMargen).Should().Be(("Varias", 0.18m, OrigenMargen.SapTm));
+        filas.Single(f => f.Cotizacion.Id == una.Id).LineaNegocio.Should().Be("Importacion");
     }
 
     private async Task<clsResultado<string>> CrearAsync(Guid usuarioId, string? nit)

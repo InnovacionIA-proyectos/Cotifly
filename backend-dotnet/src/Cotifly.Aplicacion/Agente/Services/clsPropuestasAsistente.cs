@@ -156,19 +156,20 @@ public static class clsPropuestasAsistente
 
         cuerpo["nueva_version"] = entrada.VersionNueva;
 
-        // HU-013.15 (#124): el aviso de los conexos que se descartan tiene su espacio reservado dentro de los 300 caracteres: va justo
-        // después de la acción, se arma para que quepa completo ("y N más" y "agrégalos de nuevo" incluidos) y la descripción de los
+        // HU-021.9 (#136; rehace el aviso de #124): el aviso de los conexos que se conservan tiene su espacio reservado dentro de los 300
+        // caracteres: va justo después de la acción, se arma para que quepa completo ("y N más" incluido) y la descripción de los
         // cambios de carga se acorta antes que él. El motivo (texto del LLM) y el resto van después y son lo único que el recorte final
         // puede cortar.
         var inicio = entrada.VersionNueva
             ? $"Volver a pedir el costeo a Nexo en una versión nueva de {cotizacion.Folio}"
             : $"Volver a pedir el costeo a Nexo en el mismo folio {cotizacion.Folio}.";
         var minimoCambios = entrada.VersionNueva && cambios.TieneCambios ? DescripcionCambiosGenerica.Length : 1;
-        var conexos = AvisoConexosDescartados(clsReSolicitudCosteoService.ConexosDescartados(cotizacion), entrada.VersionNueva,
-            clsAccionPropuesta.LargoMaximoResumen - inicio.Length - minimoCambios);
+        var conexos = AvisoConexosConservados(clsReSolicitudCosteoService.ConexosConservados(cotizacion), entrada.VersionNueva,
+            clsAccionPropuesta.LargoMaximoResumen - inicio.Length - minimoCambios - 1);
         var resumen = entrada.VersionNueva
             ? inicio
-              + DescripcionCambios(cambios, clsAccionPropuesta.LargoMaximoResumen - inicio.Length - conexos.Length)
+              // - 1: el recorte final deja "…" en el último carácter; así nunca cae sobre el aviso.
+              + DescripcionCambios(cambios, clsAccionPropuesta.LargoMaximoResumen - inicio.Length - conexos.Length - 1)
               + conexos
               + $" Motivo: {Cita(motivo)}. La cotización original no cambia."
             : inicio + conexos
@@ -320,12 +321,13 @@ public static class clsPropuestasAsistente
     public const int LargoMaximoNombreConexo = 40;
 
     /// <summary>
-    /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se descartan (HU-013.15, #124), con un espacio inicial; vacío
-    /// si no hay. Solo nombres (de Nexo, nunca del LLM, cada uno recortado a <see cref="LargoMaximoNombreConexo"/>) y sin montos. Siempre
-    /// cabe completo en <paramref name="largoMaximo"/>: si no, nombra menos conexos (el resto va en "y N más") y, en el límite, solo
-    /// los cuenta. Nunca pierde "y N más" ni "agrégalos de nuevo".
+    /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se conservan (HU-021.9, #136; rehace el aviso de #124: con la
+    /// decisión 3 los conexos son de Cotifly y siguen en el precio de su ruta), con un espacio inicial; vacío si no hay. Solo nombres (de
+    /// Nexo, nunca del LLM, cada uno recortado a <see cref="LargoMaximoNombreConexo"/>) y sin montos. Siempre cabe completo en
+    /// <paramref name="largoMaximo"/>: si no, nombra menos conexos (el resto va en "y N más") y, en el límite, solo los cuenta. Nunca
+    /// pierde "y N más".
     /// </summary>
-    public static string AvisoConexosDescartados(IReadOnlyList<string> conexos, bool versionNueva, int largoMaximo = int.MaxValue)
+    public static string AvisoConexosConservados(IReadOnlyList<string> conexos, bool versionNueva, int largoMaximo = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(conexos);
         if (conexos.Count == 0)
@@ -341,8 +343,8 @@ public static class clsPropuestasAsistente
                 : "los servicios conexos " + string.Join(", ", conexos.Take(nombrados).Select(n => "«" + NombreConexo(n) + "»"))
                   + (resto > 0 ? $" y {resto} más" : string.Empty);
             return versionNueva
-                ? $" La versión nueva no lleva {nombres}: agrégalos de nuevo cuando llegue su costeo."
-                : $" Se descartan {nombres}: agrégalos de nuevo cuando llegue el costeo nuevo.";
+                ? $" La versión nueva copia {nombres} con su costo y siguen en el precio."
+                : $" Se conservan {nombres} con su costo y siguen en el precio.";
         }
 
         for (var nombrados = Math.Min(MaximoConexosEnAviso, conexos.Count); nombrados > 0; nombrados--)

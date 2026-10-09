@@ -89,7 +89,11 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
         using var agregar = await ConVersionAsync(_post, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", ana.Access,
             clsApiWebPruebas.Json(new { items = new[] { new { linea_orden = 2, servicio_id = Almacenamiento, cantidad = 1 } } }), await EtagAsync(ana, folio));
         await VerificarContratoAsync(agregar, "/web/cotizaciones/{folio}/costeo/servicios-conexos", _post, HttpStatusCode.OK);
-        var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Single()!;
+        var peticiones = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!);
+        peticiones.Should().HaveCount(2, "el polling envió el conexo capturado (envío diferido, #136) y el POST el agregado");
+        peticiones[0]["items"]!.AsArray().Single()!["servicioConexoId"]!.GetValue<string>().Should().Be(Cargue);
+        var item = peticiones[^1]["items"]!.AsArray().Single()!;
+        item["servicioConexoId"]!.GetValue<string>().Should().Be(Almacenamiento);
         item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, 2),
             "decisión 3 (#134): el conexo va a la línea del primer camión VIGENTE de su ruta (el de 12500 kg está descartado)");
 

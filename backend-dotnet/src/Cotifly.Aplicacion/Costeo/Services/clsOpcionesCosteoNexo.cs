@@ -59,6 +59,29 @@ public sealed class clsOpcionesCosteoNexo : IValidatableObject
     [Range(1, 100)]
     public int MaximoFallosRelectura { get; set; } = 10;
 
+    /// <summary>
+    /// Decisión 10 (HU-021.9): intentos fallidos del envío diferido de un conexo a Nexo antes de dejarlo <c>fallido_definitivo</c> (con un
+    /// warning y visible en el costeo). También acota los reintentos de una cotización ya entregada.
+    /// </summary>
+    [Range(1, 100)]
+    public int MaximoReintentosConexos { get; set; } = 5;
+
+    /// <summary>Espera entre reintentos del envío de conexos de una cotización que el polling ya no consulta (entregada).</summary>
+    [Range(1, 1440)]
+    public int IntervaloReintentoConexosMinutos { get; set; } = 5;
+
+    public TimeSpan IntervaloReintentoConexos => TimeSpan.FromMinutes(IntervaloReintentoConexosMinutos);
+
+    /// <summary>
+    /// HU-021.9 (#136): horas que un conexo puede seguir <c>en_espera</c> (el catálogo de conexos o la cotización de Nexo no responden
+    /// antes del POST), contadas desde el inicio de la espera. Pasadas, queda <c>fallido_definitivo</c> con su aviso y la cotización sale
+    /// de la agenda. Mientras espera, el reintento de una cotización entregada se espacia 5, 15 y 60 minutos (máximo).
+    /// </summary>
+    [Range(1, 720)]
+    public int EsperaMaximaCatalogoConexosHoras { get; set; } = 24;
+
+    public TimeSpan EsperaMaximaCatalogoConexos => TimeSpan.FromHours(EsperaMaximaCatalogoConexosHoras);
+
     public TimeSpan LecturaInmediata => TimeSpan.FromSeconds(LecturaInmediataSegundos);
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

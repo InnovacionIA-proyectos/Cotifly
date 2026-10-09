@@ -1533,14 +1533,23 @@ paths:
           respuesta de la primera petición y no crea `-v2` y `-v3` ni reenvía a Nexo dos veces.
         - Nexo no tiene una operación para reabrir ni para re-solicitar una solicitud (`docs/conexion_nexo/HU-013-preguntas-nexo.md`,
           pregunta 4): en los dos casos Cotifly hace una **captura nueva** (`POST /api/captura-solicitudes`) con lo guardado, y
-          guarda el id de la solicitud nueva. En el mismo folio el costo, el precio y los conexos anteriores se limpian (quedan en
-          la auditoría con el id de la solicitud anterior) y el polling consulta la solicitud nueva.
-        - **Servicios conexos (HU-013.15, #124; ADR-018 §5).** La captura nueva de Nexo empieza sin conexos: en el mismo folio los
-          del costeo anterior se pierden y la versión `-vN` no los copia. La respuesta (200 o 201) trae siempre
-          `conexos_descartados` con sus nombres (sin montos; `[]` si no había) y el resumen de la propuesta del asistente lo avisa
-          antes de confirmar. Cotifly **no** los vuelve a agregar en Nexo por su cuenta (Nexo no tiene DELETE de conexos: un
-          re-agregado automático repetido o a medias los duplicaría o cobraría sin confirmación); el comercial los agrega de nuevo
-          con `POST .../costeo/servicios-conexos` cuando llegue el costeo nuevo. Un `error_envio` por un rechazo
+          guarda el id de la solicitud nueva. En el mismo folio el costo y el precio anteriores se limpian (quedan en la auditoría
+          con el id de la solicitud anterior) y el polling consulta la solicitud nueva.
+        - **Por ruta (HU-021.9, #136).** La versión `-vN` copia cada ruta con su línea de negocio, sus mercancías, sus camiones
+          vigentes (los `descartada` en Nexo no) y sus conexos. Si los `datos_carga` cambian el peso o las mercancías, los camiones
+          de la ruta se borran y se vuelven a planificar (hoy un camión sin vehículo con el peso de la ruta; el cubicador cuando
+          exista, #133); un error del planificador no reserva ni crea nada. `tipo_vehiculo` y `carroceria` en `datos_carga` se
+          ignoran (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). El margen ajustado de cada ruta se conserva
+          en el mismo folio y se copia a la `-vN`.
+        - **Servicios conexos (HU-021.9, #136; rehace el aviso de #124 con la decisión 3).** Los conexos son filas de la ruta en
+          Cotifly (costo de Nexo como precio) y Cotifly es su fuente: en el mismo folio **se conservan** en su ruta y la `-vN` **los
+          copia** con la misma cantidad y el costo unitario del catálogo de Nexo de hoy; siguen en el precio. La respuesta (200 o
+          201) trae siempre `conexos_conservados` con sus nombres (sin montos; `[]` si no había) y el resumen de la propuesta del
+          asistente lo dice antes de confirmar; `conexos_descartados` queda en `[]` (obsoleto). La re-solicitud no los agrega en
+          Nexo en el acto: el envío diferido (decisión 10) los manda UNA vez a la cotización nueva de Nexo cuando el polling ve
+          costeada la línea del primer camión vigente de la ruta (Nexo no tiene DELETE ni idempotencia en ese POST: un envío
+          incierto se relee y nunca se repite a ciegas). La cotización anterior de Nexo queda como estaba. Un camión descartado en
+          Nexo no se reenvía (mismo folio) ni se copia (`-vN`). Un `error_envio` por un rechazo
           definitivo de Nexo (400) no se reenvía igual en el mismo folio (`ESTADO_NO_PERMITE`): se corrige con `datos_carga`.
           Con `datos_carga`, una licitación (varias líneas) responde `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`
           (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
@@ -2004,10 +2013,15 @@ paths:
         regenerar cuando `pdf_desactualizado = true` (el anterior queda en el historial); con el PDF vigente sigue
         respondiendo `PDF_YA_GENERADO` y, ya enviada o con resultado, `PDF_YA_ENVIADO`.
 
-        HU-011.5 (ADR-017 §6): una licitación (aunque tenga una sola línea) o una cotización de dos o más líneas sale con el
-        layout de pliego: resumen con una fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin
-        servicios conexos, y luego una tabla por origen. Con más de 60 rutas o más de 20 orígenes solo trae el resumen
-        (hasta 1000 rutas). Solo cuando todas las líneas tienen precio y el total es su suma (si no, `COSTEO_NO_LISTO`).
+        **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
+        agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
+        se imprime) y la tarifa del transporte de la ruta; los servicios conexos van aparte con su precio (tarifa + conexos =
+        precio de la ruta). Con **más de una ruta** (formulario o licitación) sale con el layout de pliego: resumen con una
+        fila por ruta (número, ruta, vehículo y peso, tarifa) y el total del pliego sin servicios conexos, y luego **una
+        sección por ruta** con su título (y la línea de negocio de la ruta), su origen, su destino, sus camiones y su tarifa.
+        Con más de 20 rutas solo trae el resumen (hasta 1000 rutas). Una licitación de una sola fila sale con el PDF de una
+        ruta. En los dos casos el PDF exige que **todas** las rutas tengan precio y que `precio_final` sea la suma de sus
+        `precio_final_linea` (con los conexos incluidos); si no, `COSTEO_NO_LISTO` (el ajuste de margen es por ruta, el PDF no).
         En USD (HU-012.1, licitaciones con `moneda = USD`) las tarifas salen en `US$` con 2 decimales y el PDF lleva la nota
         "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al
         comportamiento de la misma a la fecha de elaboración de la CPI." con la `trm_aplicada` de la cotización (formato
@@ -3130,19 +3144,24 @@ components:
           type: string
           nullable: true
           enum: [sap_tm, politica_linea, negociado, null]
-          description: '`negociado` = ajuste manual del comercial (badge "Ajuste fuera de política").'
+          description: '`negociado` = ajuste manual del comercial (badge "Ajuste fuera de política"). HU-021.9 (#136): el de la ruta 1.'
         cliente:
           type: string
           nullable: true
         linea_negocio:
           type: string
           nullable: true
+          description: |
+            HU-021.9 (#136). La línea de negocio es de cada ruta: aquí la de la ruta 1, o `Varias` si las rutas de la solicitud
+            tienen líneas distintas (la de cada ruta está en `CosteoCotizacion.rutas[]`).
         precio_final:
           type: number
           nullable: true
+          description: HU-021. La suma del precio de las rutas (con sus conexos); `null` mientras alguna ruta no tenga precio.
         margen_aplicado:
           type: number
           nullable: true
+          description: HU-021.9 (#136). El margen es de cada ruta; aquí el de la ruta 1 (el de cada ruta está en el costeo).
         moneda:
           type: string
           example: COP
@@ -3188,13 +3207,24 @@ components:
           nullable: true
         conexos_descartados:
           type: array
+          deprecated: true
           items:
             type: string
           description: |
-            HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí, `[]` si no había):
-            nombres de los servicios conexos INCLUIDOS del costeo anterior que la cotización resultante ya no tiene (sin montos;
-            los excluidos no iban para el cliente y no se listan). No se
-            vuelven a agregar en Nexo; el frontend los muestra como aviso y ofrece agregarlos de nuevo cuando llegue el costeo.
+            HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí). **Desde HU-021.9 (#136,
+            decisión 3) siempre `[]`**: la re-solicitud ya no descarta conexos (ver `conexos_conservados`). Se conserva por
+            compatibilidad y se retira con #138.
+        conexos_conservados:
+          type: array
+          items:
+            type: string
+          description: |
+            HU-021.9 (#136; rehace el aviso de #124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí,
+            `[]` si no había): nombres de los servicios conexos que la cotización resultante conserva (mismo folio) o copió de la
+            original (`-vN`), sin montos. Siguen en el precio de su ruta con la misma cantidad (Cotifly es la fuente de los
+            conexos; la `-vN` toma el costo unitario del catálogo de Nexo de hoy). A la cotización nueva de Nexo los manda una
+            sola vez el envío diferido (decisión 10) cuando Nexo costea la línea del primer camión vigente de la ruta. El
+            frontend los muestra como aviso informativo.
 
     MisCotizaciones:
       type: object
@@ -3818,14 +3848,55 @@ components:
           type: integer
           nullable: true
           description: HU-021.8. Ruta a la que pertenece el conexo (`rutas[].linea_orden`).
+        estado_nexo:
+          type: string
+          nullable: true
+          enum: [pendiente, enviado, incierto, fallido_definitivo, null]
+          description: |
+            Decisión 10 (HU-021.9, #136). Estado del envío diferido del conexo a la cotización de Nexo: `pendiente` (se envía cuando
+            Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
+            su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
+            reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). Solo en
+            `GET .../costeo`; `null` en las respuestas de las mutaciones y antes de enviar la solicitud a Nexo.
 
     RutaCosteo:
       type: object
-      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos]
+      required: [linea_orden, linea_solicitud_id, origen, destino, estado_costeo, precio_final_linea, margen_aplicado, margen_sugerido, origen_margen, servicios_conexos, camiones, mercancias]
       description: |
         HU-021.8 (#135). Una ruta del costeo, sin costos. El ajuste de margen (`PUT .../costeo/margen`) y los cambios de
         conexos (`PUT`/`POST .../costeo/servicios-conexos`) dicen a qué ruta aplican con `linea_orden` o `linea_solicitud_id`.
+        HU-021.9 (#136): trae también su línea de negocio, su peso, sus camiones y sus mercancías.
       properties:
+        linea_negocio_id:
+          type: integer
+          nullable: true
+          description: HU-021.9. Línea de negocio de la ruta (id de `MargenesPolitica`); define su margen.
+        peso_kg:
+          type: number
+          nullable: true
+          description: HU-021.9. Peso total que declaró el comercial para la ruta.
+        camiones:
+          type: array
+          description: |
+            HU-021.9. Los camiones de la ruta en su orden estable (el primero vigente lleva los conexos en Nexo). Sin costos ni ids
+            de Nexo. Los `descartada` vienen con su estado y no cuentan en el precio.
+          items:
+            $ref: '#/components/schemas/CamionCosteo'
+        vehiculos:
+          type: string
+          nullable: true
+          description: HU-021.9. Los camiones agrupados como los imprime el PDF ("2 × 3S3 - FURGON (20000 KG)"); `null` sin datos.
+        mercancias:
+          type: array
+          description: HU-021.9. Las mercancías de la ruta, en su orden.
+          items:
+            $ref: '#/components/schemas/MercanciaCosteo'
+        aviso_conexos_nexo:
+          type: string
+          nullable: true
+          description: |
+            Decisión 10 (HU-021.9). Aviso cuando algún conexo de la ruta quedó `incierto` o `fallido_definitivo` en su envío a Nexo
+            (el comercial o la Mesa deben revisarlo en Nexo); `null` si no hay nada que revisar. Solo en `GET .../costeo`.
         linea_orden:
           type: integer
           minimum: 1
@@ -3862,6 +3933,55 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ServicioConexoCosteo'
+
+    CamionCosteo:
+      type: object
+      required: [tipo_vehiculo, carroceria, peso_kg, estado_costeo]
+      description: |
+        HU-021.9 (#136). Un camión de la ruta como lo ve el comercial, sin costos ni ids de Nexo. `tipo_vehiculo` y `carroceria`
+        en `null` = sin selección automática: los resuelve la Mesa de Costeo de Nexo (decisión 7).
+      properties:
+        tipo_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        peso_kg:
+          type: number
+          nullable: true
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+
+    MercanciaCosteo:
+      type: object
+      required: [orden, id_tipo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
+      description: HU-021.9 (#136). Una mercancía de la ruta (tipo del catálogo del cubicador, nombre, medidas y peso).
+      properties:
+        orden:
+          type: integer
+          minimum: 1
+        id_tipo_mercancia:
+          type: string
+          format: uuid
+          nullable: true
+          description: Vacío en las mercancías migradas por el 0009.
+        nombre_mercancia:
+          type: string
+          nullable: true
+        cantidad:
+          type: integer
+        largo_cm:
+          type: number
+        ancho_cm:
+          type: number
+        alto_cm:
+          type: number
+        peso_kg:
+          type: number
+          nullable: true
 
     CosteoCotizacion:
       type: object
@@ -3937,7 +4057,8 @@ components:
         rutas:
           type: array
           description: |
-            HU-021.8 (#135). Las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos.
+            HU-021.8 (#135). Las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos;
+            desde HU-021.9 (#136) también su línea de negocio, sus camiones y sus mercancías (nunca costos).
             `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad).
           items:
             $ref: '#/components/schemas/RutaCosteo'
@@ -5330,9 +5451,15 @@ components:
       type: object
       description: |
         Datos de lectura para prellenar el formulario. `cotizacion_origen_id` es solo el
-        id consultado; no se persiste como FK en la versión nueva.
-      required: [cotizacion_origen_id, folio_base, version_siguiente]
+        id consultado; no se persiste como FK en la versión nueva. HU-021.9 (#136): la línea de negocio y el margen son de
+        cada ruta (`rutas`); los de primer nivel son los de la ruta 1 (`linea_negocio` = `Varias` si las rutas tienen líneas
+        distintas) y `costo` es el total.
+      required: [cotizacion_origen_id, folio_base, version_siguiente, rutas]
       properties:
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaNuevaVersion'
         cotizacion_origen_id:
           type: string
           format: uuid
@@ -5373,3 +5500,38 @@ components:
         moneda:
           type: string
           nullable: true
+
+    RutaNuevaVersion:
+      type: object
+      description: HU-021.9 (#136). Una ruta de la cotización que la versión nueva copia, con su línea de negocio y su margen (sin costos).
+      required: [linea_orden, linea_negocio_id, linea_negocio, origen, destino, margen_politica, margen_aplicado, origen_margen, metodo_calculo]
+      properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+        linea_negocio_id:
+          type: integer
+          nullable: true
+        linea_negocio:
+          type: string
+          nullable: true
+        origen:
+          type: string
+          nullable: true
+        destino:
+          type: string
+          nullable: true
+        margen_politica:
+          type: number
+          nullable: true
+        margen_aplicado:
+          type: number
+          nullable: true
+        origen_margen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+        metodo_calculo:
+          type: string
+          nullable: true
+          enum: [margen, markup, null]

@@ -419,8 +419,8 @@
     "conexos": {
       "Frase": "Cargue y",
       "Pagina": 2,
-      "X": 50.19,
-      "Y": 322.97
+      "X": 50.18,
+      "Y": 332.76
     },
     "encabezado": {
       "Frase": "[imagen]",
@@ -431,13 +431,13 @@
     "firma": {
       "Frase": "Cordialmente,",
       "Pagina": 2,
-      "X": 39.69,
+      "X": 39.68,
       "Y": 303.33
     },
     "firmante": {
       "Frase": "Ana P\u00E9rez",
       "Pagina": 2,
-      "X": 39.69,
+      "X": 39.68,
       "Y": 287.53
     },
     "pie": {
@@ -461,7 +461,7 @@
     "tablaOrigen": {
       "Frase": "PLIEGO DE TRANSPORTE",
       "Pagina": 2,
-      "X": 224.63,
+      "X": 240.47,
       "Y": 590.62
     },
     "total": {
