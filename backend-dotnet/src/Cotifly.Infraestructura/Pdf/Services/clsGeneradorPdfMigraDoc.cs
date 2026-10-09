@@ -143,7 +143,7 @@ public sealed partial class clsGeneradorPdfMigraDoc : IClsGeneradorPdf
             clsBloqueCondiciones.Agregar(seccion, documento, diseno);
             seccion.AddPageBreak();
 
-            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego las tablas por origen.
+            // HU-011.5: el pliego abre con el resumen de todas sus rutas y el total; luego una sección por ruta (HU-021.9).
             if (documento.Variante == VarianteDocumento.Pliego && documento.Pliego is { } pliego)
             {
                 clsBloquePliego.Agregar(seccion, pliego, diseno);

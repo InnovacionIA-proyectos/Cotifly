@@ -2,6 +2,7 @@ using Cotifly.Aplicacion.Auditoria.Repositories;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
@@ -13,6 +14,7 @@ using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
 using Cotifly.Pruebas.Comun;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Cotifly.Aplicacion.Tests.Costeo;
@@ -38,6 +40,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     private readonly IClsValidadorFilasLicitacion _filas = FilasQuePasan();
     private readonly List<clsEventoHerramienta> _instantaneas = [];
     private readonly IClsFijacionMonedaService _monedas = Substitute.For<IClsFijacionMonedaService>();
+    private readonly IClsPlanificadorCamiones _planificador = Substitute.For<IClsPlanificadorCamiones>();
     private readonly Guid _ana = Guid.NewGuid();
     private readonly clsMargenPolitica _politica = clsMargenPolitica.Crear("Importacion", 0.15m).Valor;
     private readonly List<string> _eventos = [];
@@ -74,6 +77,10 @@ public sealed class clsReSolicitudCosteoServiceTests
         _folios.CrearNuevaVersionAsync(_ana, _cotizacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
             .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
                 clsFolio.Desde(_cotizacion.Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
+
+        // El planificador por defecto (hasta el cubicador, #133): un camión sin vehículo con el peso total de la ruta.
+        _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new clsPlanificadorCamionSinVehiculo().PlanificarAsync(ci.ArgAt<Guid>(0), ci.ArgAt<clsLineaSolicitudCosteo>(1)));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -202,14 +209,179 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.PesoKg.Should().Be(28_400m);
         ruta.LineaNegocioId.Should().Be(3);
         ruta.Mercancias.Should().HaveCount(2).And.OnlyContain(m => m.LineaSolicitudId == ruta.Id);
+
+        // HU-021.9: el peso cambió, así que el camión anterior (3S3) se borra y se vuelve a planificar; el tipo_vehiculo de datos_carga
+        // se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
         var camion = ruta.Vehiculos.Should().ContainSingle().Subject;
-        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(("2S3", "PORTACONTENEDORES", 28_400m));
+        (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(((string?)null, (string?)null, 28_400m));
+        await _planificador.Received(1).PlanificarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.PesoKg == 28_400m && l.TipoVehiculo == null), Arg.Any<CancellationToken>());
+        resultado.Valor.RutasReplanificadas.Should().Equal(1);
         await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
         await _envio.Received(1).EnviarGuardadaAsync(nueva, _politica, _ana, Arg.Any<string?>());
         _cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.CosteoVencido, "la original no cambia su costeo");
         _cotizacion.SolicitudNexoId.Should().Be("sol-vieja");
         _eventos.Should().StartWith(new[] { "instantanea", "reservar:costeo_vencido:v5" }, "la versión de la original se reserva antes de crear la nueva");
-        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo == "2S3"), Arg.Any<CancellationToken>());
+        await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo != "2S3"), Arg.Any<CancellationToken>());
+    }
+
+    // --- HU-021.9 (#136): la versión nueva copia por ruta y vuelve a planificar los camiones solo si cambian el peso o las mercancías ---
+
+    [Fact]
+    public async Task SinCambiosDeCargaLaVersionNuevaCopiaCadaRutaConSusCamionesSusConexosYSuLineaDeNegocio()
+    {
+        var licitacion = VencidaDeDosRutas();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var nueva = _agregada!;
+        nueva.Rutas.Should().HaveCount(2);
+        var r1 = nueva.RutasOrdenadas[0];
+        var r2 = nueva.RutasOrdenadas[1];
+        (r1.LineaNegocioId, r2.LineaNegocioId).Should().Be((3, 7), "cada ruta conserva su línea de negocio");
+        (r1.RutaOrigenIndice, r2.RutaOrigenIndice).Should().Be((0, 1));
+        r1.Vehiculos.Select(v => (v.TipoVehiculo, v.Carroceria, v.PesoKg)).Should().BeEquivalentTo(
+            [("3S3", "FURGON", (decimal?)10_001m), ("3S3", "FURGON", (decimal?)5_000m)]);
+        r1.Vehiculos.Should().OnlyContain(v => v.LineaSolicitudNexoId == null && v.CostoFlete == null && v.EstadoCosteo == EstadoCosteo.PendienteCosteo,
+            "camiones nuevos, sin el costeo de la original, enviados a Nexo como líneas nuevas");
+        r2.Vehiculos.Should().ContainSingle();
+        r2.Conexos.Should().ContainSingle(c => c.IdServicioConexo == "CX-9" && c.Nombre == "Escolta" && c.Precio == 42_500m && c.Cantidad == 2m);
+        r2.CostoServiciosConexos.Should().Be(85_000m, "el conexo copiado suma al costo de su ruta");
+        r1.Conexos.Should().BeEmpty();
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default!, Ct);
+        resultado.Valor.RutasReplanificadas.Should().BeEmpty();
+        resultado.Valor.ConexosConservados.Should().Equal("Escolta");
+    }
+
+    [Fact]
+    public async Task UnCamionDescartadoEnNexoNoSeCopiaALaVersionNueva()
+    {
+        var licitacion = VencidaDeDosRutas();
+        var descartado = licitacion.RutasOrdenadas[0].Vehiculos.Single(v => v.PesoKg == 5_000m);
+        licitacion.DescartarCamionSinLineaEnNexo(descartado.Id).Should().BeTrue();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        _agregada!.RutasOrdenadas[0].Vehiculos.Should().ContainSingle().Which.PesoKg.Should().Be(10_001m);
+    }
+
+    [Fact]
+    public async Task ConLaMercanciaCambiadaSeBorranLosCamionesYSeVuelvenAPlanificar()
+    {
+        // La ruta tenía dos camiones (uno con vehículo): con otras mercancías ya no sirven.
+        _cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", "FURGON", 500m);
+        var mercancias = new List<clsPosicionCarga> { new("Estiba de café", 10, 120m, 100m, 150m, 1425m) };
+        var cambios = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string> { clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg },
+            Posiciones = mercancias,
+            PesoKg = 14_250m,
+        };
+        _planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito([new clsCamionPlaneado("2S3", "FURGON", 8_000m), new clsCamionPlaneado(null, null, 6_250m)]));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var ruta = _agregada!.Rutas.Should().ContainSingle().Subject;
+        ruta.Mercancias.Should().ContainSingle().Which.Cantidad.Should().Be(10);
+        // Sin persistencia createdAt es el mismo: el orden estable cae en el id (aleatorio), así que se compara sin orden.
+        ruta.Vehiculos.Select(v => (v.TipoVehiculo, v.PesoKg)).Should().BeEquivalentTo([("2S3", (decimal?)8_000m), ((string?)null, (decimal?)6_250m)]);
+        await _planificador.Received(1).PlanificarAsync(_ana,
+            Arg.Is<clsLineaSolicitudCosteo>(l => l.Posiciones.Count == 1 && l.PesoKg == 14_250m), Arg.Any<CancellationToken>());
+        ruta.Conexos.Should().ContainSingle(c => c.Nombre == "Cargue", "los conexos de la ruta se copian aunque cambie la carga");
+        _cotizacion.PrimeraRuta.Vehiculos.Should().HaveCount(2, "la original no cambia");
+    }
+
+    [Fact]
+    public async Task UnPesoIgualAlGuardadoNoVuelveAPlanificarLosCamiones()
+    {
+        var cambios = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg, clsCambiosCarga.CampoHorasCargue },
+            PesoKg = _cotizacion.PrimeraRuta!.PesoKg,
+            HorasCargue = 8m,
+        };
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var ruta = _agregada!.Rutas.Should().ContainSingle().Subject;
+        ruta.HorasCargue.Should().Be(8m);
+        ruta.Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3", "sin cambios de peso ni de mercancías el camión se copia");
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task SiElPlanificadorFallaNoSeReservaNiSeCreaLaVersion()
+    {
+        var cambios = new clsCambiosCarga { Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg }, PesoKg = 28_400m };
+        _planificador.PlanificarAsync(_ana, Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio("CUBICADOR_NO_DISPONIBLE", "No se pudo calcular los vehículos."));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be("CUBICADOR_NO_DISPONIBLE");
+        _agregada.Should().BeNull();
+        _cotizacion.VersionNegocio.Should().Be(Version, "no se reserva la original");
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+    }
+
+    // --- Margen ajustado (decisión del usuario del 2026-10-06): se conserva al re-solicitar, por ruta (HU-021.9) ---
+
+    [Fact]
+    public async Task EnElMismoFolioElMargenAjustadoDeLaRutaSeConserva()
+    {
+        _cotizacion.AplicarMargenNegociado(1, 0.2m, DateTimeOffset.UtcNow).EsExitoso.Should().BeTrue();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada(), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var ruta = _cotizacion.PrimeraRuta!;
+        (ruta.MargenAplicado, ruta.OrigenMargen, ruta.MargenPoliticaSugerido).Should().Be((0.2m, OrigenMargen.Negociado, 0.15m));
+        ruta.PrecioFinalLinea.Should().BeNull("el precio vuelve con el costeo nuevo");
+    }
+
+    [Fact]
+    public async Task LaVersionNuevaCopiaElMargenAjustadoDeCadaRuta()
+    {
+        var licitacion = VencidaDeDosRutas();
+        licitacion.AplicarMargenNegociado(2, 0.22m, DateTimeOffset.UtcNow).EsExitoso.Should().BeTrue();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var rutas = _agregada!.RutasOrdenadas;
+        (rutas[1].MargenAplicado, rutas[1].OrigenMargen).Should().Be((0.22m, OrigenMargen.Negociado));
+        rutas[0].TieneMargenNegociado.Should().BeFalse("la ruta 1 no se ajustó: su margen se resuelve al enviar");
+    }
+
+    /// <summary>
+    /// Licitación vencida de dos rutas (líneas de negocio 3 y 7): la ruta 1 con dos camiones 3S3 (10.001 y 5.000 kg), la ruta 2 con uno
+    /// y el conexo Escolta (42.500 × 2). Ambas con flete de Nexo y precio.
+    /// </summary>
+    private clsCotizacionSolicitud VencidaDeDosRutas()
+    {
+        var licitacion = clsCotizacionMuestra.Licitacion(2, "PCN-900555111-AP-05102026-020", _ana);
+        licitacion.RutasOrdenadas[0].AgregarVehiculo("3S3", "FURGON", 5_000m);
+        typeof(clsLineaSolicitud).GetProperty(nameof(clsLineaSolicitud.LineaNegocioId))!.SetValue(licitacion.RutasOrdenadas[1], 7);
+        licitacion.RegistrarEnvioCosteo("sol-vieja", false, DateTimeOffset.UtcNow.AddHours(-73), DateTimeOffset.UtcNow);
+        foreach (var ruta in licitacion.Rutas)
+        {
+            ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+        }
+
+        licitacion.RutasOrdenadas[1].AgregarOActualizarConexo("CX-9", "Escolta", 42_500m, 2m);
+        clsCotizacionMuestra.AplicarCosteo(licitacion, [1_000_000m, 900_000m, 2_000_000m], EstadoCosteo.Entregada, null);
+        clsCotizacionMuestra.ConVersionNegocio(licitacion, Version);
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(licitacion.Folio, _ana, Arg.Any<CancellationToken>()).Returns(licitacion);
+        _unidad.GuardarCambiosSiVersionAsync(licitacion.Id, Version, Arg.Any<CancellationToken>()).Returns(true);
+        _folios.CrearNuevaVersionAsync(_ana, licitacion.Id, Arg.Any<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Func<clsFolio, CancellationToken, Task<clsResultado<clsCotizacionSolicitud>>>>()(
+                clsFolio.Desde(licitacion.Folio).Valor.ConVersion(2).Valor, CancellationToken.None));
+        return licitacion;
     }
 
     [Fact]
@@ -403,34 +575,39 @@ public sealed class clsReSolicitudCosteoServiceTests
         clsReSolicitudCosteoService.Huella("F", Entrada()).Should().NotBe(clsReSolicitudCosteoService.Huella("G", Entrada()));
     }
 
-    // --- HU-013.15 (#124): los conexos del costeo anterior se descartan y se avisan; nunca se vuelven a agregar en Nexo ---
+    // --- HU-021.9 (#136; rehace #124 con la decisión 3): los conexos son de Cotifly, se conservan y nunca se vuelven a agregar en Nexo ---
 
     [Fact]
-    public async Task EnElMismoFolioLaRespuestaAvisaLosConexosQueSeDescartanSinMontos()
+    public async Task EnElMismoFolioLosConexosSeConservanEnLaRutaYSeAvisanSinMontos()
     {
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada(), Version, null, Ct);
 
-        resultado.Valor.ConexosDescartados.Should().Equal("Cargue");
-        _cotizacion.Rutas.SelectMany(r => r.Conexos).Should().BeEmpty("el costeo anterior se olvidó");
-        _cotizacion.PrimeraRuta!.CostoServiciosConexos.Should().Be(0m);
-        Json(resultado.Valor.ConexosDescartados).Should().NotContain("85000").And.NotContain("100000");
+        resultado.Valor.ConexosConservados.Should().Equal("Cargue");
+        resultado.Valor.ConexosDescartados.Should().BeEmpty("la re-solicitud ya no descarta conexos");
+        var conexo = _cotizacion.PrimeraRuta!.Conexos.Should().ContainSingle().Subject;
+        (conexo.IdServicioConexo, conexo.Precio, conexo.Cantidad).Should().Be(("CX-1", 85_000m, 1m), "mismo costo unitario de Nexo y cantidad");
+        _cotizacion.PrimeraRuta.CostoServiciosConexos.Should().Be(85_000m);
+        _cotizacion.PrimeraRuta.PrecioFinalLinea.Should().BeNull("sin flete no hay precio: vuelve con el costeo nuevo");
+        Json(resultado.Valor.ConexosConservados).Should().NotContain("85000").And.NotContain("100000");
         await _auditoria.Received(1).RegistrarAsync(clsReSolicitudCosteoService.HerramientaAuditoria,
-            Arg.Any<object?>(), Arg.Is<object?>(s => Json(s).Contains("\"conexos_descartados\":[\"Cargue\"]")), true, Arg.Any<int>(), null);
+            Arg.Any<object?>(), Arg.Is<object?>(s => Json(s).Contains("\"conexos_conservados\":[\"Cargue\"]")), true, Arg.Any<int>(), null);
     }
 
     [Fact]
-    public async Task LaVersionNuevaAvisaLosConexosDeLaOriginalQueNoLleva()
+    public async Task LaVersionNuevaCopiaLosConexosDeLaOriginal()
     {
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
 
         resultado.Valor.VersionNueva.Should().BeTrue();
-        resultado.Valor.ConexosDescartados.Should().Equal("Cargue");
-        _agregada!.Rutas.SelectMany(r => r.Conexos).Should().BeEmpty("la versión nueva empieza sin conexos");
+        resultado.Valor.ConexosConservados.Should().Equal("Cargue");
+        var copiado = _agregada!.Rutas.SelectMany(r => r.Conexos).Should().ContainSingle().Subject;
+        (copiado.IdServicioConexo, copiado.Nombre, copiado.Precio, copiado.Cantidad).Should().Be(("CX-1", "Cargue", 85_000m, 1m));
+        copiado.LineaSolicitudId.Should().Be(_agregada.PrimeraRuta!.Id);
         _cotizacion.PrimeraRuta!.Conexos.Should().NotBeEmpty("la original conserva los suyos");
     }
 
     [Fact]
-    public void LosConexosDescartadosSonLosDeLasRutasSinRepetirConElIdSiNoTienenNombre()
+    public void LosConexosConservadosSonLosDeLasRutasSinRepetirConElIdSiNoTienenNombre()
     {
         // HU-021: los conexos son filas de la ruta (ya no hay "excluidos": todos van en el precio) y una fila sin nombre (migrada) se
         // muestra con su id de Nexo (la tabla no guarda la categoría).
@@ -441,20 +618,21 @@ public sealed class clsReSolicitudCosteoServiceTests
         ruta.AgregarOActualizarConexo("CX-4", "Stand-by", 10m, 1m);
         ruta.AgregarOActualizarConexo("CX-5", "Precinto", 10m, 1m);
 
-        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().Equal("Cargue", "CX-3", "Stand-by", "Precinto");
+        clsReSolicitudCosteoService.ConexosConservados(cotizacion).Should().Equal("Cargue", "CX-3", "Stand-by", "Precinto");
     }
 
     [Fact]
-    public void SinConexosNoSeDescartaNada()
+    public void SinConexosNoSeConservaNada()
     {
         var cotizacion = Vencida(_ana, "PCN-900555111-AP-05102026-003", 1_000_000m);
         cotizacion.PrimeraRuta!.ConservarConexos(new HashSet<string>());
 
-        clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Should().BeEmpty();
+        clsReSolicitudCosteoService.ConexosConservados(cotizacion).Should().BeEmpty();
     }
 
     private clsReSolicitudCosteoService Servicio() =>
-        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria);
+        new(_cotizaciones, _politicas, _folios, _envio, _catalogos, _filas, _monedas, _mis, _idempotencia, _unidad, _registro, _auditoria,
+            _planificador, NullLogger<clsReSolicitudCosteoService>.Instance);
 
     /// <summary>Validador de filas de licitación que deja pasar las líneas tal cual (cada prueba lo cambia si lo necesita).</summary>
     private static IClsValidadorFilasLicitacion FilasQuePasan()

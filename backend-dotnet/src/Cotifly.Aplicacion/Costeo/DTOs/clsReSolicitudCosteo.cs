@@ -19,9 +19,19 @@ public sealed record clsEntradaReSolicitudCosteo(string? Motivo, clsCambiosCarga
 /// <summary>
 /// Resultado de la re-solicitud: la cotización que quedó en Nexo (la misma, 200, o la versión nueva, 201) como <c>CotizacionResumen</c>
 /// y su versión de negocio para el <c>ETag</c>. Es lo que se guarda para repetir la respuesta con la misma <c>Idempotency-Key</c>.
-/// <paramref name="ConexosDescartados"/> (HU-013.15, #124): nombres de los servicios conexos del costeo anterior que la cotización
-/// resultante no tiene (la captura nueva de Nexo empieza sin conexos y Cotifly no los vuelve a agregar); sin montos. <c>null</c> en
-/// una respuesta guardada antes de #124 (se responde como lista vacía).
+/// <paramref name="ConexosDescartados"/> (HU-013.15, #124): desde HU-021.9 (#136, decisión 3) la re-solicitud ya no descarta conexos y
+/// siempre es vacía (se conserva por compatibilidad hasta #138). <c>null</c> en una respuesta guardada antes de #124 (se responde vacía).
 /// </summary>
 public sealed record clsReSolicitudCosteo(
-    bool VersionNueva, clsCotizacionResumen Cotizacion, string RowVersion, IReadOnlyList<string>? ConexosDescartados = null);
+    bool VersionNueva, clsCotizacionResumen Cotizacion, string RowVersion, IReadOnlyList<string>? ConexosDescartados = null)
+{
+    /// <summary>
+    /// HU-021.9 (#136): nombres de los servicios conexos que la cotización resultante conserva (en el mismo folio) o copió de la original
+    /// (en la <c>-vN</c>), sin montos. Siguen en el precio de su ruta; la cotización nueva de Nexo no los tiene. <c>null</c> en una
+    /// respuesta guardada antes de #136 (se responde vacía).
+    /// </summary>
+    public IReadOnlyList<string>? ConexosConservados { get; init; }
+
+    /// <summary>HU-021.9: orden de las rutas de la <c>-vN</c> cuyos camiones se volvieron a planificar (solo para la auditoría).</summary>
+    public IReadOnlyList<int>? RutasReplanificadas { get; init; }
+}

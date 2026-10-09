@@ -181,8 +181,9 @@ public sealed class clsHerramientasAsistenteFolio(
                 ? campos.Keys.ToList()
                 : [],
 
-            // HU-013.15 (#124): solo los nombres (sin montos) de los conexos que la re-solicitud descarta, para que el modelo lo avise.
-            ["conexos_descartados"] = clsReSolicitudCosteoService.ConexosDescartados(cotizacion).Select(clsPropuestasAsistente.NombreConexo).ToList(),
+            // HU-021.9 (#136; rehace #124): solo los nombres (sin montos) de los conexos que la re-solicitud conserva, para que el modelo
+            // lo diga: siguen en el precio de su ruta (decisión 3).
+            ["conexos_conservados"] = clsReSolicitudCosteoService.ConexosConservados(cotizacion).Select(clsPropuestasAsistente.NombreConexo).ToList(),
             ["mensaje"] = MensajePropuesta,
         });
     }

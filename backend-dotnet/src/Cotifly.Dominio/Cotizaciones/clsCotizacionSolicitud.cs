@@ -234,9 +234,11 @@ public sealed class clsCotizacionSolicitud
     /// cubicador) y sus conexos (precio = costo unitario de Nexo, decisión 3), y recalcula sus totales (los conexos ya suman al costo
     /// de la ruta; sin flete no hay precio). Todo queda en <c>pendiente_envio</c>. Las líneas deben venir validadas
     /// (<see cref="clsLineaSolicitudCosteo.Errores"/> y <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> vacías): si no, lanza.
-    /// Devuelve las rutas creadas.
+    /// <paramref name="reglasCaptura"/> en <c>false</c> = copia de rutas ya guardadas (versión <c>-vN</c> de la re-solicitud, HU-021.9):
+    /// solo se exigen los límites de Nexo, porque las rutas migradas no tienen los ids que pide la captura nueva. Devuelve las rutas creadas.
     /// </summary>
-    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas)
+    public IReadOnlyList<clsLineaSolicitud> RegistrarCaptura(
+        clsEncabezadoSolicitudCosteo encabezado, IReadOnlyList<clsRutaCapturada> rutas, bool reglasCaptura = true)
     {
         ArgumentNullException.ThrowIfNull(encabezado);
         ArgumentNullException.ThrowIfNull(rutas);
@@ -258,7 +260,7 @@ public sealed class clsCotizacionSolicitud
         foreach (var (capturada, i) in rutas.Select((r, i) => (r, i)))
         {
             ArgumentNullException.ThrowIfNull(capturada);
-            if (capturada.Linea.Errores().Concat(capturada.Linea.ErroresCaptura()).FirstOrDefault() is { } error)
+            if (capturada.Linea.Errores().Concat(reglasCaptura ? capturada.Linea.ErroresCaptura() : []).FirstOrDefault() is { } error)
             {
                 throw new ArgumentException($"Ruta {i + 1}: {error.Mensaje}", nameof(rutas));
             }
@@ -969,7 +971,7 @@ public sealed class clsCotizacionSolicitud
         }
 
         // Decisión del usuario (2026-10-08, #135): el ajuste es ruta por ruta y solo ESA ruta necesita precio; las demás pueden seguir en
-        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarPliego / SinCosteo). La ruta debe venir del costeo de Nexo
+        // costeo (el PDF sí exige todas, clsCosteoCotizacionService.ValidarTotal). La ruta debe venir del costeo de Nexo
         // (autocosteo o entregada): una cotización del chat anterior a HU-013 no se ajusta por aquí.
         if (!ruta.TienePrecio || ruta.EstadoCosteo is not { } estadoRuta || !clsDerivacionEstadoCosteo.TieneCosteo(estadoRuta))
         {

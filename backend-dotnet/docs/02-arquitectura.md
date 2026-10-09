@@ -542,7 +542,7 @@ Una cotización de Cotifly es **una solicitud de Nexo con N líneas** (`dbo_coti
 | `clsAnalizadorExcelNexo` / `clsAnalizadorExcelNoDisponible` | Infraestructura | `POST /api/captura-solicitudes/analizar-excel` (multipart) por el cliente `NexoCosteo` |
 | `clsLectorExcelLicitacionClosedXml` | Infraestructura | Puerto 1:1 de la detección de filas de Nexo (`ExcelSolicitudesAdapter`) para ubicar la `fila` en el archivo |
 | `clsExportadorExcelLicitacionClosedXml` | Infraestructura | Exportación (HU-011.3): el original con tres columnas de Cotifly a la derecha y la hoja `Resumen Cotifly`; recibe solo precios y estados (`clsExportacionLicitacion`), nunca costos |
-| `clsCosteoCotizacionService.PayloadPliego` / `ResumenPliego` | Aplicacion | PDF de pliego (HU-011.5): tablas por origen con el precio de cada línea, resumen de rutas y total; solo conexos incluidos |
+| `clsCosteoCotizacionService.PayloadPliego` / `ResumenPliego` / `ValidarTotal` | Aplicacion | PDF de pliego (HU-011.5; por ruta desde HU-021.9): una sección por ruta con su línea de negocio, sus camiones y su tarifa, resumen de rutas y total sin conexos; los conexos aparte. `ValidarTotal`: todas las rutas con precio y `precioFinal` = Σ `precioFinalLinea` (una ruta y pliego) |
 | `clsBloquePliego` | Infraestructura | Bloque MigraDoc del resumen del pliego (`VarianteDocumento.Pliego`, sobre el diseño multi-sección) |
 | `clsLicitacionesController` | Api | `/web/licitaciones/analizar-excel`, `/web/licitaciones` (multipart o JSON), `/web/licitaciones/{folio}` y `/web/licitaciones/{folio}/excel` |
 

@@ -78,9 +78,12 @@ public sealed class clsTextosCosteoService(
                 $"Los textos de la cotización {cotizacion.Folio} los editó el comercial: confirma para reemplazarlos (sobrescribir=true).");
         }
 
-        var linea = cotizacion.PrimeraRuta?.LineaNegocioId is { } lineaId ? await politicas.ObtenerPorIdAsync(lineaId, cancellationToken) : null;
-        var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, linea?.LineaNegocio);
-        var redactado = await redaccion.RedactarAsync(Contexto(cotizacion, linea?.LineaNegocio), estandar, cancellationToken);
+        // HU-021.9 (#136): la línea de negocio sale de las rutas (sin respaldo a la cabecera): el estándar lleva la de la solicitud si
+        // todas sus rutas tienen la misma (como el PDF) y la IA recibe las de sus rutas.
+        var nombres = await clsLineasNegocioRutas.NombresAsync(cotizacion, politicas, cancellationToken);
+        var estandar = clsCosteoCotizacionService.TextosEstandar(cotizacion, clsLineasNegocioRutas.Comun(cotizacion, nombres));
+        var redactado = await redaccion.RedactarAsync(
+            Contexto(cotizacion, clsLineasNegocioRutas.ParaRedaccion(cotizacion, nombres)), estandar, cancellationToken);
         var textos = new clsTextosCotizacion(redactado.Asunto, redactado.Introduccion, redactado.Fuente, Editado: false, tiempo.GetUtcNow());
         var pdfInvalidado = cotizacion.PdfPath is not null;
         var resultado = await GuardarAsync(cotizacion, textos, usuarioId, versionEsperada, cancellationToken);
@@ -183,9 +186,10 @@ public sealed class clsTextosCosteoService(
     }
 
     /// <summary>
-    /// Contexto de la IA desde la cotización (ADR-018 §2a): cliente, línea, rutas (origen y destino de cada ruta, HU-021), tipos de
-    /// vehículo de sus camiones, nombres de los conexos de las rutas y moneda, cada texto recortado a
-    /// <see cref="clsContextoRedaccion.LargoMaximoCampo"/>. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
+    /// Contexto de la IA desde la cotización (ADR-018 §2a; por ruta desde HU-021.9, #136): cliente, líneas de negocio de las rutas
+    /// (<paramref name="lineaNegocio"/>), rutas (origen y destino de cada ruta), tipos de vehículo de sus camiones vigentes (sin repetir;
+    /// un camión descartado en Nexo no cuenta), nombres de los conexos de las rutas y moneda, cada texto recortado a <see cref="clsContextoRedaccion.LargoMaximoCampo"/>.
+    /// Nada sale de la cabecera salvo el cliente y la moneda. Nada más: ni costos, ni margen, ni precios, ni la TRM, ni el folio, el NIT o
     /// el comercial.
     /// </summary>
     public static clsContextoRedaccion Contexto(clsCotizacionSolicitud cotizacion, string? lineaNegocio)
@@ -195,7 +199,8 @@ public sealed class clsTextosCosteoService(
         List<clsRutaRedaccion> rutas = [.. ordenadas
             .Where(r => !string.IsNullOrWhiteSpace(r.OrigenNombre) && !string.IsNullOrWhiteSpace(r.DestinoNombre))
             .Select(r => new clsRutaRedaccion(Recortar(r.OrigenNombre)!, Recortar(r.DestinoNombre)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)];
-        var vehiculos = ordenadas.SelectMany(r => r.VehiculosOrdenados).Select(v => v.TipoVehiculo).OfType<string>()
+        var vehiculos = ordenadas.SelectMany(r => r.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id))
+            .Select(v => v.TipoVehiculo?.Trim()).OfType<string>().Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var conexos = ordenadas.SelectMany(r => r.Conexos)
             .Select(s => Recortar(s.Nombre ?? s.IdServicioConexo)!)

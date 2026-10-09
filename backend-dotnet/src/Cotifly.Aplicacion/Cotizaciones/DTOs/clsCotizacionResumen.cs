@@ -14,8 +14,8 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <param name="PdfUrl"><c>{Pdf:BaseUrl}/pdfs/{archivo}</c>, o <c>null</c> si la cotización no tiene PDF.</param>
 /// <param name="TrmAplicada">TRM con que se convirtió el precio a USD (HU-012.2); 0 en COP.</param>
 /// <param name="ConexosDescartados">
-/// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-013.15, #124): nombres de los servicios conexos del costeo anterior
-/// que la cotización resultante ya no tiene (sin montos). En el resto de respuestas es <c>null</c> y no se serializa.
+/// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-013.15, #124). Desde HU-021.9 (#136) siempre vacía: los conexos se
+/// conservan (<c>conexos_conservados</c>). En el resto de respuestas es <c>null</c> y no se serializa.
 /// </param>
 public sealed record clsCotizacionResumen(
     Guid Id,
@@ -39,6 +39,13 @@ public sealed record clsCotizacionResumen(
     decimal TrmAplicada = 0m,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ConexosDescartados = null)
 {
+    /// <summary>
+    /// Solo en la respuesta de <c>POST .../costeo/re-solicitar</c> (HU-021.9, #136): nombres de los servicios conexos que la cotización
+    /// resultante conserva o copió (sin montos); siguen en el precio de su ruta. En el resto de respuestas es <c>null</c> y no se serializa.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? ConexosConservados { get; init; }
+
     /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
     /// (HU-021: el margen es por ruta; el contrato por ruta llega con #138).
@@ -112,7 +119,27 @@ public sealed record clsDatosNuevaVersion(
     decimal? MargenAplicado,
     string? OrigenMargen,
     string? MetodoCalculo,
-    string? Moneda);
+    string? Moneda)
+{
+    /// <summary>
+    /// HU-021.9 (#136): las rutas de la cotización, en orden, con su línea de negocio y su margen: la versión nueva copia cada ruta con
+    /// los suyos. Los campos de margen de primer nivel son los de la ruta 1 (compatibilidad) y <see cref="LineaNegocio"/> es la de la ruta
+    /// 1 o "Varias" si sus rutas tienen líneas distintas.
+    /// </summary>
+    public IReadOnlyList<clsRutaNuevaVersion> Rutas { get; init; } = [];
+}
+
+/// <summary><c>RutaNuevaVersion</c> (HU-021.9, #136): una ruta de la cotización que se copia en la versión nueva, sin costos.</summary>
+public sealed record clsRutaNuevaVersion(
+    int LineaOrden,
+    int? LineaNegocioId,
+    string? LineaNegocio,
+    string? Origen,
+    string? Destino,
+    decimal? MargenPolitica,
+    decimal? MargenAplicado,
+    string? OrigenMargen,
+    string? MetodoCalculo);
 
 /// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
 public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);
