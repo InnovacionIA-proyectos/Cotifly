@@ -17,6 +17,8 @@ Tras los ajustes del validador (redondeo a 4 decimales antes de evaluar la anoma
 
 Sin inestabilidad: las tres corridas finales dan los mismos conteos y ningún fallo intermitente.
 
+**Integrada con #138 (contrato de la API) y `origin/QA` (2026-10-13):** la rama recibe la cadena HU-021 ya fusionada en QA (#147–#151, #161–#163) y el contrato de #138 (campos retirados `valor_estimado`/`referencia` con aviso `CAMPOS_RETIRADOS`, bandera `Captura:AceptarVehiculoCliente`, `clsContratoDocumentoTests`, `clsContratoEjemplosDocTests` y `clsCamposRetiradosTests`). El ejemplo de `GET .../costeo` de `CONTRATO_API_WEB.md` trae `margen_sap_anomalo` y `aviso_margen`, así la prueba de ejemplos los valida contra `RutaCosteo`; el D9 (`VARIAS_RUTAS`/`LICITACION`) queda documentado en el contrato y la guía. Build 0 warnings; dos corridas completas de **3723 ejecutadas (+2 omitidas `sap`), 0 fallos**.
+
 ### 1.1 Cobertura (corrida final 1, unitarias + integración + BDD unidas)
 
 | Ensamblado | Líneas | Umbral |
@@ -272,7 +274,7 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 | `motivoRechazo` = "No aplica" al ganar (HU-021.13) | `clsCotizacionSolicitud.MarcarSeguimiento` | `clsResultadoCotizacionEndpointsTests`, E2E | OK |
 | CHECK de `estadoEnvio` | EF, `01_crear_esquema.sql:286`, `0010` | `clsRegistrosBdFlujoCompletoTests`, `clsBaseDatosHealthCheckTests` | OK en código; D7 en la base compartida |
 | Levante de la ruta copiado a cada camión (decisión 4) | `clsVehiculoLineaSolicitud.cs:89,110` | `clsAgregadoRutasTests`, `clsRegistrosBdFlujoCompletoTests` | OK |
-| `referencia` y `valorEstimado` no van a Nexo (decisión 1) | solo quedan en los DTO de entrada | `clsCosteoNexoTests` | OK (D12) |
+| `referencia` y `valorEstimado` no van a Nexo (decisión 1) | fuera de `openapi.yaml` y del Excel exportado (#138); los DTO de entrada solo los leen para el aviso `CAMPOS_RETIRADOS` | `clsCosteoNexoTests`, `clsCamposRetiradosTests` | OK (D12 corregido en #138) |
 | Municipio: id obligatorio + copia del nombre (decisión 2) | `clsLineaSolicitudCosteo.ErroresCaptura`, `clsMunicipiosLicitacion` | `captura_rutas.feature`, `clsRegistrosBdFlujoCompletoTests` | OK |
 | Asistente pregunta la ruta con varias rutas (decisión 6) | `clsHerramientasAsistenteFolio` (`requiere_ruta`) | `clsAsistenteMargenPorRutaTests` | OK salvo re-solicitud (D9) |
 | Métricas: conteos por cotización, valores por ruta (decisión 8) | `clsMetricasRepository.cs:35-110` | `metricas_tablero.feature`, `clsCubicadorEndpointsTests` | OK |
@@ -297,7 +299,7 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 - **D1.** Constantes de herramientas del plugin legado en `src/Cotifly.Aplicacion/Agente/DTOs/clsTurno.cs:61-69` y mapeo a `generar_pdf`/`registrar_ajuste_margen` en `clsReglasRespuestaAgente.cs:101-102`.
 - **D10.** Métricas cuentan una vez por cadena de versiones (ADR-016) y HU-010.1 decía cada versión; score de urgencia no implementado.
 - **D11.** `clsCotizacionSolicitud.CambiarValorLevante` sin llamadores en producción.
-- **D12.** `Referencia` vestigial en la exportación de licitación ("Referencia del pliego: —").
+- **D12. CORREGIDO en #138.** `Referencia` vestigial en la exportación de licitación ("Referencia del pliego: —"): el Excel exportado ya no la imprime y la vista `Licitacion` no la trae.
 - **D13.** Descarte o cambio de vehículo por la Mesa y empates solo en el log, sin `EventosHerramienta` (HU-005.6 pide auditar los cambios del polling).
 - **D14.** HU-021.7 decía "sin `posiciones[]`"; se envían con un único camión (adaptación en ADR-019).
 - **D15.** Herramientas de auditoría sin evento en las HU: `descargar_pdf`, `conexos_pendientes_nexo`, `conexos_envio_nexo`, `resultado_cotizacion_sin_costeo`, `costeo_nexo_consulta`, `editar_textos_costeo`, `redactar_textos_costeo`.
