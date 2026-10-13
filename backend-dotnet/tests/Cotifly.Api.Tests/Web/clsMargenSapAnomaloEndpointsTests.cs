@@ -66,6 +66,27 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task LaReSolicitudEnElMismoFolioVuelveAResolverElMargenYConservaLaMarca()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.Costear(solicitud, 1_000_000m);
+        _nexo.Entregar(solicitud);
+        await _api.ProcesarPollingAsync(folio);
+
+        // Entregada y sin enviar al cliente: se re-solicita en el MISMO folio (otra solicitud de Nexo, el margen se resuelve otra vez).
+        using var reSolicitud = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", ana.Access,
+            clsApiWebPruebas.Json(new { motivo = "El cliente pidió actualizar el costo" }), await EtagAsync(ana, folio));
+        var json = await VerificarContratoAsync(reSolicitud, "/web/cotizaciones/{folio}/costeo/re-solicitar", _post, HttpStatusCode.OK);
+
+        json.GetProperty("folio").GetString().Should().Be(folio, "mismo folio, sin versión nueva");
+        _nexo.SolicitudesCreadas[^1].Should().NotBe(solicitud);
+        (await MargenRutasAsync(folio)).Should().Equal(["1|politica_linea|0.1500|0.7500"]);
+    }
+
+    [Fact]
     public async Task EnLaLicitacionCadaRutaConMargenSapAnomaloUsaLaPolitica()
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
@@ -76,6 +97,30 @@ public sealed class clsMargenSapAnomaloEndpointsTests : IDisposable
 
         (await MargenRutasAsync(folio)).Should().Equal(
             "1|politica_linea|0.1500|0.7500", "2|politica_linea|0.1500|0.7500", "3|politica_linea|0.1500|0.7500");
+    }
+
+    /// <summary>
+    /// Bordes que redondea la columna <c>decimal(9,4)</c> (#139): el margen de SAP se redondea a 4 decimales ANTES de evaluar la anomalía,
+    /// así lo evaluado y lo guardado coinciden: 60,004 % → 0,6000 (60 %, válido) y -0,004 % → 0 (válido), los dos aplicados como SAP TM.
+    /// </summary>
+    [Theory]
+    [InlineData("60.004", "0.6000")]
+    [InlineData("-0.004", "0.0000")]
+    public async Task UnMargenSapQueRedondeaDentroDelRangoSeAplicaSinMarca(string valorSap, string guardado)
+    {
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, servicios: s => s.AddTransient<IClsFuenteMargen>(
+            _ => new clsFuenteMargenFija(decimal.Parse(valorSap, System.Globalization.CultureInfo.InvariantCulture))));
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, clsCosteoEndpointsTests.Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        (await MargenRutasAsync(folio)).Should().Equal([$"1|sap_tm|{guardado}|{guardado}"], "lo evaluado (4 decimales) es lo guardado");
+        using var costeo = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var ruta = (await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas").EnumerateArray().Should().ContainSingle().Subject;
+        ruta.GetProperty("margen_sap_anomalo").GetBoolean().Should().BeFalse();
+        ruta.GetProperty("aviso_margen").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     public void Dispose()

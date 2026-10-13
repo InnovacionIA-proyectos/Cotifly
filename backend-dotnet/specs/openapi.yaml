@@ -3943,7 +3943,10 @@ components:
         margen_sugerido:
           type: number
           nullable: true
-          description: Sugerido de la ruta (`margenSAPSugerido` o, si no hay, `margenPoliticaSugerido`). Por debajo, el ajuste exige justificación.
+          description: |
+            Sugerido de la ruta (`margenSAPSugerido` o, si no hay, `margenPoliticaSugerido`). Por debajo, el ajuste exige justificación.
+            Si SAP TM propuso un margen anómalo (fuera de [0, 60 %] tras redondearlo a 4 decimales; `margen_sap_anomalo = true`), el
+            sugerido es el de la política de la línea, no el de SAP.
         origen_margen:
           type: string
           nullable: true
