@@ -106,7 +106,7 @@ propio (ADR-008). El corte es único y el Python queda en el repositorio para ro
   permisos del repositorio.
 - **Que Dokploy construya desde git en el nodo** (como hoy): es lo que HU-006 pide eliminar (sin versión, disco del
   nodo, sin pruebas antes de desplegar).
-- **Editar `infra/stack.dokploy.yml` / `stack.staging.yml` en el sitio**: más corto, pero el rollback al Python
+- **Editar `infra/stack.dokploy.yml` / `stack.staging.yml` en el sitio** (ambos se borraron en HU-022.1, #146, porque nunca se desplegaron): más corto, pero el rollback al Python
   obligaría a revertir commits. Se descartó mientras el Python siga vigente.
 - **SQL Server como servicio del stack**: descartado por HU-002.4 (la base es corporativa y compartida).
 - **Puerto en modo host también en producción**: expondría la API sin TLS; producción espera a HU-006.2.

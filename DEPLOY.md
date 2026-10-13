@@ -8,10 +8,11 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 - **Backend vigente tras el corte: .NET 10** (`backend-dotnet/`, una sola imagen `cotifly-backend`, ADR-001 y ADR-002).
   Este documento describe su despliegue. Las decisiones están en
   [ADR-013](backend-dotnet/specs/decisiones/ADR-013-despliegue-dokploy.md).
-- **Stack Python: se conserva solo para rollback** hasta validar producción (corte único, ADR-001). Sus manifiestos
-  (`infra/stack.dokploy.yml`, `infra/stack.staging.yml`, `deploy/docker-compose.swarm.yml`) y scripts
-  (`deploy/rebuild-on-worker.sh`, `scripts/backup_db.sh`, `scripts/restore_db.sh`) no se modifican. Su runbook
-  quedó en el [Anexo A](#anexo-a-stack-python-solo-rollback).
+- **Stack Python: se conserva solo para rollback** hasta validar producción (corte único, ADR-001). Su manifiesto
+  (`deploy/docker-compose.swarm.yml`) y su script (`deploy/rebuild-on-worker.sh`) no se modifican. Su runbook
+  quedó en el [Anexo A](#anexo-a-stack-python-solo-rollback). HU-022.1 (#146) borró del repositorio el código Python y
+  lo que nunca se desplegó (`infra/stack.dokploy.yml`, `infra/stack.staging.yml`, `scripts/backup_db.sh` y
+  `scripts/restore_db.sh`); todo quedan en el tag `python-final`.
 - La base de datos **no** es un contenedor del stack: es la instancia corporativa SQL Server 2019 (`tbsdatacenter`),
   base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más `dbsolucionesti` de solo lectura (ADR-008). El login de
   servicio es `cotifly_app` (SQL login; el contenedor Linux no admite autenticación integrada).
@@ -177,12 +178,10 @@ historial de git (`git log --all -p`: claves privadas PEM, claves de Google `AIz
 |---|---|---|---|
 | `deploy/docker-compose.swarm.yml` (stack Python que corre hoy) | `POSTGRES_PASSWORD: bot`, `DATABASE_URL` con `bot:bot`, `MINIO_ROOT_USER`/`PASSWORD` y `S3_ACCESS_KEY`/`S3_SECRET_KEY` `minioadmin` | Credenciales por defecto en texto plano; servicios solo en la red interna `bot-back`, pero cualquiera con acceso al repo las conoce | No se toca (Python intacto hasta el corte, ADR-001). El stack .NET no lo usa. **Rotarlas o apagar el stack al retirar el Python** |
 | `docker-compose.yml` (SQL Server local de desarrollo) | Valor por defecto `Bot_Cotizador_2019!` (sa) | Solo desarrollo local; se pueden sobrescribir por variable | Ninguna; no los usa el despliegue |
-| `.env.example` (raíz, Python) | `bot:bot@localhost`, `cambiar-en-despliegue`, `dev-secret-cambia` | Ejemplos de desarrollo | Ninguna |
 | `backend-dotnet/scripts/levantar-local.sh` y `.ps1` | Claves por defecto `CotiflyLocal#2026` (sa) y `CotiflyApp#2026` (cotifly_app) del SQL Server local | Solo el contenedor local, publicado en `127.0.0.1`; sobrescribibles con `COTIFLY_SQL_*_PASSWORD` | Ninguna |
-| `secrets/google-sa.json` | Archivo versionado con contenido `{}` (sin clave); en el historial nunca tuvo `private_key` | Si alguien pega ahí la cuenta de servicio real y hace commit, queda publicada | No usarlo en el stack .NET (la cuenta va como secreto de Swarm, §2.1). Recomendación: quitarlo del índice al retirar el Python |
-| `infra/stack.dokploy.yml`, `infra/stack.staging.yml` | Solo `${VAR}`, sin valores | — | Ninguna |
+| `secrets/google-sa.json` | Borrado en HU-022.1 (#146): tenía `{}` (sin clave); en el historial nunca tuvo `private_key`. `secrets/` está en el `.gitignore` | — | Ninguna |
 | `backend-dotnet/.env.example`, `appsettings*.json`, docs | Solo placeholders (`<secreto>`, `<host>`); `appsettings*.json` no tiene secretos | — | Ninguna |
-| Pruebas (`tests/`, `backend-dotnet/tests/`) | Claves ficticias de prueba (`sk-ant-clave-de-prueba-...`, `test-token-fase2`, `ya29.fake-token`) | Ninguno | Ninguna |
+| Pruebas (`backend-dotnet/tests/`) | Claves ficticias de prueba (`sk-ant-clave-de-prueba-...`, `test-token-fase2`, `ya29.fake-token`) | Ninguno | Ninguna |
 | Historial de git | Sin claves privadas, sin claves de API reales, sin `.env` versionado | — | Ninguna |
 
 Información de infraestructura que no es secreta pero sí interna: IPs `10.10.40.x` (nodos, relay SMTP) y el nombre
@@ -393,13 +392,13 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 | Manifiesto | Ambiente | Reemplaza (se conserva para rollback) |
 |---|---|---|
-| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (nunca desplegado) |
-| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | **`deploy/docker-compose.swarm.yml`**, el stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091). `infra/stack.dokploy.yml` es su versión "ideal", nunca desplegada |
+| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (Python, nunca desplegado; borrado en HU-022.1) |
+| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | **`deploy/docker-compose.swarm.yml`**, el stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091). `infra/stack.dokploy.yml` era su versión "ideal", nunca desplegada (borrada en HU-022.1) |
 
 **Qué Python corre de verdad:** según el backlog de HU-006 (auditoría del despliegue) y la cabecera del propio archivo,
 Dokploy despliega `deploy/docker-compose.swarm.yml` (Postgres, MinIO, MCP y orquestador anclados al worker, orquestador
-en `10.10.40.31:8091` en modo host). `infra/stack.dokploy.yml` e `infra/stack.staging.yml` están documentados en el
-Anexo A pero no se desplegaron (siguen con Postgres y `${REGISTRY}`). **El rollback al Python redespliega
+en `10.10.40.31:8091` en modo host). `infra/stack.dokploy.yml` e `infra/stack.staging.yml` (descritos en el
+Anexo A, con Postgres y `${REGISTRY}`) nunca se desplegaron y se borraron en HU-022.1 (#146); quedan en el tag `python-final`. **El rollback al Python redespliega
 `deploy/docker-compose.swarm.yml`** (§4.5 paso 7).
 
 Se crearon archivos nuevos en vez de editar los del Python para que el rollback siga siendo "redesplegar el stack
@@ -577,8 +576,8 @@ La base ya no es un contenedor del stack: `dbo_cotifly` es un esquema dentro de 
    `backend-dotnet/scripts/respaldo/exportar-dbo-cotifly.sh`. Sirve para recuperar Cotifly sin tocar los datos de las
    demás aplicaciones y para cargar una instancia de pruebas.
 
-`scripts/backup_db.sh` y `scripts/restore_db.sh` (raíz del repositorio) usan `BACKUP/RESTORE DATABASE` con `sa`: solo
-sirven para el SQL Server en contenedor del desarrollo local del Python. No aplican a la instancia corporativa.
+Los antiguos `scripts/backup_db.sh` y `scripts/restore_db.sh` de la raíz (`BACKUP/RESTORE DATABASE` con `sa`, solo para el
+SQL Server en contenedor del Python) no aplicaban a la instancia corporativa y se borraron en HU-022.1 (#146).
 
 ### 6.2 Exportación lógica (`exportar-dbo-cotifly.sh`)
 
@@ -745,7 +744,8 @@ en producción. **No usarlo para el backend .NET.**
 > **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
 > `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con
 > `deploy/rebuild-on-worker.sh`). Es el destino del rollback (§4.5 paso 7). Lo que sigue (A.1 a A.9) describe el
-> diseño con `infra/stack.staging.yml`/`infra/stack.dokploy.yml`, que **no** se llegó a desplegar.
+> diseño con `infra/stack.staging.yml`/`infra/stack.dokploy.yml`, que **no** se llegó a desplegar. Esos manifiestos, el
+> código Python y `scripts/backup_db.sh`/`restore_db.sh` se borraron en HU-022.1 (#146); quedan en el tag `python-final`.
 
 ### A.1 Topología
 
@@ -766,7 +766,7 @@ Internet ──TLS──> Traefik ──> bot-orquestador ─┐   (red web/Trae
   no se actualizaron** — siguen definiendo Postgres. El manifiesto que corre hoy es
   `deploy/docker-compose.swarm.yml` (Postgres, anclado al worker, `mode: host` 8091).
 
-Manifiesto: [`infra/stack.staging.yml`](infra/stack.staging.yml).
+Manifiesto: `infra/stack.staging.yml` (borrado en HU-022.1; está en el tag `python-final`).
 
 ### A.2 Decisión de red (cierre F15)
 
@@ -817,7 +817,7 @@ docker push $REGISTRY/bot-cotizador-mcp:$TAG
 docker push $REGISTRY/bot-cotizador-orquestador:$TAG
 ```
 
-En Dokploy: crear el stack desde `infra/stack.staging.yml`, cargar las variables
+En Dokploy: crear el stack desde `infra/stack.staging.yml` (tag `python-final`), cargar las variables
 del §A.3 y desplegar. Las **migraciones corren solas**: el entrypoint del orquestador
 ejecuta `alembic upgrade head` antes de arrancar (idempotente), incluida la vista
 `v_ajustes_margen_por_comercial` para Gerencia (F15).
@@ -851,6 +851,8 @@ ORDER BY numAjustes DESC;   -- ajustes de margen por comercial y línea
 Alertas de error del worker: se publican en `GCHAT_SUPPORT_SPACE` automáticamente.
 
 ### A.8 Backup / restore de bot-db
+
+> Los dos scripts se borraron en HU-022.1 (#146); quedan en el tag `python-final`.
 
 ```bash
 # Backup (programar como tarea diaria de Dokploy o cron del host):
