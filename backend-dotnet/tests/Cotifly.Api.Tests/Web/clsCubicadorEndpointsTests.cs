@@ -720,7 +720,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Tarifa por viaje de cada ruta SIN conexos (1.800.000 / 0,85) y el conexo aparte con su precio (150.000 / 0,85).
         texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.117.647").And.Contain("$823.529").And.Contain("$500.000")
             .And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS) $3.441.176").And.Contain("Cargue en puerto: $176.471");
-        texto.Should().Contain("1 × 3S3 - FURGON, 1 × 2S3 -", "los dos camiones de la ruta 1 en el orden del cubicador");
+        texto.Should().Contain("1 × Tractocamión 3S3 - Furgón, 1", "los dos camiones de la ruta 1 en el orden del cubicador, con los nombres del catálogo (HU-023.1)")
+            .And.Contain("× Tractocamión 2S3 - Estacas (28000 KG)");
         foreach (var costo in new[] { "$1.000.000", "$800.000", "$700.000", "$400.000", "$1.950.000" })
         {
             texto.Should().NotContain(costo, "los costos de Nexo nunca van al PDF");
