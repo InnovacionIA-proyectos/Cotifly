@@ -643,8 +643,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     {
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) switch
         {
-            28_000m => [clsCubicadorFalso.Fila("3S3", "FURGON", 16_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 12_000m)],
-            _ => [clsCubicadorFalso.Fila("2", "FURGON", 12_500m)],
+            28_000m => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m)),
+            _ => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m)),
         };
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);

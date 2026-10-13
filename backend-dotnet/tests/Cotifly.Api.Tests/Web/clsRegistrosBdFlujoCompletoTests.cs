@@ -59,10 +59,10 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         _bd = entorno.BaseDatos;
         _cubicador.TiposMercancia.Add((Guid.Parse(TipoCafe), "Café en estibas"));
 
-        // Ruta 1 (28000 kg): dos camiones del cubicador; ruta 2: sin filas → respaldo de esa ruta (un camión sin vehículo con su peso).
+        // Ruta 1 (28000 kg): dos camiones del cubicador; ruta 2: sin selección → respaldo de esa ruta (un camión sin vehículo con su peso).
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
-            ? [clsCubicadorFalso.Fila("3S3", "FURGON", 16_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 12_000m)]
-            : [];
+            ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
+            : clsCubicadorFalso.SinSeleccion("SIN_CANDIDATOS_DIMENSIONALES");
         _api = clsApiWebPruebas.ConNexo(_bd, _nexo, cubicador: _cubicador, extra: new Dictionary<string, string?>
         {
             ["Correo:Habilitado"] = "true",
