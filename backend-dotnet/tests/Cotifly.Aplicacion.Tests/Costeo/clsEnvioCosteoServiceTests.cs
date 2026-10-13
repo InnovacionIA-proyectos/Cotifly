@@ -842,20 +842,23 @@ public sealed class clsEnvioCosteoServiceTests
     [Fact]
     public async Task ConElCubicadorLaRutaTieneUnCamionPorRecomendacionYLaMercanciaElNombreDelCatalogo()
     {
-        // HU-021.5 (#133): la ruta viaja al cubicador con el id que tendrá al guardarse y cada fila de la recomendación es un camión.
+        // HU-021.5 (#133) y HU-023.1 (#156): la ruta viaja al cubicador con el id que tendrá al guardarse, cada mercancía con su código
+        // (traducido del id_tipo_mercancia con el catálogo) y cada vehículo de la recomendación es un camión (flota mixta).
         var cubicador = Cubicador();
-        Guid? rutaEnviada = null;
-        cubicador.RecomendarAsync(Arg.Do<Guid>(id => rutaEnviada = id), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
-            .Returns(new clsRecomendacionCubicador([
-                new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado),
-                new clsVehiculoRecomendado(Guid.NewGuid(), null, null, 12_500m, clsResultadosRecomendacion.SinSeleccionAutomatica),
-            ]));
+        clsPeticionRecomendacion? enviada = null;
+        cubicador.RecomendarAsync(Arg.Do<clsPeticionRecomendacion>(p => enviada = p), Arg.Any<CancellationToken>())
+            .Returns(new clsRecomendacionCubicador(Guid.NewGuid(), clsResultadosRecomendacion.Asignado, null, false, [],
+            [
+                new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, 60m, 90m, 50m),
+                new clsVehiculoRecomendado(Guid.NewGuid(), "C2", "ESTACAS", 12_500m, 20m, 70m, 95m),
+            ], [], null));
 
         var guardada = (await ServicioCon(cubicador).CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")), Ct)).Valor.PrimeraRuta!;
 
-        guardada.Id.Should().Be(rutaEnviada!.Value, "IdLineaSolicitud del cubicador = el id de la ruta");
+        guardada.Id.ToString("D").Should().Be(enviada!.IdLineaSolicitud, "IdLineaSolicitud del cubicador = el id de la ruta");
+        enviada.Mercancias.Should().OnlyContain(m => m.CodigoMercancia == clsSolicitudCosteoMuestra.CodigoMercancia);
         guardada.VehiculosOrdenados.Select(v => (v.TipoVehiculo, v.Carroceria, v.PesoKg))
-            .Should().Equal(("3S3", "FURGON", 16_000m), (null, null, 12_500m));
+            .Should().Equal(("3S3", "FURGON", 16_000m), ("C2", "ESTACAS", 12_500m));
         guardada.VehiculosOrdenados.Should().OnlyContain(v => v.IdRecomendacionVehiculo != null, "C3: se guarda el id exacto de la recomendación");
         guardada.MercanciasOrdenadas.Should().NotBeEmpty().And.OnlyContain(m => m.NombreMercancia == "Café en estibas");
     }
@@ -865,7 +868,7 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var conCatalogo = Cubicador();
         conCatalogo.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
-            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador(Guid.NewGuid(), "Otra")]));
+            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador("OTRA", "Otra", null, true, false, null, true, Guid.NewGuid())]));
         var caido = Cubicador();
         caido.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
             .Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
@@ -993,9 +996,11 @@ public sealed class clsEnvioCosteoServiceTests
         cubicador.EstaConfigurado.Returns(true);
         cubicador.RespaldoSiFalla.Returns(true);
         cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
-            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador(clsSolicitudCosteoMuestra.TipoMercancia, "Café en estibas")]));
-        cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
-            .Returns(new clsRecomendacionCubicador([new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 28_500m, clsResultadosRecomendacion.Seleccionado)]));
+            .Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito([new clsTipoMercanciaCubicador(
+                clsSolicitudCosteoMuestra.CodigoMercancia, "Café en estibas", null, true, false, null, true, clsSolicitudCosteoMuestra.TipoMercancia)]));
+        cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>())
+            .Returns(new clsRecomendacionCubicador(Guid.NewGuid(), clsResultadosRecomendacion.Asignado, null, false, [],
+                [new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 28_500m, 60m, 90m, 80m)], [], null));
         return cubicador;
     }
 

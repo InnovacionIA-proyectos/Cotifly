@@ -31,6 +31,13 @@ public sealed class clsValidadorOpcionesCubicador : IValidateOptions<clsOpciones
             errores.Add($"'{Prefijo}UrlBase' es la raíz del API del cubicador, sin usuario, consulta ni fragmento (la llave va en {Prefijo}ApiKey).");
         }
 
+        if (!string.IsNullOrWhiteSpace(options.RutaSalud)
+            && (!options.RutaSalud.Trim().StartsWith('/') || options.RutaSalud.Contains("://", StringComparison.Ordinal)
+                || options.RutaSalud.Contains('?') || options.RutaSalud.Contains('#')))
+        {
+            errores.Add($"'{Prefijo}RutaSalud' es una ruta relativa a {Prefijo}UrlBase que empieza por '/' (ej. /health), sin consulta ni fragmento.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.ApiKey))
         {
             errores.Add($"'{Prefijo}ApiKey' es obligatoria con {Prefijo}UrlBase (viaja como Authorization: Bearer).");

@@ -345,13 +345,13 @@ public static class clsDependenciasInfraestructura
     /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
     /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: el tiempo de <c>Cubicador:TiempoEsperaSegundos</c>, sin
     /// reintentar los POST y sin registrar cabeceras (la llave viaja en <c>Authorization</c>). Los eventos de Polly de cada intento bajan a
-    /// Debug, como en SAP TM. El catálogo de tipos de mercancía se guarda en <see cref="clsCacheTiposMercancia"/> (singleton). TryAdd: un
+    /// Debug, como en SAP TM. Los catálogos (tipos de mercancía, carrocerías y vehículos, HU-023.1) se guardan en <see cref="clsCacheCatalogoCubicador{TFila}"/> (singleton por catálogo). TryAdd: un
     /// adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarCubicador(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsCubicadorNoDisponible>();
-        servicios.TryAddSingleton<clsCacheTiposMercancia>();
+        servicios.TryAddSingleton(typeof(clsCacheCatalogoCubicador<>));
         var tuberia = servicios.AddHttpClient<clsCubicadorHttp>(clsCubicadorHttp.NombreCliente)
             .RedactLoggedHeaders(_ => true)
             .AddStandardResilienceHandler();
@@ -449,7 +449,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddScoped<IClsCandadoTransaccional, clsCandadoTransaccionalSql>();
 
         servicios.AddHealthChecks()
-            .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness]);
+            .AddCheck<clsBaseDatosHealthCheck>(clsBaseDatosHealthCheck.Nombre, tags: [EtiquetaReadiness])
+            .AddCheck<clsCubicadorHealthCheck>(clsCubicadorHealthCheck.Nombre, tags: [EtiquetaReadiness]);
     }
 
     private static void ConfigurarSqlServer(DbContextOptionsBuilder opciones, string? cadena)

@@ -25,7 +25,7 @@ public sealed class clsValidadorFilasLicitacionTests
     public clsValidadorFilasLicitacionTests()
     {
         _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsCatalogosMaestros>.Exito(new(
-            [new("3S3", "Tractocamión")], [new("Contenedor", "Contenedor")], [], [])));
+            [new("3S3", "Tractocamión")], [new("Contenedor", "Contenedor")], [new("CNT40.HC", "CNT40.HC")], [])));
         _municipios.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsMunicipio>>.Exito(
         [
             new(76109, "76109", "Buenaventura", "Valle del Cauca", "Colombia"),

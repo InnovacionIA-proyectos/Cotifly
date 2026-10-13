@@ -9,8 +9,8 @@ using Reqnroll;
 namespace Cotifly.Aceptacion.Tests.Costeo;
 
 /// <summary>
-/// Pasos de <c>specs/features/integracion_cubicador.feature</c> (HU-021.5, #133): la API real conectada al Nexo falso de
-/// <see cref="clsPasosCosteo"/> y al cubicador falso (<see cref="clsCubicadorFalso"/>; el real aún no tiene <c>POST /recomendaciones</c>).
+/// Pasos de <c>specs/features/integracion_cubicador.feature</c> (HU-021.5, #133; contrato de HU-023.1, #156): la API real conectada al
+/// Nexo falso de <see cref="clsPasosCosteo"/> y al cubicador falso (<see cref="clsCubicadorFalso"/>; el real aún no está publicado).
 /// Las verificaciones del envío por camión y del emparejamiento son las de <see cref="clsPasosEnvioPorCamion"/>.
 /// </summary>
 [Binding]
@@ -35,13 +35,16 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
     [Given("que el cubicador tiene el tipo de mercancía {string} de las mercancías del formulario")]
     public void DadoElTipoDeMercancia(string nombre) => _cubicador.TiposMercancia.Add((Guid.Parse(clsPasosCosteo.TipoMercancia), nombre));
 
-    [Given("que el cubicador recomienda para cada ruta estos vehículos:")]
+    [Given("que el cubicador asigna para cada ruta estos vehículos:")]
     public void DadoLaRecomendacion(DataTable tabla)
     {
         ArgumentNullException.ThrowIfNull(tabla);
-        _cubicador.Recomendar = _ => [.. tabla.Rows.Select(f => clsCubicadorFalso.Fila(
-            Vacio(f["vehiculo"]), Vacio(f["carroceria"]), decimal.Parse(f["peso_kg"], CultureInfo.InvariantCulture), f["resultado"]))];
+        _cubicador.Recomendar = _ => clsCubicadorFalso.Asignado([.. tabla.Rows.Select(f => (object)clsCubicadorFalso.Vehiculo(
+            f["vehiculo"].Trim(), f["carroceria"].Trim(), decimal.Parse(f["peso_kg"], CultureInfo.InvariantCulture)))]);
     }
+
+    [Given("que el cubicador no puede escoger vehículo por {string}")]
+    public void DadoSinSeleccion(string motivo) => _cubicador.Recomendar = _ => clsCubicadorFalso.SinSeleccion(motivo);
 
     [Given("que el cubicador no responde")]
     public void DadoQueElCubicadorNoResponde() => _cubicador.Caido = HttpStatusCode.ServiceUnavailable;
@@ -54,7 +57,8 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             + $"WHERE c.folio = '{costeo.Folio(cotizacion)}' AND l.orden = {orden}");
         var peticion = _cubicador.Recomendaciones.Should().ContainSingle(r => r["idLineaSolicitud"]!.GetValue<string>() == rutaId).Subject;
         peticion["origenSistema"]!.GetValue<string>().Should().Be(origen);
-        peticion["mercancias"]!.AsArray().Should().NotBeEmpty();
+        peticion["mercancias"]!.AsArray().Should().NotBeEmpty()
+            .And.OnlyContain(m => !string.IsNullOrEmpty(m!["codigoMercancia"]!.GetValue<string>()), "HU-023: cada mercancía viaja con su código");
         _cubicador.Peticiones.Should().OnlyContain(p => p.Autorizacion == "Bearer " + clsCubicadorFalso.ApiKey);
     }
 
@@ -74,7 +78,7 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             "SELECT STRING_AGG(DISTINCT_NOMBRE, ',') FROM (SELECT DISTINCT ISNULL(m.nombreMercancia, '-') AS DISTINCT_NOMBRE FROM dbo_cotifly.CotizacionMercancias m "
             + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId "
             + $"WHERE c.folio = '{costeo.Folio(cotizacion)}') x"))
-            .Should().Be(nombre, "el nombre de cada mercancía se copia del catálogo del cubicador por su id_tipo_mercancia");
+            .Should().Be(nombre, "el nombre de cada mercancía se copia del catálogo del cubicador");
 
     [Then("la ruta {int} de {string} tiene un solo camión sin vehículo ni recomendación de {int} kg")]
     public async Task EntoncesUnSoloCamionSinVehiculo(int orden, string cotizacion, int pesoKg) =>
@@ -88,6 +92,4 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
     private string DeLaRuta(string cotizacion, int orden) =>
         "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
         + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{costeo.Folio(cotizacion)}' AND l.orden = {orden}";
-
-    private static string? Vacio(string valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 }

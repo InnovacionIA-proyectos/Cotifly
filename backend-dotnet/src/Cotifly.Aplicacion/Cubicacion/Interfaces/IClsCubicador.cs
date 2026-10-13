@@ -4,21 +4,26 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Cubicacion.Interfaces;
 
 /// <summary>
-/// Puerto del cubicador (motor de selección de vehículos, HU-021.5, #133; <c>CAMBIOS_BACKEND</c> §6). A diferencia de
-/// <see cref="IClsCubicacionProvider"/> (la cubicación rápida que pasa por Nexo), este habla directo con el cubicador, autenticado con
-/// <c>Authorization: Bearer {Cubicador:ApiKey}</c> (C5). La implementación HTTP es <c>clsCubicadorHttp</c>; sin
+/// Puerto del cubicador (motor de selección de vehículos; HU-021.5, #133, adaptado al contrato de HU-023.1, #156). A diferencia de
+/// <see cref="IClsCubicacionProvider"/> (la cubicación rápida que pasa por Nexo y se retira en el corte), este habla directo con el
+/// cubicador, autenticado con <c>Authorization: Bearer {Cubicador:ApiKey}</c>. La implementación HTTP es <c>clsCubicadorHttp</c>; sin
 /// <c>Cubicador:UrlBase</c>, Infraestructura registra la versión "no disponible" (<see cref="EstaConfigurado"/> = <c>false</c>). Nunca
-/// lanza por el cubicador: todo vía <see cref="clsResultado{TValor}"/> con <c>CUBICADOR_NO_DISPONIBLE</c>.
+/// lanza por el cubicador: todo vía <see cref="clsResultado{TValor}"/>.
 /// </summary>
+/// <remarks>
+/// Errores (<c>clsCodigosError</c>): rechazos 400 del contrato (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
+/// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>), llave rechazada (<c>CUBICADOR_NO_AUTORIZADO</c>, caída), respuesta que
+/// no cumple el contrato (<c>CUBICADOR_RESPUESTA_INVALIDA</c>) y caídas (<c>CUBICADOR_NO_DISPONIBLE</c>: 503, 5xx, tiempo agotado, red).
+/// </remarks>
 public interface IClsCubicador
 {
     /// <summary>¿Hay un cubicador configurado? Sin él, la captura usa el respaldo (un camión sin vehículo por ruta).</summary>
     bool EstaConfigurado { get; }
 
     /// <summary>
-    /// <c>Cubicador:RespaldoSiFalla</c>: si el cubicador configurado falla, ¿la captura sigue con el respaldo (un camión sin vehículo y
-    /// un aviso en el log) en vez de fallar con <c>CUBICADOR_NO_DISPONIBLE</c>? Por defecto <c>true</c> mientras el cubicador real no
-    /// exista (C1).
+    /// <c>Cubicador:RespaldoSiFalla</c>: si el cubicador configurado se CAE (no responde, 5xx, llave rechazada), ¿la captura sigue con el
+    /// respaldo (un camión sin vehículo y un aviso en el log) en vez de fallar con <c>CUBICADOR_NO_DISPONIBLE</c>? Un rechazo de la
+    /// petición o una respuesta inválida nunca van al respaldo.
     /// </summary>
     bool RespaldoSiFalla { get; }
 
@@ -29,13 +34,20 @@ public interface IClsCubicador
     TimeSpan PresupuestoCaptura { get; }
 
     /// <summary>
-    /// <c>POST /recomendaciones</c> con <c>IdLineaSolicitud</c> = <paramref name="rutaId"/>, <c>OrigenSistema = COTIFLY</c> y las
-    /// mercancías de la ruta. Devuelve un registro por vehículo recomendado (al menos uno) o <c>CUBICADOR_NO_DISPONIBLE</c>. Un POST
-    /// nunca se reintenta automáticamente.
+    /// <c>POST /recomendaciones</c> para una ruta. Devuelve la respuesta ya validada contra el contrato (<c>ASIGNADO</c> con todos los
+    /// campos de cada vehículo, o <c>SIN_SELECCION_AUTOMATICA</c> con su motivo) o el error traducido. Un POST nunca se reintenta.
     /// </summary>
-    Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
-        Guid rutaId, IReadOnlyList<clsMercanciaCubicador> mercancias, CancellationToken cancellationToken = default);
+    Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(clsPeticionRecomendacion peticion, CancellationToken cancellationToken = default);
 
-    /// <summary><c>GET /tipos-mercancia</c> (con caché en memoria): el catálogo para el desplegable del formulario y para copiar el nombre.</summary>
+    /// <summary><c>GET /tipos-mercancia</c> (con caché en memoria): código, nombre, categoría, cubicable, condicionada y activo.</summary>
     Task<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>> ListarTiposMercanciaAsync(CancellationToken cancellationToken = default);
+
+    /// <summary><c>GET /tipos-carroceria</c> (con caché en memoria).</summary>
+    Task<clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>> ListarTiposCarroceriaAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <c>GET /tipos-vehiculo</c> (con caché en memoria; petición P1 al cubicador: mientras no exista responde
+    /// <c>CUBICADOR_NO_DISPONIBLE</c>).
+    /// </summary>
+    Task<clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>> ListarTiposVehiculoAsync(CancellationToken cancellationToken = default);
 }

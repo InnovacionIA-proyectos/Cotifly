@@ -1,9 +1,11 @@
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
+using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
+using Cotifly.Dominio.Identidad;
 using Cotifly.Pruebas.Comun;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -11,8 +13,9 @@ using NSubstitute;
 namespace Cotifly.Aplicacion.Tests.Costeo;
 
 /// <summary>
-/// <see cref="clsPlanificadorCamionesCubicador"/> (HU-021.5, #133): un camión por fila de la recomendación (C2, C3), "sin selección" y
-/// "condicionada" como resultado (C6) y el respaldo (un camión sin vehículo) sin cubicador o cuando falla.
+/// <see cref="clsPlanificadorCamionesCubicador"/> (HU-021.5, #133; contrato de HU-023.1, #156): un camión por vehículo (flota mixta) con
+/// el volumen y los porcentajes, "sin selección" y "condicionada" como resultado, los rechazos y la respuesta inválida sin respaldo, y el
+/// respaldo (un camión sin vehículo) sin cubicador o cuando se cae.
 /// </summary>
 public sealed class clsPlanificadorCamionesCubicadorTests
 {
@@ -30,58 +33,88 @@ public sealed class clsPlanificadorCamionesCubicadorTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static clsLineaSolicitudCosteo Ruta() => clsSolicitudCosteoMuestra.RutaCaptura();
+    private static clsLineaSolicitudCosteo Ruta() => clsSolicitudCosteoMuestra.RutaConCodigos();
 
     private static decimal? PesoRuta => clsPlanificadorCamionSinVehiculo.PesoTotal(Ruta());
 
+    private static clsVehiculoRecomendado Vehiculo(string codigo, string carroceria, decimal peso, Guid? id = null) =>
+        new(id ?? Guid.NewGuid(), codigo, carroceria, peso, 40m, 80m, 70m);
+
+    private static clsRecomendacionCubicador Asignado(params clsVehiculoRecomendado[] vehiculos) =>
+        new(Guid.NewGuid(), clsResultadosRecomendacion.Asignado, null, false, [], vehiculos, [], null);
+
     [Fact]
-    public async Task CreaUnCamionPorFilaConVehiculoCarroceriaPesoEIdDeLaRecomendacion()
+    public async Task CreaUnCamionPorVehiculoDeLaFlotaMixtaConVolumenPorcentajesEIdDeLaRecomendacion()
     {
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
-        Responder(new clsVehiculoRecomendado(id1, "3S3", " FURGON ", 16_000.456m, clsResultadosRecomendacion.Seleccionado),
-            new clsVehiculoRecomendado(id2, "2S2", "ESTACAS", 12_500m, clsResultadosRecomendacion.Seleccionado));
+        Responder(Asignado(new clsVehiculoRecomendado(id1, "3S3", "FURGON", 16_000.456m, 62.5m, 81.25m, 47.06m), Vehiculo("C2", "ESTACAS", 4_500m, id2)));
 
         var camiones = (await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct)).Valor;
 
-        camiones.Should().Equal(new clsCamionPlaneado("3S3", "FURGON", 16_000.46m, id1), new clsCamionPlaneado("2S2", "ESTACAS", 12_500m, id2));
-        await _cubicador.Received(1).RecomendarAsync(_rutaId,
-            Arg.Is<IReadOnlyList<clsMercanciaCubicador>>(m => m.Count == Ruta().Posiciones.Count && m.All(x => x.IdTipoMercancia == clsSolicitudCosteoMuestra.TipoMercancia)),
+        camiones.Should().Equal(
+            new clsCamionPlaneado("3S3", "FURGON", 16_000.46m, id1, 62.5m, 81.25m, 47.06m),
+            new clsCamionPlaneado("C2", "ESTACAS", 4_500m, id2, 40m, 80m, 70m));
+    }
+
+    [Fact]
+    public async Task MandaElIdDeLaRutaLaClaseDeViajeElUsuarioExternoYElCodigoDeCadaMercancia()
+    {
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)));
+        var usuarios = Substitute.For<IClsUsuarioWebRepository>();
+        usuarios.ObtenerPorIdAsync(_usuario, Arg.Any<CancellationToken>())
+            .Returns(clsUsuarioWeb.Crear("ana", "Ana", "ana@x.co", null, DateTimeOffset.UtcNow, 987654).Valor);
+
+        var planificador = new clsPlanificadorCamionesCubicador(_logger, _cubicador, usuarios: usuarios);
+        await planificador.PlanificarAsync(_usuario, _rutaId, Ruta() with { ClaseViaje = " Carga Suelta " }, Ct);
+        await planificador.PlanificarAsync(_usuario, Guid.NewGuid(), Ruta(), Ct);
+
+        await _cubicador.Received(1).RecomendarAsync(
+            Arg.Is<clsPeticionRecomendacion>(p => p.IdLineaSolicitud == _rutaId.ToString("D") && p.ClaseViajeSeleccionada == "Carga Suelta"
+                && p.UsuarioId == "987654" && p.Mercancias.Count == Ruta().Posiciones.Count
+                && p.Mercancias.All(m => m.CodigoMercancia == clsSolicitudCosteoMuestra.CodigoMercancia)),
             Arg.Any<CancellationToken>());
+        await usuarios.Received(1).ObtenerPorIdAsync(_usuario, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task SinSeleccionAutomaticaElCamionQuedaSinVehiculoParaLaMesa()
+    public async Task UnaMercanciaConElIdAnteriorSeTraduceAlCodigoConElCatalogo()
     {
-        var id = Guid.NewGuid();
-        Responder(new clsVehiculoRecomendado(id, "3S3", "FURGON", 9_000m, clsResultadosRecomendacion.SinSeleccionAutomatica, "sin vehículo compatible"));
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)));
+        _cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(
+            [new clsTipoMercanciaCubicador("CAFE", "Café", null, true, false, null, true, clsSolicitudCosteoMuestra.TipoMercancia)]));
+        var planificador = Planificador();
 
-        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+        var camiones = await planificador.PlanificarAsync(_usuario, _rutaId, clsSolicitudCosteoMuestra.RutaCaptura(), Ct);
+        await planificador.PlanificarAsync(_usuario, Guid.NewGuid(), clsSolicitudCosteoMuestra.RutaCaptura(), Ct);
 
-        resultado.Valor.Should().Equal(new clsCamionPlaneado(null, null, 9_000m, id));
-        _logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Information && r.Mensaje.Contains("sin vehículo compatible"));
+        camiones.Valor.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3");
+        await _cubicador.Received(2).RecomendarAsync(Arg.Is<clsPeticionRecomendacion>(p => p.Mercancias.All(m => m.CodigoMercancia == "CAFE")),
+            Arg.Any<CancellationToken>());
+        await _cubicador.Received(1).ListarTiposMercanciaAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task UnaMercanciaCondicionadaNoEsErrorYLosCamionesSeCreanComoVienen()
+    public async Task SinSeleccionAutomaticaElCamionQuedaSinVehiculoConElPesoDeLaRutaParaLaMesa()
     {
-        Responder(new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Condicionada, "AdminTarifas"),
-            new clsVehiculoRecomendado(Guid.NewGuid(), null, null, 12_500m, clsResultadosRecomendacion.Condicionada));
+        Responder(new clsRecomendacionCubicador(Guid.NewGuid(), clsResultadosRecomendacion.SinSeleccionAutomatica,
+            clsMotivosSinSeleccion.Extradimensionado, false, [], [], [], new clsExtradimensionCubicador(true, ["ALTO"], null)));
 
         var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
 
-        resultado.Valor.Select(c => (c.TipoVehiculo, c.PesoKg)).Should().Equal(("3S3", 16_000m), (null, 12_500m));
+        resultado.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+        _logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Information && r.Mensaje.Contains("EXTRADIMENSIONADO"));
+    }
+
+    [Fact]
+    public async Task UnaRutaCondicionadaNoEsErrorYLosCamionesSeCreanComoVienen()
+    {
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)) with { Condicionada = true, MercanciasCondicionadas = [new("QUIMICOS", null)] });
+
+        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+
+        resultado.Valor.Select(c => (c.TipoVehiculo, c.PesoKg)).Should().Equal(("3S3", 16_000m));
         _logger.Registros.Should().Contain(r => r.Mensaje.Contains("condicionada", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task ConUnaSolaFilaSinPesoUsaElPesoTotalDeLaRuta()
-    {
-        Responder(new clsVehiculoRecomendado(null, "3S3", "FURGON", null, clsResultadosRecomendacion.Seleccionado));
-
-        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
-
-        resultado.Valor.Should().Equal(new clsCamionPlaneado("3S3", "FURGON", PesoRuta, null));
     }
 
     [Fact]
@@ -97,32 +130,31 @@ public sealed class clsPlanificadorCamionesCubicadorTests
 
         resultado.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
         sinCubicador.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
-        await _cubicador.DidNotReceiveWithAnyArgs().RecomendarAsync(default, default!, Ct);
+        await _cubicador.DidNotReceiveWithAnyArgs().RecomendarAsync(default!, Ct);
         _logger.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning).Which.Mensaje.Should().Contain("CUBICADOR_SIN_CONFIGURAR");
     }
 
     [Fact]
-    public async Task UnaRutaSinMercanciasOConUnaMercanciaSinTipoUsaElRespaldoSinLlamarNiCortarLasDemas()
+    public async Task UnaRutaSinMercanciasOConUnaMercanciaSinCodigoUsaElRespaldoSinLlamarNiCortarLasDemas()
     {
-        Responder(new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado));
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)));
         var planificador = Planificador();
-        var migrada = Ruta() with { Posiciones = [.. Ruta().Posiciones.Select((p, i) => i == 0 ? p with { IdTipoMercancia = null } : p)] };
+        var migrada = Ruta() with { Posiciones = [.. Ruta().Posiciones.Select((p, i) => i == 0 ? p with { CodigoMercancia = null, IdTipoMercancia = null } : p)] };
 
         var sinMercancias = await planificador.PlanificarAsync(_usuario, _rutaId, Ruta() with { Posiciones = [] }, Ct);
-        var sinTipo = await planificador.PlanificarAsync(_usuario, Guid.NewGuid(), migrada, Ct);
+        var sinCodigo = await planificador.PlanificarAsync(_usuario, Guid.NewGuid(), migrada, Ct);
         var normal = await planificador.PlanificarAsync(_usuario, Guid.NewGuid(), Ruta(), Ct);
 
         sinMercancias.Valor.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull();
-        sinTipo.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
-        normal.Valor.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3", "una ruta sin tipo no corta el cubicador para las demás");
-        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default, default!, Ct);
+        sinCodigo.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+        normal.Valor.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3", "una ruta sin código no corta el cubicador para las demás");
+        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default!, Ct);
     }
 
     [Fact]
     public async Task UnaCaidaUsaElRespaldoAvisaConCodigoEstableYNoVuelveALlamarEnLaMismaCaptura()
     {
-        _cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
-            .Returns(Caida("HTTP 503"));
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(Caida("HTTP 503"));
         var planificador = Planificador();
 
         var primera = await planificador.PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
@@ -130,20 +162,49 @@ public sealed class clsPlanificadorCamionesCubicadorTests
 
         primera.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
         segunda.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
-        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default, default!, Ct);
+        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default!, Ct);
         var aviso = _logger.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning).Subject;
         aviso.Mensaje.Should().Contain("CUBICADOR_RESPALDO").And.Contain("HTTP 503");
     }
 
     [Fact]
-    public async Task UnRechazoDeUnaRutaSoloAfectaASuRuta()
+    public async Task LaLlaveRechazadaEsUnaCaidaQueVaAlRespaldo()
+    {
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(
+            new clsErrorDominio(clsCodigosError.CubicadorNoAutorizado, "llave", "HTTP 401") { Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true } });
+
+        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+
+        resultado.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+    }
+
+    [Theory]
+    [InlineData("MERCANCIAS_REQUERIDAS")]
+    [InlineData("MERCANCIA_DESCONOCIDA")]
+    [InlineData("MERCANCIA_NO_CUBICABLE")]
+    [InlineData("DIMENSIONES_INVALIDAS")]
+    [InlineData("CUBICADOR_RESPUESTA_INVALIDA")]
+    public async Task UnRechazoDelContratoOUnaRespuestaInvalidaNuncaVanAlRespaldo(string codigo)
+    {
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(codigo, "mensaje para el comercial", "detalle interno"));
+
+        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo, "esconder un dato malo con un camión sin vehículo es el fallo silencioso");
+        resultado.Error.Mensaje.Should().Be("mensaje para el comercial");
+        resultado.Error.Detalle.Should().BeNull("el detalle interno solo va al log");
+        _logger.Registros.Should().Contain(r => r.Mensaje.Contains("detalle interno"));
+    }
+
+    [Fact]
+    public async Task UnRechazoNoPrevistoDeUnaRutaSoloAfectaASuRuta()
     {
         var llamadas = 0;
-        _cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult(++llamadas == 1
-                ? clsResultado<clsRecomendacionCubicador>.Fallo(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "rechazo", "HTTP 400"))
-                : clsResultado<clsRecomendacionCubicador>.Exito(new clsRecomendacionCubicador(
-                    [new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado)]))));
+                ? clsResultado<clsRecomendacionCubicador>.Fallo(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "rechazo", "HTTP 409"))
+                : clsResultado<clsRecomendacionCubicador>.Exito(Asignado(Vehiculo("3S3", "FURGON", 16_000m)))));
         var planificador = Planificador();
 
         var rechazada = await planificador.PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
@@ -158,7 +219,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     public async Task AgotadoElPresupuestoLasRutasRestantesNoLlamanAlCubicador()
     {
         _cubicador.PresupuestoCaptura.Returns(TimeSpan.Zero);
-        Responder(new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado));
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)));
         var planificador = Planificador();
 
         var primera = await planificador.PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
@@ -168,7 +229,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         primera.Valor.Should().ContainSingle().Which.TipoVehiculo.Should().Be("3S3");
         segunda.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
         tercera.Valor.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
-        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default, default!, Ct);
+        await _cubicador.ReceivedWithAnyArgs(1).RecomendarAsync(default!, Ct);
         _logger.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning).Which.Mensaje.Should().Contain("presupuesto");
     }
 
@@ -177,7 +238,7 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     {
         _cubicador.PresupuestoCaptura.Returns(TimeSpan.Zero);
         _cubicador.RespaldoSiFalla.Returns(false);
-        Responder(new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, clsResultadosRecomendacion.Seleccionado));
+        Responder(Asignado(Vehiculo("3S3", "FURGON", 16_000m)));
         var planificador = Planificador();
 
         await planificador.PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
@@ -187,10 +248,10 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     }
 
     [Fact]
-    public async Task SinRespaldoUnaFallaDelCubicadorImpideLaCapturaSinExponerElDetalle()
+    public async Task SinRespaldoUnaCaidaDelCubicadorImpideLaCapturaSinExponerElDetalle()
     {
         _cubicador.RespaldoSiFalla.Returns(false);
-        _cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>())
             .Returns(Caida("tiempo agotado en POST /recomendaciones"));
 
         var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
@@ -205,25 +266,15 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    public async Task UnaRespuestaInvalidaEsUnaFallaDelCubicador(int caso)
+    public async Task UnVehiculoFueraDeLosLimitesDeLaCapturaEsUnaRespuestaInvalida(int caso)
     {
-        _cubicador.RespaldoSiFalla.Returns(false);
-        clsVehiculoRecomendado[] filas = caso switch
-        {
-            0 => [],
-            1 => [new(null, "3S3", "FURGON", 10_000m, clsResultadosRecomendacion.Seleccionado), new(null, "2S2", "ESTACAS", null, clsResultadosRecomendacion.Seleccionado)],
-            2 => [new(null, "3S3", "FURGON", -1m, clsResultadosRecomendacion.Seleccionado)],
-            _ => [new(null, new string('X', clsSolicitudCosteo.LargoCatalogo + 1), "FURGON", 1_000m, clsResultadosRecomendacion.Seleccionado)],
-        };
-        Responder(filas);
+        Responder(Asignado(caso == 0
+            ? Vehiculo(new string('X', clsSolicitudCosteo.LargoCatalogo + 1), "FURGON", 1_000m)
+            : Vehiculo("3S3", "FURGON", clsSolicitudCosteo.MaximoPeso + 1m)));
 
         var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
 
-        resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
-        resultado.Error.Detalle.Should().BeNull();
-        _logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Warning && r.Mensaje.Contains("respuesta inválida"));
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorRespuestaInvalida);
     }
 
     private static clsErrorDominio Caida(string detalle) =>
@@ -266,16 +317,15 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     public async Task ConLaRecomendacionDelCubicadorElVehiculoDeLaRutaNoSeUsa()
     {
         var id = Guid.NewGuid();
-        Responder(new clsVehiculoRecomendado(id, "2S2", "ESTACAS", 12_500m, clsResultadosRecomendacion.Seleccionado));
+        Responder(Asignado(Vehiculo("2S2", "ESTACAS", 12_500m, id)));
 
         var camiones = (await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta() with { TipoVehiculo = "3S3", Carroceria = "FURGON" }, Ct)).Valor;
 
-        camiones.Should().Equal([new clsCamionPlaneado("2S2", "ESTACAS", 12_500m, id)], "si el cubicador recomienda, manda el cubicador");
+        camiones.Should().Equal([new clsCamionPlaneado("2S2", "ESTACAS", 12_500m, id, 40m, 80m, 70m)], "si el cubicador recomienda, manda el cubicador");
     }
 
-    private void Responder(params clsVehiculoRecomendado[] filas) =>
-        _cubicador.RecomendarAsync(Arg.Any<Guid>(), Arg.Any<IReadOnlyList<clsMercanciaCubicador>>(), Arg.Any<CancellationToken>())
-            .Returns(new clsRecomendacionCubicador(filas));
+    private void Responder(clsRecomendacionCubicador recomendacion) =>
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(recomendacion);
 
     private clsPlanificadorCamionesCubicador Planificador() => new(_logger, _cubicador);
 }

@@ -1,11 +1,13 @@
 # language: es
-# HU-021.5 (#133, ADR-019 decisión 7) — Integración con el cubicador: por cada ruta de la captura Cotifly pide al cubicador
-# (POST /recomendaciones, con IdLineaSolicitud = id de la ruta y OrigenSistema = COTIFLY) los vehículos y crea un camión por fila de la
-# respuesta, con su vehículo, su carrocería, su peso total (C2) y el id de la recomendación (C3). "Sin selección automática" y
-# "condicionada" son resultados, no errores (C6). Si el cubicador no está configurado o falla, la ruta queda con un camión sin vehículo
-# (respaldo, con Cubicador:RespaldoSiFalla). El nombre de cada mercancía se copia del catálogo del cubicador (GET /tipos-mercancia).
-# El cubicador real aún no tiene estos endpoints (C1): por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers, el
-# Nexo falso y el cubicador falso (nunca los reales). Pasos en Cotifly.Aceptacion.Tests/Costeo/clsPasosCubicador.cs.
+# HU-021.5 (#133, ADR-019 decisión 7) y HU-023.1 (#156, contrato del cubicador) — Integración con el cubicador: por cada ruta de la
+# captura Cotifly pide al cubicador (POST /recomendaciones, con idLineaSolicitud = id de la ruta, origenSistema = COTIFLY, la clase de
+# viaje como preferencia, el comercial y cada mercancía con su codigoMercancia) los vehículos y crea un camión por vehículo de la
+# respuesta ASIGNADO (flota mixta), con su código de vehículo y de carrocería, el peso que lleva, el volumen, los dos porcentajes de
+# llenado y el id de la recomendación. SIN_SELECCION_AUTOMATICA (con su motivo) y "condicionada" son resultados, no errores. Si el
+# cubicador no está configurado o se cae, la ruta queda con un camión sin vehículo (respaldo, con Cubicador:RespaldoSiFalla); un
+# rechazo o una respuesta incompleta nunca van al respaldo. El nombre de cada mercancía se copia del catálogo (GET /tipos-mercancia).
+# El cubicador real aún no está publicado: por HTTP contra la API real en memoria, SQL Server 2019 en Testcontainers, el Nexo falso y
+# el cubicador falso (nunca los reales). Pasos en Cotifly.Aceptacion.Tests/Costeo/clsPasosCubicador.cs.
 @integracion
 Característica: Camiones de cada ruta según el cubicador
   Como comercial de Botero Soto
@@ -18,10 +20,10 @@ Característica: Camiones de cada ruta según el cubicador
     Y el comercial "ana" con sesión en la regional "Occidente"
 
   Escenario: El cubicador recomienda dos camiones para la ruta y cada uno se costea en Nexo
-    Dado que el cubicador recomienda para cada ruta estos vehículos:
-      | vehiculo | carroceria | peso_kg | resultado    |
-      | 3S3      | FURGON     | 16000   | SELECCIONADO |
-      | 2S3      | ESTACAS    | 12500   | SELECCIONADO |
+    Dado que el cubicador asigna para cada ruta estos vehículos:
+      | vehiculo | carroceria | peso_kg |
+      | 3S3      | FURGON     | 16000   |
+      | C2       | ESTACAS    | 12500   |
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Entonces el cubicador recibió la ruta 1 de "C1" con el origen "COTIFLY" y su llave como Bearer
     Y cada camión de la ruta 1 de "C1" guarda el id de su recomendación del cubicador
@@ -35,16 +37,14 @@ Característica: Camiones de cada ruta según el cubicador
     Entonces cada camión de "C1" quedó asociado a una línea distinta de Nexo
     Y el camión de 16000 kg de "C1" tiene el vehículo "3S3" y la carrocería "FURGON"
     Y el camión de 16000 kg de "C1" tiene el flete 1500000 y el estado "autocosteo"
-    Y el camión de 12500 kg de "C1" tiene el vehículo "2S3" y la carrocería "ESTACAS"
+    Y el camión de 12500 kg de "C1" tiene el vehículo "C2" y la carrocería "ESTACAS"
     Y el camión de 12500 kg de "C1" tiene el flete 1000000 y el estado "autocosteo"
 
   Escenario: Sin selección automática el camión viaja sin vehículo para que lo resuelva la Mesa de Costeo
-    Dado que el cubicador recomienda para cada ruta estos vehículos:
-      | vehiculo | carroceria | peso_kg | resultado                |
-      |          |            | 28500   | SIN_SELECCION_AUTOMATICA |
+    Dado que el cubicador no puede escoger vehículo por "SIN_CARROCERIA_COMPATIBLE"
     Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
     Entonces la cotización "C1" queda en el estado de costeo "pendiente_costeo"
-    Y cada camión de la ruta 1 de "C1" guarda el id de su recomendación del cubicador
+    Y la ruta 1 de "C1" tiene un solo camión sin vehículo ni recomendación de 28500 kg
     Y ninguna de las líneas que recibió Nexo lleva vehículo ni carrocería
 
   Escenario: Si el cubicador no responde la ruta queda con un camión sin vehículo con el peso total

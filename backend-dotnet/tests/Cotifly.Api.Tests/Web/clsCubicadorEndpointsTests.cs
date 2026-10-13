@@ -18,6 +18,9 @@ namespace Cotifly.Api.Tests.Web;
 public sealed class clsCubicadorEndpointsTests : IDisposable
 {
     private const string TipoCafe = clsCosteoEndpointsTests.TipoMercancia;
+
+    /// <summary>Código que el cubicador falso le da a "Café en estibas".</summary>
+    private const string CodigoCafe = "CAFE_EN_ESTIBAS";
     private static readonly HttpMethod _get = HttpMethod.Get;
     private static readonly HttpMethod _post = HttpMethod.Post;
     private static readonly HttpMethod _put = HttpMethod.Put;
@@ -47,23 +50,25 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     {
         // Ruta 1 (28000 kg): dos vehículos; ruta 2 (12500 kg): uno.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
-            ? [clsCubicadorFalso.Fila("3S3", "FURGON", 16_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 12_000m)]
-            : [clsCubicadorFalso.Fila("2", "FURGON", 12_500m)];
+            ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
+            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        // El cubicador recibió cada ruta con su id, el origen COTIFLY y la llave como Bearer.
+        // El cubicador recibió cada ruta con su id, el origen COTIFLY, la clase de viaje como preferencia, el comercial y la llave como Bearer.
         var rutas = (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(LOWER(CAST(l.id AS nvarchar(36))), ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionLineasSolicitud l "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))!.Split(',');
         _cubicador.Recomendaciones.Select(r => r["idLineaSolicitud"]!.GetValue<string>()).Should().Equal(rutas);
         _cubicador.Recomendaciones.Should().OnlyContain(r => r["origenSistema"]!.GetValue<string>() == "COTIFLY");
         _cubicador.Peticiones.Should().OnlyContain(p => p.Autorizacion == "Bearer " + clsCubicadorFalso.ApiKey);
+        _cubicador.Recomendaciones.Should().OnlyContain(r => r["claseViajeSeleccionada"]!.GetValue<string>() == "Contenedor");
+        _cubicador.Recomendaciones.Should().OnlyContain(r => !string.IsNullOrEmpty(r["usuarioId"]!.GetValue<string>()));
         _cubicador.Recomendaciones[0]["mercancias"]!.AsArray().Should().ContainSingle()
-            .Which!["idTipoMercancia"]!.GetValue<string>().Should().Be(TipoCafe);
+            .Which!["codigoMercancia"]!.GetValue<string>().Should().Be(CodigoCafe, "HU-023: el id_tipo_mercancia se traduce al código del catálogo");
 
         // Un camión por fila, con el vehículo, la carrocería, el peso (C2) y el id de la recomendación (C3); la mercancía con el nombre del catálogo.
         // En el orden de la recomendación (la fila 1 es el primer camión: recibe los conexos de la ruta, decisión 10).
@@ -100,9 +105,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Escenario cruzado #133 sobre #132, #134, #135 y #137: una ruta (Importacion, 28000 kg) con un conexo capturado; el cubicador
         // recomienda tres vehículos.
         _cubicador.RecomendarSiempre(
-            clsCubicadorFalso.Fila("3S3", "FURGON", 12_000m),
-            clsCubicadorFalso.Fila("2S3", "ESTACAS", 9_000m),
-            clsCubicadorFalso.Fila("2", "FURGON", 7_000m));
+            clsCubicadorFalso.Vehiculo("3S3", "FURGON", 12_000m),
+            clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 9_000m),
+            clsCubicadorFalso.Vehiculo("2", "FURGON", 7_000m));
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
@@ -171,20 +176,58 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     [Fact]
     public async Task SinSeleccionYCondicionadaSonResultadosYLaSolicitudViajaCompleta()
     {
-        _cubicador.RecomendarSiempre(
-            clsCubicadorFalso.Fila("3S3", "FURGON", 16_000m, "SIN_SELECCION_AUTOMATICA", "carga extradimensionada"),
-            clsCubicadorFalso.Fila("3S3", "FURGON", 12_000m, "CONDICIONADA", "pendiente de AdminTarifas"));
+        // Ruta 1 (28000 kg): el cubicador no puede escoger (extradimensionado); ruta 2 (12500 kg): condicionada.
+        _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
+            ? clsCubicadorFalso.SinSeleccion("EXTRADIMENSIONADO")
+            : clsCubicadorFalso.Condicionada(clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2S2", "FURGON", 12_500m)), CodigoCafe);
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        (await CamionesAsync(folio)).Should().Equal("1|||28000.00|-", "2|2S2|FURGON|12500.00|R");
+        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineas.Should().HaveCount(2, "la solicitud se envía completa a la Mesa de Costeo de Nexo");
+        lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
+            .Should().BeEquivalentTo([((string?)null, 28_000m), ("2S2", 12_500m)], "sin selección viaja sin vehículo; condicionada, como vino");
+    }
+
+    [Theory]
+    [InlineData("MERCANCIA_DESCONOCIDA")]
+    [InlineData("MERCANCIA_NO_CUBICABLE")]
+    [InlineData("DIMENSIONES_INVALIDAS")]
+    public async Task UnRechazoDelCubicadorLlegaAlComercialYNoSeGuardaNiSeEnviaNada(string codigo)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, codigo);
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
-        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        (await CamionesAsync(folio)).Should().Equal("1|||16000.00|R", "1|3S3|FURGON|12000.00|R");
-        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
-        lineas.Should().HaveCount(2, "la solicitud se envía completa a la Mesa de Costeo de Nexo");
-        lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().BeEquivalentTo([((string?)null, 16_000m), ("3S3", 12_000m)], "sin selección viaja sin vehículo; condicionada, como vino");
+        envio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await VerificarErrorNegocioAsync(envio, codigo);
+        _nexo.UltimaAlta.Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task UnaRespuestaIncompletaDelCubicadorSeRechazaAunqueHayaRespaldoYNoSeGuardaNada()
+    {
+        // HU-023.1: ASIGNADO con un vehículo sin peso es el fallo silencioso; nunca se tapa con el respaldo.
+        _cubicador.CuerpoRecomendacion = """{"resultado":"ASIGNADO","vehiculos":[{"idRecomendacionVehiculo":"5f0e1d2c-3b4a-4968-8776-655443322110","codigoVehiculo":"3S3","codigoCarroceria":"FURGON","volumenTotalM3":10,"porcentajeLlenadoVolumen":50,"porcentajeLlenadoPeso":50}]}""";
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+
+        envio.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        await VerificarErrorNegocioAsync(envio, "CUBICADOR_RESPUESTA_INVALIDA");
+        (await envio.Content.ReadAsStringAsync(Ct)).Should().NotContain("pesoTotalKg", "el detalle interno solo va al log");
+        _nexo.UltimaAlta.Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
     [Theory]
@@ -228,13 +271,16 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15), "el catálogo se corta en 1 s y se lee una sola vez por captura");
-        (await CamionesAsync(folio)).Should().Equal(["1|3S3|FURGON|28000.00|R"], "las recomendaciones siguen funcionando");
+        reloj.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15), "el catálogo se corta en 1 s");
+        (await CamionesAsync(folio)).Should().Equal(["1|||28000.00|-"],
+            "HU-023: sin catálogo el id_tipo_mercancia no se puede traducir al código y la ruta va al respaldo sin llamar al cubicador");
+        _cubicador.Recomendaciones.Should().BeEmpty();
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT TOP 1 m.nombreMercancia FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId "
             + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
             .Should().Be("Estiba de café", "sin catálogo se conserva el nombre que mandó el cliente");
-        _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Get).Should().Be(1, "una sola lectura del catálogo por captura");
+        _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Get).Should().BeLessThanOrEqualTo(2,
+            "una lectura para validar y nombrar (compartida con la preparación) y otra del planificador para traducir el id al código");
     }
 
     [Fact]
@@ -284,9 +330,36 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             (await _entorno.Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial)).Access);
 
         tipos.EnumerateArray().Select(t => t.GetProperty("nombre").GetString()).Should().Equal("Bobinas de acero", "Café en estibas");
-        tipos.EnumerateArray().Last().GetProperty("id").GetString().Should().Be(TipoCafe);
+        var cafe = tipos.EnumerateArray().Last();
+        cafe.GetProperty("codigo").GetString().Should().Be(CodigoCafe);
+        cafe.GetProperty("id").GetString().Should().Be(TipoCafe);
+        cafe.GetProperty("categoria").GetString().Should().Be("GENERAL");
+        cafe.GetProperty("cubicable").GetBoolean().Should().BeTrue();
+        cafe.GetProperty("condicionada_cubicacion").GetBoolean().Should().BeFalse();
+        cafe.GetProperty("activo").GetBoolean().Should().BeTrue();
         await VerificarContratoAsync(sinCubicador, "/web/tipos-mercancia", _get, HttpStatusCode.ServiceUnavailable);
         await VerificarErrorNegocioAsync(sinCubicador, "CUBICADOR_NO_DISPONIBLE");
+    }
+
+    [Fact]
+    public async Task LosCatalogosDeCarroceriasYVehiculosSalenDelCubicador()
+    {
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var carrocerias = await api.EnviarAsync(_get, "/web/tipos-carroceria", ana.Access);
+        using var vehiculos = await api.EnviarAsync(_get, "/web/tipos-vehiculo", ana.Access);
+
+        (await VerificarContratoAsync(carrocerias, "/web/tipos-carroceria", _get, HttpStatusCode.OK)).EnumerateArray()
+            .Select(c => c.GetProperty("codigo").GetString()).Should().BeEquivalentTo("FURGON", "ESTACAS", "CAMA_BAJA");
+        var vehiculo = (await VerificarContratoAsync(vehiculos, "/web/tipos-vehiculo", _get, HttpStatusCode.OK)).EnumerateArray()
+            .Single(v => v.GetProperty("codigo").GetString() == "2S2");
+        vehiculo.GetProperty("nombre").GetString().Should().Be("Tractocamión 2S2", "el nombre del vehículo sale del catálogo (decisión 4)");
+        vehiculo.GetProperty("carrocerias").EnumerateArray().Select(c => c.GetString()).Should().Contain("FURGON");
+
+        _cubicador.SinTiposVehiculo = true;
+        using var sinPublicar = await Api().EnviarAsync(_get, "/web/tipos-vehiculo", ana.Access);
+        await VerificarContratoAsync(sinPublicar, "/web/tipos-vehiculo", _get, HttpStatusCode.ServiceUnavailable);
     }
 
     /// <summary>
@@ -298,11 +371,12 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     [Fact]
     public async Task LaCadenaCompletaConElCubicadorLlegaDeLaCapturaALaVersionNuevaGanadaYSusMetricas()
     {
-        // 1. Captura: la ruta 1 (28000 kg) recibe tres recomendaciones; para la 2 el cubicador responde sin filas (respuesta inválida:
-        // respaldo solo de esa ruta, un camión sin vehículo con su peso).
+        // 1. Captura: la ruta 1 (28000 kg) recibe tres vehículos; para la 2 el cubicador no puede escoger (SUPERA_K_MAX: un camión sin
+        // vehículo con el peso de la ruta, que resuelve la Mesa de Costeo).
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
-            ? [clsCubicadorFalso.Fila("3S3", "FURGON", 12_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 9_000m), clsCubicadorFalso.Fila("2", "FURGON", 7_000m)]
-            : [];
+            ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 12_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 9_000m),
+                clsCubicadorFalso.Vehiculo("2", "FURGON", 7_000m))
+            : clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX");
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true, conexo: true));

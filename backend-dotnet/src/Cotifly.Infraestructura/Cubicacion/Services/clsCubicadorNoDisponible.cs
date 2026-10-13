@@ -20,11 +20,17 @@ public sealed class clsCubicadorNoDisponible : IClsCubicador
     public TimeSpan PresupuestoCaptura => TimeSpan.Zero;
 
     public Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
-        Guid rutaId, IReadOnlyList<clsMercanciaCubicador> mercancias, CancellationToken cancellationToken = default) =>
+        clsPeticionRecomendacion peticion, CancellationToken cancellationToken = default) =>
         Task.FromResult<clsResultado<clsRecomendacionCubicador>>(NoDisponible());
 
     public Task<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>> ListarTiposMercanciaAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>>(NoDisponible());
+
+    public Task<clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>> ListarTiposCarroceriaAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>>(NoDisponible());
+
+    public Task<clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>> ListarTiposVehiculoAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>>(NoDisponible());
 
     private static clsErrorDominio NoDisponible() =>
         new(clsCodigosError.CubicadorNoDisponible, Mensaje, "cubicador sin configurar (Cubicador:UrlBase)");

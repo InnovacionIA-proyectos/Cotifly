@@ -938,12 +938,13 @@ paths:
       tags: [web]
       summary: Catálogo de tipos de mercancía del cubicador
       description: |
-        HU-021.5 (#133). Pasa el catálogo `GET /tipos-mercancia` del cubicador para el desplegable de mercancías del formulario:
-        el `id` es el `id_tipo_mercancia` que se manda en cada mercancía de `POST /web/solicitudes-costeo` (y que viaja al cubicador
-        en `POST /recomendaciones`); el `nombre` es el que Cotifly guarda como `nombre_mercancia` (copia). Ordenado por nombre.
-        Se reutiliza en memoria `Cubicador:MinutosCacheCatalogos` (30 por defecto; solo respuestas exitosas). Autenticación con el
-        cubicador: `Authorization: Bearer {Cubicador:ApiKey}`. **Contrato provisional**: el cubicador aún no publica este endpoint
-        (C1 de `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`).
+        HU-021.5 (#133) y HU-023.1 (#156). Pasa el catálogo `GET /tipos-mercancia` del cubicador para el desplegable de mercancías
+        del formulario: el `codigo` es lo que viaja al cubicador en `POST /recomendaciones` (y lo que guarda Cotifly, HU-023.3); el
+        `nombre` es el que Cotifly guarda como `nombre_mercancia` (copia). Trae también `categoria`, `cubicable`,
+        `condicionada_cubicacion` (con su `comentario_condicion`) y `activo`: el formulario solo ofrece las activas y puede avisar de
+        las condicionadas. `id` (uuid) solo sirve durante la transición para traducir el `id_tipo_mercancia` anterior. Ordenado por
+        nombre, incluidas las inactivas. Se reutiliza en memoria `Cubicador:MinutosCacheCatalogos` (30 por defecto; solo respuestas
+        exitosas). Autenticación con el cubicador: `Authorization: Bearer {Cubicador:ApiKey}`. El navegador nunca llama al cubicador.
       security:
         - bearer: []
       responses:
@@ -962,6 +963,66 @@ paths:
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía, el valor por defecto mientras
             no exista) o no respondió. El formulario puede seguir con los tipos que ya conoce: sin catálogo, la captura conserva el
             nombre que manda el cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/tipos-carroceria:
+    get:
+      operationId: listarTiposCarroceria
+      tags: [web]
+      summary: Catálogo de carrocerías del cubicador
+      description: |
+        HU-023.1 (#156). Pasa `GET /tipos-carroceria` del cubicador (con la caché de `Cubicador:MinutosCacheCatalogos`). Los códigos
+        (`FURGON`, `ESTACAS`, `CAMA_BAJA`...) son los que guarda el camión en `carroceria` y los que acepta la validación de la
+        captura. El refrigerado es `FURGON` más una advertencia del cubicador, no una carrocería aparte.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Catálogo de carrocerías
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TipoCarroceria'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '503':
+          description: '`CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado o no respondió.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/tipos-vehiculo:
+    get:
+      operationId: listarTiposVehiculo
+      tags: [web]
+      summary: Catálogo de tipos de vehículo del cubicador
+      description: |
+        HU-023.1 (#156). Pasa `GET /tipos-vehiculo` del cubicador (petición P1; con la caché de `Cubicador:MinutosCacheCatalogos`).
+        Cotifly no guarda el nombre del vehículo (decisión 4 de HU-023): la pantalla y el PDF lo sacan de aquí por su `codigo`.
+        `carrocerias` son los códigos de carrocería compatibles.
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Catálogo de tipos de vehículo
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TipoVehiculo'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '503':
+          description: |
+            `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado, no respondió o todavía no publica `GET /tipos-vehiculo`
+            (petición P1).
           content:
             application/json:
               schema:
@@ -1068,13 +1129,18 @@ paths:
         horas, `valor_levante_contenedor` (se copia a cada camión, decisión 4), valor de la mercancía, peso, mercancías con
         `id_tipo_mercancia` obligatorio (catálogo del cubicador) y `servicios_conexos` del catálogo de Nexo (id y cantidad; el
         precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y sus
-        camiones según el **cubicador** (HU-021.5, #133): manda la ruta a `POST /recomendaciones` del cubicador (`IdLineaSolicitud` =
-        id de la ruta, `OrigenSistema = COTIFLY`, y por mercancía `idTipoMercancia`, medidas, cantidad y peso) y crea **un camión por
-        fila** de la respuesta con su vehículo, su carrocería, su peso total y el id de la recomendación. "Sin selección automática"
-        deja el camión sin vehículo ni carrocería (lo resuelve la Mesa de Costeo de Nexo, decisión 7) y una mercancía "condicionada"
-        no parte ni bloquea nada: la solicitud se envía completa. **Respaldo:** sin cubicador configurado (hoy), sin mercancías o si
-        el cubicador falla (con `Cubicador:RespaldoSiFalla = true`, el valor por defecto), la ruta queda con **un camión sin vehículo
-        ni carrocería con el peso total de la ruta**, como antes. A Nexo viaja una línea por camión.
+        camiones según el **cubicador** (HU-021.5, #133, con el contrato de HU-023.1, #156): manda la ruta a `POST /recomendaciones`
+        del cubicador (`idLineaSolicitud` = id de la ruta, `origenSistema = COTIFLY`, `claseViajeSeleccionada` = la clase de viaje
+        de la ruta como preferencia, `usuarioId` = el `idUsuarioExterno` del comercial y por mercancía `codigoMercancia`, medidas,
+        cantidad y peso por unidad; el `id_tipo_mercancia` se traduce al código con el catálogo) y, con `ASIGNADO`, crea **un camión
+        por vehículo** de la respuesta (flota mixta) con su código de vehículo y de carrocería, el peso que lleva, el volumen, los dos
+        porcentajes de llenado y el id de la recomendación. `SIN_SELECCION_AUTOMATICA` (con su motivo) deja un camión sin vehículo ni
+        carrocería con el peso de la ruta (lo resuelve la Mesa de Costeo de Nexo, decisión 7) y una ruta "condicionada" no parte ni
+        bloquea nada: la solicitud se envía completa. Un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...) o una respuesta que no
+        cumple el contrato (`CUBICADOR_RESPUESTA_INVALIDA`) impiden la captura: no se guarda ni se envía nada. **Respaldo:** sin
+        cubicador configurado (hoy), sin mercancías o si el cubicador se cae (con `Cubicador:RespaldoSiFalla = true`, el valor por
+        defecto), la ruta queda con **un camión sin vehículo ni carrocería con el peso total de la ruta**, como antes. A Nexo viaja
+        una línea por camión.
         - **Mercancías:** con el catálogo del cubicador disponible (`GET /web/tipos-mercancia`), `nombre_mercancia` se copia del
           catálogo por `id_tipo_mercancia` (un nombre distinto del cliente se ignora) y un id que no está en el catálogo es
           `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia`. Sin catálogo se guarda el nombre que manda el cliente.
@@ -2691,8 +2757,13 @@ components:
                 `error_envio` definitivo, no se reintenta), `COSTEO_NO_REINTENTABLE` (409: la
                 cotización no está en `error_envio` ni en `pendiente_envio`), `COSTEO_NO_LISTO` (409: la cotización todavía no
                 tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene PDF, se cambia con una versión nueva).
-                Cubicador (HU-021.5, #133): `CUBICADOR_NO_DISPONIBLE` (503 en `GET /web/tipos-mercancia` sin cubicador o sin
-                respuesta, y en `POST /web/solicitudes-costeo` y `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`).
+                Cubicador (HU-021.5, #133; HU-023.1, #156): `CUBICADOR_NO_DISPONIBLE` (503 en `GET /web/tipos-mercancia`,
+                `/web/tipos-carroceria` y `/web/tipos-vehiculo` sin cubicador o sin respuesta, y en `POST /web/solicitudes-costeo` y
+                `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`), `CUBICADOR_NO_AUTORIZADO` (503: el cubicador
+                rechazó la llave de Cotifly; con el respaldo encendido la ruta sigue sin vehículo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
+                la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada) y los
+                rechazos 400 del cubicador con su mismo código: `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
+                `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada).
                 Resultado en Nexo (HU-005.14), con el mismo código de Nexo: `RESULTADO_YA_DEFINIDO` y
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
                 sobre una cotización que pasó por Nexo).
@@ -2779,6 +2850,12 @@ components:
                 - FOLIO_REQUERIDO
                 - COTIZACION_CHAT_RETIRADA
                 - CUBICADOR_NO_DISPONIBLE
+                - CUBICADOR_RESPUESTA_INVALIDA
+                - CUBICADOR_NO_AUTORIZADO
+                - MERCANCIAS_REQUERIDAS
+                - MERCANCIA_DESCONOCIDA
+                - MERCANCIA_NO_CUBICABLE
+                - DIMENSIONES_INVALIDAS
                 - ESTADO_NO_PERMITE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
@@ -3766,16 +3843,67 @@ components:
 
     TipoMercancia:
       type: object
-      required: [id, nombre]
-      description: HU-021.5 (#133). Un tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`).
+      required: [codigo, nombre, cubicable, condicionada_cubicacion, activo]
+      description: HU-021.5 (#133) y HU-023.1 (#156). Un tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`).
       properties:
-        id:
+        codigo:
           type: string
-          format: uuid
-          description: Id del cubicador; es el `id_tipo_mercancia` de cada mercancía de la captura.
+          maxLength: 64
+          description: Código estable del cubicador (por ejemplo `BEBIDAS`); es el `codigo_mercancia` de cada mercancía de la captura.
         nombre:
           type: string
           description: Nombre que Cotifly guarda como `nombre_mercancia` (copia).
+        categoria:
+          type: string
+          nullable: true
+        cubicable:
+          type: boolean
+          description: Si es `false`, el cubicador responde `MERCANCIA_NO_CUBICABLE`.
+        condicionada_cubicacion:
+          type: boolean
+          description: Si es `true`, la ruta queda condicionada (va a la Mesa de Costeo).
+        comentario_condicion:
+          type: string
+          nullable: true
+        activo:
+          type: boolean
+        id:
+          type: string
+          format: uuid
+          nullable: true
+          deprecated: true
+          description: Uuid del catálogo; solo traduce el `id_tipo_mercancia` anterior durante la transición.
+
+    TipoCarroceria:
+      type: object
+      required: [codigo, nombre, activo]
+      description: HU-023.1 (#156). Una carrocería del catálogo del cubicador (`GET /web/tipos-carroceria`).
+      properties:
+        codigo:
+          type: string
+        nombre:
+          type: string
+        activo:
+          type: boolean
+
+    TipoVehiculo:
+      type: object
+      required: [codigo, nombre, carrocerias, activo]
+      description: HU-023.1 (#156). Un tipo de vehículo del catálogo del cubicador (`GET /web/tipos-vehiculo`, petición P1).
+      properties:
+        codigo:
+          type: string
+          description: Código que guarda el camión en `tipo_vehiculo` (`2S2`, `C2`, `3S3`...).
+        nombre:
+          type: string
+          description: Nombre que se muestra en pantalla y en el PDF.
+        carrocerias:
+          type: array
+          items:
+            type: string
+          description: Códigos de carrocería compatibles.
+        activo:
+          type: boolean
 
     Municipio:
       type: object
