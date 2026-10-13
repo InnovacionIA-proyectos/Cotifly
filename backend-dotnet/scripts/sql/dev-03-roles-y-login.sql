@@ -37,6 +37,7 @@ GO
 IF USER_ID(N'cotifly_app') IS NULL
     CREATE USER [cotifly_app] FOR LOGIN [cotifly_app];
 GRANT SELECT ON dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL) TO [cotifly_app];
-GRANT SELECT ON dbo.tblSAPUsuarioRoles (ID, IDUSUARIO, IDROLES) TO [cotifly_app];
+-- Sin ID (#172): Cotifly solo lee IDUSUARIO e IDROLES, y la tabla de dbSolucionesTI_Prueba puede no tenerla.
+GRANT SELECT ON dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES) TO [cotifly_app];
 GRANT SELECT ON dbo.tblSAPRoles (IDROLES, DESCRIPCION) TO [cotifly_app];
 GO

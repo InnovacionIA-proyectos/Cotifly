@@ -18,7 +18,7 @@ public sealed class clsOpcionesConexiones
     [clsSecreto(LargoMinimo = 20)]
     public string? Cotifly { get; set; }
 
-    /// <summary>Solo lectura de <c>tblSAPUsuariosApp</c> en <c>dbsolucionesti</c> (login, #12).</summary>
+    /// <summary>Solo lectura de <c>tblSAPUsuariosApp</c> en la base de identidad del portal, la misma que Nexo (QA: <c>dbSolucionesTI_Prueba</c>; login, #12, #172).</summary>
     [clsSecreto(LargoMinimo = 20)]
     public string? Identidad { get; set; }
 

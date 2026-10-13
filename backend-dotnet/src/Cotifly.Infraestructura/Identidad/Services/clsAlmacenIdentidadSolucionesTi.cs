@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Identidad.Services;
 
 /// <summary>
-/// Adaptador de <see cref="IClsAlmacenIdentidadExterno"/> sobre <c>dbsolucionesti</c> (<see cref="clsIdentidadDbContext"/>,
+/// Adaptador de <see cref="IClsAlmacenIdentidadExterno"/> sobre la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>, la misma de Nexo, #172; <see cref="clsIdentidadDbContext"/>,
 /// solo lectura). Los fallos de la base se propagan (el login responde 401, fail-closed); los datos que no se pueden
 /// interpretar con seguridad se tratan como "no encontrado" con un warning.
 /// </summary>

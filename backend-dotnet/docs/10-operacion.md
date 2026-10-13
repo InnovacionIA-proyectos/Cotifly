@@ -192,7 +192,8 @@ Otras decisiones abiertas:
 |---|---|---|
 | IDROLES reales de Comercial y Gerente Comercial en ClientePro | Duban con el DBA | ADR-009 |
 | Muestra real de `tblSAPUsuariosApp.DESCRIPCIONUSUARIO` para confirmar la regla de iniciales del folio | Duban con el DBA | ADR-011 |
-| Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en `dbsolucionesti` | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
+| Login de servicio `cotifly_app`, permisos por esquema en `dbo_cotifly` y por columna en la base de identidad (`dbSolucionesTI_Prueba` en QA, #172) | DBA | [03-infraestructura](03-infraestructura.md#33-base-de-datos) |
+| Base de identidad de **producción**: la misma que use Nexo en producción (por confirmar con el equipo de Nexo, #172) | Duban con el equipo de Nexo | [Identidad compartida con Nexo](#identidad-compartida-con-nexo-172) |
 | Precondición de despliegue (`DEPLOY.md`): `0001` a `0010` aplicados, o la instalación desde cero (`db/scripts/01_crear_esquema.sql` + `db/seeder/`); cuando entre HU-023, también `db/scripts/02_alter_cubicador.sql`. Staging con `CosteoNexo__Habilitado=false` mientras comparta base con producción de Nexo | DBA | ADR-015, ADR-019 |
 | Aprobación de los scripts 0002 a 0009 (sus cabeceras dicen "pendiente de aprobación") y revisión del borrador 0010 | Sara, scalderon-bs y DBA | ADR-008, ADR-015, ADR-019 |
 | Diagnóstico (solo lectura) de licitaciones guardadas antes de #108 que ya no se pueden reenviar (`LICITACION_REQUIERE_NUEVA_CARGA`): consultas en `docs/docs_front/GUIA_FRONTEND_COTIFLY.md` §5.24. No se corrige nada en la base: el comercial las carga de nuevo | DBA | HU-013.11 (#108) |
@@ -218,7 +219,7 @@ Otras decisiones abiertas:
 
 | Integración | Pasos | Variables |
 |---|---|---|
-| Login desde ClientePro | 1. Login `cotifly_app` y permisos (DBA): `GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo_cotifly TO cotifly_app` (por esquema, sin `db_datareader`/`db_datawriter`) y `SELECT` por columna sin `CLAVE` en `dbsolucionesti`; comprobarlo con `scripts/sql/dev-04-verificar-permisos.sql` adaptando la tabla de otro esquema. 2. Esquema `0001` a `0010` con `sqlcmd -I -b`, o la instalación desde cero (`db/ejecutar-bd.ps1` o `.sh`). 3. `UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial'` (ídem `gerente_comercial`), con `sqlcmd -I`. 4. Clave JWT compartida por todas las réplicas. 5. Origen CORS del frontend | `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`, `Cors__OrigenesPermitidos__0` |
+| Login desde ClientePro | 1. Login `cotifly_app` y permisos (DBA): `GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo_cotifly TO cotifly_app` (por esquema, sin `db_datareader`/`db_datawriter`) y `SELECT` por columna sin `CLAVE` en la base de identidad, la misma de Nexo (`dbSolucionesTI_Prueba` en QA, ver [Identidad compartida con Nexo](#identidad-compartida-con-nexo-172)); comprobarlo con `scripts/sql/dev-04-verificar-permisos.sql` adaptando el nombre de la base y la tabla de otro esquema. 2. Esquema `0001` a `0010` con `sqlcmd -I -b`, o la instalación desde cero (`db/ejecutar-bd.ps1` o `.sh`). 3. `UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES> WHERE codigo = 'comercial'` (ídem `gerente_comercial`), con `sqlcmd -I`. 4. Clave JWT compartida por todas las réplicas. 5. Origen CORS del frontend | `ConnectionStrings__Cotifly`, `ConnectionStrings__Identidad`, `Jwt__SigningKey`, `Cors__OrigenesPermitidos__0` |
 | Detrás de Traefik | Encabezados reenviados con la red overlay; readiness de Traefik en `/health/ready`; puerto 8080 | `ForwardedHeaders__Habilitado=true`, `ForwardedHeaders__RedesConocidas__0` |
 | Correo | Confirmar el transporte (D3), autorizar la IP del nodo en el relay, revisar SPF/DMARC | `Correo__Habilitado=true`, `Correo__SmtpRelay__Host` |
 | SAP TM export | Montar el export de solo lectura y reemplazarlo copiando con otro nombre y renombrando | `SapTm__Modo=export_json`, `SapTm__ExportPath` |
@@ -248,6 +249,38 @@ ambiente").
 | `Captura__AceptarVehiculoCliente` | `false` | Bandera de respaldo HU-021-FE.2 (vehículo del frontend solo en el camión del respaldo) |
 | `Pdf__PermitirCotizacionChat` | `false` | Cotización legada del chat: apagada responde `COTIZACION_CHAT_RETIRADA` |
 
+### Identidad compartida con Nexo (#172)
+
+**Regla:** la base de identidad de Cotifly (`ConnectionStrings__Identidad`) es **la misma que la de Nexo** (`ConnectionStrings:IdentidadPortal`) en
+cada ambiente. Cotifly guarda el `ID` de `tblSAPUsuariosApp` en `UsuariosWeb.idUsuarioExterno` y lo manda a Nexo en
+`X-Portal-Usuario-Id`; Nexo lo valida contra su base. Con bases distintas, los `ID` no coinciden y Nexo responde 401 (en las pruebas
+del 2026-10-13, dguerra era 430 en `dbsolucionesti` y 10123 en el portal).
+
+| Ambiente | `Database=` de `ConnectionStrings__Identidad` |
+|---|---|
+| Local y pruebas | `dbsolucionesti` falsa (`scripts/sql/dev-02-identidad.sql`, `tests/Comun/clsBaseDatosPruebas`), con los tipos de `dbSolucionesTI_Prueba` |
+| QA / staging | `dbSolucionesTI_Prueba` |
+| Producción | la que use Nexo en producción (**por confirmar**) |
+
+ClientePro manda el nombre de usuario (`idUsuario: "dguerra"`) y sus roles (`["25","31","32"]`, solo se auditan). Cotifly busca la fila por
+`NOMBREUSUARIO`, guarda su `ID` y toma los roles de `tblSAPUsuarioRoles` (prueba `clsIdentidadPortalNexoTests`).
+
+**Lo que Cotifly lee de la base de identidad** (solo el login y el refresh, `clsVerificadorIdentidad`; nada más usa esta conexión):
+
+| Tabla (`dbo`) | Columnas y tipo que espera Cotifly | Verificado por Nexo en `dbSolucionesTI_Prueba` (2026-09-01) | Por confirmar en `_Prueba` |
+|---|---|---|---|
+| `tblSAPUsuariosApp` | `ID` `numeric(18,0)`, `NOMBREUSUARIO`, `DESCRIPCIONUSUARIO`, `EMAIL` (texto) | `ID` `numeric(18,0)` | tipo y largo de los textos (Cotifly espera `varchar(50)`, `varchar(250)`, `varchar(100)`; con `nvarchar` o más largos también lee bien, pero no busca nombres de más de 50 caracteres), y que `NOMBREUSUARIO` no se repita |
+| `tblSAPUsuarioRoles` | `IDUSUARIO` `int`, `IDROLES` `int` | los dos `int` | nada de tipos. Cotifly ya no lee la columna `ID` de esta tabla |
+| `tblSAPRoles` | `IDROLES` `int`, `DESCRIPCION` (texto) | `IDROLES` `int` | tipo de `DESCRIPCION` (solo informativa) |
+
+Consulta de solo lectura para el DBA en `dbSolucionesTI_Prueba`:
+`SELECT t.name AS tabla, c.name AS columna, ty.name AS tipo, c.max_length, c.precision, c.scale FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE t.name IN ('tblSAPUsuariosApp', 'tblSAPUsuarioRoles', 'tblSAPRoles') ORDER BY t.name, c.column_id;`
+
+**Al cambiar de base en un ambiente con usuarios** (QA): seguir los pasos de [`DEPLOY.md`](../../DEPLOY.md#identidad-compartida-con-nexo-172).
+Hay que dar permisos a `cotifly_app`, revisar `Roles.idRolExterno` contra los `IDROLES` de la base nueva y soltar una vez los
+vínculos `UsuariosWeb.idUsuarioExterno` viejos (si no, el login responde 401 `identidad_inconsistente`). Todo con aprobación.
+**Pendiente externo:** Nexo QA debe configurar `ConnectionStrings:IdentidadPortal`.
+
 ## 10.9 Problemas frecuentes
 
 | Síntoma | Causa probable | Qué hacer |
@@ -261,7 +294,7 @@ ambiente").
 | `/health/ready` 503 `esquema incompleto: falta <Tabla.columna>` (hasta 5, en orden) | Falta una tabla o columna que el modelo EF mapea. Desde HU-021 las ausencias de los scripts 0004 a 0008 salen así: ya no existen los mensajes `falta 0004` a `falta 0008`. Qué script trae cada cosa: `CotizacionArchivosLicitacion`, 0005; `CotizacionPdfsHistorial`, `versionNegocio`, `textosCotizacion` y `pdfDesactualizado`, 0006; `notas` y `origenMunicipioId`/`destinoMunicipioId`, 0007; `horasCargue`/`horasDescargue` de la ruta, 0008; `CotizacionVehiculosLineaSolicitud`, `CotizacionMercancias`, `CotizacionServiciosConexos` y `MargenAjustes.lineaSolicitudId`, 0009 | Comparar la base con `db/scripts/01_crear_esquema.sql` y aplicar en orden el script que la trae (`sqlcmd -I -b`); todos son idempotentes. Una base anterior al 0009 responde `falta 0009`, no esta fila |
 | `POST /web/licitaciones` responde 413 | El Excel más el JSON superan `SeguridadHttp__LimiteCuerpoLicitacionBytes` (12 MB por defecto) | El archivo admite 10 MB (límite de Nexo); revisar el tamaño del pliego o subir el límite con cuidado |
 | `/health/ready` 503 con la base caída | Red, credenciales o certificado de SQL Server | Revisar la cadena; si el certificado no es de una CA de confianza, instalar la CA (preferido) o `TrustServerCertificate=True` temporal y documentado |
-| Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, o `dbsolucionesti` inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
+| Todo login responde 401 | `Roles.idRolExterno` sin fijar, persona sin rol mapeado, rol externo distinto del asignado, `identidad_inconsistente` (vínculo a un `ID` de otra base de identidad, ver [#172](#identidad-compartida-con-nexo-172)) o la base de identidad inalcanzable | Buscar el motivo en `EventosHerramienta` (herramienta `login_clientepro`); un cambio de rol externo lo revisa un gerente, no se re-sincroniza solo |
 | 401 intermitentes con tokens recién emitidos entre réplicas | Clave JWT distinta por réplica | Misma `Jwt__SigningKey` en todas |
 | Un logout tarda en verse en otra réplica | Foto de `TokensRevocados` cada 60 s | Comportamiento esperado (hasta 60 s) |
 | `/web/chat` responde `error: true` siempre | Agente sin configurar (`codigo` `ERROR_INTERNO`) o todos los modelos caídos (`IA_NO_DISPONIBLE`, #126) | Log "El agente de IA no está configurado", o "Ningún proveedor de IA respondió" con el estado del último. Un 404, un 408, un 5xx o un error de red pasan al siguiente modelo; un 400 de contenido no. Revisar `IA__*` y `IA__Fallbacks__*` |
