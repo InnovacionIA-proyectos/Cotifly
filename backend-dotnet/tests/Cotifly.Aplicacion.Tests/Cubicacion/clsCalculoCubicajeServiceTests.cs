@@ -79,6 +79,44 @@ public sealed class clsCalculoCubicajeServiceTests
     }
 
     [Fact]
+    public async Task SinLaBanderaNoTraeLaSugerenciaLegada()
+    {
+        Responder(Respuesta(clsResultadosRecomendacion.Asignado, null, false,
+            new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, 62.5m, 81.25m, 47.06m)));
+
+        (await Servicio().CalcularAsync(_usuario, [Item()], null, Ct)).Valor.Sugerencia.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConLaBanderaDelPlanBTraeLaSugerenciaLegadaDelPrimerVehiculo()
+    {
+        Responder(Respuesta(clsResultadosRecomendacion.Asignado, null, false,
+            new clsVehiculoRecomendado(Guid.NewGuid(), "3S3", "FURGON", 16_000m, 62.5m, 81.25m, 47.06m),
+            new clsVehiculoRecomendado(Guid.NewGuid(), "C2", "ESTACAS", 4_500m, 18m, 60m, 75m)));
+        var servicio = new clsCalculoCubicajeService(_cubicador, _usuarios, _logger,
+            Microsoft.Extensions.Options.Options.Create(new clsOpcionesCubicacion { IncluirSugerenciaLegada = true }));
+
+        var resultado = (await servicio.CalcularAsync(_usuario, [Item()], null, Ct)).Valor;
+
+        resultado.Sugerencia.Should().Be(new clsSugerenciaVehiculoLegada("3S3", "Tractocamión 3S3", "cubicador", 0.8125m, "3S3", "FURGON", null, null));
+        resultado.Vehiculos.Should().HaveCount(2, "la lista sigue completa");
+
+        Responder(Respuesta(clsResultadosRecomendacion.SinSeleccionAutomatica, clsMotivosSinSeleccion.SuperaKMax));
+        (await servicio.CalcularAsync(_usuario, [Item()], null, Ct)).Valor.Sugerencia.Should().BeNull("sin vehículos no hay sugerencia");
+    }
+
+    [Fact]
+    public async Task ElParecidoMinimoDeLaDescripcionEsConfigurable()
+    {
+        Responder(Respuesta(clsResultadosRecomendacion.SinSeleccionAutomatica, clsMotivosSinSeleccion.SuperaKMax));
+        var estricto = new clsCalculoCubicajeService(_cubicador, _usuarios, _logger,
+            Microsoft.Extensions.Options.Options.Create(new clsOpcionesCubicacion { ParecidoMinimoMercancia = 0.99 }));
+
+        (await estricto.CalcularAsync(_usuario, [Item(null, "café")], null, Ct)).Error.Codigo.Should().Be(clsCodigosError.MercanciaDesconocida);
+        (await Servicio().CalcularAsync(_usuario, [Item(null, "café")], null, Ct)).EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task SinElCatalogoDeVehiculosMuestraLosCodigos()
     {
         _cubicador.ListarTiposVehiculoAsync(Arg.Any<CancellationToken>())

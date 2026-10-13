@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Cubicacion.Services;
 
@@ -25,8 +26,11 @@ namespace Cotifly.Aplicacion.Cubicacion.Services;
 public sealed class clsCalculoCubicajeService(
     IClsCubicador cubicador,
     IClsUsuarioWebRepository usuarios,
-    ILogger<clsCalculoCubicajeService> logger) : IClsCalculoCubicajeService
+    ILogger<clsCalculoCubicajeService> logger,
+    IOptions<clsOpcionesCubicacion>? opciones = null) : IClsCalculoCubicajeService
 {
+    private readonly clsOpcionesCubicacion _opciones = opciones?.Value ?? new clsOpcionesCubicacion();
+
     /// <summary>Prefijo del <c>idLineaSolicitud</c> de la vista previa (decisión 2 de HU-023).</summary>
     public const string PrefijoPrueba = "PRUEBA-";
 
@@ -80,6 +84,8 @@ public sealed class clsCalculoCubicajeService(
         logger.LogInformation("Calcular cubicaje {IdPrueba}: {Resultado} {Motivo} con {Vehiculos} vehículo(s); no se guarda.",
             idPrueba, respuesta.Resultado, respuesta.MotivoSinSeleccion, respuesta.Vehiculos.Count);
         var vehiculos = respuesta.Asignado ? await VehiculosAsync(respuesta.Vehiculos, cancellationToken) : [];
+        // Plan B del corte (Cubicacion:IncluirSugerenciaLegada, apagado por defecto): la forma anterior derivada del primer vehículo.
+        var legada = _opciones.IncluirSugerenciaLegada ? clsSugerenciaVehiculoLegada.Desde(vehiculos) : null;
         return new clsResultadoCubicacion(
             respuesta.Resultado,
             respuesta.MotivoSinSeleccion,
@@ -88,7 +94,8 @@ public sealed class clsCalculoCubicajeService(
             respuesta.MercanciasCondicionadas,
             respuesta.Advertencias,
             respuesta.Extradimension,
-            mercancias.Valor);
+            mercancias.Valor,
+            legada);
     }
 
     /// <summary>
@@ -114,6 +121,8 @@ public sealed class clsCalculoCubicajeService(
                 continue;
             }
 
+            // Cambio que rompe (documentado en CONTRATO_API_WEB §8.1 y §8.12): antes un ítem sin descripción se cubicaba; el cubicador
+            // necesita el código, así que ahora es 400 MERCANCIA_DESCONOCIDA.
             if (string.IsNullOrWhiteSpace(item.Descripcion))
             {
                 return SinMercancia(i, null);
@@ -130,7 +139,8 @@ public sealed class clsCalculoCubicajeService(
                 catalogo = leido.Valor;
             }
 
-            var sugerida = clsSugeridorMercancia.Sugerir(item.Descripcion, catalogo);
+            var sugerida = clsSugeridorMercancia.Sugerir(
+                item.Descripcion, catalogo, _opciones.ParecidoMinimoMercancia, _opciones.MargenAmbiguedadMercancia);
             if (sugerida is null)
             {
                 return SinMercancia(i, item.Descripcion.Trim());
@@ -151,7 +161,7 @@ public sealed class clsCalculoCubicajeService(
         var posicion = (indice + 1).ToString(CultureInfo.InvariantCulture);
         var mensaje = descripcion is null
             ? $"El ítem {posicion} no indica la mercancía: escoge el tipo de mercancía del catálogo."
-            : $"No encontramos en el catálogo del cubicador una mercancía parecida a «{descripcion}» (ítem {posicion}): escoge el tipo de mercancía del catálogo.";
+            : $"No encontramos en el catálogo del cubicador una única mercancía parecida a «{descripcion}» (ítem {posicion}): escoge el tipo de mercancía del catálogo.";
         return new clsErrorDominio(clsCodigosError.MercanciaDesconocida, mensaje)
         {
             Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = indice, ["descripcion"] = descripcion },

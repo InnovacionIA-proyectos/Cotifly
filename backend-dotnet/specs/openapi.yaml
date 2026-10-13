@@ -5848,6 +5848,46 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MercanciaCubicada'
+        sugerencia:
+          deprecated: true
+          description: |
+            **Plan B del corte, apagado por defecto** (`Cubicacion:IncluirSugerenciaLegada = true` en el servidor): la forma anterior
+            (`SugerenciaVehiculoLegada`) derivada del **primer** vehículo, para un frontend que todavía no pinte `vehiculos[]`. Sin la
+            bandera, o sin vehículos, el campo no viene. Se retira cuando el frontend use `vehiculos[]`.
+          allOf:
+            - $ref: '#/components/schemas/SugerenciaVehiculoLegada'
+
+    SugerenciaVehiculoLegada:
+      type: object
+      deprecated: true
+      required: [unidad_id, unidad_nombre, banda, factor_utilizacion, config_vehiculo, carroceria, clase_viaje, clase_contenedor]
+      description: |
+        HU-023.2 (#157), plan B. Forma de la antigua `sugerencia` de la cubicación de Nexo, derivada del primer vehículo del cubicador:
+        `unidad_id` y `config_vehiculo` = código del vehículo, `unidad_nombre` = su nombre, `banda` = `cubicador`,
+        `factor_utilizacion` = el mayor de los dos porcentajes de llenado sobre 100, `carroceria` = código de la carrocería;
+        `clase_viaje` y `clase_contenedor` siempre `null`.
+      properties:
+        unidad_id:
+          type: string
+        unidad_nombre:
+          type: string
+        banda:
+          type: string
+          enum: [cubicador]
+        factor_utilizacion:
+          type: number
+        config_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
 
     VistaPreviaCorreo:
       type: object

@@ -81,6 +81,26 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
         _nexo.UltimaAlta.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ConLaBanderaDelPlanBLaRespuestaTraeLaSugerenciaLegadaYCumpleElContrato()
+    {
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m, 62.5m, 81.25m, 47.06m));
+        var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, cubicador: _cubicador,
+            extra: new Dictionary<string, string?> { ["Cubicacion:IncluirSugerenciaLegada"] = "true" });
+        _apis.Add(api);
+        var token = (await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial)).Access;
+
+        using var respuesta = await api.EnviarAsync(_post, Ruta, token, Cuerpo(new { codigo_mercancia = "CAFE_EN_ESTIBAS" }));
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.OK);
+
+        var sugerencia = json.GetProperty("sugerencia");
+        sugerencia.GetProperty("unidad_id").GetString().Should().Be("3S3");
+        sugerencia.GetProperty("unidad_nombre").GetString().Should().Be("Tractocamión 3S3");
+        sugerencia.GetProperty("carroceria").GetString().Should().Be("FURGON");
+        sugerencia.GetProperty("factor_utilizacion").GetDecimal().Should().Be(0.8125m);
+        json.GetProperty("vehiculos").GetArrayLength().Should().Be(1);
+    }
+
     [Theory]
     [InlineData("EXTRADIMENSIONADO")]
     [InlineData("SIN_CANDIDATOS_DIMENSIONALES")]

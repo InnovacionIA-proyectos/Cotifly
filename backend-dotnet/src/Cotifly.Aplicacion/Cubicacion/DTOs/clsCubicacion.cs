@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Cotifly.Dominio.Cotizaciones;
 
 namespace Cotifly.Aplicacion.Cubicacion.DTOs;
@@ -32,6 +33,10 @@ public sealed record clsItemCubicacion(
 /// <param name="Advertencias">Advertencias del cubicador.</param>
 /// <param name="Extradimension">Extradimensión informada por el cubicador, o <c>null</c>.</param>
 /// <param name="Mercancias">El código con el que viajó cada ítem, en el orden de la petición.</param>
+/// <param name="Sugerencia">
+/// <b>Plan B, apagado por defecto</b> (<c>Cubicacion:IncluirSugerenciaLegada</c>): la forma anterior derivada del primer vehículo, para un
+/// frontend que todavía no pinte <see cref="Vehiculos"/>. Sin la bandera, o sin vehículos, no se serializa.
+/// </param>
 public sealed record clsResultadoCubicacion(
     string Resultado,
     string? MotivoSinSeleccion,
@@ -40,7 +45,45 @@ public sealed record clsResultadoCubicacion(
     IReadOnlyList<clsMercanciaCondicionada> MercanciasCondicionadas,
     IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
     clsExtradimensionCubicador? Extradimension,
-    IReadOnlyList<clsMercanciaCubicada> Mercancias);
+    IReadOnlyList<clsMercanciaCubicada> Mercancias,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] clsSugerenciaVehiculoLegada? Sugerencia = null);
+
+/// <summary>
+/// Forma anterior de <c>sugerencia</c> (<c>SugerenciaVehiculo</c> de la cubicación de Nexo, <c>deprecated</c>), derivada del primer vehículo
+/// del cubicador: <paramref name="UnidadId"/> y <paramref name="ConfigVehiculo"/> = código del vehículo, <paramref name="UnidadNombre"/> = su
+/// nombre, <paramref name="Banda"/> = <c>"cubicador"</c>, <paramref name="FactorUtilizacion"/> = el mayor de los dos porcentajes de llenado
+/// sobre 100, <paramref name="Carroceria"/> = código de la carrocería; las clases de viaje y de contenedor siempre <c>null</c> (el cubicador
+/// no las sugiere). Solo con <c>Cubicacion:IncluirSugerenciaLegada</c>.
+/// </summary>
+public sealed record clsSugerenciaVehiculoLegada(
+    string UnidadId,
+    string UnidadNombre,
+    string Banda,
+    decimal FactorUtilizacion,
+    string? ConfigVehiculo,
+    string? Carroceria,
+    string? ClaseViaje,
+    string? ClaseContenedor)
+{
+    /// <summary>Valor de <see cref="Banda"/>.</summary>
+    public const string BandaCubicador = "cubicador";
+
+    /// <summary>La sugerencia legada del primer vehículo, o <c>null</c> sin vehículos.</summary>
+    public static clsSugerenciaVehiculoLegada? Desde(IReadOnlyList<clsVehiculoCubicacion> vehiculos)
+    {
+        ArgumentNullException.ThrowIfNull(vehiculos);
+        if (vehiculos.Count == 0)
+        {
+            return null;
+        }
+
+        var v = vehiculos[0];
+        return new clsSugerenciaVehiculoLegada(
+            v.CodigoVehiculo, v.NombreVehiculo, BandaCubicador,
+            Math.Round(Math.Max(v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso) / 100m, 4),
+            v.CodigoVehiculo, v.CodigoCarroceria, null, null);
+    }
+}
 
 /// <summary>
 /// Un vehículo recomendado por el cubicador. Los nombres salen de los catálogos del cubicador (<c>GET /tipos-vehiculo</c> y

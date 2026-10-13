@@ -966,9 +966,14 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
      `sugerencia_flota`. "Sin selección" se muestra con su motivo y la lista vacía; "condicionada", con sus mercancías.
   2. `extradimension` cambia de `{hay_extradimension, medidas_estandar, piezas, sugerencia}` a `{extradimensionado, dimensiones, detalle}`.
   3. Ya no llegan `clase_viaje` ni `clase_contenedor` sugeridas: quitar cualquier prellenado del formulario que viniera de aquí.
-  4. Mandar `codigo_mercancia` por ítem; con solo `descripcion`, mostrar la mercancía sugerida (`mercancias[].sugerida`).
+  4. Mandar `codigo_mercancia` por ítem; con solo `descripcion`, mostrar la mercancía sugerida (`mercancias[].sugerida`). **Un ítem
+     sin código ni descripción ahora es 400 `MERCANCIA_DESCONOCIDA`** (antes se cubicaba): el cubicador necesita el tipo de mercancía.
+     La descripción solo se resuelve si hay un único tipo claramente parecido; si no, también 400.
   5. Los errores `CUBICACION_NO_DISPONIBLE` y `CUBICACION_DEMASIADO_GRANDE` (400) desaparecen; la caída ahora es **503**
      `CUBICADOR_NO_DISPONIBLE`.
+  6. **Plan B del corte:** si el frontend no alcanza a pintar `vehiculos[]` para el 16, pedir que enciendan en el servidor
+     `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto): la respuesta vuelve a traer `sugerencia` (forma anterior, derivada del
+     primer vehículo; sin `sugerencia_flota`). Es temporal.
 
 ### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En PR #74
 

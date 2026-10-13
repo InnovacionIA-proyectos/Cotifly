@@ -280,7 +280,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 11 | **"Mis cotizaciones" y la nueva versión por ruta.** `linea_negocio` es la de la ruta 1 o `Varias`, y `margen_aplicado`/`origen_margen`, los de la ruta 1. `DatosNuevaVersion.rutas[]` trae los de cada ruta. | Mostrar `Varias` tal cual. Para el detalle, usar `GET .../costeo` o `rutas[]`. |
 | 12 | **`conexos_descartados`** de la re-solicitud es siempre `[]` (`deprecated`; se retira con HU-021-FE). Los conexos se conservan y se avisan en `conexos_conservados`. | Leer `conexos_conservados`. |
 | 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE`). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
-| 14 | **`POST /web/cubicacion` ("Calcular cubicaje") cambia de forma** (HU-023.2, #157): ahora pregunta al cubicador y responde una **lista de vehículos** (`vehiculos[]`) con el resultado, el motivo, la condicionada, las advertencias y la extradimensión. Ya no trae `sugerencia`, `sugerencia_flota`, clase de viaje ni clase de contenedor. Cada ítem lleva `codigo_mercancia`. Los errores pasan a ser los del cubicador (503 `CUBICADOR_NO_DISPONIBLE` en vez de 400 `CUBICACION_NO_DISPONIBLE`). | Ver §8.12. Pintar la lista de vehículos y quitar el prellenado de clase de viaje y de contenedor. Mandar `codigo_mercancia` del desplegable (mientras tanto sirve `descripcion`). |
+| 14 | **`POST /web/cubicacion` ("Calcular cubicaje") cambia de forma** (HU-023.2, #157): ahora pregunta al cubicador y responde una **lista de vehículos** (`vehiculos[]`) con el resultado, el motivo, la condicionada, las advertencias y la extradimensión. Ya no trae `sugerencia`, `sugerencia_flota`, clase de viaje ni clase de contenedor. Cada ítem lleva `codigo_mercancia`; **un ítem sin `codigo_mercancia` ni `descripcion` (antes se cubicaba) ahora es 400 `MERCANCIA_DESCONOCIDA`**, porque el cubicador necesita el tipo de mercancía. Los errores pasan a ser los del cubicador (503 `CUBICADOR_NO_DISPONIBLE` en vez de 400 `CUBICACION_NO_DISPONIBLE`). | Ver §8.12. Pintar la lista de vehículos y quitar el prellenado de clase de viaje y de contenedor. Mandar `codigo_mercancia` del desplegable (mientras tanto sirve `descripcion`). |
 
 ### 8.2 Códigos de error nuevos de HU-021
 
@@ -730,8 +730,10 @@ responde 503 `CUBICADOR_NO_DISPONIBLE`.
 
 **Petición.** Cada ítem lleva `codigo_mercancia` (el `codigo` de `GET /web/tipos-mercancia`, §8.4). Mientras el formulario no tenga el
 desplegable, puede mandar solo `descripcion`: Cotifly la resuelve al tipo **activo** más parecido del catálogo (sin tildes ni
-mayúsculas) y lo devuelve en `mercancias[]` con `sugerida = true`. Si no se parece a ninguno, 400 `MERCANCIA_DESCONOCIDA` con el
-número del ítem en el mensaje y en `detalle.item` (base 0). `clase_viaje` es opcional: viaja al cubicador como preferencia.
+mayúsculas) y lo devuelve en `mercancias[]` con `sugerida = true`. Prefiere no sugerir antes que sugerir mal: si no se parece lo
+suficiente, si el tipo tiene números que el texto no trae ("Contenedor 40 pies" nunca es `CONTENEDOR_20`) o si dos tipos quedan casi
+empatados, responde 400 `MERCANCIA_DESCONOCIDA` con el número del ítem en el mensaje y en `detalle.item` (base 0). Un ítem **sin
+`codigo_mercancia` ni `descripcion`** también es 400 `MERCANCIA_DESCONOCIDA` (antes se cubicaba sin tipo). `clase_viaje` es opcional: viaja al cubicador como preferencia.
 
 <!-- esquema: CubicacionRequest -->
 ```json
@@ -791,7 +793,7 @@ cubicador; si no responden, vienen los códigos. `SIN_SELECCION_AUTOMATICA` trae
 {
   "error": {
     "codigo": "MERCANCIA_DESCONOCIDA",
-    "mensaje": "No encontramos en el catálogo del cubicador una mercancía parecida a «Electrodomésticos» (ítem 2): escoge el tipo de mercancía del catálogo.",
+    "mensaje": "No encontramos en el catálogo del cubicador una única mercancía parecida a «Electrodomésticos» (ítem 2): escoge el tipo de mercancía del catálogo.",
     "detalle": { "item": 1, "descripcion": "Electrodomésticos" }
   }
 }
@@ -821,6 +823,11 @@ cubicador; si no responden, vienen los códigos. `SIN_SELECCION_AUTOMATICA` trae
   `piezas`) desaparecen. Ahora es `vehiculos[]` y `extradimension` = `{extradimensionado, dimensiones, detalle}` o `null`.
 - No vuelve a llegar la clase de viaje ni la clase de contenedor sugeridas: si el formulario las prellenaba desde aquí, quitarlo.
 - Cada ítem debe llevar `codigo_mercancia`. La `descripcion` sola sigue funcionando mientras llega el desplegable, pero si no se parece
-  a ninguna mercancía del catálogo ahora es un 400.
+  a ninguna mercancía del catálogo ahora es un 400, y un ítem sin código ni descripción también.
+- **Plan B del corte** (solo si el frontend no alcanza a pintar `vehiculos[]` para el 16): el servidor puede encender
+  `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto) y la respuesta agrega `sugerencia` con la forma anterior
+  (`unidad_id`, `unidad_nombre`, `banda`, `factor_utilizacion`, `config_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor`)
+  derivada del **primer** vehículo; `sugerencia_flota` no vuelve. Sin vehículos, el campo no viene. Es temporal: se apaga cuando el
+  frontend use `vehiculos[]`.
 - Los códigos de error cambian: `CUBICACION_NO_DISPONIBLE` (400) y `CUBICACION_DEMASIADO_GRANDE` (400) se retiraron; ahora llegan
   los del cubicador (tabla de arriba), con la caída en **503**.
