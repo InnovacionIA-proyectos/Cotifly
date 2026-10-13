@@ -233,7 +233,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
                 levante_contenedor_diferente = false,
                 peso_kg = 28000,
                 valor_mercancia = 250000000,
-                mercancias = new object[] { new { id_tipo_mercancia = clsCosteoEndpointsTests.TipoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
+                mercancias = new object[] { new { codigo_mercancia = clsCosteoEndpointsTests.CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
             },
             new
             {
@@ -251,7 +251,7 @@ public sealed class clsIntegracionRutasEndpointsTests : IDisposable
                 levante_contenedor_diferente = false,
                 peso_kg = 12500,
                 valor_mercancia = 90000000,
-                mercancias = new object[] { new { id_tipo_mercancia = clsCosteoEndpointsTests.TipoMercancia, nombre_mercancia = "Bobinas", cantidad = 10, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1250 } },
+                mercancias = new object[] { new { codigo_mercancia = clsCosteoEndpointsTests.CodigoMercancia, nombre_mercancia = "Bobinas", cantidad = 10, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1250 } },
                 servicios_conexos = new object[] { new { id_servicio_conexo = Cargue, cantidad = 1 } },
             },
         },

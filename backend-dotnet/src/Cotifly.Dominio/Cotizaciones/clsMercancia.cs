@@ -5,8 +5,9 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// <summary>
 /// Mercancía de una ruta (<c>dbo_cotifly.CotizacionMercancias</c>, ex <c>CotizacionPosiciones</c>; script 0009, HU-021, ADR-019): lo que
 /// el comercial declara que va a mandar en la ruta, en su orden. Cuelga solo de la ruta (el reparto por camión lo guarda el cubicador).
-/// <see cref="IdTipoMercancia"/> es el id del catálogo del cubicador: obligatorio en las mercancías nuevas (<see cref="Crear"/>), vacío
-/// en las filas migradas y, mientras la captura no lo pida (#132), en las del formulario actual (<see cref="DesdeCaptura"/>).
+/// <see cref="CodigoMercancia"/> es el código estable del catálogo del cubicador (HU-023.3, #158; script <c>02</c>: reemplaza a
+/// <c>idTipoMercancia</c>): obligatorio en las mercancías nuevas (<see cref="Crear"/> y la captura lo exige), vacío en las filas
+/// anteriores al <c>02</c> (si hay que recalcular sus camiones, el comercial vuelve a escoger la mercancía).
 /// <see cref="CreatedAt"/> lo asigna la persistencia.
 /// </summary>
 public sealed class clsMercancia
@@ -25,8 +26,8 @@ public sealed class clsMercancia
     /// <summary>1 para la primera mercancía de la ruta (único por ruta: <c>uq_cotizacionMercancias_lineaSolicitudId_orden</c>).</summary>
     public int Orden { get; private set; }
 
-    /// <summary>Id del tipo de mercancía en el catálogo del cubicador (<c>tiposMercancia</c>).</summary>
-    public Guid? IdTipoMercancia { get; private set; }
+    /// <summary>Código del tipo de mercancía en el catálogo del cubicador (por ejemplo <c>BEBIDAS</c>); lo que viaja en <c>POST /recomendaciones</c>.</summary>
+    public string? CodigoMercancia { get; private set; }
 
     /// <summary>Nombre de la mercancía, copiado del catálogo al escogerla (ex <c>descripcion</c>).</summary>
     public string? NombreMercancia { get; private set; }
@@ -39,35 +40,36 @@ public sealed class clsMercancia
     public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>
-    /// Mercancía nueva con su tipo del catálogo del cubicador (obligatorio: <c>SOLICITUD_COSTEO_INVALIDA</c> si falta) y las reglas de
-    /// la posición de Nexo (<see cref="clsPosicionCarga.Validar"/>).
+    /// Mercancía nueva con su código del catálogo del cubicador (obligatorio: <c>SOLICITUD_COSTEO_INVALIDA</c> si falta) y las reglas
+    /// de la posición de Nexo (<see cref="clsPosicionCarga.Validar"/>).
     /// </summary>
-    public static clsResultado<clsMercancia> Crear(Guid lineaSolicitudId, int orden, Guid? idTipoMercancia, clsPosicionCarga posicion)
+    public static clsResultado<clsMercancia> Crear(Guid lineaSolicitudId, int orden, string? codigoMercancia, clsPosicionCarga posicion)
     {
         ArgumentNullException.ThrowIfNull(posicion);
-        if (idTipoMercancia is null || idTipoMercancia == Guid.Empty)
+        if (string.IsNullOrWhiteSpace(codigoMercancia))
         {
-            return new clsErrorDominio(CodigoError, $"La mercancía {orden} debe traer el tipo de mercancía del catálogo del cubicador (id_tipo_mercancia).");
+            return new clsErrorDominio(CodigoError, $"La mercancía {orden} debe traer el código del catálogo del cubicador (codigo_mercancia).");
         }
 
-        return posicion.Validar(orden) is { } error ? error : Nueva(lineaSolicitudId, orden, idTipoMercancia, posicion);
+        var conCodigo = posicion with { CodigoMercancia = codigoMercancia.Trim() };
+        return conCodigo.Validar(orden) is { } error ? error : Nueva(lineaSolicitudId, orden, conCodigo);
     }
 
     /// <summary>
-    /// Mercancías de la captura actual (formulario y licitación), que todavía no traen el tipo del cubicador: adaptación de HU-021 hasta
-    /// que la captura lo pida (#132). La forma ya la validó <see cref="clsSolicitudCosteo.Validar"/> o
-    /// <see cref="clsLineaSolicitudCosteo.Errores"/>.
+    /// Mercancías de una captura ya validada (formulario y licitación; la captura nueva exige el código, HU-023.3) o de una copia de
+    /// rutas guardadas (re-solicitud, <c>-vN</c>), con su <see cref="clsPosicionCarga.CodigoMercancia"/> si lo trae. La forma ya la
+    /// validó <see cref="clsSolicitudCosteo.Validar"/> o <see cref="clsLineaSolicitudCosteo.Errores"/>.
     /// </summary>
     public static IReadOnlyList<clsMercancia> DesdeCaptura(Guid lineaSolicitudId, IEnumerable<clsPosicionCarga> posiciones)
     {
         ArgumentNullException.ThrowIfNull(posiciones);
-        return [.. posiciones.Select((p, i) => Nueva(lineaSolicitudId, i + 1, p.IdTipoMercancia, p))];
+        return [.. posiciones.Select((p, i) => Nueva(lineaSolicitudId, i + 1, p))];
     }
 
     /// <summary>La mercancía como posición de la captura (para reenviarla a Nexo o pedir la recomendación del cubicador).</summary>
-    public clsPosicionCarga APosicion() => new(NombreMercancia, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia);
+    public clsPosicionCarga APosicion() => new(NombreMercancia, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, CodigoMercancia: CodigoMercancia);
 
-    private static clsMercancia Nueva(Guid lineaSolicitudId, int orden, Guid? idTipoMercancia, clsPosicionCarga p)
+    private static clsMercancia Nueva(Guid lineaSolicitudId, int orden, clsPosicionCarga p)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(orden, 1);
         return new clsMercancia
@@ -75,7 +77,7 @@ public sealed class clsMercancia
             Id = Guid.NewGuid(),
             LineaSolicitudId = lineaSolicitudId,
             Orden = orden,
-            IdTipoMercancia = idTipoMercancia == Guid.Empty ? null : idTipoMercancia,
+            CodigoMercancia = string.IsNullOrWhiteSpace(p.CodigoMercancia) ? null : p.CodigoMercancia.Trim(),
             NombreMercancia = string.IsNullOrWhiteSpace(p.Descripcion) ? null : p.Descripcion.Trim(),
             Cantidad = p.Cantidad,
             LargoCm = p.LargoCm,

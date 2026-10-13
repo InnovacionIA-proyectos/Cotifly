@@ -445,7 +445,7 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
                 levante_contenedor_diferente = false,
                 peso_kg = 28000,
                 valor_mercancia = 250000000,
-                mercancias = new object[] { new { id_tipo_mercancia = clsCosteoEndpointsTests.TipoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
+                mercancias = new object[] { new { codigo_mercancia = clsCosteoEndpointsTests.CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
                 servicios_conexos = new object[] { new { id_servicio_conexo = Cargue, cantidad = 2 } },
             },
         },

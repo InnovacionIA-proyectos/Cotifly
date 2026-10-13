@@ -260,11 +260,16 @@ public sealed class clsConexoCapturaWebRequest
 
 /// <summary>
 /// <c>MercanciaWeb</c> / <c>PosicionCargaWeb</c>: una mercancía (bulto) en centímetros y kilogramos; <c>cantidad</c> por defecto 1.
-/// HU-021.6: <c>id_tipo_mercancia</c> (catálogo del cubicador) es obligatorio en una captura nueva y <c>nombre_mercancia</c> es la copia de su
-/// nombre (<c>descripcion</c> es el nombre anterior del mismo campo).
+/// HU-023.3 (#158): <c>codigo_mercancia</c> (catálogo del cubicador, <c>GET /web/tipos-mercancia</c>) es obligatorio en una captura nueva.
+/// <c>id_tipo_mercancia</c> (uuid) queda <b>obsoleto</b>: durante la transición se acepta y se traduce al código con el catálogo.
+/// <c>nombre_mercancia</c> es la copia de su nombre (<c>descripcion</c> es el nombre anterior del mismo campo).
 /// </summary>
 public sealed class clsPosicionCargaWebRequest
 {
+    /// <summary>HU-023.3: código del catálogo del cubicador (por ejemplo <c>BEBIDAS</c>).</summary>
+    public string? CodigoMercancia { get; init; }
+
+    /// <summary>Obsoleto (HU-023.3): el uuid del catálogo; se traduce al código. Usar <see cref="CodigoMercancia"/>.</summary>
     public Guid? IdTipoMercancia { get; init; }
     public string? NombreMercancia { get; init; }
     public string? Descripcion { get; init; }
@@ -274,7 +279,9 @@ public sealed class clsPosicionCargaWebRequest
     public decimal AltoCm { get; init; }
     public decimal? PesoKg { get; init; }
 
-    public clsPosicionCarga APosicion() => new(NombreMercancia ?? Descripcion, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia);
+    public clsPosicionCarga APosicion() => new(
+        NombreMercancia ?? Descripcion, Cantidad, LargoCm, AnchoCm, AltoCm, PesoKg, IdTipoMercancia,
+        string.IsNullOrWhiteSpace(CodigoMercancia) ? null : CodigoMercancia.Trim());
 
     /// <summary>Las mercancías del contrato como posiciones del dominio (un elemento <c>null</c> se conserva: lo reporta la validación).</summary>
     public static IReadOnlyList<clsPosicionCarga> APosiciones(IReadOnlyList<clsPosicionCargaWebRequest?>? posiciones) =>

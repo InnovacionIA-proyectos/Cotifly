@@ -41,6 +41,9 @@ public sealed class clsColeccionApiWebInstalada : ICollectionFixture<clsEntornoA
 public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
 {
     private const string TipoCafe = clsCosteoEndpointsTests.TipoMercancia;
+
+    /// <summary>Código del catálogo del cubicador de "Café en estibas" (HU-023.3: la mercancía guarda el código, no el id).</summary>
+    private const string CodigoCafe = "CAFE_EN_ESTIBAS";
     private const string Cargue = "SC-CARGUE-BD";
     private static readonly HttpMethod _get = HttpMethod.Get;
     private static readonly HttpMethod _post = HttpMethod.Post;
@@ -59,10 +62,11 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         _bd = entorno.BaseDatos;
         _cubicador.TiposMercancia.Add((Guid.Parse(TipoCafe), "Café en estibas"));
 
-        // Ruta 1 (28000 kg): dos camiones del cubicador; ruta 2: sin selección → respaldo de esa ruta (un camión sin vehículo con su peso).
+        // Ruta 1 (28000 kg): dos camiones del cubicador; ruta 2: el cubicador no puede escoger (SUPERA_K_MAX) → un camión sin vehículo
+        // con su peso, que resuelve la Mesa de Costeo (HU-023.3).
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
-            : clsCubicadorFalso.SinSeleccion("SIN_CANDIDATOS_DIMENSIONALES");
+            : clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX");
         _api = clsApiWebPruebas.ConNexo(_bd, _nexo, cubicador: _cubicador, extra: new Dictionary<string, string?>
         {
             ["Correo:Habilitado"] = "true",
@@ -124,7 +128,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             "1|0|Importacion|76109=Buenaventura|11001=Bogotá, D.C.|Contenedor|Contenedor|CNT40.HC|1|0|1|76109=Buenaventura|1|76892=Yumbo|150000.00|4.00|6.00|28000.00|250000000.00|pendiente_costeo",
             "2|1|Exportacion|5001=Medellín|13001=Cartagena|Contenedor|Contenedor|CNT20.ST|1|0|0|-=-|0|-=-|-|4.00|6.00|12500.00|90000000.00|pendiente_costeo");
 
-        // Camiones: uno por fila del cubicador (ruta 1) y el de respaldo (ruta 2); el levante de la ruta se copia a cada camión (decisión 4).
+        // Camiones: uno por vehículo del cubicador (ruta 1) y uno sin vehículo (ruta 2, sin selección automática); el levante de la ruta se copia a cada camión (decisión 4).
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', ISNULL(v.tipoVehiculo, '-'), '|', ISNULL(v.carroceria, '-'), '|', v.pesoKg, '|', IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R'), '|',
                 v.costoLevanteContenedor, '|', ISNULL(CAST(v.costoFlete AS nvarchar(30)), '-'), '|', IIF(v.lineaSolicitudNexoId IS NULL, '-', 'N'), '|', v.estadoCosteo)
@@ -134,14 +138,14 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             "1|2S3|ESTACAS|12000.00|R|150000.00|-|-|pendiente_costeo",
             "2|-|-|12500.00|-|0.00|-|-|pendiente_costeo");
 
-        // Mercancías: cuelgan de la ruta, con el id del catálogo del cubicador y su nombre copiado.
+        // Mercancías: cuelgan de la ruta, con el código del catálogo del cubicador (HU-023.3) y su nombre copiado.
         (await Filas($"""
-            SELECT CONCAT(l.orden, '|', m.orden, '|', LOWER(CAST(m.idTipoMercancia AS nvarchar(36))), '|', m.nombreMercancia, '|', m.cantidad, '|', m.largoCm, 'x', m.anchoCm, 'x', m.altoCm, '|', m.pesoKg)
+            SELECT CONCAT(l.orden, '|', m.orden, '|', m.codigoMercancia, '|', m.nombreMercancia, '|', m.cantidad, '|', m.largoCm, 'x', m.anchoCm, 'x', m.altoCm, '|', m.pesoKg)
             FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId
             WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden, m.orden
             """)).Should().Equal(
-            $"1|1|{TipoCafe}|Café en estibas|20|120.00x100.00x150.00|1400.00",
-            $"2|1|{TipoCafe}|Café en estibas|10|120.00x100.00x150.00|1250.00");
+            $"1|1|{CodigoCafe}|Café en estibas|20|120.00x100.00x150.00|1400.00",
+            $"2|1|{CodigoCafe}|Café en estibas|10|120.00x100.00x150.00|1250.00");
 
         // Conexo capturado: en la ruta 1, con el id del catálogo de Nexo, su nombre y el costo unitario de Nexo como precio.
         (await Filas($"""
@@ -407,7 +411,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
                 valor_levante_contenedor = 150000,
                 peso_kg = 28000,
                 valor_mercancia = 250000000,
-                mercancias = new object[] { new { id_tipo_mercancia = TipoCafe, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
+                mercancias = new object[] { new { codigo_mercancia = CodigoCafe, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 } },
                 servicios_conexos = new object[] { new { id_servicio_conexo = Cargue, cantidad = 1 } },
             },
             new
@@ -426,7 +430,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
                 levante_contenedor_diferente = false,
                 peso_kg = 12500,
                 valor_mercancia = 90000000,
-                mercancias = new object[] { new { id_tipo_mercancia = TipoCafe, nombre_mercancia = "Café verde", cantidad = 10, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1250 } },
+                mercancias = new object[] { new { codigo_mercancia = CodigoCafe, nombre_mercancia = "Café verde", cantidad = 10, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1250 } },
             },
         },
     });

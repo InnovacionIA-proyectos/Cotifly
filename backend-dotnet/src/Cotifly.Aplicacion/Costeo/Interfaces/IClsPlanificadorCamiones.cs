@@ -13,9 +13,9 @@ namespace Cotifly.Aplicacion.Costeo.Interfaces;
 public interface IClsPlanificadorCamiones
 {
     /// <summary>
-    /// Los camiones de la ruta (al menos uno), o el error que impide crearla. <paramref name="rutaId"/> es el id que tendrá la ruta
-    /// (<c>IdLineaSolicitud</c> del cubicador).
+    /// Los camiones de la ruta (al menos uno) y, si se llamó al cubicador, su resultado (HU-023.3: se guarda en la ruta), o el error que
+    /// impide crearla. <paramref name="rutaId"/> es el id que tendrá la ruta (<c>idLineaSolicitud</c> del cubicador).
     /// </summary>
-    Task<clsResultado<IReadOnlyList<clsCamionPlaneado>>> PlanificarAsync(
+    Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default);
 }

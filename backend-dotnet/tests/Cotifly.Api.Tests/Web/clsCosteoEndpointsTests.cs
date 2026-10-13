@@ -33,6 +33,9 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     /// <summary>Tipo de mercancía del catálogo del cubicador que llevan las mercancías del formulario de prueba.</summary>
     public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
 
+    /// <summary>HU-023.3: código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato nuevo).</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
+
     /// <summary>
     /// Formulario por rutas (HU-021.6, <c>RutaCapturaWeb</c>): una ruta Buenaventura → Bogotá con los ids de municipio del Nexo falso y
     /// mercancías con su tipo. Sin vehículo ni carrocería (decisión 7); <c>valor_estimado</c> y <c>referencia</c> se aceptan y se ignoran.
@@ -69,8 +72,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
                 valor_mercancia = 250000000,
                 mercancias = new object[]
                 {
-                    new { id_tipo_mercancia = TipoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-                    new { id_tipo_mercancia = TipoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+                    new { codigo_mercancia = CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
+                    new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
                 },
             },
         },

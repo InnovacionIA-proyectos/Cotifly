@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c> partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c> y <c>db/scripts/02_alter_cubicador.sql</c> partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -28,7 +28,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         "0001_script_bd_cotifly_sqlserver.sql", "0002_identidad_estado_agente.sql", "0003_metricas_reenviadas.sql", "0004_costeo_nexo.sql",
         "0005_lineas_solicitud.sql", "0006_textos_y_concurrencia.sql", "0007_captura_nexo_campos.sql",
         "0008_horas_por_linea.sql", "0009_reestructuracion_cotizaciones.sql", "0010_nombres_municipio.sql",
+        // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs, sin cambios) va después del 0010.
+        Script02,
     ];
+
+    /// <summary>Ruta (relativa a <c>migrations_mssql</c>) del script <c>02</c> del cubicador, copiado a <c>scripts_bd</c>.</summary>
+    public const string Script02 = "../scripts_bd/02_alter_cubicador.sql";
+
+    /// <summary>Scripts hasta el 0009 (sin el 0010 ni el 02).</summary>
+    public const int ScriptsHasta0009 = 9;
+
+    /// <summary>Scripts hasta el 0010 (sin el 02 del cubicador).</summary>
+    public const int ScriptsHasta0010 = 10;
 
     /// <summary>Scripts hasta el esquema anterior a HU-021 (0001 a 0008): para probar el 0009 sobre filas del esquema viejo.</summary>
     public const int ScriptsAntesDeHu021 = 8;
@@ -91,6 +102,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             {
                 await CrearBaseAsync(CadenaMaster, nombre);
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
+                // HU-023.3: la instalación desde cero corre el 02 después del 01 (como el ejecutador).
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -126,6 +139,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         {
             // HU-021.12 (#139, regla de las pruebas de esquema): el esquema vigente de la base compartida, sin migraciones.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
+            // HU-023.3 (#158): el 02 del cubicador va después del 01, como lo corre el ejecutador.
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

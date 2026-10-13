@@ -26,10 +26,10 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// <item><b>Respaldo sin llamar al cubicador</b> (<see cref="clsPlanificadorCamionSinVehiculo"/>): sin cubicador configurado (warning
 /// una vez por captura) o con una ruta sin mercancías o con alguna mercancía sin <c>codigoMercancia</c> (rutas migradas, agente de chat).
 /// Durante la transición, una mercancía con el <c>id_tipo_mercancia</c> anterior se traduce al código con el catálogo.</item>
-/// <item><b>Rechazo de la petición o respuesta inválida</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
-/// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>): el error vuelve tal cual y la
-/// captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
-/// <item><b>Caída del cubicador</b> (tiempo agotado, 5xx, red, llave rechazada, otro rechazo no previsto o presupuesto de la captura
+/// <item><b>Rechazo de la petición, respuesta inválida o llave rechazada</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
+/// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>, <c>CUBICADOR_NO_AUTORIZADO</c>): el
+/// error vuelve tal cual y la captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
+/// <item><b>Caída del cubicador</b> (tiempo agotado, 5xx, red, otro rechazo no previsto o presupuesto de la captura
 /// agotado): con <see cref="IClsCubicador.RespaldoSiFalla"/> la ruta va al respaldo, con un warning de código estable
 /// <see cref="EventoRespaldo"/> y el contador <see cref="MetricaRespaldos"/> (etiqueta <c>motivo</c>); sin él,
 /// <c>CUBICADOR_NO_DISPONIBLE</c> y la captura no guarda nada. Solo una caída o el presupuesto agotado mandan al respaldo las rutas
@@ -65,6 +65,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         clsCodigosError.MercanciaNoCubicable,
         clsCodigosError.DimensionesInvalidas,
         clsCodigosError.CubicadorRespuestaInvalida,
+        // Auditoría de HU-023: una llave mala no puede convertirse en silencio en rutas sin vehículo.
+        clsCodigosError.CubicadorNoAutorizado,
     };
 
     private readonly ILogger<clsPlanificadorCamionesCubicador> _logger;
@@ -97,7 +99,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             description: "Rutas que quedaron con un camión sin vehículo porque el cubicador falló (etiqueta motivo).");
     }
 
-    public async Task<clsResultado<IReadOnlyList<clsCamionPlaneado>>> PlanificarAsync(
+    public async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(ruta);
@@ -222,7 +224,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         return externo;
     }
 
-    private clsResultado<IReadOnlyList<clsCamionPlaneado>> Falla(
+    private clsResultado<clsPlanRuta> Falla(
         IClsCubicador cubicador, Guid rutaId, clsLineaSolicitudCosteo ruta, string motivo, string detalle, bool caida)
     {
         if (!cubicador.RespaldoSiFalla)
@@ -250,11 +252,11 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         return Respaldo(ruta);
     }
 
-    private static clsResultado<IReadOnlyList<clsCamionPlaneado>> Respaldo(clsLineaSolicitudCosteo ruta) =>
-        clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito(clsPlanificadorCamionSinVehiculo.Camiones(ruta));
+    private static clsResultado<clsPlanRuta> Respaldo(clsLineaSolicitudCosteo ruta, clsCubicacionRuta? cubicacion = null) =>
+        clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(clsPlanificadorCamionSinVehiculo.Camiones(ruta), cubicacion));
 
     /// <summary>Un camión por vehículo recomendado (en su orden); "sin selección" es un camión sin vehículo con el peso de la ruta.</summary>
-    private clsResultado<IReadOnlyList<clsCamionPlaneado>> Camiones(Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion)
+    private clsResultado<clsPlanRuta> Camiones(Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion)
     {
         if (recomendacion.Condicionada)
         {
@@ -266,7 +268,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         {
             _logger.LogInformation("El cubicador no seleccionó vehículo en la ruta {RutaId} ({Motivo}): el camión queda sin vehículo para la Mesa de Costeo de Nexo.",
                 rutaId, recomendacion.MotivoSinSeleccion ?? "sin motivo");
-            return Respaldo(ruta);
+            // HU-023.3: la ruta guarda el resultado y el motivo; el camión va sin vehículo ni recomendación.
+            return Respaldo(ruta, recomendacion.ACubicacionRuta());
         }
 
         var camiones = new List<clsCamionPlaneado>(recomendacion.Vehiculos.Count);
@@ -285,7 +288,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
                 v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso));
         }
 
-        return clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito(camiones);
+        return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(camiones, recomendacion.ACubicacionRuta()));
     }
 }
 

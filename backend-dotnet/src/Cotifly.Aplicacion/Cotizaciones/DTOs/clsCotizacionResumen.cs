@@ -47,6 +47,14 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
+    /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
+    /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
+    /// ruta llamó al cubicador o en el resto de respuestas.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<clsCubicacionRutaResumen>? Cubicacion { get; init; }
+
+    /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
     /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
     /// </summary>
@@ -143,3 +151,31 @@ public sealed record clsRutaNuevaVersion(
 
 /// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
 public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);
+
+/// <summary>
+/// <c>CubicacionRuta</c> (HU-023.3, #158): lo que respondió el cubicador para una ruta de la captura. <see cref="Resultado"/>,
+/// <see cref="MotivoSinSeleccion"/> y <see cref="Condicionada"/> se guardan (y salen también en <c>GET .../costeo</c>); los avisos no.
+/// </summary>
+public sealed record clsCubicacionRutaResumen(
+    int LineaOrden,
+    Guid LineaSolicitudId,
+    string? Resultado,
+    string? MotivoSinSeleccion,
+    bool Condicionada,
+    IReadOnlyList<clsMercanciaCondicionada> MercanciasCondicionadas,
+    IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
+    clsExtradimensionCubicador? Extradimension)
+{
+    /// <summary>Las rutas de <paramref name="cotizacion"/> que pasaron por el cubicador, en orden; <c>null</c> si ninguna.</summary>
+    public static IReadOnlyList<clsCubicacionRutaResumen>? De(clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var rutas = cotizacion.RutasOrdenadas
+            .Where(r => r.ResultadoCubicacion is not null)
+            .Select(r => new clsCubicacionRutaResumen(
+                r.Orden, r.Id, r.ResultadoCubicacion, r.MotivoSinSeleccion, r.Condicionada,
+                r.AvisosCubicacion?.MercanciasCondicionadas ?? [], r.AvisosCubicacion?.Advertencias ?? [], r.AvisosCubicacion?.Extradimension))
+            .ToList();
+        return rutas.Count == 0 ? null : rutas;
+    }
+}

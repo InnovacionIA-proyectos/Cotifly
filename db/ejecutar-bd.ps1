@@ -6,7 +6,8 @@
     Corre en orden, con sqlcmd y deteniéndose en el primer error:
       1. (opcional, -CrearBase) crea la base de datos si no existe.
       2. scripts/01_crear_esquema.sql  -> schema, tablas, restricciones, índices y vistas.
-      3. seeder/*.sql                  -> líneas de negocio, mapeo SAP TM y roles (en orden de nombre).
+      3. scripts/02_*.sql en adelante  -> ajustes al esquema (ALTER), en orden de nombre. Se pueden repetir.
+      4. seeder/*.sql                  -> líneas de negocio, mapeo SAP TM y roles (en orden de nombre).
 
     Es SOLO para una instalación desde cero: si dbo_cotifly ya tiene tablas, el paso 2 se detiene sin
     tocar nada. Para una base que ya tiene el esquema viejo se usan las migraciones (db/migrations_mssql/).
@@ -30,13 +31,13 @@
     Crea la base de datos si no existe (con la collation Latin1_General_100_CI_AS_SC_UTF8).
 
 .PARAMETER SoloEsquema
-    Corre solo el paso 2 (sin seeders).
+    Corre solo los pasos 2 y 3 (sin seeders).
 
 .PARAMETER SoloSeeder
-    Corre solo el paso 3 (el esquema ya debe existir). Se puede repetir sin problema: los seeders son idempotentes.
+    Corre solo el paso 4 (el esquema ya debe existir). Se puede repetir sin problema: los seeders son idempotentes.
 
 .PARAMETER Auto
-    Modo automático: si dbo_cotifly ya tiene tablas, se salta el esquema y solo corre los seeders.
+    Modo automático: si dbo_cotifly ya tiene tablas, se salta el paso 2 y corre los ajustes (paso 3) y los seeders.
 
 .PARAMETER Si
     No pide confirmación.
@@ -71,6 +72,7 @@ $sqlcmd = Get-Command sqlcmd -ErrorAction SilentlyContinue
 if (-not $sqlcmd) { throw 'No se encontró sqlcmd. Instale las herramientas de línea de comandos de SQL Server (sqlcmd) y vuelva a intentar.' }
 
 $esquema = Join-Path $PSScriptRoot 'scripts\01_crear_esquema.sql'
+$ajustes = Get-ChildItem -Path (Join-Path $PSScriptRoot 'scripts') -Filter '*.sql' | Where-Object { $_.Name -ne '01_crear_esquema.sql' } | Sort-Object Name
 $seeders = Get-ChildItem -Path (Join-Path $PSScriptRoot 'seeder') -Filter '*.sql' | Sort-Object Name
 if (-not (Test-Path $esquema)) { throw "No existe $esquema" }
 if (-not $seeders) { throw 'No hay archivos .sql en db\seeder.' }
@@ -116,18 +118,26 @@ try {
     }
 
     $enBase = $comunes + @('-d', $Base)
+    $saltarCreacion = $false
 
     if ($Auto -and -not $SoloSeeder -and -not $SoloEsquema) {
         $consulta = "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly';"
         $tablas = (& sqlcmd @enBase -h -1 -W -Q $consulta | Out-String).Trim()
         if ($tablas -match '^\d+$' -and [int]$tablas -gt 0) {
-            Write-Host "dbo_cotifly ya tiene $tablas tablas: se salta el esquema y solo se corren los seeders."
-            $SoloSeeder = [switch]::new($true)
+            Write-Host "dbo_cotifly ya tiene $tablas tablas: se salta la creación del esquema y se corren los ajustes y los seeders."
+            $saltarCreacion = $true
         }
     }
 
-    if (-not $SoloSeeder) {
+    if (-not $SoloSeeder -and -not $saltarCreacion) {
         Invoke-Sql 'Crear el esquema dbo_cotifly (scripts\01_crear_esquema.sql)' ($enBase + @('-i', $esquema))
+    }
+
+    # Ajustes al esquema (02 en adelante): cada uno revisa si su cambio ya está, así que se pueden repetir.
+    if (-not $SoloSeeder) {
+        foreach ($archivo in $ajustes) {
+            Invoke-Sql "Ajustar el esquema: scripts\$($archivo.Name)" ($enBase + @('-i', $archivo.FullName))
+        }
     }
 
     if (-not $SoloEsquema) {

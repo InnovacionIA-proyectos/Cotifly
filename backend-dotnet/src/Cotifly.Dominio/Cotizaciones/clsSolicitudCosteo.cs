@@ -224,8 +224,9 @@ public sealed record clsSolicitudCosteo
 /// <summary>Pieza o bulto a transportar (<c>CapturaPosicionRequest</c> de Nexo), dimensiones en centímetros y peso en kilogramos.</summary>
 /// <remarks>
 /// <paramref name="Descripcion"/> se guarda como <c>nombreMercancia</c>. <paramref name="CodigoMercancia"/> es el código estable del
-/// catálogo del cubicador (HU-023: lo que viaja en <c>POST /recomendaciones</c>). <paramref name="IdTipoMercancia"/> es el uuid del
-/// catálogo que mandaba el contrato anterior (HU-021.5); durante la transición se traduce al código con el catálogo.
+/// catálogo del cubicador (HU-023: lo que viaja en <c>POST /recomendaciones</c> y lo que se guarda, HU-023.3). <paramref name="IdTipoMercancia"/>
+/// es el uuid del catálogo que mandaba el contrato anterior (<c>id_tipo_mercancia</c>, obsoleto): la captura lo traduce al código con
+/// el catálogo y ya no se guarda (el script <c>02</c> quitó la columna).
 /// </remarks>
 public sealed record clsPosicionCarga(
     string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, Guid? IdTipoMercancia = null,

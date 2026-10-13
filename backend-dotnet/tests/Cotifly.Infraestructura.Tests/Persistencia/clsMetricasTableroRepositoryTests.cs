@@ -137,7 +137,7 @@ public sealed class clsMetricasTableroRepositoryTests(clsBaseDatosPruebas baseDa
     {
         // HU-021: las ciudades son los nombres de la ruta 1 (0010). La base compartida ya tiene el 0010 (y el modelo EF lo mapea): la fila
         // se inserta con SQL en una base auxiliar que llega hasta el 0009.
-        await using var sin0010 = await BaseDatos.CrearBaseConScriptsAsync("dbMetricasSin0010", clsBaseDatosPruebas.Scripts.Length - 1);
+        await using var sin0010 = await BaseDatos.CrearBaseConScriptsAsync("dbMetricasSin0010", clsBaseDatosPruebas.ScriptsHasta0009);
         var cadena = sin0010.Cadena;
         var ana = Guid.NewGuid();
         var creada = Reloj.AhoraUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture);

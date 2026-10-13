@@ -65,7 +65,7 @@ public sealed class clsCapturaRutasService(
     private bool _catalogoLeido;
 
     /// <summary>El catálogo de tipos de mercancía leído en esta captura (<c>null</c> si no estuvo disponible).</summary>
-    private IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>? _catalogo;
+    private clsCatalogoMercancias? _catalogo;
 
     /// <summary>Campo del id de municipio → campo del nombre: si el nombre ya tiene un error, el id no se reporta otra vez.</summary>
     private static readonly IReadOnlyDictionary<string, string> _nombreDelId = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -122,22 +122,21 @@ public sealed class clsCapturaRutasService(
             }
         }
 
-        // HU-021.5: con el catálogo del cubicador disponible, un tipo de mercancía que no está en él es un error de su ruta. Sin catálogo
-        // (cubicador sin configurar o caído) no se exige: la captura conserva el nombre que mandó el cliente.
+        // HU-023.3 (#158): el código solo es obligatorio con el cubicador configurado. Con el catálogo disponible, el codigo_mercancia debe estar activo y ser cubicable; el
+        // id_tipo_mercancia obsoleto debe existir (se traduce al código). Sin catálogo (cubicador sin configurar o caído) el código se
+        // acepta tal cual (el cubicador lo valida al recomendar), pero un id solo no se puede traducir: se pide el código.
         var tipos = await TiposMercanciaAsync(validadas.Lineas.Select(r => r?.Linea), cancellationToken);
-        if (tipos is not null)
+        var exigeCodigo = cubicador is { EstaConfigurado: true };
+        var sinCodigo = 0;
+        for (var i = 0; i < validadas.Lineas.Count; i++)
         {
-            for (var i = 0; i < validadas.Lineas.Count; i++)
+            var posiciones = validadas.Lineas[i]?.Linea?.Posiciones ?? [];
+            sinCodigo += posiciones.Count(p => p is not null && string.IsNullOrWhiteSpace(p.CodigoMercancia));
+            for (var m = 0; m < posiciones.Count; m++)
             {
-                var posiciones = validadas.Lineas[i]?.Linea?.Posiciones ?? [];
-                for (var m = 0; m < posiciones.Count; m++)
+                if (ErrorMercancia(posiciones[m], m, tipos, exigeCodigo) is { } error)
                 {
-                    if (posiciones[m]?.IdTipoMercancia is { } id && id != Guid.Empty && !tipos.ContainsKey(id))
-                    {
-                        errores.Add(new clsErrorFilaLicitacion(i, validadas.Lineas[i]?.Fila, $"mercancias[{m}].id_tipo_mercancia",
-                            clsCodigosLineaSolicitud.TipoMercanciaInexistente,
-                            $"El tipo de mercancía '{id}' de la mercancía {m + 1} no está en el catálogo del cubicador (GET /web/tipos-mercancia)."));
-                    }
+                    errores.Add(new clsErrorFilaLicitacion(i, validadas.Lineas[i]?.Fila, error.Campo, error.Codigo, error.Mensaje));
                 }
             }
         }
@@ -167,6 +166,13 @@ public sealed class clsCapturaRutasService(
                     .Where(p => !encontrados.TryGetValue(p.Id!, out var costo) || costo.CostoUnitario < 0m)
                     .Select(p => ConexoNoEncontrado(p.Ruta, p.Fila, p.Indice, p.Id!)));
             }
+        }
+
+        if (!exigeCodigo && sinCodigo > 0)
+        {
+            logger.LogWarning(
+                "MERCANCIA_SIN_CODIGO: {Mercancias} mercancía(s) sin codigo_mercancia y el cubicador no está configurado: se guardan sin código y sus rutas van al respaldo (un camión sin vehículo).",
+                sinCodigo);
         }
 
         return validadas with { Errores = [.. errores.OrderBy(e => e.Indice ?? -1)], NoDisponible = noDisponible };
@@ -220,14 +226,16 @@ public sealed class clsCapturaRutasService(
             }
 
             var rutaId = Guid.NewGuid();
-            var camiones = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
-            if (camiones.EsFallo)
+            var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
+            if (plan.EsFallo)
             {
-                logger.LogWarning("No se pudieron planificar los camiones de la ruta {Ruta} ({Codigo}): no se guarda la captura.", i + 1, camiones.Error.Codigo);
-                return new clsRutasPreparadas([], [], camiones.Error);
+                // Todo o nada (HU-023.3): si una ruta falla no se guarda ninguna ni se envía nada a Nexo. Las corridas que el cubicador ya
+                // creó para las rutas anteriores quedan huérfanas allá (se acepta; ADR-019/020).
+                logger.LogWarning("No se pudieron planificar los camiones de la ruta {Ruta} ({Codigo}): no se guarda la captura.", i + 1, plan.Error.Codigo);
+                return new clsRutasPreparadas([], [], plan.Error);
             }
 
-            preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, camiones.Valor, conexos, rutaId));
+            preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, plan.Valor.Camiones, conexos, rutaId, plan.Valor.Cubicacion));
         }
 
         return errores.Count > 0 ? new clsRutasPreparadas([], errores, null) : new clsRutasPreparadas(preparadas, [], null);
@@ -237,11 +245,12 @@ public sealed class clsCapturaRutasService(
     /// Catálogo de tipos de mercancía del cubicador por id, o <c>null</c> si no hay cubicador configurado, ninguna mercancía trae tipo o
     /// el catálogo no respondió (queda un warning: la captura conserva lo actual).
     /// </summary>
-    private async Task<IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>?> TiposMercanciaAsync(
+    private async Task<clsCatalogoMercancias?> TiposMercanciaAsync(
         IEnumerable<clsLineaSolicitudCosteo?> lineas, CancellationToken cancellationToken)
     {
         if (cubicador is not { EstaConfigurado: true }
-            || !lineas.Any(l => l?.Posiciones.Any(p => p?.IdTipoMercancia is { } id && id != Guid.Empty) == true))
+            || !lineas.Any(l => l?.Posiciones.Any(p => p is not null
+                && (!string.IsNullOrWhiteSpace(p.CodigoMercancia) || (p.IdTipoMercancia is { } id && id != Guid.Empty))) == true))
         {
             return null;
         }
@@ -262,18 +271,20 @@ public sealed class clsCapturaRutasService(
             return null;
         }
 
-        // HU-023.1 (#156): el catálogo ya es por código; el uuid (si el cubicador lo publica) solo traduce el id_tipo_mercancia anterior.
+        // HU-023: el catálogo es por código; el uuid (si el cubicador lo publica) solo traduce el id_tipo_mercancia obsoleto.
         var porId = new Dictionary<Guid, clsTipoMercanciaCubicador>();
+        var porCodigo = new Dictionary<string, clsTipoMercanciaCubicador>(StringComparer.Ordinal);
         foreach (var tipo in catalogo.Valor)
         {
+            porCodigo.TryAdd(tipo.Codigo, tipo);
             if (tipo.Id is { } id)
             {
                 porId.TryAdd(id, tipo);
             }
         }
 
-        _catalogo = porId;
-        return porId;
+        _catalogo = new clsCatalogoMercancias(porId, porCodigo);
+        return _catalogo;
     }
 
     /// <summary>
@@ -281,7 +292,7 @@ public sealed class clsCapturaRutasService(
     /// municipio y el vehículo; un nombre distinto del cliente se ignora y queda en el log). Sin catálogo o sin el id, la mercancía queda
     /// como llegó.
     /// </summary>
-    private clsLineaSolicitudCosteo ConNombresDelCatalogo(clsLineaSolicitudCosteo linea, IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador>? tipos)
+    private clsLineaSolicitudCosteo ConNombresDelCatalogo(clsLineaSolicitudCosteo linea, clsCatalogoMercancias? tipos)
     {
         if (tipos is null || linea.Posiciones.Count == 0)
         {
@@ -291,7 +302,7 @@ public sealed class clsCapturaRutasService(
         var distintos = 0;
         var posiciones = linea.Posiciones.Select(clsPosicionCarga (p) =>
         {
-            if (p is null || p.IdTipoMercancia is not { } id || !tipos.TryGetValue(id, out var tipo) || string.IsNullOrWhiteSpace(tipo.Nombre))
+            if (p is null || tipos.De(p) is not { } tipo || string.IsNullOrWhiteSpace(tipo.Nombre))
             {
                 return p!;
             }
@@ -312,6 +323,65 @@ public sealed class clsCapturaRutasService(
         }
 
         return linea with { Posiciones = posiciones };
+    }
+
+    /// <summary>
+    /// HU-023.3: el error de la mercancía <paramref name="m"/> contra el catálogo del cubicador (<paramref name="tipos"/>; <c>null</c> =
+    /// no disponible), o <c>null</c>. Una mercancía sin código ni id ya la reporta <see cref="clsLineaSolicitudCosteo.ErroresCaptura"/>.
+    /// </summary>
+    private static clsErrorCampo? ErrorMercancia(clsPosicionCarga? p, int m, clsCatalogoMercancias? tipos, bool exigeCodigo)
+    {
+        if (p is null)
+        {
+            return null;
+        }
+
+        var campoCodigo = $"mercancias[{m}].codigo_mercancia";
+        if (!string.IsNullOrWhiteSpace(p.CodigoMercancia))
+        {
+            var codigo = p.CodigoMercancia.Trim();
+            if (tipos is null)
+            {
+                return null;
+            }
+
+            if (!tipos.PorCodigo.TryGetValue(codigo, out var tipo) || !tipo.Activo)
+            {
+                return new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.MercanciaDesconocida,
+                    $"La mercancía {m + 1} ('{codigo}') no está activa en el catálogo del cubicador (GET /web/tipos-mercancia).");
+            }
+
+            return tipo.Cubicable
+                ? null
+                : new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.MercanciaNoCubicable,
+                    $"La mercancía {m + 1} ('{codigo}') no se puede cubicar según el catálogo del cubicador.");
+        }
+
+        if (p.IdTipoMercancia is not { } id || id == Guid.Empty)
+        {
+            // Sin cubicador configurado no hay de dónde sacar el código (GET /web/tipos-mercancia responde 503): se guarda NULL y la
+            // ruta va al respaldo. Con cubicador es obligatorio.
+            return exigeCodigo
+                ? new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.CampoRequerido,
+                    $"La mercancía {m + 1} debe traer el código del catálogo del cubicador (codigo_mercancia, GET /web/tipos-mercancia).")
+                : null;
+        }
+
+        if (!exigeCodigo)
+        {
+            return null;
+        }
+
+        if (tipos is null)
+        {
+            return new clsErrorCampo(campoCodigo, clsCodigosLineaSolicitud.CampoRequerido,
+                $"La mercancía {m + 1} trae solo id_tipo_mercancia (obsoleto) y el catálogo del cubicador no respondió para traducirlo: envía codigo_mercancia.");
+        }
+
+        return tipos.PorId.ContainsKey(id)
+            ? null
+            : new clsErrorCampo($"mercancias[{m}].id_tipo_mercancia", clsCodigosLineaSolicitud.TipoMercanciaInexistente,
+                $"El tipo de mercancía '{id}' de la mercancía {m + 1} no está en el catálogo del cubicador (GET /web/tipos-mercancia).");
     }
 
     /// <summary>
@@ -368,4 +438,15 @@ public sealed class clsCapturaRutasService(
 
         return errores;
     }
+}
+
+/// <summary>Catálogo de tipos de mercancía del cubicador leído en una captura: por código (HU-023) y por el uuid obsoleto.</summary>
+internal sealed record clsCatalogoMercancias(
+    IReadOnlyDictionary<Guid, clsTipoMercanciaCubicador> PorId, IReadOnlyDictionary<string, clsTipoMercanciaCubicador> PorCodigo)
+{
+    /// <summary>El tipo de la mercancía: por su código o, si no trae, por el <c>id_tipo_mercancia</c> obsoleto; <c>null</c> si no está.</summary>
+    public clsTipoMercanciaCubicador? De(clsPosicionCarga posicion) =>
+        !string.IsNullOrWhiteSpace(posicion.CodigoMercancia)
+            ? PorCodigo.GetValueOrDefault(posicion.CodigoMercancia.Trim())
+            : posicion.IdTipoMercancia is { } id ? PorId.GetValueOrDefault(id) : null;
 }

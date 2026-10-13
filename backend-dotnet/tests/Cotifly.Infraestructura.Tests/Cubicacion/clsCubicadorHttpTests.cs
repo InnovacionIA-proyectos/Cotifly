@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Infraestructura.Configuracion;
 using Cotifly.Infraestructura.Cubicacion.Services;
 using Cotifly.Infraestructura.Tests.Configuracion;

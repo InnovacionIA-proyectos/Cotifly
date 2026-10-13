@@ -518,6 +518,12 @@ con el mismo código; la llave rechazada es `CUBICADOR_NO_AUTORIZADO`; el tiempo
 `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo`; la validación acepta los códigos de vehículo y carrocería del cubicador; la
 lista fija de clases de contenedor se quitó (se valida contra Nexo). Sonda `cubicador` en `/health/ready` con `Cubicador:RutaSalud`.
 
+**Actualizado en HU-023.3 (#158, 2026-10-13), ADR-020:** con `db/scripts/02_alter_cubicador.sql` (de @scalderon-bs, sin cambios) la
+mercancía guarda `codigoMercancia` (no el uuid), la ruta el resultado del cubicador (`idRecomendacion`, `resultadoCubicacion`,
+`motivoSinSeleccion`, `condicionada`) y el camión su volumen y sus porcentajes de llenado. La captura es todo o nada y devuelve los
+avisos (no guardados) en `cubicacion[]`; nuevo `POST .../rutas/{rutaId}/recalcular-vehiculos`; `/health/ready` exige el 02. La columna
+de orden del camión y el id del catálogo del conexo quedan propuestos en `db/scripts/pendientes/03_*.sql` (revisión de @scalderon-bs).
+
 ---
 
 ## 7. API y contrato con el frontend

@@ -526,12 +526,14 @@ public sealed class clsReSolicitudCosteoService(
             // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
-            if ((validada.Replanificar || vigentes.Count == 0) && linea.Posiciones.Any(p => p.IdTipoMercancia is null || p.IdTipoMercancia == Guid.Empty))
+            clsCubicacionRuta? cubicacion = null;
+            if ((validada.Replanificar || vigentes.Count == 0) && linea.Posiciones.Any(p => string.IsNullOrWhiteSpace(p.CodigoMercancia)))
             {
-                // Ruta migrada (o capturada antes de #132) con mercancías sin tipo del catálogo del cubicador: el cubicador no las puede
-                // cubicar. Respaldo: un camión sin vehículo con el peso de la ruta (lo resuelve la Mesa de Costeo de Nexo) y un aviso.
+                // Ruta con mercancías sin código del catálogo del cubicador (anteriores al script 02): el cubicador no las puede cubicar.
+                // Respaldo: un camión sin vehículo con el peso de la ruta (lo resuelve la Mesa de Costeo de Nexo) y un aviso. Para pedir
+                // los camiones al cubicador, el comercial vuelve a escoger las mercancías (HU-023.3).
                 logger.LogWarning(
-                    "La ruta {Ruta} de {Folio} tiene mercancías sin id_tipo_mercancia: la versión nueva lleva un camión sin vehículo (respaldo) en vez de planificarlos.",
+                    "La ruta {Ruta} de {Folio} tiene mercancías sin codigo_mercancia: la versión nueva lleva un camión sin vehículo (respaldo) en vez de planificarlos.",
                     ruta.Orden, original.Folio);
                 camiones = [new clsCamionPlaneado(null, null, clsPlanificadorCamionSinVehiculo.PesoTotal(linea))];
                 replanificadas.Add(ruta.Orden);
@@ -544,18 +546,24 @@ public sealed class clsReSolicitudCosteoService(
                     return plan.Error;
                 }
 
-                if (plan.Valor.Count == 0)
+                if (plan.Valor.Camiones.Count == 0)
                 {
                     return new clsErrorDominio(clsCodigosError.SolicitudCosteoInvalida,
                         $"No se pudieron calcular los vehículos de la ruta {ruta.Orden} de la cotización {original.Folio}.");
                 }
 
-                camiones = plan.Valor;
+                camiones = plan.Valor.Camiones;
+                cubicacion = plan.Valor.Cubicacion;
                 replanificadas.Add(ruta.Orden);
             }
             else
             {
-                camiones = [.. vigentes.Select(v => new clsCamionPlaneado(v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo))];
+                // Se copian los camiones con su recomendación, su volumen y sus porcentajes, y el resultado del cubicador de la ruta.
+                camiones = [.. vigentes.Select(v => new clsCamionPlaneado(
+                    v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
+                cubicacion = ruta.ResultadoCubicacion is { } resultado
+                    ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada)
+                    : null;
             }
 
             var conexos = new List<clsCambioConexo>();
@@ -580,7 +588,7 @@ public sealed class clsReSolicitudCosteoService(
                 conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
             }
 
-            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId));
+            rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion));
         }
 
         return new clsRutasVersion(rutas, replanificadas);

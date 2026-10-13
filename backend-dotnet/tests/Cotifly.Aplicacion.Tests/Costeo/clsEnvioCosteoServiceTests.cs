@@ -738,6 +738,20 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task SinCubicadorConfiguradoUnaMercanciaSinCodigoSeGuardaSinCodigoYLaRutaVaAlRespaldo()
+    {
+        // HU-023.3 (auditor): sin cubicador GET /web/tipos-mercancia responde 503 y no hay de dónde sacar el código.
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        ruta = ruta with { Linea = ruta.Linea with { Posiciones = [new clsPosicionCarga("Cajas", 1, 10m, 10m, 10m, 28_500.5m, Guid.NewGuid())] } };
+
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
+
+        guardada.MercanciasOrdenadas.Should().ContainSingle().Which.CodigoMercancia.Should().BeNull();
+        guardada.Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull();
+        guardada.ResultadoCubicacion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task TodosLosErroresDeLasRutasLleganJuntosYNoSeGuardaNada()
     {
         var sinTipo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
@@ -746,14 +760,15 @@ public sealed class clsEnvioCosteoServiceTests
         var sinLinea = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         sinLinea = sinLinea with { Linea = sinLinea.Linea with { PesoKg = null, Posiciones = [] } };
 
-        var resultado = await Servicio().CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
+        // HU-023.3: con el cubicador configurado el codigo_mercancia es obligatorio.
+        var resultado = await ServicioCon(Cubicador()).CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         resultado.Error.Mensaje.Should().StartWith("Ruta 1:").And.Contain("detalle.errores");
         var errores = ((IEnumerable<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["errores"]!).ToList();
         errores.Select(e => ((int?)e["ruta"], (string)e["campo"]!, (string)e["codigo"]!)).Should().BeEquivalentTo(
         [
-            ((int?)0, "mercancias[0].id_tipo_mercancia", clsCodigosLineaSolicitud.CampoRequerido),
+            ((int?)0, "mercancias[0].codigo_mercancia", clsCodigosLineaSolicitud.CampoRequerido),
             ((int?)1, "origen", clsCodigosLineaSolicitud.MunicipioAmbiguo),
             ((int?)2, "peso_kg", clsCodigosLineaSolicitud.PesoRequerido),
         ]);
@@ -877,7 +892,7 @@ public sealed class clsEnvioCosteoServiceTests
         var rechazada = await ServicioCon(conCatalogo).CapturarAsync(_ana, Captura(ruta), Ct);
         var guardada = (await ServicioCon(caido).CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
 
-        CodigosDe(rechazada.Error).Should().OnlyContain(c => c == clsCodigosLineaSolicitud.TipoMercanciaInexistente).And.NotBeEmpty();
+        CodigosDe(rechazada.Error).Should().OnlyContain(c => c == clsCodigosLineaSolicitud.MercanciaDesconocida).And.NotBeEmpty();
         guardada.MercanciasOrdenadas.Select(m => m.NombreMercancia)
             .Should().Equal(ruta.Linea.Posiciones.Select(p => p.Descripcion?.Trim() is { Length: > 0 } d ? d : null));
     }

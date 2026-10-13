@@ -280,8 +280,10 @@ public sealed class clsCotizacionSolicitud
                 Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado, capturada.RutaId);
             foreach (var camion in capturada.Camiones)
             {
-                ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);
+                ruta.AgregarVehiculo(camion);
             }
+
+            ruta.RegistrarCubicacion(capturada.Cubicacion);
 
             foreach (var conexo in capturada.Conexos ?? [])
             {
@@ -384,6 +386,13 @@ public sealed class clsCotizacionSolicitud
         Ganada is null
         && ((EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
             || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
+
+    /// <summary>
+    /// HU-023.3 (#158): ¿se pueden reemplazar los camiones (recalcular una ruta con el cubicador)? Solo si la solicitud nunca llegó a
+    /// Nexo (<see cref="SolicitudNexoId"/> vacío) y no hay un envío en curso ni incierto: la misma regla que
+    /// <see cref="PuedeReenviarCosteo"/> (un <c>pendiente_envio</c> reciente puede estar esperando a Nexo).
+    /// </summary>
+    public bool PuedeRecalcularCamiones(DateTimeOffset ahora) => SolicitudNexoId is null && PuedeReenviarCosteo(ahora);
 
     /// <summary>¿La cotización nació del flujo de costeo en Nexo? (<see cref="EstadoCosteo"/> con valor).</summary>
     public bool EnFlujoCosteo => EstadoCosteo is not null;
@@ -901,6 +910,30 @@ public sealed class clsCotizacionSolicitud
     private clsVehiculoLineaSolicitud Camion(Guid camionId) =>
         _rutas.SelectMany(r => r.Vehiculos).FirstOrDefault(v => v.Id == camionId)
         ?? throw new ArgumentOutOfRangeException(nameof(camionId), $"El camión {camionId} no es de la cotización {Folio}.");
+
+    /// <summary>
+    /// HU-023.3 (#158): reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
+    /// recalcula los totales. Solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso):
+    /// <c>ESTADO_NO_PERMITE</c> si no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
+    /// </summary>
+    public clsResultado<clsLineaSolicitud> ReemplazarCamionesDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (!PuedeRecalcularCamiones(ahora))
+        {
+            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                $"Los camiones de la cotización {Folio} ya están en Nexo o se están enviando: para cambiarlos pide una versión nueva.");
+        }
+
+        if (_rutas.FirstOrDefault(r => r.Id == rutaId) is not { } ruta)
+        {
+            return new clsErrorDominio(clsCodigosError.RutaInexistente, $"La ruta {rutaId} no es de la cotización {Folio}.");
+        }
+
+        ruta.ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : ruta;
+    }
 
     // ------------------------------------------------------------------ Totales y precio (§9.1)
 

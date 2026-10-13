@@ -99,18 +99,6 @@ public sealed record clsVehiculoRecomendado(
     decimal PorcentajeLlenadoPeso,
     string? NombreVehiculo = null);
 
-/// <summary>Una mercancía que dejó la ruta condicionada (pendiente de aprobación): se devuelve al comercial, no se guarda.</summary>
-public sealed record clsMercanciaCondicionada(string CodigoMercancia, string? Comentario);
-
-/// <summary>Una advertencia del cubicador (por ejemplo "refrigerado = FURGON + alerta"): se devuelve al comercial, no se guarda.</summary>
-public sealed record clsAdvertenciaCubicador(string? Codigo, string Mensaje);
-
-/// <summary>
-/// Información de extradimensión de la respuesta: se devuelve al comercial, no se guarda. <b>Forma provisional</b> mientras el cubicador
-/// no publique los ejemplos (petición P2): se lee un booleano o un objeto con la marca, las dimensiones excedidas y un detalle.
-/// </summary>
-public sealed record clsExtradimensionCubicador(bool Extradimensionado, IReadOnlyList<string> Dimensiones, string? Detalle);
-
 /// <summary>
 /// Respuesta de <c>POST /recomendaciones</c> para una ruta (HU-023.1, #156), ya validada por el adaptador:
 /// <list type="bullet">
@@ -136,6 +124,11 @@ public sealed record clsRecomendacionCubicador(
 
     /// <summary>¿El cubicador no pudo elegir (el camión queda sin vehículo para la Mesa de Costeo)?</summary>
     public bool SinSeleccion => string.Equals(Resultado, clsResultadosRecomendacion.SinSeleccionAutomatica, StringComparison.Ordinal);
+
+    /// <summary>Lo que se guarda en la ruta (HU-023.3) y los avisos que se devuelven al comercial.</summary>
+    public clsCubicacionRuta ACubicacionRuta() => new(
+        IdRecomendacion, Resultado, MotivoSinSeleccion, Condicionada,
+        new clsAvisosCubicacion(MercanciasCondicionadas, Advertencias, Extradimension));
 }
 
 /// <summary>

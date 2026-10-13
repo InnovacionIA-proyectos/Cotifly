@@ -23,8 +23,29 @@ public sealed class clsCosteoController(
     IClsAjusteMargenCosteoService ajusteMargen,
     IClsResultadoCotizacionService resultadoCotizacion,
     IClsReSolicitudCosteoService reSolicitud,
-    ILogger<clsCosteoController> logger) : clsControladorWebBase(usuario)
+    ILogger<clsCosteoController> logger,
+    IClsRecalculoVehiculosService recalculoVehiculos) : clsControladorWebBase(usuario)
 {
+    /// <summary>
+    /// HU-023.3 (#158): 200 <c>CosteoCotizacion</c> con los camiones de la ruta recalculados por el cubicador (cuando cambiaron sus
+    /// mercancías o su peso, antes de enviar a Nexo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> (mercancías sin código), <c>RUTA_INEXISTENTE</c>
+    /// o un rechazo del cubicador (<c>MERCANCIA_DESCONOCIDA</c>...); 404; 409 <c>ESTADO_NO_PERMITE</c> (ya está en Nexo: usar
+    /// re-solicitar) o <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>; 503 si el cubicador no responde (sin respaldo) o su
+    /// respuesta es inválida.
+    /// </summary>
+    [HttpPost("cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos")]
+    [clsRequiereIfMatch]
+    [ProducesResponseType<clsCosteoCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status428PreconditionRequired)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> RecalcularVehiculos(string folio, Guid rutaId, CancellationToken cancellationToken)
+    {
+        var resultado = await recalculoVehiculos.RecalcularAsync(UsuarioId, folio, rutaId, clsConcurrenciaHttp.VersionDe(HttpContext), cancellationToken);
+        return resultado.Coincidir<IActionResult>(c => Ok(c), Error);
+    }
+
     /// <summary>
     /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
     /// 409 <c>RESULTADO_YA_DEFINIDO</c>, <c>COTIZACION_NO_ENTREGADA</c>, <c>COSTEO_NO_LISTO</c> o <c>CONFLICTO_CONCURRENCIA</c>; 428 en la
@@ -144,7 +165,11 @@ public sealed class clsCosteoController(
         var resultado = await envio.CapturarAsync(UsuarioId, entrada.Valor, cancellationToken);
         return resultado.EsFallo
             ? Error(resultado.Error)
-            : StatusCode(StatusCodes.Status201Created, await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None));
+            : StatusCode(StatusCodes.Status201Created, (await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None)) with
+            {
+                // HU-023.3: el resultado del cubicador por ruta y sus avisos (estos no se guardan: solo viajan en esta respuesta).
+                Cubicacion = clsCubicacionRutaResumen.De(resultado.Valor),
+            });
     }
 
     /// <summary>Encabezado de la clave de idempotencia (ADR-018 §8).</summary>

@@ -34,6 +34,8 @@
     <!-- HU-021: instalación desde cero (db/scripts/01_crear_esquema.sql) y sus seeders, para compararla con la cadena de migraciones. -->
     <None Include="$(MSBuildThisFileDirectory)..\..\db\scripts\*.sql" Link="scripts_bd\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(MSBuildThisFileDirectory)..\..\db\seeder\*.sql" Link="scripts_bd\seeder\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- HU-023.3: propuestas pendientes de revisión (db/scripts/pendientes), que el ejecutador no corre; las pruebas las aplican en bases aisladas. -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\db\scripts\pendientes\*.sql" Link="scripts_bd\pendientes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Datos de prueba portados del Python: muestra de RentabClienteSet de SAP TM (#13) y payload del PDF (#11, ejemplo-solicitud.json). -->
     <None Include="$(MSBuildThisFileDirectory)fixtures\**\*.json" Link="fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Pliego de 300 líneas de Nexo (HU-011): paridad de la detección de filas con el analizador de Nexo. -->

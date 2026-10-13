@@ -35,8 +35,8 @@ public sealed class clsCapturaRutasTests
             ("origen_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("destino_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("ciudad_devolucion_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
-            ("ciudad_levante_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
-            ("mercancias[0].id_tipo_mercancia", clsCodigosLineaSolicitud.CampoRequerido));
+            ("ciudad_levante_municipio_id", clsCodigosLineaSolicitud.CampoRequerido));
+        // HU-023.3: el codigo_mercancia solo se exige con el cubicador configurado (lo valida la captura, no la línea).
     }
 
     [Fact]

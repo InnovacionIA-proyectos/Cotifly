@@ -115,6 +115,12 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_horas",
                 "(horasCargue IS NULL OR (horasCargue >= 0 AND horasCargue <= 240)) AND (horasDescargue IS NULL OR (horasDescargue >= 0 AND horasDescargue <= 240))");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_origenMargen", "origenMargen IS NULL OR origenMargen IN ('sap_tm', 'politica_linea', 'negociado')");
+            // HU-023.3 (#158): script 02_alter_cubicador.sql.
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_resultadoCubicacion",
+                "resultadoCubicacion IS NULL OR resultadoCubicacion IN ('ASIGNADO', 'SIN_SELECCION_AUTOMATICA')");
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_motivoSinSeleccion",
+                "motivoSinSeleccion IS NULL OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE') "
+                + "AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA')");
         });
 
         builder.HasKey(l => l.Id).HasName("pk_cotizacionLineasSolicitud");
@@ -123,6 +129,12 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.Orden).Columna("orden", "int");
         builder.Property(l => l.RutaOrigenIndice).Columna("rutaOrigenIndice", "int");
         builder.Property(l => l.LineaNegocioId).Columna("lineaNegocioId", "int");
+        // HU-023.3 (#158): lo que respondió el cubicador para la ruta (script 02).
+        builder.Property(l => l.IdRecomendacion).Columna("idRecomendacion", "uniqueidentifier");
+        builder.Property(l => l.ResultadoCubicacion).Columna("resultadoCubicacion", "nvarchar(30)").HasMaxLength(30);
+        builder.Property(l => l.MotivoSinSeleccion).Columna("motivoSinSeleccion", "nvarchar(40)").HasMaxLength(40);
+        builder.Property(l => l.Condicionada).Columna("condicionada", "bit").HasDefaultValue(false);
+        builder.Ignore(l => l.AvisosCubicacion);
         builder.Property(l => l.OrigenMunicipioId).Columna("origenMunicipioId", "int");
         builder.Property(l => l.OrigenNombre).Columna("origenNombre", "nvarchar(150)").HasMaxLength(clsLineaSolicitud.LargoMaximoNombreMunicipio);
         builder.Property(l => l.DestinoMunicipioId).Columna("destinoMunicipioId", "int");
@@ -191,6 +203,10 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
                 + "AND (costoLevanteContenedor IS NULL OR costoLevanteContenedor >= 0)");
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo",
                 $"estadoCosteo IS NULL OR estadoCosteo IN {clsCotizacionSolicitudConfiguracion.EstadosCosteo}");
+            // HU-023.3 (#158): script 02_alter_cubicador.sql.
+            t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_llenado",
+                "(volumenTotalM3 IS NULL OR volumenTotalM3 >= 0) AND (porcentajeLlenadoVolumen IS NULL OR (porcentajeLlenadoVolumen >= 0 AND porcentajeLlenadoVolumen <= 100)) "
+                + "AND (porcentajeLlenadoPeso IS NULL OR (porcentajeLlenadoPeso >= 0 AND porcentajeLlenadoPeso <= 100))");
         });
 
         builder.HasKey(v => v.Id).HasName("pk_cotizacionVehiculosLineaSolicitud");
@@ -200,6 +216,9 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
         builder.Property(v => v.TipoVehiculo).Columna("tipoVehiculo", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(v => v.Carroceria).Columna("carroceria", "nvarchar(100)").HasMaxLength(clsSolicitudCosteo.LargoCatalogo);
         builder.Property(v => v.PesoKg).Columna("pesoKg", "decimal(12,2)");
+        builder.Property(v => v.VolumenTotalM3).Columna("volumenTotalM3", "decimal(12,3)");
+        builder.Property(v => v.PorcentajeLlenadoVolumen).Columna("porcentajeLlenadoVolumen", "decimal(5,2)");
+        builder.Property(v => v.PorcentajeLlenadoPeso).Columna("porcentajeLlenadoPeso", "decimal(5,2)");
         builder.Property(v => v.CostoFlete).Columna("costoFlete", "decimal(18,2)");
         builder.Property(v => v.CostoRetornoContenedor).Columna("costoRetornoContenedor", "decimal(18,2)");
         builder.Property(v => v.CostoLevanteContenedor).Columna("costoLevanteContenedor", "decimal(18,2)");
@@ -231,7 +250,8 @@ internal sealed class clsMercanciaConfiguracion : IEntityTypeConfiguration<clsMe
         builder.Property(m => m.Id).Columna("id", "uniqueidentifier").ValueGeneratedNever();
         builder.Property(m => m.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(m => m.Orden).Columna("orden", "int");
-        builder.Property(m => m.IdTipoMercancia).Columna("idTipoMercancia", "uniqueidentifier");
+        // HU-023.3 (#158): script 02 (reemplaza a idTipoMercancia).
+        builder.Property(m => m.CodigoMercancia).Columna("codigoMercancia", "nvarchar(64)").HasMaxLength(clsPosicionCarga.LargoCodigoMercancia);
         builder.Property(m => m.NombreMercancia).Columna("nombreMercancia", "nvarchar(200)").HasMaxLength(clsPosicionCarga.LargoDescripcion);
         builder.Property(m => m.Cantidad).Columna("cantidad", "int");
         builder.Property(m => m.LargoCm).Columna("largoCm", "decimal(10,2)");

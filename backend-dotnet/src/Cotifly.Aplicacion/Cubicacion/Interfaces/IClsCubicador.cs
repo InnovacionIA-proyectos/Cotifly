@@ -21,9 +21,9 @@ public interface IClsCubicador
     bool EstaConfigurado { get; }
 
     /// <summary>
-    /// <c>Cubicador:RespaldoSiFalla</c>: si el cubicador configurado se CAE (no responde, 5xx, llave rechazada), ¿la captura sigue con el
+    /// <c>Cubicador:RespaldoSiFalla</c>: si el cubicador configurado se CAE (no responde, 5xx), ¿la captura sigue con el
     /// respaldo (un camión sin vehículo y un aviso en el log) en vez de fallar con <c>CUBICADOR_NO_DISPONIBLE</c>? Un rechazo de la
-    /// petición o una respuesta inválida nunca van al respaldo.
+    /// petición, una respuesta inválida o la llave rechazada nunca van al respaldo.
     /// </summary>
     bool RespaldoSiFalla { get; }
 

@@ -50,8 +50,8 @@ public static class clsSolicitudCosteoMuestra
         DestinoMunicipioId = 11001,
         Posiciones =
         [
-            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m, TipoMercancia),
-            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null, TipoMercancia),
+            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m, TipoMercancia, CodigoMercancia),
+            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null, TipoMercancia, CodigoMercancia),
         ],
     };
 
@@ -62,9 +62,12 @@ public static class clsSolicitudCosteoMuestra
     public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
 
     /// <summary><see cref="RutaCaptura"/> con el <c>codigoMercancia</c> de cada mercancía (HU-023.1: lo que viaja al cubicador).</summary>
-    public static clsLineaSolicitudCosteo RutaConCodigos()
+    public static clsLineaSolicitudCosteo RutaConCodigos() => RutaCaptura();
+
+    /// <summary><see cref="RutaCaptura"/> solo con el <c>id_tipo_mercancia</c> obsoleto (transición de HU-023).</summary>
+    public static clsLineaSolicitudCosteo RutaSoloConId()
     {
         var ruta = RutaCaptura();
-        return ruta with { Posiciones = [.. ruta.Posiciones.Select(p => p with { CodigoMercancia = CodigoMercancia })] };
+        return ruta with { Posiciones = [.. ruta.Posiciones.Select(p => p with { CodigoMercancia = null })] };
     }
 }

@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Infraestructura.Configuracion;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
