@@ -8,11 +8,11 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
 - **Backend vigente tras el corte: .NET 10** (`backend-dotnet/`, una sola imagen `cotifly-backend`, ADR-001 y ADR-002).
   Este documento describe su despliegue. Las decisiones están en
   [ADR-013](backend-dotnet/specs/decisiones/ADR-013-despliegue-dokploy.md).
-- **Stack Python: se conserva solo para rollback** hasta validar producción (corte único, ADR-001). Su manifiesto
-  (`deploy/docker-compose.swarm.yml`) y su script (`deploy/rebuild-on-worker.sh`) no se modifican. Su runbook
-  quedó en el [Anexo A](#anexo-a-stack-python-solo-rollback). HU-022.1 (#146) borró del repositorio el código Python y
-  lo que nunca se desplegó (`infra/stack.dokploy.yml`, `infra/stack.staging.yml`, `scripts/backup_db.sh` y
-  `scripts/restore_db.sh`); todo quedan en el tag `python-final`.
+- **Stack Python: retirado del repositorio** (decisión del usuario, 2026-10-13: "todo lo referente a python muere en este
+  repo"). HU-022.1 (#146) borró el código Python, `deploy/` (manifiesto `docker-compose.swarm.yml` y
+  `rebuild-on-worker.sh`), los manifiestos que nunca se desplegaron y los scripts de respaldo del Python. El último
+  estado completo vive en el tag de git **`python-final`** (ver el [Anexo A](#anexo-a-stack-python-retirado-tag-python-final)).
+  El stack Python que corre hoy en Dokploy no se tocó: apagarlo es una acción de infraestructura aparte (§7).
 - La base de datos **no** es un contenedor del stack: es la instancia corporativa SQL Server 2019 (`tbsdatacenter`),
   base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más `dbsolucionesti` de solo lectura (ADR-008). El login de
   servicio es `cotifly_app` (SQL login; el contenedor Linux no admite autenticación integrada).
@@ -176,7 +176,7 @@ historial de git (`git log --all -p`: claves privadas PEM, claves de Google `AIz
 
 | Archivo | Hallazgo | Riesgo | Acción |
 |---|---|---|---|
-| `deploy/docker-compose.swarm.yml` (stack Python que corre hoy) | `POSTGRES_PASSWORD: bot`, `DATABASE_URL` con `bot:bot`, `MINIO_ROOT_USER`/`PASSWORD` y `S3_ACCESS_KEY`/`S3_SECRET_KEY` `minioadmin` | Credenciales por defecto en texto plano; servicios solo en la red interna `bot-back`, pero cualquiera con acceso al repo las conoce | No se toca (Python intacto hasta el corte, ADR-001). El stack .NET no lo usa. **Rotarlas o apagar el stack al retirar el Python** |
+| Stack Python que corre hoy en Dokploy (antes `deploy/docker-compose.swarm.yml`, hoy solo en el tag `python-final`) | `POSTGRES_PASSWORD: bot`, `DATABASE_URL` con `bot:bot`, `MINIO_ROOT_USER`/`PASSWORD` y `S3_ACCESS_KEY`/`S3_SECRET_KEY` `minioadmin` | Credenciales por defecto en texto plano; servicios solo en la red interna `bot-back`, pero cualquiera con acceso al repo las conoce | El archivo ya no está en el repositorio, pero las credenciales siguen en el historial y en el stack desplegado. El stack .NET no las usa. **Rotarlas o apagar el stack Python en Dokploy** |
 | `docker-compose.yml` (SQL Server local de desarrollo) | Valor por defecto `Bot_Cotizador_2019!` (sa) | Solo desarrollo local; se pueden sobrescribir por variable | Ninguna; no los usa el despliegue |
 | `backend-dotnet/scripts/levantar-local.sh` y `.ps1` | Claves por defecto `CotiflyLocal#2026` (sa) y `CotiflyApp#2026` (cotifly_app) del SQL Server local | Solo el contenedor local, publicado en `127.0.0.1`; sobrescribibles con `COTIFLY_SQL_*_PASSWORD` | Ninguna |
 | `secrets/google-sa.json` | Borrado en HU-022.1 (#146): tenía `{}` (sin clave); en el historial nunca tuvo `private_key`. `secrets/` está en el `.gitignore` | — | Ninguna |
@@ -274,7 +274,7 @@ solo *sí* o *no* (y para las variables no secretas puede llevar el valor). Los 
 tanto la imagen se publica a mano con el script del §4.3, con los mismos tags. Cuando se resuelva, no hay que cambiar
 nada: el job empieza a publicar solo.
 
-### 4.3 Publicación manual (reemplaza a `deploy/rebuild-on-worker.sh`)
+### 4.3 Publicación manual (reemplaza la construcción en el worker del Python)
 
 `backend-dotnet/scripts/publicar-imagen.sh` (Git Bash, Linux, macOS) y `publicar-imagen.ps1` (PowerShell) hacen lo
 mismo que el pipeline desde cualquier equipo con Docker, **no desde el worker**: build con versión y commit, prueba de
@@ -309,7 +309,7 @@ sh backend-dotnet/scripts/publicar-imagen.sh --canal qa      # sha-<corto>, 1.0.
 sh backend-dotnet/scripts/publicar-imagen.sh --sin-push
 ```
 
-`deploy/rebuild-on-worker.sh` queda solo para el stack Python (rollback).
+El `rebuild-on-worker.sh` del Python (construía en el worker) se borró en HU-022.1; está en el tag `python-final`.
 
 ### 4.4 Credenciales del registry en el clúster
 
@@ -376,33 +376,23 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    caído, `http://10.10.40.31:8092/health/ready`) debe dar `200` en menos de 2 minutos. Si no:
    `docker service rollback <stack>_cotifly-api` en el manager (o volver `COTIFLY_TAG` al valor anterior y *Deploy*).
 6. **Rollback manual:** volver `COTIFLY_TAG` al valor anterior y *Deploy*, o `docker service rollback <stack>_cotifly-api`.
-7. **Rollback al stack Python** (corte único, ADR-001: solo si el backend .NET no puede seguir en producción):
-   1. Redesplegar en Dokploy el stack Python (`deploy/docker-compose.swarm.yml`, proyecto `bot-cotizador`) y
-      comprobar `http://10.10.40.31:8091/health`.
-   2. En Google Cloud, volver a apuntar la app de Google Chat (URL del endpoint HTTP) al orquestador Python; mientras
-      apunte a la API .NET, Chat seguirá llegando a .NET.
-   3. Escalar a 0 el servicio .NET (`docker service scale <stack>_cotifly-api=0`) para que no haya dos backends activos.
-   4. **Aviso de datos:** el Python usa su propia base Postgres. Lo que el backend .NET escribió en SQL Server
-      (`dbo_cotifly`: cotizaciones, ajustes, correos, sesiones, usuarios) **no** es visible para el Python; no hay
-      migración inversa. Las cotizaciones hechas en .NET se consultan en SQL Server hasta volver a .NET.
+7. **Sin rollback al stack Python desde este repositorio.** Por decisión del usuario (2026-10-13) el Python se retiró
+   del repositorio en HU-022.1 (#146); el rollback del backend .NET es volver a una imagen .NET anterior (pasos 5 y 6).
+   El último estado del Python (código, `docker-compose.swarm.yml` y `rebuild-on-worker.sh` de la antigua carpeta
+   `deploy/`) vive en el tag `python-final`. Volver a él sería una contingencia excepcional, con aprobación del negocio
+   (reabre Google Chat, ADR-018) y con este aviso de datos: el Python usa su propia base Postgres y no ve lo que el
+   backend .NET escribió en `dbo_cotifly`; no hay migración inversa.
 
 ## 5. Manifiestos del stack .NET (HU-006.6, #30)
 
 ### 5.1 Archivos
 
-| Manifiesto | Ambiente | Reemplaza (se conserva para rollback) |
+| Manifiesto | Ambiente | Reemplaza |
 |---|---|---|
-| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (Python, nunca desplegado; borrado en HU-022.1) |
-| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | **`deploy/docker-compose.swarm.yml`**, el stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091). `infra/stack.dokploy.yml` era su versión "ideal", nunca desplegada (borrada en HU-022.1) |
+| [`infra/stack.dotnet.staging.yml`](infra/stack.dotnet.staging.yml) | staging | `infra/stack.staging.yml` (Python, nunca desplegado) |
+| [`infra/stack.dotnet.dokploy.yml`](infra/stack.dotnet.dokploy.yml) | producción | El stack Python que corre hoy en Dokploy (proyecto `bot-cotizador`, puerto 8091), cuyo manifiesto era `deploy/docker-compose.swarm.yml`. `infra/stack.dokploy.yml` era su versión "ideal", nunca desplegada |
 
-**Qué Python corre de verdad:** según el backlog de HU-006 (auditoría del despliegue) y la cabecera del propio archivo,
-Dokploy despliega `deploy/docker-compose.swarm.yml` (Postgres, MinIO, MCP y orquestador anclados al worker, orquestador
-en `10.10.40.31:8091` en modo host). `infra/stack.dokploy.yml` e `infra/stack.staging.yml` (descritos en el
-Anexo A, con Postgres y `${REGISTRY}`) nunca se desplegaron y se borraron en HU-022.1 (#146); quedan en el tag `python-final`. **El rollback al Python redespliega
-`deploy/docker-compose.swarm.yml`** (§4.5 paso 7).
-
-Se crearon archivos nuevos en vez de editar los del Python para que el rollback siga siendo "redesplegar el stack
-Python" sin tocar git. Los dos manifiestos .NET son iguales salvo lo que marca la tabla del §5.3.
+Los manifiestos del Python se borraron en HU-022.1 (#146) y quedan en el tag `python-final`. Los dos manifiestos .NET son iguales salvo lo que marca la tabla del §5.3.
 
 ### 5.2 Topología
 
@@ -729,149 +719,17 @@ Al desplegar esta versión:
 - Las tablas `Sesiones` y `EventosConversacion` **no se borran**: guardan la auditoría de las conversaciones de Google
   Chat (`spaceId = spaces/...`) y siguen alimentándose con el asistente por folio (`web/{sesion_id}`).
 
-La sección anterior (verificación del JWT del webhook, HU-006.7) queda solo como historia en el Anexo A, que describe el
-stack Python de rollback.
+La verificación del JWT del webhook (HU-006.7) era del stack Python; su runbook está en el tag `python-final` (Anexo A).
 
-## Anexo A. Stack Python (solo rollback)
+## Anexo A. Stack Python (retirado, tag `python-final`)
 
-Runbook del stack Python (Fase 15), sin cambios de contenido. Se conserva para volver atrás si el backend .NET falla
-en producción. **No usarlo para el backend .NET.**
+El stack Python (orquestador, servidor MCP, `shared/`, Postgres y MinIO) se retiró del repositorio en HU-022.1 (#146),
+por decisión del usuario del 2026-10-13: "todo lo referente a python muere en este repo". Ya no es destino de rollback
+desde este repositorio.
 
-> **Ojo con el rollback (HU-013.9, #105).** Volver al Python reabre Google Chat y la creación de cotizaciones por chat, sin
-> formulario ni costeo en Nexo, en contra de la decisión del 2026-10-05 (ADR-018: Cotifly es un módulo de formularios dentro
-> de ClientePro). Solo se justifica como contingencia temporal y con aprobación explícita del negocio.
-
-> **Qué corre hoy:** el stack Python desplegado en Dokploy es `deploy/docker-compose.swarm.yml` (proyecto
-> `bot-cotizador`, anclado al worker, orquestador en `10.10.40.31:8091` sin TLS, imágenes construidas en el worker con
-> `deploy/rebuild-on-worker.sh`). Es el destino del rollback (§4.5 paso 7). Lo que sigue (A.1 a A.9) describe el
-> diseño con `infra/stack.staging.yml`/`infra/stack.dokploy.yml`, que **no** se llegó a desplegar. Esos manifiestos, el
-> código Python y `scripts/backup_db.sh`/`restore_db.sh` se borraron en HU-022.1 (#146); quedan en el tag `python-final`.
-
-### A.1 Topología
-
-```
-Internet ──TLS──> Traefik ──> bot-orquestador ─┐   (red web/Traefik + red interna)
-                                               ├── bot-mcp     (SOLO red interna)
-                                               └── bot-db      (SOLO red interna)
-```
-
-- **bot-orquestador** — único servicio expuesto (Traefik/TLS): recibe el webhook de
-  Chat y sirve `/pdfs/{folio}.pdf`. Habla con el MCP por la red interna.
-- **bot-mcp** — las 7 herramientas. **No expuesto a internet** (sin `ports`, sin
-  labels de Traefik; solo la red overlay `interna`).
-- **bot-db** — SQL Server 2019 con volumen persistente; solo red interna. **Nota
-  (HU-002.4, 2026-09-22):** esto describe el manifiesto local (`docker-compose.yml`,
-  ya actualizado a `mcr.microsoft.com/mssql/server:2019-latest`). `infra/stack.
-  staging.yml`/`infra/stack.dokploy.yml` (el manifiesto real de Dokploy) **todavía
-  no se actualizaron** — siguen definiendo Postgres. El manifiesto que corre hoy es
-  `deploy/docker-compose.swarm.yml` (Postgres, anclado al worker, `mode: host` 8091).
-
-Manifiesto: `infra/stack.staging.yml` (borrado en HU-022.1; está en el tag `python-final`).
-
-### A.2 Decisión de red (cierre F15)
-
-El Orquestador usa el **runner-puente**: declara las herramientas del MCP al LLM
-(agnóstico vía LiteLLM: Gemini/Anthropic/OpenAI según `LLM_MODEL`) y ejecuta cada
-`tool_call` contra el **MCP interno por Streamable HTTP con bearer**
-(`MCP_URL=http://bot-mcp:8080/mcp/`, `MCP_AUTH_TOKEN`). Se descartó el *MCP
-connector directo* porque el puente da control total de auditoría/registro y no
-requiere exponer el MCP. En dev/tests `MCP_URL` queda vacío y el runner usa el MCP
-**in-process**.
-
-### A.3 Secretos (variables de entorno de Dokploy)
-
-| Variable | Servicio | Descripción |
-|---|---|---|
-| `MSSQL_SA_PASSWORD` / `MSSQL_DB` | todos | credenciales de la BD (SQL Server, HU-002.4 — reemplaza `POSTGRES_USER/PASSWORD/DB`; usuario fijo `sa`) |
-| `MCP_AUTH_TOKEN` | mcp, orquestador | bearer compartido del MCP interno |
-| `LLM_MODEL` / `LLM_API_KEY` | orquestador | LLM agnóstico (LiteLLM): proveedor + clave |
-| `GCHAT_PROJECT_NUMBER` | orquestador | audience del JWT del webhook |
-| `GCHAT_SUPPORT_SPACE` | orquestador | space para alertas de error |
-| `GOOGLE_SA_JSON` | mcp, orquestador | ruta al service account (Drive lectura + Chat publicar) |
-| `SMTP_HOST/PORT/USER/PASS/FROM` | mcp | envío de la cotización |
-| `PDF_BASE_URL` | mcp, orquestador | base pública de los links a PDF |
-| `PUBLIC_HOST` | orquestador (label) | dominio del webhook/PDFs |
-| `REGISTRY` / `TAG` | build | registro e imagen |
-
-El `GOOGLE_SA_JSON` se monta como *secret*/config de Dokploy en la ruta indicada.
-
-### A.4 Google Cloud (una sola vez)
-
-1. Habilitar **Google Chat API** en el proyecto.
-2. Crear la **app de Chat** → conexión por **HTTP endpoint** apuntando a
-   `https://<PUBLIC_HOST>/chat/events`. Anotar el **número de proyecto**
-   (`GCHAT_PROJECT_NUMBER`, audience del JWT).
-3. Crear un **service account** con **delegación de dominio** y scopes:
-   - `https://www.googleapis.com/auth/chat.bot` (publicar en Chat),
-   - `https://www.googleapis.com/auth/drive.readonly` (leer el tarifario en Drive).
-   Descargar el JSON y cargarlo como secreto (`GOOGLE_SA_JSON`).
-4. Crear un **space de soporte** e invitar al bot → su `name` va en `GCHAT_SUPPORT_SPACE`.
-
-### A.5 Desplegar
-
-```bash
-# Build & push de las imágenes (o dejar que Dokploy las construya del repo).
-docker build -t $REGISTRY/bot-cotizador-mcp:$TAG          -f mcp_server/Dockerfile .
-docker build -t $REGISTRY/bot-cotizador-orquestador:$TAG  -f orquestador/Dockerfile .
-docker push $REGISTRY/bot-cotizador-mcp:$TAG
-docker push $REGISTRY/bot-cotizador-orquestador:$TAG
-```
-
-En Dokploy: crear el stack desde `infra/stack.staging.yml` (tag `python-final`), cargar las variables
-del §A.3 y desplegar. Las **migraciones corren solas**: el entrypoint del orquestador
-ejecuta `alembic upgrade head` antes de arrancar (idempotente), incluida la vista
-`v_ajustes_margen_por_comercial` para Gerencia (F15).
-
-En el clúster actual se usa `deploy/docker-compose.swarm.yml` con imágenes construidas
-en el worker por `deploy/rebuild-on-worker.sh` y "Redeploy" en Dokploy.
-
-### A.6 Verificaciones de humo (DoD F15)
-
-1. **Health tras Traefik:** `curl https://<PUBLIC_HOST>/health` → `200 {"status":"ok"}`.
-   Readiness (BD): `curl https://<PUBLIC_HOST>/health/ready` → `200 {"status":"ready"}`.
-2. **MCP no alcanzable desde internet:** no debe existir ruta pública a `bot-mcp`.
-   Verificar que `bot-mcp` no está en la red `web` (`docker service inspect` no
-   muestra labels de Traefik ni puertos publicados). Un `curl` externo al MCP debe fallar.
-3. **Webhook con evento firmado real:** postear un mensaje en el space de pruebas de
-   Chat; el bot responde con la card de previsualización en el hilo (ACK < 30 s).
-4. **Piloto E2E:** 2–3 comerciales cotizan de punta a punta (previsualización →
-   ajuste → PDF → envío). Verificar trazabilidad en BD (§A.7).
-
-### A.7 Trazabilidad para Gerencia
-
-Vista de solo lectura (HU-002.4: `dbo_cotifly.vAjustesMargenPorComercial` en SQL
-Server, ver `db/migrations_mssql/0001_script_bd_cotifly_sqlserver.sql` — equivalente a la
-`v_ajustes_margen_por_comercial` de la migración 0003 de Postgres):
-
-```sql
-SELECT * FROM dbo_cotifly.vAjustesMargenPorComercial
-ORDER BY numAjustes DESC;   -- ajustes de margen por comercial y línea
-```
-
-Alertas de error del worker: se publican en `GCHAT_SUPPORT_SPACE` automáticamente.
-
-### A.8 Backup / restore de bot-db
-
-> Los dos scripts se borraron en HU-022.1 (#146); quedan en el tag `python-final`.
-
-```bash
-# Backup (programar como tarea diaria de Dokploy o cron del host):
-DB_HOST=bot-db BACKUP_DIR=/backups sh scripts/backup_db.sh
-
-# Restore desde un backup:
-DB_HOST=bot-db sh scripts/restore_db.sh /backups/botcotizador-YYYYmmdd-HHMMSS.bak
-```
-
-Ambos scripts leen `MSSQL_SA_PASSWORD`/`MSSQL_DB` del entorno del servicio db
-(HU-002.4 — reemplaza `POSTGRES_USER/PASSWORD/DB`, usuario fijo `sa`). El restore
-requiere que nadie tenga la base abierta — ver la nota de `SINGLE_USER` dentro de
-`scripts/restore_db.sh`. Aplican solo al SQL Server en contenedor del manifiesto local;
-no sirven para la instancia corporativa (`sa` no está disponible ahí).
-
-### A.9 Rollback
-
-- Redeploy de la imagen anterior (`TAG` previo) desde Dokploy.
-- Las migraciones son aditivas; si una versión introduce una migración incompatible,
-  usar `alembic downgrade <rev>` desde un contenedor del orquestador antes de bajar imagen.
-- **Volver del backend .NET al Python** (redesplegar este stack, reapuntar la app de Google Chat, escalar a 0 el
-  servicio .NET, datos de SQL Server no visibles para el Python): ver §4.5, paso 7.
+- **Dónde quedó:** el tag `python-final` guarda el último estado completo: el código, `deploy/docker-compose.swarm.yml`
+  (el stack que corre en Dokploy, proyecto `bot-cotizador`, puerto 8091 del worker), `deploy/rebuild-on-worker.sh`,
+  `infra/stack.dokploy.yml`, `infra/stack.staging.yml`, los scripts de respaldo y la versión completa de este anexo
+  (runbook de la Fase 15). Para consultarlo: `git show python-final:DEPLOY.md`.
+- **Lo que sigue desplegado:** el stack Python en Dokploy no se tocó desde aquí. Apagarlo, rotar sus credenciales por
+  defecto y deshabilitar la app de Google Chat son acciones de infraestructura con confirmación aparte (§7).

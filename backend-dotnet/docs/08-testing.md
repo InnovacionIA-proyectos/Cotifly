@@ -226,6 +226,9 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 
 ## 8.8 Paridad con el Python
 
+> **Histórico. HU-003.9 (#15) cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar.** Esta sección queda como trazabilidad: los `test_*.py` que cita
+> están en el tag `python-final`.
+
 > Las filas del agente conversacional y de Google Chat (`clsAgenteRunnerTests`, `clsInyeccionEstadoTests`, `clsGoogleChat*Tests`, `clsChatEventosEndpointTests`, `chat_slot_filling.feature`, `google_chat.feature`, `chat_web.feature`) son históricas: esas pruebas se borraron con el retiro de HU-013.9 (#105) y el comportamiento del Python que verificaban ya no existe en Cotifly.
 
 - **Paridad con el Python (#10, #13).** Cada caso de `tests/test_precio.py` y `tests/test_margen.py` tiene su prueba .NET (el comentario sobre cada prueba nombra el test de origen):
@@ -340,7 +343,7 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 | Documento | Para qué | Estado |
 |---|---|---|
 | [qa/regresion-manual.md](qa/regresion-manual.md) | Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaciones, envío de correo) contra el backend .NET desplegado en pruebas (HU-003.8) | Pendiente: la ejecuta Kevin (QA) |
-| [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md) | Al menos 10 casos reales comparados entre el Python y el .NET, y prueba de los endpoints `/web/*` con Postman (HU-003.9, #15) | Plantilla lista; la define y ejecuta Kevin (QA) |
+| [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md) | Al menos 10 casos reales comparados entre el Python y el .NET, y prueba de los endpoints `/web/*` con Postman (HU-003.9, #15) | Cerrada por decisión del usuario (2026-10-13): el Python se retiró; la plantilla queda como histórico |
 
 ## 8.10 Licitaciones desde Excel (HU-011, ADR-017)
 

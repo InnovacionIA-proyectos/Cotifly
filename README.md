@@ -1,57 +1,25 @@
-# Bot Cotizador — MCP Server + API Orquestador
+# Cotifly — Bot cotizador de Botero Soto
 
-Servicio productivo del Bot Cotizador de Botero Soto. Convierte una solicitud de
-cotización de flete (Google Chat) en una cotización en PDF con el margen de la
-política aplicado, y la envía al cliente previa confirmación del comercial.
+Backend de Cotifly: un comercial captura la solicitud de cotización de flete en la consola web de ClientePro, Nexo la
+costea, el backend resuelve margen y precio, arma el PDF y lo envía. El backend vigente es **.NET 10**
+(`backend-dotnet/`). El bot anterior en Python (orquestador, servidor MCP y Google Chat) se retiró del repositorio en
+HU-022.1 (#146); su último estado vive en el tag `python-final`.
 
-Base de arquitectura: `../ARQUITECTURA-BOT-COTIZADOR.md` (v1.1).
-Plan de construcción por fases: `../PLAN-DESARROLLO-BOT-COTIZADOR.md`.
+> Corrección mínima de HU-022.1. La reescritura completa de este índice queda para la parte 4 de HU-022.1.
 
 ## Estructura
 
 ```
-bot-cotizador/
-  orquestador/     API Orquestador (FastAPI): webhook Chat, sesiones, loop agéntico
-  mcp_server/      MCP Server (FastMCP): 7 herramientas de negocio
-  shared/          Config y modelos compartidos
-  infra/           Manifiestos de despliegue (Dokploy)
-  tests/           Pruebas + fixtures
+backend-dotnet/   Backend .NET 10 (Clean Architecture): código, pruebas, specs y documentación
+db/               Esquema dbo_cotifly (SQL Server 2019): scripts, migraciones y seeders
+docs/             Documentación funcional: base de datos, conexión con Nexo, frontend y backlog
+infra/            Manifiestos de Swarm/Dokploy del backend .NET
+scripts/          Utilidades del repositorio (verificador de enlaces de los .md)
 ```
 
-> El paquete del MCP se llama `mcp_server` (no `mcp`) para no sombrear al SDK `mcp`/`fastmcp`.
+## Dónde seguir
 
-## Decisiones vigentes de esta etapa
-
-- **SAP TM:** se trabaja sobre el **export JSON** (`SAP_TM_MODO=export_json`). La
-  conexión OData en vivo se activa después cambiando la configuración.
-- **Tarifario:** fuente = **archivos planos en Google Drive**
-  (`DriveFlatFileProvider`). La conexión por **API Fletes queda diferida a futuro**.
-
-## Puesta en marcha (local)
-
-```bash
-cp .env.example .env          # ajustar valores
-docker compose up --build     # levanta postgres + mcp + orquestador
-curl http://localhost:8000/health
-```
-
-## Desarrollo y pruebas
-
-Requiere **Python 3.12**.
-
-```bash
-python -m venv .venv && . .venv/Scripts/activate   # Windows
-pip install -e ".[dev]"
-ruff check . && mypy shared orquestador mcp_server
-pytest
-```
-
-Las pruebas contra sistemas reales están marcadas y no corren por defecto:
-`pytest -m "not (sap or drive or smtp or llm)"` (comportamiento por defecto de CI).
-
-## Convención del tarifario temporal (Fase 3A)
-
-Una carpeta de Drive por línea de negocio; archivos
-`tarifario_<linea>_<AAAA-MM>.csv` con encabezados normalizados
-(`origen, destino, tipo_vehiculo, tarifa, vigencia`). El `DriveFlatFileProvider`
-cachea localmente con TTL de 6 h.
+- Backend .NET (ejecución local, pruebas, arquitectura): [`backend-dotnet/README.md`](backend-dotnet/README.md).
+- Documentación funcional: [`docs/README.md`](docs/README.md).
+- Base de datos: [`BASE_DE_DATOS.md`](BASE_DE_DATOS.md) y [`db/README.md`](db/README.md).
+- Despliegue: [`DEPLOY.md`](DEPLOY.md).

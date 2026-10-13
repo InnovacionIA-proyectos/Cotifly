@@ -8,9 +8,9 @@ Contrato congelado que consume el módulo Angular de ClientePro (HU-004, `client
 
 ## 1. Punto de partida
 
-En el backend Python, de los 5 endpoints `/web/*` solo `POST /web/chat` funciona hoy. `/web/login`, `/web/mis-cotizaciones`, `/enviar` y `/seguimiento` responden 501 desde HU-002.2, porque no hay identidad real sin ClientePro. Por eso este contrato no se capturó de un backend en producción. Se reconstruyó así:
+En el backend Python (retirado en HU-022.1), de los 5 endpoints `/web/*` solo `POST /web/chat` funcionaba. `/web/login`, `/web/mis-cotizaciones`, `/enviar` y `/seguimiento` respondían 501 desde HU-002.2, porque no hay identidad real sin ClientePro. Por eso este contrato no se capturó de un backend en producción. Se reconstruyó así:
 
-- `POST /web/chat`: del código actual (`orquestador/web.py`), sin cambios de forma.
+- `POST /web/chat`: del código del Python de entonces (`orquestador/web.py`, hoy solo en el tag `python-final`), sin cambios de forma.
 - `mis-cotizaciones`, `enviar`, `seguimiento`: de la última versión funcional antes del 501 (commit `88884ad^`), con los campos renombrados en HU-002.2 (`efectiva`/`nota` → `ganada`/`motivo_rechazo`; `comercial_email` → identidad por token).
 - `/web/login` se reemplaza por `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
 - Endpoints nuevos pedidos en HU-003.5, HU-003.6, HU-004.9 y HU-010.1.

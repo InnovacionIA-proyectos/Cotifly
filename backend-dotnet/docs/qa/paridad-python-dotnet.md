@@ -2,7 +2,7 @@
 
 Plantilla para el plan y la ejecución de las pruebas de paridad. La define y la ejecuta Kevin (QA). La aprobación explícita de QA queda en el issue #15 antes de que HU-006 considere el backend .NET listo para producción.
 
-- Estado: **plantilla; casos por definir con datos reales**.
+- Estado: **Cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar.** No se ejecuta; queda como histórico.
 - Responsable: Kevin (QA). Soporte: Duban (backend).
 
 > **Nota (HU-013.9, #105).** Documento histórico de la migración. Google Chat y el agente cotizador conversacional se retiraron del backend .NET en HU-013.9: los casos de Google Chat y los de cotizar conversando por `POST /web/chat` ya no aplican (hoy `/web/chat` es el asistente por folio y sin `folio` responde 400 `FOLIO_REQUERIDO`; `/chat/events` responde 404).

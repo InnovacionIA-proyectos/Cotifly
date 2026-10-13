@@ -39,11 +39,11 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | [5. Stack](docs/05-stack.md) | Tecnologías, paquetes NuGet con versión y licencia, imágenes |
 | [6. Ejecución local](docs/06-ejecucion-local.md) | Scripts de entorno local, build y pruebas en el SDK, imagen, IDE |
 | [7. API](docs/07-api.md) | Endpoints, autenticación, errores, ejemplos y límites (el detalle está en `specs/openapi.yaml` y `docs/docs_front/CONTRATO_API_WEB.md`) |
-| [8. Testing](docs/08-testing.md) | Pirámide, proyectos, traits, comandos, Testcontainers, Reqnroll, cobertura, CI y paridad con el Python |
+| [8. Testing](docs/08-testing.md) | Pirámide, proyectos, traits, comandos, Testcontainers, Reqnroll, cobertura, CI y paridad con el Python (histórica) |
 | [9. Estructura del proyecto](docs/09-estructura-del-proyecto.md) | Árbol de carpetas y dónde va cada cosa |
 | [10. Operación](docs/10-operacion.md) | Salud, logs, métricas, depuración sin shell, riesgos, decisiones pendientes, activación y problemas frecuentes |
 | [QA: regresión manual](docs/qa/regresion-manual.md) | Casos de los 3 flujos principales para la ronda de Kevin (HU-003.8) |
-| [QA: paridad Python vs .NET](docs/qa/paridad-python-dotnet.md) | Plantilla de HU-003.9 (#15) |
+| [QA: paridad Python vs .NET](docs/qa/paridad-python-dotnet.md) | HU-003.9 (#15): cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar. Se conserva como histórico |
 | [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-012 |
 
 ## Convenciones en una línea

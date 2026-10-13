@@ -1,9 +1,9 @@
 # =============================================================================
 # Stack de STAGING para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
 #
-# Equivale, para el backend .NET, al antiguo infra/stack.staging.yml (Python, nunca desplegado, borrado en HU-022.1). El stack Python
-# que corre hoy es deploy/docker-compose.swarm.yml (destino del rollback, DEPLOY.md §4.5 paso 7); ambos se conservan
-# sin cambios hasta validar producción (corte único, ADR-001). Decisiones: ADR-013.
+# Equivale, para el backend .NET, al antiguo infra/stack.staging.yml (Python, nunca desplegado). Todo el Python, incluido
+# el manifiesto del stack que corre hoy en Dokploy, se borró del repositorio en HU-022.1 (#146) y vive en el tag
+# python-final. Decisiones: ADR-013.
 # Runbook: DEPLOY.md §5. NO desplegar sin aprobación: la prueba en staging está pendiente (HU-006.6).
 #
 # Topología:

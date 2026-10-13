@@ -1,10 +1,9 @@
 # =============================================================================
 # Stack de PRODUCCIÓN para Dokploy (Docker Swarm) — backend .NET 10 de Cotifly (HU-006.6, #30).
 #
-# Reemplaza, para el backend .NET, al stack Python que CORRE HOY en Dokploy: deploy/docker-compose.swarm.yml (proyecto
-# bot-cotizador, anclado al worker, puerto 8091 en modo host). Ese archivo se conserva sin cambios para el rollback
-# hasta validar producción (corte único, ADR-001; DEPLOY.md §4.5 paso 7). El manifiesto "ideal" del Python que nunca se
-# desplegó (infra/stack.dokploy.yml) se borró en HU-022.1 (#146); no era destino de rollback.
+# Reemplaza, para el backend .NET, al stack Python que CORRE HOY en Dokploy (proyecto bot-cotizador, anclado al worker,
+# puerto 8091 en modo host). Su manifiesto (deploy/docker-compose.swarm.yml) y el resto del Python se borraron del
+# repositorio en HU-022.1 (#146) y viven en el tag python-final; ya no hay rollback al Python desde aquí (DEPLOY.md §4.5).
 # Decisiones: ADR-013. Runbook: DEPLOY.md §5.
 # Mismo contenido que infra/stack.dotnet.staging.yml salvo: sin puerto en modo host (solo Traefik con TLS),
 # start-first, nombres propios (volumen, secreto, router) y ASPNETCORE_ENVIRONMENT fijo en Production.
