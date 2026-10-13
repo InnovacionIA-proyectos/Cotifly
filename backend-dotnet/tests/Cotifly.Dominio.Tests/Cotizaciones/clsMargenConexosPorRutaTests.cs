@@ -17,6 +17,40 @@ public sealed class clsMargenConexosPorRutaTests
 
     private static clsCotizacionSolicitud TresRutas() => clsCotizacionMuestra.LicitacionCosteada([850_000m, 1_700_000m, 425_000m]);
 
+    // ------------------------------------------------------------------ Margen SAP anómalo (HU-009, #139)
+
+    [Fact]
+    public void UnMargenSapAnomaloQuedaMarcadoPeroNoSeAplicaNiEsElSugerido()
+    {
+        var ruta = clsCotizacionMuestra.Costeada().PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, 0.15m, OrigenMargen.PoliticaLinea, "margen");
+
+        ruta.RegistrarMargenSapAnomalo(0.75m);
+
+        ruta.MargenSapAnomalo.Should().BeTrue();
+        ruta.MargenSAPSugerido.Should().Be(0.75m, "el valor de SAP queda visible");
+        ruta.MargenAplicado.Should().Be(0.15m);
+        ruta.OrigenMargen.Should().Be(OrigenMargen.PoliticaLinea);
+        ruta.SugeridoVigente.Should().Be(0.15m, "la justificación se mide contra la política, no contra el 75 %");
+        ruta.MargenSugeridoMostrado.Should().Be(0.15m);
+        ruta.OrigenMargenSugerido.Should().Be(OrigenMargen.PoliticaLinea);
+    }
+
+    [Theory]
+    [InlineData(0.30)]
+    [InlineData(0)]
+    [InlineData(0.6)]
+    public void UnMargenSapDentroDelRangoNoSeMarcaAnomalo(decimal margen)
+    {
+        var ruta = clsCotizacionMuestra.Costeada().PrimeraRuta!;
+        ruta.RegistrarMargenCosteo(0.15m, margen, OrigenMargen.SapTm, "margen");
+
+        ruta.MargenSapAnomalo.Should().BeFalse();
+        ruta.SugeridoVigente.Should().Be(margen);
+        var marcar = () => ruta.RegistrarMargenSapAnomalo(margen);
+        marcar.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     // ------------------------------------------------------------------ Ruta indicada
 
     [Fact]
