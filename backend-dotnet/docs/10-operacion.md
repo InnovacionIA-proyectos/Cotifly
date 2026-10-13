@@ -278,7 +278,11 @@ Consulta de solo lectura para el DBA en `dbSolucionesTI_Prueba`:
 
 **Al cambiar de base en un ambiente con usuarios** (QA): seguir los pasos de [`DEPLOY.md`](../../DEPLOY.md#identidad-compartida-con-nexo-172).
 Hay que dar permisos a `cotifly_app`, revisar `Roles.idRolExterno` contra los `IDROLES` de la base nueva y soltar una vez los
-vínculos `UsuariosWeb.idUsuarioExterno` viejos (si no, el login responde 401 `identidad_inconsistente`). Todo con aprobación.
+vínculos `UsuariosWeb.idUsuarioExterno` viejos (si no, el login responde 401 `identidad_inconsistente`) con
+[`db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql`](../../db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql),
+en la misma ventana del cambio de la variable: con el servicio detenido, o justo después del cambio y antes de que entren usuarios.
+El siguiente login o refresh de cada persona la vincula al nuevo `ID` (pruebas `clsIdentidadPortalNexoTests` y
+`clsRevincularIdentidadScriptTests`). Todo con aprobación.
 **Pendiente externo:** Nexo QA debe configurar `ConnectionStrings:IdentidadPortal`.
 
 ## 10.9 Problemas frecuentes

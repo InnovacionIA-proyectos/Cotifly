@@ -19,7 +19,7 @@ public sealed record clsSesionEmitida(string Access, string Refresh, clsUsuarioS
 public sealed record clsSolicitudLogout(string? Refresh, string? Jti = null, DateTimeOffset? AccesoExpiraAt = null, Guid? UsuarioId = null);
 
 /// <summary>
-/// Persona del almacén corporativo (<c>dbsolucionesti.tblSAPUsuariosApp</c>, solo lectura). Nunca trae <c>CLAVE</c>.
+/// Persona del almacén corporativo (<c>tblSAPUsuariosApp</c> de la base de identidad del portal, la misma de Nexo; QA: <c>dbSolucionesTI_Prueba</c>, #172; solo lectura). Nunca trae <c>CLAVE</c>.
 /// <see cref="IdUsuarioExterno"/> es el <c>ID</c> (NUMERIC sin decimales) convertido a <see cref="long"/>.
 /// </summary>
 public sealed record clsUsuarioExterno(long IdUsuarioExterno, string NombreUsuario, string? NombreCompleto, string? Email);

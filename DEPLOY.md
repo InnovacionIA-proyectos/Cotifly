@@ -170,11 +170,16 @@ la aprobación del usuario.
 |---|---|---|---|
 | `ConnectionStrings__Identidad` | `Database=dbSolucionesTI_Prueba` (el resto de la cadena igual: `cotifly_app`, `Encrypt=True`) | la base de identidad que use Nexo en producción (**por confirmar**) | secreto de Dokploy; solo cambia el `Database` |
 
-Antes de redesplegar, en este orden:
+En este orden (los pasos 1 y 2 antes de la ventana; el 3 dentro de ella):
 
 1. **DBA, en `dbSolucionesTI_Prueba`:** usuario `cotifly_app` con `SELECT` por columna sobre `dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL)` (sin `CLAVE`), `dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES)` y `dbo.tblSAPRoles (IDROLES, DESCRIPCION)`. Confirmar con `sys.columns` las columnas que lista [10-operacion](backend-dotnet/docs/10-operacion.md#identidad-compartida-con-nexo-172).
 2. **DBA, en `dbo_cotifly.Roles`:** revisar que `idRolExterno` de `comercial` y `gerente_comercial` sean los `IDROLES` de `dbSolucionesTI_Prueba.dbo.tblSAPRoles` (pueden no ser los de `dbsolucionesti`). Si no coinciden, nadie entra (401 `sin_rol_autorizado`).
-3. **DBA, en `dbo_cotifly.UsuariosWeb` de QA:** los usuarios que ya entraron quedaron vinculados al `ID` de `dbsolucionesti`. Con la base nueva, el login los rechaza (401 `identidad_inconsistente`). Hay que soltar el vínculo una vez, con aprobación: `UPDATE dbo_cotifly.UsuariosWeb SET idUsuarioExterno = NULL WHERE idUsuarioExterno IS NOT NULL;`. En su siguiente login o refresh cada persona queda vinculada al `ID` del portal; hasta entonces, sus llamadas a Nexo no llevan identidad.
+3. **Ventana del cambio (con aprobación), en `dbo_cotifly.UsuariosWeb` de QA:** los usuarios que ya entraron quedaron vinculados al `ID` de `dbsolucionesti`; con la base nueva el login los rechaza (401 `identidad_inconsistente`). Hay que soltar el vínculo una vez con [`db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql`](db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql) (respalda los pares `id`/`idUsuarioExterno` en `dbo_cotifly.RespaldoVinculosIdentidad_172`, los pone en NULL, es idempotente y trae la consulta de verificación; `sqlcmd -I -b`). **Orden dentro de la ventana:**
+   1. Detener el servicio (escalar a 0 réplicas en Dokploy) o, como mínimo, cambiar primero `ConnectionStrings__Identidad` y redesplegar.
+   2. Correr el script **con el servicio detenido, o justo después del cambio de variable y antes de que entren usuarios.** Si corre mientras la API sigue con la configuración vieja (`dbsolucionesti`), el siguiente login vuelve a vincular el `ID` viejo (dguerra: 430) y el cambio queda a medias.
+   3. Levantar el servicio con la variable nueva.
+
+   En su siguiente login o refresh cada persona queda vinculada al `ID` del portal; hasta entonces, sus llamadas a Nexo no llevan identidad.
 4. **Pendiente externo:** Nexo QA debe configurar su `ConnectionStrings:IdentidadPortal`. Sin ella, Nexo QA valida contra su tabla `Usuarios` local.
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
