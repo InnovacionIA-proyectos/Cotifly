@@ -671,7 +671,21 @@ public sealed class clsReSolicitudCosteoServiceTests
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
-        resultado.Error.Detalle.Should().Be("LICITACION");
+        resultado.Error.Detalle.Should().Be(clsReSolicitudCosteoService.MotivoVariasRutas, "D9 (#139): es un formulario de varias rutas, no una licitación");
+        resultado.Error.Mensaje.Should().Contain("tiene 2 rutas").And.NotContain("licitación");
+    }
+
+    [Fact]
+    public async Task UnaLicitacionDeVariasRutasNoAdmiteCambiosDeCargaYElMotivoLoDice()
+    {
+        var licitacion = VencidaDeDosRutas();
+        var cambios = new clsCambiosCarga { Presentes = new HashSet<string> { clsCambiosCarga.CampoPesoKg }, PesoKg = 1000m };
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
+        resultado.Error.Detalle.Should().Be(clsReSolicitudCosteoService.MotivoLicitacion);
+        resultado.Error.Mensaje.Should().Contain("es una licitación de 2 rutas");
     }
 
     [Fact]

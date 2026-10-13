@@ -1,0 +1,34 @@
+# =============================================================================
+# Enlaces de la documentación (HU-021.14, #141): verifica que todos los enlaces relativos de los .md versionados
+# apunten a un archivo o carpeta que existe. Script: scripts/verificar_enlaces_md.py (sin dependencias; Python 3).
+# En local: python scripts/verificar_enlaces_md.py [carpeta ...]
+# =============================================================================
+name: docs-enlaces
+
+on:
+  push:
+    branches: [QA, main]
+    paths:
+      - '**/*.md'
+      - 'scripts/verificar_enlaces_md.py'
+      - '.github/workflows/docs-enlaces.yml'
+  pull_request:
+    branches: [QA, main]
+    paths:
+      - '**/*.md'
+      - 'scripts/verificar_enlaces_md.py'
+      - '.github/workflows/docs-enlaces.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  enlaces:
+    name: Enlaces relativos de los .md
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verificar enlaces
+        run: python3 scripts/verificar_enlaces_md.py

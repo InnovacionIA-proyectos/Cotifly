@@ -666,11 +666,23 @@ public sealed class clsLineaSolicitud
     /// Margen sugerido vigente para la regla de la justificación: el de SAP TM si aplicó, si no el de la política de su línea; sin
     /// ninguno (filas viejas), el aplicado si nadie lo ajustó.
     /// </summary>
-    public decimal? SugeridoVigente => MargenSAPSugerido ?? MargenPoliticaSugerido
+    public decimal? SugeridoVigente => MargenSapValido ?? MargenPoliticaSugerido
         ?? (OrigenMargen == Margen.OrigenMargen.Negociado ? null : MargenAplicado);
 
+    /// <summary>
+    /// HU-009 (#139, B1): ¿el margen que propuso SAP TM para la ruta está fuera de [0, 60 %] (<see cref="clsReglasMargen.EsAnomalo"/>)? Se
+    /// guarda en <see cref="MargenSAPSugerido"/> para que quede visible, pero no se aplica ni cuenta como sugerido: la ruta usa el de la
+    /// política de su línea (<see cref="RegistrarMargenSapAnomalo"/>).
+    /// </summary>
+    public bool MargenSapAnomalo => MargenSAPSugerido is { } sap && clsReglasMargen.EsAnomalo(sap);
+
+    /// <summary>Sugerido que se muestra al comercial: el de SAP TM si no es anómalo, si no el de la política de la línea.</summary>
+    public decimal? MargenSugeridoMostrado => MargenSapValido ?? MargenPoliticaSugerido;
+
+    private decimal? MargenSapValido => MargenSapAnomalo ? null : MargenSAPSugerido;
+
     /// <summary>Fuente del sugerido vigente: <c>sap_tm</c> o <c>politica_linea</c> (nunca <c>negociado</c>).</summary>
-    public OrigenMargen? OrigenMargenSugerido => MargenSAPSugerido is not null ? Margen.OrigenMargen.SapTm
+    public OrigenMargen? OrigenMargenSugerido => MargenSapValido is not null ? Margen.OrigenMargen.SapTm
         : MargenPoliticaSugerido is not null ? Margen.OrigenMargen.PoliticaLinea
         : OrigenMargen is Margen.OrigenMargen.SapTm or Margen.OrigenMargen.PoliticaLinea && MargenAplicado is not null ? OrigenMargen
         : null;
@@ -701,6 +713,21 @@ public sealed class clsLineaSolicitud
         MargenAplicado = margenAplicado;
         OrigenMargen = origen;
         MetodoCalculo = metodo;
+    }
+
+    /// <summary>
+    /// HU-009 (#139, B1): SAP TM propuso para la ruta un margen anómalo (fuera de [0, 60 %]). Se llama DESPUÉS de registrar el margen de la
+    /// política de la línea (<see cref="RegistrarMargenCosteo"/> o <see cref="RefrescarMargenSugerido"/>): deja el valor de SAP en
+    /// <see cref="MargenSAPSugerido"/> como marca visible (<see cref="MargenSapAnomalo"/>) sin aplicarlo ni usarlo como sugerido.
+    /// </summary>
+    public void RegistrarMargenSapAnomalo(decimal margenSap)
+    {
+        if (!clsReglasMargen.EsAnomalo(margenSap))
+        {
+            throw new ArgumentOutOfRangeException(nameof(margenSap), margenSap, "Solo un margen de SAP TM fuera de [0, 0,6] es anómalo.");
+        }
+
+        MargenSAPSugerido = margenSap;
     }
 
     /// <summary>

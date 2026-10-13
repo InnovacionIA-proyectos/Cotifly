@@ -1980,7 +1980,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -4285,6 +4285,15 @@ components:
           description: |
             Decisión 10 (HU-021.9). Aviso cuando algún conexo de la ruta quedó `incierto` o `fallido_definitivo` en su envío a Nexo
             (el comercial o la Mesa deben revisarlo en Nexo); `null` si no hay nada que revisar. Solo en `GET .../costeo`.
+        margen_sap_anomalo:
+          type: boolean
+          description: |
+            HU-009 (#139). SAP TM propuso para la ruta un margen fuera de [0, 60 %] ("anómalo"): no se aplicó, la ruta usa el margen de
+            la política de su línea (`origen_margen = politica_linea`) y `margen_sugerido` es el de la política.
+        aviso_margen:
+          type: string
+          nullable: true
+          description: HU-009 (#139). Aviso al comercial cuando `margen_sap_anomalo` es `true` (con el margen que propuso SAP TM); `null` si no.
         linea_orden:
           type: integer
           minimum: 1
@@ -4312,7 +4321,10 @@ components:
         margen_sugerido:
           type: number
           nullable: true
-          description: Sugerido de la ruta (`margenSAPSugerido` o, si no hay, `margenPoliticaSugerido`). Por debajo, el ajuste exige justificación.
+          description: |
+            Sugerido de la ruta (`margenSAPSugerido` o, si no hay, `margenPoliticaSugerido`). Por debajo, el ajuste exige justificación.
+            Si SAP TM propuso un margen anómalo (fuera de [0, 60 %] tras redondearlo a 4 decimales; `margen_sap_anomalo = true`), el
+            sugerido es el de la política de la línea, no el de SAP.
         origen_margen:
           type: string
           nullable: true
@@ -5004,7 +5016,7 @@ components:
             true` (apagada por defecto) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
             `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
             tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
-            valor no se usa. Cuando el cubicador exista, la bandera se apaga y el campo se retira.
+            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). Cuando el cubicador exista, la bandera se apaga y el campo se retira.
         carroceria:
           type: string
           nullable: true

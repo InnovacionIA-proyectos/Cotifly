@@ -30,12 +30,16 @@ on:
     paths:
       - 'backend-dotnet/**'
       - 'db/migrations_mssql/**'
+      - 'db/scripts/**'
+      - 'db/seeder/**'
       - '.github/workflows/backend-dotnet.yml'
   pull_request:
     branches: [QA, main]
     paths:
       - 'backend-dotnet/**'
       - 'db/migrations_mssql/**'
+      - 'db/scripts/**'
+      - 'db/seeder/**'
       - '.github/workflows/backend-dotnet.yml'
   workflow_dispatch:
 

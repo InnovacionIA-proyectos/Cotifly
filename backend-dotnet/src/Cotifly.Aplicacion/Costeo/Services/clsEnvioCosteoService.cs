@@ -816,16 +816,48 @@ public sealed class clsEnvioCosteoService(
                 continue;
             }
 
+            // #139: el margen de SAP se redondea a la precisión de la columna (decimal(9,4), half-to-even como los demás márgenes) ANTES de
+            // evaluar si es anómalo: lo que se evalúa es lo que se guarda (60,004 % → 0,6000, válido; -0,004 % → 0, válido).
+            var margenSalida = origen == OrigenMargen.SapTm ? MargenDeColumna(resuelto.Salida.Margen) : resuelto.Salida.Margen;
+
+            // HU-009 (#139, B1): un margen de SAP TM fuera de [0, 60 %] no se aplica a ciegas: la ruta usa el de la política de su línea y
+            // el de SAP queda marcado como anómalo (visible en GET .../costeo con un aviso). Vale para la captura, la licitación, la
+            // re-solicitud y la versión nueva, que pasan todas por aquí.
+            if (origen == OrigenMargen.SapTm && clsReglasMargen.EsAnomalo(margenSalida) && resuelto.MargenPolitica is { } margenPolitica)
+            {
+                logger.LogWarning(
+                    "SAP TM propuso un margen anómalo ({MargenSap}) para la ruta {Orden} de la cotización {Folio}: se aplica el de la política de la línea ({MargenPolitica}).",
+                    margenSalida, ruta.Orden, cotizacion.Folio, margenPolitica);
+                if (ruta.TieneMargenNegociado)
+                {
+                    ruta.RefrescarMargenSugerido(margenPolitica, margenPolitica, OrigenMargen.PoliticaLinea);
+                }
+                else
+                {
+                    ruta.RegistrarMargenCosteo(margenPolitica, margenPolitica, OrigenMargen.PoliticaLinea, resuelto.MetodoCalculo);
+                }
+
+                ruta.RegistrarMargenSapAnomalo(margenSalida);
+                continue;
+            }
+
             // HU-013.4 (decisión del 2026-10-06): un margen ajustado por el comercial (negociado) se conserva sobre el costo nuevo; el
             // sugerido se refresca con SAP TM o la política, como referencia.
             if (ruta.TieneMargenNegociado)
             {
-                ruta.RefrescarMargenSugerido(resuelto.MargenPolitica, resuelto.Salida.Margen, origen);
+                ruta.RefrescarMargenSugerido(resuelto.MargenPolitica, margenSalida, origen);
                 continue;
             }
 
-            ruta.RegistrarMargenCosteo(resuelto.MargenPolitica, resuelto.Salida.Margen, origen, resuelto.MetodoCalculo);
+            ruta.RegistrarMargenCosteo(resuelto.MargenPolitica, margenSalida, origen, resuelto.MetodoCalculo);
         }
+    }
+
+    /// <summary>Margen a la precisión de la columna (<c>decimal(9,4)</c>, half-to-even), sin cero negativo.</summary>
+    private static decimal MargenDeColumna(decimal margen)
+    {
+        var redondeado = clsMargenAjuste.RedondearMargen(margen);
+        return redondeado == 0m ? 0m : redondeado;
     }
 
     /// <summary>
