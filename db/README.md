@@ -92,8 +92,8 @@ docker compose up sqlserver db-init     # SQL Server local en el puerto 1434 del
 docker compose logs db-init             # ver qué hizo
 ```
 
-Solo toca ese SQL Server local de desarrollo. El `deploy/docker-compose.swarm.yml` no se modificó. Ojo: el bot viejo en
-Python (`mcp` y `orquestador`) usa modelos de Postgres y no puede usar este esquema.
+Solo toca ese SQL Server local de desarrollo. El compose solo trae la base (`sqlserver` y `db-init`); el entorno local del
+backend .NET es `backend-dotnet/scripts/levantar-local.*`.
 
 ### Qué hay que cambiar para ejecutarlo
 
