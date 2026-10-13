@@ -92,8 +92,8 @@ flowchart LR
     AUTH --> DBS
     AUTH --> DBC
     WEB --> DBC
-    WEB -- "X-Portal-Usuario-Id" --> NEXO
-    WRK -- "X-Portal-Usuario-Id" --> NEXO
+    WEB -- "X-Portal-clsUsuario-Id" --> NEXO
+    WRK -- "X-Portal-clsUsuario-Id" --> NEXO
     WEB --> SAP
     WEB --> TRM
     WEB --> IA
@@ -101,7 +101,7 @@ flowchart LR
 ```
 
 - El navegador **solo** habla con la API de Cotifly (y, para crear prospectos, con el backend de ClientePro por su canal existente `RequestDataService`, ver ADR-005 §3). Nunca llama a Nexo, SAP, la TRM ni la IA directamente.
-- La API llama a Nexo en nombre del comercial con `X-Portal-Usuario-Id` = `UsuariosWeb.idUsuarioExterno`, que sale del `sub` del JWT y nunca del cliente. El frontend no envía nada de Nexo.
+- La API llama a Nexo en nombre del comercial con `X-Portal-clsUsuario-Id` = `UsuariosWeb.idUsuarioExterno`, que sale del `sub` del JWT y nunca del cliente. El frontend no envía nada de Nexo.
 - Google Chat se retiró en #105 (HU-013.9, ADR-018): `POST /chat/events` ya no existe (404). La consola web es el único canal.
 
 ### 2.2 URL base por ambiente
@@ -1168,6 +1168,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
 | HU-023.3 (#158): mercancías con `codigo_mercancia` (obligatorio; `id_tipo_mercancia` obsoleto); la respuesta 201 trae `cubicacion[]` con el resultado y los avisos por ruta; `GET .../costeo` trae `resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada` y, por camión, volumen y porcentajes de llenado; nuevo `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Mandar el código del desplegable; mostrar los avisos al crear (no se guardan); llamar a recalcular cuando cambian las mercancías o el peso de una ruta antes de enviarla |
 | HU-023.1: la captura puede responder 400 `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` (el cubicador rechazó una ruta) y 503 `CUBICADOR_RESPUESTA_INVALIDA` o `CUBICADOR_NO_AUTORIZADO` | Mostrar `error.mensaje` (trae el detalle del cubicador); no se guardó nada. `CUBICADOR_NO_AUTORIZADO` no es la sesión: no cerrar sesión |
+| HU-023.4 (#159): sin cambios de contrato web. Con un solo camión, Nexo recibe el **peso declarado de la ruta**; el `peso_kg` del camión en `GET .../costeo` sigue siendo el del cubicador (puede diferir del de la ruta). Un 429 de Nexo (cupo por rol agotado) llega como `COSTEO_NEXO_NO_DISPONIBLE` / `*_NO_DISPONIBLE` durante unos 30 s | Mostrar el peso del cubicador como dato del camión, no como el peso cotizado; ante "no disponible", ofrecer Reintentar pasado medio minuto |
 | Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
 | `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Mostrar el aviso; no reintentar desde el frontend |
 | `/seguimiento` responde 409 `USAR_RESULTADO_NEXO` con `detalle.metodo`, `detalle.endpoint` y `detalle.requiere_if_match` | Llamar a `/resultado` con `If-Match` |
@@ -2266,7 +2267,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Nexo: urgencia | Score de urgencia mayor a 75: **no implementado** (ADR-016). No hay contrato de Nexo. Llegará como campo nuevo de `indicadores` (cambio compatible). El "deadline vencido" sí está (`deadline_vencidas`, calculado por Cotifly; `null` sin el `0004`) | Duban + equipo Nexo | Tablero del gerente (HU-010.3): no mostrar la tarjeta de urgencia todavía |
 | Métricas: servicios conexos | Los montos del tablero no suman conexos todavía; se integran después de #42 | Duban | Aviso "valores sin servicios conexos" si hace falta |
 | Nexo: idempotencia del alta | Sin clave de idempotencia: un reintento tras tiempo agotado puede duplicar | Equipo Nexo | Advertencia en Reintentar |
-| Nexo: autenticación | Hoy `X-Portal-Usuario-Id` del comercial, sin token. ¿API key o JWT de servicio? | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
+| Nexo: autenticación | Hoy `X-Portal-clsUsuario-Id` del comercial, sin token. ¿API key o JWT de servicio? | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
 | Nexo: polling | Intervalos (5 s a 15 min, 72 h) pendientes de aprobar por Nexo | Equipo Nexo | Tiempo que una fila queda "En costeo" |
 | Negocio: PDF en `autocosteo` | ¿Se permite el PDF con el costeo automático o solo en `entregada`? | Gerencia Comercial | Habilitar el botón PDF y los conexos |
 | Negocio: `margen_aplicado` visible | Junto a `precio_final` permite deducir el costo de Nexo. ¿Ocultarlo en el flujo de Nexo? | Gerencia Comercial | Columna de margen |

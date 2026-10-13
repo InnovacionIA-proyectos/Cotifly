@@ -202,7 +202,7 @@ public sealed class clsCosteoNexoTests : IDisposable
 
         resultado.Error.Codigo.Should().Be(esperado, "un 403 del alta es el rol del comercial en Nexo, no una caída (ADR-017 §4)");
         resultado.Error.Detalle.Should().Be($"HTTP {(int)estado} {codigo}: {mensaje}");
-        logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Error && r.Mensaje.Contains("X-Portal-Usuario-Id"));
+        logger.Registros.Should().ContainSingle(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Error && r.Mensaje.Contains("X-Portal-clsUsuario-Id"));
     }
 
     [Fact]
@@ -311,10 +311,10 @@ public sealed class clsCosteoNexoTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task UnaRutaConTresCamionesViajaComoTresLineasYLaReferenciaDeRutaSoloConLaOpcion(bool enviarReferencia)
+    public async Task UnaRutaConTresCamionesViajaComoTresLineasYElGrupoRutaIdSoloConLaOpcion(bool enviarReferencia)
     {
-        // HU-021.7 (#134): una línea por camión con los datos de su ruta y de su camión, sin posiciones (a Nexo le basta el peso). La
-        // referencia de la ruta (N1) solo viaja con Nexo:EnviarReferenciaRuta, porque hoy CapturaLineaRequest no la tiene.
+        // HU-021.7 (#134): una línea por camión con los datos de su ruta y de su camión, sin posiciones (a Nexo le basta el peso). El id de
+        // la ruta solo viaja como grupoRutaId con Nexo:EnviarGrupoRutaId (HU-023.4: Nexo QA lo tiene, pero sin desplegar).
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-CAM-1" }).Valor;
         var ruta = cotizacion.RegistrarSolicitudCosteo(clsSolicitudCosteoMuestra.Crear(), 1);
@@ -322,7 +322,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         ruta.AgregarVehiculo(null, null, 4_000m);
         var solicitud = new clsSolicitudNexo(clsClienteNexo.PorBp("15927"), cotizacion.EncabezadoSolicitud!, [.. cotizacion.LineasNexo().Select(l => l.Linea)], "PuertoAInterior");
 
-        await Adaptador(enviarReferenciaRuta: enviarReferencia).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: enviarReferencia).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
         var lineas = cuerpo.RootElement.GetProperty("lineas").EnumerateArray().ToList();
@@ -332,23 +332,107 @@ public sealed class clsCosteoNexoTests : IDisposable
                                          && l.GetProperty("horasCargue").GetDecimal() == 4m);
         lineas.Count(l => l.TryGetProperty("posiciones", out _)).Should().Be(0, "a Nexo le basta el peso de cada camión");
         lineas.Count(l => !l.TryGetProperty("tipoVehiculo", out _)).Should().Be(1, "el camión sin vehículo viaja vacío a la Mesa");
-        lineas.Select(l => l.TryGetProperty("referenciaRuta", out var r) ? r.GetString() : null)
+        lineas.Select(l => l.TryGetProperty("grupoRutaId", out var r) ? r.GetString() : null)
             .Should().OnlyContain(r => enviarReferencia ? r == ruta.Id.ToString("D") : r == null);
+        lineas.Count(l => l.TryGetProperty("referenciaRuta", out _)).Should().Be(0, "el nombre viejo ya no viaja");
     }
 
     [Fact]
-    public void LaLineaDeLaSolicitudAceptaElNombreDelSwaggerYLaReferenciaDeRuta()
+    public void LaLineaDeLaSolicitudAceptaElNombreDelSwaggerYLosDatosDelCubicador()
     {
-        // El swagger de Nexo QA (2026-10-08) publica la ruta como "clsRuta"; Cotifly lee los dos nombres.
+        // El swagger de Nexo QA (2026-10-08) publica la ruta como "clsRuta"; Cotifly lee los dos nombres. HU-023.4: clsLineaCosteoDto trae
+        // grupoRutaId e idRecomendacionVehiculo.
         using var documento = JsonDocument.Parse(
-            """{"lineaId":"L1","rutaId":"b2b8c1e0-0000-4000-8000-000000000009","clsRuta":"BUENAVENTURA → BOGOTA","tipologia":"Contenedor","peso":10000,"tipoVehiculo":"3S3","referenciaRuta":"RUTA-COTIFLY"}""");
+            """{"lineaId":"L1","rutaId":"b2b8c1e0-0000-4000-8000-000000000009","clsRuta":"BUENAVENTURA → BOGOTA","tipologia":"Contenedor","peso":10000,"tipoVehiculo":"3S3","grupoRutaId":"c3c8c1e0-0000-4000-8000-000000000001","idRecomendacionVehiculo":"d4d8c1e0-0000-4000-8000-000000000002"}""");
 
         var linea = clsCosteoNexo.LeerLineaSolicitud(documento.RootElement);
 
         linea.Should().Be(new Dominio.Cotizaciones.clsLineaSolicitudNexo("L1", "BUENAVENTURA → BOGOTA", "Contenedor", 10_000m, "3S3", null)
         {
-            ReferenciaRuta = "RUTA-COTIFLY",
-        }, "rutaId es del catálogo de rutas de Nexo, no la referencia de Cotifly");
+            GrupoRutaId = "c3c8c1e0-0000-4000-8000-000000000001",
+            IdRecomendacionVehiculo = "d4d8c1e0-0000-4000-8000-000000000002",
+        }, "rutaId es del catálogo de rutas de Nexo, no el grupo de Cotifly");
+    }
+
+    [Fact]
+    public async Task ConLasBanderasApagadasElPayloadNoLlevaLosCamposNuevos()
+    {
+        // HU-023.4 (#159): con Nexo:EnviarGrupoRutaId y Nexo:EnviarDatosCubicador apagadas (por defecto) el alta es la de antes.
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var (solicitud, _) = SolicitudCubicada();
+
+        await Adaptador().EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+
+        var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
+        cuerpo.Should().NotContain("grupoRutaId").And.NotContain("idRecomendacionVehiculo").And.NotContain("codigoTipoMercancia")
+            .And.NotContain("referenciaRuta");
+        using var json = JsonDocument.Parse(cuerpo);
+        var linea = json.RootElement.GetProperty("lineas").EnumerateArray().Single();
+        linea.GetProperty("tipoVehiculo").GetString().Should().Be("3S3", "los códigos del cubicador viajan sin bandera (decisión 7)");
+        linea.GetProperty("carroceria").GetString().Should().Be("FURGON");
+        linea.GetProperty("peso").GetDecimal().Should().Be(28_500.5m, "un solo camión: el peso declarado de la ruta, no el del cubicador");
+    }
+
+    [Fact]
+    public async Task ConLasBanderasEncendidasViajanGrupoRutaIdIdRecomendacionYCodigoTipoMercancia()
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var (solicitud, ruta) = SolicitudCubicada();
+
+        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+
+        using var json = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        var linea = json.RootElement.GetProperty("lineas").EnumerateArray().Single();
+        linea.GetProperty("grupoRutaId").GetString().Should().Be(ruta.Id.ToString("D"));
+        linea.GetProperty("idRecomendacionVehiculo").GetString().Should().Be(_recomendacion.ToString("D"));
+        linea.GetProperty("idRecomendacionVehiculo").GetString()!.Length.Should().BeLessThanOrEqualTo(64);
+        linea.GetProperty("posiciones").EnumerateArray().Select(p => p.TryGetProperty("codigoTipoMercancia", out var c) ? c.GetString() : null)
+            .Should().Equal("CAFE_EN_ESTIBAS", null);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task CadaBanderaControlaSusCampos(bool grupo, bool cubicador)
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada);
+        var (solicitud, _) = SolicitudCubicada();
+
+        await Adaptador(enviarGrupoRutaId: grupo, enviarDatosCubicador: cubicador).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+
+        var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
+        cuerpo.Contains("\"grupoRutaId\"", StringComparison.Ordinal).Should().Be(grupo);
+        cuerpo.Contains("\"idRecomendacionVehiculo\"", StringComparison.Ordinal).Should().Be(cubicador);
+        cuerpo.Contains("\"codigoTipoMercancia\"", StringComparison.Ordinal).Should().Be(cubicador);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("  ", null)]
+    [InlineData(" CAFE ", "CAFE")]
+    [InlineData("1234567890123456789012345678901234567890", "1234567890123456789012345678901234567890")]
+    [InlineData("12345678901234567890123456789012345678901", null)]
+    public void ElCodigoTipoMercanciaRespetaLos40DeNexo(string? codigo, string? esperado) =>
+        clsCosteoNexo.CodigoTipoMercancia(codigo).Should().Be(esperado, "recortarlo mandaría otro código");
+
+    [Fact]
+    public async Task Un429EnElGetEsNoDisponibleConElRetryAfterYNuncaRechazada()
+    {
+        // HU-023.4 (#159): el cupo de Nexo (por rol) agotado no es un rechazo de los datos.
+        using var respuesta = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("""{"code":"DEMASIADAS_SOLICITUDES","message":"Ha alcanzado el límite."}""", System.Text.Encoding.UTF8, "application/json"),
+        };
+        respuesta.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+        using var nexo = new clsManejadorFijo(respuesta);
+        using var http = new HttpClient(nexo);
+        var adaptador = new clsCosteoNexo(http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase }), _usuarios,
+            NullLogger<clsCosteoNexo>.Instance);
+
+        var resultado = await adaptador.ConsultarCosteoAsync(_usuarioId, "S-1", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible).And.NotBe(clsCodigosError.CosteoNexoRechazada);
+        resultado.Error.Detalle.Should().Contain("HTTP 429 DEMASIADAS_SOLICITUDES").And.Contain("Retry-After 30 s");
     }
 
     [Fact]
@@ -367,9 +451,34 @@ public sealed class clsCosteoNexoTests : IDisposable
         clsUsuarioWeb.Crear("mospina", "Mariana Ospina", "mospina@boterosoto.com.co", null, DateTimeOffset.UtcNow, idUsuarioExterno).Valor;
 
     private clsCosteoNexo Adaptador(
-        string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null, bool enviarReferenciaRuta = false) =>
-        new(_http, Options.Create(new clsOpcionesNexo { UrlBase = url, EnviarReferenciaRuta = enviarReferenciaRuta }), _usuarios,
-            logger ?? NullLogger<clsCosteoNexo>.Instance);
+        string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null, bool enviarGrupoRutaId = false,
+        bool enviarDatosCubicador = false) =>
+        new(_http, Options.Create(new clsOpcionesNexo { UrlBase = url, EnviarGrupoRutaId = enviarGrupoRutaId, EnviarDatosCubicador = enviarDatosCubicador }),
+            _usuarios, logger ?? NullLogger<clsCosteoNexo>.Instance);
+
+    private static readonly Guid _recomendacion = Guid.Parse("e5e8c1e0-0000-4000-8000-000000000005");
+
+    /// <summary>
+    /// Ruta de un camión del cubicador (3S3 FURGON, 26 t, más de 1 % lejos de las posiciones) capturada con códigos de mercancía (el
+    /// segundo, de 41 caracteres, no cabe en Nexo), y la solicitud de Nexo que se arma con ella.
+    /// </summary>
+    private static (clsSolicitudNexo Solicitud, Dominio.Cotizaciones.clsLineaSolicitud Ruta) SolicitudCubicada()
+    {
+        var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-CUB-9" }).Valor;
+        var linea = clsSolicitudCosteoMuestra.RutaCaptura();
+        linea = linea with { Posiciones = [linea.Posiciones[0], linea.Posiciones[1] with { CodigoMercancia = new string('X', 41) }] };
+        cotizacion.RegistrarCaptura(new Dominio.Cotizaciones.clsEncabezadoSolicitudCosteo { Tipo = Dominio.Cotizaciones.TipoSolicitud.Spot },
+            [new Dominio.Cotizaciones.clsRutaCapturada(linea, 1, 0, [new Dominio.Cotizaciones.clsCamionPlaneado("3S3", "FURGON", 26_000m, _recomendacion)], [])]);
+        var solicitud = new clsSolicitudNexo(clsClienteNexo.PorBp("15927"), cotizacion.EncabezadoSolicitud!,
+            [.. cotizacion.LineasNexo().Select(l => l.Linea)], "PuertoAInterior");
+        return (solicitud, cotizacion.RutasOrdenadas[0]);
+    }
+
+    /// <summary>Manejador que responde siempre la misma respuesta (para cabeceras como <c>Retry-After</c>).</summary>
+    private sealed class clsManejadorFijo(HttpResponseMessage respuesta) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(respuesta);
+    }
 
     public void Dispose()
     {

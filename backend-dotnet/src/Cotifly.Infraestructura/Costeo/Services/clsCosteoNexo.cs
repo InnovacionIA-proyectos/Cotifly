@@ -21,7 +21,7 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// Costeo contra Nexo en vivo (ADR-015). Rutas de <c>CONTRATO.md</c> de Nexo bajo <c>{Nexo:UrlBase}</c> (la raíz del servicio, sin
 /// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5), <c>GET /api/solicitudes/{id}</c> y
 /// <c>POST /api/cotizaciones</c> (HU-005.6). Igual que el resto de adaptadores de Nexo, identifica al comercial
-/// con <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
+/// con <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
 /// <c>clsFabricaCosteoNexo</c> (sin <c>Nexo:UrlBase</c> → <see cref="clsCosteoNexoNoDisponible"/>).
 /// </summary>
 /// <remarks>
@@ -31,7 +31,7 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// <para><b>Errores.</b> Nunca lanza por Nexo: tiempo agotado → <c>COSTEO_NEXO_TIEMPO_AGOTADO</c> (la solicitud pudo quedar creada);
 /// 4xx → <c>COSTEO_NEXO_RECHAZADA</c> con <c>HTTP {estado} {code}: {message}</c> de Nexo en el detalle; 5xx, red, circuito abierto,
 /// JSON inválido, sin configurar o comercial sin <c>idUsuarioExterno</c> → <c>COSTEO_NEXO_NO_DISPONIBLE</c>. Una línea de warning
-/// por fallo, sin la traza ni el header <c>X-Portal-Usuario-Id</c>. La cancelación del llamador se propaga.</para>
+/// por fallo, sin la traza ni el header <c>X-Portal-clsUsuario-Id</c>. La cancelación del llamador se propaga.</para>
 /// </remarks>
 public sealed class clsCosteoNexo(
     HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger)
@@ -72,7 +72,9 @@ public sealed class clsCosteoNexo(
 
     private readonly string? _urlBase = string.IsNullOrWhiteSpace(opciones.Value.UrlBase) ? null : opciones.Value.UrlBase.Trim().TrimEnd('/');
 
-    private readonly bool _enviarReferenciaRuta = opciones.Value.EnviarReferenciaRuta;
+    private readonly bool _enviarGrupoRutaId = opciones.Value.EnviarGrupoRutaId;
+
+    private readonly bool _enviarDatosCubicador = opciones.Value.EnviarDatosCubicador;
 
     public bool EstaConfigurado => _urlBase is not null;
 
@@ -80,7 +82,7 @@ public sealed class clsCosteoNexo(
         Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(solicitud);
-        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud, _enviarReferenciaRuta), cancellationToken);
+        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud, _enviarGrupoRutaId, _enviarDatosCubicador), cancellationToken);
         if (respuesta.EsFallo)
         {
             // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo, salvo la
@@ -308,14 +310,16 @@ public sealed class clsCosteoNexo(
     /// <summary>
     /// Una línea de <c>lineas[]</c> de <c>SolicitudCosteoDto</c> (<c>LineaCosteoDto</c>). La ruta <c>"Origen → Destino"</c> viaja en
     /// <c>ruta</c>; el swagger de Nexo QA (2026-10-08) la publica como <c>clsRuta</c> (renombre de su DTO), así que se aceptan los dos
-    /// nombres. <c>referenciaRuta</c> es el id de la ruta de Cotifly cuando Nexo implemente N1 (no es su <c>rutaId</c>, que es de su
-    /// catálogo de rutas).
+    /// nombres. <c>grupoRutaId</c> es el id de la ruta de Cotifly e <c>idRecomendacionVehiculo</c> el camión del cubicador que Nexo guardó
+    /// en la línea (HU-023.4, #159; <c>null</c> si la línea viajó sin ellos). <c>grupoRutaId</c> no es su <c>rutaId</c>, que es de su
+    /// catálogo de rutas.
     /// </summary>
     internal static clsLineaSolicitudNexo LeerLineaSolicitud(JsonElement linea) =>
         new(Texto(linea, "lineaId") ?? string.Empty, Texto(linea, "ruta") ?? Texto(linea, "clsRuta"), Texto(linea, "tipologia"), Decimal(linea, "peso"),
             Texto(linea, "tipoVehiculo"), Texto(linea, "carroceria"))
         {
-            ReferenciaRuta = Texto(linea, "referenciaRuta"),
+            GrupoRutaId = Texto(linea, "grupoRutaId"),
+            IdRecomendacionVehiculo = Texto(linea, "idRecomendacionVehiculo"),
         };
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c> (la base no lleva <c>/api</c>).</summary>
@@ -339,6 +343,9 @@ public sealed class clsCosteoNexo(
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
+        // HU-023.4 (#159): un 429 no se reintenta (respeta el Retry-After vía clsCupoNexoHandler). Antes de DisableForUnsafeHttpMethods,
+        // que compone sobre el ShouldHandle vigente.
+        Comun.clsCupoNexoHandler.NoReintentar429(resiliencia);
         resiliencia.Retry.DisableForUnsafeHttpMethods();
         resiliencia.CircuitBreaker.SamplingDuration = TiempoTotal * 2;
     }
@@ -351,11 +358,13 @@ public sealed class clsCosteoNexo(
     /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c> por línea (G6) y en cada línea las horas de cargue y descargue de la línea
     /// (HU-013.11, filas de una licitación) o, si no las trae, las del encabezado (G5: sin ellas Nexo aplica a la línea su valor por
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
-    /// desplazamiento (G4). Los nulos no viajan. Con <paramref name="enviarReferenciaRuta"/> (<c>Nexo:EnviarReferenciaRuta</c>, petición N1
-    /// de #134) cada línea lleva <c>referenciaRuta</c> = el id de su ruta de Cotifly; apagado por defecto porque Nexo aún no tiene ese
-    /// campo en <c>CapturaLineaRequest</c> (su swagger declara <c>additionalProperties: false</c>) ni otro de texto libre por línea.
+    /// desplazamiento (G4). Los nulos no viajan. HU-023.4 (#159): con <paramref name="enviarGrupoRutaId"/> (<c>Nexo:EnviarGrupoRutaId</c>)
+    /// cada línea lleva <c>grupoRutaId</c> = el id de su ruta de Cotifly; con <paramref name="enviarDatosCubicador"/>
+    /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador) y cada posición su
+    /// <c>codigoTipoMercancia</c> (el <c>codigoMercancia</c>; uno de más de <see cref="LargoCodigoTipoMercancia"/> caracteres no viaja). Las
+    /// dos apagadas por defecto: Nexo los tiene en QA pero sin desplegar, y su swagger declara <c>additionalProperties: false</c>.
     /// </summary>
-    internal static object CuerpoCaptura(clsSolicitudNexo solicitud, bool enviarReferenciaRuta = false)
+    internal static object CuerpoCaptura(clsSolicitudNexo solicitud, bool enviarGrupoRutaId = false, bool enviarDatosCubicador = false)
     {
         var e = solicitud.Encabezado;
         return new clsCapturaSolicitudWire(
@@ -373,9 +382,21 @@ public sealed class clsCosteoNexo(
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0
                     ? null
-                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
-                enviarReferenciaRuta ? s.RutaId?.ToString("D") : null))]);
+                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg,
+                        enviarDatosCubicador ? CodigoTipoMercancia(p.CodigoMercancia) : null))],
+                enviarGrupoRutaId ? s.RutaId?.ToString("D") : null,
+                enviarDatosCubicador ? s.IdRecomendacionVehiculo?.ToString("D") : null))]);
     }
+
+    /// <summary>Largo máximo de <c>codigoTipoMercancia</c> en <c>clsCapturaPosicionRequest</c> de Nexo (<c>[MaxLength(40)]</c>).</summary>
+    public const int LargoCodigoTipoMercancia = 40;
+
+    /// <summary>
+    /// El <c>codigoMercancia</c> del cubicador como <c>codigoTipoMercancia</c> de Nexo, o <c>null</c> si no hay o supera
+    /// <see cref="LargoCodigoTipoMercancia"/> (recortarlo mandaría otro código; Nexo trata <c>null</c> como "tipo desconocido").
+    /// </summary>
+    internal static string? CodigoTipoMercancia(string? codigoMercancia) =>
+        string.IsNullOrWhiteSpace(codigoMercancia) || codigoMercancia.Trim().Length > LargoCodigoTipoMercancia ? null : codigoMercancia.Trim();
 
     /// <summary>
     /// Envía la petición con la identidad del comercial y traduce los fallos. Devuelve el JSON de una respuesta 2xx (el llamador lo
@@ -402,12 +423,20 @@ public sealed class clsCosteoNexo(
             peticion.Content = JsonContent.Create(cuerpo, cuerpo.GetType(), options: _json);
         }
 
-        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         try
         {
             using var respuesta = await http.SendAsync(peticion, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                // HU-023.4 (#159): cupo de Nexo agotado (por rol). No es un rechazo de los datos: no disponible, reintentable cuando pase el
+                // Retry-After (clsCupoNexoHandler ya bloqueó las lecturas hasta entonces).
+                var (_, _, detalle429) = await LeerErrorNexoAsync(respuesta, cancellationToken);
+                return NoDisponible(ConEspera(detalle429, respuesta));
+            }
+
             if ((int)respuesta.StatusCode is >= 400 and < 500)
             {
                 var (codigoNexo, mensajeNexo, detalle) = await LeerErrorNexoAsync(respuesta, cancellationToken);
@@ -429,7 +458,7 @@ public sealed class clsCosteoNexo(
                 // configuración, no un rechazo de los datos: no disponible (503), con una línea de error clara.
                 if (respuesta.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 {
-                    logger.LogError("Nexo respondió {Estado} a {Metodo} {Ruta}: revisar la identidad X-Portal-Usuario-Id del comercial y su rol en Cabina de Fletes ({Detalle}).",
+                    logger.LogError("Nexo respondió {Estado} a {Metodo} {Ruta}: revisar la identidad X-Portal-clsUsuario-Id del comercial y su rol en Cabina de Fletes ({Detalle}).",
                         (int)respuesta.StatusCode, metodo, ruta, detalle);
                     return new clsErrorDominio(clsCodigosError.CosteoNexoNoDisponible, MensajeNoDisponible, detalle);
                 }
@@ -503,7 +532,7 @@ public sealed class clsCosteoNexo(
         {
             Content = JsonContent.Create(cuerpo, cuerpo.GetType(), options: _json),
         };
-        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         HttpResponseMessage respuesta;
@@ -524,6 +553,14 @@ public sealed class clsCosteoNexo(
         using (respuesta)
         {
             var estado = (int)respuesta.StatusCode;
+            if (respuesta.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                // Un 429 no aplicó nada: equivale a no haber enviado (reintentable), nunca a un rechazo de los datos (HU-023.4).
+                var (_, _, detalle429) = await LeerErrorNexoAsync(respuesta, CancellationToken.None);
+                logger.LogWarning("Nexo respondió 429 a POST {Ruta}: {Detalle}", ruta, detalle429);
+                return new clsRespuestaPostNexo(FasePostNexo.NoEnviado, null, ConEspera(detalle429, respuesta));
+            }
+
             if (estado is >= 400 and < 500)
             {
                 var (_, _, detalle) = await LeerErrorNexoAsync(respuesta, CancellationToken.None);
@@ -583,6 +620,12 @@ public sealed class clsCosteoNexo(
         memoria.Position = 0;
         return memoria;
     }
+
+    /// <summary>El detalle de un 429 con la espera del <c>Retry-After</c> (si viene), para el log y el motivo del error.</summary>
+    private static string ConEspera(string detalle, HttpResponseMessage respuesta) =>
+        respuesta.Headers.RetryAfter?.Delta is { } espera
+            ? $"{detalle} (Retry-After {((int)Math.Ceiling(espera.TotalSeconds)).ToString(CultureInfo.InvariantCulture)} s)"
+            : detalle;
 
     /// <summary>Error de Nexo (<c>{code, message, timestamp, details?}</c>) como <c>HTTP {estado} {code}: {message}</c> (máx. 400 caracteres).</summary>
     private static async Task<(string? Codigo, string? Mensaje, string Detalle)> LeerErrorNexoAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)
@@ -656,11 +699,12 @@ public sealed class clsCosteoNexo(
         string? Tipologia, string? LineaNegocio, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
         bool? RetornaContenedor, string? CiudadDevolucionContenedor, bool? LevanteContenedorDiferente, string? CiudadLevanteContenedor,
         decimal? ValorAprovisionamiento, decimal? HorasCargue, decimal? HorasDescargue, decimal? Peso, decimal? ValorMercancia,
-        IReadOnlyList<clsCapturaPosicionWire>? Posiciones, string? ReferenciaRuta);
+        IReadOnlyList<clsCapturaPosicionWire>? Posiciones, string? GrupoRutaId, string? IdRecomendacionVehiculo);
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 
-    private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+    private sealed record clsCapturaPosicionWire(
+        string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, string? CodigoTipoMercancia);
 }
 
 /// <summary>Qué se sabe del efecto de un POST a Nexo (ver <see cref="clsCosteoNexo.EnviarPostConEfectoAsync"/>).</summary>
