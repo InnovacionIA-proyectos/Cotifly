@@ -94,6 +94,12 @@ public sealed class clsReSolicitudCosteoService(
     IClsResolutorConexosCatalogo resolutorConexos,
     ILogger<clsReSolicitudCosteoService> logger) : IClsReSolicitudCosteoService
 {
+    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c>: cambios de carga en una licitación de varias rutas.</summary>
+    public const string MotivoLicitacion = "LICITACION";
+
+    /// <summary>Motivo de <c>ESTADO_NO_PERMITE</c> (D9, #139): cambios de carga en un formulario de varias rutas.</summary>
+    public const string MotivoVariasRutas = "VARIAS_RUTAS";
+
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>, contrato).</summary>
     public const string HerramientaAuditoria = "costeo_nexo_re_solicitud";
 
@@ -306,9 +312,16 @@ public sealed class clsReSolicitudCosteoService(
         {
             if (lineas.Count != 1)
             {
+                // D9 (#139): datos_carga trae UNA carga, sin ruta: con varias rutas no se sabe a cuál aplica. El mensaje dice lo que es la
+                // cotización (licitación o formulario de varias rutas) y el motivo los distingue.
+                var esLicitacion = cotizacion.TipoSolicitud == TipoSolicitud.Licitacion;
                 return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                    $"La cotización {cotizacion.Folio} es una licitación de {lineas.Count} líneas: los cambios de carga solo aplican a una "
-                    + "cotización de una línea (crea la versión con nueva_version y sin datos_carga).", "LICITACION");
+                    (esLicitacion
+                        ? $"La cotización {cotizacion.Folio} es una licitación de {lineas.Count} rutas"
+                        : $"La cotización {cotizacion.Folio} tiene {lineas.Count} rutas")
+                    + ": los cambios de carga solo aplican a una cotización de una ruta. Crea la versión nueva con nueva_version y sin "
+                    + "datos_carga, o cotiza la ruta que cambia en una solicitud nueva.",
+                    esLicitacion ? MotivoLicitacion : MotivoVariasRutas);
             }
 
             var cambios = clsEnvioCosteoService.SinVehiculo(pedidos, logger);

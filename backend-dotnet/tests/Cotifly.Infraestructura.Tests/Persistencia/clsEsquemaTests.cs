@@ -120,6 +120,63 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             .Should().Be("Café|1");
     }
 
+    [Fact]
+    public async Task El0009ConservaAjustesCorreosYAuditoriaYRespaldaLaCotizacionDeItrQueBorra()
+    {
+        // HU-021.12 (#139): migración de datos de las tablas que cuelgan de la cotización (MargenAjustes, Correos, CorreoDestinatarios) y de
+        // la auditoría; la cotización de prueba de ITR se borra con todo lo suyo y queda en los Respaldo0009_*.
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbMigraDatos0009", clsBaseDatosPruebas.ScriptsAntesDeHu021);
+        var cadena = baseAislada.Cadena;
+        Guid usuario = Guid.NewGuid(), cotizacion = Guid.NewGuid(), itr = Guid.NewGuid(), correo = Guid.NewGuid(), correoItr = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario) VALUES ('{usuario}', N'mig0009'); "
+            + "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, lineaNegocioId, costeoId, costo, margenAplicado, origenMargen, metodoCalculo, precioFinal, origen, destino, usuarioId, estadoEnvio) "
+            + $"SELECT '{cotizacion}', 'PCN-MIG-AJ', id, 'SOL-1', 1000000, 0.20, 'negociado', 'margen', 1250000, N'Cali', N'Yumbo', '{usuario}', 'enviada' "
+            + "FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = 'Importacion'; "
+            + "INSERT INTO dbo_cotifly.Cotizaciones (id, folio, lineaNegocioId, costo, margenAplicado, origenMargen, metodoCalculo, precioFinal, usuarioId) "
+            + $"SELECT '{itr}', 'PCN-MIG-ITR', id, 500000, 0.15, 'politica_linea', 'margen', 588235, '{usuario}' FROM dbo_cotifly.MargenesPolitica WHERE lineaNegocio = 'ITR'; "
+            + "INSERT INTO dbo_cotifly.MargenAjustes (cotizacionId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId) VALUES "
+            + $"('{cotizacion}', 'PCN-MIG-AJ', 0.15, 0.20, 0.05, N'Cliente estratégico', '{usuario}'), ('{itr}', 'PCN-MIG-ITR', 0.15, 0.10, -0.05, N'ITR', '{usuario}'); "
+            + "INSERT INTO dbo_cotifly.Correos (id, cotizacionId, asunto, estado, confirmadoPor) VALUES "
+            + $"('{correo}', '{cotizacion}', N'Cotización PCN-MIG-AJ', 'enviado', '{usuario}'), ('{correoItr}', '{itr}', N'ITR', 'enviado', '{usuario}'); "
+            + $"INSERT INTO dbo_cotifly.CorreoDestinatarios (correoId, email, tipo) VALUES ('{correo}', N'compras@cliente.com', 'para'), ('{correo}', N'jefe@cliente.com', 'cc'), "
+            + $"('{correoItr}', N'itr@cliente.com', 'para'); "
+            + "INSERT INTO dbo_cotifly.EventosHerramienta (herramienta, input, exito) VALUES (N'enviar_correo', N'{\"folio\":\"PCN-MIG-AJ\"}', 1);");
+        var eventosAntes = await clsBaseDatosPruebas.EscalarAsync<int>(cadena, "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0009_reestructuracion_cotizaciones.sql");
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, "0010_nombres_municipio.sql");
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            "SELECT CONCAT(a.folio, '|', a.margenAplicado, '|', a.diferencia, '|', a.motivo, '|', l.orden, '|', m.lineaNegocio) FROM dbo_cotifly.MargenAjustes a "
+            + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = a.lineaSolicitudId JOIN dbo_cotifly.MargenesPolitica m ON m.id = l.lineaNegocioId "
+            + $"WHERE a.cotizacionId = '{cotizacion}'"))
+            .Should().Be("PCN-MIG-AJ|0.2000|0.0500|Cliente estratégico|1|Importacion", "el ajuste queda en la ruta 1, que hereda la línea de negocio de la cabecera");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            "SELECT CONCAT(c.estado, '|', c.confirmadoPor, '|', (SELECT STRING_AGG(CONCAT(d.tipo, '=', d.email), ',') WITHIN GROUP (ORDER BY d.tipo DESC) "
+            + $"FROM dbo_cotifly.CorreoDestinatarios d WHERE d.correoId = c.id)) FROM dbo_cotifly.Correos c WHERE c.cotizacionId = '{cotizacion}'"))
+            .Should().Be($"enviado|{usuario.ToString().ToUpperInvariant()}|para=compras@cliente.com,cc=jefe@cliente.com");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            "SELECT STRING_AGG(OBJECT_NAME(fk.parent_object_id), ',') WITHIN GROUP (ORDER BY OBJECT_NAME(fk.parent_object_id)) FROM sys.foreign_keys fk "
+            + "WHERE fk.referenced_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud')"))
+            .Should().Be("Correos,CotizacionArchivosLicitacion,CotizacionLineasSolicitud,CotizacionPdfsHistorial,MargenAjustes",
+                "las FK de las tablas hijas siguen a la tabla renombrada");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            "SELECT CONCAT(e.estadoEnvio, '|', e.precioFinal) FROM dbo_cotifly.CotizacionesSolicitud e WHERE e.folio = 'PCN-MIG-AJ'")).Should().Be("enviada|1250000.00");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            "SELECT CONCAT((SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = 'PCN-MIG-ITR'), '|', "
+            + $"(SELECT COUNT(*) FROM dbo_cotifly.Correos WHERE id = '{correoItr}'), '|', (SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = 'PCN-MIG-ITR'), '|', "
+            + "(SELECT COUNT(*) FROM dbo_cotifly.Respaldo0009_Cotizaciones WHERE folio = 'PCN-MIG-ITR'), '|', "
+            + $"(SELECT COUNT(*) FROM dbo_cotifly.Respaldo0009_Correos WHERE id = '{correoItr}'), '|', "
+            + $"(SELECT COUNT(*) FROM dbo_cotifly.Respaldo0009_CorreoDestinatarios WHERE correoId = '{correoItr}'), '|', "
+            + "(SELECT COUNT(*) FROM dbo_cotifly.Respaldo0009_MargenAjustes WHERE folio = 'PCN-MIG-ITR'))"))
+            .Should().Be("0|0|0|1|1|1|1", "la cotización de ITR se borra con lo suyo y queda respaldada");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, "SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta")).Should().Be(eventosAntes, "la auditoría no se toca");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena,
+            $"SELECT CONCAT(lineaNegocio, '|', numAjustes) FROM dbo_cotifly.vAjustesMargenPorComercial WHERE usuarioId = '{usuario}'"))
+            .Should().Be("Importacion|1", "la vista adaptada lee la línea de negocio de la ruta del ajuste");
+    }
+
     // Idempotencia (#91): cada prueba re-aplica el script en una base AISLADA (nombre único, 0001 a 0005 aplicados) y no en la
     // compartida. En la compartida, otras pruebas de la colección dejan cotizaciones del formulario ampliado sin línea (columnas de
     // línea en Cotizaciones) y el backfill del 0005 les agrega su línea legítimamente al re-aplicarlo: el conteo global "crecía" sin
