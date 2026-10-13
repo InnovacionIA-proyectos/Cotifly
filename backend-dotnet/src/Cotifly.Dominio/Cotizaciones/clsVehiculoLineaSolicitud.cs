@@ -27,8 +27,17 @@ public sealed class clsVehiculoLineaSolicitud
 
     public string? Carroceria { get; private set; }
 
-    /// <summary>Peso que lleva el camión (es el que viaja a Nexo).</summary>
+    /// <summary>Peso que lleva el camión (es el que viaja a Nexo; con el cubicador, su <c>pesoTotalKg</c>).</summary>
     public decimal? PesoKg { get; private set; }
+
+    /// <summary>HU-023.3 (script <c>02</c>): volumen que lleva el camión según el cubicador (m³); <c>null</c> sin recomendación.</summary>
+    public decimal? VolumenTotalM3 { get; private set; }
+
+    /// <summary>HU-023.3: qué tan lleno va el camión en volumen (0 a 100); <c>null</c> sin recomendación.</summary>
+    public decimal? PorcentajeLlenadoVolumen { get; private set; }
+
+    /// <summary>HU-023.3: qué tan lleno va el camión en peso (0 a 100); <c>null</c> sin recomendación.</summary>
+    public decimal? PorcentajeLlenadoPeso { get; private set; }
 
     /// <summary>Flete del camión que devolvió Nexo; <c>null</c> mientras no lo costea.</summary>
     public decimal? CostoFlete { get; private set; }
@@ -71,11 +80,16 @@ public sealed class clsVehiculoLineaSolicitud
     /// </summary>
     internal static clsVehiculoLineaSolicitud Crear(
         Guid lineaSolicitudId, string? tipoVehiculo, string? carroceria, decimal? pesoKg, decimal? levante, Guid? idRecomendacionVehiculo,
-        int ordenCreacion = 0)
+        int ordenCreacion = 0, decimal? volumenTotalM3 = null, decimal? porcentajeLlenadoVolumen = null, decimal? porcentajeLlenadoPeso = null)
     {
-        if (pesoKg is < 0m || levante is < 0m)
+        if (pesoKg is < 0m || levante is < 0m || volumenTotalM3 is < 0m)
         {
-            throw new ArgumentOutOfRangeException(nameof(pesoKg), "El peso y el levante del camión no pueden ser negativos.");
+            throw new ArgumentOutOfRangeException(nameof(pesoKg), "El peso, el volumen y el levante del camión no pueden ser negativos.");
+        }
+
+        if (porcentajeLlenadoVolumen is < 0m or > 100m || porcentajeLlenadoPeso is < 0m or > 100m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(porcentajeLlenadoVolumen), "Los porcentajes de llenado van de 0 a 100.");
         }
 
         return new clsVehiculoLineaSolicitud
@@ -86,6 +100,9 @@ public sealed class clsVehiculoLineaSolicitud
             TipoVehiculo = Normalizar(tipoVehiculo),
             Carroceria = Normalizar(carroceria),
             PesoKg = pesoKg,
+            VolumenTotalM3 = volumenTotalM3,
+            PorcentajeLlenadoVolumen = porcentajeLlenadoVolumen,
+            PorcentajeLlenadoPeso = porcentajeLlenadoPeso,
             CostoLevanteContenedor = levante ?? 0m,
             OrdenCreacion = ordenCreacion,
         };

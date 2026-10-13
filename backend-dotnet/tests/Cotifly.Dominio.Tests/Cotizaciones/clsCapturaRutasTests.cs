@@ -36,7 +36,7 @@ public sealed class clsCapturaRutasTests
             ("destino_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("ciudad_devolucion_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
             ("ciudad_levante_municipio_id", clsCodigosLineaSolicitud.CampoRequerido),
-            ("mercancias[0].id_tipo_mercancia", clsCodigosLineaSolicitud.CampoRequerido));
+            ("mercancias[0].codigo_mercancia", clsCodigosLineaSolicitud.CampoRequerido));
     }
 
     [Fact]

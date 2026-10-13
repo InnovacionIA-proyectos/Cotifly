@@ -13,11 +13,11 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// </summary>
 public sealed class clsPlanificadorCamionSinVehiculo : IClsPlanificadorCamiones
 {
-    public Task<clsResultado<IReadOnlyList<clsCamionPlaneado>>> PlanificarAsync(
+    public Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(ruta);
-        return Task.FromResult(clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito(Camiones(ruta)));
+        return Task.FromResult(clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(Camiones(ruta))));
     }
 
     /// <summary>

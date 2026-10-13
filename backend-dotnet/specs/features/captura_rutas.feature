@@ -68,7 +68,7 @@ Característica: Captura de la solicitud de costeo por rutas
     Y el error trae exactamente estos errores por ruta:
       | ruta | campo                            | codigo            |
       | 0    | origen                           | MUNICIPIO_AMBIGUO |
-      | 1    | mercancias[0].id_tipo_mercancia  | CAMPO_REQUERIDO   |
+      | 1    | mercancias[0].codigo_mercancia   | CAMPO_REQUERIDO   |
     Y Nexo no recibió solicitudes
     Y "ana" no tiene cotizaciones en "Mis cotizaciones"
 

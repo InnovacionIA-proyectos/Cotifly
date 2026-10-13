@@ -280,8 +280,10 @@ public sealed class clsCotizacionSolicitud
                 Id, orden, capturada.RutaOrigenIndice, capturada.LineaNegocioId, capturada.Linea, encabezado, capturada.RutaId);
             foreach (var camion in capturada.Camiones)
             {
-                ruta.AgregarVehiculo(camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.IdRecomendacionVehiculo);
+                ruta.AgregarVehiculo(camion);
             }
+
+            ruta.RegistrarCubicacion(capturada.Cubicacion);
 
             foreach (var conexo in capturada.Conexos ?? [])
             {
@@ -901,6 +903,30 @@ public sealed class clsCotizacionSolicitud
     private clsVehiculoLineaSolicitud Camion(Guid camionId) =>
         _rutas.SelectMany(r => r.Vehiculos).FirstOrDefault(v => v.Id == camionId)
         ?? throw new ArgumentOutOfRangeException(nameof(camionId), $"El camión {camionId} no es de la cotización {Folio}.");
+
+    /// <summary>
+    /// HU-023.3 (#158): reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
+    /// recalcula los totales. Solo mientras la solicitud no está en Nexo (<c>pendiente_envio</c> o <c>error_envio</c>):
+    /// <c>ESTADO_NO_PERMITE</c> si no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
+    /// </summary>
+    public clsResultado<clsLineaSolicitud> ReemplazarCamionesDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (EstadoCosteo is not (Cotizaciones.EstadoCosteo.PendienteEnvio or Cotizaciones.EstadoCosteo.ErrorEnvio))
+        {
+            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                $"Los camiones de la cotización {Folio} ya están en Nexo: para cambiarlos pide una versión nueva.");
+        }
+
+        if (_rutas.FirstOrDefault(r => r.Id == rutaId) is not { } ruta)
+        {
+            return new clsErrorDominio(clsCodigosError.RutaInexistente, $"La ruta {rutaId} no es de la cotización {Folio}.");
+        }
+
+        ruta.ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : ruta;
+    }
 
     // ------------------------------------------------------------------ Totales y precio (§9.1)
 

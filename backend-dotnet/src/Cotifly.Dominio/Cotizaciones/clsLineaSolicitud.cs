@@ -112,6 +112,24 @@ public sealed class clsLineaSolicitud
     /// <summary>Precio de la ruta al cliente (ex <c>precioFinal</c> de la línea), en la moneda de la solicitud.</summary>
     public decimal? PrecioFinalLinea { get; private set; }
 
+    /// <summary>HU-023.3 (script <c>02</c>): la corrida del cubicador de esta ruta (para volver a consultarla); <c>null</c> sin cubicador.</summary>
+    public Guid? IdRecomendacion { get; private set; }
+
+    /// <summary>HU-023.3: qué respondió el cubicador (<c>ASIGNADO</c> o <c>SIN_SELECCION_AUTOMATICA</c>); <c>null</c> sin cubicador.</summary>
+    public string? ResultadoCubicacion { get; private set; }
+
+    /// <summary>HU-023.3: por qué no pudo escoger (solo con <c>SIN_SELECCION_AUTOMATICA</c>).</summary>
+    public string? MotivoSinSeleccion { get; private set; }
+
+    /// <summary>HU-023.3: la ruta va a la Mesa de Costeo por una mercancía condicionada.</summary>
+    public bool Condicionada { get; private set; }
+
+    /// <summary>
+    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). No se guardan:
+    /// solo viajan en la respuesta de la captura o del recálculo; leída de la base vale <c>null</c>.
+    /// </summary>
+    public clsAvisosCubicacion? AvisosCubicacion { get; private set; }
+
     /// <summary>Resumen del estado de sus camiones (<see cref="clsResumenEstadoCosteo"/>).</summary>
     public EstadoCosteo? EstadoCosteo { get; private set; }
 
@@ -229,13 +247,62 @@ public sealed class clsLineaSolicitud
     /// Camión nuevo de la ruta con el levante de la ruta copiado (decisión 4; 0 si no aplica). Vehículo y carrocería vacíos = sin
     /// selección automática (la Mesa de Costeo los resuelve). Recalcula los totales de levante.
     /// </summary>
-    public clsVehiculoLineaSolicitud AgregarVehiculo(string? tipoVehiculo, string? carroceria, decimal? pesoKg, Guid? idRecomendacionVehiculo = null)
+    public clsVehiculoLineaSolicitud AgregarVehiculo(string? tipoVehiculo, string? carroceria, decimal? pesoKg, Guid? idRecomendacionVehiculo = null) =>
+        AgregarVehiculo(new clsCamionPlaneado(tipoVehiculo, carroceria, pesoKg, idRecomendacionVehiculo));
+
+    /// <summary>
+    /// Camión nuevo de la ruta a partir del plan (HU-023.3: con el volumen y los porcentajes de llenado del cubicador) y con el levante de
+    /// la ruta copiado.
+    /// </summary>
+    public clsVehiculoLineaSolicitud AgregarVehiculo(clsCamionPlaneado plan)
     {
+        ArgumentNullException.ThrowIfNull(plan);
         var camion = clsVehiculoLineaSolicitud.Crear(
-            Id, tipoVehiculo, carroceria, pesoKg, ValorLevanteContenedor, idRecomendacionVehiculo, _vehiculos.Count + 1);
+            Id, plan.TipoVehiculo, plan.Carroceria, plan.PesoKg, ValorLevanteContenedor, plan.IdRecomendacionVehiculo, _vehiculos.Count + 1,
+            plan.VolumenTotalM3, plan.PorcentajeLlenadoVolumen, plan.PorcentajeLlenadoPeso);
         _vehiculos.Add(camion);
         SumarCostos();
         return camion;
+    }
+
+    /// <summary>
+    /// HU-023.3: guarda lo que respondió el cubicador para la ruta (<c>null</c> = sin cubicador: se limpian el resultado, el motivo y la
+    /// corrida). Los avisos quedan solo en memoria (<see cref="AvisosCubicacion"/>).
+    /// </summary>
+    public void RegistrarCubicacion(clsCubicacionRuta? cubicacion)
+    {
+        if (cubicacion is not null && cubicacion.MotivoSinSeleccion is not null
+            && !string.Equals(cubicacion.Resultado, "SIN_SELECCION_AUTOMATICA", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("El motivo de 'sin selección' solo existe con SIN_SELECCION_AUTOMATICA.", nameof(cubicacion));
+        }
+
+        IdRecomendacion = cubicacion?.IdRecomendacion;
+        ResultadoCubicacion = cubicacion?.Resultado;
+        MotivoSinSeleccion = cubicacion?.MotivoSinSeleccion;
+        Condicionada = cubicacion?.Condicionada ?? false;
+        AvisosCubicacion = cubicacion?.Avisos;
+    }
+
+    /// <summary>
+    /// HU-023.3: reemplaza los camiones de la ruta por un plan nuevo del cubicador (recalcular la ruta, re-solicitud con cambios de carga),
+    /// con su resultado. Solo antes de enviar a Nexo: los camiones anteriores se quitan y los nuevos nacen sin estado ni costo.
+    /// </summary>
+    public void ReemplazarCamiones(IReadOnlyList<clsCamionPlaneado> camiones, clsCubicacionRuta? cubicacion)
+    {
+        ArgumentNullException.ThrowIfNull(camiones);
+        if (camiones.Count == 0)
+        {
+            throw new ArgumentException("La ruta debe tener al menos un camión.", nameof(camiones));
+        }
+
+        _vehiculos.Clear();
+        foreach (var camion in camiones)
+        {
+            AgregarVehiculo(camion);
+        }
+
+        RegistrarCubicacion(cubicacion);
     }
 
     /// <summary>

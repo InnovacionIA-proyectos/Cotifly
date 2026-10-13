@@ -52,7 +52,7 @@ public sealed class clsPasosEnvioConexosNexo(clsContextoWeb web, clsPasosCosteo 
                     valor_mercancia = 250000000,
                     mercancias = new object[]
                     {
-                        new { id_tipo_mercancia = clsPasosCosteo.TipoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 },
+                        new { codigo_mercancia = clsPasosCosteo.CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1400 },
                     },
                     servicios_conexos = new object[] { new { id_servicio_conexo = _servicios[servicio], cantidad } },
                 },

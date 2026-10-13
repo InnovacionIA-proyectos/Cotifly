@@ -131,7 +131,7 @@ public sealed class clsPasosCapturaRutas(clsContextoWeb web, clsPasosCosteo cost
         };
         if (tipo is not null)
         {
-            mercancia["id_tipo_mercancia"] = tipo;
+            mercancia["codigo_mercancia"] = tipo;
         }
 
         return mercancia;

@@ -97,7 +97,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             description: "Rutas que quedaron con un camión sin vehículo porque el cubicador falló (etiqueta motivo).");
     }
 
-    public async Task<clsResultado<IReadOnlyList<clsCamionPlaneado>>> PlanificarAsync(
+    public async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(ruta);
@@ -222,7 +222,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         return externo;
     }
 
-    private clsResultado<IReadOnlyList<clsCamionPlaneado>> Falla(
+    private clsResultado<clsPlanRuta> Falla(
         IClsCubicador cubicador, Guid rutaId, clsLineaSolicitudCosteo ruta, string motivo, string detalle, bool caida)
     {
         if (!cubicador.RespaldoSiFalla)
@@ -250,11 +250,11 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         return Respaldo(ruta);
     }
 
-    private static clsResultado<IReadOnlyList<clsCamionPlaneado>> Respaldo(clsLineaSolicitudCosteo ruta) =>
-        clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito(clsPlanificadorCamionSinVehiculo.Camiones(ruta));
+    private static clsResultado<clsPlanRuta> Respaldo(clsLineaSolicitudCosteo ruta, clsCubicacionRuta? cubicacion = null) =>
+        clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(clsPlanificadorCamionSinVehiculo.Camiones(ruta), cubicacion));
 
     /// <summary>Un camión por vehículo recomendado (en su orden); "sin selección" es un camión sin vehículo con el peso de la ruta.</summary>
-    private clsResultado<IReadOnlyList<clsCamionPlaneado>> Camiones(Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion)
+    private clsResultado<clsPlanRuta> Camiones(Guid rutaId, clsLineaSolicitudCosteo ruta, clsRecomendacionCubicador recomendacion)
     {
         if (recomendacion.Condicionada)
         {
@@ -266,7 +266,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         {
             _logger.LogInformation("El cubicador no seleccionó vehículo en la ruta {RutaId} ({Motivo}): el camión queda sin vehículo para la Mesa de Costeo de Nexo.",
                 rutaId, recomendacion.MotivoSinSeleccion ?? "sin motivo");
-            return Respaldo(ruta);
+            // HU-023.3: la ruta guarda el resultado y el motivo; el camión va sin vehículo ni recomendación.
+            return Respaldo(ruta, recomendacion.ACubicacionRuta());
         }
 
         var camiones = new List<clsCamionPlaneado>(recomendacion.Vehiculos.Count);
@@ -285,7 +286,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
                 v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso));
         }
 
-        return clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito(camiones);
+        return clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(camiones, recomendacion.ACubicacionRuta()));
     }
 }
 

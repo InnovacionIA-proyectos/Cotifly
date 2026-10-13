@@ -85,6 +85,51 @@ Cubicador falso (`clsCubicadorFalso`) con los ejemplos del contrato en `clsEjemp
 flota mixta, cada motivo de "sin selección", condicionada, extradimensión y cada error. Pruebas del adaptador: respuesta incompleta
 rechazada (cada campo), `401` y `503` traducidos, sin reintento del `POST`, tiempo agotado, catálogos con caché y la sonda.
 
+## Decisión — HU-023.3 (#158): base de datos y solicitud con camiones
+
+### Script `02` (Parte A, de @scalderon-bs, ya aplicado en la base compartida)
+
+`db/scripts/02_alter_cubicador.sql` se trae **sin modificarlo**: `CotizacionMercancias.idTipoMercancia` → `codigoMercancia
+NVARCHAR(64) NULL`; en el camión `volumenTotalM3 DECIMAL(12,3)`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso DECIMAL(5,2)`
+(CHECK de 0 a 100); en la ruta `idRecomendacion`, `resultadoCubicacion` (CHECK `ASIGNADO`/`SIN_SELECCION_AUTOMATICA`),
+`motivoSinSeleccion` (CHECK de los 4 motivos y solo con "sin selección") y `condicionada BIT NOT NULL DEFAULT 0`. El ejecutador lo
+corre después del 01 (y en `-Auto` sobre una base existente).
+
+**Conciliación con la cadena HU-021:**
+- EF y el dominio pasan de `IdTipoMercancia` a `CodigoMercancia` (obligatorio en las mercancías nuevas, `NULL` en las anteriores) y
+  mapean las 7 columnas nuevas con sus `CHECK`.
+- `/health/ready` exige el 02: sin sus columnas responde `esquema incompleto: falta 02` (`DescripcionEsquemaSin02`).
+- Las pruebas con Testcontainers aplican `0001` a `0010` más el 02, y `01_crear_esquema.sql` más el 02, y exigen el mismo esquema;
+  el 02 se prueba idempotente sobre las dos.
+- **Diferencias encontradas en el 02** (sin tocarlo): se escribió sobre un `01` anterior al `0010` (sin los nombres de municipio),
+  pero no depende de esas columnas y aplica igual sobre el `01` de la cadena; no trae la columna de orden del camión
+  (`ordenVehiculo`) ni el id del catálogo del conexo (#136). Las dos van en `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql`,
+  **pendiente de revisión de @scalderon-bs** (fuera de la carpeta que corre el ejecutador; el backend no las mapea).
+
+### Solicitud con camiones (Parte B)
+
+- **Contrato:** cada mercancía lleva `codigo_mercancia` (obligatorio en una captura nueva; con el catálogo disponible debe estar activo,
+  `MERCANCIA_DESCONOCIDA`, y ser cubicable, `MERCANCIA_NO_CUBICABLE`). `id_tipo_mercancia` queda **obsoleto**: se acepta y se traduce
+  al código con el catálogo (sin catálogo, `CAMPO_REQUERIDO` en `codigo_mercancia`). Vale para el formulario y la licitación.
+- **Una llamada por ruta, todo o nada:** primero se piden los camiones de todas las rutas y al final se guarda todo en una
+  transacción. Si una ruta falla (rechazo, respuesta inválida, o caída sin respaldo) no se guarda nada ni se envía nada a Nexo; las
+  corridas ya creadas quedan huérfanas en el cubicador (se acepta).
+- **Se guarda:** un camión por vehículo (`idRecomendacionVehiculo`, `tipoVehiculo` = `codigoVehiculo`, `carroceria` =
+  `codigoCarroceria`, `pesoKg` = `pesoTotalKg`, volumen y porcentajes) y en la ruta `idRecomendacion`, `resultadoCubicacion`,
+  `motivoSinSeleccion` y `condicionada`. "Sin selección" es un camión sin vehículo ni carrocería con el peso de la ruta, que viaja
+  igual a Nexo.
+- **No se guarda:** `mercanciasCondicionadas`, `advertencias` y `extradimension`; viajan en `cubicacion[]` de la respuesta de
+  `POST /web/solicitudes-costeo` (`CubicacionRuta`). La licitación responde `Licitacion` y no los trae (pendiente de HU-023.5).
+- `GET .../costeo` trae por ruta `resultado_cubicacion`, `motivo_sin_seleccion` y `condicionada`; por camión `volumen_total_m3`,
+  `porcentaje_llenado_volumen` y `porcentaje_llenado_peso`; por mercancía `codigo_mercancia`.
+- **Recalcular una ruta:** `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` (`If-Match`) vuelve a pedir los
+  camiones con el mismo id de ruta y los reemplaza, solo mientras la solicitud no está en Nexo (`pendiente_envio`/`error_envio`);
+  después, 409 `ESTADO_NO_PERMITE` y se usa la re-solicitud, que también vuelve a planificar (y copia el resultado del cubicador
+  cuando conserva los camiones). Mercancías sin código: 400, el comercial las vuelve a escoger.
+- **Agente de chat:** no captura mercancías: su ruta queda con un camión sin recomendación y sin resultado del cubicador.
+- **No se implementó** `GET /recomendaciones/{idRecomendacionVehiculo}/mercancias` (reconsultar qué lleva cada camión): ninguna
+  pantalla lo necesita todavía.
+
 ## Consecuencias
 
 - El frontend debe mandar `codigo_mercancia` (HU-023.3) y mostrar el nombre del vehículo desde `GET /web/tipos-vehiculo`.
@@ -96,6 +141,8 @@ rechazada (cada campo), `401` y `503` traducidos, sin reintento del `POST`, tiem
 
 | Pendiente | Dueño |
 |---|---|
+| Revisar y aplicar `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (orden del camión e id del catálogo del conexo) | @scalderon-bs |
+| Prueba de punta a punta de la solicitud con flota mixta contra el cubicador de QA (reconsultar el `idRecomendacionVehiculo` guardado) | Duban y Kevin, cuando exista P3 |
 | P1 `GET /tipos-vehiculo`, P2 ejemplos reales, P3 URL de QA, P7 endpoint de salud; confirmar la forma de `advertencias`, `mercanciasCondicionadas` y `extradimension` | Equipo del cubicador |
 | Prueba de punta a punta contra el cubicador de QA (con Kevin) | Duban y Kevin, cuando exista P3 |
 | Llave por ambiente en los secretos de Dokploy (`Cubicador__ApiKey`) | Duban (sin tocar el clúster sin autorización) |

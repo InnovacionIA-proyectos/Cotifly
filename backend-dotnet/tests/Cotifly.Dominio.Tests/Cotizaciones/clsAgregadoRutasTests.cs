@@ -270,15 +270,48 @@ public sealed class clsAgregadoRutasTests
     }
 
     [Fact]
+    public void ReemplazarLosCamionesDeUnaRutaGuardaElPlanDelCubicadorSoloAntesDeEnviarANexo()
+    {
+        // HU-023.3 (#158): recalcular una ruta (pendiente_envio) reemplaza sus camiones y guarda el resultado del cubicador.
+        var cotizacion = clsCotizacionMuestra.Formulario();
+        var ruta = cotizacion.PrimeraRuta!;
+        var id = Guid.NewGuid();
+        var plan = new clsPlanRuta(
+            [new clsCamionPlaneado("2S2", "FURGON", 16_000m, id, 40.5m, 80m, 70m), new clsCamionPlaneado("C2", "ESTACAS", 12_000m, Guid.NewGuid(), 10m, 50m, 90m)],
+            new clsCubicacionRuta(Guid.NewGuid(), "ASIGNADO", null, true));
+
+        var reemplazo = cotizacion.ReemplazarCamionesDeRuta(ruta.Id, plan, _ahora);
+
+        if (cotizacion.EstadoCosteo is EstadoCosteo.PendienteEnvio or EstadoCosteo.ErrorEnvio)
+        {
+            reemplazo.EsExitoso.Should().BeTrue();
+            ruta.Vehiculos.Select(v => (v.TipoVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoPeso)).Should().Equal(("2S2", 40.5m, 70m), ("C2", 10m, 90m));
+            ruta.Vehiculos[0].IdRecomendacionVehiculo.Should().Be(id);
+            (ruta.ResultadoCubicacion, ruta.Condicionada, ruta.MotivoSinSeleccion).Should().Be(("ASIGNADO", true, (string?)null));
+        }
+        else
+        {
+            reemplazo.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
+        }
+
+        cotizacion.ReemplazarCamionesDeRuta(Guid.NewGuid(), plan, _ahora).EsFallo.Should().BeTrue();
+        var motivoSinSinSeleccion = () => ruta.RegistrarCubicacion(new clsCubicacionRuta(null, "ASIGNADO", "SUPERA_K_MAX", false));
+        motivoSinSinSeleccion.Should().Throw<ArgumentException>("el motivo solo existe con SIN_SELECCION_AUTOMATICA (CHECK del 02)");
+    }
+
+    [Fact]
     public void UnaMercanciaNuevaExigeElTipoDelCubicador()
     {
         var posicion = new clsPosicionCarga("Naranja", 10, 100m, 80m, 60m, 20m);
 
-        clsMercancia.Crear(Guid.NewGuid(), 1, null, posicion).Error.Mensaje.Should().Contain("id_tipo_mercancia");
-        clsMercancia.Crear(Guid.NewGuid(), 1, Guid.Empty, posicion).EsFallo.Should().BeTrue();
-        var mercancia = clsMercancia.Crear(Guid.NewGuid(), 2, Guid.NewGuid(), posicion).Valor;
-        (mercancia.Orden, mercancia.NombreMercancia, mercancia.APosicion().IdTipoMercancia).Should().Be((2, "Naranja", mercancia.IdTipoMercancia));
-        clsMercancia.Crear(Guid.NewGuid(), 1, Guid.NewGuid(), posicion with { Cantidad = 0 }).EsFallo.Should().BeTrue("las reglas de la posición de Nexo siguen");
+        // HU-023.3 (#158): el código del catálogo del cubicador (codigo_mercancia) reemplaza al uuid.
+        clsMercancia.Crear(Guid.NewGuid(), 1, null, posicion).Error.Mensaje.Should().Contain("codigo_mercancia");
+        clsMercancia.Crear(Guid.NewGuid(), 1, " ", posicion).EsFallo.Should().BeTrue();
+        clsMercancia.Crear(Guid.NewGuid(), 1, new string('X', 65), posicion).EsFallo.Should().BeTrue("codigoMercancia es NVARCHAR(64)");
+        var mercancia = clsMercancia.Crear(Guid.NewGuid(), 2, " BEBIDAS ", posicion).Valor;
+        (mercancia.Orden, mercancia.NombreMercancia, mercancia.CodigoMercancia, mercancia.APosicion().CodigoMercancia)
+            .Should().Be((2, "Naranja", "BEBIDAS", "BEBIDAS"));
+        clsMercancia.Crear(Guid.NewGuid(), 1, "BEBIDAS", posicion with { Cantidad = 0 }).EsFallo.Should().BeTrue("las reglas de la posición de Nexo siguen");
     }
 
     [Fact]

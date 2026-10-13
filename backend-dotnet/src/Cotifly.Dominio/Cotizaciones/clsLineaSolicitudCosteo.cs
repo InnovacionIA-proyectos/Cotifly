@@ -45,8 +45,14 @@ public static class clsCodigosLineaSolicitud
     /// <summary>HU-021.6: la ruta pide más servicios conexos de los admitidos.</summary>
     public const string DemasiadosConexos = "DEMASIADOS_CONEXOS";
 
-    /// <summary>HU-021.5 (#133): el <c>id_tipo_mercancia</c> no está en el catálogo del cubicador (<c>GET /web/tipos-mercancia</c>).</summary>
+    /// <summary>HU-021.5 (#133): el <c>id_tipo_mercancia</c> (obsoleto) no está en el catálogo del cubicador (<c>GET /web/tipos-mercancia</c>).</summary>
     public const string TipoMercanciaInexistente = "TIPO_MERCANCIA_INEXISTENTE";
+
+    /// <summary>HU-023.3 (#158): el <c>codigo_mercancia</c> no está (activo) en el catálogo del cubicador.</summary>
+    public const string MercanciaDesconocida = "MERCANCIA_DESCONOCIDA";
+
+    /// <summary>HU-023.3 (#158): el catálogo del cubicador marca la mercancía como no cubicable.</summary>
+    public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -289,7 +295,8 @@ public sealed record clsLineaSolicitudCosteo
     /// <list type="bullet">
     /// <item>decisión 2: el origen y el destino llevan su id de municipio (<c>CAMPO_REQUERIDO</c> en <c>origen_municipio_id</c> /
     /// <c>destino_municipio_id</c>); una ciudad de devolución o de levante con nombre lleva también su id;</item>
-    /// <item>cada mercancía lleva el tipo del catálogo del cubicador (<c>mercancias[i].id_tipo_mercancia</c>, <c>CAMPO_REQUERIDO</c>).</item>
+    /// <item>cada mercancía lleva el código del catálogo del cubicador (<c>mercancias[i].codigo_mercancia</c>, <c>CAMPO_REQUERIDO</c>;
+    /// HU-023.3). Durante la transición vale también el <c>id_tipo_mercancia</c> obsoleto, que la captura traduce al código.</item>
     /// </list>
     /// </summary>
     public IReadOnlyList<clsErrorCampo> ErroresCaptura()
@@ -319,10 +326,11 @@ public sealed record clsLineaSolicitudCosteo
 
         for (var i = 0; i < Posiciones.Count; i++)
         {
-            if (Posiciones[i] is { } mercancia && (mercancia.IdTipoMercancia is null || mercancia.IdTipoMercancia == Guid.Empty))
+            if (Posiciones[i] is { } mercancia && string.IsNullOrWhiteSpace(mercancia.CodigoMercancia)
+                && (mercancia.IdTipoMercancia is null || mercancia.IdTipoMercancia == Guid.Empty))
             {
-                Requerido($"mercancias[{i}].id_tipo_mercancia",
-                    $"La mercancía {i + 1} debe traer el tipo de mercancía del catálogo del cubicador (id_tipo_mercancia).");
+                Requerido($"mercancias[{i}].codigo_mercancia",
+                    $"La mercancía {i + 1} debe traer el código del catálogo del cubicador (codigo_mercancia, GET /web/tipos-mercancia).");
             }
         }
 

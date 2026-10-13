@@ -16,6 +16,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// <item><see cref="DescripcionEsquemaSin0009"/>: la base sigue con <c>Cotizaciones</c> (esquema anterior a la reestructuración);</item>
 /// <item><see cref="DescripcionEsquemaSin0010"/>: solo faltan las columnas del 0010 (nombres de municipio, id de la solicitud de Nexo,
 /// nombre del conexo);</item>
+/// <item><see cref="DescripcionEsquemaSin02"/>: solo faltan las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>
+/// (HU-023.3, #158);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
@@ -32,6 +34,22 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
 
     /// <summary>Está el 0009, pero no el 0010 (nombres de municipio, id de la solicitud de Nexo y nombre del conexo).</summary>
     public const string DescripcionEsquemaSin0010 = "esquema incompleto: falta 0010";
+
+    /// <summary>HU-023.3 (#158): están el 0009 y el 0010, pero no las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>.</summary>
+    public const string DescripcionEsquemaSin02 = "esquema incompleto: falta 02";
+
+    /// <summary>Columnas que agrega <c>db/scripts/02_alter_cubicador.sql</c> (HU-023.3).</summary>
+    public static readonly IReadOnlySet<string> Columnas02 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionMercancias.codigoMercancia",
+        "CotizacionVehiculosLineaSolicitud.volumenTotalM3",
+        "CotizacionVehiculosLineaSolicitud.porcentajeLlenadoVolumen",
+        "CotizacionVehiculosLineaSolicitud.porcentajeLlenadoPeso",
+        "CotizacionLineasSolicitud.idRecomendacion",
+        "CotizacionLineasSolicitud.resultadoCubicacion",
+        "CotizacionLineasSolicitud.motivoSinSeleccion",
+        "CotizacionLineasSolicitud.condicionada",
+    };
 
     /// <summary>Prefijo de la descripción cuando falta otra tabla o columna del modelo.</summary>
     public const string PrefijoEsquemaIncompleto = "esquema incompleto: falta ";
@@ -115,6 +133,12 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
         if (faltantes.All(Columnas0010.Contains))
         {
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0010);
+        }
+
+        // Faltan columnas del 0010 y del 02 (una base que llega solo al 0009): primero el 0010.
+        if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f)))
+        {
+            return HealthCheckResult.Unhealthy(faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010 : DescripcionEsquemaSin02);
         }
 
         return HealthCheckResult.Unhealthy(PrefijoEsquemaIncompleto + string.Join(", ", faltantes.Order(StringComparer.Ordinal).Take(5)));

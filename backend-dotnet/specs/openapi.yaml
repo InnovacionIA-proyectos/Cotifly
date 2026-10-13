@@ -1127,7 +1127,7 @@ paths:
         cada ruta con su línea de negocio (o la de la solicitud), origen y destino con **id de municipio obligatorio y copia del
         nombre** (decisión 2), condiciones del contenedor con las ciudades de devolución y de levante también por id + nombre,
         horas, `valor_levante_contenedor` (se copia a cada camión, decisión 4), valor de la mercancía, peso, mercancías con
-        `id_tipo_mercancia` obligatorio (catálogo del cubicador) y `servicios_conexos` del catálogo de Nexo (id y cantidad; el
+        `codigo_mercancia` obligatorio (catálogo del cubicador, HU-023.3) y `servicios_conexos` del catálogo de Nexo (id y cantidad; el
         precio lo pone Cotifly con el costo de Nexo, decisión 3, y nunca se muestra). Cotifly crea una ruta por cada una y sus
         camiones según el **cubicador** (HU-021.5, #133, con el contrato de HU-023.1, #156): manda la ruta a `POST /recomendaciones`
         del cubicador (`idLineaSolicitud` = id de la ruta, `origenSistema = COTIFLY`, `claseViajeSeleccionada` = la clase de viaje
@@ -1142,8 +1142,11 @@ paths:
         defecto), la ruta queda con **un camión sin vehículo ni carrocería con el peso total de la ruta**, como antes. A Nexo viaja
         una línea por camión.
         - **Mercancías:** con el catálogo del cubicador disponible (`GET /web/tipos-mercancia`), `nombre_mercancia` se copia del
-          catálogo por `id_tipo_mercancia` (un nombre distinto del cliente se ignora) y un id que no está en el catálogo es
-          `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia`. Sin catálogo se guarda el nombre que manda el cliente.
+          catálogo por `codigo_mercancia` (un nombre distinto del cliente se ignora); un código inactivo o desconocido es
+          `MERCANCIA_DESCONOCIDA` y uno no cubicable `MERCANCIA_NO_CUBICABLE` (HU-023.3). Sin catálogo se guarda el nombre que manda
+          el cliente. **Todo o nada:** si una ruta falla en el cubicador, no se guarda ninguna ni se envía nada a Nexo. La ruta guarda
+          `resultado_cubicacion`, `motivo_sin_seleccion` y `condicionada`, y cada camión su volumen y sus porcentajes de llenado; la
+          respuesta trae `cubicacion` con los avisos.
         - **Municipios:** el nombre que se guarda **siempre sale del catálogo** de `GET /web/municipios` por el id (un nombre
           distinto que mande el cliente se ignora y queda en el log); un id que no existe es `MUNICIPIO_INEXISTENTE` en el campo del
           id. Sin id, el nombre se resuelve con la regla determinista de HU-005.13 y nunca se adivina (`MUNICIPIO_AMBIGUO` con los
@@ -1452,6 +1455,73 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '404':
           $ref: '#/components/responses/NoEsTuya'
+
+  /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos:
+    post:
+      operationId: recalcularVehiculosRuta
+      tags: [web]
+      summary: Pide de nuevo al cubicador los camiones de UNA ruta y reemplaza los anteriores
+      x-issue: '#158 (HU-023.3)'
+      description: |
+        HU-023.3 (#158, ADR-020). Cuando cambian las mercancías o el peso de una ruta, el frontend pide los camiones de nuevo: la ruta
+        viaja al cubicador con su mismo id (`idLineaSolicitud`, una corrida nueva) y sus mercancías con `codigo_mercancia`; los camiones
+        de esa ruta se reemplazan por los de la respuesta (con volumen y porcentajes de llenado) y la ruta guarda el resultado
+        (`resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada`). Sin cubicador o si se cae (con el respaldo encendido), un camión
+        sin vehículo con el peso de la ruta. Solo mientras la solicitud **no está en Nexo** (`pendiente_envio` o `error_envio`): después,
+        409 `ESTADO_NO_PERMITE` y se usa `POST .../costeo/re-solicitar` (la versión nueva también vuelve a pedir los camiones). Una ruta
+        con mercancías sin código (anteriores al script `02`) responde 400 `SOLICITUD_COSTEO_INVALIDA`: el comercial las vuelve a escoger.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - name: rutaId
+          in: path
+          required: true
+          description: '`linea_solicitud_id` de la ruta (de `rutas[]` de `CosteoCotizacion`).'
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+      responses:
+        '200':
+          description: Costeo con los camiones nuevos de la ruta
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CosteoCotizacion'
+        '400':
+          description: |
+            `SOLICITUD_COSTEO_INVALIDA` (mercancías sin código), `RUTA_INEXISTENTE` o un rechazo del cubicador con su código
+            (`MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`ESTADO_NO_PERMITE` (la solicitud ya está en Nexo) o `CONFLICTO_CONCURRENCIA`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          description: '`PRECONDICION_REQUERIDA`: falta `If-Match`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '503':
+          description: '`CUBICADOR_NO_DISPONIBLE` (sin respaldo), `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
 
   /web/cotizaciones/{folio}/costeo/margen:
     put:
@@ -3320,6 +3390,95 @@ components:
             conexos; la `-vN` toma el costo unitario del catálogo de Nexo de hoy). A la cotización nueva de Nexo los manda una
             sola vez el envío diferido (decisión 10) cuando Nexo costea la línea del primer camión vigente de la ruta. El
             frontend los muestra como aviso informativo.
+        cubicacion:
+          type: array
+          items:
+            $ref: '#/components/schemas/CubicacionRuta'
+          description: |
+            HU-023.3 (#158). Solo en la respuesta de `POST /web/solicitudes-costeo` y solo si alguna ruta pasó por el cubicador: por
+            ruta, el resultado y los avisos (mercancías condicionadas, advertencias y extradimensión). Los avisos **no se guardan**:
+            el frontend los muestra al crear; el resultado y el motivo quedan también en `GET .../costeo`.
+
+    CubicacionRuta:
+      type: object
+      required: [linea_orden, linea_solicitud_id, resultado, motivo_sin_seleccion, condicionada, mercancias_condicionadas, advertencias, extradimension]
+      description: HU-023.3 (#158). Lo que respondió el cubicador para una ruta de la captura.
+      properties:
+        linea_orden:
+          type: integer
+          minimum: 1
+        linea_solicitud_id:
+          type: string
+          format: uuid
+        resultado:
+          type: string
+          nullable: true
+          enum: [ASIGNADO, SIN_SELECCION_AUTOMATICA, null]
+        motivo_sin_seleccion:
+          type: string
+          nullable: true
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
+        condicionada:
+          type: boolean
+          description: La ruta va a la Mesa de Costeo por una mercancía condicionada.
+        mercancias_condicionadas:
+          type: array
+          items:
+            $ref: '#/components/schemas/MercanciaCondicionada'
+        advertencias:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdvertenciaCubicador'
+        extradimension:
+          type: object
+          nullable: true
+          description: Forma de `ExtradimensionCubicador`; `null` si el cubicador no la informó.
+          required: [extradimensionado, dimensiones, detalle]
+          properties:
+            extradimensionado:
+              type: boolean
+            dimensiones:
+              type: array
+              items:
+                type: string
+            detalle:
+              type: string
+              nullable: true
+
+    MercanciaCondicionada:
+      type: object
+      required: [codigo_mercancia, comentario]
+      properties:
+        codigo_mercancia:
+          type: string
+        comentario:
+          type: string
+          nullable: true
+
+    AdvertenciaCubicador:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          nullable: true
+        mensaje:
+          type: string
+
+    ExtradimensionCubicador:
+      type: object
+      required: [extradimensionado, dimensiones, detalle]
+      description: Forma provisional hasta que el cubicador publique sus ejemplos (petición P2).
+      properties:
+        extradimensionado:
+          type: boolean
+        dimensiones:
+          type: array
+          items:
+            type: string
+        detalle:
+          type: string
+          nullable: true
 
     MisCotizaciones:
       type: object
@@ -4040,6 +4199,19 @@ components:
           description: HU-021.9. Las mercancías de la ruta, en su orden.
           items:
             $ref: '#/components/schemas/MercanciaCosteo'
+        resultado_cubicacion:
+          type: string
+          nullable: true
+          enum: [ASIGNADO, SIN_SELECCION_AUTOMATICA, null]
+          description: HU-023.3 (#158). Qué respondió el cubicador para la ruta; `null` si no pasó por el cubicador.
+        motivo_sin_seleccion:
+          type: string
+          nullable: true
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
+          description: HU-023.3. Por qué el cubicador no pudo escoger (solo con `SIN_SELECCION_AUTOMATICA`).
+        condicionada:
+          type: boolean
+          description: HU-023.3. La ruta va a la Mesa de Costeo por una mercancía condicionada.
         aviso_conexos_nexo:
           type: string
           nullable: true
@@ -4103,20 +4275,36 @@ components:
           type: string
           nullable: true
           enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+        volumen_total_m3:
+          type: number
+          nullable: true
+          description: HU-023.3 (#158). Volumen que lleva el camión según el cubicador (m³); `null` sin recomendación.
+        porcentaje_llenado_volumen:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: HU-023.3. Qué tan lleno va el camión en volumen; `null` sin recomendación.
+        porcentaje_llenado_peso:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: HU-023.3. Qué tan lleno va el camión en peso; `null` sin recomendación.
 
     MercanciaCosteo:
       type: object
-      required: [orden, id_tipo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
-      description: HU-021.9 (#136). Una mercancía de la ruta (tipo del catálogo del cubicador, nombre, medidas y peso).
+      required: [orden, codigo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg]
+      description: HU-021.9 (#136). Una mercancía de la ruta (código del catálogo del cubicador, nombre, medidas y peso).
       properties:
         orden:
           type: integer
           minimum: 1
-        id_tipo_mercancia:
+        codigo_mercancia:
           type: string
-          format: uuid
           nullable: true
-          description: Vacío en las mercancías migradas por el 0009.
+          maxLength: 64
+          description: HU-023.3 (#158). Código del catálogo del cubicador; `null` en las mercancías anteriores al script `02`.
         nombre_mercancia:
           type: string
           nullable: true
@@ -4541,16 +4729,23 @@ components:
         999.999). `peso_kg` es opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
 
         HU-021.6 (#132): es también la **mercancía** de una ruta (`RutaCapturaWeb.mercancias`, `LineaLicitacionWeb.mercancias`).
-        En una captura nueva `id_tipo_mercancia` (catálogo del cubicador) es **obligatorio** (`CAMPO_REQUERIDO` en
-        `mercancias[i].id_tipo_mercancia`) y `nombre_mercancia` es la copia de su nombre (`descripcion` es el nombre anterior del
-        mismo campo; si llegan los dos, vale `nombre_mercancia`). Mientras el desplegable de `GET /web/tipos-mercancia` no exista
-        (#133), el frontend envía el id que le entregue el cubicador.
+        **HU-023.3 (#158):** en una captura nueva `codigo_mercancia` (código de `GET /web/tipos-mercancia`) es **obligatorio**
+        (`CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`); con el catálogo disponible debe estar activo
+        (`MERCANCIA_DESCONOCIDA`) y ser cubicable (`MERCANCIA_NO_CUBICABLE`). `id_tipo_mercancia` queda **obsoleto**: durante la
+        transición se acepta y se traduce al código con el catálogo (sin catálogo, `CAMPO_REQUERIDO` en `codigo_mercancia`).
+        `nombre_mercancia` es la copia del nombre del catálogo (`descripcion` es el nombre anterior del mismo campo).
       properties:
+        codigo_mercancia:
+          type: string
+          nullable: true
+          maxLength: 64
+          description: HU-023.3 (#158). Código del tipo de mercancía en el catálogo del cubicador; obligatorio en una captura nueva.
         id_tipo_mercancia:
           type: string
           format: uuid
           nullable: true
-          description: HU-021.6. Id del tipo de mercancía en el catálogo del cubicador; obligatorio en una captura nueva.
+          deprecated: true
+          description: Obsoleto (HU-023.3). Uuid del catálogo; se traduce a `codigo_mercancia`.
         nombre_mercancia:
           type: string
           nullable: true
@@ -5292,7 +5487,7 @@ components:
           enum: [LINEAS_REQUERIDAS, DEMASIADAS_LINEAS, LINEA_INCOMPLETA, CAMPO_REQUERIDO, CAMPO_DEMASIADO_LARGO, VALOR_FUERA_DE_RANGO,
                  DEMASIADAS_POSICIONES, POSICION_INVALIDA, PESO_REQUERIDO, PESO_INCONSISTENTE, FILA_INVALIDA, CAMPO_NO_APLICA,
                  CODIGO_NO_CATALOGO, MUNICIPIO_AMBIGUO, MUNICIPIO_NO_ENCONTRADO, MUNICIPIO_INEXISTENTE, CONEXO_DUPLICADO,
-                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE]
+                 CONEXO_NO_ENCONTRADO, DEMASIADOS_CONEXOS, TIPO_MERCANCIA_INEXISTENTE, MERCANCIA_DESCONOCIDA, MERCANCIA_NO_CUBICABLE]
           description: |
             HU-013.11: `CODIGO_NO_CATALOGO` (el valor no es un código de catálogo, G2), `CAMPO_NO_APLICA` y `CAMPO_REQUERIDO` de las
             reglas condicionales (G3), `MUNICIPIO_AMBIGUO` y `MUNICIPIO_NO_ENCONTRADO` (G6, campo `origen` o `destino`).
@@ -5300,7 +5495,9 @@ components:
             `MUNICIPIO_INEXISTENTE` en `*_municipio_id` si el id no está en el catálogo); `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` y `mercancias[i].id_tipo_mercancia`; `CONEXO_DUPLICADO`,
             `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS` en `servicios_conexos`. HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en
-            `mercancias[i].id_tipo_mercancia` (el id no está en el catálogo del cubicador).
+            `mercancias[i].id_tipo_mercancia` (el id obsoleto no está en el catálogo del cubicador). HU-023.3:
+            `MERCANCIA_DESCONOCIDA` y `MERCANCIA_NO_CUBICABLE` en `mercancias[i].codigo_mercancia`; `CAMPO_REQUERIDO` en
+            `mercancias[i].codigo_mercancia` si falta el código.
         mensaje:
           type: string
 

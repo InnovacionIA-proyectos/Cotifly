@@ -103,12 +103,24 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     [Fact]
     public async Task ConEl0009PeroSinEl0010EsUnhealthyPorqueLeFaltaEl0010()
     {
-        await using var sin0010 = await baseDatos.CrearBaseConScriptsAsync("dbSin0010", clsBaseDatosPruebas.Scripts.Length - 1);
+        await using var sin0010 = await baseDatos.CrearBaseConScriptsAsync("dbSin0010", clsBaseDatosPruebas.ScriptsHasta0009);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0010.Cadena);
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 0010", "el modelo EF mapea los nombres de municipio, solicitudNexoId y el nombre del conexo");
+    }
+
+    [Fact]
+    public async Task ConEl0010PeroSinEl02EsUnhealthyPorqueLeFaltaEl02()
+    {
+        // HU-023.3 (#158): el modelo EF mapea las columnas del cubicador de db/scripts/02_alter_cubicador.sql.
+        await using var sin02 = await baseDatos.CrearBaseConScriptsAsync("dbSin02", clsBaseDatosPruebas.ScriptsHasta0010);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin02.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 02");
     }
 
     [Fact]

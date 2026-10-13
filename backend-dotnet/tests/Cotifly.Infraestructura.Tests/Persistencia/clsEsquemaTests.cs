@@ -66,6 +66,21 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript02DelCubicadorEsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs) va después del 0010 o del 01 y se puede repetir.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem02", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script02);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem02Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script02);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+            "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionMercancias', N'idTipoMercancia') IS NULL "
+            + "AND COL_LENGTH(N'dbo_cotifly.CotizacionMercancias', N'codigoMercancia') IS NOT NULL THEN 1 ELSE 0 END"))
+            .Should().Be(1, "el 02 cambia idTipoMercancia por codigoMercancia");
+    }
+
+    [Fact]
     public async Task ElScript0009EsIdempotenteSobreUnaBaseMigrada()
     {
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0009", clsBaseDatosPruebas.Scripts.Length);

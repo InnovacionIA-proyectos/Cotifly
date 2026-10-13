@@ -336,13 +336,16 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
         // Formato plano anterior (una ruta, HU-021.6 lo conserva): los municipios se resuelven por nombre y cada mercancía lleva su tipo.
         posiciones = new object[]
         {
-            new { id_tipo_mercancia = TipoMercancia, descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-            new { id_tipo_mercancia = TipoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+            new { codigo_mercancia = CodigoMercancia, descripcion = "Estiba", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
+            new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
         },
     });
 
     /// <summary>Tipo de mercancía del catálogo del cubicador de las mercancías del formulario (HU-021.6).</summary>
     public const string TipoMercancia = "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50";
+
+    /// <summary>HU-023.3: código del tipo de mercancía en el catálogo del cubicador (lo que manda el contrato nuevo).</summary>
+    public const string CodigoMercancia = "CAFE_EN_ESTIBAS";
 
     public void Dispose()
     {

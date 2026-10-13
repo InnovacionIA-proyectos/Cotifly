@@ -29,4 +29,38 @@ public sealed record clsRutaCapturada(
     int? RutaOrigenIndice,
     IReadOnlyList<clsCamionPlaneado> Camiones,
     IReadOnlyList<clsCambioConexo> Conexos,
-    Guid? RutaId = null);
+    Guid? RutaId = null,
+    clsCubicacionRuta? Cubicacion = null);
+
+/// <summary>
+/// Lo que respondió el cubicador para una ruta (HU-023.3, #158; columnas del script <c>02</c> en <c>CotizacionLineasSolicitud</c>): la
+/// corrida (<paramref name="IdRecomendacion"/>, para volver a consultarla), el resultado (<c>ASIGNADO</c> o
+/// <c>SIN_SELECCION_AUTOMATICA</c>), el motivo de "sin selección" y si la ruta quedó condicionada (va a la Mesa de Costeo).
+/// <paramref name="Avisos"/> (mercancías condicionadas, advertencias y extradimensión) se devuelve al comercial pero NO se guarda.
+/// </summary>
+public sealed record clsCubicacionRuta(
+    Guid? IdRecomendacion, string Resultado, string? MotivoSinSeleccion, bool Condicionada, clsAvisosCubicacion? Avisos = null);
+
+/// <summary>
+/// Plan de camiones de una ruta (HU-023.3): los camiones (al menos uno) y lo que respondió el cubicador (<c>null</c> si la ruta no lo
+/// llamó: sin cubicador configurado, sin códigos de mercancía o respaldo por una caída).
+/// </summary>
+public sealed record clsPlanRuta(IReadOnlyList<clsCamionPlaneado> Camiones, clsCubicacionRuta? Cubicacion = null);
+
+/// <summary>Avisos del cubicador para una ruta que se devuelven al comercial y no se guardan (HU-023.3).</summary>
+public sealed record clsAvisosCubicacion(
+    IReadOnlyList<clsMercanciaCondicionada> MercanciasCondicionadas,
+    IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
+    clsExtradimensionCubicador? Extradimension);
+
+/// <summary>Una mercancía que dejó la ruta condicionada (pendiente de aprobación): se devuelve al comercial, no se guarda.</summary>
+public sealed record clsMercanciaCondicionada(string CodigoMercancia, string? Comentario);
+
+/// <summary>Una advertencia del cubicador (por ejemplo "refrigerado = FURGON + alerta"): se devuelve al comercial, no se guarda.</summary>
+public sealed record clsAdvertenciaCubicador(string? Codigo, string Mensaje);
+
+/// <summary>
+/// Información de extradimensión de la respuesta: se devuelve al comercial, no se guarda. <b>Forma provisional</b> mientras el cubicador
+/// no publique los ejemplos (petición P2): se lee un booleano o un objeto con la marca, las dimensiones excedidas y un detalle.
+/// </summary>
+public sealed record clsExtradimensionCubicador(bool Extradimensionado, IReadOnlyList<string> Dimensiones, string? Detalle);

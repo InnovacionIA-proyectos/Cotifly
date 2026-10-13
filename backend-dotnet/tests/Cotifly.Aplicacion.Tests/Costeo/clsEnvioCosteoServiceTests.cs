@@ -753,7 +753,7 @@ public sealed class clsEnvioCosteoServiceTests
         var errores = ((IEnumerable<IReadOnlyDictionary<string, object?>>)resultado.Error.Datos!["errores"]!).ToList();
         errores.Select(e => ((int?)e["ruta"], (string)e["campo"]!, (string)e["codigo"]!)).Should().BeEquivalentTo(
         [
-            ((int?)0, "mercancias[0].id_tipo_mercancia", clsCodigosLineaSolicitud.CampoRequerido),
+            ((int?)0, "mercancias[0].codigo_mercancia", clsCodigosLineaSolicitud.CampoRequerido),
             ((int?)1, "origen", clsCodigosLineaSolicitud.MunicipioAmbiguo),
             ((int?)2, "peso_kg", clsCodigosLineaSolicitud.PesoRequerido),
         ]);
@@ -877,7 +877,7 @@ public sealed class clsEnvioCosteoServiceTests
         var rechazada = await ServicioCon(conCatalogo).CapturarAsync(_ana, Captura(ruta), Ct);
         var guardada = (await ServicioCon(caido).CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
 
-        CodigosDe(rechazada.Error).Should().OnlyContain(c => c == clsCodigosLineaSolicitud.TipoMercanciaInexistente).And.NotBeEmpty();
+        CodigosDe(rechazada.Error).Should().OnlyContain(c => c == clsCodigosLineaSolicitud.MercanciaDesconocida).And.NotBeEmpty();
         guardada.MercanciasOrdenadas.Select(m => m.NombreMercancia)
             .Should().Equal(ruta.Linea.Posiciones.Select(p => p.Descripcion?.Trim() is { Length: > 0 } d ? d : null));
     }

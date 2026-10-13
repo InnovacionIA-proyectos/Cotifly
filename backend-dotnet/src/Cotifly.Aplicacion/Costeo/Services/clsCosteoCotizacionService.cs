@@ -134,6 +134,15 @@ public sealed record clsRutaCosteo(
     /// <summary>HU-021.9: las mercancías de la ruta, en su orden.</summary>
     public IReadOnlyList<clsMercanciaCosteo> Mercancias { get; init; } = [];
 
+    /// <summary>HU-023.3 (#158): qué respondió el cubicador para la ruta (<c>ASIGNADO</c> o <c>SIN_SELECCION_AUTOMATICA</c>); <c>null</c> sin cubicador.</summary>
+    public string? ResultadoCubicacion { get; init; }
+
+    /// <summary>HU-023.3: por qué el cubicador no pudo escoger (solo con <c>SIN_SELECCION_AUTOMATICA</c>).</summary>
+    public string? MotivoSinSeleccion { get; init; }
+
+    /// <summary>HU-023.3: la ruta va a la Mesa de Costeo por una mercancía condicionada.</summary>
+    public bool Condicionada { get; init; }
+
     /// <summary>
     /// Decisión 10 (HU-021.9): aviso cuando algún conexo de la ruta quedó <c>incierto</c> o <c>fallido_definitivo</c> en su envío a Nexo
     /// (el comercial o la Mesa deben revisarlo en Nexo); <c>null</c> si no hay nada que revisar. Solo en <c>GET .../costeo</c>.
@@ -143,13 +152,19 @@ public sealed record clsRutaCosteo(
 
 /// <summary>
 /// <c>CamionCosteo</c> (HU-021.9, #136): un camión de la ruta como lo ve el comercial. Vehículo y carrocería vacíos = sin selección
-/// automática (los resuelve la Mesa de Costeo de Nexo, decisión 7). Sin costos ni ids de Nexo.
+/// automática (los resuelve la Mesa de Costeo de Nexo, decisión 7). Sin costos ni ids de Nexo. HU-023.3 (#158): con el cubicador, el
+/// volumen que lleva y qué tan lleno va en volumen y en peso (0 a 100); <c>null</c> sin recomendación.
 /// </summary>
-public sealed record clsCamionCosteo(string? TipoVehiculo, string? Carroceria, decimal? PesoKg, string? EstadoCosteo);
+public sealed record clsCamionCosteo(
+    string? TipoVehiculo, string? Carroceria, decimal? PesoKg, string? EstadoCosteo,
+    decimal? VolumenTotalM3 = null, decimal? PorcentajeLlenadoVolumen = null, decimal? PorcentajeLlenadoPeso = null);
 
-/// <summary><c>MercanciaCosteo</c> (HU-021.9, #136): una mercancía de la ruta (tipo del catálogo del cubicador, nombre, medidas y peso).</summary>
+/// <summary>
+/// <c>MercanciaCosteo</c> (HU-021.9, #136): una mercancía de la ruta (código del catálogo del cubicador, HU-023.3; nombre, medidas y peso).
+/// <c>codigo_mercancia</c> es <c>null</c> en las mercancías anteriores al script <c>02</c>.
+/// </summary>
 public sealed record clsMercanciaCosteo(
-    int Orden, Guid? IdTipoMercancia, string? NombreMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+    int Orden, string? CodigoMercancia, string? NombreMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 
 /// <summary>PDF del costeo generado (<c>SalidaPdf</c>) y la versión nueva de la fila (va en el <c>ETag</c>, no en el cuerpo).</summary>
 public sealed record clsPdfCosteoGenerado(clsSalidaPdf Pdf, string? RowVersion);
@@ -965,10 +980,14 @@ public sealed class clsCosteoCotizacionService(
             LineaNegocioId = ruta.LineaNegocioId,
             PesoKg = ruta.PesoKg,
             Camiones = [.. ruta.VehiculosOrdenados.Select(v => new clsCamionCosteo(
-                v.TipoVehiculo, v.Carroceria, v.PesoKg, v.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null))],
+                v.TipoVehiculo, v.Carroceria, v.PesoKg, v.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
+                v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))],
+            ResultadoCubicacion = ruta.ResultadoCubicacion,
+            MotivoSinSeleccion = ruta.MotivoSinSeleccion,
+            Condicionada = ruta.Condicionada,
             Vehiculos = clsCosteoCotizacionService.Camiones(ruta),
             Mercancias = [.. ruta.MercanciasOrdenadas.Select(m => new clsMercanciaCosteo(
-                m.Orden, m.IdTipoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
+                m.Orden, m.CodigoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
         };
     }
 

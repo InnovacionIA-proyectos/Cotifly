@@ -214,6 +214,11 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoMercanciaCubicador), "TipoMercancia"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoCarroceriaCubicador), "TipoCarroceria"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoVehiculoCubicador), "TipoVehiculo"),
+        // HU-023.3 (#158): la cubicación por ruta en la respuesta de la captura.
+        (typeof(Cotifly.Aplicacion.Cotizaciones.DTOs.clsCubicacionRutaResumen), "CubicacionRuta"),
+        (typeof(Cotifly.Dominio.Cotizaciones.clsMercanciaCondicionada), "MercanciaCondicionada"),
+        (typeof(Cotifly.Dominio.Cotizaciones.clsAdvertenciaCubicador), "AdvertenciaCubicador"),
+        (typeof(Cotifly.Dominio.Cotizaciones.clsExtradimensionCubicador), "ExtradimensionCubicador"),
         (typeof(Cotifly.Aplicacion.Municipios.DTOs.clsMunicipio), "Municipio"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsCatalogosFlete), "CatalogosFlete"),
         (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsOpcionCatalogo), "OpcionCatalogo"),

@@ -222,7 +222,7 @@ public sealed class clsReSolicitudCosteoServiceTests
         // se ignora (decisión 7: lo define el cubicador o la Mesa de Costeo de Nexo).
         var camion = ruta.Vehiculos.Should().ContainSingle().Subject;
         (camion.TipoVehiculo, camion.Carroceria, camion.PesoKg).Should().Be(((string?)null, (string?)null, 28_400m));
-        // Las mercancías de la muestra no tienen id_tipo_mercancia (filas anteriores a #132): el cubicador no las puede cubicar y va el
+        // Las mercancías de la muestra no tienen codigo_mercancia (filas anteriores al script 02): el cubicador no las puede cubicar y va el
         // respaldo de un camión sin vehículo con el peso de la ruta (corrección del auditor de #136).
         await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
         resultado.Valor.RutasReplanificadas.Should().Equal(1);
@@ -394,7 +394,7 @@ public sealed class clsReSolicitudCosteoServiceTests
     {
         // La ruta tenía dos camiones (uno con vehículo): con otras mercancías ya no sirven.
         _cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", "FURGON", 500m);
-        var mercancias = new List<clsPosicionCarga> { new("Estiba de café", 10, 120m, 100m, 150m, 1425m, clsSolicitudCosteoMuestra.TipoMercancia) };
+        var mercancias = new List<clsPosicionCarga> { new("Estiba de café", 10, 120m, 100m, 150m, 1425m, CodigoMercancia: clsSolicitudCosteoMuestra.CodigoMercancia) };
         var cambios = new clsCambiosCarga
         {
             Presentes = new HashSet<string> { clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg },
@@ -402,7 +402,7 @@ public sealed class clsReSolicitudCosteoServiceTests
             PesoKg = 14_250m,
         };
         _planificador.PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<IReadOnlyList<clsCamionPlaneado>>.Exito([new clsCamionPlaneado("2S3", "FURGON", 8_000m), new clsCamionPlaneado(null, null, 6_250m)]));
+            .Returns(clsResultado<clsPlanRuta>.Exito(new clsPlanRuta([new clsCamionPlaneado("2S3", "FURGON", 8_000m), new clsCamionPlaneado(null, null, 6_250m)])));
 
         var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
 
