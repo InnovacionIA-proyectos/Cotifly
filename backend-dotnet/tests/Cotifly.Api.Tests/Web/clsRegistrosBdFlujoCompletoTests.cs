@@ -134,14 +134,14 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
             "1|2S3|ESTACAS|12000.00|R|150000.00|-|-|pendiente_costeo",
             "2|-|-|12500.00|-|0.00|-|-|pendiente_costeo");
 
-        // Mercancías: cuelgan de la ruta, con el id del catálogo del cubicador y su nombre copiado.
+        // Mercancías: cuelgan de la ruta, con el código del catálogo del cubicador (HU-023.3: id_tipo_mercancia se traduce al código) y su nombre copiado.
         (await Filas($"""
-            SELECT CONCAT(l.orden, '|', m.orden, '|', LOWER(CAST(m.idTipoMercancia AS nvarchar(36))), '|', m.nombreMercancia, '|', m.cantidad, '|', m.largoCm, 'x', m.anchoCm, 'x', m.altoCm, '|', m.pesoKg)
+            SELECT CONCAT(l.orden, '|', m.orden, '|', m.codigoMercancia, '|', m.nombreMercancia, '|', m.cantidad, '|', m.largoCm, 'x', m.anchoCm, 'x', m.altoCm, '|', m.pesoKg)
             FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId
             WHERE l.cotizacionSolicitudId = '{id}' ORDER BY l.orden, m.orden
             """)).Should().Equal(
-            $"1|1|{TipoCafe}|Café en estibas|20|120.00x100.00x150.00|1400.00",
-            $"2|1|{TipoCafe}|Café en estibas|10|120.00x100.00x150.00|1250.00");
+            "1|1|CAFE_EN_ESTIBAS|Café en estibas|20|120.00x100.00x150.00|1400.00",
+            "2|1|CAFE_EN_ESTIBAS|Café en estibas|10|120.00x100.00x150.00|1250.00");
 
         // Conexo capturado: en la ruta 1, con el id del catálogo de Nexo, su nombre y el costo unitario de Nexo como precio.
         (await Filas($"""

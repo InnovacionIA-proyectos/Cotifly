@@ -139,6 +139,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         {
             // HU-021.12 (#139, regla de las pruebas de esquema): el esquema vigente de la base compartida, sin migraciones.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
+            // HU-023.3 (#158): la instalación desde cero corre el 02 después del 01, como el ejecutador y CrearBaseInstaladaAsync.
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
