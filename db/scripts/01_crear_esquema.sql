@@ -2,8 +2,8 @@
    Cotifly — Instalación desde cero del esquema dbo_cotifly (SQL Server 2019)
    ============================================================================
    Crea el schema `dbo_cotifly` con TODAS sus tablas, llaves, restricciones, índices
-   y vistas, ya en su forma final (la del diseño HU-021, docs/PROPUESTA_REESTRUCTURACION_
-   COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0010
+   y vistas, ya en su forma final (la del diseño HU-021, docs/database/PROPUESTA_
+   REESTRUCTURACION_COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0010
    aplicados en orden, pero en un solo paso (0010, borrador pendiente de revisión de
    @scalderon-bs: nombres de municipio de la ruta, id de la solicitud de Nexo y nombre del
    conexo; decisión 2 de HU-021). Una base instalada con este script NO corre migraciones.
