@@ -843,14 +843,14 @@ public sealed class clsEnvioCosteoServiceTests
     {
         var planificador = Substitute.For<IClsPlanificadorCamiones>();
         planificador.PlanificarAsync(_ana, Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
-            .Returns(new clsErrorDominio(clsCodigosError.CubicacionNoDisponible, "no se pudo calcular los vehículos"));
+            .Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "no se pudo calcular los vehículos"));
         var servicio = new clsEnvioCosteoService(
             _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
             Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
             new clsCapturaRutasService(_filas, _costosConexos, planificador, NullLogger<clsCapturaRutasService>.Instance));
 
         (await servicio.CapturarAsync(_ana, Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.")), Ct)).Error.Codigo
-            .Should().Be(clsCodigosError.CubicacionNoDisponible);
+            .Should().Be(clsCodigosError.CubicadorNoDisponible);
         _eventos.Should().BeEmpty();
     }
 

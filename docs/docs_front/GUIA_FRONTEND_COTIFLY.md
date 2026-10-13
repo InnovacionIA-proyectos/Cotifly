@@ -484,7 +484,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` (En PR #77) |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
-| `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401 | 400 `*_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `CUBICACION_DEMASIADO_GRANDE` |
+| `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401 | 400 `*_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `MERCANCIA_DESCONOCIDA` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
 | `POST /web/solicitudes-costeo` (En PR #74) | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
 | `POST .../costeo/reintentar` (En PR #74) | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
 | `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` (En PR #76) | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
@@ -535,8 +535,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `MUNICIPIOS_NO_DISPONIBLE` | 400 en `/web/municipios`; chat | Catálogo de Nexo no disponible | Deshabilitar el autocompletado de origen y destino y mostrar reintento. El chat sigue con texto libre | En QA |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 en `/web/catalogos-flete` y en `/web/solicitudes-costeo` | Catálogos maestros de Nexo no disponibles y sin copia de respaldo en el servidor (menos de 24 h, HU-013.10) | Selects vacíos con reintento; no enviar texto libre | En QA |
 | `ITEMS_REQUERIDOS` | 400 en `/web/cubicacion` | Falta `items` o viene vacío | Deshabilitar "Cubicar" sin bultos | En QA |
-| `CUBICACION_NO_DISPONIBLE` | 400 en `/web/cubicacion` | Nexo o el Cubicador no responden | "Cubicación no disponible" | En QA |
-| `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion` | Nexo rechazó la solicitud (típicamente demasiados bultos; también medidas inválidas) | "Reduce el número de bultos o revisa las medidas" | En QA |
+| `CUBICACION_NO_DISPONIBLE`, `CUBICACION_DEMASIADO_GRANDE` | Retirados (HU-023.2, #157) | La cubicación de Nexo se retiró: `/web/cubicacion` responde los códigos del cubicador (503 `CUBICADOR_NO_DISPONIBLE`, 400 `MERCANCIA_DESCONOCIDA`...) | Ver sección 5.14 | Retirado |
 | `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
 | `ERROR_INTERNO` | Cualquiera | Error no controlado | "Ocurrió un error. Reintenta" | En QA |
 | `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` y en `POST /web/solicitudes-costeo` (#103) con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
@@ -910,45 +909,71 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 - **No incluye** `tipologia` ni `clase_contenedor`, ni las líneas de negocio. Esos siguen hardcodeados en el frontend con los códigos del mapeo (sección 6.4).
 - **A confirmar** con Nexo: que los `valor` de este catálogo sean los mismos códigos que acepta el alta de la solicitud (`tipo_vehiculo`, `carroceria`, `clase_viaje`).
 
-### 5.14 Cubicación rápida (`POST /web/cubicacion`). En QA
+### 5.14 Calcular cubicaje (`POST /web/cubicacion`). HU-023.2 (#157): cambia de forma
 
-- Sin persistencia. Unidades en **centímetros y kilogramos**.
-- Request:
+> **Cambio que rompe (HU-023.2, viernes 16 de octubre).** "Calcular cubicaje" ya no pasa por Nexo (`POST /api/cubicacion` se retira en
+> el corte del cubicador): Cotifly le pregunta al **cubicador** con una corrida de prueba `PRUEBA-<guid>` y no guarda nada. La
+> respuesta deja de ser "un vehículo o N iguales" y pasa a ser una **lista de vehículos**. Detalle y ejemplos que validan las pruebas:
+> `CONTRATO_API_WEB.md` §8.12.
+
+- Sin persistencia. Unidades en **centímetros y kilogramos**. Es solo una vista previa: los camiones definitivos se piden al guardar la
+  solicitud.
+- Request: cada ítem con `codigo_mercancia` (desplegable de `GET /web/tipos-mercancia`). Mientras llega el desplegable sirve
+  `descripcion`: el backend la resuelve a la mercancía más parecida del catálogo (sin tildes ni mayúsculas) y la devuelve en
+  `mercancias[]` con `sugerida = true` para que el comercial la confirme.
 
 ```json
 {
   "items": [
-    { "descripcion": "Estiba de cajas", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 },
-    { "descripcion": "Máquina", "cantidad": 1, "largo_cm": 420, "ancho_cm": 260, "alto_cm": 280, "peso_kg": 3200 }
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1000 },
+    { "descripcion": "Bobinas de acero", "cantidad": 2, "largo_cm": 180, "ancho_cm": 180, "alto_cm": 120, "peso_kg": 2250.25 }
   ],
-  "clase_viaje": "CargaSuelta"
+  "clase_viaje": "Contenedor"
 }
 ```
 
-- 200 (`ResultadoCubicacion`):
+- 200 (`ResultadoCubicacion`): `resultado` (`ASIGNADO` o `SIN_SELECCION_AUTOMATICA`), `motivo_sin_seleccion`, `condicionada`,
+  `vehiculos[]` (`codigo_vehiculo`, `nombre_vehiculo`, `codigo_carroceria`, `nombre_carroceria`, `peso_total_kg`, `volumen_total_m3`,
+  `porcentaje_llenado_volumen`, `porcentaje_llenado_peso`; pueden ser de tipos distintos), `mercancias_condicionadas`, `advertencias`,
+  `extradimension` (`{extradimensionado, dimensiones, detalle}` o `null`) y `mercancias[]`.
 
 ```json
 {
-  "sugerencia": {
-    "unidad_id": "TRACTO_3S3_FURGON", "unidad_nombre": "Tractocamión 3S3 furgón", "banda": "optima",
-    "factor_utilizacion": 0.82, "config_vehiculo": "3S3", "carroceria": "FURGON", "clase_viaje": "CargaSuelta", "clase_contenedor": null
-  },
-  "sugerencia_flota": null,
-  "advertencias": ["La pieza Máquina excede el ancho estándar."],
-  "extradimension": {
-    "hay_extradimension": true,
-    "medidas_estandar": { "largo_max_cm": 1200, "ancho_max_cm": 250, "alto_max_cm": 280, "peso_max_kg": 34000 },
-    "piezas": [ { "descripcion": "Máquina", "excesos": ["ancho"], "largo_cm": 420, "ancho_cm": 260, "alto_cm": 280, "peso_kg": 3200 } ],
-    "sugerencia": "Evaluar vehículo extradimensionado."
-  }
+  "resultado": "ASIGNADO",
+  "motivo_sin_seleccion": null,
+  "condicionada": false,
+  "vehiculos": [
+    { "codigo_vehiculo": "3S3", "nombre_vehiculo": "Tractocamión 3S3", "codigo_carroceria": "FURGON", "nombre_carroceria": "Furgón", "peso_total_kg": 16000, "volumen_total_m3": 62.5, "porcentaje_llenado_volumen": 81.25, "porcentaje_llenado_peso": 47.06 },
+    { "codigo_vehiculo": "C2", "nombre_vehiculo": "Sencillo C2", "codigo_carroceria": "ESTACAS", "nombre_carroceria": "Estacas", "peso_total_kg": 4500.5, "volumen_total_m3": 18.25, "porcentaje_llenado_volumen": 60, "porcentaje_llenado_peso": 75.01 }
+  ],
+  "mercancias_condicionadas": [],
+  "advertencias": [ { "codigo": "REFRIGERADO", "mensaje": "La mercancía refrigerada va en FURGON: confirmar el equipo de frío." } ],
+  "extradimension": null,
+  "mercancias": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre": null, "descripcion": null, "sugerida": false },
+    { "codigo_mercancia": "BOBINAS_ACERO", "nombre": "Bobinas de acero", "descripcion": "Bobinas de acero", "sugerida": true }
+  ]
 }
 ```
 
-(Valores ilustrativos.)
-
-- `sugerencia` = mejor vehículo único (o null si ninguno sirve); `sugerencia_flota` = cuando hace falta más de un vehículo (`cantidad_vehiculos`, `utilizacion_promedio`).
-- 400 `ITEMS_REQUERIDOS`, `CUBICACION_DEMASIADO_GRANDE` o `CUBICACION_NO_DISPONIBLE`.
-- Uso: sugerir `tipo_vehiculo` y `carroceria` al comercial. Las posiciones de `solicitudes-costeo` usan las mismas unidades (ojo: allí la cantidad por defecto es 1).
+- Errores: 400 `ITEMS_REQUERIDOS`; 400 `MERCANCIA_DESCONOCIDA` (ítem sin código ni descripción, descripción que no se parece a
+  ninguna mercancía o código que el cubicador no conoce; el mensaje dice qué ítem); 400 `MERCANCIA_NO_CUBICABLE`,
+  `DIMENSIONES_INVALIDAS` o `MERCANCIAS_REQUERIDAS` (rechazo del cubicador); **503 `CUBICADOR_NO_DISPONIBLE`** (cubicador sin
+  configurar o caído: no hay respaldo, ofrecer Reintentar); 503 `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA` (avisar a
+  soporte; no cerrar sesión).
+- **Qué cambia para el frontend actual** (que ya usa este endpoint):
+  1. Pintar `vehiculos[]` (una fila por vehículo, con su nombre, carrocería, peso, volumen y llenados) en vez de `sugerencia` /
+     `sugerencia_flota`. "Sin selección" se muestra con su motivo y la lista vacía; "condicionada", con sus mercancías.
+  2. `extradimension` cambia de `{hay_extradimension, medidas_estandar, piezas, sugerencia}` a `{extradimensionado, dimensiones, detalle}`.
+  3. Ya no llegan `clase_viaje` ni `clase_contenedor` sugeridas: quitar cualquier prellenado del formulario que viniera de aquí.
+  4. Mandar `codigo_mercancia` por ítem; con solo `descripcion`, mostrar la mercancía sugerida (`mercancias[].sugerida`). **Un ítem
+     sin código ni descripción ahora es 400 `MERCANCIA_DESCONOCIDA`** (antes se cubicaba): el cubicador necesita el tipo de mercancía.
+     La descripción solo se resuelve si hay un único tipo claramente parecido; si no, también 400.
+  5. Los errores `CUBICACION_NO_DISPONIBLE` y `CUBICACION_DEMASIADO_GRANDE` (400) desaparecen; la caída ahora es **503**
+     `CUBICADOR_NO_DISPONIBLE`.
+  6. **Plan B del corte:** si el frontend no alcanza a pintar `vehiculos[]` para el 16, pedir que enciendan en el servidor
+     `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto): la respuesta vuelve a traer `sugerencia` (forma anterior, derivada del
+     primer vehículo; sin `sugerencia_flota`). Es temporal.
 
 ### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En PR #74
 
@@ -1815,9 +1840,9 @@ sequenceDiagram
     F->>A: GET /web/clientes?q=texto
     A-->>F: candidatos
     U->>F: Llena el formulario y las posiciones
-    opt Sugerencia de vehículo
+    opt Calcular cubicaje (vista previa, HU-023.2)
         F->>A: POST /web/cubicacion
-        A-->>F: sugerencia o flota
+        A-->>F: lista de vehículos del cubicador (no se guarda)
     end
     F->>A: POST /web/solicitudes-costeo
     A->>A: Crea la cotización en pendiente_envio y confirma
@@ -1850,7 +1875,7 @@ Responsabilidades del frontend, paso a paso:
 3. **Origen y destino**: autocompletado sobre el catálogo plano. Validar que el valor salga del catálogo. El frontend actual guarda `"MUNICIPIO (DEPARTAMENTO)"` para nombres repetidos, y el backend reenvía `origen` y `destino` a Nexo tal cual. **A confirmar con Nexo** si acepta ese formato o solo el `municipio` exacto (o su `id`/`codigo_dane`). Hasta confirmarlo, enviar el valor `municipio` del catálogo.
 4. **Catálogos cerrados**: `clase_viaje` desde `catalogos-flete` (mostrar `etiqueta`, enviar `valor`). `tipologia` y `clase_contenedor` hardcodeados con los códigos de la sección 5.15, en texto amigable. **HU-021.6:** el formulario ya no pide `tipo_vehiculo` ni `carroceria` y se organiza por **rutas** (sección 5.15.1): cada ruta con su línea de negocio, municipios por id + nombre, mercancías con su tipo y servicios conexos.
 5. **Línea de negocio**: no existe un endpoint de líneas para el comercial (`GET /web/admin/lineas-negocio` responde 403 a `comercial`). Seguir con la lista hardcodeada y manejar `MARGEN_LINEA_DESCONOCIDA` (**Pendiente**).
-6. **Cubicación** (En QA, opcional): `POST /web/cubicacion` con las posiciones para sugerir el vehículo y la carrocería.
+6. **Calcular cubicaje** (opcional, HU-023.2): `POST /web/cubicacion` con las mercancías (`codigo_mercancia`) para ver los vehículos que recomienda el cubicador. Es una vista previa: no llena `tipo_vehiculo` ni `carroceria` (los define el cubicador al guardar). Ver sección 5.14.
 7. **Validación en el cliente** antes de enviar: obligatorios (`tipo`, `nit_cliente`, `linea_negocio`, `origen`, `destino`), regla de peso (peso > 0 o posiciones con peso; 1 % de tolerancia), máximo 2 decimales, rangos, hasta 200 posiciones, condicionales de contenedor.
 8. **Enviar** (`POST /web/solicitudes-costeo`): spinner de hasta 30 s y bloqueo del doble envío. Con el 201, navegar al detalle de la cotización o a "Mis cotizaciones".
 9. **Reintento**: con `error_envio` y un motivo que no empiece por "Rechazo definitivo", botón Reintentar. Si el motivo menciona tiempo agotado, advertir que se verifique en Nexo.

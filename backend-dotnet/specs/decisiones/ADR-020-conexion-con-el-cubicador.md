@@ -1,6 +1,6 @@
 # ADR-020 — Conexión de Cotifly con el cubicador (HU-023)
 
-- **Estado:** Aceptada (2026-10-09). Parte de la milestone HU-023 (#156 a #160).
+- **Estado:** Aceptada (2026-10-09; HU-023.2 agregada el 2026-10-13). Parte de la milestone HU-023 (#156 a #160).
 - **Reemplaza:** el contrato provisional de la integración con el cubicador de ADR-019 (sección "Integración con el cubicador",
   HU-021.5, #133). Lo demás de ADR-019 sigue vigente.
 - **Fuentes:** `docs/backlog/2026-10-08_HU_Sprint5_Cotifly_Backend.md` (HU-023, decisiones del 2026-10-08),
@@ -146,9 +146,58 @@ corre después del 01 (y en `-Auto` sobre una base existente).
 - **No se implementó** `GET /recomendaciones/{idRecomendacionVehiculo}/mercancias` (reconsultar qué lleva cada camión): ninguna
   pantalla lo necesita todavía.
 
+
+## Decisión — HU-023.2 (#157): "Calcular cubicaje" contra el cubicador (transición previa al corte)
+
+- **Qué cambia.** `POST /web/cubicacion` deja de reenviar a `POST /api/cubicacion` de Nexo y llama a `POST /recomendaciones` por
+  `IClsCubicador` (`clsCalculoCubicajeService`) con `idLineaSolicitud = "PRUEBA-<guid>"` (uno nuevo en cada llamada), `origenSistema =
+  COTIFLY`, `claseViajeSeleccionada` = `clase_viaje` y el `idUsuarioExterno` del comercial. **No se guarda nada** (ni base ni Nexo);
+  el `POST` no se reintenta (lo garantiza el adaptador). Se retiraron `clsCubicacionNexo`, `IClsCubicacionProvider`,
+  `clsCubicacionNoDisponible`, `clsFabricaCubicacion`, su registro (`AgregarCubicacion`) y los códigos `CUBICACION_NO_DISPONIBLE` y
+  `CUBICACION_DEMASIADO_GRANDE`.
+- **Respuesta.** Una lista de vehículos (`VehiculoCubicacion`: código y nombre del vehículo, código y nombre de la carrocería, peso,
+  volumen y los dos porcentajes) más `resultado`, `motivo_sin_seleccion`, `condicionada`, `mercancias_condicionadas`, `advertencias`,
+  `extradimension` y `mercancias[]` (el código con el que viajó cada ítem). Ya no trae clase de viaje ni clase de contenedor. Los nombres
+  salen de `GET /tipos-vehiculo` y `/tipos-carroceria` (con caché); si no responden, el código. **Cambia de forma para el frontend
+  actual** (ver `CONTRATO_API_WEB.md` §8.12).
+- **Mercancía por código; descripción mientras tanto.** Cada ítem lleva `codigo_mercancia`. Sin código se usa `descripcion` y se
+  resuelve al tipo **activo** más parecido del catálogo con `clsSugeridorMercancia` (componente puro de Aplicacion, que reutilizará la
+  licitación en HU-023.5, #160; la firma `Sugerir(texto, catalogo)` se conserva y hay una sobrecarga con los criterios): sin tildes,
+  sin mayúsculas y sin signos, contra el nombre y el código. **Prefiere no sugerir antes que sugerir mal** (validación de la #157):
+  - **Números:** si el tipo tiene números (`CONTENEDOR_20`), el texto debe traer exactamente esos; "Contenedor 40 pies" nunca es
+    `CONTENEDOR_20`. Un tipo sin números no se descarta por los del texto ("sacos de 50 kg" son pesos). Se apartó a propósito de la regla
+    literal "si la descripción tiene números, el candidato debe tenerlos": con ella "Cemento en sacos de 50 kg" no resolvería nunca.
+  - **Parecido:** Dice por palabras (con plurales) o por pares de letras. El piso de 0,7 por contenido solo aplica si todas las palabras
+    del texto están en el tipo, o si todas las del tipo están en el texto **y** el tipo explica la primera palabra del texto (el núcleo en
+    español): "Electrodomésticos en cajas" ya no es `CAJAS`; "Bobinas de acero laminado" sí es "Bobinas de acero".
+  - **Umbral** `Cubicacion:ParecidoMinimoMercancia` (0,7 por defecto, siempre más de 0,5): "Carga seca" ya no es `CARGA_GENERAL` (0,5).
+  - **Ambigüedad** `Cubicacion:MargenAmbiguedadMercancia` (0,05): si el segundo tipo queda a esa distancia o menos del mejor, nada.
+  Sin sugerencia: 400 `MERCANCIA_DESCONOCIDA` con el ítem (mensaje y `detalle.item`), sin llamar al cubicador. Un ítem sin código ni
+  descripción también es 400 (antes se cubicaba): cambio que rompe documentado en `CONTRATO_API_WEB.md` §8.1.
+- **Plan B del corte** (`Cubicacion:IncluirSugerenciaLegada`, apagado por defecto): si el frontend no alcanza a pintar `vehiculos[]` para
+  el 16, encenderlo agrega `sugerencia` con la forma anterior (`SugerenciaVehiculoLegada`, `deprecated` en el contrato) derivada del
+  primer vehículo (`banda = cubicador`, `factor_utilizacion` = el mayor llenado / 100, clases de viaje y contenedor `null`). No vuelve
+  `sugerencia_flota`. Se apaga y se retira cuando el frontend use la lista.
+- **Sin respaldo.** Es solo una vista previa: sin cubicador configurado o con el cubicador caído (incluido el catálogo de mercancías al
+  resolver una descripción) responde **503 `CUBICADOR_NO_DISPONIBLE`** con un mensaje para el comercial; el detalle técnico solo va al
+  log. Los rechazos del contrato (400) y `CUBICADOR_NO_AUTORIZADO` / `CUBICADOR_RESPUESTA_INVALIDA` (503) llegan con su código.
+- **Pruebas.** `clsSugeridorMercanciaTests` (tildes, mayúsculas, plurales, sin coincidencia, inactivos, empates),
+  `clsCalculoCubicajeServiceTests` (petición de prueba, flota mixta con nombres y sin catálogo, los 4 motivos, condicionada, descripción,
+  errores) y `clsCalcularCubicajeEndpointsTests` por HTTP con SQL Server y el cubicador falso (contrato de cada respuesta, y que las tablas
+  de negocio no cambian), más `specs/features/calcular_cubicaje.feature`.
+
+### Riesgo de la fecha del corte (viernes 16 de octubre)
+
+Nexo **tampoco** consume todavía `POST /recomendaciones`: si el 16 el cubicador retira `POST /api/cubicacion`, Nexo también se queda
+sin cubicar. Cotifly ya no depende de ese endpoint con esta HU, pero **la fecha real del corte hay que confirmarla con Nexo y con el
+equipo del cubicador antes de comprometerla**, y hacer la verificación contra el cubicador de QA (con Kevin): flota mixta y un código de
+mercancía desconocido rechazado con un mensaje claro. Mientras el cubicador de QA no tenga URL (P3), esa verificación no se ha hecho:
+todo lo anterior se probó solo con el cubicador falso.
 ## Consecuencias
 
 - El frontend debe mandar `codigo_mercancia` (HU-023.3) y mostrar el nombre del vehículo desde `GET /web/tipos-vehiculo`.
+- HU-023.2: la respuesta de `POST /web/cubicacion` cambia de forma (lista de vehículos) y su caída pasa a 503; el frontend de hoy debe
+  ajustarse antes del corte.
 - Un cubicador que cambie un campo obligatorio sin avisar ya no deja camiones sin datos: la captura falla con
   `CUBICADOR_RESPUESTA_INVALIDA` y queda un warning con el campo.
 - Con el respaldo encendido, una llave mala se ve como rutas sin vehículo: vigilar el log de error y `cotifly.cubicador.respaldos`.
@@ -161,4 +210,6 @@ corre después del 01 (y en `-Auto` sobre una base existente).
 | Prueba de punta a punta de la solicitud con flota mixta contra el cubicador de QA (reconsultar el `idRecomendacionVehiculo` guardado) | Duban y Kevin, cuando exista P3 |
 | P1 `GET /tipos-vehiculo`, P2 ejemplos reales, P3 URL de QA, P7 endpoint de salud; confirmar la forma de `advertencias`, `mercanciasCondicionadas` y `extradimension` | Equipo del cubicador |
 | Prueba de punta a punta contra el cubicador de QA (con Kevin) | Duban y Kevin, cuando exista P3 |
+| **Confirmar la fecha real del corte de `POST /api/cubicacion`** (Nexo tampoco consume `/recomendaciones`) y verificar "Calcular cubicaje" contra el cubicador de QA (flota mixta, código desconocido) | Duban con Nexo y el equipo del cubicador, antes del viernes 16 |
+| Frontend: pintar la lista de vehículos de `POST /web/cubicacion` y mandar `codigo_mercancia` (HU-023.2) | Frontend (HU-023-FE) |
 | Llave por ambiente en los secretos de Dokploy (`Cubicador__ApiKey`) | Duban (sin tocar el clúster sin autorización) |

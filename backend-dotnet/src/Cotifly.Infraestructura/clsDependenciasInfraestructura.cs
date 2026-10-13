@@ -102,6 +102,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
+        // HU-023.2 (#157): "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
+        servicios.AddOpcionesValidadas<Aplicacion.Cubicacion.Services.clsOpcionesCubicacion>(configuracion, Aplicacion.Cubicacion.Services.clsOpcionesCubicacion.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
 
         // Adaptadores de puertos transversales.
@@ -120,10 +122,10 @@ public static class clsDependenciasInfraestructura
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
 
-        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje). La cubicación
+        // rápida de Nexo (POST /api/cubicacion) se retiró en HU-023.2 (#157): "Calcular cubicaje" usa el cubicador (AgregarCubicador).
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
-        AgregarCubicacion(servicios);
         AgregarCubicador(servicios);
         AgregarCosteo(servicios);
 
@@ -324,20 +326,6 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
         servicios.TryAddScoped<clsCatalogosFleteNexo>();
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
-    }
-
-    /// <summary>
-    /// Cubicación rápida elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCubicacion.Crear"/>):
-    /// configurada → <see cref="clsCubicacionNexo"/>; vacía → <see cref="clsCubicacionNoDisponible"/>. Mismo cliente
-    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
-    /// mismo servicio Nexo. No repite la configuración de resiliencia/redacción por la misma razón que
-    /// <see cref="AgregarMunicipios"/>. TryAdd: un adaptador registrado antes (pruebas) se respeta.
-    /// </summary>
-    private static void AgregarCubicacion(IServiceCollection servicios)
-    {
-        servicios.TryAddScoped<clsCubicacionNoDisponible>();
-        servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
-        servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
     }
 
     /// <summary>
