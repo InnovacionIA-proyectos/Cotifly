@@ -538,8 +538,8 @@ la rama `QA` de Nexo (fusionado, sin desplegar). Sin cambios de esquema.
   `PESO_INCONSISTENTE`); el del cubicador se guarda y se muestra. Con varios, el de cada camión, sin posiciones.
 - **Códigos de vehículo y carrocería del cubicador:** viajan sin bandera (el usuario acepta que Nexo cree filas nuevas en su catálogo).
   **Línea sin vehículo:** sin cambios; se espera la 19.2 de Nexo (`PorCostear`).
-- **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` en todas las lecturas y la
-  tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.
+- **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` solo en `catalogos/*` y la bandeja
+  `GET /api/solicitudes` (el polling y lo demás no se congelan) y la tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.
 
 ---
 

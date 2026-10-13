@@ -113,46 +113,15 @@ public sealed class clsRegistroCosteoNexoTests
     }
 
     [Fact]
-    public async Task Un429EnUnGetNoSeReintentaYBloqueaLasLecturasHastaQuePaseElRetryAfter()
+    public async Task Un429DeCatalogosNoSeReintentaYBloqueaSoloLosListadosHastaElRetryAfter()
     {
-        // HU-023.4 (#159): Nexo limita sus listados por ROL y manda Retry-After: 30. Reintentar dentro del mismo minuto solo gasta cupo.
+        // HU-023.4 (#159): Nexo limita por ROL solo catalogos/* y la bandeja GET /api/solicitudes, con Retry-After: 30. Tras el 429 esas
+        // rutas no vuelven a Nexo hasta el Retry-After; el polling (/api/solicitudes/{id}) y la búsqueda de clientes siguen saliendo.
         var tiempo = new clsTiempoManual();
         var nexo = new clsNexoClientesFalso()
             .ResponderLimite(30)
-            .Responder(HttpStatusCode.Created, """{"id":"N-1","lineas":1,"fletesCalculados":0,"lineasPorCostear":1,"costeoEnProceso":false}""")
-            .Responder(HttpStatusCode.OK, """{"solicitud":{"id":"S","estado":"Descartada","lineas":[]}}""");
-        using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, s =>
-        {
-            UsarNexoFalso(s, nexo);
-            s.AddSingleton<TimeProvider>(tiempo);
-        });
-        using var ambito = proveedor.CreateScope();
-        var costeo = ambito.ServiceProvider.GetRequiredService<IClsCosteoNexo>();
-
-        var limitada = await costeo.ConsultarCosteoAsync(_usuarioId, "S", Ct);
-        var bloqueada = await costeo.ConsultarCosteoAsync(_usuarioId, "S", Ct);
-
-        limitada.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible, "un 429 nunca es COSTEO_NEXO_RECHAZADA");
-        limitada.Error.Detalle.Should().Contain("HTTP 429 DEMASIADAS_SOLICITUDES").And.Contain("Retry-After 30 s");
-        bloqueada.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
-        nexo.Peticiones.Should().ContainSingle("ni la tubería reintenta el 429 ni la segunda lectura sale antes del Retry-After");
-
-        var alta = await costeo.EnviarSolicitudAsync(_usuarioId, new clsSolicitudNexo("15927", clsSolicitudCosteoMuestra.Crear(), null), Ct);
-        alta.EsExitoso.Should().BeTrue("el bloqueo es de las lecturas: el alta no está limitada");
-
-        tiempo.Avanzar(TimeSpan.FromSeconds(31));
-        var despues = await costeo.ConsultarCosteoAsync(_usuarioId, "S", Ct);
-
-        despues.Valor.EstadoSolicitud.Should().Be("Descartada", "pasado el Retry-After se vuelve a leer de Nexo");
-        nexo.Peticiones.Should().HaveCount(3);
-    }
-
-    [Fact]
-    public async Task ElCupoBloqueaTambienLasBusquedasDelOtroClienteDeNexo()
-    {
-        // El cupo de Nexo es por rol, no por endpoint: tras un 429 del costeo, la búsqueda de clientes tampoco sale.
-        var tiempo = new clsTiempoManual();
-        var nexo = new clsNexoClientesFalso().ResponderLimite(30);
+            .Responder(HttpStatusCode.OK, """{"solicitud":{"id":"S","estado":"Descartada","lineas":[]}}""")
+            .Responder(HttpStatusCode.OK, "[]");
         using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, s =>
         {
             UsarNexoFalso(s, nexo);
@@ -160,13 +129,70 @@ public sealed class clsRegistroCosteoNexoTests
             s.AddSingleton<TimeProvider>(tiempo);
         });
         using var ambito = proveedor.CreateScope();
+        var fabrica = ambito.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+        var lecturas = fabrica.CreateClient(Cotifly.Infraestructura.Clientes.Services.clsBuscadorClientesNexo.NombreCliente);
+        var costeoHttp = fabrica.CreateClient(clsCosteoNexo.NombreCliente);
 
-        await ambito.ServiceProvider.GetRequiredService<IClsCosteoNexo>().ConsultarCosteoAsync(_usuarioId, "S", Ct);
+        using var p1 = Get("/api/catalogos/tipos-vehiculo");
+        using var p2 = Get("/api/catalogos/clases-viaje");
+        using var p3 = Get("/api/solicitudes");
+        using var limitada = await lecturas.SendAsync(p1, Ct);
+        using var catalogoBloqueado = await lecturas.SendAsync(p2, Ct);
+        using var bandejaBloqueada = await costeoHttp.SendAsync(p3, Ct);
+        var polling = await ambito.ServiceProvider.GetRequiredService<IClsCosteoNexo>().ConsultarCosteoAsync(_usuarioId, "S", Ct);
         var busqueda = await ambito.ServiceProvider.GetRequiredService<Aplicacion.Clientes.Interfaces.IClsBuscadorClientes>()
             .BuscarAsync(_usuarioId, "900123", Ct);
 
-        busqueda.EsFallo.Should().BeTrue();
-        nexo.Peticiones.Should().ContainSingle();
+        limitada.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        catalogoBloqueado.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        bandejaBloqueada.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        catalogoBloqueado.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(30));
+        polling.Valor.EstadoSolicitud.Should().Be("Descartada", "el polling no se congela por el cupo de los catálogos");
+        busqueda.EsExitoso.Should().BeTrue("la búsqueda de clientes no está limitada en Nexo");
+        nexo.Peticiones.Select(p => p.Url.AbsolutePath).Should().Equal(
+            ["/api/catalogos/tipos-vehiculo", "/api/solicitudes/S", "/api/captura-solicitudes/clientes"],
+            "el 429 no se reintenta y los listados bloqueados no salen de Cotifly");
+
+        tiempo.Avanzar(TimeSpan.FromSeconds(31));
+        using var p4 = Get("/api/catalogos/clases-viaje");
+        using var despues = await lecturas.SendAsync(p4, Ct);
+
+        despues.StatusCode.Should().Be(HttpStatusCode.OK, "pasado el Retry-After se vuelve a leer de Nexo");
+        nexo.Peticiones.Should().HaveCount(4);
+    }
+
+    [Fact]
+    public void ElRetryAfterConFechaPasadaNoBloqueaYConFechaFuturaEsperaHastaElla()
+    {
+        var tiempo = new clsTiempoManual();
+        var cupo = new Cotifly.Infraestructura.Comun.clsCupoNexo(tiempo);
+        using var pasada = Limite(new System.Net.Http.Headers.RetryConditionHeaderValue(tiempo.GetUtcNow().AddSeconds(-10)));
+        using var futura = Limite(new System.Net.Http.Headers.RetryConditionHeaderValue(tiempo.GetUtcNow().AddSeconds(60)));
+        using var sinEncabezado = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+
+        cupo.EsperaDe(pasada).Should().Be(TimeSpan.Zero);
+        cupo.Bloquear(cupo.EsperaDe(pasada));
+        cupo.Restante().Should().BeNull("una fecha ya pasada espera 0");
+        cupo.EsperaDe(sinEncabezado).Should().BeNull();
+        cupo.Bloquear(cupo.EsperaDe(futura)).Should().Be(TimeSpan.FromSeconds(60));
+        cupo.Restante().Should().Be(TimeSpan.FromSeconds(60));
+        Cotifly.Infraestructura.Comun.clsCupoNexo.EsRutaLimitada(new Uri("http://n/api/solicitudes/S")).Should().BeFalse();
+        Cotifly.Infraestructura.Comun.clsCupoNexo.EsRutaLimitada(new Uri("http://n/api/solicitudes")).Should().BeTrue();
+        clsCosteoNexo.ConEspera("HTTP 429 DEMASIADAS_SOLICITUDES", pasada).Should().Be("HTTP 429 DEMASIADAS_SOLICITUDES (Retry-After 0 s)");
+    }
+
+    private static HttpResponseMessage Limite(System.Net.Http.Headers.RetryConditionHeaderValue reintento)
+    {
+        var respuesta = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        respuesta.Headers.RetryAfter = reintento;
+        return respuesta;
+    }
+
+    private static HttpRequestMessage Get(string ruta)
+    {
+        var peticion = new HttpRequestMessage(HttpMethod.Get, clsNexoClientesFalso.UrlBase + ruta);
+        Cotifly.Infraestructura.Configuracion.clsIdentidadNexo.Identificar(peticion, 1007L);
+        return peticion;
     }
 
     [Fact]

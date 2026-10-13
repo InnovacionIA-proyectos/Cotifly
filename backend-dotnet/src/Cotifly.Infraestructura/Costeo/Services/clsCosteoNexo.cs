@@ -621,9 +621,12 @@ public sealed class clsCosteoNexo(
         return memoria;
     }
 
-    /// <summary>El detalle de un 429 con la espera del <c>Retry-After</c> (si viene), para el log y el motivo del error.</summary>
-    private static string ConEspera(string detalle, HttpResponseMessage respuesta) =>
-        respuesta.Headers.RetryAfter?.Delta is { } espera
+    /// <summary>
+    /// El detalle de un 429 con la espera del <c>Retry-After</c> (segundos o fecha; una fecha pasada es 0 s), para el log y el motivo del
+    /// error.
+    /// </summary>
+    internal static string ConEspera(string detalle, HttpResponseMessage respuesta) =>
+        Comun.clsCupoNexo.EsperaDe(respuesta, DateTimeOffset.UtcNow) is { } espera
             ? $"{detalle} (Retry-After {((int)Math.Ceiling(espera.TotalSeconds)).ToString(CultureInfo.InvariantCulture)} s)"
             : detalle;
 

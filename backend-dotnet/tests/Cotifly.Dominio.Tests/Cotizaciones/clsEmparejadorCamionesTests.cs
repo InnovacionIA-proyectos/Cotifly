@@ -366,9 +366,9 @@ public sealed class clsEmparejadorCamionesTests
         lineaNexo.Errores().Should().NotContain(e => e.Codigo == clsCodigosLineaSolicitud.PesoInconsistente);
         lineaNexo.IdRecomendacionVehiculo.Should().Be(_recomendacionA);
         lineaNexo.Posiciones.Select(p => p.CodigoMercancia).Should().Equal("CAFE", "SACO");
-        clsCamionParaEmparejar.Desde(ruta, camion).PesoAlterno.Should().Be(28_500.5m, "el emparejador acepta también el peso que viajó");
+        clsCamionParaEmparejar.Desde(ruta, camion).PesoKg.Should().Be(28_500.5m, "el emparejador compara con el peso que viajó");
         clsEmparejadorLineasNexo.Emparejar([clsCamionParaEmparejar.Desde(ruta, camion)], [Linea("N1", ruta, 28_500.5m, "3S3", "FURGON")])
-            .Should().ContainKey(camion.Id, "Nexo devuelve el peso que recibió (segunda pasada con el peso de la ruta)");
+            .Should().ContainKey(camion.Id, "Nexo devuelve el peso que recibió ");
     }
 
     [Fact]
@@ -382,6 +382,82 @@ public sealed class clsEmparejadorCamionesTests
         lineas.Select(l => l.Linea.PesoKg).Should().Equal(12_345m, 7_655m);
         lineas.Should().OnlyContain(l => l.Linea.Posiciones.Count == 0);
         lineas.Select(l => l.Linea.IdRecomendacionVehiculo).Should().Equal(_recomendacionA, _recomendacionB);
+    }
+
+    [Theory]
+    [InlineData(false, false, 0)]
+    [InlineData(false, false, 1)]
+    [InlineData(false, false, 2)]
+    [InlineData(false, false, 3)]
+    [InlineData(false, true, 3)]
+    [InlineData(true, false, 3)]
+    [InlineData(true, true, 0)]
+    [InlineData(true, true, 3)]
+    public void FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(bool grupoEnGet, bool recomendacionEnGet, int modo)
+    {
+        // Regresión de la validación de #159: rutas de 1 a 3 camiones del cubicador (pesos que no cuadran con la ruta), respaldo, la Mesa
+        // que cambia el vehículo (modo & 1) o borra líneas antes del primer polling (modo & 2). Se compara contra lo que hacía QA (el peso
+        // del camión en los dos lados): no puede cruzar más costos entre rutas que antes, y con grupoRutaId en el GET no cruza ninguno.
+        var azar = new Random(159 + modo);
+        var (crucesRama, crucesQa, pares) = (0, 0, 0);
+        for (var vuelta = 0; vuelta < 1500; vuelta++)
+        {
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-FUZZ-159" }).Valor;
+            var rutas = new List<clsRutaCapturada>();
+            for (var r = azar.Next(2, 4); r > 0; r--)
+            {
+                var peso = azar.Next(2) == 0 ? 20_000m : 28_500.5m;
+                var linea = LineaCaptura((null, null, peso)) with { Posiciones = [new clsPosicionCarga("x", 1, 100m, 100m, 100m, peso, null, "COD")] };
+                var cantidad = azar.Next(1, 4);
+                IReadOnlyList<clsCamionPlaneado> camiones = azar.Next(5) == 0
+                    ? [new clsCamionPlaneado(null, null, peso)]
+                    : Enumerable.Range(0, cantidad).Select(_ => new clsCamionPlaneado(azar.Next(3) == 0 ? "2S2" : "3S3", "FURGON",
+                        new[] { Math.Round(peso / cantidad, 2), 10_000m, peso, 18_000m }[azar.Next(4)], Guid.NewGuid())).ToList();
+                rutas.Add(new clsRutaCapturada(linea, 3, 0, camiones, []));
+            }
+
+            cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, rutas);
+            var lineas = new List<(clsLineaSolicitudNexo Rama, clsLineaSolicitudNexo Qa, Guid Ruta)>();
+            foreach (var (camion, linea) in cotizacion.LineasNexo())
+            {
+                var vehiculo = (modo & 1) != 0 && azar.Next(8) == 0 ? (azar.Next(2) == 0 ? "2S2" : "3S3") : linea.TipoVehiculo;
+                if ((modo & 2) != 0 && azar.Next(10) == 0)
+                {
+                    continue;
+                }
+
+                var rama = new clsLineaSolicitudNexo(Guid.NewGuid().ToString(), $"{linea.Origen} → {linea.Destino}", linea.Tipologia, linea.PesoKg, vehiculo, linea.Carroceria)
+                {
+                    GrupoRutaId = grupoEnGet ? linea.RutaId?.ToString("D") : null,
+                    IdRecomendacionVehiculo = recomendacionEnGet ? linea.IdRecomendacionVehiculo?.ToString("D") : null,
+                };
+                lineas.Add((rama, rama with { Peso = camion.PesoKg, GrupoRutaId = null, IdRecomendacionVehiculo = null }, camion.LineaSolicitudId));
+            }
+
+            lineas = [.. lineas.OrderBy(_ => azar.Next())];
+            var rutaDe = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (r, v))).ToDictionary(x => x.v.Id, x => x.r);
+            var camionesRama = cotizacion.Vehiculos.Select(c => clsCamionParaEmparejar.Desde(rutaDe[c.Id], c)).ToList();
+            var camionesQa = camionesRama.Select(c => c with { PesoKg = cotizacion.Vehiculos.Single(v => v.Id == c.Id).PesoKg, IdRecomendacionVehiculo = null }).ToList();
+
+            foreach (var (camionId, lineaId) in clsEmparejadorLineasNexo.Emparejar(camionesRama, [.. lineas.Select(l => l.Rama)]))
+            {
+                pares++;
+                crucesRama += lineas.Single(l => l.Rama.Id == lineaId).Ruta != rutaDe[camionId].Id ? 1 : 0;
+            }
+
+            foreach (var (camionId, lineaId) in clsEmparejadorLineasNexo.Emparejar(camionesQa, [.. lineas.Select(l => l.Qa)]))
+            {
+                crucesQa += lineas.Single(l => l.Qa.Id == lineaId).Ruta != rutaDe[camionId].Id ? 1 : 0;
+            }
+        }
+
+        TestContext.Current.TestOutputHelper?.WriteLine($"FUZZ159 grupo={grupoEnGet} rec={recomendacionEnGet} modo={modo}: pares={pares} cruces={crucesRama} qa={crucesQa}");
+        pares.Should().BeGreaterThan(0);
+        crucesRama.Should().BeLessThanOrEqualTo(crucesQa, "no puede cruzar más costos entre rutas que QA");
+        if (grupoEnGet)
+        {
+            crucesRama.Should().Be(0, "con grupoRutaId en el GET ninguna línea va a otra ruta");
+        }
     }
 
     /// <summary>Ruta capturada con el cubicador: peso declarado <paramref name="pesoRuta"/> y los camiones del plan, en ese orden.</summary>

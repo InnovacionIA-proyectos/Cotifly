@@ -9,8 +9,10 @@ namespace Cotifly.Infraestructura.Comun;
 /// Cupo de lecturas de Nexo (HU-023.4, #159, decisión 9 del 2026-10-13). Nexo limita sus listados (<c>GET /api/catalogos/*</c>,
 /// <c>GET /api/solicitudes</c>...) por ROL con ventanas de un minuto y, al pasarse, responde <c>429 DEMASIADAS_SOLICITUDES</c> con
 /// <c>Retry-After: 30</c>. La partición es el rol, no el usuario: todos los comerciales de Cotifly (y los usuarios de Nexo con el mismo
-/// rol) comparten el cupo. Por eso el bloqueo es uno para todo Cotifly (singleton): tras un 429, ningún GET vuelve a Nexo hasta que pase
-/// el <c>Retry-After</c>. Los POST no se bloquean (el alta no está limitada y un POST nunca se reintenta).
+/// rol) comparten el cupo. Por eso el bloqueo es uno para todo Cotifly (singleton): tras un 429, ningún GET a una ruta LIMITADA
+/// (<see cref="EsRutaLimitada"/>: <c>/api/catalogos/*</c> y la bandeja <c>GET /api/solicitudes</c>) vuelve a Nexo hasta que pase el
+/// <c>Retry-After</c>. Lo demás no se congela: el polling (<c>GET /api/solicitudes/{id}</c>), las cotizaciones, los conexos, los clientes y
+/// los municipios no tienen límite en Nexo. Los POST nunca se bloquean.
 /// </summary>
 public sealed class clsCupoNexo(TimeProvider tiempo)
 {
@@ -23,6 +25,17 @@ public sealed class clsCupoNexo(TimeProvider tiempo)
     private readonly object _candado = new();
     private DateTimeOffset _bloqueadoHasta = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// ¿La ruta está limitada en Nexo? Solo <c>/api/catalogos/*</c> y la bandeja <c>/api/solicitudes</c> (el listado, no
+    /// <c>/api/solicitudes/{id}</c>), que son las que usan las políticas <c>listados-*</c> de Nexo y llama Cotifly.
+    /// </summary>
+    public static bool EsRutaLimitada(Uri? url)
+    {
+        var ruta = url?.AbsolutePath.TrimEnd('/') ?? string.Empty;
+        return ruta.StartsWith("/api/catalogos/", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(ruta, "/api/solicitudes", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Lo que falta para volver a leer de Nexo, o <c>null</c> si ya se puede.</summary>
     public TimeSpan? Restante()
     {
@@ -33,10 +46,18 @@ public sealed class clsCupoNexo(TimeProvider tiempo)
         }
     }
 
-    /// <summary>Nexo respondió 429: bloquea las lecturas durante <paramref name="espera"/> (o <see cref="EsperaPorDefecto"/>), con tope.</summary>
+    /// <summary>
+    /// Nexo respondió 429: bloquea las lecturas limitadas durante <paramref name="espera"/>, con tope. Sin <c>Retry-After</c> (<c>null</c>),
+    /// <see cref="EsperaPorDefecto"/>; una espera de cero o negativa (una fecha ya pasada) no bloquea.
+    /// </summary>
     public TimeSpan Bloquear(TimeSpan? espera)
     {
-        var duracion = espera is { } e && e > TimeSpan.Zero ? (e > EsperaMaxima ? EsperaMaxima : e) : EsperaPorDefecto;
+        var duracion = espera is not { } e ? EsperaPorDefecto : e <= TimeSpan.Zero ? TimeSpan.Zero : e > EsperaMaxima ? EsperaMaxima : e;
+        if (duracion == TimeSpan.Zero)
+        {
+            return duracion;
+        }
+
         lock (_candado)
         {
             var hasta = tiempo.GetUtcNow() + duracion;
@@ -50,22 +71,28 @@ public sealed class clsCupoNexo(TimeProvider tiempo)
     }
 
     /// <summary>La espera que pide el <c>Retry-After</c> de <paramref name="respuesta"/> (segundos o fecha), o <c>null</c>.</summary>
-    public TimeSpan? EsperaDe(HttpResponseMessage respuesta)
+    public TimeSpan? EsperaDe(HttpResponseMessage respuesta) => EsperaDe(respuesta, tiempo.GetUtcNow());
+
+    /// <summary>
+    /// La espera del <c>Retry-After</c> (segundos o fecha HTTP) respecto de <paramref name="ahora"/>; una fecha ya pasada es cero. <c>null</c>
+    /// sin encabezado.
+    /// </summary>
+    public static TimeSpan? EsperaDe(HttpResponseMessage respuesta, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(respuesta);
         var reintento = respuesta.Headers.RetryAfter;
         if (reintento?.Delta is { } delta)
         {
-            return delta;
+            return delta < TimeSpan.Zero ? TimeSpan.Zero : delta;
         }
 
-        return reintento?.Date is { } fecha ? fecha - tiempo.GetUtcNow() : null;
+        return reintento?.Date is { } fecha ? (fecha > ahora ? fecha - ahora : TimeSpan.Zero) : null;
     }
 }
 
 /// <summary>
 /// Manejador de los clientes HTTP de Nexo (<c>Nexo</c> y <c>NexoCosteo</c>) que respeta el <c>Retry-After</c> de un 429
-/// (<see cref="clsCupoNexo"/>): mientras el cupo está bloqueado, un GET no sale de Cotifly y recibe un 429 local con el
+/// (<see cref="clsCupoNexo"/>): mientras el cupo está bloqueado, un GET a una ruta limitada no sale de Cotifly y recibe un 429 local con el
 /// <c>Retry-After</c> restante; los adaptadores lo tratan como "Nexo no disponible" (nunca como un rechazo de los datos). Va por fuera de
 /// la tubería de resiliencia, que no reintenta los 429 (<see cref="NoReintentar429"/>): reintentar dentro del mismo minuto solo gasta
 /// cupo, y esperar 30 s agotaría el tiempo de la petición.
@@ -78,7 +105,7 @@ public sealed class clsCupoNexoHandler(clsCupoNexo cupo, ILogger<clsCupoNexoHand
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var esLectura = request.Method == HttpMethod.Get;
+        var esLectura = request.Method == HttpMethod.Get && clsCupoNexo.EsRutaLimitada(request.RequestUri);
         if (esLectura && cupo.Restante() is { } restante)
         {
             return CupoAgotado(request, restante);
@@ -89,7 +116,7 @@ public sealed class clsCupoNexoHandler(clsCupoNexo cupo, ILogger<clsCupoNexoHand
         {
             var espera = cupo.Bloquear(cupo.EsperaDe(respuesta));
             logger.LogWarning(
-                "Nexo respondió 429 a GET {Ruta}: el cupo de lecturas (compartido por rol) está agotado; no se vuelve a leer de Nexo en {Segundos} s.",
+                "Nexo respondió 429 a GET {Ruta}: el cupo de listados (compartido por rol) está agotado; no se vuelven a leer catálogos ni la bandeja de Nexo en {Segundos} s.",
                 request.RequestUri?.AbsolutePath, (int)Math.Ceiling(espera.TotalSeconds));
         }
 

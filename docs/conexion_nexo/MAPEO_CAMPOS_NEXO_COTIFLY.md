@@ -170,4 +170,4 @@ Verificado contra la rama `QA` de Nexo (fusionada, **todavía no desplegada**): 
 
 **Cupo de lecturas:** Nexo limita sus listados **por rol** (`listados-estandar` 120/min; `listados-pesados` 20/min, 60 para Admin) y
 responde `429 DEMASIADAS_SOLICITUDES` con `Retry-After: 30`. El cupo lo comparten todos los comerciales de Cotifly. Cotifly no reintenta
-el 429 y no vuelve a leer de Nexo hasta el `Retry-After`; el error es "no disponible" (`COSTEO_NEXO_NO_DISPONIBLE`), no "rechazada".
+el 429; solo `/api/catalogos/*` y la bandeja `GET /api/solicitudes` (el listado) se bloquean hasta el `Retry-After` (fecha pasada = 0 s; sin encabezado, 30 s; tope 5 min); el polling (`/api/solicitudes/{id}`), las cotizaciones, los conexos, los clientes y los municipios no se congelan, y un 429 de catálogos no aumenta el backoff del polling. El error es "no disponible" (`COSTEO_NEXO_NO_DISPONIBLE`), no "rechazada".

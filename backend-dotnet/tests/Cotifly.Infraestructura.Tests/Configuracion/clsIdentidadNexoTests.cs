@@ -53,10 +53,9 @@ public sealed class clsIdentidadNexoTests
     {
         // Un solo lugar: los adaptadores llaman a clsIdentidadNexo.Identificar; nadie vuelve a escribir el nombre del encabezado.
         var raiz = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src"));
-        if (!Directory.Exists(raiz))
-        {
-            return; // fuera del repositorio (paquete de pruebas): no hay fuentes que revisar
-        }
+        Directory.Exists(raiz).Should().BeTrue($"la prueba revisa las fuentes de {raiz}: sin ellas no puede pasar en verde");
+        var archivos = Directory.EnumerateFiles(raiz, "*.cs", SearchOption.AllDirectories).ToList();
+        archivos.Should().Contain(f => f.EndsWith("clsIdentidadNexo.cs", StringComparison.Ordinal), "debe estar revisando el src de Cotifly");
 
         var conLiteral = Directory.EnumerateFiles(raiz, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))

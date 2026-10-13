@@ -46,25 +46,20 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
     public Guid? IdRecomendacionVehiculo { get; init; }
 
     /// <summary>
-    /// HU-023.4 (decisión 6): el peso declarado de la ruta, si es el que viaja a Nexo por este camión y difiere de <see cref="PesoKg"/> (un
-    /// solo camión: <see cref="clsLineaSolicitud.PesoLineaNexo"/>). La línea de Nexo puede traer cualquiera de los dos: el que viajó depende
-    /// de cuántos camiones contaban al enviar (un camión descartado después cambia la cuenta). El emparejador lo usa en una segunda pasada,
-    /// solo para los camiones que no se asociaron con <see cref="PesoKg"/>.
+    /// El camión <paramref name="camion"/> de <paramref name="ruta"/>, con el peso que REALMENTE viajó a Nexo en su línea
+    /// (<see cref="clsLineaSolicitud.PesoLineaNexo"/>: con un solo camión, el de la ruta; con varios, el del camión). HU-023.4: el
+    /// emparejador compara con ese peso en una sola pasada; comparar primero con el del cubicador cruzaba costos entre rutas.
     /// </summary>
-    public decimal? PesoAlterno { get; init; }
-
-    /// <summary>El camión <paramref name="camion"/> de <paramref name="ruta"/>, con su peso y, si difiere, el de la ruta (<see cref="PesoAlterno"/>).</summary>
     public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(camion);
         return new clsCamionParaEmparejar(
             camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia, camion.TipoVehiculo, camion.Carroceria,
-            camion.PesoKg ?? (ruta.Vehiculos.Count == 1 ? ruta.PesoKg : null))
+            ruta.PesoLineaNexo(camion))
         {
             RutaId = ruta.Id,
             IdRecomendacionVehiculo = camion.IdRecomendacionVehiculo,
-            PesoAlterno = ruta.PesoLineaNexo(camion) is { } pesoNexo && pesoNexo != camion.PesoKg ? pesoNexo : null,
         };
     }
 }
@@ -124,20 +119,6 @@ public static class clsEmparejadorLineasNexo
         }
         while (avanzo && pendientes.Count > 0 && libres.Count > 0);
 
-        // HU-023.4 (decisión 6): segunda pasada solo para lo que quedó, con el peso de la ruta en vez del del camión (PesoAlterno). Va al
-        // final para no volver ambiguo un camión que ya cuadra con su propio peso (si se descartó otro camión después del envío).
-        if (pendientes.Any(c => c.PesoAlterno is not null) && libres.Count > 0)
-        {
-            var segunda = EmparejarConDetalle(
-                [.. pendientes.Select(c => c.PesoAlterno is { } alterno ? c with { PesoKg = alterno, PesoAlterno = null } : c)], libres);
-            foreach (var (camionId, lineaId) in segunda.Pares)
-            {
-                Asociar(pendientes.Single(c => c.Id == camionId), libres.Single(l => l.Id == lineaId), pendientes, libres, resultado);
-            }
-
-            empates.Clear();
-            empates.AddRange(segunda.EmpatesSinResolver);
-        }
 
         return new clsEmparejamiento(resultado, [.. libres.Select(l => l.Id)], [.. pendientes.Select(c => c.Id)], empates);
     }

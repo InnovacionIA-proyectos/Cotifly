@@ -221,7 +221,7 @@ hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solic
 6. **Peso.** Con **un solo camión** la línea lleva las posiciones y el **peso declarado de la ruta** (sin él, la suma de las
    posiciones), que ya cuadra al 1 % con ellas: así Nexo no responde `PESO_INCONSISTENTE` aunque el `pesoTotalKg` del cubicador difiera.
    El peso del cubicador se guarda en el camión y se muestra en Cotifly, pero no viaja. Con **varios camiones** no cambia: el peso de
-   cada camión, sin posiciones. La regla es `clsLineaSolicitud.PesoLineaNexo`; el emparejador usa el peso del camión y, en una segunda pasada solo para los camiones que quedaron sin línea, el de la ruta (`PesoAlterno`), porque si un camión se descarta después del envío la cuenta de camiones cambia.
+   cada camión, sin posiciones. La regla es `clsLineaSolicitud.PesoLineaNexo` y "un solo camión" cuenta TODOS los camiones de la ruta (también los descartados): un descarte posterior al envío no cambia lo que viajó. El emparejador compara con ese mismo peso **en una sola pasada** (validación: comparar primero con el peso del cubicador cruzaba costos entre rutas). Las posiciones siguen la misma regla.
 7. **Códigos de vehículo y carrocería del cubicador:** se mandan **ya, sin bandera**, en `tipoVehiculo` y `carroceria` (era el
    comportamiento desde HU-023.3). El usuario **acepta que Nexo cree filas nuevas en su catálogo** de configuraciones de vehículo cuando
    un código del cubicador no exista allí (Nexo resuelve o crea por texto libre). Se descartó la bandera de "cuarentena" de la issue.
@@ -230,8 +230,8 @@ hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solic
 9. **429 y `Retry-After`.** Nexo limita sus listados **por rol** (política `listados-estandar`: 120 por minuto por rol;
    `listados-pesados`: 20, o 60 para Admin) y responde `429 DEMASIADAS_SOLICITUDES` con `Retry-After: 30`. **El cupo se comparte por
    rol:** todos los comerciales de Cotifly (y los usuarios de Nexo con el mismo rol) gastan el mismo. `clsCupoNexoHandler` (en los dos
-   clientes HTTP de Nexo, por fuera de la resiliencia) bloquea **todas** las lecturas (`GET`) de Cotifly hasta que pase el
-   `Retry-After` (30 s si no viene, tope 5 min) y responde un 429 local sin llamar a Nexo; la tubería ya no reintenta un 429. El 429
+   clientes HTTP de Nexo, por fuera de la resiliencia) bloquea **solo las rutas limitadas en Nexo** (`/api/catalogos/*` y la bandeja `GET /api/solicitudes`; no el polling `/api/solicitudes/{id}`, ni cotizaciones, conexos, clientes o municipios, así que un 429 de catálogos no aumenta el backoff del polling) hasta que pase el
+   `Retry-After` (segundos o fecha; una fecha pasada es 0 s; 30 s si no viene; tope 5 min) y responde un 429 local sin llamar a Nexo; la tubería ya no reintenta un 429. El 429
    llega como **`COSTEO_NEXO_NO_DISPONIBLE`** (el detalle trae `HTTP 429 DEMASIADAS_SOLICITUDES ... (Retry-After 30 s)`), nunca como
    `COSTEO_NEXO_RECHAZADA`; en clientes, municipios y catálogos es su "no disponible" de siempre (los catálogos sirven la copia de
    respaldo). Un 429 a un POST con efecto (conexos) cuenta como "no enviado". Los POST no se bloquean (el alta no está limitada).
