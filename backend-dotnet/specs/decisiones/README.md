@@ -27,7 +27,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 
-Nota: varias ADR citan `backend-dotnet/specs/openapi.yaml` (contrato #17). Ese archivo llega con el PR #53 y todavía no está en `QA`.
+Nota: varias ADR citan `backend-dotnet/specs/openapi.yaml` (contrato #17), que está en `QA` desde el PR #53.
 
 ## Plantilla
 

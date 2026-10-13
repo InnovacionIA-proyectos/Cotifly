@@ -1,6 +1,6 @@
 # Propuesta de reestructuración de `Cotizaciones` y tablas relacionadas (HU-021)
 
-**Estado: propuesta — NO ejecutada.** Mismo patrón que `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1): primero se
+**Estado: propuesta — NO ejecutada.** Mismo patrón que `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1): primero se
 aprueba el diseño completo acá, y solo después se escribe el script de migración (`000N_*.sql`) contra
 `tbsdatacenter`. Los cambios que esto le pide al backend están en
 `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.

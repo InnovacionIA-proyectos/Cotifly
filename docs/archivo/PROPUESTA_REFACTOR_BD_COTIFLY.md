@@ -1,5 +1,8 @@
 # Propuesta de refactor de la base de datos de Cotifly — integración con Nexo + migración a SQL Server
 
+> **ARCHIVADO — NO VIGENTE.** Este documento se movió a `docs/archivo/` en HU-022.1 (#146, 2026-10-13). Se conserva
+> solo como registro histórico: no describe el sistema actual y no se mantiene. Lo vigente está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../database/ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A), [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../database/DICCIONARIO_BASE_DE_DATOS.md) y ADR-019.
+
 Organiza el plan de refactor de la BD de Cotifly para integrarse con Nexo (costeo,
 clientes, ciudades, usuarios), estandarizar nombres en camelCase, y migrar el motor
 de PostgreSQL a SQL Server. Es una **propuesta**: no se ha ejecutado ningún cambio de

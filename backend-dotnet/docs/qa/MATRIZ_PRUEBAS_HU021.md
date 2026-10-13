@@ -304,7 +304,7 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 - **D14.** HU-021.7 decía "sin `posiciones[]`"; se envían con un único camión (adaptación en ADR-019).
 - **D15.** Herramientas de auditoría sin evento en las HU: `descargar_pdf`, `conexos_pendientes_nexo`, `conexos_envio_nexo`, `resultado_cotizacion_sin_costeo`, `costeo_nexo_consulta`, `editar_textos_costeo`, `redactar_textos_costeo`.
 - **D16.** El escenario de HU-021 "las cotizaciones del agente de chat tienen ruta y camión" quedó obsoleto con #105.
-- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md:118` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`. ADR-015:87 dice "ningún cambio local" ante `RESULTADO_YA_DEFINIDO`, superado por ADR-018:298.
+- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md:118` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`. ADR-015:87 dice "ningún cambio local" ante `RESULTADO_YA_DEFINIDO`, superado por ADR-018:298.
 
 Verificado sin desviación: "No aplica" al ganar, decisión 6, decisión 8, `conexos_descartados` rehecho, retiro de Google Chat (`clsRetiroGoogleChatTests`), "Mis cotizaciones" tolera filas malas.
 

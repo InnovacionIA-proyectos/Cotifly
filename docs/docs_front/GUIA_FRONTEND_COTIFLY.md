@@ -2364,6 +2364,6 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - `LINEA_SIN_COTIZACION_NEXO` (409)
 - `TEXTOS_EDITADOS` (409)
 
-**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
+**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
 
 La guía completa de estos flujos llega con HU-013.8 (#104).

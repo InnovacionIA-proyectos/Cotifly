@@ -103,7 +103,7 @@ Entonces se convierte a una ruta con un camión, hasta que el frontend nuevo sal
 ```
 
 ### Trazabilidad (event storming)
-Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño de las tablas nuevas, columna por columna), `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md` (lo que el backend tiene que cambiar, capa por capa, con archivo y línea) y `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1, aprobada el 2026-09-22; se verificó el 2026-10-08 punto por punto contra el backend, resultado en HU-021.13). Corrige lo que dejaron HU-002 y HU-003 (esquema y backend) y lo que agregaron HU-005, HU-011 y HU-013 (costeo en Nexo, líneas de licitación, captura). Entrega la base sobre la que se construye el Sprint 5 (HU-014 a HU-020). Depende del cubicador (equipo de NEXO) para la fase 4.
+Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño de las tablas nuevas, columna por columna), `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md` (lo que el backend tiene que cambiar, capa por capa, con archivo y línea) y `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1, aprobada el 2026-09-22; se verificó el 2026-10-08 punto por punto contra el backend, resultado en HU-021.13). Corrige lo que dejaron HU-002 y HU-003 (esquema y backend) y lo que agregaron HU-005, HU-011 y HU-013 (costeo en Nexo, líneas de licitación, captura). Entrega la base sobre la que se construye el Sprint 5 (HU-014 a HU-020). Depende del cubicador (equipo de NEXO) para la fase 4.
 
 ### Alcance en este repo (Cotifly)
 1. Validar y cerrar el esquema nuevo de la base de datos y su migración (HU-021.1, 021.2; 2 a 3 días de la migración, más pruebas).
@@ -294,7 +294,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Labels:** `cotifly`, `backend`, `corrección-bd`
 **Repo donde se crea este issue:** `Cotifly`
 **Asignado a:** Duban (Backend)
-**Parte de HU-021 (milestone). Independiente: se puede hacer en cualquier momento.** Origen: `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md`, verificado el 2026-10-08 contra el código. Estimado: menos de 1 día.
+**Parte de HU-021 (milestone). Independiente: se puede hacer en cualquier momento.** Origen: `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md`, verificado el 2026-10-08 contra el código. Estimado: menos de 1 día.
 
 **Pendiente de verdad:**
 - [ ] **`motivoRechazo` = "No aplica" cuando se marca ganada** (§2.1: no se deja `null`; solo queda vacío mientras no se ha marcado ningún resultado). Hoy `clsCotizacion.cs:662-667` (`MarcarSeguimiento`) guarda el motivo tal cual, y `clsSeguimientoService.cs:54` y `clsResultadoCotizacionService.cs:127` lo pasan sin tocar.
