@@ -185,7 +185,7 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 Desde HU-013.6 (#102) el chat es el **asistente de una cotización ya creada** y desde HU-013.9 (#105) el agente cotizador legado
 no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitudes-costeo`, 3.2) y una versión nueva sale de
 `POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` o con cambios de carga. Detalle completo en
-`docs/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
+`docs/docs_front/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
 
 ```json
 // request
@@ -279,7 +279,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 10 | **`motivo_rechazo` de una ganada es `"No aplica"`** (HU-021.13). | Mostrar el motivo solo en las perdidas. |
 | 11 | **"Mis cotizaciones" y la nueva versión por ruta.** `linea_negocio` es la de la ruta 1 o `Varias`, y `margen_aplicado`/`origen_margen`, los de la ruta 1. `DatosNuevaVersion.rutas[]` trae los de cada ruta. | Mostrar `Varias` tal cual. Para el detalle, usar `GET .../costeo` o `rutas[]`. |
 | 12 | **`conexos_descartados`** de la re-solicitud es siempre `[]` (`deprecated`; se retira con HU-021-FE). Los conexos se conservan y se avisan en `conexos_conservados`. | Leer `conexos_conservados`. |
-| 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE`). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
+| 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE` con `detalle.motivo` = `VARIAS_RUTAS` en un formulario o `LICITACION` en una licitación; D9, #139). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
 
 ### 8.2 Códigos de error nuevos de HU-021
 
@@ -294,7 +294,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 400 | `RUTA_INEXISTENTE` | Margen y conexos | La ruta no es de la cotización, o `linea_orden` y `linea_solicitud_id` son de rutas distintas. |
 | 400 | `JUSTIFICACION_REQUERIDA` | Margen | Por debajo del sugerido **de esa ruta**; `detalle` trae `margen_sugerido`, `linea_orden` y `linea_solicitud_id`. |
 | 409 | `USAR_RESULTADO_NEXO` | `/seguimiento` | `detalle` = `{metodo, endpoint, requiere_if_match}`. |
-| 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas. |
+| 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas: `detalle.motivo` = `VARIAS_RUTAS` (formulario) o `LICITACION` (licitación). |
 | 503 | `MUNICIPIOS_NO_DISPONIBLE` | Captura y licitación | El catálogo de municipios no respondió. Nada se guarda. |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
 | 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
@@ -531,7 +531,9 @@ primer nivel son los de la ruta 1:
       "servicios_conexos": [
         { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "incierto" }
       ],
-      "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo."
+      "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo.",
+      "margen_sap_anomalo": true,
+      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización."
     },
     {
       "linea_orden": 2,
@@ -553,13 +555,19 @@ primer nivel son los de la ruta 1:
         { "orden": 1, "id_tipo_mercancia": "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50", "nombre_mercancia": "Estiba de cajas", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 }
       ],
       "servicios_conexos": [],
-      "aviso_conexos_nexo": null
+      "aviso_conexos_nexo": null,
+      "margen_sap_anomalo": false,
+      "aviso_margen": null
     }
   ]
 }
 ```
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
+
+`margen_sap_anomalo` y `aviso_margen` (HU-009, #139): SAP TM propuso para la ruta 1 un margen fuera de [0, 60 %]; no se aplicó, la ruta
+usa el de la política de su línea (`origen_margen = politica_linea`, `margen_sugerido` = el de la política) y `aviso_margen` lo explica
+al comercial. Sin anomalía, `false` y `null`.
 
 ### 8.7 Margen por ruta: `PUT /web/cotizaciones/{folio}/costeo/margen`
 

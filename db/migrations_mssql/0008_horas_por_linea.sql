@@ -1,7 +1,7 @@
 /* ============================================================================
    Cotifly — 0008: horas de cargue y descargue por línea (licitaciones)
    ============================================================================
-   HU-013.11 (#108), gap G5 de docs/HU-013-preguntas-nexo.md §3. Patrón de
+   HU-013.11 (#108), gap G5 de docs/conexion_nexo/HU-013-preguntas-nexo.md §3. Patrón de
    scripts: backend-dotnet/specs/decisiones/ADR-008 (EF Core Database First: el
    esquema SOLO cambia con scripts `db/migrations_mssql/000N_*.sql`; no hay
    migraciones EF). Depende del 0005 (tabla CotizacionLineasSolicitud); el DBA

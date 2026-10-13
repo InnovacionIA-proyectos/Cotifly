@@ -18,7 +18,7 @@
 ## Del backend (issues siguientes de HU-021)
 
 - [ ] Adaptar el backend al esquema nuevo (HU-021.3 en adelante). Detalle en `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
-- [ ] ~28 archivos de `backend-dotnet/` todavía apuntan a rutas viejas de la documentación (ver `2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`, punto 11).
+- [x] ~28 archivos de `backend-dotnet/` todavía apuntan a rutas viejas de la documentación (ver `2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`, punto 11). Corregido en `12f3d87` (#128) y revisado en HU-021.14 (#141), que corrigió los que quedaban en `docs/` y en los comentarios de `db/` y agregó `scripts/verificar_enlaces_md.py` (CI `docs-enlaces`).
 - [ ] Comunicación Cotifly ↔ cubicador (`POST /recomendaciones`, `GET /tipos-mercancia`, `GET /tipos-carroceria`): nombres de campos, autenticación y fechas. Decisiones ya tomadas con Brayan: Cotifly manda el `idTipoMercancia` y guarda id + nombre (sin código estable); si hay que re-cubicar una cotización vieja y el id ya no existe, se busca por nombre y, si no hay coincidencia, el comercial la vuelve a escoger. La mercancía condicionada vuelve como resultado marcado, sin flujo de aprobación en el cubicador para Cotifly.
 
 ## Limpieza al terminar

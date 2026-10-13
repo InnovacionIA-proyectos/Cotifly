@@ -1,10 +1,23 @@
 # ADR-015 — Costeo en Nexo: persistencia, envío, polling, margen y resultado
 
-- **Estado:** Reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones). Aceptada (se implementa por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado). Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
+- **Estado:** Aceptada; reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones; ver la sección siguiente). Se implementó por partes: #24 persistencia, #21 envío, #22 polling, #23 margen y "Mis cotizaciones", #42 resultado. Varios puntos quedan pendientes de confirmar con el equipo de Nexo (ver Pendientes).
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
 - **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
 - **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
+
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+El script `0009` reestructuró la cotización en solicitud → rutas → camiones y [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) fija cómo lo usa el código. De esta ADR quedan reemplazados:
+
+- **Id de la solicitud de Nexo:** `Cotizaciones.costeoId` pasa a `CotizacionesSolicitud.solicitudNexoId` (script `0010`). `costeoUltimaConsultaAt` ya no existe (lo borró el `0009`). Donde esta ADR dice `costeoId` o `Cotizaciones`, léase `solicitudNexoId` y `CotizacionesSolicitud`.
+- **Unidad (§1):** ya no es "una cotización = una línea". El costo, el margen y el precio son de la ruta (`CotizacionLineasSolicitud`: `costoFinal`, `margenAplicado`, `precioFinalLinea`); `precioFinal` de la cabecera es la suma de las rutas. El margen sugerido se divide en `margenPoliticaSugerido` y `margenSAPSugerido` por ruta.
+- **Envío (§3):** a Nexo viaja **una línea por camión** (`CotizacionVehiculosLineaSolicitud`), con la línea de negocio de su ruta. `valorEstimado` y `referencia` ya no viajan (decisión 1).
+- **Estados (§2 y §4):** el estado de costeo se guarda en cada camión y se resume en la ruta y en la cabecera ("el más atrasado", `clsResumenEstadoCosteo`). Los códigos y la derivación desde Nexo no cambian.
+- **Servicios conexos (§1 y §5):** el JSON `serviciosConexos` se reemplazó por filas de la ruta (`CotizacionServiciosConexos`), con el costo de Nexo como precio, y suman al precio de la ruta (decisión 3).
+- **Por qué:** con varias rutas y varios camiones por ruta, Nexo costea cada camión por separado y el margen depende de la línea de negocio de cada ruta.
+
+El `/health/ready` ya no responde `falta 0004`: hoy solo informa `falta 0002`, `falta 0009`, `falta 0010` o `falta Tabla.columna` (ADR-019, "Sonda `/health/ready`").
 
 ## Contexto
 
@@ -84,7 +97,7 @@ El tarifario de Google Drive se retiró: el costo de una cotización lo calcula 
 
 - `POST /web/cotizaciones/{folio}/resultado` `{resultado, motivo?, comentario?}`, solo el dueño (404 si no, como el resto de `/web/cotizaciones`).
 - Dos escrituras: primero Nexo (`POST /api/cotizaciones/{cotizacionNexoId}/resultado`; si Cotifly aún no tiene `cotizacionNexoId`, lo recupera con `POST /api/cotizaciones {solicitudId}`), y **solo con 200** se actualizan `ganada`, `motivoRechazo` (= `motivo`) y `marcadoAt`. `comentario` se reenvía a Nexo y no se persiste en Cotifly (decisión de la HU-005.14).
-- `409 RESULTADO_YA_DEFINIDO` y `409 COTIZACION_NO_ENTREGADA` de Nexo → 409 `ErrorNegocio` con el mismo código y **ningún cambio local**. Nexo caído → 503 `COSTEO_NEXO_NO_DISPONIBLE`, sin cambio local.
+- `409 COTIZACION_NO_ENTREGADA` de Nexo → 409 `ErrorNegocio` con el mismo código y ningún cambio local. `409 RESULTADO_YA_DEFINIDO` de Nexo → 409 con el mismo código, pero **con un cambio local**: ADR-018 §17 (corrección "Resultado ya definido en Nexo", #123) lo matiza. Cotifly lee el resultado que tiene Nexo, lo guarda con `versionNegocio` si difiere del suyo (Nexo es la fuente de verdad del resultado) y responde el 409 con ese resultado en `detalle` (`clsResultadoCotizacionService`). Nexo caído → 503 `COSTEO_NEXO_NO_DISPONIBLE`, sin cambio local.
 - **Entrega implícita:** la HU-005.14 la describía (marcar el resultado sobre un `Borrador` lo entregaba sin correo). Nexo la eliminó (issue #171): hoy ese caso responde `COTIZACION_NO_ENTREGADA`. Si Nexo la restableciera, `estado_costeo` puede saltar a `entregada` en el mismo momento de marcar el resultado aunque antes estuviera en `autocosteo` o `pendiente_costeo`: Cotifly lo trata como un estado válido (el polling y este endpoint derivan el estado de la respuesta de Nexo), nunca como una inconsistencia.
 - `POST /web/cotizaciones/{folio}/seguimiento` (interino) se conserva por compatibilidad con el frontend y queda marcado como obsoleto en el contrato. Se decide por el flujo de costeo (`estadoCosteo` con valor), no por `costeoId` (lo llena también el chat con la referencia de la tarifa y lo traen filas del Python): en el flujo de costeo responde 409 `USAR_RESULTADO_NEXO`, **salvo `descartada` y `costeo_vencido`**, que se marcan solo en Cotifly porque Nexo no les acepta resultado. Las del chat (`estadoCosteo` nulo) siguen como antes.
 - `POST .../resultado` sobre una cotización que no está en `autocosteo` ni `entregada` responde `COTIZACION_NO_ENTREGADA` sin llamar a Nexo (no se crea un borrador vacío solo para que lo rechace). `SOLICITUD_NO_TRANSICIONABLE` de Nexo pasa como 409; 404 `COTIZACION_NO_ENCONTRADA` como 404; 401/403 de Nexo son configuración (identidad o rol del comercial): 503 `COSTEO_NEXO_NO_DISPONIBLE` con una línea de error en el log; otro 4xx, 400 `COSTEO_NEXO_RECHAZADA`.

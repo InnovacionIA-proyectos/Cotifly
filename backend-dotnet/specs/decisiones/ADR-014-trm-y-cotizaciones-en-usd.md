@@ -1,8 +1,16 @@
 # ADR-014 — TRM del día y cotizaciones en dólares
 
-- **Estado:** Aceptada. La revisión del 2026-10-05 (fuente DolarApi con respaldo, nota del PDF y licitaciones en USD) la pidió negocio; ver "Revisión del 2026-10-05".
+- **Estado:** Aceptada; reemplazada en parte por ADR-019 (dónde se guarda y cómo se suma el precio). La revisión del 2026-10-05 (fuente DolarApi con respaldo, nota del PDF y licitaciones en USD) la pidió negocio; ver "Revisión del 2026-10-05".
 - **Fecha:** 2026-09-28, revisada el 2026-10-05
 - **Issue / HU:** #50 (HU-012.1), #51 (HU-012.2), #52 (HU-012.3). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-006 (PDF), ADR-017 (licitaciones) y HU-010 (métricas en COP con `trmAplicada`).
+
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+[ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (script `0009`) reorganizó la cotización en solicitud → rutas → camiones. Para esta ADR:
+
+- **Sigue vigente:** la fuente de la TRM, su caché y redondeo, la conversión `round(precio_cop / trm, 2)`, la nota del PDF y la regla de la TRM fija (mismo folio) o refrescada (`-vN`). La moneda y la TRM siguen siendo de la cabecera: `CotizacionesSolicitud.moneda` y `CotizacionesSolicitud.trmAplicada` (antes `Cotizaciones.*`).
+- **Reemplazado:** el precio ya no es uno por cotización. Cada ruta calcula su `precioFinalLinea` (en la moneda y con la TRM de la cabecera, `clsCalculadoraPrecio`) sobre su `costoFinal`, que incluye los servicios conexos de la ruta. `precioFinal` de la cabecera es la suma de los `precioFinalLinea` (NULL mientras alguna ruta no tenga precio). Donde este texto dice "precio de cada línea" o "el total es la suma de las líneas", léase ruta.
+- **Por qué:** con varias rutas y varios camiones por ruta, el costo lo da Nexo por camión y el margen depende de la línea de negocio de cada ruta (ADR-019, "Agregado y reglas").
 
 ## Contexto
 

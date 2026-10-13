@@ -1,9 +1,20 @@
 # ADR-017 — Licitaciones desde Excel y cotizaciones de varias líneas
 
-- **Estado:** Reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones). Propuesta (formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes)
+- **Estado:** Propuesta; reemplazada en parte por [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) (HU-021: rutas y camiones; ver la sección siguiente). Formato y preguntas de negocio pendientes de aprobación de Gerencia Comercial; script 0005 pendiente de aprobación de scalderon-bs y del DBA; varios puntos con Nexo, ver Pendientes
 - **Fecha:** 2026-10-01
 - **Issue / HU:** #46 (HU-011.1), #47 (HU-011.2), #48 (HU-011.3) y #49 (HU-011.5). Amplía ADR-015 (costeo en Nexo, que dejó la deuda "HU-011 multi-línea"). Relacionada con ADR-006 (PDF), ADR-008 (esquema solo por scripts), ADR-011 (folio) y ADR-014 (TRM y USD).
 - **Nota de numeración:** ADR-016 es la de métricas (HU-010.1); esta queda como ADR-017.
+
+## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
+
+El script `0009` reestructuró la cotización en solicitud → rutas → camiones y [ADR-019](ADR-019-reestructuracion-rutas-y-camiones.md) fija cómo lo usa el código. De esta ADR quedan reemplazados:
+
+- **Fila del Excel (§2):** cada fila es una **ruta** (`CotizacionLineasSolicitud`), con sus camiones en `CotizacionVehiculosLineaSolicitud` (los del cubicador o, de respaldo, un camión sin vehículo con el peso de la ruta). `filaOrigen` pasa a `rutaOrigenIndice`. A Nexo viaja una línea por camión, no por fila.
+- **Columnas de línea de `Cotizaciones` (§2 y §7):** el `0009` las borró (`origen`, `destino`, `costo`, `lineaNegocioId`…); son de la ruta. Ya no hay espejo de la línea 1 en la cabecera, y la tabla de §7 queda cumplida.
+- **Vehículo y carrocería (§1):** salieron del mapeo del Excel y del formulario; los define el cubicador o la Mesa de Costeo de Nexo (decisión 7). `valor_estimado` y `referencia` salieron del encabezado (decisión 1).
+- **Margen, línea de negocio y conexos (§3 y §5):** cada fila trae su línea de negocio y su margen; los conexos son filas de la ruta (`CotizacionServiciosConexos`) y no "de toda la licitación" ni JSON. El precio de la ruta incluye sus conexos; el total del pliego y del Excel sigue siendo la suma de las tarifas, con los conexos aparte.
+- **`/health/ready`:** ya no responde `falta 0005` (ver ADR-019, "Sonda `/health/ready`").
+- **Por qué:** una fila de licitación puede salir en varios camiones y cada ruta puede tener otra línea de negocio; el modelo de una línea por fila no lo admitía.
 
 ## Contexto
 

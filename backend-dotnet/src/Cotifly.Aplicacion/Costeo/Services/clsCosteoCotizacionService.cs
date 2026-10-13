@@ -139,6 +139,14 @@ public sealed record clsRutaCosteo(
     /// (el comercial o la Mesa deben revisarlo en Nexo); <c>null</c> si no hay nada que revisar. Solo en <c>GET .../costeo</c>.
     /// </summary>
     public string? AvisoConexosNexo { get; init; }
+
+    /// <summary>
+    /// HU-009 (#139, B1): SAP TM propuso para la ruta un margen fuera de [0, 60 %]; no se aplicó y la ruta usa el de la política de su línea.
+    /// </summary>
+    public bool MargenSapAnomalo { get; init; }
+
+    /// <summary>HU-009 (#139, B1): aviso al comercial cuando <see cref="MargenSapAnomalo"/>; <c>null</c> si no.</summary>
+    public string? AvisoMargen { get; init; }
 }
 
 /// <summary>
@@ -921,7 +929,7 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r), estadosNexo))],
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
-            ruta is null ? null : ruta.MargenSAPSugerido ?? ruta.MargenPoliticaSugerido,
+            ruta?.MargenSugeridoMostrado,
             ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             cotizacion.PdfDesactualizado,
             VersionEtag(cotizacion),
@@ -954,10 +962,12 @@ public sealed class clsCosteoCotizacionService(
             ruta.EstadoCosteo is { } estadoRuta ? clsCodigoEnum.ACodigo(estadoRuta) : null,
             ruta.PrecioFinalLinea,
             ruta.PrecioFinalLinea is null ? null : ruta.MargenAplicado,
-            ruta.MargenSAPSugerido ?? ruta.MargenPoliticaSugerido,
+            ruta.MargenSugeridoMostrado,
             ruta.OrigenMargen is { } origenRuta ? clsCodigoEnum.ACodigo(origenRuta) : null,
             conexos)
         {
+            MargenSapAnomalo = ruta.MargenSapAnomalo,
+            AvisoMargen = AvisoMargenSapAnomalo(ruta),
             AvisoConexosNexo = revisar.Count == 0
                 ? null
                 : $"Revisa en la cotización de Nexo los servicios conexos {string.Join(", ", revisar)}: Cotifly no pudo confirmar que llegaron "
@@ -970,6 +980,20 @@ public sealed class clsCosteoCotizacionService(
             Mercancias = [.. ruta.MercanciasOrdenadas.Select(m => new clsMercanciaCosteo(
                 m.Orden, m.IdTipoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
         };
+    }
+
+    /// <summary>
+    /// HU-009 (#139, B1): aviso al comercial cuando SAP TM propuso para la ruta un margen anómalo (fuera de [0, 60 %]) y se aplicó el de la
+    /// política de la línea; <c>null</c> si no.
+    /// </summary>
+    public static string? AvisoMargenSapAnomalo(clsLineaSolicitud ruta)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        return ruta.MargenSapAnomalo && ruta.MargenSAPSugerido is { } sap
+            ? $"SAP TM propuso un margen de {(sap * 100m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} % para esta ruta, "
+              + "fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes "
+              + "de enviar la cotización."
+            : null;
     }
 
     /// <summary>Los conexos de la ruta con el estado de su envío a Nexo (decisión 10), si se conoce; sin estados, tal cual.</summary>

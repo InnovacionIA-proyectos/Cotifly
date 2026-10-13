@@ -476,6 +476,129 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         porLinea["Exportacion"].GetProperty("margen_ponderado").GetDecimal().Should().Be(0.3m, "(857.143 − 600.000) / 857.143");
     }
 
+    /// <summary>
+    /// E2E de la LICITACIÓN (HU-021.12, #139) con el Nexo falso y el cubicador falso, hasta el PDF: un pliego Excel de tres filas (la 1 con
+    /// mercancías y un conexo → dos camiones del cubicador; la 2 con mercancías → uno; la 3 sin mercancías → respaldo sin vehículo), una sola
+    /// solicitud de Nexo con una línea por camión, polling parcial y completo con las líneas barajadas, conexo diferido a la fila 1, margen
+    /// en la ruta 3, PDF de pliego sin costos de Nexo, Excel exportado con el precio de cada ruta, "Mis cotizaciones", entrega y ganada.
+    /// </summary>
+    [Fact]
+    public async Task LaLicitacionConElCubicadorLlegaDelExcelAlPdfDePliegoYAlResultado()
+    {
+        _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) switch
+        {
+            28_000m => [clsCubicadorFalso.Fila("3S3", "FURGON", 16_000m), clsCubicadorFalso.Fila("2S3", "ESTACAS", 12_000m)],
+            _ => [clsCubicadorFalso.Fila("2", "FURGON", 12_500m)],
+        };
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        object Mercancia(int cantidad, decimal peso) => new { id_tipo_mercancia = TipoCafe, nombre_mercancia = "Estiba de café", cantidad, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = peso };
+        object[] filas =
+        [
+            new { fila = 0, origen = "BUENAVENTURA", origen_municipio_id = 76109, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 28_000m,
+                valor_mercancia = 50_000_000m, mercancias = new[] { Mercancia(20, 1400m) }, servicios_conexos = new[] { new { id_servicio_conexo = Cargue, cantidad = 1 } } },
+            new { fila = 1, origen = "CALI", origen_municipio_id = 76001, destino = "CARTAGENA", destino_municipio_id = 13001, tipologia = "CargaSeca", peso_kg = 12_500m,
+                valor_mercancia = 50_000_000m, mercancias = new[] { Mercancia(10, 1250m) } },
+            new { fila = 2, origen = "CUCUTA", origen_municipio_id = 54001, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 8_000m,
+                valor_mercancia = 50_000_000m },
+        ];
+
+        // 1. Carga del pliego (Excel + filas mapeadas).
+        using var alta = await api.EnviarContenidoAsync(_post, "/web/licitaciones", ana.Access,
+            clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, filas), clsPliegoMuestra.Excel()));
+        var creada = await VerificarContratoAsync(alta, "/web/licitaciones", _post, HttpStatusCode.Created);
+        var folio = creada.GetProperty("folio").GetString()!;
+        creada.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo");
+
+        // 2. Cubicador por fila: dos camiones, uno y el respaldo; cada ruta con su fila de origen del Excel.
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R", "3|||8000.00|-");
+        _cubicador.Recomendaciones.Should().HaveCount(2, "la fila sin mercancías no llama al cubicador");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            "SELECT STRING_AGG(CONCAT(l.orden, '=', l.rutaOrigenIndice), ',') WITHIN GROUP (ORDER BY l.orden) FROM dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}' AND c.tipoSolicitud = 'licitacion'"))
+            .Should().Be("1=0,2=1,3=2");
+
+        // 3. Una solicitud de Nexo de tipo licitación con una línea por camión, en orden.
+        _nexo.UltimaAlta!["tipo"]!.GetValue<string>().Should().Be("licitacion");
+        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
+            .Should().Equal(("3S3", 16_000m), ("2S3", 12_000m), ("2", 12_500m), ((string?)null, 8_000m));
+
+        // 4. Polling parcial (falta un camión de la ruta 1) y completo, con las líneas barajadas.
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.SemillaOrdenLineas = 20261010;
+        _nexo.CostearLinea(solicitud, Indice(lineas, 16_000m), 1_000_000m);
+        _nexo.CostearLinea(solicitud, Indice(lineas, 12_500m), 700_000m);
+        _nexo.CostearLinea(solicitud, Indice(lineas, 8_000m), 400_000m);
+        await api.ProcesarPollingAsync(folio);
+        using (var parcial = await api.EnviarAsync(_get, $"/web/licitaciones/{folio}", ana.Access))
+        {
+            var vista = await VerificarContratoAsync(parcial, "/web/licitaciones/{folio}", _get, HttpStatusCode.OK);
+            vista.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo", "a la ruta 1 le falta un camión");
+            vista.GetProperty("precio_final").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+
+        _nexo.CostearLinea(solicitud, Indice(lineas, 12_000m), 800_000m);
+        await api.ProcesarPollingAsync(folio);
+        var rutas = await RutasAsync(api, ana, folio);
+        // (1.800.000 de fletes + 150.000 del conexo) / 0,85; 700.000 / 0,85; 400.000 / 0,85 (política de Nacional).
+        rutas.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_294_118m, 823_529m, 470_588m);
+        var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
+        item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, Indice(lineas, 16_000m)), "el conexo de la ruta va al primer camión");
+
+        // 5. Margen solo en la ruta 3.
+        using (var margen = await api.EnviarAsync(_put, $"/web/cotizaciones/{folio}/costeo/margen", ana.Access,
+            """{"margen":0.20,"linea_orden":3,"justificacion":"Retorno asegurado"}""", await EtagAsync(api, ana, folio)))
+        {
+            var ajustado = (await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", _put, HttpStatusCode.OK))
+                .GetProperty("rutas").EnumerateArray().OrderBy(r => r.GetProperty("linea_orden").GetInt32()).ToList();
+            ajustado.Select(r => r.GetProperty("precio_final_linea").GetDecimal()).Should().Equal(2_294_118m, 823_529m, 500_000m);
+        }
+
+        // 6. PDF de pliego: una sección por ruta, los camiones de la ruta 1 en orden y ningún costo de Nexo.
+        using var pdf = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", ana.Access);
+        var pdfJson = await VerificarContratoAsync(pdf, "/web/cotizaciones/{folio}/costeo/pdf", _post, HttpStatusCode.Created);
+        using var descarga = await api.EnviarAsync(_get, new Uri(new Uri("http://localhost"), pdfJson.GetProperty("pdf_url").GetString()!).AbsolutePath, ana.Access);
+        descarga.StatusCode.Should().Be(HttpStatusCode.OK);
+        var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
+        // Tarifa por viaje de cada ruta SIN conexos (1.800.000 / 0,85) y el conexo aparte con su precio (150.000 / 0,85).
+        texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.117.647").And.Contain("$823.529").And.Contain("$500.000")
+            .And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS) $3.441.176").And.Contain("Cargue en puerto: $176.471");
+        texto.Should().Contain("1 × 3S3 - FURGON, 1 × 2S3 -", "los dos camiones de la ruta 1 en el orden del cubicador");
+        foreach (var costo in new[] { "$1.000.000", "$800.000", "$700.000", "$400.000", "$1.950.000" })
+        {
+            texto.Should().NotContain(costo, "los costos de Nexo nunca van al PDF");
+        }
+
+        // 7. Excel exportado: las columnas del cliente y la tarifa por viaje de cada ruta (sin conexos, igual que el PDF).
+        using (var excel = await api.EnviarAsync(_get, $"/web/licitaciones/{folio}/excel", ana.Access))
+        {
+            excel.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var libro = new ClosedXML.Excel.XLWorkbook(new MemoryStream(await excel.Content.ReadAsByteArrayAsync(Ct)));
+            var hoja = libro.Worksheet(clsPliegoMuestra.Hoja);
+            hoja.Cell(clsPliegoMuestra.FilaExcel(0), 2).GetString().Should().Be("BUENAVENTURA");
+            Enumerable.Range(0, 3).Select(i => hoja.Cell(clsPliegoMuestra.FilaExcel(i), 7).GetValue<decimal>()).Should().Equal(2_117_647m, 823_529m, 500_000m);
+        }
+
+        // 8. "Mis cotizaciones" la muestra con el total y la línea de negocio de la ruta 1.
+        using (var lista = await api.EnviarAsync(_get, "/web/mis-cotizaciones", ana.Access))
+        {
+            var json = await VerificarContratoAsync(lista, "/web/mis-cotizaciones", _get, HttpStatusCode.OK);
+            var fila = json.GetProperty("cotizaciones").EnumerateArray()
+                .Should().ContainSingle(c => c.GetProperty("folio").GetString() == folio).Subject;
+            fila.GetProperty("precio_final").GetDecimal().Should().Be(3_617_647m);
+            fila.GetProperty("linea_negocio").GetString().Should().Be("Nacional");
+        }
+
+        // 9. La Mesa entrega y el comercial la marca ganada.
+        _nexo.Entregar(solicitud);
+        await api.ProcesarPollingAsync(folio);
+        using var resultado = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/resultado", ana.Access, """{"resultado":"ganada"}""");
+        var marcada = await VerificarContratoAsync(resultado, "/web/cotizaciones/{folio}/resultado", _post, HttpStatusCode.OK);
+        marcada.GetProperty("ganada").GetBoolean().Should().BeTrue();
+        _nexo.Resultado(solicitud).Should().Contain("anada", "el resultado viaja a Nexo antes de guardarse");
+    }
+
     private static int Indice(IReadOnlyList<JsonNode> lineas, decimal peso) => lineas.ToList().FindIndex(l => l["peso"]!.GetValue<decimal>() == peso);
 
     /// <summary>La Mesa costea cada línea por su peso (12000 → 1.000.000, 9000 → 800.000, 7000 → 500.000, 12500 → 600.000) y corre el polling.</summary>
