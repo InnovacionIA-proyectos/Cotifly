@@ -61,8 +61,8 @@ public interface IClsCubicacionLicitacionService
 
     /// <summary>
     /// <c>POST /web/licitaciones/{folio}/cubicacion/reintentar</c>: las rutas fallidas vuelven a la cola o, con
-    /// <paramref name="usarRespaldo"/>, se aceptan con el camión sin vehículo (lo resuelve la Mesa de Costeo) y, si ya no queda nada
-    /// pendiente, la solicitud sale a Nexo. <c>COTIZACION_NO_ENCONTRADA</c> si no es una licitación suya; <c>ESTADO_NO_PERMITE</c> si no
+    /// <paramref name="usarRespaldo"/>, las que fallaron por una caída del cubicador (no los rechazos de la petición) se aceptan con el
+    /// camión sin vehículo (lo resuelve la Mesa de Costeo) y, si ya no queda nada pendiente, la solicitud sale a Nexo. <c>COTIZACION_NO_ENCONTRADA</c> si no es una licitación suya; <c>ESTADO_NO_PERMITE</c> si no
     /// tiene rutas fallidas.
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> ReintentarAsync(Guid usuarioId, string folio, bool usarRespaldo, CancellationToken cancellationToken = default);
@@ -91,7 +91,8 @@ public sealed class clsCubicacionLicitacionService(
     IClsCupoCubicador cupos,
     IClsReloj reloj,
     IOptions<clsOpcionesCubicacionLicitacion> opciones,
-    ILogger<clsCubicacionLicitacionService> logger) : IClsCubicacionLicitacionService
+    ILogger<clsCubicacionLicitacionService> logger,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsCubicacionLicitacionService
 {
     public Task<IReadOnlyList<clsRutaPorCubicar>> PendientesAsync(Guid? cotizacionId = null, CancellationToken cancellationToken = default) =>
         cotizaciones.ListarRutasPorCubicarAsync(reloj.AhoraUtc, opciones.Value.LoteRutas, cotizacionId, cancellationToken);
@@ -145,7 +146,11 @@ public sealed class clsCubicacionLicitacionService(
             return ResultadoCubicacionRuta.Fallida;
         }
 
-        var entrada = linea.ALinea() with { TipoVehiculo = null, Carroceria = null };
+        // Como el camino síncrono: con Captura:AceptarVehiculoCliente (#138) el vehículo del cliente (el del camión provisional) se
+        // conserva para el respaldo; si el cubicador recomienda, manda el cubicador. Sin la bandera, el respaldo va sin vehículo.
+        var entrada = opcionesCaptura?.Value.AceptarVehiculoCliente == true
+            ? linea.ALinea()
+            : linea.ALinea() with { TipoVehiculo = null, Carroceria = null };
         var plan = await planificador.PlanificarAsync(cotizacion.UsuarioId ?? Guid.Empty, linea.Id, entrada, cancellationToken);
         var ahora = reloj.AhoraUtc;
         if (plan.EsExitoso)
@@ -218,7 +223,9 @@ public sealed class clsCubicacionLicitacionService(
         if (cambiadas == 0)
         {
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"La licitación {cotizacion.Folio} no tiene rutas con la cubicación fallida (o ya salió a Nexo): no hay nada que reintentar.");
+                usarRespaldo && cotizacion.Rutas.Any(r => r.EstadoCubicacion == EstadoCubicacion.Fallida)
+                    ? $"Las rutas fallidas de la licitación {cotizacion.Folio} las rechazó el cubicador (mercancía o medidas): no se pueden enviar sin vehículo. Reintenta sin usar_respaldo o corrige la carga en una versión nueva."
+                    : $"La licitación {cotizacion.Folio} no tiene rutas con la cubicación fallida (o ya salió a Nexo): no hay nada que reintentar.");
         }
 
         await unidadTrabajo.GuardarCambiosAsync(cancellationToken);

@@ -3,6 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -226,12 +228,20 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         await api.ProcesarCubicacionAsync(folio);
         Progreso(await LicitacionAsync(api, sesion, folio)).Fallidas.Should().Be(1);
 
-        // Aceptar la ruta con el camión sin vehículo: la licitación sale completa a Nexo.
+        // Un rechazo de la petición NO se acepta con el camión sin vehículo (escondería un dato malo).
         using var respaldo = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, """{"usar_respaldo":true}""");
-        var aceptada = await VerificarContratoAsync(respaldo, "/web/licitaciones/{folio}/cubicacion/reintentar", _post, HttpStatusCode.OK);
-        Progreso(aceptada).Should().Be(("completa", 3, 3, 0, 0));
+        respaldo.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await VerificarErrorNegocioAsync(respaldo, "ESTADO_NO_PERMITE");
+        _nexo.UltimaAlta.Should().BeNull();
+
+        // Corregido el motivo del rechazo, el reintento normal la cubica y la licitación sale completa a Nexo.
+        _cubicador.ErrorPara = null;
+        using var corregida = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, "{}");
+        corregida.StatusCode.Should().Be(HttpStatusCode.OK);
+        await api.ProcesarCubicacionAsync(folio);
+        Progreso(await LicitacionAsync(api, sesion, folio)).Should().Be(("completa", 3, 3, 0, 0));
         _nexo.SolicitudesCreadas.Should().ContainSingle();
-        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]?.GetValue<string>()).Should().Equal("3S3", null, "3S3");
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]?.GetValue<string>()).Should().Equal("3S3", "3S3", "3S3");
 
         // Sin fallidas, otro reintento es 409.
         using var sinFallidas = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, "{}");
@@ -264,6 +274,14 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         vista.GetProperty("lineas")[0].GetProperty("estado_cubicacion").GetString().Should().Be("fallida");
         vista.GetProperty("lineas")[0].GetProperty("error_cubicacion").GetString().Should().StartWith("CUBICADOR_NO_DISPONIBLE");
         _nexo.UltimaAlta.Should().BeNull();
+
+        // Una caída sí se puede aceptar con el camión sin vehículo: la ruta queda cubicada, sin error, y la licitación sale a Nexo.
+        using var respaldo = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, """{"usar_respaldo":true}""");
+        var aceptada = await VerificarContratoAsync(respaldo, "/web/licitaciones/{folio}/cubicacion/reintentar", _post, HttpStatusCode.OK);
+        Progreso(aceptada).Should().Be(("completa", 1, 1, 0, 0));
+        aceptada.GetProperty("lineas")[0].GetProperty("error_cubicacion").ValueKind.Should().Be(JsonValueKind.Null);
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Should().ContainSingle().Which!["tipoVehiculo"].Should().BeNull();
     }
 
     [Fact]
@@ -276,7 +294,7 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         using var envio = await replica1.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(8));
         var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
-        await Task.WhenAll(replica1.ProcesarCubicacionAsync(folio, vueltas: 40), replica2.ProcesarCubicacionAsync(folio, vueltas: 40));
+        await Task.WhenAll(replica1.ProcesarCubicacionAsync(folio), replica2.ProcesarCubicacionAsync(folio));
 
         _cubicador.Recomendaciones.Select(r => r["idLineaSolicitud"]!.GetValue<string>()).Should().OnlyHaveUniqueItems().And.HaveCount(8);
         _cubicador.MaximoEnParalelo.Should().BeLessThanOrEqualTo(2, "el límite de llamadas es entre todas las réplicas (cupos en la base)");
@@ -309,6 +327,148 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         camiones.RowsUsed().Count().Should().Be(4, "encabezado + dos camiones de la ruta 1 + uno de la ruta 2");
         camiones.Cell(2, 4).GetString().Should().Be("Tractocamión 3S3");
         camiones.Cell(2, 8).GetValue<decimal>().Should().Be(81.25m);
+    }
+
+    [Fact]
+    public async Task LosConexosQuedanEnLaRutaAlReemplazarElCamionProvisionalYElEnvioDiferidoVaAlPrimerCamionReal()
+    {
+        const string Cargue = "SC-CARGUE-LIC";
+        _nexo.ConServicioConexo(Cargue, Cargue, "Cargue en puerto", "logistico", "UND", 150_000m);
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 6_000m), clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 4_000m));
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = JsonNode.Parse(Licitacion(1))!;
+        cuerpo["lineas"]![0]!["servicios_conexos"] = new JsonArray(new JsonObject { ["id_servicio_conexo"] = Cargue, ["cantidad"] = 1 });
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, cuerpo.ToJsonString());
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var provisional = await clsBaseDatosPruebas.EscalarAsync<Guid>(Cadena,
+            "SELECT v.id FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = N'{folio}'");
+
+        await api.ProcesarCubicacionAsync(folio);
+
+        // El camión provisional ya no existe; los dos reales quedan en la ruta y el conexo sigue colgado de la ruta (no de un camión).
+        var deLaRuta = "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = N'{folio}'";
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena, $"SELECT COUNT(*) {deLaRuta} AND v.id = '{provisional}'")).Should().Be(0);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena, $"SELECT COUNT(*) {deLaRuta} AND v.idRecomendacionVehiculo IS NOT NULL")).Should().Be(2);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
+            "SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = N'{folio}'")).Should().Be(1);
+
+        // Nexo costea los dos camiones; el envío diferido (decisión 10) manda el conexo a la línea del primer camión real (fila 1).
+        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineas.Select(l => l["peso"]!.GetValue<decimal>()).Should().Equal(6_000m, 4_000m);
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.CostearLinea(solicitud, 0, 1_000_000m);
+        _nexo.CostearLinea(solicitud, 1, 800_000m);
+        await api.ProcesarPollingAsync(folio);
+        var item = _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle().Subject["items"]!.AsArray().Should().ContainSingle().Subject!;
+        item["servicioConexoId"]!.GetValue<string>().Should().Be(Cargue);
+        item["lineaId"]!.GetValue<string>().Should().Be(_nexo.LineaCotizacionDe(solicitud, 0));
+    }
+
+    [Fact]
+    public async Task ExportarCotizacionSirveParaCualquierCotizacionPropiaYExportarLicitacionNo()
+    {
+        // HU-018.1, parte C ("Ver detalle") reusa la exportación de la licitación con cualquier cotización con rutas.
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cotizacion = await api.CrearCotizacionAsync(sesion.UsuarioId, clsCosteoEndpointsTests.Nit, conPdf: false);
+        await using var ambito = api.Factory.Services.CreateAsyncScope();
+        var servicio = ambito.ServiceProvider.GetRequiredService<Cotifly.Aplicacion.Licitaciones.Services.IClsLicitacionService>();
+
+        var detalle = await servicio.ExportarCotizacionAsync(sesion.UsuarioId, cotizacion.Folio, Ct);
+        var licitacion = await servicio.ExportarAsync(sesion.UsuarioId, cotizacion.Folio, Ct);
+        var ajena = await servicio.ExportarCotizacionAsync(Guid.NewGuid(), cotizacion.Folio, Ct);
+
+        detalle.EsExitoso.Should().BeTrue();
+        detalle.Valor.Nombre.Should().Be(cotizacion.Folio + ".xlsx");
+        using var libro = new ClosedXML.Excel.XLWorkbook(new MemoryStream(detalle.Valor.Contenido));
+        libro.Worksheets.Select(h => h.Name).Should().Contain(["Licitación", "Resumen Cotifly", "Camiones Cotifly"]);
+        libro.Worksheet("Licitación").Row(1).CellsUsed().Select(c => c.GetString()).Should().Contain("Camiones Cotifly");
+        licitacion.EsFallo.Should().BeTrue("GET /web/licitaciones/{folio}/excel sigue siendo solo de licitaciones");
+        licitacion.Error.Codigo.Should().Be("COTIZACION_NO_ENCONTRADA");
+        ajena.Error.Codigo.Should().Be("COTIZACION_NO_ENCONTRADA");
+    }
+
+    [Fact]
+    public async Task UnaCaidaConElRespaldoPorDefectoDejaLaRutaCubicadaConCamionSinVehiculoYSaleANexo()
+    {
+        // Del validador (V05): con Cubicador:RespaldoSiFalla (por defecto) la caída no llega a la cola de reintentos.
+        _cubicador.Caido = HttpStatusCode.ServiceUnavailable;
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(2));
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        await api.ProcesarCubicacionAsync(folio);
+
+        Progreso(await LicitacionAsync(api, sesion, folio)).Estado.Should().Be("completa");
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task LaRecuperacionDeDosReplicasALaVezEnviaANexoUnaSolaVez()
+    {
+        // Del validador (V06): licitación ya cubicada que no salió (proceso cortado) y seis vueltas concurrentes en dos réplicas.
+        var r1 = Api();
+        var r2 = Api();
+        var sesion = await r1.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await r1.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(3));
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var id = await r1.IdCotizacionAsync(folio);
+        await clsBaseDatosPruebas.EjecutarAsync(Cadena,
+            $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCubicacion = N'cubicada' WHERE cotizacionSolicitudId = '{id}';"
+            + $"UPDATE dbo_cotifly.CotizacionesSolicitud SET updatedAt = DATEADD(MINUTE, -5, updatedAt) WHERE id = '{id}';");
+
+        await Task.WhenAll(Enumerable.Range(0, 6).Select(i => Task.Run(() => Lote(i % 2 == 0 ? r1 : r2, id), Ct)));
+
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task SinCubicadorOConElSegundoPlanoApagadoLaLicitacionSaleDeUnaVezSinCola()
+    {
+        // Del validador (V07 y V08).
+        var sinCubicador = Api(conCubicador: false);
+        var sesion = await sinCubicador.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var primera = await sinCubicador.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(3));
+        var creada = await VerificarContratoAsync(primera, Ruta, _post, HttpStatusCode.Created);
+        creada.GetProperty("lineas").EnumerateArray().Should().OnlyContain(l => l.GetProperty("estado_cubicacion").ValueKind == JsonValueKind.Null);
+        creada.GetProperty("progreso_cubicacion").ValueKind.Should().Be(JsonValueKind.Null);
+        _nexo.SolicitudesCreadas.Should().ContainSingle("sale de una vez");
+
+        var sincrona = Api(extra: new() { ["Cubicador:LicitacionEnSegundoPlano"] = "false" });
+        using var segunda = await sincrona.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(2));
+        var otra = await VerificarContratoAsync(segunda, Ruta, _post, HttpStatusCode.Created);
+        otra.GetProperty("lineas").EnumerateArray().Should().OnlyContain(l => l.GetProperty("estado_cubicacion").ValueKind == JsonValueKind.Null);
+        _cubicador.Recomendaciones.Should().HaveCount(2, "HU-023.3: las rutas se cubican mientras el comercial espera");
+        _nexo.SolicitudesCreadas.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ReintentarUnFolioAjenoEs404YUnaRutaPendienteNoSeAceptaConRespaldo()
+    {
+        // Del validador (V09).
+        var api = Api();
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var ajeno = await api.EnviarAsync(_post, $"{Ruta}/LIC-NO-EXISTE/cubicacion/reintentar", sesion.Access, "{}");
+        ajeno.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var envio = await api.EnviarAsync(_post, Ruta, sesion.Access, Licitacion(1));
+        var folio = (await VerificarContratoAsync(envio, Ruta, _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        using var pendiente = await api.EnviarAsync(_post, $"{Ruta}/{folio}/cubicacion/reintentar", sesion.Access, """{"usar_respaldo":true}""");
+
+        pendiente.StatusCode.Should().Be(HttpStatusCode.Conflict, "una ruta pendiente (no fallida) no se acepta con respaldo");
+        _nexo.SolicitudesCreadas.Should().BeEmpty();
+    }
+
+    private static async Task<int> Lote(clsApiWebPruebas api, Guid id)
+    {
+        var ambitos = api.Factory.Services.GetRequiredService<IServiceScopeFactory>();
+        var logger = api.Factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("pruebas");
+        return await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
     }
 
     private static (string Estado, int Total, int Cubicadas, int Pendientes, int Fallidas) Progreso(JsonElement licitacion)

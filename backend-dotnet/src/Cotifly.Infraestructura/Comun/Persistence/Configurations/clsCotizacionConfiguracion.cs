@@ -121,7 +121,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_motivoSinSeleccion",
                 "motivoSinSeleccion IS NULL OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE') "
                 + "AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA')");
-            // HU-023.5 (#160): migración 0011 (cubicación de la licitación en segundo plano).
+            // HU-023.5 (#160): db/scripts/pendientes/04 (cubicación de la licitación en segundo plano).
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCubicacion",
                 "estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_cubicacionIntentos", "cubicacionIntentos >= 0");
@@ -139,7 +139,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.ResultadoCubicacion).Columna("resultadoCubicacion", "nvarchar(30)").HasMaxLength(30);
         builder.Property(l => l.MotivoSinSeleccion).Columna("motivoSinSeleccion", "nvarchar(40)").HasMaxLength(40);
         builder.Property(l => l.Condicionada).Columna("condicionada", "bit").HasDefaultValue(false);
-        // HU-023.5 (#160, migración 0011): los avisos se guardan (JSON) y la cola de la cubicación en segundo plano.
+        // HU-023.5 (#160, db/scripts/pendientes/04): los avisos se guardan (JSON) y la cola de la cubicación en segundo plano.
         builder.Property(l => l.AvisosCubicacion).Columna("avisosCubicacion", "nvarchar(max)")
             .HasConversion(new clsConvertidorAvisosCubicacion());
         builder.Property(l => l.EstadoCubicacion).Columna("estadoCubicacion", "nvarchar(20)").HasMaxLength(20)
@@ -186,7 +186,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
 
         builder.HasIndex(l => new { l.CotizacionSolicitudId, l.Orden }).IsUnique().HasDatabaseName("uq_cotizacionLineasSolicitud_cotizacionId_orden");
         // HU-023.5 (#160): la cola de la cubicación en segundo plano (solo las rutas pendientes).
-        builder.HasIndex(l => l.CubicacionDisponibleAt).HasDatabaseName("ix_cotizacionLineasSolicitud_cubicacionPendiente")
+        builder.HasIndex(l => new { l.CubicacionDisponibleAt, l.CreatedAt }).HasDatabaseName("ix_cotizacionLineasSolicitud_cubicacionPendiente")
             .HasFilter("[estadoCubicacion] = N'pendiente'");
         builder.HasOne<clsMargenPolitica>().WithMany().HasForeignKey(l => l.LineaNegocioId)
             .HasConstraintName("fk_cotizacionLineasSolicitud_lineaNegocioId").OnDelete(DeleteBehavior.NoAction);

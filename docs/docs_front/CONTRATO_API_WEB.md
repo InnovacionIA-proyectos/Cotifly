@@ -185,7 +185,7 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 Desde HU-013.6 (#102) el chat es el **asistente de una cotización ya creada** y desde HU-013.9 (#105) el agente cotizador legado
 no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitudes-costeo`, 3.2) y una versión nueva sale de
 `POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` o con cambios de carga. Detalle completo en
-`docs/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
+`docs/docs_front/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
 
 ```json
 // request
@@ -279,7 +279,8 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 10 | **`motivo_rechazo` de una ganada es `"No aplica"`** (HU-021.13). | Mostrar el motivo solo en las perdidas. |
 | 11 | **"Mis cotizaciones" y la nueva versión por ruta.** `linea_negocio` es la de la ruta 1 o `Varias`, y `margen_aplicado`/`origen_margen`, los de la ruta 1. `DatosNuevaVersion.rutas[]` trae los de cada ruta. | Mostrar `Varias` tal cual. Para el detalle, usar `GET .../costeo` o `rutas[]`. |
 | 12 | **`conexos_descartados`** de la re-solicitud es siempre `[]` (`deprecated`; se retira con HU-021-FE). Los conexos se conservan y se avisan en `conexos_conservados`. | Leer `conexos_conservados`. |
-| 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE`). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
+| 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE` con `detalle.motivo` = `VARIAS_RUTAS` en un formulario o `LICITACION` en una licitación; D9, #139). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
+| 14 | **`POST /web/cubicacion` ("Calcular cubicaje") cambia de forma** (HU-023.2, #157): ahora pregunta al cubicador y responde una **lista de vehículos** (`vehiculos[]`) con el resultado, el motivo, la condicionada, las advertencias y la extradimensión. Ya no trae `sugerencia`, `sugerencia_flota`, clase de viaje ni clase de contenedor. Cada ítem lleva `codigo_mercancia`; **un ítem sin `codigo_mercancia` ni `descripcion` (antes se cubicaba) ahora es 400 `MERCANCIA_DESCONOCIDA`**, porque el cubicador necesita el tipo de mercancía. Los errores pasan a ser los del cubicador (503 `CUBICADOR_NO_DISPONIBLE` en vez de 400 `CUBICACION_NO_DISPONIBLE`). | Ver §8.12. Pintar la lista de vehículos y quitar el prellenado de clase de viaje y de contenedor. Mandar `codigo_mercancia` del desplegable (mientras tanto sirve `descripcion`). |
 
 ### 8.2 Códigos de error nuevos de HU-021
 
@@ -294,9 +295,9 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 400 | `RUTA_INEXISTENTE` | Margen y conexos | La ruta no es de la cotización, o `linea_orden` y `linea_solicitud_id` son de rutas distintas. |
 | 400 | `JUSTIFICACION_REQUERIDA` | Margen | Por debajo del sugerido **de esa ruta**; `detalle` trae `margen_sugerido`, `linea_orden` y `linea_solicitud_id`. |
 | 409 | `USAR_RESULTADO_NEXO` | `/seguimiento` | `detalle` = `{metodo, endpoint, requiere_if_match}`. |
-| 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas. |
+| 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas: `detalle.motivo` = `VARIAS_RUTAS` (formulario) o `LICITACION` (licitación). |
 | 503 | `MUNICIPIOS_NO_DISPONIBLE` | Captura y licitación | El catálogo de municipios no respondió. Nada se guarda. |
-| 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; `POST /web/cubicacion` (HU-023.2, sin respaldo); captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
 | 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
 | 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación | HU-023.1: el cubicador rechazó la llave de Cotifly (nunca va al respaldo). No es la sesión del comercial: no cerrar sesión. |
 | 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. |
@@ -486,8 +487,10 @@ sola a Nexo (`estado_costeo` pasa a `pendiente_costeo`) y cada ruta trae sus `ca
 volumen y llenado) y su `resultado_cubicacion`; los avisos del cubicador van en `cubicacion[]` (la misma forma de
 `POST /web/solicitudes-costeo`, ahora se guardan). Si una ruta falla (`estado_cubicacion = fallida`, con `error_cubicacion`), el estado
 es `con_fallas` y la licitación **no sale a Nexo** hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar` (cuerpo opcional
-`{"usar_respaldo": true}` para aceptar esas rutas con un camión sin vehículo que resuelve la Mesa de Costeo; sin él, vuelven a la
-cola). 409 `ESTADO_NO_PERMITE` si no hay rutas fallidas. Mientras la cubicación no termina, `POST .../costeo/reintentar` y el
+`{"usar_respaldo": true}` para aceptar con un camión sin vehículo, que resuelve la Mesa de Costeo, **solo las rutas que fallaron porque
+el cubicador no respondió** (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); sin él, vuelven a la cola). 409
+`ESTADO_NO_PERMITE` si no hay rutas fallidas, o con `usar_respaldo` si las fallidas son rechazos de la mercancía o las medidas
+(`MERCANCIA_DESCONOCIDA`, `DIMENSIONES_INVALIDAS`...): esos se corrigen en una versión nueva. Mientras la cubicación no termina, `POST .../costeo/reintentar` y el
 recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_cubicacion`):
 
 <!-- respuesta: POST /web/licitaciones 201 -->
@@ -580,7 +583,9 @@ primer nivel son los de la ruta 1:
       "servicios_conexos": [
         { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "incierto" }
       ],
-      "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo."
+      "aviso_conexos_nexo": "No se pudo confirmar en Nexo el envío del servicio conexo «Cargue con montacargas»: revísalo en la cotización de Nexo.",
+      "margen_sap_anomalo": true,
+      "aviso_margen": "SAP TM propuso un margen de 72.5 % para esta ruta, fuera del rango normal (0 a 60 %): no se aplicó y la ruta usa el margen de la política de su línea de negocio. Revísalo antes de enviar la cotización."
     },
     {
       "linea_orden": 2,
@@ -602,13 +607,19 @@ primer nivel son los de la ruta 1:
         { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de cajas", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 }
       ],
       "servicios_conexos": [],
-      "aviso_conexos_nexo": null
+      "aviso_conexos_nexo": null,
+      "margen_sap_anomalo": false,
+      "aviso_margen": null
     }
   ]
 }
 ```
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
+
+`margen_sap_anomalo` y `aviso_margen` (HU-009, #139): SAP TM propuso para la ruta 1 un margen fuera de [0, 60 %]; no se aplicó, la ruta
+usa el de la política de su línea (`origen_margen = politica_linea`, `margen_sugerido` = el de la política) y `aviso_margen` lo explica
+al comercial. Sin anomalía, `false` y `null`.
 
 ### 8.7 Margen por ruta: `PUT /web/cotizaciones/{folio}/costeo/margen`
 
@@ -753,3 +764,114 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
 | `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, aceptan los códigos del cubicador, HU-023.1) | Cuando exista el cubicador (C1) |
 | `incluidos` en `PUT .../costeo/servicios-conexos` (compatibilidad de HU-005.7) | Sin fecha |
 | `valor_estimado` y `referencia` en la petición: ya no están en el contrato, pero si llegan se ignoran sin error | Sin fecha |
+
+### 8.12 Calcular cubicaje: `POST /web/cubicacion` (HU-023.2, #157)
+
+"Calcular cubicaje" ya no pasa por Nexo (`POST /api/cubicacion` se retira en el corte del cubicador): Cotifly le pregunta al
+**cubicador** (`POST /recomendaciones`) con una corrida de prueba `PRUEBA-<guid>` y **no guarda nada**. Es solo una vista previa: los
+camiones definitivos se piden al guardar la solicitud (§8.3). **Sin respaldo:** si el cubicador no está configurado o está caído,
+responde 503 `CUBICADOR_NO_DISPONIBLE`.
+
+**Petición.** Cada ítem lleva `codigo_mercancia` (el `codigo` de `GET /web/tipos-mercancia`, §8.4). Mientras el formulario no tenga el
+desplegable, puede mandar solo `descripcion`: Cotifly la resuelve al tipo **activo** más parecido del catálogo (sin tildes ni
+mayúsculas) y lo devuelve en `mercancias[]` con `sugerida = true`. Prefiere no sugerir antes que sugerir mal: si no se parece lo
+suficiente, si el tipo tiene números que el texto no trae ("Contenedor 40 pies" nunca es `CONTENEDOR_20`) o si dos tipos quedan casi
+empatados, responde 400 `MERCANCIA_DESCONOCIDA` con el número del ítem en el mensaje y en `detalle.item` (base 0). Un ítem **sin
+`codigo_mercancia` ni `descripcion`** también es 400 `MERCANCIA_DESCONOCIDA` (antes se cubicaba sin tipo). `clase_viaje` es opcional: viaja al cubicador como preferencia.
+
+<!-- esquema: CubicacionRequest -->
+```json
+{
+  "clase_viaje": "Contenedor",
+  "items": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1000 },
+    { "descripcion": "Bobinas de acero", "cantidad": 2, "largo_cm": 180, "ancho_cm": 180, "alto_cm": 120, "peso_kg": 2250.25 }
+  ]
+}
+```
+
+**Respuesta 200.** Una lista de vehículos (pueden ser de tipos distintos: flota mixta), cada uno con código y nombre del vehículo,
+código y nombre de la carrocería, peso que lleva, volumen y los dos porcentajes de llenado. Los nombres salen de los catálogos del
+cubicador; si no responden, vienen los códigos. `SIN_SELECCION_AUTOMATICA` trae `motivo_sin_seleccion` (`EXTRADIMENSIONADO`,
+`SIN_CANDIDATOS_DIMENSIONALES`, `SUPERA_K_MAX` o `SIN_CARROCERIA_COMPATIBLE`) y `vehiculos` vacía. `condicionada = true` con
+`mercancias_condicionadas` avisa que la ruta iría a la Mesa de Costeo.
+
+<!-- respuesta: POST /web/cubicacion 200 -->
+```json
+{
+  "resultado": "ASIGNADO",
+  "motivo_sin_seleccion": null,
+  "condicionada": false,
+  "vehiculos": [
+    { "codigo_vehiculo": "3S3", "nombre_vehiculo": "Tractocamión 3S3", "codigo_carroceria": "FURGON", "nombre_carroceria": "Furgón", "peso_total_kg": 16000, "volumen_total_m3": 62.5, "porcentaje_llenado_volumen": 81.25, "porcentaje_llenado_peso": 47.06 },
+    { "codigo_vehiculo": "C2", "nombre_vehiculo": "Sencillo C2", "codigo_carroceria": "ESTACAS", "nombre_carroceria": "Estacas", "peso_total_kg": 4500.5, "volumen_total_m3": 18.25, "porcentaje_llenado_volumen": 60, "porcentaje_llenado_peso": 75.01 }
+  ],
+  "mercancias_condicionadas": [],
+  "advertencias": [ { "codigo": "REFRIGERADO", "mensaje": "La mercancía refrigerada va en FURGON: confirmar el equipo de frío." } ],
+  "extradimension": null,
+  "mercancias": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre": null, "descripcion": null, "sugerida": false },
+    { "codigo_mercancia": "BOBINAS_ACERO", "nombre": "Bobinas de acero", "descripcion": "Bobinas de acero", "sugerida": true }
+  ]
+}
+```
+
+<!-- respuesta: POST /web/cubicacion 200 -->
+```json
+{
+  "resultado": "SIN_SELECCION_AUTOMATICA",
+  "motivo_sin_seleccion": "EXTRADIMENSIONADO",
+  "condicionada": false,
+  "vehiculos": [],
+  "mercancias_condicionadas": [],
+  "advertencias": [],
+  "extradimension": { "extradimensionado": true, "dimensiones": ["ALTO"], "detalle": "Supera el alto máximo de la flota." },
+  "mercancias": [ { "codigo_mercancia": "BOBINAS_ACERO", "nombre": null, "descripcion": null, "sugerida": false } ]
+}
+```
+
+**Errores.**
+
+<!-- respuesta: POST /web/cubicacion 400 -->
+```json
+{
+  "error": {
+    "codigo": "MERCANCIA_DESCONOCIDA",
+    "mensaje": "No encontramos en el catálogo del cubicador una única mercancía parecida a «Electrodomésticos» (ítem 2): escoge el tipo de mercancía del catálogo.",
+    "detalle": { "item": 1, "descripcion": "Electrodomésticos" }
+  }
+}
+```
+
+<!-- respuesta: POST /web/cubicacion 503 -->
+```json
+{
+  "error": {
+    "codigo": "CUBICADOR_NO_DISPONIBLE",
+    "mensaje": "No se pudo calcular el cubicaje: el cubicador no está disponible en este momento. Intenta de nuevo en unos minutos."
+  }
+}
+```
+
+| HTTP | Código | Cuándo | Qué mostrar |
+|---|---|---|---|
+| 400 | `ITEMS_REQUERIDOS` | Sin ítems | Deshabilitar el botón sin bultos |
+| 400 | `MERCANCIA_DESCONOCIDA` | Ítem sin código ni descripción, descripción sin parecido o código que el cubicador no conoce | El mensaje; pedir que escoja la mercancía |
+| 400 | `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador | El mensaje |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | Cubicador sin configurar o caído | El mensaje y un botón Reintentar |
+| 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada o respuesta fuera del contrato | "Avisa a soporte" |
+
+**Qué cambia para el frontend de hoy** (que ya usa `/web/cubicacion`):
+
+- La respuesta **cambia de forma**: `sugerencia`, `sugerencia_flota` y su `extradimension` (`hay_extradimension`, `medidas_estandar`,
+  `piezas`) desaparecen. Ahora es `vehiculos[]` y `extradimension` = `{extradimensionado, dimensiones, detalle}` o `null`.
+- No vuelve a llegar la clase de viaje ni la clase de contenedor sugeridas: si el formulario las prellenaba desde aquí, quitarlo.
+- Cada ítem debe llevar `codigo_mercancia`. La `descripcion` sola sigue funcionando mientras llega el desplegable, pero si no se parece
+  a ninguna mercancía del catálogo ahora es un 400, y un ítem sin código ni descripción también.
+- **Plan B del corte** (solo si el frontend no alcanza a pintar `vehiculos[]` para el 16): el servidor puede encender
+  `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto) y la respuesta agrega `sugerencia` con la forma anterior
+  (`unidad_id`, `unidad_nombre`, `banda`, `factor_utilizacion`, `config_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor`)
+  derivada del **primer** vehículo; `sugerencia_flota` no vuelve. Sin vehículos, el campo no viene. Es temporal: se apaga cuando el
+  frontend use `vehiculos[]`.
+- Los códigos de error cambian: `CUBICACION_NO_DISPONIBLE` (400) y `CUBICACION_DEMASIADO_GRANDE` (400) se retiraron; ahora llegan
+  los del cubicador (tabla de arriba), con la caída en **503**.

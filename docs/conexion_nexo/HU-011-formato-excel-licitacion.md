@@ -86,7 +86,7 @@ Unidades: si el pliego trae toneladas, el frontend multiplica por 1000 antes de 
 |---|---|---|
 | Municipios (origen, destino, devolución y levante) | `GET /web/municipios` (catálogo completo, sin filtro ni paginación: el autocompletado filtra en el cliente) | `GET /api/captura-solicitudes/municipios` |
 | Tipo de vehículo, carrocería y clase de viaje | `GET /web/catalogos-flete` | Biblioteca SAP TM histórico de Nexo |
-| Cubicación de las posiciones | `POST /web/cubicacion` | `POST /api/cubicacion` |
+| Cubicación de las posiciones | `POST /web/cubicacion` | Ya no pasa por Nexo: `POST /recomendaciones` del cubicador (HU-023.2, #157) |
 | Tipología y clase de contenedor | Fijos en el frontend (deuda técnica del mapeo HU-005.1) | Sin endpoint en Nexo |
 
 Para un pliego de cientos de filas el frontend debe cachear los catálogos y resolver los municipios con una sola carga, no con una búsqueda por fila.

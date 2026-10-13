@@ -100,6 +100,7 @@ public sealed class clsApiWebPruebas : IDisposable
     /// <paramref name="superfinanciera"/>, las fuentes de la TRM (ADR-014) también son falsas. Con <paramref name="modelo"/>, el
     /// <c>IChatClient</c> (agente y redactor de textos, HU-013.5) es ese doble: nunca un proveedor real. Con <paramref name="cubicador"/>
     /// (HU-021.5, #133), <c>Cubicador:UrlBase</c> y <c>Cubicador:ApiKey</c> apuntan al cubicador falso y su cliente HTTP lo usa como manejador.
+    /// Con <paramref name="servicios"/>, reemplazos adicionales de DI (por ejemplo, una fuente de margen SAP TM fija, #139).
     /// </summary>
     public static clsApiWebPruebas ConNexo(
         clsBaseDatosPruebas baseDatos,
@@ -108,7 +109,8 @@ public sealed class clsApiWebPruebas : IDisposable
         HttpMessageHandler? dolarApi = null,
         HttpMessageHandler? superfinanciera = null,
         Microsoft.Extensions.AI.IChatClient? modelo = null,
-        HttpMessageHandler? cubicador = null)
+        HttpMessageHandler? cubicador = null,
+        Action<IServiceCollection>? servicios = null)
     {
         ArgumentNullException.ThrowIfNull(nexo);
         // El worker del polling queda apagado por defecto: las pruebas procesan la agenda cuando quieren (ProcesarPollingAsync).
@@ -152,6 +154,8 @@ public sealed class clsApiWebPruebas : IDisposable
             {
                 s.AddHttpClient(Cotifly.Infraestructura.Precio.Services.clsProveedorTrmSuperfinanciera.NombreCliente).ConfigurePrimaryHttpMessageHandler(() => superfinanciera);
             }
+
+            servicios?.Invoke(s);
         }));
     }
 
@@ -270,24 +274,35 @@ public sealed class clsApiWebPruebas : IDisposable
 
     /// <summary>
     /// HU-023.5 (#160): vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
-    /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna con el turno vencido (o
-    /// <paramref name="vueltas"/>; una vuelta sin cupo libre no procesa nada y se repite). Devuelve cuántas rutas se procesaron.
+    /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna pendiente con el turno vencido ni reclamada
+    /// por un instante (otra réplica de la prueba la está cubicando), o hasta <paramref name="limite"/> (30 s por defecto). Se espera por
+    /// tiempo y no por número de vueltas: una vuelta sin cupo libre no procesa nada y se repite tras una pausa corta. Devuelve cuántas rutas
+    /// procesó esta réplica.
     /// </summary>
-    public async Task<int> ProcesarCubicacionAsync(string folio, int vueltas = 10)
+    public async Task<int> ProcesarCubicacionAsync(string folio, TimeSpan? limite = null)
     {
         var id = await IdCotizacionAsync(folio);
         var ambitos = Factory.Services.GetRequiredService<IServiceScopeFactory>();
         var logger = Factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ProcesarCubicacion");
         var total = 0;
-        for (var i = 0; i < vueltas; i++)
+        var fin = DateTime.UtcNow + (limite ?? TimeSpan.FromSeconds(30));
+        while (DateTime.UtcNow < fin)
         {
-            total += await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
-            var listas = await clsBaseDatosPruebas.EscalarAsync<int>(_baseDatos.CadenaCotifly,
+            var procesadas = await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
+            total += procesadas;
+            // Pendientes con el turno vencido, o reclamadas hace poco (en curso en otra réplica: menos de 2 min de reclamo restante).
+            var porTerminar = await clsBaseDatosPruebas.EscalarAsync<int>(_baseDatos.CadenaCotifly,
                 "SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE estadoCubicacion = N'pendiente' "
-                + $"AND (cubicacionDisponibleAt IS NULL OR cubicacionDisponibleAt <= SYSDATETIMEOFFSET()) AND cotizacionSolicitudId = '{id}';");
-            if (listas == 0)
+                + "AND (cubicacionDisponibleAt IS NULL OR cubicacionDisponibleAt <= DATEADD(SECOND, 125, SYSDATETIMEOFFSET()) AND cubicacionIntentos = 0 "
+                + $"OR cubicacionDisponibleAt <= SYSDATETIMEOFFSET()) AND cotizacionSolicitudId = '{id}';");
+            if (porTerminar == 0)
             {
                 break;
+            }
+
+            if (procesadas == 0)
+            {
+                await Task.Delay(50);
             }
         }
 

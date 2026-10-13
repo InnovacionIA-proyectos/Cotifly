@@ -73,7 +73,7 @@ public interface IClsCotizacionRepository
 
     /// <summary>
     /// HU-023.5 (#160): la cola de la cubicación en segundo plano: hasta <paramref name="lote"/> rutas en <c>pendiente</c> con
-    /// <c>cubicacionDisponibleAt</c> vacío o vencido (<c>&lt;= ahora</c>), de la más antigua a la más reciente (índice filtrado del 0011).
+    /// <c>cubicacionDisponibleAt</c> vacío o vencido (<c>&lt;= ahora</c>), de la más antigua a la más reciente (índice filtrado de la propuesta 04).
     /// Con <paramref name="cotizacionId"/>, solo las de esa cotización.
     /// </summary>
     Task<IReadOnlyList<clsRutaPorCubicar>> ListarRutasPorCubicarAsync(

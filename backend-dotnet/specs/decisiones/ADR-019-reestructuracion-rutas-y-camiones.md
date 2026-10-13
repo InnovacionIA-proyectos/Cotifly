@@ -1,8 +1,8 @@
 # ADR-019 — Reestructuración: rutas y camiones
 
-- **Estado:** Aceptada (decisiones del usuario del 2026-10-08; el `0010` está pendiente de revisión de scalderon-bs; las extensiones quedan en #132 a #137); #133: cubicador integrado contra un servidor falso, a la espera de C1
+- **Estado:** Aceptada (decisiones del usuario del 2026-10-08 y 2026-10-09). Las issues #130 a #140 están cerradas o en PR. Sigue pendiente la revisión del `0010` por scalderon-bs. El cubicador (#133) está integrado contra un servidor falso, a la espera de C1, y evoluciona hacia HU-023 (decisión 12)
 - **Fecha:** 2026-10-08
-- **Issue / HU:** #130 (HU-021.3), #131 (HU-021.4) · milestone HU-021 · reemplaza en parte ADR-015, ADR-017 y ADR-018
+- **Issue / HU:** #130 (HU-021.3), #131 (HU-021.4) · milestone HU-021 · reemplaza en parte ADR-014, ADR-015, ADR-017 y ADR-018
 
 ## Contexto
 
@@ -20,18 +20,26 @@ La base compartida ya se instaló con ese esquema el 2026-10-08 y el backend dej
 
 ## Decisión
 
-### Las 8 decisiones del usuario (2026-10-08)
+### Principio: cubica el sistema donde nace la solicitud
 
-1. **`referencia` y `valorEstimado` se eliminan** del dominio, la persistencia y el envío a Nexo. **#138:** ya no están en `openapi.yaml` (tampoco `referencia` en la vista `Licitacion` ni en el Excel exportado); si un frontend anterior los manda, se ignoran sin error y queda un warning `CAMPOS_RETIRADOS` (evento 2110) con el nombre del campo, nunca el valor (`[clsCampoRetirado]` en el DTO).
-2. **Municipios: id obligatorio y copia del nombre** en todos los flujos; las ciudades de devolución y de levante pasan a id + nombre. Requiere el `0010` (abajo).
-3. **Conexos tal cual la propuesta:** filas de la ruta (`CotizacionServiciosConexos`) con el costo de Nexo como precio; se envían pegados al primer camión de la ruta en Nexo. El aviso `conexos_descartados` de #124 se rehace (#134).
-4. **Levante:** el comercial lo digita en la ruta (`valorLevanteContenedor`) y se **copia a cada camión** (`costoLevanteContenedor`).
-5. QA espera a este núcleo; no se restaura el esquema viejo.
-6. El asistente propone el margen **por ruta** y, si hay varias, pregunta cuál (#135).
-7. Vehículo y carrocería **los define el cubicador o la Mesa de Costeo de Nexo**, no el comercial; las columnas del Excel se retiran (#132, #133).
-8. Métricas: los **conteos son por cotización**; los **valores y la línea de negocio, por ruta** (#137).
+Viene de la propuesta del `0009` ([`PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`](../../../docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md), §1 idea 5 y §13 decisión 9). Si la solicitud nace en Cotifly, Cotifly llama al cubicador y manda a Nexo los camiones ya planeados (una línea por camión). Si nace en Nexo, la cubica Nexo. **Nexo nunca vuelve a cubicar lo que le llega de Cotifly:** un camión sin vehículo (respaldo o "sin selección") lo resuelve la Mesa de Costeo, no un segundo cubicaje.
 
-**Decisión 10 del usuario (2026-10-09, #136): conexos hacia Nexo con envío diferido.** Los conexos capturados con la ruta (#132), los conservados en una re-solicitud y los copiados a una `-vN` no llegaban a Nexo: el `POST /api/cotizaciones/{id}/conexos` exige la cotización de Nexo y la línea del camión, que solo existen cuando Nexo costea. El polling los envía UNA sola vez cuando empareja la línea del primer camión vigente de la ruta (detalle en la sección de #136). El precio en Cotifly sigue siendo el costo del catálogo de Nexo guardado en la ruta.
+### Decisiones del usuario (1 a 12)
+
+Las decisiones 1 a 9 son del 2026-10-08 y las 10 a 12, del 2026-10-09.
+
+1. (2026-10-08) **`referencia` y `valorEstimado` se eliminan** del dominio, la persistencia y el envío a Nexo. **#138:** ya no están en `openapi.yaml` (tampoco `referencia` en la vista `Licitacion` ni en el Excel exportado); si un frontend anterior los manda, se ignoran sin error y queda un warning `CAMPOS_RETIRADOS` (evento 2110) con el nombre del campo, nunca el valor (`[clsCampoRetirado]` en el DTO).
+2. (2026-10-08) **Municipios: id obligatorio y copia del nombre** en todos los flujos; las ciudades de devolución y de levante pasan a id + nombre. Requiere el `0010` (abajo).
+3. (2026-10-08) **Conexos tal cual la propuesta:** filas de la ruta (`CotizacionServiciosConexos`) con el costo de Nexo como precio; se envían pegados al primer camión de la ruta en Nexo. El aviso `conexos_descartados` de #124 se rehace (lo rehizo #136).
+4. (2026-10-08) **Levante:** el comercial lo digita en la ruta (`valorLevanteContenedor`) y se **copia a cada camión** (`costoLevanteContenedor`).
+5. (2026-10-08) QA espera a este núcleo; no se restaura el esquema viejo.
+6. (2026-10-08) El asistente propone el margen **por ruta** y, si hay varias, pregunta cuál (#135).
+7. (2026-10-08) Vehículo y carrocería **los define el cubicador o la Mesa de Costeo de Nexo**, no el comercial; las columnas del Excel se retiran (#132, #133).
+8. (2026-10-08) Métricas: los **conteos son por cotización**; los **valores y la línea de negocio, por ruta** (#137).
+9. (2026-10-08) **El margen se ajusta ruta por ruta:** solo la ruta ajustada necesita precio; si otra sigue en costeo, la cabecera queda sin precio hasta que todas lo tengan, y el PDF exige todas las rutas con precio (#135, sección "Margen, conexos y levante por ruta").
+10. (2026-10-09, #136) **Conexos hacia Nexo con envío diferido.** Los conexos capturados con la ruta (#132), los conservados en una re-solicitud y los copiados a una `-vN` no llegaban a Nexo: el `POST /api/cotizaciones/{id}/conexos` exige la cotización de Nexo y la línea del camión, que solo existen cuando Nexo costea. El polling los envía UNA sola vez cuando empareja la línea del primer camión vigente de la ruta (detalle en la sección de #136). El precio en Cotifly sigue siendo el costo del catálogo de Nexo guardado en la ruta.
+11. (2026-10-09) **Folio:** se acepta lo implementado, `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (el NIT es opcional y va en lugar del BP).
+12. (2026-10-09) **Cubicador:** el PR #161 (#133) evoluciona hacia HU-023 (#156 a #160). HU-023 reemplaza el enfoque de HU-021.5 y trae `db/scripts/02_alter_cubicador.sql` (columnas del resultado de la cubicación y `codigoMercancia` en lugar de `idTipoMercancia`), que todavía no está integrado en esta rama (ver Pendientes). La sección "Integración con el cubicador" describe lo que hay hoy.
 
 ### Agregado y reglas (§8 y §9 de `docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`)
 
@@ -99,8 +107,8 @@ La base compartida ya se instaló con ese esquema el 2026-10-08 y el backend dej
 - **Coherencia contrato ↔ código.** `clsContratoDocumentoTests` compara lo que la API declara de sí misma con `openapi.yaml`: (1) cada esquema alcanzable desde una operación de `/web/*` o `/pdfs` tiene su DTO en `clsContratoRutasTests.MapaDtos` (se agregaron `RutaCapturaWeb`, `ConexoCapturaWeb`, `CantidadConexoWeb`, `TipoMercancia`, `Municipio`, los catálogos, la búsqueda de clientes, la cubicación, las salidas del chat y los dos errores), y la prueba de siempre exige que el DTO tenga exactamente sus propiedades; (2) cada `ProducesResponseType` de una acción existe en el contrato con el mismo estado y el esquema de su DTO; (3) en los DTOs de respuesta, cada propiedad `required` y no anulable del esquema tampoco es anulable en C#. Las respuestas reales siguen validándose contra el esquema en las pruebas de cada endpoint (`VerificarContratoAsync`).
 - **Campos retirados (decisión 1).** `valor_estimado` y `referencia` salen de `SolicitudCosteoWeb`, `LicitacionWeb` y la respuesta `Licitacion` (siempre era `null`); el Excel exportado ya no imprime "Referencia del pliego". Los DTO de entrada los siguen leyendo con `[clsCampoRetirado]` solo para el aviso `CAMPOS_RETIRADOS` del log; la prueba de contrato exige que el esquema no los declare.
 - **Compatibilidad que se mantiene hasta HU-021-FE:** el formato plano de `POST /web/solicitudes-costeo` (`deprecated`, `x-retiro`) y `conexos_descartados` (siempre `[]`).
-- **Bandera de respaldo `Captura:AceptarVehiculoCliente`** (`clsOpcionesCaptura`, `false` por defecto; HU-021-FE.2). Apagada rige la decisión 7. Encendida, `tipo_vehiculo` y `carroceria` de la ruta (formulario, formato plano y licitación) se conservan, se validan contra el catálogo de Nexo (G2: `CODIGO_NO_CATALOGO` si no) y van **solo en el camión del respaldo** (`clsPlanificadorCamionSinVehiculo`: sin cubicador, ruta sin mercancías tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador. La re-solicitud (`datos_carga`) los sigue ignorando. Es coherente con la decisión 7 porque no cambia nada con el valor por defecto y nunca compite con el cubicador; se apaga y se retira cuando el cubicador exista (C1).
-- **Guía del frontend.** `docs/docs_front/CONTRATO_API_WEB.md` §8 trae los ejemplos JSON de cada endpoint cambiado, los códigos de error nuevos y el resumen de cambios que rompen; `GUIA_FRONTEND_COTIFLY.md` §5.28 lo resume.
+- **Bandera de respaldo `Captura:AceptarVehiculoCliente`** (`clsOpcionesCaptura`, `false` por defecto; HU-021-FE.2). Apagada rige la decisión 7. Encendida, `tipo_vehiculo` y `carroceria` de la ruta (formulario, formato plano y licitación) se conservan, se validan contra el catálogo de Nexo (G2: `CODIGO_NO_CATALOGO` si no) y van **solo en el camión del respaldo** (`clsPlanificadorCamionSinVehiculo`: sin cubicador, ruta sin mercancías tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador. La re-solicitud (`datos_carga`) los sigue ignorando. Es coherente con la decisión 7 porque no cambia nada con el valor por defecto y nunca compite con el cubicador; se apaga y se retira cuando el cubicador exista (C1). **Límite conocido:** con la bandera encendida, el código se valida contra el catálogo de Nexo en la validación de la captura, ANTES de saber si la ruta usará el respaldo (el cubicador se llama después, en la preparación); un código inválido es `CODIGO_NO_CATALOGO` aunque luego mande el cubicador. Validarlo solo al usarlo exigiría mover la validación de catálogos al planificador; no compensa para una bandera temporal, apagada por defecto, que solo se enciende sin cubicador.
+- **Guía del frontend.** `docs/docs_front/CONTRATO_API_WEB.md` §8 trae los ejemplos JSON de cada endpoint cambiado, los códigos de error nuevos y el resumen de cambios que rompen; `GUIA_FRONTEND_COTIFLY.md` §5.18.2 lo resume.
 
 ### Script `0010_nombres_municipio.sql` (borrador, pendiente de revisión de scalderon-bs)
 
@@ -119,9 +127,12 @@ Idempotente, no destructivo y en una transacción. Agrega a la ruta `origenNombr
 
 ### Qué reemplaza
 
+Cada ADR afectada tiene al inicio una sección "Reemplazado en parte por ADR-019" con el detalle.
+
+- **ADR-014** (TRM y USD): la moneda y `trmAplicada` siguen en la cabecera (`CotizacionesSolicitud`), pero el precio se calcula por ruta (`precioFinalLinea`, con sus conexos) y `precioFinal` es la suma de las rutas.
 - **ADR-015** (costeo en Nexo): el id de la solicitud pasa de `Cotizaciones.costeoId` a `CotizacionesSolicitud.solicitudNexoId`; el costo, el margen y el precio son de la ruta; el estado se guarda en el camión y se resume en ruta y cabecera; `valorEstimado` y `referencia` ya no viajan a Nexo.
-- **ADR-017** (licitaciones): cada fila del Excel es una ruta con un camión; las columnas de línea de la cabecera (`origen`, `destino`, `costo`, `lineaNegocioId`…) ya no existen; `filaOrigen` es `rutaOrigenIndice`.
-- **ADR-018**: §3 (margen) pasa a ser por ruta; §12 (conexos) deja el JSON y usa filas de la ruta; la tabla de idempotencia irá en el siguiente script libre (hoy el `0011`).
+- **ADR-017** (licitaciones): cada fila del Excel es una ruta (con los camiones del cubicador o, de respaldo, uno sin vehículo); vehículo y carrocería salen del Excel (decisión 7); las columnas de línea de la cabecera (`origen`, `destino`, `costo`, `lineaNegocioId`…) ya no existen; `filaOrigen` es `rutaOrigenIndice`.
+- **ADR-018**: §3 (margen) pasa a ser por ruta; §4 y §12 (conexos) dejan el JSON y usan filas de la ruta; §18 (conexos al re-solicitar) se rehízo en #136; la tabla de idempotencia irá en el siguiente script libre (hoy el `0011`).
 
 ### Captura por rutas (HU-021.6, #132)
 
@@ -201,10 +212,11 @@ Idempotente, no destructivo y en una transacción. Agrega a la ruta `origenNombr
 | Extensiones de la tabla de adaptaciones | #132 a #137 |
 | ~~Contrato de la API y `openapi.yaml`~~ Hecho en #138 (sección "Contrato de la API") | #138 ✔ |
 | Retirar el formato plano, `conexos_descartados`, `tipo_vehiculo`/`carroceria` y la bandera `Captura:AceptarVehiculoCliente` | HU-021-FE (cuando salga el frontend nuevo) y el cubicador (C1) |
-| `datos_carga` de la re-solicitud por ruta (`CAMBIOS_BACKEND` §7: "la re-solicitud dice qué ruta cambia"): hoy solo aplica a una cotización de una ruta (`ESTADO_NO_PERMITE` con varias) | Issue nueva (fuera del alcance de #138) |
+| `datos_carga` de la re-solicitud por ruta (`CAMBIOS_BACKEND` §7: "la re-solicitud dice qué ruta cambia"): hoy solo aplica a una cotización de una ruta (`ESTADO_NO_PERMITE` con varias, `detalle.motivo` `VARIAS_RUTAS` o `LICITACION`: D9, #139) | Issue nueva (fuera del alcance de #138) |
 | N1 (`referenciaRuta` en `CapturaLineaRequest` y en `LineaCosteoDto`) y aclarar el renombre `ruta` → `clsRuta` del swagger | Equipo de Nexo (preguntas 18 a 20 de `docs/conexion_nexo/HU-013-preguntas-nexo.md`) |
 | **C1** `POST /recomendaciones`, `GET /tipos-mercancia` y `GET /tipos-carroceria` en el cubicador: hasta entonces #133 solo se prueba contra el cubicador falso y en producción corre el respaldo. Al publicarse, confirmar el contrato provisional de `clsCubicadorHttp` | Equipo del cubicador; Duban (validación) |
 | **C2** peso total por vehículo en la respuesta (sin él, varias filas son una falla y cae al respaldo) · **C3** no sobrescribir recomendaciones · **C4** códigos de vehículo y carrocería de Nexo (si no, Nexo crea filas de catálogo o rechaza el vehículo) · **C5** reconfirmar `Bearer` en `/recomendaciones` · **C6** "sin selección" y "condicionada" como resultado (un 4xx hoy cae al respaldo) | Equipo del cubicador (`docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` §4) |
 | `Cubicador:RespaldoSiFalla`: hoy `true` (respaldo, regla del coordinador); la issue #133 pide que la captura falle si el cubicador no responde (`false`). Recomendación del auditor: `false` en QA y producción en cuanto haya URL, `true` solo en la ventana de estabilización | Duban |
 | Columna de orden del camión (`ordenVehiculo`) en `CotizacionVehiculosLineaSolicitud`, script ≥ `0011`: hoy el orden de la recomendación va en un desfase de `createdAt` | scalderon-bs (revisión) y Duban |
 | N3: que el admin de fletes ponga el vehículo de un camión que llegó vacío ("sin selección") | Equipo de Nexo |
+| **HU-023 (decisión 12):** integrar `db/scripts/02_alter_cubicador.sql` (rama 158 de scalderon-bs, aún no está en esta rama): agrega las columnas del resultado de la cubicación y cambia `idTipoMercancia` por `codigoMercancia` en `CotizacionMercancias`. Al integrarlo hay que actualizar el modelo EF (la sonda `/health/ready` lo sigue sola) y esta ADR | scalderon-bs (script); Duban (integración, #156 a #160) |

@@ -7,7 +7,7 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 
 /// <summary>
 /// HU-023.5 (#160): guarda <see cref="clsAvisosCubicacion"/> (mercancías condicionadas, advertencias y extradimensión del cubicador) como
-/// JSON en <c>CotizacionLineasSolicitud.avisosCubicacion</c> (migración <c>0011</c>, con <c>CHECK (ISJSON(...) = 1)</c>). Cada lista se
+/// JSON en <c>CotizacionLineasSolicitud.avisosCubicacion</c> (propuesta <c>db/scripts/pendientes/04</c>, con <c>CHECK (ISJSON(...) = 1)</c>). Cada lista se
 /// recorta a <see cref="MaximoElementos"/> y cada texto a <see cref="LargoMaximoTexto"/>: los avisos los escribe un sistema externo y no
 /// pueden crecer sin límite. Un JSON que ya no se puede leer (forma vieja) vale <c>null</c>: los avisos son informativos. EF no llama al
 /// convertidor con <c>null</c>: sin avisos la columna queda en <c>NULL</c>.
