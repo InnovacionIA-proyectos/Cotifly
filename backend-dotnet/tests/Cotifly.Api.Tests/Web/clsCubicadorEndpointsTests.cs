@@ -630,6 +630,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _nexo.SolicitudesCreadas.Should().ContainSingle();
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             $"SELECT solicitudNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be(_nexo.SolicitudesCreadas[0]);
+    }
+
     /// <summary>
     /// E2E de la LICITACIÓN (HU-021.12, #139) con el Nexo falso y el cubicador falso, hasta el PDF: un pliego Excel de tres filas (la 1 con
     /// mercancías y un conexo → dos camiones del cubicador; la 2 con mercancías → uno; la 3 sin mercancías → respaldo sin vehículo), una sola
