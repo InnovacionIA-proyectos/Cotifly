@@ -159,3 +159,12 @@ public sealed class clsLineaLicitacionWebRequest
 public sealed record clsReporteLicitacionWeb(
     [property: JsonPropertyName("error")] Comun.clsErrorNegocioWeb.clsCuerpo Error,
     [property: JsonPropertyName("errores")] IReadOnlyList<clsErrorFilaLicitacion> Errores);
+
+/// <summary>
+/// HU-023.5 (#160): cuerpo opcional de <c>POST /web/licitaciones/{folio}/cubicacion/reintentar</c>. <c>usar_respaldo = true</c> acepta
+/// las rutas fallidas con un camión sin vehículo (lo resuelve la Mesa de Costeo de Nexo) en vez de volver a llamar al cubicador.
+/// </summary>
+public sealed class clsReintentoCubicacionWebRequest
+{
+    public bool? UsarRespaldo { get; init; }
+}

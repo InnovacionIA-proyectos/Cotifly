@@ -125,10 +125,31 @@ public sealed class clsLineaSolicitud
     public bool Condicionada { get; private set; }
 
     /// <summary>
-    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). No se guardan:
-    /// solo viajan en la respuesta de la captura o del recálculo; leída de la base vale <c>null</c>.
+    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). HU-023.5 (#160):
+    /// se guardan en <c>avisosCubicacion</c> (JSON, migración <c>0011</c>) porque la licitación se cubica en segundo plano y el comercial
+    /// los lee después en <c>GET /web/licitaciones/{folio}</c>. <c>null</c> sin cubicador (o en una ruta anterior a la 0011).
     /// </summary>
     public clsAvisosCubicacion? AvisosCubicacion { get; private set; }
+
+    /// <summary>
+    /// HU-023.5 (#160): estado de la cubicación en segundo plano (<c>null</c> = se cubicó al guardarla). Ver <see cref="Cotizaciones.EstadoCubicacion"/>.
+    /// </summary>
+    public EstadoCubicacion? EstadoCubicacion { get; private set; }
+
+    /// <summary>HU-023.5: intentos fallidos de cubicar la ruta en segundo plano (se reinicia al reintentar a mano).</summary>
+    public int CubicacionIntentos { get; private set; }
+
+    /// <summary>
+    /// HU-023.5: desde cuándo una réplica puede tomar la ruta pendiente (<c>null</c> = ya). Sirve de reclamo (una réplica la toma hasta
+    /// <c>ahora + Cubicador:ReclamoSegundos</c>) y de espera entre reintentos.
+    /// </summary>
+    public DateTimeOffset? CubicacionDisponibleAt { get; private set; }
+
+    /// <summary>HU-023.5: último error de la cubicación en segundo plano (<c>CODIGO: mensaje</c>); <c>null</c> si no falló.</summary>
+    public string? ErrorCubicacion { get; private set; }
+
+    /// <summary>Largo máximo de <see cref="ErrorCubicacion"/> (columna <c>errorCubicacion NVARCHAR(500)</c>).</summary>
+    public const int LargoMaximoErrorCubicacion = 500;
 
     /// <summary>Resumen del estado de sus camiones (<see cref="clsResumenEstadoCosteo"/>).</summary>
     public EstadoCosteo? EstadoCosteo { get; private set; }
@@ -303,6 +324,66 @@ public sealed class clsLineaSolicitud
         }
 
         RegistrarCubicacion(cubicacion);
+    }
+
+    /// <summary>
+    /// HU-023.5 (#160): la ruta queda esperando la cubicación en segundo plano (con su camión provisional sin vehículo). Solo al crearla.
+    /// </summary>
+    internal void MarcarCubicacionPendiente()
+    {
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Pendiente;
+        CubicacionIntentos = 0;
+        CubicacionDisponibleAt = null;
+        ErrorCubicacion = null;
+    }
+
+    /// <summary>HU-023.5: la cubicación en segundo plano terminó: los camiones del plan reemplazan al provisional.</summary>
+    internal void CompletarCubicacion(clsPlanRuta plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;
+        CubicacionDisponibleAt = null;
+        ErrorCubicacion = null;
+    }
+
+    /// <summary>
+    /// HU-023.5: un intento de cubicar la ruta falló. Con <paramref name="reintentarEn"/> la ruta sigue pendiente y se vuelve a tomar
+    /// desde esa hora; sin él queda <see cref="Cotizaciones.EstadoCubicacion.Fallida"/> (con el error visible para el comercial).
+    /// </summary>
+    internal void RegistrarFalloCubicacion(string codigo, string mensaje, DateTimeOffset? reintentarEn)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(codigo);
+        CubicacionIntentos++;
+        var error = $"{codigo.Trim()}: {mensaje?.Trim()}";
+        ErrorCubicacion = error.Length > LargoMaximoErrorCubicacion ? error[..LargoMaximoErrorCubicacion] : error;
+        EstadoCubicacion = reintentarEn is null ? Cotizaciones.EstadoCubicacion.Fallida : Cotizaciones.EstadoCubicacion.Pendiente;
+        CubicacionDisponibleAt = reintentarEn;
+    }
+
+    /// <summary>
+    /// HU-023.5: el comercial reintenta una ruta fallida. Con <paramref name="usarRespaldo"/> acepta el camión provisional sin vehículo
+    /// (lo resuelve la Mesa de Costeo de Nexo) y la ruta queda cubicada sin resultado del cubicador; sin él vuelve a la cola.
+    /// </summary>
+    internal bool ReintentarCubicacion(bool usarRespaldo)
+    {
+        if (EstadoCubicacion != Cotizaciones.EstadoCubicacion.Fallida)
+        {
+            return false;
+        }
+
+        CubicacionIntentos = 0;
+        CubicacionDisponibleAt = null;
+        if (usarRespaldo)
+        {
+            EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;
+            RegistrarCubicacion(null);
+            return true;
+        }
+
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Pendiente;
+        ErrorCubicacion = null;
+        return true;
     }
 
     /// <summary>

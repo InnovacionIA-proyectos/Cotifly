@@ -1630,6 +1630,21 @@ Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifl
 - **Numeración que ve el comercial (HU-013.15, #124): la fila del Excel.** `filas_excel[i]` es el número de fila de la hoja de Excel (base 1, encabezado incluido) de `filas[i]`: en el ejemplo, la portada ocupa la fila 1, el encabezado la 3 y los datos empiezan en la 4. Mostrar siempre esa numeración en la tabla del mapeo y en los errores ("Fila 7 del Excel"); el índice `fila` (base 0) es técnico y no se muestra. Si `filas_excel` es `null` (la hoja no cuadra con el análisis de Nexo), mostrar la posición base 1 (`i + 1`) como "línea".
 - 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 403 `ErrorNegocio` `NEXO_SIN_PERMISO`: el comercial no tiene el rol de Cabina de Fletes en Nexo ("Pide a soporte el rol Comercial en Nexo"; no cerrar la sesión de Cotifly). 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`; `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`), nunca su texto (#124): mostrar el `mensaje`. 413 `ErrorWeb` si el cuerpo pasa de 12 MB.
 
+### 5.23.1 Código de mercancía sugerido y cubicación en segundo plano (HU-023.5, #160)
+
+- **Al analizar el Excel** cada hoja trae `mercancias[]`: por fila, el `codigo_mercancia` de la columna de código del Excel
+  (`origen = excel`) o el más parecido del catálogo del cubicador (`origen = parecido`, `sugerido = true`, con `similitud` de 0 a 1).
+  Precargar el desplegable de mercancía con ese código **marcado como sugerido** (por ejemplo con un chip "Sugerido") para que el
+  comercial lo confirme o lo cambie; si `codigo_mercancia` es `null`, dejarlo vacío y obligatorio.
+- **Al crear la licitación con cubicador** el 201 llega enseguida con `progreso_cubicacion.estado = en_curso`: mostrar una barra
+  "Calculando vehículos: `cubicadas` de `total`" y consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s mientras siga `en_curso`.
+  Al quedar `completa` la licitación sale sola a Nexo. Con `con_fallas`, mostrar por ruta `error_cubicacion` y dos botones:
+  **Reintentar** (`POST /web/licitaciones/{folio}/cubicacion/reintentar` sin cuerpo) y **Enviar sin vehículo**
+  (`{"usar_respaldo": true}`: la Mesa de Costeo escoge el vehículo).
+- Cada línea trae `camiones[]` (vehículo y carrocería por código: el nombre sale de `GET /web/tipos-vehiculo` y
+  `GET /web/tipos-carroceria`) y `cubicacion[]` trae los avisos del cubicador por ruta, como en el formulario.
+- La descarga del Excel trae la columna y la hoja `Camiones Cotifly`.
+
 ### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
 
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).

@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c> y <c>db/scripts/02_alter_cubicador.sql</c> partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c> y el <c>0011</c> (HU-023.5) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -30,7 +30,15 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         "0008_horas_por_linea.sql", "0009_reestructuracion_cotizaciones.sql", "0010_nombres_municipio.sql",
         // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs, sin cambios) va después del 0010.
         Script02,
+        // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (el 01 ya trae sus columnas).
+        Script0011,
     ];
+
+    /// <summary>HU-023.5 (#160): migración de la cubicación en segundo plano.</summary>
+    public const string Script0011 = "0011_cubicacion_segundo_plano.sql";
+
+    /// <summary>Scripts hasta el 02 del cubicador (sin el 0011).</summary>
+    public const int ScriptsHasta02 = 11;
 
     /// <summary>Ruta (relativa a <c>migrations_mssql</c>) del script <c>02</c> del cubicador, copiado a <c>scripts_bd</c>.</summary>
     public const string Script02 = "../scripts_bd/02_alter_cubicador.sql";

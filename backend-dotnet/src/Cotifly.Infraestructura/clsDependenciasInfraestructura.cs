@@ -103,6 +103,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
+        servicios.AddOpcionesValidadas<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>(
+            configuracion, Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion.Seccion);
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -359,6 +361,10 @@ public static class clsDependenciasInfraestructura
             .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
                 clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
+
+        // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
+        servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
+        servicios.AddHostedService<clsWorkerCubicacionLicitacion>();
 
         servicios.Configure<TelemetryOptions>(telemetria =>
         {

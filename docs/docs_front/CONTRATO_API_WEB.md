@@ -425,7 +425,9 @@ anterior).
 **HU-023.3 (#158): las mercancías de la captura y de la licitación se mandan con `codigo_mercancia`** (el `codigo` de este
 catálogo), obligatorio cuando el cubicador está configurado; sin cubicador (este catálogo responde 503) se aceptan sin código y la ruta
 va con un camión sin vehículo. `id_tipo_mercancia` queda obsoleto: todavía se acepta y se traduce al código, pero el formulario nuevo
-debe mandar el código. La captura es **todo o nada** también en la licitación: si el cubicador rechaza una ruta no se guarda ninguna. Errores por mercancía en `detalle.errores`: `CAMPO_REQUERIDO`, `MERCANCIA_DESCONOCIDA` (inactiva o desconocida) y
+debe mandar el código. La captura del formulario es **todo o nada**: si el cubicador rechaza una ruta no se guarda ninguna. La
+licitación con cubicador (HU-023.5, #160) se cubica en segundo plano (ver 8.5): se guarda de una vez y es "todo o nada" **hacia Nexo**
+(no sale hasta que todas sus rutas quedan cubicadas). Errores por mercancía en `detalle.errores`: `CAMPO_REQUERIDO`, `MERCANCIA_DESCONOCIDA` (inactiva o desconocida) y
 `MERCANCIA_NO_CUBICABLE`, en `mercancias[i].codigo_mercancia`.
 
 La respuesta 201 de `POST /web/solicitudes-costeo` trae `cubicacion[]` cuando alguna ruta pasó por el cubicador: por ruta
@@ -474,7 +476,19 @@ Cada fila es una ruta, sin vehículo y con mercancías y conexos. `valor_estimad
 ```
 
 Respuesta 201 (`Licitacion`, sin `referencia`). `tipo_vehiculo` de cada línea es el de sus camiones (lo pone el cubicador o
-la Mesa), `null` mientras no lo haya:
+la Mesa), `null` mientras no lo haya.
+
+**HU-023.5 (#160): con el cubicador configurado la licitación se cubica en segundo plano.** El 201 llega sin esperar al cubicador:
+cada ruta trae `estado_cubicacion = pendiente` y un camión provisional sin vehículo, `progreso_cubicacion.estado = en_curso` y
+`estado_costeo = pendiente_envio` (todavía no está en Nexo). El frontend consulta `GET /web/licitaciones/{folio}` cada 3 a 5 s mientras
+`progreso_cubicacion.estado = en_curso` y muestra el avance (`cubicadas` de `total`). Al quedar todas cubicadas, la licitación sale
+sola a Nexo (`estado_costeo` pasa a `pendiente_costeo`) y cada ruta trae sus `camiones` (código de vehículo y carrocería, peso,
+volumen y llenado) y su `resultado_cubicacion`; los avisos del cubicador van en `cubicacion[]` (la misma forma de
+`POST /web/solicitudes-costeo`, ahora se guardan). Si una ruta falla (`estado_cubicacion = fallida`, con `error_cubicacion`), el estado
+es `con_fallas` y la licitación **no sale a Nexo** hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar` (cuerpo opcional
+`{"usar_respaldo": true}` para aceptar esas rutas con un camión sin vehículo que resuelve la Mesa de Costeo; sin él, vuelven a la
+cola). 409 `ESTADO_NO_PERMITE` si no hay rutas fallidas. Mientras la cubicación no termina, `POST .../costeo/reintentar` y el
+recálculo de una ruta responden 409. Sin cubicador, como antes (sin `progreso_cubicacion`):
 
 <!-- respuesta: POST /web/licitaciones 201 -->
 ```json
@@ -483,7 +497,7 @@ la Mesa), `null` mientras no lo haya:
   "cliente_nombre": "AGENCIA JF S.A.S.",
   "nit_cliente": "900555111",
   "deadline": "2026-10-20T17:00:00+00:00",
-  "estado_costeo": "pendiente_costeo",
+  "estado_costeo": "pendiente_envio",
   "motivo_estado_costeo": null,
   "moneda": "COP",
   "trm_aplicada": 0,
@@ -493,10 +507,30 @@ la Mesa), `null` mientras no lo haya:
   "archivo_nombre": null,
   "hoja": "Tarifas",
   "lineas": [
-    { "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000, "estado_costeo": "pendiente_costeo", "precio_final": null }
-  ]
+    {
+      "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000,
+      "estado_costeo": "pendiente_envio", "precio_final": null,
+      "estado_cubicacion": "pendiente", "error_cubicacion": null, "resultado_cubicacion": null, "motivo_sin_seleccion": null,
+      "condicionada": false,
+      "camiones": [
+        { "orden": 1, "tipo_vehiculo": null, "carroceria": null, "peso_kg": 12000, "volumen_total_m3": null, "porcentaje_llenado_volumen": null, "porcentaje_llenado_peso": null }
+      ]
+    }
+  ],
+  "progreso_cubicacion": { "estado": "en_curso", "total": 1, "cubicadas": 0, "pendientes": 1, "fallidas": 0 },
+  "cubicacion": null
 }
 ```
+
+**Código de mercancía sugerido (HU-023.5).** `POST /web/licitaciones/analizar-excel` trae en cada hoja `columna_mercancia`,
+`columna_codigo_mercancia` y `mercancias[]`: por fila (`fila`, índice en `filas`), `{texto, codigo_mercancia, nombre_mercancia,
+sugerido, origen, similitud}`. Con la columna de código del Excel se usa tal cual (`origen = excel`, `sugerido = false`); si no, el
+tipo más parecido del catálogo del cubicador, sin tildes ni mayúsculas (`origen = parecido`, `sugerido = true`): **mostrarlo como
+sugerido y que el comercial lo confirme o lo cambie** antes de mandarlo en `mercancias[].codigo_mercancia`. Sin nada parecido,
+`codigo_mercancia = null`. `catalogo_mercancias_disponible = false` cuando no hay cubicador o su catálogo no respondió.
+
+**Excel (`GET /web/licitaciones/{folio}/excel`).** Agrega la columna `Camiones Cotifly` (un camión por línea de la celda) y la hoja
+`Camiones Cotifly` (un camión por fila).
 
 ### 8.6 Costeo: `GET /web/cotizaciones/{folio}/costeo`
 

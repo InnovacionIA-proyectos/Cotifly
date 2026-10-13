@@ -19,6 +19,7 @@ namespace Cotifly.Api.Licitaciones.Controllers;
 public sealed class clsLicitacionesController(
     IClsContextoUsuario usuario,
     IClsLicitacionService licitaciones,
+    IClsCubicacionLicitacionService cubicacion,
     ILogger<clsLicitacionesController> logger) : clsControladorWebBase(usuario)
 {
     public const string ParteArchivo = "archivo";
@@ -100,7 +101,10 @@ public sealed class clsLicitacionesController(
         return vista.Coincidir<IActionResult>(v => StatusCode(StatusCodes.Status201Created, v), Error);
     }
 
-    /// <summary>200 <c>Licitacion</c> con el estado y el precio de cada línea (nunca el costo de Nexo); 404 si no es suya.</summary>
+    /// <summary>
+    /// 200 <c>Licitacion</c> con el estado y el precio de cada línea (nunca el costo de Nexo), sus camiones y el progreso de la cubicación en
+    /// segundo plano (HU-023.5: <c>progreso_cubicacion</c>, para consultarlo cada pocos segundos mientras esté <c>en_curso</c>); 404 si no es suya.
+    /// </summary>
     [HttpGet("licitaciones/{folio}")]
     [ProducesResponseType<clsLicitacion>(StatusCodes.Status200OK)]
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
@@ -108,8 +112,43 @@ public sealed class clsLicitacionesController(
         (await licitaciones.ObtenerAsync(UsuarioId, folio, cancellationToken)).Coincidir<IActionResult>(l => Ok(l), Error);
 
     /// <summary>
-    /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado y servicios conexos (HU-011.3), más la hoja
-    /// "Resumen Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. 404 si no es suya o no es licitación.
+    /// HU-023.5 (#160): reintenta las rutas con la cubicación fallida (vuelven a la cola) o, con <c>usar_respaldo</c>, las acepta con un
+    /// camión sin vehículo (lo resuelve la Mesa de Costeo) y, si no queda nada pendiente, envía la licitación a Nexo. 200 <c>Licitacion</c>;
+    /// 404 si no es una licitación suya; 409 <c>ESTADO_NO_PERMITE</c> si no tiene rutas fallidas.
+    /// </summary>
+    [HttpPost("licitaciones/{folio}/cubicacion/reintentar")]
+    [ProducesResponseType<clsLicitacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ReintentarCubicacion(string folio, CancellationToken cancellationToken)
+    {
+        clsReintentoCubicacionWebRequest? cuerpo = null;
+        if (Request.ContentLength is > 0 || Request.Headers.TransferEncoding.Count > 0)
+        {
+            try
+            {
+                cuerpo = await JsonSerializer.DeserializeAsync<clsReintentoCubicacionWebRequest>(Request.Body, clsJsonWeb.Opciones, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return BadRequest(new clsErrorWeb(clsErrorWeb.MensajeCuerpoInvalido));
+            }
+        }
+
+        var resultado = await cubicacion.ReintentarAsync(UsuarioId, folio, cuerpo?.UsarRespaldo ?? false, cancellationToken);
+        if (resultado.EsFallo)
+        {
+            return Error(resultado.Error);
+        }
+
+        var vista = await licitaciones.ObtenerAsync(UsuarioId, resultado.Valor.Folio, CancellationToken.None);
+        return vista.Coincidir<IActionResult>(v => Ok(v), Error);
+    }
+
+    /// <summary>
+    /// 200 xlsx: el Excel original del cliente con las columnas de precio final, estado, servicios conexos y camiones (HU-011.3, HU-023.5),
+    /// más las hojas "Resumen Cotifly" y "Camiones Cotifly"; sin original, una hoja con los campos mapeados. Nunca trae costos de Nexo. 404
+    /// si no es suya o no es licitación.
     /// </summary>
     [HttpGet("licitaciones/{folio}/excel")]
     [ProducesResponseType(StatusCodes.Status200OK)]

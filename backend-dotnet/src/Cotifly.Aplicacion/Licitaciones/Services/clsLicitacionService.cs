@@ -2,6 +2,9 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Cotifly.Aplicacion.Cubicacion.Services;
+using Cotifly.Aplicacion.Cubicacion.DTOs;
+using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.DTOs;
 using Cotifly.Aplicacion.Licitaciones.Interfaces;
 using Cotifly.Aplicacion.Licitaciones.Validators;
@@ -21,7 +24,9 @@ public interface IClsLicitacionService
 {
     /// <summary>
     /// Reenvía el Excel al análisis de Nexo (no guarda nada). <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c> y
-    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> se validan antes de llamar a Nexo; los errores de lectura los devuelve Nexo.
+    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> se validan antes de llamar a Nexo; los errores de lectura los devuelve Nexo. HU-023.5 (#160): cada
+    /// fila trae el <c>codigoMercancia</c> de la columna de código del Excel o, si no hay, el más parecido del catálogo del cubicador,
+    /// marcado como sugerido (<see cref="clsHojaExcel.Mercancias"/>). Sin catálogo, el análisis no falla.
     /// </summary>
     Task<clsResultado<clsAnalisisExcel>> AnalizarAsync(Guid usuarioId, clsArchivoSubido archivo, CancellationToken cancellationToken = default);
 
@@ -38,7 +43,10 @@ public interface IClsLicitacionService
     /// </summary>
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
-    /// <summary>La licitación con el estado y el precio de cada línea (nunca el costo de Nexo).</summary>
+    /// <summary>
+    /// La licitación con el estado y el precio de cada línea (nunca el costo de Nexo). HU-023.5 (#160): con los camiones de cada ruta, el
+    /// progreso de la cubicación en segundo plano y los avisos del cubicador.
+    /// </summary>
     Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -47,6 +55,13 @@ public interface IClsLicitacionService
     /// si no es suya o no tiene líneas.
     /// </summary>
     Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-023.5 (#160), para "Ver detalle" (HU-018.1, parte C): el mismo Excel de <see cref="ExportarAsync"/> (una fila por ruta con sus
+    /// camiones, la hoja "Camiones Cotifly" y el resumen) para CUALQUIER cotización propia con rutas, no solo una licitación. Sin Excel
+    /// original, arma la hoja con los campos de cada ruta. <c>COTIZACION_NO_ENCONTRADA</c> si no es suya o no tiene rutas.
+    /// </summary>
+    Task<clsResultado<clsArchivoExportado>> ExportarCotizacionAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Implementación de <see cref="IClsLicitacionService"/>.</summary>
@@ -63,22 +78,34 @@ public sealed class clsLicitacionService(
     IClsFijacionMonedaService monedas,
     IClsCapturaRutasService captura,
     ILogger<clsLicitacionService> logger,
-    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsLicitacionService
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
+    IClsCubicador? cubicador = null,
+    IOptions<clsOpcionesCubicacionLicitacion>? opcionesCubicacion = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
-    public async Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default) =>
+        ExportarAsync(usuarioId, folio, soloLicitacion: true, cancellationToken);
+
+    public Task<clsResultado<clsArchivoExportado>> ExportarCotizacionAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default) =>
+        ExportarAsync(usuarioId, folio, soloLicitacion: false, cancellationToken);
+
+    private async Task<clsResultado<clsArchivoExportado>> ExportarAsync(
+        Guid usuarioId, string folio, bool soloLicitacion, CancellationToken cancellationToken)
     {
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
             ? null
             : await cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, usuarioId, cancellationToken);
-        if (cotizacion is null || cotizacion.Rutas.Count == 0 || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
+        if (cotizacion is null || cotizacion.Rutas.Count == 0 || (soloLicitacion && cotizacion.TipoSolicitud != TipoSolicitud.Licitacion))
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
-        var archivo = await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc);
+        var archivo = cotizacion.TipoSolicitud == TipoSolicitud.Licitacion
+            ? await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken)
+            : null;
+        var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
+        var datos = DatosExportacion(cotizacion, archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias);
         var generado = exportador.Generar(datos);
         if (generado.EsFallo)
         {
@@ -92,9 +119,16 @@ public sealed class clsLicitacionService(
     /// Datos de la exportación (HU-021: una fila por ruta): la tarifa del transporte de la ruta (sin conexos, la misma del PDF del pliego),
     /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos), como
     /// el resumen del PDF: los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
-    /// Nexo no entra a este objeto: el exportador no lo puede escribir.
+    /// Nexo no entra a este objeto: el exportador no lo puede escribir. HU-023.5 (#160): cada línea lleva sus camiones con el nombre del
+    /// vehículo y de la carrocería del catálogo del cubicador (<paramref name="vehiculos"/> y <paramref name="carrocerias"/>, por código; si
+    /// no están, el código) y el estado de su cubicación.
     /// </summary>
-    public static clsExportacionLicitacion DatosExportacion(clsCotizacionSolicitud cotizacion, clsArchivoLicitacion? archivo, DateTimeOffset ahora)
+    public static clsExportacionLicitacion DatosExportacion(
+        clsCotizacionSolicitud cotizacion,
+        clsArchivoLicitacion? archivo,
+        DateTimeOffset ahora,
+        IReadOnlyDictionary<string, string>? vehiculos = null,
+        IReadOnlyDictionary<string, string>? carrocerias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
@@ -113,9 +147,69 @@ public sealed class clsLicitacionService(
             archivo?.Hoja,
             archivo?.Contenido,
             [.. lineas.Select((l, i) => new clsLineaExportacion(
-                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), tarifas[i]))],
+                l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg, EstadoLegible(l), tarifas[i],
+                CamionesExportacion(l, vehiculos, carrocerias), CubicacionLegible(l)))],
             conexos,
             ahora);
+    }
+
+    /// <summary>HU-023.5: los camiones de la ruta para el Excel, con los nombres del catálogo del cubicador (o el código).</summary>
+    public static IReadOnlyList<clsCamionExportacion> CamionesExportacion(
+        clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? vehiculos = null, IReadOnlyDictionary<string, string>? carrocerias = null)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        static string? Nombre(string? codigo, IReadOnlyDictionary<string, string>? catalogo) =>
+            codigo is null ? null : catalogo is not null && catalogo.TryGetValue(codigo, out var nombre) ? nombre : codigo;
+        return [.. ruta.VehiculosOrdenados.Select((v, i) => new clsCamionExportacion(
+            i + 1, Nombre(v.TipoVehiculo, vehiculos), Nombre(v.Carroceria, carrocerias), v.PesoKg, v.VolumenTotalM3,
+            v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
+    }
+
+    /// <summary>HU-023.5: estado de la cubicación en segundo plano para el Excel (<c>null</c> si la ruta se cubicó al guardarla).</summary>
+    public static string? CubicacionLegible(clsLineaSolicitud ruta)
+    {
+        ArgumentNullException.ThrowIfNull(ruta);
+        return ruta.EstadoCubicacion switch
+        {
+            EstadoCubicacion.Pendiente => "Cubicando",
+            EstadoCubicacion.Fallida => "Cubicación fallida: " + (ruta.ErrorCubicacion ?? "sin detalle"),
+            EstadoCubicacion.Cubicada => "Cubicada",
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Nombres de los vehículos y carrocerías del catálogo del cubicador (por código), como el PDF (HU-023.1). Sin cubicador, sin camiones
+    /// con código o con el catálogo caído, vacíos: el Excel muestra el código.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<string, string>? Vehiculos, IReadOnlyDictionary<string, string>? Carrocerias)> NombresCubicadorAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    {
+        if (cubicador is not { EstaConfigurado: true }
+            || !cotizacion.Rutas.SelectMany(r => r.Vehiculos).Any(v => v.TipoVehiculo is not null || v.Carroceria is not null))
+        {
+            return (null, null);
+        }
+
+        var vehiculos = await cubicador.ListarTiposVehiculoAsync(cancellationToken);
+        var carrocerias = await cubicador.ListarTiposCarroceriaAsync(cancellationToken);
+        return (
+            vehiculos.EsExitoso ? PorCodigo(vehiculos.Valor.Select(v => (v.Codigo, v.Nombre))) : null,
+            carrocerias.EsExitoso ? PorCodigo(carrocerias.Valor.Select(c => (c.Codigo, c.Nombre))) : null);
+    }
+
+    private static Dictionary<string, string> PorCodigo(IEnumerable<(string Codigo, string Nombre)> filas)
+    {
+        var diccionario = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (codigo, nombre) in filas)
+        {
+            if (!string.IsNullOrWhiteSpace(codigo) && !string.IsNullOrWhiteSpace(nombre))
+            {
+                diccionario.TryAdd(codigo, nombre.Trim());
+            }
+        }
+
+        return diccionario;
     }
 
     /// <summary>Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen.</summary>
@@ -151,8 +245,162 @@ public sealed class clsLicitacionService(
         }
 
         var analisis = await analizador.AnalizarAsync(usuarioId, clsArchivoLicitacion.NombreLimpio(archivo.Nombre), archivo.Contenido, cancellationToken);
-        return analisis.EsFallo ? analisis : ConFilasExcel(analisis.Valor, archivo.Contenido, cancellationToken);
+        return analisis.EsFallo
+            ? analisis
+            : await ConMercanciasAsync(ConFilasExcel(analisis.Valor, archivo.Contenido, cancellationToken), cancellationToken);
     }
+
+    /// <summary>
+    /// HU-023.5 (#160): a cada hoja le agrega el código de mercancía de cada fila (<see cref="clsHojaExcel.Mercancias"/>): el de la columna
+    /// de código del Excel tal cual o, si no hay, el más parecido del catálogo del cubicador (<see cref="clsSugeridorMercancia"/>, el de la #157),
+    /// marcado como sugerido. El catálogo se lee una vez (con caché) y solo si alguna hoja tiene una columna de mercancía; si no responde,
+    /// el análisis sigue sin sugerencias (<see cref="clsAnalisisExcel.CatalogoMercanciasDisponible"/> = <c>false</c>).
+    /// </summary>
+    private async Task<clsAnalisisExcel> ConMercanciasAsync(clsAnalisisExcel analisis, CancellationToken cancellationToken)
+    {
+        var columnas = analisis.Hojas.Select(h => (Hoja: h, Texto: ColumnaMercancia(h.Encabezados), Codigo: ColumnaCodigoMercancia(h.Encabezados))).ToList();
+        if (columnas.All(c => c.Texto is null && c.Codigo is null))
+        {
+            return analisis;
+        }
+
+        IReadOnlyList<clsTipoMercanciaCubicador>? catalogo = null;
+        if (cubicador is { EstaConfigurado: true })
+        {
+            var leido = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
+            if (leido.EsExitoso)
+            {
+                catalogo = leido.Valor;
+            }
+            else
+            {
+                logger.LogInformation("El catálogo de tipos de mercancía del cubicador no respondió ({Codigo}): el análisis va sin sugerencias de código.",
+                    leido.Error.Codigo);
+            }
+        }
+
+        var porCodigo = new Dictionary<string, clsTipoMercanciaCubicador>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tipo in catalogo ?? [])
+        {
+            porCodigo.TryAdd(tipo.Codigo, tipo);
+        }
+
+        return analisis with
+        {
+            CatalogoMercanciasDisponible = catalogo is not null,
+            Hojas = [.. columnas.Select(c => c.Texto is null && c.Codigo is null
+                ? c.Hoja
+                : c.Hoja with
+                {
+                    ColumnaMercancia = c.Texto is { } t ? c.Hoja.Encabezados[t] : null,
+                    ColumnaCodigoMercancia = c.Codigo is { } k ? c.Hoja.Encabezados[k] : null,
+                    Mercancias = MercanciasDeHoja(c.Hoja, c.Texto, c.Codigo, catalogo, porCodigo),
+                })],
+        };
+    }
+
+    /// <summary>Por cada fila con mercancía (texto o código), su código (ver <see cref="clsCodigoMercanciaFila"/>).</summary>
+    public static IReadOnlyList<clsCodigoMercanciaFila> MercanciasDeHoja(
+        clsHojaExcel hoja,
+        int? columnaTexto,
+        int? columnaCodigo,
+        IReadOnlyList<clsTipoMercanciaCubicador>? catalogo,
+        IReadOnlyDictionary<string, clsTipoMercanciaCubicador>? porCodigo = null)
+    {
+        ArgumentNullException.ThrowIfNull(hoja);
+        static string? Celda(IReadOnlyList<string> fila, int? columna) =>
+            columna is { } c && c < fila.Count && !string.IsNullOrWhiteSpace(fila[c]) ? fila[c].Trim() : null;
+
+        // Solo los tipos cubicables: uno que no se puede cubicar se rechazaría al guardar (HU-023.3).
+        var cubicables = catalogo?.Where(t => t.Cubicable).ToList();
+        var sugerencias = new Dictionary<string, clsMercanciaSugerida?>(StringComparer.Ordinal);
+        var resultado = new List<clsCodigoMercanciaFila>();
+        for (var i = 0; i < hoja.Filas.Count; i++)
+        {
+            var texto = Celda(hoja.Filas[i], columnaTexto);
+            var codigo = Celda(hoja.Filas[i], columnaCodigo);
+            if (codigo is not null)
+            {
+                // La columna de código del Excel se usa tal cual (la validación de la licitación revisa que exista en el catálogo).
+                var nombre = porCodigo is not null && porCodigo.TryGetValue(codigo, out var tipo) ? tipo.Nombre : null;
+                resultado.Add(new clsCodigoMercanciaFila(i, texto, codigo, nombre, Sugerido: false, clsCodigoMercanciaFila.OrigenExcel, null));
+                continue;
+            }
+
+            if (texto is null)
+            {
+                continue;
+            }
+
+            if (!sugerencias.TryGetValue(texto, out var sugerencia))
+            {
+                sugerencia = cubicables is null ? null : clsSugeridorMercancia.Sugerir(texto, cubicables);
+                sugerencias[texto] = sugerencia;
+            }
+
+            resultado.Add(sugerencia is null
+                ? new clsCodigoMercanciaFila(i, texto, null, null, Sugerido: false, null, null)
+                : new clsCodigoMercanciaFila(i, texto, sugerencia.Tipo.Codigo, sugerencia.Tipo.Nombre, Sugerido: true, clsCodigoMercanciaFila.OrigenParecido,
+                    Math.Round((decimal)sugerencia.Parecido, 4, MidpointRounding.AwayFromZero)));
+        }
+
+        return resultado;
+    }
+
+    /// <summary>
+    /// HU-023.5: índice de la columna con la descripción de la mercancía, por su encabezado (sin tildes ni mayúsculas): primero uno que
+    /// diga "mercancía", luego "PRODUCTO", "tipo de carga" o "carga", "commodity" y por último "descripción". <c>null</c> si no hay.
+    /// La columna de código (<see cref="ColumnaCodigoMercancia"/>) no cuenta.
+    /// </summary>
+    public static int? ColumnaMercancia(IReadOnlyList<string> encabezados)
+    {
+        ArgumentNullException.ThrowIfNull(encabezados);
+        var normalizados = encabezados.Select(e => clsSugeridorMercancia.Normalizar(e)).ToList();
+        Func<string, bool>[] reglas =
+        [
+            e => Palabras(e).Any(p => p.StartsWith("MERCANC", StringComparison.Ordinal)),
+            e => Palabras(e).Any(p => p.StartsWith("PRODUCTO", StringComparison.Ordinal)),
+            e => e is "CARGA" or "TIPO DE CARGA" or "DESCRIPCION DE LA CARGA" or "DESCRIPCION CARGA",
+            e => Palabras(e).Contains("COMMODITY"),
+            e => Palabras(e).Any(p => p.StartsWith("DESCRIPCION", StringComparison.Ordinal)),
+        ];
+        foreach (var regla in reglas)
+        {
+            for (var i = 0; i < normalizados.Count; i++)
+            {
+                if (!EsCodigo(normalizados[i]) && regla(normalizados[i]))
+                {
+                    return i;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// HU-023.5: índice de la columna con el código de la mercancía ("Código mercancía", "codigo_mercancia", "Cód. producto"...), o
+    /// <c>null</c>.
+    /// </summary>
+    public static int? ColumnaCodigoMercancia(IReadOnlyList<string> encabezados)
+    {
+        ArgumentNullException.ThrowIfNull(encabezados);
+        for (var i = 0; i < encabezados.Count; i++)
+        {
+            var normalizado = clsSugeridorMercancia.Normalizar(encabezados[i]);
+            if (EsCodigo(normalizado)
+                && Palabras(normalizado).Any(p => p.StartsWith("MERCANC", StringComparison.Ordinal) || p.StartsWith("PRODUCTO", StringComparison.Ordinal)))
+            {
+                return i;
+            }
+        }
+
+        return null;
+    }
+
+    private static string[] Palabras(string normalizado) => normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+    private static bool EsCodigo(string normalizado) => Palabras(normalizado).Any(p => p is "CODIGO" or "COD" or "CODE");
 
     /// <summary>
     /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
@@ -284,8 +532,10 @@ public sealed class clsLicitacionService(
         var politica = porNombre[entrada.LineaNegocio!.Trim()];
 
         // HU-021.6: conexos con el costo del catálogo de Nexo y los camiones de cada ruta (cubicador, #133, con presupuesto de tiempo; o respaldo).
+        // HU-023.5 (#160): con el cubicador configurado, las rutas se guardan con un camión provisional y se cubican en segundo plano.
+        var enSegundoPlano = CubicaEnSegundoPlano;
         var preparadas = await captura.PrepararAsync(
-            usuarioId, [.. entradas.Select((l, i) => new clsRutaPorPreparar(l, politicasPorRuta[i].Id, l.Fila))], cancellationToken);
+            usuarioId, [.. entradas.Select((l, i) => new clsRutaPorPreparar(l, politicasPorRuta[i].Id, l.Fila))], enSegundoPlano, cancellationToken);
         if (preparadas.Error is { } errorPreparacion)
         {
             return clsResultadoLicitacion.Fallo(errorPreparacion);
@@ -344,10 +594,24 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(creada.Error);
         }
 
+        if (enSegundoPlano)
+        {
+            // HU-023.5 (#160): la solicitud sale a Nexo cuando la última ruta quede cubicada (clsCubicacionLicitacionService).
+            logger.LogInformation("Licitación {Folio} guardada con {Rutas} ruta(s) por cubicar en segundo plano.", creada.Valor.Folio, creada.Valor.Rutas.Count);
+            return clsResultadoLicitacion.Exito(creada.Valor);
+        }
+
         // Confirmada: desde aquí, sin el token de la petición (como HU-005.5, ADR-015 §3).
         await envio.EnviarGuardadaAsync(creada.Valor, politica, usuarioId);
         return clsResultadoLicitacion.Exito(creada.Valor);
     }
+
+    /// <summary>
+    /// HU-023.5 (#160): ¿la licitación se cubica en segundo plano? Con el cubicador configurado y <c>Cubicador:LicitacionEnSegundoPlano</c>
+    /// (por defecto sí). Sin cubicador, el respaldo (un camión sin vehículo por ruta) no llama a nadie y la licitación sale de una vez.
+    /// </summary>
+    private bool CubicaEnSegundoPlano =>
+        cubicador is { EstaConfigurado: true } && (opcionesCubicacion?.Value.LicitacionEnSegundoPlano ?? true);
 
     /// <summary>
     /// Todas las validaciones de las filas, juntas (HU-013.11): las de forma y rango de <see cref="clsValidadorLicitacion"/> (con G3) y
@@ -403,7 +667,11 @@ public sealed class clsLicitacionService(
             archivo?.Hoja,
             [.. ordenadas.Select((l, i) => new clsLineaLicitacion(
                 l.Orden, l.RutaOrigenIndice, l.OrigenNombre ?? string.Empty, l.DestinoNombre ?? string.Empty, TipoVehiculo(l), l.PesoKg,
-                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea is null ? null : tarifas[i]))]);
+                l.EstadoCosteo is { } e ? clsCodigoEnum.ACodigo(e) : null, l.PrecioFinalLinea is null ? null : tarifas[i],
+                l.EstadoCubicacion is { } c ? clsCodigoEnum.ACodigo(c) : null, l.ErrorCubicacion, l.ResultadoCubicacion, l.MotivoSinSeleccion,
+                l.Condicionada, clsCamionLicitacion.De(l)))],
+            clsProgresoCubicacion.De(cotizacion),
+            Cotizaciones.DTOs.clsCubicacionRutaResumen.De(cotizacion));
     }
 
     /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>

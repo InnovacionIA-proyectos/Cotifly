@@ -124,6 +124,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
+    public async Task ConEl02PeroSinEl0011EsUnhealthyPorqueLeFaltaEl0011()
+    {
+        // HU-023.5 (#160): el modelo EF mapea las columnas de la cubicación en segundo plano del 0011.
+        await using var sin0011 = await baseDatos.CrearBaseConScriptsAsync("dbSin0011", clsBaseDatosPruebas.ScriptsHasta02);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin0011.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 0011");
+    }
+
+    [Fact]
     public async Task UnaBaseInstaladaDesdeCeroConElScriptDeInstalacionEsHealthy()
     {
         await using var instalada = await baseDatos.CrearBaseInstaladaAsync("dbSaludInstalada", conSeeders: true);

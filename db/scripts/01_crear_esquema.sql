@@ -337,6 +337,12 @@ CREATE TABLE dbo_cotifly.CotizacionLineasSolicitud (
     metodoCalculo               NVARCHAR(20)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,
     precioFinalLinea            DECIMAL(18,2)    NULL,   -- costoFinal con el margen aplicado
     estadoCosteo                NVARCHAR(30)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- resumen de sus camiones
+    -- HU-023.5 (#160, migración 0011): cubicación de la licitación en segundo plano.
+    estadoCubicacion            NVARCHAR(20)  COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- pendiente / cubicada / fallida; NULL = se cubicó al guardarla
+    cubicacionIntentos          INT              NOT NULL CONSTRAINT df_cotizacionLineasSolicitud_cubicacionIntentos DEFAULT (0),
+    cubicacionDisponibleAt      DATETIMEOFFSET   NULL,   -- desde cuándo una réplica puede tomarla (reclamo y espera entre reintentos)
+    errorCubicacion             NVARCHAR(500) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- último error, para el comercial
+    avisosCubicacion            NVARCHAR(MAX) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL,   -- advertencias, extradimensión y condicionadas (JSON)
     createdAt                   DATETIMEOFFSET   NOT NULL CONSTRAINT df_cotizacionLineasSolicitud_createdAt DEFAULT (SYSDATETIMEOFFSET()),
     updatedAt                   DATETIMEOFFSET   NOT NULL CONSTRAINT df_cotizacionLineasSolicitud_updatedAt DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT pk_cotizacionLineasSolicitud PRIMARY KEY (id),
@@ -364,8 +370,17 @@ CREATE TABLE dbo_cotifly.CotizacionLineasSolicitud (
         (horasCargue IS NULL OR (horasCargue >= 0 AND horasCargue <= 240))
         AND (horasDescargue IS NULL OR (horasDescargue >= 0 AND horasDescargue <= 240))),
     CONSTRAINT ck_cotizacionLineasSolicitud_origenMargen CHECK (
-        origenMargen IS NULL OR origenMargen IN ('sap_tm', 'politica_linea', 'negociado'))
+        origenMargen IS NULL OR origenMargen IN ('sap_tm', 'politica_linea', 'negociado')),
+    CONSTRAINT ck_cotizacionLineasSolicitud_estadoCubicacion CHECK (
+        estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')),
+    CONSTRAINT ck_cotizacionLineasSolicitud_cubicacionIntentos CHECK (cubicacionIntentos >= 0),
+    CONSTRAINT ck_cotizacionLineasSolicitud_avisosCubicacion CHECK (avisosCubicacion IS NULL OR ISJSON(avisosCubicacion) = 1)
 );
+GO
+
+-- HU-023.5 (#160): la cola de la cubicación en segundo plano (solo las rutas pendientes).
+CREATE INDEX ix_cotizacionLineasSolicitud_cubicacionPendiente ON dbo_cotifly.CotizacionLineasSolicitud (cubicacionDisponibleAt)
+    WHERE estadoCubicacion = N'pendiente';
 GO
 
 -- Un camión por fila: si el cubicador recomienda 7 camiones para una ruta, son 7 filas.

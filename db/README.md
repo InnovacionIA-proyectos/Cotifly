@@ -9,6 +9,11 @@ dejarla con la configuración inicial.
 > integración (Testcontainers) comparan una instalación desde cero con una base armada con las migraciones `0001` a `0010` y
 > exigen el mismo esquema. El `0010_nombres_municipio.sql` es un **borrador pendiente de revisión de scalderon-bs** (ADR-019).
 >
+> **`migrations_mssql/0011_cubicacion_segundo_plano.sql`** (HU-023.5, #160, **pendiente de aprobación del DBA**) agrega a la ruta
+> la cola de la cubicación de la licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`,
+> `errorCubicacion`, `avisosCubicacion` y un índice filtrado). Es idempotente y no destructivo; `scripts/01_crear_esquema.sql` ya trae
+> esas columnas. Una base instalada antes con el 01 necesita el 0011 aplicado a mano (el ejecutador no corre `migrations_mssql/`).
+>
 > **`scripts/02_alter_cubicador.sql`** (HU-023.3, #158) agrega las columnas para guardar la respuesta del cubicador. Va
 > después del 01 (o del `0010` en una base migrada) y el ejecutador lo corre solo. Las pruebas de integración lo aplican después
 > de `0001` a `0010` y después del 01, y exigen el mismo esquema (HU-023.3).

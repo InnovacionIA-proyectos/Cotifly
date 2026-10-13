@@ -167,7 +167,7 @@ public sealed class clsEnvioCosteoService(
 
         // Conexos con el costo del catálogo de Nexo y camiones del planificador (los del cubicador o, de respaldo, uno sin vehículo; #133).
         var preparadas = await capturaRutas.PrepararAsync(
-            usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken);
+            usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken: cancellationToken);
         if (preparadas.Error is { } errorPreparacion)
         {
             return errorPreparacion;

@@ -21,7 +21,8 @@ public sealed record clsCamionPlaneado(
 /// y con sus municipios resueltos, la línea de negocio (id de <c>MargenesPolitica</c>), la fila del Excel de la que salió (0 en el
 /// formulario), sus camiones y sus servicios conexos con el costo del catálogo de Nexo como precio (decisión 3). <paramref name="RutaId"/>
 /// es el id que tendrá la ruta (<c>CotizacionLineasSolicitud.id</c>): se fija antes de guardar porque viaja al cubicador como
-/// <c>IdLineaSolicitud</c> (HU-021.5, #133); <c>null</c> = uno nuevo.
+/// <c>IdLineaSolicitud</c> (HU-021.5, #133); <c>null</c> = uno nuevo. <paramref name="CubicacionPendiente"/> (HU-023.5, #160): la ruta se
+/// guarda con su camión provisional y se cubica después, en segundo plano (licitación con cubicador).
 /// </summary>
 public sealed record clsRutaCapturada(
     clsLineaSolicitudCosteo Linea,
@@ -30,7 +31,8 @@ public sealed record clsRutaCapturada(
     IReadOnlyList<clsCamionPlaneado> Camiones,
     IReadOnlyList<clsCambioConexo> Conexos,
     Guid? RutaId = null,
-    clsCubicacionRuta? Cubicacion = null);
+    clsCubicacionRuta? Cubicacion = null,
+    bool CubicacionPendiente = false);
 
 /// <summary>
 /// Lo que respondió el cubicador para una ruta (HU-023.3, #158; columnas del script <c>02</c> en <c>CotizacionLineasSolicitud</c>): la

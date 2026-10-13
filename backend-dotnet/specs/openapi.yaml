@@ -2232,6 +2232,16 @@ paths:
         campos destino. Ni Nexo ni Cotifly guardan el archivo en este paso. `multipart/form-data` con el campo `archivo`
         (`.xlsx` o `.xlsm`, máximo 10 MB). El cuerpo completo de `/web/licitaciones*` admite hasta
         `SeguridadHttp:LimiteCuerpoLicitacionBytes` (12 MB por defecto; 413 al pasarlo).
+
+        **Código de mercancía (HU-023.5, #160).** Cotifly reconoce en cada hoja la columna de la mercancía (encabezado con
+        "mercancía", "producto", "tipo de carga", "commodity" o "descripción", sin tildes ni mayúsculas) y la del código ("código
+        mercancía", "cód. producto"...). Por cada fila con mercancía devuelve en `hojas[h].mercancias` el `codigo_mercancia`: el de
+        la columna de código tal cual (`origen = excel`, `sugerido = false`) o, si no hay, el más parecido del catálogo del
+        cubicador (`GET /web/tipos-mercancia`, solo tipos activos y cubicables), comparado sin tildes ni mayúsculas, con
+        `origen = parecido`, `sugerido = true` y su `similitud` (0 a 1): **el frontend lo muestra como sugerido y el comercial lo
+        confirma o lo cambia** antes de mandarlo en `POST /web/licitaciones`. Sin nada parecido (similitud menor que 0,5) el código
+        queda `null`. Sin cubicador o con su catálogo caído el análisis no falla: `catalogo_mercancias_disponible = false` y solo
+        se usa la columna de código.
       security:
         - bearer: []
       requestBody:
@@ -2316,6 +2326,16 @@ paths:
         En los dos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo (forma, contenedor y
         aprovisionamiento, tipología, carrocería, clase de contenedor), se devuelve primero el reporte 400 con todos ellos y el
         código del catálogo caído en `error.detalle.motivo`: lo que dependía de él se valida al volver a enviarla.
+
+        **Cubicación en segundo plano (HU-023.5, #160).** Con el cubicador configurado (y `Cubicador:LicitacionEnSegundoPlano`,
+        por defecto sí) la licitación se guarda **sin esperar al cubicador**: cada ruta queda con un camión provisional sin vehículo
+        y `estado_cubicacion = pendiente`, la respuesta trae `progreso_cubicacion.estado = en_curso` y **todavía no se envía a
+        Nexo** (`estado_costeo = pendiente_envio`). Un proceso en segundo plano le pide los camiones al cubicador ruta por ruta,
+        con `Cubicador:MaximoParalelo` llamadas a la vez entre todas las réplicas (petición P6), y cuando la última ruta queda
+        cubicada envía la solicitud completa a Nexo. El frontend consulta `GET /web/licitaciones/{folio}` cada pocos segundos
+        mientras `progreso_cubicacion.estado = en_curso`. Si una ruta falla (`fallida`, con `error_cubicacion`), la licitación
+        no sale a Nexo hasta `POST /web/licitaciones/{folio}/cubicacion/reintentar`. Sin cubicador, como antes: un camión sin
+        vehículo por ruta y el envío a Nexo de una vez.
       security:
         - bearer: []
       requestBody:
@@ -2389,7 +2409,9 @@ paths:
       summary: Estado y precio de cada línea de la licitación
       description: |
         HU-011.2. Solo precios con margen (nunca el costo de Nexo). Sirve para el polling de la pantalla: una línea sin flete
-        tiene `precio_final = null`. Solo el dueño.
+        tiene `precio_final = null`. Solo el dueño. HU-023.5 (#160): trae los camiones de cada ruta (`lineas[].camiones`), el
+        estado de su cubicación en segundo plano (`lineas[].estado_cubicacion`, `error_cubicacion`), el progreso
+        (`progreso_cubicacion`) y los avisos del cubicador por ruta (`cubicacion`, la misma forma de `POST /web/solicitudes-costeo`).
       security:
         - bearer: []
       parameters:
@@ -2406,6 +2428,54 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
 
+  /web/licitaciones/{folio}/cubicacion/reintentar:
+    post:
+      operationId: reintentarCubicacionLicitacion
+      tags: [web]
+      summary: Reintenta las rutas de la licitación cuya cubicación falló
+      description: |
+        HU-023.5 (#160). Las rutas con `estado_cubicacion = fallida` vuelven a la cola del cubicador. Con `usar_respaldo = true`
+        se aceptan con el camión provisional sin vehículo (lo resuelve la Mesa de Costeo de Nexo) y, si ya no queda ninguna
+        pendiente, la licitación se envía a Nexo en la misma petición. Solo antes de enviarla a Nexo. Cuerpo opcional.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                usar_respaldo:
+                  type: boolean
+                  nullable: true
+                  description: '`true` = aceptar las rutas fallidas con un camión sin vehículo en vez de volver a llamar al cubicador.'
+      responses:
+        '200':
+          description: La licitación con su progreso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Licitacion'
+        '400':
+          description: El cuerpo no es JSON válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`ESTADO_NO_PERMITE`: no hay rutas con la cubicación fallida o la licitación ya salió a Nexo'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/licitaciones/{folio}/excel:
     get:
       operationId: exportarExcelLicitacion
@@ -2421,6 +2491,12 @@ paths:
         Se puede exportar en cualquier momento. Siempre un `.xlsx` real: un `.xlsm` se convierte sin macros, y gráficos,
         imágenes o tablas dinámicas del original pueden perderse. El total del resumen es sin servicios conexos. `Sin enviar`
         solo marca filas entre la primera y la última línea enviada. Solo el dueño y solo licitaciones (404 si no).
+
+        HU-023.5 (#160): agrega también la columna `Camiones Cotifly` (un camión por línea de la celda: vehículo y carrocería con
+        el nombre del catálogo del cubicador, peso y llenado de volumen; "Sin vehículo (Mesa de Costeo)" si el cubicador no
+        escogió; y "Cubicando" o el error si la cubicación no terminó) y la hoja `Camiones Cotifly` con un camión por fila
+        (línea, ruta, camión, vehículo, carrocería, peso, volumen, llenado de volumen y de peso, cubicación). La exportación de una
+        cotización desde "Ver detalle" (HU-018.1, parte C) reusa esta misma función.
       security:
         - bearer: []
       parameters:
@@ -5256,10 +5332,59 @@ components:
             mismo orden: es la numeración que ve el comercial en su archivo y la que el frontend debe mostrar (`filas_excel[i]`
             para `filas[i]`). La calcula Cotifly con la misma regla de detección de Nexo; `null` si la hoja no cuadra con el
             análisis de Nexo (en ese caso, mostrar la posición base 1).
+        columna_mercancia:
+          type: string
+          nullable: true
+          description: HU-023.5 (#160). Encabezado que Cotifly reconoció como la descripción de la mercancía; `null` si no hay.
+        columna_codigo_mercancia:
+          type: string
+          nullable: true
+          description: HU-023.5. Encabezado que Cotifly reconoció como el código de la mercancía; `null` si no hay.
+        mercancias:
+          type: array
+          nullable: true
+          description: HU-023.5. Código de mercancía de cada fila con mercancía; `null` si la hoja no tiene columna de mercancía ni de código.
+          items:
+            $ref: '#/components/schemas/CodigoMercanciaFila'
+
+    CodigoMercanciaFila:
+      type: object
+      required: [fila, texto, codigo_mercancia, nombre_mercancia, sugerido, origen, similitud]
+      description: |
+        HU-023.5 (#160). El `codigo_mercancia` de una fila del análisis: el de la columna de código del Excel tal cual
+        (`origen = excel`) o el más parecido del catálogo del cubicador (`origen = parecido`, `sugerido = true`: el comercial lo
+        confirma o lo cambia). `null` si nada se parece.
+      properties:
+        fila:
+          type: integer
+          minimum: 0
+          description: Índice en `hojas[h].filas` (base 0), el mismo `fila` de `LineaLicitacionWeb`.
+        texto:
+          type: string
+          nullable: true
+          description: Lo que dice la columna de la mercancía.
+        codigo_mercancia:
+          type: string
+          nullable: true
+        nombre_mercancia:
+          type: string
+          nullable: true
+          description: Nombre del tipo en el catálogo del cubicador (`null` si el código no está en él).
+        sugerido:
+          type: boolean
+        origen:
+          type: string
+          nullable: true
+          enum: [excel, parecido, null]
+        similitud:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
 
     AnalisisExcel:
       type: object
-      required: [archivo, hojas]
+      required: [archivo, hojas, catalogo_mercancias_disponible]
       description: '`AnalisisExcelDto` de Nexo (HU-011.2).'
       properties:
         archivo:
@@ -5268,6 +5393,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HojaExcel'
+        catalogo_mercancias_disponible:
+          type: boolean
+          description: HU-023.5. `false` sin cubicador o con su catálogo caído (no hay sugerencias por parecido).
 
     LineaLicitacionWeb:
       type: object
@@ -5587,6 +5715,58 @@ components:
           description: |
             Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel y del PDF del pliego;
             HU-021); `null` mientras no tiene flete. Nunca el costo de Nexo.
+        estado_cubicacion:
+          type: string
+          nullable: true
+          enum: [pendiente, cubicada, fallida, null]
+          description: HU-023.5 (#160). Cubicación en segundo plano de la ruta; `null` si se cubicó al guardarla.
+        error_cubicacion:
+          type: string
+          nullable: true
+          description: "HU-023.5. Último error de la cubicación (`CODIGO: mensaje`), si falló."
+        resultado_cubicacion:
+          type: string
+          nullable: true
+          enum: [ASIGNADO, SIN_SELECCION_AUTOMATICA, null]
+        motivo_sin_seleccion:
+          type: string
+          nullable: true
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
+        condicionada:
+          type: boolean
+        camiones:
+          type: array
+          nullable: true
+          description: HU-023.5. Los camiones de la ruta, en su orden (uno provisional sin vehículo mientras está `pendiente`).
+          items:
+            $ref: '#/components/schemas/CamionLicitacion'
+
+    CamionLicitacion:
+      type: object
+      required: [orden, tipo_vehiculo, carroceria, peso_kg, volumen_total_m3, porcentaje_llenado_volumen, porcentaje_llenado_peso]
+      description: HU-023.5 (#160). Un camión de una ruta de la licitación (códigos del cubicador; vacíos = sin vehículo).
+      properties:
+        orden:
+          type: integer
+          minimum: 1
+        tipo_vehiculo:
+          type: string
+          nullable: true
+        carroceria:
+          type: string
+          nullable: true
+        peso_kg:
+          type: number
+          nullable: true
+        volumen_total_m3:
+          type: number
+          nullable: true
+        porcentaje_llenado_volumen:
+          type: number
+          nullable: true
+        porcentaje_llenado_peso:
+          type: number
+          nullable: true
 
     Licitacion:
       type: object
@@ -5640,6 +5820,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LineaLicitacion'
+        progreso_cubicacion:
+          type: object
+          nullable: true
+          description: |
+            HU-023.5 (#160). Progreso de la cubicación en segundo plano (`null` si ninguna ruta pasó por ella): `en_curso` (quedan
+            rutas pendientes), `con_fallas` (no quedan pendientes pero alguna falló: no sale a Nexo hasta reintentarla) o `completa`.
+          required: [estado, total, cubicadas, pendientes, fallidas]
+          properties:
+            estado:
+              type: string
+              enum: [en_curso, con_fallas, completa]
+            total:
+              type: integer
+            cubicadas:
+              type: integer
+            pendientes:
+              type: integer
+            fallidas:
+              type: integer
+        cubicacion:
+          type: array
+          nullable: true
+          description: |
+            HU-023.5 (#160). Por cada ruta ya cubicada, el resultado y los avisos del cubicador (advertencias, extradimensión y
+            mercancías condicionadas; la misma forma de `POST /web/solicitudes-costeo`). `null` si ninguna.
+          items:
+            $ref: '#/components/schemas/CubicacionRuta'
 
     ItemCubicacion:
       type: object
