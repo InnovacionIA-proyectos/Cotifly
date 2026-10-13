@@ -8,6 +8,10 @@ dejarla con la configuración inicial.
 > 20 tablas, las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Desde #130/#131 las pruebas de
 > integración (Testcontainers) comparan una instalación desde cero con una base armada con las migraciones `0001` a `0010` y
 > exigen el mismo esquema. El `0010_nombres_municipio.sql` es un **borrador pendiente de revisión de scalderon-bs** (ADR-019).
+>
+> **`scripts/02_alter_cubicador.sql`** (HU-023.3, #158) agrega las columnas para guardar la respuesta del cubicador. Va
+> después del 01 (o del `0010` en una base migrada) y el ejecutador lo corre solo. Las pruebas de integración lo aplican después
+> de `0001` a `0010` y después del 01, y exigen el mismo esquema (HU-023.3).
 
 ## Estructura
 
@@ -17,7 +21,8 @@ db/
 ├── ejecutar-bd.ps1        ejecutador para Windows (PowerShell)
 ├── ejecutar-bd.sh         ejecutador para Linux / contenedores (bash)
 ├── scripts/
-│   └── 01_crear_esquema.sql   schema, tablas, restricciones, índices y vistas, en su forma final
+│   ├── 01_crear_esquema.sql   schema, tablas, restricciones, índices y vistas, en su forma final
+│   └── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
 ├── seeder/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
 │   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
@@ -37,7 +42,7 @@ Necesitas `sqlcmd` y permiso para crear schemas, tablas y vistas en la base.
 
 ```powershell
 cd db
-# Crea la base si no existe, el esquema y los seeders:
+# Crea la base si no existe, el esquema (01 y 02) y los seeders:
 .\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly -CrearBase
 
 # Con usuario de SQL Server en vez de autenticación de Windows:
@@ -57,18 +62,22 @@ compartido (`tbsdatacenter`). Antes de ejecutar muestra a dónde va y pide escri
 | Opción (PowerShell / bash) | Qué hace |
 |---|---|
 | `-CrearBase` / `-c` | Crea la base de datos si no existe, con la collation `Latin1_General_100_CI_AS_SC_UTF8` |
-| `-SoloEsquema` / `-e` | Corre solo `scripts/01_crear_esquema.sql` |
+| `-SoloEsquema` / `-e` | Corre solo el esquema: `scripts/01_crear_esquema.sql` y los ajustes `scripts/02_*` en adelante |
 | `-SoloSeeder` / `-r` | Corre solo los seeders; se puede repetir sin problema |
-| `-Auto` / `-a` | Si `dbo_cotifly` ya tiene tablas, se salta el esquema y solo corre los seeders (sirve para correrlo en cada arranque) |
+| `-Auto` / `-a` | Si `dbo_cotifly` ya tiene tablas, se salta la creación del esquema (01) y corre los ajustes (02 en adelante) y los seeders (sirve para correrlo en cada arranque) |
 | `-Usuario` y `-Clave` / `-u` y `-p` | Autenticación de SQL Server (sin esto usa la de Windows) |
 
-Se detiene en el primer error y no ejecuta los pasos siguientes.
+El orden es: crear la base (opcional), `scripts/01_crear_esquema.sql`, los ajustes `scripts/02_*.sql` en adelante (en
+orden de nombre) y los seeders. Se detiene en el primer error y no ejecuta los pasos siguientes.
+
+**Los ajustes (`02` en adelante) se pueden repetir**: cada cambio revisa si ya está. Por eso corren también en una base que
+ya tiene el esquema; así una base instalada antes queda igual que una nueva.
 
 ### Con Docker
 
 El `docker-compose.yml` de la raíz trae un servicio `db-init` que levanta después de SQL Server y corre
 `ejecutar-bd.sh -c -a -y` contra la base `bd_cotifly`: la crea, crea el esquema y siembra. Es seguro en cada
-`docker compose up`: si el esquema ya existe, solo repasa los seeders.
+`docker compose up`: si el esquema ya existe, no lo vuelve a crear; solo corre los ajustes y repasa los seeders.
 
 ```bash
 docker compose up sqlserver db-init     # SQL Server local en el puerto 1434 del host
@@ -90,8 +99,8 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 ### En SSMS o Azure Data Studio (sin el ejecutador)
 
 1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
-2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `seeder/01_lineas_negocio.sql`,
-   `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
+   `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -99,6 +108,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 
 ```
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -156,6 +166,18 @@ ruta, `CotizacionesSolicitud.solicitudNexoId`, `CotizacionServiciosConexos.nombr
 `estadoEnvio` si falta. Es idempotente y no destructivo, y llena los nombres desde `Respaldo0009_*` si existen.
 `scripts/01_crear_esquema.sql` ya trae esas columnas.
 
+## Ajustes al esquema (`scripts/02_*`)
+
+Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como `ALTER TABLE`, en un script numerado de
+`scripts/` que **se puede repetir** (cada cambio revisa si ya está) y corre en **una sola transacción**.
+
+| Script | HU | Qué cambia |
+|---|---|---|
+| `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
+
+El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
+Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.
+
 ## Mantener esto en sincronía
 
 `scripts/01_crear_esquema.sql` es el resultado de aplicar todas las migraciones. **Cada migración nueva (`000N`) tiene que
@@ -170,6 +192,7 @@ Contra una base vacía **local o de pruebas, nunca la compartida**:
 .\ejecutar-bd.ps1 -Servidor localhost -Base dbCotifly_prueba -CrearBase
 ```
 
-El resumen final debe mostrar 20 tablas, 6 líneas de negocio, 5 mapeos SAP TM y 2 roles. Para comprobar que quedó igual que
-una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` y comparar columnas (por ejemplo con
+El resumen final debe mostrar 20 tablas, 6 líneas de negocio, 5 mapeos SAP TM y 2 roles. Al final del
+`02_alter_cubicador.sql` hay una consulta para comprobar sus 8 columnas. Para comprobar que quedó igual que
+una base migrada, aplicar en otra base vacía `db/migrations_mssql/0001` a `0010` más el `02` y comparar columnas (por ejemplo con
 `INFORMATION_SCHEMA.COLUMNS`) entre las dos.
