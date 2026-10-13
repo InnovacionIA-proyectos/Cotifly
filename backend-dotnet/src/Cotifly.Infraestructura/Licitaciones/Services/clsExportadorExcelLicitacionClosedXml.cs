@@ -242,7 +242,6 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         Dato("Folio", datos.Folio);
         Dato("Cliente", datos.Cliente ?? "—");
         Dato("NIT", datos.NitCliente ?? "—");
-        Dato("Referencia del pliego", datos.Referencia ?? "—");
         Dato("Moneda", datos.Moneda);
         if (!string.Equals(datos.Moneda, "COP", StringComparison.OrdinalIgnoreCase) && datos.TrmAplicada > 0m)
         {

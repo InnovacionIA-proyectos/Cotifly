@@ -14,5 +14,7 @@
   <ItemGroup>
     <!-- Contrato congelado (#17): se copia a la salida para el test de contrato. -->
     <None Include="..\..\specs\openapi.yaml" Link="specs\openapi.yaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- HU-021.11 (#138): los ejemplos JSON de la guía del frontend se validan contra el contrato. -->
+    <None Include="..\..\..\docs\docs_front\CONTRATO_API_WEB.md" Link="docs\CONTRATO_API_WEB.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

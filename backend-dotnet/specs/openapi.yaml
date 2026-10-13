@@ -1088,10 +1088,15 @@ paths:
         - **Todos los errores juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[]` (`ruta` base 0 o `null` si es del
           encabezado, `campo`, `codigo`, `mensaje`); `mensaje` es el del primero y `detalle.motivo` su código (o el del catálogo de
           Nexo que no respondió).
-        - **Retirados:** `tipo_vehiculo` y `carroceria` (decisión 7) y `valor_estimado` y `referencia` (decisión 1) se aceptan y se
-          **ignoran** (el vehículo y la carrocería dejan un aviso en el log del servidor); el contrato completo lo cierra #138.
-        - **Formato plano anterior:** sin `rutas`, los campos de ruta en la raíz (`origen`, `destino`, `posiciones`...) se leen como
-          una sola ruta con las mismas reglas. Enviar `rutas` y campos de ruta en la raíz a la vez es `SOLICITUD_COSTEO_INVALIDA`.
+        - **Retirados (HU-021.11, #138):** `valor_estimado` y `referencia` (decisión 1) **ya no están en el contrato**; si un
+          frontend anterior los manda, se ignoran sin error y queda un aviso `CAMPOS_RETIRADOS` en el log del servidor.
+          `tipo_vehiculo` y `carroceria` (decisión 7) siguen `deprecated`: por defecto se ignoran con un aviso en el log; con la
+          bandera de respaldo `Captura:AceptarVehiculoCliente = true` (apagada por defecto, HU-021-FE.2) se validan contra el
+          catálogo de Nexo y van **solo en el camión del respaldo** (sin cubicador, ruta sin mercancías tipadas o cubicador caído
+          con `Cubicador:RespaldoSiFalla`); si el cubicador recomienda, manda el cubicador.
+        - **Formato plano anterior (`deprecated`, se retira cuando salga HU-021-FE):** sin `rutas`, los campos de ruta en la raíz
+          (`origen`, `destino`, `posiciones`...) se leen como una sola ruta con un camión, con las mismas reglas. Enviar `rutas` y
+          campos de ruta en la raíz a la vez es `SOLICITUD_COSTEO_INVALIDA`.
 
         HU-005.5 (ADR-015). Crea la cotización del comercial (folio del servidor, ADR-011, con el NIT) con el
         formulario ampliado y sus posiciones en `estado_costeo = pendiente_envio`, la **confirma antes de llamar a
@@ -1575,7 +1580,7 @@ paths:
               motivo: "El cliente cambió el peso de la carga"
               datos_carga:
                 peso_kg: 28400
-                tipo_vehiculo: "2S3"
+                valor_mercancia: 150000000
       responses:
         '200':
           description: Reenviada a Nexo con el mismo folio; `estado_costeo` dice si Nexo la recibió
@@ -2324,6 +2329,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Destinatarios'
+        '400':
+          description: 'El NIT supera 20 caracteres (`ErrorWeb`). Declarado en #138 al comparar las acciones con el contrato.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
@@ -3220,7 +3231,7 @@ components:
           description: |
             HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí). **Desde HU-021.9 (#136,
             decisión 3) siempre `[]`**: la re-solicitud ya no descarta conexos (ver `conexos_conservados`). Se conserva por
-            compatibilidad y se retira con #138.
+            compatibilidad (frontend actual) y se retira cuando salga HU-021-FE (#138); el frontend nuevo no lo lee.
         conexos_conservados:
           type: array
           items:
@@ -4607,24 +4618,35 @@ components:
           type: string
           nullable: true
           deprecated: true
-          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora.
+          maxLength: 100
+          description: |
+            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Por defecto se acepta y se ignora
+            con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con `Captura:AceptarVehiculoCliente =
+            true` (apagada por defecto) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
+            `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
+            tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
+            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). Cuando el cubicador exista, la bandera se apaga y el campo se retira.
         carroceria:
           type: string
           nullable: true
           deprecated: true
-          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora.
+          maxLength: 100
+          description: Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`).
 
     SolicitudCosteoWeb:
       type: object
       required: [tipo, nit_cliente]
+      x-retiro: 'Formato plano (campos de ruta en la raíz): se retira cuando salga HU-021-FE (#138).'
       description: |
         **HU-021.6 (#132):** la solicitud se captura por `rutas` (`RutaCapturaWeb`). Los campos de ruta de la raíz (desde `origen`
-        hasta `posiciones`, marcados `deprecated`) son el **formato plano anterior** (una sola ruta), **obsoleto: se retira en #138**.
+        hasta `posiciones`, marcados `deprecated`) son el **formato plano anterior** (una sola ruta con un camión), **obsoleto: se
+        mantiene mientras el frontend nuevo no esté listo y se retira cuando salga HU-021-FE** (`x-retiro`).
         Se aceptan solo sin `rutas` (con `rutas`, cada campo plano que llegue es 400 `SOLICITUD_COSTEO_INVALIDA` con
         `CAMPO_NO_APLICA` en `detalle.errores`) y con las mismas reglas
         (id de municipio obligatorio o resoluble por nombre, mercancías con `id_tipo_mercancia`). `linea_negocio` es la de las
-        rutas que no traen la suya (en el formato plano, obligatoria). `tipo_vehiculo`, `carroceria`, `valor_estimado` y
-        `referencia` están retirados: se aceptan y se ignoran.
+        rutas que no traen la suya (en el formato plano, obligatoria). `valor_estimado` y `referencia` ya no están en el contrato
+        (decisión 1, #138): si llegan, se ignoran sin error y quedan en el log. `tipo_vehiculo` y `carroceria` están `deprecated`
+        (decisión 7; ver `RutaCapturaWeb.tipo_vehiculo`).
 
 
         Formulario ampliado (HU-005.3, mapeo aprobado en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
@@ -4673,16 +4695,6 @@ components:
             `2026-10-10T17:00:00`) se interpreta en hora de Bogotá (America/Bogota, UTC-05:00): `2026-10-10` es
             `2026-10-10T00:00:00-05:00`, es decir, el **inicio del día en hora de Bogotá** (HU-013.10, G4; pendiente de
             confirmar con negocio si debería ser el fin del día, 23:59:59). Un texto que no es ISO 8601 es un cuerpo inválido (`ErrorWeb`).
-        valor_estimado:
-          type: number
-          nullable: true
-          deprecated: true
-          description: Retirado (decisión 1 de HU-021). Se acepta y se ignora; ya no viaja a Nexo.
-        referencia:
-          type: string
-          nullable: true
-          deprecated: true
-          description: Retirado (decisión 1 de HU-021). Se acepta y se ignora; ya no viaja a Nexo.
         rutas:
           type: array
           nullable: true
@@ -4698,8 +4710,8 @@ components:
           nullable: true
           maxLength: 2000
           description: |
-            Encabezado (`notas`, máx. 2000 en Nexo; HU-013.10, G7): nota u observación para la Mesa de Nexo. Distinta de
-            `referencia` y de la personalización del PDF (que no viaja a Nexo). Se guarda y se reenvía en el reintento.
+            Encabezado (`notas`, máx. 2000 en Nexo; HU-013.10, G7): nota u observación para la Mesa de Nexo. Distinta de la
+            personalización del PDF (que no viaja a Nexo). Se guarda y se reenvía en el reintento.
         horas_cargue:
           type: number
           nullable: true
@@ -4746,13 +4758,13 @@ components:
           nullable: true
           deprecated: true
           description: |
-            Retirado (decisión 7 de HU-021, HU-021.6): el comercial ya no digita el vehículo; lo define el cubicador o la Mesa de
-            Costeo de Nexo. Se acepta y se ignora (queda un aviso en el log del servidor).
+            Formato plano. Retirado (decisión 7 de HU-021, HU-021.6): el comercial ya no digita el vehículo; lo define el cubicador
+            o la Mesa de Costeo de Nexo. Igual que `RutaCapturaWeb.tipo_vehiculo` (bandera `Captura:AceptarVehiculoCliente`).
         carroceria:
           type: string
           nullable: true
           deprecated: true
-          description: Retirado (decisión 7 de HU-021). Se acepta y se ignora, igual que `tipo_vehiculo`.
+          description: Formato plano. Igual que `RutaCapturaWeb.carroceria`.
         tipologia:
           deprecated: true
           type: string
@@ -4937,7 +4949,7 @@ components:
         `linea_negocio` (sin ella, la de la licitación), las ciudades de devolución y de levante por id + nombre (con solo el nombre
         se resuelven como el origen), `mercancias` con `id_tipo_mercancia` obligatorio y `servicios_conexos` del catálogo de Nexo
         (`ConexoCapturaWeb`). **`tipo_vehiculo` y `carroceria` se retiraron del mapeo del Excel** (decisión 7): si llegan, se
-        ignoran. Una fila con solo el id de municipio copia el nombre del catálogo.
+        ignoran (salvo la bandera `Captura:AceptarVehiculoCliente`, igual que en `RutaCapturaWeb`). Una fila con solo el id de municipio copia el nombre del catálogo.
 
         Los valores se guardan recortados y el primer envío, el reintento y la re-solicitud mandan exactamente lo guardado.
       properties:
@@ -4989,12 +5001,14 @@ components:
           type: string
           nullable: true
           deprecated: true
-          description: Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora.
+          description: |
+            Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora, salvo la bandera de respaldo
+            `Captura:AceptarVehiculoCliente` (igual que `RutaCapturaWeb.tipo_vehiculo`, #138).
         carroceria:
           type: string
           nullable: true
           deprecated: true
-          description: Retirado del mapeo (decisión 7 de HU-021, HU-021.6). Se acepta y se ignora.
+          description: Igual que `tipo_vehiculo`.
         tipologia:
           type: string
           nullable: true
@@ -5078,7 +5092,9 @@ components:
     LicitacionWeb:
       type: object
       required: [nit_cliente, linea_negocio, lineas]
-      description: Encabezado de la licitación (el `tipo` es siempre `licitacion`) y sus líneas ya mapeadas, hasta 1000.
+      description: |
+        Encabezado de la licitación (el `tipo` es siempre `licitacion`) y sus líneas ya mapeadas, hasta 1000. `valor_estimado` y
+        `referencia` ya no están en el contrato (decisión 1 de HU-021, #138): si llegan, se ignoran sin error y quedan en el log.
       properties:
         nit_cliente:
           type: string
@@ -5097,14 +5113,6 @@ components:
           type: string
           format: date-time
           nullable: true
-        valor_estimado:
-          type: number
-          nullable: true
-          minimum: 0
-        referencia:
-          type: string
-          nullable: true
-          maxLength: 200
         notas:
           type: string
           nullable: true
@@ -5235,9 +5243,11 @@ components:
 
     Licitacion:
       type: object
-      required: [folio, cliente_nombre, nit_cliente, referencia, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
+      required: [folio, cliente_nombre, nit_cliente, deadline, estado_costeo, motivo_estado_costeo, moneda, trm_aplicada,
                  precio_final, lineas_costeadas, lineas_pendientes, archivo_nombre, hoja, lineas]
-      description: Licitación vista por el comercial (HU-011.2). Solo precios.
+      description: |
+        Licitación vista por el comercial (HU-011.2). Solo precios. Sin `referencia` desde HU-021.11 (#138, decisión 1: siempre
+        era `null`).
       properties:
         folio:
           type: string
@@ -5245,9 +5255,6 @@ components:
           type: string
           nullable: true
         nit_cliente:
-          type: string
-          nullable: true
-        referencia:
           type: string
           nullable: true
         deadline:

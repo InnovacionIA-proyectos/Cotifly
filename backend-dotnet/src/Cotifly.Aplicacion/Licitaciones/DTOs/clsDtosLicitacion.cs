@@ -89,13 +89,13 @@ public sealed record clsResultadoLicitacion(clsCotizacionSolicitud? Cotizacion, 
 }
 
 /// <summary>
-/// <c>Licitacion</c>: la vista del comercial de una cotización de varias líneas (estado y precios; nunca el costo de Nexo).
+/// <c>Licitacion</c>: la vista del comercial de una cotización de varias líneas (estado y precios; nunca el costo de Nexo). Sin
+/// <c>referencia</c> desde #138 (decisión 1 de HU-021: la cabecera ya no la guarda).
 /// </summary>
 public sealed record clsLicitacion(
     string Folio,
     string? ClienteNombre,
     string? NitCliente,
-    string? Referencia,
     DateTimeOffset? Deadline,
     string? EstadoCosteo,
     string? MotivoEstadoCosteo,
@@ -116,7 +116,6 @@ public sealed record clsExportacionLicitacion(
     string Folio,
     string? Cliente,
     string? NitCliente,
-    string? Referencia,
     string Moneda,
     decimal TrmAplicada,
     decimal? PrecioTotal,

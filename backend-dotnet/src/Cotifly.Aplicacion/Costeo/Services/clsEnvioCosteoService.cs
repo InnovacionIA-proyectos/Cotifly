@@ -98,7 +98,8 @@ public sealed class clsEnvioCosteoService(
     IOptions<clsOpcionesCosteoNexo> opciones,
     ILogger<clsEnvioCosteoService> logger,
     IClsPrecioCosteoService precioCosteo,
-    IClsCapturaRutasService capturaRutas) : IClsEnvioCosteoService
+    IClsCapturaRutasService capturaRutas,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
@@ -120,7 +121,7 @@ public sealed class clsEnvioCosteoService(
             return new clsErrorDominio(clsCodigosError.ErrorInterno, "El envío a costeo exige el comercial autenticado.");
         }
 
-        var rutas = SinVehiculo(entrada.Rutas, logger);
+        var rutas = SinVehiculo(entrada.Rutas, logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false);
         var nit = entrada.NitCliente?.Trim();
 
         // HU-021.6: todas las validaciones juntas (encabezado y cada ruta); el error trae el primero y detalle.errores trae todos.
@@ -223,11 +224,28 @@ public sealed class clsEnvioCosteoService(
     /// <summary>
     /// Decisión 7 de HU-021 (HU-021.6): el comercial ya no digita vehículo ni carrocería (los define el cubicador o la Mesa de Costeo de
     /// Nexo). Si una ruta los trae (cliente con el contrato anterior), se ignoran y queda un aviso en el log; la captura sigue.
+    /// Con la bandera de respaldo <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) se conservan: los valida el catálogo de
+    /// Nexo como cualquier código y solo los usa el camión del respaldo (<see cref="clsPlanificadorCamionSinVehiculo"/>); si el cubicador
+    /// recomienda, manda el cubicador.
     /// </summary>
-    public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger)
+    public static IReadOnlyList<clsLineaLicitacionEntrada?> SinVehiculo(
+        IReadOnlyList<clsLineaLicitacionEntrada?> rutas, ILogger logger, bool aceptarVehiculoCliente = false)
     {
         ArgumentNullException.ThrowIfNull(rutas);
         ArgumentNullException.ThrowIfNull(logger);
+        if (aceptarVehiculoCliente)
+        {
+            var conVehiculo = rutas.Count(r => r?.Linea is { } l && (l.TipoVehiculo is not null || l.Carroceria is not null));
+            if (conVehiculo > 0)
+            {
+                logger.LogInformation(
+                    "{Rutas} ruta(s) traen tipo_vehiculo o carroceria y Captura:AceptarVehiculoCliente está encendida: se conservan para el camión del respaldo (sin cubicador).",
+                    conVehiculo);
+            }
+
+            return rutas;
+        }
+
         var ignoradas = 0;
         var limpias = rutas.Select(r =>
         {
@@ -251,7 +269,7 @@ public sealed class clsEnvioCosteoService(
 
     /// <summary>
     /// La misma regla (decisión 7) sobre los cambios de carga de la re-solicitud (<c>datos_carga</c>, HU-021.9): <c>tipo_vehiculo</c> y
-    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura para que #138 la cambie en un solo sitio.
+    /// <c>carroceria</c> se ignoran con un aviso en el log. Está junto a la de la captura. La bandera <see cref="clsOpcionesCaptura.AceptarVehiculoCliente"/> (#138) no aplica aquí: los camiones de la versión nueva salen del planificador o se copian.
     /// </summary>
     public static clsCambiosCarga SinVehiculo(clsCambiosCarga cambios, ILogger logger)
     {

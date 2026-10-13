@@ -961,10 +961,10 @@ El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaW
 - **Cada ruta** lleva: `linea_negocio` (si falta, la `linea_negocio` de la raíz), `origen_municipio_id` + `origen`, `destino_municipio_id` + `destino`, `tipologia`, `clase_viaje`, `clase_contenedor`, `exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_municipio_id` + `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`, `ciudad_levante_municipio_id` + `ciudad_levante_contenedor`, `horas_cargue`, `horas_descargue` (si faltan, las de la raíz), `valor_levante_contenedor` (antes `valor_aprovisionamiento`), `valor_mercancia`, `peso_kg`, `mercancias[]` y `servicios_conexos[]`.
 - **Municipios (decisión 2): enviar siempre el `id` y el nombre** que devolvió `GET /web/municipios` (también en las ciudades de devolución y levante). El nombre que se guarda **siempre sale del catálogo por el id** (un nombre distinto se ignora); un id que no existe es `MUNICIPIO_INEXISTENTE`. Si solo llega el nombre, el servidor lo resuelve y, si es ambiguo, responde `MUNICIPIO_AMBIGUO` con los candidatos `(id N)` en el mensaje para que el comercial elija. Nunca adivina.
 - **Varias líneas de negocio** en una misma solicitud se aceptan: el margen es por ruta y cada camión viaja a Nexo con la línea de negocio de su ruta.
-- **Formato plano obsoleto:** se retira en #138; con `rutas`, un campo de ruta en la raíz es 400 con `detalle.errores`.
+- **Formato plano obsoleto:** `deprecated`; #138 lo mantiene y **se retira cuando salga HU-021-FE**. Con `rutas`, un campo de ruta en la raíz es 400 con `detalle.errores`.
 - **Mercancías:** `{id_tipo_mercancia, nombre_mercancia, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg}`. `id_tipo_mercancia` (uuid del catálogo del cubicador) es **obligatorio**; el desplegable `GET /web/tipos-mercancia` llega con #133.
 - **Servicios conexos:** `{id_servicio_conexo, cantidad}` con ids de `GET /web/servicios-conexos`. El servidor guarda el costo de Nexo como precio (nunca se muestra) y lo suma al costo de la ruta. Errores: `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` (20 por ruta).
-- **Ya no se envían** `tipo_vehiculo` ni `carroceria` (decisión 7): quitar esos campos del formulario. Si llegan, se ignoran. Cada ruta nace con **un camión sin vehículo** con su peso total y la Mesa de Costeo de Nexo elige el vehículo (el cubicador, #133, lo recomendará). `valor_estimado` y `referencia` también se ignoran (decisión 1).
+- **Ya no se envían** `tipo_vehiculo` ni `carroceria` (decisión 7): quitar esos campos del formulario. Si llegan, se ignoran. Cada ruta nace con los camiones que recomienda el cubicador o, mientras no exista, con **un camión sin vehículo** con su peso total, y la Mesa de Costeo de Nexo elige el vehículo. Única excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (apagada por defecto, HU-021-FE.2), el vehículo y la carrocería de la ruta van en ese camión del respaldo. `valor_estimado` y `referencia` **ya no están en el contrato** (decisión 1, #138): si llegan, se ignoran sin error.
 - **Errores todos juntos:** 400 `SOLICITUD_COSTEO_INVALIDA` con `error.detalle.errores[]` = `{ruta, campo, codigo, mensaje}` (`ruta` base 0, `null` si es de la raíz). Pintar cada error en su ruta y campo; `error.mensaje` es solo el primero.
 - **503 nuevos:** `MUNICIPIOS_NO_DISPONIBLE` (alguna ruta sin id o sin nombre y el catálogo de municipios caído) y `NEXO_NO_DISPONIBLE` (la ruta trae conexos y no se pudo leer su costo). Nada queda guardado; ofrecer Reintentar.
 - **Compatibilidad:** sin `rutas`, el formato plano de la tabla de abajo se sigue leyendo como **una** ruta, con las mismas reglas nuevas (id de municipio obligatorio o resoluble, `id_tipo_mercancia` en cada posición). Mandar `rutas` y campos de ruta en la raíz es 400.
@@ -1005,8 +1005,8 @@ El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaW
 | `cliente_nombre` | string o null, hasta 300 | No | Referencia visible. Se reemplaza por el nombre del catálogo |
 | `linea_negocio` | string | Sí | Nombre de la línea en Cotifly (`MargenesPolitica`). Si no existe o está inactiva: 400 `MARGEN_LINEA_DESCONOCIDA` |
 | `deadline` | fecha y hora o null | No | ISO 8601 con desfase |
-| `valor_estimado` | number o null | No | 0 a 9.999.999.999.999,99; máximo 2 decimales |
-| `referencia` | string o null, hasta 200 | No | — |
+| `valor_estimado` | — | — | **Retirado del contrato (decisión 1, #138):** se ignora; no enviarlo |
+| `referencia` | — | — | **Retirado del contrato (decisión 1, #138):** se ignora; no enviarlo |
 | `horas_cargue`, `horas_descargue` | number o null | No | 0 a 240, 2 decimales |
 | `origen`, `destino` | string, hasta 150 | Sí | Municipio del catálogo (`GET /web/municipios`) |
 | `tipo_vehiculo` | — | — | **Retirado (HU-021.6, decisión 7):** se ignora; no enviarlo |
@@ -1032,14 +1032,10 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
   "cliente_nombre": "Almacenes Éxito",
   "linea_negocio": "Nacional",
   "deadline": "2026-10-03T17:00:00-05:00",
-  "valor_estimado": null,
-  "referencia": "OC-7781",
   "horas_cargue": 4,
   "horas_descargue": 3,
   "origen": "YUMBO",
   "destino": "BOGOTA, D.C.",
-  "tipo_vehiculo": "3S3",
-  "carroceria": "FURGON",
   "tipologia": "CargaSeca",
   "clase_viaje": "CargaSuelta",
   "clase_contenedor": null,
@@ -1079,7 +1075,8 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 ### 5.17 Costeo de la cotización (`GET /web/cotizaciones/{folio}/costeo`). En PR #76
 
 - Solo el dueño. Lee la base de Cotifly (no llama a Nexo): se puede consultar con polling sin costo para Nexo.
-- 200 (`CosteoCotizacion`):
+- 200 (`CosteoCotizacion`). Desde HU-021 trae `rutas[]` con sus camiones, mercancías y conexos (con `estado_nexo`): el ejemplo
+  completo está en `CONTRATO_API_WEB.md` §8.6. El de abajo es el de antes de HU-021 (sin `rutas`):
 
 ```json
 {
@@ -1129,6 +1126,27 @@ La cotización tiene una o varias rutas y cada una tiene su margen y sus conexos
 - **Concurrencia y PDF:** como siempre, `If-Match` obligatorio (428/409) y el `ETag` nuevo en la respuesta. Sin enviar, el PDF vigente queda invalidado (`pdf_desactualizado`); enviada o con resultado, 409 `PDF_YA_ENVIADO` con la llamada para crear la versión `-vN`. Sin cambios (mismo margen o mismas cantidades), 200 sin tocar nada.
 - **Asistente:** la acción propuesta `ajustar_margen` trae `linea_orden` en el `cuerpo`: enviarlo tal cual al Confirmar. Si la cotización tiene varias rutas y el comercial no dijo cuál, el asistente pregunta antes de proponer.
 - **Camiones y mercancías de cada ruta (HU-021.9, #136):** `rutas[]` trae también `linea_negocio_id`, `peso_kg`, `camiones[]` (`tipo_vehiculo`, `carroceria`, `peso_kg`, `estado_costeo`; sin costos; vehículo en `null` = lo define la Mesa de Costeo), `vehiculos` (el texto que imprime el PDF, por ejemplo "2 × 3S3 - FURGON (20000 KG)") y `mercancias[]` (`orden`, `id_tipo_mercancia`, `nombre_mercancia`, `cantidad`, medidas y `peso_kg`). Un camión `descartada` sigue en la lista con su estado, pero no cuenta en el precio ni sale en el PDF.
+
+### 5.18.2 Contrato HU-021 cerrado (HU-021.11, #138): cambios que rompen
+
+El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de códigos de error nuevos están en
+`CONTRATO_API_WEB.md` §8 (cada ejemplo se valida contra `openapi.yaml` en las pruebas). Lo esencial para planear HU-021-FE:
+
+| Cambio | Acción en el frontend |
+|---|---|
+| `precio_final` (y `precio_final_linea`) **incluye los servicios conexos** | No sumar el `precio` de los conexos: es el desglose |
+| `POST /web/solicitudes-costeo` con `rutas[]`; formato plano `deprecated` hasta HU-021-FE | Migrar el formulario; no mezclar `rutas` con campos en la raíz (`CAMPO_NO_APLICA`) |
+| `tipo_vehiculo` y `carroceria` se ignoran (decisión 7) | Quitarlos; el vehículo se lee en `rutas[].camiones[]`. Bandera de respaldo del servidor: `Captura:AceptarVehiculoCliente` |
+| `valor_estimado` y `referencia` fuera del contrato (decisión 1); `Licitacion` ya no trae `referencia` | Dejar de enviarlos y de leerlos |
+| Municipios con id obligatorio; 503 `MUNICIPIOS_NO_DISPONIBLE` si el catálogo no responde | Enviar siempre el id; ofrecer Reintentar |
+| Mercancías con `id_tipo_mercancia` (`GET /web/tipos-mercancia`; 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador) | Desplegable del catálogo |
+| Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
+| `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Mostrar el aviso; no reintentar desde el frontend |
+| `/seguimiento` responde 409 `USAR_RESULTADO_NEXO` con `detalle.metodo`, `detalle.endpoint` y `detalle.requiere_if_match` | Llamar a `/resultado` con `If-Match` |
+| `motivo_rechazo` de una ganada = `"No aplica"` | Mostrar el motivo solo en perdidas |
+| "Mis cotizaciones": `linea_negocio` = la de la ruta 1 o `Varias`; margen de la ruta 1. `DatosNuevaVersion.rutas[]` por ruta | Mostrar `Varias` tal cual |
+| `conexos_descartados` siempre `[]` (`deprecated`, se retira con HU-021-FE) | Leer `conexos_conservados` |
+| `datos_carga` de la re-solicitud solo con una ruta (409 `ESTADO_NO_PERMITE` con varias: `detalle.motivo` = `VARIAS_RUTAS` o `LICITACION`) | Con varias rutas, `nueva_version: true` sin `datos_carga` |
 
 ### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En PR #76
 
@@ -1614,7 +1632,7 @@ Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifl
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
 
 - Request recomendado: `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y la parte `archivo` (el mismo Excel que se analizó; se guarda para la exportación de la sección 5.26). Sin archivo se puede enviar `application/json` con el `LicitacionWeb`.
-- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `valor_estimado?`, `referencia?`, `notas?` (nota para la Mesa de Nexo, HU-013.11), `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). **`linea_negocio` es una línea de Cotifly** (las de 5.20): da el margen de toda la licitación. "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly: responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo = "LINEA_DE_NEXO"` y `detalle.lineas_validas` (las líneas activas; cualquier otra línea desconocida trae también `lineas_validas`). UX: ofrecer un selector con las líneas de Cotifly, nunca texto libre (HU-013.15, #124; pregunta abierta a negocio en `docs/HU-013-preguntas-nexo.md`, 16). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos), `fila` (obligatoria con archivo, única) y, opcionales (HU-013.11, #108), `origen_municipio_id`, `destino_municipio_id`, `horas_cargue` y `horas_descargue` propias de la fila. El `tipo` lo pone el servidor (`licitacion`).
+- `LicitacionWeb`: `nit_cliente` (obligatorio), `cliente_nombre?`, `linea_negocio` (obligatorio; una por licitación), `deadline?`, `notas?` (`valor_estimado` y `referencia` salieron del contrato en #138: si llegan, se ignoran) (nota para la Mesa de Nexo, HU-013.11), `horas_cargue?`, `horas_descargue?`, `hoja` (obligatoria con archivo), `moneda?` (`COP` por defecto o `USD`, rama de #50) y `lineas` (1 a 1000). **`linea_negocio` es una línea de Cotifly** (las de 5.20): da el margen de toda la licitación. "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly: responde 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo = "LINEA_DE_NEXO"` y `detalle.lineas_validas` (las líneas activas; cualquier otra línea desconocida trae también `lineas_validas`). UX: ofrecer un selector con las líneas de Cotifly, nunca texto libre (HU-013.15, #124; pregunta abierta a negocio en `docs/HU-013-preguntas-nexo.md`, 16). Cada línea lleva los campos de `SolicitudCosteoWeb` de la sección 5.15 desde `origen` hasta `posiciones` (mismos límites y catálogos), `fila` (obligatoria con archivo, única) y, opcionales (HU-013.11, #108), `origen_municipio_id`, `destino_municipio_id`, `horas_cargue` y `horas_descargue` propias de la fila. El `tipo` lo pone el servidor (`licitacion`).
 
 **HU-021.6 (#132): cada fila es una ruta.** Cambios para el mapeo del pliego:
 
@@ -1700,7 +1718,7 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 
 ### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). PR de #47
 
-200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `referencia`, `deadline`, `estado_costeo`, `motivo_estado_costeo`, `moneda`, `trm_aplicada` (rama de #50; 0 en COP), `precio_final` (suma de las líneas en `moneda`, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
+200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `deadline` (sin `referencia` desde #138), `estado_costeo`, `motivo_estado_costeo`, `moneda`, `trm_aplicada` (rama de #50; 0 en COP), `precio_final` (suma de las líneas en `moneda`, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
@@ -2288,10 +2306,10 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - **Cuándo mostrar el botón.** Mismo folio: `estado_costeo` en `costeo_vencido`, `entregada` o `error_envio`, `estado_envio = sin_enviar` y sin resultado. Versión nueva: en cualquier estado salvo `pendiente_envio` y `pendiente_costeo`.
 - **Mismo folio** (cuerpo `{"motivo": "..."}`): 200 `CotizacionResumen` en `pendiente_costeo` (o `error_envio` si Nexo falla, con `motivo_estado_costeo`). El precio anterior desaparece (`precio_final = null`) hasta el nuevo costeo y el PDF queda desactualizado; **los conexos y el margen ajustado de cada ruta se conservan** (HU-021.9). Guardar el `ETag` de la respuesta.
 - **Versión nueva** (`datos_carga` con solo los campos que cambian, o `nueva_version: true`): 201 con la cotización `-vN` y `Location: /web/cotizaciones/{folio nuevo}/costeo`. Navegar a la versión nueva; la original no cambia. Un campo de `datos_carga` en `null` se borra (ej. `clase_contenedor` al pasar a carga suelta); `posiciones`, si viene, reemplaza todas. Origen, destino, cliente y línea no se cambian aquí: el backend responde 400. **Por ruta (HU-021.9, #136):** la `-vN` copia cada ruta con su línea de negocio, sus mercancías, sus camiones y sus conexos, y el margen ajustado de cada ruta. Si `datos_carga` cambia el peso o las mercancías, los camiones de la ruta se vuelven a calcular (hoy un camión sin vehículo que resuelve la Mesa de Costeo; el cubicador cuando exista): `rutas[].camiones` del costeo nuevo los muestra. **No enviar `tipo_vehiculo` ni `carroceria`**: se ignoran (decisión 7).
-- **Errores.** 400 `SOLICITUD_COSTEO_INVALIDA` (motivo vacío o de más de 300 caracteres, `datos_carga` vacío o con un campo no permitido, o reglas de la captura como el peso); 409 `ESTADO_NO_PERMITE` (estado; con `detalle.motivo = LICITACION` si se mandan cambios de carga a una licitación), `PDF_YA_ENVIADO` (ofrecer la versión con `nueva_version: true`) o `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`. Un `error_envio` por rechazo definitivo de Nexo (motivo "Rechazo definitivo de Nexo…") no se reenvía igual: pedir los cambios de carga.
+- **Errores.** 400 `SOLICITUD_COSTEO_INVALIDA` (motivo vacío o de más de 300 caracteres, `datos_carga` vacío o con un campo no permitido, o reglas de la captura como el peso); 409 `ESTADO_NO_PERMITE` (estado; con `detalle.motivo = LICITACION` si se mandan cambios de carga a una licitación de varias rutas o `VARIAS_RUTAS` si es un formulario de varias rutas, D9), `PDF_YA_ENVIADO` (ofrecer la versión con `nueva_version: true`) o `CONFLICTO_CONCURRENCIA`; 428 sin `If-Match`. Un `error_envio` por rechazo definitivo de Nexo (motivo "Rechazo definitivo de Nexo…") no se reenvía igual: pedir los cambios de carga.
 - **Dólares.** En el mismo folio la cotización conserva su moneda y su TRM. La versión nueva copia la moneda y toma la TRM del día (puede diferir de la original); si no hay TRM responde 400 `TRM_NO_DISPONIBLE` y no se crea nada: mostrar "no hay TRM disponible, intenta más tarde".
 - **Doble clic.** Generar un UUID por clic y enviarlo en `Idempotency-Key`: la repetición devuelve la misma respuesta sin crear otra versión ni reenviar a Nexo. La misma clave con otro cuerpo responde 400 `ErrorWeb`.
-- **Servicios conexos conservados (HU-021.9, #136; reemplaza el aviso de #124).** Con la decisión 3 los conexos son de la ruta en Cotifly: en el mismo folio **se conservan** y la `-vN` **los copia** (misma cantidad; en la `-vN`, el costo del catálogo de Nexo de hoy), y siguen en el precio (no hay que volver a agregarlos). La respuesta (200 o 201) trae siempre `conexos_conservados` (solo nombres, sin montos; `[]` si no había), por ejemplo `"conexos_conservados": ["Cargue", "Stand-by"]`. `conexos_descartados` sigue llegando, **siempre `[]`** (obsoleto, se retira con #138): quitar el aviso de "agrégalos de nuevo" y el buscador precargado. **Envío diferido (decisión 10):** el backend manda solo, una vez, los conexos de cada ruta a la cotización de Nexo cuando Nexo costea la línea del primer camión de la ruta (vale para la captura, la re-solicitud y la `-vN`); el frontend no tiene que hacer nada. Mientras Nexo no costee, la cotización de Nexo no los muestra; el precio al cliente siempre sale de Cotifly. En `GET .../costeo` cada conexo trae `estado_nexo` (`pendiente`, `enviado`, `incierto`, `fallido_definitivo`; `null` antes de enviar a Nexo; `fallido_definitivo` también cuando el conexo ya no está en el catálogo de Nexo) y cada ruta `aviso_conexos_nexo`: si viene, mostrarlo como aviso ("revisa en Nexo"); Cotifly no reintenta solo lo incierto.
+- **Servicios conexos conservados (HU-021.9, #136; reemplaza el aviso de #124).** Con la decisión 3 los conexos son de la ruta en Cotifly: en el mismo folio **se conservan** y la `-vN` **los copia** (misma cantidad; en la `-vN`, el costo del catálogo de Nexo de hoy), y siguen en el precio (no hay que volver a agregarlos). La respuesta (200 o 201) trae siempre `conexos_conservados` (solo nombres, sin montos; `[]` si no había), por ejemplo `"conexos_conservados": ["Cargue", "Stand-by"]`. `conexos_descartados` sigue llegando, **siempre `[]`** (obsoleto, se retira cuando salga HU-021-FE): quitar el aviso de "agrégalos de nuevo" y el buscador precargado. **Envío diferido (decisión 10):** el backend manda solo, una vez, los conexos de cada ruta a la cotización de Nexo cuando Nexo costea la línea del primer camión de la ruta (vale para la captura, la re-solicitud y la `-vN`); el frontend no tiene que hacer nada. Mientras Nexo no costee, la cotización de Nexo no los muestra; el precio al cliente siempre sale de Cotifly. En `GET .../costeo` cada conexo trae `estado_nexo` (`pendiente`, `enviado`, `incierto`, `fallido_definitivo`; `null` antes de enviar a Nexo; `fallido_definitivo` también cuando el conexo ya no está en el catálogo de Nexo) y cada ruta `aviso_conexos_nexo`: si viene, mostrarlo como aviso ("revisa en Nexo"); Cotifly no reintenta solo lo incierto.
 - **Aviso antes de confirmar "Cotizar costo" (regla, #136).** Si `servicios_conexos` de `GET .../costeo` no está vacío, el diálogo de confirmación puede mostrar, como información, el mismo texto que el resumen del asistente, con sus nombres (hasta 3 y "y N más"):
   - mismo folio: «Se conservan los servicios conexos «Cargue», «Stand-by» con su costo y siguen en el precio.»;
   - versión nueva: «La versión nueva copia los servicios conexos «Cargue», «Stand-by» con su costo y siguen en el precio.».

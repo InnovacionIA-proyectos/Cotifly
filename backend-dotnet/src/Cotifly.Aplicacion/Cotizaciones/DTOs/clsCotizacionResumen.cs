@@ -48,7 +48,7 @@ public sealed record clsCotizacionResumen(
 
     /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
-    /// (HU-021: el margen es por ruta; el contrato por ruta llega con #138).
+    /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
     /// </summary>
     public static clsCotizacionResumen Desde(clsCotizacionSolicitud cotizacion, string? lineaNegocio, string? baseUrlPdf)
     {
