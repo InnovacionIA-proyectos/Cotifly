@@ -1,7 +1,7 @@
 # language: es
 # HU-003.3 (#9) — Persistencia en SQL Server 2019 (ADR-008, ADR-010).
 # Se ejecuta en Cotifly.Aceptacion.Tests contra SQL Server 2019 en Testcontainers,
-# con el esquema de db/migrations_mssql/0001 y 0002 y los repositorios EF Core reales.
+# con el esquema de db/migrations_mssql/0001 a 0010 (HU-021, ADR-019: CotizacionesSolicitud y su agregado) y los repositorios EF Core reales.
 # Folios escritos a mano con la forma heredada del Python (PCN-DDMMAAAA[-vN]): el repositorio guarda el folio que
 # recibe; el formato del servidor (ADR-011, PCN-[nit-]INICIALES-DDMMAAAA-NNN[-vN]) se prueba en folio.feature. Cada escenario usa un folio distinto
 # porque la base es compartida durante la corrida.
@@ -12,7 +12,7 @@ Característica: Persistencia de cotizaciones en SQL Server 2019
   Para que no se pierdan y cada comercial vea y modifique solo las suyas
 
   Antecedentes:
-    Dado el esquema dbo_cotifly creado con los scripts 0001 a 0004
+    Dado el esquema dbo_cotifly creado con los scripts 0001 a 0010
     Y el comercial "ana.perez" registrado
     Y el comercial "luis.gomez" registrado
 

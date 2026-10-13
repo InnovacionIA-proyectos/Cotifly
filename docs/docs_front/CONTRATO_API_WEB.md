@@ -185,7 +185,7 @@ Los esquemas completos de request y response están en el `openapi.yaml`. El spe
 Desde HU-013.6 (#102) el chat es el **asistente de una cotización ya creada** y desde HU-013.9 (#105) el agente cotizador legado
 no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitudes-costeo`, 3.2) y una versión nueva sale de
 `POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` o con cambios de carga. Detalle completo en
-`docs/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
+`docs/docs_front/GUIA_FRONTEND_COTIFLY.md` (secciones 5.3 y 10, "Asistente por folio").
 
 ```json
 // request
