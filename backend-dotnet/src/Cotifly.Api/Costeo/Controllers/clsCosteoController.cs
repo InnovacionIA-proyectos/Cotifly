@@ -22,7 +22,8 @@ public sealed class clsCosteoController(
     IClsCosteoCotizacionService costeo,
     IClsAjusteMargenCosteoService ajusteMargen,
     IClsResultadoCotizacionService resultadoCotizacion,
-    IClsReSolicitudCosteoService reSolicitud) : clsControladorWebBase(usuario)
+    IClsReSolicitudCosteoService reSolicitud,
+    ILogger<clsCosteoController> logger) : clsControladorWebBase(usuario)
 {
     /// <summary>
     /// 200 <c>CotizacionResumen</c> con <c>ganada</c> y <c>motivo_rechazo</c> (solo si Nexo respondió 200); 400; 404 si no es suya;
@@ -133,6 +134,7 @@ public sealed class clsCosteoController(
     public async Task<IActionResult> Enviar([FromBody] clsSolicitudCosteoWebRequest cuerpo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(cuerpo);
+        clsCamposRetirados.Registrar(logger, "POST /web/solicitudes-costeo", cuerpo.CamposRetirados());
         var entrada = cuerpo.AEntrada();
         if (entrada.EsFallo)
         {

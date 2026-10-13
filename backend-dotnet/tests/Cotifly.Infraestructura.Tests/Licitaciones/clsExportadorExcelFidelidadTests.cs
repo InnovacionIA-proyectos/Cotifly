@@ -19,9 +19,9 @@ public sealed class clsExportadorExcelFidelidadTests
 {
     private readonly clsExportadorExcelLicitacionClosedXml _exportador = new();
 
-    private static clsExportacionLicitacion Datos(byte[]? original, string hoja = clsPliegoMuestra.Hoja, string? cliente = "Agencia JF", string? referencia = "Pliego 2026-04",
+    private static clsExportacionLicitacion Datos(byte[]? original, string hoja = clsPliegoMuestra.Hoja, string? cliente = "Agencia JF",
         IReadOnlyList<clsLineaExportacion>? lineas = null, IReadOnlyList<clsConexoExportacion>? conexos = null) => new(
-        "PCN-900555111-DG-01102026-001", cliente, "900555111", referencia, "COP", 0m, null, hoja, original,
+        "PCN-900555111-DG-01102026-001", cliente, "900555111", "COP", 0m, null, hoja, original,
         lineas ??
         [
             new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m),
@@ -64,7 +64,7 @@ public sealed class clsExportadorExcelFidelidadTests
     [Fact]
     public void LosTextosQueEmpiezanConIgualNoSeVuelvenFormulas()
     {
-        var datos = Datos(clsPliegoMuestra.Excel(3), cliente: "=HYPERLINK(\"http://x\",\"a\")", referencia: "=1+1",
+        var datos = Datos(clsPliegoMuestra.Excel(3), cliente: "=HYPERLINK(\"http://x\",\"a\")",
             conexos: [new clsConexoExportacion("=cmd|' /C calc'!A0", "x", 1m, 1m)]);
         using var libro = new XLWorkbook(new MemoryStream(_exportador.Generar(datos).Valor));
         libro.Worksheets.SelectMany(h => h.CellsUsed()).Where(c => c.HasFormula).Should().BeEmpty();

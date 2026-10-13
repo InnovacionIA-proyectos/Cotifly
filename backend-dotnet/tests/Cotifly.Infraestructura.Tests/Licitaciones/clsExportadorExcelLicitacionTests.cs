@@ -15,7 +15,7 @@ public sealed class clsExportadorExcelLicitacionTests
     private readonly clsExportadorExcelLicitacionClosedXml _exportador = new();
 
     private static clsExportacionLicitacion Datos(byte[]? original, string moneda = "COP", decimal trm = 0m, decimal? total = null, bool conexos = true) => new(
-        "PCN-900555111-DG-01102026-001", "Agencia JF", "900555111", "Pliego 2026-04", moneda, trm, total, clsPliegoMuestra.Hoja, original,
+        "PCN-900555111-DG-01102026-001", "Agencia JF", "900555111", moneda, trm, total, clsPliegoMuestra.Hoja, original,
         [
             new clsLineaExportacion(1, 0, "BUENAVENTURA", "BOGOTA, D.C.", "3S3", 32000m, "Costeada", 1_176_471m),
             new clsLineaExportacion(2, 2, "CUCUTA", "BOGOTA, D.C.", "2", 8000m, "Pendiente de costeo", null),

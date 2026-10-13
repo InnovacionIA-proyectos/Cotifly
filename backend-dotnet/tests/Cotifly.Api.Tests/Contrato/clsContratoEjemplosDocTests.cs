@@ -1,0 +1,73 @@
+using System.Globalization;
+using System.Net;
+using System.Text.RegularExpressions;
+using Cotifly.Pruebas.Contrato;
+
+namespace Cotifly.Api.Tests.Contrato;
+
+/// <summary>
+/// HU-021.11 (#138): los ejemplos JSON de <c>docs/docs_front/CONTRATO_API_WEB.md</c> (sección 8, la guía del frontend) cumplen
+/// <c>specs/openapi.yaml</c>. Cada bloque <c>```json</c> precedido de <c>&lt;!-- esquema: Nombre --&gt;</c> se valida contra ese esquema
+/// de <c>components/schemas</c>, y uno precedido de <c>&lt;!-- respuesta: METODO /ruta ESTADO --&gt;</c>, contra la respuesta de esa
+/// operación. Así un ejemplo que deja de cumplir el contrato rompe las pruebas en vez de confundir al frontend.
+/// </summary>
+public sealed partial class clsContratoEjemplosDocTests
+{
+    private static readonly string _rutaGuia = Path.Combine(AppContext.BaseDirectory, "docs", "CONTRATO_API_WEB.md");
+
+    public static TheoryData<string, string> Ejemplos()
+    {
+        var datos = new TheoryData<string, string>();
+        foreach (var (marca, json) in Bloques())
+        {
+            datos.Add(marca, json);
+        }
+
+        return datos;
+    }
+
+    private static List<(string Marca, string Json)> Bloques() =>
+        [.. BloqueMarcado().Matches(File.ReadAllText(_rutaGuia))
+            .Select(m => ($"{m.Groups["tipo"].Value}: {m.Groups["destino"].Value.Trim()}", m.Groups["json"].Value))];
+
+    [Fact]
+    public void LaGuiaTraeLosEjemplosDeLosEndpointsCambiados()
+    {
+        var marcas = Bloques().Select(b => b.Marca).ToList();
+
+        marcas.Should().Contain([
+            "esquema: SolicitudCosteoWeb",
+            "respuesta: POST /web/solicitudes-costeo 201",
+            "respuesta: GET /web/cotizaciones/{folio}/costeo 200",
+            "respuesta: PUT /web/cotizaciones/{folio}/costeo/margen 400",
+            "respuesta: POST /web/cotizaciones/{folio}/seguimiento 409",
+            "respuesta: GET /web/tipos-mercancia 200",
+            "respuesta: GET /web/mis-cotizaciones 200",
+            "respuesta: GET /web/cotizaciones/{id}/nueva-version 200",
+            "esquema: LicitacionWeb",
+        ]);
+    }
+
+    [Theory]
+    [MemberData(nameof(Ejemplos))]
+    public async Task CadaEjemploDeLaGuiaCumpleElContrato(string marca, string json)
+    {
+        var (tipo, destino) = (marca[..marca.IndexOf(':', StringComparison.Ordinal)], marca[(marca.IndexOf(':', StringComparison.Ordinal) + 2)..]);
+        Microsoft.OpenApi.IOpenApiSchema esquema;
+        if (tipo == "esquema")
+        {
+            esquema = await clsValidadorEsquemaOpenApi.EsquemaAsync(destino);
+        }
+        else
+        {
+            var partes = destino.Split(' ');
+            esquema = await clsValidadorEsquemaOpenApi.EsquemaRespuestaAsync(
+                partes[1], new HttpMethod(partes[0]), (HttpStatusCode)int.Parse(partes[2], CultureInfo.InvariantCulture));
+        }
+
+        clsValidadorEsquemaOpenApi.Validar(json, esquema).Should().BeEmpty($"el ejemplo «{marca}» de CONTRATO_API_WEB.md debe cumplir openapi.yaml");
+    }
+
+    [GeneratedRegex(@"<!-- (?<tipo>esquema|respuesta): (?<destino>[^>]+?) -->\s*```json\s*(?<json>.*?)```", RegexOptions.Singleline | RegexOptions.CultureInvariant)]
+    private static partial Regex BloqueMarcado();
+}

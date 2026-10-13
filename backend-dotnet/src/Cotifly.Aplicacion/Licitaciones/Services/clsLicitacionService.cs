@@ -9,6 +9,7 @@ using Cotifly.Aplicacion.Margen.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
@@ -61,7 +62,8 @@ public sealed class clsLicitacionService(
     IClsReloj reloj,
     IClsFijacionMonedaService monedas,
     IClsCapturaRutasService captura,
-    ILogger<clsLicitacionService> logger) : IClsLicitacionService
+    ILogger<clsLicitacionService> logger,
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsLicitacionService
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
@@ -105,7 +107,6 @@ public sealed class clsLicitacionService(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            null,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
             cotizacion.TrmAplicada,
             tarifas.All(t => t is not null) ? tarifas.Sum(t => t!.Value) : null,
@@ -203,8 +204,12 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.LicitacionInvalida, "El tipo de una licitación es 'licitacion'."));
         }
 
-        // HU-021 (decisión 7): vehículo y carrocería ya no se mapean del Excel; si llegan, se ignoran con un aviso en el log.
-        entrada = entrada with { Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger).Select(l => l!)] };
+        // HU-021 (decisión 7): vehículo y carrocería ya no se mapean del Excel; si llegan, se ignoran con un aviso en el log (salvo la
+        // bandera de respaldo Captura:AceptarVehiculoCliente, #138: entonces van solo en el camión del respaldo).
+        entrada = entrada with
+        {
+            Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? false).Select(l => l!)],
+        };
 
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.
         IReadOnlyList<int>? filasExcel = null;
@@ -386,7 +391,6 @@ public sealed class clsLicitacionService(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            null,
             cotizacion.Deadline,
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,

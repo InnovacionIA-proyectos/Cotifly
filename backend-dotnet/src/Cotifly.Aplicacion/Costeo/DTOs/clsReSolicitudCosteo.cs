@@ -20,7 +20,7 @@ public sealed record clsEntradaReSolicitudCosteo(string? Motivo, clsCambiosCarga
 /// Resultado de la re-solicitud: la cotización que quedó en Nexo (la misma, 200, o la versión nueva, 201) como <c>CotizacionResumen</c>
 /// y su versión de negocio para el <c>ETag</c>. Es lo que se guarda para repetir la respuesta con la misma <c>Idempotency-Key</c>.
 /// <paramref name="ConexosDescartados"/> (HU-013.15, #124): desde HU-021.9 (#136, decisión 3) la re-solicitud ya no descarta conexos y
-/// siempre es vacía (se conserva por compatibilidad hasta #138). <c>null</c> en una respuesta guardada antes de #124 (se responde vacía).
+/// siempre es vacía (se conserva por compatibilidad hasta que salga HU-021-FE, #138). <c>null</c> en una respuesta guardada antes de #124 (se responde vacía).
 /// </summary>
 public sealed record clsReSolicitudCosteo(
     bool VersionNueva, clsCotizacionResumen Cotizacion, string RowVersion, IReadOnlyList<string>? ConexosDescartados = null)

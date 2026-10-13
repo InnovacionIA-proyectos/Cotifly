@@ -146,63 +146,103 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
             .Should().OnlyContain(c => c.Tipo.GetCustomAttribute<clsJsonSnakeCaseAttribute>(true) == null, "/api/auth/*, /health y /pdfs conservan su convención");
     }
 
-    public static TheoryData<Type, string> DtosWeb() => new()
+    /// <summary>
+    /// Cada DTO de <c>/web/*</c> (entrada o salida) con su esquema del contrato. #138: lo usa también
+    /// <see cref="clsContratoDocumentoTests"/> (cada esquema alcanzable desde <c>/web/*</c> tiene su DTO, los <c>ProducesResponseType</c>
+    /// de cada acción coinciden con el contrato y los <c>required</c> no anulables de las respuestas no son anulables en C#).
+    /// </summary>
+    public static IReadOnlyList<(Type Dto, string Esquema)> MapaDtos { get; } =
+    [
+        (typeof(clsCotizacionResumen), "CotizacionResumen"),
+        (typeof(clsMisCotizaciones), "MisCotizaciones"),
+        (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
+        (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
+        (typeof(clsActividadComercial), "ActividadComercial"),
+        (typeof(clsAjustesMargenComercial), "AjustesMargenComercial"),
+        (typeof(clsMetricasComercial), "MetricasComercial"),
+        (typeof(clsMetricasRegional), "MetricasRegional"),
+        (typeof(clsComercialRegional), "ComercialRegional"),
+        (typeof(clsPeriodoMetricas), "PeriodoMetricas"),
+        (typeof(Cotifly.Dominio.Metricas.clsIndicadoresMetricas), "IndicadoresMetricas"),
+        (typeof(Cotifly.Dominio.Metricas.clsPuntoSerieMensual), "PuntoSerieMensual"),
+        (typeof(Cotifly.Dominio.Metricas.clsMetricaCiudad), "MetricaCiudad"),
+        (typeof(Cotifly.Dominio.Metricas.clsConcentracionCiudades), "ConcentracionCiudades"),
+        (typeof(Cotifly.Dominio.Metricas.clsMetricaLineaNegocio), "MetricaLineaNegocio"),
+        (typeof(clsTelefonoComercial), "TelefonoComercial"),
+        (typeof(clsDestinatarios), "Destinatarios"),
+        (typeof(clsVistaPreviaCorreo), "VistaPreviaCorreo"),
+        (typeof(clsRespuestaEnvio), "RespuestaEnvio"),
+        (typeof(clsSeguimientoWebRequest), "SeguimientoWeb"),
+        (typeof(clsEnvioWebRequest), "EnvioWeb"),
+        (typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio"),
+        (typeof(clsTelefonoRequest), "TelefonoComercial"),
+        (typeof(clsRespuestaChat), "RespuestaChat"),
+        (typeof(clsRespuestaChatError), "RespuestaChatError"),
+        (typeof(clsAccionPropuesta), "AccionPropuesta"),
+        (typeof(clsMensajeWebRequest), "MensajeWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsSolicitudCosteoWebRequest), "SolicitudCosteoWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsPosicionCargaWebRequest), "PosicionCargaWeb"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsCosteoCotizacion), "CosteoCotizacion"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsServicioConexoPrecio), "ServicioConexoCosteo"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsRutaCosteo), "RutaCosteo"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsCamionCosteo), "CamionCosteo"),
+        (typeof(Cotifly.Aplicacion.Costeo.Services.clsMercanciaCosteo), "MercanciaCosteo"),
+        (typeof(Cotifly.Aplicacion.Cotizaciones.DTOs.clsRutaNuevaVersion), "RutaNuevaVersion"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb"),
+        (typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb"),
+        (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos"),
+        (typeof(Cotifly.Aplicacion.Costeo.DTOs.clsServicioConexoCatalogo), "ServicioConexoCatalogo"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsReSolicitudCosteoWebRequest), "ReSolicitudCosteoWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsDatosCargaWebRequest), "DatosCargaWeb"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb"),
+        (typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsErrorFilaLicitacion), "ErrorFilaLicitacion"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsAnalisisExcel), "AnalisisExcel"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaExcel), "HojaExcel"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLicitacion), "Licitacion"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaLicitacion), "LineaLicitacion"),
+        // #138: los esquemas alcanzables desde /web/* que no tenían DTO en esta lista.
+        (typeof(Cotifly.Api.Costeo.DTOs.clsRutaCapturaWebRequest), "RutaCapturaWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsConexoCapturaWebRequest), "ConexoCapturaWeb"),
+        (typeof(Cotifly.Api.Costeo.DTOs.clsCantidadConexoWebRequest), "CantidadConexoWeb"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsTipoMercanciaCubicador), "TipoMercancia"),
+        (typeof(Cotifly.Aplicacion.Municipios.DTOs.clsMunicipio), "Municipio"),
+        (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsCatalogosFlete), "CatalogosFlete"),
+        (typeof(Cotifly.Aplicacion.CatalogosFlete.DTOs.clsOpcionCatalogo), "OpcionCatalogo"),
+        (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsResultadoBusquedaClientes), "ResultadoBusquedaClientes"),
+        (typeof(Cotifly.Aplicacion.Clientes.DTOs.clsClienteEncontrado), "ClienteEncontrado"),
+        (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionWebRequest), "CubicacionRequest"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsItemCubicacion), "ItemCubicacion"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsResultadoCubicacion), "ResultadoCubicacion"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsSugerenciaVehiculo), "SugerenciaVehiculo"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsSugerenciaFlota), "SugerenciaFlota"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsMedidasEstandar), "MedidasEstandar"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsPiezaExcedida), "PiezaExcedida"),
+        (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsDeteccionExtradimension), "DeteccionExtradimension"),
+        (typeof(Cotifly.Aplicacion.Precio.DTOs.clsSalidaPrecio), "SalidaPrecio"),
+        (typeof(Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen), "SalidaMargen"),
+        (typeof(Cotifly.Aplicacion.Pdf.DTOs.clsSalidaPdf), "SalidaPdf"),
+        (typeof(clsErrorHerramienta), "ErrorHerramienta"),
+        (typeof(clsErrorWeb), "ErrorWeb"),
+        (typeof(clsErrorNegocioWeb), "ErrorNegocio"),
+    ];
+
+    public static TheoryData<Type, string> DtosWeb()
     {
-        { typeof(clsCotizacionResumen), "CotizacionResumen" },
-        { typeof(clsMisCotizaciones), "MisCotizaciones" },
-        { typeof(clsDatosNuevaVersion), "DatosNuevaVersion" },
-        { typeof(clsLineaNegocioAdmin), "LineaNegocio" },
-        { typeof(clsActividadComercial), "ActividadComercial" },
-        { typeof(clsAjustesMargenComercial), "AjustesMargenComercial" },
-        { typeof(clsMetricasComercial), "MetricasComercial" },
-        { typeof(clsMetricasRegional), "MetricasRegional" },
-        { typeof(clsComercialRegional), "ComercialRegional" },
-        { typeof(clsPeriodoMetricas), "PeriodoMetricas" },
-        { typeof(Cotifly.Dominio.Metricas.clsIndicadoresMetricas), "IndicadoresMetricas" },
-        { typeof(Cotifly.Dominio.Metricas.clsPuntoSerieMensual), "PuntoSerieMensual" },
-        { typeof(Cotifly.Dominio.Metricas.clsMetricaCiudad), "MetricaCiudad" },
-        { typeof(Cotifly.Dominio.Metricas.clsConcentracionCiudades), "ConcentracionCiudades" },
-        { typeof(Cotifly.Dominio.Metricas.clsMetricaLineaNegocio), "MetricaLineaNegocio" },
-        { typeof(clsTelefonoComercial), "TelefonoComercial" },
-        { typeof(clsDestinatarios), "Destinatarios" },
-        { typeof(clsVistaPreviaCorreo), "VistaPreviaCorreo" },
-        { typeof(clsRespuestaEnvio), "RespuestaEnvio" },
-        { typeof(clsSeguimientoWebRequest), "SeguimientoWeb" },
-        { typeof(clsEnvioWebRequest), "EnvioWeb" },
-        { typeof(clsActualizarLineaNegocioRequest), "ActualizarLineaNegocio" },
-        { typeof(clsTelefonoRequest), "TelefonoComercial" },
-        { typeof(clsRespuestaChat), "RespuestaChat" },
-        { typeof(clsRespuestaChatError), "RespuestaChatError" },
-        { typeof(clsAccionPropuesta), "AccionPropuesta" },
-        { typeof(clsMensajeWebRequest), "MensajeWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsSolicitudCosteoWebRequest), "SolicitudCosteoWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsPosicionCargaWebRequest), "PosicionCargaWeb" },
-        { typeof(Cotifly.Aplicacion.Costeo.Services.clsCosteoCotizacion), "CosteoCotizacion" },
-        { typeof(Cotifly.Aplicacion.Costeo.Services.clsServicioConexoPrecio), "ServicioConexoCosteo" },
-        { typeof(Cotifly.Aplicacion.Costeo.Services.clsRutaCosteo), "RutaCosteo" },
-        { typeof(Cotifly.Aplicacion.Costeo.Services.clsCamionCosteo), "CamionCosteo" },
-        { typeof(Cotifly.Aplicacion.Costeo.Services.clsMercanciaCosteo), "MercanciaCosteo" },
-        { typeof(Cotifly.Aplicacion.Cotizaciones.DTOs.clsRutaNuevaVersion), "RutaNuevaVersion" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsSeleccionServiciosConexosWebRequest), "SeleccionServiciosConexos" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsResultadoWebRequest), "ResultadoWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsAjusteMargenWebRequest), "AjusteMargenWeb" },
-        { typeof(Cotifly.Aplicacion.Redaccion.DTOs.clsTextosCotizacion), "TextosCotizacion" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsTextosCotizacionWebRequest), "TextosCotizacionWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsAgregarServiciosConexosWebRequest), "AgregarServiciosConexosWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsConexoAgregarWebRequest), "ConexoAgregarWeb" },
-        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsPaginaServiciosConexos), "PaginaServiciosConexos" },
-        { typeof(Cotifly.Aplicacion.Costeo.DTOs.clsServicioConexoCatalogo), "ServicioConexoCatalogo" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsReSolicitudCosteoWebRequest), "ReSolicitudCosteoWeb" },
-        { typeof(Cotifly.Api.Costeo.DTOs.clsDatosCargaWebRequest), "DatosCargaWeb" },
-        { typeof(Cotifly.Api.Licitaciones.DTOs.clsLicitacionWebRequest), "LicitacionWeb" },
-        { typeof(Cotifly.Api.Licitaciones.DTOs.clsLineaLicitacionWebRequest), "LineaLicitacionWeb" },
-        { typeof(Cotifly.Api.Licitaciones.DTOs.clsReporteLicitacionWeb), "ReporteLicitacionInvalida" },
-        { typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsErrorFilaLicitacion), "ErrorFilaLicitacion" },
-        { typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsAnalisisExcel), "AnalisisExcel" },
-        { typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaExcel), "HojaExcel" },
-        { typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLicitacion), "Licitacion" },
-        { typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaLicitacion), "LineaLicitacion" },
-    };
+        var datos = new TheoryData<Type, string>();
+        foreach (var (dto, esquema) in MapaDtos)
+        {
+            datos.Add(dto, esquema);
+        }
+
+        return datos;
+    }
 
     /// <summary>
     /// Con <see cref="clsJsonWeb.Opciones"/> cada DTO de <c>/web/*</c> produce (y lee) exactamente los nombres snake_case de su
@@ -214,10 +254,19 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
     {
         var propiedades = (await clsValidadorEsquemaOpenApi.EsquemaAsync(esquema)).Properties!.Keys.ToList();
         var pendientes = PropiedadesPendientes.TryGetValue(esquema, out var deEsquema) ? deEsquema.Keys.ToList() : [];
-        var delDto = clsJsonWeb.Opciones.GetTypeInfo(dto).Properties.Select(p => p.Name).ToList();
+        // [JsonIgnore] (siempre) no sale ni entra por el cable: no es parte del contrato.
+        var todas = clsJsonWeb.Opciones.GetTypeInfo(dto).Properties
+            .Where(p => p.AttributeProvider?.GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonIgnoreAttribute), true)
+                .OfType<System.Text.Json.Serialization.JsonIgnoreAttribute>()
+                .Any(a => a.Condition == System.Text.Json.Serialization.JsonIgnoreCondition.Always) != true)
+            .ToList();
+        // #138: un campo retirado del contrato se sigue leyendo (se ignora y queda en el log), pero el esquema ya no lo declara.
+        var retiradas = todas.Where(EsRetirada).Select(p => p.Name).ToList();
+        var delDto = todas.Where(p => !EsRetirada(p)).Select(p => p.Name).ToList();
 
         pendientes.Should().OnlyContain(p => propiedades.Contains(p), "una propiedad pendiente debe estar en el esquema");
         delDto.Intersect(pendientes).Should().BeEmpty("si el DTO ya la tiene, quítala de PropiedadesPendientes");
+        retiradas.Intersect(propiedades).Should().BeEmpty("un campo [clsCampoRetirado] ya no está en el contrato");
         delDto.Should().BeEquivalentTo(propiedades.Except(pendientes));
     }
 
@@ -236,6 +285,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
             clsValidadorEsquemaOpenApi.Validar(json, esquema).Should().BeEmpty(json);
         }
     }
+
+    /// <summary>¿La propiedad está marcada como retirada del contrato (<see cref="clsCampoRetiradoAttribute"/>, #138)?</summary>
+    private static bool EsRetirada(System.Text.Json.Serialization.Metadata.JsonPropertyInfo propiedad) =>
+        propiedad.AttributeProvider?.IsDefined(typeof(clsCampoRetiradoAttribute), inherit: true) ?? false;
 
     /// <summary>Valor de la extensión <c>x-estado</c> de una operación, o <c>null</c>.</summary>
     private static string? EstadoExtension(OpenApiOperation operacion) =>

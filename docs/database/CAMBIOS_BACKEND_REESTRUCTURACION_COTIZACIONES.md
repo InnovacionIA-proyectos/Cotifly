@@ -520,7 +520,7 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 | DTO / endpoint | Cambio |
 |---|---|
 | `Costeo/DTOs/clsDtosCosteo.cs` 15-91 `clsSolicitudCosteoWebRequest` | Hoy es plano: una línea, un vehículo. Pasa a tener una lista de rutas. Cada ruta trae línea de negocio, municipios, condiciones, horas, valor del levante, mercancías (`idTipoMercancia`, nombre, medidas, cantidad, peso) y conexos. **Sin vehículo ni carrocería** |
-| HU-021.6 (#132, hecho) | `POST /web/solicitudes-costeo` recibe `rutas[]` (`RutaCapturaWeb`). El **formato plano anterior** (una ruta en la raíz) queda **obsoleto** (`deprecated` en `openapi.yaml`) y solo se acepta sin `rutas`; **se retira en #138**. Con `rutas`, un campo plano en la raíz es 400 con `detalle.errores` |
+| HU-021.6 (#132, hecho) | `POST /web/solicitudes-costeo` recibe `rutas[]` (`RutaCapturaWeb`). El **formato plano anterior** (una ruta en la raíz) queda **obsoleto** (`deprecated` en `openapi.yaml`) y solo se acepta sin `rutas`; #138 lo **mantiene** y **se retira cuando salga HU-021-FE**. Con `rutas`, un campo plano en la raíz es 400 con `detalle.errores` |
 | `clsDtosCosteo.cs` 96-103 (posición) | `descripcion` → `nombreMercancia`, y se agrega `idTipoMercancia` |
 | `clsDtosCosteo.cs` 107, 113 (conexos, margen) | La petición dice a qué ruta aplica (`lineaSolicitudId`) |
 | `clsDtosCosteo.cs` 146-225 `clsDatosCargaWebRequest` | La re-solicitud dice qué ruta cambia |
@@ -531,6 +531,13 @@ Estos cambios rompen el contrato. El frontend (Sara) tiene que ajustarse al mism
 
 Los endpoints de margen y de conexos (`/costeo/margen`, `/costeo/servicios-conexos`) conservan la ruta, pero su
 cuerpo agrega la ruta.
+
+**Estado tras HU-021.11 (#138).** Hecho: rutas en la captura y en la licitación (#132), mercancías con `id_tipo_mercancia` y
+`nombre_mercancia` (#132), `GET .../costeo` con rutas, camiones, mercancías, conexos con `estado_nexo`, margen y precio
+(#135, #136), margen y conexos por ruta (#135), `GET /web/tipos-mercancia` (#133) y el contrato completo (#138: `openapi.yaml`
+coherente con el código y probado, `valor_estimado`/`referencia` fuera del contrato, bandera `Captura:AceptarVehiculoCliente`,
+guía del frontend con ejemplos y cambios que rompen). **Pendiente:** "la re-solicitud dice qué ruta cambia" (`datos_carga` por
+ruta; hoy solo con una ruta) queda para una issue nueva, y el retiro del formato plano para HU-021-FE.
 
 ### 7.1 Margen y conexos por ruta: guía para el frontend (HU-021.8, #135, implementado)
 
