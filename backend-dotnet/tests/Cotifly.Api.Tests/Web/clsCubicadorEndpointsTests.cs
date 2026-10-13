@@ -648,13 +648,13 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         };
         var api = Api();
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        object Mercancia(int cantidad, decimal peso) => new { id_tipo_mercancia = TipoCafe, nombre_mercancia = "Estiba de café", cantidad, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = peso };
+        object MercanciaPliego(int cantidad, decimal peso) => new { codigo_mercancia = CodigoCafe, nombre_mercancia = "Estiba de café", cantidad, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = peso };
         object[] filas =
         [
             new { fila = 0, origen = "BUENAVENTURA", origen_municipio_id = 76109, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 28_000m,
-                valor_mercancia = 50_000_000m, mercancias = new[] { Mercancia(20, 1400m) }, servicios_conexos = new[] { new { id_servicio_conexo = Cargue, cantidad = 1 } } },
+                valor_mercancia = 50_000_000m, mercancias = new[] { MercanciaPliego(20, 1400m) }, servicios_conexos = new[] { new { id_servicio_conexo = Cargue, cantidad = 1 } } },
             new { fila = 1, origen = "CALI", origen_municipio_id = 76001, destino = "CARTAGENA", destino_municipio_id = 13001, tipologia = "CargaSeca", peso_kg = 12_500m,
-                valor_mercancia = 50_000_000m, mercancias = new[] { Mercancia(10, 1250m) } },
+                valor_mercancia = 50_000_000m, mercancias = new[] { MercanciaPliego(10, 1250m) } },
             new { fila = 2, origen = "CUCUTA", origen_municipio_id = 54001, destino = "BOGOTA, D.C.", destino_municipio_id = 11001, tipologia = "CargaSeca", peso_kg = 8_000m,
                 valor_mercancia = 50_000_000m },
         ];
@@ -720,12 +720,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         // Tarifa por viaje de cada ruta SIN conexos (1.800.000 / 0,85) y el conexo aparte con su precio (150.000 / 0,85).
         texto.Should().Contain("RESUMEN DEL PLIEGO").And.Contain("$2.117.647").And.Contain("$823.529").And.Contain("$500.000")
             .And.Contain("TOTAL DEL PLIEGO (3 RUTAS, SIN SERVICIOS CONEXOS) $3.441.176").And.Contain("Cargue en puerto: $176.471");
-        // Con el nombre del catálogo (HU-023.3) el layout de la tabla intercala otras columnas entre los dos camiones: se verifica
-        // presencia y orden, no adyacencia exacta en el texto aplanado.
-        var indice3S3 = texto.IndexOf("Tractocamión 3S3 - Furgón", StringComparison.Ordinal);
-        var indice2S3 = texto.IndexOf("Tractocamión 2S3 - Estacas", StringComparison.Ordinal);
-        indice3S3.Should().BeGreaterThanOrEqualTo(0, "el primer camión de la ruta 1 debe aparecer con el nombre del catálogo");
-        indice2S3.Should().BeGreaterThan(indice3S3, "los dos camiones de la ruta 1 en el orden del cubicador");
+        texto.Should().Contain("1 × Tractocamión 3S3 - Furgón, 1", "los dos camiones de la ruta 1 en el orden del cubicador, con los nombres del catálogo (HU-023.1)")
+            .And.Contain("× Tractocamión 2S3 - Estacas (28000 KG)");
         foreach (var costo in new[] { "$1.000.000", "$800.000", "$700.000", "$400.000", "$1.950.000" })
         {
             texto.Should().NotContain(costo, "los costos de Nexo nunca van al PDF");
