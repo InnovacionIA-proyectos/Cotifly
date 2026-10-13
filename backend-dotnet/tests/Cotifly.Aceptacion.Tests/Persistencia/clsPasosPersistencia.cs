@@ -18,7 +18,7 @@ namespace Cotifly.Aceptacion.Tests.Persistencia;
 [Binding]
 public sealed class clsPasosPersistencia(clsContextoEscenario contexto)
 {
-    [Given("el esquema dbo_cotifly creado con los scripts 0001 a 0004")]
+    [Given("el esquema dbo_cotifly creado con los scripts 0001 a 0010")]
     public async Task DadoElEsquemaCreado()
     {
         var tablas = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,

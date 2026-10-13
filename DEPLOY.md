@@ -141,6 +141,21 @@ ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto, que 
 cubicador. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
+**Variables a agregar en Dokploy por ambiente (HU-021).** Los manifiestos de `infra/` no se cambiaron en HU-021.14: tocar un
+despliegue requiere la aprobación del usuario. Cuando se apruebe, se declaran en el manifiesto con `${VAR:-<defecto>}` y se
+cargan en Dokploy así:
+
+| Variable | Staging (`infra/stack.dotnet.staging.yml`) | Producción (`infra/stack.dotnet.dokploy.yml`) | Cuándo |
+|---|---|---|---|
+| `Cubicador__UrlBase` | URL del cubicador de pruebas | URL del cubicador de producción | Cuando el cubicador publique `POST /recomendaciones` (C1) |
+| `Cubicador__ApiKey` | secreto de Dokploy (≥ 16) | secreto de Dokploy (≥ 16), distinto del de staging | Con `Cubicador__UrlBase` |
+| `Cubicador__RespaldoSiFalla` | `true` durante la estabilización; luego `false` | `false` | Con `Cubicador__UrlBase` |
+| `Cubicador__TiempoEsperaSegundos`, `__MinutosCacheCatalogos`, `__PresupuestoCapturaSegundos`, `__TiempoMaximoCatalogoSegundos` | por defecto (`15`, `30`, `60`, `10`) | por defecto | Solo si hay que ajustarlas |
+| `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | por defecto (`5`, `5`, `24`) | por defecto | Solo si hay que ajustarlas |
+| `Nexo__EnviarReferenciaRuta` | `false`; `true` cuando Nexo QA acepte `referenciaRuta` (N1) | `false`; `true` cuando Nexo producción la acepte | Pregunta N1 a Nexo |
+| `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
+| `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
+
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
 `WEB_SESSION_SECRET` (reemplazada por `Jwt__SigningKey`), `INTERNAL_API_TOKEN`, `LLM_MODEL`/`LLM_API_KEY`/`LLM_RPM`
