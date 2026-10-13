@@ -3,11 +3,18 @@
 SQL Server 2019, schema `dbo_cotifly`. Esta carpeta tiene todo lo necesario para **crear la base de datos desde cero** y
 dejarla con la configuración inicial.
 
-> **Estado:** la instalación desde cero (`scripts/01_crear_esquema.sql` y `seeder/`) se escribió como parte de HU-021 y se
-> **probó el 2026-10-08** sobre `dbTarifario_Nexo_Pruebas` (después de borrar el schema `dbo_cotifly` anterior): creó las
-> 20 tablas, las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Desde #130/#131 las pruebas de
-> integración (Testcontainers) comparan una instalación desde cero con una base armada con las migraciones `0001` a `0010` y
-> exigen el mismo esquema. El `0010_nombres_municipio.sql` es un **borrador pendiente de revisión de scalderon-bs** (ADR-019).
+> **Estado (2026-10-13, HU-021.14):** probado. La instalación desde cero (`scripts/01_crear_esquema.sql` y `seeder/`) se
+> corrió el 2026-10-08 sobre `dbTarifario_Nexo_Pruebas` (después de borrar el schema `dbo_cotifly` anterior): creó las
+> 20 tablas y las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Las pruebas de integración
+> (Testcontainers, `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) lo verifican en
+> cada corrida: la instalación desde cero y las migraciones `0001` a `0010` dejan el mismo esquema, el `0010` es idempotente
+> y el `0009` migra datos del esquema anterior sin perder ajustes, correos ni auditoría. El backend corre sobre este esquema
+> (ADR-019). Lo único pendiente es de aprobación, no de prueba: el `0010_nombres_municipio.sql` es un **borrador pendiente
+> de revisión de scalderon-bs y del DBA**.
+>
+> **Pendiente (HU-023):** el cubicador traerá `scripts/02_alter_cubicador.sql` (columnas de resultado de la cubicación y
+> `codigoMercancia` en lugar de `idTipoMercancia`). Todavía no está en esta rama; cuando entre, el ejecutador y la
+> precondición de despliegue lo incluyen.
 
 ## Estructura
 
@@ -121,7 +128,9 @@ siguen ejecutando después de un error.
 | Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
 | Vistas | `vAjustesMargenPorComercial`, `vActividadPorComercial` |
 
-El diseño de las tablas de cotizaciones, columna por columna, está en `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`.
+El esquema vigente con su diagrama ER está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md)
+y el significado de cada columna en [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../docs/database/DICCIONARIO_BASE_DE_DATOS.md).
+El diseño original de las tablas de cotizaciones está en `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`.
 
 **Seeders** (`seeder/`): la configuración que la aplicación necesita desde el primer día.
 
@@ -145,11 +154,12 @@ sesión con ese rol (falla cerrado). Las dos sentencias están en `seeder/03_rol
 
 ## Bases que ya existen (migraciones)
 
-La base compartida (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`) ya tiene aplicados los scripts `0001` a `0007`. El
-`0009_reestructuracion_cotizaciones.sql` la lleva al esquema de este directorio, conservando sus datos, y está **pendiente
-de aprobación del DBA y de ser probado contra una copia**. Hace un respaldo de las tablas que toca (`Respaldo0009_*`) y corre
-en una sola transacción. (Nota del 2026-10-08: la base compartida se reinstaló desde cero con `01_crear_esquema.sql`, que
-equivale a `0001`–`0009`.)
+La base compartida (`tbsdatacenter`, `dbTarifario_Nexo_Pruebas`) se **reinstaló desde cero el 2026-10-08** con
+`scripts/01_crear_esquema.sql` en la versión de ese día, que equivalía a `0001`–`0009`. Para una base que todavía tenga el
+esquema anterior (`Cotizaciones`), el `0009_reestructuracion_cotizaciones.sql` la lleva al esquema de este directorio
+conservando sus datos: hace un respaldo de las tablas que toca (`Respaldo0009_*`) y corre en una sola transacción. Está
+probado con Testcontainers sobre datos del esquema anterior; aplicarlo en un ambiente real sigue necesitando el visto bueno
+del DBA.
 
 El `0010_nombres_municipio.sql` (HU-021, ADR-019) se aplica **después del `0009`**: agrega los nombres de municipio de la
 ruta, `CotizacionesSolicitud.solicitudNexoId`, `CotizacionServiciosConexos.nombreServicioConexo` y el `CHECK` de

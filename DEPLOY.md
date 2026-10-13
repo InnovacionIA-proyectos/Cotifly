@@ -99,6 +99,13 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `CosteoNexo__Habilitado` | no | no | staging **`false`**, producción `true` | manifiesto / Dokploy | polling del costeo en Nexo (HU-005.6/005.8). En staging queda apagado hasta que el DBA confirme que staging y producción **no** comparten `dbo_cotifly`: si la comparten, los workers de los dos stacks consultarían y actualizarían las mismas cotizaciones contra instancias distintas de Nexo. Sin `Nexo__UrlBase` no corre aunque esté en `true` |
 | `CosteoNexo__IntervaloInicialSegundos`, `__IntervaloMaximoMinutos`, `__FactorEdad`, `__EdadMaximaHoras` | no | no | `5`, `15`, `0.25`, `72` | manifiesto | ritmo del polling: primera consulta a los 5 s, espera creciente con la edad (25 %) hasta 15 min; pasadas 72 h queda `costeo_vencido`. Valores por confirmar con el equipo de Nexo (ADR-015) |
 | `CosteoNexo__IntervaloTickSegundos`, `__Lote`, `__ReclamoSegundos` | no | no | `5`, `20`, `120` | manifiesto | cada cuánto revisa el worker la agenda, cotizaciones por vuelta y reclamo de una cotización en consulta (debe superar los 60 s de la consulta a Nexo) |
+| `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
+| `Nexo__EnviarReferenciaRuta` | no | no | `false` | — (no está en el manifiesto) | petición N1 a Nexo (HU-021.7): manda `referenciaRuta` en cada línea. Se enciende solo cuando Nexo la acepte (su swagger rechaza campos de más) |
+| `Cubicador__UrlBase` | no | no | vacío | — (no está en el manifiesto) | raíz del API del cubicador (HU-021.5). Vacía = sin cubicador: cada ruta queda con un camión sin vehículo que resuelve la Mesa de Costeo (warning `CUBICADOR_SIN_CONFIGURAR`). Se configura cuando el cubicador publique `POST /recomendaciones` (C1) |
+| `Cubicador__ApiKey` | **sí** (≥ 16 en Production) | con `Cubicador__UrlBase` | vacío | — (agregarla al manifiesto como secreto de Dokploy al activar el cubicador) | llave del cubicador (`Authorization: Bearer`) |
+| `Cubicador__TiempoEsperaSegundos`, `__MinutosCacheCatalogos`, `__PresupuestoCapturaSegundos`, `__TiempoMaximoCatalogoSegundos` | no | no | `15` (1-120), `30` (0-1440), `60` (1-3600), `10` (1-120) | — (no están en el manifiesto) | límite por petición (el POST no se reintenta), caché del catálogo de tipos de mercancía, tiempo total de llamadas de una captura y tope del catálogo |
+| `Cubicador__RespaldoSiFalla` | no | no | `true` | — (no está en el manifiesto) | con el cubicador configurado y caído: `true` = la ruta sigue con un camión sin vehículo (warning `CUBICADOR_RESPALDO`); `false` = la captura falla con 503 `CUBICADOR_NO_DISPONIBLE`. Recomendación: `false` en QA y producción en cuanto exista la URL |
+| `Captura__AceptarVehiculoCliente` | no | no | `false` | — (no está en el manifiesto) | bandera de respaldo (HU-021-FE.2): encendida, el vehículo y la carrocería que manda el frontend van solo en el camión del respaldo. Apagada rige la decisión 7. Se retira cuando exista el cubicador |
 | `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
 | `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
 | `Trm__Url` | no | **sí** (vacía no arranca) | `https://www.datos.gov.co/resource/32sa-8pi3.json` | manifiesto | TRM del día (frente C), datos abiertos de la Superintendencia, respaldo; exige salida a `www.datos.gov.co:443` |
@@ -106,6 +113,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Trm__TiempoEsperaDolarApiSegundos` | no | no | `4` | manifiesto | límite de la consulta de la TRM a DolarApi (2 a 60), corto para no demorar el respaldo |
 | `Pdf__StorageModo`, `Pdf__StorageDir` | no | no | `volumen`, `/data/pdfs` | manifiesto | |
 | `Pdf__BaseUrl` | no | no (no se valida al arrancar) | vacío | Dokploy | URL pública de la API (`https://<PUBLIC_HOST>`). Vacía, el enlace del PDF queda relativo (`/pdfs/{folio}.pdf`): sirve en la web |
+| `Pdf__PermitirCotizacionChat` | no | no | `false` | — (no está en el manifiesto) | `false` = la cotización legada del chat responde `COTIZACION_CHAT_RETIRADA` (HU-021.6). Solo las pruebas del PDF legado la encienden |
 | `Correo__Habilitado`, `Correo__Modo` | no | no | `false`, `smtp_relay` | Dokploy | transporte real por confirmar (D3) |
 | `Correo__SmtpRelay__Host` | no | con el correo habilitado | vacío | Dokploy | relay interno, sin AUTH (control por IP) |
 | `Correo__SmtpRelay__Port`, `__FromFallback`, `__TimeoutSeg` | no | no | `25`, `notificaciones@boterosoto.com.co`, `20` | manifiesto | |
@@ -126,6 +134,12 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
   - **cuándo:** antes de cargarla en staging (la de las pruebas del 2026-10-01 se compartió por chat); después, cada 6 meses o de inmediato ante cualquier exposición (chat, log, captura, repositorio, salida de alguien con acceso);
   - **cómo:** (1) el dueño de OmniRoute emite una clave nueva; (2) actualizar `IA__ApiKey` e `IA__Fallbacks__N__ApiKey` en Dokploy (staging y producción); (3) redesplegar el stack (*Deploy* en Dokploy) y probar un turno de `/web/chat`; (4) revocar la anterior en OmniRoute; (5) anotar la fecha en la bitácora de operaciones.
 - **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
+
+**Variables nuevas de HU-021** (`Cubicador__*`, `Captura__AceptarVehiculoCliente`, `Pdf__PermitirCotizacionChat`,
+`Nexo__EnviarReferenciaRuta` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
+ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto, que es el correcto mientras no exista el
+cubicador. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
+Dokploy. Todas están en `backend-dotnet/.env.example`.
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),
@@ -301,16 +315,31 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0005` aplicados** (el `0005`, líneas de la solicitud y Excel de licitaciones de HU-011, ADR-017, va antes de la versión que lo incluye: sin él `/health/ready` responde `503 falta 0005`) en la base del ambiente (con un usuario
-   administrador y `sqlcmd -I`; la app no aplica migraciones). **El `0004` (costeo en Nexo, HU-005.8) va ANTES de
-   desplegar la versión que lo incluye:** sin él, `/health/ready` responde `503` con `falta 0004`, Traefik no manda
-   tráfico a la tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5). Cada script nuevo
-   `000N` sigue la misma regla: primero la migración, después la imagen.
-   **Desde HU-021 (#130/#131, ADR-019) la precondición es `0001`–`0010`:** el `0009` (rutas y camiones) ya está aplicado
-   en la base compartida de QA; el `0010` (`0010_nombres_municipio.sql`, idempotente y no destructivo, pendiente de
-   revisión de scalderon-bs) se aplica después del `0009` y antes de la imagen que lo usa. Sin él, `/health/ready`
-   responde `503 falta 0010`; sin el `0009`, `503 falta 0009`. Una base nueva se puede instalar con
-   `db/scripts/01_crear_esquema.sql` (equivale a `0001`–`0010`) y los seeders.
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010` aplicados** en la base del ambiente (o la base instalada
+   desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
+   un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
+   la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
+   tarea y, como la sonda de vida sigue en 200, Swarm no revierte solo (paso 5).
+   - El `0009` (rutas y camiones, HU-021, ADR-019) ya está en la base compartida de QA, que se reinstaló desde cero el
+     2026-10-08.
+   - El `0010` (`0010_nombres_municipio.sql`, idempotente y no destructivo) es un **borrador pendiente de revisión de
+     scalderon-bs y del DBA**. Se aplica después del `0009` y antes de la imagen que lo usa (cualquiera desde #130/#131).
+   - **Cuando entre HU-023 (cubicador):** también `db/scripts/02_alter_cubicador.sql` (columnas de resultado de la
+     cubicación y `codigoMercancia`), antes de la imagen que lo mapee. Todavía no está en la rama.
+
+   **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
+   columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a
+   `falta 0008` ya no existen.
+
+   | `detalle` | Causa | Qué hacer |
+   |---|---|---|
+   | `La cadena de conexión 'ConnectionStrings:Cotifly' no está configurada.` | Falta `ConnectionStrings__Cotifly` | Cargar el secreto en Dokploy (§2.2) |
+   | `La base de datos de Cotifly no está disponible.` | Base caída, red, credenciales o la sonda pasó de 5 s | Revisar red a `tbsdatacenter`, usuario y permisos |
+   | `esquema incompleto: falta 0002` | Faltan `TokensRefresco` o `Sesiones.estadoAgente` | Aplicar `0002` a `0010` en orden |
+   | `esquema incompleto: falta 0009` | La base tiene el esquema anterior a HU-021 (`Cotizaciones`, sin `CotizacionesSolicitud`) | Aplicar `0009_reestructuracion_cotizaciones.sql` (con su respaldo `Respaldo0009_*`) y después el `0010` |
+   | `esquema incompleto: falta 0010` | Está el `0009` pero faltan las columnas del `0010` (nombres de municipio, `solicitudNexoId`, `nombreServicioConexo`) o el `CHECK` `ck_cotizaciones_estadoEnvio` | Aplicar `0010_nombres_municipio.sql` |
+   | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar, o el `02` del cubicador cuando HU-023 lo mapee) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
+
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
    de staging: variable `COTIFLY_TAG=sha-<corto>` → *Deploy*. Verificar `/health`, `/health/ready` y las pruebas de humo
    (HU-006.8).
@@ -501,8 +530,8 @@ be persisted` (ASP.NET Core Data Protection; Cotifly no guarda datos protegidos 
   permisos mínimos: `ASPNETCORE_ENVIRONMENT=Production`, `/health` 200 y `/health/ready` 200. Confirma que los
   valores por defecto vacíos (IA, SAP, Nexo, correo; en esa corrida también Google Chat, hoy retirado) no rompen la validación de arranque.
   - Esa corrida fue con la imagen de `QA` de ese día, que exigía `0001`–`0003`. **Desde el costeo en Nexo (HU-005.8)
-    la precondición es `0001`–`0004`**: una imagen que incluye el costeo contra una base sin `0004` responde `503`
-    `falta 0004` en `/health/ready` (§4.5, paso 0). Las variables `CosteoNexo__*`, `Trm__*` y
+    la precondición fue `0001`–`0004`, y desde HU-021 es `0001`–`0010`** (§4.5, paso 0): una imagen nueva contra una base
+    sin esos scripts responde `503` en `/health/ready`. Las variables `CosteoNexo__*`, `Trm__*` y
     `Nexo__MinutosCacheMunicipios` se agregaron después con valores por defecto válidos; `docker stack config` y
     `docker compose config` se repitieron y pasan.
 - Arranque real repetido por el validador (2026-09-29): las **72 variables** que produce hoy
