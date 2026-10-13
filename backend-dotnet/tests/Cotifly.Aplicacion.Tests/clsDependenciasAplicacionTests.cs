@@ -61,6 +61,7 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsHerramientasAsistenteFolio), typeof(clsHerramientasAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsValidadorRespuestaAgente), typeof(clsValidadorRespuestaAgente), ServiceLifetime.Singleton)]
+    [InlineData(typeof(Cotifly.Aplicacion.Cubicacion.Interfaces.IClsCalculoCubicajeService), typeof(Cotifly.Aplicacion.Cubicacion.Services.clsCalculoCubicajeService), ServiceLifetime.Scoped)]
     public void AddAplicacionRegistraLosCasosDeUso(Type servicio, Type implementacion, ServiceLifetime ciclo)
     {
         var servicios = new ServiceCollection();
@@ -81,6 +82,11 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData("Cotifly.Aplicacion.Agente.Services.clsOpcionesChat")]
     public void ElAgenteLegadoYGoogleChatYaNoExisten(string tipo) =>
         typeof(clsDependenciasAplicacion).Assembly.GetType(tipo).Should().BeNull();
+
+    /// <summary>HU-023.2 (#157): el puerto de la cubicación rápida de Nexo se retiró; "Calcular cubicaje" usa el cubicador.</summary>
+    [Fact]
+    public void ElPuertoDeLaCubicacionDeNexoYaNoExiste() =>
+        typeof(clsDependenciasAplicacion).Assembly.GetType("Cotifly.Aplicacion.Cubicacion.Interfaces.IClsCubicacionProvider").Should().BeNull();
 
     /// <summary>Los casos de uso auditados (#11) se registran como decorador sobre la implementación concreta.</summary>
     [Theory]

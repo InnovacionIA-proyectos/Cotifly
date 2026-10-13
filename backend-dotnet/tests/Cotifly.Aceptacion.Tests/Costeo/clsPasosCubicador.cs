@@ -87,6 +87,67 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             + $"IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R')), ',') {DeLaRuta(cotizacion, orden)}"))
             .Should().Be($"-|-|{pesoKg.ToString(CultureInfo.InvariantCulture)}.00|-");
 
+    // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador (specs/features/calcular_cubicaje.feature).
+
+    [When("{string} calcula el cubicaje con el código de mercancía {string}")]
+    public Task CuandoCalculaConCodigo(string comercial, string codigo) =>
+        CalcularAsync(comercial, new Dictionary<string, object?> { ["codigo_mercancia"] = codigo });
+
+    [When("{string} calcula el cubicaje con la descripción {string}")]
+    public Task CuandoCalculaConDescripcion(string comercial, string descripcion) =>
+        CalcularAsync(comercial, new Dictionary<string, object?> { ["descripcion"] = descripcion });
+
+    [Then("el cubicaje trae estos vehículos:")]
+    public void EntoncesLosVehiculos(DataTable tabla)
+    {
+        ArgumentNullException.ThrowIfNull(tabla);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var json = web.UltimoJson();
+        json.GetProperty("resultado").GetString().Should().Be("ASIGNADO");
+        json.GetProperty("vehiculos").EnumerateArray()
+            .Select(v => (v.GetProperty("codigo_vehiculo").GetString(), v.GetProperty("nombre_vehiculo").GetString(),
+                v.GetProperty("codigo_carroceria").GetString(), v.GetProperty("peso_total_kg").GetDecimal()))
+            .Should().Equal(tabla.Rows.Select(f => ((string?)f["vehiculo"].Trim(), (string?)f["nombre"].Trim(), (string?)f["carroceria"].Trim(),
+                decimal.Parse(f["peso_kg"], CultureInfo.InvariantCulture))));
+    }
+
+    [Then("el cubicaje trae el resultado {string} con el motivo {string} y sin vehículos")]
+    public void EntoncesSinSeleccion(string resultado, string motivo)
+    {
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var json = web.UltimoJson();
+        json.GetProperty("resultado").GetString().Should().Be(resultado);
+        json.GetProperty("motivo_sin_seleccion").GetString().Should().Be(motivo);
+        json.GetProperty("vehiculos").GetArrayLength().Should().Be(0);
+    }
+
+    [Then("el cubicador recibió una corrida de prueba con el código de mercancía {string}")]
+    public void EntoncesCorridaDePrueba(string codigo)
+    {
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var peticion = _cubicador.Recomendaciones.Should().ContainSingle().Subject;
+        peticion["idLineaSolicitud"]!.GetValue<string>().Should().StartWith("PRUEBA-");
+        peticion["origenSistema"]!.GetValue<string>().Should().Be("COTIFLY");
+        peticion["mercancias"]!.AsArray().Select(m => m!["codigoMercancia"]!.GetValue<string>()).Should().Equal(codigo);
+    }
+
+    [Then("{string} no tiene cotizaciones guardadas")]
+    public async Task EntoncesSinCotizaciones(string comercial) =>
+        (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{web.Sesion(comercial).UsuarioId}'"))
+            .Should().Be(0, "\"Calcular cubicaje\" es una vista previa: no guarda nada");
+
+    private Task CalcularAsync(string comercial, Dictionary<string, object?> item)
+    {
+        item["cantidad"] = 10;
+        item["largo_cm"] = 120;
+        item["ancho_cm"] = 100;
+        item["alto_cm"] = 150;
+        item["peso_kg"] = 800;
+        return web.EnviarAsync(HttpMethod.Post, "/web/cubicacion", web.Sesion(comercial).Access,
+            clsApiWebPruebas.Json(new { items = new[] { item }, clase_viaje = "Contenedor" }));
+    }
+
     public void Dispose() => _cubicador.Dispose();
 
     private string DeLaRuta(string cotizacion, int orden) =>

@@ -93,6 +93,9 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsCapturaRutasService, clsCapturaRutasService>();
         servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionesCubicador>();
 
+        // "Calcular cubicaje" (HU-023.2, #157): vista previa contra el cubicador (POST /recomendaciones con PRUEBA-<guid>), sin persistencia.
+        servicios.AddScoped<Cubicacion.Interfaces.IClsCalculoCubicajeService, Cubicacion.Services.clsCalculoCubicajeService>();
+
         // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
         // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.
         servicios.AddScoped<Redaccion.Services.IClsRedaccionCotizacionService, Redaccion.Services.clsRedaccionCotizacionService>();
