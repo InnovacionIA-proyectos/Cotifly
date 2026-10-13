@@ -81,6 +81,24 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task LaPropuesta03PendienteSeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
+    {
+        // HU-023.3 (#158): db/scripts/pendientes/03 (pendiente de revisión de @scalderon-bs; el backend no la mapea). En una base aislada.
+        const string Script03 = "../scripts_bd/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql";
+        await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbPropuesta03");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseAislada.Cadena, Script03);
+        await ReaplicarYVerificarIdempotenciaAsync(baseAislada.Cadena, Script03);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseAislada.Cadena,
+            "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'"))
+            .Should().Contain("isnull", "un motivo con resultadoCubicacion NULL ya no pasa el CHECK");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(baseAislada.Cadena,
+            "SELECT COUNT(*) FROM sys.indexes WHERE name = N'uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo' AND has_filter = 1"))
+            .Should().Be(1);
+    }
+
+    [Fact]
     public async Task ElScript0009EsIdempotenteSobreUnaBaseMigrada()
     {
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem0009", clsBaseDatosPruebas.Scripts.Length);

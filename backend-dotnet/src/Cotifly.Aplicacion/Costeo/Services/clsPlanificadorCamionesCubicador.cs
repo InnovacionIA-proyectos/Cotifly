@@ -26,10 +26,10 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// <item><b>Respaldo sin llamar al cubicador</b> (<see cref="clsPlanificadorCamionSinVehiculo"/>): sin cubicador configurado (warning
 /// una vez por captura) o con una ruta sin mercancías o con alguna mercancía sin <c>codigoMercancia</c> (rutas migradas, agente de chat).
 /// Durante la transición, una mercancía con el <c>id_tipo_mercancia</c> anterior se traduce al código con el catálogo.</item>
-/// <item><b>Rechazo de la petición o respuesta inválida</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
-/// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>): el error vuelve tal cual y la
-/// captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
-/// <item><b>Caída del cubicador</b> (tiempo agotado, 5xx, red, llave rechazada, otro rechazo no previsto o presupuesto de la captura
+/// <item><b>Rechazo de la petición, respuesta inválida o llave rechazada</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
+/// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>, <c>CUBICADOR_NO_AUTORIZADO</c>): el
+/// error vuelve tal cual y la captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
+/// <item><b>Caída del cubicador</b> (tiempo agotado, 5xx, red, otro rechazo no previsto o presupuesto de la captura
 /// agotado): con <see cref="IClsCubicador.RespaldoSiFalla"/> la ruta va al respaldo, con un warning de código estable
 /// <see cref="EventoRespaldo"/> y el contador <see cref="MetricaRespaldos"/> (etiqueta <c>motivo</c>); sin él,
 /// <c>CUBICADOR_NO_DISPONIBLE</c> y la captura no guarda nada. Solo una caída o el presupuesto agotado mandan al respaldo las rutas
@@ -65,6 +65,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         clsCodigosError.MercanciaNoCubicable,
         clsCodigosError.DimensionesInvalidas,
         clsCodigosError.CubicadorRespuestaInvalida,
+        // Auditoría de HU-023: una llave mala no puede convertirse en silencio en rutas sin vehículo.
+        clsCodigosError.CubicadorNoAutorizado,
     };
 
     private readonly ILogger<clsPlanificadorCamionesCubicador> _logger;

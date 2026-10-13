@@ -73,6 +73,11 @@ orden de nombre) y los seeders. Se detiene en el primer error y no ejecuta los p
 **Los ajustes (`02` en adelante) se pueden repetir**: cada cambio revisa si ya está. Por eso corren también en una base que
 ya tiene el esquema; así una base instalada antes queda igual que una nueva.
 
+Con `-Auto` / `-a` el `02` corre en **cada** arranque (la segunda vez no hace nada). En una base anterior al `0009` (sin
+`CotizacionMercancias`) el `02` se detiene con un error en su precondición y el ejecutador también: primero hay que migrar con
+`migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión, como el `03`) **no** la corre el
+ejecutador.
+
 ### Con Docker
 
 El `docker-compose.yml` de la raíz trae un servicio `db-init` que levanta después de SQL Server y corre

@@ -172,7 +172,7 @@ public sealed class clsPdfPliegoTests
         payload.Secciones!.Select(s => s.Titulo).Should().Equal(lineas.Select(l => $"RUTA {l.Orden}: PLIEGO DE TRANSPORTE NACIONAL"));
         payload.Secciones!.Select(s => s.Origen).Should().Equal(lineas.Select(l => l.OrigenNombre));
         payload.Secciones!.Select(s => s.Filas![0].Destino).Should().Equal(lineas.Select(l => l.DestinoNombre));
-        payload.Secciones!.Select(s => s.Filas![0].VehiculoPeso).Should().Equal(lineas.Select(clsCosteoCotizacionService.Camiones));
+        payload.Secciones!.Select(s => s.Filas![0].VehiculoPeso).Should().Equal(lineas.Select(l => clsCosteoCotizacionService.Camiones(l)));
         payload.Secciones!.Select(s => s.Filas![0].Tarifa).Should().Equal(lineas.Select(l => clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)));
     }
 
@@ -295,6 +295,12 @@ public sealed class clsPdfPliegoTests
         var texto = GenerarRuta(cotizacion, "COP", 0m);
 
         clsCosteoCotizacionService.Camiones(ruta).Should().Be("2 × 3S3 - FURGON (20000 KG)");
+        // HU-023.1: con el catálogo del cubicador se imprimen los nombres; un código que no está (o sin catálogo) queda tal cual.
+        var catalogo = new clsNombresCatalogoCubicador(
+            new Dictionary<string, string> { ["3S3"] = "Tractocamión 3S3" }, new Dictionary<string, string> { ["FURGON"] = "Furgón" });
+        clsCosteoCotizacionService.Camiones(ruta, catalogo).Should().Be("2 × Tractocamión 3S3 - Furgón (20000 KG)");
+        clsCosteoCotizacionService.Camiones(ruta, new clsNombresCatalogoCubicador(null, new Dictionary<string, string>()))
+            .Should().Be("2 × 3S3 - FURGON (20000 KG)");
         texto.Should().Contain("2 × 3S3 - FURGON (20000", "la celda puede partirse en dos renglones junto a la tarifa");
         var tarifa = clsCosteoCotizacionService.PrecioTransporte(cotizacion, ruta)!.Value;
         var conexo = clsCosteoCotizacionService.ConexosConPrecio(cotizacion, ruta).Single().Precio;

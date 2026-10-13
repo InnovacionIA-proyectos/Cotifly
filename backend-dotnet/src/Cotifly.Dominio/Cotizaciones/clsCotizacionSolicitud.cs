@@ -387,6 +387,13 @@ public sealed class clsCotizacionSolicitud
         && ((EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
             || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
 
+    /// <summary>
+    /// HU-023.3 (#158): ¿se pueden reemplazar los camiones (recalcular una ruta con el cubicador)? Solo si la solicitud nunca llegó a
+    /// Nexo (<see cref="SolicitudNexoId"/> vacío) y no hay un envío en curso ni incierto: la misma regla que
+    /// <see cref="PuedeReenviarCosteo"/> (un <c>pendiente_envio</c> reciente puede estar esperando a Nexo).
+    /// </summary>
+    public bool PuedeRecalcularCamiones(DateTimeOffset ahora) => SolicitudNexoId is null && PuedeReenviarCosteo(ahora);
+
     /// <summary>¿La cotización nació del flujo de costeo en Nexo? (<see cref="EstadoCosteo"/> con valor).</summary>
     public bool EnFlujoCosteo => EstadoCosteo is not null;
 
@@ -906,16 +913,16 @@ public sealed class clsCotizacionSolicitud
 
     /// <summary>
     /// HU-023.3 (#158): reemplaza los camiones de la ruta <paramref name="rutaId"/> por el plan nuevo del cubicador (con su resultado) y
-    /// recalcula los totales. Solo mientras la solicitud no está en Nexo (<c>pendiente_envio</c> o <c>error_envio</c>):
+    /// recalcula los totales. Solo con <see cref="PuedeRecalcularCamiones"/> (nunca enviada a Nexo y sin envío en curso):
     /// <c>ESTADO_NO_PERMITE</c> si no; <c>RUTA_INEXISTENTE</c> si la ruta no es de esta cotización.
     /// </summary>
     public clsResultado<clsLineaSolicitud> ReemplazarCamionesDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        if (EstadoCosteo is not (Cotizaciones.EstadoCosteo.PendienteEnvio or Cotizaciones.EstadoCosteo.ErrorEnvio))
+        if (!PuedeRecalcularCamiones(ahora))
         {
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
-                $"Los camiones de la cotización {Folio} ya están en Nexo: para cambiarlos pide una versión nueva.");
+                $"Los camiones de la cotización {Folio} ya están en Nexo o se están enviando: para cambiarlos pide una versión nueva.");
         }
 
         if (_rutas.FirstOrDefault(r => r.Id == rutaId) is not { } ruta)

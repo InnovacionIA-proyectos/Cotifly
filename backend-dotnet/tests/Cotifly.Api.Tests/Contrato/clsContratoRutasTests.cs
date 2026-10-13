@@ -217,6 +217,7 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         // HU-023.3 (#158): la cubicación por ruta en la respuesta de la captura.
         (typeof(Cotifly.Aplicacion.Cotizaciones.DTOs.clsCubicacionRutaResumen), "CubicacionRuta"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsMercanciaCondicionada), "MercanciaCondicionada"),
+        (typeof(Cotifly.Dominio.Cotizaciones.clsAvisosCubicacion), "AvisosCubicacion"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsAdvertenciaCubicador), "AdvertenciaCubicador"),
         (typeof(Cotifly.Dominio.Cotizaciones.clsExtradimensionCubicador), "ExtradimensionCubicador"),
         (typeof(Cotifly.Aplicacion.Municipios.DTOs.clsMunicipio), "Municipio"),

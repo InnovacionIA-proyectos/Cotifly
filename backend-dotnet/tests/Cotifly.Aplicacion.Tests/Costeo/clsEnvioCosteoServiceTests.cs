@@ -738,6 +738,20 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task SinCubicadorConfiguradoUnaMercanciaSinCodigoSeGuardaSinCodigoYLaRutaVaAlRespaldo()
+    {
+        // HU-023.3 (auditor): sin cubicador GET /web/tipos-mercancia responde 503 y no hay de dónde sacar el código.
+        var ruta = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
+        ruta = ruta with { Linea = ruta.Linea with { Posiciones = [new clsPosicionCarga("Cajas", 1, 10m, 10m, 10m, 28_500.5m, Guid.NewGuid())] } };
+
+        var guardada = (await Servicio().CapturarAsync(_ana, Captura(ruta), Ct)).Valor.PrimeraRuta!;
+
+        guardada.MercanciasOrdenadas.Should().ContainSingle().Which.CodigoMercancia.Should().BeNull();
+        guardada.Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull();
+        guardada.ResultadoCubicacion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task TodosLosErroresDeLasRutasLleganJuntosYNoSeGuardaNada()
     {
         var sinTipo = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
@@ -746,7 +760,8 @@ public sealed class clsEnvioCosteoServiceTests
         var sinLinea = Ruta(76109, "Buenaventura", 11001, "Bogotá D.C.");
         sinLinea = sinLinea with { Linea = sinLinea.Linea with { PesoKg = null, Posiciones = [] } };
 
-        var resultado = await Servicio().CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
+        // HU-023.3: con el cubicador configurado el codigo_mercancia es obligatorio.
+        var resultado = await ServicioCon(Cubicador()).CapturarAsync(_ana, Captura(sinTipo, ambigua, sinLinea), Ct);
 
         resultado.Error.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
         resultado.Error.Mensaje.Should().StartWith("Ruta 1:").And.Contain("detalle.errores");

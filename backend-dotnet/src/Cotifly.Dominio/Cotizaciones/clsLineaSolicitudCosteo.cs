@@ -295,8 +295,8 @@ public sealed record clsLineaSolicitudCosteo
     /// <list type="bullet">
     /// <item>decisión 2: el origen y el destino llevan su id de municipio (<c>CAMPO_REQUERIDO</c> en <c>origen_municipio_id</c> /
     /// <c>destino_municipio_id</c>); una ciudad de devolución o de levante con nombre lleva también su id;</item>
-    /// <item>cada mercancía lleva el código del catálogo del cubicador (<c>mercancias[i].codigo_mercancia</c>, <c>CAMPO_REQUERIDO</c>;
-    /// HU-023.3). Durante la transición vale también el <c>id_tipo_mercancia</c> obsoleto, que la captura traduce al código.</item>
+    /// <item>el código de cada mercancía (<c>codigo_mercancia</c>, HU-023.3) NO se exige aquí: solo es obligatorio con el cubicador
+    /// configurado y lo exige <c>clsCapturaRutasService</c> (sin cubicador no hay de dónde sacarlo y la ruta va al respaldo).</item>
     /// </list>
     /// </summary>
     public IReadOnlyList<clsErrorCampo> ErroresCaptura()
@@ -322,16 +322,6 @@ public sealed record clsLineaSolicitudCosteo
         if (CiudadLevanteMunicipioId is null && !string.IsNullOrWhiteSpace(CiudadLevanteContenedor))
         {
             Requerido("ciudad_levante_municipio_id", "La ciudad de levante del contenedor debe llevar su id de municipio de Nexo.");
-        }
-
-        for (var i = 0; i < Posiciones.Count; i++)
-        {
-            if (Posiciones[i] is { } mercancia && string.IsNullOrWhiteSpace(mercancia.CodigoMercancia)
-                && (mercancia.IdTipoMercancia is null || mercancia.IdTipoMercancia == Guid.Empty))
-            {
-                Requerido($"mercancias[{i}].codigo_mercancia",
-                    $"La mercancía {i + 1} debe traer el código del catálogo del cubicador (codigo_mercancia, GET /web/tipos-mercancia).");
-            }
         }
 
         return errores;

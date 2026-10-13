@@ -162,7 +162,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .Where(c => c.Id == cotizacionId && c.UpdatedAt == updatedAtLeido
                         && (c.EstadoCosteo == EstadoCosteo.ErrorEnvio || c.EstadoCosteo == EstadoCosteo.PendienteEnvio))
             .ExecuteUpdateAsync(
-                s => s.SetProperty(c => c.EstadoCosteo, (EstadoCosteo?)EstadoCosteo.PendienteEnvio).SetProperty(c => c.UpdatedAt, ahora),
+                // HU-023.3 (#158): el reclamo sube versionNegocio, así ninguna mutación con un If-Match anterior (recalcular camiones,
+                // margen, conexos) se guarda mientras el reenvío está en curso.
+                s => s.SetProperty(c => c.EstadoCosteo, (EstadoCosteo?)EstadoCosteo.PendienteEnvio).SetProperty(c => c.UpdatedAt, ahora)
+                    .SetProperty(c => c.VersionNegocio, c => c.VersionNegocio + 1),
                 cancellationToken);
         return filas == 1;
     }

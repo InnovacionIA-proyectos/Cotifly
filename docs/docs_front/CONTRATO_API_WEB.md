@@ -298,7 +298,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 503 | `MUNICIPIOS_NO_DISPONIBLE` | Captura y licitación | El catálogo de municipios no respondió. Nada se guarda. |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
 | 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
-| 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación (solo con `Cubicador:RespaldoSiFalla = false`) | HU-023.1: el cubicador rechazó la llave de Cotifly. No es la sesión del comercial: no cerrar sesión. |
+| 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación | HU-023.1: el cubicador rechazó la llave de Cotifly (nunca va al respaldo). No es la sesión del comercial: no cerrar sesión. |
 | 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. |
 | 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. |
 
@@ -423,8 +423,9 @@ anterior).
 ```
 
 **HU-023.3 (#158): las mercancías de la captura y de la licitación se mandan con `codigo_mercancia`** (el `codigo` de este
-catálogo). `id_tipo_mercancia` queda obsoleto: todavía se acepta y se traduce al código, pero el formulario nuevo debe mandar el
-código. Errores por mercancía en `detalle.errores`: `CAMPO_REQUERIDO`, `MERCANCIA_DESCONOCIDA` (inactiva o desconocida) y
+catálogo), obligatorio cuando el cubicador está configurado; sin cubicador (este catálogo responde 503) se aceptan sin código y la ruta
+va con un camión sin vehículo. `id_tipo_mercancia` queda obsoleto: todavía se acepta y se traduce al código, pero el formulario nuevo
+debe mandar el código. La captura es **todo o nada** también en la licitación: si el cubicador rechaza una ruta no se guarda ninguna. Errores por mercancía en `detalle.errores`: `CAMPO_REQUERIDO`, `MERCANCIA_DESCONOCIDA` (inactiva o desconocida) y
 `MERCANCIA_NO_CUBICABLE`, en `mercancias[i].codigo_mercancia`.
 
 La respuesta 201 de `POST /web/solicitudes-costeo` trae `cubicacion[]` cuando alguna ruta pasó por el cubicador: por ruta
@@ -433,7 +434,8 @@ extradimension}`. Los avisos **no se guardan**: mostrarlos al crear. `GET .../co
 `motivo_sin_seleccion` y `condicionada`, y en cada camión `volumen_total_m3`, `porcentaje_llenado_volumen` y
 `porcentaje_llenado_peso`. Para recalcular los camiones de una ruta antes de enviarla a Nexo:
 `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` con `If-Match` (409 `ESTADO_NO_PERMITE` si ya está en Nexo:
-usar re-solicitar).
+usar re-solicitar; también mientras el envío está en curso). Su respuesta trae en la ruta recalculada `avisos_cubicacion` (los avisos de
+esa llamada).
 
 `GET /web/tipos-carroceria` devuelve `[{codigo, nombre, activo}]` y `GET /web/tipos-vehiculo` `[{codigo, nombre, carrocerias, activo}]`:
 el nombre del vehículo que se muestra en pantalla y en el PDF sale de este último por el código del camión (Cotifly no lo guarda).

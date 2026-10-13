@@ -1467,8 +1467,9 @@ paths:
         viaja al cubicador con su mismo id (`idLineaSolicitud`, una corrida nueva) y sus mercancías con `codigo_mercancia`; los camiones
         de esa ruta se reemplazan por los de la respuesta (con volumen y porcentajes de llenado) y la ruta guarda el resultado
         (`resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada`). Sin cubicador o si se cae (con el respaldo encendido), un camión
-        sin vehículo con el peso de la ruta. Solo mientras la solicitud **no está en Nexo** (`pendiente_envio` o `error_envio`): después,
-        409 `ESTADO_NO_PERMITE` y se usa `POST .../costeo/re-solicitar` (la versión nueva también vuelve a pedir los camiones). Una ruta
+        sin vehículo con el peso de la ruta. La ruta recalculada trae `avisos_cubicacion`. Solo si la solicitud **nunca llegó a Nexo** y
+        no hay un envío en curso ni incierto (la misma regla que el reintento): si no, 409 `ESTADO_NO_PERMITE` y se usa
+        `POST .../costeo/re-solicitar` (la versión nueva también vuelve a pedir los camiones). Una ruta
         con mercancías sin código (anteriores al script `02`) responde 400 `SOLICITUD_COSTEO_INVALIDA`: el comercial las vuelve a escoger.
       security:
         - bearer: []
@@ -2830,7 +2831,7 @@ components:
                 Cubicador (HU-021.5, #133; HU-023.1, #156): `CUBICADOR_NO_DISPONIBLE` (503 en `GET /web/tipos-mercancia`,
                 `/web/tipos-carroceria` y `/web/tipos-vehiculo` sin cubicador o sin respuesta, y en `POST /web/solicitudes-costeo` y
                 `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`), `CUBICADOR_NO_AUTORIZADO` (503: el cubicador
-                rechazó la llave de Cotifly; con el respaldo encendido la ruta sigue sin vehículo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
+                rechazó la llave de Cotifly; nunca va al respaldo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
                 la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada) y los
                 rechazos 400 del cubicador con su mismo código: `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
                 `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada).
@@ -3433,6 +3434,36 @@ components:
           type: object
           nullable: true
           description: Forma de `ExtradimensionCubicador`; `null` si el cubicador no la informó.
+          required: [extradimensionado, dimensiones, detalle]
+          properties:
+            extradimensionado:
+              type: boolean
+            dimensiones:
+              type: array
+              items:
+                type: string
+            detalle:
+              type: string
+              nullable: true
+
+    AvisosCubicacion:
+      type: object
+      required: [mercancias_condicionadas, advertencias, extradimension]
+      description: |
+        HU-023.3 (#158). Solo en la respuesta de `POST .../rutas/{rutaId}/recalcular-vehiculos` (en la ruta recalculada): los avisos
+        del cubicador de esa llamada. No se guardan; en el resto de respuestas no viene.
+      properties:
+        mercancias_condicionadas:
+          type: array
+          items:
+            $ref: '#/components/schemas/MercanciaCondicionada'
+        advertencias:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdvertenciaCubicador'
+        extradimension:
+          type: object
+          nullable: true
           required: [extradimensionado, dimensiones, detalle]
           properties:
             extradimensionado:
@@ -4212,6 +4243,8 @@ components:
         condicionada:
           type: boolean
           description: HU-023.3. La ruta va a la Mesa de Costeo por una mercancía condicionada.
+        avisos_cubicacion:
+          $ref: '#/components/schemas/AvisosCubicacion'
         aviso_conexos_nexo:
           type: string
           nullable: true
@@ -4729,8 +4762,9 @@ components:
         999.999). `peso_kg` es opcional y **por unidad**: el peso de la posición es `cantidad × peso_kg`.
 
         HU-021.6 (#132): es también la **mercancía** de una ruta (`RutaCapturaWeb.mercancias`, `LineaLicitacionWeb.mercancias`).
-        **HU-023.3 (#158):** en una captura nueva `codigo_mercancia` (código de `GET /web/tipos-mercancia`) es **obligatorio**
-        (`CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`); con el catálogo disponible debe estar activo
+        **HU-023.3 (#158):** en una captura nueva con el cubicador configurado, `codigo_mercancia` (código de `GET /web/tipos-mercancia`)
+        es **obligatorio** (`CAMPO_REQUERIDO` en `mercancias[i].codigo_mercancia`; sin cubicador se acepta sin código y la ruta va al
+        respaldo); con el catálogo disponible debe estar activo
         (`MERCANCIA_DESCONOCIDA`) y ser cubicable (`MERCANCIA_NO_CUBICABLE`). `id_tipo_mercancia` queda **obsoleto**: durante la
         transición se acepta y se traduce al código con el catálogo (sin catálogo, `CAMPO_REQUERIDO` en `codigo_mercancia`).
         `nombre_mercancia` es la copia del nombre del catálogo (`descripcion` es el nombre anterior del mismo campo).

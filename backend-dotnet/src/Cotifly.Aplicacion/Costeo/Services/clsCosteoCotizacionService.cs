@@ -144,6 +144,13 @@ public sealed record clsRutaCosteo(
     public bool Condicionada { get; init; }
 
     /// <summary>
+    /// HU-023.3: avisos del cubicador de la llamada que se acaba de hacer (respuesta de <c>POST .../recalcular-vehiculos</c>): mercancías
+    /// condicionadas, advertencias y extradimensión. No se guardan: en el resto de respuestas es <c>null</c> y no se serializa.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public clsAvisosCubicacion? AvisosCubicacion { get; init; }
+
+    /// <summary>
     /// Decisión 10 (HU-021.9): aviso cuando algún conexo de la ruta quedó <c>incierto</c> o <c>fallido_definitivo</c> en su envío a Nexo
     /// (el comercial o la Mesa deben revisarlo en Nexo); <c>null</c> si no hay nada que revisar. Solo en <c>GET .../costeo</c>.
     /// </summary>
@@ -181,7 +188,8 @@ public sealed class clsCosteoCotizacionService(
     IClsAuditoriaService auditoria,
     IOptions<clsOpcionesPdf> opcionesPdf,
     ILogger<clsCosteoCotizacionService> logger,
-    IClsEnvioConexosNexoService? envioConexos = null) : IClsCosteoCotizacionService
+    IClsEnvioConexosNexoService? envioConexos = null,
+    Cubicacion.Interfaces.IClsCubicador? cubicador = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -470,7 +478,11 @@ public sealed class clsCosteoCotizacionService(
 
         // HU-021.9: el layout de pliego es para una solicitud de más de una ruta (formulario o licitación); con una ruta, el PDF de la ruta.
         var esPliego = EsPliego(cotizacion);
-        var payload = esPliego ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres) : Payload(cotizacion, lineaNegocio, moneda);
+        // HU-023.1: el PDF muestra el nombre del vehículo y de la carrocería del catálogo del cubicador (Cotifly guarda solo el código).
+        var catalogo = await NombresCubicadorAsync(cotizacion, cancellationToken);
+        var payload = esPliego
+            ? PayloadPliego(cotizacion, lineaNegocio, moneda, nombres, catalogo)
+            : Payload(cotizacion, lineaNegocio, moneda, catalogo);
         AplicarTextos(payload, cotizacion);
         var invalido = esPliego
             ? clsValidadorCotizacionPdfPayload.Validar(payload, MaximoLineasPliego, MaximoLineasPliego)
@@ -499,7 +511,7 @@ public sealed class clsCosteoCotizacionService(
             return documento.Error;
         }
 
-        var aRenderizar = esPliego ? DocumentoPliego(documento.Valor, cotizacion, moneda) : documento.Valor;
+        var aRenderizar = esPliego ? DocumentoPliego(documento.Valor, cotizacion, moneda, catalogo) : documento.Valor;
 
         clsPdfGenerado pdf;
         try
@@ -629,7 +641,8 @@ public sealed class clsCosteoCotizacionService(
     /// camiones y el precio del transporte de la ruta (fletes, retorno y levante con su margen); los servicios conexos de la ruta, cada uno
     /// con su precio (HU-021: el precio de la ruta suma los dos).
     /// </summary>
-    public static clsCotizacionPdfPayload Payload(clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda)
+    public static clsCotizacionPdfPayload Payload(
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ruta = cotizacion.PrimeraRuta;
@@ -648,7 +661,7 @@ public sealed class clsCosteoCotizacionService(
                     new clsFilaTarifaPayload
                     {
                         Destino = ruta?.DestinoNombre,
-                        VehiculoPeso = ruta is null ? null : Camiones(ruta),
+                        VehiculoPeso = ruta is null ? null : Camiones(ruta, catalogo),
                         Tarifa = ruta is null ? null : PrecioTransporte(cotizacion, ruta),
                         Moneda = moneda,
                     },
@@ -667,7 +680,8 @@ public sealed class clsCosteoCotizacionService(
     /// cobrarlos dos veces; el precio de la ruta los incluye). Nada del LLM ni del cliente.
     /// </summary>
     public static clsCotizacionPdfPayload PayloadPliego(
-        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, IReadOnlyDictionary<int, string>? lineasPorId = null)
+        clsCotizacionSolicitud cotizacion, string? lineaNegocio, string moneda, IReadOnlyDictionary<int, string>? lineasPorId = null,
+        clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
@@ -685,7 +699,7 @@ public sealed class clsCosteoCotizacionService(
                         new clsFilaTarifaPayload
                         {
                             Destino = r.DestinoNombre,
-                            VehiculoPeso = Camiones(r),
+                            VehiculoPeso = Camiones(r, catalogo),
                             Tarifa = PrecioTransporte(cotizacion, r),
                             Moneda = moneda,
                         },
@@ -714,7 +728,7 @@ public sealed class clsCosteoCotizacionService(
     /// Resumen del pliego: una fila por ruta, en orden, con la tarifa del transporte, y el total (la suma de esas tarifas, sin servicios
     /// conexos; HU-021: <c>PrecioFinal</c> sí los incluye, por eso no se usa aquí).
     /// </summary>
-    public static clsResumenPliegoDocumento ResumenPliego(clsCotizacionSolicitud cotizacion, string moneda)
+    public static clsResumenPliegoDocumento ResumenPliego(clsCotizacionSolicitud cotizacion, string moneda, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var rutas = cotizacion.RutasOrdenadas;
@@ -722,7 +736,7 @@ public sealed class clsCosteoCotizacionService(
         var filas = rutas.Select((r, i) => new clsFilaPliegoDocumento(
             r.Orden.ToString(System.Globalization.CultureInfo.InvariantCulture),
             clsTextoSeguro.LimpiarLinea($"{r.OrigenNombre} → {r.DestinoNombre}") ?? string.Empty,
-            Camiones(r) ?? "—",
+            Camiones(r, catalogo) ?? "—",
             tarifas[i] is { } precio ? clsFormatoMoneda.Formatear(precio, moneda) : "—")).ToList();
         return new clsResumenPliegoDocumento(
             "RESUMEN DEL PLIEGO",
@@ -790,11 +804,12 @@ public sealed class clsCosteoCotizacionService(
     /// Documento del pliego: la variante <see cref="VarianteDocumento.Pliego"/> con el resumen y, en modo compacto
     /// (<see cref="EsPliegoCompacto"/>), sin las secciones de cada ruta.
     /// </summary>
-    public static clsDocumentoCotizacion DocumentoPliego(clsDocumentoCotizacion documento, clsCotizacionSolicitud cotizacion, string moneda)
+    public static clsDocumentoCotizacion DocumentoPliego(
+        clsDocumentoCotizacion documento, clsCotizacionSolicitud cotizacion, string moneda, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(documento);
         var compacto = EsPliegoCompacto(cotizacion);
-        var resumen = ResumenPliego(cotizacion, moneda);
+        var resumen = ResumenPliego(cotizacion, moneda, catalogo);
         return documento with
         {
             Variante = VarianteDocumento.Pliego,
@@ -810,22 +825,58 @@ public sealed class clsCosteoCotizacionService(
     /// uno, "vehículo - carrocería - peso KG"; con varios, cada vehículo con cuántos van y el peso total de la ruta
     /// ("2 × 3S3 - FURGON, 1 × Vehículo por definir (34000 KG)"). <c>null</c> si no hay nada que mostrar.
     /// </summary>
-    public static string? Camiones(clsLineaSolicitud ruta)
+    public static string? Camiones(clsLineaSolicitud ruta, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         var camiones = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id).ToList();
         if (camiones.Count <= 1)
         {
             var unico = camiones.Count == 1 ? camiones[0] : null;
-            return VehiculoPeso(unico?.TipoVehiculo, unico?.Carroceria, unico?.PesoKg ?? ruta.PesoKg);
+            return VehiculoPeso(catalogo.Vehiculo(unico?.TipoVehiculo), catalogo.Carroceria(unico?.Carroceria), unico?.PesoKg ?? ruta.PesoKg);
         }
 
         var grupos = camiones
-            .GroupBy(c => VehiculoPeso(c.TipoVehiculo, c.Carroceria, null) ?? VehiculoPorDefinir, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(c => VehiculoPeso(catalogo.Vehiculo(c.TipoVehiculo), catalogo.Carroceria(c.Carroceria), null) ?? VehiculoPorDefinir,
+                StringComparer.OrdinalIgnoreCase)
             .Select(g => $"{g.Count()} × {g.Key}");
         var pesoCamiones = camiones.All(c => c.PesoKg is not null) ? camiones.Sum(c => c.PesoKg!.Value) : (decimal?)null;
         var peso = (pesoCamiones ?? ruta.PesoKg) is { } total ? $" ({total.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} KG)" : string.Empty;
         return string.Join(", ", grupos) + peso;
+    }
+
+    /// <summary>
+    /// HU-023.1 (#156): nombres de los vehículos y carrocerías del catálogo del cubicador para el PDF, o <c>null</c> si ningún camión tiene
+    /// código o el cubicador no está configurado. Un catálogo que no responde se omite: el PDF usa el código como respaldo.
+    /// </summary>
+    private async Task<clsNombresCatalogoCubicador?> NombresCubicadorAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    {
+        if (cubicador is not { EstaConfigurado: true }
+            || !cotizacion.Rutas.SelectMany(r => r.Vehiculos).Any(v => v.TipoVehiculo is not null || v.Carroceria is not null))
+        {
+            return null;
+        }
+
+        var vehiculos = await cubicador.ListarTiposVehiculoAsync(cancellationToken);
+        var carrocerias = await cubicador.ListarTiposCarroceriaAsync(cancellationToken);
+        if (vehiculos.EsFallo || carrocerias.EsFallo)
+        {
+            logger.LogInformation("El catálogo de vehículos o de carrocerías del cubicador no respondió: el PDF de {Folio} muestra los códigos.", cotizacion.Folio);
+        }
+
+        return new clsNombresCatalogoCubicador(
+            vehiculos.EsExitoso ? Diccionario(vehiculos.Valor.Select(v => (v.Codigo, v.Nombre))) : null,
+            carrocerias.EsExitoso ? Diccionario(carrocerias.Valor.Select(c => (c.Codigo, c.Nombre))) : null);
+    }
+
+    private static Dictionary<string, string> Diccionario(IEnumerable<(string Codigo, string Nombre)> filas)
+    {
+        var diccionario = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (codigo, nombre) in filas)
+        {
+            diccionario.TryAdd(codigo, nombre);
+        }
+
+        return diccionario;
     }
 
     /// <summary>Texto de un camión sin vehículo ni carrocería (los resuelve la Mesa de Costeo de Nexo, decisión 7).</summary>
@@ -985,6 +1036,7 @@ public sealed class clsCosteoCotizacionService(
             ResultadoCubicacion = ruta.ResultadoCubicacion,
             MotivoSinSeleccion = ruta.MotivoSinSeleccion,
             Condicionada = ruta.Condicionada,
+            AvisosCubicacion = ruta.AvisosCubicacion,
             Vehiculos = clsCosteoCotizacionService.Camiones(ruta),
             Mercancias = [.. ruta.MercanciasOrdenadas.Select(m => new clsMercanciaCosteo(
                 m.Orden, m.CodigoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
@@ -1002,4 +1054,20 @@ public sealed class clsCosteoCotizacionService(
             })];
 
     private static clsErrorDominio NoEncontrada() => new(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
+}
+
+/// <summary>
+/// HU-023.1 (#156): nombres del catálogo del cubicador por código (<c>null</c> = catálogo no disponible) para el PDF. Un código que no
+/// está en el catálogo se muestra tal cual.
+/// </summary>
+public sealed record clsNombresCatalogoCubicador(IReadOnlyDictionary<string, string>? Vehiculos, IReadOnlyDictionary<string, string>? Carrocerias);
+
+/// <summary>El nombre del catálogo con respaldo al código (también con el catálogo en <c>null</c>).</summary>
+public static class clsNombresCatalogoCubicadorExtensiones
+{
+    public static string? Vehiculo(this clsNombresCatalogoCubicador? catalogo, string? codigo) =>
+        codigo is not null && catalogo?.Vehiculos?.TryGetValue(codigo, out var nombre) == true ? nombre : codigo;
+
+    public static string? Carroceria(this clsNombresCatalogoCubicador? catalogo, string? codigo) =>
+        codigo is not null && catalogo?.Carrocerias?.TryGetValue(codigo, out var nombre) == true ? nombre : codigo;
 }

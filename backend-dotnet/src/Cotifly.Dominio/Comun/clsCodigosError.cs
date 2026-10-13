@@ -333,8 +333,8 @@ public static class clsCodigosError
 
     /// <summary>
     /// HU-023.1 (#156): el cubicador rechazó la llave de Cotifly (401 <c>NO_AUTORIZADO</c> del contrato). Es un problema de configuración
-    /// de Cotifly (<c>Cubicador:ApiKey</c>), no de la sesión del comercial: 503, nunca 401. Cuenta como caída (va al respaldo con
-    /// <c>Cubicador:RespaldoSiFalla</c>).
+    /// de Cotifly (<c>Cubicador:ApiKey</c>), no de la sesión del comercial: 503, nunca 401. Nunca va al respaldo (auditoría de HU-023): la
+    /// captura falla aunque <c>Cubicador:RespaldoSiFalla</c> esté encendido.
     /// </summary>
     public const string CubicadorNoAutorizado = "CUBICADOR_NO_AUTORIZADO";
 

@@ -32,6 +32,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
     public HttpStatusCode? AltaFalla { get; set; }
 
     /// <summary>
+    /// HU-023.3 (#158): si tiene valor, el alta (<c>POST /api/captura-solicitudes</c>) lo espera antes de responder: sirve para hacer
+    /// otra petición a la API mientras el envío a Nexo está en curso (carreras).
+    /// </summary>
+    public Func<Task>? AntesDelAlta { get; set; }
+
+    /// <summary>
     /// Si es verdadero, <c>GET /api/solicitudes/{id}</c> responde 503 para las solicitudes cuya cotización ya tiene resultado: la
     /// relectura del costeo justo después de marcar el resultado falla (HU-013.14).
     /// </summary>
@@ -306,6 +312,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         var ruta = request.RequestUri!.AbsolutePath.TrimEnd('/');
+        if (AntesDelAlta is { } gancho && request.Method == HttpMethod.Post && ruta == "/api/captura-solicitudes")
+        {
+            await gancho();
+        }
+
         lock (_candado)
         {
             return (request.Method.Method, ruta) switch

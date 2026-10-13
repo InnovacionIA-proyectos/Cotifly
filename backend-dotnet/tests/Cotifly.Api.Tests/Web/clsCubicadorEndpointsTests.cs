@@ -421,7 +421,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
         // La cabecera "Varias" es el payload del pliego (sin texto propio en el documento); cada sección lleva la línea de su ruta.
         texto.Should().Contain("licitación (2 rutas)").And.Contain("RUTA 1: PLIEGO DE TRANSPORTE IMPORTACION")
-            .And.Contain("RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION").And.Contain("1 × 3S3 - FURGON, 1 × 2S3 -", "los tres camiones de la ruta 1 en el orden del cubicador");
+            .And.Contain("RUTA 2: PLIEGO DE TRANSPORTE EXPORTACION").And.Contain("1 × Tractocamión 3S3 - Furgón", "HU-023.1: el PDF muestra los nombres del catálogo del cubicador, en el orden del cubicador")
+            .And.NotContain("3S3 - FURGON");
 
         // 7. La Mesa entrega y el comercial pide una versión nueva: conserva los tres camiones en orden y el respaldo, y los conexos viajan
         // con el id del catálogo a la línea del primer camión.
@@ -579,6 +580,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         costeo.GetProperty("rutas")[0].GetProperty("camiones").EnumerateArray().Select(c => c.GetProperty("tipo_vehiculo").GetString())
             .Should().Equal("2S2", "C2");
+        costeo.GetProperty("rutas")[0].GetProperty("avisos_cubicacion").GetProperty("advertencias").GetArrayLength()
+            .Should().Be(0, "el recálculo devuelve los avisos de su llamada (no se guardan)");
         (await CamionesAsync(folio)).Should().Equal("1|2S2|FURGON|16000.00|R", "1|C2|ESTACAS|12000.00|R");
         _cubicador.Recomendaciones.Select(r => r["idLineaSolicitud"]!.GetValue<string>()).Should().OnlyContain(id => id == rutaId);
 
@@ -590,6 +593,43 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         using var tarde = await ConVersionAsync(api, _post, ruta, ana.Access, "{}", await EtagAsync(api, ana, folio));
         tarde.StatusCode.Should().Be(HttpStatusCode.Conflict);
         await VerificarErrorNegocioAsync(tarde, "ESTADO_NO_PERMITE");
+    }
+
+    [Fact]
+    public async Task RecalcularMientrasElReintentoEnviaANexoNoPisaLosCamionesNiPierdeLaSolicitudDeNexo()
+    {
+        // Regresión del validador (HU-023.3): el alta del reintento queda retenida en Nexo y en ese momento se recalcula la ruta.
+        _nexo.AltaFalla = HttpStatusCode.ServiceUnavailable;
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 28_000m));
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        var rutaId = (await RutasAsync(api, ana, folio))[0].GetProperty("linea_solicitud_id").GetString();
+        var etagAntes = await EtagAsync(api, ana, folio);
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("2S2", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 12_000m));
+        _nexo.AltaFalla = null;
+        HttpStatusCode? durante = null;
+        HttpStatusCode? duranteConEtagNuevo = null;
+        _nexo.AntesDelAlta = async () =>
+        {
+            _nexo.AntesDelAlta = null;
+            var ruta = $"/web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos";
+            using var conEtagViejo = await ConVersionAsync(api, _post, ruta, ana.Access, "{}", etagAntes);
+            durante = conEtagViejo.StatusCode;
+            using var conEtagNuevo = await ConVersionAsync(api, _post, ruta, ana.Access, "{}", await EtagAsync(api, ana, folio));
+            duranteConEtagNuevo = conEtagNuevo.StatusCode;
+        };
+
+        using var reintento = await api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/reintentar", ana.Access);
+
+        reintento.StatusCode.Should().Be(HttpStatusCode.OK);
+        durante.Should().Be(HttpStatusCode.Conflict, "el reclamo del reenvío subió la versión: el If-Match anterior ya no vale");
+        duranteConEtagNuevo.Should().Be(HttpStatusCode.Conflict, "con el envío en curso no se cambian los camiones (ESTADO_NO_PERMITE)");
+        (await CamionesAsync(folio)).Should().Equal(["1|3S3|FURGON|28000.00|R"], "Nexo y la base tienen los mismos camiones");
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+        (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            $"SELECT solicitudNexoId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'")).Should().Be(_nexo.SolicitudesCreadas[0]);
     }
 
     private static int Indice(IReadOnlyList<JsonNode> lineas, decimal peso) => lineas.ToList().FindIndex(l => l["peso"]!.GetValue<decimal>() == peso);

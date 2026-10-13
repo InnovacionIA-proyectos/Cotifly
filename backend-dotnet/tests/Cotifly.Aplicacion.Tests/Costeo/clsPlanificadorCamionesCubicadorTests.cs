@@ -171,14 +171,14 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     }
 
     [Fact]
-    public async Task LaLlaveRechazadaEsUnaCaidaQueVaAlRespaldo()
+    public async Task LaLlaveRechazadaFallaSinRespaldoAunqueElRespaldoEsteEncendido()
     {
         _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(
             new clsErrorDominio(clsCodigosError.CubicadorNoAutorizado, "llave", "HTTP 401") { Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true } });
 
         var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
 
-        resultado.Valor.Camiones.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoAutorizado, "una llave mala no se tapa con camiones sin vehículo");
     }
 
     [Theory]

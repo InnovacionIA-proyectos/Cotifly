@@ -26,8 +26,10 @@ public interface IClsRecalculoVehiculosService
 
 /// <summary>Implementación de <see cref="IClsRecalculoVehiculosService"/>.</summary>
 /// <remarks>
-/// Solo antes de que los camiones estén en Nexo (estado <c>pendiente_envio</c> o <c>error_envio</c>): después, cambiar los camiones aquí
-/// los desincronizaría de las líneas de Nexo, así que se usa la re-solicitud con una versión nueva (que también vuelve a planificar).
+/// Solo si la solicitud nunca llegó a Nexo y no hay un envío en curso ni incierto
+/// (<see cref="clsCotizacionSolicitud.PuedeRecalcularCamiones"/>: la misma regla que el reenvío). El guardado exige la versión del
+/// <c>If-Match</c> con la fila bloqueada, y el reclamo del reenvío sube esa versión: un recálculo y un reenvío nunca se pisan.
+/// Después del envío, cambiar los camiones aquí los desincronizaría de las líneas de Nexo: se usa la re-solicitud con una versión nueva.
 /// La ruta se manda al cubicador con su mismo id (<c>idLineaSolicitud</c>): es una corrida nueva y Cotifly copia los
 /// <c>idRecomendacionVehiculo</c> de ESA respuesta (decisión 3 de HU-023; nunca "la última corrida").
 /// </remarks>
@@ -40,7 +42,7 @@ public sealed class clsRecalculoVehiculosService(
     ILogger<clsRecalculoVehiculosService> logger) : IClsRecalculoVehiculosService
 {
     public const string MensajeYaEnNexo =
-        "Los camiones de esta solicitud ya están en Nexo: para cambiarlos pide una versión nueva (POST .../costeo/re-solicitar).";
+        "Los camiones de esta solicitud ya están en Nexo o se están enviando: para cambiarlos pide una versión nueva (POST .../costeo/re-solicitar) o espera el envío.";
 
     public async Task<clsResultado<clsCosteoCotizacion>> RecalcularAsync(
         Guid usuarioId, string folio, Guid rutaId, int versionEsperada, CancellationToken cancellationToken = default)
@@ -65,7 +67,7 @@ public sealed class clsRecalculoVehiculosService(
         }
 
         var ruta = resuelta.Valor;
-        if (cotizacion.EstadoCosteo is not (EstadoCosteo.PendienteEnvio or EstadoCosteo.ErrorEnvio))
+        if (!cotizacion.PuedeRecalcularCamiones(reloj.AhoraUtc))
         {
             return new clsErrorDominio(clsCodigosError.EstadoNoPermite, MensajeYaEnNexo);
         }
