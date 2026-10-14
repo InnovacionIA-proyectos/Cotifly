@@ -137,7 +137,7 @@ Fuentes: `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md` (el diseño 
 **Asignado a:** Sara (Datos) — el visto bueno final es del DBA
 **Parte de HU-021 (milestone). Depende de HU-021.1.**
 
-**Lo que ya se hizo (2026-10-08):** la instalación desde cero se corrió sobre `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos SAP y 2 roles, sin errores. Se restauraron los roles externos (`comercial` = 34, `gerente_comercial` = 31).
+**Lo que ya se hizo (2026-10-08):** la instalación desde cero se corrió sobre `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos SAP y 2 roles, sin errores. Se restauraron los roles externos (`comercial` = 34, `gerente_comercial` = 31). **Corrección (#173, 2026-10-14):** el 34 es `AdministracionZonasGeocerca`; el comercial es el 32 (`ClienteProComercial`). Se corrige con `db/scripts/operacion/corregir_rol_comercial_32.sql` (lo ejecuta el DBA).
 
 **Pruebas hechas el 2026-10-08** en el SQL Server del `docker-compose.yml` (contenedor propio, no la base compartida):
 

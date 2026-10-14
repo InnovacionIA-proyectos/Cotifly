@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
@@ -44,6 +47,16 @@ public interface IClsEnvioCosteoService
     /// <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> para los conexos): nada se guarda.
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// #173: <see cref="CapturarAsync"/> con <c>Idempotency-Key</c> (<see cref="IClsAlmacenIdempotencia"/>, ámbito
+    /// <c>capturar_costeo:{usuarioId}</c>). Una repetición con la misma clave y el mismo cuerpo en 24 h devuelve la cotización de la
+    /// primera sin crear otro folio ni otra solicitud en Nexo (el cliente reintenta tras un timeout o un 500); con otro cuerpo,
+    /// <c>SOLICITUD_INVALIDA</c>. Toda captura exitosa (también la que quedó en <c>error_envio</c>, que ya tiene folio) consume la clave.
+    /// Sin clave se comporta igual que <see cref="CapturarAsync"/>.
+    /// </summary>
+    Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reenvía la solicitud guardada. <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial;
@@ -99,10 +112,39 @@ public sealed class clsEnvioCosteoService(
     ILogger<clsEnvioCosteoService> logger,
     IClsPrecioCosteoService precioCosteo,
     IClsCapturaRutasService capturaRutas,
-    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEnvioCosteoService
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
+    IClsAlmacenIdempotencia? idempotencia = null) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
+
+    /// <summary>Ámbito de las claves de idempotencia de la captura (con el comercial, #173).</summary>
+    public const string OperacionIdempotencia = "capturar_costeo";
+
+    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
+
+    public Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        return claveIdempotencia is null || idempotencia is null
+            ? CapturarAsync(usuarioId, entrada, cancellationToken)
+            : idempotencia.EjecutarUnaVezAsync(
+                $"{OperacionIdempotencia}:{usuarioId}",
+                claveIdempotencia,
+                Huella(entrada),
+                ct => CapturarAsync(usuarioId, entrada, ct),
+                r => r.EsExitoso,
+                cancellationToken);
+    }
+
+    /// <summary>Huella (SHA-256) del cuerpo de la captura: la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.</summary>
+    public static string Huella(clsEntradaCaptura entrada)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        var cuerpo = JsonSerializer.Serialize(entrada, _jsonHuella);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+    }
 
     public Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
     {

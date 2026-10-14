@@ -202,4 +202,27 @@ public sealed class clsCalculadoraMetricasTests
     public void SinColumnasDeCiudadLaConcentracionNoEstaDisponible() =>
         clsCalculadoraMetricas.Concentracion([Fila(), Fila()], disponible: false)
             .Should().BeEquivalentTo(new clsConcentracionCiudades(false, [], [], 2, 2));
+
+    [Fact]
+    public void B3LoGanadoSaleDeLaVersionGanadaYNoDeLaVigente()
+    {
+        // #173: la -v2 vigente no tiene precio; la v1 (ganada) costó 4.000.000 y se cotizó en 5.000.000.
+        var cadena = Fila(precio: null, costo: null, ganada: true, versiones: 2) with
+        {
+            VersionResultado = new clsVersionResultadoMetrica(5_000_000m, "COP", 0m, 4_000_000m),
+        };
+        var enDolares = Fila(precio: null, costo: null, ganada: true) with
+        {
+            VersionResultado = new clsVersionResultadoMetrica(1_000m, "USD", 4_000m, 3_000_000m),
+        };
+
+        var indicadores = Indicadores(cadena, enDolares);
+
+        indicadores.ValorCotizadoCop.Should().Be(0m, "lo cotizado sigue siendo lo de la vigente");
+        indicadores.ValorGanadoCop.Should().Be(9_000_000m);
+        indicadores.CosteoGanadas.Should().Be(7_000_000m);
+        indicadores.Ganancias.Should().Be(2_000_000m);
+        clsCalculadoraMetricas.SerieMensual([cadena], new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), f => DateOnly.FromDateTime(f.UtcDateTime))
+            .Sum(p => p.ValorGanadoCop).Should().Be(5_000_000m);
+    }
 }

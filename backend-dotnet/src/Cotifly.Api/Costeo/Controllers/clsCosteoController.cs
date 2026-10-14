@@ -146,7 +146,8 @@ public sealed class clsCosteoController(
     /// 201 <c>CotizacionResumen</c> aunque Nexo falle (queda en <c>error_envio</c> con el motivo); 400 <c>SOLICITUD_COSTEO_INVALIDA</c>
     /// (con todos los errores en <c>detalle.errores</c>, HU-021.6), <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503
     /// <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> (conexos) si no se pudo validar
-    /// contra los catálogos de Nexo (nada queda guardado).
+    /// contra los catálogos de Nexo (nada queda guardado). <c>Idempotency-Key</c> opcional (#173): la repetición devuelve la misma
+    /// cotización. Si la lectura secundaria del resumen falla después de guardar, igual responde 201 con <c>avisos = [RESUMEN_INCOMPLETO]</c>.
     /// </summary>
     [HttpPost("solicitudes-costeo")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status201Created)]
@@ -162,7 +163,10 @@ public sealed class clsCosteoController(
             return Error(entrada.Error);
         }
 
-        var resultado = await envio.CapturarAsync(UsuarioId, entrada.Valor, cancellationToken);
+        // #173: con Idempotency-Key, un reintento del mismo POST (timeout, 500) devuelve la cotización de la primera sin otro folio
+        // ni otra solicitud en Nexo. El resumen se arma tolerando fallos de la lectura secundaria: lo esencial ya quedó guardado.
+        var clave = Request.Headers[EncabezadoIdempotencia].ToString();
+        var resultado = await envio.CapturarUnaVezAsync(UsuarioId, entrada.Valor, clave.Length == 0 ? null : clave, cancellationToken);
         return resultado.EsFallo
             ? Error(resultado.Error)
             : StatusCode(StatusCodes.Status201Created, (await misCotizaciones.ResumirAsync(resultado.Valor, CancellationToken.None)) with

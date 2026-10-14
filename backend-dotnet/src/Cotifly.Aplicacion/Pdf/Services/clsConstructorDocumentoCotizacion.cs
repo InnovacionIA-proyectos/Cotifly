@@ -69,7 +69,9 @@ public static class clsConstructorDocumentoCotizacion
         var incluye = Itemizado(payload, fuenteListas, monedaPorDefecto)
                       ?? Primera(fuenteListas?.Incluye, payload.Textos?.Incluye)
                       ?? textos.Incluye;
-        var noIncluye = Primera(fuenteListas?.NoIncluye, payload.Textos?.NoIncluye) ?? textos.NoIncluye;
+        // #173: "no incluye" nunca nombra un servicio que sí va itemizado (p. ej. "Acompañamiento vehicular" con el conexo
+        // "Acompañante vehicular en moto"): la lista se depura contra los conexos reales de la cotización.
+        var noIncluye = SinLoIncluido(Primera(fuenteListas?.NoIncluye, payload.Textos?.NoIncluye) ?? textos.NoIncluye, payload.ServiciosConexos);
 
         var clave = ClaveLinea(linea);
         var imagen = !esMulti && clsTextosEstandar.ImagenPorLinea.TryGetValue(clave, out var recurso) ? recurso : null;
@@ -289,4 +291,56 @@ public static class clsConstructorDocumentoCotizacion
 
     private static IReadOnlyList<string>? Primera(params List<string>?[] listas) =>
         listas.Select(clsTextoSeguro.LimpiarLista).FirstOrDefault(l => l.Count > 0);
+
+    /// <summary>Largo de la raíz con que se comparan las palabras (acompañamiento / acompañante → "acompa").</summary>
+    private const int LargoRaiz = 6;
+
+    /// <summary>
+    /// #173: quita de "no incluye" lo que cubre un servicio conexo incluido. Un texto queda cubierto si TODAS sus palabras significativas
+    /// (4 letras o más, sin tildes ni mayúsculas) empiezan igual (<see cref="LargoRaiz"/> letras) que alguna palabra de la descripción de
+    /// UN mismo conexo: "Acompañamiento vehicular" ↔ "Acompañante vehicular en moto", pero "Cargues y descargues" no se quita con un conexo
+    /// "Cargue" solo.
+    /// </summary>
+    public static IReadOnlyList<string> SinLoIncluido(IReadOnlyList<string> noIncluye, IEnumerable<clsServicioConexoPayload?>? conexos)
+    {
+        ArgumentNullException.ThrowIfNull(noIncluye);
+        var incluidos = (conexos ?? [])
+            .Select(c => clsTextoSeguro.LimpiarLinea(c?.Descripcion))
+            .OfType<string>()
+            .Select(d => Raices(d).ToHashSet(StringComparer.Ordinal))
+            .Where(r => r.Count > 0)
+            .ToList();
+        if (incluidos.Count == 0)
+        {
+            return noIncluye;
+        }
+
+        return [.. noIncluye.Where(texto =>
+        {
+            var raices = Raices(texto).ToList();
+            return raices.Count == 0 || !incluidos.Any(conexo => raices.All(conexo.Contains));
+        })];
+    }
+
+    private static IEnumerable<string> Raices(string texto) =>
+        SinTildes(texto).ToLowerInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => new string([.. p.Where(char.IsLetter)]))
+            .Where(p => p.Length >= 4)
+            .Select(p => p.Length > LargoRaiz ? p[..LargoRaiz] : p);
+
+    private static string SinTildes(string texto)
+    {
+        var descompuesto = texto.Normalize(NormalizationForm.FormD);
+        var limpio = new StringBuilder(descompuesto.Length);
+        foreach (var c in descompuesto)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            {
+                limpio.Append(c);
+            }
+        }
+
+        return limpio.ToString().Normalize(NormalizationForm.FormC);
+    }
 }

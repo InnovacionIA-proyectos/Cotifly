@@ -52,11 +52,13 @@ public static class clsCalculadoraMetricas
             MargenPromedio = margenes.Count == 0 ? null : Redondear(margenes.Average(), DecimalesFraccion),
             MargenPonderado = MargenPonderadoDe(universo.SelectMany(f => f.Rutas.Select(r => (f, r)))),
             CosteoTotal = Redondear(universo.Sum(f => f.Costo ?? 0m), DecimalesMonto),
-            CosteoGanadas = Redondear(ganadas.Sum(f => f.Costo ?? 0m), DecimalesMonto),
+            // B3 (#173): lo ganado sale de la versión ganada, no de la vigente.
+            CosteoGanadas = Redondear(ganadas.Sum(f => f.CostoResultado ?? 0m), DecimalesMonto),
             ValorCotizadoCop = Redondear(universo.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
-            ValorGanadoCop = Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
+            ValorGanadoCop = Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto),
             Ganancias = Redondear(
-                ganadas.Where(f => f.ValorCop.HasValue && f.Costo.HasValue).Sum(f => f.ValorCop!.Value - f.Costo!.Value),
+                ganadas.Where(f => f.ValorResultadoCop.HasValue && f.CostoResultado.HasValue)
+                    .Sum(f => f.ValorResultadoCop!.Value - f.CostoResultado!.Value),
                 DecimalesMonto),
             CotizacionesUsd = universo.Count(f => !f.EsPesos),
             TiempoPromedioCotizacionHoras = tiempos.Count == 0 ? null : Redondear(tiempos.Average(), DecimalesHoras),
@@ -101,7 +103,7 @@ public static class clsCalculadoraMetricas
                 ganadas.Count,
                 delMes.Count(f => f.Ganada == false),
                 Redondear(delMes.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
-                Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto)));
+                Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto)));
         }
 
         return serie;
@@ -197,7 +199,7 @@ public static class clsCalculadoraMetricas
                     g.Count(),
                     ganadas.Count,
                     Redondear(g.Sum(f => f.ValorCop ?? 0m), DecimalesMonto),
-                    Redondear(ganadas.Sum(f => f.ValorCop ?? 0m), DecimalesMonto));
+                    Redondear(ganadas.Sum(f => f.ValorResultadoCop ?? 0m), DecimalesMonto));
             })
             .OrderByDescending(c => c.Cantidad)
             .ThenBy(c => c.Ciudad, StringComparer.OrdinalIgnoreCase)];

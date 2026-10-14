@@ -33,13 +33,13 @@ public sealed class clsIdentidadPortalNexoTests : IDisposable
     [Fact]
     public async Task ElLoginPorNombreDeUsuarioGuardaElIdDeLaFilaYEseEsElQueViajaANexo()
     {
-        // La fila del portal: NOMBREUSUARIO en mayúsculas, ID NUMERIC 10123 y roles en la base (25 y 31 sin mapeo + el de comercial).
+        // La fila del portal: NOMBREUSUARIO en mayúsculas, ID NUMERIC 10123 y roles en la base (25 y 34 sin mapeo: el 34 es AdministracionZonasGeocerca, #173; + el de comercial).
         await _entorno.BaseDatos.CrearPersonaExternaConIdAsync(IdPortal, "DGUERRA", "Persona de prueba 172", "persona172@example.com",
-            25, 31, clsBaseDatosPruebas.RolExternoComercial);
+            25, 34, clsBaseDatosPruebas.RolExternoComercial);
 
         // Lo que manda ClientePro: el nombre de usuario (no el ID) y sus roles informados (solo se auditan).
         using var login = await _api.Cliente.PostAsJsonAsync("/api/auth/login-clientepro",
-            new { idUsuario = "dguerra", roles = new[] { "25", "31", "32" } }, Ct);
+            new { idUsuario = "dguerra", roles = new[] { "25", "34", "32" } }, Ct);
         var cuerpoLogin = await login.Content.ReadAsStringAsync(Ct);
         login.StatusCode.Should().Be(HttpStatusCode.OK, cuerpoLogin);
         using var json = JsonDocument.Parse(cuerpoLogin);

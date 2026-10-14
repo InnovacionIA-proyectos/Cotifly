@@ -93,8 +93,8 @@ public sealed record clsServicioConexoPrecio(
 {
     /// <summary>
     /// Decisión 10 (HU-021.9): estado del envío diferido del conexo a la cotización de Nexo: <c>pendiente</c>, <c>enviado</c>,
-    /// <c>incierto</c> (no se pudo confirmar: revisar Nexo; no se reintenta solo) o <c>fallido_definitivo</c>. Solo en
-    /// <c>GET .../costeo</c>; <c>null</c> en las respuestas de las mutaciones y antes de enviar la solicitud a Nexo.
+    /// <c>incierto</c> (no se pudo confirmar: revisar Nexo; no se reintenta solo) o <c>fallido_definitivo</c>. En <c>GET .../costeo</c> y
+    /// en los PUT de margen y de conexos (#173); <c>null</c> antes de enviar la solicitud a Nexo y en las demás mutaciones.
     /// </summary>
     public string? EstadoNexo { get; init; }
 }
@@ -197,7 +197,8 @@ public sealed class clsCosteoCotizacionService(
     IOptions<clsOpcionesPdf> opcionesPdf,
     ILogger<clsCosteoCotizacionService> logger,
     IClsEnvioConexosNexoService? envioConexos = null,
-    Cubicacion.Interfaces.IClsCubicador? cubicador = null) : IClsCosteoCotizacionService
+    Cubicacion.Interfaces.IClsCubicador? cubicador = null,
+    IClsCategoriasConexos? categoriasConexos = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -217,7 +218,7 @@ public sealed class clsCosteoCotizacionService(
 
         // Decisión 10 (HU-021.9): el estado del envío diferido de cada conexo a Nexo (incierto o fallido definitivo quedan a la vista).
         var estadosNexo = envioConexos is null ? null : await envioConexos.EstadosAsync(cotizacion, cancellationToken);
-        return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo);
+        return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken));
     }
 
     /// <summary>Herramienta de la auditoría de los cambios de conexos (<c>EventosHerramienta.herramienta</c>, HU-021.8).</summary>
@@ -310,13 +311,13 @@ public sealed class clsCosteoCotizacionService(
         if (movimientos.Count == 0)
         {
             // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
-            return (Vista(cotizacion, opcionesPdf.Value.BaseUrl), [], false);
+            return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos), [], false);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
-            ? (Vista(cotizacion, opcionesPdf.Value.BaseUrl), movimientos, pdfInvalidado)
+            ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos), movimientos, pdfInvalidado)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
 
@@ -923,18 +924,32 @@ public sealed class clsCosteoCotizacionService(
         return transporte;
     }
 
-    /// <summary>Conexos de la ruta como los ve el comercial: precio con el margen de la ruta (nunca el costo de Nexo); todos incluidos.</summary>
-    public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta)
+    /// <summary>
+    /// Conexos de la ruta como los ve el comercial: precio con el margen de la ruta (nunca el costo de Nexo); todos incluidos. La categoría
+    /// es la del catálogo de Nexo (<paramref name="categorias"/>, #173) o <see cref="CategoriaConexo"/> si no se conoce.
+    /// </summary>
+    public static IReadOnlyList<clsServicioConexoPrecio> ConexosConPrecio(
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? categorias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
         return [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => (Conexo: c, Error: ruta.PrecioDe(c.Costo, cotizacion.Moneda, cotizacion.TrmAplicada, out var precio), Precio: precio))
             .Where(x => x.Error is null && x.Precio is not null)
-            .Select(x => new clsServicioConexoPrecio(x.Conexo.IdServicioConexo, x.Conexo.Nombre, CategoriaConexo, x.Conexo.Cantidad, x.Precio!.Value, true, ruta.Orden))];
+            .Select(x => new clsServicioConexoPrecio(
+                x.Conexo.IdServicioConexo,
+                x.Conexo.Nombre,
+                categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var categoria) ? categoria : CategoriaConexo,
+                x.Conexo.Cantidad,
+                x.Precio!.Value,
+                true,
+                ruta.Orden))];
     }
 
-    /// <summary>Categoría con la que se muestra un conexo (la tabla de HU-021 no la guarda).</summary>
+    /// <summary>
+    /// Categoría por defecto de un conexo cuando no se pudo leer la del catálogo de Nexo (la tabla de HU-021 no la guarda; la columna está
+    /// propuesta en <c>db/scripts/pendientes/05_categoria_conexo.sql</c>, #173).
+    /// </summary>
     public const string CategoriaConexo = "logistico";
 
     private static string? VehiculoPeso(string? tipoVehiculo, string? carroceria, decimal? pesoKg)
@@ -974,11 +989,73 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
+    /// #173: <see cref="Vista"/> con el estado del envío diferido de cada conexo a Nexo (<c>estado_nexo</c>), igual que
+    /// <c>GET .../costeo</c>: las respuestas de los PUT de margen y de conexos salían con <c>estado_nexo = null</c>. Se llama después de
+    /// guardar: si la lectura de los estados falla, responde sin ellos (y lo deja en el log) en lugar de un 500 con el cambio ya hecho.
+    /// </summary>
+    public static async Task<clsCosteoCotizacion> VistaConEstadosAsync(
+        clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
+        CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(logger);
+        var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
+        if (envioConexos is null)
+        {
+            return Vista(cotizacion, baseUrlPdf, null, categorias);
+        }
+
+        try
+        {
+            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logEstadosNoDisponibles(logger, cotizacion.Folio, ex);
+            return Vista(cotizacion, baseUrlPdf, null, categorias);
+        }
+    }
+
+    /// <summary>
+    /// #173: categorías de los conexos según el catálogo de Nexo (<see cref="IClsCategoriasConexos"/>). Nunca falla: sin servicio o si
+    /// la lectura lanza, <c>null</c> (la vista usa <see cref="CategoriaConexo"/>).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, string>?> CategoriasAsync(
+        IClsCategoriasConexos? categoriasConexos, clsCotizacionSolicitud cotizacion, ILogger logger, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        ArgumentNullException.ThrowIfNull(logger);
+        if (categoriasConexos is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await categoriasConexos.CategoriasAsync(cotizacion, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logCategoriasNoDisponibles(logger, cotizacion.Folio, ex);
+            return null;
+        }
+    }
+
+    private static readonly Action<ILogger, string, Exception?> _logCategoriasNoDisponibles = LoggerMessage.Define<string>(
+        LogLevel.Warning, new EventId(1733, nameof(_logCategoriasNoDisponibles)),
+        "No se pudo leer la categoría de los conexos de {Folio} en el catálogo de Nexo; se usa la categoría por defecto.");
+
+    private static readonly Action<ILogger, string, Exception?> _logEstadosNoDisponibles = LoggerMessage.Define<string>(
+        LogLevel.Warning, new EventId(1731, nameof(_logEstadosNoDisponibles)),
+        "No se pudo leer el estado de los conexos en Nexo de {Folio} después de guardar; la respuesta sale sin estado_nexo.");
+
+    /// <summary>
     /// <c>CosteoCotizacion</c> de la cotización (sin costos de Nexo). La comparten el costeo, el ajuste de margen y las demás acciones de
     /// la etapa final.
     /// </summary>
     public static clsCosteoCotizacion Vista(
-        clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null)
+        clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
+        IReadOnlyDictionary<string, string>? categorias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
@@ -993,7 +1070,7 @@ public sealed class clsCosteoCotizacionService(
             cotizacion.PrecioFinal,
             cotizacion.PrecioFinal is null ? null : ruta?.MargenAplicado,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
-            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r), estadosNexo))],
+            [.. cotizacion.RutasOrdenadas.SelectMany(r => ConEstadoNexo(r, ConexosConPrecio(cotizacion, r, categorias), estadosNexo))],
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
             ruta?.MargenSugeridoMostrado,
             ruta?.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
@@ -1002,7 +1079,7 @@ public sealed class clsCosteoCotizacionService(
             clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
         {
             TrmAplicada = cotizacion.TrmAplicada,
-            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo))],
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias))],
         };
     }
 
@@ -1011,11 +1088,12 @@ public sealed class clsCosteoCotizacionService(
     /// mercancías, como la ve el comercial (nunca costos de Nexo).
     /// </summary>
     public static clsRutaCosteo RutaCosteo(
-        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null)
+        clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
+        IReadOnlyDictionary<string, string>? categorias = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
-        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta), estadosNexo);
+        var conexos = ConEstadoNexo(ruta, ConexosConPrecio(cotizacion, ruta, categorias), estadosNexo);
         var revisar = conexos
             .Where(c => c.EstadoNexo is clsEnvioConexosNexoService.VisibleIncierto or clsEnvioConexosNexoService.VisibleFallidoDefinitivo)
             .Select(c => $"«{c.Nombre ?? c.Id}»")

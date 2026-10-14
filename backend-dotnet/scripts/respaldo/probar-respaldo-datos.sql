@@ -12,8 +12,8 @@ DECLARE @c UNIQUEIDENTIFIER = NEWID(), @c2 UNIQUEIDENTIFIER = NEWID(), @m UNIQUE
 DECLARE @t1 UNIQUEIDENTIFIER = NEWID(), @t2 UNIQUEIDENTIFIER = NEWID(), @familia UNIQUEIDENTIFIER = NEWID();
 DECLARE @linea INT = (SELECT MIN(id) FROM dbo_cotifly.MargenesPolitica);
 
-UPDATE dbo_cotifly.Roles SET idRolExterno = 34 WHERE codigo = N'comercial';
-UPDATE dbo_cotifly.Roles SET idRolExterno = 35 WHERE codigo = N'gerente_comercial';
+UPDATE dbo_cotifly.Roles SET idRolExterno = 32 WHERE codigo = N'comercial';
+UPDATE dbo_cotifly.Roles SET idRolExterno = 31 WHERE codigo = N'gerente_comercial';
 
 INSERT dbo_cotifly.UsuariosWeb (id, nombreUsuario, nombreCompleto, email, idUsuarioExterno, ultimaSesion)
 VALUES (@u, N'APEREZ', N'Ana Pérez Núñez', N'aperez@example.com', 101, SYSDATETIMEOFFSET()),

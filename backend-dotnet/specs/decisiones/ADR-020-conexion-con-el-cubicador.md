@@ -109,6 +109,16 @@ corre después del 01 (y en `-Auto` sobre una base existente).
   `(lineaSolicitudId, ordenVehiculo)`, CHECK con `ISNULL` y consulta de verificación), **pendiente de revisión de @scalderon-bs**: fuera
   de la carpeta que corre el ejecutador; el backend no mapea sus columnas, así que las filas nuevas quedarían en NULL. Una prueba la
   aplica en una base aislada y la verifica idempotente.
+- **`ordenVehiculo` sigue sin mapear (decisión de #173, 2026-10-14).** El E2E real encontró la columna ya creada en la base compartida
+  (alguien aplicó el 03) y en NULL en los camiones nuevos. **No se mapea en EF hasta que el 03 esté aprobado y aplicado en todos los
+  ambientes:** EF es Database First y un `HasColumnName("ordenVehiculo")` haría fallar cada lectura de la cotización (`Invalid column
+  name`) en una base sin el 03 (local, pruebas, producción). Mientras tanto queda **NULL** en las filas nuevas y el orden del cubicador
+  sigue en el desfase de `createdAt` (`OrdenCreacion`, ADR-019): es la fuente de verdad y el envío de conexos al primer camión no
+  depende de la columna. Al aprobarse el 03: mapear la columna, llenarla con `OrdenCreacion` y exigirla en `/health/ready`.
+- **Categoría del conexo (#173).** La tabla `CotizacionServiciosConexos` no guarda la categoría del catálogo de Nexo; el costeo la lee del
+  catálogo (`clsCategoriasConexosService`, índice en memoria de 30 min, por id del catálogo o por nombre) y usa `logistico` solo si el
+  catálogo no responde o no tiene el conexo. La columna para guardarla está propuesta en `db/scripts/pendientes/05_categoria_conexo.sql`
+  (pendiente de revisión; no se mapea).
 - **Ejecutador con `-Auto`:** corre los ajustes (`02` en adelante) en **cada** arranque; el 02 es idempotente y no hace nada la segunda
   vez. En una base anterior al `0009` (sin `CotizacionMercancias`) su precondición se detiene con error y el ejecutador también (`-b`):
   hay que migrar primero con `0009` y `0010`.
@@ -348,7 +358,8 @@ el del cubicador a más del 1 % y el 429 sin reintento con el bloqueo compartido
 
 | Pendiente | Dueño |
 |---|---|
-| Revisar y aplicar `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (orden del camión e id del catálogo del conexo) | @scalderon-bs |
+| Revisar y aplicar `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (orden del camión e id del catálogo del conexo). Hasta entonces `ordenVehiculo` queda NULL y el backend no la mapea (#173) | @scalderon-bs |
+| Revisar y aplicar `db/scripts/pendientes/05_categoria_conexo.sql` (categoría del conexo, #173) y mapearla después | @scalderon-bs y DBA |
 | Prueba de punta a punta de la solicitud con flota mixta contra el cubicador de QA (reconsultar el `idRecomendacionVehiculo` guardado) | Duban y Kevin, cuando exista P3 |
 | P1 `GET /tipos-vehiculo`, P2 ejemplos reales, P3 URL de QA, P7 endpoint de salud; confirmar la forma de `advertencias`, `mercanciasCondicionadas` y `extradimension` | Equipo del cubicador |
 | Prueba de punta a punta contra el cubicador de QA (con Kevin) | Duban y Kevin, cuando exista P3 |

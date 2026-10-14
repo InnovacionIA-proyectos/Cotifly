@@ -220,7 +220,7 @@ Cotifly no tiene login propio (ADR-009). ClientePro ya autenticó a la persona y
 {
   "idUsuario": "APEREZ",
   "nombreUsuario": "Ana Pérez",
-  "roles": ["34"]
+  "roles": ["32"]
 }
 ```
 

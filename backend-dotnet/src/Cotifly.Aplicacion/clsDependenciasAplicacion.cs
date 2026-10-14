@@ -86,6 +86,10 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsEnvioConexosNexoService, clsEnvioConexosNexoService>();
         servicios.AddScoped<IClsResolutorConexosCatalogo, clsResolutorConexosCatalogo>();
 
+        // #173: categoría de los conexos del costeo según el catálogo de Nexo (índice en memoria de 30 min).
+        servicios.AddSingleton<clsAlmacenCategoriasConexos>();
+        servicios.AddScoped<IClsCategoriasConexos, clsCategoriasConexosService>();
+
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra
         // Infraestructura) y, sin cubicador o si falla, un camión sin vehículo por ruta (respaldo). Scoped: recuerda en la petición que el

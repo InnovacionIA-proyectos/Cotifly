@@ -35,7 +35,7 @@ public sealed class clsAuthEndpointTests(clsBaseDatosPruebas baseDatos) : IClass
         using var factory = Crear();
         using var cliente = factory.CreateClient();
 
-        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre, roles = new[] { "35" } }, Ct);
+        using var respuesta = await cliente.PostAsJsonAsync("/api/auth/login-clientepro", new { idUsuario = nombre, roles = new[] { "31" } }, Ct);
         using var json = await JsonAsync(respuesta);
 
         respuesta.StatusCode.Should().Be(HttpStatusCode.OK);

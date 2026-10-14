@@ -470,6 +470,58 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         $"SELECT COUNT(*) FROM dbo_cotifly.EventosHerramienta WHERE herramienta = '{Cotifly.Aplicacion.Costeo.DTOs.clsEnvioConexosNexo.Herramienta}' "
         + $"AND input LIKE '%{folio}%' AND outputResumen LIKE '%\"estado\":\"{estado}\"%'");
 
+    /// <summary>
+    /// #173: las respuestas de <c>PUT .../costeo/margen</c> y <c>PUT .../costeo/servicios-conexos</c> traen el <c>estado_nexo</c> de cada
+    /// conexo igual que el GET (antes salía <c>null</c>), y la categoría es la del catálogo de Nexo (<c>adicional</c>), no <c>logistico</c> fijo.
+    /// </summary>
+    [Fact]
+    public async Task LosPutDeMargenYDeConexosTraenElEstadoNexoYLaCategoriaDelCatalogoComoElGet()
+    {
+        using var nexo = new clsNexoFalso()
+            .ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
+            .ConServicioConexo(Cargue, "AVP_MOTO", "Acompañante vehicular en moto", "adicional", "UND", 150_000m);
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, nexo);
+        var sesion = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        using var captura = await api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, Formulario());
+        var folio = (await VerificarContratoAsync(captura, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+        nexo.CostearLinea(nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
+        await api.ProcesarPollingAsync(folio);
+
+        using var get = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        var conexoGet = (await VerificarContratoAsync(get, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0];
+        conexoGet.GetProperty("estado_nexo").GetString().Should().Be("enviado");
+        conexoGet.GetProperty("categoria").GetString().Should().Be("adicional", "la categoría sale del catálogo de Nexo");
+
+        using var margen = await EnviarConVersionAsync(api, HttpMethod.Put, $"/web/cotizaciones/{folio}/costeo/margen", sesion.Access,
+            """{"margen":0.18}""", get.Headers.ETag?.Tag);
+        var ajustado = await VerificarContratoAsync(margen, "/web/cotizaciones/{folio}/costeo/margen", HttpMethod.Put, HttpStatusCode.OK);
+        foreach (var conexo in new[] { ajustado.GetProperty("servicios_conexos")[0], ajustado.GetProperty("rutas")[0].GetProperty("servicios_conexos")[0] })
+        {
+            conexo.GetProperty("estado_nexo").GetString().Should().Be("enviado", "igual que el GET");
+            conexo.GetProperty("categoria").GetString().Should().Be("adicional");
+        }
+
+        using var seleccion = await EnviarConVersionAsync(api, HttpMethod.Put, $"/web/cotizaciones/{folio}/costeo/servicios-conexos", sesion.Access,
+            clsApiWebPruebas.Json(new { incluidos = new[] { Cargue } }), margen.Headers.ETag?.Tag);
+        var elegida = await VerificarContratoAsync(seleccion, "/web/cotizaciones/{folio}/costeo/servicios-conexos", HttpMethod.Put, HttpStatusCode.OK);
+        elegida.GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("estado_nexo").GetString().Should().Be("enviado");
+        elegida.GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString().Should().Be("adicional");
+    }
+
+    private async Task<HttpResponseMessage> EnviarConVersionAsync(clsApiWebPruebas api, HttpMethod metodo, string ruta, string token, string cuerpo, string? ifMatch)
+    {
+        using var peticion = new HttpRequestMessage(metodo, ruta);
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        if (ifMatch is not null)
+        {
+            peticion.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
+        return await api.Cliente.SendAsync(peticion, Ct);
+    }
+
     public void Dispose()
     {
         _api.Dispose();

@@ -9,6 +9,8 @@ using Cotifly.Aplicacion.Precio.Services;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Cotifly.Aplicacion.Costeo.Services;
@@ -55,8 +57,13 @@ public sealed class clsAjusteMargenCosteoService(
     IClsMargenAjusteRepository ajustes,
     IClsUnitOfWork unidadTrabajo,
     IClsAuditoriaService auditoria,
-    IOptions<clsOpcionesPdf> opcionesPdf) : IClsAjusteMargenCosteoService
+    IOptions<clsOpcionesPdf> opcionesPdf,
+    IClsEnvioConexosNexoService? envioConexos = null,
+    ILogger<clsAjusteMargenCosteoService>? logger = null,
+    IClsCategoriasConexos? categoriasConexos = null) : IClsAjusteMargenCosteoService
 {
+    private readonly ILogger _logger = logger ?? NullLogger<clsAjusteMargenCosteoService>.Instance;
+
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "ajustar_margen_costeo";
 
@@ -136,7 +143,7 @@ public sealed class clsAjusteMargenCosteoService(
         if (anterior == redondeado)
         {
             // Idempotente: el mismo margen vigente de la ruta no registra un ajuste ni invalida el PDF.
-            return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), false, false);
+            return (await clsCosteoCotizacionService.VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, cancellationToken, categoriasConexos), false, false);
         }
 
         // Vista previa ANTES de cambiar nada: si el módulo de precio rechaza el margen, la cotización queda intacta.
@@ -168,7 +175,9 @@ public sealed class clsAjusteMargenCosteoService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false, false);
         }
 
-        return (clsCosteoCotizacionService.Vista(cotizacion, opcionesPdf.Value.BaseUrl), true, pdfInvalidado);
+        // #173: con el estado_nexo de cada conexo, igual que GET .../costeo.
+        return (await clsCosteoCotizacionService.VistaConEstadosAsync(
+            cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, _logger, CancellationToken.None, categoriasConexos), true, pdfInvalidado);
     }
 
     /// <summary>
