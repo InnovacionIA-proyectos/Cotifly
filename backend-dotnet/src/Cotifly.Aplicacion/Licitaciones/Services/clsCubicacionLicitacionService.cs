@@ -95,6 +95,7 @@ public sealed class clsCubicacionLicitacionService(
     IOptions<clsOpcionesCubicacionLicitacion> opciones,
     ILogger<clsCubicacionLicitacionService> logger,
     IClsAuditoriaService auditoria,
+    TimeProvider tiempo,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsCubicacionLicitacionService
 {
     /// <summary>Herramienta de la auditoría de cada ruta cubicada en segundo plano (<c>EventosHerramienta.herramienta</c>, E1 de #174).</summary>
@@ -116,8 +117,11 @@ public sealed class clsCubicacionLicitacionService(
             return ResultadoCubicacionRuta.SinCupo;
         }
 
-        ResultadoCubicacionRuta resultado;
-        clsCotizacionSolicitud? cotizacion;
+        clsCotizacionSolicitud cotizacion;
+        clsLineaSolicitud linea;
+        clsDetalleRuta detalle;
+        int versionLeida;
+        var cronometro = Stopwatch.StartNew();
         await using (cupo)
         {
             if (!await cotizaciones.ReclamarRutaPorCubicarAsync(ruta.RutaId, ruta.DisponibleAt, reloj.AhoraUtc + config.Reclamo, cancellationToken))
@@ -125,25 +129,42 @@ public sealed class clsCubicacionLicitacionService(
                 return ResultadoCubicacionRuta.NoReclamada;
             }
 
-            cotizacion = await cotizaciones.ObtenerPorIdAsync(ruta.CotizacionId, cancellationToken);
-            if (cotizacion?.Rutas.FirstOrDefault(r => r.Id == ruta.RutaId) is not { } linea)
+            var leida = await cotizaciones.ObtenerPorIdAsync(ruta.CotizacionId, cancellationToken);
+            if (leida?.Rutas.FirstOrDefault(r => r.Id == ruta.RutaId) is not { } encontrada)
             {
                 return ResultadoCubicacionRuta.NoReclamada;
             }
 
-            var cronometro = Stopwatch.StartNew();
-            var detalle = await CubicarRutaAsync(cotizacion, linea, config, cancellationToken);
-            resultado = detalle.Resultado;
-            await AuditarRutaAsync(cotizacion, linea, detalle, (int)cronometro.ElapsedMilliseconds);
+            cotizacion = leida;
+            versionLeida = leida.VersionNegocio;
+            linea = encontrada;
+            detalle = await CubicarRutaAsync(cotizacion, linea, config, cancellationToken);
         }
 
-        // Fuera del cupo: el envío a Nexo no ocupa al cubicador.
-        if (resultado == ResultadoCubicacionRuta.Cubicada && cotizacion is not null)
+        // Fuera del cupo: ni la auditoría ni el envío a Nexo ocupan al cubicador.
+        await AuditarRutaAsync(cotizacion, linea, detalle, (int)cronometro.ElapsedMilliseconds);
+        if (detalle.Resultado == ResultadoCubicacionRuta.Cubicada)
         {
-            await EnviarSiListaAsync(cotizacion);
+            await EnviarTrasCubicarAsync(cotizacion, versionLeida, cancellationToken);
         }
 
-        return resultado;
+        return detalle.Resultado;
+    }
+
+    /// <summary>
+    /// La ruta ya quedó guardada como cubicada: lo que falle al intentar el envío (la base, el candado, Nexo) no la deja sin contar ni la
+    /// devuelve a la cola. La licitación queda cubicada sin enviar y la recuperación (<see cref="EnviarCubicadasAsync"/>) la envía.
+    /// </summary>
+    private async Task EnviarTrasCubicarAsync(clsCotizacionSolicitud cotizacion, int versionLeida, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnviarSiListaAsync(cotizacion, esperarCandado: true, versionLeida, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "La licitación {Folio} quedó cubicada pero no se pudo revisar su envío a Nexo; la recuperación la envía.", cotizacion.Folio);
+        }
     }
 
     /// <summary>Qué pasó con una ruta (para la auditoría): el resultado, el intento, el código del error y los camiones (sin montos ni pesos).</summary>
@@ -242,7 +263,7 @@ public sealed class clsCubicacionLicitacionService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             // La recuperación no espera el candado: si alguien lo tiene, está enviando; la vuelta siguiente la vuelve a mirar.
-            if (await cotizaciones.ObtenerPorIdAsync(id, cancellationToken) is { } cotizacion && await EnviarSiListaAsync(cotizacion, esperarCandado: false))
+            if (await cotizaciones.ObtenerPorIdAsync(id, cancellationToken) is { } cotizacion && await EnviarSiListaAsync(cotizacion, esperarCandado: false, versionLeida: null, cancellationToken))
             {
                 enviadas++;
             }
@@ -263,6 +284,7 @@ public sealed class clsCubicacionLicitacionService(
         }
 
         var cronometro = Stopwatch.StartNew();
+        var versionLeida = cotizacion.VersionNegocio;
         var cambiadas = cotizacion.ReintentarCubicacionFallida(usarRespaldo);
         if (cambiadas == 0)
         {
@@ -277,7 +299,7 @@ public sealed class clsCubicacionLicitacionService(
         await unidadTrabajo.GuardarCambiosAsync(cancellationToken);
         logger.LogInformation("La licitación {Folio}: {Rutas} ruta(s) fallida(s) {Accion}.",
             cotizacion.Folio, cambiadas, usarRespaldo ? "aceptadas con el camión sin vehículo" : "vuelven a la cola del cubicador");
-        var enviada = usarRespaldo && await EnviarSiListaAsync(cotizacion);
+        var enviada = usarRespaldo && await EnviarSiListaAsync(cotizacion, esperarCandado: true, versionLeida, cancellationToken);
         await AuditarReintentoAsync(cotizacion, usarRespaldo, new { rutas = cambiadas, enviada_a_nexo = enviada }, exito: true, cronometro);
         return cotizacion;
     }
@@ -296,7 +318,7 @@ public sealed class clsCubicacionLicitacionService(
     /// (<see cref="IClsCupoCubicador.IntentarTomarEnvioAsync"/>) la reclama con el <c>updatedAt</c> de la cabecera y la envía a Nexo con la política de su primera ruta, como el reintento. Sin el token de la
     /// petición: una vez reclamada, el envío se completa (HU-005.5).
     /// </summary>
-    private async Task<bool> EnviarSiListaAsync(clsCotizacionSolicitud cotizacion, bool esperarCandado = true)
+    private async Task<bool> EnviarSiListaAsync(clsCotizacionSolicitud cotizacion, bool esperarCandado, int? versionLeida, CancellationToken cancellationToken)
     {
         // El reclamo por updatedAt no basta: una réplica que recarga DESPUÉS del reclamo de otra (y antes de que esta guarde el envío)
         // ve la licitación todavía en pendiente_envio y la reclamaría otra vez. El candado del envío cubre la revisión, el reclamo y el
@@ -308,12 +330,12 @@ public sealed class clsCubicacionLicitacionService(
         // que está enviando (o la recuperación lo retoma).
         for (var intento = 1; ; intento++)
         {
-            var candado = await cupos.IntentarTomarEnvioAsync(cotizacion.Id, CancellationToken.None);
+            var candado = await IntentarTomarCandadoEnvioAsync(cotizacion, intento);
             if (candado is not null)
             {
                 await using (candado)
                 {
-                    return await EnviarConCandadoAsync(cotizacion);
+                    return await EnviarConCandadoAsync(cotizacion, versionLeida);
                 }
             }
 
@@ -329,21 +351,68 @@ public sealed class clsCubicacionLicitacionService(
                 return false;
             }
 
-            await Task.Delay(EsperaCandadoEnvio(intento));
+            // La espera usa el reloj inyectado (pruebas con reloj falso) y se corta con el token (apagado o petición cancelada): sin el
+            // candado no se reclamó nada, así que dejarlo es seguro y la recuperación toma la licitación.
+            try
+            {
+                await Task.Delay(EsperaCandadoEnvio(intento), tiempo, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                logger.LogInformation("La licitación {Folio}: se canceló la espera del candado del envío; la recuperación la retoma.", cotizacion.Folio);
+                return false;
+            }
         }
     }
 
-    /// <summary>Intentos de tomar el candado del envío antes de dejarlo a quien lo tiene (B2, #174): unos 15 s con <see cref="EsperaCandadoEnvio"/>.</summary>
+    /// <summary>
+    /// Un intento de tomar el candado del envío. Revisión de #174: cada intento abre una conexión propia sin pool (el candado es de
+    /// sesión) y, con la base cargada, abrirla puede fallar (<c>Connection Timeout Expired</c> en el saludo previo al login). Antes esa
+    /// excepción salía de <see cref="CubicarAsync"/> con la ruta ya guardada: el procesador no la contaba y la licitación esperaba la
+    /// recuperación. Ahora un fallo al pedir el candado cuenta como "no obtenido" y se reintenta dentro del mismo tope.
+    /// </summary>
+    private async Task<IAsyncDisposable?> IntentarTomarCandadoEnvioAsync(clsCotizacionSolicitud cotizacion, int intento)
+    {
+        try
+        {
+            return await cupos.IntentarTomarEnvioAsync(cotizacion.Id, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "La licitación {Folio}: no se pudo pedir el candado del envío (intento {Intento}); se reintenta.", cotizacion.Folio, intento);
+            return null;
+        }
+    }
+
+    /// <summary>Intentos de tomar el candado del envío antes de dejarlo a quien lo tiene (B2, #174): 15,75 s de espera en total con <see cref="EsperaCandadoEnvio"/>.</summary>
     internal const int IntentosCandadoEnvio = 35;
 
     /// <summary>Espera antes del intento <paramref name="intento"/> + 1 del candado del envío: 50 ms que se duplican hasta 500 ms.</summary>
     internal static TimeSpan EsperaCandadoEnvio(int intento) => TimeSpan.FromMilliseconds(Math.Min(500, 50 * Math.Pow(2, Math.Max(0, intento - 1))));
 
-    private async Task<bool> EnviarConCandadoAsync(clsCotizacionSolicitud cotizacion)
+    /// <summary>
+    /// Con el candado: recarga, revisa y, si sigue lista, reclama y envía. <paramref name="versionLeida"/> es la <c>versionNegocio</c> que
+    /// vio quien cubicó la ruta (o reintentó) antes de guardar; <c>null</c> en la recuperación.
+    /// </summary>
+    /// <remarks>
+    /// Revisión de #174 (doble envío medido bajo carga): el reclamo sube <c>versionNegocio</c>. Si quien envió obtuvo el alta en Nexo pero
+    /// no pudo guardar el <c>solicitudNexoId</c> (la base no respondió), la licitación sigue en <c>pendiente_envio</c> y suelta el candado:
+    /// la ruta que esperaba lo tomaba, la veía "lista" y la enviaba otra vez (dos altas en Nexo). Con la versión cambiada desde que se
+    /// leyó, alguien ya la reclamó: el envío está en curso o es incierto y no se repite aquí; la recuperación aplica la regla de siempre
+    /// (<see cref="clsCotizacionSolicitud.EsperaReenvioPendiente"/>), igual que un reenvío cortado a medias (HU-005.5).
+    /// </remarks>
+    private async Task<bool> EnviarConCandadoAsync(clsCotizacionSolicitud cotizacion, int? versionLeida)
     {
         await cotizaciones.RecargarAsync(cotizacion, CancellationToken.None);
         if (!cotizacion.ListaParaEnviarTrasCubicar || cotizacion.UsuarioId is not { } usuarioId)
         {
+            return false;
+        }
+
+        if (versionLeida is { } version && cotizacion.VersionNegocio != version)
+        {
+            logger.LogWarning("La licitación {Folio} ya fue reclamada para el envío por otro proceso (versión {Leida} → {Actual}) y sigue sin solicitud de Nexo: el envío está en curso o es incierto y no se repite aquí; la recuperación la revisa.",
+                cotizacion.Folio, version, cotizacion.VersionNegocio);
             return false;
         }
 

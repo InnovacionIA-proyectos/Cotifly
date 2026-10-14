@@ -300,7 +300,9 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
-        for (var repeticion = 1; repeticion <= 20; repeticion++)
+        // COTIFLY_REPETICIONES_B2 sube las repeticiones para las corridas de carga (50 en la revisión de #174).
+        var repeticiones = int.TryParse(Environment.GetEnvironmentVariable("COTIFLY_REPETICIONES_B2"), out var pedidas) && pedidas > 0 ? pedidas : 20;
+        for (var repeticion = 1; repeticion <= repeticiones; repeticion++)
         {
             // Las dos últimas llamadas al cubicador responden a la vez (se esperan una a la otra, con tope): sus rutas terminan juntas.
             var llamadas = 0;
@@ -322,7 +324,9 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
             var folio = cuerpo.RootElement.GetProperty("folio").GetString()!;
             var id = await api.IdCotizacionAsync(folio);
 
-            (await api.ProcesarCubicacionAsync(folio)).Should().Be(10, $"repetición {repeticion}");
+            // Tope de 90 s (no 30): bajo la carga de la suite completa, abrir una conexión puede tardar el tiempo de conexión de SqlClient
+            // (15 s) antes de fallar; la ruta sigue pendiente y la vuelta siguiente la cubica. La verificación no cambia: las 10 rutas.
+            (await api.ProcesarCubicacionAsync(folio, TimeSpan.FromSeconds(90))).Should().Be(10, $"repetición {repeticion}");
 
             _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, $"repetición {repeticion}: la licitación sale a Nexo al cubicar la última ruta, una sola vez");
             (await Fila($"SELECT CONCAT(estadoCosteo, '|', IIF(solicitudNexoId IS NULL, '-', 'S')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))

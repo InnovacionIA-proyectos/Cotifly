@@ -181,7 +181,8 @@ Rama `174-hu-023-licitacion-y-matriz` (sale de `hu-023-integracion`). Todo con l
 
 - **Causa:** `EnviarSiListaAsync` tomaba el candado del envío sin esperar. La ruta A lo tomaba, recargaba, veía la ruta B todavía
   pendiente y lo soltaba sin enviar; la ruta B, que ya había guardado, no lo obtenía y se iba. Nadie volvía a revisar.
-- **Arreglo:** quien no obtiene el candado espera y reintenta (50 ms que se duplican hasta 500 ms, unos 15 s en total). Cuando lo obtiene,
+- **Arreglo:** quien no obtiene el candado espera y reintenta (50 ms que se duplican hasta 500 ms; 35 intentos y 15,75 s de espera en
+  total, con el `TimeProvider` inyectado y el token de cancelación). Cuando lo obtiene,
   la revisión ve todo lo que se guardó antes de que lo soltara el otro, así que la última ruta siempre revisa con su ruta guardada. El
   envío sigue siendo único por tres barreras: el candado, el estado (`ListaParaEnviarTrasCubicar`, que deja de valer con el
   `solicitudNexoId`) y el reclamo por `updatedAt`. La recuperación (`EnviarCubicadasAsync`) no espera el candado, porque si alguien lo
@@ -212,7 +213,7 @@ Rama `174-hu-023-licitacion-y-matriz` (sale de `hu-023-integracion`). Todo con l
   de #173). La verificación de `metricas_tablero.feature` no cambia.
 - **Pendiente (fuera de #174):** el arreglo de fondo es `FROM dbo_cotifly.CotizacionesSolicitud c WITH (FORCESEEK)` en `SqlCotizaciones`,
   que lee solo las filas de los comerciales pedidos por `ix_cotizaciones_usuarioId_createdAt` y quita el choque con escrituras ajenas.
-  Debe aplicarse con #173, que modifica esa consulta por B3. El choque con escrituras del mismo comercial solo desaparece con
+  No se aplica en #174 porque #173 modifica esa consulta por B3: el coordinador lo aplica en la integración final. El choque con escrituras del mismo comercial solo desaparece con
   `READ_COMMITTED_SNAPSHOT` (o `SNAPSHOT`) en la base, una decisión del DBA.
 
 ### 7.3 Pruebas nuevas
@@ -236,3 +237,35 @@ Build `--no-incremental` en Release: 0 errores y 0 warnings de código (solo los
 |---|---|---|---|---|
 | 1 | 3985 | 3983 | 2 | 0 |
 | 2 | 3985 | 3983 | 2 | 0 |
+
+### 7.5 Revisión de #174 (observaciones del coordinador)
+
+- **Fallo intermitente de F2 (MEDIA).** Reproducido con la suite completa y la regresión de B2 a 50 repeticiones
+  (`COTIFLY_REPETICIONES_B2=50`): `ProcesarCubicacionAsync` contó 9 de 10 en la repetición 6 de la corrida 3. Log del procesador:
+  `SqlException: Connection Timeout Expired ... pre-login handshake` en `clsCupoCubicadorSql.TomarPrimeroLibreAsync`, llamado desde la
+  espera del candado del envío (`EnviarSiListaAsync`). Cada intento abre una conexión sin pool. Con la base cargada, abrirla falló
+  **con la ruta ya guardada como cubicada**: la excepción salía de `CubicarAsync`, el procesador no contaba la ruta y la licitación
+  esperaba la recuperación (2 min). No era un estado inconsistente en la base ni un doble envío. Arreglo:
+  - un fallo al pedir el candado cuenta como "no obtenido" y se reintenta dentro del mismo tope;
+  - cualquier fallo después de guardar la ruta (recargar, Nexo) se registra y la ruta queda cubicada y contada; la recuperación envía la
+    licitación.
+  - Un fallo al pedir el **cupo del cubicador** (antes de reclamar la ruta) no cambia: no se guardó nada, la ruta sigue pendiente y la
+    vuelta siguiente la cuenta.
+  - **Doble envío, encontrado en la carga y corregido.** Al repetir la carga, F2 vio dos altas para la misma licitación (repetición 23).
+    Log: quien tenía el candado reclamó y obtuvo el alta en Nexo (201), pero el guardado del `solicitudNexoId` falló (`Execution
+    Timeout Expired` con la base cargada). La licitación quedó en `pendiente_envio` y el candado se soltó. La ruta que esperaba (B2) lo
+    tomó, la vio "lista" y la envió otra vez. Antes de B2 pasaba lo mismo con la recuperación a los 2 min (riesgo de HU-005.5); la
+    espera solo lo adelantaba. Arreglo: el reclamo sube `versionNegocio`. Si al tomar el candado la versión cambió desde que la ruta
+    leyó la licitación, alguien ya la reclamó (envío en curso o incierto) y no se envía; queda la regla de la recuperación. Prueba
+    unitaria: `SiOtroProcesoYaReclamoElEnvioYQuedoInciertoNoSeEnviaOtraVez`.
+  - F2 verifica en cada repetición que Nexo recibe exactamente un alta más y que la licitación queda `pendiente_costeo` con
+    `solicitudNexoId`.
+  - Con la base sin responder (`server was not found`, unos 15 s por conexión), el tope de 30 s del ayudante `ProcesarCubicacionAsync`
+    se agotaba con 3 rutas todavía pendientes, sin reclamar y sin estado inconsistente. La regresión usa un tope de 90 s y la
+    verificación (10 de 10) no cambia.
+- **Espera del candado (BAJA).** `Task.Delay(espera, TimeProvider, CancellationToken)`. Una espera cancelada deja la licitación a la
+  recuperación sin reclamar nada. Prueba del tope con `clsTiempoManual`: 35 intentos y 15,75 s; la ruta se rinde, queda contada y la
+  recuperación envía la licitación.
+- **Auditoría fuera del cupo (BAJA).** `cubicar_ruta_licitacion` se registra después de soltar el cupo del cubicador.
+- **Métricas.** `FORCESEEK` no se aplica aquí (lo aplica el coordinador en la integración final, después de #173).
+  `docs/10-operacion.md` §10.7 recomienda `READ_COMMITTED_SNAPSHOT` como decisión del DBA.

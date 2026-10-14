@@ -54,10 +54,10 @@ public sealed class clsCubicacionLicitacionServiceTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private clsCubicacionLicitacionService Servicio(int maximoIntentos = 3) => new(
+    private clsCubicacionLicitacionService Servicio(int maximoIntentos = 3, TimeProvider? tiempo = null) => new(
         _cotizaciones, _planificador, _unidad, _envio, _politicas, _cupos, _reloj,
         Options.Create(new clsOpcionesCubicacionLicitacion { MaximoIntentos = maximoIntentos, EsperaReintentoSegundos = 30 }),
-        _logger, _auditoria);
+        _logger, _auditoria, tiempo ?? TimeProvider.System);
 
     /// <summary>Licitación guardada con sus rutas pendientes de cubicar (un camión provisional sin vehículo cada una).</summary>
     private static clsCotizacionSolicitud Licitacion(int rutas)
@@ -202,6 +202,131 @@ public sealed class clsCubicacionLicitacionServiceTests
 
         await _cupos.Received(4).IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>()); // 1 de la ruta 1 + 3 de la ruta 2
         await EnviosANexo(1);
+    }
+
+    /// <summary>
+    /// Revisión de #174: la espera del candado tiene tope (35 intentos, 15,75 s del reloj inyectado). Al agotarse, la ruta se rinde sin
+    /// enviar, queda cubicada y contada, y la recuperación envía la licitación cuando el candado se libera.
+    /// </summary>
+    [Fact]
+    public async Task AlAgotarLaEsperaDelCandadoLaRutaSeRindeYLaRecuperacionEnviaLaLicitacion()
+    {
+        var tiempo = new clsTiempoManual();
+        var inicio = tiempo.GetUtcNow();
+        var servicio = Servicio(tiempo: tiempo);
+        await servicio.CubicarAsync(Cola(1), Ct);
+        _cupos.IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IAsyncDisposable?>(null));
+        _cupos.ClearReceivedCalls();
+
+        var ultima = servicio.CubicarAsync(Cola(2), Ct);
+        var limite = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (!ultima.IsCompleted && DateTime.UtcNow < limite)
+        {
+            if (tiempo.Pendientes > 0)
+            {
+                tiempo.Avanzar(TimeSpan.FromMilliseconds(50));
+            }
+            else
+            {
+                await Task.Delay(1, Ct);
+            }
+        }
+
+        (await ultima).Should().Be(ResultadoCubicacionRuta.Cubicada, "la ruta ya quedó guardada: se cuenta aunque no envíe");
+        (tiempo.GetUtcNow() - inicio).Should().Be(TimeSpan.FromMilliseconds(15_750), "50 + 100 + 200 + 400 + 30 × 500 ms entre los 35 intentos");
+        await _cupos.Received(35).IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>());
+        await EnviosANexo(0);
+        _logger.Registros.Should().Contain(r => r.Mensaje.Contains("sigue tomado tras 35 intentos"));
+
+        // Se libera el candado: la recuperación (sin esperar) envía la licitación una vez.
+        _cupos.IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IAsyncDisposable?>(_candadoEnvio));
+        _cotizaciones.ListarCubicadasSinEnviarAsync(Arg.Any<DateTimeOffset>(), Arg.Any<int>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns([_licitacion.Id]);
+        (await servicio.EnviarCubicadasAsync(cancellationToken: Ct)).Should().Be(1);
+        await EnviosANexo(1);
+    }
+
+    [Fact]
+    public async Task SiSeCancelaLaEsperaDelCandadoLaRutaQuedaContadaSinEnviar()
+    {
+        var tiempo = new clsTiempoManual();
+        var servicio = Servicio(tiempo: tiempo);
+        await servicio.CubicarAsync(Cola(1), Ct);
+        _cupos.IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IAsyncDisposable?>(null));
+        using var cancelacion = new CancellationTokenSource();
+
+        var ultima = servicio.CubicarAsync(Cola(2), cancelacion.Token);
+        var limite = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (tiempo.Pendientes == 0 && DateTime.UtcNow < limite)
+        {
+            await Task.Delay(1, Ct);
+        }
+
+        await cancelacion.CancelAsync();
+
+        (await ultima).Should().Be(ResultadoCubicacionRuta.Cubicada);
+        Ruta(2).EstadoCubicacion.Should().Be(EstadoCubicacion.Cubicada);
+        await EnviosANexo(0);
+    }
+
+    /// <summary>
+    /// Revisión de #174 (fallo intermitente): si algo falla DESPUÉS de guardar la ruta (la base al recargar, el candado), la ruta sigue
+    /// contada como cubicada y no vuelve a la cola; el envío queda para la recuperación.
+    /// </summary>
+    [Fact]
+    public async Task UnFalloAlRevisarElEnvioDespuesDeGuardarNoDejaLaRutaSinContar()
+    {
+        var servicio = Servicio();
+        await servicio.CubicarAsync(Cola(1), Ct);
+        _cotizaciones.RecargarAsync(_licitacion, Arg.Any<CancellationToken>()).Returns(Task.FromException(new InvalidOperationException("base caída (prueba)")));
+
+        (await servicio.CubicarAsync(Cola(2), Ct)).Should().Be(ResultadoCubicacionRuta.Cubicada);
+
+        Ruta(2).EstadoCubicacion.Should().Be(EstadoCubicacion.Cubicada);
+        await EnviosANexo(0);
+        await _candadoEnvio.Received(2).DisposeAsync();
+        _logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Error && r.Mensaje.Contains("la recuperación la envía"));
+    }
+
+    /// <summary>
+    /// Causa del fallo intermitente de la revisión de #174: con la base cargada, abrir la conexión del candado del envío falló
+    /// (<c>Connection Timeout Expired</c>) con la ruta ya guardada; la excepción salía y la ruta no se contaba. Ahora cuenta como candado
+    /// no obtenido: se reintenta y la licitación sale una vez.
+    /// </summary>
+    [Fact]
+    public async Task SiPedirElCandadoDelEnvioFallaSeReintentaYLaLicitacionSaleUnaVez()
+    {
+        var servicio = Servicio();
+        await servicio.CubicarAsync(Cola(1), Ct);
+        _cupos.IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>()).Returns(
+            Task.FromException<IAsyncDisposable?>(new TimeoutException("Connection Timeout Expired (prueba)")),
+            Task.FromResult<IAsyncDisposable?>(_candadoEnvio));
+
+        (await servicio.CubicarAsync(Cola(2), Ct)).Should().Be(ResultadoCubicacionRuta.Cubicada);
+
+        await EnviosANexo(1);
+        _logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && r.Mensaje.Contains("no se pudo pedir el candado"));
+    }
+
+    /// <summary>
+    /// Doble envío medido bajo carga en la revisión de #174: otro proceso reclamó el envío (sube <c>versionNegocio</c>), obtuvo el alta en
+    /// Nexo y no pudo guardar el <c>solicitudNexoId</c>. Al tomar el candado la licitación se ve "lista" (sigue en <c>pendiente_envio</c>),
+    /// pero la versión cambió desde que se leyó: no se reclama ni se envía otra vez; queda para la recuperación.
+    /// </summary>
+    [Fact]
+    public async Task SiOtroProcesoYaReclamoElEnvioYQuedoInciertoNoSeEnviaOtraVez()
+    {
+        var servicio = Servicio();
+        await servicio.CubicarAsync(Cola(1), Ct);
+        _cotizaciones.When(c => c.RecargarAsync(_licitacion, Arg.Any<CancellationToken>()))
+            .Do(_ => _licitacion.IncrementarVersionNegocio());
+
+        (await servicio.CubicarAsync(Cola(2), Ct)).Should().Be(ResultadoCubicacionRuta.Cubicada);
+
+        _licitacion.ListaParaEnviarTrasCubicar.Should().BeTrue("sigue en pendiente_envio sin solicitud de Nexo");
+        await _cotizaciones.DidNotReceiveWithAnyArgs().ReclamarReenvioCosteoAsync(default, default, default, Ct);
+        await EnviosANexo(0);
+        _logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && r.Mensaje.Contains("ya fue reclamada para el envío"));
     }
 
     [Fact]
