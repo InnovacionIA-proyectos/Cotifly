@@ -507,7 +507,13 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
 
     private clsApiWebPruebas Api(bool conCubicador = true, int maximoParalelo = 4, Dictionary<string, string?>? extra = null)
     {
-        var valores = new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = maximoParalelo.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        // Integración final HU-023: desde #159 los códigos del cubicador (tipoVehiculo/carroceria) viajan a Nexo solo con
+        // Nexo:EnviarCodigosCubicador (contrato de Nexo #297). Estas pruebas verifican que el alta lleva los camiones del cubicador.
+        var valores = new Dictionary<string, string?>
+        {
+            ["Cubicador:MaximoParalelo"] = maximoParalelo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["Nexo:EnviarCodigosCubicador"] = "true",
+        };
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
         {
             valores[clave] = valor;
