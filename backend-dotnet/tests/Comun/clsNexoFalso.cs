@@ -43,8 +43,11 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public bool FallarConsultaTrasResultado { get; set; }
 
-    /// <summary>Si es mayor que cero, los siguientes N GET responden <c>429 DEMASIADAS_SOLICITUDES</c> con <c>Retry-After: 30</c>.</summary>
+    /// <summary>Si es mayor que cero, los siguientes N GET responden <c>429 DEMASIADAS_SOLICITUDES</c> con <c>Retry-After</c> (<see cref="SegundosRetryAfter"/>).</summary>
     public int LecturasLimitadas { get; set; }
+
+    /// <summary>Segundos del <c>Retry-After</c> de esos 429 (30 por defecto, el que manda Nexo hoy).</summary>
+    public int SegundosRetryAfter { get; set; } = 30;
 
     /// <summary>Si es verdadero, el alta auto-costea la línea con <see cref="FleteAutocosteo"/> (como la Biblioteca de Nexo).</summary>
     public bool AutoCostear { get; set; }
@@ -327,7 +330,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             LecturasLimitadas--;
             var limitada = Error(HttpStatusCode.TooManyRequests, "DEMASIADAS_SOLICITUDES",
                 "Ha alcanzado el límite de solicitudes para este recurso. Intente de nuevo en unos segundos.");
-            limitada.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+            limitada.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(SegundosRetryAfter));
             return limitada;
         }
 
