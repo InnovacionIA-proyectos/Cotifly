@@ -261,9 +261,13 @@ Reemplaza los puntos 4 y 7 de arriba. Respuestas de Nexo (decididas por Sara) en
   línea de un camión del cubicador (la que trae `idRecomendacionVehiculo` en Cotifly) va **sin `tipoVehiculo` ni `carroceria`**; con #297,
   esa línea no se autocostea y queda para la Mesa. **Revierte** el "se mandan ya" del punto 7: hoy un código que Nexo no conoce crea un
   vehículo duplicado en su catálogo. Se enciende cuando Nexo despliegue la cuarentena de vehículos (S5-HU-18.4) y S5-HU-20.5.
-  `idRecomendacionVehiculo` sigue detrás de `Nexo:EnviarDatosCubicador`. El polling sabe si los códigos viajaron
+  `idRecomendacionVehiculo` sigue detrás de `Nexo:EnviarDatosCubicador`. El polling sabe si los códigos **viajaron**
   (`clsCosteoConsultadoNexo.CodigosCubicadorEnviados`) y, si no, no compara el vehículo de esos camiones (lo que ponga la Mesa no los
-  contradice). Riesgo: si la bandera cambia entre el envío y el polling, se compara con lo que dice la bandera actual.
+  contradice). **Lo que viajó, no la bandera actual** (tercera validación: leer con la bandera cambiada daba 110 a 140 cruces de costo
+  entre rutas): el envío lo registra en `EventosHerramienta` (`envio_nexo_registrado`, entrada `{folio, solicitud_nexo_id}`, salida
+  `{codigos_cubicador}`) en la misma transacción que el `solicitudNexoId`, sin esquema nuevo, y `clsCosteoNexo.ConsultarCosteoAsync` lo
+  lee por solicitud. **Sin registro** (solicitudes enviadas antes de este cambio, o si la lectura falla) se asume que **no viajaron**: no
+  se compara el vehículo, que es el caso seguro.
 - **Respaldo con `Captura:AceptarVehiculoCliente`:** el camión del respaldo no tiene `idRecomendacionVehiculo` y su vehículo digitado es
   del catálogo de Nexo: **sí viaja** aunque `Nexo:EnviarCodigosCubicador` esté apagada.
 - **Nombre de la bandera:** el texto de Nexo #297 la llama `Nexo:EnviarReferenciaRuta`; en Cotifly se renombró a

@@ -653,6 +653,10 @@ public sealed class clsEnvioCosteoService(
             var creada = resultado.Valor;
             // La solicitud y cada camión arrancan en pendiente_costeo; el polling deriva después el de cada camión (ADR-017, HU-021).
             cotizacion.RegistrarEnvioCosteo(creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+
+            // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
+            // contra esto y no contra la bandera actual.
+            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados));
         }
         else
         {

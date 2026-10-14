@@ -34,7 +34,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// por fallo, sin la traza ni el header <c>X-Portal-clsUsuario-Id</c>. La cancelación del llamador se propaga.</para>
 /// </remarks>
 public sealed class clsCosteoNexo(
-    HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger)
+    HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger,
+    Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository? cotizaciones = null)
     : IClsCosteoNexo
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del costeo (las pruebas le cambian el manejador primario).</summary>
@@ -113,7 +114,10 @@ public sealed class clsCosteoNexo(
             Entero(raiz, "lineas") ?? solicitud.Lineas.Count,
             Entero(raiz, "fletesCalculados") ?? 0,
             Entero(raiz, "lineasPorCostear") ?? solicitud.Lineas.Count,
-            raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True);
+            raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True)
+        {
+            CodigosCubicadorEnviados = _enviarCodigosCubicador,
+        };
     }
 
     public async Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(
@@ -169,15 +173,44 @@ public sealed class clsCosteoNexo(
 
         if (string.Equals(estado, clsCosteoConsultadoNexo.SolicitudDescartada, StringComparison.OrdinalIgnoreCase))
         {
-            return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas, CodigosCubicadorEnviados = _enviarCodigosCubicador };
+            return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas, CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken) };
         }
 
         var cotizacion = await ObtenerCotizacionAsync(usuarioId, id, cancellationToken);
-        return cotizacion.EsFallo ? cotizacion.Error : new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor)
+        if (cotizacion.EsFallo)
+        {
+            return cotizacion.Error;
+        }
+
+        return new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor)
         {
             Detalle = contenidoLineas,
-            CodigosCubicadorEnviados = _enviarCodigosCubicador,
+            CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken),
         };
+    }
+
+    /// <summary>
+    /// ¿Viajaron los códigos del cubicador en el alta de <paramref name="solicitudId"/>? Lo que registró el envío
+    /// (<see cref="clsEnvioNexoRegistrado"/>), NUNCA la bandera actual (la validación de #159 midió 110 a 140 cruces de costo al leer con la
+    /// bandera cambiada). Sin registro, <c>false</c>: no se compara el vehículo de los camiones del cubicador (el caso seguro).
+    /// </summary>
+    private async Task<bool> CodigosEnviadosAsync(string solicitudId, CancellationToken cancellationToken)
+    {
+        if (cotizaciones is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await cotizaciones.ObtenerCodigosCubicadorEnviadosAsync(solicitudId, cancellationToken) ?? false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("No se pudo leer si viajaron los códigos del cubicador de la solicitud {Solicitud} ({Tipo}): se asume que no.",
+                solicitudId, ex.GetType().Name);
+            return false;
+        }
     }
 
     /// <summary>

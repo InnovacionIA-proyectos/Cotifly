@@ -46,14 +46,28 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     private string Cadena => _entorno.BaseDatos.CadenaCotifly;
 
     [Fact]
-    public async Task ConLosCodigosDelCubicadorApagadosLasLineasVanSinVehiculoYCadaCamionRecibeSuFlete()
+    public async Task ConLosCodigosDelCubicadorApagadosLasLineasVanSinVehiculoYCadaCamionRecibeSuFlete() =>
+        await EnviarYLeerConBanderasAsync(enviarCodigos: false, leerConCodigos: false);
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task SiLaBanderaDeCodigosCambiaEntreElEnvioYElPollingSeEmparejaConLoQueViajo(bool enviarCodigos, bool leerConCodigos) =>
+        await EnviarYLeerConBanderasAsync(enviarCodigos, leerConCodigos);
+
+    /// <summary>
+    /// Validación de #159: envía con <c>Nexo:EnviarCodigosCubicador</c> = <paramref name="enviarCodigos"/> y hace el polling con OTRA API
+    /// (otro despliegue) con la bandera en <paramref name="leerConCodigos"/>. El emparejamiento usa lo que viajó (registro del envío).
+    /// </summary>
+    private async Task EnviarYLeerConBanderasAsync(bool enviarCodigos, bool leerConCodigos)
     {
         // Contrato de Nexo #297 (por defecto): la línea del camión del cubicador va sin tipoVehiculo ni carroceria (la resuelve la Mesa);
         // Cotifly guarda los códigos y el polling empareja sin compararlos, aunque la Mesa le ponga otro vehículo.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
             : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
-        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = "false" });
+        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = enviarCodigos ? "true" : "false" });
+        var lectura = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = leerConCodigos ? "true" : "false" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
@@ -61,17 +75,24 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        (string?, string?, decimal)[] esperadas = enviarCodigos
+            ? [("3S3", "FURGON", 16_000m), ("2S3", "ESTACAS", 12_000m), ("2", "FURGON", 12_500m)]
+            : [(null, null, 16_000m), (null, null, 12_000m), (null, null, 12_500m)];
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["carroceria"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
-            .Should().Equal((null, null, 16_000m), (null, null, 12_000m), (null, null, 12_500m));
+            .Should().Equal(esperadas);
         lineas.Should().OnlyContain(l => l["posiciones"] == null || l["posiciones"]!.AsArray().All(p => p!["codigoTipoMercancia"] == null));
 
         var solicitud = _nexo.SolicitudesCreadas[^1];
         _nexo.SemillaOrdenLineas = 20261008;
-        _nexo.AsignarVehiculo(solicitud, 1, "2S2", "ESTACAS");
+        if (!enviarCodigos)
+        {
+            _nexo.AsignarVehiculo(solicitud, 1, "2S2", "ESTACAS"); // la Mesa le pone vehículo a una línea que iba vacía
+        }
+
         _nexo.CostearLinea(solicitud, 0, 1_600_000m);
         _nexo.CostearLinea(solicitud, 1, 1_200_000m);
         _nexo.CostearLinea(solicitud, 2, 1_250_000m);
-        await api.ProcesarPollingAsync(folio);
+        await lectura.ProcesarPollingAsync(folio);
 
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(CAST(v.pesoKg AS nvarchar(20)), '=', CAST(v.costoFlete AS nvarchar(30))), ',') WITHIN GROUP (ORDER BY v.pesoKg DESC) "

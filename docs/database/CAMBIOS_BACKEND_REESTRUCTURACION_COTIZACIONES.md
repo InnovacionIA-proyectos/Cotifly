@@ -539,7 +539,8 @@ la rama `QA` de Nexo (fusionado, sin desplegar). Sin cambios de esquema.
   `PESO_INCONSISTENTE`); el del cubicador se guarda y se muestra. Con varios, el de cada camión, sin posiciones.
 - **Códigos de vehículo y carrocería del cubicador:** detrás de `Nexo:EnviarCodigosCubicador` (apagada): la línea del camión del
   cubicador va sin vehículo ni carrocería hasta que Nexo despliegue la cuarentena (18.4) y #297. El vehículo digitado del respaldo
-  (`Captura:AceptarVehiculoCliente`) sí viaja.
+  (`Captura:AceptarVehiculoCliente`) sí viaja. Lo que viajó se registra por solicitud en `EventosHerramienta` (`envio_nexo_registrado`)
+  y el polling compara contra eso, no contra la bandera actual; sin registro, "no viajaron".
   **Línea sin vehículo:** sin cambios; se espera la 19.2 de Nexo (`PorCostear`).
 - **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` solo en `catalogos/*` y la bandeja
   `GET /api/solicitudes` (el polling y lo demás no se congelan) y la tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.
