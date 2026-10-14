@@ -10,7 +10,8 @@ namespace Cotifly.Pruebas.Comun;
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
-/// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
+/// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT, sin columna ID: Cotifly no la lee, #172) y <c>dbo.tblSAPRoles</c>, los tipos que
+/// Nexo verificó en <c>dbSolucionesTI_Prueba</c> (la base de identidad de QA, #172; aquí conserva el nombre <c>dbsolucionesti</c>). Mapea los roles internos de
 /// <c>dbo_cotifly.Roles</c> a los roles externos de prueba (<see cref="RolExternoComercial"/>,
 /// <see cref="RolExternoGerente"/>). Un contenedor por ensamblado de pruebas (o por clase, según el fixture).
 /// </summary>
@@ -56,7 +57,11 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>IDROLES externo de prueba sin mapeo (no da acceso).</summary>
     public const int RolExternoSinMapeo = 40;
 
-    private static long _siguienteIdExterno = 10_000;
+    /// <summary>
+    /// Contador de IDs externos de las personas de prueba. Empieza en 1.000.000 (sigue cabiendo en INT) para no chocar con los IDs fijos
+    /// de las pruebas, como el 10123 del portal (#172).
+    /// </summary>
+    private static long _siguienteIdExterno = 1_000_000;
 
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
@@ -168,7 +173,6 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 DESCRIPCION         VARCHAR(50)   NULL
             );
             CREATE TABLE dbo.tblSAPUsuarioRoles (
-                ID                  INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
                 IDUSUARIO           INT           NOT NULL,
                 IDROLES             INT           NOT NULL
             );
@@ -193,10 +197,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public static long NuevoIdExterno() => Interlocked.Increment(ref _siguienteIdExterno);
 
     /// <summary>Agrega una persona a <c>tblSAPUsuariosApp</c> con sus roles externos; devuelve su ID.</summary>
-    public async Task<long> CrearPersonaExternaAsync(string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos)
+    public Task<long> CrearPersonaExternaAsync(string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos) =>
+        CrearPersonaExternaConIdAsync(NuevoIdExterno(), nombreUsuario, descripcion, email, rolesExternos);
+
+    /// <summary>Agrega una persona con un <c>ID</c> fijo (NUMERIC) a <c>tblSAPUsuariosApp</c> con sus roles externos; devuelve su ID.</summary>
+    public async Task<long> CrearPersonaExternaConIdAsync(long id, string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos)
     {
         ArgumentNullException.ThrowIfNull(rolesExternos);
-        var id = NuevoIdExterno();
         await using var conexion = new SqlConnection(CadenaIdentidad);
         await conexion.OpenAsync();
         await using (var comando = new SqlCommand(

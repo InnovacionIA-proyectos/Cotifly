@@ -13,7 +13,8 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
   (`deploy/rebuild-on-worker.sh`, `scripts/backup_db.sh`, `scripts/restore_db.sh`) no se modifican. Su runbook
   quedó en el [Anexo A](#anexo-a-stack-python-solo-rollback).
 - La base de datos **no** es un contenedor del stack: es la instancia corporativa SQL Server 2019 (`tbsdatacenter`),
-  base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más `dbsolucionesti` de solo lectura (ADR-008). El login de
+  base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más la base de identidad del portal de solo lectura (ADR-008),
+  que es **la misma que lee Nexo** en cada ambiente: `dbSolucionesTI_Prueba` en QA (#172, ADR-009). El login de
   servicio es `cotifly_app` (SQL login; el contenedor Linux no admite autenticación integrada).
 - Referencia de cada variable y de su validación al arrancar: `backend-dotnet/.env.example` y
   `backend-dotnet/docs/03-infraestructura.md` §3.2.
@@ -72,7 +73,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `ASPNETCORE_HTTP_PORTS` | no | no | `8080` (imagen) | imagen | no se cambia |
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
-| `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, `Database=dbsolucionesti` (solo lectura) |
+| `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, solo lectura, contra **la misma base de identidad que Nexo** en ese ambiente (#172): QA `Database=dbSolucionesTI_Prueba`; producción, la que use Nexo en producción (**por confirmar**). Ver [cambio de #172](#identidad-compartida-con-nexo-172) |
 | `ConnectionStrings__Regional` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosEBSSAP`, solo lectura de `dbo.DimEjecutivo` (ADR-016, ADR-008). El **login** llena y refresca `UsuariosWeb.regional` (#81) y el **tablero del gerente** la lee en vivo (#45). Vacía = no configurada: se usa lo que ya haya en `UsuariosWeb.regional`, y el tablero responde 409 `REGIONAL_NO_ASIGNADA` si está vacía. Con valor exige salida desde el worker a **`10.10.40.24:1433`** y un **usuario SQL de solo lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`** (**pendiente con el DBA**); si la consulta falla, el login sigue (sin bloquear) y el tablero responde 503 |
 | `Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional` | no | no (pero nunca vacías: identificadores obligatorios) | `dbo`, `DimEjecutivo`, **`USUARIO`**, `REGIONAL` | manifiesto | ubicación de la tabla de ejecutivos. `USUARIO` guarda `boterosoto\usuario`: el código quita el dominio antes de comparar con `UsuariosWeb.nombreUsuario` (#81). **No usar `ID`**: con ese valor el cruce nunca coincide |
 | `Regional__Dominio` | no | no | `boterosoto` | manifiesto | dominio aceptado en `USUARIO` (#81): una fila de otro dominio no cuenta; una sin dominio sí. El manifiesto usa `:-`, así que para aceptar cualquier dominio hay que editar el manifiesto |
@@ -157,6 +158,29 @@ cargan en Dokploy así:
 | `Nexo__EnviarReferenciaRuta` | `false`; `true` cuando Nexo QA acepte `referenciaRuta` (N1) | `false`; `true` cuando Nexo producción la acepte | Pregunta N1 a Nexo |
 | `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
+
+### Identidad compartida con Nexo (#172)
+
+Cotifly manda a Nexo `X-Portal-Usuario-Id = UsuariosWeb.idUsuarioExterno`, que es el `ID` de `tblSAPUsuariosApp`. Nexo lo valida
+contra su base de identidad (`ConnectionStrings:IdentidadPortal`), así que **las dos apps deben leer la misma base**. Hoy QA lee
+`dbsolucionesti`, donde los `ID` son otros (dguerra es 430 ahí y 10123 en el portal), y Nexo responde 401. El despliegue requiere
+la aprobación del usuario.
+
+| Variable | Staging / QA | Producción | Nota |
+|---|---|---|---|
+| `ConnectionStrings__Identidad` | `Database=dbSolucionesTI_Prueba` (el resto de la cadena igual: `cotifly_app`, `Encrypt=True`) | la base de identidad que use Nexo en producción (**por confirmar**) | secreto de Dokploy; solo cambia el `Database` |
+
+En este orden (los pasos 1 y 2 antes de la ventana; el 3 dentro de ella):
+
+1. **DBA, en `dbSolucionesTI_Prueba`:** usuario `cotifly_app` con `SELECT` por columna sobre `dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL)` (sin `CLAVE`), `dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES)` y `dbo.tblSAPRoles (IDROLES, DESCRIPCION)`. Confirmar con `sys.columns` las columnas que lista [10-operacion](backend-dotnet/docs/10-operacion.md#identidad-compartida-con-nexo-172).
+2. **DBA, en `dbo_cotifly.Roles`:** revisar que `idRolExterno` de `comercial` y `gerente_comercial` sean los `IDROLES` de `dbSolucionesTI_Prueba.dbo.tblSAPRoles` (pueden no ser los de `dbsolucionesti`). Si no coinciden, nadie entra (401 `sin_rol_autorizado`).
+3. **Ventana del cambio (con aprobación), en `dbo_cotifly.UsuariosWeb` de QA:** los usuarios que ya entraron quedaron vinculados al `ID` de `dbsolucionesti`; con la base nueva el login los rechaza (401 `identidad_inconsistente`). Hay que soltar el vínculo una vez con [`db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql`](db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql) (respalda los pares `id`/`idUsuarioExterno` en `dbo_cotifly.RespaldoVinculosIdentidad_172`, los pone en NULL, es idempotente y trae la consulta de verificación; `sqlcmd -I -b`). **Orden dentro de la ventana:**
+   1. Detener el servicio (escalar a 0 réplicas en Dokploy) o, como mínimo, cambiar primero `ConnectionStrings__Identidad` y redesplegar.
+   2. Correr el script **con el servicio detenido, o justo después del cambio de variable y antes de que entren usuarios.** Si corre mientras la API sigue con la configuración vieja (`dbsolucionesti`), el siguiente login vuelve a vincular el `ID` viejo (dguerra: 430) y el cambio queda a medias.
+   3. Levantar el servicio con la variable nueva.
+
+   En su siguiente login o refresh cada persona queda vinculada al `ID` del portal; hasta entonces, sus llamadas a Nexo no llevan identidad.
+4. **Pendiente externo:** Nexo QA debe configurar su `ConnectionStrings:IdentidadPortal`. Sin ella, Nexo QA valida contra su tabla `Usuarios` local.
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),

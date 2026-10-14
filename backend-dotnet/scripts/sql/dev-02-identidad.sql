@@ -1,7 +1,9 @@
 /* ============================================================================
    Cotifly — SOLO DESARROLLO LOCAL (scripts/levantar-local.*, #14). Nunca en QA ni producción.
    dbsolucionesti FALSA con las tres tablas del login SSO (ADR-009) y sus tipos reales, igual que la de
-   las pruebas (tests/Comun/clsBaseDatosPruebas). Datos ficticios:
+   las pruebas (tests/Comun/clsBaseDatosPruebas). Imita a dbSolucionesTI_Prueba, la base de identidad de QA que
+   comparte con Nexo (#172): ID NUMERIC(18,0), IDUSUARIO e IDROLES INT; tblSAPUsuarioRoles sin columna ID porque
+   Cotifly no la lee. En local conserva el nombre dbsolucionesti. Datos ficticios:
 
      NOMBREUSUARIO  ID    Rol externo (IDROLES)       Resultado del login
      APEREZ         101   34 COMERCIAL                comercial
@@ -31,7 +33,6 @@ IF OBJECT_ID(N'dbo.tblSAPRoles', N'U') IS NULL
 GO
 IF OBJECT_ID(N'dbo.tblSAPUsuarioRoles', N'U') IS NULL
     CREATE TABLE dbo.tblSAPUsuarioRoles (
-        ID                  INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
         IDUSUARIO           INT           NOT NULL,
         IDROLES             INT           NOT NULL
     );

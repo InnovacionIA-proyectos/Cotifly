@@ -27,7 +27,7 @@ El esquema `dbo_cotifly` ya existe en `dbTarifario_Nexo_Pruebas` (host `tbsdatac
    - **Desviación explícita** del Gherkin de HU-003 ("migraciones EF Core versionadas"), del mismo tipo que ADR-007 con compose. Queda pendiente la ratificación de Sara (HU-003.3).
 3. **Tres conexiones, cada una con su propio `DbContext`:**
    - `ConnectionStrings:Cotifly`: lectura y escritura sobre `dbo_cotifly`.
-   - `ConnectionStrings:Identidad`: solo lectura a `dbsolucionesti` (usuarios y roles de ClientePro); `CLAVE` nunca se mapea. Ver "Implementación" para cómo quedó.
+   - `ConnectionStrings:Identidad`: solo lectura a la base de identidad del portal (usuarios y roles de ClientePro; desde #172, la misma que Nexo: `dbSolucionesTI_Prueba` en QA, ver ADR-009); `CLAVE` nunca se mapea. Ver "Implementación" para cómo quedó.
    - `ConnectionStrings:Regional`: solo lectura a `DWCubosEBSSAP.DimEjecutivo`.
 
    Los contextos de solo lectura usan `NoTracking` y sobrescriben `SaveChanges` / `SaveChangesAsync` para lanzar una excepción. Lo que garantiza la solo lectura son los permisos del login. (`ApplicationIntent=ReadOnly` no se usa: solo redirige a réplicas de lectura en grupos de disponibilidad y no impide escribir.)
@@ -95,7 +95,7 @@ Lo decidido arriba se implementó así; donde difiere, manda esta sección:
 | Pendiente | Dueño |
 |---|---|
 | Crear `cotifly_app` con esos permisos y entregar las credenciales por canal seguro | DBA (lo solicita Duban) |
-| Confirmar esquema real de `tblSAPUsuariosApp`, `tblSAPUsuarioRoles` y `tblSAPRoles` en `dbsolucionesti` (hoy se asume `dbo`, configurable) y la precisión de `ID` (se lee NUMERIC sin decimales) | DBA |
+| Confirmar esquema real de `tblSAPUsuariosApp`, `tblSAPUsuarioRoles` y `tblSAPRoles` en la base de identidad (desde #172, la misma de Nexo: `dbSolucionesTI_Prueba` en QA; `dbo` y los tipos de `ID`, `IDUSUARIO` e `IDROLES` ya los verificó Nexo con `sys.columns`; faltan los textos) | DBA |
 | Smoke del `DbContext` contra `tbsdatacenter` (diferido de HU-002.4; espera a `cotifly_app`) | Duban |
 | Merge del PR #40 (script 0001) a `QA` | scalderon-bs |
 | Ratificar "solo scripts `.sql`" y revisar y aplicar `0002_identidad_estado_agente.sql` | Sara + scalderon-bs |

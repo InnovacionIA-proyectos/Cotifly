@@ -417,7 +417,7 @@ public static class clsDependenciasInfraestructura
             opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // dbsolucionesti: solo lectura (usuarios y roles de ClientePro para el login, #12).
+        // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba, #172): solo lectura (login, #12).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 
