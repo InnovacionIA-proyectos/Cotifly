@@ -13,6 +13,12 @@ El script `0009` reestructuró la cotización en solicitud → rutas → camione
 - **§4 y §12 (conexos):** el JSON `Cotizaciones.serviciosConexos` se reemplazó por filas de la ruta (`CotizacionServiciosConexos`: id, precio = costo de Nexo, cantidad). Quitar un conexo borra su fila (ya no hay `incluido`). A Nexo van pegados al primer camión vigente de la ruta, con envío diferido desde el polling (decisiones 3 y 10).
 - **§12 (margen sugerido):** `Cotizaciones.margenSugerido` se dividió en `margenPoliticaSugerido` y `margenSAPSugerido` por ruta.
 - **§12 (idempotencia):** la tabla de idempotencia, cuando se escale, va en el siguiente script libre (hoy el `0011`).
+- **§12 (idempotencia de la captura, #173):** `POST /web/solicitudes-costeo` acepta `Idempotency-Key`. Antes de llamar a Nexo la clave
+  queda registrada con el folio confirmado (`IClsRegistroCapturasIdempotentes`) y, en cuanto se conoce, con el `solicitudNexoId`: si la
+  primera petición falla después de enviar a Nexo, el reintento con la misma clave **no vuelve a llamar a Nexo** (responde la cotización
+  guardada o 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`, el folio y el id de Nexo). **Deuda:** todo vive en la
+  memoria del proceso y se pierde al reiniciar o en un despliegue `start-first`; la tabla persistente con `UNIQUE (usuarioId, clave)` está
+  propuesta en `db/scripts/pendientes/06_idempotencia_captura.sql` (sin mapear hasta su aprobación).
 - **§18 (conexos al re-solicitar):** ya no se descartan: se conservan en el mismo folio y se copian a la `-vN` (`conexos_conservados`; `conexos_descartados` queda en `[]`, obsoleto). `filaOrigen` pasa a `rutaOrigenIndice`.
 - **Nombres de tabla y columna:** donde este texto dice `Cotizaciones`, `costeoId` o `costeoUltimaConsultaAt`, hoy son `CotizacionesSolicitud`, `solicitudNexoId` y nada (el `0009` lo borró). La consulta de diagnóstico de §17 está escrita contra el esquema anterior y no corre sobre el vigente.
 - **Por qué:** con varias rutas y varios camiones por ruta, el costo lo da Nexo por camión y el margen depende de la línea de negocio de cada ruta.

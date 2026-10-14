@@ -3,6 +3,7 @@ using System.Text.Json;
 using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Pruebas.Comun;
 using Cotifly.Pruebas.Web;
+using Microsoft.Extensions.DependencyInjection;
 using static Cotifly.Api.Tests.Web.clsEntornoApiWeb;
 
 namespace Cotifly.Api.Tests.Web;
@@ -486,6 +487,13 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         var folio = (await VerificarContratoAsync(captura, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
         nexo.CostearLinea(nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
         await api.ProcesarPollingAsync(folio);
+
+        // Con la caché fría el GET no espera al catálogo de Nexo: responde con la categoría de respaldo y la calienta en segundo plano.
+        using var frio = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        (await VerificarContratoAsync(frio, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString()
+            .Should().Be(clsCosteoCotizacionService.CategoriaConexo, "la caché estaba fría");
+        await api.Factory.Services.GetRequiredService<clsAlmacenCategoriasConexos>().UltimaLectura.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         using var get = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         var conexoGet = (await VerificarContratoAsync(get, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))

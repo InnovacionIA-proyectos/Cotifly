@@ -70,13 +70,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         SELECT v.id AS CotizacionId, v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
                v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
                v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
-               r.precioFinal AS PrecioResultado, r.moneda AS MonedaResultado, r.trmAplicada AS TrmResultado, r.costo AS CostoResultado,
+               r.id AS CotizacionResultadoId, r.precioFinal AS PrecioResultado, r.moneda AS MonedaResultado, r.trmAplicada AS TrmResultado, r.costo AS CostoResultado,
                v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
                a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias,
                a.sumaDiferencias AS SumaDiferencias, a.sumaDiferenciasAbs AS SumaDiferenciasAbsolutas
         FROM cadenas v
         OUTER APPLY (
-            SELECT TOP (1) b2.ganada, b2.precioFinal, b2.moneda, b2.trmAplicada, b2.costo
+            SELECT TOP (1) b2.id, b2.ganada, b2.precioFinal, b2.moneda, b2.trmAplicada, b2.costo
             FROM base b2
             WHERE b2.usuarioId = v.usuarioId AND b2.folioBase = v.folioBase AND b2.ganada IS NOT NULL
             ORDER BY CASE WHEN b2.marcadoAt IS NULL THEN 1 ELSE 0 END, b2.marcadoAt DESC, b2.version DESC
@@ -145,7 +145,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 new SqlParameter("@desde", System.Data.SqlDbType.DateTimeOffset) { Value = desde },
                 new SqlParameter("@hasta", System.Data.SqlDbType.DateTimeOffset) { Value = hastaExclusivo })
             .ToListAsync(cancellationToken));
-        var rutas = await ListarRutasAsync([.. filas.Select(f => f.CotizacionId)], cancellationToken);
+        // B3 (#173): también las rutas de la versión ganada cuando no es la vigente (apertura por línea de negocio).
+        var rutas = await ListarRutasAsync(
+            [.. filas.Select(f => f.CotizacionId).Concat(filas.Select(f => f.CotizacionResultadoId).OfType<Guid>()).Distinct()], cancellationToken);
 
         return new clsDatosMetricas(
             [.. filas.Select(f => new clsCotizacionMetrica
@@ -165,6 +167,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 VersionResultado = f.Ganada is null
                     ? null
                     : new clsVersionResultadoMetrica(f.PrecioResultado, f.MonedaResultado, f.TrmResultado ?? 0m, f.CostoResultado),
+                RutasResultado = f.Ganada is not null && f.CotizacionResultadoId is { } ganada && ganada != f.CotizacionId
+                    ? rutas[ganada].ToList()
+                    : null,
                 CosteoListoAt = f.CosteoListoAt,
                 Origen = f.Origen,
                 Destino = f.Destino,
@@ -321,6 +326,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal TrmAplicada { get; set; }
         public decimal? MargenAplicado { get; set; }
         public bool? Ganada { get; set; }
+        public Guid? CotizacionResultadoId { get; set; }
         public decimal? PrecioResultado { get; set; }
         public string? MonedaResultado { get; set; }
         public decimal? TrmResultado { get; set; }

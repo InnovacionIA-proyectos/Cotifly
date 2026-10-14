@@ -162,4 +162,28 @@ public sealed class clsCalculadoraMetricasRutasTests
         clsCalculadoraMetricas.PorLineaNegocio([sinRutas]).Should().BeEmpty();
         clsCalculadoraMetricas.Indicadores([sinRutas], _ahora, deadlineDisponible: false).MargenPonderado.Should().BeNull();
     }
+
+    /// <summary>
+    /// B3 (#173, observación del validador): la -v2 vigente no tiene precio y la v1 ganada sí. La apertura por línea de negocio saca lo
+    /// ganado de las rutas de la v1 (con su moneda y su TRM), igual que los indicadores; antes daba 0.
+    /// </summary>
+    [Fact]
+    public void LaAperturaPorLineaSacaLoGanadoDeLaVersionGanada()
+    {
+        var cadena = Cotizacion(true, "COP", 0m, Ruta(1, 7, "Nacional", null, null, null)) with
+        {
+            VersionResultado = new clsVersionResultadoMetrica(1_000m, "USD", 4_000m, 3_000_000m),
+            RutasResultado = [Ruta(1, 7, "Nacional", 3_000_000m, 1_000m, 0.25m)],
+        };
+
+        var linea = clsCalculadoraMetricas.PorLineaNegocio([cadena]).Should().ContainSingle().Subject;
+        var indicadores = clsCalculadoraMetricas.Indicadores([cadena], _ahora, deadlineDisponible: false);
+
+        linea.Ganadas.Should().Be(1);
+        linea.ValorCotizadoCop.Should().Be(0m, "lo cotizado es de la vigente");
+        linea.ValorGanadoCop.Should().Be(4_000_000m, "1.000 USD × 4.000 de la versión ganada");
+        linea.CosteoGanadas.Should().Be(3_000_000m);
+        linea.Ganancias.Should().Be(1_000_000m);
+        linea.ValorGanadoCop.Should().Be(indicadores.ValorGanadoCop, "la apertura cuadra con el total");
+    }
 }

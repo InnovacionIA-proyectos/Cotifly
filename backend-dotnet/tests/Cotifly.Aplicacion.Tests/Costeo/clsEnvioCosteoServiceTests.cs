@@ -1026,6 +1026,65 @@ public sealed class clsEnvioCosteoServiceTests
             new clsPlanificadorCamionesCubicador(NullLogger<clsPlanificadorCamionesCubicador>.Instance, cubicador),
             NullLogger<clsCapturaRutasService>.Instance, cubicador));
 
+    /// <summary>
+    /// #173 (observación del validador): Nexo recibe la solicitud y el guardado posterior falla. El almacén de idempotencia no guarda un
+    /// resultado (la petición lanzó), pero la clave quedó registrada con el folio ANTES de llamar a Nexo y con el solicitudNexoId después:
+    /// el reintento con la misma clave NO vuelve a llamar a Nexo y responde ESTADO_NO_PERMITE (CAPTURA_EN_CURSO) con el folio.
+    /// </summary>
+    [Fact]
+    public async Task SiFallaElGuardadoDespuesDeNexoElReintentoConLaMismaClaveNoVuelveALlamarANexo()
+    {
+        var guardados = 0;
+        _unidad.GuardarCambiosAsync(Arg.Any<CancellationToken>()).Returns<Task<int>>(_ =>
+            ++guardados == 2 ? throw new TimeoutException("Execution Timeout Expired") : Task.FromResult(1));
+        var registro = new clsRegistroCapturasIdempotentesEnMemoria(_reloj);
+        var servicio = ServicioIdempotente(registro);
+        var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
+
+        var primera = () => servicio.CapturarUnaVezAsync(_ana, entrada, "clave-173-ab", Ct);
+        await primera.Should().ThrowAsync<TimeoutException>();
+        var folio = _creada!.Folio;
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(folio, _ana, Arg.Any<CancellationToken>()).Returns((clsCotizacionSolicitud?)null);
+
+        var reintento = await servicio.CapturarUnaVezAsync(_ana, entrada, "clave-173-ab", Ct);
+
+        await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
+        reintento.Error.Codigo.Should().Be(clsCodigosError.EstadoNoPermite);
+        reintento.Error.Detalle.Should().Be(clsEnvioCosteoService.MotivoCapturaEnCurso);
+        reintento.Error.Datos!["folio"].Should().Be(folio);
+        reintento.Error.Datos!["solicitud_nexo_id"].Should().Be("sol-1", "el id de Nexo quedó registrado aunque el guardado falló");
+    }
+
+    [Fact]
+    public async Task ConLaCapturaYaGuardadaElReintentoConLaMismaClaveDevuelveElFolioSinLlamarANexo()
+    {
+        var servicio = ServicioIdempotente(new clsRegistroCapturasIdempotentesEnMemoria(_reloj));
+        var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
+        var primera = (await servicio.CapturarUnaVezAsync(_ana, entrada, "clave-173-cd", Ct)).Valor;
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(primera.Folio, _ana, Arg.Any<CancellationToken>()).Returns(primera);
+
+        var reintento = await servicio.CapturarUnaVezAsync(_ana, entrada, "clave-173-cd", Ct);
+        var otroCuerpo = await servicio.CapturarUnaVezAsync(_ana, entrada with { ClienteNombre = "Otro" }, "clave-173-cd", Ct);
+
+        reintento.Valor.Folio.Should().Be(primera.Folio);
+        otroCuerpo.Error.Codigo.Should().Be(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.SolicitudInvalida);
+        await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Almacén de idempotencia que nunca tiene nada guardado (como tras una petición que lanzó): ejecuta siempre la acción.</summary>
+    private sealed class clsAlmacenSinMemoria : IClsAlmacenIdempotencia
+    {
+        public Task<clsResultado<T>> EjecutarUnaVezAsync<T>(
+            string ambito, string clave, string huella, Func<CancellationToken, Task<clsResultado<T>>> accion,
+            Func<clsResultado<T>, bool>? seGuarda, CancellationToken ct) => accion(ct);
+    }
+
+    private clsEnvioCosteoService ServicioIdempotente(IClsRegistroCapturasIdempotentes registro) => new(
+        _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
+        Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),
+        new clsCapturaRutasService(_filas, _costosConexos, new clsPlanificadorCamionSinVehiculo(), NullLogger<clsCapturaRutasService>.Instance),
+        null, new clsAlmacenSinMemoria(), registro);
+
     private clsEnvioCosteoService Servicio() => new(
         _cotizaciones, _politicas, _margen, _folios, _buscador, _nexo, _catalogos, _filas, _monedas, _unidad, _auditoria, _reloj,
         Options.Create(_opciones), NullLogger<clsEnvioCosteoService>.Instance, new clsPrecioCosteoService(),

@@ -15,9 +15,13 @@ public sealed partial class clsPdfIncluyeConexosTests
 {
     private static readonly clsGeneradorPdfMigraDoc _generador = new();
 
-    private static string TextoPdf(params string[] conexos)
+    private static string TextoPdf(params string[] conexos) => TextoPdf(null, null, conexos);
+
+    private static string TextoPdf(decimal? horasCargue, decimal? horasDescargue, params string[] conexos)
     {
         var payload = clsDocumentosPrueba.Payload();
+        payload.HorasCargue = horasCargue;
+        payload.HorasDescargue = horasDescargue;
         payload.ServiciosConexos = [.. conexos.Select(c => new clsServicioConexoPayload { Descripcion = c, Precio = 219_512m, Moneda = "COP" })];
         var documento = clsDocumentosPrueba.Documento(payload);
         return Espacios().Replace(clsLectorPdf.Leer(_generador.Generar(documento).Contenido).Texto, " ");
@@ -40,6 +44,30 @@ public sealed partial class clsPdfIncluyeConexosTests
     {
         TextoPdf().Should().Contain("Acompañamiento vehicular");
     }
+
+    /// <summary>#173 (E2E real): la captura pidió 2 h y el PDF decía 4 h fijas.</summary>
+    [Fact]
+    public void LaNotaUsaLasHorasCapturadas()
+    {
+        var texto = TextoPdf(2m, 2m);
+
+        texto.Should().Contain("Se basan en tiempos logísticos de máximo 2 horas para cada labor.");
+        texto.Should().NotContain("4 horas");
+    }
+
+    [Fact]
+    public void ConHorasDistintasYElCargueIncluidoLaNotaLoDiceAsi()
+    {
+        var texto = TextoPdf(2m, 6.5m, "Cargue en puerto");
+
+        texto.Should().Contain("Las tarifas cotizadas no incluyen el servicio de descargue.");
+        texto.Should().Contain("máximo 2 horas para el cargue y 6,5 horas para el descargue.");
+        texto.Should().NotContain("no incluyen servicios de cargue ni descargue");
+    }
+
+    [Fact]
+    public void SinHorasNiConexosLaNotaEsLaDeSiempre() =>
+        TextoPdf().Should().Contain("no incluyen servicios de cargue ni descargue. Se basan en tiempos logísticos de máximo 4 horas para cada labor.");
 
     [Fact]
     public void UnConexoQueCubreSoloParteDeUnTextoNoLoQuita()

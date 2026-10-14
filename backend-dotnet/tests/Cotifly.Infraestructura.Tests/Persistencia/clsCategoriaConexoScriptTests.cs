@@ -24,4 +24,23 @@ public sealed class clsCategoriaConexoScriptTests(clsBaseDatosPruebas baseDatos)
             WHERE TABLE_SCHEMA = 'dbo_cotifly' AND TABLE_NAME = 'CotizacionServiciosConexos' AND COLUMN_NAME = 'categoriaServicioConexo'
             """)).Should().Be("nvarchar|20|YES");
     }
+
+    /// <summary>#173: la propuesta <c>pendientes/06_idempotencia_captura.sql</c> crea la tabla con <c>UNIQUE (usuarioId, clave)</c> y se puede repetir.</summary>
+    [Fact]
+    public async Task LaPropuesta06CreaLaTablaDeClavesConSuUnicoYEsIdempotente()
+    {
+        await using var aislada = await BaseDatos.CrearBaseInstaladaAsync("dbIdempotencia173");
+        var script = clsBaseDatosPruebas.RutaScriptInstalacion(Path.Combine("pendientes", "06_idempotencia_captura.sql"));
+
+        await clsBaseDatosPruebas.EjecutarScriptAsync(aislada.Cadena, script);
+        await clsBaseDatosPruebas.EjecutarScriptAsync(aislada.Cadena, script);
+
+        var insertar = """
+            INSERT INTO dbo_cotifly.CapturasIdempotentes (usuarioId, clave, huella, estado, expiraAt)
+            VALUES ('11111111-1111-1111-1111-111111111111', N'clave-173-xx', REPLICATE('a', 64), N'reservada', DATEADD(HOUR, 24, SYSDATETIMEOFFSET()));
+            """;
+        await clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, insertar);
+        var repetida = () => clsBaseDatosPruebas.EjecutarAsync(aislada.Cadena, insertar);
+        await repetida.Should().ThrowAsync<Exception>("la misma clave del mismo usuario choca con el UNIQUE");
+    }
 }

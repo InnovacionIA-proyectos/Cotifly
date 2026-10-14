@@ -147,11 +147,13 @@ public sealed class clsCosteoController(
     /// (con todos los errores en <c>detalle.errores</c>, HU-021.6), <c>MARGEN_LINEA_DESCONOCIDA</c> o <c>FOLIO_CONSECUTIVO_AGOTADO</c>; 503
     /// <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> (conexos) si no se pudo validar
     /// contra los catálogos de Nexo (nada queda guardado). <c>Idempotency-Key</c> opcional (#173): la repetición devuelve la misma
-    /// cotización. Si la lectura secundaria del resumen falla después de guardar, igual responde 201 con <c>avisos = [RESUMEN_INCOMPLETO]</c>.
+    /// cotización; si la primera falló después de confirmar el folio, 409 <c>ESTADO_NO_PERMITE</c> (<c>CAPTURA_EN_CURSO</c>) sin volver a
+    /// llamar a Nexo. Si la lectura secundaria del resumen falla después de guardar, igual responde 201 con <c>avisos = [RESUMEN_INCOMPLETO]</c>.
     /// </summary>
     [HttpPost("solicitudes-costeo")]
     [ProducesResponseType<clsCotizacionResumen>(StatusCodes.Status201Created)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Enviar([FromBody] clsSolicitudCosteoWebRequest cuerpo, CancellationToken cancellationToken)
     {

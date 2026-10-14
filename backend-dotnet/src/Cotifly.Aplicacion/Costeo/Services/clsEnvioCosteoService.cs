@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
@@ -113,7 +114,8 @@ public sealed class clsEnvioCosteoService(
     IClsPrecioCosteoService precioCosteo,
     IClsCapturaRutasService capturaRutas,
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
-    IClsAlmacenIdempotencia? idempotencia = null) : IClsEnvioCosteoService
+    IClsAlmacenIdempotencia? idempotencia = null,
+    IClsRegistroCapturasIdempotentes? registroCapturas = null) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
@@ -127,15 +129,56 @@ public sealed class clsEnvioCosteoService(
         Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entrada);
-        return claveIdempotencia is null || idempotencia is null
-            ? CapturarAsync(usuarioId, entrada, cancellationToken)
-            : idempotencia.EjecutarUnaVezAsync(
-                $"{OperacionIdempotencia}:{usuarioId}",
-                claveIdempotencia,
-                Huella(entrada),
-                ct => CapturarAsync(usuarioId, entrada, ct),
-                r => r.EsExitoso,
-                cancellationToken);
+        if (claveIdempotencia is null || idempotencia is null)
+        {
+            return CapturarAsync(usuarioId, entrada, cancellationToken);
+        }
+
+        var ambito = $"{OperacionIdempotencia}:{usuarioId}";
+        var huella = Huella(entrada);
+        return idempotencia.EjecutarUnaVezAsync(
+            ambito,
+            claveIdempotencia,
+            huella,
+            ct => registroCapturas?.Buscar(ambito, claveIdempotencia) is { } previa
+                ? ReanudarAsync(previa, huella, usuarioId, ct)
+                : CapturarInternoAsync(usuarioId, entrada, ct, c => registroCapturas?.Registrar(ambito, claveIdempotencia,
+                    new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc))),
+            r => r.EsExitoso,
+            cancellationToken);
+    }
+
+    /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ESTADO_NO_PERMITE</c> cuando la primera captura con la clave no terminó (#173).</summary>
+    public const string MotivoCapturaEnCurso = "CAPTURA_EN_CURSO";
+
+    /// <summary>
+    /// #173: la clave ya tiene una captura registrada (folio confirmado) cuyo resultado no quedó guardado: la primera petición falló
+    /// después de confirmar el folio (por ejemplo, al guardar el <c>solicitudNexoId</c>). NUNCA vuelve a llamar a Nexo. Si la cotización
+    /// guardada ya refleja el envío (no está en <c>pendiente_envio</c> y, si se conoce, tiene el mismo <c>solicitudNexoId</c>), responde con
+    /// ella; si no, <c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = CAPTURA_EN_CURSO</c>, el folio y el id de Nexo, para revisar el folio
+    /// en "Mis cotizaciones" en lugar de reintentar.
+    /// </summary>
+    private async Task<clsResultado<clsCotizacionSolicitud>> ReanudarAsync(
+        clsCapturaIdempotente previa, string huella, Guid usuarioId, CancellationToken cancellationToken)
+    {
+        if (previa.Huella != huella)
+        {
+            return new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
+                "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
+        }
+
+        var guardada = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(previa.Folio, usuarioId, cancellationToken);
+        if (guardada is not null && guardada.EstadoCosteo != EstadoCosteo.PendienteEnvio
+            && (previa.SolicitudNexoId is null || guardada.SolicitudNexoId == previa.SolicitudNexoId))
+        {
+            return guardada;
+        }
+
+        var datos = new Dictionary<string, object?> { ["folio"] = previa.Folio, ["solicitud_nexo_id"] = previa.SolicitudNexoId };
+        return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+            $"La captura de esta Idempotency-Key ya creó el folio {previa.Folio} y su envío a Nexo no terminó de registrarse. No la repitas: "
+            + "revisa el folio en Mis cotizaciones.",
+            MotivoCapturaEnCurso) { Datos = datos };
     }
 
     /// <summary>Huella (SHA-256) del cuerpo de la captura: la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.</summary>
@@ -153,7 +196,15 @@ public sealed class clsEnvioCosteoService(
         return CapturarAsync(usuarioId, clsEntradaCaptura.Desde(entrada), cancellationToken);
     }
 
-    public async Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default) =>
+        CapturarInternoAsync(usuarioId, entrada, cancellationToken, null);
+
+    /// <summary>
+    /// <see cref="CapturarAsync"/> con <paramref name="alConfirmar"/> (#173): se llama con la cotización recién confirmada ANTES de llamar a
+    /// Nexo y otra vez después del envío (con el <c>solicitudNexoId</c>, aunque el guardado posterior falle).
+    /// </summary>
+    private async Task<clsResultado<clsCotizacionSolicitud>> CapturarInternoAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken, Action<clsCotizacionSolicitud>? alConfirmar)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Encabezado);
@@ -259,7 +310,17 @@ public sealed class clsEnvioCosteoService(
         // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo.
         // HU-021: las horas viajan en cada línea (la ruta las guarda); la cabecera no las tiene, así el reintento manda lo mismo.
         var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Encabezado;
-        await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
+        alConfirmar?.Invoke(creada.Valor);
+        try
+        {
+            await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
+        }
+        finally
+        {
+            // #173: el solicitudNexoId queda registrado con la clave aunque falle el guardado posterior a Nexo.
+            alConfirmar?.Invoke(creada.Valor);
+        }
+
         return creada.Valor;
     }
 

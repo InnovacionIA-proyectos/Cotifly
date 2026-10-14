@@ -96,7 +96,10 @@ public static class clsConstructorDocumentoCotizacion
             Secciones = secciones,
             NotaGeneral = esMulti
                 ? null
-                : clsTextoSeguro.Limpiar(payload.Tarifa?.NotaGeneral) ?? clsTextoSeguro.Limpiar(payload.Textos?.NotaGeneral) ?? textos.NotaGeneral,
+                : clsTextoSeguro.Limpiar(payload.Tarifa?.NotaGeneral) ?? clsTextoSeguro.Limpiar(payload.Textos?.NotaGeneral)
+                  // #173: con las horas reales de la captura y contra los conexos incluidos (cargue / descargue).
+                  ?? clsTextosEstandar.NotaGeneral(payload.HorasCargue, payload.HorasDescargue,
+                      Cubre("Cargue", payload.ServiciosConexos), Cubre("Descargue", payload.ServiciosConexos)),
             NotaDecreto = esMulti ? null : clsTextoSeguro.Limpiar(payload.NotaDecreto) ?? clsTextosEstandar.NotaDecreto,
             NotaMoneda = enDolares ? clsTextosEstandar.NotaTrmMinima(trmAplicada) : null,
             BloquesAdicionales = BloquesAdicionales(payload, linea),
@@ -291,6 +294,10 @@ public static class clsConstructorDocumentoCotizacion
 
     private static IReadOnlyList<string>? Primera(params List<string>?[] listas) =>
         listas.Select(clsTextoSeguro.LimpiarLista).FirstOrDefault(l => l.Count > 0);
+
+    /// <summary>¿Algún conexo incluido cubre <paramref name="servicio"/>? (misma regla que <see cref="SinLoIncluido"/>).</summary>
+    public static bool Cubre(string servicio, IEnumerable<clsServicioConexoPayload?>? conexos) =>
+        SinLoIncluido([servicio], conexos).Count == 0;
 
     /// <summary>Largo de la raíz con que se comparan las palabras (acompañamiento / acompañante → "acompa").</summary>
     private const int LargoRaiz = 6;

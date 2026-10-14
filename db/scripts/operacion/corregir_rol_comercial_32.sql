@@ -23,8 +23,10 @@
    NUNCA en producción sin confirmar antes los IDROLES de la base de identidad de producción.
 
    Efecto en los usuarios: quien ya tenga una asignación `comercial` en UsuariosRoles conserva la asignación. Si en el
-   portal tiene el 32, el siguiente login coincide y entra; si solo tenía el 34 (geocerca), el siguiente login lo deja en
-   revisión (`rol_externo_cambio`), como debe ser.
+   portal tiene el 32, el siguiente login coincide y entra. Si solo tenía el 34 (geocerca) y ningún otro rol mapeado, el
+   siguiente login (y el refresh) responde 401 `sin_rol_autorizado`: ningún rol externo suyo mapea a un rol interno, así
+   que ni siquiera se llega a comparar con la asignación guardada (no es `rol_externo_cambio`). Si además tiene el 31,
+   entra como `gerente_comercial` y, por la asignación `comercial` anterior, queda en revisión (`rol_externo_cambio`).
    ============================================================================ */
 
 SET NOCOUNT ON;

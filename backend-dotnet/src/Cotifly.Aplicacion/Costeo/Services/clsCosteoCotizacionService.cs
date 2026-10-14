@@ -679,6 +679,9 @@ public sealed class clsCosteoCotizacionService(
             ServiciosConexos = conexos.Count == 0
                 ? null
                 : [.. conexos.Select(s => new clsServicioConexoPayload { Descripcion = s.Nombre ?? s.Categoria, Precio = s.Precio, Moneda = moneda })],
+            // #173: la nota general usa las horas de cargue y descargue capturadas en la ruta (antes, 4 h fijas).
+            HorasCargue = ruta?.HorasCargue,
+            HorasDescargue = ruta?.HorasDescargue,
         };
     }
 

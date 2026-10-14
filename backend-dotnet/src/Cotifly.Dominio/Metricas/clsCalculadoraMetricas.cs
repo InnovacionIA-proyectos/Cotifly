@@ -148,29 +148,35 @@ public static class clsCalculadoraMetricas
     public static IReadOnlyList<clsMetricaLineaNegocio> PorLineaNegocio(IEnumerable<clsCotizacionMetrica> filas)
     {
         ArgumentNullException.ThrowIfNull(filas);
-        return [.. filas
-            .SelectMany(f => f.Rutas.Select(r => (Cotizacion: f, Ruta: r)))
-            .GroupBy(x => x.Ruta.LineaNegocioId)
-            .Select(g =>
+        var universo = filas.ToList();
+        var vigentes = universo.SelectMany(f => f.Rutas.Select(r => (Cotizacion: f, Ruta: r))).ToLookup(x => x.Ruta.LineaNegocioId);
+        // B3 (#173): lo ganado sale de las rutas de la versión ganada (con su moneda y su TRM), como en los indicadores.
+        var ganadasPorLinea = universo
+            .Where(f => f.Ganada == true)
+            .SelectMany(f => f.RutasDelResultado.Select(r => (Cotizacion: f, Ruta: r)))
+            .ToLookup(x => x.Ruta.LineaNegocioId);
+        return [.. vigentes.Select(g => g.Key).Union(ganadasPorLinea.Select(g => g.Key))
+            .Select(linea =>
             {
+                var g = vigentes[linea].ToList();
+                var ganadas = ganadasPorLinea[linea].ToList();
                 // Por referencia: dos cotizaciones con los mismos valores son dos cotizaciones.
                 var cotizaciones = g.Select(x => x.Cotizacion).Distinct<clsCotizacionMetrica>(ReferenceEqualityComparer.Instance).ToList();
-                var ganadas = g.Where(x => x.Cotizacion.Ganada == true).ToList();
                 var numDiferencias = g.Sum(x => x.Ruta.NumDiferencias);
                 return new clsMetricaLineaNegocio(
-                    g.Key,
-                    g.Select(x => x.Ruta.LineaNegocio).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                    linea,
+                    g.Concat(ganadas).Select(x => x.Ruta.LineaNegocio).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
                     cotizaciones.Count,
-                    cotizaciones.Count(c => c.Ganada == true),
+                    ganadas.Select(x => x.Cotizacion).Distinct<clsCotizacionMetrica>(ReferenceEqualityComparer.Instance).Count(),
                     cotizaciones.Count(c => c.Ganada == false),
-                    g.Count(),
+                    g.Count,
                     Redondear(g.Sum(x => x.Ruta.Costo ?? 0m), DecimalesMonto),
                     Redondear(ganadas.Sum(x => x.Ruta.Costo ?? 0m), DecimalesMonto),
                     Redondear(g.Sum(x => x.Cotizacion.ACop(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
-                    Redondear(ganadas.Sum(x => x.Cotizacion.ACop(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
+                    Redondear(ganadas.Sum(x => x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal) ?? 0m), DecimalesMonto),
                     Redondear(
                         ganadas
-                            .Select(x => (Valor: x.Cotizacion.ACop(x.Ruta.PrecioFinal), x.Ruta.Costo))
+                            .Select(x => (Valor: x.Cotizacion.ACopResultado(x.Ruta.PrecioFinal), x.Ruta.Costo))
                             .Where(x => x.Valor.HasValue && x.Costo.HasValue)
                             .Sum(x => x.Valor!.Value - x.Costo!.Value),
                         DecimalesMonto),

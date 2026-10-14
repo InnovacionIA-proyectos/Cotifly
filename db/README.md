@@ -91,7 +91,8 @@ ejecutador. Tampoco `scripts/operacion/`: scripts de datos de una sola vez que c
 `corregir_rol_comercial_32.sql` (#173: `Roles.idRolExterno` de `comercial` pasa de 34, que en `dbSolucionesTI_Prueba` es
 `AdministracionZonasGeocerca`, a 32 `ClienteProComercial`; respalda `Roles` en `RespaldoRoles_173`, es idempotente y **requiere
 aprobación; lo ejecuta el DBA**). En `pendientes/` está también el `05_categoria_conexo.sql` (#173, categoría del catálogo de Nexo
-en el conexo; el backend no la mapea).
+en el conexo; el backend no la mapea). Y el `06_idempotencia_captura.sql` (#173, deuda): tabla `CapturasIdempotentes` con `UNIQUE (usuarioId, clave)` para que la
+`Idempotency-Key` de la captura sobreviva a reinicios y a despliegues `start-first`; hoy vive en memoria y el backend no la mapea.
 
 ### Con Docker
 

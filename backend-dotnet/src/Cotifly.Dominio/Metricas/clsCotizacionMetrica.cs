@@ -87,6 +87,19 @@ public sealed record clsCotizacionMetrica
     /// <summary>Costo en COP de la versión con el resultado (<see cref="VersionResultado"/>, o la vigente).</summary>
     public decimal? CostoResultado => VersionResultado is { } v ? v.Costo : Costo;
 
+    /// <summary>
+    /// B3 (#173): rutas de la versión que tiene el resultado cuando NO es la vigente; <c>null</c> = las de la vigente
+    /// (<see cref="Rutas"/>). La apertura por línea de negocio saca de aquí lo ganado.
+    /// </summary>
+    public IReadOnlyList<clsRutaMetrica>? RutasResultado { get; init; }
+
+    /// <summary>Rutas de la versión con el resultado (<see cref="RutasResultado"/> o, si es la vigente, <see cref="Rutas"/>).</summary>
+    public IReadOnlyList<clsRutaMetrica> RutasDelResultado => RutasResultado ?? Rutas;
+
+    /// <summary>Precio de una ruta de la versión con el resultado, en COP con la moneda y la TRM de esa versión.</summary>
+    public decimal? ACopResultado(decimal? precio) =>
+        VersionResultado is { } v ? ACop(precio, v.Moneda, v.TrmAplicada) : ACop(precio);
+
     /// <summary><c>true</c> si la moneda es COP o no se informó (el esquema la pone en COP por defecto).</summary>
     public bool EsPesos => string.IsNullOrWhiteSpace(Moneda) || string.Equals(Moneda.Trim(), MonedaPesos, StringComparison.OrdinalIgnoreCase);
 

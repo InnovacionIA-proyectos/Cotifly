@@ -150,6 +150,9 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
         indicadores.ValorGanadoCop.Should().Be(2_000_000m, "el valor ganado es el de la versión ganada, no el de la vigente");
         indicadores.CosteoGanadas.Should().Be(1_275_000m);
         indicadores.Ganancias.Should().Be(725_000m);
+        fila.RutasResultado.Should().ContainSingle("las rutas de la versión ganada (la v1) vienen aparte");
+        Cotifly.Dominio.Metricas.clsCalculadoraMetricas.PorLineaNegocio(datos.Filas).Sum(l => l.ValorGanadoCop)
+            .Should().Be(2_000_000m, "la apertura por línea cuadra con el total");
     }
 
     private Task<IReadOnlyList<T>> Repositorio<T>(Func<IClsMetricasRepository, Task<IReadOnlyList<T>>> consulta) =>

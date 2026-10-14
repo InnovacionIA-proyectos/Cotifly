@@ -133,8 +133,10 @@ entraba como comercial, y quien tuviera el rol de geocerca habría entrado como 
 - La base compartida se corrige con `db/scripts/operacion/corregir_rol_comercial_32.sql` (**requiere aprobación; lo ejecuta el
   DBA**): respalda `Roles`, cambia 34 → 32 solo en `codigo = 'comercial'`, es idempotente y trae su consulta de verificación.
 - Con 31 y 32 mapeados, una persona que tenga los dos (como dguerra) entra como `gerente_comercial` por la regla de precedencia.
-  Quien hoy tenga una asignación `comercial` creada con el 34 queda en revisión (`rol_externo_cambio`) si ya no tiene ese rol: lo
-  revisa la verificación doble, no el script.
+  Después del script, quien solo tenía el 34 (y ningún otro rol mapeado) recibe 401 `sin_rol_autorizado` en el siguiente login o
+  refresh: ningún rol externo suyo mapea, así que no se llega a comparar con su asignación (no es `rol_externo_cambio`). Quien tenga una
+  asignación `comercial` y además el 31 resuelve `gerente_comercial` y queda en revisión (`rol_externo_cambio`), como cualquier cambio
+  de rol.
 - Producción: confirmar los IDROLES de la base de identidad de producción antes de fijarlos; no se asume que sean los mismos.
 
 ## Desviaciones

@@ -85,9 +85,36 @@ public static class clsTextosEstandar
     /// <summary>Frase de cierre (<c>FRASE_FINAL_STD</c>); el enlace va en la línea siguiente.</summary>
     public const string FraseFinal = "Para conocer más de nuestra organización, ingresa a:";
 
-    private const string NotaGeneralComun =
-        "Las tarifas cotizadas no incluyen servicios de cargue ni descargue. Se basan "
-        + "en tiempos logísticos de máximo 4 horas para cada labor. En caso de requerir "
+    /// <summary>Horas de cada labor (cargue o descargue) que asume la nota cuando la captura no las trae.</summary>
+    public const decimal HorasLaborPorDefecto = 4m;
+
+    /// <summary>
+    /// #173: nota general de la tarifa con las horas REALES de cargue y descargue de la ruta (sin dato, <see cref="HorasLaborPorDefecto"/>)
+    /// y sin decir que no incluye un servicio que sí va itemizado: si la cotización lleva el conexo de cargue o de descargue, la frase
+    /// "no incluyen servicios de cargue ni descargue" se ajusta o se quita. Sin horas ni conexos es el texto de siempre.
+    /// </summary>
+    public static string NotaGeneral(decimal? horasCargue, decimal? horasDescargue, bool cargueIncluido, bool descargueIncluido)
+    {
+        var servicios = (cargueIncluido, descargueIncluido) switch
+        {
+            (false, false) => "Las tarifas cotizadas no incluyen servicios de cargue ni descargue. Se basan ",
+            (true, false) => "Las tarifas cotizadas no incluyen el servicio de descargue. Se basan ",
+            (false, true) => "Las tarifas cotizadas no incluyen el servicio de cargue. Se basan ",
+            (true, true) => "Las tarifas cotizadas se basan ",
+        };
+        var cargue = horasCargue ?? HorasLaborPorDefecto;
+        var descargue = horasDescargue ?? HorasLaborPorDefecto;
+        var tiempos = cargue == descargue
+            ? $"en tiempos logísticos de máximo {Horas(cargue)} para cada labor. "
+            : $"en tiempos logísticos de máximo {Horas(cargue)} para el cargue y {Horas(descargue)} para el descargue. ";
+        return servicios + tiempos + RestoNotaGeneral;
+    }
+
+    private static string Horas(decimal horas) =>
+        horas == 1m ? "1 hora" : $"{horas.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-CO"))} horas";
+
+    private const string RestoNotaGeneral =
+        "En caso de requerir "
         + "un vehículo tipo furgón, el valor se ajustará según lo estipulado por el "
         + "SICETAC. Esta oferta permanecerá vigente siempre que las condiciones del "
         + "mercado de fletes lo permitan. La Superintendencia de Puertos y Transporte, a "
@@ -135,7 +162,7 @@ public static class clsTextosEstandar
         ],
         Incluye: _incluyeComun,
         NoIncluye: _noIncluyeComun,
-        NotaGeneral: NotaGeneralComun,
+        NotaGeneral: NotaGeneral(null, null, false, false),
         Seguro:
             "EDUARDO BOTERO SOTO S.A. cuenta con una póliza de responsabilidad contractual que "
             + "ampara las obligaciones derivadas del contrato de Transporte, conforme a lo "
@@ -207,7 +234,7 @@ public static class clsTextosEstandar
         ],
         Incluye: _incluyeComun,
         NoIncluye: _noIncluyeComun,
-        NotaGeneral: NotaGeneralComun,
+        NotaGeneral: NotaGeneral(null, null, false, false),
         Seguro:
             "Eduardo Botero Soto S.A. tiene contratado un seguro que ampara sus "
             + "obligaciones derivadas del contrato de transporte conforme los parámetros del "
