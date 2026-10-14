@@ -51,6 +51,7 @@ Contenido:
 | "Ruta {Ruta} de la licitación {Folio} cubicada en segundo plano ..." / "Licitación {Folio} cubicada por completo ({Rutas} rutas): se envía a Nexo." | Information | HU-023.5 (#160): el procesador de la cubicación en segundo plano (`clsWorkerCubicacionLicitacion`) terminó una ruta / la licitación completa |
 | "El cubicador no respondió para la ruta {Ruta} de la licitación {Folio} (intento {Intento}) ..." | Information | HU-023.5: caída del cubicador sin respaldo; la ruta se reintenta con espera creciente (`Cubicador__EsperaReintentoSegundos`, hasta `Cubicador__MaximoIntentos`) |
 | "La ruta {Ruta} de la licitación {Folio} no se pudo cubicar ({Codigo}, intento {Intento}) ..." | Warning | HU-023.5: la ruta quedó `fallida` y la licitación no sale a Nexo hasta que el comercial la reintente (`POST /web/licitaciones/{folio}/cubicacion/reintentar`). Consulta: `SELECT c.folio, l.orden, l.errorCubicacion FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE l.estadoCubicacion = 'fallida'` |
+| "La licitación {Folio}: el candado del envío sigue tomado tras {Intentos} intentos ..." | Information | B2 (#174): la última ruta esperó unos 15 s el candado del envío a Nexo y lo dejó a quien lo tiene (está enviando). Si la licitación no sale, la recuperación del procesador la envía pasados 2 min |
 | "No se pudo cubicar la ruta {RutaId} ...; vuelve a la cola cuando venza su reclamo" / "Falló una vuelta de la cubicación de licitaciones" | Error | HU-023.5: excepción (base, red) en una ruta o una vuelta; la ruta se retoma sola cuando vence `Cubicador__ReclamoSegundos` |
 | `/health/ready` responde "esquema incompleto: falta 04" | Error (readiness) | HU-023.5: falta `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (idempotente, con respaldo previo; pendiente de @scalderon-bs y del DBA). **No desplegar la #160 sin aplicar antes el 0010 y el 04** |
 | "CUBICADOR_SIN_CONFIGURAR: Cubicador:UrlBase vacía ..." (evento 2100) | Warning (una vez por captura) | Comportamiento por defecto mientras el cubicador no tenga `POST /recomendaciones` (C1): cada ruta queda con un camión sin vehículo |
@@ -63,6 +64,7 @@ Contenido:
 | "PDF {Referencia} sin turno de render tras {EsperaMs} ms" | Warning | La cola de render no avanzó en `Pdf__TiempoEsperaRenderSegundos`: el comercial recibió 503 `PDF_RENDER_NO_DISPONIBLE` |
 
 - `EventosHerramienta` es la auditoría de negocio (herramientas, logins, descargas de PDF ajenos, administración de líneas): consultarla en la base, no en los logs. Contiene datos personales (ver [10.6](#106-riesgos-y-limitaciones-conocidos)).
+- HU-023 (#174, desviación E1): la cubicación en segundo plano deja un evento por ruta procesada (`cubicar_ruta_licitacion`: folio, ruta, intento, resultado `cubicada`/`reintento`/`fallida`, código del error y número de camiones), el reintento del comercial deja `reintentar_cubicacion_licitacion` y el recálculo de una ruta deja `recalcular_vehiculos_ruta` (también cuando se rechaza: 409, 428 no llega al servicio). Ninguno guarda montos, pesos ni mercancías.
 
 ## 10.3 Métricas
 

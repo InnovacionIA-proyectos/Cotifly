@@ -203,12 +203,21 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
 
     /// <summary>
     /// HU-021: la consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
-    /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite hasta
-    /// tres veces con una espera corta.
+    /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite.
     /// </summary>
+    /// <remarks>
+    /// I1 (#174), causa medida con el grafo del interbloqueo: en READ COMMITTED la lectura retiene el candado S de la fila de la cabecera
+    /// (<c>pk_cotizaciones</c>) mientras busca sus rutas (<c>pk_cotizacionLineasSolicitud</c>), y un guardado del polling tiene la ruta en X
+    /// y espera la cabecera. La lectura recorre también filas de otros comerciales, así que choca con escrituras ajenas. Con tres
+    /// intentos a 50 y 100 ms la siguiente escritura del polling volvía a cruzarse: ~3 % de lecturas fallidas con escrituras intermitentes.
+    /// Seis intentos con espera exponencial y variación aleatoria (100 ms a 1,6 s, unos 3 s en total) dejan pasar la ráfaga. La causa de
+    /// fondo es el recorrido de toda la cabecera en <see cref="SqlCotizaciones"/>: con <c>WITH (FORCESEEK)</c> (índice
+    /// <c>ix_cotizaciones_usuarioId_createdAt</c>) la lectura no toca filas ajenas (medido: 0 fallos en 887 lecturas). Ese cambio y
+    /// <c>READ_COMMITTED_SNAPSHOT</c> (decisión del DBA) quedan documentados en la matriz de HU-023.
+    /// </remarks>
     private static async Task<T> ConReintentoPorInterbloqueoAsync<T>(Func<Task<T>> consulta)
     {
-        const int Intentos = 3;
+        const int Intentos = 6;
         for (var intento = 1; ; intento++)
         {
             try
@@ -217,7 +226,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             }
             catch (SqlException ex) when (ex.Number == 1205 && intento < Intentos)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(50 * intento));
+                var pausa = 100 << (intento - 1);
+                await Task.Delay(TimeSpan.FromMilliseconds(pausa + Random.Shared.Next(0, (pausa / 2) + 1)));
             }
         }
     }

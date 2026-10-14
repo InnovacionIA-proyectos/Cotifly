@@ -1,6 +1,6 @@
 # Matriz de pruebas HU-021 + HU-023 (campaña de QA de la integración)
 
-**Fecha:** 2026-10-13 · **Rama:** `hu-023-integracion` (sale de `origin/QA` `cf744ff` + merges de #172, #159 y #160) · **Entorno:** SDK
+**Fecha:** 2026-10-13, actualizada el 2026-10-14 con #174 (§7) · **Rama:** `hu-023-integracion` (sale de `origin/QA` `cf744ff` + merges de #172, #159 y #160) · **Entorno:** SDK
 `mcr.microsoft.com/dotnet/sdk:10.0` + Testcontainers (SQL Server 2019), **Nexo, cubicador, TRM, relay SMTP y modelo falsos**
 (`tests/Comun/`). Las pruebas contra los sistemas reales no son parte de este documento (las hace otro frente).
 
@@ -66,18 +66,18 @@ fijar `Cubicador:MaximoParalelo = 1` en esa prueba; después, 8/8 en 4 repeticio
 | # | Funcionalidad | Unit. | Integ. | BDD | E2E (§4) | Resultado | Huecos |
 |---|---|---|---|---|---|---|---|
 | 1 | Login, refresh y logout | Sí | Sí | Sí (20 esc.) | F5 | **Verde** | — |
-| 2 | Identidad compartida con Nexo (#172): login por `NOMBREUSUARIO`, `idUsuarioExterno` = `ID` del portal, revinculación | Sí (`clsIdentidadNexoTests`, 4) | Sí (`clsIdentidadPortalNexoTests`, 3; `clsRevincularIdentidadScriptTests`, 1) | No | F5 | **Con huecos** | Sin escenario BDD; el script de revinculación solo se prueba en una base aislada |
+| 2 | Identidad compartida con Nexo (#172): login por `NOMBREUSUARIO`, `idUsuarioExterno` = `ID` del portal, revinculación | Sí (`clsIdentidadNexoTests`, 4) | Sí (`clsIdentidadPortalNexoTests`, 3; `clsRevincularIdentidadScriptTests`, 1) | Sí (`identidad_portal`, 3, #174) | F5 | **Verde** | El script de revinculación solo se prueba en una base aislada (el BDD hace su efecto: `idUsuarioExterno = NULL`) |
 | 3 | Header `X-Portal-clsUsuario-Id` en todo adaptador | Sí (`NingunAdaptadorEscribeElEncabezadoAMano`) | Sí (los falsos responden 401 al nombre viejo) | Sí (indirecto) | F1, F5 | **Verde** | — |
 | 4 | Captura con rutas, municipios, mercancías y conexos | Sí | Sí | Sí | F1 | **Verde** | — |
 | 5 | Cubicador al guardar (flota mixta, sin selección, condicionada, respuesta incompleta, todo o nada) | Sí (`clsPlanificadorCamionesCubicadorTests` 18, `clsCubicadorHttpTests` 29) | Sí (`clsCubicadorEndpointsTests` 17) | Sí (`integracion_cubicador`, 3) | F1 | **Verde** | Reconsulta `GET /recomendaciones/{id}/mercancias` no implementada (opcional en la HU) |
 | 6 | "Calcular cubicaje" (`POST /web/cubicacion`, `PRUEBA-<guid>`) | Sí (`clsCalculoCubicajeServiceTests` 15, `clsSugeridorMercanciaTests` 13) | Sí (`clsCalcularCubicajeEndpointsTests` 10) | Sí (`calcular_cubicaje`, 5) | F3 | **Verde** | — |
-| 7 | Recalcular los camiones de una ruta | Sí | Sí (2 en `clsCubicadorEndpointsTests`) | No | — | **Con huecos** | Sin BDD; no deja `EventosHerramienta` |
+| 7 | Recalcular los camiones de una ruta | Sí | Sí (2 en `clsCubicadorEndpointsTests`) | Sí (`recalculo_vehiculos_ruta`, 5, #174) | — | **Verde** | — (audita `recalcular_vehiculos_ruta` desde #174) |
 | 8 | Envío a Nexo por camión con `grupoRutaId`, `idRecomendacionVehiculo` y `codigoTipoMercancia` (banderas) | Sí (`clsCosteoNexoTests` 28) | Sí | Sí (`envio_nexo_datos_cubicador`, 1; `envio_nexo_por_camion`, 5) | F1, F2 | **Verde** | — |
 | 9 | Peso declarado con 1 camión / peso del camión con varios | Sí (`clsEmparejadorCamionesTests`, 2) | Sí (E2E) | Parcial | F1 | **Verde** | — |
 | 10 | Emparejamiento por grupo + recomendación (camiones idénticos, líneas barajadas) | Sí (`clsEmparejadorCamionesTests` 20) | Sí | Sí | F1 | **Verde** | — |
-| 11 | Cupo de lecturas de Nexo (429 por rol) | Sí (`clsRegistroCosteoNexoTests`, `clsCosteoNexoTests`) | No | No | — | **Con huecos** | Sin prueba HTTP de punta a punta |
+| 11 | Cupo de lecturas de Nexo (429 por rol) | Sí (`clsRegistroCosteoNexoTests`, `clsCosteoNexoTests`) | Sí (`clsCupoNexoEndpointsTests`, 1, #174) | No | — | **Verde** | — |
 | 12 | Licitación: análisis del Excel con código de mercancía sugerido | Sí (`clsMercanciasLicitacionTests` 5) | Sí (2) | No | F2 | **Verde** | — |
-| 13 | Licitación: cubicación en segundo plano (cola, reclamo entre réplicas, cupos P6, reintentos, respaldo, recuperación) | **No** (`clsCubicacionLicitacionService` sin clase de prueba propia) | Sí (`clsLicitacionCubicadorEndpointsTests` 13) | Sí (`licitacion_cubicador`, 1) | F2 | **Rojo (bug B2)** | Carrera en el envío final (§6, B2); el servicio y el worker solo se prueban por HTTP |
+| 13 | Licitación: cubicación en segundo plano (cola, reclamo entre réplicas, cupos P6, reintentos, respaldo, recuperación) | Sí (`clsCubicacionLicitacionServiceTests`, 19, #174) | Sí (`clsLicitacionCubicadorEndpointsTests` 13) | Sí (`licitacion_cubicador`, 1) | F2 (con `MaximoParalelo = 4`) y la regresión de B2 (20 licitaciones) | **Verde** | B2 corregido en #174 (§6). El worker sigue probándose por HTTP |
 | 14 | Licitación: PDF del pliego y Excel exportado con los camiones | Sí (`clsPdfPliegoTests` 19) | Sí | Sí | F2 | **Verde** | — |
 | 15 | Polling, estados agregados y totales | Sí | Sí | Sí | F1, F2 | **Verde** | — |
 | 16 | Margen por ruta y política SAP | Sí | Sí | Sí | F1 | **Verde** | — |
@@ -87,7 +87,7 @@ fijar `Cubicador:MaximoParalelo = 1` en esa prueba; después, 8/8 en 4 repeticio
 | 20 | Re-solicitud en el mismo folio y `-vN` | Sí | Sí | Sí | F1, F4 | **Verde** | — |
 | 21 | Asistente que propone y confirma (sin montos al LLM) | Sí | Sí | Sí | F6 | **Verde** | — |
 | 22 | `/resultado` y `/seguimiento` | Sí | Sí | Sí | F1, F8 | **Verde** | — |
-| 23 | Métricas | Sí | Sí | Sí | F1 | **Con huecos** | Cadena ganada en una versión que no es la vigente vale 0 (§6, B3); la regional se cae por interbloqueo (inestable, §2) |
+| 23 | Métricas | Sí | Sí | Sí | F1 | **Con huecos** | Cadena ganada en una versión que no es la vigente vale 0 (§6, B3, lo corrige #173); el interbloqueo I1 queda mitigado en #174 y su arreglo de fondo pendiente (§6) |
 | 24 | Health/ready (0010, 04 y cubicador) | Sí | Sí (`clsBaseDatosHealthCheckTests` 14) | No | — | **Verde** | — |
 
 ## 4. E2E flujo a flujo (`tests/Cotifly.Api.Tests/Web/clsE2EFlujosHU023Tests.cs`)
@@ -117,13 +117,13 @@ Fuente: HU-023 del Sprint 5 (criterios de aceptación e issues HU-023.1 a .5) y 
 |---|---|---|---|---|---|
 | PedirCamionesAlCubicador (al guardar la ruta) | Sistema → Cubicador | `clsPlanificadorCamionesCubicador`, `clsCubicadorHttp` | camión por vehículo + `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada` | `integracion_cubicador.feature`, F1 | OK |
 | CalcularCubicaje (transición) | Comercial | `clsCalculoCubicajeService` | ninguno (a propósito) | `calcular_cubicaje.feature`, F3 | OK |
-| RecalcularVehiculosRuta | Comercial | `clsRecalculoVehiculosService` | camiones reemplazados | `clsCubicadorEndpointsTests` | Desviación E3 |
+| RecalcularVehiculosRuta | Comercial | `clsRecalculoVehiculosService` | camiones reemplazados + `EventosHerramienta` (`recalcular_vehiculos_ruta`) | `recalculo_vehiculos_ruta.feature`, `clsCubicadorEndpointsTests` | OK (#174: E1 y E3 resueltas) |
 | ReconsultarRecomendacion | Sistema | — | — | — | Desviación E4 (no implementado) |
 | EnviarANexoPorCamion | Sistema | `clsEnvioCosteoService`, `clsCosteoNexo` (banderas `EnviarGrupoRutaId`/`EnviarDatosCubicador`) | `solicitudNexoId`, `enviar_costeo_nexo` | `envio_nexo_datos_cubicador.feature`, F1 | OK |
 | SugerirMercanciaLicitacion | Sistema | `clsSugeridorMercancia`, `clsMercanciasLicitacion` | ninguno | `clsMercanciasLicitacionTests` | OK |
-| CubicarLicitacionEnSegundoPlano | Sistema (procesador) | `clsWorkerCubicacionLicitacion`, `clsCubicacionLicitacionService` | `estadoCubicacion`, cola (04) | `licitacion_cubicador.feature`, F2 | Bug B2 |
-| ReintentarCubicacion (der., #160) | Comercial | `POST /web/licitaciones/{folio}/cubicacion/reintentar` | ídem | `clsLicitacionCubicadorEndpointsTests` | OK (fuera de la HU) |
-| RevincularIdentidad (der., #172) | DBA | `db/scripts/operacion/revincular_…sql` | `RespaldoVinculosIdentidad_172`, `idUsuarioExterno = NULL` | `clsRevincularIdentidadScriptTests` | OK |
+| CubicarLicitacionEnSegundoPlano | Sistema (procesador) | `clsWorkerCubicacionLicitacion`, `clsCubicacionLicitacionService` | `estadoCubicacion`, cola (04), `EventosHerramienta` (`cubicar_ruta_licitacion`) | `licitacion_cubicador.feature`, F2, `clsCubicacionLicitacionServiceTests` | OK (B2 corregido en #174) |
+| ReintentarCubicacion (der., #160) | Comercial | `POST /web/licitaciones/{folio}/cubicacion/reintentar` | ídem + `EventosHerramienta` (`reintentar_cubicacion_licitacion`) | `clsLicitacionCubicadorEndpointsTests`, `clsCubicacionLicitacionServiceTests` | OK (fuera de la HU) |
+| RevincularIdentidad (der., #172) | DBA | `db/scripts/operacion/revincular_…sql` | `RespaldoVinculosIdentidad_172`, `idUsuarioExterno = NULL` | `clsRevincularIdentidadScriptTests`, `identidad_portal.feature` (login y refresh) | OK |
 
 ### 5.2 Eventos de dominio
 
@@ -132,17 +132,17 @@ Fuente: HU-023 del Sprint 5 (criterios de aceptación e issues HU-023.1 a .5) y 
 | CamionesRecomendados | `clsRecomendacionCubicador` → `RegistrarCubicacion` | camiones + ruta | F1 | OK |
 | RecomendacionRechazada (`CUBICADOR_RESPUESTA_INVALIDA`) | `clsCubicadorHttp` | ninguno (todo o nada) | `UnaRespuestaIncompletaDelCubicadorSeRechaza…` | OK |
 | CubicacionSinSeleccion / Condicionada | `clsRecomendacionCubicador` | `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada` | `SinSeleccionYCondicionadaSonResultados…` | OK |
-| CubicacionPendiente / Cubicada / Fallida (der.) | `MarcarCubicacionPendiente`, `CompletarCubicacion`, `RegistrarFalloCubicacion` | columnas del 04 | F2, `clsLicitacionCubicadorEndpointsTests` | Desviación E1 (sin auditoría) |
-| LicitacionListaParaNexo (der.) | `ListaParaEnviarTrasCubicar` → `EnviarSiListaAsync` | `solicitudNexoId` | F2 | Bug B2 |
+| CubicacionPendiente / Cubicada / Fallida (der.) | `MarcarCubicacionPendiente`, `CompletarCubicacion`, `RegistrarFalloCubicacion` | columnas del 04 + `EventosHerramienta` (`cubicar_ruta_licitacion`, sin montos) | F2, `clsLicitacionCubicadorEndpointsTests`, `clsCubicacionLicitacionServiceTests` | OK (E1 resuelta en #174) |
+| LicitacionListaParaNexo (der.) | `ListaParaEnviarTrasCubicar` → `EnviarSiListaAsync` | `solicitudNexoId` | F2, regresión de B2, `clsCubicacionLicitacionServiceTests` | OK (B2 corregido en #174) |
 | LineaEmparejadaPorGrupoYRecomendacion (der.) | `clsEmparejadorLineasNexo` | `lineaSolicitudNexoId` | F1, `clsEmparejadorCamionesTests` | OK |
-| CupoNexoAgotado (der.) | `clsCupoNexo` | ninguno (log) | `clsRegistroCosteoNexoTests` | OK |
+| CupoNexoAgotado (der.) | `clsCupoNexo` | ninguno (log) | `clsRegistroCosteoNexoTests`, `clsCupoNexoEndpointsTests` (HTTP) | OK |
 
 ### 5.3 Políticas
 
 | Política | Estado |
 |---|---|
 | Todo o nada en la captura de varias rutas (HU-023.3) | OK (`SiFallaLaTerceraRutaNoSeGuardaNingunaNiSeEnviaNadaANexo`) |
-| Todo o nada hacia Nexo en la licitación (no sale con una ruta pendiente o fallida) | OK, pero con la carrera B2 |
+| Todo o nada hacia Nexo en la licitación (no sale con una ruta pendiente o fallida) | OK (B2 corregido en #174: sale al terminar la última ruta, una sola vez) |
 | Un rechazo del cubicador nunca se tapa con el respaldo; una caída sí | OK (`UnaRutaQueFallaDejaLaLicitacionSinEnviar…`, `UnaCaidaSinRespaldo…`) |
 | Límite de llamadas al cubicador entre réplicas (P6) | OK (`DosReplicasNoRepitenNingunaRuta…`) |
 | Sin cuarentena de vehículos en Nexo, no mandar los códigos del cubicador (HU-023.4) | Desviación E2 (decidido en ADR-020) |
@@ -151,21 +151,88 @@ Fuente: HU-023 del Sprint 5 (criterios de aceptación e issues HU-023.1 a .5) y 
 
 ### 5.4 Desviaciones
 
-- **E1 (baja).** La cubicación en segundo plano, el reintento y el recálculo de una ruta solo dejan log: ninguna fila de `EventosHerramienta`
-  (como D13 de HU-021).
+- **E1 (baja). Resuelta en #174.** La cubicación en segundo plano (`cubicar_ruta_licitacion`, una fila por ruta procesada), el reintento
+  (`reintentar_cubicacion_licitacion`) y el recálculo de una ruta (`recalcular_vehiculos_ruta`) dejan su fila en `EventosHerramienta`,
+  con el patrón de `IClsAuditoriaService` y sin montos, pesos ni mercancías.
 - **E2 (decidida).** HU-023.4 pedía una bandera para no mandar los códigos del cubicador mientras Nexo no tenga cuarentena. ADR-020:315
   la descartó: los códigos viajan siempre (F2 lo muestra: `tipoVehiculo = 3S3` aunque las banderas estén apagadas en otras pruebas).
-- **E3 (baja).** "Recalcular una ruta" sin escenario BDD.
+- **E3 (baja). Resuelta en #174.** `recalculo_vehiculos_ruta.feature` (5 escenarios: recálculo con If-Match, 428, 409
+  `CONFLICTO_CONCURRENCIA`, 409 `ESTADO_NO_PERMITE` ya en Nexo y ruta inexistente).
 - **E4 (baja).** La reconsulta `GET /recomendaciones/{idRecomendacionVehiculo}/mercancias` no está implementada (la HU la condicionaba a que
   el detalle la necesitara).
 - **E5 (media).** La métrica "valor ganado" toma los valores de la versión vigente aunque la ganada sea otra (B3); ADR-016 §2 lo define así,
   pero la HU de métricas espera el valor de lo ganado.
-- **E6 (baja).** Identidad #172 sin escenario BDD; solo pruebas HTTP.
+- **E6 (baja). Resuelta en #174.** `identidad_portal.feature` (login por nombre de usuario, ID del portal en `X-Portal-clsUsuario-Id`,
+  revinculación por login y por refresh con el vínculo en NULL).
 
-## 6. Bugs (reportados, no corregidos)
+## 6. Bugs
 
-| Id | Severidad | Archivo:línea | Reproducción |
-|---|---|---|---|
-| B2 | Media | `src/Cotifly.Aplicacion/Licitaciones/Services/clsCubicacionLicitacionService.cs:252-256` (`EnviarSiListaAsync`: si el candado del envío está tomado, devuelve `false` sin volver a mirar) | Licitación de 10 rutas con `Cubicador:MaximoParalelo = 4` y el cubicador sin demora (`clsE2EFlujosHU023Tests.F2` sin el `MaximoParalelo = 1`): las dos últimas rutas terminan juntas; la que llega primero toma el candado, ve la otra todavía pendiente y no envía; la última no obtiene el candado y tampoco envía. Las 10 rutas quedan `cubicada` y Nexo no recibe nada (3 de 5 corridas). La licitación sale recién con la recuperación (`EnviarCubicadasAsync`), cuando `updatedAt` tiene más de `EsperaReenvioPendiente` (2 min): demora, no pérdida |
-| B3 | Media | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:35-95` (`SqlCotizaciones`: valores de la versión vigente, resultado de cualquier versión de la cadena) | Formulario costeado y enviado → `re-solicitar` con `nueva_version` (la `-v2` queda `pendiente_costeo`, sin precio) → entregar la original → `POST /resultado` ganada sobre la original → `GET /web/metricas/comercial`: `ganadas = 1` y `valor_ganado_cop = 0` |
-| I1 | Inestable | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:208-222` (`ConReintentoPorInterbloqueoAsync`, 3 intentos) | `metricas_tablero.feature` "El gerente filtra el tablero por un comercial de su regional" falló 1 vez (corrida preliminar) con `SqlException 1205` tras agotar los 3 reintentos; la lectura del tablero choca con las escrituras del polling de otras pruebas. Sin `READ_COMMITTED_SNAPSHOT` el riesgo existe también en producción |
+| Id | Severidad | Archivo:línea | Reproducción | Estado |
+|---|---|---|---|---|
+| B2 | Media | `src/Cotifly.Aplicacion/Licitaciones/Services/clsCubicacionLicitacionService.cs:252-256` (`EnviarSiListaAsync`: si el candado del envío está tomado, devuelve `false` sin volver a mirar) | Licitación de 10 rutas con `Cubicador:MaximoParalelo = 4` y el cubicador sin demora (`clsE2EFlujosHU023Tests.F2` sin el `MaximoParalelo = 1`): las dos últimas rutas terminan juntas; la que llega primero toma el candado, ve la otra todavía pendiente y no envía; la última no obtiene el candado y tampoco envía. Las 10 rutas quedan `cubicada` y Nexo no recibe nada (3 de 5 corridas). La licitación sale recién con la recuperación (`EnviarCubicadasAsync`), cuando `updatedAt` tiene más de `EsperaReenvioPendiente` (2 min): demora, no pérdida | **Corregido en #174** (§7.1) |
+| B3 | Media | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:35-95` (`SqlCotizaciones`: valores de la versión vigente, resultado de cualquier versión de la cadena) | Formulario costeado y enviado → `re-solicitar` con `nueva_version` (la `-v2` queda `pendiente_costeo`, sin precio) → entregar la original → `POST /resultado` ganada sobre la original → `GET /web/metricas/comercial`: `ganadas = 1` y `valor_ganado_cop = 0` | Lo corrige #173 |
+| I1 | Inestable | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:208-222` (`ConReintentoPorInterbloqueoAsync`, 3 intentos) | `metricas_tablero.feature` "El gerente filtra el tablero por un comercial de su regional" falló 1 vez (corrida preliminar) con `SqlException 1205` tras agotar los 3 reintentos; la lectura del tablero choca con las escrituras del polling de otras pruebas. Sin `READ_COMMITTED_SNAPSHOT` el riesgo existe también en producción | **Causa medida y mitigado en #174**; arreglo de fondo pendiente (§7.2) |
+
+## 7. Cambios de #174 (2026-10-14)
+
+Rama `174-hu-023-licitacion-y-matriz` (sale de `hu-023-integracion`). Todo con los falsos (Nexo, cubicador, TRM, relay SMTP y modelo).
+
+### 7.1 B2: el envío de la licitación cuando las dos últimas rutas terminan juntas
+
+- **Causa:** `EnviarSiListaAsync` tomaba el candado del envío sin esperar. La ruta A lo tomaba, recargaba, veía la ruta B todavía
+  pendiente y lo soltaba sin enviar; la ruta B, que ya había guardado, no lo obtenía y se iba. Nadie volvía a revisar.
+- **Arreglo:** quien no obtiene el candado espera y reintenta (50 ms que se duplican hasta 500 ms, unos 15 s en total). Cuando lo obtiene,
+  la revisión ve todo lo que se guardó antes de que lo soltara el otro, así que la última ruta siempre revisa con su ruta guardada. El
+  envío sigue siendo único por tres barreras: el candado, el estado (`ListaParaEnviarTrasCubicar`, que deja de valer con el
+  `solicitudNexoId`) y el reclamo por `updatedAt`. La recuperación (`EnviarCubicadasAsync`) no espera el candado, porque si alguien lo
+  tiene es que está enviando.
+- **Regresión:** `clsE2EFlujosHU023Tests.F2_LasDosUltimasRutasQueTerminanJuntasEnvianLaLicitacionUnaSolaVezEnVeinteRepeticiones` hace 20
+  licitaciones de 10 rutas con `Cubicador:MaximoParalelo = 4`, el cubicador sin demora y las dos últimas respuestas del cubicador
+  sincronizadas. Sin el arreglo falla en la repetición 1 (Nexo recibe 0 altas); con él, 20 de 20. `F2` vuelve a correr con
+  `MaximoParalelo = 4`. Unitarias: `SiElCandadoDelEnvioEstaOcupadoEsperaVuelveARevisarYEnvia` y
+  `LaRecuperacionNoEsperaElCandadoDelEnvioSiOtroLoTiene`.
+
+### 7.2 I1: interbloqueo 1205 del tablero de métricas
+
+- **Causa (grafo del interbloqueo, prueba de estrés local no versionada):** en READ COMMITTED, `SqlCotizaciones` retiene el candado S
+  de la fila de la cabecera (`pk_cotizaciones`) mientras lee sus rutas (`pk_cotizacionLineasSolicitud`). Un guardado del polling tiene
+  la ruta en X y pide la cabecera en X. Además, el plan recorre la cabecera completa y no solo las filas de los comerciales pedidos, así
+  que la lectura choca con escrituras de **otros** comerciales (en las pruebas, con el polling de otros escenarios).
+- **Medición** (20 s, 4 escritores intermitentes, 30 cotizaciones por comercial):
+
+  | Variante | Escrituras sobre otro comercial | Escrituras sobre el mismo comercial |
+  |---|---|---|
+  | Antes (3 intentos, 50 y 100 ms) | 5 fallos en 136 lecturas | 6 fallos en 254 lecturas |
+  | #174 (6 intentos, espera exponencial con variación aleatoria de 100 ms a 1,6 s) | 0 en 19 | 1 en 68 |
+  | `WITH (FORCESEEK)` en la cabecera de `SqlCotizaciones` (con 3 intentos) | **0 en 887** | 4 en 49 |
+
+  Con el reintento nuevo casi no quedan fallos, pero hay menos lecturas porque cada una espera a que pasen las escrituras: es una
+  mitigación. `FORCESEEK` quita la causa entre comerciales distintos.
+- **Lo que entra en #174:** solo el reintento (`ConReintentoPorInterbloqueoAsync`, cambio mínimo, porque `clsMetricasRepository` es
+  de #173). La verificación de `metricas_tablero.feature` no cambia.
+- **Pendiente (fuera de #174):** el arreglo de fondo es `FROM dbo_cotifly.CotizacionesSolicitud c WITH (FORCESEEK)` en `SqlCotizaciones`,
+  que lee solo las filas de los comerciales pedidos por `ix_cotizaciones_usuarioId_createdAt` y quita el choque con escrituras ajenas.
+  Debe aplicarse con #173, que modifica esa consulta por B3. El choque con escrituras del mismo comercial solo desaparece con
+  `READ_COMMITTED_SNAPSHOT` (o `SNAPSHOT`) en la base, una decisión del DBA.
+
+### 7.3 Pruebas nuevas
+
+| Prueba | Tipo | Cubre |
+|---|---|---|
+| `tests/Cotifly.Aplicacion.Tests/Licitaciones/clsCubicacionLicitacionServiceTests.cs` (19) | Unitaria | Sin cupo, ruta ya reclamada, duración del reclamo, ruta cubicada (no la última), envío único con candado y reclamo, reclamo perdido, licitación ya enviada al recargar, candado ocupado (B2), recuperación con y sin candado, caída con reintento y espera, rechazo fallido al primer intento, licitación que cambió de estado, reintento sin respaldo, con respaldo (caída) y con respaldo (rechazo), folio ajeno o sin fallidas, auditoría sin montos |
+| `specs/features/identidad_portal.feature` (3) | BDD | Login por nombre de usuario en minúsculas contra `NOMBREUSUARIO` en mayúsculas, `idUsuarioExterno` = ID del portal, ese ID en `X-Portal-clsUsuario-Id` de toda petición a Nexo, revinculación con el vínculo en NULL por login (misma cuenta) y por refresh |
+| `specs/features/recalculo_vehiculos_ruta.feature` (5) | BDD | Recálculo con If-Match (camiones reemplazados, auditoría, sin llegar a Nexo), 428 sin If-Match, 409 `CONFLICTO_CONCURRENCIA`, 409 `ESTADO_NO_PERMITE` con la solicitud en Nexo, 400 `RUTA_INEXISTENTE` |
+| `tests/Cotifly.Api.Tests/Web/clsCupoNexoEndpointsTests.cs` (1) | Integración HTTP | 429 de un catálogo con `Retry-After: 45`: los catálogos no salen de Cotifly mientras dura, el polling (`GET /api/solicitudes/{id}`) sigue y aplica el costeo, a los 44 s sigue bloqueado y a los 46 s se vuelve a leer |
+| `clsE2EFlujosHU023Tests.F2_LasDosUltimasRutas…` (1) | E2E | Regresión de B2 (§7.1) |
+
+
+### 7.4 Corridas de #174
+
+Build `--no-incremental` en Release: 0 errores y 0 warnings de código (solo los 24 avisos NU1902/NU1903 de la auditoría NuGet de
+`System.Security.Cryptography.Pkcs` 10.0.0, que `Directory.Build.props` deja como aviso). `dotnet test` de toda la solución en
+`mcr.microsoft.com/dotnet/sdk:10.0` con Testcontainers:
+
+| Corrida | Total | Correctas | Omitidas | Fallidas |
+|---|---|---|---|---|
+| 1 | 3985 | 3983 | 2 | 0 |
+| 2 | 3985 | 3983 | 2 | 0 |

@@ -231,10 +231,9 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
     {
         _cubicador.Recomendar = p => clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", clsCubicadorFalso.PesoTotal(p)));
 
-        // Una llamada a la vez: con varias en paralelo, si las dos últimas rutas terminan juntas, la que llega a EnviarSiListaAsync con
-        // la otra aún pendiente se queda con el candado del envío y la última no lo obtiene: nadie envía y la licitación espera a la
-        // recuperación (EsperaReenvioPendiente, 2 min). Bug reportado en la campaña de QA (no se corrige aquí).
-        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "1" });
+        // Cuatro llamadas en paralelo y el cubicador sin demora: las dos últimas rutas pueden terminar juntas (B2, #174). La que no obtiene
+        // el candado del envío espera y vuelve a revisar, así que la licitación sale de una vez y una sola vez.
+        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using (var analisis = await api.EnviarContenidoAsync(_post, "/web/licitaciones/analizar-excel", ana.Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(10))))
@@ -288,6 +287,47 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         excel.StatusCode.Should().Be(HttpStatusCode.OK);
         using var libro = new ClosedXML.Excel.XLWorkbook(new MemoryStream(await excel.Content.ReadAsByteArrayAsync(Ct)));
         libro.Worksheet("Camiones Cotifly").RowsUsed().Count().Should().Be(11, "encabezado + un camión por ruta");
+    }
+
+    /// <summary>
+    /// Regresión de B2 (#174): 20 licitaciones de 10 rutas seguidas, con <c>Cubicador:MaximoParalelo = 4</c> y el cubicador sin demora. Antes
+    /// del arreglo, cuando las dos últimas rutas terminaban juntas, ninguna enviaba (3 de 5 corridas). Cada licitación debe salir a Nexo al
+    /// terminar su última ruta, sin esperar a la recuperación, y una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task F2_LasDosUltimasRutasQueTerminanJuntasEnvianLaLicitacionUnaSolaVezEnVeinteRepeticiones()
+    {
+        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        for (var repeticion = 1; repeticion <= 20; repeticion++)
+        {
+            // Las dos últimas llamadas al cubicador responden a la vez (se esperan una a la otra, con tope): sus rutas terminan juntas.
+            var llamadas = 0;
+            using var ultimas = new CountdownEvent(2);
+            _cubicador.Recomendar = p =>
+            {
+                if (Interlocked.Increment(ref llamadas) > 8)
+                {
+                    ultimas.Signal();
+                    ultimas.Wait(TimeSpan.FromSeconds(5));
+                }
+
+                return clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", clsCubicadorFalso.PesoTotal(p)));
+            };
+            var antes = _nexo.SolicitudesCreadas.Count;
+            using var envio = await api.EnviarAsync(_post, "/web/licitaciones", ana.Access, Licitacion(10));
+            envio.StatusCode.Should().Be(HttpStatusCode.Created, await envio.Content.ReadAsStringAsync(Ct));
+            using var cuerpo = JsonDocument.Parse(await envio.Content.ReadAsStringAsync(Ct));
+            var folio = cuerpo.RootElement.GetProperty("folio").GetString()!;
+            var id = await api.IdCotizacionAsync(folio);
+
+            (await api.ProcesarCubicacionAsync(folio)).Should().Be(10, $"repetición {repeticion}");
+
+            _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, $"repetición {repeticion}: la licitación sale a Nexo al cubicar la última ruta, una sola vez");
+            (await Fila($"SELECT CONCAT(estadoCosteo, '|', IIF(solicitudNexoId IS NULL, '-', 'S')) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'"))
+                .Should().Be("pendiente_costeo|S", $"repetición {repeticion}");
+        }
     }
 
     // ============================================================================================================== Flujo 3
