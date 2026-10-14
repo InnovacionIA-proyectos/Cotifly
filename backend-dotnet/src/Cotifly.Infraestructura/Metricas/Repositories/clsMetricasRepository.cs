@@ -38,6 +38,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
     /// <c>{3}</c>: la lectura de la ruta 1 (fragmentos fijos del código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
     /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple).
+    /// I1 (HU-023): <c>WITH (FORCESEEK)</c> obliga a buscar la cabecera por <c>ix_cotizaciones_usuarioId_createdAt</c> (filtro por
+    /// <c>usuarioId</c>), así la lectura no toma candados S en filas de otros comerciales y no se cruza con su polling. La solución de
+    /// fondo, que también cubre el choque con las escrituras del mismo comercial, es <c>READ_COMMITTED_SNAPSHOT</c>: decisión del DBA.
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
@@ -47,7 +50,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
                         THEN LEFT(c.folio, LEN(c.folio) - LEN(N'-v' + CAST(c.version AS nvarchar(10))))
                         ELSE c.folio END AS folioBase
-            FROM dbo_cotifly.CotizacionesSolicitud c
+            FROM dbo_cotifly.CotizacionesSolicitud c WITH (FORCESEEK)
             OUTER APPLY (
                 SELECT CASE WHEN COUNT(*) = COUNT(l.costoFinal) THEN SUM(l.costoFinal) END AS costo,
                        CASE WHEN SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) > 0
@@ -221,9 +224,10 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// y espera la cabecera. La lectura recorre también filas de otros comerciales, así que choca con escrituras ajenas. Con tres
     /// intentos a 50 y 100 ms la siguiente escritura del polling volvía a cruzarse: ~3 % de lecturas fallidas con escrituras intermitentes.
     /// Seis intentos con espera exponencial y variación aleatoria (100 ms a 1,6 s, unos 3 s en total) dejan pasar la ráfaga. La causa de
-    /// fondo es el recorrido de toda la cabecera en <see cref="SqlCotizaciones"/>: con <c>WITH (FORCESEEK)</c> (índice
-    /// <c>ix_cotizaciones_usuarioId_createdAt</c>) la lectura no toca filas ajenas (medido: 0 fallos en 887 lecturas). Ese cambio y
-    /// <c>READ_COMMITTED_SNAPSHOT</c> (decisión del DBA) quedan documentados en la matriz de HU-023.
+    /// fondo era el recorrido de toda la cabecera en <see cref="SqlCotizaciones"/>: desde la integración final de HU-023 la consulta
+    /// lleva <c>WITH (FORCESEEK)</c> (índice <c>ix_cotizaciones_usuarioId_createdAt</c>) y no toca filas ajenas (medido: 0 fallos en
+    /// 887 lecturas). El choque con escrituras del mismo comercial sigue posible y lo cubre este reintento; la solución de fondo es
+    /// <c>READ_COMMITTED_SNAPSHOT</c>, decisión del DBA (matriz de HU-023 §7.2 y <c>docs/10-operacion.md</c>).
     /// </remarks>
     private static async Task<T> ConReintentoPorInterbloqueoAsync<T>(Func<Task<T>> consulta)
     {
