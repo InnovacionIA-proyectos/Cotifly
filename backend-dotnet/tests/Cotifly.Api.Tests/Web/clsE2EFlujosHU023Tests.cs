@@ -77,7 +77,8 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         (await Escalar<int>($"SELECT COUNT(DISTINCT v.idRecomendacionVehiculo) {DeLosCamiones(id)}")).Should().Be(3, "cada camión con su recomendación");
 
         // El alta: una línea por camión, con su ruta (grupoRutaId) y su camión (idRecomendacionVehiculo); la ruta de UN camión lleva el
-        // peso DECLARADO (12500, no el 12480 del cubicador) y sus posiciones con codigoTipoMercancia; la de dos camiones, el peso de cada uno.
+        // peso DECLARADO (12500, no el 12480 del cubicador) y sus posiciones SIN codigoTipoMercancia (contrato de Nexo #297, #159); la de dos
+        // camiones, el peso de cada uno.
         var alta = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
         alta.Should().HaveCount(3);
         var rutas = await FilasPar($"SELECT CAST(id AS nvarchar(40)), CAST(orden AS nvarchar(5)) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE cotizacionSolicitudId = '{id}'");
@@ -94,7 +95,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
                 linea["peso"]!.GetValue<decimal>().Should().Be(12_500m, "con un solo camión viaja el peso declarado de la ruta");
                 var posiciones = linea["posiciones"]!.AsArray();
                 posiciones.Should().ContainSingle();
-                posiciones[0]!["codigoTipoMercancia"]!.GetValue<string>().Should().Be(CodigoCafe);
+                posiciones[0]!["codigoTipoMercancia"].Should().BeNull("con el contrato de Nexo #297 el código de mercancía no viaja (ADR-020)");
             }
             else
             {
@@ -592,6 +593,10 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         {
             extra["Nexo:EnviarGrupoRutaId"] = "true";
             extra["Nexo:EnviarDatosCubicador"] = "true";
+
+            // Integración final HU-023: con #159 los códigos de vehículo y carrocería del cubicador viajan solo con esta bandera (Nexo #297).
+            // El E2E simula Nexo con el contrato completo; la bandera apagada la cubren clsCosteoNexoTests y el fuzz del emparejador.
+            extra["Nexo:EnviarCodigosCubicador"] = "true";
         }
 
         if (correo)
