@@ -104,6 +104,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__ApiKey` | **sí** (≥ 16) | con `Cubicador__UrlBase` | vacío | Dokploy | llave de Cotifly ante el cubicador (`Authorization: Bearer`), **una por ambiente** (QA y producción), distinta de la de Nexo; se entrega al equipo del cubicador por un canal seguro. Nunca llega al navegador |
 | `Cubicador__TiempoEsperaSegundos` | no | no | `30` | manifiesto | límite de cada petición (el objetivo del cubicador es 10 s). El `POST /recomendaciones` nunca se reintenta |
 | `Cubicador__RespaldoSiFalla` | no | no | `true` | manifiesto | si el cubicador se cae, la ruta sigue con un camión sin vehículo. Recomendación: `false` en QA y producción en cuanto haya URL. Un rechazo o una respuesta incompleta nunca van al respaldo |
+| `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` | no | no | `true`, `true`, `4`, `5`, `50`, `120`, `3`, `30` | manifiesto | licitación cubicada en segundo plano (HU-023.5, #160; exige `db/scripts/pendientes/04`). `MaximoParalelo` es para todas las réplicas juntas (P6 del cubicador) |
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `60` | manifiesto | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
@@ -163,7 +164,7 @@ cargan en Dokploy así:
 
 ### Identidad compartida con Nexo (#172)
 
-Cotifly manda a Nexo `X-Portal-Usuario-Id = UsuariosWeb.idUsuarioExterno`, que es el `ID` de `tblSAPUsuariosApp`. Nexo lo valida
+Cotifly manda a Nexo `X-Portal-clsUsuario-Id = UsuariosWeb.idUsuarioExterno`, que es el `ID` de `tblSAPUsuariosApp`. Nexo lo valida
 contra su base de identidad (`ConnectionStrings:IdentidadPortal`), así que **las dos apps deben leer la misma base**. Hoy QA lee
 `dbsolucionesti`, donde los `ID` son otros (dguerra es 430 ahí y 10123 en el portal), y Nexo responde 401. El despliegue requiere
 la aprobación del usuario.

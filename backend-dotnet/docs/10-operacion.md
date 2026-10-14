@@ -262,7 +262,7 @@ ambiente").
 
 **Regla:** la base de identidad de Cotifly (`ConnectionStrings__Identidad`) es **la misma que la de Nexo** (`ConnectionStrings:IdentidadPortal`) en
 cada ambiente. Cotifly guarda el `ID` de `tblSAPUsuariosApp` en `UsuariosWeb.idUsuarioExterno` y lo manda a Nexo en
-`X-Portal-Usuario-Id`; Nexo lo valida contra su base. Con bases distintas, los `ID` no coinciden y Nexo responde 401 (en las pruebas
+`X-Portal-clsUsuario-Id`; Nexo lo valida contra su base. Con bases distintas, los `ID` no coinciden y Nexo responde 401 (en las pruebas
 del 2026-10-13, dguerra era 430 en `dbsolucionesti` y 10123 en el portal).
 
 | Ambiente | `Database=` de `ConnectionStrings__Identidad` |

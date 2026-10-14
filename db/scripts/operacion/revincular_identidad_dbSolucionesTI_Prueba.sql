@@ -12,7 +12,7 @@
    administrador (crea la tabla de respaldo con SELECT ... INTO; cotifly_app no puede).
 
    Por qué: Cotifly guarda en UsuariosWeb.idUsuarioExterno el ID de tblSAPUsuariosApp de la base de identidad
-   y lo manda a Nexo en X-Portal-Usuario-Id. Al pasar de dbsolucionesti a dbSolucionesTI_Prueba (la de Nexo
+   y lo manda a Nexo en X-Portal-clsUsuario-Id. Al pasar de dbsolucionesti a dbSolucionesTI_Prueba (la de Nexo
    QA, ADR-009) los ID cambian, y el login rechaza a quien quedó vinculado al ID viejo (401
    identidad_inconsistente). Con el vínculo en NULL, el siguiente login o refresh de cada persona la vincula
    al ID del portal (clsVerificadorIdentidad).

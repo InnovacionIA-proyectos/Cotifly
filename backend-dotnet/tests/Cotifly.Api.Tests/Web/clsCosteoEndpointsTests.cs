@@ -99,7 +99,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         alta["clienteBp"]!.GetValue<string>().Should().Be("15927");
         alta["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
         var peticion = _nexo.Peticiones.Last(p => p.Metodo == _post);
-        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-Usuario-Id");
+        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-clsUsuario-Id");
 
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
             $"SELECT CONCAT(solicitudNexoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId WHERE lp.cotizacionSolicitudId = c.id)) FROM dbo_cotifly.CotizacionesSolicitud c WHERE folio = '{json.GetProperty("folio").GetString()}'");

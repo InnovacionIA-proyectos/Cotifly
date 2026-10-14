@@ -9,7 +9,7 @@ namespace Cotifly.Api.Tests.Web;
 /// <summary>
 /// #172: Cotifly y Nexo resuelven la identidad del portal contra la misma base (en QA, <c>dbSolucionesTI_Prueba</c>). ClientePro
 /// manda el NOMBRE de usuario (<c>idUsuario: "dguerra"</c>) y sus roles; Cotifly busca por <c>NOMBREUSUARIO</c>, guarda el <c>ID</c>
-/// de esa fila en <c>UsuariosWeb.idUsuarioExterno</c> y ese mismo número es el que viaja a Nexo en <c>X-Portal-Usuario-Id</c>.
+/// de esa fila en <c>UsuariosWeb.idUsuarioExterno</c> y ese mismo número es el que viaja a Nexo en <c>X-Portal-clsUsuario-Id</c>.
 /// </summary>
 [Collection(clsColeccionApiWeb.Nombre)]
 [Trait("Categoria", "Integracion")]
