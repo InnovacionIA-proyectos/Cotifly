@@ -368,6 +368,8 @@ El pliego de prueba es `tests/Comun/clsPliegoMuestra.cs`: un Excel generado con 
 
 ## 8.11 Matriz de QA de HU-021
 
+La campaña de la integración de HU-023 (#159, #160 y #172) sigue en [qa/MATRIZ_PRUEBAS_HU023.md](qa/MATRIZ_PRUEBAS_HU023.md): un E2E por flujo sobre la base instalada desde cero (`clsE2EFlujosHU023Tests`), el alineamiento con el event storming de HU-023 y los bugs encontrados.
+
 [qa/MATRIZ_PRUEBAS_HU021.md](qa/MATRIZ_PRUEBAS_HU021.md) (#139, HU-021.12) es la matriz de pruebas de la reestructuración por rutas y camiones ([ADR-019](../specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md)). Corre con el SDK 10 en contenedor, Testcontainers (SQL Server 2019), el Nexo falso (`tests/Comun/clsNexoFalso.cs`) y el cubicador falso (`tests/Comun/clsCubicadorFalso.cs`); no incluye Nexo QA ni la base compartida.
 
 Qué trae:
