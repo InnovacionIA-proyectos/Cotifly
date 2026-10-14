@@ -81,6 +81,29 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task ElScript04EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-023.5 (#160): la cola de la cubicación en segundo plano (propuesta pendiente 04; el 01 no la trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem04", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script04);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem04Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script04);
+    }
+
+    [Fact]
+    public async Task LosCheckDel04AcotanElEstadoLosIntentosYExigenAvisosEnJson()
+    {
+        var definiciones = await LeerAsync(
+            "SELECT name + '=' + definition FROM sys.check_constraints WHERE name IN (N'ck_cotizacionLineasSolicitud_estadoCubicacion', "
+            + "N'ck_cotizacionLineasSolicitud_avisosCubicacion', N'ck_cotizacionLineasSolicitud_cubicacionIntentos')",
+            r => r.GetString(0));
+
+        definiciones.Should().HaveCount(3);
+        string.Join(" | ", definiciones).Should().Contain("'pendiente'").And.Contain("'fallida'").And.Contain("isjson").And.Contain(">=(0)");
+    }
+
+    [Fact]
     public async Task LaPropuesta03PendienteSeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
     {
         // HU-023.3 (#158): db/scripts/pendientes/03 (pendiente de revisión de @scalderon-bs; el backend no la mapea). En una base aislada.
@@ -648,8 +671,11 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         });
 
         ef.Should().BeEquivalentTo(bd);
-        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(14,
-            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF) y el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta");
+        bd.Where(x => x.Contains(":ix_", StringComparison.Ordinal)).Should().HaveCount(15,
+            "el 0002 crea 10 índices ix_, el 0004 uno, el 0006 uno (historial de PDF), el 0009 quita el de posiciones por línea y agrega el de camiones y el de ajustes por ruta, y la propuesta 04 el de la cola del cubicador");
+        bd.Should().Contain(x => x.StartsWith("CotizacionLineasSolicitud:ix_cotizacionLineasSolicitud_cubicacionPendiente unico=False", StringComparison.Ordinal)
+            && x.Contains("claves=(cubicacionDisponibleAt,createdAt)", StringComparison.Ordinal)
+            && x.EndsWith("filtro=estadocubicacion=n'pendiente'", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("CotizacionesSolicitud:ix_cotizaciones_costeoSiguienteConsultaAt unico=False", StringComparison.Ordinal)
             && x.EndsWith("filtro=costeosiguienteconsultaatisnotnull", StringComparison.Ordinal));
         bd.Should().Contain(x => x.StartsWith("UsuariosWeb:uq_usuariosWeb_nombreUsuario", StringComparison.Ordinal) && x.EndsWith("filtro=nombreusuarioisnotnull", StringComparison.Ordinal));

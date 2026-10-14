@@ -664,7 +664,11 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             clsApiWebPruebas.Licitacion(clsPliegoMuestra.Json(clsCosteoEndpointsTests.Nit, filas), clsPliegoMuestra.Excel()));
         var creada = await VerificarContratoAsync(alta, "/web/licitaciones", _post, HttpStatusCode.Created);
         var folio = creada.GetProperty("folio").GetString()!;
-        creada.GetProperty("estado_costeo").GetString().Should().Be("pendiente_costeo");
+        // HU-023.5 (#160): con el cubicador la licitación se guarda sin esperarlo y se cubica en segundo plano antes de ir a Nexo.
+        creada.GetProperty("estado_costeo").GetString().Should().Be("pendiente_envio");
+        creada.GetProperty("progreso_cubicacion").GetProperty("estado").GetString().Should().Be("en_curso");
+        _nexo.UltimaAlta.Should().BeNull();
+        await api.ProcesarCubicacionAsync(folio);
 
         // 2. Cubicador por fila: dos camiones, uno y el respaldo; cada ruta con su fila de origen del Excel.
         (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R", "3|||8000.00|-");

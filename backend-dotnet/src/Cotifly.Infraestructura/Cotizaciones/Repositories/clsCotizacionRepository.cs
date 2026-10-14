@@ -170,6 +170,45 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         return filas == 1;
     }
 
+    public async Task<IReadOnlyList<clsRutaPorCubicar>> ListarRutasPorCubicarAsync(
+        DateTimeOffset ahora, int lote, Guid? cotizacionId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(lote, 1);
+        return await contexto.Set<clsLineaSolicitud>().AsNoTracking()
+            .Where(l => l.EstadoCubicacion == EstadoCubicacion.Pendiente && (l.CubicacionDisponibleAt == null || l.CubicacionDisponibleAt <= ahora))
+            .Where(l => cotizacionId == null || l.CotizacionSolicitudId == cotizacionId)
+            .OrderBy(l => l.CreatedAt).ThenBy(l => l.CotizacionSolicitudId).ThenBy(l => l.Orden)
+            .Take(lote)
+            .Select(l => new clsRutaPorCubicar(l.Id, l.CotizacionSolicitudId, l.CubicacionDisponibleAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> ReclamarRutaPorCubicarAsync(
+        Guid rutaId, DateTimeOffset? disponibleLeido, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default)
+    {
+        var filas = await contexto.Set<clsLineaSolicitud>()
+            .Where(l => l.Id == rutaId && l.EstadoCubicacion == EstadoCubicacion.Pendiente && l.CubicacionDisponibleAt == disponibleLeido)
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.CubicacionDisponibleAt, (DateTimeOffset?)reclamoHasta), cancellationToken);
+        return filas == 1;
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListarCubicadasSinEnviarAsync(
+        DateTimeOffset sinCambiosDesde, int lote, Guid? cotizacionId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(lote, 1);
+        var rutas = contexto.Set<clsLineaSolicitud>();
+        return await contexto.CotizacionesSolicitud.AsNoTracking()
+            .Where(c => cotizacionId == null || c.Id == cotizacionId)
+            .Where(c => c.EstadoCosteo == EstadoCosteo.PendienteEnvio && c.SolicitudNexoId == null && c.UpdatedAt <= sinCambiosDesde
+                        && rutas.Any(l => l.CotizacionSolicitudId == c.Id && l.EstadoCubicacion != null)
+                        && !rutas.Any(l => l.CotizacionSolicitudId == c.Id
+                                           && (l.EstadoCubicacion == EstadoCubicacion.Pendiente || l.EstadoCubicacion == EstadoCubicacion.Fallida)))
+            .OrderBy(c => c.UpdatedAt)
+            .Take(lote)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<clsConsultaCosteoPendiente>> ListarConsultasCosteoPendientesAsync(
         DateTimeOffset ahora, int lote, CancellationToken cancellationToken = default)
     {

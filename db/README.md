@@ -12,6 +12,13 @@ dejarla con la configuración inicial.
 > (ADR-019). Lo único pendiente es de aprobación, no de prueba: el `0010_nombres_municipio.sql` es un **borrador pendiente
 > de revisión de scalderon-bs y del DBA**.
 >
+> **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160, **pendiente de revisión de @scalderon-bs y del DBA**)
+> agrega a la ruta la cola de la cubicación de la licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`,
+> `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion` y el índice filtrado `(cubicacionDisponibleAt, createdAt)`), con un
+> respaldo previo de la tabla si tiene datos. Es idempotente y no destructivo. **No** está en el 01 ni lo corre el ejecutador: queda en
+> un solo lugar hasta su aprobación. Pero el backend de la #160 SÍ mapea sus columnas: **no fusionar ni desplegar la #160 hasta que se
+> apliquen el 0010 y el 04** (sin él, `/health/ready` responde "esquema incompleto: falta 04").
+>
 > **`scripts/02_alter_cubicador.sql`** (HU-023.3, #158) agrega las columnas para guardar la respuesta del cubicador. Va
 > después del 01 (o del `0010` en una base migrada) y el ejecutador lo corre solo. Las pruebas de integración lo aplican después
 > de `0001` a `0010` y después del 01, y exigen el mismo esquema (HU-023.3).

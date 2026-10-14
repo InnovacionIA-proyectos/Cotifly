@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Cotifly.Pruebas.Web;
 
@@ -118,6 +119,11 @@ public sealed class clsApiWebPruebas : IDisposable
         {
             valores["Cubicador:UrlBase"] = clsCubicadorFalso.UrlBase;
             valores["Cubicador:ApiKey"] = clsCubicadorFalso.ApiKey;
+
+            // HU-023.5 (#160): el procesador de la cubicación en segundo plano queda apagado; las pruebas lo corren cuando quieren
+            // (ProcesarCubicacionAsync), solo con las rutas de su licitación.
+            valores["Cubicador:ProcesadorHabilitado"] = "false";
+            valores["Cubicador:LoteRutas"] = "1000";
         }
 
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
@@ -265,6 +271,48 @@ public sealed class clsApiWebPruebas : IDisposable
             new Aplicacion.Cotizaciones.DTOs.clsConsultaCosteoPendiente(cotizacionId, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)), CancellationToken.None);
         return resultado == Aplicacion.Costeo.Services.ResultadoConsultaCosteo.NoReclamada ? 0 : 1;
     }
+
+    /// <summary>
+    /// HU-023.5 (#160): vueltas del procesador de la cubicación en segundo plano (<c>clsWorkerCubicacionLicitacion.ProcesarLoteAsync</c>)
+    /// solo con las rutas de la licitación <paramref name="folio"/>, hasta que no quede ninguna pendiente con el turno vencido ni reclamada
+    /// por un instante (otra réplica de la prueba la está cubicando), o hasta <paramref name="limite"/> (30 s por defecto). Se espera por
+    /// tiempo y no por número de vueltas: una vuelta sin cupo libre no procesa nada y se repite tras una pausa corta. Devuelve cuántas rutas
+    /// procesó esta réplica.
+    /// </summary>
+    public async Task<int> ProcesarCubicacionAsync(string folio, TimeSpan? limite = null)
+    {
+        var id = await IdCotizacionAsync(folio);
+        var ambitos = Factory.Services.GetRequiredService<IServiceScopeFactory>();
+        var logger = Factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ProcesarCubicacion");
+        var total = 0;
+        var fin = DateTime.UtcNow + (limite ?? TimeSpan.FromSeconds(30));
+        while (DateTime.UtcNow < fin)
+        {
+            var procesadas = await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
+            total += procesadas;
+            // Pendientes con el turno vencido, o reclamadas hace poco (en curso en otra réplica: menos de 2 min de reclamo restante).
+            var porTerminar = await clsBaseDatosPruebas.EscalarAsync<int>(_baseDatos.CadenaCotifly,
+                "SELECT COUNT(*) FROM dbo_cotifly.CotizacionLineasSolicitud WHERE estadoCubicacion = N'pendiente' "
+                + "AND (cubicacionDisponibleAt IS NULL OR cubicacionDisponibleAt <= DATEADD(SECOND, 125, SYSDATETIMEOFFSET()) AND cubicacionIntentos = 0 "
+                + $"OR cubicacionDisponibleAt <= SYSDATETIMEOFFSET()) AND cotizacionSolicitudId = '{id}';");
+            if (porTerminar == 0)
+            {
+                break;
+            }
+
+            if (procesadas == 0)
+            {
+                await Task.Delay(50);
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>Id de la cotización <paramref name="folio"/>.</summary>
+    public async Task<Guid> IdCotizacionAsync(string folio) =>
+        await clsBaseDatosPruebas.EscalarAsync<Guid>(_baseDatos.CadenaCotifly,
+            $"SELECT id FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = N'{folio.Replace("'", "''", StringComparison.Ordinal)}';");
 
     /// <summary>
     /// Dos (o más) réplicas del worker procesan a la vez la misma cotización vencida en la agenda, cada una en su propio ámbito de DI

@@ -153,6 +153,12 @@ public sealed record clsRutaNuevaVersion(
 public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);
 
 /// <summary>
+/// HU-023.5 (#160): una ruta de la cola de la cubicación en segundo plano: su id, el de su cotización y el <c>cubicacionDisponibleAt</c>
+/// leído (para el reclamo optimista).
+/// </summary>
+public sealed record clsRutaPorCubicar(Guid RutaId, Guid CotizacionId, DateTimeOffset? DisponibleAt);
+
+/// <summary>
 /// <c>CubicacionRuta</c> (HU-023.3, #158): lo que respondió el cubicador para una ruta de la captura. <see cref="Resultado"/>,
 /// <see cref="MotivoSinSeleccion"/> y <see cref="Condicionada"/> se guardan (y salen también en <c>GET .../costeo</c>); los avisos no.
 /// </summary>

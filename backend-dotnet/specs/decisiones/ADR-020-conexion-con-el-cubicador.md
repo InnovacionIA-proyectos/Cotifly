@@ -128,7 +128,8 @@ corre después del 01 (y en `-Auto` sobre una base existente).
   `motivoSinSeleccion` y `condicionada`. "Sin selección" es un camión sin vehículo ni carrocería con el peso de la ruta, que viaja
   igual a Nexo.
 - **No se guarda:** `mercanciasCondicionadas`, `advertencias` y `extradimension`; viajan en `cubicacion[]` de la respuesta de
-  `POST /web/solicitudes-costeo` (`CubicacionRuta`). La licitación responde `Licitacion` y no los trae (pendiente de HU-023.5).
+  `POST /web/solicitudes-costeo` (`CubicacionRuta`). HU-023.5 (#160) los empieza a guardar (`avisosCubicacion`, JSON) porque la
+  licitación se cubica en segundo plano; ver abajo.
 - `GET .../costeo` trae por ruta `resultado_cubicacion`, `motivo_sin_seleccion` y `condicionada`; por camión `volumen_total_m3`,
   `porcentaje_llenado_volumen` y `porcentaje_llenado_peso`; por mercancía `codigo_mercancia`.
 - **Recalcular una ruta:** `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` (`If-Match`) vuelve a pedir los
@@ -145,6 +146,93 @@ corre después del 01 (y en `-Auto` sobre una base existente).
 - **Agente de chat:** no captura mercancías: su ruta queda con un camión sin recomendación y sin resultado del cubicador.
 - **No se implementó** `GET /recomendaciones/{idRecomendacionVehiculo}/mercancias` (reconsultar qué lleva cada camión): ninguna
   pantalla lo necesita todavía.
+
+## Decisión — HU-023.5 (#160): licitación con cubicador
+
+### Código de mercancía sugerido
+
+`POST /web/licitaciones/analizar-excel` reconoce por su encabezado (sin tildes ni mayúsculas) la columna de la mercancía ("mercancía",
+"producto", "tipo de carga", "commodity", "descripción") y la del código ("código mercancía", "cód. producto"). Por cada fila devuelve en
+`hojas[h].mercancias` el código de la columna del Excel **tal cual** (`origen = excel`) o el tipo **activo y cubicable** más parecido del
+catálogo (`origen = parecido`, `sugerido = true`, `similitud`), con `clsSugeridorMercancia` (creado en la #157 para
+`POST /web/cubicacion`; un solo componente para las dos HU). Debajo de 0,5 no hay sugerencia. Es una sugerencia: el comercial la
+confirma o la cambia, y `POST /web/licitaciones` valida el código contra el catálogo como siempre. Sin cubicador o con el catálogo
+caído el análisis no falla (`catalogo_mercancias_disponible = false`).
+
+### Cubicación en segundo plano
+
+- **Al crear** (con el cubicador configurado y `Cubicador:LicitacionEnSegundoPlano`, por defecto sí): se valida todo como antes, pero
+  las rutas se guardan sin llamar al cubicador, con un camión provisional sin vehículo (el del respaldo) y `estadoCubicacion =
+  pendiente`. La respuesta es inmediata y la licitación queda en `pendiente_envio` **sin ir a Nexo**. Sin cubicador nada cambia (el
+  respaldo no llama a nadie y la licitación sale de una vez). El formulario sigue síncrono.
+- **Cola en la base** (propuesta `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, en la ruta): `estadoCubicacion` (`pendiente`, `cubicada`, `fallida`; `NULL` = se cubicó al
+  guardarla), `cubicacionIntentos`, `cubicacionDisponibleAt` (reclamo y espera entre reintentos, con índice filtrado), `errorCubicacion`
+  y `avisosCubicacion`. Se eligió la base y no una cola en memoria: sobrevive a reinicios y la comparten las réplicas, como la agenda
+  del polling.
+- **Procesador** (`clsWorkerCubicacionLicitacion`, `BackgroundService` como el polling): cada `Cubicador:IntervaloTickSegundos` lee
+  hasta `Cubicador:LoteRutas` rutas con el turno vencido y las procesa en paralelo, cada una en su ámbito de DI
+  (`clsCubicacionLicitacionService.CubicarAsync`): reclama la ruta con un `UPDATE` condicionado al `cubicacionDisponibleAt` leído (lo
+  mueve a `ahora + Cubicador:ReclamoSegundos`), llama al planificador de HU-023.3 con el id de la ruta, reemplaza el camión provisional
+  y guarda el resultado y los avisos.
+- **Límite de llamadas (P6):** `Cubicador:MaximoParalelo` vale **para todas las réplicas juntas**: antes de cada llamada se toma un cupo
+  `cotifly:cubicador:cupo:{i}` con `sp_getapplock` de sesión (`clsCupoCubicadorSql`, el mismo mecanismo del candado de la sesión del
+  agente). Sin cupo libre la vuelta termina y las rutas esperan; si una réplica muere, SQL Server suelta su cupo al cortarse la conexión.
+- **Envío a Nexo:** cuando la última ruta queda cubicada, la réplica que la cubicó toma el candado del envío de esa licitación
+  (`cotifly:licitacion:envio:{id}`, `sp_getapplock` sin espera), la recarga y la reclama con el mismo reclamo del reintento
+  (`updatedAt` + `versionNegocio`). El reclamo solo no bastaba (la prueba de dos réplicas lo mostró): una réplica que recarga después
+  del reclamo de la otra, pero antes de que esta guarde el envío, la veía todavía en `pendiente_envio` y la reclamaba otra vez; con el
+  candado, quien no lo obtiene no hace nada. Si el proceso muere entre la
+  última ruta y el envío, cada vuelta recupera las licitaciones cubicadas sin enviar que llevan más de 2 min sin cambios. Se envía con
+  la política de la primera ruta, como el reintento.
+- **Reintentos y fallas:** solo una caída sin respaldo (`CUBICADOR_NO_DISPONIBLE`) se reintenta sola, hasta `Cubicador:MaximoIntentos`,
+  esperando `Cubicador:EsperaReintentoSegundos` duplicado en cada intento. Con `Cubicador:RespaldoSiFalla` una caída ya da el camión sin
+  vehículo (como en el formulario). Un rechazo de la petición, una respuesta inválida o la llave rechazada dejan la ruta `fallida` al
+  primer intento (nunca se tapan con el respaldo, HU-023.1). Una excepción (base, red) deja la ruta reclamada hasta que vence el
+  reclamo y otra vuelta la retoma.
+- **Ruta fallida:** la licitación queda en `pendiente_envio`, no sale a Nexo y el error se ve por ruta. El comercial la reintenta con
+  `POST /web/licitaciones/{folio}/cubicacion/reintentar` (vuelve a la cola) o, **solo si falló por una caída del cubicador**
+  (`CUBICADOR_NO_DISPONIBLE`), la acepta con `{"usar_respaldo": true}` (camión sin vehículo para la Mesa de Costeo, sin error; si no
+  queda nada pendiente, se envía a Nexo en la misma petición). Un rechazo de la petición (`MERCANCIA_DESCONOCIDA`,
+  `DIMENSIONES_INVALIDAS`, respuesta inválida...) no se acepta con respaldo (auditoría): se corrige la carga en una versión nueva.
+- **Conexos:** cuelgan de la ruta, no del camión: reemplazar el camión provisional no los toca, y el envío diferido (decisión 10) los
+  manda a la línea del primer camión real (prueba `LosConexosQuedanEnLaRuta...`).
+- **Captura:AceptarVehiculoCliente (#138):** como en el camino síncrono, con la bandera el vehículo del cliente (el del camión
+  provisional) llega al respaldo; si el cubicador recomienda, manda el cubicador.
+- **Progreso:** `GET /web/licitaciones/{folio}` trae `progreso_cubicacion` (`en_curso`, `con_fallas` o `completa`, con total,
+  cubicadas, pendientes y fallidas), por ruta `estado_cubicacion`, `error_cubicacion`, el resultado y los `camiones`, y `cubicacion[]` con
+  los avisos. No se agregó un endpoint de progreso aparte.
+
+### Qué cambia del "todo o nada" de la #158
+
+En el formulario, nada. En la licitación con cubicador el "todo o nada" pasa a ser **hacia Nexo**: la licitación sí se guarda aunque una
+ruta falle después, pero nada viaja a Nexo hasta que todas sus rutas estén cubicadas (`CubicacionEnCurso` bloquea el reintento del
+envío, el recálculo de una ruta y la reclamación del envío). Las corridas que el cubicador creó para las demás rutas siguen guardadas
+(antes quedaban huérfanas).
+
+### Excel
+
+`GET /web/licitaciones/{folio}/excel` agrega la columna `Camiones Cotifly` (un camión por línea de la celda, con los nombres del
+catálogo del cubicador o el código) y la hoja `Camiones Cotifly` (un camión por fila). `IClsLicitacionService.ExportarCotizacionAsync`
+genera el mismo Excel para cualquier cotización propia con rutas: es la que debe usar "Ver detalle" (HU-018.1, parte C).
+
+### Riesgos
+
+- `Cubicador:MaximoParalelo` es un supuesto (4) hasta que el cubicador conteste P6. Cada llamada en curso ocupa una conexión a SQL
+  Server sin pool (el cupo).
+- **FIFO:** las rutas se atienden en orden de llegada (`createdAt`, índice `(cubicacionDisponibleAt, createdAt)`): una licitación
+  grande ocupa todos los cupos y la siguiente espera a que termine (no hay reparto justo entre licitaciones).
+- **"El último gana" en la cabecera:** varias rutas de la misma licitación se guardan en paralelo (cada una con su réplica o tarea) y
+  cada guardado recalcula los totales; si la cabecera cambia, el último guardado gana. Es inocuo: mientras se cubica no hay flete y el
+  precio de la cabecera es `null` en todos los guardados; el envío a Nexo recarga la cotización con el candado del envío.
+- `Cubicador:ReclamoSegundos` debe ser mayor que `Cubicador:TiempoEsperaSegundos` + 30 s (se valida al arrancar): si el reclamo
+  venciera durante la llamada, otra réplica repetiría la ruta.
+- La cubicación en segundo plano no sube `versionNegocio`: un ETag leído durante la cubicación sigue valiendo, pero las mutaciones que
+  dependen de los camiones están bloqueadas mientras tanto.
+- **Esquema pendiente:** el cambio está en `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (con respaldo previo, pendiente de
+  @scalderon-bs y del DBA), **no** en `01_crear_esquema.sql` ni en `migrations_mssql/`: así queda en un solo lugar hasta que se
+  apruebe (entonces se mueve a `db/scripts/` o se consolida en el 01). EF mapea esas columnas sin condición: sin el 04,
+  `/health/ready` responde "esquema incompleto: falta 04" y cualquier lectura de rutas falla. **El PR de la #160 no se fusiona hasta
+  que se apliquen el 0010 y el 04.** Las pruebas aplican el 04 en las dos cadenas (migrada e instalada).
 
 
 ## Decisión — HU-023.2 (#157): "Calcular cubicaje" contra el cubicador (transición previa al corte)
@@ -267,3 +355,5 @@ el del cubicador a más del 1 % y el 429 sin reintento con el bloqueo compartido
 | **Confirmar la fecha real del corte de `POST /api/cubicacion`** (Nexo tampoco consume `/recomendaciones`) y verificar "Calcular cubicaje" contra el cubicador de QA (flota mixta, código desconocido) | Duban con Nexo y el equipo del cubicador, antes del viernes 16 |
 | Frontend: pintar la lista de vehículos de `POST /web/cubicacion` y mandar `codigo_mercancia` (HU-023.2) | Frontend (HU-023-FE) |
 | Llave por ambiente en los secretos de Dokploy (`Cubicador__ApiKey`) | Duban (sin tocar el clúster sin autorización) |
+| Aprobar y aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación, HU-023.5) | DBA |
+| P6: confirmar cuántas llamadas en paralelo aguanta el cubicador y fijar `Cubicador__MaximoParalelo` | Equipo del cubicador |

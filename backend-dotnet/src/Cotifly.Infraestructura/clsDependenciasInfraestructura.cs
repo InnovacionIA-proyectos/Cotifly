@@ -105,6 +105,9 @@ public static class clsDependenciasInfraestructura
         // HU-023.2 (#157): "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
         servicios.AddOpcionesValidadas<Aplicacion.Cubicacion.Services.clsOpcionesCubicacion>(configuracion, Aplicacion.Cubicacion.Services.clsOpcionesCubicacion.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
+        servicios.AddOpcionesValidadas<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>(
+            configuracion, Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion.Seccion);
+        servicios.AddSingleton<IValidateOptions<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>, clsValidadorOpcionesCubicacionLicitacion>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -349,6 +352,10 @@ public static class clsDependenciasInfraestructura
             .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
                 clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
+
+        // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
+        servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
+        servicios.AddHostedService<clsWorkerCubicacionLicitacion>();
 
         servicios.Configure<TelemetryOptions>(telemetria =>
         {
