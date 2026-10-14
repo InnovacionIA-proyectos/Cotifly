@@ -1,6 +1,6 @@
 # Matriz de pruebas HU-021 + HU-023 (campaña de QA de la integración)
 
-**Fecha:** 2026-10-13, actualizada el 2026-10-14 con #174 (§7) · **Rama:** `hu-023-integracion` (sale de `origin/QA` `cf744ff` + merges de #172, #159 y #160) · **Entorno:** SDK
+**Fecha:** 2026-10-13, actualizada el 2026-10-14 con #174 (§7) y con la integración final (§8) · **Rama:** `hu-023-integracion` (sale de `origin/QA` `cf744ff` + merges de #172, #159 y #160) · **Entorno:** SDK
 `mcr.microsoft.com/dotnet/sdk:10.0` + Testcontainers (SQL Server 2019), **Nexo, cubicador, TRM, relay SMTP y modelo falsos**
 (`tests/Comun/`). Las pruebas contra los sistemas reales no son parte de este documento (las hace otro frente).
 
@@ -87,7 +87,7 @@ fijar `Cubicador:MaximoParalelo = 1` en esa prueba; después, 8/8 en 4 repeticio
 | 20 | Re-solicitud en el mismo folio y `-vN` | Sí | Sí | Sí | F1, F4 | **Verde** | — |
 | 21 | Asistente que propone y confirma (sin montos al LLM) | Sí | Sí | Sí | F6 | **Verde** | — |
 | 22 | `/resultado` y `/seguimiento` | Sí | Sí | Sí | F1, F8 | **Verde** | — |
-| 23 | Métricas | Sí | Sí | Sí | F1 | **Con huecos** | Cadena ganada en una versión que no es la vigente vale 0 (§6, B3, lo corrige #173); el interbloqueo I1 queda mitigado en #174 y su arreglo de fondo pendiente (§6) |
+| 23 | Métricas | Sí | Sí | Sí | F1 | **Verde** (integración final, §8) | B3 corregido en #173; I1 con `FORCESEEK` (§8.2). Queda el choque con escrituras del mismo comercial, que cubre el reintento; solución de fondo `READ_COMMITTED_SNAPSHOT` (DBA) |
 | 24 | Health/ready (0010, 04 y cubicador) | Sí | Sí (`clsBaseDatosHealthCheckTests` 14) | No | — | **Verde** | — |
 
 ## 4. E2E flujo a flujo (`tests/Cotifly.Api.Tests/Web/clsE2EFlujosHU023Tests.cs`)
@@ -154,13 +154,14 @@ Fuente: HU-023 del Sprint 5 (criterios de aceptación e issues HU-023.1 a .5) y 
 - **E1 (baja). Resuelta en #174.** La cubicación en segundo plano (`cubicar_ruta_licitacion`, una fila por ruta procesada), el reintento
   (`reintentar_cubicacion_licitacion`) y el recálculo de una ruta (`recalcular_vehiculos_ruta`) dejan su fila en `EventosHerramienta`,
   con el patrón de `IClsAuditoriaService` y sin montos, pesos ni mercancías.
-- **E2 (decidida).** HU-023.4 pedía una bandera para no mandar los códigos del cubicador mientras Nexo no tenga cuarentena. ADR-020:315
-  la descartó: los códigos viajan siempre (F2 lo muestra: `tipoVehiculo = 3S3` aunque las banderas estén apagadas en otras pruebas).
+- **E2 (resuelta con #159).** HU-023.4 pedía una bandera para no mandar los códigos del cubicador mientras Nexo no tenga cuarentena. Con
+  el contrato de Nexo #297, `Nexo:EnviarCodigosCubicador` (apagada por defecto) controla `tipoVehiculo`/`carroceria` de los camiones del
+  cubicador; el envío registra lo que viajó (`envio_nexo_registrado`) y el polling empareja con eso, no con la bandera actual (§8.3).
 - **E3 (baja). Resuelta en #174.** `recalculo_vehiculos_ruta.feature` (5 escenarios: recálculo con If-Match, 428, 409
   `CONFLICTO_CONCURRENCIA`, 409 `ESTADO_NO_PERMITE` ya en Nexo y ruta inexistente).
 - **E4 (baja).** La reconsulta `GET /recomendaciones/{idRecomendacionVehiculo}/mercancias` no está implementada (la HU la condicionaba a que
   el detalle la necesitara).
-- **E5 (media).** La métrica "valor ganado" toma los valores de la versión vigente aunque la ganada sea otra (B3); ADR-016 §2 lo define así,
+- **E5 (media). Resuelta en #173** (B3: lo ganado sale de la versión ganada). La métrica "valor ganado" toma los valores de la versión vigente aunque la ganada sea otra (B3); ADR-016 §2 lo define así,
   pero la HU de métricas espera el valor de lo ganado.
 - **E6 (baja). Resuelta en #174.** `identidad_portal.feature` (login por nombre de usuario, ID del portal en `X-Portal-clsUsuario-Id`,
   revinculación por login y por refresh con el vínculo en NULL).
@@ -170,8 +171,8 @@ Fuente: HU-023 del Sprint 5 (criterios de aceptación e issues HU-023.1 a .5) y 
 | Id | Severidad | Archivo:línea | Reproducción | Estado |
 |---|---|---|---|---|
 | B2 | Media | `src/Cotifly.Aplicacion/Licitaciones/Services/clsCubicacionLicitacionService.cs:252-256` (`EnviarSiListaAsync`: si el candado del envío está tomado, devuelve `false` sin volver a mirar) | Licitación de 10 rutas con `Cubicador:MaximoParalelo = 4` y el cubicador sin demora (`clsE2EFlujosHU023Tests.F2` sin el `MaximoParalelo = 1`): las dos últimas rutas terminan juntas; la que llega primero toma el candado, ve la otra todavía pendiente y no envía; la última no obtiene el candado y tampoco envía. Las 10 rutas quedan `cubicada` y Nexo no recibe nada (3 de 5 corridas). La licitación sale recién con la recuperación (`EnviarCubicadasAsync`), cuando `updatedAt` tiene más de `EsperaReenvioPendiente` (2 min): demora, no pérdida | **Corregido en #174** (§7.1) |
-| B3 | Media | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:35-95` (`SqlCotizaciones`: valores de la versión vigente, resultado de cualquier versión de la cadena) | Formulario costeado y enviado → `re-solicitar` con `nueva_version` (la `-v2` queda `pendiente_costeo`, sin precio) → entregar la original → `POST /resultado` ganada sobre la original → `GET /web/metricas/comercial`: `ganadas = 1` y `valor_ganado_cop = 0` | Lo corrige #173 |
-| I1 | Inestable | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:208-222` (`ConReintentoPorInterbloqueoAsync`, 3 intentos) | `metricas_tablero.feature` "El gerente filtra el tablero por un comercial de su regional" falló 1 vez (corrida preliminar) con `SqlException 1205` tras agotar los 3 reintentos; la lectura del tablero choca con las escrituras del polling de otras pruebas. Sin `READ_COMMITTED_SNAPSHOT` el riesgo existe también en producción | **Causa medida y mitigado en #174**; arreglo de fondo pendiente (§7.2) |
+| B3 | Media | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:35-95` (`SqlCotizaciones`: valores de la versión vigente, resultado de cualquier versión de la cadena) | Formulario costeado y enviado → `re-solicitar` con `nueva_version` (la `-v2` queda `pendiente_costeo`, sin precio) → entregar la original → `POST /resultado` ganada sobre la original → `GET /web/metricas/comercial`: `ganadas = 1` y `valor_ganado_cop = 0` | **Corregido en #173** (§8) |
+| I1 | Inestable | `src/Cotifly.Infraestructura/Metricas/Repositories/clsMetricasRepository.cs:208-222` (`ConReintentoPorInterbloqueoAsync`, 3 intentos) | `metricas_tablero.feature` "El gerente filtra el tablero por un comercial de su regional" falló 1 vez (corrida preliminar) con `SqlException 1205` tras agotar los 3 reintentos; la lectura del tablero choca con las escrituras del polling de otras pruebas. Sin `READ_COMMITTED_SNAPSHOT` el riesgo existe también en producción | **Mitigado en #174 y `FORCESEEK` en la integración final** (§8.2); fondo: `READ_COMMITTED_SNAPSHOT` (DBA) |
 
 ## 7. Cambios de #174 (2026-10-14)
 
@@ -269,3 +270,77 @@ Build `--no-incremental` en Release: 0 errores y 0 warnings de código (solo los
 - **Auditoría fuera del cupo (BAJA).** `cubicar_ruta_licitacion` se registra después de soltar el cupo del cubicador.
 - **Métricas.** `FORCESEEK` no se aplica aquí (lo aplica el coordinador en la integración final, después de #173).
   `docs/10-operacion.md` §10.7 recomienda `READ_COMMITTED_SNAPSHOT` como decisión del DBA.
+
+## 8. Integración final HU-023 (2026-10-14)
+
+Rama `hu-023-integracion-final`, sale de `hu-023-integracion` (`4af9366`). Todo con los falsos (Nexo, cubicador, TRM, relay SMTP y modelo).
+
+### 8.1 Ramas y conflictos
+
+| Paso | Commit de la rama | Conflictos |
+|---|---|---|
+| + `origin/159-hu-023-envio-nexo-cubicador` (contrato Nexo #297, banderas, `envio_nexo_registrado`, peso declarado, 429) | `69c2ae4` | ninguno textual |
+| + `origin/173-hu-023-correcciones-e2e` (rol 32, idempotencia, `estado_nexo`, PDF, B3, categorías) | `24a3195` | ninguno textual |
+| + `origin/174-hu-023-licitacion-y-matriz` (B2, doble envío, BDD, auditoría, métricas 1205) | `2d4d82a` | ninguno textual |
+
+Archivos tocados por más de una rama y revisados a mano: `clsEnvioCosteoService`, ADR-020, `GUIA_FRONTEND` (#159 y #173), `10-operacion` y
+`clsNexoFalso` (#159 y #174), `clsMetricasRepository` (#173 y #174). Quedaron unidos sin pérdida: códigos de error, banderas
+(`Nexo:EnviarGrupoRutaId`, `EnviarDatosCubicador`, `EnviarCodigosCubicador`, en `.env.example`, `DEPLOY.md` y `10-operacion`) y pruebas.
+Scripts `pendientes`: `03` y `04` (anteriores), `05` y `06` (#173); no hubo números repetidos, no hizo falta renumerar.
+
+**Conflictos semánticos (Git no los marca) corregidos en la integración:**
+
+- **E2E F1 y F2 (`clsE2EFlujosHU023Tests`).** Esperaban `codigoTipoMercancia` en las posiciones y `tipoVehiculo` en el alta. Con #159 el
+  código de mercancía no viaja (Nexo #297) y los códigos del cubicador solo con `Nexo:EnviarCodigosCubicador`. El E2E enciende la bandera
+  junto con los datos del cubicador (Nexo con el contrato completo) y verifica que el código de mercancía NO viaja.
+- **`clsLicitacionCubicadorEndpointsTests` (2 pruebas de #160).** Mismo motivo: encienden `Nexo:EnviarCodigosCubicador`.
+- **Esperas con `DateTime.UtcNow`.** `clsCubicacionLicitacionServiceTests.AlAgotarLaEsperaDelCandado…` (de #174) se colgó (volcado
+  `dumpasync`: esperando `EnviarSiListaAsync`) y `ProcesarCubicacionAsync` devolvió 6 de 10 en la regresión de B2: el reloj de la VM de
+  Docker salta (§8.4) y cortaba el bucle antes de tiempo. Ahora usan `Stopwatch`, y la prueba del tope falla en vez de colgarse.
+
+### 8.2 I1: `FORCESEEK`
+
+`FROM dbo_cotifly.CotizacionesSolicitud c WITH (FORCESEEK)` en `SqlCotizaciones`: la lectura busca por
+`ix_cotizaciones_usuarioId_createdAt` y no toma candados en filas de otros comerciales. Se mantienen los 6 reintentos de #174 para el
+choque con escrituras del mismo comercial. **La solución de fondo es `READ_COMMITTED_SNAPSHOT` en la base: decisión del DBA**
+(`10-operacion` §10.7).
+
+Estrés (prueba local no versionada de #174; 20 s, 4 escritores intermitentes, 30 cotizaciones por comercial), 6 rondas:
+
+| Escrituras sobre | Lecturas | 1205 tras los reintentos |
+|---|---|---|
+| Otro comercial | 5288 | **0** |
+| El mismo comercial | 127 | 1 |
+
+Métricas: `clsCalculadoraMetricas*` (23), `clsMetricasRepositoryTests` (5, incluye `-v2` ganada: lo ganado sale de la versión ganada),
+`clsMetricas*` HTTP (7) y BDD de métricas y tablero (10): todas en verde.
+
+### 8.3 Pruebas específicas
+
+| Prueba | Resultado |
+|---|---|
+| Fuzz del emparejador (#159), 16 casos × 4000 cotizaciones, bandera de códigos distinta entre envío y lectura | Leyendo lo registrado en el envío: **los mismos cruces de ruta que QA** (0 en 13 casos; 5, 18 y 1 en los tres sin `grupoRutaId` con la Mesa cambiando vehículos, igual que QA). Sin registro (se asume `false`): **0**. Con la bandera actual opuesta (el error que #159 evita): hasta 140 |
+| F2 (B2) con `COTIFLY_REPETICIONES_B2=50`, en paralelo con la suite completa | 3 de 3 corridas en verde (150 licitaciones): exactamente un alta a Nexo por repetición |
+| Reintento con folio y timeout tras Nexo (#173), 3 rondas de `clsEnvioCosteoServiceTests` (66) | Verde: una sola solicitud en Nexo |
+| Idempotencia: 4 POST concurrentes con la misma `Idempotency-Key`, 20 repeticiones (prueba no versionada) | 20 de 20: `201,201,201,201`, 1 alta en Nexo y 1 folio |
+| PDF de horas y conexos (`clsPdfIncluyeConexosTests`, `clsGeneradorPdfMigraDocTests`) | 24 + 48 en verde |
+| E2E de los 8 flujos (`clsE2EFlujosHU023Tests`, 9 pruebas) | 3 de 3 rondas en verde tras el ajuste de §8.1 |
+
+### 8.4 Corridas completas
+
+Build `--no-incremental` en Release: 0 errores y **0 warnings de código**. Avisos aparte: 24 NU1902/NU1903 de
+`System.Security.Cryptography.Pkcs` 10.0.0 (12 únicos), fuera de esta integración.
+
+| Corrida | Total | Correctas | Omitidas | Fallidas |
+|---|---|---|---|---|
+| 1 | 4021 | 4009 | 2 | 10 |
+| 2 | 4021 | 4010 | 2 | 9 |
+| 3 | 4021 | 4002 | 2 | 17 |
+
+**Todas las fallas son `SqlException: Execution Timeout Expired` (Win32 258)** o su efecto directo (login 401 y `DbUpdateException` por
+timeout al guardar), a los 0,1 a 13 s de comandos con `CommandTimeout` de 30 a 120 s. No se repiten en las mismas pruebas (36 fallas en
+unas 34 pruebas distintas; solo la familia de scripts de `clsEsquemaTests` aparece en las tres). Causa medida: **el reloj de la VM de
+Docker Desktop (WSL2) salta entre 0 y +121 s respecto del host** en segundos, y SqlClient mide el plazo con el reloj de pared (lo mismo que
+documenta `clsAppLockSql`, #125). Recursos sin presión: SQL de Testcontainers ~1 GB de 31 GB, CPU sin saturar; disco del host al 95 %
+(51 GB libres; 245 GB de imágenes recuperables, no se tocaron). Hace falta repetir las 3 corridas con el reloj sincronizado (reiniciar
+Docker Desktop/WSL, decisión del usuario) para cerrar en 0 fallas.
