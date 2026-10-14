@@ -15,6 +15,12 @@ public sealed record clsCosteoConsultadoNexo(string EstadoSolicitud, IReadOnlyLi
     /// <c>solicitud.lineas[]</c> (ADR-017 §3). Vacío si Nexo no lo trae.
     /// </summary>
     public IReadOnlyList<clsLineaSolicitudNexo> Detalle { get; init; } = [];
+
+    /// <summary>
+    /// ¿Los códigos de vehículo y carrocería del cubicador viajaron en las líneas (<c>Nexo:EnviarCodigosCubicador</c>, HU-023.4)? Con
+    /// <c>false</c>, el emparejador no compara el vehículo de los camiones del cubicador (su línea iba vacía). Por defecto <c>true</c>.
+    /// </summary>
+    public bool CodigosCubicadorEnviados { get; init; } = true;
 }
 
 /// <summary>
@@ -30,6 +36,12 @@ public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipo
 
     /// <summary>Camión de la recomendación del cubicador que Nexo guardó en la línea (<c>idRecomendacionVehiculo</c>), o <c>null</c>.</summary>
     public string? IdRecomendacionVehiculo { get; init; }
+
+    /// <summary>
+    /// Posición de la línea en el arreglo del alta (<c>numeroLinea</c> del GET, Nexo #297; desde 1), o <c>null</c> si Nexo no lo trae.
+    /// Desempate fuerte entre camiones idénticos de un mismo <see cref="GrupoRutaId"/>.
+    /// </summary>
+    public int? NumeroLinea { get; init; }
 }
 
 /// <summary>
@@ -50,12 +62,18 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
     /// (<see cref="clsLineaSolicitud.PesoLineaNexo"/>: con un solo camión, el de la ruta; con varios, el del camión). HU-023.4: el
     /// emparejador compara con ese peso en una sola pasada; comparar primero con el del cubicador cruzaba costos entre rutas.
     /// </summary>
-    public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion)
+    /// <remarks>
+    /// Con <paramref name="codigosCubicador"/> en <c>false</c> (<c>Nexo:EnviarCodigosCubicador</c> apagada) un camión del cubicador viajó sin
+    /// vehículo ni carrocería: se empareja sin ellos (lo que la Mesa le ponga en Nexo no lo contradice).
+    /// </remarks>
+    public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion, bool codigosCubicador = true)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(camion);
+        var sinCodigos = !codigosCubicador && camion.IdRecomendacionVehiculo is not null;
         return new clsCamionParaEmparejar(
-            camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia, camion.TipoVehiculo, camion.Carroceria,
+            camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia,
+            sinCodigos ? null : camion.TipoVehiculo, sinCodigos ? null : camion.Carroceria,
             ruta.PesoLineaNexo(camion))
         {
             RutaId = ruta.Id,
@@ -195,6 +213,12 @@ public static class clsEmparejadorLineasNexo
             {
                 empates.Add($"{grupo.Count} camiones idénticos de la ruta {grupo[0].Origen} → {grupo[0].Destino} con {candidatos.Count} líneas candidatas en Nexo");
                 continue;
+            }
+
+            // Nexo #297: con el grupo y numeroLinea en todas las candidatas, el orden del alta manda (desempate fuerte); si no, el id.
+            if (conReferencia && candidatos.All(n => n.NumeroLinea is not null))
+            {
+                candidatos = [.. candidatos.OrderBy(n => n.NumeroLinea)];
             }
 
             foreach (var (camion, linea) in grupo.Zip(candidatos))

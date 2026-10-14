@@ -529,14 +529,17 @@ la rama `QA` de Nexo (fusionado, sin desplegar). Sin cambios de esquema.
 - **Identidad:** todos los adaptadores mandan `X-Portal-clsUsuario-Id` (Nexo responde 401 a `X-Portal-Usuario-Id`), desde un solo
   lugar: `Infraestructura/Configuracion/clsIdentidadNexo.cs`.
 - **`grupoRutaId`** (antes `referenciaRuta`) por línea con `Nexo:EnviarGrupoRutaId` (antes `Nexo:EnviarReferenciaRuta`);
-  **`idRecomendacionVehiculo`** por línea y **`codigoTipoMercancia`** por posición (máx. 40) con `Nexo:EnviarDatosCubicador`. Las dos
-  apagadas por defecto. `clsLineaSolicitudCosteo.IdRecomendacionVehiculo` y `clsLineaSolicitudNexo.GrupoRutaId` /
+  **`idRecomendacionVehiculo`** por línea con `Nexo:EnviarDatosCubicador`. Las dos apagadas por defecto. Con el contrato de Nexo #297
+  (2026-10-14): el código de mercancía **no** viaja, no hay campo de orden (Nexo numera por el arreglo y devuelve `numeroLinea`, que el
+  emparejador usa como desempate dentro de un grupo). `clsLineaSolicitudCosteo.IdRecomendacionVehiculo` y `clsLineaSolicitudNexo.GrupoRutaId` /
   `IdRecomendacionVehiculo` son nuevos.
 - **Emparejador** (§3.6): primero por (`grupoRutaId`, `idRecomendacionVehiculo`) si la línea de Nexo los trae; después, como antes, por
   grupo y contenido o solo por contenido. La columna de orden ya no hace falta para emparejar.
 - **Peso** (`clsLineaSolicitud.PesoLineaNexo`): con un solo camión viaja el peso declarado de la ruta (cuadra con las posiciones; evita
   `PESO_INCONSISTENTE`); el del cubicador se guarda y se muestra. Con varios, el de cada camión, sin posiciones.
-- **Códigos de vehículo y carrocería del cubicador:** viajan sin bandera (el usuario acepta que Nexo cree filas nuevas en su catálogo).
+- **Códigos de vehículo y carrocería del cubicador:** detrás de `Nexo:EnviarCodigosCubicador` (apagada): la línea del camión del
+  cubicador va sin vehículo ni carrocería hasta que Nexo despliegue la cuarentena (18.4) y #297. El vehículo digitado del respaldo
+  (`Captura:AceptarVehiculoCliente`) sí viaja.
   **Línea sin vehículo:** sin cambios; se espera la 19.2 de Nexo (`PorCostear`).
 - **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` solo en `catalogos/*` y la bandeja
   `GET /api/solicitudes` (el polling y lo demás no se congelan) y la tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.

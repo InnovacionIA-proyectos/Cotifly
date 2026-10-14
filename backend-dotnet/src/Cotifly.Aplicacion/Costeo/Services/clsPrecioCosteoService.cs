@@ -78,7 +78,7 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var porCamion = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (Ruta: r, Camion: v))).ToDictionary(x => x.Camion.Id);
         var asignados = cotizacion.Vehiculos.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
-        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c)).ToList();
+        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c, foto.CodigosCubicadorEnviados)).ToList();
         var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(candidatos, detalle, asignados);
         foreach (var (camionId, nexoId) in emparejamiento.Pares)
         {

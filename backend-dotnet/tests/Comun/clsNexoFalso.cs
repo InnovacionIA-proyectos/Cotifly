@@ -511,6 +511,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 // HU-023.4 (#159): clsLineaCosteoDto devuelve lo que recibió (null si no viajó).
                 grupoRutaId = s.Lineas[i].GrupoRutaId,
                 idRecomendacionVehiculo = s.Lineas[i].IdRecomendacionVehiculo,
+                // Nexo #297 (S5-HU-20.5): posición de la línea en el arreglo del alta, desde 1.
+                numeroLinea = i + 1,
             }).ToArray(),
         });
     }

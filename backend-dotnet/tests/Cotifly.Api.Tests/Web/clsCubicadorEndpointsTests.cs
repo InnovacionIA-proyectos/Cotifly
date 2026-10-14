@@ -46,6 +46,41 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     private string Cadena => _entorno.BaseDatos.CadenaCotifly;
 
     [Fact]
+    public async Task ConLosCodigosDelCubicadorApagadosLasLineasVanSinVehiculoYCadaCamionRecibeSuFlete()
+    {
+        // Contrato de Nexo #297 (por defecto): la línea del camión del cubicador va sin tipoVehiculo ni carroceria (la resuelve la Mesa);
+        // Cotifly guarda los códigos y el polling empareja sin compararlos, aunque la Mesa le ponga otro vehículo.
+        _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
+            ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
+            : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
+        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = "false" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
+        var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
+        lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["carroceria"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
+            .Should().Equal((null, null, 16_000m), (null, null, 12_000m), (null, null, 12_500m));
+        lineas.Should().OnlyContain(l => l["posiciones"] == null || l["posiciones"]!.AsArray().All(p => p!["codigoTipoMercancia"] == null));
+
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.SemillaOrdenLineas = 20261008;
+        _nexo.AsignarVehiculo(solicitud, 1, "2S2", "ESTACAS");
+        _nexo.CostearLinea(solicitud, 0, 1_600_000m);
+        _nexo.CostearLinea(solicitud, 1, 1_200_000m);
+        _nexo.CostearLinea(solicitud, 2, 1_250_000m);
+        await api.ProcesarPollingAsync(folio);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            "SELECT STRING_AGG(CONCAT(CAST(v.pesoKg AS nvarchar(20)), '=', CAST(v.costoFlete AS nvarchar(30))), ',') WITHIN GROUP (ORDER BY v.pesoKg DESC) "
+            + "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
+            .Should().Be("16000.00=1600000.00,12500.00=1250000.00,12000.00=1200000.00", "cada camión recibe el flete de su línea");
+    }
+
+    [Fact]
     public async Task VariosCamionesPorRutaViajanANexoUnoPorLineaYCadaUnoRecibeSuFlete()
     {
         // Ruta 1 (28000 kg): dos vehículos; ruta 2 (12500 kg): uno.
@@ -787,9 +822,19 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _cubicador.Dispose();
     }
 
+    /// <summary>
+    /// API con el cubicador falso. Estas pruebas verifican la cadena completa con los códigos del cubicador en Nexo, así que encienden
+    /// <c>Nexo:EnviarCodigosCubicador</c> (apagada por defecto, contrato de Nexo #297) salvo que <paramref name="extra"/> diga otra cosa.
+    /// </summary>
     private clsApiWebPruebas Api(IDictionary<string, string?>? extra = null)
     {
-        var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, extra: extra, cubicador: _cubicador);
+        var configuracion = new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = "true" };
+        foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
+        {
+            configuracion[clave] = valor;
+        }
+
+        var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, extra: configuracion, cubicador: _cubicador);
         _apis.Add(api);
         return api;
     }
