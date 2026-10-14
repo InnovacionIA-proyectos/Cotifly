@@ -13,12 +13,12 @@ namespace Cotifly.Aplicacion.Tests.Identidad;
 
 /// <summary>
 /// Puertos simulados (NSubstitute) de la verificación doble, el login, el refresh y el logout, con un catálogo de roles
-/// como el de las pruebas de integración: <c>comercial</c> ↔ IDROLES 34 y <c>gerente_comercial</c> ↔ IDROLES 35.
+/// como el de las pruebas de integración: <c>comercial</c> ↔ IDROLES 32 y <c>gerente_comercial</c> ↔ IDROLES 31 (los de dbSolucionesTI_Prueba, #173).
 /// </summary>
 internal sealed class clsEscenarioIdentidad
 {
-    public const int RolExternoComercial = 34;
-    public const int RolExternoGerente = 35;
+    public const int RolExternoComercial = 32;
+    public const int RolExternoGerente = 31;
     public const int RolExternoSinMapeo = 40;
 
     public clsEscenarioIdentidad()

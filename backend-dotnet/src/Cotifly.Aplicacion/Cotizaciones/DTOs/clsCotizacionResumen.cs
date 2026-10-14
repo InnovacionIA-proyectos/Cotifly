@@ -55,6 +55,13 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<clsCubicacionRutaResumen>? Cubicacion { get; init; }
 
     /// <summary>
+    /// #173: avisos de una respuesta que salió incompleta después de guardar (hoy solo <c>RESUMEN_INCOMPLETO</c>: falló la lectura del
+    /// nombre de la línea). <c>null</c> (no se serializa) cuando el resumen está completo.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Avisos { get; init; }
+
+    /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
     /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
     /// </summary>

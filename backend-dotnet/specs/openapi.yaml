@@ -148,7 +148,7 @@ paths:
             example:
               idUsuario: "USR12345"
               nombreUsuario: "Nombre Apellido"
-              roles: ["34"]
+              roles: ["32"]
       responses:
         '200':
           description: Sesión emitida
@@ -1241,8 +1241,17 @@ paths:
         no envía nada a Nexo. El polling calcula el precio del flete y de los conexos en pesos y lo convierte con esa TRM
         (`round(precio_cop / trm, 2)`); el costo sigue en COP. El ajuste de margen usa la misma TRM fijada (nunca la del
         día), el reintento la conserva y el PDF lleva la nota de TRM mínima con la `trm_aplicada`.
+
+        **Respuesta e idempotencia (#173).** El 201 no depende de lecturas secundarias: si después de guardar y enviar a Nexo
+        falla la lectura del nombre de la línea (timeout de la base), igual responde 201 con lo esencial, `linea_negocio: null`
+        y `avisos: ["RESUMEN_INCOMPLETO"]` (el frontend recarga "Mis cotizaciones"). Con `Idempotency-Key`, una repetición del
+        mismo POST (mismo usuario y mismo cuerpo, 24 h) devuelve la cotización de la primera **sin crear otro folio ni otra
+        solicitud en Nexo**; toda captura exitosa consume la clave, también la que quedó en `error_envio` (se reintenta con
+        `.../costeo/reintentar`). El frontend debe generar la clave al pulsar Enviar y reutilizarla en los reintentos.
       security:
         - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1280,6 +1289,15 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorNegocio'
                   - $ref: '#/components/schemas/ErrorWeb'
+        '409':
+          description: |
+            #173. `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`: la `Idempotency-Key` ya creó un folio cuyo envío a Nexo
+            no terminó de registrarse (la primera petición falló después de confirmar el folio). No se vuelve a llamar a Nexo;
+            `detalle.folio` y `detalle.solicitud_nexo_id` dicen qué revisar. No reintentar: llevar al comercial a "Mis cotizaciones".
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
         '503':
           description: |
             `CATALOGOS_FLETE_NO_DISPONIBLE`: los catálogos maestros de Nexo no están disponibles (Nexo caído o sin configurar, el
@@ -2801,7 +2819,7 @@ components:
         volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
         cuerpo responde 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
         falló) tampoco la consume, y repetirla vuelve a ejecutar (con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA`:
-        recargar y reintentar).
+        recargar y reintentar). En `POST /web/solicitudes-costeo` (#173) toda captura 201 la consume, también con `error_envio`.
       schema:
         type: string
         minLength: 8
@@ -3511,6 +3529,14 @@ components:
             HU-023.3 (#158). Solo en la respuesta de `POST /web/solicitudes-costeo` y solo si alguna ruta pasó por el cubicador: por
             ruta, el resultado y los avisos (mercancías condicionadas, advertencias y extradimensión). Los avisos **no se guardan**:
             el frontend los muestra al crear; el resultado y el motivo quedan también en `GET .../costeo`.
+        avisos:
+          type: array
+          items:
+            type: string
+            enum: [RESUMEN_INCOMPLETO]
+          description: |
+            #173. Solo si la respuesta salió incompleta DESPUÉS de guardar (la cotización existe y, si aplica, ya está en Nexo):
+            `RESUMEN_INCOMPLETO` = falló una lectura secundaria y `linea_negocio` sale `null`. No reintentar el POST: recargar.
 
     CubicacionRuta:
       type: object
@@ -4287,7 +4313,10 @@ components:
           nullable: true
         categoria:
           type: string
-          example: logistico
+          example: adicional
+          description: |
+            #173. Categoría del servicio en el catálogo de Nexo (`logistico`, `adicional`...), por el id del catálogo o, si el conexo
+            se guardó con el id de la fila de Nexo, por su nombre. `logistico` solo si el catálogo de Nexo no responde o no lo tiene.
         cantidad:
           type: number
         precio:
@@ -4307,8 +4336,9 @@ components:
             Decisión 10 (HU-021.9, #136). Estado del envío diferido del conexo a la cotización de Nexo: `pendiente` (se envía cuando
             Nexo costea la línea del primer camión vigente de la ruta, o se reintentará), `enviado`, `incierto` (Nexo no respondió y
             su cotización no lo muestra: revisar en Nexo; Cotifly no lo reenvía solo) o `fallido_definitivo` (se agotaron los
-            reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). Solo en
-            `GET .../costeo`; `null` en las respuestas de las mutaciones y antes de enviar la solicitud a Nexo.
+            reintentos, o el conexo no tiene servicio en el catálogo de Nexo ni por id ni por nombre: revisar en Nexo). En
+            `GET .../costeo` y, desde #173, también en las respuestas de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`
+            (igual que el GET). `null` antes de enviar la solicitud a Nexo y en las demás mutaciones.
 
     RutaCosteo:
       type: object

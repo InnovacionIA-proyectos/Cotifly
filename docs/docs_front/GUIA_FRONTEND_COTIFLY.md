@@ -220,7 +220,7 @@ Cotifly no tiene login propio (ADR-009). ClientePro ya autenticó a la persona y
 {
   "idUsuario": "APEREZ",
   "nombreUsuario": "Ana Pérez",
-  "roles": ["34"]
+  "roles": ["32"]
 }
 ```
 
@@ -493,6 +493,15 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `GET /web/metricas/comercial` (PR de #45) | 400 (fechas), 401 | — |
 | `GET /web/metricas/regional` (PR de #45) | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /pdfs/{archivo}` | 401, 404 (JSON aunque se pidió un blob) | — |
+
+> **Captura idempotente (#173), obligatorio:** `POST /web/solicitudes-costeo` **debe** llevar el encabezado `Idempotency-Key`
+> (8 a 64 caracteres; un UUID). Se genera **al pulsar Enviar** y se **reutiliza tal cual en cada reintento** de esa misma captura
+> (timeout, error de red, 500); una captura nueva lleva una clave nueva. Con la misma clave el backend no crea otro folio ni otra
+> solicitud en Nexo: responde la cotización de la primera (201) o, si la primera no terminó de registrar el envío, 409
+> `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` y `detalle.folio`: no reintentar, llevar al comercial a "Mis
+> cotizaciones" con ese folio. La misma clave con otro cuerpo es 400. Si el 201 trae `avisos: ["RESUMEN_INCOMPLETO"]`, la cotización
+> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Limitación conocida: la clave vive en la memoria del servidor (se pierde
+> al reiniciar; tabla propuesta en `db/scripts/pendientes/06`).
 
 Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403; validaciones → 400 `ErrorWeb`; `CORREO_DESHABILITADO` (y en PR #77 `COSTEO_NEXO_NO_DISPONIBLE` y `COSTEO_NEXO_TIEMPO_AGOTADO`) → 503 `ErrorNegocio`; los de conflicto de estado del costeo → 409 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`.
 

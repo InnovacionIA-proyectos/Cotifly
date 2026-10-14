@@ -1,7 +1,7 @@
 # ADR-009 — Autenticación: patrón "Login SSO — Cliente Pro"
 
-- **Estado:** Aceptada. D8 (fuente de roles del lado servidor) resuelto el 2026-09-25 con la verificación doble. Quedan pendientes los IDROLES reales y la revisión del script 0002.
-- **Fecha:** 2026-09-24 (actualizada el 2026-09-25 con la implementación de #12 y el 2026-10-13 con la base de identidad compartida con Nexo, #172)
+- **Estado:** Aceptada. D8 (fuente de roles del lado servidor) resuelto el 2026-09-25 con la verificación doble. IDROLES de QA verificados el 2026-10-14 (#173): comercial = 32, gerente_comercial = 31. Queda pendiente la revisión del script 0002 y los IDROLES de producción.
+- **Fecha:** 2026-09-24 (actualizada el 2026-09-25 con la implementación de #12, el 2026-10-13 con la base de identidad compartida con Nexo, #172, y el 2026-10-14 con la tabla de equivalencias de roles, #173)
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #12 (HU-003.6, parte A). El contrato está en #17 (`openapi.yaml`, `/api/auth/*`).
 
 ## Contexto
@@ -115,6 +115,30 @@ UPDATE dbo_cotifly.Roles SET idRolExterno = <IDROLES de Gerente Comercial> WHERE
 
 Re-ejecutar el 0002 no pisa esos valores.
 
+### Equivalencias de roles (verificadas en `dbSolucionesTI_Prueba` el 2026-10-14, #173)
+
+| `tblSAPRoles.IDROLES` | `DESCRIPCION` | Rol interno de Cotifly (`Roles.codigo`) |
+|---|---|---|
+| **32** | `ClienteProComercial` | `comercial` |
+| **31** | `ClienteProGerencial` | `gerente_comercial` |
+| 34 | `AdministracionZonasGeocerca` | ninguno (**no** es el comercial) |
+| 23, 24, 25, 53… | `TarifasComercial`, `TarifasAdministrador`, `ClienteProAdmin`, `AdminNEXO`… | ninguno |
+
+El E2E real del 2026-10-14 encontró `comercial = 34` en `dbo_cotifly.Roles` de la base compartida: venía del seed de
+desarrollo (`scripts/sql/dev-03-roles-y-login.sql`, que usaba 34/35 como IDROLES inventados). Con eso ningún comercial real
+entraba como comercial, y quien tuviera el rol de geocerca habría entrado como comercial. El 31 del gerente sí estaba bien.
+
+- El seed de desarrollo, la `dbsolucionesti` falsa (`dev-02-identidad.sql`), las pruebas (`clsBaseDatosPruebas`,
+  `clsEscenarioIdentidad`) y los `.feature` usan ahora 32 y 31, los mismos de QA. El 40 de las pruebas es un rol cualquiera sin mapeo.
+- La base compartida se corrige con `db/scripts/operacion/corregir_rol_comercial_32.sql` (**requiere aprobación; lo ejecuta el
+  DBA**): respalda `Roles`, cambia 34 → 32 solo en `codigo = 'comercial'`, es idempotente y trae su consulta de verificación.
+- Con 31 y 32 mapeados, una persona que tenga los dos (como dguerra) entra como `gerente_comercial` por la regla de precedencia.
+  Después del script, quien solo tenía el 34 (y ningún otro rol mapeado) recibe 401 `sin_rol_autorizado` en el siguiente login o
+  refresh: ningún rol externo suyo mapea, así que no se llega a comparar con su asignación (no es `rol_externo_cambio`). Quien tenga una
+  asignación `comercial` y además el 31 resuelve `gerente_comercial` y queda en revisión (`rol_externo_cambio`), como cualquier cambio
+  de rol.
+- Producción: confirmar los IDROLES de la base de identidad de producción antes de fijarlos; no se asume que sean los mismos.
+
 ## Desviaciones
 
 - **De HU-003.6:** HU-003.6 solo consulta el almacén al crear el usuario; aquí se revalida en cada login y refresh (fail-closed: una baja en el almacén corta el acceso aunque la cuenta exista) y se agrega la búsqueda por `ID`.
@@ -159,7 +183,7 @@ Mitigaciones a acordar con ClientePro (scalderon-bs), en orden de preferencia:
 
 | Pendiente | Dueño |
 |---|---|
-| `IDROLES` reales de "Comercial" y "Gerente Comercial" (`UPDATE dbo_cotifly.Roles ...`) | Equipo ClientePro (scalderon-bs) + DBA |
+| `IDROLES` de producción de "Comercial" y "Gerente Comercial" (en QA: 32 y 31, #173) y aplicar `db/scripts/operacion/corregir_rol_comercial_32.sql` en la base compartida | Equipo ClientePro (scalderon-bs) + DBA |
 | Revisión y aplicación del script 0002 (`Roles`, `UsuariosRoles`, `UsuariosWeb.idUsuarioExterno` en lugar de `RolesMapeo`) | Sara + scalderon-bs |
 | Esquema real de las tres tablas en `dbSolucionesTI_Prueba` (textos; `ID`, `IDUSUARIO` e `IDROLES` ya los verificó Nexo) y permisos de `cotifly_app` (SELECT sin `CLAVE`) | DBA |
 | Base de identidad de producción (la misma que use Nexo en producción) y `ConnectionStrings:IdentidadPortal` configurada en Nexo QA (#172) | Duban con el equipo de Nexo |

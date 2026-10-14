@@ -15,6 +15,7 @@ namespace Cotifly.Infraestructura.Tests.Pdf;
 /// con teléfono, bloque aduanero solo en Internacional, variante multi, fuentes embebidas (solo Liberation Sans),
 /// texto literal sin HTML. Deja los 3 PDF de la comparación visual de #11 en <c>tests/artefactos/</c> (no versionados).
 /// </summary>
+[Collection(clsColeccionRenderPdf.Nombre)]
 public sealed class clsGeneradorPdfMigraDocTests
 {
     private static readonly clsGeneradorPdfMigraDoc _generador = new();

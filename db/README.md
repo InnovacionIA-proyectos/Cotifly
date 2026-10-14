@@ -87,7 +87,12 @@ Con `-Auto` / `-a` el `02` corre en **cada** arranque (la segunda vez no hace na
 `CotizacionMercancias`) el `02` se detiene con un error en su precondición y el ejecutador también: primero hay que migrar con
 `migrations_mssql/0009` y `0010`. `scripts/pendientes/` (propuestas pendientes de revisión, como el `03`) **no** la corre el
 ejecutador. Tampoco `scripts/operacion/`: scripts de datos de una sola vez que corre el DBA con aprobación, como
-`revincular_identidad_dbSolucionesTI_Prueba.sql` (#172, ver [`DEPLOY.md`](../DEPLOY.md#identidad-compartida-con-nexo-172)).
+`revincular_identidad_dbSolucionesTI_Prueba.sql` (#172, ver [`DEPLOY.md`](../DEPLOY.md#identidad-compartida-con-nexo-172)) y
+`corregir_rol_comercial_32.sql` (#173: `Roles.idRolExterno` de `comercial` pasa de 34, que en `dbSolucionesTI_Prueba` es
+`AdministracionZonasGeocerca`, a 32 `ClienteProComercial`; respalda `Roles` en `RespaldoRoles_173`, es idempotente y **requiere
+aprobación; lo ejecuta el DBA**). En `pendientes/` está también el `05_categoria_conexo.sql` (#173, categoría del catálogo de Nexo
+en el conexo; el backend no la mapea). Y el `06_idempotencia_captura.sql` (#173, deuda): tabla `CapturasIdempotentes` con `UNIQUE (usuarioId, clave)` para que la
+`Idempotency-Key` de la captura sobreviva a reinicios y a despliegues `start-first`; hoy vive en memoria y el backend no la mapea.
 
 ### Con Docker
 

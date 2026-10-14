@@ -58,10 +58,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string ScriptInstalacion = "01_crear_esquema.sql";
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
-    public const int RolExternoComercial = 34;
+    public const int RolExternoComercial = 32;
 
     /// <summary>IDROLES externo de prueba mapeado a <c>gerente_comercial</c>.</summary>
-    public const int RolExternoGerente = 35;
+    public const int RolExternoGerente = 31;
 
     /// <summary>IDROLES externo de prueba sin mapeo (no da acceso).</summary>
     public const int RolExternoSinMapeo = 40;
