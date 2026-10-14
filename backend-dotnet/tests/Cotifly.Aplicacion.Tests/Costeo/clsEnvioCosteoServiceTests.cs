@@ -1055,6 +1055,47 @@ public sealed class clsEnvioCosteoServiceTests
         reintento.Error.Datos!["solicitud_nexo_id"].Should().Be("sol-1", "el id de Nexo quedó registrado aunque el guardado falló");
     }
 
+    /// <summary>
+    /// #173 (segunda ronda del validador): timeout en el guardado posterior a Nexo y después "reintentar" desde la consola. El folio quedó
+    /// en pendiente_envio sin solicitudNexoId; el registro de la clave sí conoce el id de Nexo: se vincula (pendiente_costeo) y NO se reenvía.
+    /// </summary>
+    [Fact]
+    public async Task ElReintentoDeUnFolioCuyoGuardadoFalloTrasNexoLoVinculaSinReenviar()
+    {
+        var guardados = 0;
+        _unidad.GuardarCambiosAsync(Arg.Any<CancellationToken>()).Returns<Task<int>>(_ =>
+            ++guardados == 2 ? throw new TimeoutException("Execution Timeout Expired") : Task.FromResult(1));
+        var registro = new clsRegistroCapturasIdempotentesEnMemoria(_reloj);
+        var servicio = ServicioIdempotente(registro);
+        var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
+        var primera = () => servicio.CapturarUnaVezAsync(_ana, entrada, "clave-173-ef", Ct);
+        await primera.Should().ThrowAsync<TimeoutException>();
+
+        // Lo que quedó en la base: el mismo folio en pendiente_envio y sin solicitudNexoId (la captura se confirmó; el envío no se guardó).
+        _buscador.BuscarAsync(_ana, Nit, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsResultadoBusquedaClientes>>>(_ => throw new InvalidOperationException("corte"));
+        try
+        {
+            await Servicio().CapturarAsync(_ana, entrada, Ct);
+        }
+        catch (InvalidOperationException)
+        {
+            // El corte antes de Nexo deja el folio confirmado y sin enviar.
+        }
+
+        var guardada = _creada!;
+        guardada.EstadoCosteo.Should().BeOneOf(EstadoCosteo.PendienteEnvio, EstadoCosteo.ErrorEnvio);
+        guardada.SolicitudNexoId.Should().BeNull();
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(guardada.Folio, _ana, Arg.Any<CancellationToken>()).Returns(guardada);
+        _reloj.Avanzar(clsCotizacionSolicitud.EsperaReenvioPendiente + TimeSpan.FromMinutes(1));
+
+        var reintento = await servicio.ReintentarAsync(_ana, guardada.Folio, Ct);
+
+        reintento.Valor.SolicitudNexoId.Should().Be("sol-1", "se vincula la solicitud que Nexo ya tenía");
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "el polling la sigue normalmente");
+        reintento.Valor.CosteoSiguienteConsultaAt.Should().NotBeNull();
+        await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ConLaCapturaYaGuardadaElReintentoConLaMismaClaveDevuelveElFolioSinLlamarANexo()
     {

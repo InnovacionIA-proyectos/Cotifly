@@ -19,6 +19,12 @@ public interface IClsRegistroCapturasIdempotentes
 
     /// <summary>Registra o actualiza la captura (al confirmar el folio y, después, con el <c>solicitudNexoId</c>).</summary>
     void Registrar(string ambito, string clave, clsCapturaIdempotente captura);
+
+    /// <summary>
+    /// #173: la captura vigente de <paramref name="folio"/> (con cualquier clave), o <c>null</c>. La usa el reintento: si Nexo ya tiene
+    /// la solicitud (el guardado posterior falló), se vincula ese id en lugar de reenviar.
+    /// </summary>
+    clsCapturaIdempotente? BuscarPorFolio(string folio);
 }
 
 /// <summary>Una captura con clave: la huella del cuerpo, el folio confirmado y el id de la solicitud de Nexo en cuanto se conoce.</summary>
@@ -55,6 +61,17 @@ public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : 
             }
 
             _capturas[Llave(ambito, clave)] = captura;
+        }
+    }
+
+    public clsCapturaIdempotente? BuscarPorFolio(string folio)
+    {
+        lock (_candado)
+        {
+            return _capturas.Values
+                .Where(c => Vigente(c) && string.Equals(c.Folio, folio, StringComparison.Ordinal))
+                .OrderByDescending(c => c.SolicitudNexoId is not null)
+                .FirstOrDefault();
         }
     }
 

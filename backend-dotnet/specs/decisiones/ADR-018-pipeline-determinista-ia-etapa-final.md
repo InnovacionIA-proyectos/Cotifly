@@ -19,6 +19,10 @@ El script `0009` reestructuró la cotización en solicitud → rutas → camione
   guardada o 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`, el folio y el id de Nexo). **Deuda:** todo vive en la
   memoria del proceso y se pierde al reiniciar o en un despliegue `start-first`; la tabla persistente con `UNIQUE (usuarioId, clave)` está
   propuesta en `db/scripts/pendientes/06_idempotencia_captura.sql` (sin mapear hasta su aprobación).
+  `POST .../costeo/reintentar` consulta el mismo registro por folio: si la captura llegó a Nexo y el guardado posterior falló (folio en
+  `pendiente_envio` sin `solicitudNexoId`), vincula ese id y deja la cotización en `pendiente_costeo` (el polling la sigue) **sin
+  reenviar**. **Riesgo vigente:** si el registro ya no lo sabe (reinicio, otra réplica, más de 24 h), el reintento reenvía como antes y
+  Nexo tendría dos solicitudes; lo cierra la tabla del `06`.
 - **§18 (conexos al re-solicitar):** ya no se descartan: se conservan en el mismo folio y se copian a la `-vN` (`conexos_conservados`; `conexos_descartados` queda en `[]`, obsoleto). `filaOrigen` pasa a `rutaOrigenIndice`.
 - **Nombres de tabla y columna:** donde este texto dice `Cotizaciones`, `costeoId` o `costeoUltimaConsultaAt`, hoy son `CotizacionesSolicitud`, `solicitudNexoId` y nada (el `0009` lo borró). La consulta de diagnóstico de §17 está escrita contra el esquema anterior y no corre sobre el vigente.
 - **Por qué:** con varias rutas y varios camiones por ruta, el costo lo da Nexo por camión y el margen depende de la línea de negocio de cada ruta.

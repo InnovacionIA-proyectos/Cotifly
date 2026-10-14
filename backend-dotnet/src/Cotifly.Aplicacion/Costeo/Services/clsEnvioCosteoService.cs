@@ -614,6 +614,18 @@ public sealed class clsEnvioCosteoService(
             return NoReintentable(cotizacion);
         }
 
+        // #173: si la captura llegó a Nexo y el guardado posterior falló, el folio quedó en pendiente_envio sin solicitudNexoId. Si el
+        // registro de la Idempotency-Key conoce el id de Nexo, se vincula (pendiente_costeo, el polling sigue) y NO se reenvía: reenviar
+        // duplicaría la solicitud. Sin registro (reinicio, otra réplica) se reenvía como antes: lo cubre la tabla propuesta en el 06.
+        if (cotizacion.SolicitudNexoId is null && registroCapturas?.BuscarPorFolio(cotizacion.Folio) is { SolicitudNexoId: { } enNexo })
+        {
+            cotizacion.RegistrarEnvioCosteo(enNexo, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            logger.LogWarning("Reintento de {Folio}: Nexo ya tenía la solicitud {Solicitud} (el guardado posterior había fallado); se vincula sin reenviar.",
+                cotizacion.Folio, enNexo);
+            return cotizacion;
+        }
+
         // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una licitación
         // pasa por todas las reglas de captura, también catálogos y municipios (HU-013.11: nunca texto libre a Nexo); el formulario de
         // una línea usa su validación (mismos mensajes que HU-005.5).
