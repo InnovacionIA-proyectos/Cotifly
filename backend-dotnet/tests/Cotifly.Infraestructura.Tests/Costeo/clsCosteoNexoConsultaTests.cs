@@ -200,6 +200,26 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         _nexo.Peticiones.Single().Url.AbsoluteUri.Should().Be("http://nexo-test.local/api/solicitudes/a%2Fb%3Fc");
     }
 
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(null, true, false)]
+    [InlineData(true, true, true)]
+    public async Task LosCodigosDelCubicadorSonLosQueViajaronNoLosDeLaBanderaActual(bool? registrado, bool banderaActual, bool esperado)
+    {
+        // Validación de #159: enviado con Nexo:EnviarCodigosCubicador apagada y leído con ella encendida (o al revés), el emparejamiento debe
+        // comparar contra lo que viajó (registro del envío). Sin registro (solicitudes anteriores), "no viajaron".
+        var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
+        cotizaciones.ObtenerCodigosCubicadorEnviadosAsync("SOL-1", Arg.Any<CancellationToken>()).Returns(registrado);
+        _nexo.Responder(HttpStatusCode.OK, Solicitud).Responder(HttpStatusCode.Created, Cotizacion);
+        var adaptador = new clsCosteoNexo(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, EnviarCodigosCubicador = banderaActual }),
+            _usuarios, NullLogger<clsCosteoNexo>.Instance, cotizaciones);
+
+        var foto = (await adaptador.ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Valor;
+
+        foto.CodigosCubicadorEnviados.Should().Be(esperado);
+    }
+
     private clsCosteoNexo Adaptador() =>
         new(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase }), _usuarios, NullLogger<clsCosteoNexo>.Instance);
 

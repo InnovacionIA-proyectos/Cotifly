@@ -43,6 +43,39 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         contexto.EventosHerramienta.Add(evento.Valor);
     }
 
+    public void RegistrarEnvioNexo(clsEnvioNexoRegistrado envio)
+    {
+        ArgumentNullException.ThrowIfNull(envio);
+        var entrada = JsonSerializer.Serialize(new { folio = envio.Folio, solicitud_nexo_id = envio.SolicitudNexoId.Trim() });
+        var salida = JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados });
+        var evento = clsEventoHerramienta.Registrar(clsEnvioNexoRegistrado.Herramienta, entrada, salida, true, 0);
+        contexto.EventosHerramienta.Add(evento.Valor);
+    }
+
+    public async Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);
+        var marca = $"\"solicitud_nexo_id\":{JsonSerializer.Serialize(solicitudNexoId.Trim())}";
+        var salida = await contexto.EventosHerramienta.AsNoTracking()
+            .Where(e => e.Herramienta == clsEnvioNexoRegistrado.Herramienta && e.Input != null && e.Input.Contains(marca))
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => e.OutputResumen)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (salida is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonNode.Parse(salida)?["codigos_cubicador"]?.GetValue<bool>();
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
     public async Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(folio);

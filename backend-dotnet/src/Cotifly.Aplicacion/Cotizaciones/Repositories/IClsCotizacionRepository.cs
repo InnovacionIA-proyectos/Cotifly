@@ -37,6 +37,18 @@ public interface IClsCotizacionRepository
     Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// HU-023.4 (#159): guarda lo que viajó en el alta a Nexo (<see cref="clsEnvioNexoRegistrado"/>) en <c>EventosHerramienta</c>, en la
+    /// misma unidad de trabajo que el <c>solicitudNexoId</c>.
+    /// </summary>
+    void RegistrarEnvioNexo(clsEnvioNexoRegistrado envio);
+
+    /// <summary>
+    /// ¿Viajaron los códigos del cubicador en el alta de la solicitud de Nexo <paramref name="solicitudNexoId"/>? <c>null</c> si no hay
+    /// registro (quien lo usa asume que no viajaron).
+    /// </summary>
+    Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Decisión 10 (HU-021.9): agrega un registro del envío diferido de conexos a Nexo (<see cref="clsEnvioConexosNexo"/>) en
     /// <c>EventosHerramienta</c>; se escribe al guardar la unidad de trabajo.
     /// </summary>

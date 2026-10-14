@@ -297,8 +297,8 @@ hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solic
    leer el GET. Bandera **`Nexo:EnviarGrupoRutaId`** (antes `Nexo:EnviarReferenciaRuta`), **apagada** por defecto.
 3. **`idRecomendacionVehiculo`** por línea: el camión del cubicador (`CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo`, GUID en
    texto, 36 caracteres). Bandera **`Nexo:EnviarDatosCubicador`**, **apagada** por defecto.
-4. **`codigoTipoMercancia`** por posición: el `codigoMercancia` de la mercancía, con la misma bandera del punto 3. Un código de más de
-   40 caracteres (Cotifly admite 64) no viaja: recortarlo mandaría otro código y Nexo trata `null` como "tipo desconocido".
+4. ~~**`codigoTipoMercancia`** por posición~~ — **retirado** con el contrato de Nexo #297 (ver el ajuste de abajo): el código de
+   mercancía no va a Nexo.
 5. **Emparejamiento en el polling** (`clsEmparejadorLineasNexo`):
    - con `grupoRutaId` **e** `idRecomendacionVehiculo` en la línea de Nexo, se asocia directo con el camión de esa ruta y esa
      recomendación (único por camión, aun entre camiones idénticos; no exige que el contenido cuadre, porque la Mesa pudo cambiar el
@@ -310,9 +310,8 @@ hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solic
    posiciones), que ya cuadra al 1 % con ellas: así Nexo no responde `PESO_INCONSISTENTE` aunque el `pesoTotalKg` del cubicador difiera.
    El peso del cubicador se guarda en el camión y se muestra en Cotifly, pero no viaja. Con **varios camiones** no cambia: el peso de
    cada camión, sin posiciones. La regla es `clsLineaSolicitud.PesoLineaNexo` y "un solo camión" cuenta TODOS los camiones de la ruta (también los descartados): un descarte posterior al envío no cambia lo que viajó. El emparejador compara con ese mismo peso **en una sola pasada** (validación: comparar primero con el peso del cubicador cruzaba costos entre rutas). Las posiciones siguen la misma regla.
-7. **Códigos de vehículo y carrocería del cubicador:** se mandan **ya, sin bandera**, en `tipoVehiculo` y `carroceria` (era el
-   comportamiento desde HU-023.3). El usuario **acepta que Nexo cree filas nuevas en su catálogo** de configuraciones de vehículo cuando
-   un código del cubicador no exista allí (Nexo resuelve o crea por texto libre). Se descartó la bandera de "cuarentena" de la issue.
+7. **Códigos de vehículo y carrocería del cubicador:** ~~se mandan ya, sin bandera~~ — **revertido** con el contrato de Nexo #297:
+   van detrás de `Nexo:EnviarCodigosCubicador` (apagada); ver el ajuste de abajo.
 8. **Línea sin vehículo** ("sin selección automática" o respaldo): **no cambia**; viaja vacía y la resuelve la Mesa. Se espera la 19.2 de
    Nexo (estado `PorCostear` para esas líneas).
 9. **429 y `Retry-After`.** Nexo limita sus listados **por rol** (política `listados-estandar`: 120 por minuto por rol;
@@ -331,7 +330,74 @@ el del cubicador a más del 1 % y el 429 sin reintento con el bloqueo compartido
 
 **Encender las banderas** cuando Nexo despliegue su rama `QA` en el ambiente correspondiente: su swagger declara
 `additionalProperties: false`, así que mandarlas antes podría hacer que rechace el alta. Primero `Nexo__EnviarGrupoRutaId`, luego
-`Nexo__EnviarDatosCubicador`, y verificar con el GET que vuelven en `lineas[]`.
+`Nexo__EnviarDatosCubicador`, y verificar con el GET que vuelven en `lineas[]`. `Nexo__EnviarCodigosCubicador` solo cuando Nexo
+despliegue la cuarentena de vehículos (S5-HU-18.4) y #297.
+
+### Ajuste al contrato acordado con Nexo (#297, S5-HU-20.5; 2026-10-14)
+
+Reemplaza los puntos 4 y 7 de arriba. Respuestas de Nexo (decididas por Sara) en la issue NEXO #297.
+
+- **Orden de las líneas.** Nexo **no** recibe un campo de orden: numera las líneas por la posición en el arreglo (`numeroLinea`, desde
+  1) y lo devuelve en el GET, ordenado. Cotifly ya envía las líneas en orden estable: las rutas por su `orden` y, dentro de cada una, los
+  camiones por `OrdenCreacion` (la fila del cubicador). Por eso **no se agregó `orden` al payload** (la coordinación lo pedía detrás de
+  `Nexo:EnviarGrupoRutaId`, pero con el `additionalProperties: false` de Nexo un campo que su contrato no tiene haría rechazar el alta).
+  Al leer el GET, `numeroLinea` (o `orden`, si llegara) es el **desempate fuerte** de los camiones idénticos de un mismo `grupoRutaId`:
+  se asignan por `numeroLinea` en vez de por el id de Nexo.
+- **Código de mercancía:** **no viaja** a Nexo (ni `codigoTipoMercancia`). Se quitó del payload; Cotifly lo sigue guardando para el
+  cubicador.
+- **Códigos del cubicador** (`2S2`, `FURGON`...): nueva bandera **`Nexo:EnviarCodigosCubicador`** (`false` por defecto). Apagada, la
+  línea de un camión del cubicador (la que trae `idRecomendacionVehiculo` en Cotifly) va **sin `tipoVehiculo` ni `carroceria`**; con #297,
+  esa línea no se autocostea y queda para la Mesa. **Revierte** el "se mandan ya" del punto 7: hoy un código que Nexo no conoce crea un
+  vehículo duplicado en su catálogo. Se enciende cuando Nexo despliegue la cuarentena de vehículos (S5-HU-18.4) y S5-HU-20.5.
+  `idRecomendacionVehiculo` sigue detrás de `Nexo:EnviarDatosCubicador`. El polling sabe si los códigos **viajaron**
+  (`clsCosteoConsultadoNexo.CodigosCubicadorEnviados`) y, si no, no compara el vehículo de esos camiones (lo que ponga la Mesa no los
+  contradice). **Lo que viajó, no la bandera actual** (tercera validación: leer con la bandera cambiada daba 110 a 140 cruces de costo
+  entre rutas): el envío lo registra en `EventosHerramienta` (`envio_nexo_registrado`, entrada `{folio, solicitud_nexo_id}`, salida
+  `{codigos_cubicador}`) en la misma transacción que el `solicitudNexoId`, sin esquema nuevo, y `clsCosteoNexo.ConsultarCosteoAsync` lo
+  lee por solicitud. **Sin registro** (solicitudes enviadas antes de este cambio, o si la lectura falla) se asume que **no viajaron**: no
+  se compara el vehículo, que es el caso seguro.
+- **Respaldo con `Captura:AceptarVehiculoCliente`:** el camión del respaldo no tiene `idRecomendacionVehiculo` y su vehículo digitado es
+  del catálogo de Nexo: **sí viaja** aunque `Nexo:EnviarCodigosCubicador` esté apagada.
+- **Nombre de la bandera:** el texto de Nexo #297 la llama `Nexo:EnviarReferenciaRuta`; en Cotifly se renombró a
+  **`Nexo:EnviarGrupoRutaId`** (el campo es `grupoRutaId`). `Nexo__EnviarReferenciaRuta` ya no se lee.
+
+**Payload acordado** (`POST /api/captura-solicitudes`) con `Nexo:EnviarGrupoRutaId` y `Nexo:EnviarDatosCubicador` encendidas y
+`Nexo:EnviarCodigosCubicador` apagada: ruta 1 con dos camiones del cubicador (sin vehículo, sin posiciones, peso de cada camión) y ruta 2
+con un camión del respaldo con vehículo digitado (con vehículo, posiciones y el peso de la ruta). Los nulos no viajan.
+
+```json
+{
+  "clienteBp": "15927",
+  "tipo": "spot",
+  "deadline": "2026-10-15T17:00:00-05:00",
+  "notas": "Ruta 1 (Buenaventura → Bogotá, D.C.): 2 camiones. ...",
+  "lineas": [
+    {
+      "origen": "Buenaventura", "destino": "Bogotá, D.C.", "origenMunicipioId": 76109, "destinoMunicipioId": 11001,
+      "tipologia": "Contenedor", "lineaNegocio": "PuertoAInterior", "claseViaje": "Contenedor", "claseContenedor": "CNT40.HC",
+      "horasCargue": 4, "horasDescargue": 6.5, "peso": 20000, "valorMercancia": 250000000,
+      "grupoRutaId": "8d6f0c2e-5b1a-4c3e-9f7d-2a1b3c4d5e6f",
+      "idRecomendacionVehiculo": "aaaaaaaa-0000-4000-8000-000000000001"
+    },
+    {
+      "origen": "Buenaventura", "destino": "Bogotá, D.C.", "origenMunicipioId": 76109, "destinoMunicipioId": 11001,
+      "tipologia": "Contenedor", "lineaNegocio": "PuertoAInterior", "claseViaje": "Contenedor", "claseContenedor": "CNT40.HC",
+      "horasCargue": 4, "horasDescargue": 6.5, "peso": 8500.5, "valorMercancia": 250000000,
+      "grupoRutaId": "8d6f0c2e-5b1a-4c3e-9f7d-2a1b3c4d5e6f",
+      "idRecomendacionVehiculo": "bbbbbbbb-0000-4000-8000-000000000002"
+    },
+    {
+      "origen": "Cali", "destino": "Bogotá, D.C.", "origenMunicipioId": 76001, "destinoMunicipioId": 11001,
+      "tipoVehiculo": "3S3", "carroceria": "PORTACONTENEDORES",
+      "tipologia": "Contenedor", "lineaNegocio": "Nacional", "peso": 28500.5,
+      "posiciones": [{ "descripcion": "Estiba de café", "cantidad": 20, "largoCm": 120, "anchoCm": 100, "altoCm": 150, "pesoKg": 1425 }],
+      "grupoRutaId": "1e2d3c4b-5a69-4788-9a0b-c1d2e3f4a5b6"
+    }
+  ]
+}
+```
+
+En el GET (`clsLineaCosteoDto`), Nexo devuelve por línea `grupoRutaId`, `idRecomendacionVehiculo` y `numeroLinea` (1, 2, 3).
 
 ## Consecuencias
 

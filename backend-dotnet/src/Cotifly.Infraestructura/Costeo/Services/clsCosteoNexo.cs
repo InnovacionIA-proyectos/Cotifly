@@ -34,7 +34,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// por fallo, sin la traza ni el header <c>X-Portal-clsUsuario-Id</c>. La cancelación del llamador se propaga.</para>
 /// </remarks>
 public sealed class clsCosteoNexo(
-    HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger)
+    HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger,
+    Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository? cotizaciones = null)
     : IClsCosteoNexo
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del costeo (las pruebas le cambian el manejador primario).</summary>
@@ -76,13 +77,15 @@ public sealed class clsCosteoNexo(
 
     private readonly bool _enviarDatosCubicador = opciones.Value.EnviarDatosCubicador;
 
+    private readonly bool _enviarCodigosCubicador = opciones.Value.EnviarCodigosCubicador;
+
     public bool EstaConfigurado => _urlBase is not null;
 
     public async Task<clsResultado<clsSolicitudCreadaNexo>> EnviarSolicitudAsync(
         Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(solicitud);
-        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud, _enviarGrupoRutaId, _enviarDatosCubicador), cancellationToken);
+        var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", CuerpoCaptura(solicitud, _enviarGrupoRutaId, _enviarDatosCubicador, _enviarCodigosCubicador), cancellationToken);
         if (respuesta.EsFallo)
         {
             // Un 400 del alta es validación de los datos (Nexo no cambia de opinión con los mismos datos): error definitivo, salvo la
@@ -111,7 +114,10 @@ public sealed class clsCosteoNexo(
             Entero(raiz, "lineas") ?? solicitud.Lineas.Count,
             Entero(raiz, "fletesCalculados") ?? 0,
             Entero(raiz, "lineasPorCostear") ?? solicitud.Lineas.Count,
-            raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True);
+            raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True)
+        {
+            CodigosCubicadorEnviados = _enviarCodigosCubicador,
+        };
     }
 
     public async Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(
@@ -167,11 +173,44 @@ public sealed class clsCosteoNexo(
 
         if (string.Equals(estado, clsCosteoConsultadoNexo.SolicitudDescartada, StringComparison.OrdinalIgnoreCase))
         {
-            return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas };
+            return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas, CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken) };
         }
 
         var cotizacion = await ObtenerCotizacionAsync(usuarioId, id, cancellationToken);
-        return cotizacion.EsFallo ? cotizacion.Error : new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor) { Detalle = contenidoLineas };
+        if (cotizacion.EsFallo)
+        {
+            return cotizacion.Error;
+        }
+
+        return new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor)
+        {
+            Detalle = contenidoLineas,
+            CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken),
+        };
+    }
+
+    /// <summary>
+    /// ¿Viajaron los códigos del cubicador en el alta de <paramref name="solicitudId"/>? Lo que registró el envío
+    /// (<see cref="clsEnvioNexoRegistrado"/>), NUNCA la bandera actual (la validación de #159 midió 110 a 140 cruces de costo al leer con la
+    /// bandera cambiada). Sin registro, <c>false</c>: no se compara el vehículo de los camiones del cubicador (el caso seguro).
+    /// </summary>
+    private async Task<bool> CodigosEnviadosAsync(string solicitudId, CancellationToken cancellationToken)
+    {
+        if (cotizaciones is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await cotizaciones.ObtenerCodigosCubicadorEnviadosAsync(solicitudId, cancellationToken) ?? false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("No se pudo leer si viajaron los códigos del cubicador de la solicitud {Solicitud} ({Tipo}): se asume que no.",
+                solicitudId, ex.GetType().Name);
+            return false;
+        }
     }
 
     /// <summary>
@@ -320,6 +359,7 @@ public sealed class clsCosteoNexo(
         {
             GrupoRutaId = Texto(linea, "grupoRutaId"),
             IdRecomendacionVehiculo = Texto(linea, "idRecomendacionVehiculo"),
+            NumeroLinea = Entero(linea, "numeroLinea") ?? Entero(linea, "orden"),
         };
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c> (la base no lleva <c>/api</c>).</summary>
@@ -360,11 +400,16 @@ public sealed class clsCosteoNexo(
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
     /// desplazamiento (G4). Los nulos no viajan. HU-023.4 (#159): con <paramref name="enviarGrupoRutaId"/> (<c>Nexo:EnviarGrupoRutaId</c>)
     /// cada línea lleva <c>grupoRutaId</c> = el id de su ruta de Cotifly; con <paramref name="enviarDatosCubicador"/>
-    /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador) y cada posición su
-    /// <c>codigoTipoMercancia</c> (el <c>codigoMercancia</c>; uno de más de <see cref="LargoCodigoTipoMercancia"/> caracteres no viaja). Las
-    /// dos apagadas por defecto: Nexo los tiene en QA pero sin desplegar, y su swagger declara <c>additionalProperties: false</c>.
+    /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador). Las dos apagadas por
+    /// defecto: Nexo los tiene en QA pero sin desplegar, y su swagger declara <c>additionalProperties: false</c>. Contrato con Nexo #297
+    /// (S5-HU-20.5): el código de mercancía NO viaja (ni <c>codigoTipoMercancia</c>); no hay campo de orden de entrada: Nexo numera las
+    /// líneas por el orden del arreglo (<c>numeroLinea</c> en el GET), que aquí es ruta por ruta y, dentro de cada una, el orden de los
+    /// camiones. Con <paramref name="enviarCodigosCubicador"/> apagada (<c>Nexo:EnviarCodigosCubicador</c>, por defecto) la línea de un
+    /// camión del cubicador (con <c>idRecomendacionVehiculo</c>) va SIN vehículo ni carrocería (la resuelve la Mesa); el vehículo de un
+    /// camión sin recomendación (el digitado del respaldo, <c>Captura:AceptarVehiculoCliente</c>, del catálogo de Nexo) sí viaja.
     /// </summary>
-    internal static object CuerpoCaptura(clsSolicitudNexo solicitud, bool enviarGrupoRutaId = false, bool enviarDatosCubicador = false)
+    internal static object CuerpoCaptura(
+        clsSolicitudNexo solicitud, bool enviarGrupoRutaId = false, bool enviarDatosCubicador = false, bool enviarCodigosCubicador = false)
     {
         var e = solicitud.Encabezado;
         return new clsCapturaSolicitudWire(
@@ -376,27 +421,26 @@ public sealed class clsCosteoNexo(
             e.HorasDescargue,
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s => new clsCapturaLineaWire(
-                s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId, s.TipoVehiculo, s.Carroceria, s.Tipologia,
+                s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId,
+                SinCodigosCubicador(s, enviarCodigosCubicador) ? null : s.TipoVehiculo,
+                SinCodigosCubicador(s, enviarCodigosCubicador) ? null : s.Carroceria,
+                s.Tipologia,
                 s.LineaNegocioNexo ?? solicitud.LineaNegocioNexo, s.ClaseViaje, s.ClaseContenedor,
                 s.Exclusivo, s.Consolidado, s.RetornaContenedor, s.CiudadDevolucionContenedor, s.LevanteContenedorDiferente,
                 s.CiudadLevanteContenedor, s.ValorAprovisionamiento, s.HorasCargue ?? e.HorasCargue, s.HorasDescargue ?? e.HorasDescargue, s.PesoKg, s.ValorMercancia,
                 s.Posiciones.Count == 0
                     ? null
-                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg,
-                        enviarDatosCubicador ? CodigoTipoMercancia(p.CodigoMercancia) : null))],
+                    : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
                 enviarGrupoRutaId ? s.RutaId?.ToString("D") : null,
                 enviarDatosCubicador ? s.IdRecomendacionVehiculo?.ToString("D") : null))]);
     }
 
-    /// <summary>Largo máximo de <c>codigoTipoMercancia</c> en <c>clsCapturaPosicionRequest</c> de Nexo (<c>[MaxLength(40)]</c>).</summary>
-    public const int LargoCodigoTipoMercancia = 40;
-
     /// <summary>
-    /// El <c>codigoMercancia</c> del cubicador como <c>codigoTipoMercancia</c> de Nexo, o <c>null</c> si no hay o supera
-    /// <see cref="LargoCodigoTipoMercancia"/> (recortarlo mandaría otro código; Nexo trata <c>null</c> como "tipo desconocido").
+    /// ¿La línea es de un camión del cubicador (trae <c>idRecomendacionVehiculo</c>) y sus códigos no deben viajar? Mientras Nexo no
+    /// despliegue la cuarentena de vehículos (S5-HU-18.4) y #297, un código que no conoce crea un vehículo duplicado en su catálogo.
     /// </summary>
-    internal static string? CodigoTipoMercancia(string? codigoMercancia) =>
-        string.IsNullOrWhiteSpace(codigoMercancia) || codigoMercancia.Trim().Length > LargoCodigoTipoMercancia ? null : codigoMercancia.Trim();
+    internal static bool SinCodigosCubicador(clsLineaSolicitudCosteo linea, bool enviarCodigosCubicador) =>
+        !enviarCodigosCubicador && linea.IdRecomendacionVehiculo is not null;
 
     /// <summary>
     /// Envía la petición con la identidad del comercial y traduce los fallos. Devuelve el JSON de una respuesta 2xx (el llamador lo
@@ -706,8 +750,7 @@ public sealed class clsCosteoNexo(
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
 
-    private sealed record clsCapturaPosicionWire(
-        string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg, string? CodigoTipoMercancia);
+    private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 }
 
 /// <summary>Qué se sabe del efecto de un POST a Nexo (ver <see cref="clsCosteoNexo.EnviarPostConEfectoAsync"/>).</summary>
