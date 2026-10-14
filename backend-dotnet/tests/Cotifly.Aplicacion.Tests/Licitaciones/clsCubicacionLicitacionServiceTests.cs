@@ -219,8 +219,9 @@ public sealed class clsCubicacionLicitacionServiceTests
         _cupos.ClearReceivedCalls();
 
         var ultima = servicio.CubicarAsync(Cola(2), Ct);
-        var limite = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        while (!ultima.IsCompleted && DateTime.UtcNow < limite)
+        // Reloj monotónico: con DateTime.UtcNow un salto del reloj (WSL2) cortaba el bucle y el await de abajo esperaba para siempre.
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        while (!ultima.IsCompleted && reloj.Elapsed < TimeSpan.FromSeconds(20))
         {
             if (tiempo.Pendientes > 0)
             {
@@ -232,6 +233,7 @@ public sealed class clsCubicacionLicitacionServiceTests
             }
         }
 
+        ultima.IsCompleted.Should().BeTrue("la espera del candado tiene tope (35 intentos); si no terminó, la prueba falla en vez de colgarse");
         (await ultima).Should().Be(ResultadoCubicacionRuta.Cubicada, "la ruta ya quedó guardada: se cuenta aunque no envíe");
         (tiempo.GetUtcNow() - inicio).Should().Be(TimeSpan.FromMilliseconds(15_750), "50 + 100 + 200 + 400 + 30 × 500 ms entre los 35 intentos");
         await _cupos.Received(35).IntentarTomarEnvioAsync(_licitacion.Id, Arg.Any<CancellationToken>());
@@ -256,8 +258,8 @@ public sealed class clsCubicacionLicitacionServiceTests
         using var cancelacion = new CancellationTokenSource();
 
         var ultima = servicio.CubicarAsync(Cola(2), cancelacion.Token);
-        var limite = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (tiempo.Pendientes == 0 && DateTime.UtcNow < limite)
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        while (tiempo.Pendientes == 0 && reloj.Elapsed < TimeSpan.FromSeconds(10))
         {
             await Task.Delay(1, Ct);
         }

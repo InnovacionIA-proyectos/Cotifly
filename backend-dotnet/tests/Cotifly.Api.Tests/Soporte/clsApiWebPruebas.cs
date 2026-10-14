@@ -285,8 +285,10 @@ public sealed class clsApiWebPruebas : IDisposable
         var ambitos = Factory.Services.GetRequiredService<IServiceScopeFactory>();
         var logger = Factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ProcesarCubicacion");
         var total = 0;
-        var fin = DateTime.UtcNow + (limite ?? TimeSpan.FromSeconds(30));
-        while (DateTime.UtcNow < fin)
+        // Reloj monotónico: con DateTime.UtcNow un salto del reloj del contenedor (WSL2) cortaba la espera antes de tiempo.
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        var plazo = limite ?? TimeSpan.FromSeconds(30);
+        while (reloj.Elapsed < plazo)
         {
             var procesadas = await Cotifly.Infraestructura.Cubicacion.Services.clsWorkerCubicacionLicitacion.ProcesarLoteAsync(ambitos, logger, id, CancellationToken.None);
             total += procesadas;
