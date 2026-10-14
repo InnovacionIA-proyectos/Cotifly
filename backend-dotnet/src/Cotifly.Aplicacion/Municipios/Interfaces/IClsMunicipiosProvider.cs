@@ -6,7 +6,7 @@ namespace Cotifly.Aplicacion.Municipios.Interfaces;
 /// <summary>
 /// Puerto del catálogo de municipios de <c>GET /web/municipios</c>: origen/destino del formulario de captura. La
 /// implementación real (<c>clsMunicipiosNexo</c>) consume <c>GET /api/captura-solicitudes/municipios</c> de Nexo,
-/// identificando al comercial ante Nexo con <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que
+/// identificando al comercial ante Nexo con <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que
 /// reciba <paramref name="usuarioId"/>. Sin adaptador real, Infraestructura registra uno que responde
 /// <c>MUNICIPIOS_NO_DISPONIBLE</c>.
 /// </summary>

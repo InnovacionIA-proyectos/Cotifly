@@ -345,7 +345,8 @@ public sealed class clsLineaSolicitud
     /// (origen y destino por nombre e id, condiciones, horas, valor de la mercancía) y los del camión (vehículo, carrocería, peso y su
     /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
     /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
-    /// reparto lo sabe el cubicador).
+    /// reparto lo sabe el cubicador). El peso es <see cref="PesoLineaNexo"/> y el camión del cubicador viaja en
+    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159).
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -359,12 +360,39 @@ public sealed class clsLineaSolicitud
         return linea with
         {
             RutaId = Id,
+            IdRecomendacionVehiculo = camion.IdRecomendacionVehiculo,
             TipoVehiculo = camion.TipoVehiculo,
             Carroceria = camion.Carroceria,
-            PesoKg = camion.PesoKg,
+            PesoKg = PesoLineaNexo(camion),
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = VehiculosQueCuentan.Count == 1 ? linea.Posiciones : [],
+            Posiciones = UnSoloCamion ? linea.Posiciones : [],
         };
+    }
+
+    /// <summary>
+    /// ¿La ruta tiene un solo camión (contando los descartados)? Decide si la línea lleva las posiciones y el peso de la ruta
+    /// (<see cref="PesoLineaNexo"/>). Cuenta TODOS los camiones, no solo los vigentes: un camión que la Mesa descarta después del envío no
+    /// cambia lo que ya viajó, así que el emparejador del polling vuelve a calcular exactamente el peso enviado (HU-023.4, validación).
+    /// </summary>
+    private bool UnSoloCamion => _vehiculos.Count == 1;
+
+    /// <summary>
+    /// Peso que viaja a Nexo en la línea de <paramref name="camion"/> (HU-023.4, #159, decisión 6 del 2026-10-13). Con <b>un solo camión</b>
+    /// la línea lleva las posiciones, así que lleva el <b>peso declarado de la ruta</b> (o, sin él, la suma de las posiciones): ese ya cuadra
+    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c>. El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
+    /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión, como antes. El emparejador
+    /// compara con este mismo peso, en una sola pasada (<see cref="clsCamionParaEmparejar.Desde"/>).
+    /// </summary>
+    public decimal? PesoLineaNexo(clsVehiculoLineaSolicitud camion)
+    {
+        ArgumentNullException.ThrowIfNull(camion);
+        if (!UnSoloCamion)
+        {
+            return camion.PesoKg;
+        }
+
+        var suma = MercanciasOrdenadas.Select(m => m.APosicion()).Where(p => p.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+        return PesoKg ?? (suma > 0 ? suma : camion.PesoKg);
     }
 
     /// <summary>

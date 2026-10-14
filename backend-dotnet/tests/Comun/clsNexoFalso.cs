@@ -43,6 +43,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public bool FallarConsultaTrasResultado { get; set; }
 
+    /// <summary>Si es mayor que cero, los siguientes N GET responden <c>429 DEMASIADAS_SOLICITUDES</c> con <c>Retry-After: 30</c>.</summary>
+    public int LecturasLimitadas { get; set; }
+
     /// <summary>Si es verdadero, el alta auto-costea la línea con <see cref="FleteAutocosteo"/> (como la Biblioteca de Nexo).</summary>
     public bool AutoCostear { get; set; }
 
@@ -299,16 +302,33 @@ public sealed class clsNexoFalso : HttpMessageHandler
             var bytes = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
             UltimoArchivoAnalizado = bytes.LongLength;
         }
+        var identidad = request.Headers.TryGetValues(clsPeticionNexo.EncabezadoIdentidad, out var valores) ? valores.FirstOrDefault() : null;
         _peticiones.Enqueue(new clsPeticionNexo(
             request.Method,
             request.RequestUri!,
-            request.Headers.TryGetValues("X-Portal-Usuario-Id", out var valores) ? valores.FirstOrDefault() : null,
+            identidad,
             request.Headers.Accept.ToString(),
             cuerpo));
+
+        // Como clsIdentidadPortalAuthenticationHandler de Nexo: sin X-Portal-clsUsuario-Id numérico, 401 (HU-023.4, #159).
+        if (!long.TryParse(identidad, out _))
+        {
+            return Error(HttpStatusCode.Unauthorized, "SESION_INVALIDA", "La sesión no es válida. Ingrese nuevamente desde el portal.");
+        }
 
         if (Caido is { } caido)
         {
             return Error(caido, "NEXO_CAIDO", "Nexo no disponible (prueba).");
+        }
+
+        // Como el rate limiter de Nexo (por rol): 429 DEMASIADAS_SOLICITUDES con Retry-After: 30 en los GET.
+        if (request.Method == HttpMethod.Get && LecturasLimitadas > 0)
+        {
+            LecturasLimitadas--;
+            var limitada = Error(HttpStatusCode.TooManyRequests, "DEMASIADAS_SOLICITUDES",
+                "Ha alcanzado el límite de solicitudes para este recurso. Intente de nuevo en unos segundos.");
+            limitada.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+            return limitada;
         }
 
         var ruta = request.RequestUri!.AbsolutePath.TrimEnd('/');
@@ -408,7 +428,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 l?["tipoVehiculo"]?.GetValue<string>(),
                 l?["carroceria"]?.GetValue<string>())
             {
-                ReferenciaRuta = l?["referenciaRuta"]?.GetValue<string>(),
+                GrupoRutaId = l?["grupoRutaId"]?.GetValue<string>(),
+                IdRecomendacionVehiculo = l?["idRecomendacionVehiculo"]?.GetValue<string>(),
             }));
         }
 
@@ -487,8 +508,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 peso = s.Lineas[i].Peso,
                 tipoVehiculo = s.Lineas[i].TipoVehiculo,
                 carroceria = s.Lineas[i].Carroceria,
-                // N1 (#134): Nexo devolvería la referencia de la ruta de Cotifly si la recibió.
-                referenciaRuta = s.Lineas[i].ReferenciaRuta,
+                // HU-023.4 (#159): clsLineaCosteoDto devuelve lo que recibió (null si no viajó).
+                grupoRutaId = s.Lineas[i].GrupoRutaId,
+                idRecomendacionVehiculo = s.Lineas[i].IdRecomendacionVehiculo,
             }).ToArray(),
         });
     }
@@ -723,7 +745,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     private sealed record clsLineaFalsa(string Origen, string Destino, string? Tipologia, decimal? Peso, string? TipoVehiculo, string? Carroceria)
     {
-        public string? ReferenciaRuta { get; init; }
+        public string? GrupoRutaId { get; init; }
+
+        public string? IdRecomendacionVehiculo { get; init; }
     }
 
     private sealed class clsSolicitudFalsa(string id, int orden, IReadOnlyList<string> lineaIds)

@@ -126,8 +126,8 @@ public sealed class clsEmparejadorCamionesTests
 
         var pares = clsEmparejadorLineasNexo.Emparejar(camiones,
         [
-            Linea("N1", rutas[1], 10_000m, "3S3", null) with { ReferenciaRuta = rutas[1].Id.ToString("D") },
-            Linea("N2", rutas[0], 10_000m, "3S3", null) with { ReferenciaRuta = rutas[0].Id.ToString("D").ToUpperInvariant() },
+            Linea("N1", rutas[1], 10_000m, "3S3", null) with { GrupoRutaId = rutas[1].Id.ToString("D") },
+            Linea("N2", rutas[0], 10_000m, "3S3", null) with { GrupoRutaId = rutas[0].Id.ToString("D").ToUpperInvariant() },
         ]);
 
         pares[rutas[0].Vehiculos[0].Id].Should().Be("N2", "N1 de Nexo: la referencia de la ruta decide");
@@ -140,8 +140,8 @@ public sealed class clsEmparejadorCamionesTests
         var (cotizacion, ruta) = Ruta(("3S3", null, 10_000m));
         var camion = Camiones(cotizacion)[0];
 
-        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", null) with { ReferenciaRuta = Guid.NewGuid().ToString() }).Should().BeFalse();
-        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", null) with { Ruta = null, ReferenciaRuta = ruta.Id.ToString() })
+        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", null) with { GrupoRutaId = Guid.NewGuid().ToString() }).Should().BeFalse();
+        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", null) with { Ruta = null, GrupoRutaId = ruta.Id.ToString() })
             .Should().BeTrue("con la referencia no hace falta el texto de la ruta");
     }
 
@@ -177,7 +177,7 @@ public sealed class clsEmparejadorCamionesTests
 
         // Con la referencia de ruta de Nexo (N1) sí se sabe.
         var conReferencia = clsEmparejadorLineasNexo.EmparejarConDetalle([deLaRuta2],
-            [nexo[0] with { ReferenciaRuta = rutas[0].Id.ToString() }, nexo[1] with { ReferenciaRuta = rutas[1].Id.ToString() }]);
+            [nexo[0] with { GrupoRutaId = rutas[0].Id.ToString() }, nexo[1] with { GrupoRutaId = rutas[1].Id.ToString() }]);
         conReferencia.Pares[deLaRuta2.Id].Should().Be("B-ruta2");
         conReferencia.LineasSinDueno.Should().Equal("A-huerfana-ruta1");
     }
@@ -242,6 +242,235 @@ public sealed class clsEmparejadorCamionesTests
         cruces.Should().Be(0);
         asociados.Should().BeGreaterThan(0, "el fuzz también asocia");
     }
+
+    // ------------------------------------------------------------------ HU-023.4 (#159): datos del cubicador en Nexo
+
+    private static readonly Guid _recomendacionA = Guid.Parse("aaaaaaaa-0000-4000-8000-000000000001");
+    private static readonly Guid _recomendacionB = Guid.Parse("bbbbbbbb-0000-4000-8000-000000000002");
+
+    [Fact]
+    public void DosCamionesIdenticosConGrupoRutaEIdRecomendacionSeAsocianPorEsosCampos()
+    {
+        // El caso frágil: dos camiones IGUALES en la misma ruta. Con el par (grupoRutaId, idRecomendacionVehiculo) en el GET, cada línea
+        // va a SU camión aunque el orden estable dijera lo contrario (N-a iría al primero) y aunque la Mesa le cambie el vehículo.
+        var (cotizacion, ruta) = RutaCubicada(20_000m,
+            new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA), new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionB));
+        var camiones = Camiones(cotizacion);
+        clsLineaSolicitudNexo[] nexo =
+        [
+            Linea("N-a", ruta, 10_000m, "3S3", "FURGON") with { GrupoRutaId = ruta.Id.ToString("D"), IdRecomendacionVehiculo = _recomendacionB.ToString("D") },
+            Linea("N-z", ruta, 10_000m, "2S2", "ESTACAS") with { GrupoRutaId = ruta.Id.ToString("D"), IdRecomendacionVehiculo = _recomendacionA.ToString("D") },
+        ];
+
+        foreach (var orden in Permutaciones(nexo))
+        {
+            var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(camiones, orden);
+
+            emparejamiento.Pares.Should().HaveCount(2);
+            emparejamiento.Pares[CamionDe(cotizacion, _recomendacionA).Id].Should().Be("N-z", "la línea dice de qué camión del cubicador es");
+            emparejamiento.Pares[CamionDe(cotizacion, _recomendacionB).Id].Should().Be("N-a");
+            emparejamiento.EmpatesSinResolver.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public void DosCamionesIdenticosSoloConGrupoRutaSeAsocianPorGrupoYLuegoPorContenido()
+    {
+        // Sin idRecomendacionVehiculo en el GET (Nexo:EnviarDatosCubicador apagada): el grupo separa la ruta de otra igual y el contenido
+        // resuelve el empate en orden estable (los dos camiones valen lo mismo).
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-CUB-2" }).Valor;
+        var camionesRuta = new[] { new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA), new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionB) };
+        cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
+        [
+            new clsRutaCapturada(LineaCaptura((null, null, 20_000m)), 3, 0, camionesRuta, []),
+            new clsRutaCapturada(LineaCaptura((null, null, 20_000m)), 3, 1, [new clsCamionPlaneado("3S3", "FURGON", 10_000m), new clsCamionPlaneado("3S3", "FURGON", 10_000m)], []),
+        ]);
+        var rutas = cotizacion.RutasOrdenadas;
+        var camiones = Camiones(cotizacion);
+        var nexo = rutas.SelectMany((r, i) => new[]
+        {
+            Linea($"R{i}-2", r, 10_000m, "3S3", "FURGON") with { GrupoRutaId = r.Id.ToString("D") },
+            Linea($"R{i}-1", r, 10_000m, "3S3", "FURGON") with { GrupoRutaId = r.Id.ToString("D") },
+        }).Reverse().ToList();
+
+        var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(camiones, nexo);
+
+        emparejamiento.Pares.Should().HaveCount(4, "el grupo distingue las dos rutas iguales");
+        foreach (var (ruta, i) in rutas.Select((r, i) => (r, i)))
+        {
+            ruta.VehiculosOrdenados.Select(v => emparejamiento.Pares[v.Id]).Should().Equal($"R{i}-1", $"R{i}-2");
+        }
+    }
+
+    [Fact]
+    public void DosCamionesIdenticosSinLosCamposNuevosSiguenLaLogicaDeHoy()
+    {
+        var (cotizacion, ruta) = RutaCubicada(20_000m,
+            new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA), new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionB));
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), [Linea("N-z", ruta, 10_000m, "3S3", "FURGON"), Linea("N-a", ruta, 10_000m, "3S3", "FURGON")]);
+
+        pares[CamionDe(cotizacion, _recomendacionA).Id].Should().Be("N-a", "sin los campos nuevos: orden estable por id de Nexo");
+        pares[CamionDe(cotizacion, _recomendacionB).Id].Should().Be("N-z");
+    }
+
+    [Fact]
+    public void UnaLineaDeOtroCamionDelCubicadorNuncaCoincide()
+    {
+        var (cotizacion, ruta) = RutaCubicada(10_000m, new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA));
+        var camion = Camiones(cotizacion)[0];
+
+        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", "FURGON") with { IdRecomendacionVehiculo = _recomendacionB.ToString() })
+            .Should().BeFalse();
+        clsEmparejadorLineasNexo.Coincide(camion, Linea("N1", ruta, 10_000m, "3S3", "FURGON") with { IdRecomendacionVehiculo = _recomendacionA.ToString().ToUpperInvariant() })
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void UnParRepetidoEnNexoNoSeUsaYSigueElContenido()
+    {
+        var (cotizacion, ruta) = RutaCubicada(20_000m,
+            new clsCamionPlaneado("3S3", "FURGON", 12_000m, _recomendacionA), new clsCamionPlaneado("2S2", null, 8_000m, _recomendacionB));
+        var par = (Grupo: ruta.Id.ToString("D"), Recomendacion: _recomendacionA.ToString("D"));
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion),
+        [
+            Linea("N1", ruta, 12_000m, "3S3", "FURGON") with { GrupoRutaId = par.Grupo, IdRecomendacionVehiculo = par.Recomendacion },
+            Linea("N2", ruta, 8_000m, "2S2", null) with { GrupoRutaId = par.Grupo, IdRecomendacionVehiculo = par.Recomendacion },
+        ]);
+
+        pares.Should().ContainSingle().Which.Should().Be(new KeyValuePair<Guid, string>(CamionDe(cotizacion, _recomendacionA).Id, "N1"),
+            "N2 dice ser del camión A pero contradice su contenido: no se asocia al B");
+    }
+
+    [Fact]
+    public void ConUnSoloCamionLaLineaLlevaElPesoDeclaradoDeLaRutaYNoElDelCubicador()
+    {
+        // Decisión 6 (2026-10-13): el cubicador dice 26 t (más de 1 % lejos de las posiciones, 28 500,5 kg); la línea lleva el peso de la ruta,
+        // que cuadra con las posiciones, y así Nexo no responde PESO_INCONSISTENTE. El peso del cubicador se guarda en el camión.
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-CUB-3" }).Valor;
+        var linea = LineaCaptura((null, null, 28_500.5m)) with
+        {
+            Posiciones = [new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m, null, "CAFE"), new clsPosicionCarga("Saco", 1, 50m, 40m, 30m, 0.5m, null, "SACO")],
+        };
+        cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
+            [new clsRutaCapturada(linea, 3, 0, [new clsCamionPlaneado("3S3", "FURGON", 26_000m, _recomendacionA)], [])]);
+        var ruta = cotizacion.RutasOrdenadas[0];
+        var camion = ruta.Vehiculos[0];
+
+        var (_, lineaNexo) = cotizacion.LineasNexo().Single();
+
+        camion.PesoKg.Should().Be(26_000m, "el peso del cubicador se guarda y se muestra");
+        lineaNexo.PesoKg.Should().Be(28_500.5m);
+        Math.Abs(lineaNexo.PesoKg!.Value - lineaNexo.SumaPesoPosiciones).Should().BeLessThanOrEqualTo(lineaNexo.PesoKg.Value * 0.01m);
+        lineaNexo.Errores().Should().NotContain(e => e.Codigo == clsCodigosLineaSolicitud.PesoInconsistente);
+        lineaNexo.IdRecomendacionVehiculo.Should().Be(_recomendacionA);
+        lineaNexo.Posiciones.Select(p => p.CodigoMercancia).Should().Equal("CAFE", "SACO");
+        clsCamionParaEmparejar.Desde(ruta, camion).PesoKg.Should().Be(28_500.5m, "el emparejador compara con el peso que viajó");
+        clsEmparejadorLineasNexo.Emparejar([clsCamionParaEmparejar.Desde(ruta, camion)], [Linea("N1", ruta, 28_500.5m, "3S3", "FURGON")])
+            .Should().ContainKey(camion.Id, "Nexo devuelve el peso que recibió ");
+    }
+
+    [Fact]
+    public void ConVariosCamionesCadaLineaLlevaElPesoDelCubicadorSinPosiciones()
+    {
+        var (cotizacion, _) = RutaCubicada(20_000m,
+            new clsCamionPlaneado("3S3", "FURGON", 12_345m, _recomendacionA), new clsCamionPlaneado("2S2", null, 7_655m, _recomendacionB));
+
+        var lineas = cotizacion.LineasNexo();
+
+        lineas.Select(l => l.Linea.PesoKg).Should().Equal(12_345m, 7_655m);
+        lineas.Should().OnlyContain(l => l.Linea.Posiciones.Count == 0);
+        lineas.Select(l => l.Linea.IdRecomendacionVehiculo).Should().Equal(_recomendacionA, _recomendacionB);
+    }
+
+    [Theory]
+    [InlineData(false, false, 0)]
+    [InlineData(false, false, 1)]
+    [InlineData(false, false, 2)]
+    [InlineData(false, false, 3)]
+    [InlineData(false, true, 3)]
+    [InlineData(true, false, 3)]
+    [InlineData(true, true, 0)]
+    [InlineData(true, true, 3)]
+    public void FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(bool grupoEnGet, bool recomendacionEnGet, int modo)
+    {
+        // Regresión de la validación de #159: rutas de 1 a 3 camiones del cubicador (pesos que no cuadran con la ruta), respaldo, la Mesa
+        // que cambia el vehículo (modo & 1) o borra líneas antes del primer polling (modo & 2). Se compara contra lo que hacía QA (el peso
+        // del camión en los dos lados): no puede cruzar más costos entre rutas que antes, y con grupoRutaId en el GET no cruza ninguno.
+        var azar = new Random(159 + modo);
+        var (crucesRama, crucesQa, pares) = (0, 0, 0);
+        for (var vuelta = 0; vuelta < 1500; vuelta++)
+        {
+            var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-FUZZ-159" }).Valor;
+            var rutas = new List<clsRutaCapturada>();
+            for (var r = azar.Next(2, 4); r > 0; r--)
+            {
+                var peso = azar.Next(2) == 0 ? 20_000m : 28_500.5m;
+                var linea = LineaCaptura((null, null, peso)) with { Posiciones = [new clsPosicionCarga("x", 1, 100m, 100m, 100m, peso, null, "COD")] };
+                var cantidad = azar.Next(1, 4);
+                IReadOnlyList<clsCamionPlaneado> camiones = azar.Next(5) == 0
+                    ? [new clsCamionPlaneado(null, null, peso)]
+                    : Enumerable.Range(0, cantidad).Select(_ => new clsCamionPlaneado(azar.Next(3) == 0 ? "2S2" : "3S3", "FURGON",
+                        new[] { Math.Round(peso / cantidad, 2), 10_000m, peso, 18_000m }[azar.Next(4)], Guid.NewGuid())).ToList();
+                rutas.Add(new clsRutaCapturada(linea, 3, 0, camiones, []));
+            }
+
+            cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, rutas);
+            var lineas = new List<(clsLineaSolicitudNexo Rama, clsLineaSolicitudNexo Qa, Guid Ruta)>();
+            foreach (var (camion, linea) in cotizacion.LineasNexo())
+            {
+                var vehiculo = (modo & 1) != 0 && azar.Next(8) == 0 ? (azar.Next(2) == 0 ? "2S2" : "3S3") : linea.TipoVehiculo;
+                if ((modo & 2) != 0 && azar.Next(10) == 0)
+                {
+                    continue;
+                }
+
+                var rama = new clsLineaSolicitudNexo(Guid.NewGuid().ToString(), $"{linea.Origen} → {linea.Destino}", linea.Tipologia, linea.PesoKg, vehiculo, linea.Carroceria)
+                {
+                    GrupoRutaId = grupoEnGet ? linea.RutaId?.ToString("D") : null,
+                    IdRecomendacionVehiculo = recomendacionEnGet ? linea.IdRecomendacionVehiculo?.ToString("D") : null,
+                };
+                lineas.Add((rama, rama with { Peso = camion.PesoKg, GrupoRutaId = null, IdRecomendacionVehiculo = null }, camion.LineaSolicitudId));
+            }
+
+            lineas = [.. lineas.OrderBy(_ => azar.Next())];
+            var rutaDe = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (r, v))).ToDictionary(x => x.v.Id, x => x.r);
+            var camionesRama = cotizacion.Vehiculos.Select(c => clsCamionParaEmparejar.Desde(rutaDe[c.Id], c)).ToList();
+            var camionesQa = camionesRama.Select(c => c with { PesoKg = cotizacion.Vehiculos.Single(v => v.Id == c.Id).PesoKg, IdRecomendacionVehiculo = null }).ToList();
+
+            foreach (var (camionId, lineaId) in clsEmparejadorLineasNexo.Emparejar(camionesRama, [.. lineas.Select(l => l.Rama)]))
+            {
+                pares++;
+                crucesRama += lineas.Single(l => l.Rama.Id == lineaId).Ruta != rutaDe[camionId].Id ? 1 : 0;
+            }
+
+            foreach (var (camionId, lineaId) in clsEmparejadorLineasNexo.Emparejar(camionesQa, [.. lineas.Select(l => l.Qa)]))
+            {
+                crucesQa += lineas.Single(l => l.Qa.Id == lineaId).Ruta != rutaDe[camionId].Id ? 1 : 0;
+            }
+        }
+
+        TestContext.Current.TestOutputHelper?.WriteLine($"FUZZ159 grupo={grupoEnGet} rec={recomendacionEnGet} modo={modo}: pares={pares} cruces={crucesRama} qa={crucesQa}");
+        pares.Should().BeGreaterThan(0);
+        crucesRama.Should().BeLessThanOrEqualTo(crucesQa, "no puede cruzar más costos entre rutas que QA");
+        if (grupoEnGet)
+        {
+            crucesRama.Should().Be(0, "con grupoRutaId en el GET ninguna línea va a otra ruta");
+        }
+    }
+
+    /// <summary>Ruta capturada con el cubicador: peso declarado <paramref name="pesoRuta"/> y los camiones del plan, en ese orden.</summary>
+    private static (clsCotizacionSolicitud Cotizacion, clsLineaSolicitud Ruta) RutaCubicada(decimal pesoRuta, params clsCamionPlaneado[] camiones)
+    {
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-CUB-1" }).Valor;
+        cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
+            [new clsRutaCapturada(LineaCaptura((null, null, pesoRuta)), 3, 0, camiones, [])]);
+        return (cotizacion, cotizacion.RutasOrdenadas[0]);
+    }
+
+    private static clsVehiculoLineaSolicitud CamionDe(clsCotizacionSolicitud cotizacion, Guid recomendacion) =>
+        cotizacion.Vehiculos.Single(v => v.IdRecomendacionVehiculo == recomendacion);
 
     // ------------------------------------------------------------------ Apoyo
 

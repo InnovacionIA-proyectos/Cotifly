@@ -524,6 +524,23 @@ mercancía guarda `codigoMercancia` (no el uuid), la ruta el resultado del cubic
 avisos (no guardados) en `cubicacion[]`; nuevo `POST .../rutas/{rutaId}/recalcular-vehiculos`; `/health/ready` exige el 02. La columna
 de orden del camión y el id del catálogo del conexo quedan propuestos en `db/scripts/pendientes/03_*.sql` (revisión de @scalderon-bs).
 
+**Actualizado en HU-023.4 (#159, 2026-10-13), ADR-020:** envío a Nexo por camión con los datos del cubicador, contra el contrato de
+la rama `QA` de Nexo (fusionado, sin desplegar). Sin cambios de esquema.
+- **Identidad:** todos los adaptadores mandan `X-Portal-clsUsuario-Id` (Nexo responde 401 a `X-Portal-Usuario-Id`), desde un solo
+  lugar: `Infraestructura/Configuracion/clsIdentidadNexo.cs`.
+- **`grupoRutaId`** (antes `referenciaRuta`) por línea con `Nexo:EnviarGrupoRutaId` (antes `Nexo:EnviarReferenciaRuta`);
+  **`idRecomendacionVehiculo`** por línea y **`codigoTipoMercancia`** por posición (máx. 40) con `Nexo:EnviarDatosCubicador`. Las dos
+  apagadas por defecto. `clsLineaSolicitudCosteo.IdRecomendacionVehiculo` y `clsLineaSolicitudNexo.GrupoRutaId` /
+  `IdRecomendacionVehiculo` son nuevos.
+- **Emparejador** (§3.6): primero por (`grupoRutaId`, `idRecomendacionVehiculo`) si la línea de Nexo los trae; después, como antes, por
+  grupo y contenido o solo por contenido. La columna de orden ya no hace falta para emparejar.
+- **Peso** (`clsLineaSolicitud.PesoLineaNexo`): con un solo camión viaja el peso declarado de la ruta (cuadra con las posiciones; evita
+  `PESO_INCONSISTENTE`); el del cubicador se guarda y se muestra. Con varios, el de cada camión, sin posiciones.
+- **Códigos de vehículo y carrocería del cubicador:** viajan sin bandera (el usuario acepta que Nexo cree filas nuevas en su catálogo).
+  **Línea sin vehículo:** sin cambios; se espera la 19.2 de Nexo (`PorCostear`).
+- **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` solo en `catalogos/*` y la bandeja
+  `GET /api/solicitudes` (el polling y lo demás no se congelan) y la tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.
+
 ---
 
 ## 7. API y contrato con el frontend

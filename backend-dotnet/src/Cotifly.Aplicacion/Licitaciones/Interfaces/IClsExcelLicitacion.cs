@@ -6,7 +6,7 @@ namespace Cotifly.Aplicacion.Licitaciones.Interfaces;
 /// <summary>
 /// Análisis del Excel del cliente en Nexo (HU-011.1, ADR-017): reenvía el archivo a
 /// <c>POST /api/captura-solicitudes/analizar-excel</c> (multipart <c>archivo</c>) con la identidad del comercial
-/// (<c>X-Portal-Usuario-Id</c>). Nexo no guarda nada. Sin <c>Nexo:UrlBase</c>, Infraestructura registra uno que responde
+/// (<c>X-Portal-clsUsuario-Id</c>). Nexo no guarda nada. Sin <c>Nexo:UrlBase</c>, Infraestructura registra uno que responde
 /// <c>COSTEO_NEXO_NO_DISPONIBLE</c>. Nunca lanza por fallos de Nexo: un 400 de Nexo llega con su código
 /// (<c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c>, <c>EXCEL_INVALIDO</c>, <c>EXCEL_SIN_DATOS</c>); el resto, como en el costeo.
 /// </summary>

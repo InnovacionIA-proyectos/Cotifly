@@ -276,14 +276,16 @@ public static class clsDependenciasInfraestructura
     /// <summary>
     /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
     /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
-    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-Usuario-Id</c> en los
+    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-clsUsuario-Id</c> en los
     /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarBuscadorClientes(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsBuscadorClientesNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsBuscadorClientesNexo>(clsBuscadorClientesNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
     }
@@ -368,8 +370,10 @@ public static class clsDependenciasInfraestructura
     private static void AgregarCosteo(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsCosteoNexoNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsCosteoNexo>(clsCosteoNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
@@ -402,6 +406,16 @@ public static class clsDependenciasInfraestructura
                 : sp.GetRequiredService<Licitaciones.Services.clsAnalizadorExcelNexo>());
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsLectorExcelLicitacion, Licitaciones.Services.clsLectorExcelLicitacionClosedXml>();
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
+    }
+
+    /// <summary>
+    /// Cupo de lecturas de Nexo (HU-023.4, #159): un bloqueo para todo Cotifly tras un 429 (Nexo limita por rol) y el manejador que lo
+    /// aplica en los dos clientes de Nexo, por fuera de la tubería de resiliencia. Idempotente (lo piden clientes y costeo).
+    /// </summary>
+    private static void AgregarCupoNexo(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<clsCupoNexo>();
+        servicios.TryAddTransient<clsCupoNexoHandler>();
     }
 
     private static void AgregarPersistencia(IServiceCollection servicios)

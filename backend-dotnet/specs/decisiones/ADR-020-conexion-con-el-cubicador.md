@@ -1,6 +1,6 @@
 # ADR-020 — Conexión de Cotifly con el cubicador (HU-023)
 
-- **Estado:** Aceptada (2026-10-09; HU-023.2 agregada el 2026-10-13). Parte de la milestone HU-023 (#156 a #160).
+- **Estado:** Aceptada (2026-10-09; HU-023.2 y HU-023.4 agregadas el 2026-10-13). Parte de la milestone HU-023 (#156 a #160).
 - **Reemplaza:** el contrato provisional de la integración con el cubicador de ADR-019 (sección "Integración con el cubicador",
   HU-021.5, #133). Lo demás de ADR-019 sigue vigente.
 - **Fuentes:** `docs/backlog/2026-10-08_HU_Sprint5_Cotifly_Backend.md` (HU-023, decisiones del 2026-10-08),
@@ -193,8 +193,62 @@ sin cubicar. Cotifly ya no depende de ese endpoint con esta HU, pero **la fecha 
 equipo del cubicador antes de comprometerla**, y hacer la verificación contra el cubicador de QA (con Kevin): flota mixta y un código de
 mercancía desconocido rechazado con un mensaje claro. Mientras el cubicador de QA no tenga URL (P3), esa verificación no se ha hecho:
 todo lo anterior se probó solo con el cubicador falso.
+
+## Decisión — HU-023.4 (#159): envío a Nexo por camión con los datos del cubicador (decisiones del usuario del 2026-10-13)
+
+Contrato de Nexo QA (rama `QA`, fusionado pero **todavía no desplegado**): `clsCapturaLineaRequest.GrupoRutaId` (`Guid?`, S5-HU-18.3),
+`clsCapturaLineaRequest.IdRecomendacionVehiculo` (texto hasta 64, S5-HU-18.2), `clsCapturaPosicionRequest.CodigoTipoMercancia` (texto
+hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solicitudes/{id}`.
+
+1. **Identidad: `X-Portal-clsUsuario-Id`.** Es el encabezado que valida `clsIdentidadPortalAuthenticationHandler` de Nexo; al
+   `X-Portal-Usuario-Id` que mandaba Cotifly Nexo le responde **401**. Queda en un solo lugar (`clsIdentidadNexo.Encabezado` e
+   `Identificar`), que usan todos los adaptadores: clientes, municipios, catálogos maestros, costeo, conexos, costos de conexos y el
+   análisis del Excel de licitación. Los Nexo falsos de las pruebas exigen el nombre nuevo (401 sin él) y una prueba impide volver a
+   escribir el nombre a mano en `src/`.
+2. **`grupoRutaId`** (antes `referenciaRuta`, petición N1): el id de la ruta de Cotifly (GUID en texto) en cada línea, al enviar y al
+   leer el GET. Bandera **`Nexo:EnviarGrupoRutaId`** (antes `Nexo:EnviarReferenciaRuta`), **apagada** por defecto.
+3. **`idRecomendacionVehiculo`** por línea: el camión del cubicador (`CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo`, GUID en
+   texto, 36 caracteres). Bandera **`Nexo:EnviarDatosCubicador`**, **apagada** por defecto.
+4. **`codigoTipoMercancia`** por posición: el `codigoMercancia` de la mercancía, con la misma bandera del punto 3. Un código de más de
+   40 caracteres (Cotifly admite 64) no viaja: recortarlo mandaría otro código y Nexo trata `null` como "tipo desconocido".
+5. **Emparejamiento en el polling** (`clsEmparejadorLineasNexo`):
+   - con `grupoRutaId` **e** `idRecomendacionVehiculo` en la línea de Nexo, se asocia directo con el camión de esa ruta y esa
+     recomendación (único por camión, aun entre camiones idénticos; no exige que el contenido cuadre, porque la Mesa pudo cambiar el
+     vehículo). Un par repetido en Nexo o que no está en Cotifly no se usa y la línea sigue por contenido; una línea con otra
+     recomendación nunca coincide con el camión;
+   - solo con `grupoRutaId`: por grupo y luego por contenido (la regla N1 que ya existía);
+   - sin ninguno: la lógica de antes (contenido y orden estable). No hace falta la columna de orden.
+6. **Peso.** Con **un solo camión** la línea lleva las posiciones y el **peso declarado de la ruta** (sin él, la suma de las
+   posiciones), que ya cuadra al 1 % con ellas: así Nexo no responde `PESO_INCONSISTENTE` aunque el `pesoTotalKg` del cubicador difiera.
+   El peso del cubicador se guarda en el camión y se muestra en Cotifly, pero no viaja. Con **varios camiones** no cambia: el peso de
+   cada camión, sin posiciones. La regla es `clsLineaSolicitud.PesoLineaNexo` y "un solo camión" cuenta TODOS los camiones de la ruta (también los descartados): un descarte posterior al envío no cambia lo que viajó. El emparejador compara con ese mismo peso **en una sola pasada** (validación: comparar primero con el peso del cubicador cruzaba costos entre rutas). Las posiciones siguen la misma regla.
+7. **Códigos de vehículo y carrocería del cubicador:** se mandan **ya, sin bandera**, en `tipoVehiculo` y `carroceria` (era el
+   comportamiento desde HU-023.3). El usuario **acepta que Nexo cree filas nuevas en su catálogo** de configuraciones de vehículo cuando
+   un código del cubicador no exista allí (Nexo resuelve o crea por texto libre). Se descartó la bandera de "cuarentena" de la issue.
+8. **Línea sin vehículo** ("sin selección automática" o respaldo): **no cambia**; viaja vacía y la resuelve la Mesa. Se espera la 19.2 de
+   Nexo (estado `PorCostear` para esas líneas).
+9. **429 y `Retry-After`.** Nexo limita sus listados **por rol** (política `listados-estandar`: 120 por minuto por rol;
+   `listados-pesados`: 20, o 60 para Admin) y responde `429 DEMASIADAS_SOLICITUDES` con `Retry-After: 30`. **El cupo se comparte por
+   rol:** todos los comerciales de Cotifly (y los usuarios de Nexo con el mismo rol) gastan el mismo. `clsCupoNexoHandler` (en los dos
+   clientes HTTP de Nexo, por fuera de la resiliencia) bloquea **solo las rutas limitadas en Nexo** (`/api/catalogos/*` y la bandeja `GET /api/solicitudes`; no el polling `/api/solicitudes/{id}`, ni cotizaciones, conexos, clientes o municipios, así que un 429 de catálogos no aumenta el backoff del polling) hasta que pase el
+   `Retry-After` (segundos o fecha; una fecha pasada es 0 s; 30 s si no viene; tope 5 min) y responde un 429 local sin llamar a Nexo; la tubería ya no reintenta un 429. El 429
+   llega como **`COSTEO_NEXO_NO_DISPONIBLE`** (el detalle trae `HTTP 429 DEMASIADAS_SOLICITUDES ... (Retry-After 30 s)`), nunca como
+   `COSTEO_NEXO_RECHAZADA`; en clientes, municipios y catálogos es su "no disponible" de siempre (los catálogos sirven la copia de
+   respaldo). Un 429 a un POST con efecto (conexos) cuenta como "no enviado". Los POST no se bloquean (el alta no está limitada).
+
+**Pruebas:** encabezado nuevo en todos los adaptadores (sus pruebas leen `X-Portal-clsUsuario-Id` y los falsos exigen el nombre),
+payload idéntico con las banderas apagadas (salvo el encabezado y la regla del peso) y con los campos nuevos encendidas, cada bandera por
+separado, el límite de 40, emparejamiento de dos camiones idénticos de la misma ruta con y sin los campos nuevos, peso de un camión con
+el del cubicador a más del 1 % y el 429 sin reintento con el bloqueo compartido entre los dos clientes de Nexo.
+
+**Encender las banderas** cuando Nexo despliegue su rama `QA` en el ambiente correspondiente: su swagger declara
+`additionalProperties: false`, así que mandarlas antes podría hacer que rechace el alta. Primero `Nexo__EnviarGrupoRutaId`, luego
+`Nexo__EnviarDatosCubicador`, y verificar con el GET que vuelven en `lineas[]`.
+
 ## Consecuencias
 
+- HU-023.4: sin desplegar el encabezado nuevo, **ninguna** llamada a Nexo autentica (401). Es un cambio que hay que desplegar ya.
+- HU-023.4: un 429 de Nexo detiene por 30 s todas las lecturas de Cotifly (búsqueda de clientes, catálogos, municipios, polling).
 - El frontend debe mandar `codigo_mercancia` (HU-023.3) y mostrar el nombre del vehículo desde `GET /web/tipos-vehiculo`.
 - HU-023.2: la respuesta de `POST /web/cubicacion` cambia de forma (lista de vehículos) y su caída pasa a 503; el frontend de hoy debe
   ajustarse antes del corte.

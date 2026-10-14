@@ -1046,7 +1046,7 @@ paths:
         - Cotifly también lee `GET /api/catalogos/clases-contenedor` (acepta sus `descripcion` en `clase_contenedor`) y
           `GET /api/catalogos/lineas-negocio` (advierte en el log si un `MargenesPolitica.mapeoLineasNexo` no aparece, G11).
 
-        **Caché y Nexo caído.** Los cuatro catálogos se piden juntos (todo o nada) con el `X-Portal-Usuario-Id` del
+        **Caché y Nexo caído.** Los cuatro catálogos se piden juntos (todo o nada) con el `X-Portal-clsUsuario-Id` del
         comercial y se reutilizan `Nexo:MinutosCacheCatalogos` (30 por defecto). Si Nexo no responde al renovarlos, se usa la
         última copia mientras tenga menos de `Nexo:HorasCatalogosVencidos` (24 por defecto). Sin copia utilizable responde
         503 `CATALOGOS_FLETE_NO_DISPONIBLE`: el formulario nunca ofrece texto libre.

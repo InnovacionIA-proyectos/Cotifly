@@ -7,7 +7,7 @@ namespace Cotifly.Aplicacion.Clientes.Interfaces;
 /// Puerto de la búsqueda de clientes, compartido por el agente (<c>buscar_cliente</c>, ADR-005) y por
 /// <c>GET /web/clientes?q=</c> (HU-005.2). La implementación real (<c>clsBuscadorClientesNexo</c>) consume
 /// <c>GET /api/captura-solicitudes/clientes</c> de Nexo, identificando al comercial ante Nexo con
-/// <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que reciba <paramref name="usuarioId"/>
+/// <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que reciba <paramref name="usuarioId"/>
 /// además del texto. Sin adaptador real, Infraestructura registra uno que responde
 /// <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c>: el agente sigue sin cliente resuelto (<c>nitCliente = NULL</c>, margen de la política).
 /// </summary>

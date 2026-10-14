@@ -60,7 +60,7 @@ Reglas:
   `cambiar...`, `changeme`, `dev`) o es más corto que su mínimo (`clsValidadorSecretos`). Un despliegue con valores
   de ejemplo falla en el rollout en vez de quedar corriendo.
 - MinIO no se mantiene: los PDF van en el volumen `/data/pdfs` (ADR-012). No hay credenciales de S3 que migrar.
-- Nexo no usa credencial: cada petición lleva `X-Portal-Usuario-Id` del comercial (ADR-005).
+- Nexo no usa credencial: cada petición lleva `X-Portal-clsUsuario-Id` del comercial (ADR-005).
 
 ### 2.2 Variables que espera el backend .NET
 
@@ -107,7 +107,8 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `60` | manifiesto | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
-| `Nexo__EnviarReferenciaRuta` | no | no | `false` | — (no está en el manifiesto) | petición N1 a Nexo (HU-021.7): manda `referenciaRuta` en cada línea. Se enciende solo cuando Nexo la acepte (su swagger rechaza campos de más) |
+| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `false` | — (no está en el manifiesto) | HU-023.4: manda `grupoRutaId` en cada línea. Se enciende solo cuando Nexo despliegue el campo (su swagger rechaza campos de más) |
+| `Nexo__EnviarDatosCubicador` | no | no | `false` | — (no está en el manifiesto) | HU-023.4: manda `idRecomendacionVehiculo` por línea y `codigoTipoMercancia` por posición. Se enciende después de `Nexo__EnviarGrupoRutaId` |
 | `Captura__AceptarVehiculoCliente` | no | no | `false` | — (no está en el manifiesto) | bandera de respaldo (HU-021-FE.2): encendida, el vehículo y la carrocería que manda el frontend van solo en el camión del respaldo. Apagada rige la decisión 7. Se retira cuando exista el cubicador |
 | `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
 | `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
@@ -139,7 +140,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 - **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
 
 **Variables nuevas de HU-021** (`Cubicador__*`, `Captura__AceptarVehiculoCliente`, `Pdf__PermitirCotizacionChat`,
-`Nexo__EnviarReferenciaRuta` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
+`Nexo__EnviarGrupoRutaId`, `Nexo__EnviarDatosCubicador` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
 ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto, que es el correcto mientras no exista el
 cubicador. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
@@ -155,7 +156,8 @@ cargan en Dokploy así:
 | `Cubicador__RespaldoSiFalla` | `true` durante la estabilización; luego `false` | `false` | Con `Cubicador__UrlBase` |
 | `Cubicador__TiempoEsperaSegundos`, `__MinutosCacheCatalogos`, `__PresupuestoCapturaSegundos`, `__TiempoMaximoCatalogoSegundos` | por defecto (`15`, `30`, `60`, `10`) | por defecto | Solo si hay que ajustarlas |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | por defecto (`5`, `5`, `24`) | por defecto | Solo si hay que ajustarlas |
-| `Nexo__EnviarReferenciaRuta` | `false`; `true` cuando Nexo QA acepte `referenciaRuta` (N1) | `false`; `true` cuando Nexo producción la acepte | Pregunta N1 a Nexo |
+| `Nexo__EnviarGrupoRutaId` | `false`; `true` cuando Nexo QA despliegue `grupoRutaId` | `false`; `true` cuando Nexo producción lo tenga | HU-023.4 |
+| `Nexo__EnviarDatosCubicador` | `false`; `true` cuando Nexo QA despliegue `idRecomendacionVehiculo` y `codigoTipoMercancia` | `false`; ídem en producción | HU-023.4 |
 | `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
 
