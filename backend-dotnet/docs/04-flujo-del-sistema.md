@@ -1,5 +1,7 @@
 # 4. Flujo del sistema
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Cómo se mueve una cotización por el sistema, desde el login hasta el correo. El detalle de cada pieza está en [02-arquitectura](02-arquitectura.md); el contrato HTTP, en [07-api](07-api.md).
 
 Contenido:

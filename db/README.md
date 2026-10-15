@@ -3,25 +3,26 @@
 SQL Server 2019, schema `dbo_cotifly`. Esta carpeta tiene todo lo necesario para **crear la base de datos desde cero** y
 dejarla con la configuración inicial.
 
-> **Estado (2026-10-13, HU-021.14):** probado. La instalación desde cero (`scripts/01_crear_esquema.sql` y `seeder/`) se
-> corrió el 2026-10-08 sobre `dbTarifario_Nexo_Pruebas` (después de borrar el schema `dbo_cotifly` anterior): creó las
-> 20 tablas y las 2 vistas y sembró 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Las pruebas de integración
-> (Testcontainers, `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) lo verifican en
-> cada corrida: la instalación desde cero y las migraciones `0001` a `0010` dejan el mismo esquema, el `0010` es idempotente
-> y el `0009` migra datos del esquema anterior sin perder ajustes, correos ni auditoría. El backend corre sobre este esquema
-> (ADR-019). Lo único pendiente es de aprobación, no de prueba: el `0010_nombres_municipio.sql` es un **borrador pendiente
-> de revisión de scalderon-bs y del DBA**.
->
-> **`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160, **pendiente de revisión de @scalderon-bs y del DBA**)
-> agrega a la ruta la cola de la cubicación de la licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`,
-> `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion` y el índice filtrado `(cubicacionDisponibleAt, createdAt)`), con un
-> respaldo previo de la tabla si tiene datos. Es idempotente y no destructivo. **No** está en el 01 ni lo corre el ejecutador: queda en
-> un solo lugar hasta su aprobación. Pero el backend de la #160 SÍ mapea sus columnas: **no fusionar ni desplegar la #160 hasta que se
-> apliquen el 0010 y el 04** (sin él, `/health/ready` responde "esquema incompleto: falta 04").
->
-> **`scripts/02_alter_cubicador.sql`** (HU-023.3, #158) agrega las columnas para guardar la respuesta del cubicador. Va
-> después del 01 (o del `0010` en una base migrada) y el ejecutador lo corre solo. Las pruebas de integración lo aplican después
-> de `0001` a `0010` y después del 01, y exigen el mismo esquema (HU-023.3).
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend); revisión de scripts: scalderon-bs y el DBA · **Actualizado:** 2026-10-15
+
+## Estado
+
+- **Instalación desde cero probada.** `scripts/01_crear_esquema.sql` y `seeder/` se corrieron el 2026-10-08 sobre
+  `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos y 2 roles, sin errores.
+- **Verificación continua.** Las pruebas de integración (Testcontainers,
+  `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`) dejan el mismo esquema, que el `0010` es
+  idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
+- **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
+
+| Script | HU | Estado |
+|---|---|---|
+| `migrations_mssql/0010_nombres_municipio.sql` | HU-021 | Borrador pendiente de revisión de scalderon-bs y del DBA |
+| `scripts/02_alter_cubicador.sql` | HU-023.3 (#158) | En el ejecutador. Columnas para guardar la respuesta del cubicador; va después del `01` (o del `0010` en una base migrada) |
+| `scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158) | Propuesta. El backend no mapea sus columnas |
+| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen |
+| `scripts/pendientes/05_categoria_conexo.sql` | #173 | Propuesta. El backend no mapea la columna |
+| `scripts/pendientes/06_idempotencia_captura.sql` | #173 | Propuesta (deuda). El backend no mapea la tabla |
 
 ## Estructura
 
@@ -32,7 +33,9 @@ db/
 ├── ejecutar-bd.sh         ejecutador para Linux / contenedores (bash)
 ├── scripts/
 │   ├── 01_crear_esquema.sql   schema, tablas, restricciones, índices y vistas, en su forma final
-│   └── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
+│   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
+│   ├── pendientes/            propuestas 03 a 06, pendientes de revisión (el ejecutador no las corre)
+│   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
 │   ├── 01_lineas_negocio.sql      líneas de negocio y su margen de política
 │   ├── 02_sap_mapeo_trqtype.sql   mapeo del TrqType de SAP TM a la línea de negocio
@@ -105,8 +108,8 @@ docker compose up sqlserver db-init     # SQL Server local en el puerto 1434 del
 docker compose logs db-init             # ver qué hizo
 ```
 
-Solo toca ese SQL Server local de desarrollo. El `deploy/docker-compose.swarm.yml` no se modificó. Ojo: el bot viejo en
-Python (`mcp` y `orquestador`) usa modelos de Postgres y no puede usar este esquema.
+Solo toca ese SQL Server local de desarrollo. El compose solo trae la base (`sqlserver` y `db-init`); el entorno local del
+backend .NET es `backend-dotnet/scripts/levantar-local.*`.
 
 ### Qué hay que cambiar para ejecutarlo
 

@@ -1,5 +1,7 @@
 # 10. Operación
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Runbook del backend .NET: cómo saber si está sano, dónde mirar cuando algo falla y qué falta para activar cada integración. El despliegue en Docker Swarm con Dokploy es HU-006; aquí se describe lo que el contenedor ofrece.
 
 Contenido:

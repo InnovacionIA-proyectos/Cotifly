@@ -110,7 +110,7 @@ USER $APP_UID
 
 EXPOSE 8080
 
-# Equivale al HEALTHCHECK de orquestador/Dockerfile (GET /health, 30s/5s/3). Sin curl: el mismo binario
+# Equivale al HEALTHCHECK del Dockerfile del orquestador Python (tag python-final; GET /health, 30s/5s/3). Sin curl: el mismo binario
 # hace de sonda (clsSondaSalud) y termina con 0/1 sin levantar el host web. start-period cubre el arranque.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["dotnet", "/app/Cotifly.Api.dll", "--healthcheck"]

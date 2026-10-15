@@ -1,14 +1,16 @@
 # Sprint 5 — Cotifly (HUs de backend y frontend)
 
+> **Estado:** vigente (borrador del Sprint 5; la fuente de verdad son las milestones de GitHub) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 > **Fecha de redacción:** 2026-10-07. Documento vivo: se va completando a medida que se van confirmando más hallazgos/pedidos para este sprint — no es la versión final todavía.
-> **Fuente:** `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` (hallazgos encontrados probando en vivo contra `tbsdatacenter`/`dbTarifario_Nexo_Pruebas`, 2026-09-29 a 2026-10-05) + deuda técnica detectada aparte.
-> **Convención:** sigue el mismo formato de `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (Historia / Contexto / checklist con `[ ]`), numeración continúa desde HU-013 (la de `ADR-018`, ya construida) — estas son todas nuevas, HU-014 en adelante.
+> **Fuente:** las notas de las pruebas en vivo (no versionadas: hallazgos encontrados probando en vivo contra `tbsdatacenter`/`dbTarifario_Nexo_Pruebas`, 2026-09-29 a 2026-10-05) + deuda técnica detectada aparte.
+> **Convención:** sigue el mismo formato de `docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (Historia / Contexto / checklist con `[ ]`), numeración continúa desde HU-013 (la de `ADR-018`, ya construida) — estas son todas nuevas, HU-014 en adelante.
 
 ---
 
 ## Revisión del 2026-10-08: qué aplica después de la reestructuración de la base de datos
 
-**El Sprint 5 va DESPUÉS de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU. Se revisó cada HU de abajo contra ese esquema:
+**El Sprint 5 va DESPUÉS de `docs/archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU. Se revisó cada HU de abajo contra ese esquema:
 
 | HU | Estado | Qué cambia | Depende de |
 |---|---|---|---|
@@ -210,7 +212,7 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 
 ### [HU-022.1] Limpiar el código viejo y dejar la documentación profesional
 
-**Contexto:** al borrar Alembic (HU-021.2) apareció que el stack viejo en Python y su infraestructura de Postgres siguen en el repo sin usarse (hallazgo en el punto 12 de `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md`). Además, buena parte de la documentación describe ese stack o el esquema anterior. HU-021.14 pone los documentos al día con el esquema nuevo; esta HU los deja **profesionales** y quita lo que sobra.
+**Contexto:** al borrar Alembic (HU-021.2) apareció que el stack viejo en Python y su infraestructura de Postgres siguen en el repo sin usarse (hallazgo en las notas de las pruebas en vivo). Además, buena parte de la documentación describe ese stack o el esquema anterior. HU-021.14 pone los documentos al día con el esquema nuevo; esta HU los deja **profesionales** y quita lo que sobra.
 
 - [ ] **Evaluar qué quedó viejo y sin uso** (Python viejo, Alembic, Postgres, servicios de compose, scripts y pruebas del stack viejo) con un inventario: qué existe, quién lo usa y si está en algún ambiente.
 - [ ] **Borrar por partes** y comprobar después de cada una que el backend compila, las pruebas pasan y el despliegue sigue sano.
@@ -243,4 +245,4 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 
 ## Pendiente de agregar
 
-- Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (lo que se le pide a Nexo y al cubicador; no son issues) y, para el `TrqType`, en HU-021.2 de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.
+- Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (lo que se le pide a Nexo y al cubicador; no son issues) y, para el `TrqType`, en HU-021.2 de `docs/archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.

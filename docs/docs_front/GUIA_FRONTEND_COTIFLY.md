@@ -1,12 +1,17 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 | Campo | Valor |
 |---|---|
 | Propósito | Todo lo que el frontend necesita para integrar el módulo Cotifly de ClientePro con la API .NET 10 de Cotifly: contratos, formas de comunicación, flujos, estados y reglas de UI |
 | Audiencia | Desarrollador(a) frontend de `clientepro-frontend` (Angular 17.3.8) |
-| Fecha | 2026-09-29 |
-| Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` y los controllers de `backend-dotnet/src/Cotifly.Api`, en `origin/QA` y en las ramas de los PR abiertos |
-| Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec de la rama correspondiente, y hay que avisar al backend |
+| Estado | Vigente |
+| Dueño | Duban Guerra (backend) |
+| Fecha de creación | 2026-09-29 |
+| Actualizado | 2026-10-15 |
+| Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, el backlog de HU-001 a HU-013 (archivado en `docs/archivo/backlog/`) y los controllers de `backend-dotnet/src/Cotifly.Api` en `origin/QA` |
+| Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec, y hay que avisar al backend |
 
 > **AVISO HU-021 (ADR-019, 2026-10-08): `precio_final` YA INCLUYE los servicios conexos.** Es la suma de las rutas, y cada ruta es
 > su costo (fletes, retorno, levante y conexos) con el margen. **No sumarle el `precio` de los conexos** (se cobrarían dos veces):
@@ -15,49 +20,19 @@
 
 Convención de la guía: "a confirmar" marca todo lo que no está cerrado en el código ni en las decisiones. No hay nada inventado. Si algo no aparece aquí, no existe en el backend.
 
-## 1. Portada
+## 1. Estado de los endpoints
 
-### 1.1 Leyenda de estado por endpoint
+Todos los endpoints de esta guía están en la rama `QA` y son el contrato vigente, salvo los marcados así:
 
 | Etiqueta | Significado | ¿Se puede construir contra ella? |
 |---|---|---|
-| **En QA** | Ya está en la rama `QA` (PR fusionado). Es el contrato vigente | Sí, contra el ambiente de QA |
-| **En PR #N** | Implementado y probado en un PR abierto contra `QA`, todavía sin fusionar. El contrato puede cambiar un poco al resolver conflictos | Sí, con mocks basados en esta guía. Contra un backend real, solo con un despliegue de la rama |
-| **PR de #45 (por abrir)** | Implementado en la rama `45-hu-0101-endpoints-de-métricas-agregadas-backend` (contrato final en el commit `a48ed49`), sin PR abierto todavía | Sí, con mocks basados en esta guía |
+| **En QA** | Ya está en la rama `QA`. Es el contrato vigente | Sí, contra el ambiente de QA |
 | **Pendiente** | No está construido (por ejemplo, la urgencia de Nexo o el endpoint de líneas para el comercial) | No. Dejar el hueco en la UI o esconder la función |
+| **Retirado** | Ya no existe (por ejemplo, el webhook de Google Chat, #105) | No |
+| **Obsoleto** | Sigue respondiendo, pero no se debe usar en pantallas nuevas | No en pantallas nuevas |
 
-Actualización del 2026-09-29 (tarde): los PR **#67 a #71 ya están fusionados en QA**. Eso incluye #69 (municipios en el chat), #70 (TRM) y #71 (conversión a USD). Por eso `moneda`, `errores`, `precio_cop`, `trm_aplicada` y `trm_vigencia_*` del chat, y `trm_aplicada` de "Mis cotizaciones", aparecen como "En QA". Solo el PDF en dólares sigue en el PR #72. Siguen abiertos del #72 al #79, todos sin conflictos contra `QA` (`gh`: `MERGEABLE`).
-
-### 1.2 Orden de fusión de los PR que afectan al frontend
-
-Estado verificado con `gh pr list --repo InnovacionIA-proyectos/Cotifly --state all` el 2026-09-29.
-
-| Orden | PR | HU / issue backend | Qué agrega para el frontend | Estado |
-|---|---|---|---|---|
-| 0 | #65 | HU-005.2/.3/.4 | `GET /web/clientes`, `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | Fusionado (En QA) |
-| 0 | #67, #68 | HU-006.5, HU-006.4 | Secretos y registry de imágenes. No afectan al frontend | Fusionado (En QA) |
-| 0 | #69 | HU-005.13 | El agente del chat resuelve origen y destino contra el catálogo de Nexo y desambigua. No cambia el contrato HTTP | Fusionado (En QA) |
-| 0 | #70 | HU-012.1 | Código `TRM_NO_DISPONIBLE` (fuente oficial de TRM con caché) | Fusionado (En QA) |
-| 0 | #71 | HU-012.2 | `moneda` en `POST /web/chat`, `precio` en USD (`moneda`, `trm_aplicada`, `precio_cop`, `trm_vigencia_desde`/`hasta`), `errores` en `RespuestaChat` y `trm_aplicada` en `CotizacionResumen` | Fusionado (En QA) |
-| A1 | #72 | HU-012.3 | PDF en dólares (su aclaración del piso mínimo la reemplaza la nota de TRM mínima de la rama de #50). No cambia el contrato HTTP | Fusionado (En QA) |
-| A2 | Rama de #50 (por abrir) | HU-012.1 | TRM desde DolarApi con respaldo (`trm_fuente` en `SalidaPrecio`), nota de TRM mínima en el PDF en USD, `moneda` en `POST /web/licitaciones` y `trm_aplicada` en `Licitacion` | Por abrir |
-| B1 | #73 | HU-005.8 | Script `0004` (persistencia del costeo). Sin endpoints nuevos. **También llena el mapa de métricas** (columnas `origen`/`destino`) | Abierto |
-| B2 | #74 | HU-005.5 | `POST /web/solicitudes-costeo`, `POST /web/cotizaciones/{folio}/costeo/reintentar`, enum de `estado_costeo` y `motivo_estado_costeo` | Abierto |
-| B3 | #75 | HU-005.6 | Polling del lado del servidor: `estado_costeo` avanza solo (sin endpoint nuevo) | Abierto |
-| B4 | #76 | HU-005.7 | `GET /web/cotizaciones/{folio}/costeo`, `PUT .../costeo/servicios-conexos`, `POST .../costeo/pdf` y `precio_final` sobre el costeo | Abierto |
-| B5 | #77 | HU-005.14 | `POST /web/cotizaciones/{folio}/resultado`. `/seguimiento` pasa a obsoleto y responde 409 `USAR_RESULTADO_NEXO` en el flujo de costeo | Abierto |
-| C1 | PR de #45 (por abrir) | HU-010.1 | `GET /web/metricas/comercial` y `GET /web/metricas/regional`; `/actividad` y `/ajustes-margen` pasan a obsoletos | Por abrir |
-| — | #78, #79 | HU-006.6, HU-006.7 | Infraestructura (Swarm, respaldos; el JWT de Google Chat se fue con Google Chat en #105). No afectan al frontend | Abierto |
-| D1 | PR de #47 (por abrir) | HU-011.2 | `POST /web/licitaciones/analizar-excel`, `POST /web/licitaciones` y `GET /web/licitaciones/{folio}` (licitaciones desde Excel, ADR-017); script `0005` | Por abrir |
-| D2 | PR de #48 (por abrir) | HU-011.3 | `GET /web/licitaciones/{folio}/excel` (exportación con precios) | Por abrir |
-| D3 | PR de #49 (por abrir) | HU-011.5 | El PDF del costeo de una licitación sale con el layout de pliego (sin endpoint nuevo) | Por abrir |
-
-Notas sobre la fusión:
-
-- Todas las ramas abiertas (#72 a #79) y la de #45 ya están actualizadas con `QA` (`8edcdd7`, que incluye #71). Una simulación de fusión (`git merge-tree`) contra ese `QA` da **cero conflictos** en todas, y `gh pr list` las reporta `MERGEABLE`.
-- Al actualizarse con `QA`, los contratos de los endpoints de costeo no cambiaron: solo heredaron lo de #71 (`moneda`, TRM).
-- Dentro de la pila B, cada PR contiene al anterior: se fusionan en orden. El PR #72 y el de #45 son independientes de la pila B.
-- La pila B es **solo COP** en el formulario spot (ADR-015 §5). Las licitaciones ya admiten USD (rama de #50, sección 5.24).
+La creación de cotizaciones es solo por formulario (`POST /web/solicitudes-costeo`) o por Excel de licitación
+(`POST /web/licitaciones`); el formulario spot es solo en COP (ADR-015 §5) y las licitaciones admiten USD (sección 5.24).
 
 ## 2. Arquitectura y comunicación
 
@@ -482,16 +457,16 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | Cualquier `/web/*` | 401, 403, 404, 413, 429 y 400 de validación del cuerpo | — |
 | `POST /web/chat` | 400 (`sesion_id inválido`, `folio inválido`, mensaje), 404 (sesión de otro comercial, o folio ajeno o inexistente) | 400 `FOLIO_REQUERIDO` (desde #102, sin `folio`). Los errores de las herramientas llegan en `errores` de un 200 |
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
-| `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` (En PR #77) |
+| `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
 | `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401 | 400 `*_NO_DISPONIBLE`, `ITEMS_REQUERIDOS`, `MERCANCIA_DESCONOCIDA` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
-| `POST /web/solicitudes-costeo` (En PR #74) | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
-| `POST .../costeo/reintentar` (En PR #74) | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
-| `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` (En PR #76) | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
-| `POST .../resultado` (En PR #77) | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
+| `POST /web/solicitudes-costeo` | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
+| `POST .../costeo/reintentar` | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
+| `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` | 404 | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
+| `POST .../resultado` | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
-| `GET /web/metricas/comercial` (PR de #45) | 400 (fechas), 401 | — |
-| `GET /web/metricas/regional` (PR de #45) | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
+| `GET /web/metricas/comercial` | 400 (fechas), 401 | — |
+| `GET /web/metricas/regional` | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /pdfs/{archivo}` | 401, 404 (JSON aunque se pidió un blob) | — |
 
 > **Captura idempotente (#173), obligatorio:** `POST /web/solicitudes-costeo` **debe** llevar el encabezado `Idempotency-Key`
@@ -503,7 +478,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 > sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Limitación conocida: la clave vive en la memoria del servidor (se pierde
 > al reiniciar; tabla propuesta en `db/scripts/pendientes/06`).
 
-Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403; validaciones → 400 `ErrorWeb`; `CORREO_DESHABILITADO` (y en PR #77 `COSTEO_NEXO_NO_DISPONIBLE` y `COSTEO_NEXO_TIEMPO_AGOTADO`) → 503 `ErrorNegocio`; los de conflicto de estado del costeo → 409 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`.
+Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403; validaciones → 400 `ErrorWeb`; `CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE` y `COSTEO_NEXO_TIEMPO_AGOTADO` → 503 `ErrorNegocio`; los de conflicto de estado del costeo → 409 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`.
 
 ### 4.3 Mensajes fijos de `ErrorWeb`
 
@@ -524,12 +499,12 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `TARIFA_FUENTE_NO_DISPONIBLE` | `errores` del chat (`buscar_tarifa`) | El tarifario de Drive se retiró: no hay tarifa automática | **No es un error para el usuario**: el agente pide el costo. No mostrar alerta | En QA |
 | `TARIFA_CONFIG_INVALIDA` | `errores` del chat | La tarifa de la fuente no está en COP | Aviso: "La tarifa no está en pesos; indica el costo" | En QA |
 | `MARGEN_FUENTE_NO_DISPONIBLE` | chat | SAP caído y la línea no tiene política | "No se pudo obtener el margen. Intenta más tarde" | En QA |
-| `MARGEN_LINEA_DESCONOCIDA` | chat; 400 en `solicitudes-costeo` | La línea no existe o está inactiva | Marcar el campo línea: "Línea no disponible" | En QA / En PR #74 |
+| `MARGEN_LINEA_DESCONOCIDA` | chat; 400 en `solicitudes-costeo` | La línea no existe o está inactiva | Marcar el campo línea: "Línea no disponible" | En QA |
 | `PRECIO_INVALIDO` | chat | Datos de precio inválidos (costo o margen fuera de rango, moneda desconocida) | Mostrar el texto del agente | En QA |
 | `AJUSTE_MARGEN_INVALIDO` | chat | Margen negociado fuera de rango (negativo o 1 o más con método `margen`) | "Margen fuera de rango" | En QA |
 | `AJUSTE_COTIZACION_INVALIDA`, `AJUSTE_ID_INVALIDO` | chat | Ajuste de margen sin cotización válida | Texto del agente | En QA |
-| `PDF_PAYLOAD_INVALIDO` | chat; 400 en `costeo/pdf` | Datos incompletos o incoherentes para el PDF | "No se pudo generar el PDF: faltan datos" | En QA / En PR #76 |
-| `PDF_RENDER_NO_DISPONIBLE` | chat; 503 en `costeo/pdf` (desde #92) | Falló el render o no hubo turno de render a tiempo (los PDF se generan uno a la vez) | "Reintenta más tarde" con botón Reintentar | En QA / En PR #76 |
+| `PDF_PAYLOAD_INVALIDO` | chat; 400 en `costeo/pdf` | Datos incompletos o incoherentes para el PDF | "No se pudo generar el PDF: faltan datos" | En QA |
+| `PDF_RENDER_NO_DISPONIBLE` | chat; 503 en `costeo/pdf` (desde #92) | Falló el render o no hubo turno de render a tiempo (los PDF se generan uno a la vez) | "Reintenta más tarde" con botón Reintentar | En QA |
 | `CONFIRMACION_REQUERIDA` | chat (y `errores`); 400 en `/enviar` | Falta confirmar (PDF, o elegir el municipio o el cliente) | No mostrar alerta: el agente lo pide. Ofrecer el botón "Confirmo" si hay previsualización | En QA |
 | `COTIZACION_NO_ENCONTRADA` | 404 `ErrorWeb` en `/web/*` | No existe o no es tuya | "Cotización no encontrada" y refrescar la lista | En QA |
 | `CORREO_DUPLICADO` | 400 en `/enviar` | Mismo envío a los mismos destinatarios hace menos de 5 min | "Ya enviaste esta cotización a esos destinatarios hace poco" | En QA |
@@ -538,7 +513,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `CORREO_DESHABILITADO` | 503 en `/enviar` | El correo está apagado en el servidor (`Correo:Habilitado=false`, por defecto) | "El envío de correo no está habilitado en este ambiente" | En QA |
 | `CORREO_INVALIDO` | 400 `ErrorWeb` (sin código) en `/enviar` | Destinatarios inválidos o vacíos, asunto de más de 300 o cuerpo de más de 5000 | Validar en el formulario antes de enviar | En QA |
 | `FOLIO_DUPLICADO` | chat | Colisión de folio | "Reintenta" | En QA |
-| `FOLIO_CONSECUTIVO_AGOTADO` | chat; 400 en `solicitudes-costeo` | Se usaron los 999 folios del día de esas iniciales | "Límite diario de folios alcanzado. Contacta a soporte" | En QA / En PR #74 |
+| `FOLIO_CONSECUTIVO_AGOTADO` | chat; 400 en `solicitudes-costeo` | Se usaron los 999 folios del día de esas iniciales | "Límite diario de folios alcanzado. Contacta a soporte" | En QA |
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 en `/web/clientes`; chat | Nexo sin configurar, caído, o el comercial sin `idUsuarioExterno`. **No** significa "sin resultados" (eso es 200 con `candidatos: []`) | En el autocompletado: "Buscador de clientes no disponible" con reintento | En QA |
 | `HERRAMIENTA_DESCONOCIDA` | chat (interno) | El modelo pidió una herramienta inexistente | Ignorar | En QA |
 | `MUNICIPIOS_NO_DISPONIBLE` | 400 en `/web/municipios`; chat | Catálogo de Nexo no disponible | Deshabilitar el autocompletado de origen y destino y mostrar reintento. El chat sigue con texto libre | En QA |
@@ -548,21 +523,21 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
 | `ERROR_INTERNO` | Cualquiera | Error no controlado | "Ocurrió un error. Reintenta" | En QA |
 | `TRM_NO_DISPONIBLE` | `errores` del chat (`calcular_precio`, `registrar_ajuste_margen`); 400 en `POST /web/licitaciones` y en `POST /web/solicitudes-costeo` (#103) con `moneda = USD` | Ninguna fuente de la TRM respondió (DolarApi ni la Superintendencia): no hay precio en USD | Mensaje no bloqueante: "No se pudo obtener la TRM. Reintenta en unos minutos o cotiza en pesos", con botones **Reintentar** y **Cambiar a COP**. Quitar el spinner | En QA (#70/#71) |
-| `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En PR #74 |
-| `COSTEO_NEXO_NO_DISPONIBLE` | `motivo_estado_costeo` (envío); 503 en `resultado` | Nexo caído, circuito abierto, sin configurar, 401/403 de Nexo o cliente no resoluble | En el envío queda `error_envio` (botón Reintentar). En resultado: "Nexo no responde; intenta más tarde". Nada cambió | En PR #74/#77 |
-| `COSTEO_NEXO_TIEMPO_AGOTADO` | 503 en `resultado`; motivo del envío | Nexo no respondió a tiempo | En el envío: advertir "Nexo pudo haber recibido la solicitud: verifica en Nexo antes de reintentar" | En PR #74/#77 |
-| `COSTEO_NEXO_RECHAZADA` | Motivo del envío; 400 en `resultado` | Nexo respondió 4xx (código de Nexo en `detalle.motivo`); también NIT fuera del catálogo o **cliente prospecto sin BP** | Mostrar el motivo | En PR #74/#77 |
-| `COSTEO_NEXO_SOLICITUD_INVALIDA` | Motivo del envío (prefijo `Rechazo definitivo de Nexo...`) | Nexo respondió 400 al alta: definitivo | Ocultar "Reintentar". "Corrige el formulario en una cotización nueva" | En PR #74 |
-| `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA` | Motivo (polling) | Nexo ya no reconoce la solicitud; queda `costeo_vencido` | Mostrar el motivo | En PR #75 |
-| `COSTEO_NO_REINTENTABLE` | 409 en `reintentar` | El estado no permite reenviar (no está en `error_envio` ni en un `pendiente_envio` de más de 2 min, ya tiene resultado, rechazo definitivo u otro reenvío en curso) | Refrescar la fila y ocultar "Reintentar" | En PR #74 |
-| `COSTEO_NO_LISTO` | 409 en `servicios-conexos`, `costeo/pdf` y `resultado` | Todavía sin precio con margen; o, en resultado, la cotización no está en Nexo (chat, descartada, vencida, o no enviada) | Deshabilitar los botones hasta que haya `precio_final`. En resultado, usar `/seguimiento` | En PR #76/#77 |
-| `PDF_YA_GENERADO` | 409 en `servicios-conexos` y `costeo/pdf` | Ya tiene PDF: no se cambia | Bloquear la selección de conexos y el botón PDF. "Genera una cotización nueva para cambiarla" | En PR #76 |
-| `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En PR #77 |
-| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | Nexo exige la cotización entregada (su issue #171) | "Nexo todavía no ha entregado esta cotización" | En PR #77 |
-| `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En PR #77 |
-| `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | PR de #45 |
-| `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | PR de #45 |
-| `USAR_RESULTADO_NEXO` | 409 en `/seguimiento` | Cotización del flujo de Nexo: hay que usar `/resultado`. Desde HU-021.13, `detalle` = `{"metodo": "POST", "endpoint": "/web/cotizaciones/{folio}/resultado", "requiere_if_match": true}` con el folio real | Error de programación del frontend: enrutar el botón a `/resultado` con `If-Match` (sección 6.5). Como respaldo se puede reintentar contra `detalle.endpoint` | En PR #77; `detalle` en #140 |
+| `SOLICITUD_COSTEO_INVALIDA` | 400 en `solicitudes-costeo`, `reintentar` y `servicios-conexos` | Campo fuera de los límites de Nexo. `detalle.motivo` = `PESO_REQUERIDO` o `PESO_INCONSISTENTE` cuando es el peso | Mostrar `mensaje` junto al campo (el mensaje nombra el campo) | En QA |
+| `COSTEO_NEXO_NO_DISPONIBLE` | `motivo_estado_costeo` (envío); 503 en `resultado` | Nexo caído, circuito abierto, sin configurar, 401/403 de Nexo o cliente no resoluble | En el envío queda `error_envio` (botón Reintentar). En resultado: "Nexo no responde; intenta más tarde". Nada cambió | En QA |
+| `COSTEO_NEXO_TIEMPO_AGOTADO` | 503 en `resultado`; motivo del envío | Nexo no respondió a tiempo | En el envío: advertir "Nexo pudo haber recibido la solicitud: verifica en Nexo antes de reintentar" | En QA |
+| `COSTEO_NEXO_RECHAZADA` | Motivo del envío; 400 en `resultado` | Nexo respondió 4xx (código de Nexo en `detalle.motivo`); también NIT fuera del catálogo o **cliente prospecto sin BP** | Mostrar el motivo | En QA |
+| `COSTEO_NEXO_SOLICITUD_INVALIDA` | Motivo del envío (prefijo `Rechazo definitivo de Nexo...`) | Nexo respondió 400 al alta: definitivo | Ocultar "Reintentar". "Corrige el formulario en una cotización nueva" | En QA |
+| `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA` | Motivo (polling) | Nexo ya no reconoce la solicitud; queda `costeo_vencido` | Mostrar el motivo | En QA |
+| `COSTEO_NO_REINTENTABLE` | 409 en `reintentar` | El estado no permite reenviar (no está en `error_envio` ni en un `pendiente_envio` de más de 2 min, ya tiene resultado, rechazo definitivo u otro reenvío en curso) | Refrescar la fila y ocultar "Reintentar" | En QA |
+| `COSTEO_NO_LISTO` | 409 en `servicios-conexos`, `costeo/pdf` y `resultado` | Todavía sin precio con margen; o, en resultado, la cotización no está en Nexo (chat, descartada, vencida, o no enviada) | Deshabilitar los botones hasta que haya `precio_final`. En resultado, usar `/seguimiento` | En QA |
+| `PDF_YA_GENERADO` | 409 en `servicios-conexos` y `costeo/pdf` | Ya tiene PDF: no se cambia | Bloquear la selección de conexos y el botón PDF. "Genera una cotización nueva para cambiarla" | En QA |
+| `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En QA |
+| `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | Nexo exige la cotización entregada (su issue #171) | "Nexo todavía no ha entregado esta cotización" | En QA |
+| `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En QA |
+| `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
+| `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | En QA |
+| `USAR_RESULTADO_NEXO` | 409 en `/seguimiento` | Cotización del flujo de Nexo: hay que usar `/resultado`. Desde HU-021.13, `detalle` = `{"metodo": "POST", "endpoint": "/web/cotizaciones/{folio}/resultado", "requiere_if_match": true}` con el folio real | Error de programación del frontend: enrutar el botón a `/resultado` con `If-Match` (sección 6.5). Como respaldo se puede reintentar contra `detalle.endpoint` | En QA; `detalle` desde #140 |
 
 Códigos internos que el frontend solo ve como texto en un `ErrorWeb` 400: `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO` y `SEGUIMIENTO_INVALIDO`.
 
@@ -581,12 +556,12 @@ Resumen:
 | `POST /api/auth/logout` | Cualquiera | En QA |
 | `GET /health`, `GET /health/ready` | Anónimo | En QA |
 | `POST /web/chat` | Ambos | En QA (incluye `moneda` y `errores` desde #71) |
-| `GET /web/mis-cotizaciones` | Ambos | En QA (incluye `trm_aplicada`; `motivo_estado_costeo` y enum de `estado_costeo` En PR #74) |
+| `GET /web/mis-cotizaciones` | Ambos | En QA (incluye `trm_aplicada`, `motivo_estado_costeo` y el enum de `estado_costeo`) |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | Ambos | En QA |
 | `POST /web/cotizaciones/{folio}/enviar` | Ambos | En QA |
 | `GET /web/clientes/{nit}/destinatarios-previos` | Ambos | En QA |
-| `POST /web/cotizaciones/{folio}/seguimiento` | Ambos | En QA (obsoleto y 409 En PR #77) |
-| `POST /web/cotizaciones/{folio}/resultado` | Ambos (dueño) | En PR #77 |
+| `POST /web/cotizaciones/{folio}/seguimiento` | Ambos | Obsoleto (409 `USAR_RESULTADO_NEXO` en el flujo de Nexo) |
+| `POST /web/cotizaciones/{folio}/resultado` | Ambos (dueño) | En QA |
 | `GET /web/cotizaciones/{id}/nueva-version` | Ambos | En QA |
 | `GET`, `PUT /web/usuario/telefono` | Ambos | En QA |
 | `GET /pdfs/{archivo}` | Dueño o gerente de su regional | En QA |
@@ -594,23 +569,23 @@ Resumen:
 | `GET /web/municipios` | Ambos | En QA |
 | `GET /web/catalogos-flete` | Ambos | En QA |
 | `POST /web/cubicacion` | Ambos | En QA |
-| `POST /web/solicitudes-costeo` | Ambos | En PR #74 |
-| `POST /web/cotizaciones/{folio}/costeo/reintentar` | Ambos (dueño) | En PR #74 |
-| `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | En PR #76 |
-| `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | En PR #76 |
-| `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | En PR #76 |
-| `POST /web/licitaciones/analizar-excel` | Ambos | PR de #47 |
-| `POST /web/licitaciones` | Ambos | PR de #47 |
-| `GET /web/licitaciones/{folio}` | Ambos (dueño) | PR de #47 |
-| `GET /web/licitaciones/{folio}/excel` | Ambos (dueño) | PR de #48 |
+| `POST /web/solicitudes-costeo` | Ambos | En QA |
+| `POST /web/cotizaciones/{folio}/costeo/reintentar` | Ambos (dueño) | En QA |
+| `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | En QA |
+| `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | En QA |
+| `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | En QA |
+| `POST /web/licitaciones/analizar-excel` | Ambos | En QA |
+| `POST /web/licitaciones` | Ambos | En QA |
+| `GET /web/licitaciones/{folio}` | Ambos (dueño) | En QA |
+| `GET /web/licitaciones/{folio}/excel` | Ambos (dueño) | En QA |
 | `GET /web/admin/lineas-negocio` | `gerente_comercial` | En QA |
 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | En QA |
-| `GET /web/metricas/comercial` | Ambos (lo propio) | PR de #45 (por abrir) |
-| `GET /web/metricas/regional` | `gerente_comercial` | PR de #45 (por abrir) |
+| `GET /web/metricas/comercial` | Ambos (lo propio) | En QA |
+| `GET /web/metricas/regional` | `gerente_comercial` | En QA |
 | `GET /web/metricas/actividad` | Ambos | En QA, borrador **obsoleto** |
 | `GET /web/metricas/ajustes-margen` | Ambos | En QA, borrador **obsoleto** |
 | Líneas de negocio activas para el comercial | Ambos | **Pendiente** (no existe) |
-| Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`, con el `0004`) |
+| Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`) |
 
 Parámetro común `folio` (ruta): string de hasta 50 caracteres, `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (ADR-011), por ejemplo `PCN-DG-25092026-001` o `PCN-9000472281-DG-25092026-002-v2`. También hay folios heredados (`PCN-23072026`). **No validar el formato ni parsearlo**: solo mostrarlo, y codificarlo con `encodeURIComponent` en la ruta.
 
@@ -622,7 +597,7 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 
 - Anónimos. No los necesita la UI, salvo para una página de diagnóstico.
 - `GET /health` → 200 `{"status":"ok","servicio":"cotifly-api","entorno":"Production"}`.
-- `GET /health/ready` → 200 `{"status":"ready"}` o 503 `{"status":"unavailable","detalle":"esquema incompleto: falta 0004"}` (base caída, sin cadena, falta el 0002 o, con la pila B, el 0004; con HU-011, `falta 0005`).
+- `GET /health/ready` → 200 `{"status":"ready"}` o 503 `{"status":"unavailable","detalle":"esquema incompleto: falta 0010"}` (base caída, sin cadena o esquema incompleto; los mensajes vigentes, como `falta 0009`, `falta 0010`, `falta 02` y `falta 04`, están en `DEPLOY.md` §4.5).
 
 ### 5.3 `POST /web/chat`. En QA
 
@@ -719,8 +694,8 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 | `margen_aplicado` | number o null | Fracción. HU-021.9: el de la ruta 1 (el margen es por ruta) |
 | `moneda` | string | `COP` o `USD` |
 | `trm_aplicada` | number | En QA (#71). 0 en COP |
-| `estado_costeo` | enum o null | En QA es un string libre (null en las del chat). **En PR #74** es el enum de 7 valores (sección 7.1). null = cotización del chat (no pasa por Nexo) |
-| `motivo_estado_costeo` | string o null | **En PR #74.** Motivo legible (error al enviar, rechazo, vencido, precio conservado tras un cambio de costeo...) |
+| `estado_costeo` | enum o null | Enum de 7 valores (sección 7.1). null = cotización del chat anterior (no pasa por Nexo) |
+| `motivo_estado_costeo` | string o null | Motivo legible (error al enviar, rechazo, vencido, precio conservado tras un cambio de costeo...) |
 | `estado_envio` | `sin_enviar`, `enviada` o `reenviada` | — |
 | `ganada` | bool o null | null = sin resultado |
 | `motivo_rechazo` | string o null | — |
@@ -791,7 +766,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 - Para ver el error de un 404, leer el blob como texto y parsear el JSON.
 - Si `pdf_url` es absoluta, debe apuntar al mismo host de la API; el interceptor solo agrega el Bearer a las URL que empiezan por `cotiflyApiUrl`.
 
-### 5.7 Seguimiento (`POST /web/cotizaciones/{folio}/seguimiento`). En QA; obsoleto En PR #77
+### 5.7 Seguimiento (`POST /web/cotizaciones/{folio}/seguimiento`). Obsoleto
 
 - Request (`SeguimientoWeb`): `{"ganada": true | false | null, "motivo_rechazo": "string o null (hasta 2000)"}`. `ganada: null` **limpia** el resultado (botón "Limpiar").
 
@@ -800,9 +775,9 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 ```
 
 - 200 `CotizacionResumen` (la fila actualizada). 400 (motivo de más de 2000, cuerpo inválido). 404.
-- **En PR #77**: queda `deprecated`. Para una cotización con `estado_costeo` con valor responde **409 `USAR_RESULTADO_NEXO`**, salvo en `descartada` y `costeo_vencido`, que se marcan aquí solo en Cotifly. Las del chat (`estado_costeo = null`) siguen igual, y se pueden cambiar o limpiar libremente.
+- Está `deprecated`. Para una cotización con `estado_costeo` con valor responde **409 `USAR_RESULTADO_NEXO`**, salvo en `descartada` y `costeo_vencido`, que se marcan aquí solo en Cotifly. Las del chat (`estado_costeo = null`) siguen igual, y se pueden cambiar o limpiar libremente.
 
-### 5.8 Resultado en Nexo (`POST /web/cotizaciones/{folio}/resultado`). En PR #77
+### 5.8 Resultado en Nexo (`POST /web/cotizaciones/{folio}/resultado`). En QA
 
 - Rol: ambos, solo el dueño.
 - Request (`ResultadoWeb`):
@@ -984,7 +959,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
      `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto): la respuesta vuelve a traer `sugerencia` (forma anterior, derivada del
      primer vehículo; sin `sugerencia_flota`). Es temporal.
 
-### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En PR #74
+### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En QA
 
 Crea la cotización con el formulario ampliado (folio del servidor con el NIT) y la envía a Nexo. **Responde 201 aunque Nexo falle.**
 
@@ -1098,7 +1073,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 - La petición puede tardar hasta unos 30 s (el alta en Nexo auto-costea en línea). Spinner y bloquear el doble clic: un segundo POST crea **otra** cotización.
 - **Moneda (#103, HU-013.7, ADR-014 §5):** `moneda` opcional, `"COP"` (por defecto) o `"USD"`, sin distinguir mayúsculas ni espacios al borde. Con `USD` la API fija la TRM del día **antes de guardar** (`trm_aplicada` de 5.17 y de "Mis cotizaciones") y ya no cambia: el `precio_final` y el `precio` de los conexos llegan en USD (2 decimales), convertidos con esa TRM, también tras un ajuste de margen o un reintento. El costo sigue en COP y nunca se muestra. El PDF lleva la tarifa en `US$` y la nota de TRM mínima (sección 6.3, punto 7). Sin TRM: 400 `TRM_NO_DISPONIBLE`, no se crea nada ni se envía a Nexo; ofrecer **Reintentar** o **Cambiar a COP**. Una cadena vacía u otro valor: 400 `SOLICITUD_COSTEO_INVALIDA` (el mensaje nombra `moneda`).
 
-### 5.16 Reintentar el envío (`POST /web/cotizaciones/{folio}/costeo/reintentar`). En PR #74
+### 5.16 Reintentar el envío (`POST /web/cotizaciones/{folio}/costeo/reintentar`). En QA
 
 - Sin cuerpo. Reenvía el formulario y las posiciones guardados (no hay que volver a llenarlos).
 - Permitido solo si `ganada` es null **y** (`estado_costeo = error_envio` sin rechazo definitivo, **o** `pendiente_envio` con más de 2 minutos sin cambios).
@@ -1107,7 +1082,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 - Si el motivo anterior fue tiempo agotado, Nexo pudo haber creado la solicitud: mostrar la advertencia "Verifica en Nexo antes de reintentar" (no hay clave de idempotencia).
 - Rechazo definitivo: `motivo_estado_costeo` empieza por `Rechazo definitivo de Nexo (corrige el formulario en una versión nueva): `. En ese caso **ocultar** Reintentar.
 
-### 5.17 Costeo de la cotización (`GET /web/cotizaciones/{folio}/costeo`). En PR #76
+### 5.17 Costeo de la cotización (`GET /web/cotizaciones/{folio}/costeo`). En QA
 
 - Solo el dueño. Lee la base de Cotifly (no llama a Nexo): se puede consultar con polling sin costo para Nexo.
 - 200 (`CosteoCotizacion`). Desde HU-021 trae `rutas[]` con sus camiones, mercancías y conexos (con `estado_nexo`): el ejemplo
@@ -1144,7 +1119,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 - **HU-021:** el total es `precio_final` (ya incluye los conexos). **No** sumarle el `precio` de los conexos. Todos los conexos que llegan están incluidos (`incluido` siempre es true): excluir uno lo quita de la ruta.
 - **HU-021.8 (#135): `rutas[]`.** Cada ruta (`RutaCosteo`) trae `linea_orden`, `linea_solicitud_id`, `origen`, `destino`, `estado_costeo`, `precio_final_linea`, `margen_aplicado`, `margen_sugerido`, `origen_margen` y sus `servicios_conexos` (cada conexo trae también `linea_orden`). El margen es **por ruta**: mostrar el margen y el sugerido de cada ruta y usar su `linea_orden` (o `linea_solicitud_id`) en el ajuste de margen y en los conexos (sección 5.18.1). `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad). Nunca trae costos.
 
-### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En PR #76
+### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En QA
 
 - Request: `{"incluidos": ["<id>", "<id>"]}`: los ids que van en el precio y en el PDF. Los demás quedan excluidos. `[]` excluye todos.
 - 200 `CosteoCotizacion` actualizado. 400 `SOLICITUD_COSTEO_INVALIDA` (algún id no es del costeo). 404. 409 `COSTEO_NO_LISTO` (sin precio) o `PDF_YA_GENERADO`.
@@ -1187,7 +1162,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | `conexos_descartados` siempre `[]` (`deprecated`, se retira con HU-021-FE) | Leer `conexos_conservados` |
 | `datos_carga` de la re-solicitud solo con una ruta (409 `ESTADO_NO_PERMITE` con varias: `detalle.motivo` = `VARIAS_RUTAS` o `LICITACION`) | Con varias rutas, `nueva_version: true` sin `datos_carga` |
 
-### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En PR #76
+### 5.19 PDF del costeo (`POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin cuerpo. El servidor arma el PDF: una fila con origen, destino, vehículo y la tarifa del transporte, más los conexos, cada uno con su precio. Tarifa + conexos = `precio_final` (HU-021).
 - 201 `SalidaPdf` `{cotizacion_id, folio, pdf_url, registrada_en_bd: true}`.
@@ -1222,14 +1197,14 @@ Solo `gerente_comercial` (403 `ErrorWeb` para `comercial`).
 
 Ya no existe: responde 404 (HU-013.9, ADR-018). Las cotizaciones que se crearon por Google Chat o por el chat de la consola antes del retiro (`estado_costeo = null`) siguen en "Mis cotizaciones", admiten `/seguimiento` y cuentan en las métricas.
 
-### 5.22 Métricas (HU-010.1). PR de #45 (por abrir)
+### 5.22 Métricas (HU-010.1). En QA
 
 Fuentes: `openapi.yaml` (tag `metricas`), `docs/docs_front/CONTRATO_API_WEB.md` §3.1, ADR-016 y `specs/features/metricas_tablero.feature` de la rama `45-hu-0101-endpoints-de-métricas-agregadas-backend`, **commit `a48ed49`** (contrato final). ADR-016 está en estado **Propuesta**: Gerencia Comercial todavía tiene que validar las definiciones (sección 9).
 
 | Endpoint | Rol | Uso | Estado |
 |---|---|---|---|
-| `GET /web/metricas/comercial?desde&hasta` | `comercial` y `gerente_comercial` (política `Comercial`) | Tablero del comercial (HU-010.2, #50): **las cotizaciones propias**. El gerente también ve aquí solo las suyas | PR de #45 (por abrir) |
-| `GET /web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 | Tablero del gerente (HU-010.3, #51): **su regional**, filtrable por comercial | PR de #45 (por abrir) |
+| `GET /web/metricas/comercial?desde&hasta` | `comercial` y `gerente_comercial` (política `Comercial`) | Tablero del comercial (HU-010.2, #50): **las cotizaciones propias**. El gerente también ve aquí solo las suyas | En QA |
+| `GET /web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 | Tablero del gerente (HU-010.3, #51): **su regional**, filtrable por comercial | En QA |
 | `GET /web/metricas/actividad` | Ambos | Borrador anterior. **Obsoleto** (`deprecated: true`) | En QA, obsoleto |
 | `GET /web/metricas/ajustes-margen` | Ambos | Borrador anterior. **Obsoleto** (`deprecated: true`) | En QA, obsoleto |
 
@@ -1298,11 +1273,11 @@ Ejemplo (del contrato): `PCN-DG-10082026-001` se crea el **10 de agosto** (v1, 1
 | `valor_ganado_cop` | number | SUM(`valor_cop`) de las ganadas. Es el **valor cotizado** de lo ganado, **no dinero recaudado**. En la UI: **"Valor ganado (COP)"**, también en el mapa |
 | `ganancias` | number | SUM(`valor_cop` − `costo`) de las ganadas con precio y costo |
 | `cotizaciones_usd` | int | Cadenas en moneda distinta de COP |
-| `tiempo_promedio_cotizacion_horas` | number o null | Promedio de (`costeoListoAt` − `createdAt` de la versión vigente) en horas. Se descartan las filas con `costeoListoAt` anterior a `createdAt`. `null` si no queda ninguna. Hoy solo el flujo de costeo de Nexo (PR #76) llena `costeoListoAt`, así que en QA será `null` |
+| `tiempo_promedio_cotizacion_horas` | number o null | Promedio de (`costeoListoAt` − `createdAt` de la versión vigente) en horas. Se descartan las filas con `costeoListoAt` anterior a `createdAt`. `null` si no queda ninguna. Solo el flujo de costeo de Nexo llena `costeoListoAt` |
 | `desviacion_promedio_margen` | number o null | Promedio de `MargenAjustes.diferencia` (negociado − política, **con signo**) de los ajustes de la versión vigente. `null` sin ajustes |
 | `desviacion_promedio_margen_abs` | number o null | Promedio del **valor absoluto** de esas diferencias (magnitud de la negociación, sin que se compensen subidas y bajadas). `null` sin ajustes |
 | `ajustes_margen` | int | Cantidad de esos ajustes |
-| `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`, PR #73) |
+| `deadline_vencidas` | int o null | Sin resultado y con `deadline` anterior al momento de la consulta. **`null`** mientras la base no tenga la columna `deadline` (script `0004`) |
 
 Solo en `/regional`: `lineas_negocio_activas` (int) = líneas de `MargenesPolitica` con `isActive = 1`. No depende del periodo ni de la regional.
 
@@ -1343,7 +1318,7 @@ Comprobación del `.feature` (comercial "ana", año 2026). A1 COP 1.000.000 gana
 
 | Campo | Tipo | Significado |
 |---|---|---|
-| `disponible` | bool | `false` mientras la base no tenga las columnas `origen`/`destino` (script `0004`, PR #73). Entonces las listas van vacías |
+| `disponible` | bool | `false` mientras la base no tenga las columnas `origen`/`destino` (script `0004`). Entonces las listas van vacías |
 | `por_destino` | `MetricaCiudad[]` | Por municipio de **destino** (la vista del mapa) |
 | `por_origen` | `MetricaCiudad[]` | Por municipio de origen (complemento) |
 | `sin_destino`, `sin_origen` | int | Cotizaciones sin ciudad (las del chat no guardan ciudades) |
@@ -1609,7 +1584,7 @@ Mientras el `0004` no esté aplicado (hoy en QA), `concentracion_ciudades` llega
   - Cancelar la petición anterior (`switchMap`) si el usuario cambia rápido.
   - Como alternativa sin petición, `comerciales[i].indicadores` ya trae los KPI de cada uno, pero no su serie ni sus ciudades.
 - **Gráfica:** `serie_mensual` alimenta la línea de tiempo (cantidad y ganadas por mes, o valor cotizado y valor ganado). Vienen todos los meses, sin huecos.
-- **Mapa:** usar `concentracion_ciudades.por_destino`, con el rótulo "Valor ganado (COP)" para el dinero. Con `disponible = false`, ocultar el mapa o mostrar "El mapa estará disponible cuando se active el costeo por ciudad" (depende del `0004`, PR #73). Las ciudades llegan como texto del catálogo de Nexo: el frontend necesita su propio diccionario de coordenadas (o cruzar con `GET /web/municipios`, que trae `codigo_dane`). **A confirmar** qué texto exacto se guardará en `origen`/`destino` (sección 6.4, paso 3).
+- **Mapa:** usar `concentracion_ciudades.por_destino`, con el rótulo "Valor ganado (COP)" para el dinero. Con `disponible = false`, ocultar el mapa o mostrar "El mapa estará disponible cuando se active el costeo por ciudad" (depende del `0004`). Las ciudades llegan como texto del catálogo de Nexo: el frontend necesita su propio diccionario de coordenadas (o cruzar con `GET /web/municipios`, que trae `codigo_dane`). **A confirmar** qué texto exacto se guardará en `origen`/`destino` (sección 6.4, paso 3).
 - **Fechas:** por defecto el año en curso. Validar en el cliente `desde <= hasta` y un rango de 3 años o menos.
 - **Conexos:** los montos no incluyen servicios conexos todavía (se integran después de #42). Si el tablero lo muestra junto a la vista de costeo, avisar "Valores sin servicios conexos".
 - **Pendiente de Nexo:** el "score de urgencia" no está en el contrato. Llegará como campo nuevo de `indicadores` (cambio compatible). No reservar esa tarjeta todavía. El "deadline vencido" **sí** está (`deadline_vencidas`), calculado por Cotifly con el `deadline` del formulario.
@@ -1639,7 +1614,7 @@ Mientras el `0004` no esté aplicado (hoy en QA), `concentracion_ciudades` llega
 
 Se retirarán cuando el frontend use los nuevos. Si algún componente ya los consume, migrarlo.
 
-### 5.23 Analizar el Excel del pliego (`POST /web/licitaciones/analizar-excel`). PR de #47
+### 5.23 Analizar el Excel del pliego (`POST /web/licitaciones/analizar-excel`). En QA
 
 Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifly **no impone plantilla**: reenvía el archivo al análisis de Nexo, que detecta el encabezado de cada hoja y devuelve las filas como texto. No se guarda nada.
 
@@ -1682,7 +1657,7 @@ Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifl
   `GET /web/tipos-carroceria`) y `cubicacion[]` trae los avisos del cubicador por ruta, como en el formulario.
 - La descarga del Excel trae la columna y la hoja `Camiones Cotifly`.
 
-### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
+### 5.24 Crear la licitación (`POST /web/licitaciones`). En QA
 
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
 
@@ -1769,15 +1744,15 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
   GROUP BY l.tipoVehiculo, l.claseViaje
   ORDER BY filas DESC;
   ```
-- **Moneda (rama de #50, ADR-014 §5):** con `"moneda": "USD"` la API consulta la TRM del día antes de guardar y la deja fija en la licitación (`trm_aplicada` de 5.25). Todos los precios (líneas, total, servicios conexos, Excel y PDF del pliego) salen en USD, convertidos con esa TRM. Mostrar `US$` con 2 decimales y la TRM aplicada. Otro valor de `moneda` (o cadena vacía) es un error del reporte con `campo = "moneda"` y `VALOR_FUERA_DE_RANGO`.
+- **Moneda (ADR-014 §5):** con `"moneda": "USD"` la API consulta la TRM del día antes de guardar y la deja fija en la licitación (`trm_aplicada` de 5.25). Todos los precios (líneas, total, servicios conexos, Excel y PDF del pliego) salen en USD, convertidos con esa TRM. Mostrar `US$` con 2 decimales y la TRM aplicada. Otro valor de `moneda` (o cadena vacía) es un error del reporte con `campo = "moneda"` y `VALOR_FUERA_DE_RANGO`.
 - 400 `ErrorNegocio`: errores del archivo (5.23), `EXCEL_SIN_DATOS` si la `hoja` no está en el archivo, `MARGEN_LINEA_DESCONOCIDA` (la línea no existe **o está inactiva**: `detalle.motivo` lo dice), `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` (con `moneda = USD` y ninguna fuente de la TRM respondió: no se guardó nada ni se envió a Nexo; ofrecer Reintentar en unos segundos o crearla en COP). 400 `ErrorWeb` si el JSON es inválido. 413 `ErrorWeb` si el cuerpo (Excel + JSON) pasa de 12 MB.
 - Si Nexo responde 403 al alta (rol del comercial en Nexo), la licitación se crea igual (201) en `error_envio` con `motivo_estado_costeo` que lo explica; se reintenta cuando le den el rol.
 - La petición puede tardar hasta unos 30 s (alta en Nexo). Con más de 10 líneas Nexo costea en segundo plano: la licitación nace en `pendiente_costeo` y el polling la avanza.
 - **Doble envío (responsabilidad del frontend):** el servidor no tiene clave de idempotencia; dos POST iguales crean **dos** licitaciones y dos solicitudes en Nexo. Deshabilitar el botón desde el clic hasta la respuesta (hasta unos 30 s), no reintentar automáticamente un POST que se cortó (consultar "Mis cotizaciones" antes) y no reenviar en un refresco de la página.
 
-### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). PR de #47
+### 5.25 Ver la licitación (`GET /web/licitaciones/{folio}`). En QA
 
-200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `deadline` (sin `referencia` desde #138), `estado_costeo`, `motivo_estado_costeo`, `moneda`, `trm_aplicada` (rama de #50; 0 en COP), `precio_final` (suma de las líneas en `moneda`, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
+200 `Licitacion`: `folio`, `cliente_nombre`, `nit_cliente`, `deadline` (sin `referencia` desde #138), `estado_costeo`, `motivo_estado_costeo`, `moneda`, `trm_aplicada` (0 en COP), `precio_final` (suma de las líneas en `moneda`, **solo** cuando todas tienen flete), `lineas_costeadas`, `lineas_pendientes`, `archivo_nombre`, `hoja` y `lineas[]` con `orden`, `fila`, `origen`, `destino`, `tipo_vehiculo`, `peso_kg`, `estado_costeo` y `precio_final` de cada línea (`null` mientras no tiene flete). Nunca trae costos de Nexo. 404 si no es suya.
 
 Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: mostrarlo por fila con la marca "pendiente" en las demás.
 
@@ -1785,7 +1760,7 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - Si una línea no se pudo asociar con certeza a su línea en Nexo (dos rutas idénticas, o Nexo devolvió otra cosa), queda sin precio y `motivo_estado_costeo` lo explica: mostrar el motivo; la licitación no tendrá total hasta que se resuelva con el equipo de Nexo.
 - Las licitaciones no aparecen en la concentración por ciudad del tablero de métricas (sus rutas viven por línea).
 
-### 5.26 Exportar el Excel con resultados (`GET /web/licitaciones/{folio}/excel`). PR de #48
+### 5.26 Exportar el Excel con resultados (`GET /web/licitaciones/{folio}/excel`). En QA
 
 - 200 binario `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` con `Content-Disposition: attachment; filename={folio}.xlsx`. Descargarlo como blob con el `Authorization` (no abrir la URL en una pestaña: no lleva token).
 - Contenido: el Excel **original** del cliente sin cambios en sus columnas, con tres columnas nuevas a la derecha de la hoja mapeada: `Precio final Cotifly (COP)` (o `USD`), `Estado costeo Cotifly` (`Costeada`, `Pendiente de costeo`, `Entregada sin flete`, `Descartada en Nexo`, `Costeo vencido`, `No llegó a Nexo`, o `Sin enviar` para filas que no se mandaron) y `Servicios conexos Cotifly`; y una hoja `Resumen Cotifly` con el total y los servicios conexos incluidos con su precio. Las líneas sin costeo dicen `SIN COSTEO` con fondo amarillo.
@@ -1795,13 +1770,13 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - Siempre se descarga como `.xlsx`: si el original era `.xlsm` se quitan las macros, y gráficos, imágenes o tablas dinámicas del original pueden no conservarse. Avisarlo al comercial ("copia de trabajo con los precios").
 - 404 si no es suya o no es una licitación (una cotización spot o del chat). 400 `EXCEL_INVALIDO`/`EXCEL_SIN_DATOS` si el original guardado ya no se puede leer.
 
-### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). PR de #49
+### 5.27 PDF del pliego (mismo `POST /web/cotizaciones/{folio}/costeo/pdf`). En QA
 
 - Sin endpoint nuevo. **HU-021.9 (#136): sale con el layout de pliego toda solicitud de más de una ruta** (formulario o licitación): resumen de todas las rutas con su tarifa y "TOTAL DEL PLIEGO (N RUTAS, SIN SERVICIOS CONEXOS)", y luego **una sección por ruta** ("RUTA n: PLIEGO DE TRANSPORTE {línea de esa ruta}", origen, destino, camiones y tarifa). Con una sola ruta (también una licitación de una fila) sale el PDF de una ruta: origen, destino, los camiones agrupados ("2 × 3S3 - FURGON (20000 KG)") y la tarifa, con los conexos aparte.
 - **Tamaño:** con más de 20 rutas el PDF trae **solo el resumen** (todas las rutas siguen ahí; las secciones por ruta se omiten). Admite hasta 1000 rutas; un pliego grande puede tener decenas de páginas: mostrar un spinner y descargar el blob.
 - **409 `COSTEO_NO_LISTO`** mientras alguna ruta no tenga precio (`lineas_pendientes > 0`, o una línea sin asociar en Nexo) o el total todavía no sea la suma de las rutas (esperar la siguiente consulta del costeo): deshabilitar el botón hasta que `precio_final` tenga valor. Vale igual para una ruta: el ajuste de margen es por ruta, pero el PDF exige todas.
 - **409 `PDF_YA_GENERADO`**: una sola vez por licitación. Los servicios conexos excluidos con `PUT .../costeo/servicios-conexos` no aparecen.
-- En USD (rama de #50) las tarifas salen en `US$` y el PDF lleva la nota de TRM mínima con la `trm_aplicada` de la licitación (sección 6.3, punto 7). Ya no responde `PDF_PAYLOAD_INVALIDO` por la moneda.
+- En USD las tarifas salen en `US$` y el PDF lleva la nota de TRM mínima con la `trm_aplicada` de la licitación (sección 6.3, punto 7). Ya no responde `PDF_PAYLOAD_INVALIDO` por la moneda.
 
 ## 6. Flujos
 
@@ -1853,10 +1828,10 @@ El selector de moneda del chat se retiró (#105): la cotización en dólares se 
 4. `TRM_NO_DISPONIBLE` al crear: no se crea nada; ofrecer Reintentar o cambiar a COP.
 5. (Retirado con el chat: la TRM queda fijada al crear la cotización.)
 6. "Mis cotizaciones": columna `moneda` (y `trm_aplicada` si es USD).
-7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05, rama de #50): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
+7. El PDF en USD trae, debajo de la tabla, la nota de negocio (2026-10-05): "Esta cotización está bajo una TRM mínima de {TRM} y es de resaltar que la tarifa puede variar de acuerdo al comportamiento de la misma a la fecha de elaboración de la CPI.", con `{TRM}` = la `trm_aplicada` de la cotización (la del día en que se cotizó) en formato `$3.273,49`. Los PDF en COP no la llevan. No hace falta nada en el frontend; si se muestra una vista previa del texto, usar ese mismo formato.
 8. El formulario ampliado de Nexo (spot) soporta USD desde #103 (HU-013.7): enviar `moneda` en `POST /web/solicitudes-costeo` (sección 5.15). Las **licitaciones** también: ver 5.24 (`moneda`).
 
-### 6.4 Formulario ampliado con costeo en Nexo. En PR #74 a #76
+### 6.4 Formulario ampliado con costeo en Nexo. En QA
 
 ```mermaid
 sequenceDiagram
@@ -1954,7 +1929,7 @@ Notas:
 
 - Regla de ruteo del botón de resultado: `estado_costeo === null` → `/seguimiento`; `entregada` → `/resultado`; `descartada` o `costeo_vencido` → `/seguimiento`. Cualquier otro estado → deshabilitado. Si `/seguimiento` responde 409 `USAR_RESULTADO_NEXO`, es un error de ruteo del frontend.
 - El backend también **intenta** `/resultado` en `autocosteo` (el polling pudo no ver aún la entrega), pero Nexo responde `COTIZACION_NO_ENTREGADA` mientras siga en borrador. La recomendación es habilitar solo en `entregada`. Si negocio quiere permitir el intento en `autocosteo`, manejar ese 409.
-- Mientras la pila B no esté fusionada (hoy en QA), todas las filas tienen `estado_costeo` null y todo va por `/seguimiento`.
+- Las cotizaciones del chat anterior tienen `estado_costeo` null y van por `/seguimiento`.
 - Estado de envío: badge `sin_enviar`, `enviada` o `reenviada`. Margen negociado: badge "Ajuste fuera de política" si `origen_margen = negociado`.
 - Refrescar la fila con la respuesta de `/seguimiento`, `/resultado` o `/reintentar` (devuelven `CotizacionResumen`) sin recargar la tabla.
 - Vacío: "No tienes cotizaciones registradas". Carga: spinner o skeleton.
@@ -2010,7 +1985,7 @@ sequenceDiagram
 
 Responsabilidades: ruta y menú visibles solo con `user.rol = gerente_comercial` (el backend igual responde 403 a un comercial), edición en porcentaje convertida a fracción (0 a 99 %), confirmación antes de desactivar una línea (deja de estar disponible para cotizar) y actualizar la fila con la respuesta.
 
-### 6.8 Tableros (métricas). PR de #45 (por abrir)
+### 6.8 Tableros (métricas). En QA
 
 Contrato en la sección 5.22. Los dos tableros son de solo lectura, con `GET` y un filtro de periodo (por defecto el año en curso). No hay push: se recarga al cambiar un filtro o con un botón "Actualizar".
 
@@ -2097,7 +2072,7 @@ Responsabilidades del frontend:
 2. **Selector dinámico:** se llena con `comerciales[]` (`nombre_completo`, o `nombre_usuario` si viene null), más la opción "Todos". Cambiar la selección hace una sola petición con `usuario_id` y el mismo periodo, cancela la anterior (`switchMap`) y actualiza solo `indicadores`, `serie_mensual` y `concentracion_ciudades`, sin recargar la página. `comerciales` llega completo en cada respuesta. La lista incluye al gerente (`rol: gerente_comercial`), y sus cotizaciones cuentan en el agregado "Todos". Mostrar el `rol` como etiqueta. La regional se cachea 60 s en el servidor: cambiar el selector no vuelve a consultar `DimEjecutivo`.
 3. Una tabla de comerciales (opcional) sale de `comerciales[].indicadores` sin más peticiones.
 4. **Gráfica:** línea de tiempo con `serie_mensual` (cantidad y ganadas, o valor cotizado y valor ganado). Para la torta por línea de negocio no hay datos agregados por línea en el contrato (**Pendiente**, sección 9).
-5. **Mapa** (la HU lo llama "concentración de cotizaciones por ciudad y dinero recaudado", pero el dato es valor cotizado de lo ganado: rotularlo **"Valor ganado (COP)"**): `concentracion_ciudades.por_destino` con `cantidad` y `valor_ganado_cop`. Si `disponible = false`, ocultarlo o mostrar un estado vacío; se llena cuando el DBA aplique el `0004` (PR #73). Mostrar aparte `sin_destino` ("sin ciudad", las del chat) solo cuando `disponible = true`. Hay que resolver en el frontend las coordenadas a partir del nombre del municipio.
+5. **Mapa** (la HU lo llama "concentración de cotizaciones por ciudad y dinero recaudado", pero el dato es valor cotizado de lo ganado: rotularlo **"Valor ganado (COP)"**): `concentracion_ciudades.por_destino` con `cantidad` y `valor_ganado_cop`. Si `disponible = false`, ocultarlo o mostrar un estado vacío; se llena con las cotizaciones del formulario ampliado. Mostrar aparte `sin_destino` ("sin ciudad", las del chat) solo cuando `disponible = true`. Hay que resolver en el frontend las coordenadas a partir del nombre del municipio.
 6. **409 `REGIONAL_NO_ASIGNADA`:** estado vacío con el `mensaje` del error y el texto "Pide al administrador que registre tu regional". No reintentar en bucle.
 7. **503 `REGIONAL_NO_DISPONIBLE`:** aviso con botón Reintentar (fuente caída; el servidor no cae al respaldo).
 8. `lineas_negocio_activas` como tarjeta informativa (no depende del filtro).
@@ -2107,7 +2082,7 @@ Responsabilidades del frontend:
 
 Las definiciones de la sección 5.22.2 son recalculables a mano sobre `dbo_cotifly`. El escenario del `.feature` (sección 5.22.2, "Comprobación") sirve como caso de referencia. El frontend no recalcula nada: muestra lo que devuelve la API.
 
-### 6.9 Licitación desde Excel. PR de #47 a #49
+### 6.9 Licitación desde Excel. En QA
 
 ```mermaid
 sequenceDiagram
@@ -2156,11 +2131,11 @@ Responsabilidades del frontend:
 5. **Enviar** con el archivo (5.24); spinner de hasta 30 s y bloqueo del doble envío (un segundo POST crea otra licitación).
 6. **Seguimiento**: `GET /web/licitaciones/{folio}` cada 15 a 30 s mientras haya líneas sin precio y el estado sea `pendiente_costeo` o `autocosteo`; detener en `entregada`, `descartada`, `costeo_vencido` o `error_envio`.
 7. **Reintento** con `error_envio`: `POST /web/cotizaciones/{folio}/costeo/reintentar` (todas las líneas, con los mismos ids de municipio y horas).
-8. **Exportar** (5.26, PR de #48) y **PDF** (5.19 con layout de pliego, PR de #49).
+8. **Exportar** (5.26) y **PDF** (5.19 con layout de pliego).
 
 ## 7. Estados y reglas de UI
 
-### 7.1 Máquina de estados de `estado_costeo` (En PR #74 a #77)
+### 7.1 Máquina de estados de `estado_costeo` (En QA)
 
 ```mermaid
 stateDiagram-v2
@@ -2258,32 +2233,31 @@ UI por estado:
 | Selector COP/USD en el formulario por chat, visualización en USD, `TRM_NO_DISPONIBLE`, TRM vencida, columna `moneda` y `trm_aplicada` en "Mis cotizaciones" | `/web/chat` (`moneda`, `errores`), `/web/mis-cotizaciones` | HU-012.4 (#55). Ya está en QA desde #70 y #71 |
 | Pruebas QA del módulo migrado | Todo lo anterior | HU-004.8 (#38) |
 
-### 8.2 Espera a un PR (construir con mocks de esta guía)
+### 8.2 Flujos de Nexo, licitaciones y tableros (backend en QA)
 
-| Tarea | Espera | Issue |
+| Tarea | Endpoints | Issue |
 |---|---|---|
-| QA de conversión de moneda (el precio ya está en QA; falta el PDF en USD con la nota de TRM mínima) | Rama de #50 | HU-012.5 (#56) |
-| Enviar el formulario ampliado a Nexo, estados `estado_costeo`, `motivo_estado_costeo` y Reintentar | PR #73 y #74 | HU-005.3 (#39), HU-005.5 (backend) |
-| Polling del frontend y estados que avanzan solos | PR #75 | HU-005.6 (backend), "Mis cotizaciones" (#36) |
-| Vista de costeo, selección de conexos y PDF del costeo | PR #76 | HU-005.7 (backend); patrón reutilizable para HU-011.4 (#53) |
-| Botón Ganada/Perdida por `/resultado` y ruteo `/seguimiento` frente a `/resultado` | PR #77 | HU-004.5 (#36), HU-005.14 |
-| QA end-to-end con Nexo | Toda la pila B | HU-005.9 (#41) |
-| **Tablero Comercial**: tarjetas con los KPI, filtro de periodo, gráfica con `serie_mensual`, estado vacío y promedios "—". Nada depende del DBA | PR de #45 (por abrir). Se puede empezar ya con los ejemplos de la sección 5.22 | HU-010.2 (#50) |
-| **Tablero Gerente**: selector dinámico con `comerciales`, filtro por `usuario_id` sin recargar, gráfica, tabla por comercial, UX de 409, 503 y 404, y mapa con su estado vacío (`disponible = false`) | PR de #45 (por abrir) para el código; **datos reales** esperan al DBA (ver 8.3) | HU-010.3 (#51) |
-| **QA de cálculos**: recalcular cada campo con las definiciones de la sección 5.22.2 | PR de #45 fusionado y datos en QA | HU-010.4 (#52) |
+| QA de conversión de moneda, con el PDF en USD y la nota de TRM mínima | `/web/solicitudes-costeo` (`moneda`), `/web/licitaciones` | HU-012.5 (#56) |
+| Enviar el formulario ampliado a Nexo, estados `estado_costeo`, `motivo_estado_costeo` y Reintentar | `/web/solicitudes-costeo`, `.../costeo/reintentar` | HU-005.3 (#39), HU-005.5 (backend) |
+| Polling del frontend y estados que avanzan solos | `/web/mis-cotizaciones`, `.../costeo` | HU-005.6 (backend), "Mis cotizaciones" (#36) |
+| Vista de costeo, selección de conexos y PDF del costeo | `.../costeo`, `.../servicios-conexos`, `.../costeo/pdf` | HU-005.7 (backend); patrón reutilizable para HU-011.4 (#53) |
+| Botón Ganada/Perdida por `/resultado` y ruteo `/seguimiento` frente a `/resultado` | `.../resultado` | HU-004.5 (#36), HU-005.14 |
+| QA end-to-end con Nexo | Todo lo anterior | HU-005.9 (#41) |
+| **Tablero Comercial**: tarjetas con los KPI, filtro de periodo, gráfica con `serie_mensual`, estado vacío y promedios "—" | `/web/metricas/comercial` (sección 5.22) | HU-010.2 (#50) |
+| **Tablero Gerente**: selector dinámico con `comerciales`, filtro por `usuario_id` sin recargar, gráfica, tabla por comercial, UX de 409, 503 y 404, y mapa con su estado vacío (`disponible = false`). Los datos reales esperan al DBA (ver 8.3) | `/web/metricas/regional` | HU-010.3 (#51) |
+| **QA de cálculos**: recalcular cada campo con las definiciones de la sección 5.22.2 | `/web/metricas/*` | HU-010.4 (#52) |
+| Licitaciones por Excel: carga, progreso por línea y exportación | `/web/licitaciones/*` (secciones 5.23 a 5.27) | HU-011.4 (#53), HU-011.6 (#54) |
 
 ### 8.3 Espera a otros trabajos
 
 | Tarea | Espera | Issue |
 |---|---|---|
 | Tablero del gerente con datos reales (no 409) | El DBA llena `UsuariosWeb.regional` de gerentes y comerciales (después de su primer login), o se conecta `DimEjecutivo` (`ConnectionStrings__Regional`). Mientras tanto, todo gerente recibe 409 `REGIONAL_NO_ASIGNADA` | HU-010.3 (#51), HU-010.4 (#52) |
-| Mapa de concentración por ciudad con datos | El DBA aplica el `0004` (PR #73) y hay cotizaciones del formulario ampliado (las del chat no guardan ciudades) | HU-010.3 (#51) |
-| `tiempo_promedio_cotizacion_horas` con valor | `costeoListoAt` lo llena el flujo de costeo de Nexo (PR #76) | HU-010.3 (#51) |
+| Mapa de concentración por ciudad con datos | Que haya cotizaciones del formulario ampliado (las del chat no guardan ciudades) | HU-010.3 (#51) |
+| `tiempo_promedio_cotizacion_horas` con valor | `costeoListoAt` lo llena el flujo de costeo de Nexo | HU-010.3 (#51) |
 | Torta por línea de negocio | No hay agregado por línea en el contrato (**Pendiente**) | HU-010.3 (#51) |
-| Licitaciones por Excel (carga, progreso por línea y exportación) | HU-011.1 a HU-011.3 (backend no construido) | HU-011.4 (#53), HU-011.6 (#54) |
 | Selector de líneas de negocio activas para el comercial | Endpoint no existente (**Pendiente**) | HU-005.3 (#39, comentario) |
 | Score de urgencia | Contrato de Nexo (**Pendiente**) | HU-010.3 (#51) |
-| `deadline_vencidas` con valor (hoy `null`) | El DBA aplica el `0004` (columna `deadline`) | HU-010.3 (#51) |
 | Montos con servicios conexos | Integración de conexos en métricas, después de #42 (**Pendiente**) | HU-010.2 (#50), HU-010.3 (#51) |
 
 Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #45 de Cotifly, HU-010.1) y #66 (ajustes visuales del portal).
@@ -2298,7 +2272,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Nexo: urgencia | Score de urgencia mayor a 75: **no implementado** (ADR-016). No hay contrato de Nexo. Llegará como campo nuevo de `indicadores` (cambio compatible). El "deadline vencido" sí está (`deadline_vencidas`, calculado por Cotifly; `null` sin el `0004`) | Duban + equipo Nexo | Tablero del gerente (HU-010.3): no mostrar la tarjeta de urgencia todavía |
 | Métricas: servicios conexos | Los montos del tablero no suman conexos todavía; se integran después de #42 | Duban | Aviso "valores sin servicios conexos" si hace falta |
 | Nexo: idempotencia del alta | Sin clave de idempotencia: un reintento tras tiempo agotado puede duplicar | Equipo Nexo | Advertencia en Reintentar |
-| Nexo: autenticación | Hoy `X-Portal-clsUsuario-Id` del comercial, sin token. ¿API key o JWT de servicio? | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
+| Nexo: autenticación | Respondida en HU-023: Nexo no emite tokens; la identidad viaja en `X-Portal-clsUsuario-Id` del comercial (rol Comercial o Admin) | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
 | Nexo: polling | Intervalos (5 s a 15 min, 72 h) pendientes de aprobar por Nexo | Equipo Nexo | Tiempo que una fila queda "En costeo" |
 | Negocio: PDF en `autocosteo` | ¿Se permite el PDF con el costeo automático o solo en `entregada`? | Gerencia Comercial | Habilitar el botón PDF y los conexos |
 | Negocio: `margen_aplicado` visible | Junto a `precio_final` permite deducir el costo de Nexo. ¿Ocultarlo en el flujo de Nexo? | Gerencia Comercial | Columna de margen |
@@ -2306,26 +2280,24 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Negocio: resultado en `descartada`/`costeo_vencido` | El backend lo permite solo en Cotifly. ¿Se muestra el botón? | Gerencia Comercial | Botones de "Mis cotizaciones" |
 | Negocio: menú del gerente | ¿El gerente ve el Cotizador? El backend lo permite; HU-004.3 dice solo comercial | Negocio + Sara | Menú |
 | Negocio: nueva versión de una cotización de Nexo | `PDF_YA_GENERADO` dice "genera una versión nueva", pero `solicitudes-costeo` no crea versiones (`-vN`) | Duban + negocio | Botón "Nueva versión" en filas de Nexo |
-| Negocio: USD en el costeo de Nexo | La pila B es solo COP | Duban (integración HU-012 con ADR-015) | Selector de moneda en el formulario ampliado |
+| Negocio: USD en el costeo de Nexo | El formulario ampliado acepta `moneda` desde #103 (sección 10); confirmar con negocio | Duban (integración HU-012 con ADR-015) | Selector de moneda en el formulario ampliado |
 | Negocio: v2 en USD | ¿TRM de la original o la del día al rehacer? | Gerencia Comercial | Texto de la nueva versión |
 | Negocio: texto de la nota del PDF en USD | Definido el 2026-10-05 (nota de TRM mínima, ADR-014 §4) | Gerencia Comercial | Ninguno (lo pone el PDF) |
 | Backend: precio del ajuste de margen | `RespuestaChat.precio` no expone la salida de `registrar_ajuste_margen` | Duban | Precio estructurado tras "Ajusta el margen" |
 | Backend: endpoint de líneas para el comercial | No existe; el selector sigue hardcodeado | Duban | Selector de línea (HU-005.3) |
-| Backend: PR de #45 | Las ramas #72 a #79 y la de #45 fusionan sin conflictos contra `QA`. Falta abrir el PR de #45 | Duban | Ninguno en el contrato |
 | ClientePro: identidad | ¿Qué valor de la sesión de ClientePro es `idUsuario` (`NOMBREUSUARIO` o `ID`)? | Sara + scalderon-bs | Llamada al login |
 | ClientePro: seguridad del login | El login confía en `idUsuario` (riesgo crítico de ADR-009): se planea una aserción firmada por el backend de ClientePro | Duban + scalderon-bs | El request del login podría cambiar (un campo más) |
 | DBA: `IDROLES` | Sin `Roles.idRolExterno` nadie entra | DBA + ClientePro | Todo login responde 401 hasta que se fijen |
 | Infraestructura: dominios y URL | Orígenes CORS de ClientePro por ambiente y URL de la API | Sara + infraestructura | `environment.ts` |
 | Infraestructura: salida a `datos.gov.co` | Sin ella, todo USD responde `TRM_NO_DISPONIBLE` | Infraestructura | Aviso de TRM |
 | DBA: datos de la regional | Confirmar la tabla (`DWCubosEBSSAP.DimEjecutivo`: esquema, columna de usuario, columna `REGIONAL`, si incluye a los gerentes y el catálogo de valores), dar acceso de solo lectura y `ConnectionStrings__Regional`. Mientras tanto, llenar `UsuariosWeb.regional` con un `UPDATE` (plantilla en `docs/10-operacion.md`) | DBA / equipo de datos / infraestructura | Sin esto el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA`. `user.ubicacion` del login refleja `UsuariosWeb.regional`, no `DimEjecutivo` (**a confirmar** que coincidan) |
-| DBA: `0004` | Aplicar el script `0004` (PR #73) | DBA | Mapa de ciudades (`disponible = false` hasta entonces) |
 | Negocio: validar las definiciones de métricas (ADR-016, Propuesta) | Una fila por cadena de versiones con el periodo por la primera creación y el resultado más reciente de la cadena (frente a contar cada versión, como decía el backlog); `conversion` sobre el total (y no sobre las cerradas); `costeo_total` sobre todo el universo; `ganancias` solo de ganadas; periodo por defecto (año en curso); que las cotizaciones del gerente cuenten en el agregado de su regional; que `valor_ganado_cop` sea valor cotizado y no dinero recaudado | Gerencia Comercial (Sara / scalderon-bs) | Etiquetas y tarjetas del tablero; posible cambio de definiciones |
 | Negocio: tablero propio del gerente | ¿El gerente ve también `/web/metricas/comercial` en su menú? | Negocio + Sara | Menú |
 | Tiempo de un turno de chat | Propuesta del backend (#84): timeout de cliente ≥ 120 s (sección 2.8.1). Confirmar con frontend y verificar los timeouts de Traefik | Duban + Sara | Configuración de `HttpClient` |
 
-## 10. Próximo contrato HU-013 (en construcción)
+## 10. Contrato de HU-013: pipeline determinista e IA en la etapa final
 
-**Estado: implementado en el backend** (ajuste de margen y concurrencia #98, servicios conexos #99, "Cotizar costo" #100, textos del PDF #101, asistente por folio #102 y moneda del formulario #103; los de #102 entran a QA con su PR). Ningún endpoint de esta sección queda con `x-estado: pendiente` en `backend-dotnet/specs/openapi.yaml`: ya se puede integrar. Quedan pendientes #104 (la guía completa de estos flujos) y #105 (retiro de Google Chat y del código legado del chat). Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
+**Estado: implementado en el backend** (ajuste de margen y concurrencia #98, servicios conexos #99, "Cotizar costo" #100, textos del PDF #101, asistente por folio #102 y moneda del formulario #103). Ningún endpoint de esta sección queda con `x-estado: pendiente` en `backend-dotnet/specs/openapi.yaml`: ya se puede integrar. Quedan pendientes #104 (la guía completa de estos flujos) y #105 (retiro de Google Chat y del código legado del chat). Decisión: ADR-018 (2026-10-05). Fuente de verdad: el spec. Esta sección solo resume.
 
 **Qué cambia.** La cotización sale siempre del formulario y del costeo de Nexo (sección 6.4):
 
@@ -2421,6 +2393,6 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 - `LINEA_SIN_COTIZACION_NEXO` (409)
 - `TEXTOS_EDITADOS` (409)
 
-**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
+**Catálogos del formulario.** Enviar siempre el **código** de catálogo (`valor` de `GET /web/catalogos-flete`) en `tipo_vehiculo`, `carroceria`, `clase_viaje`, `clase_contenedor` y `tipologia`, nunca texto libre: Nexo crea vehículos duplicados si el texto no coincide. `deadline` va con fecha, hora y zona (`2026-10-10T17:00:00-05:00`). Más detalle en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y `docs/conexion_nexo/HU-013-preguntas-nexo.md`.
 
 La guía completa de estos flujos llega con HU-013.8 (#104).

@@ -14,7 +14,7 @@ HU-005.2 construye el buscador de clientes consumiendo el endpoint de Nexo (`/ca
 - Combina `DimBpSolicitante` (clientes) y `tblProspectos` (prospectos). Esa ampliación la hace el equipo de Nexo en HU-005.10.
 - Según el backlog (HU-002.4, Fase 2), responde `{clienteId, bp, nit, nombre, origen}`.
 
-HU-005.2 también permite consumir la API Grovity de ClientePro (`docs/Manual de Conexión ClientePro - Grovity (1).pdf`), pero **solo** con `ObtenerCiudades`, `ObtenerTipoServicio` y `CrearProspecto`.
+HU-005.2 también permite consumir la API Grovity de ClientePro (`docs/docs_front/Manual de Conexión ClientePro - Grovity.pdf`), pero **solo** con `ObtenerCiudades`, `ObtenerTipoServicio` y `CrearProspecto`.
 
 ## Decisión
 

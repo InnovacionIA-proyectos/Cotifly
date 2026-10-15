@@ -4,7 +4,7 @@
 - **Fecha:** 2026-09-28
 - **Issue / HU:** #24 (HU-005.8), #21 (HU-005.5), #22 (HU-005.6), #23 (HU-005.7), #42 (HU-005.14). Relacionada con ADR-003 (el LLM no pone números), ADR-004 (estado de la conversación), ADR-005 (búsqueda de clientes en Nexo), ADR-008 (esquema solo por scripts) y ADR-011 (folio).
 - **Nota de numeración:** ADR-013 es el despliegue en Dokploy y ADR-014 la TRM (HU-012); esta queda como ADR-015.
-- **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
+- **Actualización 2026-10-05 (ADR-018, HU-013):** este flujo pasa a ser el ÚNICO cotizador. ADR-018 le agrega el ajuste de margen, los servicios conexos agregados en Nexo, la re-solicitud del costeo, los textos del PDF, la moneda en el formulario y la concurrencia con `If-Match`. También retira el chat como creador de cotizaciones (§7 de esta ADR queda superado). El mapeo de campos Nexo ↔ Cotifly verificado contra el código está en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, y el mapeo de los estados de Nexo con `estado_costeo` en ADR-018 §9.
 
 ## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
 

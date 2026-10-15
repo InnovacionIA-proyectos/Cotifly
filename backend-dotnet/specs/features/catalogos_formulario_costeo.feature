@@ -1,5 +1,5 @@
 # language: es
-# HU-013.1 (#97, ADR-018), HU-013.10 (#106) y docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md — Catálogos del formulario de costeo. POST
+# HU-013.1 (#97, ADR-018), HU-013.10 (#106) y docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md — Catálogos del formulario de costeo. POST
 # /api/captura-solicitudes de Nexo no valida contra sus catálogos: resuelve el texto por coincidencia aproximada y, si no
 # encuentra el tipo de vehículo, crea una fila nueva de catálogo (duplicados). Cotifly ofrece las opciones de los catálogos
 # maestros de Nexo (GET /api/catalogos/*, con caché) en lugar del histórico de tarifas (biblioteca-sap-historico/filtros) y
