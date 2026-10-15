@@ -1,5 +1,7 @@
 # 3. Infraestructura
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Contenido:
 
 - [3.1 Contenedor e imagen](#31-contenedor-e-imagen)

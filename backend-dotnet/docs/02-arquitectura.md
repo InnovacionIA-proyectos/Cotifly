@@ -1,5 +1,7 @@
 # 2. Arquitectura
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Clean Architecture de 4 capas en un monolito modular ([ADR-002](../specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)), con un pipeline determinista (formulario, Nexo, SAP y código) que cotiza y una IA agnóstica al proveedor que solo redacta textos y asiste sobre una cotización ya hecha ([ADR-003](../specs/decisiones/ADR-003-orquestacion-ia-agnostica.md), [ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). El agente cotizador conversacional con estado estructurado ([ADR-004](../specs/decisiones/ADR-004-estado-conversacion-slot-filling.md)) y Google Chat se retiraron en HU-013.9 (#105). Un solo proceso, `Cotifly.Api`, empaquetado en un solo contenedor ([ADR-007](../specs/decisiones/ADR-007-contenedores-sin-docker-compose.md)).
 
 Contenido:

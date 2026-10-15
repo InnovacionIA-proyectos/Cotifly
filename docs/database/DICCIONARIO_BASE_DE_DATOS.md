@@ -1,6 +1,6 @@
 # Diccionario de datos — `dbo_cotifly` (SQL Server)
 
-**Vigente desde HU-021. Actualizado en HU-021.14 (2026-10-13).**
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-13 (HU-021.14)
 
 Qué significa cada columna de las tablas de cotizaciones, quién la escribe y quién la lee. Los tipos, nulos, restricciones e
 índices están en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A, con el diagrama ER); la decisión
@@ -112,12 +112,14 @@ Una fila por camión. Si el cubicador recomienda 7 camiones para una ruta, son 7
 | Columna | Qué es | Quién la escribe | Quién la lee |
 |---|---|---|---|
 | `lineaSolicitudId`, `orden` | Ruta y posición | Captura | Agregado |
-| `idTipoMercancia` | Tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`). Obligatorio en toda captura nueva | Captura | Cubicador |
+| `codigoMercancia` | Código del tipo de mercancía del catálogo del cubicador (`GET /web/tipos-mercancia`), por ejemplo `BEBIDAS`. Reemplaza a `idTipoMercancia` desde el `02`. Obligatorio en toda captura nueva | Captura | Cubicador |
 | `nombreMercancia` | Copia del nombre del catálogo (si el catálogo no responde, el que mandó el cliente) | Captura | PDF, asistente |
 | `cantidad`, `largoCm`, `anchoCm`, `altoCm`, `pesoKg` | Unidades y medidas | Captura | Cubicador; posiciones hacia Nexo cuando la ruta tiene un solo camión |
 
-> **HU-023 (pendiente):** `db/scripts/02_alter_cubicador.sql` cambiará `idTipoMercancia` por `codigoMercancia` y agregará
-> las columnas de resultado de la cubicación. Todavía no está en esta rama.
+> **HU-023:** `db/scripts/02_alter_cubicador.sql` agrega además el resultado de la cubicación en la ruta (`idRecomendacion`,
+> `resultadoCubicacion`, `motivoSinSeleccion`, `condicionada`) y el llenado en el camión (`volumenTotalM3`,
+> `porcentajeLlenadoVolumen`, `porcentajeLlenadoPeso`). `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` agrega en la
+> ruta la cola de la cubicación en segundo plano. El detalle está en la cabecera de cada script.
 
 ## 7. `CotizacionServiciosConexos` — conexos de la ruta
 

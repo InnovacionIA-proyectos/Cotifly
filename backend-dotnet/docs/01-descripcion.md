@@ -1,10 +1,12 @@
 # 1. Descripción
 
-Cotifly es el bot cotizador de Botero Soto: un comercial captura la solicitud en la consola web de ClientePro, Nexo la costea, el backend resuelve margen y precio, genera el PDF de la cotización y la envía por correo; la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Hasta HU-013.9 (#105) la cotización la armaba un agente conversacional, también desde Google Chat; ambos se retiraron. Este proyecto reemplaza por completo a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](../specs/decisiones/ADR-001-estrategia-de-corte.md)). El código Python queda intacto hasta validar el backend .NET en producción.
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
+Cotifly es el bot cotizador de Botero Soto: un comercial captura la solicitud en la consola web de ClientePro, Nexo la costea, el backend resuelve margen y precio, genera el PDF de la cotización y la envía por correo; la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](../specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Hasta HU-013.9 (#105) la cotización la armaba un agente conversacional, también desde Google Chat; ambos se retiraron. Este proyecto reemplazó por completo al bot anterior en Python (corte big-bang, [ADR-001](../specs/decisiones/ADR-001-estrategia-de-corte.md)), que se retiró del repositorio en HU-022.1 (#146; su último estado está en el tag `python-final`).
 
 ## 1.1 Objetivo
 
-Migrar el backend de Cotifly a C# / .NET 10 (milestone HU-003) con Clean Architecture, conservando el comportamiento de negocio del Python (política de márgenes, cálculo de precio, formato del PDF, flujo de correo) salvo los cambios que el equipo decidió de forma explícita, y exponer el contrato congelado que consume el módulo Angular de ClientePro (HU-004, [`docs/docs_front/CONTRATO_API_WEB.md`](../../docs/docs_front/CONTRATO_API_WEB.md)).
+Backend de Cotifly en C# / .NET 10 (milestone HU-003) con Clean Architecture. La migración conservó el comportamiento de negocio del bot anterior (política de márgenes, cálculo de precio, formato del PDF, flujo de correo) salvo los cambios que el equipo decidió de forma explícita. El backend expone el contrato congelado que consume el módulo Angular de ClientePro (HU-004, [`docs/docs_front/CONTRATO_API_WEB.md`](../../docs/docs_front/CONTRATO_API_WEB.md)).
 
 ## 1.2 Usuarios y roles
 
@@ -26,6 +28,8 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 - **Correo** por el relay interno con vista previa, destinatarios previos, deduplicación de 5 minutos y estado `enviada`/`reenviada`.
 - **Consola web** `/web/*`: mis cotizaciones, seguimiento ganada/perdida, nueva versión, teléfono del comercial, descarga autenticada del PDF, administración de líneas de negocio y métricas.
 - **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el formulario, catálogo de municipios y catálogos de flete (tipo de vehículo, carrocería y clase de viaje). La cubicación ya no pasa por Nexo: "Calcular cubicaje" (`POST /web/cubicacion`) y los camiones de cada ruta los recomienda el **cubicador** (`Cubicador__UrlBase`, HU-023, ADR-020).
+- **Costeo en Nexo** por formulario o por Excel de licitación: una solicitud con rutas y camiones, polling del costeo, servicios conexos por ruta y resultado ganada/perdida ([ADR-015](../specs/decisiones/ADR-015-costeo-nexo.md), [ADR-017](../specs/decisiones/ADR-017-licitaciones-multilinea.md), [ADR-019](../specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md)).
+- **Cotización en USD** con la TRM del día fijada al crear (HU-012, [ADR-014](../specs/decisiones/ADR-014-trm-y-cotizaciones-en-usd.md)).
 - **Auditoría** de cada herramienta y de los accesos sensibles en `EventosHerramienta`.
 
 ## 1.4 Estado por issue (milestone HU-003)
@@ -51,12 +55,10 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 
 | Tema | Dónde se resuelve |
 |---|---|
-| Costeo real de rutas (Nexo) | HU-005.5 en adelante ([ADR-015](../specs/decisiones/ADR-015-costeo-nexo.md)) |
 | Criterio de coincidencia exacta de la búsqueda de clientes | Pendiente con el equipo de Nexo ([ADR-005](../specs/decisiones/ADR-005-busqueda-clientes-desde-chat.md)); hasta entonces es exacta solo con un único candidato |
 | Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005 y sin objeto desde HU-013.9 (el agente que la usaría se retiró); el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
 | Regional del comercial desde `DWCubosEBSSAP` | Adaptador listo tras `ConnectionStrings__Regional` (ADR-016); falta que el DBA confirme la tabla y dé acceso. Mientras tanto la fija el DBA en `UsuariosWeb.regional`; sin ella el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` |
 | Score de urgencia y deadline vencido (Nexo) en el tablero | Pendiente del contrato de Nexo (ADR-016 §8) |
-| Conversión a USD con TRM | HU-012 (`trmAplicada` queda en 0) |
 | Sincronización a Google Sheets y PDF en S3/MinIO | Diferidas, [ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md) |
 | Despliegue en Docker Swarm con Dokploy | HU-006 |
 | Frontend Angular | HU-004 (`clientepro-frontend`) |

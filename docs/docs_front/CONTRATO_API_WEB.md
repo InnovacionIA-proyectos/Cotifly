@@ -2,18 +2,24 @@
 
 Contrato congelado que consume el módulo Angular de ClientePro (HU-004, `clientepro-frontend`) y que implementa el backend .NET 10 (HU-003). La fuente de verdad es [`backend-dotnet/specs/openapi.yaml`](../../backend-dotnet/specs/openapi.yaml); este documento resume lo que el frontend necesita saber para integrarse sin leer el código.
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 - Fecha de congelamiento: 2026-09-24
 - Issue: #17 (HU-004.1)
 - Validación: `redocly lint` sin errores
 
-## 1. Punto de partida
+## 1. Origen del contrato
 
-En el backend Python (retirado en HU-022.1), de los 5 endpoints `/web/*` solo `POST /web/chat` funcionaba. `/web/login`, `/web/mis-cotizaciones`, `/enviar` y `/seguimiento` respondían 501 desde HU-002.2, porque no hay identidad real sin ClientePro. Por eso este contrato no se capturó de un backend en producción. Se reconstruyó así:
+El contrato se congeló el 2026-09-24 a partir de la API web del bot anterior, que se retiró del repositorio en HU-022.1
+(su último estado está en el tag `python-final`), y lo implementa el backend .NET 10:
 
-- `POST /web/chat`: del código del Python de entonces (`orquestador/web.py`, hoy solo en el tag `python-final`), sin cambios de forma.
-- `mis-cotizaciones`, `enviar`, `seguimiento`: de la última versión funcional antes del 501 (commit `88884ad^`), con los campos renombrados en HU-002.2 (`efectiva`/`nota` → `ganada`/`motivo_rechazo`; `comercial_email` → identidad por token).
-- `/web/login` se reemplaza por `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
-- Endpoints nuevos pedidos en HU-003.5, HU-003.6, HU-004.9 y HU-010.1.
+- `mis-cotizaciones`, `enviar` y `seguimiento` conservan la forma de la última versión funcional del bot anterior, con los
+  campos renombrados en HU-002.2 (`efectiva`/`nota` → `ganada`/`motivo_rechazo`; `comercial_email` → identidad por token).
+- `/web/login` se reemplazó por `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
+- La creación de cotizaciones es solo por formulario (`POST /web/solicitudes-costeo` y `POST /web/licitaciones`, ADR-018);
+  Google Chat se retiró en #105.
+- Los demás endpoints se agregaron después (HU-003.5, HU-003.6, HU-004.9, HU-010.1, HU-013, HU-021 y HU-023) y están en
+  `specs/openapi.yaml`.
 
 ## 2. Autenticación
 

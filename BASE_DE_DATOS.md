@@ -1,6 +1,6 @@
 # Base de datos — Cotifly
 
-**Vigente desde HU-021. Actualizado en HU-021.14 (2026-10-13).**
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15 (HU-023 y HU-022.1)
 
 Punto de entrada a la base de datos de Cotifly: motor, esquema, scripts y dónde está cada detalle.
 
@@ -85,7 +85,7 @@ erDiagram
     CotizacionMercancias {
         uniqueidentifier id PK
         uniqueidentifier lineaSolicitudId FK
-        uniqueidentifier idTipoMercancia
+        nvarchar64 codigoMercancia
         nvarchar200 nombreMercancia
         int cantidad
     }
@@ -121,16 +121,15 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/migrations_mssql/0001` a `0008` | Esquema inicial, identidad, costeo en Nexo, líneas de la solicitud, concurrencia y textos del PDF, campos de captura y horas por línea |
 | `db/migrations_mssql/0009_reestructuracion_cotizaciones.sql` | HU-021: cabecera → rutas → camiones, mercancías y conexos en filas, con respaldo `Respaldo0009_*` |
 | `db/migrations_mssql/0010_nombres_municipio.sql` | Nombres de municipio de la ruta, `solicitudNexoId`, nombre del conexo y el CHECK de `estadoEnvio`. **Borrador pendiente de revisión de scalderon-bs** |
+| `db/scripts/02_alter_cubicador.sql` | HU-023.3: columnas de resultado de la cubicación y `codigoMercancia` en lugar de `idTipoMercancia`. Idempotente; el ejecutador lo corre después del `01` |
+| `db/scripts/pendientes/03` a `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (orden del camión, cubicación en segundo plano, categoría del conexo e idempotencia de la captura). El ejecutador no las corre. El backend solo mapea el `04` |
+| `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 
 Detalle de cada script en [`ESQUEMA_OBJETIVO_SQLSERVER.md`](docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md) §A.5.
 
-**Precondición para desplegar el backend:** `0001` a `0010` aplicados (o la instalación desde cero). Si falta algo,
-`/health/ready` responde `503` y dice qué falta (`falta 0009`, `falta 0010`, `falta Tabla.columna`; ver
-[`DEPLOY.md`](DEPLOY.md) §4.5).
-
-**Pendiente — HU-023 (cubicador):** `db/scripts/02_alter_cubicador.sql` agregará las columnas de resultado de la cubicación
-y cambiará `idTipoMercancia` por `codigoMercancia`. Todavía no está en esta rama; cuando entre, pasa a ser parte de la
-precondición.
+**Precondición para desplegar el backend:** `0001` a `0010`, el `02` y el `pendientes/04` aplicados (o la instalación desde cero
+con el ejecutador, más el `04`). Si falta algo, `/health/ready` responde `503` y dice qué falta (`falta 0009`, `falta 0010`,
+`falta 02`, `falta 04`, `falta Tabla.columna`; ver [`DEPLOY.md`](DEPLOY.md) §4.5).
 
 ## 5. Cómo acceder
 
@@ -144,3 +143,12 @@ precondición.
 
 La política de respaldo de `dbo_cotifly`, la exportación lógica (`exportar-dbo-cotifly.sh`) y el restore en una instancia
 de pruebas están en [`DEPLOY.md`](DEPLOY.md) §6.
+
+## 7. Pendientes
+
+| Pendiente | Quién lo resuelve |
+|---|---|
+| Revisión del `0010` y de `db/scripts/pendientes/03` a `06` | scalderon-bs y el DBA |
+| `TrqType` de SAP TM para `DevolucionContenedor` (falta en `db/seeder/02_sap_mapeo_trqtype.sql`; no se inventa) | Negocio o SAP |
+| Fijar `Roles.idRolExterno` de los roles de ClientePro en cada ambiente (`db/seeder/03_roles.sql`) | DBA |
+| Borrar el respaldo `dbo_cotifly_respaldo_20261008` de la base compartida cuando ya no se necesite | DBA |

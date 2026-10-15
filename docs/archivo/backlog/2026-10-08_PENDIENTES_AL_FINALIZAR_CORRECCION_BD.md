@@ -1,5 +1,8 @@
 # Pendientes para cuando se finalice la corrección de la base de datos (HU-021)
 
+> **ARCHIVADO — NO VIGENTE.** Este documento se movió a `docs/archivo/backlog/` en HU-022.1 (#146, 2026-10-15). Se conserva
+> solo como registro histórico y no se mantiene. Pendientes al cerrar HU-021. Lo que sigue vivo pasó a [`BASE_DE_DATOS.md`](../../../BASE_DE_DATOS.md) §7 (TrqType de `DevolucionContenedor`, respaldo `dbo_cotifly_respaldo_20261008`); el stack viejo se retiró en HU-022.1 y la comunicación con el cubicador se hizo en HU-023.
+
 **Fecha:** 2026-10-08. Cosas que quedaron fuera de las HU a propósito o que dependen de otras personas. Revisar al cerrar HU-021.
 
 ## De HU-021.2 (base de datos)

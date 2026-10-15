@@ -1,6 +1,8 @@
 # Cotifly — backend .NET 10
 
-Backend de Cotifly, el bot cotizador de Botero Soto, migrado de Python a C# / .NET 10 (milestone HU-003). Un comercial captura la solicitud en la consola web de ClientePro; Nexo costea, el backend resuelve margen y precio, genera el PDF y lo envía por correo, y la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Google Chat y el agente cotizador conversacional se retiraron en HU-013.9 (#105). Reemplaza a los servicios Python `orquestador` y `mcp_server` (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)).
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
+Backend de Cotifly, el bot cotizador de Botero Soto, en C# / .NET 10 (milestone HU-003). Un comercial captura la solicitud en la consola web de ClientePro; Nexo costea, el backend resuelve margen y precio, genera el PDF y lo envía por correo, y la IA solo redacta textos y asiste sobre una cotización ya hecha ([ADR-018](specs/decisiones/ADR-018-pipeline-determinista-ia-etapa-final.md)). Google Chat y el agente cotizador conversacional se retiraron en HU-013.9 (#105). Reemplazó al bot anterior en Python (corte big-bang, [ADR-001](specs/decisiones/ADR-001-estrategia-de-corte.md)), que se retiró del repositorio en HU-022.1 (tag `python-final`).
 
 - Clean Architecture de 4 capas en un monolito modular: `Cotifly.Dominio`, `Cotifly.Aplicacion`, `Cotifly.Infraestructura`, `Cotifly.Api` ([ADR-002](specs/decisiones/ADR-002-arquitectura-clean-monolito-modular.md)).
 - ASP.NET Core 10, EF Core 10 Database First sobre SQL Server 2019, Semantic Kernel + Microsoft.Extensions.AI, PDFsharp-MigraDoc, MailKit.
@@ -42,9 +44,12 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | [8. Testing](docs/08-testing.md) | Pirámide, proyectos, traits, comandos, Testcontainers, Reqnroll, cobertura, CI y paridad con el Python (histórica) |
 | [9. Estructura del proyecto](docs/09-estructura-del-proyecto.md) | Árbol de carpetas y dónde va cada cosa |
 | [10. Operación](docs/10-operacion.md) | Salud, logs, métricas, depuración sin shell, riesgos, decisiones pendientes, activación y problemas frecuentes |
+| [Contrato NEXO ⇄ Cotifly](docs/COTIFLY-CONTRATO.md) | Lo que Cotifly manda a NEXO en la captura y lo que recibe (documento de NEXO, HU-023) |
+| [Conexión con el cubicador](docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) | URL, llave, endpoints, ejemplo y errores del cubicador (documento del cubicador, HU-023) |
+| [QA: matriz HU-021](docs/qa/MATRIZ_PRUEBAS_HU021.md) y [matriz HU-023](docs/qa/MATRIZ_PRUEBAS_HU023.md) | Registro de las campañas de pruebas de HU-021 y HU-023 |
 | [QA: regresión manual](docs/qa/regresion-manual.md) | Casos de los 3 flujos principales para la ronda de Kevin (HU-003.8) |
 | [QA: paridad Python vs .NET](docs/qa/paridad-python-dotnet.md) | HU-003.9 (#15): cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar. Se conserva como histórico |
-| [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-012 |
+| [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-020 |
 
 ## Convenciones en una línea
 

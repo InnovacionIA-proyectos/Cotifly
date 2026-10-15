@@ -1,5 +1,7 @@
 # 6. Ejecución local
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Sin `docker-compose` ([ADR-007](../specs/decisiones/ADR-007-contenedores-sin-docker-compose.md)): todo se hace con `docker run` y, para el entorno completo, con los scripts `scripts/levantar-local.ps1` (PowerShell) y `scripts/levantar-local.sh` (Linux, macOS o Git Bash).
 
 Contenido:

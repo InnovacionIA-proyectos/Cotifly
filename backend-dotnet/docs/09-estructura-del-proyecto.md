@@ -1,5 +1,7 @@
 # 9. Estructura del proyecto
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 ```
 .github/workflows/
 └── backend-dotnet.yml           # CI del backend .NET (#14): unitarias, integración, cobertura, auditoría NuGet, imagen, lint OpenAPI

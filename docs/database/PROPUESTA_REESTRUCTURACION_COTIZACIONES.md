@@ -1,9 +1,14 @@
 # Propuesta de reestructuración de `Cotizaciones` y tablas relacionadas (HU-021)
 
-**Estado: propuesta — NO ejecutada.** Mismo patrón que `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md` (HU-002.1): primero se
-aprueba el diseño completo acá, y solo después se escribe el script de migración (`000N_*.sql`) contra
-`tbsdatacenter`. Los cambios que esto le pide al backend están en
-`docs/database/CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`.
+> **Estado:** ejecutada (registro del diseño) · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-15
+
+**Ejecutada.** El diseño se aprobó y se aplicó con `db/migrations_mssql/0009_reestructuracion_cotizaciones.sql` y
+`0010_nombres_municipio.sql` (HU-021, cerrada; decisión en
+[ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md)). Este documento queda como
+registro del porqué de cada tabla. El esquema vigente está en
+[`ESQUEMA_OBJETIVO_SQLSERVER.md`](ESQUEMA_OBJETIVO_SQLSERVER.md) (Parte A) y el significado de cada columna en
+[`DICCIONARIO_BASE_DE_DATOS.md`](DICCIONARIO_BASE_DE_DATOS.md). Los cambios que provocó en el backend están en
+[`CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md`](CAMBIOS_BACKEND_REESTRUCTURACION_COTIZACIONES.md).
 
 **Contexto:** las migraciones 0001 a 0007 ya corrieron contra la base real. `Cotizaciones` y sus tablas satélite
 crecieron HU tras HU hasta volverse difíciles de seguir, y ahora llega el cubicador, que puede recomendar varios

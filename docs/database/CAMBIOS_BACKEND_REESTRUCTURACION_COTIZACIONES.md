@@ -1,8 +1,13 @@
 # Cambios en el backend por la reestructuración de cotizaciones (HU-021)
 
-**Estado: plan — NO ejecutado.** Describe lo que el backend (`backend-dotnet/`) tiene que cambiar para funcionar con
-el esquema de `docs/database/PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`. No se toca código hasta que la propuesta esté
-aprobada y se confirme que el backend ya no está en freeze.
+> **Estado:** ejecutado (registro de cambios) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
+**Ejecutado.** Describe lo que el backend (`backend-dotnet/`) cambió para funcionar con el esquema de
+[`PROPUESTA_REESTRUCTURACION_COTIZACIONES.md`](PROPUESTA_REESTRUCTURACION_COTIZACIONES.md). HU-021 se cerró (14 de 14
+issues) y las secciones de HU-023 registran los ajustes posteriores. La arquitectura vigente está en
+[`backend-dotnet/docs/02-arquitectura.md`](../../backend-dotnet/docs/02-arquitectura.md) y en
+[ADR-019](../../backend-dotnet/specs/decisiones/ADR-019-reestructuracion-rutas-y-camiones.md) y
+[ADR-020](../../backend-dotnet/specs/decisiones/ADR-020-conexion-con-el-cubicador.md).
 
 Las rutas de archivo son relativas a `backend-dotnet/`. Los números de línea son de la fecha de este documento
 (2026-10-07) y pueden moverse.

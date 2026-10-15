@@ -1,5 +1,8 @@
 # Milestone e Issues — [Corrección con BD] · Cotifly
 
+> **ARCHIVADO — NO VIGENTE.** Este documento se movió a `docs/archivo/backlog/` en HU-022.1 (#146, 2026-10-15). Se conserva
+> solo como registro histórico y no se mantiene. Borrador de HU-021 para copiar en GitHub; la milestone se cerró (14 de 14 issues).
+
 **Fecha de redacción:** 2026-10-08. Borrador listo para copiar/pegar en GitHub. Mismo formato de `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`: la milestone es la historia completa en Gherkin, y cada issue técnico ("tarea-tecnica") es un checklist explícito, ya con nombre, labels, repo y persona asignada.
 
 **Cómo usar este documento**

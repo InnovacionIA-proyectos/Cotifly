@@ -1,5 +1,8 @@
 # Nuevas Milestones e Issues — Cotifly / ClientePro
 
+> **ARCHIVADO — NO VIGENTE.** Este documento se movió a `docs/archivo/backlog/` en HU-022.1 (#146, 2026-10-15). Se conserva
+> solo como registro histórico y no se mantiene. Borrador de HU-001 a HU-013 para copiar en GitHub; las milestones e issues ya se crearon y son la fuente de verdad.
+
 Borrador listo para copiar/pegar en GitHub. Sigue el mismo formato usado en EmbarQA (HU-6XX): milestone = historia completa en Gherkin, issues técnicos ("tarea-tecnica") = checklist explícito sin nada a criterio del desarrollador.
 
 **Cómo usar este documento**

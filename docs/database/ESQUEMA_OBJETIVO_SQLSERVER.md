@@ -1,6 +1,6 @@
 # Esquema de la base de datos — SQL Server 2019 (`dbo_cotifly`)
 
-**Vigente desde HU-021 (2026-10-08). Actualizado en HU-021.14 (2026-10-13).**
+> **Estado:** vigente desde HU-021 · **Dueño:** Duban Guerra (backend) y scalderon-bs (datos) · **Actualizado:** 2026-10-13 (HU-021.14)
 
 Este documento describe la Parte A; la Parte B se archivó:
 
@@ -148,7 +148,7 @@ erDiagram
         uniqueidentifier id PK
         uniqueidentifier lineaSolicitudId FK
         int orden
-        uniqueidentifier idTipoMercancia "catalogo del cubicador"
+        nvarchar64 codigoMercancia "catalogo del cubicador (02)"
         nvarchar200 nombreMercancia "copia"
         int cantidad
         decimal10_2 largoCm
@@ -335,7 +335,7 @@ Estados de costeo (cabecera, ruta y camión): `pendiente_envio`, `error_envio`, 
 | `id` | uid | no | `NEWID()` | PK `pk_cotizacionPosiciones` |
 | `lineaSolicitudId` | uid | no | | FK ruta |
 | `orden` | int | no | | Único con `lineaSolicitudId` |
-| `idTipoMercancia` | uid | sí | | Catálogo del cubicador. El backend lo exige en toda captura nueva |
+| `codigoMercancia` | nv(64) | sí | | Código del catálogo del cubicador (por ejemplo `BEBIDAS`). Lo agrega el `02` en lugar de `idTipoMercancia` (uuid). El backend lo exige en toda captura nueva |
 | `nombreMercancia` | nv(200) | sí | | Copia del nombre del catálogo |
 | `cantidad` | int | no | `1` | CHECK ≥ 1 |
 | `largoCm`, `anchoCm`, `altoCm` | dec(10,2) | no | | CHECK > 0 |
@@ -405,10 +405,10 @@ El tablero de métricas (ADR-016) no usa estas vistas: calcula en memoria. Se co
 | `0009_reestructuracion_cotizaciones.sql` | **HU-021:** cabecera → rutas → camiones, mercancías y conexos en filas; respaldo `Respaldo0009_*`; catálogo de líneas de negocio |
 | `0010_nombres_municipio.sql` | Nombres de municipio de la ruta, `solicitudNexoId`, `nombreServicioConexo` y el CHECK de `estadoEnvio` si falta. **Borrador pendiente de revisión de scalderon-bs** |
 | `db/scripts/01_crear_esquema.sql` | Instalación desde cero: equivale a `0001` a `0010` aplicados. Las pruebas de integración verifican que dejan el mismo esquema |
+| `db/scripts/02_alter_cubicador.sql` | **HU-023.3 (#158):** `CotizacionMercancias.codigoMercancia` en lugar de `idTipoMercancia`; en el camión `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso`; en la ruta `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada`. Idempotente; lo corre el ejecutador después del `01` |
+| `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` | **HU-023.5 (#160):** cola de la cubicación de la licitación en la ruta (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion`). Pendiente de scalderon-bs y del DBA; el backend lo exige (`falta 04`) |
 
-**Pendiente — HU-023 (cubicador):** `db/scripts/02_alter_cubicador.sql` (rama de scalderon-bs) agregará las columnas de
-resultado de la cubicación y cambiará `CotizacionMercancias.idTipoMercancia` por `codigoMercancia`. Todavía no está en esta
-rama ni en el modelo EF. Cuando entre, se actualizan este documento, el diccionario y la precondición de `DEPLOY.md`.
+Las columnas del `02` y del `04` no están en las tablas de §A.4 de arriba; el detalle está en la cabecera de cada script.
 
-**Deuda de esquema anotada (script ≥ `0011`, revisión de scalderon-bs):** `ordenVehiculo` en el camión, una columna para el id
-del catálogo del conexo y la tabla de idempotencia de ADR-018.
+**Deuda de esquema propuesta (`db/scripts/pendientes/`, revisión de scalderon-bs y del DBA):** `03` (`ordenVehiculo` en el
+camión y el id del catálogo del conexo), `05` (categoría del conexo) y `06` (tabla de idempotencia de la captura, ADR-018).

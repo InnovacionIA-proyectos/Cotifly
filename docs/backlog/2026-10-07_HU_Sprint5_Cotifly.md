@@ -2,13 +2,13 @@
 
 > **Fecha de redacción:** 2026-10-07. Documento vivo: se va completando a medida que se van confirmando más hallazgos/pedidos para este sprint — no es la versión final todavía.
 > **Fuente:** `docs/backlog/2026-09-29_PENDIENTES_CORRECCION_DUBAN.md` (hallazgos encontrados probando en vivo contra `tbsdatacenter`/`dbTarifario_Nexo_Pruebas`, 2026-09-29 a 2026-10-05) + deuda técnica detectada aparte.
-> **Convención:** sigue el mismo formato de `docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (Historia / Contexto / checklist con `[ ]`), numeración continúa desde HU-013 (la de `ADR-018`, ya construida) — estas son todas nuevas, HU-014 en adelante.
+> **Convención:** sigue el mismo formato de `docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md` (Historia / Contexto / checklist con `[ ]`), numeración continúa desde HU-013 (la de `ADR-018`, ya construida) — estas son todas nuevas, HU-014 en adelante.
 
 ---
 
 ## Revisión del 2026-10-08: qué aplica después de la reestructuración de la base de datos
 
-**El Sprint 5 va DESPUÉS de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU. Se revisó cada HU de abajo contra ese esquema:
+**El Sprint 5 va DESPUÉS de `docs/archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md` (HU-021, "[Corrección con BD]").** El 2026-10-08 se recreó `dbo_cotifly` con el esquema nuevo (solicitud → rutas → camiones) y el backend actual no funciona contra él hasta terminar esa HU. Se revisó cada HU de abajo contra ese esquema:
 
 | HU | Estado | Qué cambia | Depende de |
 |---|---|---|---|
@@ -243,4 +243,4 @@ El botón "Exportar Excel" en "Ver detalle" sigue deshabilitado (`title="Próxim
 
 ## Pendiente de agregar
 
-- Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (lo que se le pide a Nexo y al cubicador; no son issues) y, para el `TrqType`, en HU-021.2 de `docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.
+- Los acuerdos con el equipo del cubicador y con Nexo (campo de ruta, códigos de vehículo, `TrqType` de `DevolucionContenedor`) están en `docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md` (lo que se le pide a Nexo y al cubicador; no son issues) y, para el `TrqType`, en HU-021.2 de `docs/archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`.
