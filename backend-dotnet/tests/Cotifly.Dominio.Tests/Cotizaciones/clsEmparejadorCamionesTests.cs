@@ -398,7 +398,13 @@ public sealed class clsEmparejadorCamionesTests
     [InlineData(true, true, 0, false)]
     [InlineData(true, true, 3, false)]
     [InlineData(true, true, 3, true)]
-    public void FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(bool grupoEnGet, bool recomendacionEnGet, int modo, bool codigos)
+    // HU-023 (#176): contrato vigente (banderas encendidas por defecto): la línea suelta (ruta de un camión) viaja con grupoRutaId = null.
+    [InlineData(true, true, 0, true, true)]
+    [InlineData(true, true, 1, true, true)]
+    [InlineData(true, true, 2, true, true)]
+    [InlineData(true, true, 3, true, true)]
+    [InlineData(true, false, 3, true, true)]
+    public void FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(bool grupoEnGet, bool recomendacionEnGet, int modo, bool codigos, bool lineaSuelta = false)
     {
         // Contrato #297: con Nexo:EnviarCodigosCubicador apagada (codigos = false) la línea del camión del cubicador viaja sin vehículo ni
         // carrocería y el emparejador no los compara; Nexo devuelve numeroLinea (posición en el arreglo).
@@ -426,6 +432,7 @@ public sealed class clsEmparejadorCamionesTests
             cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, rutas);
             var lineas = new List<(clsLineaSolicitudNexo Rama, clsLineaSolicitudNexo Qa, Guid Ruta)>();
             var numero = 0;
+            var camionesPorRuta = cotizacion.LineasNexo().GroupBy(x => x.Linea.RutaId).ToDictionary(g => g.Key ?? Guid.Empty, g => g.Count());
             foreach (var (camion, linea) in cotizacion.LineasNexo())
             {
                 numero++;
@@ -439,7 +446,7 @@ public sealed class clsEmparejadorCamionesTests
                 var rama = new clsLineaSolicitudNexo(Guid.NewGuid().ToString(), $"{linea.Origen} → {linea.Destino}", linea.Tipologia, linea.PesoKg,
                     mesa ?? (sinCodigos ? null : linea.TipoVehiculo), sinCodigos ? null : linea.Carroceria)
                 {
-                    GrupoRutaId = grupoEnGet ? linea.RutaId?.ToString("D") : null,
+                    GrupoRutaId = grupoEnGet && (!lineaSuelta || camionesPorRuta[linea.RutaId ?? Guid.Empty] > 1) ? linea.RutaId?.ToString("D") : null,
                     IdRecomendacionVehiculo = recomendacionEnGet ? linea.IdRecomendacionVehiculo?.ToString("D") : null,
                     NumeroLinea = grupoEnGet ? numero : null,
                 };
@@ -464,13 +471,56 @@ public sealed class clsEmparejadorCamionesTests
             }
         }
 
-        TestContext.Current.TestOutputHelper?.WriteLine($"FUZZ159 grupo={grupoEnGet} rec={recomendacionEnGet} modo={modo} codigos={codigos}: pares={pares} cruces={crucesRama} qa={crucesQa}");
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"FUZZ159 grupo={grupoEnGet} rec={recomendacionEnGet} modo={modo} codigos={codigos} suelta={lineaSuelta}: pares={pares} cruces={crucesRama} qa={crucesQa}");
         pares.Should().BeGreaterThan(0);
         crucesRama.Should().BeLessThanOrEqualTo(crucesQa, "no puede cruzar más costos entre rutas que QA");
-        if (grupoEnGet)
+        if (grupoEnGet && (!lineaSuelta || recomendacionEnGet))
         {
-            crucesRama.Should().Be(0, "con grupoRutaId en el GET ninguna línea va a otra ruta");
+            // HU-023 (#176): la línea suelta no trae grupoRutaId; la protege su idRecomendacionVehiculo. Sin él (bandera de datos del
+            // cubicador apagada), la línea suelta se empareja por contenido como en QA: no cruza más que QA, pero puede cruzar.
+            crucesRama.Should().Be(0, "con grupoRutaId (o, en la línea suelta, idRecomendacionVehiculo) en el GET ninguna línea va a otra ruta");
         }
+    }
+
+    [Fact]
+    public void LaLineaSueltaSinGrupoRutaIdSeAsociaPorSuCamionDelCubicadorAunqueHayaOtraRutaIgual()
+    {
+        // HU-023 (#176, contrato con Nexo §3.3): una ruta de un solo camión viaja con grupoRutaId = null. Dos rutas iguales (mismo texto,
+        // peso y vehículo), cada una con un camión: el idRecomendacionVehiculo del GET basta para no cruzarlas, en cualquier orden.
+        var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = "PCN-SUELTA-1" }).Valor;
+        cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot },
+        [
+            new clsRutaCapturada(LineaCaptura((null, null, 10_000m)), 3, 0, [new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionA)], []),
+            new clsRutaCapturada(LineaCaptura((null, null, 10_000m)), 3, 1, [new clsCamionPlaneado("3S3", "FURGON", 10_000m, _recomendacionB)], []),
+        ]);
+        var rutas = cotizacion.RutasOrdenadas;
+        clsLineaSolicitudNexo[] nexo =
+        [
+            Linea("N-1", rutas[0], 10_000m, "3S3", "FURGON") with { IdRecomendacionVehiculo = _recomendacionB.ToString("D").ToUpperInvariant(), NumeroLinea = 2 },
+            Linea("N-2", rutas[1], 10_000m, "3S3", "FURGON") with { IdRecomendacionVehiculo = _recomendacionA.ToString("D").ToUpperInvariant(), NumeroLinea = 1 },
+        ];
+
+        foreach (var orden in Permutaciones(nexo))
+        {
+            var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), orden);
+
+            pares.Should().HaveCount(2);
+            pares[CamionDe(cotizacion, _recomendacionA).Id].Should().Be("N-2", "el camión del cubicador (en MAYÚSCULAS) dice de qué ruta es");
+            pares[CamionDe(cotizacion, _recomendacionB).Id].Should().Be("N-1");
+        }
+    }
+
+    [Fact]
+    public void LaLineaSueltaSinGrupoNiRecomendacionSeAsociaPorContenido()
+    {
+        // HU-023 (#176): un camión de respaldo (sin recomendación) en una ruta de un camión: grupoRutaId = null y sin idRecomendacionVehiculo;
+        // se asocia por el texto de la ruta y el contenido, como antes.
+        var (cotizacion, ruta) = RutaCubicada(10_000m, new clsCamionPlaneado(null, null, 10_000m));
+
+        var pares = clsEmparejadorLineasNexo.Emparejar(Camiones(cotizacion), [Linea("N-1", ruta, 10_000m, null, null)]);
+
+        pares.Should().ContainSingle().Which.Value.Should().Be("N-1");
     }
 
     [Fact]

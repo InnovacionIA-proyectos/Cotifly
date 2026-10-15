@@ -10,7 +10,7 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - dbo_cotifly al esquema vigente (0001 a 0010): base vacía -> db/scripts/01_crear_esquema.sql;
+                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, pendientes/04 y 07): base vacía -> db/scripts/01_crear_esquema.sql;
                           esquema anterior a HU-021 (Cotizaciones) -> 0002 a 0010; ya migrada -> solo el 0010 (idempotente)
                         - seeders de db/seeder/ (idempotentes: líneas de negocio, mapeo SAP, roles)
                         - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
@@ -182,7 +182,9 @@ SqlcmdArchivo 'master' '/sql/dev-01-bases.sql'
 #   - con el esquema anterior (tabla Cotizaciones, p. ej. un volumen de antes de HU-021) -> migraciones 0002 a 0010
 #     (el 0003 y el 0004 exigen Cotizaciones, por eso no se repiten sobre una base ya migrada);
 #   - ya migrada (CotizacionesSolicitud) -> solo el 0010, idempotente.
-# El 02 del cubicador (HU-023) no se aplica: esta versión del backend no lo mapea.
+# Después, siempre y en este orden (HU-023, #176; los tres son idempotentes): db/scripts/02_alter_cubicador.sql,
+# db/scripts/pendientes/04_cubicacion_segundo_plano.sql (el backend mapea sus columnas: sin él /health/ready da 503 "falta 04")
+# y db/scripts/07_motivo_busqueda_agotada.sql (BUSQUEDA_AGOTADA en el CHECK del motivo).
 $tablas = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'"
 $viejo = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END"
 if ($tablas -eq '0') {
@@ -199,6 +201,10 @@ if ($tablas -eq '0') {
 } else {
     Write-Host 'dbo_cotifly ya está migrado: se aplica solo el 0010 (idempotente)'
     SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' '/migraciones/0010_nombres_municipio.sql'
+}
+foreach ($script in @('scripts/02_alter_cubicador.sql', 'scripts/pendientes/04_cubicacion_segundo_plano.sql', 'scripts/07_motivo_busqueda_agotada.sql')) {
+    Write-Host "aplicando db/$script (idempotente)"
+    SqlcmdArchivo 'dbTarifario_Nexo_Pruebas' "/db/$script"
 }
 foreach ($seeder in @('01_lineas_negocio.sql', '02_sap_mapeo_trqtype.sql', '03_roles.sql')) {
     Write-Host "sembrando $seeder"

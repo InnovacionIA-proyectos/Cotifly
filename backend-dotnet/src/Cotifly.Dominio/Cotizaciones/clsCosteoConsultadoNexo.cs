@@ -150,13 +150,16 @@ public static class clsEmparejadorLineasNexo
         var conPar = libres
             .Select(n => (Linea: n, Par: ParCubicador(n)))
             .Where(x => x.Par is not null)
-            .GroupBy(x => x.Par!.Value)
+            .GroupBy(x => x.Par!.Value.Recomendacion)
             .Where(g => g.Count() == 1)
             .Select(g => g.Single())
             .ToList();
         foreach (var (linea, par) in conPar)
         {
-            var camiones = pendientes.Where(c => c.RutaId == par!.Value.Ruta && c.IdRecomendacionVehiculo == par.Value.Recomendacion).ToList();
+            // HU-023 (#176): una línea suelta (ruta de un solo camión) viaja con grupoRutaId = null; el camión del cubicador es único.
+            var camiones = pendientes
+                .Where(c => (par!.Value.Ruta is not { } ruta || c.RutaId == ruta) && c.IdRecomendacionVehiculo == par.Value.Recomendacion)
+                .ToList();
             if (camiones.Count == 1)
             {
                 Asociar(camiones[0], linea, pendientes, libres, resultado);
@@ -164,10 +167,13 @@ public static class clsEmparejadorLineasNexo
         }
     }
 
-    /// <summary>El par (<c>grupoRutaId</c>, <c>idRecomendacionVehiculo</c>) de la línea de Nexo, o <c>null</c> si le falta alguno.</summary>
-    private static (Guid Ruta, Guid Recomendacion)? ParCubicador(clsLineaSolicitudNexo linea) =>
-        Guid.TryParse(linea.GrupoRutaId, out var ruta) && Guid.TryParse(linea.IdRecomendacionVehiculo, out var recomendacion)
-            ? (ruta, recomendacion)
+    /// <summary>
+    /// El par (<c>grupoRutaId</c>, <c>idRecomendacionVehiculo</c>) de la línea de Nexo, o <c>null</c> sin <c>idRecomendacionVehiculo</c>. Sin
+    /// <c>grupoRutaId</c> (línea suelta, HU-023 #176) la ruta va en <c>null</c> y basta el camión del cubicador, que es único.
+    /// </summary>
+    private static (Guid? Ruta, Guid Recomendacion)? ParCubicador(clsLineaSolicitudNexo linea) =>
+        Guid.TryParse(linea.IdRecomendacionVehiculo, out var recomendacion) && recomendacion != Guid.Empty
+            ? (Guid.TryParse(linea.GrupoRutaId, out var ruta) ? ruta : null, recomendacion)
             : null;
 
     /// <summary>Asocia los pares únicos en ambos sentidos. Devuelve si asoció alguno.</summary>

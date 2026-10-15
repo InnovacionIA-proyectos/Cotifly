@@ -118,9 +118,11 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
             // HU-023.3 (#158): script 02_alter_cubicador.sql.
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_resultadoCubicacion",
                 "resultadoCubicacion IS NULL OR resultadoCubicacion IN ('ASIGNADO', 'SIN_SELECCION_AUTOMATICA')");
+            // HU-023 (#176): db/scripts/07 agrega BUSQUEDA_AGOTADA y exige el resultado con ISNULL (sin el 07, el 02 admite 4 motivos y el
+            // backend guarda BUSQUEDA_AGOTADA en NULL con un aviso: clsMotivoSinSeleccionInterceptor).
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_motivoSinSeleccion",
-                "motivoSinSeleccion IS NULL OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE') "
-                + "AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA')");
+                "motivoSinSeleccion IS NULL OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE', "
+                + "'BUSQUEDA_AGOTADA') AND ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA')");
             // HU-023.5 (#160): db/scripts/pendientes/04 (cubicación de la licitación en segundo plano).
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_estadoCubicacion",
                 "estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')");

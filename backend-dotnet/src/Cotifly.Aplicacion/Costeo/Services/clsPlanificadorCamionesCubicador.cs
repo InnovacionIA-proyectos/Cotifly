@@ -64,6 +64,8 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         clsCodigosError.MercanciaDesconocida,
         clsCodigosError.MercanciaNoCubicable,
         clsCodigosError.DimensionesInvalidas,
+        // HU-023 (#176): más de 10.000 unidades (lo valida el adaptador antes de llamar, o el 400 del cubicador): se parte la carga.
+        clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorRespuestaInvalida,
         // Auditoría de HU-023: una llave mala no puede convertirse en silencio en rutas sin vehículo.
         clsCodigosError.CubicadorNoAutorizado,

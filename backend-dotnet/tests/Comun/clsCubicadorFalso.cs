@@ -38,12 +38,29 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Catálogo de carrocerías (<c>GET /tipos-carroceria</c>).</summary>
     public List<(string Codigo, string Nombre)> TiposCarroceria { get; } = [("FURGON", "Furgón"), ("ESTACAS", "Estacas"), ("CAMA_BAJA", "Cama baja")];
 
-    /// <summary>Catálogo de vehículos (<c>GET /tipos-vehiculo</c>); con <see cref="SinTiposVehiculo"/> la ruta responde 404 (P1 sin publicar).</summary>
+    /// <summary>Catálogo de vehículos (<c>GET /vehiculos-catalogo</c>, HU-023 #176); con <see cref="SinTiposVehiculo"/> la ruta responde 404.</summary>
     public List<(string Codigo, string Nombre)> TiposVehiculo { get; } =
         [("2S2", "Tractocamión 2S2"), ("2S3", "Tractocamión 2S3"), ("3S3", "Tractocamión 3S3"), ("C2", "Sencillo C2"), ("C3", "Dobletroque C3")];
 
-    /// <summary>El cubicador todavía no publica <c>GET /tipos-vehiculo</c> (404).</summary>
+    /// <summary>El catálogo <c>GET /vehiculos-catalogo</c> responde 404.</summary>
     public bool SinTiposVehiculo { get; set; }
+
+    /// <summary>
+    /// HU-023 (#176): corridas guardadas por <c>idLineaSolicitud</c> (la última gana), las que devuelve
+    /// <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c>. Cada <c>POST</c> que responde guarda la suya; con
+    /// <see cref="TiempoAgotadoTrasGuardar"/> el POST guarda la corrida y después no responde (se cuelga hasta la cancelación).
+    /// </summary>
+    public ConcurrentDictionary<string, string> Corridas { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>HU-023 (#176): el POST guarda la corrida y se cuelga (simula un tiempo agotado con la corrida ya creada).</summary>
+    public bool TiempoAgotadoTrasGuardar { get; set; }
+
+    /// <summary>HU-023 (#176): el POST se cuelga SIN guardar la corrida (la reconsulta no encuentra nada: 404).</summary>
+    public bool TiempoAgotadoSinGuardar { get; set; }
+
+    /// <summary>Las peticiones a <c>GET /recomendaciones</c> (reconsultas).</summary>
+    public IReadOnlyList<clsPeticionCubicador> Reconsultas =>
+        [.. Peticiones.Where(p => p.Metodo == HttpMethod.Get && p.Url.AbsolutePath.EndsWith("/recomendaciones", StringComparison.Ordinal))];
 
     /// <summary>Si tiene valor, toda petición responde ese estado (cubicador caído).</summary>
     public HttpStatusCode? Caido { get; set; }
@@ -96,6 +113,32 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Respuesta <c>ASIGNADO</c> con estos vehículos (flota mixta si son de tipos distintos).</summary>
     public static Dictionary<string, object?> Asignado(params object[] vehiculos) => Respuesta("ASIGNADO", null, vehiculos);
 
+    /// <summary>Un vehículo con los campos de HU-023 (#176): número, nombre, alertas y lo que lleva por posición.</summary>
+    public static Dictionary<string, object?> VehiculoCompleto(
+        int numero, string codigoVehiculo, string nombreVehiculo, string codigoCarroceria, decimal pesoTotalKg, bool alertaBajoLlenado,
+        bool heterogenea, params object[] mercancias)
+    {
+        var vehiculo = Vehiculo(codigoVehiculo, codigoCarroceria, pesoTotalKg);
+        vehiculo["numeroVehiculo"] = numero;
+        vehiculo["nombreVehiculo"] = nombreVehiculo;
+        vehiculo["alertaBajoLlenado"] = alertaBajoLlenado;
+        vehiculo["heterogenea"] = heterogenea;
+        vehiculo["mercancias"] = mercancias.ToList();
+        return vehiculo;
+    }
+
+    /// <summary>Una fila de <c>vehiculos[].mercancias[]</c> (<paramref name="indicePosicion"/> puede ir en <c>null</c>).</summary>
+    public static Dictionary<string, object?> MercanciaVehiculo(int? indicePosicion, string codigo, int cantidad, decimal pesoKg, decimal volumenM3) =>
+        new()
+        {
+            ["indicePosicion"] = indicePosicion,
+            ["idTipoMercancia"] = "2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A",
+            ["codigoMercancia"] = codigo,
+            ["cantidad"] = cantidad,
+            ["pesoKg"] = pesoKg,
+            ["volumenM3"] = volumenM3,
+        };
+
     /// <summary>Respuesta <c>SIN_SELECCION_AUTOMATICA</c> con su motivo y sin vehículos.</summary>
     public static Dictionary<string, object?> SinSeleccion(string motivo) => Respuesta("SIN_SELECCION_AUTOMATICA", motivo, []);
 
@@ -104,7 +147,8 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     {
         ArgumentNullException.ThrowIfNull(respuesta);
         respuesta["condicionada"] = true;
-        respuesta["mercanciasCondicionadas"] = codigos.Select(c => new { codigoMercancia = c, comentarioCondicion = "Requiere aprobación" }).ToList();
+        // Guía del cubicador §5.4: una lista de códigos; el comentario sale de GET /tipos-mercancia.
+        respuesta["mercanciasCondicionadas"] = codigos.ToList();
         return respuesta;
     }
 
@@ -172,7 +216,20 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
             return Json(HttpStatusCode.OK, JsonSerializer.Serialize(TiposCarroceria.Select(t => new { codigoCarroceria = t.Codigo, nombre = t.Nombre, activo = true })));
         }
 
-        if (request.Method == HttpMethod.Get && ruta.EndsWith("/tipos-vehiculo", StringComparison.Ordinal))
+        if (request.Method == HttpMethod.Get && ruta.EndsWith("/recomendaciones", StringComparison.Ordinal))
+        {
+            var consulta = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
+            if (!string.Equals(consulta["origenSistema"], "COTIFLY", StringComparison.Ordinal))
+            {
+                return Json(HttpStatusCode.UnprocessableEntity, """{"detail":"origenSistema es obligatorio"}""");
+            }
+
+            return consulta["idLineaSolicitud"] is { } linea && Corridas.TryGetValue(linea, out var corrida)
+                ? Json(HttpStatusCode.OK, corrida)
+                : Json(HttpStatusCode.NotFound, """{"codigo":"NO_ENCONTRADO","mensaje":"sin corrida para la línea"}""");
+        }
+
+        if (request.Method == HttpMethod.Get && ruta.EndsWith("/vehiculos-catalogo", StringComparison.Ordinal))
         {
             await ColgarCatalogoAsync(cancellationToken);
             return SinTiposVehiculo
@@ -204,7 +261,29 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
                     await Task.Delay(espera, cancellationToken);
                 }
 
-                return Recomendacion(cuerpo);
+                if (TiempoAgotadoSinGuardar)
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
+
+                var respuesta = Recomendacion(cuerpo);
+                if (respuesta.StatusCode == HttpStatusCode.OK && JsonNode.Parse(cuerpo!)?["idLineaSolicitud"]?.GetValue<string>() is { } idLinea)
+                {
+                    var guardada = await respuesta.Content.ReadAsStringAsync(cancellationToken);
+                    if (JsonNode.Parse(guardada) is JsonObject nodo)
+                    {
+                        nodo["idLineaSolicitud"] = idLinea;
+                        nodo["origenSistema"] = "COTIFLY";
+                        Corridas[idLinea] = nodo.ToJsonString();
+                    }
+                }
+
+                if (TiempoAgotadoTrasGuardar)
+                {
+                    await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
+
+                return respuesta;
             }
             finally
             {
@@ -292,11 +371,11 @@ public static class clsEjemplosContratoCubicador
          "extradimension":null}
         """;
 
-    /// <summary><c>SIN_SELECCION_AUTOMATICA</c> con el motivo dado y la marca de extradimensión si aplica.</summary>
+    /// <summary><c>SIN_SELECCION_AUTOMATICA</c> con el motivo dado y la extradimensión (estructura vigente) si aplica.</summary>
     public static string SinSeleccion(string motivo)
     {
         var extradimension = motivo == "EXTRADIMENSIONADO"
-            ? """{"extradimensionado":true,"dimensiones":["ALTO"],"detalle":"Supera el alto máximo de la flota."}"""
+            ? """{"hayExtradimension":true,"medidasEstandar":{"largoMaxCm":1220,"anchoMaxCm":260,"altoMaxCm":300,"pesoMaxKg":34000},"piezas":[{"indicePosicion":0,"idTipoMercancia":null,"codigoMercancia":"VIGAS_ESTRUCTURAS","excesos":["alto 320.0 cm > 300.0 cm"]}]}"""
             : "null";
         return $$"""
             {"idRecomendacion":"1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f","resultado":"SIN_SELECCION_AUTOMATICA","motivoSinSeleccion":"{{motivo}}",
@@ -315,9 +394,72 @@ public static class clsEjemplosContratoCubicador
     /// <summary>Un error del contrato: <c>{codigo, mensaje}</c>.</summary>
     public static string Error(string codigo) => $$"""{"codigo":"{{codigo}}","mensaje":"Mensaje del cubicador para {{codigo}}."}""";
 
-    /// <summary>Los cuatro motivos de "sin selección".</summary>
-    public static readonly IReadOnlyList<string> Motivos = ["EXTRADIMENSIONADO", "SIN_CANDIDATOS_DIMENSIONALES", "SUPERA_K_MAX", "SIN_CARROCERIA_COMPATIBLE"];
+    /// <summary>Los cinco motivos de "sin selección" (HU-023 #176: BUSQUEDA_AGOTADA).</summary>
+    public static readonly IReadOnlyList<string> Motivos =
+        ["EXTRADIMENSIONADO", "SIN_CANDIDATOS_DIMENSIONALES", "SUPERA_K_MAX", "SIN_CARROCERIA_COMPATIBLE", "BUSQUEDA_AGOTADA"];
 
-    /// <summary>Los cuatro rechazos 400 del contrato.</summary>
-    public static readonly IReadOnlyList<string> Rechazos = ["MERCANCIAS_REQUERIDAS", "MERCANCIA_DESCONOCIDA", "MERCANCIA_NO_CUBICABLE", "DIMENSIONES_INVALIDAS"];
+    /// <summary>Los rechazos 400 del contrato (HU-023 #176: CUBICACION_DEMASIADO_GRANDE).</summary>
+    public static readonly IReadOnlyList<string> Rechazos =
+        ["MERCANCIAS_REQUERIDAS", "MERCANCIA_DESCONOCIDA", "MERCANCIA_NO_CUBICABLE", "DIMENSIONES_INVALIDAS", "CUBICACION_DEMASIADO_GRANDE"];
+
+    /// <summary>
+    /// Ejemplo exacto de la guía del cubicador §5.1 (<c>ASIGNADO</c>), completado con un segundo camión de otro tipo (flota mixta) y con
+    /// <c>CAJAS_CARTON</c> repetido en dos filas del mismo camión (<c>indicePosicion</c> 0 y 1).
+    /// </summary>
+    public const string GuiaAsignadoFlotaMixta = """
+        {
+          "idRecomendacion": "C17B9E44-2A31-4F6B-9D02-1E8C3A5F7B64",
+          "idLineaSolicitud": "8f3a1c20-5b7d-4e8a-9c21-7d4e5f6a8b90",
+          "origenSistema": "COTIFLY",
+          "resultado": "ASIGNADO",
+          "motivoSinSeleccion": null,
+          "condicionada": false,
+          "mercanciasCondicionadas": [],
+          "vehiculos": [
+            {
+              "idRecomendacionVehiculo": "A4D2E6F8-1B3C-4D5E-8F90-A1B2C3D4E5F6", "numeroVehiculo": 1,
+              "codigoVehiculo": "3S3", "nombreVehiculo": "Tractomula 3S3", "codigoCarroceria": "FURGON",
+              "pesoTotalKg": 10900.0, "volumenTotalM3": 31.2,
+              "porcentajeLlenadoVolumen": 90.0, "porcentajeLlenadoPeso": 31.0,
+              "alertaBajoLlenado": false, "heterogenea": false,
+              "mercancias": [
+                { "indicePosicion": 0, "idTipoMercancia": "2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A", "codigoMercancia": "CAJAS_CARTON", "cantidad": 500, "pesoKg": 10000.0, "volumenM3": 18.0 },
+                { "indicePosicion": 1, "idTipoMercancia": "2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A", "codigoMercancia": "CAJAS_CARTON", "cantidad": 300, "pesoKg": 900.0,   "volumenM3": 13.2 }
+              ]
+            },
+            {
+              "idRecomendacionVehiculo": "B5E3F7A9-2C4D-4E6F-9A01-B2C3D4E5F6A7", "numeroVehiculo": 2,
+              "codigoVehiculo": "C2", "nombreVehiculo": "Sencillo C2", "codigoCarroceria": "ESTACAS",
+              "pesoTotalKg": 2400.0, "volumenTotalM3": 9.6,
+              "porcentajeLlenadoVolumen": 40.0, "porcentajeLlenadoPeso": 24.0,
+              "alertaBajoLlenado": true, "heterogenea": false,
+              "mercancias": [
+                { "indicePosicion": 2, "idTipoMercancia": "3C32BAD5-8F66-4E8C-AB21-4D2F1F3E5C7B", "codigoMercancia": "BEBIDAS", "cantidad": 120, "pesoKg": 2400.0, "volumenM3": 9.6 }
+              ]
+            }
+          ],
+          "advertencias": [],
+          "extradimension": null
+        }
+        """;
+
+    /// <summary>Ejemplo exacto de la guía del cubicador §5.3 (<c>EXTRADIMENSIONADO</c> con la estructura vigente de <c>extradimension</c>).</summary>
+    public const string GuiaExtradimension = """
+        { "resultado": "SIN_SELECCION_AUTOMATICA", "motivoSinSeleccion": "EXTRADIMENSIONADO", "vehiculos": [],
+          "advertencias": ["2 pieza(s) exceden las medidas estándar."],
+          "extradimension": { "hayExtradimension": true,
+            "medidasEstandar": { "largoMaxCm": 1220, "anchoMaxCm": 260, "altoMaxCm": 300, "pesoMaxKg": 34000 },
+            "piezas": [ { "indicePosicion": 1, "idTipoMercancia": "9F2C4A6E-1D3B-4F5A-8C7E-0B1D2F3A4C5E", "codigoMercancia": "VIGAS_ESTRUCTURAS",
+                          "excesos": ["largo 1400.0 cm > 1220.0 cm"] } ] } }
+        """;
+
+    /// <summary>Ejemplo de la guía §5.4: <c>ASIGNADO</c> condicionada, con la lista de códigos (el comentario sale de <c>/tipos-mercancia</c>).</summary>
+    public const string GuiaCondicionada = """
+        {"idRecomendacion":"D28CAF55-3B42-4A7C-8E13-2F9D4B6A8C75","resultado":"ASIGNADO","motivoSinSeleccion":null,"condicionada":true,
+         "mercanciasCondicionadas":["BOBINAS_ACERO"],
+         "vehiculos":[{"idRecomendacionVehiculo":"E39DB066-4C53-4B8D-9F24-3A0E5C7B9D86","numeroVehiculo":1,"codigoVehiculo":"3S3","codigoCarroceria":"ESTACAS",
+           "pesoTotalKg":24000,"volumenTotalM3":20,"porcentajeLlenadoVolumen":30,"porcentajeLlenadoPeso":70.6,"alertaBajoLlenado":false,"heterogenea":false,
+           "mercancias":[{"indicePosicion":0,"idTipoMercancia":"4D43CBE6-9A77-4F9D-BC32-5E3A2A4F6D8C","codigoMercancia":"BOBINAS_ACERO","cantidad":3,"pesoKg":24000,"volumenM3":20}]}],
+         "advertencias":[],"extradimension":null}
+        """;
 }
