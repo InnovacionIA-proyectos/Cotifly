@@ -62,7 +62,18 @@ public sealed record clsMercanciaCondicionada(string CodigoMercancia, string? Co
 public sealed record clsAdvertenciaCubicador(string? Codigo, string Mensaje);
 
 /// <summary>
-/// Información de extradimensión de la respuesta: se devuelve al comercial, no se guarda. <b>Forma provisional</b> mientras el cubicador
-/// no publique los ejemplos (petición P2): se lee un booleano o un objeto con la marca, las dimensiones excedidas y un detalle.
+/// Extradimensión de la respuesta del cubicador (HU-023, #176; guía del cubicador §5.3): si alguna pieza excede las medidas estándar
+/// (<paramref name="HayExtradimension"/>), las medidas estándar con las que se comparó y cada pieza que las excede, con la posición de
+/// la petición (<c>indicePosicion</c>, base 0) y los excesos en texto. Se devuelve al comercial y se guarda en <c>avisosCubicacion</c>.
 /// </summary>
-public sealed record clsExtradimensionCubicador(bool Extradimensionado, IReadOnlyList<string> Dimensiones, string? Detalle);
+public sealed record clsExtradimensionCubicador(
+    bool HayExtradimension, clsMedidasEstandarCubicador? MedidasEstandar, IReadOnlyList<clsPiezaExtradimension> Piezas);
+
+/// <summary>Las medidas estándar con las que el cubicador decide la extradimensión (cm y kg).</summary>
+public sealed record clsMedidasEstandarCubicador(decimal? LargoMaxCm, decimal? AnchoMaxCm, decimal? AltoMaxCm, decimal? PesoMaxKg);
+
+/// <summary>
+/// Una pieza que excede las medidas estándar: <paramref name="IndicePosicion"/> es la posición (base 0) en las mercancías de la
+/// petición (puede faltar en corridas viejas), con su tipo de mercancía y los excesos (por ejemplo <c>"largo 1400.0 cm &gt; 1220.0 cm"</c>).
+/// </summary>
+public sealed record clsPiezaExtradimension(int? IndicePosicion, string? IdTipoMercancia, string? CodigoMercancia, IReadOnlyList<string> Excesos);

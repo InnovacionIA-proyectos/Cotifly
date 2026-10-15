@@ -120,8 +120,12 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
         var extradimension = json.GetProperty("extradimension");
         if (motivo == "EXTRADIMENSIONADO")
         {
-            extradimension.GetProperty("extradimensionado").GetBoolean().Should().BeTrue();
-            extradimension.GetProperty("dimensiones").EnumerateArray().Select(d => d.GetString()).Should().Equal("ALTO");
+            extradimension.GetProperty("hay_extradimension").GetBoolean().Should().BeTrue();
+            extradimension.GetProperty("medidas_estandar").GetProperty("alto_max_cm").GetDecimal().Should().Be(300m);
+            var pieza = extradimension.GetProperty("piezas").EnumerateArray().Should().ContainSingle().Subject;
+            pieza.GetProperty("indice_posicion").GetInt32().Should().Be(0);
+            pieza.GetProperty("excesos").EnumerateArray().Select(d => d.GetString()).Should().Equal("alto 320.0 cm > 300.0 cm");
+            json.GetProperty("mensaje_sin_seleccion").GetString().Should().NotContain("cabe");
         }
         else
         {

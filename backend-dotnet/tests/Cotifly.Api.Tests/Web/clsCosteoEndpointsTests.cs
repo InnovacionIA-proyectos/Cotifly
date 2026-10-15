@@ -72,8 +72,8 @@ public sealed class clsCosteoEndpointsTests : IDisposable
                 valor_mercancia = 250000000,
                 mercancias = new object[]
                 {
-                    new { codigo_mercancia = CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1425 },
-                    new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269 },
+                    new { codigo_mercancia = CodigoMercancia, nombre_mercancia = "Estiba de café", cantidad = 20, largo_cm = 120, ancho_cm = 100, alto_cm = 150, peso_kg = 1424.95m },
+                    new { codigo_mercancia = CodigoMercancia, largo_cm = 1200, ancho_cm = 235, alto_cm = 269, peso_kg = 1 },
                 },
             },
         },

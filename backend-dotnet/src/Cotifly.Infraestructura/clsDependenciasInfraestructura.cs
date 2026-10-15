@@ -77,6 +77,8 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesZona>, clsValidadorOpcionesZona>();
         servicios.AddOpcionesValidadas<clsOpcionesConexiones>(configuracion, clsOpcionesConexiones.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesConexiones>, clsValidadorOpcionesConexiones>();
+        servicios.AddOpcionesValidadas<clsOpcionesBaseDatos>(configuracion, clsOpcionesBaseDatos.Seccion);
+        servicios.AddSingleton<IValidateOptions<clsOpcionesBaseDatos>, clsValidadorOpcionesBaseDatos>();
         servicios.AddOpcionesValidadas<clsOpcionesIdentidad>(configuracion, clsOpcionesIdentidad.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesRegional>(configuracion, clsOpcionesRegional.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesMargen>(configuracion, clsOpcionesMargen.Seccion);
@@ -428,6 +430,9 @@ public static class clsDependenciasInfraestructura
     private static void AgregarPersistencia(IServiceCollection servicios)
     {
         servicios.AddSingleton<clsMarcasTiempoInterceptor>();
+        // HU-023 (#176): BUSQUEDA_AGOTADA se guarda tal cual con el script 07 y, sin él, en NULL con un aviso (autodetectado).
+        servicios.TryAddSingleton<clsDetectorMotivosBd>();
+        servicios.AddSingleton<clsMotivoSinSeleccionInterceptor>();
 
         // dbo_cotifly: lectura y escritura (ADR-008). Sin cadena (fuera de Production) la API arranca
         // igual y /health/ready responde 503.
@@ -435,7 +440,8 @@ public static class clsDependenciasInfraestructura
         {
             var cadena = proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Cotifly;
             ConfigurarSqlServer(opciones, cadena);
-            opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
+            opciones.AddInterceptors(
+                proveedor.GetRequiredService<clsMotivoSinSeleccionInterceptor>(), proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
         // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba, #172): solo lectura (login, #12).

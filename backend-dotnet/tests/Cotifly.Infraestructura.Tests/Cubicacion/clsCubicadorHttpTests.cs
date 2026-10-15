@@ -40,6 +40,35 @@ public sealed class clsCubicadorHttpTests : IDisposable
         RutaId, claseViaje, "1234567",
         [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, null)]);
 
+    /// <summary>HU-023 (#176, A3): la petición con el peso de todas las posiciones (20 × 700 kg y 1 × 1.700 kg), para comprobar la huella.</summary>
+    private static clsPeticionRecomendacion PeticionConPesos() => new(
+        RutaId, "Carga Suelta", "1234567",
+        [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, 1_700m)]);
+
+    /// <summary>Un <c>ASIGNADO</c> con el detalle de la petición con pesos: 20 cafés de <paramref name="pesoCafe"/> kg en total y una bobina.</summary>
+    private static Dictionary<string, object?> AsignadoDeLaCarga(decimal pesoCafe = 14_000m, int cantidadCafe = 20) =>
+        clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(
+            1, "3S3", "Tractomula 3S3", "FURGON", pesoCafe + 1_700m, false, true,
+            clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", cantidadCafe, pesoCafe, 36m),
+            clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+    private static string? Diferencia(object respuesta, clsPeticionRecomendacion peticion)
+    {
+        using var documento = JsonDocument.Parse(JsonSerializer.Serialize(respuesta));
+        return clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion);
+    }
+
+    /// <summary>Reconsulta tras un tiempo agotado sin corrida nueva: devuelve <paramref name="corridaAnterior"/> (la última de la ruta).</summary>
+    private async Task<clsResultado<clsRecomendacionCubicador>> ReconsultarCorridaAnteriorAsync(object corridaAnterior)
+    {
+        _cubicador.Corridas[RutaId] = JsonSerializer.Serialize(corridaAnterior);
+        _cubicador.TiempoAgotadoSinGuardar = true;
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+        return await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
+    }
+
     [Fact]
     public async Task MandaLaRutaConOrigenCotiflyClaseDeViajeUsuarioMercanciasPorCodigoYLaLlaveComoBearer()
     {
@@ -105,7 +134,9 @@ public sealed class clsCubicadorHttpTests : IDisposable
         r.Vehiculos.Should().BeEmpty();
         if (motivo == clsMotivosSinSeleccion.Extradimensionado)
         {
-            r.Extradimension.Should().BeEquivalentTo(new clsExtradimensionCubicador(true, ["ALTO"], "Supera el alto máximo de la flota."));
+            r.Extradimension.Should().BeEquivalentTo(new clsExtradimensionCubicador(
+                true, new clsMedidasEstandarCubicador(1220m, 260m, 300m, 34000m),
+                [new clsPiezaExtradimension(0, null, "VIGAS_ESTRUCTURAS", ["alto 320.0 cm > 300.0 cm"])]));
         }
     }
 
@@ -119,7 +150,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         r.Condicionada.Should().BeTrue();
         r.MercanciasCondicionadas.Should().Equal(new clsMercanciaCondicionada("QUIMICOS", "Requiere aprobación de AdminTarifas"));
         r.Advertencias.Should().ContainSingle().Which.Mensaje.Should().Contain("condicionada");
-        r.Extradimension!.Extradimensionado.Should().BeFalse();
+        r.Extradimension!.HayExtradimension.Should().BeFalse();
         r.Vehiculos.Should().ContainSingle();
     }
 
@@ -271,7 +302,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
 
         carrocerias.Valor.Select(c => c.Codigo).Should().BeEquivalentTo("FURGON", "ESTACAS", "CAMA_BAJA");
         vehiculos.Valor.Should().ContainEquivalentOf(new clsTipoVehiculoCubicador("2S2", "Tractocamión 2S2", ["FURGON", "ESTACAS", "CAMA_BAJA"], true));
-        _cubicador.Peticiones.Select(p => p.Url.AbsolutePath).Should().Equal("/api/tipos-carroceria", "/api/tipos-vehiculo");
+        _cubicador.Peticiones.Select(p => p.Url.AbsolutePath).Should().Equal("/api/tipos-carroceria", "/api/vehiculos-catalogo");
     }
 
     [Fact]
@@ -407,7 +438,337 @@ public sealed class clsCubicadorHttpTests : IDisposable
         resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
         resultado.Error.Detalle.Should().Contain("tiempo agotado");
         clsErroresCubicador.EsCaida(resultado.Error).Should().BeTrue();
-        _cubicador.Peticiones.Should().ContainSingle();
+        _cubicador.Recomendaciones.Should().ContainSingle("HU-023 (#176): el POST nunca se reintenta; solo se reconsulta con GET");
+    }
+
+    // ---------------------------------------------------------------- HU-023 (#176): contrato vigente del cubicador
+
+    [Fact]
+    public async Task ElEjemploDeLaGuiaConFlotaMixtaLeeNumeroNombreAlertasYCadaPosicionSinAgruparElCodigoRepetido()
+    {
+        _cubicador.CuerpoRecomendacion = clsEjemplosContratoCubicador.GuiaAsignadoFlotaMixta;
+
+        var r = (await Cubicador().RecomendarAsync(Peticion(), Ct)).Valor;
+
+        r.IdRecomendacion.Should().Be(Guid.Parse("C17B9E44-2A31-4F6B-9D02-1E8C3A5F7B64"), "los ids llegan en MAYÚSCULAS");
+        r.Vehiculos.Should().HaveCount(2);
+        var tracto = r.Vehiculos[0];
+        tracto.NumeroVehiculo.Should().Be(1);
+        tracto.NombreVehiculo.Should().Be("Tractomula 3S3");
+        tracto.AlertaBajoLlenado.Should().BeFalse();
+        tracto.Heterogenea.Should().BeFalse();
+        tracto.Mercancias.Should().HaveCount(2, "dos filas del mismo código con medidas distintas: no se pisan");
+        tracto.Mercancias!.Select(m => m.IndicePosicion).Should().Equal(0, 1);
+        tracto.Mercancias.Select(m => m.CodigoMercancia).Should().AllBe("CAJAS_CARTON");
+        tracto.TotalesPorCodigo().Should().ContainSingle().Which.Should().Match<clsMercanciaVehiculo>(
+            m => m.Cantidad == 800 && m.PesoKg == 10_900m && m.VolumenM3 == 31.2m, "quien agrupa por código suma, no toma la primera ni la última");
+        var sencillo = r.Vehiculos[1];
+        sencillo.CodigoVehiculo.Should().Be("C2", "flota mixta");
+        sencillo.NumeroVehiculo.Should().Be(2);
+        sencillo.AlertaBajoLlenado.Should().BeTrue();
+        sencillo.Mercancias.Should().ContainSingle().Which.IndicePosicion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UnIndicePosicionEnNullDeUnaCorridaViejaNoEsUnError()
+    {
+        _cubicador.Recomendar = _ => clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(
+            1, "3S3", "Tractomula 3S3", "FURGON", 10_000m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(null, "CAFE_EN_ESTIBAS", 20, 9_000m, 30m), clsCubicadorFalso.MercanciaVehiculo(null, "cafe_en_estibas", 1, 1_000m, 2m)));
+
+        var r = (await Cubicador().RecomendarAsync(Peticion(), Ct)).Valor;
+
+        r.Vehiculos[0].Mercancias.Should().HaveCount(2).And.OnlyContain(m => m.IndicePosicion == null);
+        r.Vehiculos[0].TotalesPorCodigo().Should().ContainSingle("los códigos se comparan sin distinguir mayúsculas")
+            .Which.Cantidad.Should().Be(21);
+    }
+
+    [Theory]
+    [InlineData("EXTRADIMENSIONADO")]
+    [InlineData("SIN_CANDIDATOS_DIMENSIONALES")]
+    [InlineData("SUPERA_K_MAX")]
+    [InlineData("SIN_CARROCERIA_COMPATIBLE")]
+    [InlineData("BUSQUEDA_AGOTADA")]
+    public async Task LosCincoMotivosDeSinSeleccionSonResultadosValidos(string motivo)
+    {
+        _cubicador.CuerpoRecomendacion = clsEjemplosContratoCubicador.SinSeleccion(motivo);
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.EsExitoso.Should().BeTrue("HU-023 (#176): BUSQUEDA_AGOTADA ya no es CUBICADOR_RESPUESTA_INVALIDA");
+        r.Valor.MotivoSinSeleccion.Should().Be(motivo);
+        clsMotivosSinSeleccion.Mensaje(motivo).Should().NotContainAny("no cabe", "no caben");
+    }
+
+    [Fact]
+    public void ElMensajeDeBusquedaAgotadaNoDiceQueLaCargaNoCabe() =>
+        clsMotivosSinSeleccion.Mensaje(clsMotivosSinSeleccion.BusquedaAgotada).Should().Contain("algoritmo").And.NotContain("cabe");
+
+    [Fact]
+    public async Task LaExtradimensionDeLaGuiaTraeMedidasEstandarYPiezasConSuPosicion()
+    {
+        _cubicador.CuerpoRecomendacion = clsEjemplosContratoCubicador.GuiaExtradimension;
+
+        var r = (await Cubicador().RecomendarAsync(Peticion(), Ct)).Valor;
+
+        r.MotivoSinSeleccion.Should().Be("EXTRADIMENSIONADO");
+        r.Extradimension.Should().BeEquivalentTo(new clsExtradimensionCubicador(
+            true, new clsMedidasEstandarCubicador(1220m, 260m, 300m, 34000m),
+            [new clsPiezaExtradimension(1, "9F2C4A6E-1D3B-4F5A-8C7E-0B1D2F3A4C5E", "VIGAS_ESTRUCTURAS", ["largo 1400.0 cm > 1220.0 cm"])]));
+        r.Advertencias.Should().ContainSingle().Which.Mensaje.Should().Be("2 pieza(s) exceden las medidas estándar.");
+    }
+
+    [Fact]
+    public async Task LaCondicionadaDeLaGuiaUneElComentarioDelCatalogoDeTiposDeMercancia()
+    {
+        _cubicador.TiposMercancia.Add(new clsTipoMercanciaFalso("bobinas_acero", "Bobinas de acero", Condicionada: true));
+        _cubicador.CuerpoRecomendacion = clsEjemplosContratoCubicador.GuiaCondicionada;
+
+        var r = (await Cubicador().RecomendarAsync(Peticion(), Ct)).Valor;
+
+        r.Condicionada.Should().BeTrue();
+        r.Asignado.Should().BeTrue("la recomendación condicionada es válida");
+        r.MercanciasCondicionadas.Should().Equal(new clsMercanciaCondicionada("BOBINAS_ACERO", "Requiere aprobación de AdminTarifas"));
+    }
+
+    [Fact]
+    public async Task LaCondicionadaSinCatalogoQuedaSinComentarioPeroNoFalla()
+    {
+        _cubicador.CuerpoRecomendacion = clsEjemplosContratoCubicador.GuiaCondicionada;
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.EsExitoso.Should().BeTrue();
+        r.Valor.MercanciasCondicionadas.Should().Equal(new clsMercanciaCondicionada("BOBINAS_ACERO", null));
+    }
+
+    [Fact]
+    public async Task Un422DelCubicadorEsUnErrorVisibleNoUnaCaida()
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorRespuestaInvalida);
+        r.Error.Mensaje.Should().Contain("422");
+        clsErroresCubicador.EsCaida(r.Error).Should().BeFalse("un 422 nunca va al respaldo");
+    }
+
+    [Fact]
+    public async Task MasDeDiezMilUnidadesNoLlamaAlCubicadorYDevuelveCubicacionDemasiadoGrande()
+    {
+        var peticion = new clsPeticionRecomendacion(RutaId, null, null,
+            [new clsMercanciaCubicador("CAJAS_CARTON", 6_000, 40m, 30m, 30m, 20m), new clsMercanciaCubicador("BEBIDAS", 4_001, 50m, 40m, 40m, 20m)]);
+
+        var r = await Cubicador().RecomendarAsync(peticion, Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicacionDemasiadoGrande);
+        _cubicador.Peticiones.Should().BeEmpty("se valida antes de llamar");
+    }
+
+    [Fact]
+    public async Task ExactamenteDiezMilUnidadesSiSeMandan()
+    {
+        var peticion = new clsPeticionRecomendacion(RutaId, null, null,
+            [new clsMercanciaCubicador("CAJAS_CARTON", 6_000, 40m, 30m, 30m, 20m), new clsMercanciaCubicador("BEBIDAS", 4_000, 50m, 40m, 40m, 20m)]);
+
+        (await Cubicador().RecomendarAsync(peticion, Ct)).EsExitoso.Should().BeTrue();
+        _cubicador.Recomendaciones.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task El400CubicacionDemasiadoGrandeDelCubicadorSeTraduceIgual()
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, "CUBICACION_DEMASIADO_GRANDE");
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicacionDemasiadoGrande);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TrasUnTiempoAgotadoDelPostReconsultaYUsaLaCorridaQueQuedoCreadaConUnSoloPost()
+    {
+        _cubicador.Recomendar = _ => AsignadoDeLaCarga();
+        _cubicador.TiempoAgotadoTrasGuardar = true;
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
+
+        r.EsExitoso.Should().BeTrue("la corrida existe: se usa sin volver a pedirla");
+        r.Valor.Vehiculos.Should().ContainSingle().Which.Heterogenea.Should().BeTrue();
+        _cubicador.Recomendaciones.Should().ContainSingle("el POST nunca se reintenta a ciegas");
+        var reconsulta = _cubicador.Reconsultas.Should().ContainSingle().Subject;
+        reconsulta.Url.Query.Should().Contain("idLineaSolicitud=" + RutaId).And.Contain("origenSistema=COTIFLY");
+    }
+
+    [Fact]
+    public async Task TrasUnTiempoAgotadoSinCorridaEsUnaCaidaConUnSoloPost()
+    {
+        _cubicador.TiempoAgotadoSinGuardar = true;
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue();
+        _cubicador.Recomendaciones.Should().ContainSingle();
+        _cubicador.Reconsultas.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task UnaCorridaReconsultadaDeOtraCargaNoSeUsa()
+    {
+        // Corrida anterior de la misma ruta con otras cantidades (recalcular con cambios de carga).
+        _cubicador.Corridas[RutaId] = System.Text.Json.JsonSerializer.Serialize(clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(
+            1, "C2", "Sencillo C2", "FURGON", 1_000m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", 5, 1_000m, 3m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 10m, 1m))));
+        _cubicador.TiempoAgotadoSinGuardar = true;
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible, "la corrida guardada es de otra carga (5 unidades, no 20)");
+        _cubicador.Recomendaciones.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task UnaCorridaReconsultadaConLasMismasCantidadesYOtroPesoNoSeUsa()
+    {
+        // Auditoría A3: recalcular con el mismo rutaId tras cambiar el peso (999 kg y no 14.000): mismas unidades, otra carga.
+        var r = await ReconsultarCorridaAnteriorAsync(AsignadoDeLaCarga(pesoCafe: 999m));
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible, "la corrida guardada pesa otra cosa");
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue("sigue el flujo del tiempo agotado");
+        _cubicador.Recomendaciones.Should().ContainSingle("el POST nunca se reintenta");
+        _cubicador.Reconsultas.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task UnaSinSeleccionAnteriorReconsultadaNoSeUsa()
+    {
+        // Auditoría A3: una SIN_SELECCION no trae detalle por posición: no se puede atribuir a esta petición.
+        var r = await ReconsultarCorridaAnteriorAsync(clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX"));
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnaCorridaReconsultadaCoincidenteSeUsa()
+    {
+        var r = await ReconsultarCorridaAnteriorAsync(AsignadoDeLaCarga());
+
+        r.EsExitoso.Should().BeTrue("misma cantidad y mismo peso en cada posición");
+        r.Valor.Vehiculos.Should().ContainSingle().Which.PesoTotalKg.Should().Be(15_700m);
+        _cubicador.Recomendaciones.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void LaHuellaToleraElRedondeoDelPesoPeroNoOtroPeso()
+    {
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 14_000.05m), PeticionConPesos()).Should().BeNull("redondeo de la fila");
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 14_001m), PeticionConPesos()).Should().Contain("posición 0 pesa");
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 13_999m), PeticionConPesos()).Should().Contain("posición 0 pesa");
+    }
+
+    [Theory]
+    [InlineData("12.3", "redondeo a un decimal de 12,35")]
+    [InlineData("12.4", "redondeo a un decimal hacia arriba")]
+    [InlineData("12.299999999999999", "ruido de un double serializado")]
+    [InlineData("12", "redondeo a kilo entero")]
+    [InlineData("12.35", "exacto")]
+    public void LaHuellaToleraElRedondeoDelCubicadorEnUnaFilaConDecimales(string pesoFila, string porque)
+    {
+        // Auditoría de f3c79d5: 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); la guía no fija los decimales del pesoKg de la fila.
+        var peticion = new clsPeticionRecomendacion(
+            RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);
+        var json = "{\"resultado\":\"ASIGNADO\",\"vehiculos\":[{\"mercancias\":[{\"indicePosicion\":0,\"codigoMercancia\":\"CAFE_EN_ESTIBAS\","
+            + "\"cantidad\":1,\"pesoKg\":" + pesoFila + "}]}]}";
+        using var documento = JsonDocument.Parse(json);
+
+        clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion).Should().BeNull(porque);
+    }
+
+    [Fact]
+    public void LaHuellaRechazaMedioKiloOMasDeDiferenciaPorFila()
+    {
+        var peticion = new clsPeticionRecomendacion(
+            RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);
+        using var documento = JsonDocument.Parse(
+            "{\"resultado\":\"ASIGNADO\",\"vehiculos\":[{\"mercancias\":[{\"indicePosicion\":0,\"codigoMercancia\":\"CAFE_EN_ESTIBAS\",\"cantidad\":1,\"pesoKg\":12.9}]}]}");
+
+        clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion).Should().Contain("posición 0 pesa");
+        Diferencia(AsignadoDeLaCarga(cantidadCafe: 19), PeticionConPesos()).Should().Contain("19 unidad(es)");
+    }
+
+    [Fact]
+    public void LaHuellaRepartidaEnVariosCamionesSeSumaPorPosicion()
+    {
+        var flota = clsCubicadorFalso.Asignado(
+            clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 7_000m, false, false,
+                clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", 10, 7_000m, 18m)),
+            clsCubicadorFalso.VehiculoCompleto(2, "C2", "Sencillo C2", "FURGON", 8_700m, false, true,
+                clsCubicadorFalso.MercanciaVehiculo(0, "cafe_en_estibas", 10, 7_000m, 18m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+        Diferencia(flota, PeticionConPesos()).Should().BeNull();
+    }
+
+    [Fact]
+    public void SinDetalleComprobableLaCorridaNoSeAtribuye()
+    {
+        var sinIndice = clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 15_700m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(null, "CAFE_EN_ESTIBAS", 20, 14_000m, 36m), clsCubicadorFalso.MercanciaVehiculo(null, "BOBINAS", 1, 1_700m, 7.6m)));
+        var sinDetalle = clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 15_700m));
+
+        Diferencia(sinIndice, PeticionConPesos()).Should().Contain("indicePosicion");
+        Diferencia(sinDetalle, PeticionConPesos()).Should().Contain("sin detalle");
+        Diferencia(AsignadoDeLaCarga(), Peticion()).Should().Contain("no trae el peso", "la petición sin peso no se puede comparar");
+        Diferencia(clsCubicadorFalso.SinSeleccion("BUSQUEDA_AGOTADA"), PeticionConPesos()).Should().Contain("no se puede comprobar");
+    }
+
+    [Fact]
+    public void UnaSinSeleccionConElEcoDeLaPeticionSoloSeAceptaSiCoincide()
+    {
+        static Dictionary<string, object?> ConEco(decimal pesoCafe, decimal largoCafe)
+        {
+            var respuesta = clsCubicadorFalso.SinSeleccion("BUSQUEDA_AGOTADA");
+            respuesta["mercancias"] = new List<object>
+            {
+                new { codigoMercancia = "CAFE_EN_ESTIBAS", cantidad = 20, largoCm = largoCafe, anchoCm = 100m, altoCm = 150m, pesoKg = pesoCafe },
+                new { codigoMercancia = "BOBINAS", cantidad = 1, largoCm = 1200m, anchoCm = 235m, altoCm = 269m, pesoKg = 1_700m },
+            };
+            return respuesta;
+        }
+
+        Diferencia(ConEco(700m, 120m), PeticionConPesos()).Should().BeNull();
+        Diferencia(ConEco(50m, 120m), PeticionConPesos()).Should().Contain("peso por unidad");
+        Diferencia(ConEco(700m, 130m), PeticionConPesos()).Should().Contain("largoCm");
+    }
+
+    [Fact]
+    public void UnCodigoDistintoEnLaPosicionNoCoincide()
+    {
+        var otra = clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 15_700m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(0, "BEBIDAS", 20, 14_000m, 36m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+        Diferencia(otra, PeticionConPesos()).Should().Contain("BEBIDAS");
+    }
+
+    [Fact]
+    public async Task ElCatalogoDeVehiculosSaleDeVehiculosCatalogo()
+    {
+        var tipos = await Cubicador().ListarTiposVehiculoAsync(Ct);
+
+        tipos.Valor.Select(t => t.Codigo).Should().Contain(["2S2", "3S3", "C2"]);
+        _cubicador.Peticiones.Should().ContainSingle().Which.Url.AbsolutePath.Should().EndWith("/vehiculos-catalogo");
     }
 
     [Fact]

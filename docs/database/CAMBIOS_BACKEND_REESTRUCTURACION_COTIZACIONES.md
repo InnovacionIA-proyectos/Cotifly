@@ -545,6 +545,21 @@ la rama `QA` de Nexo (fusionado, sin desplegar). Sin cambios de esquema.
 - **429 de Nexo:** `Infraestructura/Comun/clsCupoNexo.cs` (cupo compartido por rol) respeta `Retry-After` solo en `catalogos/*` y la bandeja
   `GET /api/solicitudes` (el polling y lo demás no se congelan) y la tubería ya no reintenta el 429; llega como `COSTEO_NEXO_NO_DISPONIBLE`, nunca `COSTEO_NEXO_RECHAZADA`.
 
+**Actualizado en HU-023 (#176, 2026-10-15), ADR-020:** alineación con los contratos vigentes de NEXO (`COTIFLY-CONTRATO.md`) y del
+cubicador (`COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`), copiados en `backend-dotnet/docs/`.
+- **Banderas de Nexo encendidas por defecto** (`EnviarGrupoRutaId`, `EnviarDatosCubicador`, `EnviarCodigosCubicador`): quedan como
+  interruptor de emergencia. Una ruta de un solo camión viaja con `grupoRutaId = null`; el emparejador la asocia por su
+  `idRecomendacionVehiculo`.
+- **Esquema:** `db/scripts/07_motivo_busqueda_agotada.sql` (CHECK del motivo con `BUSQUEDA_AGOTADA` e `ISNULL`). Sin él, el backend lo
+  detecta en `sys.check_constraints` y guarda el motivo en NULL con la advertencia `MOTIVO_SIN_SELECCION` en `avisosCubicacion`
+  (`Infraestructura/Comun/Persistence/clsMotivoSinSeleccionInterceptor.cs`). `avisosCubicacion` guarda la `extradimension` nueva
+  (`hayExtradimension`, `medidasEstandar`, `piezas[]`); un JSON viejo se sigue leyendo.
+- **Cubicador:** catálogo de vehículos de `GET /vehiculos-catalogo`; reconsulta con `GET /recomendaciones?idLineaSolicitud=&origenSistema=COTIFLY`
+  tras un POST sin respuesta (un solo POST); tope de 10.000 unidades (`CUBICACION_DEMASIADO_GRANDE`); 422 visible
+  (`CUBICADOR_RESPUESTA_INVALIDA`); `pesoKg` > 0; `comentarioCondicion` unido desde `GET /tipos-mercancia`; `numeroVehiculo`,
+  `alertaBajoLlenado`, `heterogenea` y `mercancias[]` por posición (sumar al agrupar por código).
+- **Municipios:** búsqueda por `GET /api/captura-solicitudes/ciudades` (`GET /web/municipios?q=&departamento=`).
+
 ---
 
 ## 7. API y contrato con el frontend

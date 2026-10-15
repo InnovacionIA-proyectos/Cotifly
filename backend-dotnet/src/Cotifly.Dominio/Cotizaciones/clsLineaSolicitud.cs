@@ -305,6 +305,33 @@ public sealed class clsLineaSolicitud
         AvisosCubicacion = cubicacion?.Avisos;
     }
 
+    /// <summary>Código de la advertencia que deja el motivo real cuando la base no lo admite (<see cref="DegradarMotivoSinSeleccion"/>).</summary>
+    public const string CodigoAvisoMotivoNoGuardado = "MOTIVO_SIN_SELECCION";
+
+    /// <summary>
+    /// HU-023 (#176), respaldo de la opción A: la base todavía no admite el motivo (falta <c>db/scripts/07</c>, que agrega
+    /// <c>BUSQUEDA_AGOTADA</c> al CHECK). El motivo se guarda en <c>NULL</c> y el valor real queda como advertencia visible de la ruta
+    /// (<see cref="CodigoAvisoMotivoNoGuardado"/>), con el <paramref name="mensaje"/> para el comercial. No hace nada sin motivo.
+    /// </summary>
+    public void DegradarMotivoSinSeleccion(string mensaje)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(mensaje);
+        if (MotivoSinSeleccion is not { } motivo)
+        {
+            return;
+        }
+
+        var avisos = AvisosCubicacion ?? new clsAvisosCubicacion([], [], null);
+        var advertencias = avisos.Advertencias ?? [];
+        if (!advertencias.Any(a => a.Codigo == CodigoAvisoMotivoNoGuardado))
+        {
+            advertencias = [.. advertencias, new clsAdvertenciaCubicador(CodigoAvisoMotivoNoGuardado, $"{motivo}: {mensaje}")];
+        }
+
+        AvisosCubicacion = avisos with { Advertencias = advertencias };
+        MotivoSinSeleccion = null;
+    }
+
     /// <summary>
     /// HU-023.3: reemplaza los camiones de la ruta por un plan nuevo del cubicador (recalcular la ruta, re-solicitud con cambios de carga),
     /// con su resultado. Solo antes de enviar a Nexo: los camiones anteriores se quitan y los nuevos nacen sin estado ni costo.

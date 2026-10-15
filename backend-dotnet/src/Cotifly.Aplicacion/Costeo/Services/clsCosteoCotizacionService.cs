@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Pdf.DTOs;
@@ -142,6 +143,13 @@ public sealed record clsRutaCosteo(
 
     /// <summary>HU-023.3: la ruta va a la Mesa de Costeo por una mercancía condicionada.</summary>
     public bool Condicionada { get; init; }
+
+    /// <summary>
+    /// HU-023 (#176): con <c>SIN_SELECCION_AUTOMATICA</c>, el texto para el comercial según el motivo (<c>BUSQUEDA_AGOTADA</c> no dice que
+    /// la carga no cabe). Si la base no admite el motivo (sin el script <c>07</c>), el motivo real está en la advertencia
+    /// <c>MOTIVO_SIN_SELECCION</c> de <see cref="AvisosCubicacion"/>. <c>null</c> en los demás casos.
+    /// </summary>
+    public string? MensajeSinSeleccion { get; init; }
 
     /// <summary>
     /// HU-023.3: avisos del cubicador de la llamada que se acaba de hacer (respuesta de <c>POST .../recalcular-vehiculos</c>): mercancías
@@ -882,7 +890,7 @@ public sealed class clsCosteoCotizacionService(
 
     private static Dictionary<string, string> Diccionario(IEnumerable<(string Codigo, string Nombre)> filas)
     {
-        var diccionario = new Dictionary<string, string>(StringComparer.Ordinal);
+        var diccionario = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (codigo, nombre) in filas)
         {
             diccionario.TryAdd(codigo, nombre);
@@ -1127,12 +1135,21 @@ public sealed class clsCosteoCotizacionService(
             ResultadoCubicacion = ruta.ResultadoCubicacion,
             MotivoSinSeleccion = ruta.MotivoSinSeleccion,
             Condicionada = ruta.Condicionada,
+            MensajeSinSeleccion = string.Equals(ruta.ResultadoCubicacion, clsResultadosRecomendacion.SinSeleccionAutomatica, StringComparison.Ordinal)
+                ? clsMotivosSinSeleccion.Mensaje(ruta.MotivoSinSeleccion ?? MotivoDelAviso(ruta.AvisosCubicacion))
+                : null,
             AvisosCubicacion = ruta.AvisosCubicacion,
             Vehiculos = clsCosteoCotizacionService.Camiones(ruta),
             Mercancias = [.. ruta.MercanciasOrdenadas.Select(m => new clsMercanciaCosteo(
                 m.Orden, m.CodigoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
         };
     }
+
+    /// <summary>El motivo real que quedó en la advertencia <c>MOTIVO_SIN_SELECCION</c> cuando la base no lo admitía (sin el script 07).</summary>
+    private static string? MotivoDelAviso(clsAvisosCubicacion? avisos) =>
+        avisos?.Advertencias?.FirstOrDefault(a => a.Codigo == clsLineaSolicitud.CodigoAvisoMotivoNoGuardado)?.Mensaje is { } mensaje
+            ? mensaje.Split(':', 2)[0].Trim()
+            : null;
 
     /// <summary>
     /// HU-009 (#139, B1): aviso al comercial cuando SAP TM propuso para la ruta un margen anómalo (fuera de [0, 60 %]) y se aplicó el de la

@@ -409,9 +409,11 @@ public sealed class clsCosteoNexo(
     /// camión sin recomendación (el digitado del respaldo, <c>Captura:AceptarVehiculoCliente</c>, del catálogo de Nexo) sí viaja.
     /// </summary>
     internal static object CuerpoCaptura(
-        clsSolicitudNexo solicitud, bool enviarGrupoRutaId = false, bool enviarDatosCubicador = false, bool enviarCodigosCubicador = false)
+        clsSolicitudNexo solicitud, bool enviarGrupoRutaId = true, bool enviarDatosCubicador = true, bool enviarCodigosCubicador = true)
     {
         var e = solicitud.Encabezado;
+        // HU-023 (#176, contrato con Nexo §3.3): una ruta con un solo camión es una "línea suelta" y viaja con grupoRutaId = null.
+        var camionesPorRuta = solicitud.Lineas.Where(l => l.RutaId is not null).GroupBy(l => l.RutaId!.Value).ToDictionary(g => g.Key, g => g.Count());
         return new clsCapturaSolicitudWire(
             solicitud.Cliente.Bp,
             solicitud.Cliente.Id,
@@ -431,9 +433,19 @@ public sealed class clsCosteoNexo(
                 s.Posiciones.Count == 0
                     ? null
                     : [.. s.Posiciones.Select(p => new clsCapturaPosicionWire(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
-                enviarGrupoRutaId ? s.RutaId?.ToString("D") : null,
+                GrupoRutaId(s, enviarGrupoRutaId, camionesPorRuta),
                 enviarDatosCubicador ? s.IdRecomendacionVehiculo?.ToString("D") : null))]);
     }
+
+    /// <summary>
+    /// <c>grupoRutaId</c> de la línea (HU-023, #176): el id de su ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas,
+    /// que van contiguas porque las líneas se arman ruta por ruta) solo si la ruta tiene más de un camión; <c>null</c> para una línea suelta
+    /// o con <c>Nexo:EnviarGrupoRutaId</c> apagada.
+    /// </summary>
+    internal static string? GrupoRutaId(clsLineaSolicitudCosteo linea, bool enviarGrupoRutaId, IReadOnlyDictionary<Guid, int> camionesPorRuta) =>
+        enviarGrupoRutaId && linea.RutaId is { } rutaId && camionesPorRuta.TryGetValue(rutaId, out var camiones) && camiones > 1
+            ? rutaId.ToString("D")
+            : null;
 
     /// <summary>
     /// ¿La línea es de un camión del cubicador (trae <c>idRecomendacionVehiculo</c>) y sus códigos no deben viajar? Mientras Nexo no
