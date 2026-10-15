@@ -9,8 +9,10 @@ namespace Cotifly.Api.Comun;
 
 /// <summary>
 /// CORS del frontend Angular de ClientePro (sección <c>Cors</c>, contrato §6). Orígenes exactos
-/// (<c>https://host[:puerto]</c>, sin ruta ni comodines); métodos GET/POST/PUT; encabezados <c>Authorization</c> y
-/// <c>Content-Type</c>; sin cookies ni credenciales. En Production la lista es obligatoria.
+/// (<c>https://host[:puerto]</c>, sin ruta ni comodines); métodos GET/POST/PUT; encabezados <c>Authorization</c>,
+/// <c>Content-Type</c>, <c>If-Match</c> e <c>Idempotency-Key</c>; expone <c>ETag</c>, <c>Location</c>, <c>Retry-After</c> y
+/// <c>Content-Disposition</c> (<see cref="clsSeguridadHttp.EncabezadosCors"/>, <see cref="clsSeguridadHttp.EncabezadosExpuestosCors"/>);
+/// sin cookies ni credenciales. En Production la lista es obligatoria.
 /// </summary>
 public sealed class clsOpcionesCors
 {
