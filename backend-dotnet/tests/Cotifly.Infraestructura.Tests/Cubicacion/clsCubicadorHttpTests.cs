@@ -676,6 +676,36 @@ public sealed class clsCubicadorHttpTests : IDisposable
     {
         Diferencia(AsignadoDeLaCarga(pesoCafe: 14_000.05m), PeticionConPesos()).Should().BeNull("redondeo de la fila");
         Diferencia(AsignadoDeLaCarga(pesoCafe: 14_001m), PeticionConPesos()).Should().Contain("posición 0 pesa");
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 13_999m), PeticionConPesos()).Should().Contain("posición 0 pesa");
+    }
+
+    [Theory]
+    [InlineData("12.3", "redondeo a un decimal de 12,35")]
+    [InlineData("12.4", "redondeo a un decimal hacia arriba")]
+    [InlineData("12.299999999999999", "ruido de un double serializado")]
+    [InlineData("12", "redondeo a kilo entero")]
+    [InlineData("12.35", "exacto")]
+    public void LaHuellaToleraElRedondeoDelCubicadorEnUnaFilaConDecimales(string pesoFila, string porque)
+    {
+        // Auditoría de f3c79d5: 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); la guía no fija los decimales del pesoKg de la fila.
+        var peticion = new clsPeticionRecomendacion(
+            RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);
+        var json = "{\"resultado\":\"ASIGNADO\",\"vehiculos\":[{\"mercancias\":[{\"indicePosicion\":0,\"codigoMercancia\":\"CAFE_EN_ESTIBAS\","
+            + "\"cantidad\":1,\"pesoKg\":" + pesoFila + "}]}]}";
+        using var documento = JsonDocument.Parse(json);
+
+        clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion).Should().BeNull(porque);
+    }
+
+    [Fact]
+    public void LaHuellaRechazaMedioKiloOMasDeDiferenciaPorFila()
+    {
+        var peticion = new clsPeticionRecomendacion(
+            RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);
+        using var documento = JsonDocument.Parse(
+            "{\"resultado\":\"ASIGNADO\",\"vehiculos\":[{\"mercancias\":[{\"indicePosicion\":0,\"codigoMercancia\":\"CAFE_EN_ESTIBAS\",\"cantidad\":1,\"pesoKg\":12.9}]}]}");
+
+        clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion).Should().Contain("posición 0 pesa");
         Diferencia(AsignadoDeLaCarga(cantidadCafe: 19), PeticionConPesos()).Should().Contain("19 unidad(es)");
     }
 
