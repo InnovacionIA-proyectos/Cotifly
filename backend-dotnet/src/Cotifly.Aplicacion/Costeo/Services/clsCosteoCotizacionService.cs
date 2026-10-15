@@ -79,7 +79,7 @@ public sealed record clsCosteoCotizacion(
     public decimal TrmAplicada { get; init; }
 
     /// <summary>
-    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera, la del formulario de costeo); <c>null</c> si no se dio. Es de toda la
+    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera, la del formulario de costeo) en UTC; <c>null</c> si no se dio. Es de toda la
     /// solicitud, no de cada ruta, por eso va aquí y no en <see cref="clsRutaCosteo"/>.
     /// </summary>
     public DateTimeOffset? Deadline { get; init; }
@@ -1102,7 +1102,7 @@ public sealed class clsCosteoCotizacionService(
             clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
         {
             TrmAplicada = cotizacion.TrmAplicada,
-            Deadline = cotizacion.Deadline,
+            Deadline = cotizacion.Deadline?.ToUniversalTime(),
             ScorePrioridad = cotizacion.ScorePrioridad,
             Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias))],
         };

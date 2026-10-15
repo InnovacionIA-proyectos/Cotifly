@@ -386,7 +386,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
    - HU-018.1 (#155): `db/scripts/09_score_prioridad.sql` (`scorePrioridad` de Nexo en la cabecera, idempotente; lo corre el
-     ejecutador después del `07`). El backend mapea la columna: se aplica antes de la imagen que trae la #155.
+     ejecutador después del `07`). El backend mapea la columna: se aplica antes de la imagen que trae la #155. Si la imagen
+     sale sin él, la sonda de vida sigue en 200, Swarm retira la versión anterior y la API entera queda en 503: aplicar el `09`
+     (un `ADD` de columna NULL, segundos) la recupera sin redesplegar, porque `/health/ready` revisa el esquema en cada consulta.
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
    columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a

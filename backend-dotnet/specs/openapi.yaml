@@ -4599,7 +4599,7 @@ components:
 
     CosteoCotizacion:
       type: object
-      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url, rutas]
+      required: [folio, estado_costeo, motivo_estado_costeo, costeo_listo_at, precio_final, margen_aplicado, moneda, servicios_conexos, pdf_url, rutas, deadline, score_prioridad]
       properties:
         folio:
           type: string

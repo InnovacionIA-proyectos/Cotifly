@@ -46,7 +46,10 @@ public sealed record clsCotizacionResumen(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
-    /// <summary>HU-018.1 (#155): fecha límite de la solicitud (cabecera); <c>null</c> si no se dio. Siempre se serializa.</summary>
+    /// <summary>
+    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
+    /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
+    /// </summary>
     public DateTimeOffset? Deadline { get; init; }
 
     /// <summary>
@@ -107,7 +110,7 @@ public sealed record clsCotizacionResumen(
             cotizacion.CreatedAt == default ? null : cotizacion.CreatedAt,
             cotizacion.TrmAplicada)
         {
-            Deadline = cotizacion.Deadline,
+            Deadline = cotizacion.Deadline?.ToUniversalTime(),
             ScorePrioridad = cotizacion.ScorePrioridad,
         };
     }

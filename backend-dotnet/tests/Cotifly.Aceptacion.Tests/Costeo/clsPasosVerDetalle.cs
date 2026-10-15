@@ -30,7 +30,7 @@ public sealed class clsPasosVerDetalle(clsContextoWeb web, clsPasosCosteo costeo
     public void EntoncesTrae(string deadline, string score)
     {
         var json = web.UltimoJson();
-        json.GetProperty("deadline").GetDateTimeOffset().Should().Be(DateTimeOffset.Parse(deadline, CultureInfo.InvariantCulture));
+        json.GetProperty("deadline").GetString().Should().Be(deadline, "la API responde la fecha límite en UTC, como created_at");
         json.GetProperty("score_prioridad").GetDecimal().Should().Be(decimal.Parse(score, CultureInfo.InvariantCulture));
     }
 

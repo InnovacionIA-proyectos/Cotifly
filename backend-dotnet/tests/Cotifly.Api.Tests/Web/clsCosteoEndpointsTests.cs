@@ -115,24 +115,23 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     {
         var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         _nexo.ScorePrioridadAlta = 62.5m;
-        var deadline = new DateTimeOffset(2026, 10, 15, 22, 0, 0, TimeSpan.Zero);
 
         using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         var resumen = await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
         var folio = resumen.GetProperty("folio").GetString()!;
-        resumen.GetProperty("deadline").GetDateTimeOffset().Should().Be(deadline, "el formulario manda 2026-10-15T17:00:00-05:00");
+        resumen.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00", "el formulario manda 2026-10-15T17:00:00-05:00 y la API responde en UTC");
         resumen.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
 
         using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
         var json = await VerificarContratoAsync(costeo, "/web/cotizaciones/{folio}/costeo", HttpMethod.Get, HttpStatusCode.OK);
-        json.GetProperty("deadline").GetDateTimeOffset().Should().Be(deadline);
+        json.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00", "leída de la base (datetimeoffset con -05:00) sale en UTC");
         json.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
         json.GetProperty("rutas")[0].TryGetProperty("deadline", out _).Should().BeFalse("el deadline es de la solicitud (cabecera), no de la ruta");
 
         using var lista = await _api.EnviarAsync(HttpMethod.Get, "/web/mis-cotizaciones", ana.Access);
         var cotizaciones = (await VerificarContratoAsync(lista, "/web/mis-cotizaciones", HttpMethod.Get, HttpStatusCode.OK)).GetProperty("cotizaciones");
         var fila = cotizaciones.EnumerateArray().Single(c => c.GetProperty("folio").GetString() == folio);
-        fila.GetProperty("deadline").GetDateTimeOffset().Should().Be(deadline);
+        fila.GetProperty("deadline").GetString().Should().Be("2026-10-15T22:00:00+00:00");
         fila.GetProperty("score_prioridad").GetDecimal().Should().Be(62.5m);
 
         (await clsBaseDatosPruebas.EscalarAsync<decimal?>(_entorno.BaseDatos.CadenaCotifly,

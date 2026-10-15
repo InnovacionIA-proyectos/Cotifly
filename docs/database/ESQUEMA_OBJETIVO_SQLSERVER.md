@@ -407,8 +407,9 @@ El tablero de métricas (ADR-016) no usa estas vistas: calcula en memoria. Se co
 | `db/scripts/01_crear_esquema.sql` | Instalación desde cero: equivale a `0001` a `0010` aplicados. Las pruebas de integración verifican que dejan el mismo esquema |
 | `db/scripts/02_alter_cubicador.sql` | **HU-023.3 (#158):** `CotizacionMercancias.codigoMercancia` en lugar de `idTipoMercancia`; en el camión `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso`; en la ruta `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada`. Idempotente; lo corre el ejecutador después del `01` |
 | `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` | **HU-023.5 (#160):** cola de la cubicación de la licitación en la ruta (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`, `avisosCubicacion`). Pendiente de scalderon-bs y del DBA; el backend lo exige (`falta 04`) |
+| `db/scripts/09_score_prioridad.sql` | **HU-018.1 (#155):** `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` del alta en Nexo). Idempotente; lo corre el ejecutador después del `07`; el backend lo exige (`falta 09`) |
 
-Las columnas del `02` y del `04` no están en las tablas de §A.4 de arriba; el detalle está en la cabecera de cada script.
+Las columnas del `02`, del `04` y del `09` no están en las tablas de §A.4 de arriba; el detalle está en la cabecera de cada script.
 
 **Deuda de esquema propuesta (`db/scripts/pendientes/`, revisión de scalderon-bs y del DBA):** `03` (`ordenVehiculo` en el
 camión y el id del catálogo del conexo), `05` (categoría del conexo) y `06` (tabla de idempotencia de la captura, ADR-018).
