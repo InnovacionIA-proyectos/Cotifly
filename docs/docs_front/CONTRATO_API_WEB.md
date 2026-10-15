@@ -70,13 +70,12 @@ ClientePro (ya autenticado)
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
 | `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
-| `GET /web/metricas/actividad` | ambos | Actividad por comercial (**borrador obsoleto**: usar `/web/metricas/comercial` y `/regional`) |
-| `GET /web/metricas/ajustes-margen` | ambos | Ajustes de margen por comercial (**borrador obsoleto**) |
+| `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados (HU-014.3, #152):** responden 404. Eran el borrador del tablero; usar `/web/metricas/comercial` y `/regional` |
 | `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
 Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints nuevos, en la respuesta **y en el cuerpo de la petición** (`motivo_rechazo`, `metodo_calculo`, `is_active`; un `motivoRechazo` se ignora). Los campos `nullable` siempre vienen, con `null` si no tienen valor. Un número enviado como texto (`"margen": "0.2"`) es un cuerpo inválido (400).
 
-"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. En las métricas del borrador (`/actividad`, `/ajustes-margen`) el comercial ve su fila y el gerente las de los comerciales de su regional (`UsuariosWeb.regional`; si la del gerente aún no se conoce, solo la suya). El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
+"Ambos" = `comercial` o `gerente_comercial`; cada uno ve solo sus cotizaciones. El gerente puede descargar los PDF de los comerciales de su regional; si su regional aún no se conoce, solo los suyos (fail-closed).
 
 **Folio** (ADR-011, aprobado el 2026-09-25, con iniciales desde el mismo día): lo genera siempre el servidor, `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`: NIT solo con dígitos cuando la cotización lo tiene, dos letras con las iniciales del comercial (primer nombre + primer apellido, sin tildes; p. ej. "Duban Guerra Castro" → `DG`), fecha de Bogotá, `NNN` consecutivo diario de esas iniciales (`001`…`999`; dos comerciales con las mismas iniciales comparten la secuencia) y `-vN` solo en versiones nuevas (sobre el folio de la v1). Ejemplos: `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`. Máximo 50 caracteres. El frontend no debe asumir el formato para nada distinto de mostrarlo.
 
@@ -260,7 +259,7 @@ El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde
 | 404 de `/pdfs` responde `{"error": "..."}` | En Python era `{"detail": "..."}` |
 | Nuevos códigos `CLIENTE_BUSQUEDA_NO_DISPONIBLE` y `HERRAMIENTA_DESCONOCIDA` | Búsqueda de clientes (HU-005.2) y validación del modelo (HU-003.10) |
 | Nuevo código `FOLIO_CONSECUTIVO_AGOTADO` | El folio lo genera el servidor con las iniciales del comercial y un consecutivo diario de 3 dígitos por iniciales (ADR-011); el Python lo tomaba del LLM |
-| `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrige el script `0003` |
+| `num_cotizaciones_enviadas` cuenta `enviada` y `reenviada` | La vista del 0001 contaba solo `enviada`; la corrigió el script `0003`. La vista y su endpoint (`/web/metricas/actividad`) se retiraron en HU-014.3 (#152) |
 
 ## 8. Contrato por rutas (HU-021, #130 a #140; cerrado en HU-021.11, #138)
 

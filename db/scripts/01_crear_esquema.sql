@@ -1,10 +1,11 @@
 /* ============================================================================
    Cotifly — Instalación desde cero del esquema dbo_cotifly (SQL Server 2019)
    ============================================================================
-   Crea el schema `dbo_cotifly` con TODAS sus tablas, llaves, restricciones, índices
-   y vistas, ya en su forma final (la del diseño HU-021, docs/database/PROPUESTA_
+   Crea el schema `dbo_cotifly` con TODAS sus tablas, llaves, restricciones e índices,
+   ya en su forma final (la del diseño HU-021, docs/database/PROPUESTA_
    REESTRUCTURACION_COTIZACIONES.md). Es lo que dejan los scripts de `db/migrations_mssql/` 0001 a 0010
-   aplicados en orden, pero en un solo paso (0010, borrador pendiente de revisión de
+   aplicados en orden (menos las dos vistas del borrador de métricas, que retira
+   db/scripts/08 desde HU-014.3, #152), pero en un solo paso (0010, borrador pendiente de revisión de
    @scalderon-bs: nombres de municipio de la ruta, id de la solicitud de Nexo y nombre del
    conexo; decisión 2 de HU-021). Una base instalada con este script NO corre migraciones.
 
@@ -31,7 +32,7 @@
    Cómo ejecutarlo a mano:
      sqlcmd -S <servidor> -d <base> -E -C -I -b -i 01_crear_esquema.sql
    (-E = autenticación de Windows, -C = confiar en el certificado, -I = QUOTED_IDENTIFIER
-   ON, -b = detenerse en el primer error). Requiere permiso para CREATE SCHEMA/TABLE/VIEW.
+   ON, -b = detenerse en el primer error). Requiere permiso para CREATE SCHEMA/TABLE.
    ============================================================================ */
 
 SET NOCOUNT ON;
@@ -534,43 +535,6 @@ GO
 CREATE INDEX ix_correoDestinatarios_correoId ON dbo_cotifly.CorreoDestinatarios (correoId);
 GO
 
--- =============================================================================
--- 6. Vistas de solo lectura (las lee el tablero de métricas)
--- =============================================================================
-CREATE VIEW dbo_cotifly.vAjustesMargenPorComercial AS
-SELECT
-    a.usuarioId,
-    mp.lineaNegocio,
-    COUNT(*)                                            AS numAjustes,
-    AVG(a.diferencia)                                   AS diferenciaPromedio,
-    MIN(a.diferencia)                                   AS diferenciaMin,
-    MAX(a.diferencia)                                   AS diferenciaMax,
-    MAX(a.createdAt)                                    AS ultimoAjuste,
-    SUM(CASE WHEN a.diferencia < 0 THEN 1 ELSE 0 END)   AS numAjustesBajoSugerido
-FROM dbo_cotifly.MargenAjustes a
-LEFT JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = a.lineaSolicitudId
-LEFT JOIN dbo_cotifly.MargenesPolitica mp ON mp.id = l.lineaNegocioId
-GROUP BY a.usuarioId, mp.lineaNegocio;
-GO
-
-CREATE VIEW dbo_cotifly.vActividadPorComercial AS
-SELECT
-    c.usuarioId,
-    COUNT(DISTINCT c.id)                                                        AS numCotizaciones,
-    SUM(CASE WHEN c.estadoEnvio IN ('enviada', 'reenviada') THEN 1 ELSE 0 END)  AS numCotizacionesEnviadas,
-    COALESCE(SUM(sub.numAjustes), 0)                                            AS numAjustes,
-    MAX(c.createdAt)                                                            AS ultimaCotizacion
-FROM dbo_cotifly.CotizacionesSolicitud c
-LEFT JOIN (
-    SELECT cotizacionId, COUNT(*) AS numAjustes
-    FROM dbo_cotifly.MargenAjustes
-    WHERE cotizacionId IS NOT NULL
-    GROUP BY cotizacionId
-) sub ON sub.cotizacionId = c.id
-WHERE c.usuarioId IS NOT NULL
-GROUP BY c.usuarioId;
-GO
-
 PRINT N'Esquema dbo_cotifly creado. Falta sembrar la configuración inicial (db/seeder/).';
 GO
 
@@ -589,5 +553,5 @@ GO
      --   SapMapeoTrqType, Sesiones, TokensRefresco, TokensRevocados, UsuariosRoles, UsuariosWeb.
 
      SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = 'dbo_cotifly';
-     -- vActividadPorComercial y vAjustesMargenPorComercial.
+     -- ninguna: las vistas del borrador de métricas se retiraron (HU-014.3, db/scripts/08).
    ============================================================================ */

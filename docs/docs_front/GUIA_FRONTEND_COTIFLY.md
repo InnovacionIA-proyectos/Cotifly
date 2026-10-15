@@ -582,8 +582,7 @@ Resumen:
 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | En QA |
 | `GET /web/metricas/comercial` | Ambos (lo propio) | En QA |
 | `GET /web/metricas/regional` | `gerente_comercial` | En QA |
-| `GET /web/metricas/actividad` | Ambos | En QA, borrador **obsoleto** |
-| `GET /web/metricas/ajustes-margen` | Ambos | En QA, borrador **obsoleto** |
+| `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados** (HU-014.3, #152): responden 404 |
 | Líneas de negocio activas para el comercial | Ambos | **Pendiente** (no existe) |
 | Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`) |
 
@@ -1206,8 +1205,7 @@ Fuentes: `openapi.yaml` (tag `metricas`), `docs/docs_front/CONTRATO_API_WEB.md` 
 |---|---|---|---|
 | `GET /web/metricas/comercial?desde&hasta` | `comercial` y `gerente_comercial` (política `Comercial`) | Tablero del comercial (HU-010.2, #50): **las cotizaciones propias**. El gerente también ve aquí solo las suyas | En QA |
 | `GET /web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 | Tablero del gerente (HU-010.3, #51): **su regional**, filtrable por comercial | En QA |
-| `GET /web/metricas/actividad` | Ambos | Borrador anterior. **Obsoleto** (`deprecated: true`) | En QA, obsoleto |
-| `GET /web/metricas/ajustes-margen` | Ambos | Borrador anterior. **Obsoleto** (`deprecated: true`) | En QA, obsoleto |
+| `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | Borrador anterior. **Retirados** en HU-014.3 (#152): responden 404 | Retirados |
 
 El rol sale del claim `rol` del access token (login SSO con la verificación doble, ADR-009) y el caso de uso lo revalida. No se lee de `UsuariosWeb` ni se pide a ClientePro en cada consulta.
 
@@ -1590,30 +1588,9 @@ Mientras el `0004` no esté aplicado (hoy en QA), `concentracion_ciudades` llega
 - **Conexos:** los montos no incluyen servicios conexos todavía (se integran después de #42). Si el tablero lo muestra junto a la vista de costeo, avisar "Valores sin servicios conexos".
 - **Pendiente de Nexo:** el "score de urgencia" no está en el contrato. Llegará como campo nuevo de `indicadores` (cambio compatible). No reservar esa tarjeta todavía. El "deadline vencido" **sí** está (`deadline_vencidas`), calculado por Cotifly con el `deadline` del formulario.
 
-#### 5.22.6 Borradores obsoletos (se mantienen, no usar en pantallas nuevas)
+#### 5.22.6 Borradores retirados
 
-`GET /web/metricas/actividad` (En QA, `deprecated: true`)
-
-- Rol: ambos. El `comercial` ve solo su fila. El `gerente_comercial` ve las filas de los comerciales de su regional (`UsuariosWeb.regional`; si es null, solo la suya). Cuenta todas las versiones y no convierte moneda.
-- 200 (`ActividadComercial[]`):
-
-```json
-[
-  { "usuario_id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602", "nombre_completo": "Ana Pérez", "num_cotizaciones": 42, "num_cotizaciones_enviadas": 30, "num_ajustes": 7, "ultima_cotizacion": "2026-09-29T14:03:11+00:00" }
-]
-```
-
-`GET /web/metricas/ajustes-margen` (En QA, `deprecated: true`)
-
-- Mismo alcance. 200 (`AjustesMargenComercial[]`, una fila por comercial y línea). La desviación pasó a `IndicadoresMetricas.desviacion_promedio_margen`.
-
-```json
-[
-  { "usuario_id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602", "nombre_completo": "Ana Pérez", "linea_negocio": "Nacional", "num_ajustes": 5, "diferencia_promedio": -0.012, "diferencia_min": -0.03, "diferencia_max": 0.005, "ultimo_ajuste": "2026-09-28T20:11:00+00:00" }
-]
-```
-
-Se retirarán cuando el frontend use los nuevos. Si algún componente ya los consume, migrarlo.
+`GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` (el borrador anterior a HU-010.1) se retiraron en HU-014.3 (#152), junto con sus esquemas `ActividadComercial` y `AjustesMargenComercial` y las vistas `vActividadPorComercial` y `vAjustesMargenPorComercial`. Responden 404. Lo que daban está en el tablero: la actividad, en `indicadores` y `comerciales` de `/web/metricas/regional`; la desviación del margen, en `IndicadoresMetricas.desviacion_promedio_margen`.
 
 ### 5.23 Analizar el Excel del pliego (`POST /web/licitaciones/analizar-excel`). En QA
 
@@ -2320,7 +2297,7 @@ La IA solo redacta el asunto y la introducción del PDF, y **propone** acciones.
 | `POST /web/chat` con `folio` obligatorio | **Implementado (#102).** Asistente sobre una cotización. Sin folio: 400 `FOLIO_REQUERIDO`; folio ajeno o inexistente: 404. Responde `{texto, accion_propuesta?}`. Ver "Asistente por folio" abajo | #102 (HU-013.6) |
 | `POST /chat/events` | **Retirado (#105).** Responde 404 | #105 (HU-013.9) |
 
-**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` (#103) y `textos` (asunto e introducción guardados, o `null` si todavía no hay; #101) ya están. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen` trae `num_ajustes_bajo_sugerido`.
+**`GET /web/cotizaciones/{folio}/costeo`** suma `margen_sugerido`, `origen_margen`, `pdf_desactualizado` y `row_version`, y el encabezado `ETag` (implementados en #98); `trm_aplicada` (#103) y `textos` (asunto e introducción guardados, o `null` si todavía no hay; #101) ya están. `PUT .../servicios-conexos` ya exige `If-Match` y, con el PDF generado y sin enviar, lo invalida en lugar de responder `PDF_YA_GENERADO` (#98). `GET /web/metricas/ajustes-margen`, que traía `num_ajustes_bajo_sugerido`, se retiró en HU-014.3 (#152).
 
 **Servicios conexos de Nexo (implementado en #99).**
 

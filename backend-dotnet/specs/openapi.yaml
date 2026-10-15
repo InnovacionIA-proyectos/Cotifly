@@ -61,7 +61,7 @@ tags:
     description: |
       Tablero de métricas agregadas (HU-010.1, ADR-016). `GET /web/metricas/comercial` (las cotizaciones
       propias) y `GET /web/metricas/regional` (solo `gerente_comercial`: su regional, filtrable por comercial).
-      `/web/metricas/actividad` y `/web/metricas/ajustes-margen` son el borrador anterior y quedan obsoletos.
+      El borrador anterior (`/web/metricas/actividad` y `/web/metricas/ajustes-margen`) se retiró en HU-014.3 (#152).
 
       Definiciones (recalculables a mano sobre `dbo_cotifly`, ver `docs/docs_front/CONTRATO_API_WEB.md` §3.1):
       - **Unidad: la cadena de versiones.** Cadena = filas del mismo `usuarioId` con el mismo folio base (el folio sin
@@ -738,56 +738,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
-
-  /web/metricas/actividad:
-    get:
-      operationId: obtenerActividadComercial
-      x-estado: borrador
-      deprecated: true
-      tags: [metricas]
-      summary: Actividad por comercial (vista vActividadPorComercial). Obsoleto, usar /web/metricas/comercial y /regional
-      description: |
-        Borrador anterior a HU-010.1; se conserva por compatibilidad. El rol gerente_comercial ve a los comerciales de
-        su regional (`UsuariosWeb.regional`; si es nula, solo su fila); el rol comercial solo su propia fila. Cuenta
-        todas las versiones y no convierte moneda.
-      security:
-        - bearer: []
-      responses:
-        '200':
-          description: Filas de actividad
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ActividadComercial'
-        '401':
-          $ref: '#/components/responses/SesionExpirada'
-
-  /web/metricas/ajustes-margen:
-    get:
-      operationId: obtenerAjustesMargen
-      x-estado: borrador
-      deprecated: true
-      tags: [metricas]
-      summary: Ajustes de margen por comercial (vista vAjustesMargenPorComercial). Obsoleto, usar /web/metricas/regional
-      description: |
-        Borrador anterior a HU-010.1; se conserva por compatibilidad (la desviación promedio pasó a
-        `IndicadoresMetricas.desviacion_promedio_margen`). El rol gerente_comercial ve a los comerciales de su regional;
-        el rol comercial solo su propia fila.
-      security:
-        - bearer: []
-      responses:
-        '200':
-          description: Filas de ajustes
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AjustesMargenComercial'
-        '401':
-          $ref: '#/components/responses/SesionExpirada'
 
   /web/usuario/telefono:
     get:
@@ -4122,66 +4072,6 @@ components:
           description: Apertura por línea de negocio, por ruta, de la regional o del comercial filtrado (como `indicadores`).
           items:
             $ref: '#/components/schemas/MetricaLineaNegocio'
-
-    ActividadComercial:
-      type: object
-      description: |
-        Fila de la vista `vActividadPorComercial` más `nombre_completo` (JOIN con
-        `UsuariosWeb`). `num_cotizaciones_enviadas` debe contar `enviada` y `reenviada`.
-      required: [usuario_id, num_cotizaciones, num_cotizaciones_enviadas, num_ajustes]
-      properties:
-        usuario_id:
-          type: string
-          format: uuid
-        nombre_completo:
-          type: string
-          nullable: true
-        num_cotizaciones:
-          type: integer
-        num_cotizaciones_enviadas:
-          type: integer
-        num_ajustes:
-          type: integer
-        ultima_cotizacion:
-          type: string
-          format: date-time
-          nullable: true
-
-    AjustesMargenComercial:
-      type: object
-      description: Fila de la vista `vAjustesMargenPorComercial` más `nombre_completo` (JOIN con `UsuariosWeb`).
-      required: [usuario_id, num_ajustes]
-      properties:
-        usuario_id:
-          type: string
-          format: uuid
-          nullable: true
-        nombre_completo:
-          type: string
-          nullable: true
-        linea_negocio:
-          type: string
-          nullable: true
-        num_ajustes:
-          type: integer
-        diferencia_promedio:
-          type: number
-          nullable: true
-        diferencia_min:
-          type: number
-          nullable: true
-        diferencia_max:
-          type: number
-          nullable: true
-        ultimo_ajuste:
-          type: string
-          format: date-time
-          nullable: true
-        num_ajustes_bajo_sugerido:
-          type: integer
-          description: |
-            HU-013.2 (script 0006). Ajustes que quedaron por debajo del margen sugerido (`diferencia` negativa: margen
-            aplicado menor que el sugerido, que es `MargenAjustes.margenPolitica`). Esos ajustes exigen justificación.
 
     TelefonoComercial:
       type: object

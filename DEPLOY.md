@@ -156,6 +156,12 @@ definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesit
 otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables). Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
+**Base de datos, HU-014.3 (#152):** el backend ya no expone `GET /web/metricas/actividad` ni `/web/metricas/ajustes-margen` (responden
+404) y no lee las vistas `vActividadPorComercial` ni `vAjustesMargenPorComercial`. **Después** de desplegar esta versión, el DBA aplica
+`db/scripts/08_retirar_vistas_actividad.sql`, que las borra (idempotente, `IF OBJECT_ID(...) IS NOT NULL DROP VIEW`; no toca tablas ni
+datos). Antes del despliegue no: la versión anterior las sigue leyendo. Si se demora, no pasa nada: el backend nuevo no las usa y
+`/health/ready` no las revisa.
+
 **Variables a agregar en Dokploy por ambiente (HU-021).** Los manifiestos de `infra/` no se cambiaron en HU-021.14: tocar un
 despliegue requiere la aprobación del usuario. Cuando se apruebe, se declaran en el manifiesto con `${VAR:-<defecto>}` y se
 cargan en Dokploy así:

@@ -24,7 +24,7 @@ cómo instalar y migrar, en [`db/README.md`](../../db/README.md); la decisión d
 ## A.1 Resumen
 
 - **Motor:** SQL Server 2019. **Base:** `dbTarifario_Nexo_Pruebas` (compartida, en `tbsdatacenter`). **Schema:** `dbo_cotifly`.
-- **20 tablas y 2 vistas.** EF Core es *Database First*: el esquema solo cambia con scripts `db/migrations_mssql/000N_*.sql`
+- **20 tablas, sin vistas** (las 2 del borrador de métricas se retiraron en HU-014.3, #152). EF Core es *Database First*: el esquema solo cambia con scripts `db/migrations_mssql/000N_*.sql`
   (ADR-008), y cada script nuevo se refleja también en `db/scripts/01_crear_esquema.sql`.
 - **Collation** `Latin1_General_100_CI_AS_SC_UTF8` explícita en cada columna de texto. Única excepción:
   `TokensRefresco.tokenHash` (`Latin1_General_100_BIN2`).
@@ -384,11 +384,9 @@ Sin cambios de estructura en HU-021 (salvo el catálogo de líneas de negocio de
 
 ### A.4.8 Vistas
 
-- `vAjustesMargenPorComercial`: ajustes por comercial y línea de negocio. Desde el `0009` la línea sale de la **ruta**
-  ajustada (`MargenAjustes.lineaSolicitudId` → `CotizacionLineasSolicitud.lineaNegocioId`).
-- `vActividadPorComercial`: cotizaciones, enviadas (`enviada` y `reenviada`, `0003`), ajustes y última cotización por comercial.
-
-El tablero de métricas (ADR-016) no usa estas vistas: calcula en memoria. Se conservan hasta HU-014.4.
+Ninguna. `vAjustesMargenPorComercial` y `vActividadPorComercial` (las del borrador del tablero, `0001`, `0003`, `0006` y `0009`) se
+retiraron en HU-014.3 (#152) con `db/scripts/08_retirar_vistas_actividad.sql`, junto con `GET /web/metricas/actividad` y
+`/ajustes-margen`. El tablero de métricas (ADR-016) no usa vistas: calcula en memoria.
 
 ## A.5 Scripts
 

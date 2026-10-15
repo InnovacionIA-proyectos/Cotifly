@@ -30,7 +30,6 @@ Característica: Ajuste de margen sobre el costeo de Nexo
     Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
     Y el costeo de "C1" tiene el precio final 2897727 con el margen aplicado "0.12" y el origen "negociado"
     Y queda un ajuste de margen de "C1" de "0.15" a "0.12" por "ana" con la justificación "Cliente estratégico; la competencia cotizó más bajo"
-    Y las métricas de ajustes de "ana" marcan 1 ajuste por debajo del sugerido
 
   Escenario: Bajar el margen por debajo del sugerido sin justificación se rechaza
     Cuando "ana" ajusta el margen de "C1" a "0.10" sin justificación

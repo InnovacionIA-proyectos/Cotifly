@@ -157,8 +157,6 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(clsMisCotizaciones), "MisCotizaciones"),
         (typeof(clsDatosNuevaVersion), "DatosNuevaVersion"),
         (typeof(clsLineaNegocioAdmin), "LineaNegocio"),
-        (typeof(clsActividadComercial), "ActividadComercial"),
-        (typeof(clsAjustesMargenComercial), "AjustesMargenComercial"),
         (typeof(clsMetricasComercial), "MetricasComercial"),
         (typeof(clsMetricasRegional), "MetricasRegional"),
         (typeof(clsComercialRegional), "ComercialRegional"),

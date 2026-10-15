@@ -55,7 +55,7 @@ la línea; ahora esos datos son de la ruta.
 | `version` | Número de versión del folio (`-vN`) | Nueva versión | Folio, asistente |
 | `pdfPath`, `pdfDesactualizado` | PDF vigente y si un cambio lo invalidó | Generación del PDF; mutaciones | PDF, correo |
 | `textosCotizacion` | JSON con asunto e introducción del PDF (IA con respaldo estándar) | Redacción (ADR-018) | PDF, correo |
-| `estadoEnvio` | `sin_enviar`, `enviada`, `reenviada` | Correo | Regla del PDF, métricas, vistas |
+| `estadoEnvio` | `sin_enviar`, `enviada`, `reenviada` | Correo | Regla del PDF, métricas |
 | `ganada`, `motivoRechazo`, `marcadoAt` | Resultado del negocio | Seguimiento | Métricas |
 | `usuarioId` | Comercial dueño | Captura | Autorización, métricas |
 | `spaceId`, `threadId` | Hilo de origen (legado de Google Chat, retirado en #105) | Solo la cotización legada del chat (`clsGenerarPdfService`, apagada por defecto con `Pdf:PermitirCotizacionChat`) | Lectura de cotizaciones antiguas |
@@ -140,7 +140,7 @@ Quitar un conexo borra su fila (no hay columna `incluido`). El estado del envío
 
 | Tabla | Qué guarda |
 |---|---|
-| `MargenAjustes` | Cada ajuste de margen de un comercial: `margenPolitica` (el sugerido de la ruta), `margenAplicado`, `diferencia`, `motivo` y la ruta (`lineaSolicitudId`). Base de `vAjustesMargenPorComercial` y de las métricas por ruta |
+| `MargenAjustes` | Cada ajuste de margen de un comercial: `margenPolitica` (el sugerido de la ruta), `margenAplicado`, `diferencia`, `motivo` y la ruta (`lineaSolicitudId`). Base de las métricas por ruta |
 | `CotizacionArchivosLicitacion` | El Excel original del pliego (hasta 10 MB), con su SHA-256 y la hoja usada |
 | `CotizacionPdfsHistorial` | Los PDF anteriores de una cotización y por qué se invalidaron (`ajuste_margen`, `servicios_conexos`, `textos`, `re_solicitud`) |
 | `Correos`, `CorreoDestinatarios` | Cada envío del PDF al cliente, su estado y sus destinatarios (`para`, `cc`) |

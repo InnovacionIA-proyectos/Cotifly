@@ -53,8 +53,25 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         desdeCero.Except(migrada).Should().BeEmpty("lo que trae la instalación desde cero debe estar en la base migrada");
         migrada.Except(desdeCero).Should().BeEmpty("lo que deja la cadena de migraciones debe estar en la instalación desde cero");
-        (await LeerAsync("SELECT name FROM sys.views WHERE SCHEMA_NAME(schema_id) = 'dbo_cotifly'", r => r.GetString(0), instalada.Cadena))
-            .Should().BeEquivalentTo(["vActividadPorComercial", "vAjustesMargenPorComercial"]);
+        (await VistasAsync(instalada.Cadena)).Should().BeEmpty("el 01 ya no crea las vistas del borrador de métricas (HU-014.3, #152)");
+        (await VistasAsync(BaseDatos.CadenaCotifly)).Should().BeEmpty("el 08 las retira de la base migrada");
+    }
+
+    [Fact]
+    public async Task ElScript08RetiraLasVistasDelBorradorYEsIdempotente()
+    {
+        // HU-014.3 (#152): sobre una base migrada que todavía tiene las vistas (0001 a 0010, 02, 04 y 07) las borra; repetirlo, o
+        // correrlo sobre una instalación desde cero (que ya no las tiene), no cambia nada.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbRetiro08", clsBaseDatosPruebas.ScriptsHasta07);
+        (await VistasAsync(migrada.Cadena)).Should().BeEquivalentTo(["vActividadPorComercial", "vAjustesMargenPorComercial"], "la cadena hasta el 07 las tiene");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(migrada.Cadena, clsBaseDatosPruebas.Script08);
+
+        (await VistasAsync(migrada.Cadena)).Should().BeEmpty();
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script08);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem08Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script08);
     }
 
     [Fact]
@@ -424,20 +441,6 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         (await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 'otro')").Should().ThrowAsync<SqlException>())
             .Which.Message.Should().Contain("ck_cotizacionPdfsHistorial_motivo");
         await Sql($"INSERT INTO dbo_cotifly.CotizacionPdfsHistorial (cotizacionId, pdfPath, motivo) VALUES ('{id}', 'PCN-X.pdf', 're_solicitud')")();
-    }
-
-    [Fact]
-    public async Task LaVistaDeAjustesCuentaLosQueQuedanPorDebajoDelSugerido()
-    {
-        var usuario = Guid.NewGuid();
-        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
-            $"INSERT INTO dbo_cotifly.UsuariosWeb (id, nombreUsuario) VALUES ('{usuario}', 'v{Guid.NewGuid():N}'); "
-            + "INSERT INTO dbo_cotifly.MargenAjustes (margenPolitica, margenAplicado, diferencia, usuarioId) VALUES "
-            + $"(0.15, 0.12, -0.03, '{usuario}'), (0.15, 0.18, 0.03, '{usuario}'), (0.15, 0.10, -0.05, '{usuario}');");
-
-        (await clsBaseDatosPruebas.EscalarAsync<int>(BaseDatos.CadenaCotifly,
-                $"SELECT numAjustesBajoSugerido FROM dbo_cotifly.vAjustesMargenPorComercial WHERE usuarioId = '{usuario}'"))
-            .Should().Be(2);
     }
 
     [Fact]
@@ -955,6 +958,10 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         return [.. columnas.Concat(restricciones).Concat(indices).Order(StringComparer.Ordinal)];
     }
+
+    /// <summary>Vistas de <c>dbo_cotifly</c> en <paramref name="cadena"/>.</summary>
+    private Task<List<string>> VistasAsync(string cadena) =>
+        LeerAsync("SELECT name FROM sys.views WHERE SCHEMA_NAME(schema_id) = 'dbo_cotifly'", r => r.GetString(0), cadena);
 
     /// <summary>
     /// Re-aplica <paramref name="script"/> sobre una base aislada y verifica que no cambie el esquema ni el número de filas de

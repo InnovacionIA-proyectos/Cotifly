@@ -56,7 +56,6 @@ public sealed class clsDependenciasAplicacionTests
     [InlineData(typeof(IClsGeneradorFolioService), typeof(clsGeneradorFolioService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsDescargaPdfService), typeof(clsDescargaPdfService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsLineasNegocioAdminService), typeof(clsLineasNegocioAdminService), ServiceLifetime.Scoped)]
-    [InlineData(typeof(IClsMetricasService), typeof(clsMetricasService), ServiceLifetime.Scoped)]
     [InlineData(typeof(IClsAsistenteFolioRunner), typeof(clsAsistenteFolioRunner), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsContextoAsistenteFolio), typeof(clsContextoAsistenteFolio), ServiceLifetime.Scoped)]
     [InlineData(typeof(clsHerramientasAsistenteFolio), typeof(clsHerramientasAsistenteFolio), ServiceLifetime.Scoped)]
