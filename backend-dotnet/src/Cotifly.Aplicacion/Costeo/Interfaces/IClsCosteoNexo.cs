@@ -6,7 +6,7 @@ namespace Cotifly.Aplicacion.Costeo.Interfaces;
 
 /// <summary>
 /// Puerto del costeo en Nexo (ADR-015). La implementación real (<c>clsCosteoNexo</c>) identifica al comercial ante Nexo con
-/// <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c>, igual que la búsqueda de clientes; sin <c>Nexo:UrlBase</c>,
+/// <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c>, igual que la búsqueda de clientes; sin <c>Nexo:UrlBase</c>,
 /// Infraestructura registra uno que responde <c>COSTEO_NEXO_NO_DISPONIBLE</c>. Nunca lanza por fallos de Nexo: devuelve
 /// <c>COSTEO_NEXO_NO_DISPONIBLE</c>, <c>COSTEO_NEXO_TIEMPO_AGOTADO</c> o <c>COSTEO_NEXO_RECHAZADA</c> (el código y el mensaje de
 /// Nexo en el detalle). La cancelación del llamador sí se propaga.

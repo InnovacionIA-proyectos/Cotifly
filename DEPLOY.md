@@ -14,7 +14,8 @@ Runbook del despliegue de Cotifly en el clúster Docker Swarm + Dokploy (manager
   estado completo vive en el tag de git **`python-final`** (ver el [Anexo A](#anexo-a-stack-python-retirado-tag-python-final)).
   El stack Python que corre hoy en Dokploy no se tocó: apagarlo es una acción de infraestructura aparte (§7).
 - La base de datos **no** es un contenedor del stack: es la instancia corporativa SQL Server 2019 (`tbsdatacenter`),
-  base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más `dbsolucionesti` de solo lectura (ADR-008). El login de
+  base `dbTarifario_Nexo_Pruebas`, esquema `dbo_cotifly`, más la base de identidad del portal de solo lectura (ADR-008),
+  que es **la misma que lee Nexo** en cada ambiente: `dbSolucionesTI_Prueba` en QA (#172, ADR-009). El login de
   servicio es `cotifly_app` (SQL login; el contenedor Linux no admite autenticación integrada).
 - Referencia de cada variable y de su validación al arrancar: `backend-dotnet/.env.example` y
   `backend-dotnet/docs/03-infraestructura.md` §3.2.
@@ -60,7 +61,7 @@ Reglas:
   `cambiar...`, `changeme`, `dev`) o es más corto que su mínimo (`clsValidadorSecretos`). Un despliegue con valores
   de ejemplo falla en el rollout en vez de quedar corriendo.
 - MinIO no se mantiene: los PDF van en el volumen `/data/pdfs` (ADR-012). No hay credenciales de S3 que migrar.
-- Nexo no usa credencial: cada petición lleva `X-Portal-Usuario-Id` del comercial (ADR-005).
+- Nexo no usa credencial: cada petición lleva `X-Portal-clsUsuario-Id` del comercial (ADR-005).
 
 ### 2.2 Variables que espera el backend .NET
 
@@ -73,7 +74,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `ASPNETCORE_HTTP_PORTS` | no | no | `8080` (imagen) | imagen | no se cambia |
 | `Zona__ZonaHoraria` | no | no | `America/Bogota` | imagen / manifiesto | |
 | `ConnectionStrings__Cotifly` | **sí** | **sí** | vacío | Dokploy | `Server=tbsdatacenter,1433;Database=dbTarifario_Nexo_Pruebas;User Id=cotifly_app;Password=...;Encrypt=True` |
-| `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, `Database=dbsolucionesti` (solo lectura) |
+| `ConnectionStrings__Identidad` | **sí** | **sí** | vacío | Dokploy | igual, solo lectura, contra **la misma base de identidad que Nexo** en ese ambiente (#172): QA `Database=dbSolucionesTI_Prueba`; producción, la que use Nexo en producción (**por confirmar**). Ver [cambio de #172](#identidad-compartida-con-nexo-172) |
 | `ConnectionStrings__Regional` | **sí** (≥ 20, si tiene valor) | no (opcional) | vacío | Dokploy | `DWCubosEBSSAP`, solo lectura de `dbo.DimEjecutivo` (ADR-016, ADR-008). El **login** llena y refresca `UsuariosWeb.regional` (#81) y el **tablero del gerente** la lee en vivo (#45). Vacía = no configurada: se usa lo que ya haya en `UsuariosWeb.regional`, y el tablero responde 409 `REGIONAL_NO_ASIGNADA` si está vacía. Con valor exige salida desde el worker a **`10.10.40.24:1433`** y un **usuario SQL de solo lectura con `SELECT` únicamente sobre `dbo.DimEjecutivo`** (**pendiente con el DBA**); si la consulta falla, el login sigue (sin bloquear) y el tablero responde 503 |
 | `Regional__Esquema`, `Regional__Tabla`, `Regional__ColumnaUsuario`, `Regional__ColumnaRegional` | no | no (pero nunca vacías: identificadores obligatorios) | `dbo`, `DimEjecutivo`, **`USUARIO`**, `REGIONAL` | manifiesto | ubicación de la tabla de ejecutivos. `USUARIO` guarda `boterosoto\usuario`: el código quita el dominio antes de comparar con `UsuariosWeb.nombreUsuario` (#81). **No usar `ID`**: con ese valor el cruce nunca coincide |
 | `Regional__Dominio` | no | no | `boterosoto` | manifiesto | dominio aceptado en `USUARIO` (#81): una fila de otro dominio no cuenta; una sin dominio sí. El manifiesto usa `:-`, así que para aceptar cualquier dominio hay que editar el manifiesto |
@@ -104,10 +105,13 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__ApiKey` | **sí** (≥ 16) | con `Cubicador__UrlBase` | vacío | Dokploy | llave de Cotifly ante el cubicador (`Authorization: Bearer`), **una por ambiente** (QA y producción), distinta de la de Nexo; se entrega al equipo del cubicador por un canal seguro. Nunca llega al navegador |
 | `Cubicador__TiempoEsperaSegundos` | no | no | `30` | manifiesto | límite de cada petición (el objetivo del cubicador es 10 s). El `POST /recomendaciones` nunca se reintenta |
 | `Cubicador__RespaldoSiFalla` | no | no | `true` | manifiesto | si el cubicador se cae, la ruta sigue con un camión sin vehículo. Recomendación: `false` en QA y producción en cuanto haya URL. Un rechazo o una respuesta incompleta nunca van al respaldo |
+| `Cubicador__LicitacionEnSegundoPlano`, `__ProcesadorHabilitado`, `__MaximoParalelo`, `__IntervaloTickSegundos`, `__LoteRutas`, `__ReclamoSegundos`, `__MaximoIntentos`, `__EsperaReintentoSegundos` | no | no | `true`, `true`, `4`, `5`, `50`, `120`, `3`, `30` | manifiesto | licitación cubicada en segundo plano (HU-023.5, #160; exige `db/scripts/pendientes/04`). `MaximoParalelo` es para todas las réplicas juntas (P6 del cubicador) |
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `60` | manifiesto | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
-| `Nexo__EnviarReferenciaRuta` | no | no | `false` | — (no está en el manifiesto) | petición N1 a Nexo (HU-021.7): manda `referenciaRuta` en cada línea. Se enciende solo cuando Nexo la acepte (su swagger rechaza campos de más) |
+| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `false` | — (no está en el manifiesto) | HU-023.4: manda `grupoRutaId` en cada línea. Se enciende solo cuando Nexo despliegue el campo (su swagger rechaza campos de más) |
+| `Nexo__EnviarDatosCubicador` | no | no | `false` | — (no está en el manifiesto) | HU-023.4: manda `idRecomendacionVehiculo` por línea. Se enciende después de `Nexo__EnviarGrupoRutaId` |
+| `Nexo__EnviarCodigosCubicador` | no | no | `false` | — (no está en el manifiesto) | Nexo #297: manda los códigos de vehículo y carrocería del cubicador. Apagada, esas líneas van sin vehículo a la Mesa. Se enciende cuando Nexo despliegue la cuarentena (18.4) |
 | `Captura__AceptarVehiculoCliente` | no | no | `false` | — (no está en el manifiesto) | bandera de respaldo (HU-021-FE.2): encendida, el vehículo y la carrocería que manda el frontend van solo en el camión del respaldo. Apagada rige la decisión 7. Se retira cuando exista el cubicador |
 | `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
 | `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
@@ -139,7 +143,7 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 - **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
 
 **Variables nuevas de HU-021** (`Cubicador__*`, `Captura__AceptarVehiculoCliente`, `Pdf__PermitirCotizacionChat`,
-`Nexo__EnviarReferenciaRuta` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
+`Nexo__EnviarGrupoRutaId`, `Nexo__EnviarDatosCubicador`, `Nexo__EnviarCodigosCubicador` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
 ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto, que es el correcto mientras no exista el
 cubicador. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
@@ -155,9 +159,34 @@ cargan en Dokploy así:
 | `Cubicador__RespaldoSiFalla` | `true` durante la estabilización; luego `false` | `false` | Con `Cubicador__UrlBase` |
 | `Cubicador__TiempoEsperaSegundos`, `__MinutosCacheCatalogos`, `__PresupuestoCapturaSegundos`, `__TiempoMaximoCatalogoSegundos` | por defecto (`15`, `30`, `60`, `10`) | por defecto | Solo si hay que ajustarlas |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | por defecto (`5`, `5`, `24`) | por defecto | Solo si hay que ajustarlas |
-| `Nexo__EnviarReferenciaRuta` | `false`; `true` cuando Nexo QA acepte `referenciaRuta` (N1) | `false`; `true` cuando Nexo producción la acepte | Pregunta N1 a Nexo |
+| `Nexo__EnviarGrupoRutaId` | `false`; `true` cuando Nexo QA despliegue `grupoRutaId` | `false`; `true` cuando Nexo producción lo tenga | HU-023.4 |
+| `Nexo__EnviarDatosCubicador` | `false`; `true` cuando Nexo QA despliegue `idRecomendacionVehiculo` | `false`; ídem en producción | HU-023.4 |
+| `Nexo__EnviarCodigosCubicador` | `false`; `true` cuando Nexo QA despliegue la cuarentena (18.4) y #297 | `false`; ídem en producción | Nexo #297 |
 | `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
+
+### Identidad compartida con Nexo (#172)
+
+Cotifly manda a Nexo `X-Portal-clsUsuario-Id = UsuariosWeb.idUsuarioExterno`, que es el `ID` de `tblSAPUsuariosApp`. Nexo lo valida
+contra su base de identidad (`ConnectionStrings:IdentidadPortal`), así que **las dos apps deben leer la misma base**. Hoy QA lee
+`dbsolucionesti`, donde los `ID` son otros (dguerra es 430 ahí y 10123 en el portal), y Nexo responde 401. El despliegue requiere
+la aprobación del usuario.
+
+| Variable | Staging / QA | Producción | Nota |
+|---|---|---|---|
+| `ConnectionStrings__Identidad` | `Database=dbSolucionesTI_Prueba` (el resto de la cadena igual: `cotifly_app`, `Encrypt=True`) | la base de identidad que use Nexo en producción (**por confirmar**) | secreto de Dokploy; solo cambia el `Database` |
+
+En este orden (los pasos 1 y 2 antes de la ventana; el 3 dentro de ella):
+
+1. **DBA, en `dbSolucionesTI_Prueba`:** usuario `cotifly_app` con `SELECT` por columna sobre `dbo.tblSAPUsuariosApp (ID, NOMBREUSUARIO, DESCRIPCIONUSUARIO, EMAIL)` (sin `CLAVE`), `dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES)` y `dbo.tblSAPRoles (IDROLES, DESCRIPCION)`. Confirmar con `sys.columns` las columnas que lista [10-operacion](backend-dotnet/docs/10-operacion.md#identidad-compartida-con-nexo-172).
+2. **DBA, en `dbo_cotifly.Roles`:** revisar que `idRolExterno` de `comercial` y `gerente_comercial` sean los `IDROLES` de `dbSolucionesTI_Prueba.dbo.tblSAPRoles` (pueden no ser los de `dbsolucionesti`). Si no coinciden, nadie entra (401 `sin_rol_autorizado`).
+3. **Ventana del cambio (con aprobación), en `dbo_cotifly.UsuariosWeb` de QA:** los usuarios que ya entraron quedaron vinculados al `ID` de `dbsolucionesti`; con la base nueva el login los rechaza (401 `identidad_inconsistente`). Hay que soltar el vínculo una vez con [`db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql`](db/scripts/operacion/revincular_identidad_dbSolucionesTI_Prueba.sql) (respalda los pares `id`/`idUsuarioExterno` en `dbo_cotifly.RespaldoVinculosIdentidad_172`, los pone en NULL, es idempotente y trae la consulta de verificación; `sqlcmd -I -b`). **Orden dentro de la ventana:**
+   1. Detener el servicio (escalar a 0 réplicas en Dokploy) o, como mínimo, cambiar primero `ConnectionStrings__Identidad` y redesplegar.
+   2. Correr el script **con el servicio detenido, o justo después del cambio de variable y antes de que entren usuarios.** Si corre mientras la API sigue con la configuración vieja (`dbsolucionesti`), el siguiente login vuelve a vincular el `ID` viejo (dguerra: 430) y el cambio queda a medias.
+   3. Levantar el servicio con la variable nueva.
+
+   En su siguiente login o refresh cada persona queda vinculada al `ID` del portal; hasta entonces, sus llamadas a Nexo no llevan identidad.
+4. **Pendiente externo:** Nexo QA debe configurar su `ConnectionStrings:IdentidadPortal`. Sin ella, Nexo QA valida contra su tabla `Usuarios` local.
 
 Variables del Python que **no** pasan al backend .NET (se retiran; no cargarlas en el stack nuevo):
 `DATABASE_URL`, `POSTGRES_*`, `MSSQL_SA_PASSWORD`, `MCP_URL`, `MCP_AUTH_TOKEN` (no hay MCP aparte, ADR-002),

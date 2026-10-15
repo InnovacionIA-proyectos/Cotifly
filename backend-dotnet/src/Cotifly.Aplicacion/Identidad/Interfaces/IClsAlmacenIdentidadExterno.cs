@@ -3,7 +3,7 @@ using Cotifly.Aplicacion.Identidad.DTOs;
 namespace Cotifly.Aplicacion.Identidad.Interfaces;
 
 /// <summary>
-/// Puerto del almacén corporativo de identidad (<c>dbsolucionesti</c>, solo lectura, ADR-008/ADR-009): personas de
+/// Puerto del almacén corporativo de identidad (base de identidad del portal, la misma de Nexo; QA: <c>dbSolucionesTI_Prueba</c>, #172; solo lectura, ADR-008/ADR-009): personas de
 /// <c>tblSAPUsuariosApp</c> y sus roles de ClientePro (<c>tblSAPUsuarioRoles</c> + <c>tblSAPRoles</c>). Reemplaza a la
 /// entidad <c>clsUsuarioSapApp</c> que vivía en Dominio (deuda de ADR-008).
 /// </summary>

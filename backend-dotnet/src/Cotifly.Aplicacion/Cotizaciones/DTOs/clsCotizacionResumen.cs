@@ -55,6 +55,13 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<clsCubicacionRutaResumen>? Cubicacion { get; init; }
 
     /// <summary>
+    /// #173: avisos de una respuesta que salió incompleta después de guardar (hoy solo <c>RESUMEN_INCOMPLETO</c>: falló la lectura del
+    /// nombre de la línea). <c>null</c> (no se serializa) cuando el resumen está completo.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Avisos { get; init; }
+
+    /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
     /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
     /// </summary>
@@ -151,6 +158,12 @@ public sealed record clsRutaNuevaVersion(
 
 /// <summary>Cotización que toca consultar en Nexo (agenda del polling, HU-005.6) y la marca con la que se reclama.</summary>
 public sealed record clsConsultaCosteoPendiente(Guid Id, DateTimeOffset SiguienteConsultaAt);
+
+/// <summary>
+/// HU-023.5 (#160): una ruta de la cola de la cubicación en segundo plano: su id, el de su cotización y el <c>cubicacionDisponibleAt</c>
+/// leído (para el reclamo optimista).
+/// </summary>
+public sealed record clsRutaPorCubicar(Guid RutaId, Guid CotizacionId, DateTimeOffset? DisponibleAt);
 
 /// <summary>
 /// <c>CubicacionRuta</c> (HU-023.3, #158): lo que respondió el cubicador para una ruta de la captura. <see cref="Resultado"/>,

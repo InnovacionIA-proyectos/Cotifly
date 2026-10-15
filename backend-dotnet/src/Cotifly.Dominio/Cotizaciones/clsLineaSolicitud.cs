@@ -125,10 +125,31 @@ public sealed class clsLineaSolicitud
     public bool Condicionada { get; private set; }
 
     /// <summary>
-    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). No se guardan:
-    /// solo viajan en la respuesta de la captura o del recálculo; leída de la base vale <c>null</c>.
+    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). HU-023.5 (#160):
+    /// se guardan en <c>avisosCubicacion</c> (JSON, propuesta <c>db/scripts/pendientes/04</c>) porque la licitación se cubica en segundo plano y el comercial
+    /// los lee después en <c>GET /web/licitaciones/{folio}</c>. <c>null</c> sin cubicador (o en una ruta anterior al 04).
     /// </summary>
     public clsAvisosCubicacion? AvisosCubicacion { get; private set; }
+
+    /// <summary>
+    /// HU-023.5 (#160): estado de la cubicación en segundo plano (<c>null</c> = se cubicó al guardarla). Ver <see cref="Cotizaciones.EstadoCubicacion"/>.
+    /// </summary>
+    public EstadoCubicacion? EstadoCubicacion { get; private set; }
+
+    /// <summary>HU-023.5: intentos fallidos de cubicar la ruta en segundo plano (se reinicia al reintentar a mano).</summary>
+    public int CubicacionIntentos { get; private set; }
+
+    /// <summary>
+    /// HU-023.5: desde cuándo una réplica puede tomar la ruta pendiente (<c>null</c> = ya). Sirve de reclamo (una réplica la toma hasta
+    /// <c>ahora + Cubicador:ReclamoSegundos</c>) y de espera entre reintentos.
+    /// </summary>
+    public DateTimeOffset? CubicacionDisponibleAt { get; private set; }
+
+    /// <summary>HU-023.5: último error de la cubicación en segundo plano (<c>CODIGO: mensaje</c>); <c>null</c> si no falló.</summary>
+    public string? ErrorCubicacion { get; private set; }
+
+    /// <summary>Largo máximo de <see cref="ErrorCubicacion"/> (columna <c>errorCubicacion NVARCHAR(500)</c>).</summary>
+    public const int LargoMaximoErrorCubicacion = 500;
 
     /// <summary>Resumen del estado de sus camiones (<see cref="clsResumenEstadoCosteo"/>).</summary>
     public EstadoCosteo? EstadoCosteo { get; private set; }
@@ -306,6 +327,78 @@ public sealed class clsLineaSolicitud
     }
 
     /// <summary>
+    /// HU-023.5 (#160): la ruta queda esperando la cubicación en segundo plano (con su camión provisional sin vehículo). Solo al crearla.
+    /// </summary>
+    internal void MarcarCubicacionPendiente()
+    {
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Pendiente;
+        CubicacionIntentos = 0;
+        CubicacionDisponibleAt = null;
+        ErrorCubicacion = null;
+    }
+
+    /// <summary>HU-023.5: la cubicación en segundo plano terminó: los camiones del plan reemplazan al provisional.</summary>
+    internal void CompletarCubicacion(clsPlanRuta plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ReemplazarCamiones(plan.Camiones, plan.Cubicacion);
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;
+        CubicacionDisponibleAt = null;
+        ErrorCubicacion = null;
+    }
+
+    /// <summary>
+    /// HU-023.5: un intento de cubicar la ruta falló. Con <paramref name="reintentarEn"/> la ruta sigue pendiente y se vuelve a tomar
+    /// desde esa hora; sin él queda <see cref="Cotizaciones.EstadoCubicacion.Fallida"/> (con el error visible para el comercial).
+    /// </summary>
+    internal void RegistrarFalloCubicacion(string codigo, string mensaje, DateTimeOffset? reintentarEn)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(codigo);
+        CubicacionIntentos++;
+        var error = $"{codigo.Trim()}: {mensaje?.Trim()}";
+        ErrorCubicacion = error.Length > LargoMaximoErrorCubicacion ? error[..LargoMaximoErrorCubicacion] : error;
+        EstadoCubicacion = reintentarEn is null ? Cotizaciones.EstadoCubicacion.Fallida : Cotizaciones.EstadoCubicacion.Pendiente;
+        CubicacionDisponibleAt = reintentarEn;
+    }
+
+    /// <summary>
+    /// HU-023.5: ¿la ruta falló porque el cubicador no respondió (caída o tiempo agotado, <c>CUBICADOR_NO_DISPONIBLE</c>)? Solo esas se
+    /// pueden aceptar con el camión sin vehículo: un rechazo de la petición (mercancía desconocida, dimensiones inválidas...) o una
+    /// respuesta inválida es un dato malo que el respaldo escondería (HU-023.1, contra el fallo silencioso).
+    /// </summary>
+    public bool FalloPorCaidaDelCubicador =>
+        EstadoCubicacion == Cotizaciones.EstadoCubicacion.Fallida
+        && ErrorCubicacion is { } error
+        && error.StartsWith(clsCodigosError.CubicadorNoDisponible + ":", StringComparison.Ordinal);
+
+    /// <summary>
+    /// HU-023.5: el comercial reintenta una ruta fallida. Sin <paramref name="usarRespaldo"/> vuelve a la cola. Con él, solo si falló por
+    /// una caída del cubicador (<see cref="FalloPorCaidaDelCubicador"/>), acepta el camión provisional sin vehículo (lo resuelve la Mesa
+    /// de Costeo de Nexo) y la ruta queda cubicada sin resultado ni error; un rechazo no cambia (devuelve <c>false</c>).
+    /// </summary>
+    internal bool ReintentarCubicacion(bool usarRespaldo)
+    {
+        if (EstadoCubicacion != Cotizaciones.EstadoCubicacion.Fallida || (usarRespaldo && !FalloPorCaidaDelCubicador))
+        {
+            return false;
+        }
+
+        CubicacionIntentos = 0;
+        CubicacionDisponibleAt = null;
+        if (usarRespaldo)
+        {
+            EstadoCubicacion = Cotizaciones.EstadoCubicacion.Cubicada;
+            ErrorCubicacion = null;
+            RegistrarCubicacion(null);
+            return true;
+        }
+
+        EstadoCubicacion = Cotizaciones.EstadoCubicacion.Pendiente;
+        ErrorCubicacion = null;
+        return true;
+    }
+
+    /// <summary>
     /// La ruta como línea de la captura (para revalidarla o aplicarle cambios de carga): con el vehículo de su único camión (o vacío si
     /// tiene varios) y sus mercancías en orden. Es la adaptación "una ruta, un camión" de HU-021 (ADR-019).
     /// </summary>
@@ -345,7 +438,8 @@ public sealed class clsLineaSolicitud
     /// (origen y destino por nombre e id, condiciones, horas, valor de la mercancía) y los del camión (vehículo, carrocería, peso y su
     /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
     /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
-    /// reparto lo sabe el cubicador).
+    /// reparto lo sabe el cubicador). El peso es <see cref="PesoLineaNexo"/> y el camión del cubicador viaja en
+    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159).
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -359,12 +453,39 @@ public sealed class clsLineaSolicitud
         return linea with
         {
             RutaId = Id,
+            IdRecomendacionVehiculo = camion.IdRecomendacionVehiculo,
             TipoVehiculo = camion.TipoVehiculo,
             Carroceria = camion.Carroceria,
-            PesoKg = camion.PesoKg,
+            PesoKg = PesoLineaNexo(camion),
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = VehiculosQueCuentan.Count == 1 ? linea.Posiciones : [],
+            Posiciones = UnSoloCamion ? linea.Posiciones : [],
         };
+    }
+
+    /// <summary>
+    /// ¿La ruta tiene un solo camión (contando los descartados)? Decide si la línea lleva las posiciones y el peso de la ruta
+    /// (<see cref="PesoLineaNexo"/>). Cuenta TODOS los camiones, no solo los vigentes: un camión que la Mesa descarta después del envío no
+    /// cambia lo que ya viajó, así que el emparejador del polling vuelve a calcular exactamente el peso enviado (HU-023.4, validación).
+    /// </summary>
+    private bool UnSoloCamion => _vehiculos.Count == 1;
+
+    /// <summary>
+    /// Peso que viaja a Nexo en la línea de <paramref name="camion"/> (HU-023.4, #159, decisión 6 del 2026-10-13). Con <b>un solo camión</b>
+    /// la línea lleva las posiciones, así que lleva el <b>peso declarado de la ruta</b> (o, sin él, la suma de las posiciones): ese ya cuadra
+    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c>. El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
+    /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión, como antes. El emparejador
+    /// compara con este mismo peso, en una sola pasada (<see cref="clsCamionParaEmparejar.Desde"/>).
+    /// </summary>
+    public decimal? PesoLineaNexo(clsVehiculoLineaSolicitud camion)
+    {
+        ArgumentNullException.ThrowIfNull(camion);
+        if (!UnSoloCamion)
+        {
+            return camion.PesoKg;
+        }
+
+        var suma = MercanciasOrdenadas.Select(m => m.APosicion()).Where(p => p.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+        return PesoKg ?? (suma > 0 ? suma : camion.PesoKg);
     }
 
     /// <summary>

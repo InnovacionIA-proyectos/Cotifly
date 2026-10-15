@@ -18,7 +18,7 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// (<c>clsTipoVehiculoDto {codigo, descripcion, esCatalogoOficial}</c>), <c>clases-viaje</c> (<c>{id, descripcion}</c>),
 /// <c>clases-contenedor</c> (<c>{id, descripcion, ...}</c>) y <c>lineas-negocio</c> (<c>{id, descripcion}</c>), verificados en el
 /// swagger de Nexo QA el 2026-10-05. Reemplaza a <c>GET /api/biblioteca-sap-historico/filtros</c> (histórico de tarifas, no el
-/// catálogo maestro). Cada petición identifica al comercial con <c>X-Portal-Usuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
+/// catálogo maestro). Cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c> (Nexo responde 401
 /// <c>SESION_INVALIDA</c> sin él). Comparte el cliente HTTP con nombre
 /// <see cref="Cotifly.Infraestructura.Clientes.Services.clsBuscadorClientesNexo.NombreCliente"/> y su tubería de resiliencia.
 /// </summary>
@@ -104,7 +104,7 @@ public sealed class clsCatalogosMaestrosNexo(
         string urlBase, string ruta, string identidad, Func<JsonElement, string?> valor, CancellationToken cancellationToken)
     {
         using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(urlBase, ruta));
-        peticion.Headers.Add("X-Portal-Usuario-Id", identidad);
+        clsIdentidadNexo.Identificar(peticion, identidad);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         try
         {

@@ -1,5 +1,9 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Cotifly.Aplicacion.Auditoria.Services;
+using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Clientes.Interfaces;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
@@ -44,6 +48,16 @@ public interface IClsEnvioCosteoService
     /// <c>MUNICIPIOS_NO_DISPONIBLE</c> o <c>NEXO_NO_DISPONIBLE</c> para los conexos): nada se guarda.
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// #173: <see cref="CapturarAsync"/> con <c>Idempotency-Key</c> (<see cref="IClsAlmacenIdempotencia"/>, ámbito
+    /// <c>capturar_costeo:{usuarioId}</c>). Una repetición con la misma clave y el mismo cuerpo en 24 h devuelve la cotización de la
+    /// primera sin crear otro folio ni otra solicitud en Nexo (el cliente reintenta tras un timeout o un 500); con otro cuerpo,
+    /// <c>SOLICITUD_INVALIDA</c>. Toda captura exitosa (también la que quedó en <c>error_envio</c>, que ya tiene folio) consume la clave.
+    /// Sin clave se comporta igual que <see cref="CapturarAsync"/>.
+    /// </summary>
+    Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reenvía la solicitud guardada. <c>COTIZACION_NO_ENCONTRADA</c> si no existe o no es del comercial;
@@ -99,10 +113,81 @@ public sealed class clsEnvioCosteoService(
     ILogger<clsEnvioCosteoService> logger,
     IClsPrecioCosteoService precioCosteo,
     IClsCapturaRutasService capturaRutas,
-    IOptions<clsOpcionesCaptura>? opcionesCaptura = null) : IClsEnvioCosteoService
+    IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
+    IClsAlmacenIdempotencia? idempotencia = null,
+    IClsRegistroCapturasIdempotentes? registroCapturas = null) : IClsEnvioCosteoService
 {
     /// <summary>Herramienta con la que se audita cada intento de envío (<c>EventosHerramienta</c>).</summary>
     public const string HerramientaAuditoria = "enviar_costeo_nexo";
+
+    /// <summary>Ámbito de las claves de idempotencia de la captura (con el comercial, #173).</summary>
+    public const string OperacionIdempotencia = "capturar_costeo";
+
+    private static readonly JsonSerializerOptions _jsonHuella = new(JsonSerializerDefaults.Web);
+
+    public Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, string? claveIdempotencia, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        if (claveIdempotencia is null || idempotencia is null)
+        {
+            return CapturarAsync(usuarioId, entrada, cancellationToken);
+        }
+
+        var ambito = $"{OperacionIdempotencia}:{usuarioId}";
+        var huella = Huella(entrada);
+        return idempotencia.EjecutarUnaVezAsync(
+            ambito,
+            claveIdempotencia,
+            huella,
+            ct => registroCapturas?.Buscar(ambito, claveIdempotencia) is { } previa
+                ? ReanudarAsync(previa, huella, usuarioId, ct)
+                : CapturarInternoAsync(usuarioId, entrada, ct, c => registroCapturas?.Registrar(ambito, claveIdempotencia,
+                    new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc))),
+            r => r.EsExitoso,
+            cancellationToken);
+    }
+
+    /// <summary>Motivo (<c>detalle.motivo</c>) de <c>ESTADO_NO_PERMITE</c> cuando la primera captura con la clave no terminó (#173).</summary>
+    public const string MotivoCapturaEnCurso = "CAPTURA_EN_CURSO";
+
+    /// <summary>
+    /// #173: la clave ya tiene una captura registrada (folio confirmado) cuyo resultado no quedó guardado: la primera petición falló
+    /// después de confirmar el folio (por ejemplo, al guardar el <c>solicitudNexoId</c>). NUNCA vuelve a llamar a Nexo. Si la cotización
+    /// guardada ya refleja el envío (no está en <c>pendiente_envio</c> y, si se conoce, tiene el mismo <c>solicitudNexoId</c>), responde con
+    /// ella; si no, <c>ESTADO_NO_PERMITE</c> con <c>detalle.motivo = CAPTURA_EN_CURSO</c>, el folio y el id de Nexo, para revisar el folio
+    /// en "Mis cotizaciones" en lugar de reintentar.
+    /// </summary>
+    private async Task<clsResultado<clsCotizacionSolicitud>> ReanudarAsync(
+        clsCapturaIdempotente previa, string huella, Guid usuarioId, CancellationToken cancellationToken)
+    {
+        if (previa.Huella != huella)
+        {
+            return new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
+                "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
+        }
+
+        var guardada = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(previa.Folio, usuarioId, cancellationToken);
+        if (guardada is not null && guardada.EstadoCosteo != EstadoCosteo.PendienteEnvio
+            && (previa.SolicitudNexoId is null || guardada.SolicitudNexoId == previa.SolicitudNexoId))
+        {
+            return guardada;
+        }
+
+        var datos = new Dictionary<string, object?> { ["folio"] = previa.Folio, ["solicitud_nexo_id"] = previa.SolicitudNexoId };
+        return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+            $"La captura de esta Idempotency-Key ya creó el folio {previa.Folio} y su envío a Nexo no terminó de registrarse. No la repitas: "
+            + "revisa el folio en Mis cotizaciones.",
+            MotivoCapturaEnCurso) { Datos = datos };
+    }
+
+    /// <summary>Huella (SHA-256) del cuerpo de la captura: la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.</summary>
+    public static string Huella(clsEntradaCaptura entrada)
+    {
+        ArgumentNullException.ThrowIfNull(entrada);
+        var cuerpo = JsonSerializer.Serialize(entrada, _jsonHuella);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cuerpo)));
+    }
 
     public Task<clsResultado<clsCotizacionSolicitud>> EnviarAsync(Guid usuarioId, clsEntradaSolicitudCosteo entrada, CancellationToken cancellationToken = default)
     {
@@ -111,7 +196,15 @@ public sealed class clsEnvioCosteoService(
         return CapturarAsync(usuarioId, clsEntradaCaptura.Desde(entrada), cancellationToken);
     }
 
-    public async Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsCotizacionSolicitud>> CapturarAsync(Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken = default) =>
+        CapturarInternoAsync(usuarioId, entrada, cancellationToken, null);
+
+    /// <summary>
+    /// <see cref="CapturarAsync"/> con <paramref name="alConfirmar"/> (#173): se llama con la cotización recién confirmada ANTES de llamar a
+    /// Nexo y otra vez después del envío (con el <c>solicitudNexoId</c>, aunque el guardado posterior falle).
+    /// </summary>
+    private async Task<clsResultado<clsCotizacionSolicitud>> CapturarInternoAsync(
+        Guid usuarioId, clsEntradaCaptura entrada, CancellationToken cancellationToken, Action<clsCotizacionSolicitud>? alConfirmar)
     {
         ArgumentNullException.ThrowIfNull(entrada);
         ArgumentNullException.ThrowIfNull(entrada.Encabezado);
@@ -167,7 +260,7 @@ public sealed class clsEnvioCosteoService(
 
         // Conexos con el costo del catálogo de Nexo y camiones del planificador (los del cubicador o, de respaldo, uno sin vehículo; #133).
         var preparadas = await capturaRutas.PrepararAsync(
-            usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken);
+            usuarioId, [.. validadas.Lineas.Select((r, i) => new clsRutaPorPreparar(r, politicasPorRuta[i].Id, i))], cancellationToken: cancellationToken);
         if (preparadas.Error is { } errorPreparacion)
         {
             return errorPreparacion;
@@ -217,7 +310,17 @@ public sealed class clsEnvioCosteoService(
         // entrada: el primer envío y el reintento mandan exactamente lo mismo a Nexo.
         // HU-021: las horas viajan en cada línea (la ruta las guarda); la cabecera no las tiene, así el reintento manda lo mismo.
         var encabezado = creada.Valor.EncabezadoSolicitud ?? entrada.Encabezado;
-        await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
+        alConfirmar?.Invoke(creada.Valor);
+        try
+        {
+            await EnviarANexoAsync(creada.Valor, encabezado, politica, usuarioId, reintento: false);
+        }
+        finally
+        {
+            // #173: el solicitudNexoId queda registrado con la clave aunque falle el guardado posterior a Nexo.
+            alConfirmar?.Invoke(creada.Valor);
+        }
+
         return creada.Valor;
     }
 
@@ -511,6 +614,18 @@ public sealed class clsEnvioCosteoService(
             return NoReintentable(cotizacion);
         }
 
+        // #173: si la captura llegó a Nexo y el guardado posterior falló, el folio quedó en pendiente_envio sin solicitudNexoId. Si el
+        // registro de la Idempotency-Key conoce el id de Nexo, se vincula (pendiente_costeo, el polling sigue) y NO se reenvía: reenviar
+        // duplicaría la solicitud. Sin registro (reinicio, otra réplica) se reenvía como antes: lo cubre la tabla propuesta en el 06.
+        if (cotizacion.SolicitudNexoId is null && registroCapturas?.BuscarPorFolio(cotizacion.Folio) is { SolicitudNexoId: { } enNexo })
+        {
+            cotizacion.RegistrarEnvioCosteo(enNexo, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            logger.LogWarning("Reintento de {Folio}: Nexo ya tenía la solicitud {Solicitud} (el guardado posterior había fallado); se vincula sin reenviar.",
+                cotizacion.Folio, enNexo);
+            return cotizacion;
+        }
+
         // Lo guardado se vuelve a validar (filas anteriores a una regla nueva): nunca se reenvía algo que Nexo rechazaría. Una licitación
         // pasa por todas las reglas de captura, también catálogos y municipios (HU-013.11: nunca texto libre a Nexo); el formulario de
         // una línea usa su validación (mismos mensajes que HU-005.5).
@@ -653,6 +768,10 @@ public sealed class clsEnvioCosteoService(
             var creada = resultado.Valor;
             // La solicitud y cada camión arrancan en pendiente_costeo; el polling deriva después el de cada camión (ADR-017, HU-021).
             cotizacion.RegistrarEnvioCosteo(creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+
+            // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
+            // contra esto y no contra la bandera actual.
+            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados));
         }
         else
         {

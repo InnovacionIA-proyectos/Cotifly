@@ -10,11 +10,13 @@ namespace Cotifly.Infraestructura.Licitaciones.Services;
 /// Exportación del Excel de una licitación con ClosedXML (HU-011.3, ADR-017 §5).
 /// <list type="bullet">
 /// <item><b>Con el original:</b> abre el archivo del cliente, ubica la hoja mapeada y sus filas con la regla de Nexo
-/// (<see cref="clsLectorExcelLicitacionClosedXml.Detectar"/>) y agrega tres columnas a la derecha de la última usada: precio final
-/// (en la moneda de la cotización), estado del costeo y servicios conexos. No modifica ninguna celda existente. Las filas del pliego
+/// (<see cref="clsLectorExcelLicitacionClosedXml.Detectar"/>) y agrega cuatro columnas a la derecha de la última usada: precio final
+/// (en la moneda de la cotización), estado del costeo, servicios conexos y (HU-023.5, #160) los camiones de la ruta. No modifica ninguna
+/// celda existente. Las filas del pliego
 /// que no se enviaron quedan "Sin enviar".</item>
 /// <item><b>Sin original:</b> una hoja <c>Licitación</c> con los campos mapeados y las mismas columnas.</item>
-/// <item>Siempre una hoja <see cref="HojaResumen"/> con el folio, el cliente, la moneda (y la TRM en USD), el total y los conexos.</item>
+/// <item>Siempre una hoja <see cref="HojaResumen"/> con el folio, el cliente, la moneda (y la TRM en USD), el total y los conexos, y una
+/// hoja <see cref="HojaCamiones"/> con un camión por fila (HU-023.5).</item>
 /// </list>
 /// Las líneas sin costeo llevan <see cref="SinCosteo"/> en la columna del precio, con fondo amarillo. Nunca escribe costos de Nexo (no
 /// los recibe). Siempre guarda <c>.xlsx</c>: ClosedXML no conserva las macros de un <c>.xlsm</c>.
@@ -27,6 +29,15 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
     public const string SinEnviar = "Sin enviar";
     public const string ColumnaEstado = "Estado costeo Cotifly";
     public const string ColumnaConexos = "Servicios conexos Cotifly";
+
+    /// <summary>HU-023.5 (#160): columna con los camiones de cada ruta (uno por línea de la celda).</summary>
+    public const string ColumnaCamiones = "Camiones Cotifly";
+
+    /// <summary>HU-023.5 (#160): hoja con un camión por fila (vehículo, carrocería, peso, volumen y llenado).</summary>
+    public const string HojaCamiones = "Camiones Cotifly";
+
+    /// <summary>Columnas que agrega Cotifly a la derecha del pliego: precio, estado, conexos y camiones.</summary>
+    public const int ColumnasCotifly = 4;
     public const string ConexosDeLaLicitacion = "Aplican a toda la licitación (ver hoja Resumen Cotifly)";
 
     /// <summary>El total es la suma de los precios ya redondeados de las líneas, sin servicios conexos (ADR-017 §3).</summary>
@@ -64,6 +75,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
             }
 
             EscribirResumen(libro, datos, sinUbicar);
+            EscribirCamiones(libro, datos);
             using var memoria = new MemoryStream();
             libro.SaveAs(memoria);
             return ComoXlsx(memoria);
@@ -110,7 +122,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
 
         // A la derecha de la última columna usada de VERDAD (el lector solo lee 200): nunca se pisa una celda del cliente.
         var columna = detectado.UltimaColumnaReal + 1;
-        if (columna + 2 > clsLectorExcelLicitacionClosedXml.UltimaColumnaExcel)
+        if (columna + ColumnasCotifly - 1 > clsLectorExcelLicitacionClosedXml.UltimaColumnaExcel)
         {
             return new clsErrorDominio(clsCodigosError.ExcelInvalido, $"La hoja '{datos.Hoja}' no tiene columnas libres a la derecha para los precios.");
         }
@@ -118,7 +130,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         if (detectado.FinEncabezado > detectado.Encabezado)
         {
             // Subencabezado: las columnas nuevas ocupan las dos filas del encabezado, como las del cliente.
-            for (var c = columna; c < columna + 3; c++)
+            for (var c = columna; c < columna + ColumnasCotifly; c++)
             {
                 hoja.Range(detectado.Encabezado, c, detectado.FinEncabezado, c).Merge();
             }
@@ -184,11 +196,14 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         hoja.Cell(fila, columna).Value = ColumnaPrecio(moneda);
         hoja.Cell(fila, columna + 1).Value = ColumnaEstado;
         hoja.Cell(fila, columna + 2).Value = ColumnaConexos;
-        hoja.Range(fila, columna, fila, columna + 2).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
-        for (var c = columna; c < columna + 3; c++)
+        hoja.Cell(fila, columna + 3).Value = ColumnaCamiones;
+        hoja.Range(fila, columna, fila, columna + ColumnasCotifly - 1).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+        for (var c = columna; c < columna + ColumnasCotifly; c++)
         {
             hoja.Column(c).Width = 26;
         }
+
+        hoja.Column(columna + 3).Width = 48;
     }
 
     private static void EscribirLinea(IXLWorksheet hoja, int fila, int columna, clsLineaExportacion linea, clsExportacionLicitacion datos)
@@ -207,6 +222,76 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
 
         hoja.Cell(fila, columna + 1).Value = linea.Estado;
         hoja.Cell(fila, columna + 2).Value = datos.ServiciosConexos.Count == 0 ? string.Empty : ConexosDeLaLicitacion;
+        var camiones = hoja.Cell(fila, columna + 3);
+        camiones.Value = TextoCamiones(linea);
+        camiones.Style.Alignment.SetWrapText(true);
+    }
+
+    /// <summary>
+    /// HU-023.5 (#160): la celda de camiones de una ruta: un camión por línea (<c>"1 × Tractocamión 3S3 / Furgón · 16.000 kg · 81,25 % vol."</c>)
+    /// y, si la cubicación no terminó, su estado.
+    /// </summary>
+    public static string TextoCamiones(clsLineaExportacion linea)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        var lineas = (linea.Camiones ?? []).Select(c => $"{c.Orden}. {c.Resumen()}").ToList();
+        if (linea.Cubicacion is { } cubicacion && !string.Equals(cubicacion, "Cubicada", StringComparison.Ordinal))
+        {
+            lineas.Insert(0, cubicacion);
+        }
+
+        return string.Join("\n", lineas);
+    }
+
+    /// <summary>HU-023.5 (#160): hoja con un camión por fila, para filtrar y sumar (la celda de la ruta es para leer).</summary>
+    private static void EscribirCamiones(XLWorkbook libro, clsExportacionLicitacion datos)
+    {
+        var nombre = HojaCamiones;
+        for (var n = 2; libro.Worksheets.Contains(nombre); n++)
+        {
+            nombre = $"{HojaCamiones} {n}";
+        }
+
+        var hoja = libro.Worksheets.Add(nombre);
+        string[] campos =
+        [
+            "Línea", "Ruta", "Camión", "Vehículo", "Carrocería", "Peso (kg)", "Volumen (m³)", "Llenado volumen (%)", "Llenado peso (%)", "Cubicación",
+        ];
+        for (var c = 0; c < campos.Length; c++)
+        {
+            hoja.Cell(1, c + 1).Value = campos[c];
+        }
+
+        hoja.Range(1, 1, 1, campos.Length).Style.Font.SetBold().Fill.SetBackgroundColor(_encabezado);
+        var fila = 2;
+        foreach (var linea in datos.Lineas)
+        {
+            foreach (var camion in linea.Camiones ?? [])
+            {
+                hoja.Cell(fila, 1).Value = linea.Orden;
+                hoja.Cell(fila, 2).Value = $"{linea.Origen} → {linea.Destino}";
+                hoja.Cell(fila, 3).Value = camion.Orden;
+                hoja.Cell(fila, 4).Value = camion.Vehiculo is null && camion.Carroceria is null ? clsCamionExportacion.SinVehiculo : camion.Vehiculo ?? string.Empty;
+                hoja.Cell(fila, 5).Value = camion.Carroceria ?? string.Empty;
+                Numero(hoja.Cell(fila, 6), camion.PesoKg, "#,##0.##");
+                Numero(hoja.Cell(fila, 7), camion.VolumenTotalM3, "#,##0.###");
+                Numero(hoja.Cell(fila, 8), camion.PorcentajeLlenadoVolumen, "0.##");
+                Numero(hoja.Cell(fila, 9), camion.PorcentajeLlenadoPeso, "0.##");
+                hoja.Cell(fila, 10).Value = linea.Cubicacion ?? string.Empty;
+                fila++;
+            }
+        }
+
+        hoja.Columns().AdjustToContents();
+    }
+
+    private static void Numero(IXLCell celda, decimal? valor, string formato)
+    {
+        if (valor is { } numero)
+        {
+            celda.Value = numero;
+            celda.Style.NumberFormat.Format = formato;
+        }
     }
 
     private static void EscribirResumen(XLWorkbook libro, clsExportacionLicitacion datos, IReadOnlyList<clsLineaExportacion> sinUbicar)

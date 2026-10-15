@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Cotifly.Aplicacion.Identidad.Repositories;
@@ -16,7 +15,7 @@ namespace Cotifly.Infraestructura.Municipios.Services;
 /// <summary>
 /// Catálogo de municipios contra Nexo en vivo: <c>GET {Nexo:UrlBase}/api/captura-solicitudes/municipios</c>, el mismo
 /// catálogo (sin paginar) que usa el formulario "Nueva solicitud" de Nexo para el origen/destino. Nexo no tiene login
-/// propio: cada petición identifica al comercial con <c>X-Portal-Usuario-Id: {idUsuarioExterno}</c>
+/// propio: cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c>
 /// (<c>UsuariosWeb.idUsuarioExterno</c>, la misma fila de <c>tblSAPUsuariosApp</c> que usa el login de ClientePro) —
 /// nunca un token de Cotifly, igual que
 /// <see cref="Cotifly.Infraestructura.Clientes.Services.clsBuscadorClientesNexo"/>. Se registra vía
@@ -29,7 +28,7 @@ namespace Cotifly.Infraestructura.Municipios.Services;
 /// <para><b>Fallos.</b> Nunca lanza: usuario sin <c>idUsuarioExterno</c>, HTTP, red o tiempo agotado devuelven
 /// <c>MUNICIPIOS_NO_DISPONIBLE</c> (Result), igual que <see cref="clsMunicipiosNoDisponible"/> — el llamante
 /// (<c>GET /web/municipios</c>) decide qué mostrar. Una sola línea de warning por fallo, sin la traza completa ni el
-/// header <c>X-Portal-Usuario-Id</c> (no es secreto, pero no aporta al log).</para>
+/// header <c>X-Portal-clsUsuario-Id</c> (no es secreto, pero no aporta al log).</para>
 /// </remarks>
 public sealed class clsMunicipiosNexo(
     HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsMunicipiosNexo> logger)
@@ -55,7 +54,7 @@ public sealed class clsMunicipiosNexo(
         }
 
         using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(_urlBase));
-        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         try

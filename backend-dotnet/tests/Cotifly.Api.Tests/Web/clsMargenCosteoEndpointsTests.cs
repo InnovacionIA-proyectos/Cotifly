@@ -90,6 +90,10 @@ public sealed class clsMargenCosteoEndpointsTests : IDisposable
         var texto = clsLectorPdf.Leer(await descarga.Content.ReadAsByteArrayAsync(Ct)).Texto;
         texto.Should().Contain("Cargue en puerto").And.Contain("3.000.000").And.NotContain("Escolta", "solo los conexos incluidos");
         texto.Should().NotContain("2.550.000", "el PDF lleva el precio con margen, no el costo de Nexo");
+        // #173: la nota usa las horas capturadas (4 h de cargue y 6,5 h de descargue) y no dice que no incluye el cargue (va itemizado).
+        var plano = System.Text.RegularExpressions.Regex.Replace(texto, @"\s+", " ");
+        plano.Should().Contain("no incluyen el servicio de descargue").And.NotContain("no incluyen servicios de cargue ni descargue");
+        plano.Should().Contain("máximo 4 horas para el cargue y 6,5 horas para el descargue");
 
         using var otra = await _api.EnviarAsync(_post, $"/web/cotizaciones/{folio}/costeo/pdf", sesion.Access);
         otra.StatusCode.Should().Be(HttpStatusCode.Conflict);

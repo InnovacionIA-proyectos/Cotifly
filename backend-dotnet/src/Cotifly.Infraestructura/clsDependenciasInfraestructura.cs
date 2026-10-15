@@ -102,7 +102,12 @@ public static class clsDependenciasInfraestructura
         servicios.AddSingleton<IValidateOptions<clsOpcionesTrm>, clsValidadorOpcionesTrm>();
         servicios.AddOpcionesValidadas<clsOpcionesCandadoSql>(configuracion, clsOpcionesCandadoSql.Seccion);
         servicios.AddOpcionesValidadas<clsOpcionesCubicador>(configuracion, clsOpcionesCubicador.Seccion);
+        // HU-023.2 (#157): "Calcular cubicaje" (parecido de la descripción y el plan B de la sugerencia legada).
+        servicios.AddOpcionesValidadas<Aplicacion.Cubicacion.Services.clsOpcionesCubicacion>(configuracion, Aplicacion.Cubicacion.Services.clsOpcionesCubicacion.Seccion);
         servicios.AddSingleton<IValidateOptions<clsOpcionesCubicador>, clsValidadorOpcionesCubicador>();
+        servicios.AddOpcionesValidadas<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>(
+            configuracion, Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion.Seccion);
+        servicios.AddSingleton<IValidateOptions<Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion>, clsValidadorOpcionesCubicacionLicitacion>();
 
         // Adaptadores de puertos transversales.
         servicios.TryAddSingleton(TimeProvider.System);
@@ -120,10 +125,10 @@ public static class clsDependenciasInfraestructura
         // TRM oficial del día para cotizar en USD (HU-012.1, ADR-014).
         AgregarTrm(servicios);
 
-        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje).
+        // Catálogos del formulario de captura que también proxean Nexo (municipios, tipos de vehículo/carrocería/viaje). La cubicación
+        // rápida de Nexo (POST /api/cubicacion) se retiró en HU-023.2 (#157): "Calcular cubicaje" usa el cubicador (AgregarCubicador).
         AgregarMunicipios(servicios);
         AgregarCatalogosFlete(servicios);
-        AgregarCubicacion(servicios);
         AgregarCubicador(servicios);
         AgregarCosteo(servicios);
 
@@ -274,14 +279,16 @@ public static class clsDependenciasInfraestructura
     /// <summary>
     /// Búsqueda de clientes elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaBuscadorClientes"/>): configurada
     /// → <see cref="clsBuscadorClientesNexo"/>; vacía → <see cref="clsBuscadorClientesNoDisponible"/> (#10, HU-005.2). Cliente
-    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-Usuario-Id</c> en los
+    /// tipado con la tubería estándar de resiliencia (8 s en total) y sin registrar el header <c>X-Portal-clsUsuario-Id</c> en los
     /// logs. TryAdd: un adaptador registrado antes (pruebas) se respeta.
     /// </summary>
     private static void AgregarBuscadorClientes(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsBuscadorClientesNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsBuscadorClientesNexo>(clsBuscadorClientesNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsBuscadorClientesNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsBuscadorClientes>(clsFabricaBuscadorClientes.Crear);
     }
@@ -327,20 +334,6 @@ public static class clsDependenciasInfraestructura
     }
 
     /// <summary>
-    /// Cubicación rápida elegida por <c>Nexo:UrlBase</c> al resolver (<see cref="clsFabricaCubicacion.Crear"/>):
-    /// configurada → <see cref="clsCubicacionNexo"/>; vacía → <see cref="clsCubicacionNoDisponible"/>. Mismo cliente
-    /// HTTP tipado (nombre <see cref="clsBuscadorClientesNexo.NombreCliente"/>) que la búsqueda de clientes: es el
-    /// mismo servicio Nexo. No repite la configuración de resiliencia/redacción por la misma razón que
-    /// <see cref="AgregarMunicipios"/>. TryAdd: un adaptador registrado antes (pruebas) se respeta.
-    /// </summary>
-    private static void AgregarCubicacion(IServiceCollection servicios)
-    {
-        servicios.TryAddScoped<clsCubicacionNoDisponible>();
-        servicios.AddHttpClient<clsCubicacionNexo>(clsBuscadorClientesNexo.NombreCliente);
-        servicios.TryAddScoped<IClsCubicacionProvider>(clsFabricaCubicacion.Crear);
-    }
-
-    /// <summary>
     /// Cubicador (HU-021.5, #133) elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
     /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
     /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: el tiempo de <c>Cubicador:TiempoEsperaSegundos</c>, sin
@@ -359,6 +352,10 @@ public static class clsDependenciasInfraestructura
             .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
                 clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
+
+        // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
+        servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
+        servicios.AddHostedService<clsWorkerCubicacionLicitacion>();
 
         servicios.Configure<TelemetryOptions>(telemetria =>
         {
@@ -380,8 +377,10 @@ public static class clsDependenciasInfraestructura
     private static void AgregarCosteo(IServiceCollection servicios)
     {
         servicios.TryAddScoped<clsCosteoNexoNoDisponible>();
+        AgregarCupoNexo(servicios);
         servicios.AddHttpClient<clsCosteoNexo>(clsCosteoNexo.NombreCliente)
             .RedactLoggedHeaders(_ => true)
+            .AddHttpMessageHandler<clsCupoNexoHandler>()
             .AddStandardResilienceHandler(clsCosteoNexo.ConfigurarResiliencia);
         servicios.TryAddScoped<IClsCosteoNexo>(clsFabricaCosteoNexo.Crear);
         servicios.AddHostedService<clsWorkerCosteoNexo>();
@@ -416,6 +415,16 @@ public static class clsDependenciasInfraestructura
         servicios.TryAddSingleton<Aplicacion.Licitaciones.Interfaces.IClsExportadorExcelLicitacion, Licitaciones.Services.clsExportadorExcelLicitacionClosedXml>();
     }
 
+    /// <summary>
+    /// Cupo de lecturas de Nexo (HU-023.4, #159): un bloqueo para todo Cotifly tras un 429 (Nexo limita por rol) y el manejador que lo
+    /// aplica en los dos clientes de Nexo, por fuera de la tubería de resiliencia. Idempotente (lo piden clientes y costeo).
+    /// </summary>
+    private static void AgregarCupoNexo(IServiceCollection servicios)
+    {
+        servicios.TryAddSingleton<clsCupoNexo>();
+        servicios.TryAddTransient<clsCupoNexoHandler>();
+    }
+
     private static void AgregarPersistencia(IServiceCollection servicios)
     {
         servicios.AddSingleton<clsMarcasTiempoInterceptor>();
@@ -429,7 +438,7 @@ public static class clsDependenciasInfraestructura
             opciones.AddInterceptors(proveedor.GetRequiredService<clsMarcasTiempoInterceptor>());
         });
 
-        // dbsolucionesti: solo lectura (usuarios y roles de ClientePro para el login, #12).
+        // Base de identidad del portal (la misma de Nexo; QA: dbSolucionesTI_Prueba, #172): solo lectura (login, #12).
         servicios.AddDbContext<clsIdentidadDbContext>((proveedor, opciones) =>
             ConfigurarSqlServer(opciones, proveedor.GetRequiredService<IOptions<clsOpcionesConexiones>>().Value.Identidad));
 

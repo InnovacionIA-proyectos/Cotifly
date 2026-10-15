@@ -99,7 +99,7 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         alta["clienteBp"]!.GetValue<string>().Should().Be("15927");
         alta["lineas"]![0]!["posiciones"]!.AsArray().Should().HaveCount(2);
         var peticion = _nexo.Peticiones.Last(p => p.Metodo == _post);
-        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-Usuario-Id");
+        peticion.IdPortalUsuario.Should().NotBeNullOrEmpty("Nexo identifica al comercial por X-Portal-clsUsuario-Id");
 
         var fila = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
             $"SELECT CONCAT(solicitudNexoId, '|', estadoCosteo, '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias p JOIN dbo_cotifly.CotizacionLineasSolicitud lp ON lp.id = p.lineaSolicitudId WHERE lp.cotizacionSolicitudId = c.id)) FROM dbo_cotifly.CotizacionesSolicitud c WHERE folio = '{json.GetProperty("folio").GetString()}'");
@@ -390,6 +390,47 @@ public sealed class clsCosteoEndpointsTests : IDisposable
         };
 
         return Normalizar(System.Text.Json.Nodes.JsonNode.Parse(json))!.ToJsonString();
+    }
+
+    /// <summary>
+    /// #173: el E2E real recibió un 500 DESPUÉS de guardar y enviar a Nexo; un reintento del frontend duplicaba la solicitud. Con la misma
+    /// <c>Idempotency-Key</c>, el segundo POST devuelve la misma cotización sin crear otro folio ni otra solicitud en Nexo; sin clave, cada
+    /// POST es una captura nueva.
+    /// </summary>
+    [Fact]
+    public async Task ConLaMismaIdempotencyKeyElReintentoDeLaCapturaNoDuplicaLaSolicitudEnNexo()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var clave = Guid.NewGuid().ToString();
+        var antes = _nexo.SolicitudesCreadas.Count;
+
+        using var primera = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var folio = (await VerificarContratoAsync(primera, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString();
+        using var reintento = await CapturarConClaveAsync(ana.Access, clave, Formulario());
+        var repetida = await VerificarContratoAsync(reintento, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+
+        repetida.GetProperty("folio").GetString().Should().Be(folio, "la repetición devuelve la cotización de la primera");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "una sola solicitud en Nexo");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(_entorno.BaseDatos.CadenaCotifly,
+                $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = (SELECT usuarioId FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}')"))
+            .Should().Be(1, "un solo folio");
+
+        using var otroCuerpo = await CapturarConClaveAsync(ana.Access, clave, Formulario(linea: "Nacional"));
+        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo es SOLICITUD_INVALIDA");
+
+        using var sinClave = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        (await VerificarContratoAsync(sinClave, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()
+            .Should().NotBe(folio, "sin clave cada POST es una captura nueva");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 2);
+    }
+
+    private async Task<HttpResponseMessage> CapturarConClaveAsync(string token, string clave, string cuerpo)
+    {
+        using var peticion = new HttpRequestMessage(_post, "/web/solicitudes-costeo");
+        peticion.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        peticion.Headers.TryAddWithoutValidation("Idempotency-Key", clave);
+        peticion.Content = new StringContent(cuerpo, System.Text.Encoding.UTF8, "application/json");
+        return await _api.Cliente.SendAsync(peticion, Ct);
     }
 
     public void Dispose()

@@ -7,7 +7,7 @@ namespace Cotifly.Aplicacion.Costeo.Interfaces;
 /// <summary>
 /// Puerto de los servicios conexos de Nexo (HU-013.3, ADR-018 §4). La implementación real usa el mismo cliente HTTP del costeo
 /// (<c>NexoCosteo</c>: 30 s, reintentos solo en GET, nunca en POST) y la misma identidad del comercial
-/// (<c>X-Portal-Usuario-Id</c>), con un límite de tamaño de respuesta. Nunca lanza por fallos de Nexo; los errores ya vienen
+/// (<c>X-Portal-clsUsuario-Id</c>), con un límite de tamaño de respuesta. Nunca lanza por fallos de Nexo; los errores ya vienen
 /// traducidos: <c>NEXO_NO_DISPONIBLE</c> (sin configurar, caído, sin respuesta a tiempo, 5xx, 401, comercial sin
 /// <c>idUsuarioExterno</c> o respuesta demasiado grande), <c>NEXO_SIN_PERMISO</c> (403) y, solo al agregar, <c>CONEXO_INVALIDO</c>
 /// (otro 4xx, con el código de Nexo en el detalle). La cancelación del llamador sí se propaga.

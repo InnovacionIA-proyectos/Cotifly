@@ -149,6 +149,38 @@ public sealed class clsMisCotizacionesYNuevaVersionTests
         (await servicio.ResumirAsync(cotizacion, Ct)).LineaNegocio.Should().Be("Nacional");
     }
 
+    /// <summary>
+    /// #173 (E2E real del 2026-10-14): la captura ya guardó y envió a Nexo, y la lectura secundaria del nombre de la línea se agota
+    /// ("Execution Timeout Expired"). El resumen no lanza (el controlador respondía 500 y un reintento duplicaba la solicitud en Nexo):
+    /// sale con lo que está en memoria, sin la línea y con el aviso RESUMEN_INCOMPLETO.
+    /// </summary>
+    [Fact]
+    public async Task SiLaLecturaDeLaLineaSeAgotaElResumenSaleConLoEsencialYUnAviso()
+    {
+        var cotizacion = Cotifly.Pruebas.Comun.clsCotizacionMuestra.LicitacionCosteada([1_000_000m, 2_000_000m], folio: "PCN-DG-14102026-002", usuarioId: _ana);
+        _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<Task<clsMargenPolitica?>>(_ => throw new TimeoutException("Execution Timeout Expired"));
+        var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf()));
+
+        var resumen = await servicio.ResumirAsync(cotizacion, Ct);
+
+        resumen.Folio.Should().Be("PCN-DG-14102026-002");
+        resumen.Id.Should().Be(cotizacion.Id);
+        resumen.PrecioFinal.Should().Be(cotizacion.PrecioFinal);
+        resumen.LineaNegocio.Should().BeNull();
+        resumen.Avisos.Should().Equal(clsMisCotizacionesService.AvisoResumenIncompleto);
+    }
+
+    [Fact]
+    public async Task ConLaLecturaBienElResumenNoTraeAvisos()
+    {
+        var cotizacion = Cotifly.Pruebas.Comun.clsCotizacionMuestra.LicitacionCosteada([1_000_000m], folio: "PCN-DG-14102026-004", usuarioId: _ana);
+        _politicas.ObtenerPorIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(clsMargenPolitica.Crear("Nacional", 0.15m).Valor);
+        var servicio = new clsMisCotizacionesService(_cotizaciones, _politicas, Options.Create(new clsOpcionesPdf()));
+
+        (await servicio.ResumirAsync(cotizacion, Ct)).Avisos.Should().BeNull();
+    }
+
     [Fact]
     public async Task LosDatosDeNuevaVersionTraenCadaRutaConSuLineaYSuMargen()
     {

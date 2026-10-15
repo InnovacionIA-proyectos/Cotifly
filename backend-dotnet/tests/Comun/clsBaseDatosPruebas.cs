@@ -6,11 +6,12 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c> y <c>db/scripts/02_alter_cubicador.sql</c> partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c> y la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
-/// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT) y <c>dbo.tblSAPRoles</c>. Mapea los roles internos de
+/// <c>dbo.tblSAPUsuarioRoles</c> (IDUSUARIO e IDROLES INT, sin columna ID: Cotifly no la lee, #172) y <c>dbo.tblSAPRoles</c>, los tipos que
+/// Nexo verificó en <c>dbSolucionesTI_Prueba</c> (la base de identidad de QA, #172; aquí conserva el nombre <c>dbsolucionesti</c>). Mapea los roles internos de
 /// <c>dbo_cotifly.Roles</c> a los roles externos de prueba (<see cref="RolExternoComercial"/>,
 /// <see cref="RolExternoGerente"/>). Un contenedor por ensamblado de pruebas (o por clase, según el fixture).
 /// </summary>
@@ -30,7 +31,16 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         "0008_horas_por_linea.sql", "0009_reestructuracion_cotizaciones.sql", "0010_nombres_municipio.sql",
         // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs, sin cambios) va después del 0010.
         Script02,
+        // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/pendientes/04, pendiente de aprobación;
+        // el backend mapea sus columnas, así que las pruebas lo aplican en las dos cadenas).
+        Script04,
     ];
+
+    /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
+
+    /// <summary>Scripts hasta el 02 del cubicador (sin el 04).</summary>
+    public const int ScriptsHasta02 = 11;
 
     /// <summary>Ruta (relativa a <c>migrations_mssql</c>) del script <c>02</c> del cubicador, copiado a <c>scripts_bd</c>.</summary>
     public const string Script02 = "../scripts_bd/02_alter_cubicador.sql";
@@ -48,15 +58,19 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public const string ScriptInstalacion = "01_crear_esquema.sql";
 
     /// <summary>IDROLES externo de prueba mapeado a <c>comercial</c>.</summary>
-    public const int RolExternoComercial = 34;
+    public const int RolExternoComercial = 32;
 
     /// <summary>IDROLES externo de prueba mapeado a <c>gerente_comercial</c>.</summary>
-    public const int RolExternoGerente = 35;
+    public const int RolExternoGerente = 31;
 
     /// <summary>IDROLES externo de prueba sin mapeo (no da acceso).</summary>
     public const int RolExternoSinMapeo = 40;
 
-    private static long _siguienteIdExterno = 10_000;
+    /// <summary>
+    /// Contador de IDs externos de las personas de prueba. Empieza en 1.000.000 (sigue cabiendo en INT) para no chocar con los IDs fijos
+    /// de las pruebas, como el 10123 del portal (#172).
+    /// </summary>
+    private static long _siguienteIdExterno = 1_000_000;
 
     private readonly MsSqlContainer _contenedor = new MsSqlBuilder(Imagen).Build();
     private readonly SemaphoreSlim _candado = new(1, 1);
@@ -104,6 +118,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
                 // HU-023.3: la instalación desde cero corre el 02 después del 01 (como el ejecutador).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
+                // HU-023.5: la propuesta 04 (pendiente de aprobación) también, porque el backend mapea sus columnas.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -141,6 +157,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
             // HU-023.3 (#158): el 02 del cubicador va después del 01, como lo corre el ejecutador.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
+            // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);
@@ -168,7 +186,6 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 DESCRIPCION         VARCHAR(50)   NULL
             );
             CREATE TABLE dbo.tblSAPUsuarioRoles (
-                ID                  INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
                 IDUSUARIO           INT           NOT NULL,
                 IDROLES             INT           NOT NULL
             );
@@ -193,10 +210,13 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     public static long NuevoIdExterno() => Interlocked.Increment(ref _siguienteIdExterno);
 
     /// <summary>Agrega una persona a <c>tblSAPUsuariosApp</c> con sus roles externos; devuelve su ID.</summary>
-    public async Task<long> CrearPersonaExternaAsync(string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos)
+    public Task<long> CrearPersonaExternaAsync(string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos) =>
+        CrearPersonaExternaConIdAsync(NuevoIdExterno(), nombreUsuario, descripcion, email, rolesExternos);
+
+    /// <summary>Agrega una persona con un <c>ID</c> fijo (NUMERIC) a <c>tblSAPUsuariosApp</c> con sus roles externos; devuelve su ID.</summary>
+    public async Task<long> CrearPersonaExternaConIdAsync(long id, string nombreUsuario, string? descripcion, string? email, params int[] rolesExternos)
     {
         ArgumentNullException.ThrowIfNull(rolesExternos);
-        var id = NuevoIdExterno();
         await using var conexion = new SqlConnection(CadenaIdentidad);
         await conexion.OpenAsync();
         await using (var comando = new SqlCommand(

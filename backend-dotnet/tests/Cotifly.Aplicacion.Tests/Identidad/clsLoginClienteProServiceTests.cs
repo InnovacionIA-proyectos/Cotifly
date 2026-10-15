@@ -153,11 +153,11 @@ public sealed class clsLoginClienteProServiceTests
         _e.PersonaExterna("APEREZ", 101, clsEscenarioIdentidad.RolExternoComercial);
 
         var resultado = await _e.Login().IniciarSesionAsync(
-            new clsSolicitudLoginClientePro("APEREZ", null, ["35", "gerente_comercial"]), Ct);
+            new clsSolicitudLoginClientePro("APEREZ", null, ["31", "gerente_comercial"]), Ct);
 
         resultado.Valor.Usuario.Rol.Should().Be("comercial");
         var entrada = _e.EntradaAuditada(clsCodigosAcceso.HerramientaLogin);
-        entrada.GetProperty("roles_informados").EnumerateArray().Select(r => r.GetString()).Should().Equal("35", "gerente_comercial");
+        entrada.GetProperty("roles_informados").EnumerateArray().Select(r => r.GetString()).Should().Equal("31", "gerente_comercial");
     }
 
     [Fact]
@@ -305,9 +305,9 @@ public sealed class clsLoginClienteProServiceTests
     {
         var catalogo = _e.Catalogo;
 
-        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(34, null)]).Should().Be((RolInterno.Comercial, clsMotivosAcceso.ReglaMapeoUnico));
-        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(35, null)]).Should().Be((RolInterno.GerenteComercial, clsMotivosAcceso.ReglaMapeoUnico));
-        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(35, null), new clsRolExterno(34, null)])
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(32, null)]).Should().Be((RolInterno.Comercial, clsMotivosAcceso.ReglaMapeoUnico));
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(31, null)]).Should().Be((RolInterno.GerenteComercial, clsMotivosAcceso.ReglaMapeoUnico));
+        clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(31, null), new clsRolExterno(32, null)])
             .Should().Be((RolInterno.GerenteComercial, clsMotivosAcceso.ReglaPrecedenciaGerente));
         clsVerificadorIdentidad.ResolverRol(catalogo, [new clsRolExterno(40, null)]).Should().Be(((RolInterno?)null, (string?)null));
         clsVerificadorIdentidad.ResolverRol(catalogo, []).Rol.Should().BeNull();
@@ -318,6 +318,6 @@ public sealed class clsLoginClienteProServiceTests
     {
         _e.Gerente.Desactivar();
 
-        clsVerificadorIdentidad.ResolverRol(_e.Catalogo, [new clsRolExterno(35, null)]).Rol.Should().BeNull();
+        clsVerificadorIdentidad.ResolverRol(_e.Catalogo, [new clsRolExterno(31, null)]).Rol.Should().BeNull();
     }
 }

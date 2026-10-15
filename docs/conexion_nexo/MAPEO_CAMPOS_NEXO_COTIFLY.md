@@ -146,3 +146,31 @@ Relevante para el diseño de la integración, independientemente de que Cotifly 
 5. **Actualizar `docs/docs_front/CONTRATO_API_WEB.md`** para documentar `POST /web/solicitudes-costeo` como el endpoint vigente para este frontend, en reemplazo de la referencia actual a `/web/chat`.
 6. **Servicios conexos:** implementar la llamada faltante a `POST /api/cotizaciones/{id}/conexos` en `clsCosteoNexo.cs`, y definir en qué punto del flujo de Cotifly se le presenta al comercial la opción de elegir cuáles incluir — necesariamente después del costeo, no durante la captura inicial.
 7. **Migrar los catálogos de tipo de vehículo y clase de viaje** a `GET /api/catalogos/*` en lugar de `biblioteca-sap-historico/filtros`; confirmar con Duban si existe un catálogo real para carrocería.
+
+---
+
+## Parte 3 — Actualización 2026-10-13: envío por camión con los datos del cubicador (HU-023.4, #159)
+
+Verificado contra la rama `QA` de Nexo (fusionada, **todavía no desplegada**): `CapturaRequests.cs`, `clsLineaCosteoDto`,
+`clsCapturarSolicitudValidador.cs` y `clsIdentidadPortalAuthenticationHandler.cs`. Decisiones del usuario del 2026-10-13; detalle en
+`backend-dotnet/specs/decisiones/ADR-020-conexion-con-el-cubicador.md`.
+
+| Dato de Cotifly | Campo de Nexo | Nivel | Regla en Cotifly |
+|---|---|---|---|
+| `UsuariosWeb.idUsuarioExterno` del comercial | Encabezado HTTP **`X-Portal-clsUsuario-Id`** | Toda petición | Siempre. Nexo responde 401 al nombre anterior (`X-Portal-Usuario-Id`). Un solo lugar: `clsIdentidadNexo` |
+| Id de la ruta (`CotizacionLineasSolicitud.id`) | `grupoRutaId` (`Guid?`), también en `clsLineaCosteoDto` del GET | Línea | Con `Nexo:EnviarGrupoRutaId` (apagada). Antes `referenciaRuta` (N1) |
+| `CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo` | `idRecomendacionVehiculo` (texto, máx. 64), también en el GET | Línea | Con `Nexo:EnviarDatosCubicador` (apagada). GUID en texto (36) |
+| `CotizacionMercancias.codigoMercancia` | — | — | **No viaja** (contrato #297): Cotifly lo guarda solo para el cubicador |
+| Orden de envío (rutas por `orden`, camiones por `OrdenCreacion`) | `numeroLinea` (solo en el GET, desde 1) | Línea | Sin campo de entrada: Nexo numera por el orden del arreglo. Desempate fuerte de camiones idénticos de un mismo `grupoRutaId` |
+| `tipoVehiculo` / `carroceria` del camión del cubicador (`2S2`, `FURGON`) | `tipoVehiculo` / `carroceria` | Línea | Con `Nexo:EnviarCodigosCubicador` (apagada). Apagada, la línea va sin vehículo y la resuelve la Mesa (con #297 no se autocostea): hoy un código desconocido crea un vehículo duplicado en Nexo. Se enciende con la cuarentena (18.4) y #297 |
+| `tipoVehiculo` / `carroceria` del respaldo (`Captura:AceptarVehiculoCliente`) | `tipoVehiculo` / `carroceria` | Línea | Siempre: es un código del catálogo de Nexo |
+| Peso | `peso` | Línea | Un solo camión: el **peso declarado de la ruta** (con las posiciones; cuadra al 1 % y evita `PESO_INCONSISTENTE`). Varios camiones: el `pesoTotalKg` de cada camión, sin posiciones. El peso del cubicador se guarda y se muestra en Cotifly |
+| Camión sin vehículo | `tipoVehiculo`/`carroceria` vacíos | Línea | Sin cambios; se espera la 19.2 de Nexo (`PorCostear`) |
+
+**Emparejamiento en el polling:** con `grupoRutaId` + `idRecomendacionVehiculo` en el GET, por esos campos (únicos por camión); solo con
+`grupoRutaId`, por grupo, luego por contenido y, entre camiones idénticos, por `numeroLinea`; sin ellos, por contenido y orden estable
+(como antes). El payload acordado completo está en ADR-020 ("Ajuste al contrato acordado con Nexo").
+
+**Cupo de lecturas:** Nexo limita sus listados **por rol** (`listados-estandar` 120/min; `listados-pesados` 20/min, 60 para Admin) y
+responde `429 DEMASIADAS_SOLICITUDES` con `Retry-After: 30`. El cupo lo comparten todos los comerciales de Cotifly. Cotifly no reintenta
+el 429; solo `/api/catalogos/*` y la bandeja `GET /api/solicitudes` (el listado) se bloquean hasta el `Retry-After` (fecha pasada = 0 s; sin encabezado, 30 s; tope 5 min); el polling (`/api/solicitudes/{id}`), las cotizaciones, los conexos, los clientes y los municipios no se congelan, y un 429 de catálogos no aumenta el backoff del polling. El error es "no disponible" (`COSTEO_NEXO_NO_DISPONIBLE`), no "rechazada".

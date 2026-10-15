@@ -86,12 +86,22 @@ public static class clsDependenciasAplicacion
         servicios.AddScoped<IClsEnvioConexosNexoService, clsEnvioConexosNexoService>();
         servicios.AddScoped<IClsResolutorConexosCatalogo, clsResolutorConexosCatalogo>();
 
+        // #173: categoría de los conexos del costeo según el catálogo de Nexo (índice en memoria de 30 min).
+        servicios.AddSingleton<clsAlmacenCategoriasConexos>();
+        servicios.AddScoped<IClsCategoriasConexos, clsCategoriasConexosService>();
+
+        // #173: capturas con Idempotency-Key registradas antes de llamar a Nexo (el reintento nunca duplica la solicitud).
+        servicios.AddSingleton<IClsRegistroCapturasIdempotentes, clsRegistroCapturasIdempotentesEnMemoria>();
+
         // Captura por rutas (HU-021.6): validación común al formulario y a la licitación y el punto de extensión de los camiones. El
         // planificador (HU-021.5, #133) crea un camión por fila de la recomendación del cubicador (IClsCubicador, lo registra
         // Infraestructura) y, sin cubicador o si falla, un camión sin vehículo por ruta (respaldo). Scoped: recuerda en la petición que el
         // cubicador falló. TryAdd: un planificador registrado antes (pruebas) se respeta.
         servicios.AddScoped<IClsCapturaRutasService, clsCapturaRutasService>();
         servicios.TryAddScoped<Costeo.Interfaces.IClsPlanificadorCamiones, clsPlanificadorCamionesCubicador>();
+
+        // "Calcular cubicaje" (HU-023.2, #157): vista previa contra el cubicador (POST /recomendaciones con PRUEBA-<guid>), sin persistencia.
+        servicios.AddScoped<Cubicacion.Interfaces.IClsCalculoCubicajeService, Cubicacion.Services.clsCalculoCubicajeService>();
 
         // Asunto e introducción del PDF (HU-013.5, ADR-018 §2a): la IA redacta con el texto estándar de respaldo; el redactor
         // (IClsRedactorCotizacion, sobre IChatClient) lo registra Infraestructura.
@@ -101,6 +111,8 @@ public static class clsDependenciasAplicacion
 
         // Licitaciones desde Excel (HU-011, ADR-017).
         servicios.AddScoped<Licitaciones.Services.IClsLicitacionService, Licitaciones.Services.clsLicitacionService>();
+        // HU-023.5 (#160): cubicación de la licitación en segundo plano (el procesador lo registra Infraestructura).
+        servicios.AddScoped<Licitaciones.Services.IClsCubicacionLicitacionService, Licitaciones.Services.clsCubicacionLicitacionService>();
         servicios.AddScoped<Licitaciones.Services.IClsValidadorFilasLicitacion, Licitaciones.Services.clsValidadorFilasLicitacion>();
 
         // Tablero de métricas agregadas (HU-010.1, ADR-016) y regional del usuario (DimEjecutivo o UsuariosWeb.regional).

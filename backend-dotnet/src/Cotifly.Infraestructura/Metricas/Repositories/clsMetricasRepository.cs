@@ -38,6 +38,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
     /// <c>{0}</c>/<c>{1}</c>/<c>{2}</c>: origen y destino de la ruta 1 y <c>deadline</c> (o <c>NULL</c> si la columna no existe);
     /// <c>{3}</c>: la lectura de la ruta 1 (fragmentos fijos del código, nunca datos del usuario). Costo = suma de <c>costoFinal</c> de las
     /// rutas (solo si todas lo tienen); margen = promedio de las rutas ponderado por su costo (sin costo, el promedio simple).
+    /// I1 (HU-023): <c>WITH (FORCESEEK)</c> obliga a buscar la cabecera por <c>ix_cotizaciones_usuarioId_createdAt</c> (filtro por
+    /// <c>usuarioId</c>), así la lectura no toma candados S en filas de otros comerciales y no se cruza con su polling. La solución de
+    /// fondo, que también cubre el choque con las escrituras del mismo comercial, es <c>READ_COMMITTED_SNAPSHOT</c>: decisión del DBA.
     /// </summary>
     private const string SqlCotizaciones = """
         WITH base AS (
@@ -47,7 +50,7 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                              AND RIGHT(c.folio, LEN(N'-v' + CAST(c.version AS nvarchar(10)))) = N'-v' + CAST(c.version AS nvarchar(10))
                         THEN LEFT(c.folio, LEN(c.folio) - LEN(N'-v' + CAST(c.version AS nvarchar(10))))
                         ELSE c.folio END AS folioBase
-            FROM dbo_cotifly.CotizacionesSolicitud c
+            FROM dbo_cotifly.CotizacionesSolicitud c WITH (FORCESEEK)
             OUTER APPLY (
                 SELECT CASE WHEN COUNT(*) = COUNT(l.costoFinal) THEN SUM(l.costoFinal) END AS costo,
                        CASE WHEN SUM(CASE WHEN l.margenAplicado IS NOT NULL AND l.costoFinal > 0 THEN l.costoFinal END) > 0
@@ -70,12 +73,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         SELECT v.id AS CotizacionId, v.usuarioId AS UsuarioId, v.primeraCreacion AS CreatedAt, v.createdAt AS CreatedAtVigente, v.versiones AS Versiones,
                v.costo AS Costo, v.precioFinal AS PrecioFinal, v.moneda AS Moneda, v.trmAplicada AS TrmAplicada,
                v.margenAplicado AS MargenAplicado, r.ganada AS Ganada, v.costeoListoAt AS CosteoListoAt,
+               r.id AS CotizacionResultadoId, r.precioFinal AS PrecioResultado, r.moneda AS MonedaResultado, r.trmAplicada AS TrmResultado, r.costo AS CostoResultado,
                v.origen AS Origen, v.destino AS Destino, v.deadline AS Deadline,
                a.numAjustes AS NumAjustes, a.numDiferencias AS NumDiferencias,
                a.sumaDiferencias AS SumaDiferencias, a.sumaDiferenciasAbs AS SumaDiferenciasAbsolutas
         FROM cadenas v
         OUTER APPLY (
-            SELECT TOP (1) b2.ganada
+            SELECT TOP (1) b2.id, b2.ganada, b2.precioFinal, b2.moneda, b2.trmAplicada, b2.costo
             FROM base b2
             WHERE b2.usuarioId = v.usuarioId AND b2.folioBase = v.folioBase AND b2.ganada IS NOT NULL
             ORDER BY CASE WHEN b2.marcadoAt IS NULL THEN 1 ELSE 0 END, b2.marcadoAt DESC, b2.version DESC
@@ -144,7 +148,9 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 new SqlParameter("@desde", System.Data.SqlDbType.DateTimeOffset) { Value = desde },
                 new SqlParameter("@hasta", System.Data.SqlDbType.DateTimeOffset) { Value = hastaExclusivo })
             .ToListAsync(cancellationToken));
-        var rutas = await ListarRutasAsync([.. filas.Select(f => f.CotizacionId)], cancellationToken);
+        // B3 (#173): también las rutas de la versión ganada cuando no es la vigente (apertura por línea de negocio).
+        var rutas = await ListarRutasAsync(
+            [.. filas.Select(f => f.CotizacionId).Concat(filas.Select(f => f.CotizacionResultadoId).OfType<Guid>()).Distinct()], cancellationToken);
 
         return new clsDatosMetricas(
             [.. filas.Select(f => new clsCotizacionMetrica
@@ -160,6 +166,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                 TrmAplicada = f.TrmAplicada,
                 MargenAplicado = f.MargenAplicado,
                 Ganada = f.Ganada,
+                // B3 (#173): precio y costo de la versión que tiene el resultado (la ganada puede no ser la vigente).
+                VersionResultado = f.Ganada is null
+                    ? null
+                    : new clsVersionResultadoMetrica(f.PrecioResultado, f.MonedaResultado, f.TrmResultado ?? 0m, f.CostoResultado),
+                RutasResultado = f.Ganada is not null && f.CotizacionResultadoId is { } ganada && ganada != f.CotizacionId
+                    ? rutas[ganada].ToList()
+                    : null,
                 CosteoListoAt = f.CosteoListoAt,
                 Origen = f.Origen,
                 Destino = f.Destino,
@@ -203,12 +216,22 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
 
     /// <summary>
     /// HU-021: la consulta del tablero lee la cabecera y sus rutas (dos tablas) mientras el costeo y el polling las escriben en una
-    /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite hasta
-    /// tres veces con una espera corta.
+    /// transacción; SQL Server puede elegirla como víctima de un interbloqueo (error 1205). Es una lectura sin efectos: se repite.
     /// </summary>
+    /// <remarks>
+    /// I1 (#174), causa medida con el grafo del interbloqueo: en READ COMMITTED la lectura retiene el candado S de la fila de la cabecera
+    /// (<c>pk_cotizaciones</c>) mientras busca sus rutas (<c>pk_cotizacionLineasSolicitud</c>), y un guardado del polling tiene la ruta en X
+    /// y espera la cabecera. La lectura recorre también filas de otros comerciales, así que choca con escrituras ajenas. Con tres
+    /// intentos a 50 y 100 ms la siguiente escritura del polling volvía a cruzarse: ~3 % de lecturas fallidas con escrituras intermitentes.
+    /// Seis intentos con espera exponencial y variación aleatoria (100 ms a 1,6 s, unos 3 s en total) dejan pasar la ráfaga. La causa de
+    /// fondo era el recorrido de toda la cabecera en <see cref="SqlCotizaciones"/>: desde la integración final de HU-023 la consulta
+    /// lleva <c>WITH (FORCESEEK)</c> (índice <c>ix_cotizaciones_usuarioId_createdAt</c>) y no toca filas ajenas (medido: 0 fallos en
+    /// 887 lecturas). El choque con escrituras del mismo comercial sigue posible y lo cubre este reintento; la solución de fondo es
+    /// <c>READ_COMMITTED_SNAPSHOT</c>, decisión del DBA (matriz de HU-023 §7.2 y <c>docs/10-operacion.md</c>).
+    /// </remarks>
     private static async Task<T> ConReintentoPorInterbloqueoAsync<T>(Func<Task<T>> consulta)
     {
-        const int Intentos = 3;
+        const int Intentos = 6;
         for (var intento = 1; ; intento++)
         {
             try
@@ -217,7 +240,8 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
             }
             catch (SqlException ex) when (ex.Number == 1205 && intento < Intentos)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(50 * intento));
+                var pausa = 100 << (intento - 1);
+                await Task.Delay(TimeSpan.FromMilliseconds(pausa + Random.Shared.Next(0, (pausa / 2) + 1)));
             }
         }
     }
@@ -316,6 +340,11 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
         public decimal TrmAplicada { get; set; }
         public decimal? MargenAplicado { get; set; }
         public bool? Ganada { get; set; }
+        public Guid? CotizacionResultadoId { get; set; }
+        public decimal? PrecioResultado { get; set; }
+        public string? MonedaResultado { get; set; }
+        public decimal? TrmResultado { get; set; }
+        public decimal? CostoResultado { get; set; }
         public DateTimeOffset? CosteoListoAt { get; set; }
         public string? Origen { get; set; }
         public string? Destino { get; set; }

@@ -35,6 +35,20 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
             extra: new Dictionary<string, string?> { ["IA:TiempoRedaccionSegundos"] = TiempoRedaccionSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
     }
 
+    /// <summary>HU-023.4 (#159): la misma API con <c>Nexo:EnviarGrupoRutaId</c> y <c>Nexo:EnviarDatosCubicador</c> encendidas.</summary>
+    [Given("la API web de Cotifly conectada a Nexo con el grupo de ruta y los datos del cubicador y el cliente {string} de BP {string}")]
+    public void DadoLaApiConNexoYDatosDelCubicador(string nit, string bp)
+    {
+        _nexo.ConCliente(nit, $"CLIENTE {nit} S.A.S.", "cliente", bp);
+        web.Iniciar(clsApiWebPruebas.ConNexo(clsEntornoAceptacion.BaseDatos, _nexo, dolarApi: _dolarApi, superfinanciera: _superfinanciera, modelo: Modelo,
+            extra: new Dictionary<string, string?>
+            {
+                ["IA:TiempoRedaccionSegundos"] = TiempoRedaccionSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Nexo:EnviarGrupoRutaId"] = "true",
+                ["Nexo:EnviarDatosCubicador"] = "true",
+            }));
+    }
+
     [Given("que DolarApi publica hoy la TRM {string}")]
     public void DadoQueDolarApiPublicaHoy(string valor)
     {

@@ -25,7 +25,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 - **PDF** de la cotización con PDFsharp-MigraDoc (una tarifa o varias secciones), folio generado por el servidor ([ADR-011](../specs/decisiones/ADR-011-folio-e-identidad-google-chat.md)) y almacén en volumen.
 - **Correo** por el relay interno con vista previa, destinatarios previos, deduplicación de 5 minutos y estado `enviada`/`reenviada`.
 - **Consola web** `/web/*`: mis cotizaciones, seguimiento ganada/perdida, nueva versión, teléfono del comercial, descarga autenticada del PDF, administración de líneas de negocio y métricas.
-- **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el formulario, catálogo de municipios, catálogos de flete (tipo de vehículo, carrocería y clase de viaje) y cubicación rápida.
+- **Integración con Nexo** (con `Nexo__UrlBase` configurada): búsqueda de clientes y prospectos para el formulario, catálogo de municipios y catálogos de flete (tipo de vehículo, carrocería y clase de viaje). La cubicación ya no pasa por Nexo: "Calcular cubicaje" (`POST /web/cubicacion`) y los camiones de cada ruta los recomienda el **cubicador** (`Cubicador__UrlBase`, HU-023, ADR-020).
 - **Auditoría** de cada herramienta y de los accesos sensibles en `EventosHerramienta`.
 
 ## 1.4 Estado por issue (milestone HU-003)

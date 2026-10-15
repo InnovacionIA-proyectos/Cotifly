@@ -34,10 +34,13 @@ public interface IClsCapturaRutasService
     /// por su <c>id_tipo_mercancia</c> (HU-021.5; sin catálogo, el que mandó el cliente), sus conexos con el costo unitario del catálogo de
     /// Nexo como precio (decisión 3) y sus camiones (<see cref="IClsPlanificadorCamiones"/>). Un conexo que no está en el catálogo es un error de su ruta
     /// (<c>CONEXO_NO_ENCONTRADO</c>); Nexo caído o el planificador sin respuesta son <see cref="clsRutasPreparadas.Error"/>.
+    /// Con <paramref name="cubicarDespues"/> (HU-023.5, #160: licitación con cubicador) no se llama al planificador: cada ruta queda con
+    /// un camión provisional sin vehículo (el del respaldo) y marcada para la cubicación en segundo plano.
     /// </summary>
     Task<clsRutasPreparadas> PrepararAsync(
         Guid usuarioId,
         IReadOnlyList<clsRutaPorPreparar> rutas,
+        bool cubicarDespues = false,
         CancellationToken cancellationToken = default);
 }
 
@@ -183,7 +186,7 @@ public sealed class clsCapturaRutasService(
             $"El servicio conexo '{id}' no está activo en el catálogo de Nexo (GET /web/servicios-conexos).");
 
     public async Task<clsRutasPreparadas> PrepararAsync(
-        Guid usuarioId, IReadOnlyList<clsRutaPorPreparar> rutas, CancellationToken cancellationToken = default)
+        Guid usuarioId, IReadOnlyList<clsRutaPorPreparar> rutas, bool cubicarDespues = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rutas);
         var ids = rutas
@@ -226,6 +229,14 @@ public sealed class clsCapturaRutasService(
             }
 
             var rutaId = Guid.NewGuid();
+            if (cubicarDespues)
+            {
+                // HU-023.5 (#160): el camión provisional (sin vehículo, con el peso de la ruta) lo reemplaza la cubicación en segundo plano.
+                preparadas.Add(new clsRutaCapturada(
+                    linea, lineaNegocioId, indiceOrigen, clsPlanificadorCamionSinVehiculo.Camiones(linea), conexos, rutaId, CubicacionPendiente: true));
+                continue;
+            }
+
             var plan = await planificador.PlanificarAsync(usuarioId, rutaId, linea, cancellationToken);
             if (plan.EsFallo)
             {

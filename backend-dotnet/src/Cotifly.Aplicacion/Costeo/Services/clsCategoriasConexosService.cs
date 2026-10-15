@@ -1,0 +1,214 @@
+using Cotifly.Aplicacion.Comun.Interfaces;
+using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Costeo.Interfaces;
+using Cotifly.Dominio.Cotizaciones;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace Cotifly.Aplicacion.Costeo.Services;
+
+/// <summary>
+/// #173: categoría de cada conexo de la cotización según el catálogo de Nexo (<c>logistico</c>, <c>adicional</c>...). La tabla
+/// <c>CotizacionServiciosConexos</c> no la guarda (la columna está propuesta en <c>db/scripts/pendientes/05_categoria_conexo.sql</c>), así
+/// que se lee del catálogo al armar el costeo. Nunca falla ni espera a Nexo: responde con el índice en memoria; si está frío o le falta un
+/// conexo, lo calienta EN SEGUNDO PLANO (la respuesta sale con la categoría de respaldo
+/// <see cref="clsCosteoCotizacionService.CategoriaConexo"/> y la siguiente ya trae la del catálogo). Así un GET o un PUT del costeo nunca
+/// paga las hasta 20 páginas del catálogo de Nexo.
+/// </summary>
+public interface IClsCategoriasConexos
+{
+    /// <summary>Categoría por id guardado (<c>idServicioConexo</c>) de los conexos de <paramref name="cotizacion"/> que se pudieron resolver.</summary>
+    Task<IReadOnlyDictionary<string, string>> CategoriasAsync(clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Índice en memoria (singleton) del catálogo de conexos de Nexo: categoría por id y por nombre. Vale <see cref="Vigencia"/>; después de
+/// un intento fallido no se vuelve a leer el catálogo durante <see cref="EsperaTrasFallo"/> (un GET del costeo no espera a Nexo caído
+/// en cada petición).
+/// </summary>
+public sealed class clsAlmacenCategoriasConexos
+{
+    /// <summary>Vigencia del índice leído.</summary>
+    public static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(30);
+
+    /// <summary>Espera antes de volver a leer el catálogo después de un fallo o de un conexo que no estaba.</summary>
+    public static readonly TimeSpan EsperaTrasFallo = TimeSpan.FromMinutes(1);
+
+    private readonly object _candado = new();
+    private clsIndiceCategorias? _indice;
+    private DateTimeOffset? _ultimoIntento;
+
+    /// <summary>La última lectura del catálogo en segundo plano (o una tarea completada): las pruebas la esperan.</summary>
+    public Task UltimaLectura { get; set; } = Task.CompletedTask;
+
+    /// <summary>El índice vigente, o <c>null</c>.</summary>
+    public clsIndiceCategorias? Vigente(DateTimeOffset ahora)
+    {
+        lock (_candado)
+        {
+            return _indice is { } i && ahora - i.LeidoAt < Vigencia ? i : null;
+        }
+    }
+
+    /// <summary>El último índice leído aunque esté vencido (respaldo si el catálogo no responde), o <c>null</c>.</summary>
+    public clsIndiceCategorias? Ultimo()
+    {
+        lock (_candado)
+        {
+            return _indice;
+        }
+    }
+
+    /// <summary>¿Se puede volver a leer el catálogo? Marca el intento (solo uno por <see cref="EsperaTrasFallo"/>).</summary>
+    public bool ReservarIntento(DateTimeOffset ahora)
+    {
+        lock (_candado)
+        {
+            if (_ultimoIntento is { } previo && ahora - previo < EsperaTrasFallo)
+            {
+                return false;
+            }
+
+            _ultimoIntento = ahora;
+            return true;
+        }
+    }
+
+    /// <summary>Guarda el índice leído.</summary>
+    public void Guardar(clsIndiceCategorias indice)
+    {
+        lock (_candado)
+        {
+            _indice = indice;
+        }
+    }
+}
+
+/// <summary>Categoría por id del catálogo y por nombre (solo los nombres con una sola categoría) y cuándo se leyó.</summary>
+public sealed record clsIndiceCategorias(
+    IReadOnlyDictionary<string, string> PorId, IReadOnlyDictionary<string, string> PorNombre, DateTimeOffset LeidoAt)
+{
+    /// <summary>Categoría de un conexo guardado: por su id (del catálogo) o, si es el id de una fila de Nexo, por su nombre.</summary>
+    public string? De(string id, string? nombre) =>
+        PorId.TryGetValue(id, out var porId) ? porId
+        : nombre is not null && PorNombre.TryGetValue(nombre.Trim(), out var porNombre) ? porNombre
+        : null;
+}
+
+/// <summary>Implementación de <see cref="IClsCategoriasConexos"/> sobre <see cref="IClsServiciosConexosNexo.BuscarAsync"/>.</summary>
+public sealed class clsCategoriasConexosService(
+    IServiceScopeFactory ambitos,
+    clsAlmacenCategoriasConexos almacen,
+    IClsReloj reloj,
+    ILogger<clsCategoriasConexosService> logger) : IClsCategoriasConexos
+{
+    /// <summary>Tiempo máximo de la lectura del catálogo en segundo plano.</summary>
+    public static readonly TimeSpan TiempoMaximoLectura = TimeSpan.FromMinutes(2);
+
+    /// <summary>Tamaño de página con que se recorre el catálogo.</summary>
+    public const int TamanoPagina = 100;
+
+    /// <summary>Máximo de páginas leídas (el catálogo de QA tiene unas 940 filas).</summary>
+    public const int MaximoPaginas = 20;
+
+    public Task<IReadOnlyDictionary<string, string>> CategoriasAsync(
+        clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).ToList();
+        if (conexos.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+        }
+
+        var ahora = reloj.AhoraUtc;
+        var indice = almacen.Vigente(ahora);
+        if ((indice is null || conexos.Any(c => indice.De(c.IdServicioConexo, c.Nombre) is null))
+            && cotizacion.UsuarioId is { } usuarioId && almacen.ReservarIntento(ahora))
+        {
+            // #173 (observación del validador): no se espera a Nexo; se calienta el índice en segundo plano con su propio ámbito.
+            almacen.UltimaLectura = Task.Run(() => CalentarAsync(usuarioId, cotizacion.Folio, ahora), CancellationToken.None);
+        }
+
+        return Task.FromResult(Resolver(indice ?? almacen.Ultimo(), conexos));
+    }
+
+    private static IReadOnlyDictionary<string, string> Resolver(clsIndiceCategorias? indice, IReadOnlyList<clsServicioConexoRuta> conexos)
+    {
+        var categorias = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (indice is null)
+        {
+            return categorias;
+        }
+
+        foreach (var conexo in conexos)
+        {
+            if (indice.De(conexo.IdServicioConexo, conexo.Nombre) is { } categoria)
+            {
+                categorias[conexo.IdServicioConexo] = categoria;
+            }
+        }
+
+        return categorias;
+    }
+
+    private async Task CalentarAsync(Guid usuarioId, string folio, DateTimeOffset ahora)
+    {
+        try
+        {
+            using var limite = new CancellationTokenSource(TiempoMaximoLectura);
+            await using var ambito = ambitos.CreateAsyncScope();
+            await LeerAsync(ambito.ServiceProvider.GetRequiredService<IClsServiciosConexosNexo>(), usuarioId, folio, ahora, limite.Token);
+        }
+        catch (Exception ex)
+        {
+            _logCatalogoNoDisponible(logger, folio, ex.GetType().Name, ex);
+        }
+    }
+
+    private async Task<clsIndiceCategorias?> LeerAsync(
+        IClsServiciosConexosNexo catalogo, Guid usuarioId, string folio, DateTimeOffset ahora, CancellationToken cancellationToken)
+    {
+        var porId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var porNombre = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        for (var pagina = 1; pagina <= MaximoPaginas; pagina++)
+        {
+            var leida = await catalogo.BuscarAsync(usuarioId, new clsFiltroCatalogoConexos(null, null, pagina, TamanoPagina), cancellationToken);
+            if (leida.EsFallo)
+            {
+                _logCatalogoNoDisponible(logger, folio, leida.Error.Codigo, null);
+                return null;
+            }
+
+            foreach (var servicio in leida.Valor.Items)
+            {
+                if (string.IsNullOrWhiteSpace(servicio.Categoria))
+                {
+                    continue;
+                }
+
+                var categoria = servicio.Categoria.Trim();
+                porId[servicio.Id] = categoria;
+                if (servicio.Nombre?.Trim() is { Length: > 0 } nombre)
+                {
+                    // Un nombre con dos categorías distintas no sirve para resolver: queda en null y se ignora.
+                    porNombre[nombre] = porNombre.TryGetValue(nombre, out var previa) && previa != categoria ? null : categoria;
+                }
+            }
+
+            if (leida.Valor.Items.Count < TamanoPagina || pagina * TamanoPagina >= leida.Valor.Total)
+            {
+                break;
+            }
+        }
+
+        var indice = new clsIndiceCategorias(
+            porId, porNombre.Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value!, StringComparer.OrdinalIgnoreCase), ahora);
+        almacen.Guardar(indice);
+        return indice;
+    }
+
+    private static readonly Action<ILogger, string, string, Exception?> _logCatalogoNoDisponible = LoggerMessage.Define<string, string>(
+        LogLevel.Warning, new EventId(1732, nameof(_logCatalogoNoDisponible)),
+        "No se pudo leer el catálogo de conexos de Nexo para las categorías de {Folio} ({Codigo}); se usa la categoría por defecto.");
+}

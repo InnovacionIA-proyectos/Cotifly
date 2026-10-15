@@ -45,6 +45,11 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: GET /web/mis-cotizaciones 200",
             "respuesta: GET /web/cotizaciones/{id}/nueva-version 200",
             "esquema: LicitacionWeb",
+            // HU-023.2 (#157): "Calcular cubicaje" contra el cubicador.
+            "esquema: CubicacionRequest",
+            "respuesta: POST /web/cubicacion 200",
+            "respuesta: POST /web/cubicacion 400",
+            "respuesta: POST /web/cubicacion 503",
         ]);
     }
 

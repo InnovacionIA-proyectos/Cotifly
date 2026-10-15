@@ -139,10 +139,17 @@ public sealed record clsLineaSolicitudCosteo
 
     /// <summary>
     /// Ruta de Cotifly de la que sale la línea (HU-021.7, #134; petición N1 a Nexo): solo la llena <see cref="clsLineaSolicitud.ALineaNexo"/>
-    /// al armar una línea por camión. No la captura el comercial ni se valida. Viaja a Nexo como <c>referenciaRuta</c> solo cuando Nexo
-    /// la acepte (<c>Nexo:EnviarReferenciaRuta</c>); mientras tanto, el emparejamiento usa el contenido de la línea y el orden de envío.
+    /// al armar una línea por camión. No la captura el comercial ni se valida. Viaja a Nexo como <c>grupoRutaId</c> (HU-023.4, #159) solo
+    /// con <c>Nexo:EnviarGrupoRutaId</c>; mientras tanto, el emparejamiento usa el contenido de la línea y el orden de envío.
     /// </summary>
     public Guid? RutaId { get; init; }
+
+    /// <summary>
+    /// Camión de la recomendación del cubicador del que sale la línea (HU-023.4, #159): solo la llena
+    /// <see cref="clsLineaSolicitud.ALineaNexo"/>. Viaja a Nexo como <c>idRecomendacionVehiculo</c> (texto, hasta 64) solo con
+    /// <c>Nexo:EnviarDatosCubicador</c>. <c>null</c> en un camión sin recomendación (respaldo o "sin selección automática").
+    /// </summary>
+    public Guid? IdRecomendacionVehiculo { get; init; }
 
     /// <summary>
     /// Línea de negocio de Nexo de la ruta (<c>lineaNegocio</c> de <c>CapturaLineaRequest</c>, #134): la llena el envío con el
