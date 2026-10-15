@@ -59,6 +59,7 @@ ClientePro (ya autenticado)
 | `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una línea): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
 | `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías y clases de viaje del formulario (catálogos maestros de Nexo). Ver §3.2 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
+| `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
 | `POST /web/cotizaciones/{folio}/enviar` | ambos | Envía la cotización por correo con el PDF. 503 `ErrorNegocio` `CORREO_DESHABILITADO` si el correo está deshabilitado en el servidor |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | ambos | Asunto, cuerpo y destinatarios sin enviar |
 | `POST /web/cotizaciones/{folio}/seguimiento` | ambos | Marca ganada o perdida **solo** cotizaciones fuera de Nexo (`estado_costeo` `null`, `descartada` o `costeo_vencido`). Las de Nexo responden 409 `USAR_RESULTADO_NEXO`, con `detalle` = `{metodo, endpoint, requiere_if_match}` (HU-021.13) |
@@ -238,8 +239,8 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
-| 409 | `GET /web/metricas/regional` de un gerente sin regional: `ErrorNegocio` con `REGIONAL_NO_ASIGNADA`. |
-| 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. |
+| 409 | `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `ErrorNegocio` con `REGIONAL_NO_ASIGNADA`. |
+| 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. |
 
 ## 6. CORS
 
@@ -767,6 +768,56 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
   "rutas": [
     { "linea_orden": 1, "linea_negocio_id": 3, "linea_negocio": "Importacion", "origen": "Buenaventura", "destino": "Bogotá D.C.", "margen_politica": 0.15, "margen_aplicado": 0.15, "origen_margen": "politica_linea", "metodo_calculo": "margen" },
     { "linea_orden": 2, "linea_negocio_id": 1, "linea_negocio": "Nacional", "origen": "Cali", "destino": "Yumbo", "margen_politica": 0.18, "margen_aplicado": 0.15, "origen_margen": "negociado", "metodo_calculo": "margen" }
+  ]
+}
+```
+
+### 8.10.1 Listado regional del gerente: `GET /web/cotizaciones/regional` (HU-016.1, #154)
+
+Vista "Todas las cotizaciones" del gerente comercial. Solo `gerente_comercial` (un `comercial` recibe 403). La regional es la del
+gerente, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`; no se manda por parámetro y nunca salen
+cotizaciones de otra regional. El propio gerente es miembro de su regional, así que sus cotizaciones también salen.
+
+- Cada fila es un `CotizacionResumen` (la misma forma de `GET /web/mis-cotizaciones`: línea de la ruta 1 o `Varias`, `precio_final` de
+  la cabecera) más `comercial` = `{usuario_id, nombre_usuario, nombre_completo}` del dueño. `comercial` solo viene en este endpoint.
+- Máximo 100 en total (no por comercial), de la más reciente a la más antigua (`created_at` y, a igualdad, `folio` descendente). Sin
+  filtros ni paginación: para filtrar por comercial, el frontend filtra la lista por `comercial.usuario_id`.
+- Errores: 409 `REGIONAL_NO_ASIGNADA` (gerente sin regional; nunca se devuelven todas las regionales) y 503 `REGIONAL_NO_DISPONIBLE`
+  (la fuente de la regional está configurada pero caída), como en el tablero del gerente.
+
+<!-- respuesta: GET /web/cotizaciones/regional 200 -->
+```json
+{
+  "regional": "ANTIOQUIA",
+  "fuente_regional": "usuarios_web",
+  "total": 1,
+  "cotizaciones": [
+    {
+      "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+      "folio": "PCN-900555111-AP-09102026-001",
+      "version": 1,
+      "nit_cliente": "900555111",
+      "origen_cliente": "cliente",
+      "origen_margen": "politica_linea",
+      "cliente": "LONGYIN S.A.S.",
+      "linea_negocio": "Nacional",
+      "precio_final": 8823530,
+      "margen_aplicado": 0.15,
+      "moneda": "COP",
+      "trm_aplicada": 0,
+      "estado_costeo": "entregada",
+      "motivo_estado_costeo": null,
+      "estado_envio": "sin_enviar",
+      "ganada": null,
+      "motivo_rechazo": null,
+      "pdf_url": "/pdfs/PCN-900555111-AP-09102026-001.pdf",
+      "created_at": "2026-10-09T15:20:11.532+00:00",
+      "comercial": {
+        "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10",
+        "nombre_usuario": "APEREZ",
+        "nombre_completo": "Ana Pérez"
+      }
+    }
   ]
 }
 ```

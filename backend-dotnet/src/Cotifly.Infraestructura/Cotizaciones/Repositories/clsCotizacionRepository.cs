@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq.Expressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Cotifly.Aplicacion.Costeo.DTOs;
@@ -356,11 +357,30 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(
+    public Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(
         Guid usuarioId, int limite = IClsCotizacionRepository.LimitePorDefecto, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limite, 1);
-        var cabeceras = await CabecerasToleranteAsync(usuarioId, limite, cancellationToken);
+        return ListarConLineaAsync(c => c.UsuarioId == usuarioId, limite, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<clsCotizacionConLinea>> ListarPorUsuariosAsync(
+        IReadOnlyCollection<Guid> usuarioIds, int limite = IClsCotizacionRepository.LimitePorDefecto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(usuarioIds);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limite, 1);
+        List<Guid?> ids = [.. usuarioIds.Distinct().Select(id => (Guid?)id)];
+        return ids.Count == 0 ? [] : await ListarConLineaAsync(c => ids.Contains(c.UsuarioId), limite, cancellationToken);
+    }
+
+    /// <summary>
+    /// Proyección de "Mis cotizaciones" (y del listado regional, HU-016.1): cabeceras que cumplen <paramref name="filtro"/>, de la más
+    /// reciente a la más antigua, con la línea de negocio y el margen de su ruta 1 (o "Varias").
+    /// </summary>
+    private async Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaAsync(
+        Expression<Func<clsCotizacionSolicitud, bool>> filtro, int limite, CancellationToken cancellationToken)
+    {
+        var cabeceras = await CabecerasToleranteAsync(filtro, limite, cancellationToken);
         if (cabeceras.Count == 0)
         {
             return [];
@@ -393,13 +413,14 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     }
 
     /// <summary>
-    /// Cabeceras del comercial (HU-014.1, mediano plazo): si una fila trae un código fuera de catálogo (el convertidor del enum la
-    /// rechaza), en vez de tumbar toda la lista se leen una por una y se omiten las inválidas (queda en el log).
+    /// Cabeceras que cumplen <paramref name="filtro"/> (HU-014.1, mediano plazo): si una fila trae un código fuera de catálogo (el
+    /// convertidor del enum la rechaza), en vez de tumbar toda la lista se leen una por una y se omiten las inválidas (queda en el log).
     /// </summary>
-    private async Task<List<clsCotizacionSolicitud>> CabecerasToleranteAsync(Guid usuarioId, int limite, CancellationToken cancellationToken)
+    private async Task<List<clsCotizacionSolicitud>> CabecerasToleranteAsync(
+        Expression<Func<clsCotizacionSolicitud, bool>> filtro, int limite, CancellationToken cancellationToken)
     {
         var consulta = contexto.CotizacionesSolicitud.AsNoTracking()
-            .Where(c => c.UsuarioId == usuarioId)
+            .Where(filtro)
             .OrderByDescending(c => c.CreatedAt)
             .ThenByDescending(c => c.Folio)
             .Take(limite);
@@ -422,7 +443,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
                 }
                 catch (Exception porFila) when (porFila is InvalidOperationException or ArgumentException)
                 {
-                    _logger.LogWarning(porFila, "La cotización {Id} tiene un valor fuera de catálogo: se omite de \"Mis cotizaciones\".", id);
+                    _logger.LogWarning(porFila, "La cotización {Id} tiene un valor fuera de catálogo: se omite del listado.", id);
                 }
             }
 

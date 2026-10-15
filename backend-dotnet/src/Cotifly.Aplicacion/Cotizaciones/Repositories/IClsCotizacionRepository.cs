@@ -158,6 +158,14 @@ public interface IClsCotizacionRepository
     Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaPorUsuarioAsync(Guid usuarioId, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// HU-016.1 (#154): igual que <see cref="ListarConLineaPorUsuarioAsync"/> (misma proyección, mismo orden <c>createdAt DESC, folio DESC</c>
+    /// y mismo tope), pero de varios usuarios a la vez (<c>WHERE usuarioId IN (...)</c>): el listado regional del gerente comercial. El tope
+    /// es del conjunto, no por usuario. Una colección vacía devuelve una lista vacía sin consultar la base.
+    /// </summary>
+    Task<IReadOnlyList<clsCotizacionConLinea>> ListarPorUsuariosAsync(
+        IReadOnlyCollection<Guid> usuarioIds, int limite = LimitePorDefecto, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Mayor consecutivo <c>NNN</c> ya usado con las <paramref name="iniciales"/> en la fecha <paramref name="segmentoFecha"/>
     /// (<c>DDMMAAAA</c>), contando todos los folios base con y sin NIT (<c>PCN-[nit-]INICIALES-DDMMAAAA-NNN</c>, ADR-011) de
     /// cualquier comercial: dos comerciales con las mismas iniciales comparten la secuencia, así el siguiente número nunca

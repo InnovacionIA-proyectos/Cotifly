@@ -1,22 +1,26 @@
 using Cotifly.Api.Comun;
 using Cotifly.Api.Cotizaciones.DTOs;
+using Cotifly.Api.Identidad;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.DTOs;
 using Cotifly.Aplicacion.Cotizaciones.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Cotifly.Api.Cotizaciones.Controllers;
 
 /// <summary>
 /// Cotizaciones del comercial (<c>specs/openapi.yaml</c>): listado, seguimiento y datos para una versión nueva. Solo las del
-/// comercial autenticado; una ajena responde 404 igual que una inexistente.
+/// comercial autenticado; una ajena responde 404 igual que una inexistente. Excepción: <c>GET /web/cotizaciones/regional</c> (HU-016.1),
+/// solo para <c>gerente_comercial</c>, lista las de los miembros de su regional.
 /// </summary>
 [Route("web")]
 public sealed class clsCotizacionesController(
     IClsContextoUsuario usuario,
     IClsMisCotizacionesService misCotizaciones,
     IClsSeguimientoService seguimiento,
-    IClsNuevaVersionService nuevaVersion) : clsControladorWebBase(usuario)
+    IClsNuevaVersionService nuevaVersion,
+    IClsCotizacionesRegionalService regional) : clsControladorWebBase(usuario)
 {
     /// <summary>200 <c>MisCotizaciones</c>: máximo 100, de la más reciente a la más antigua.</summary>
     [HttpGet("mis-cotizaciones")]
@@ -24,6 +28,23 @@ public sealed class clsCotizacionesController(
     [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Listar(CancellationToken cancellationToken) =>
         Ok(await misCotizaciones.ListarAsync(UsuarioId, cancellationToken));
+
+    /// <summary>
+    /// HU-016.1 (#154). 200 <c>CotizacionesRegional</c>: las de los miembros de la regional del gerente, máximo 100, de la más reciente a
+    /// la más antigua; 403 si no es gerente; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
+    /// </summary>
+    [HttpGet("cotizaciones/regional")]
+    [Authorize(Policy = clsPoliticas.GerenteComercial)]
+    [ProducesResponseType<clsCotizacionesRegional>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<clsErrorNegocioWeb>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> ListarRegional(CancellationToken cancellationToken)
+    {
+        var resultado = await regional.ListarAsync(cancellationToken);
+        return resultado.Coincidir<IActionResult>(r => Ok(r), Error);
+    }
 
     /// <summary>200 <c>CotizacionResumen</c>; 400 motivo de más de 2000 caracteres; 404 si no es suya.</summary>
     [HttpPost("cotizaciones/{folio}/seguimiento")]

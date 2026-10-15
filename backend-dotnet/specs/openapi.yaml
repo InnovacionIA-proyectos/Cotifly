@@ -321,6 +321,55 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/cotizaciones/regional:
+    get:
+      operationId: listarCotizacionesRegional
+      tags: [web]
+      summary: Lista las cotizaciones de los comerciales de la regional del gerente comercial (HU-016.1)
+      description: |
+        HU-016.1 (#154). Vista "Todas las cotizaciones" del gerente: fila por fila, con la misma forma que
+        `GET /web/mis-cotizaciones` (`CotizacionResumen`) y, en cada fila, el comercial dueño (`comercial`).
+
+        - Solo `gerente_comercial` (claim `rol` del token; un `comercial` recibe 403).
+        - El alcance es SIEMPRE la regional del usuario autenticado, resuelta en el servidor con la misma regla que
+          `GET /web/metricas/regional` (`DimEjecutivo` cuando está conectada; si no, `UsuariosWeb.regional`). No se acepta
+          una regional por parámetro y nunca se devuelven cotizaciones de otra regional.
+        - El propio gerente es miembro de su regional: sus cotizaciones también salen.
+        - Sin regional asignada: 409 `REGIONAL_NO_ASIGNADA` (nunca se devuelven todas las regionales). Fuente de la
+          regional configurada pero caída: 503 `REGIONAL_NO_DISPONIBLE`.
+        - Máximo 100 en total (no por comercial), de la más reciente a la más antigua (`createdAt` y, a igualdad, `folio`
+          descendente), como "Mis cotizaciones". Sin filtros ni paginación.
+        - `linea_negocio` es la de la ruta 1 (o `Varias`) y `precio_final` el de la cabecera, como en "Mis cotizaciones".
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Cotizaciones de la regional del gerente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CotizacionesRegional'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: El gerente no tiene regional asignada (`REGIONAL_NO_ASIGNADA`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+              example:
+                error:
+                  codigo: REGIONAL_NO_ASIGNADA
+                  mensaje: "Tu usuario no tiene una regional asignada. Pide al administrador que la registre."
+        '503':
+          description: La fuente de la regional (`DimEjecutivo`) está configurada pero no responde (`REGIONAL_NO_DISPONIBLE`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/cotizaciones/{folio}/enviar:
     post:
       operationId: enviarCotizacion
@@ -3553,6 +3602,8 @@ components:
           description: |
             #173. Solo si la respuesta salió incompleta DESPUÉS de guardar (la cotización existe y, si aplica, ya está en Nexo):
             `RESUMEN_INCOMPLETO` = falló una lectura secundaria y `linea_negocio` sale `null`. No reintentar el POST: recargar.
+        comercial:
+          $ref: '#/components/schemas/ComercialCotizacion'
 
     CubicacionRuta:
       type: object
@@ -3725,6 +3776,46 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CotizacionResumen'
+
+    ComercialCotizacion:
+      type: object
+      required: [usuario_id, nombre_usuario, nombre_completo]
+      description: |
+        HU-016.1 (#154). Comercial dueño de la cotización (`UsuariosWeb`). Solo en `GET /web/cotizaciones/regional` (siempre
+        presente ahí); en el resto de respuestas `CotizacionResumen` no trae `comercial`.
+      properties:
+        usuario_id:
+          type: string
+          format: uuid
+        nombre_usuario:
+          type: string
+          nullable: true
+        nombre_completo:
+          type: string
+          nullable: true
+
+    CotizacionesRegional:
+      type: object
+      required: [regional, fuente_regional, total, cotizaciones]
+      description: HU-016.1 (#154). Respuesta de `GET /web/cotizaciones/regional`.
+      properties:
+        regional:
+          type: string
+          description: Regional del gerente, resuelta en el servidor.
+        fuente_regional:
+          type: string
+          enum: [dim_ejecutivo, usuarios_web]
+        total:
+          type: integer
+          description: Cuántas filas trae `cotizaciones` (máximo 100).
+        cotizaciones:
+          type: array
+          maxItems: 100
+          items:
+            allOf:
+              - $ref: '#/components/schemas/CotizacionResumen'
+              - type: object
+                required: [comercial]
 
     EnvioWeb:
       type: object
