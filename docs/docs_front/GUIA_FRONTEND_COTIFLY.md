@@ -467,6 +467,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
 | `GET /web/metricas/comercial` | 400 (fechas), 401 | — |
 | `GET /web/metricas/regional` | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
+| `GET /web/cotizaciones/regional` | 401, 403 | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /pdfs/{archivo}` | 401, 404 (JSON aunque se pidió un blob) | — |
 
 > **Captura idempotente (#173), obligatorio:** `POST /web/solicitudes-costeo` **debe** llevar el encabezado `Idempotency-Key`
@@ -535,8 +536,8 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `RESULTADO_YA_DEFINIDO` | 409 en `resultado` | Nexo ya tiene otro resultado | Deshabilitar ganada/perdida y refrescar | En QA |
 | `COTIZACION_NO_ENTREGADA` | 409 en `resultado` | Nexo exige la cotización entregada (su issue #171) | "Nexo todavía no ha entregado esta cotización" | En QA |
 | `SOLICITUD_NO_TRANSICIONABLE` | 409 en `resultado` | Nexo no permite la transición | Mostrar el `mensaje` | En QA |
-| `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
-| `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | En QA |
+| `REGIONAL_NO_ASIGNADA` | 409 en `/web/metricas/regional` y `/web/cotizaciones/regional` | El gerente no tiene regional (ni en `DimEjecutivo` ni en `UsuariosWeb.regional`) | Estado vacío con el `mensaje`: "Tu usuario no tiene una regional asignada...". Sin reintento automático | En QA |
+| `REGIONAL_NO_DISPONIBLE` | 503 en `/web/metricas/regional` y `/web/cotizaciones/regional` | La fuente de la regional (`DimEjecutivo`) está configurada pero no responde | "No se pudo consultar tu regional" con Reintentar | En QA |
 | `USAR_RESULTADO_NEXO` | 409 en `/seguimiento` | Cotización del flujo de Nexo: hay que usar `/resultado`. Desde HU-021.13, `detalle` = `{"metodo": "POST", "endpoint": "/web/cotizaciones/{folio}/resultado", "requiere_if_match": true}` con el folio real | Error de programación del frontend: enrutar el botón a `/resultado` con `If-Match` (sección 6.5). Como respaldo se puede reintentar contra `detalle.endpoint` | En QA; `detalle` desde #140 |
 
 Códigos internos que el frontend solo ve como texto en un `ErrorWeb` 400: `SOLICITUD_INVALIDA`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO` y `SEGUIMIENTO_INVALIDO`.
@@ -557,6 +558,7 @@ Resumen:
 | `GET /health`, `GET /health/ready` | Anónimo | En QA |
 | `POST /web/chat` | Ambos | En QA (incluye `moneda` y `errores` desde #71) |
 | `GET /web/mis-cotizaciones` | Ambos | En QA (incluye `trm_aplicada`, `motivo_estado_costeo` y el enum de `estado_costeo`) |
+| `GET /web/cotizaciones/regional` | `gerente_comercial` | Implementado (HU-016.1, #154), pendiente de llegar a QA. Sección 5.4.1 |
 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | Ambos | En QA |
 | `POST /web/cotizaciones/{folio}/enviar` | Ambos | En QA |
 | `GET /web/clientes/{nit}/destinatarios-previos` | Ambos | En QA |
@@ -564,7 +566,7 @@ Resumen:
 | `POST /web/cotizaciones/{folio}/resultado` | Ambos (dueño) | En QA |
 | `GET /web/cotizaciones/{id}/nueva-version` | Ambos | En QA |
 | `GET`, `PUT /web/usuario/telefono` | Ambos | En QA |
-| `GET /pdfs/{archivo}` | Dueño o gerente de su regional | En QA |
+| `GET /pdfs/{archivo}` | Dueño o gerente de su regional efectiva | En QA |
 | `GET /web/clientes?q=` | Ambos | En QA |
 | `GET /web/municipios` | Ambos | En QA |
 | `GET /web/catalogos-flete` | Ambos | En QA |
@@ -703,6 +705,74 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 
 No trae costo (ni `costo` ni el de Nexo) a propósito.
 
+### 5.4.1 `GET /web/cotizaciones/regional` (listado del gerente, HU-016.1, #154). Implementado, pendiente de QA
+
+Vista "Todas las cotizaciones" del gerente comercial: las cotizaciones de los comerciales de **su** regional, fila por fila.
+
+- Rol: solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 `ErrorWeb`. Mostrar la opción del menú solo
+  con `user.rol = gerente_comercial`.
+- Alcance: **siempre** la regional del gerente autenticado, resuelta en el servidor con la misma regla que `GET /web/metricas/regional`
+  (sección 5.22.4). No se manda la regional por parámetro y nunca salen cotizaciones de otra regional. El gerente es miembro de su
+  regional: **sus propias cotizaciones también salen** aquí.
+- Máximo 100 **en total** (no por comercial), de la más reciente a la más antigua (a igual `created_at`, por `folio` descendente).
+  **Sin paginación ni filtros** en el servidor, como "Mis cotizaciones": filtrar por comercial, estado o línea en el cliente (por
+  ejemplo, un selector de comercial con los `comercial.usuario_id` distintos de la lista, o con `comerciales[]` de `/web/metricas/regional`).
+- Respuesta 200 (`CotizacionesRegional`): `regional`, `fuente_regional` (`dim_ejecutivo` o `usuarios_web`), `total` y
+  `cotizaciones[]`. Cada fila es **la misma** `CotizacionResumen` de la sección 5.4 (misma tabla de campos: `linea_negocio` de la ruta 1
+  o `Varias`, `precio_final` de la cabecera...) más `comercial`:
+
+```json
+{
+  "regional": "ANTIOQUIA",
+  "fuente_regional": "usuarios_web",
+  "total": 1,
+  "cotizaciones": [
+    {
+      "id": "7c2d9b3e-2a41-4c7a-9f0d-5b6e1a2c3d4e",
+      "folio": "PCN-9000472281-AP-29092026-005",
+      "version": 1,
+      "nit_cliente": "9000472281",
+      "origen_cliente": "cliente",
+      "origen_margen": "politica_linea",
+      "cliente": "ALMACENES EXITO S.A.",
+      "linea_negocio": "Nacional",
+      "precio_final": null,
+      "margen_aplicado": 0.15,
+      "moneda": "COP",
+      "trm_aplicada": 0,
+      "estado_costeo": "pendiente_costeo",
+      "motivo_estado_costeo": null,
+      "estado_envio": "sin_enviar",
+      "ganada": null,
+      "motivo_rechazo": null,
+      "pdf_url": null,
+      "created_at": "2026-09-29T15:12:40.113+00:00",
+      "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
+    }
+  ]
+}
+```
+
+| Campo | Tipo | Nota |
+|---|---|---|
+| `comercial.usuario_id` | UUID | Dueño de la cotización (`UsuariosWeb.id`); el mismo `usuario_id` de `/web/metricas/regional` |
+| `comercial.nombre_usuario`, `comercial.nombre_completo` | string o null | Mostrar `nombre_completo` (o `nombre_usuario` si es null) |
+
+`comercial` solo viene en este endpoint: `GET /web/mis-cotizaciones` y las demás respuestas con `CotizacionResumen` no lo traen.
+
+Errores:
+
+| HTTP | Cuerpo | Cuándo | UX |
+|---|---|---|---|
+| 403 | `ErrorWeb` `No tienes permiso para esta operación.` | El usuario es `comercial` | No mostrar la vista a un comercial |
+| 409 | `ErrorNegocio` `REGIONAL_NO_ASIGNADA` | El gerente no tiene regional | Estado vacío explicativo con el `mensaje`. Sin reintento automático. Nunca se devuelven todas las regionales |
+| 503 | `ErrorNegocio` `REGIONAL_NO_DISPONIBLE` | La fuente de la regional está configurada pero caída | "No se pudo consultar tu regional" con Reintentar |
+
+Las acciones de la fila que exigen ser el dueño (`/resultado`, `/enviar`, `/costeo`, nueva versión...) responden 404 al gerente sobre una
+cotización de otro comercial: en esta vista la fila es de consulta. La descarga del PDF (`GET /pdfs/{archivo}`) sí funciona para el
+gerente sobre cualquier fila de este listado, porque usa **la misma regla**: el dueño debe ser miembro de la regional efectiva del
+gerente (sección 5.6). Si la fuente de la regional está caída, el listado responde 503 y el PDF ajeno 404.
+
 ### 5.5 Correo: vista previa, envío y destinatarios previos. En QA
 
 **`POST /web/cotizaciones/{folio}/correo/vista-previa`**
@@ -741,7 +811,9 @@ No trae costo (ni `costo` ni el de Nexo) a propósito.
 ### 5.6 Descarga del PDF (`GET /pdfs/{archivo}`). En QA
 
 - `archivo` sigue `^[A-Za-z0-9_-]+\.pdf$` (el folio más `.pdf`). Tomarlo de `pdf_url`, nunca construirlo a mano.
-- Acceso con **Bearer**: el dueño, o un `gerente_comercial` de la misma regional (si la regional del gerente no se conoce, solo el dueño).
+- Acceso con **Bearer**: el dueño, o un `gerente_comercial` cuando el dueño es miembro de su **regional efectiva** (la misma regla que
+  `GET /web/cotizaciones/regional`, sección 5.4.1: `DimEjecutivo` primero y `UsuariosWeb.regional` de respaldo, para el gerente y para
+  el dueño). Si el gerente no tiene regional o la fuente de la regional está caída, solo el dueño (404 para el gerente, nunca 409 ni 503).
 - 200 `application/pdf` inline. 401 `ErrorWeb` sin sesión. 404 `ErrorWeb` (no existe o no es tuya), con cuerpo JSON aunque se haya pedido un blob.
 - **URL firmada `?t=`**: se retiró en #105 junto con Google Chat (era el único que la emitía). El endpoint exige siempre Bearer.
 - Un `<a href>` directo no envía `Authorization` y recibe 401. Además, `X-Frame-Options: DENY` impide incrustar la URL en un iframe. Hay que descargar el blob:

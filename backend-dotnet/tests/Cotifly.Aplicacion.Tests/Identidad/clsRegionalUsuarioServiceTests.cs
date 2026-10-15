@@ -128,4 +128,37 @@ public sealed class clsRegionalUsuarioServiceTests
 
         resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoDisponible);
     }
+
+    [Fact]
+    public async Task EsMiembroUsaLaRegionalEfectivaDelGerenteYDelUsuario()
+    {
+        // El gerente sigue en Norte en UsuariosWeb, pero DimEjecutivo lo pone en Occidente con ana.
+        Directorio(("gerente", "Occidente"), ("ana", "Occidente"), ("luis", "Norte"));
+        var gerente = Usuario("gerente", "Norte");
+        var ana = Usuario("ana", "Norte");
+        var luis = Usuario("luis", "Occidente");
+        _usuarios.ListarPorRegionalONombresAsync("Occidente", Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).Returns([gerente, ana, luis]);
+
+        (await Servicio().EsMiembroDeMiRegionalAsync(gerente, ana.Id, Ct)).Valor.Should().BeTrue();
+        (await Servicio().EsMiembroDeMiRegionalAsync(gerente, luis.Id, Ct)).Valor.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EsMiembroSinRegionalDelGerenteEsNoAsignada()
+    {
+        var resultado = await Servicio().EsMiembroDeMiRegionalAsync(Usuario("gerente", null), Guid.NewGuid(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoAsignada);
+    }
+
+    [Fact]
+    public async Task EsMiembroConElDirectorioCaidoEsNoDisponible()
+    {
+        _directorio.Configurado.Returns(true);
+        _directorio.ObtenerRegionalesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException());
+
+        var resultado = await Servicio().EsMiembroDeMiRegionalAsync(Usuario("gerente", "Occidente"), Guid.NewGuid(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.RegionalNoDisponible);
+    }
 }

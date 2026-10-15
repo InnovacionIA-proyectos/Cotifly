@@ -64,6 +64,7 @@ public static class clsDependenciasAplicacion
         // API web /web/* (HU-003.6, #12 parte B): mis cotizaciones, nueva versión, folio del servidor (ADR-011), descarga
         // autenticada del PDF, y administración de líneas (HU-004.9).
         servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
+        servicios.AddScoped<IClsCotizacionesRegionalService, clsCotizacionesRegionalService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();

@@ -62,6 +62,13 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? Avisos { get; init; }
 
     /// <summary>
+    /// Solo en <c>GET /web/cotizaciones/regional</c> (HU-016.1, #154): el comercial dueño de la cotización. <c>null</c> (no se serializa) en
+    /// el resto de respuestas, donde la cotización siempre es del usuario autenticado.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public clsComercialCotizacion? Comercial { get; init; }
+
+    /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
     /// (HU-021: el margen es por ruta; el de cada ruta está en <c>CosteoCotizacion.rutas[]</c>, #138).
     /// </summary>
@@ -113,6 +120,16 @@ public sealed record clsCotizacionConLinea(
 
 /// <summary><c>MisCotizaciones</c>: <c>{total, cotizaciones}</c>, máximo 100, de la más reciente a la más antigua.</summary>
 public sealed record clsMisCotizaciones(int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
+
+/// <summary><c>ComercialCotizacion</c> (HU-016.1, #154): dueño de una cotización del listado regional (<c>UsuariosWeb</c>).</summary>
+public sealed record clsComercialCotizacion(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto);
+
+/// <summary>
+/// <c>CotizacionesRegional</c> (HU-016.1, #154): las cotizaciones de los miembros de la regional del gerente comercial, con la forma de
+/// <c>MisCotizaciones</c> y el comercial dueño en cada fila. Máximo 100 en total, de la más reciente a la más antigua.
+/// </summary>
+/// <param name="FuenteRegional"><c>dim_ejecutivo</c> o <c>usuarios_web</c> (de dónde salió la regional del gerente).</param>
+public sealed record clsCotizacionesRegional(string Regional, string FuenteRegional, int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
 
 /// <summary>
 /// <c>DatosNuevaVersion</c>: datos de una cotización existente para prellenar una versión nueva. No se persiste nada;

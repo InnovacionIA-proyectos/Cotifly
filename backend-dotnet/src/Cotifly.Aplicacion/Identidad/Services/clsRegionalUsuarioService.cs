@@ -79,6 +79,18 @@ public sealed class clsRegionalUsuarioService(
         return clsResultado<IReadOnlyList<clsUsuarioWeb>>.Exito(miembros);
     }
 
+    public async Task<clsResultado<bool>> EsMiembroDeMiRegionalAsync(clsUsuarioWeb gerente, Guid usuarioId, CancellationToken cancellationToken = default)
+    {
+        var regional = await ResolverAsync(gerente, cancellationToken);
+        if (regional.EsFallo)
+        {
+            return regional.Error;
+        }
+
+        var miembros = await ListarMiembrosAsync(regional.Valor.Regional, cancellationToken);
+        return miembros.EsFallo ? miembros.Error : miembros.Valor.Any(m => m.Id == usuarioId);
+    }
+
     private async Task<T?> ConsultarAsync<T>(Func<Task<T>> consulta, CancellationToken cancellationToken)
         where T : class
     {
