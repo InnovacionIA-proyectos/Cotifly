@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c> y la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el 07 y el 08 (HU-014.3) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -36,13 +36,31 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         Script04,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
+        // HU-014.3 (#152): retiro de las vistas del borrador de métricas (db/scripts/08, lo aplica el DBA).
+        Script08,
     ];
+
+    /// <summary>HU-014.3 (#152): el 08 que retira las vistas del borrador de métricas (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script08 = "../scripts_bd/08_retirar_vistas_actividad.sql";
 
     /// <summary>HU-023 (#176): el 07 del quinto motivo (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
 
     /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
+
+    /// <summary>
+    /// Scripts hasta el 07 incluido (sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
+    /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
+    /// </summary>
+    public const int ScriptsHasta07 = 13;
+
+    /// <summary>
+    /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después): para probar el 07 sobre una base
+    /// que no lo tiene. <c>Scripts[ScriptsSin07]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el
+    /// backend mapea, va antes del 07 en la lista y este número sube.
+    /// </summary>
+    public const int ScriptsSin07 = 12;
 
     /// <summary>Scripts hasta el 02 del cubicador (sin el 04).</summary>
     public const int ScriptsHasta02 = 11;
@@ -127,6 +145,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
                 // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
+                // HU-014.3 (#152): el 08 va después del 07; sobre el 01 actual no hace nada (ya no crea las vistas).
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -167,6 +187,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

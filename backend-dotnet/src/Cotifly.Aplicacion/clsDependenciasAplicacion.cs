@@ -62,13 +62,12 @@ public static class clsDependenciasAplicacion
         servicios.AddSingleton<IClsRevocacionAccesos, clsCacheTokensRevocados>();
 
         // API web /web/* (HU-003.6, #12 parte B): mis cotizaciones, nueva versión, folio del servidor (ADR-011), descarga
-        // autenticada del PDF, administración de líneas (HU-004.9) y métricas en borrador (HU-010.1).
+        // autenticada del PDF, y administración de líneas (HU-004.9).
         servicios.AddScoped<IClsMisCotizacionesService, clsMisCotizacionesService>();
         servicios.AddScoped<IClsNuevaVersionService, clsNuevaVersionService>();
         servicios.AddScoped<IClsGeneradorFolioService, clsGeneradorFolioService>();
         servicios.AddScoped<IClsDescargaPdfService, clsDescargaPdfService>();
         servicios.AddScoped<IClsLineasNegocioAdminService, clsLineasNegocioAdminService>();
-        servicios.AddScoped<IClsMetricasService, clsMetricasService>();
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();

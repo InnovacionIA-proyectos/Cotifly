@@ -53,11 +53,3 @@ Característica: Aislamiento de las cotizaciones por comercial
   Escenario: Un gerente comercial de otra regional no descarga el PDF
     Cuando "hugo" descarga el PDF de la cotización "B1"
     Entonces la respuesta tiene el estado 404 con el error "Cotización no encontrada o no es tuya."
-
-  Escenario: En las métricas el comercial ve solo su fila y el gerente ve su regional
-    Cuando "ana" consulta las métricas de actividad
-    Entonces las métricas incluyen solo a "ana"
-    Cuando "gloria" consulta las métricas de actividad
-    Entonces las métricas incluyen a "ana" y a "luis"
-    Cuando "hugo" consulta las métricas de actividad
-    Entonces las métricas están vacías

@@ -13,7 +13,7 @@ Punto de entrada a la base de datos de Cotifly: motor, esquema, scripts y dónde
   scripts `db/migrations_mssql/000N_*.sql` (ADR-008).
 - **Qué guarda:** la trazabilidad de cada cotización (rutas, camiones, costos de Nexo, margen, precio, PDF, correo y
   resultado), la identidad interna y la auditoría. No es el ERP: Nexo, SAP TM y el cubicador son fuentes externas.
-- **20 tablas y 2 vistas.**
+- **20 tablas, sin vistas** (las 2 del borrador de métricas se retiraron en HU-014.3, #152, con `db/scripts/08`).
 
 | Documento | Qué tiene |
 |---|---|
@@ -111,7 +111,6 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | Configuración | `MargenesPolitica` (líneas de negocio), `SapMapeoTrqType` |
 | Identidad | `UsuariosWeb`, `Roles`, `UsuariosRoles`, `TokensRefresco`, `TokensRevocados` |
 | Asistente y auditoría | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
-| Vistas | `vAjustesMargenPorComercial`, `vActividadPorComercial` |
 
 ## 4. Scripts
 
@@ -122,6 +121,8 @@ El diagrama completo, con todas las columnas y el resto de tablas, está en
 | `db/migrations_mssql/0009_reestructuracion_cotizaciones.sql` | HU-021: cabecera → rutas → camiones, mercancías y conexos en filas, con respaldo `Respaldo0009_*` |
 | `db/migrations_mssql/0010_nombres_municipio.sql` | Nombres de municipio de la ruta, `solicitudNexoId`, nombre del conexo y el CHECK de `estadoEnvio`. **Borrador pendiente de revisión de scalderon-bs** |
 | `db/scripts/02_alter_cubicador.sql` | HU-023.3: columnas de resultado de la cubicación y `codigoMercancia` en lugar de `idTipoMercancia`. Idempotente; el ejecutador lo corre después del `01` |
+| `db/scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176): quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. Idempotente |
+| `db/scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152): `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` si existen. Idempotente; lo aplica el DBA después de desplegar el backend sin el borrador de métricas |
 | `db/scripts/pendientes/03` a `06` | Propuestas pendientes de revisión de scalderon-bs y del DBA (orden del camión, cubicación en segundo plano, categoría del conexo e idempotencia de la captura). El ejecutador no las corre. El backend solo mapea el `04` |
 | `db/scripts/operacion/` | Scripts de datos de una sola vez (identidad compartida con Nexo, rol comercial). Los corre el DBA con aprobación |
 

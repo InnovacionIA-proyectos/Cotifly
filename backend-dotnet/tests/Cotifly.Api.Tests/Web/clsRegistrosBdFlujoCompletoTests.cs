@@ -87,7 +87,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
             "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(20);
         (await clsBaseDatosPruebas.EscalarAsync<int>(Cadena,
-            "SELECT COUNT(*) FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(2);
+            "SELECT COUNT(*) FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id WHERE s.name = 'dbo_cotifly'")).Should().Be(0, "las vistas del borrador de métricas se retiraron (HU-014.3, #152)");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(lineaNegocio, '=', ISNULL(mapeoLineasNexo, '-')), ',') WITHIN GROUP (ORDER BY lineaNegocio) FROM dbo_cotifly.MargenesPolitica"))
             .Should().Be("DevolucionContenedor=DevolucionContenedor,Distribucion=-,Exportacion=InteriorAPuerto,Importacion=PuertoAInterior,Internacional=Andino,Nacional=Nacional");

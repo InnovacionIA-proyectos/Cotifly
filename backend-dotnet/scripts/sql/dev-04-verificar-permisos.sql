@@ -8,11 +8,9 @@
 SET NOCOUNT ON;
 SET XACT_ABORT OFF;
 GO
--- Debe funcionar: tablas y vistas de dbo_cotifly, escritura y candados.
+-- Debe funcionar: tablas de dbo_cotifly, escritura y candados (las vistas del borrador de métricas se retiraron, HU-014.3).
 DECLARE @n INT;
 SELECT @n = COUNT(*) FROM dbo_cotifly.Roles;
-SELECT @n = COUNT(*) FROM dbo_cotifly.vActividadPorComercial;
-SELECT @n = COUNT(*) FROM dbo_cotifly.vAjustesMargenPorComercial;
 BEGIN TRANSACTION;
     UPDATE dbo_cotifly.Roles SET codigo = codigo WHERE 1 = 0;
     DECLARE @candado INT;
@@ -20,7 +18,7 @@ BEGIN TRANSACTION;
                                   @LockOwner = N'Transaction', @LockTimeout = 5000;
     IF @candado < 0 THROW 50001, 'cotifly_app no pudo tomar un candado con sp_getapplock.', 1;
 ROLLBACK TRANSACTION;
-PRINT 'OK: lectura y escritura en dbo_cotifly, vistas y sp_getapplock';
+PRINT 'OK: lectura y escritura en dbo_cotifly y sp_getapplock';
 GO
 -- No debe funcionar: otros esquemas de la base compartida.
 DECLARE @permitido BIT = 0;

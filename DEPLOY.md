@@ -156,6 +156,12 @@ definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesit
 otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables). Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
+**Base de datos, HU-014.3 (#152):** el backend ya no expone `GET /web/metricas/actividad` ni `/web/metricas/ajustes-margen` (responden
+404) y no lee las vistas `vActividadPorComercial` ni `vAjustesMargenPorComercial`. **Después** de desplegar esta versión, el DBA aplica
+`db/scripts/08_retirar_vistas_actividad.sql`, que las borra (idempotente, `IF OBJECT_ID(...) IS NOT NULL DROP VIEW`; no toca tablas ni
+datos). Antes del despliegue no: la versión anterior las sigue leyendo (si se aplica antes con el ejecutador, ver §4.5, paso 0). Si se
+demora, no pasa nada: el backend nuevo no las usa y `/health/ready` no las revisa.
+
 **Variables a agregar en Dokploy por ambiente (HU-021).** Los manifiestos de `infra/` no se cambiaron en HU-021.14: tocar un
 despliegue requiere la aprobación del usuario. Cuando se apruebe, se declaran en el manifiesto con `${VAR:-<defecto>}` y se
 cargan en Dokploy así:
@@ -382,6 +388,10 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
      HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
+   - **Excepción, HU-014.3 (#152):** `db/scripts/08_retirar_vistas_actividad.sql` va **después** de la imagen (borra las vistas que
+     lee la versión anterior). El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre, así que si el DBA lo
+     usa antes de la imagen también aplica el 08: no rompe nada que se use, solo los dos endpoints retirados de la versión anterior
+     (`/web/metricas/actividad` y `/ajustes-margen`, que el frontend no consume) responden 500 hasta que sube la imagen nueva.
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
    columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a

@@ -6,9 +6,6 @@ using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Margen.Repositories;
-using Cotifly.Aplicacion.Metricas.DTOs;
-using Cotifly.Aplicacion.Metricas.Repositories;
-using Cotifly.Aplicacion.Metricas.Services;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Cotizaciones;
@@ -20,7 +17,7 @@ namespace Cotifly.Aplicacion.Tests.Web;
 
 /// <summary>
 /// Casos de uso de <c>/web/*</c> que revalidan el rol del token (además de la política del endpoint): administración de líneas
-/// (solo gerente, auditada), métricas (alcance por rol y regional) y descarga del PDF (dueño o gerente de la regional).
+/// (solo gerente, auditada) y descarga del PDF (dueño o gerente de la regional).
 /// </summary>
 public sealed class clsCasosWebTests
 {
@@ -28,7 +25,6 @@ public sealed class clsCasosWebTests
     private readonly IClsUnitOfWork _unidadTrabajo = Substitute.For<IClsUnitOfWork>();
     private readonly IClsAuditoriaService _auditoria = Substitute.For<IClsAuditoriaService>();
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
-    private readonly IClsMetricasRepository _metricas = Substitute.For<IClsMetricasRepository>();
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsAlmacenPdf _almacen = Substitute.For<IClsAlmacenPdf>();
 
@@ -95,45 +91,6 @@ public sealed class clsCasosWebTests
     }
 
     [Fact]
-    public async Task ElComercialVeSusMetricasYElGerenteLasDeSuRegional()
-    {
-        var comercial = Usuario(RolInterno.Comercial);
-        var gerente = Usuario(RolInterno.GerenteComercial);
-        _usuarios.ObtenerPorIdAsync(gerente.UsuarioId!.Value, Arg.Any<CancellationToken>())
-            .Returns(clsUsuarioWeb.Crear("gloria", "Gloria", null, "Occidente", DateTimeOffset.UtcNow).Valor);
-
-        var alcanceComercial = (await Metricas(comercial).ResolverAlcanceAsync(Ct)).Valor;
-        var alcanceGerente = (await Metricas(gerente).ResolverAlcanceAsync(Ct)).Valor;
-
-        alcanceComercial.UsuarioId.Should().Be(comercial.UsuarioId);
-        alcanceComercial.Regional.Should().BeNull();
-        alcanceGerente.UsuarioId.Should().BeNull();
-        alcanceGerente.Regional.Should().Be("Occidente");
-    }
-
-    [Fact]
-    public async Task UnGerenteSinRegionalSoloVeSuPropiaFila()
-    {
-        var gerente = Usuario(RolInterno.GerenteComercial);
-        _usuarios.ObtenerPorIdAsync(gerente.UsuarioId!.Value, Arg.Any<CancellationToken>())
-            .Returns(clsUsuarioWeb.Crear("gloria", "Gloria", null, null, DateTimeOffset.UtcNow).Valor);
-        _metricas.ListarActividadAsync(Arg.Any<clsAlcanceMetricas>(), Arg.Any<CancellationToken>()).Returns([]);
-
-        await Metricas(gerente).ObtenerActividadAsync(Ct);
-
-        await _metricas.Received(1).ListarActividadAsync(
-            Arg.Is<clsAlcanceMetricas>(a => a.UsuarioId == gerente.UsuarioId && a.Regional == null), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task SinSesionNoHayMetricas()
-    {
-        var resultado = await Metricas(new clsUsuarioFalso(null, null)).ObtenerAjustesMargenAsync(Ct);
-
-        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoAutenticado);
-    }
-
-    [Fact]
     public async Task ElDuenoDescargaSuPdfYOtroComercialRecibeNoEncontrado()
     {
         var dueno = Usuario(RolInterno.Comercial);
@@ -189,8 +146,6 @@ public sealed class clsCasosWebTests
     private static clsUsuarioFalso Usuario(RolInterno rol) => new(Guid.NewGuid(), rol);
 
     private clsLineasNegocioAdminService Admin(IClsContextoUsuario usuario) => new(usuario, _politicas, _unidadTrabajo, _auditoria);
-
-    private clsMetricasService Metricas(IClsContextoUsuario usuario) => new(usuario, _usuarios, _metricas);
 
     private clsDescargaPdfService Descarga(IClsContextoUsuario usuario) => new(usuario, _cotizaciones, _usuarios, _almacen, _auditoria);
 

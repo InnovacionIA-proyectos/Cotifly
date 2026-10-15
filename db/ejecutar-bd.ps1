@@ -5,7 +5,7 @@
 .DESCRIPTION
     Corre en orden, con sqlcmd y deteniéndose en el primer error:
       1. (opcional, -CrearBase) crea la base de datos si no existe.
-      2. scripts/01_crear_esquema.sql  -> schema, tablas, restricciones, índices y vistas.
+      2. scripts/01_crear_esquema.sql  -> schema, tablas, restricciones e índices.
       3. scripts/02_*.sql en adelante  -> ajustes al esquema (ALTER), en orden de nombre. Se pueden repetir.
       4. seeder/*.sql                  -> líneas de negocio, mapeo SAP TM y roles (en orden de nombre).
 
