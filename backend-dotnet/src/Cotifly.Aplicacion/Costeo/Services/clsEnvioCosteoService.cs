@@ -767,7 +767,9 @@ public sealed class clsEnvioCosteoService(
             // HU-013.14: siempre "pendiente_costeo" hasta leer el costo; si Nexo ya costeó, la lectura inmediata (abajo) la promueve.
             var creada = resultado.Valor;
             // La solicitud y cada camión arrancan en pendiente_costeo; el polling deriva después el de cada camión (ADR-017, HU-021).
-            cotizacion.RegistrarEnvioCosteo(creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+            // HU-018.1 (#155): el scorePrioridad de Nexo se guarda con el id (antes se descartaba).
+            cotizacion.RegistrarEnvioCosteo(
+                creada.Id, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos), creada.ScorePrioridad);
 
             // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
             // contra esto y no contra la bandera actual.

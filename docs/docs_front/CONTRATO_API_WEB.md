@@ -393,9 +393,14 @@ es `Varias`:
   "ganada": null,
   "motivo_rechazo": null,
   "pdf_url": null,
-  "created_at": "2026-10-09T15:20:11.532+00:00"
+  "created_at": "2026-10-09T15:20:11.532+00:00",
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "score_prioridad": 62.5
 }
 ```
+
+`deadline` y `score_prioridad` (HU-018.1, #155) vienen en todo `CotizacionResumen` (también en "Mis cotizaciones"): la fecha
+límite del formulario, en UTC, y el `scorePrioridad` que Nexo devolvió al crear la solicitud (ver 8.6).
 
 Error 400 con todos los errores juntos (nada queda guardado):
 
@@ -569,6 +574,8 @@ primer nivel son los de la ruta 1:
   "origen_margen": "politica_linea",
   "moneda": "COP",
   "trm_aplicada": 0,
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "score_prioridad": 62.5,
   "servicios_conexos": [
     { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "incierto" }
   ],
@@ -632,6 +639,12 @@ primer nivel son los de la ruta 1:
 ```
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
+
+`deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
+(también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
+`score_prioridad` es el `scorePrioridad` que Nexo devolvió al crear la solicitud (`201 CapturaResultDto`), con hasta 4 decimales y
+en la escala de Nexo (mostrarlo tal cual). `score_prioridad` es `null` si Nexo no lo mandó, si la solicitud todavía no se envió o si
+se envió antes del script 09; es el de la creación y no se actualiza después.
 
 `margen_sap_anomalo` y `aviso_margen` (HU-009, #139): SAP TM propuso para la ruta 1 un margen fuera de [0, 60 %]; no se aplicó, la ruta
 usa el de la política de su línea (`origen_margen = politica_linea`, `margen_sugerido` = el de la política) y `aviso_margen` lo explica
@@ -740,7 +753,9 @@ líneas distintas), y `precio_final` es la suma de las rutas, con conexos:
       "ganada": true,
       "motivo_rechazo": "No aplica",
       "pdf_url": "/pdfs/PCN-900555111-DG-09102026-001.pdf",
-      "created_at": "2026-10-09T15:20:11.532+00:00"
+      "created_at": "2026-10-09T15:20:11.532+00:00",
+      "deadline": "2026-10-15T22:00:00+00:00",
+      "score_prioridad": 62.5
     }
   ]
 }

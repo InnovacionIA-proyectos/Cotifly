@@ -92,6 +92,22 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public async Task HU0181_ElScript09EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal94Null()
+    {
+        // HU-018.1 (#155): scorePrioridad en la cabecera (db/scripts/09; el 01 no lo trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem09", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script09);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem09Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script09);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(ty.name, '(', c.precision, ',', c.scale, ')|', c.is_nullable) FROM sys.columns c "
+                + "JOIN sys.types ty ON ty.user_type_id = c.user_type_id "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name = N'scorePrioridad'"))
+            .Should().Be("decimal(9,4)|1");
+    }
+
+    [Fact]
     public async Task LosCheckDel04AcotanElEstadoLosIntentosYExigenAvisosEnJson()
     {
         var definiciones = await LeerAsync(

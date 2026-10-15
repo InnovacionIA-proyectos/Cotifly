@@ -118,6 +118,26 @@ public sealed class clsEnvioCosteoServiceTests
     }
 
     [Fact]
+    public async Task HU0181_ElScorePrioridadQueDevuelveNexoSeGuardaEnLaCabeceraConElIdDeLaSolicitud()
+    {
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false) { ScorePrioridad = 62.5m });
+
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.SolicitudNexoId.Should().Be("sol-1");
+        cotizacion.ScorePrioridad.Should().Be(62.5m, "antes Cotifly descartaba el scorePrioridad del CapturaResultDto");
+    }
+
+    [Fact]
+    public async Task HU0181_SiNexoNoMandaScorePrioridadQuedaNull()
+    {
+        var cotizacion = (await Servicio().EnviarAsync(_ana, Entrada(), Ct)).Valor;
+
+        cotizacion.ScorePrioridad.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ElClienteSaleDelCatalogoDeNexoConSuBpYLaLineaVaConSuMapeo()
     {
         var resultado = await Servicio().EnviarAsync(_ana, Entrada() with { ClienteNombre = "longyin" }, Ct);

@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c> y la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>07</c> y el <c>09</c> (HU-018.1) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -34,9 +34,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/pendientes/04, pendiente de aprobación;
         // el backend mapea sus columnas, así que las pruebas lo aplican en las dos cadenas).
         Script04,
+        // HU-018.1 (#155): scorePrioridad en la cabecera (db/scripts/09). Va ANTES del 07 en esta lista (el ejecutador corre 07 y luego 09;
+        // son independientes) para que `Scripts.Length - 1` siga siendo "todo menos el 07" en las pruebas del 07.
+        Script09,
         // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
         Script07,
     ];
+
+    /// <summary>HU-018.1 (#155): el 09 de <c>scorePrioridad</c> (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script09 = "../scripts_bd/09_score_prioridad.sql";
+
+    /// <summary>Scripts hasta el 04 (sin el 09 ni el 07).</summary>
+    public const int ScriptsHasta04 = 12;
 
     /// <summary>HU-023 (#176): el 07 del quinto motivo (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
@@ -127,6 +136,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
                 // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
+                // HU-018.1 (#155): el 09 (scorePrioridad) va después del 07 por nombre, como en el ejecutador.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("09_score_prioridad.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -167,6 +178,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("09_score_prioridad.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

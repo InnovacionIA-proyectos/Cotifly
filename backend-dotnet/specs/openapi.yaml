@@ -3517,6 +3517,21 @@ components:
           type: string
           format: date-time
           nullable: true
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-018.1 (#155). Fecha límite de la solicitud (cabecera, la del formulario de costeo), ISO 8601 en UTC. `null` si no se
+            dio. Siempre presente.
+        score_prioridad:
+          type: number
+          nullable: true
+          description: |
+            HU-018.1 (#155). `scorePrioridad` que Nexo devolvió al crear la solicitud (`201 CapturaResultDto` de
+            `POST /api/captura-solicitudes`), con hasta 4 decimales. Nexo no fija la escala (su ejemplo trae 62.5): mostrarlo tal
+            cual. `null` si Nexo no lo mandó, si la solicitud no se ha enviado o si se envió antes del script 09. Siempre presente.
+            Es el de la creación: no se actualiza después (`scoreUrgencia` por solicitud sigue bloqueado, ADR-016).
         conexos_descartados:
           type: array
           deprecated: true
@@ -4639,6 +4654,19 @@ components:
         trm_aplicada:
           type: number
           description: HU-013.7. TRM fijada al crear la cotización (COP por USD); 0 en COP.
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-018.1 (#155). Fecha límite de la solicitud, ISO 8601 en UTC; `null` si no se dio. Es de la cabecera (toda la
+            solicitud), no de cada ruta: no está en `rutas[]`. Siempre presente.
+        score_prioridad:
+          type: number
+          nullable: true
+          description: |
+            HU-018.1 (#155). `scorePrioridad` que Nexo devolvió al crear la solicitud (hasta 4 decimales; escala de Nexo, mostrarlo
+            tal cual). `null` si Nexo no lo mandó, si no se ha enviado o si se envió antes del script 09. Siempre presente.
         textos:
           description: HU-013.5. Asunto e introducción guardados para el PDF, o `null` si todavía no hay (el PDF usa los estándar).
           oneOf:
