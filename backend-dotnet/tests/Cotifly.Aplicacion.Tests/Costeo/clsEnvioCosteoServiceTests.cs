@@ -1116,6 +1116,79 @@ public sealed class clsEnvioCosteoServiceTests
         await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// HU-018.1 (#155) + #173: el reintento que vincula por el registro de la Idempotency-Key guarda también el scorePrioridad que Nexo
+    /// devolvió con el id (antes quedaba null porque el registro no lo tenía).
+    /// </summary>
+    [Fact]
+    public async Task ElReintentoQueVinculaPorElRegistroGuardaElScorePrioridadDeNexo()
+    {
+        _nexo.EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>())
+            .Returns(new clsSolicitudCreadaNexo("sol-1", 1, 0, 1, false) { ScorePrioridad = 62.5m });
+        var guardados = 0;
+        _unidad.GuardarCambiosAsync(Arg.Any<CancellationToken>()).Returns<Task<int>>(_ =>
+            ++guardados == 2 ? throw new TimeoutException("Execution Timeout Expired") : Task.FromResult(1));
+        var registro = new clsRegistroCapturasIdempotentesEnMemoria(_reloj);
+        var servicio = ServicioIdempotente(registro);
+        var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
+        var primera = () => servicio.CapturarUnaVezAsync(_ana, entrada, "clave-155-sc", Ct);
+        await primera.Should().ThrowAsync<TimeoutException>();
+        registro.BuscarPorFolio(_creada!.Folio)!.ScorePrioridad.Should().Be(62.5m, "el registro guarda el score con el id de Nexo");
+
+        var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
+
+        var reintento = await servicio.ReintentarAsync(_ana, guardada.Folio, Ct);
+
+        reintento.Valor.SolicitudNexoId.Should().Be("sol-1");
+        reintento.Valor.ScorePrioridad.Should().Be(62.5m, "la vinculación guarda el mismo score que el primer envío");
+        await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Un registro sin score (Nexo no lo mandó, o la captura se registró antes de guardar el score en el registro): la vinculación sigue y
+    /// el score queda null, sin romper el flujo ni llamar a Nexo.
+    /// </summary>
+    [Fact]
+    public async Task ElReintentoQueVinculaConUnRegistroSinScoreLoDejaNullYNoReenvia()
+    {
+        var registro = new clsRegistroCapturasIdempotentesEnMemoria(_reloj);
+        var servicio = ServicioIdempotente(registro);
+        var entrada = Captura(Ruta(76109, "Buenaventura", 11001, "Bogotá D.C."));
+        var guardada = await FolioPendienteSinIdDeNexoAsync(entrada);
+        registro.Registrar($"{clsEnvioCosteoService.OperacionIdempotencia}:{_ana}", "clave-anterior",
+            new clsCapturaIdempotente("huella", guardada.Id, guardada.Folio, "sol-previa", _reloj.AhoraUtc));
+
+        var reintento = await servicio.ReintentarAsync(_ana, guardada.Folio, Ct);
+
+        reintento.Valor.SolicitudNexoId.Should().Be("sol-previa");
+        reintento.Valor.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo);
+        reintento.Valor.ScorePrioridad.Should().BeNull();
+        await _nexo.DidNotReceive().EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Deja el folio como lo deja el guardado fallido tras Nexo: confirmado, en pendiente_envio y sin solicitudNexoId (un corte antes de
+    /// Nexo), con el reloj pasada la espera de reenvío.
+    /// </summary>
+    private async Task<clsCotizacionSolicitud> FolioPendienteSinIdDeNexoAsync(clsEntradaCaptura entrada)
+    {
+        _buscador.BuscarAsync(_ana, Nit, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsResultadoBusquedaClientes>>>(_ => throw new InvalidOperationException("corte"));
+        try
+        {
+            await Servicio().CapturarAsync(_ana, entrada, Ct);
+        }
+        catch (InvalidOperationException)
+        {
+            // El corte antes de Nexo deja el folio confirmado y sin enviar.
+        }
+
+        var guardada = _creada!;
+        guardada.SolicitudNexoId.Should().BeNull();
+        _cotizaciones.ObtenerPorFolioDelUsuarioAsync(guardada.Folio, _ana, Arg.Any<CancellationToken>()).Returns(guardada);
+        _reloj.Avanzar(clsCotizacionSolicitud.EsperaReenvioPendiente + TimeSpan.FromMinutes(1));
+        return guardada;
+    }
+
     [Fact]
     public async Task ConLaCapturaYaGuardadaElReintentoConLaMismaClaveDevuelveElFolioSinLlamarANexo()
     {

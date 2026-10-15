@@ -143,7 +143,7 @@ public sealed class clsEnvioCosteoService(
             ct => registroCapturas?.Buscar(ambito, claveIdempotencia) is { } previa
                 ? ReanudarAsync(previa, huella, usuarioId, ct)
                 : CapturarInternoAsync(usuarioId, entrada, ct, c => registroCapturas?.Registrar(ambito, claveIdempotencia,
-                    new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc))),
+                    new clsCapturaIdempotente(huella, c.Id, c.Folio, c.SolicitudNexoId, reloj.AhoraUtc, c.ScorePrioridad))),
             r => r.EsExitoso,
             cancellationToken);
     }
@@ -617,9 +617,12 @@ public sealed class clsEnvioCosteoService(
         // #173: si la captura llegó a Nexo y el guardado posterior falló, el folio quedó en pendiente_envio sin solicitudNexoId. Si el
         // registro de la Idempotency-Key conoce el id de Nexo, se vincula (pendiente_costeo, el polling sigue) y NO se reenvía: reenviar
         // duplicaría la solicitud. Sin registro (reinicio, otra réplica) se reenvía como antes: lo cubre la tabla propuesta en el 06.
-        if (cotizacion.SolicitudNexoId is null && registroCapturas?.BuscarPorFolio(cotizacion.Folio) is { SolicitudNexoId: { } enNexo })
+        // HU-018.1 (#155): el scorePrioridad que Nexo devolvió con ese id viaja en el registro; si no lo tiene, queda null.
+        if (cotizacion.SolicitudNexoId is null
+            && registroCapturas?.BuscarPorFolio(cotizacion.Folio) is { SolicitudNexoId: { } enNexo } capturaPrevia)
         {
-            cotizacion.RegistrarEnvioCosteo(enNexo, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos));
+            cotizacion.RegistrarEnvioCosteo(
+                enNexo, costeoCompleto: false, ahora, ahora.AddSeconds(opciones.Value.IntervaloInicialSegundos), capturaPrevia.ScorePrioridad);
             await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
             logger.LogWarning("Reintento de {Folio}: Nexo ya tenía la solicitud {Solicitud} (el guardado posterior había fallado); se vincula sin reenviar.",
                 cotizacion.Folio, enNexo);
