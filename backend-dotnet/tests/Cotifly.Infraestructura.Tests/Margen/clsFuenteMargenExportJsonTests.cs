@@ -9,7 +9,7 @@ namespace Cotifly.Infraestructura.Tests.Margen;
 
 /// <summary>
 /// <see cref="clsFuenteMargenExportJson"/>: port de <c>ExportJsonFuente</c> (<c>mcp_server/margen/export_fuente.py</c>) con la
-/// muestra del Python (<c>tests/fixtures/sap/rentab_cliente_muestra.json</c>, idéntica a <c>datos/sap_export.json</c>).
+/// muestra del Python (copiada en <c>backend-dotnet/tests/fixtures/sap/rentab_cliente_muestra.json</c>).
 /// </summary>
 public sealed class clsFuenteMargenExportJsonTests : IDisposable
 {

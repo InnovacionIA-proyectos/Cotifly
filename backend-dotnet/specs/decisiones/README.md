@@ -1,6 +1,8 @@
 # Decisiones de arquitectura (ADR) — backend .NET de Cotifly
 
-Registro de las decisiones de arquitectura de la migración del backend de Cotifly de Python a C# / .NET 10 (milestone HU-003). Cierran los ítems abiertos del issue #7 (HU-003.1).
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
+Registro de las decisiones de arquitectura del backend .NET 10 de Cotifly. ADR-001 a ADR-012 nacieron con la migración desde el bot en Python (milestone HU-003) y cierran los ítems abiertos del issue #7 (HU-003.1); las siguientes registran las decisiones de HU-005 a HU-023.
 
 | Id | Título | Estado | Issue / HU relacionada |
 |---|---|---|---|
@@ -27,7 +29,7 @@ Registro de las decisiones de arquitectura de la migración del backend de Cotif
 
 Estados posibles: **Propuesta**, **Aceptada**, **Pendiente** (falta un dato externo para decidir), **Reemplazada por ADR-NNN**. Una ADR aceptada puede tener pendientes de implementación con dueño asignado; eso no la reabre.
 
-Nota: varias ADR citan `backend-dotnet/specs/openapi.yaml` (contrato #17). Ese archivo llega con el PR #53 y todavía no está en `QA`.
+Nota: varias ADR citan `backend-dotnet/specs/openapi.yaml` (contrato #17), que está en `QA` desde el PR #53.
 
 ## Plantilla
 
@@ -60,4 +62,4 @@ Qué se gana, qué se pierde, qué cambia para otros issues.
 Reglas:
 
 - Una ADR aceptada no se edita para cambiar la decisión. Se escribe una nueva que la reemplace y se actualiza el estado de la anterior.
-- Las decisiones del usuario y del equipo registradas en el backlog (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md`) tienen prioridad. Si una ADR las contradice, se corrige la ADR.
+- Las decisiones del usuario y del equipo registradas en los milestones de GitHub (y en sus borradores: `docs/backlog/` y `docs/archivo/backlog/`) tienen prioridad. Si una ADR las contradice, se corrige la ADR.

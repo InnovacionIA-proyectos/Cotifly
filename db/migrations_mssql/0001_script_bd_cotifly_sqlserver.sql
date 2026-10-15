@@ -1,7 +1,7 @@
 /* ============================================================================
    Cotifly — Esquema objetivo SQL Server 2019 (HU-002.4 + Fase 2)
    ============================================================================
-   Fuente de diseño: docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md — no rediseña nada, es la
+   Fuente de diseño: docs/archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md (histórico) — no rediseña nada, es la
    traducción literal de ese documento a T-SQL ejecutable. Script único: crea
    todo el esquema (tablas, FKs, constraints, vistas) y siembra la configuración
    base de una sola vez, en su forma FINAL — no hay una "Fase 1" intermedia que
@@ -21,7 +21,7 @@
 
    Confirmar antes de ejecutar en el entorno real: `dbTarifario_Nexo_Pruebas`
    suena a nombre de instancia de pruebas — validar si producción usa el mismo
-   nombre de base o uno distinto (ver docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md §9).
+   nombre de base o uno distinto (ver docs/archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md §9).
 
    Decisión de HU-002.4: se ejecuta como script T-SQL directo (no migraciones EF
    Core) porque HU-003 (.NET/EF Core) todavía no existe como opción real.
@@ -56,8 +56,8 @@
    Nombres de tabla: PascalCase plano, sin prefijo (`Cotizaciones`,
    `SapMapeoTrqType`, etc.) — se probó el prefijo `tbl`/`tblSap` del estándar
    `dotnet-enterprise-architect` primero y el equipo lo retiró (desviación
-   explícita, ver docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md §9 y
-   docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md línea 218).
+   explícita, ver docs/archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md §9 y
+   docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md, HU-002).
 
    `UsuariosWeb.id` es `UNIQUEIDENTIFIER` (UUID generado por Cotifly), NO el id
    de SAP — no existe columna de id de SAP en este esquema. El aprovisionamiento

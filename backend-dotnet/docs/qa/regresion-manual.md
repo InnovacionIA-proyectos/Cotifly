@@ -1,5 +1,7 @@
 # Regresión manual del backend .NET (HU-003.8, #14)
 
+> **Estado:** vigente (pendiente de ejecución) · **Dueño:** Kevin (QA); soporte: Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaciones y envío de correo) contra el backend .NET **desplegado en el entorno de pruebas**, antes de considerar la migración lista para producción. La ejecuta Kevin (QA); el resultado se registra en este documento y en el issue #14.
 
 - Estado: **pendiente de ejecución**.

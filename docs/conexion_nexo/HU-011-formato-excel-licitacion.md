@@ -1,5 +1,7 @@
 # HU-011: formato del Excel de licitación (HU-011.1, #46)
 
+> **Estado:** vigente (preguntas pendientes de Gerencia Comercial) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 **Estado:** propuesta técnica lista para revisión. Las preguntas de la sección 8 están **pendientes de aprobación de Gerencia Comercial**. El ejemplo real de un pliego del cliente (primer checkbox de #46) sigue **pendiente con negocio**.
 
 Documentos relacionados: `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` (mapeo aprobado del formulario ampliado, HU-005.1), `backend-dotnet/specs/decisiones/ADR-015-costeo-nexo.md` (costeo en Nexo), `backend-dotnet/specs/decisiones/ADR-017-licitaciones-multilinea.md` (modelo multi-línea y endpoints de HU-011) y `docs/docs_front/GUIA_FRONTEND_COTIFLY.md` (contrato para el frontend).

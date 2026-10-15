@@ -12,7 +12,7 @@
 - `Cotizaciones` no tiene `cotizacionOrigenId` (se quitó el 2026-09-24). Una versión nueva es una fila con `version + 1` y el folio de la v1 con sufijo `-vN` (ADR-011).
 - `Cotizaciones.moneda` y `trmAplicada` existen desde el 0001. En USD, `precioFinal` está en dólares y `costo` siempre en pesos (ADR-014).
 - `origen` y `destino` de la cotización llegan con el script 0004 (ADR-015), que todavía no está en `QA`.
-- `UsuariosWeb.regional` existe desde el 0001 pero nadie la llena. La fuente prevista es `DWCubosEBSSAP.DimEjecutivo` (cruce `nombreUsuario` → `DimEjecutivo.ID`, columna `REGIONAL`; 0001 y `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §5.8), que no está conectada. No hay más información de esa tabla en el repositorio (ni en el Python, ni en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md`, ni en `docs/Entendimiento_Cotifly.docx.md`).
+- `UsuariosWeb.regional` existe desde el 0001 pero nadie la llena. La fuente prevista es `DWCubosEBSSAP.DimEjecutivo` (cruce `nombreUsuario` → `DimEjecutivo.ID`, columna `REGIONAL`; 0001 y `docs/archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md` §5.8), que no está conectada. No hay más información de esa tabla en el repositorio (ni en el Python, ni en `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md`, ni en `docs/Entendimiento_Cotifly.docx.md`).
 - **Actualización (#81, 2026-09-29):** el equipo verificó la fuente real: `DWCubosEBSSAP` con un usuario SQL de solo lectura, tabla `DimEjecutivo(ID, NOMBRE, REGIONAL, CORREO, USUARIO, FECHACREACION, FECHAMODIFICACION)`. El cruce es por `USUARIO` (con el dominio `boterosoto\` pegado), no por `ID`. #81 conecta además el login (sección 6).
 
 ## Decisión

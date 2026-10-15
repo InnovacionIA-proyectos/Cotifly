@@ -1,5 +1,7 @@
 # Próximos alcances
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Cosas que se identificaron durante el diseño pero que **no entran en el alcance actual**. Cada una explica por qué
 se dejó por fuera y qué tendría que pasar para retomarla.
 

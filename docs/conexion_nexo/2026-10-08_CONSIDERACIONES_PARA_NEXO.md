@@ -1,8 +1,31 @@
 # Consideraciones para Nexo y el cubicador — reestructuración de cotizaciones de Cotifly
 
-**Fecha:** 2026-10-08. **Origen:** HU-021 (`docs/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`).
+> **Estado:** vigente (abiertas: N3 y C3) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15 (respuestas de HU-023)
+
+**Fecha de creación:** 2026-10-08. **Origen:** HU-021 (milestone en GitHub; el borrador está archivado en `docs/archivo/backlog/2026-10-08_HU_Correccion_BD_Cotifly.md`).
 **Para quién:** el equipo de Nexo y quien construye el cubicador (que vive en `NEXO/cubicador`).
 **Qué es este documento:** lo que Cotifly le **pide o le avisa** a Nexo y al cubicador. **No son issues de Cotifly**: es código de otros sistemas, que Cotifly no puede hacer por su cuenta. Cada petición dice qué pasa si no se hace.
+
+## Estado de las peticiones (2026-10-15)
+
+Nexo y el cubicador respondieron en HU-023. El contrato vigente está en
+[`COTIFLY-CONTRATO.md`](../../backend-dotnet/docs/COTIFLY-CONTRATO.md) (Nexo) y
+[`COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`](../../backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) (cubicador); la
+decisión de Cotifly, en [ADR-020](../../backend-dotnet/specs/decisiones/ADR-020-conexion-con-el-cubicador.md). Las secciones de
+abajo conservan el planteamiento original.
+
+| # | Estado |
+|---|---|
+| N1 | **Resuelta.** Nexo acepta `grupoRutaId` (GUID de Cotifly por ruta) e `idRecomendacionVehiculo` por línea y numera las líneas por el orden del arreglo (`numeroLinea`). Cotifly los envía detrás de `Nexo:EnviarGrupoRutaId` y `Nexo:EnviarDatosCubicador` |
+| N2 | Resuelta (ya existía) |
+| N3 | **Abierta.** Asignar vehículo y carrocería a una línea que llegó vacía en la Mesa |
+| N4 | **Respondida.** Solo una línea de **Cupo** sin vehículo queda `PorCostear`, sin precio, para la consulta completa; Contenedor, Carga suelta y Extradimensionado se costean igual. Un código de vehículo o carrocería que Nexo no conoce nace en cuarentena |
+| C1 | **Resuelta.** El cubicador publica `POST /recomendaciones`, `GET /tipos-mercancia`, `GET /tipos-carroceria` y `GET /vehiculos-catalogo` |
+| C2 | **Resuelta.** Cada camión trae su `pesoTotalKg` |
+| C3 | **Por confirmar.** Cada camión tiene su `idRecomendacionVehiculo` y la reconsulta devuelve la última recomendación de la línea; la guía del cubicador no dice si una corrida anterior puede cambiar |
+| C4 | **Resuelta del lado de Nexo:** los códigos del cubicador viajan tal cual y un código desconocido nace en cuarentena |
+| C5 | **Resuelta.** `Authorization: Bearer` con una llave propia de Cotifly (`CUBICADOR_API_KEY_COTIFLY`), distinta de la de Nexo |
+| C6 | **Resuelta.** `SIN_SELECCION_AUTOMATICA` y `condicionada: true` llegan como 200 |
 
 ---
 
