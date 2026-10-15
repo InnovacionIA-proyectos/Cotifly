@@ -40,6 +40,35 @@ public sealed class clsCubicadorHttpTests : IDisposable
         RutaId, claseViaje, "1234567",
         [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, null)]);
 
+    /// <summary>HU-023 (#176, A3): la petición con el peso de todas las posiciones (20 × 700 kg y 1 × 1.700 kg), para comprobar la huella.</summary>
+    private static clsPeticionRecomendacion PeticionConPesos() => new(
+        RutaId, "Carga Suelta", "1234567",
+        [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 20, 120m, 100m, 150m, 700m), new clsMercanciaCubicador("BOBINAS", 1, 1200m, 235m, 269m, 1_700m)]);
+
+    /// <summary>Un <c>ASIGNADO</c> con el detalle de la petición con pesos: 20 cafés de <paramref name="pesoCafe"/> kg en total y una bobina.</summary>
+    private static Dictionary<string, object?> AsignadoDeLaCarga(decimal pesoCafe = 14_000m, int cantidadCafe = 20) =>
+        clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(
+            1, "3S3", "Tractomula 3S3", "FURGON", pesoCafe + 1_700m, false, true,
+            clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", cantidadCafe, pesoCafe, 36m),
+            clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+    private static string? Diferencia(object respuesta, clsPeticionRecomendacion peticion)
+    {
+        using var documento = JsonDocument.Parse(JsonSerializer.Serialize(respuesta));
+        return clsCubicadorHttp.DiferenciaConLaCarga(documento.RootElement, peticion);
+    }
+
+    /// <summary>Reconsulta tras un tiempo agotado sin corrida nueva: devuelve <paramref name="corridaAnterior"/> (la última de la ruta).</summary>
+    private async Task<clsResultado<clsRecomendacionCubicador>> ReconsultarCorridaAnteriorAsync(object corridaAnterior)
+    {
+        _cubicador.Corridas[RutaId] = JsonSerializer.Serialize(corridaAnterior);
+        _cubicador.TiempoAgotadoSinGuardar = true;
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+        return await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
+    }
+
     [Fact]
     public async Task MandaLaRutaConOrigenCotiflyClaseDeViajeUsuarioMercanciasPorCodigoYLaLlaveComoBearer()
     {
@@ -561,15 +590,13 @@ public sealed class clsCubicadorHttpTests : IDisposable
     [Fact]
     public async Task TrasUnTiempoAgotadoDelPostReconsultaYUsaLaCorridaQueQuedoCreadaConUnSoloPost()
     {
-        _cubicador.Recomendar = _ => clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(
-            1, "3S3", "Tractomula 3S3", "FURGON", 15_700m, false, true,
-            clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", 20, 14_000m, 36m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+        _cubicador.Recomendar = _ => AsignadoDeLaCarga();
         _cubicador.TiempoAgotadoTrasGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
-        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
 
         r.EsExitoso.Should().BeTrue("la corrida existe: se usa sin volver a pedirla");
         r.Valor.Vehiculos.Should().ContainSingle().Which.Heterogenea.Should().BeTrue();
@@ -610,6 +637,99 @@ public sealed class clsCubicadorHttpTests : IDisposable
 
         r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible, "la corrida guardada es de otra carga (5 unidades, no 20)");
         _cubicador.Recomendaciones.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task UnaCorridaReconsultadaConLasMismasCantidadesYOtroPesoNoSeUsa()
+    {
+        // Auditoría A3: recalcular con el mismo rutaId tras cambiar el peso (999 kg y no 14.000): mismas unidades, otra carga.
+        var r = await ReconsultarCorridaAnteriorAsync(AsignadoDeLaCarga(pesoCafe: 999m));
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible, "la corrida guardada pesa otra cosa");
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue("sigue el flujo del tiempo agotado");
+        _cubicador.Recomendaciones.Should().ContainSingle("el POST nunca se reintenta");
+        _cubicador.Reconsultas.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task UnaSinSeleccionAnteriorReconsultadaNoSeUsa()
+    {
+        // Auditoría A3: una SIN_SELECCION no trae detalle por posición: no se puede atribuir a esta petición.
+        var r = await ReconsultarCorridaAnteriorAsync(clsCubicadorFalso.SinSeleccion("SUPERA_K_MAX"));
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task UnaCorridaReconsultadaCoincidenteSeUsa()
+    {
+        var r = await ReconsultarCorridaAnteriorAsync(AsignadoDeLaCarga());
+
+        r.EsExitoso.Should().BeTrue("misma cantidad y mismo peso en cada posición");
+        r.Valor.Vehiculos.Should().ContainSingle().Which.PesoTotalKg.Should().Be(15_700m);
+        _cubicador.Recomendaciones.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void LaHuellaToleraElRedondeoDelPesoPeroNoOtroPeso()
+    {
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 14_000.05m), PeticionConPesos()).Should().BeNull("redondeo de la fila");
+        Diferencia(AsignadoDeLaCarga(pesoCafe: 14_001m), PeticionConPesos()).Should().Contain("posición 0 pesa");
+        Diferencia(AsignadoDeLaCarga(cantidadCafe: 19), PeticionConPesos()).Should().Contain("19 unidad(es)");
+    }
+
+    [Fact]
+    public void LaHuellaRepartidaEnVariosCamionesSeSumaPorPosicion()
+    {
+        var flota = clsCubicadorFalso.Asignado(
+            clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 7_000m, false, false,
+                clsCubicadorFalso.MercanciaVehiculo(0, "CAFE_EN_ESTIBAS", 10, 7_000m, 18m)),
+            clsCubicadorFalso.VehiculoCompleto(2, "C2", "Sencillo C2", "FURGON", 8_700m, false, true,
+                clsCubicadorFalso.MercanciaVehiculo(0, "cafe_en_estibas", 10, 7_000m, 18m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+        Diferencia(flota, PeticionConPesos()).Should().BeNull();
+    }
+
+    [Fact]
+    public void SinDetalleComprobableLaCorridaNoSeAtribuye()
+    {
+        var sinIndice = clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 15_700m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(null, "CAFE_EN_ESTIBAS", 20, 14_000m, 36m), clsCubicadorFalso.MercanciaVehiculo(null, "BOBINAS", 1, 1_700m, 7.6m)));
+        var sinDetalle = clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 15_700m));
+
+        Diferencia(sinIndice, PeticionConPesos()).Should().Contain("indicePosicion");
+        Diferencia(sinDetalle, PeticionConPesos()).Should().Contain("sin detalle");
+        Diferencia(AsignadoDeLaCarga(), Peticion()).Should().Contain("no trae el peso", "la petición sin peso no se puede comparar");
+        Diferencia(clsCubicadorFalso.SinSeleccion("BUSQUEDA_AGOTADA"), PeticionConPesos()).Should().Contain("no se puede comprobar");
+    }
+
+    [Fact]
+    public void UnaSinSeleccionConElEcoDeLaPeticionSoloSeAceptaSiCoincide()
+    {
+        static Dictionary<string, object?> ConEco(decimal pesoCafe, decimal largoCafe)
+        {
+            var respuesta = clsCubicadorFalso.SinSeleccion("BUSQUEDA_AGOTADA");
+            respuesta["mercancias"] = new List<object>
+            {
+                new { codigoMercancia = "CAFE_EN_ESTIBAS", cantidad = 20, largoCm = largoCafe, anchoCm = 100m, altoCm = 150m, pesoKg = pesoCafe },
+                new { codigoMercancia = "BOBINAS", cantidad = 1, largoCm = 1200m, anchoCm = 235m, altoCm = 269m, pesoKg = 1_700m },
+            };
+            return respuesta;
+        }
+
+        Diferencia(ConEco(700m, 120m), PeticionConPesos()).Should().BeNull();
+        Diferencia(ConEco(50m, 120m), PeticionConPesos()).Should().Contain("peso por unidad");
+        Diferencia(ConEco(700m, 130m), PeticionConPesos()).Should().Contain("largoCm");
+    }
+
+    [Fact]
+    public void UnCodigoDistintoEnLaPosicionNoCoincide()
+    {
+        var otra = clsCubicadorFalso.Asignado(clsCubicadorFalso.VehiculoCompleto(1, "3S3", "Tractomula 3S3", "FURGON", 15_700m, false, false,
+            clsCubicadorFalso.MercanciaVehiculo(0, "BEBIDAS", 20, 14_000m, 36m), clsCubicadorFalso.MercanciaVehiculo(1, "BOBINAS", 1, 1_700m, 7.6m)));
+
+        Diferencia(otra, PeticionConPesos()).Should().Contain("BEBIDAS");
     }
 
     [Fact]

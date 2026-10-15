@@ -440,8 +440,12 @@ normalización de nombres.
   raíz o bajo `items`/`vehiculos`. La forma exacta no está publicada en la guía: queda en la lista de pendientes.
 - **Reconsulta tras un POST sin respuesta.** El `POST /recomendaciones` nunca se reintenta. Si se agota el tiempo o falla la red (no con
   el circuito abierto: la petición no salió), se consulta `GET /recomendaciones?idLineaSolicitud=…&origenSistema=COTIFLY`: si la corrida
-  existe, cumple el contrato y corresponde a la carga (con `ASIGNADO` e `indicePosicion`, la suma de `cantidad` por posición debe ser
-  la de la petición), se usa; si no, sigue la caída de siempre.
+  existe, cumple el contrato y su **huella** coincide con la petición, se usa; si no, sigue la caída de siempre. Huella (auditoría A3):
+  con `ASIGNADO`, por posición (`indicePosicion`) la suma de `cantidad` debe ser la pedida y la suma de `pesoKg` la de `cantidad × pesoKg`
+  pedido (tolerancia de 0,05 kg por fila, solo el redondeo), y el código y las medidas por unidad si vienen; si la respuesta repite las
+  mercancías de la petición en la raíz, también se comparan. Lo que no se puede comprobar (una `SIN_SELECCION_AUTOMATICA` sin ese eco, un
+  `ASIGNADO` sin `indicePosicion`, una petición sin peso) **no se acepta**: recalcular con el mismo `rutaId` deja la corrida anterior como
+  la última y no debe confundirse con la nueva. El `volumenM3` no se compara (el ejemplo de la guía no cuadra con largo × ancho × alto).
 - **Tope de 10.000 unidades** por petición: se valida antes de llamar (`CUBICACION_DEMASIADO_GRANDE`, 400, vuelve al catálogo de
   errores) y el 400 del cubicador con ese código se traduce igual. Nunca va al respaldo.
 - **422** (validación del esquema del cubicador) es `CUBICADOR_RESPUESTA_INVALIDA` con un mensaje propio: visible, nunca al respaldo.

@@ -110,18 +110,86 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
         (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Definicion)).Should().Be(primera, "orden 07 → 03: el 03 no quita BUSQUEDA_AGOTADA");
     }
 
-    [Fact]
-    public async Task El03AntesYEl07DespuesTambienDejaLosCincoMotivos()
-    {
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden0307", clsBaseDatosPruebas.Scripts.Length - 1);
+    /// <summary>
+    /// La versión del CHECK "sin ISNULL" (la que se aplicó a mano en la base compartida): los 5 motivos, pero con
+    /// <c>AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA'</c>, que deja pasar un motivo con <c>resultadoCubicacion</c> NULL.
+    /// </summary>
+    private const string VersionSinIsnull = """
+        ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud DROP CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion;
+        ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud WITH CHECK ADD CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion CHECK (
+            motivoSinSeleccion IS NULL
+            OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX',
+                                       'SIN_CARROCERIA_COMPATIBLE', 'BUSQUEDA_AGOTADA')
+                AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA'));
+        """;
 
-        await clsBaseDatosPruebas.AplicarScriptAsync(baseAislada.Cadena, Script03);
-        await clsBaseDatosPruebas.AplicarScriptAsync(baseAislada.Cadena, Script07);
+    private const string ConsultaDefinicion =
+        "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'";
+
+    private const string ConsultaObjeto =
+        "SELECT object_id FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'";
+
+    /// <summary>
+    /// HU-023 (#176, auditoría A1): en cualquier orden (03 → 07, 07 → 03, "sin ISNULL" → 07, "sin ISNULL" → 03, 03 → 03) el CHECK termina
+    /// EXACTAMENTE en el del 07 (5 motivos e ISNULL), y volver a correr el 03 y el 07 no lo toca (mismo <c>object_id</c>).
+    /// </summary>
+    [Theory]
+    [InlineData("03,07")]
+    [InlineData("07,03")]
+    [InlineData("sinIsnull,07")]
+    [InlineData("sinIsnull,03")]
+    [InlineData("03,03")]
+    public async Task CualquierOrdenTerminaEnElCheckDel07YEsIdempotente(string orden)
+    {
+        // La base principal tiene el 07: su definición es la de referencia.
+        var esperada = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, ConsultaDefinicion);
+        esperada.Should().Contain("BUSQUEDA_AGOTADA").And.Contain("isnull");
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden" + orden.Replace(",", "", StringComparison.Ordinal),
+            clsBaseDatosPruebas.Scripts.Length - 1);
+        var cadena = baseAislada.Cadena;
+
+        foreach (var paso in orden.Split(','))
+        {
+            await AplicarAsync(cadena, paso);
+        }
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, ConsultaDefinicion)).Should().Be(esperada, $"orden {orden}");
+        var objeto = await clsBaseDatosPruebas.EscalarAsync<int>(cadena, ConsultaObjeto);
+
+        await AplicarAsync(cadena, "03");
+        await AplicarAsync(cadena, "07");
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, ConsultaDefinicion)).Should().Be(esperada);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena, ConsultaObjeto)).Should().Be(objeto, "ya aplicado: ni el 03 ni el 07 hacen DROP y ADD");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(cadena,
+            "SELECT CAST(is_not_trusted AS INT) FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'"))
+            .Should().Be(0, "WITH CHECK");
+    }
+
+    [Fact]
+    public async Task El03ConservaLasRutasConBusquedaAgotadaDeLaVersionSinIsnull()
+    {
+        // Antes (A1): el 03 volvía a 4 motivos y fallaba entero si ya había rutas con BUSQUEDA_AGOTADA.
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSinIsnull03", clsBaseDatosPruebas.Scripts.Length - 1);
+        await AplicarAsync(baseAislada.Cadena, "sinIsnull");
+        await using var proveedor = clsServiciosPruebas.Crear(baseAislada.Cadena, Reloj, BaseDatos.CadenaIdentidad);
+        var (_, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
+
+        await AplicarAsync(baseAislada.Cadena, "03");
 
         (await clsBaseDatosPruebas.EscalarAsync<string>(baseAislada.Cadena,
-            "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'"))
+            $"SELECT motivoSinSeleccion FROM dbo_cotifly.CotizacionLineasSolicitud WHERE id = '{rutaId}'")).Should().Be("BUSQUEDA_AGOTADA");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseAislada.Cadena, ConsultaDefinicion))
             .Should().Contain("BUSQUEDA_AGOTADA").And.Contain("isnull");
     }
+
+    private static Task AplicarAsync(string cadena, string paso) => paso switch
+    {
+        "03" => clsBaseDatosPruebas.AplicarScriptAsync(cadena, Script03),
+        "07" => clsBaseDatosPruebas.AplicarScriptAsync(cadena, Script07),
+        "sinIsnull" => clsBaseDatosPruebas.EjecutarAsync(cadena, VersionSinIsnull),
+        _ => throw new ArgumentOutOfRangeException(nameof(paso), paso, null),
+    };
 
     [Fact]
     public async Task LaSondaDeLaBaseSigueSanaSinEl07ConUnAvisoInformativo()
@@ -135,6 +203,54 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
 
         resultado.Status.Should().Be(HealthStatus.Healthy, "el 07 no es obligatorio");
         resultado.Description.Should().Be(clsBaseDatosHealthCheck.DescripcionSin07);
+    }
+
+    [Fact]
+    public async Task SinViewDefinitionLaSondaDiceQueNoSePuedeVerificarYNoQueFaltaEl07()
+    {
+        // Auditoría A2: un login como cotifly_app (lee y escribe dbo_cotifly, sin VIEW DEFINITION) no ve la definición del CHECK.
+        await using var con07 = await BaseDatos.CrearBaseConScriptsAsync("dbSinVista07", clsBaseDatosPruebas.Scripts.Length);
+        var login = "cotifly_sin_vista_" + Guid.NewGuid().ToString("N")[..8];
+        const string Clave = "Cotifly#SinVista2026";
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaMaster, $"CREATE LOGIN [{login}] WITH PASSWORD = N'{Clave}', CHECK_POLICY = OFF;");
+        try
+        {
+            await clsBaseDatosPruebas.EjecutarAsync(con07.Cadena,
+                $"CREATE USER [{login}] FOR LOGIN [{login}]; GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::dbo_cotifly TO [{login}];");
+            var cadenaSinVista = new SqlConnectionStringBuilder(con07.Cadena) { UserID = login, Password = Clave, IntegratedSecurity = false }
+                .ConnectionString;
+            await using var proveedor = clsServiciosPruebas.Crear(cadenaSinVista, Reloj, BaseDatos.CadenaIdentidad);
+            var detector = proveedor.GetRequiredService<clsDetectorMotivosBd>();
+            detector.Olvidar();
+
+            (await detector.DetectarAsync(cadenaSinVista, Ct)).Should().Be(EstadoScript07.NoVerificable, "el 07 está aplicado, pero no se ve");
+            (await detector.AdmiteBusquedaAgotadaAsync(cadenaSinVista, Ct)).Should().BeFalse("sin verificarlo se degrada (lo seguro)");
+            await using (var ambito = proveedor.CreateAsyncScope())
+            {
+                var sonda = ActivatorUtilities.CreateInstance<clsBaseDatosHealthCheck>(ambito.ServiceProvider);
+                var resultado = await sonda.CheckHealthAsync(new HealthCheckContext(), Ct);
+                resultado.Status.Should().Be(HealthStatus.Healthy);
+                resultado.Description.Should().Be(clsBaseDatosHealthCheck.DescripcionSin07NoVerificable);
+            }
+
+            // Con el override, el motivo real se guarda aunque el login no vea la definición.
+            await using var conOverride = clsServiciosPruebas.Crear(cadenaSinVista, Reloj, BaseDatos.CadenaIdentidad,
+                new Dictionary<string, string?> { ["BaseDatos:MotivoBusquedaAgotada"] = "habilitado" });
+            var (_, rutaId) = await GuardarRutaSinSeleccionAsync(conOverride);
+            (await clsBaseDatosPruebas.EscalarAsync<string>(con07.Cadena,
+                $"SELECT motivoSinSeleccion FROM dbo_cotifly.CotizacionLineasSolicitud WHERE id = '{rutaId}'")).Should().Be("BUSQUEDA_AGOTADA");
+
+            // Con el GRANT que documenta DEPLOY.md, la autodetección ve el 07.
+            await clsBaseDatosPruebas.EjecutarAsync(con07.Cadena, $"GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO [{login}];");
+            detector.Olvidar();
+            (await detector.DetectarAsync(cadenaSinVista, Ct)).Should().Be(EstadoScript07.Aplicado);
+        }
+        finally
+        {
+            SqlConnection.ClearAllPools();
+            await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaMaster,
+                $"IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{login}') DROP LOGIN [{login}];");
+        }
     }
 
     /// <summary>Guarda una cotización con una ruta <c>SIN_SELECCION_AUTOMATICA</c> y el motivo dado; devuelve el folio y el id de la ruta.</summary>

@@ -18,10 +18,11 @@
      3. ck_cotizacionLineasSolicitud_motivoSinSeleccion (del 02, que no se toca): acepta un motivo con
         resultadoCubicacion NULL, porque `NULL = 'SIN_SELECCION_AUTOMATICA'` es UNKNOWN y un CHECK UNKNOWN pasa.
         Se recrea exigiendo resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA' (con ISNULL) cuando hay motivo.
-        HU-023 (#176): db/scripts/07_motivo_busqueda_agotada.sql ya deja este CHECK con ISNULL y con el quinto motivo
-        (BUSQUEDA_AGOTADA). El 03 solo lo reemplaza si su definición NO tiene `isnull`: después del 07 no lo toca, así
-        que nunca le quita BUSQUEDA_AGOTADA (orden 07 -> 03 probado en clsEsquemaTests). Si el 03 corre antes del 07,
-        el 07 lo reemplaza después por el de 5 motivos.
+        HU-023 (#176): el CHECK que deja el 03 es EXACTAMENTE el de db/scripts/07_motivo_busqueda_agotada.sql (los 5
+        motivos, con BUSQUEDA_AGOTADA, e ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'). El 03 solo lo
+        reemplaza si a la definición actual le falta BUSQUEDA_AGOTADA o le falta el ISNULL: después del 07 no lo toca, y
+        si alguien aplicó una versión sin ISNULL la corrige. Órdenes 03 -> 07, 07 -> 03 y "sin ISNULL" -> 03 / 07
+        probados en clsMotivoBusquedaAgotadaTests: todos terminan en el mismo CHECK y son idempotentes.
 
    OJO: mientras el backend no mapee ordenVehiculo ni idServicioConexoCatalogo, las filas NUEVAS quedan en
    NULL (el backend sigue usando el desfase de createdAt y la resolución por nombre). Por eso el índice único
@@ -75,16 +76,19 @@ BEGIN TRY
             ADD idServicioConexoCatalogo NVARCHAR(64) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;  -- id del catálogo de Nexo
 
     -- 3. CHECK del motivo de "sin selección" (corrige el del 02) ---------------------------
-    --    No reemplaza un CHECK que ya tenga ISNULL: el del 07 (con BUSQUEDA_AGOTADA) lo tiene y se conserva.
+    --    El mismo CHECK del 07 (5 motivos + ISNULL). Solo se reemplaza si a la definición actual le falta BUSQUEDA_AGOTADA o el
+    --    ISNULL: el del 07 se conserva tal cual y una versión sin ISNULL (o la del 02, de 4 motivos) se corrige.
     IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'
-               AND definition NOT LIKE N'%isnull%')
+               AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud')
+               AND (definition NOT LIKE N'%BUSQUEDA[_]AGOTADA%' OR definition NOT LIKE N'%isnull%'))
         ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud DROP CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion;
 
     IF OBJECT_ID(N'dbo_cotifly.ck_cotizacionLineasSolicitud_motivoSinSeleccion', N'C') IS NULL
         EXEC (N'ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud WITH CHECK
             ADD CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion CHECK (
                 motivoSinSeleccion IS NULL
-                OR (motivoSinSeleccion IN (''EXTRADIMENSIONADO'', ''SIN_CANDIDATOS_DIMENSIONALES'', ''SUPERA_K_MAX'', ''SIN_CARROCERIA_COMPATIBLE'')
+                OR (motivoSinSeleccion IN (''EXTRADIMENSIONADO'', ''SIN_CANDIDATOS_DIMENSIONALES'', ''SUPERA_K_MAX'',
+                                           ''SIN_CARROCERIA_COMPATIBLE'', ''BUSQUEDA_AGOTADA'')
                     AND ISNULL(resultadoCubicacion, '''') = ''SIN_SELECCION_AUTOMATICA''));');
 
     COMMIT TRANSACTION;

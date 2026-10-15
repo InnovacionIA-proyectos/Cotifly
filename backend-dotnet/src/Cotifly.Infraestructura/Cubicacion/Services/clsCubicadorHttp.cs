@@ -28,7 +28,7 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// (<see cref="clsCacheCatalogoCubicador{TFila}"/>).</item>
 /// <item>HU-023 (#176): tope de 10.000 unidades antes de llamar (<c>CUBICACION_DEMASIADO_GRANDE</c>); un POST sin respuesta (tiempo agotado
 /// o red) no se reintenta: se reconsulta <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c> y, si la corrida existe y
-/// corresponde a la carga, se usa; un 422 es <c>CUBICADOR_RESPUESTA_INVALIDA</c> (visible, nunca al respaldo); el
+/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 es <c>CUBICADOR_RESPUESTA_INVALIDA</c> (visible, nunca al respaldo); el
 /// <c>comentarioCondicion</c> de las mercancías condicionadas sale de <c>GET /tipos-mercancia</c>. Los códigos se comparan sin distinguir
 /// mayúsculas.</item>
 /// </list>
@@ -181,8 +181,8 @@ public sealed class clsCubicadorHttp(
 
     /// <summary>
     /// <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c> (guía §7): la última corrida de la línea, o <c>null</c> si no
-    /// existe, no responde, no cumple el contrato o no corresponde a esta carga (una corrida anterior de la misma ruta con otra carga: con
-    /// <c>ASIGNADO</c> e <c>indicePosicion</c>, las cantidades por posición deben coincidir con las de la petición).
+    /// existe, no responde, no cumple el contrato o su huella no coincide con esta petición (<see cref="DiferenciaConLaCarga"/>: una corrida
+    /// anterior de la misma ruta con otra carga u otro peso, o una que no se puede comprobar).
     /// </summary>
     private async Task<clsRecomendacionCubicador?> ReconsultarAsync(clsPeticionRecomendacion peticion, CancellationToken cancellationToken)
     {
@@ -215,10 +215,12 @@ public sealed class clsCubicadorHttp(
         }
 
         var leida = Validar(raiz);
-        if (leida.EsFallo || !CorrespondeACarga(leida.Valor, peticion))
+        var diferencia = leida.EsFallo ? leida.Error.Detalle : DiferenciaConLaCarga(raiz, peticion);
+        if (diferencia is not null)
         {
-            logger.LogWarning("La reconsulta de {IdLineaSolicitud} no sirve ({Motivo}): se trata como caída.",
-                peticion.IdLineaSolicitud, leida.EsFallo ? leida.Error.Detalle : "la corrida es de otra carga");
+            // Auditoría A3: nunca se acepta una corrida que no se pueda atribuir a ESTA petición (otra carga de la misma ruta, una
+            // SIN_SELECCION anterior, el mismo número de unidades con otro peso). Se sigue como si no hubiera respuesta.
+            logger.LogWarning("La reconsulta de {IdLineaSolicitud} no sirve ({Motivo}): se trata como caída.", peticion.IdLineaSolicitud, diferencia);
             return null;
         }
 
@@ -232,22 +234,178 @@ public sealed class clsCubicadorHttp(
         $"{RutaRecomendaciones}?idLineaSolicitud={Uri.EscapeDataString(idLineaSolicitud)}&origenSistema={OrigenSistema}";
 
     /// <summary>
-    /// ¿La corrida corresponde a las mercancías de la petición? Solo se puede comprobar con <c>ASIGNADO</c> y todas las filas con
-    /// <c>indicePosicion</c>: la suma de <c>cantidad</c> por posición debe ser la de la petición. En los demás casos se acepta.
+    /// Tolerancia del peso por fila del detalle (kg): solo el redondeo del <c>pesoKg</c> de cada fila (a un decimal, como en la guía: media
+    /// décima). Se suma por fila de la posición; nada relativo, para que un cambio real de peso nunca pase.
     /// </summary>
-    public static bool CorrespondeACarga(clsRecomendacionCubicador recomendacion, clsPeticionRecomendacion peticion)
+    public const decimal ToleranciaPesoFilaKg = 0.05m;
+
+    /// <summary>Tolerancia de una medida o de un peso por unidad (cm o kg) cuando la respuesta los trae.</summary>
+    public const decimal ToleranciaUnidad = 0.01m;
+
+    /// <summary>
+    /// HU-023 (#176, auditoría A3): ¿la corrida reconsultada es la de ESTA petición? Devuelve <c>null</c> si su huella coincide, o por qué
+    /// no (para el log). La guía del cubicador (§5.1, §5.2, §7) dice que el <c>GET</c> devuelve la última corrida con la misma forma del
+    /// <c>POST</c>: por camión, <c>mercancias[]</c> con <c>indicePosicion</c>, <c>codigoMercancia</c>, <c>cantidad</c>, <c>pesoKg</c>
+    /// (total de la fila) y <c>volumenM3</c>; <b>no devuelve medidas</b>, y una corrida anterior al cambio trae <c>indicePosicion</c> en
+    /// <c>null</c>. La huella se comprueba con lo que haya:
+    /// <list type="bullet">
+    /// <item>Con <c>ASIGNADO</c>, el detalle por camión es obligatorio: cada fila con <c>indicePosicion</c> dentro de la petición,
+    /// <c>cantidad</c> y <c>pesoKg</c>; por posición, la cantidad debe ser la pedida y el peso <c>cantidad × pesoKg</c> de la petición
+    /// (tolerancia de <see cref="ToleranciaPesoFilaKg"/> por fila); el código y las
+    /// medidas por unidad (<c>largoCm</c>, <c>anchoCm</c>, <c>altoCm</c>), si vienen, también.</item>
+    /// <item>Si la respuesta repite las mercancías de la petición en la raíz (<c>mercancias[]</c>, por posición), se comparan código,
+    /// cantidad, peso por unidad y medidas (si vienen).</item>
+    /// <item>Sin nada que comparar (una <c>SIN_SELECCION_AUTOMATICA</c> sin el eco de la petición, o un <c>ASIGNADO</c> sin detalle por
+    /// posición) no se puede atribuir: se rechaza. El <c>volumenM3</c> no se compara (el ejemplo de la guía no cuadra con largo × ancho
+    /// × alto).</item>
+    /// </list>
+    /// </summary>
+    public static string? DiferenciaConLaCarga(JsonElement raiz, clsPeticionRecomendacion peticion)
     {
-        ArgumentNullException.ThrowIfNull(recomendacion);
         ArgumentNullException.ThrowIfNull(peticion);
-        var filas = recomendacion.Vehiculos.SelectMany(v => v.Mercancias ?? []).ToList();
-        if (!recomendacion.Asignado || filas.Count == 0 || filas.Any(f => f.IndicePosicion is null))
+        if (raiz.ValueKind != JsonValueKind.Object)
         {
-            return true;
+            return "la respuesta no es un objeto";
         }
 
-        var porPosicion = filas.GroupBy(f => f.IndicePosicion!.Value).ToDictionary(g => g.Key, g => g.Sum(f => f.Cantidad));
-        return porPosicion.Count == peticion.Mercancias.Count
-               && peticion.Mercancias.Select((m, i) => (m, i)).All(x => porPosicion.TryGetValue(x.i, out var cantidad) && cantidad == x.m.Cantidad);
+        var comprobada = false;
+        if (Propiedad(raiz, "mercancias") is { ValueKind: JsonValueKind.Array } eco)
+        {
+            if (DiferenciaEco(eco, peticion) is { } motivo)
+            {
+                return motivo;
+            }
+
+            comprobada = true;
+        }
+
+        if (string.Equals(Texto(raiz, "resultado")?.Trim(), clsResultadosRecomendacion.Asignado, StringComparison.OrdinalIgnoreCase))
+        {
+            if (DiferenciaDetalle(raiz, peticion) is { } motivo)
+            {
+                return motivo;
+            }
+
+            comprobada = true;
+        }
+
+        return comprobada ? null : "no se puede comprobar que la corrida sea de esta carga (sin detalle por posición)";
+    }
+
+    /// <summary>Compara el detalle por camión de un <c>ASIGNADO</c> (cantidad y peso por posición) con la petición.</summary>
+    private static string? DiferenciaDetalle(JsonElement raiz, clsPeticionRecomendacion peticion)
+    {
+        var mercancias = peticion.Mercancias;
+        var cantidades = new long[mercancias.Count];
+        var pesos = new decimal[mercancias.Count];
+        var filas = new int[mercancias.Count];
+        var hayFilas = false;
+        foreach (var fila in Arreglo(raiz, "vehiculos").SelectMany(v => Arreglo(v, "mercancias")))
+        {
+            hayFilas = true;
+            if (Entero(fila, "indicePosicion") is not { } indice)
+            {
+                return "una fila del detalle no trae indicePosicion (corrida anterior): no se puede comprobar";
+            }
+
+            if (indice < 0 || indice >= mercancias.Count)
+            {
+                return $"la posición {indice} no existe en la petición";
+            }
+
+            if (Entero(fila, "cantidad") is not { } cantidad || Numero(fila, "pesoKg") is not { } peso)
+            {
+                return $"una fila de la posición {indice} no trae cantidad o pesoKg: no se puede comprobar";
+            }
+
+            if (DiferenciaCodigoYMedidas(fila, mercancias[indice], indice) is { } motivo)
+            {
+                return motivo;
+            }
+
+            cantidades[indice] += cantidad;
+            pesos[indice] += peso;
+            filas[indice]++;
+        }
+
+        if (!hayFilas)
+        {
+            return "ASIGNADO sin detalle por posición: no se puede comprobar";
+        }
+
+        for (var i = 0; i < mercancias.Count; i++)
+        {
+            var pedida = mercancias[i];
+            if (cantidades[i] != pedida.Cantidad)
+            {
+                return $"la posición {i} lleva {cantidades[i]} unidad(es) y se pidieron {pedida.Cantidad}";
+            }
+
+            if (pedida.PesoKg is not { } pesoUnidad)
+            {
+                return $"la petición no trae el peso de la posición {i}: no se puede comprobar";
+            }
+
+            var esperado = pedida.Cantidad * pesoUnidad;
+            if (Math.Abs(pesos[i] - esperado) > ToleranciaPesoFilaKg * filas[i])
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"la posición {i} pesa {pesos[i]:0.##} kg y se pidieron {esperado:0.##} kg");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Compara el eco de la petición (<c>mercancias[]</c> en la raíz de la respuesta) con la petición, posición por posición.</summary>
+    private static string? DiferenciaEco(JsonElement eco, clsPeticionRecomendacion peticion)
+    {
+        var filas = eco.EnumerateArray().Take(MaximoFilas + 1).ToList();
+        if (filas.Count != peticion.Mercancias.Count)
+        {
+            return $"la corrida tiene {filas.Count} posición(es) y la petición {peticion.Mercancias.Count}";
+        }
+
+        for (var i = 0; i < filas.Count; i++)
+        {
+            var pedida = peticion.Mercancias[i];
+            var fila = filas[i];
+            if (Entero(fila, "cantidad") is not { } cantidad || cantidad != pedida.Cantidad)
+            {
+                return $"la posición {i} de la corrida no tiene la cantidad pedida ({pedida.Cantidad})";
+            }
+
+            if (Numero(fila, "pesoKg") is not { } peso || pedida.PesoKg is not { } pesoPedido
+                || Math.Abs(peso - pesoPedido) > ToleranciaUnidad)
+            {
+                return $"la posición {i} de la corrida no tiene el peso por unidad pedido";
+            }
+
+            if (DiferenciaCodigoYMedidas(fila, pedida, i) is { } motivo)
+            {
+                return motivo;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>El código y las medidas por unidad de una fila, si los trae, deben ser los de la posición pedida.</summary>
+    private static string? DiferenciaCodigoYMedidas(JsonElement fila, clsMercanciaCubicador pedida, int indice)
+    {
+        if (Codigo(fila, "codigoMercancia") is { } codigo && !string.Equals(codigo, pedida.CodigoMercancia.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return $"la posición {indice} es {codigo} y se pidió {pedida.CodigoMercancia}";
+        }
+
+        foreach (var (nombre, valor) in new[] { ("largoCm", pedida.LargoCm), ("anchoCm", pedida.AnchoCm), ("altoCm", pedida.AltoCm) })
+        {
+            if (Numero(fila, nombre) is { } medida && Math.Abs(medida - valor) > ToleranciaUnidad)
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"la posición {indice} mide {nombre} = {medida} y se pidió {valor}");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -23,7 +23,8 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// </list>
 /// La sonda tiene un tiempo máximo propio (<see cref="TiempoMaximo"/>). Las descripciones no incluyen la cadena ni el servidor.
 /// </summary>
-public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptions<clsOpcionesConexiones> opciones) : IHealthCheck
+public sealed class clsBaseDatosHealthCheck(
+    clsCotiflyDbContext contexto, IOptions<clsOpcionesConexiones> opciones, IOptions<clsOpcionesBaseDatos> opcionesBaseDatos) : IHealthCheck
 {
     public const string Nombre = "base-datos-cotifly";
     public const string DescripcionSinCadena = "La cadena de conexión 'ConnectionStrings:Cotifly' no está configurada.";
@@ -77,6 +78,22 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
     public const string DescripcionSin07 =
         "La base de datos de Cotifly responde. Aviso: falta el script 07 (BUSQUEDA_AGOTADA se guarda en NULL con un aviso en la ruta).";
 
+    /// <summary>
+    /// HU-023 (#176, auditoría A2): sana, con un aviso: el login no puede leer la definición del CHECK del motivo (le falta
+    /// <c>VIEW DEFINITION</c>), así que no se sabe si el 07 está aplicado. Mientras tanto se degrada como sin el 07.
+    /// </summary>
+    public const string DescripcionSin07NoVerificable =
+        "La base de datos de Cotifly responde. Aviso: no se puede verificar el script 07 (falta VIEW DEFINITION para el login de la API); "
+        + "BUSQUEDA_AGOTADA se guarda en NULL con un aviso en la ruta. Otorgue VIEW DEFINITION o configure BaseDatos__MotivoBusquedaAgotada.";
+
+    /// <summary>HU-023 (#176): sana; <c>BaseDatos:MotivoBusquedaAgotada=deshabilitado</c> (BUSQUEDA_AGOTADA se guarda en NULL a propósito).</summary>
+    public const string DescripcionMotivoDeshabilitado =
+        "La base de datos de Cotifly responde. Aviso: BUSQUEDA_AGOTADA deshabilitado por configuración (BaseDatos__MotivoBusquedaAgotada); se guarda en NULL con un aviso en la ruta.";
+
+    /// <summary>HU-023 (#176): sana, pero <c>BaseDatos:MotivoBusquedaAgotada=habilitado</c> y la base no tiene el 07: guardar ese motivo fallará.</summary>
+    public const string DescripcionMotivoHabilitadoSin07 =
+        "La base de datos de Cotifly responde. Aviso: BaseDatos__MotivoBusquedaAgotada=habilitado pero falta el script 07: guardar una ruta con BUSQUEDA_AGOTADA fallará.";
+
     /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
     public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
 
@@ -126,9 +143,13 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
             }
 
             // HU-023 (#176): el 07 (BUSQUEDA_AGOTADA en el CHECK del motivo) no es obligatorio: sin él, el motivo se guarda en NULL con
-            // un aviso. Solo se informa en la descripción; la sonda sigue sana.
-            var con07 = await contexto.Database.SqlQueryRaw<int>(clsDetectorMotivosBd.Consulta + " AS [Value]").SingleAsync(limite.Token) == 1;
-            return con07 ? clasificado : HealthCheckResult.Healthy(DescripcionSin07);
+            // un aviso. Solo se informa en la descripción; la sonda sigue sana. Con "deshabilitado" no se consulta.
+            var modo = opcionesBaseDatos.Value.MotivoBusquedaAgotadaNormalizado;
+            EstadoScript07? estado = modo == clsOpcionesBaseDatos.ModoDeshabilitado
+                ? null
+                : clsDetectorMotivosBd.Interpretar(
+                    await contexto.Database.SqlQueryRaw<int>(clsDetectorMotivosBd.Consulta + " AS [Value]").SingleAsync(limite.Token));
+            return ConAvisoScript07(clasificado, modo, estado);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -139,6 +160,22 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
             return HealthCheckResult.Unhealthy(DescripcionNoDisponible, ex);
         }
     }
+
+    /// <summary>
+    /// HU-023 (#176): la sonda sana con el aviso del script 07 según <c>BaseDatos:MotivoBusquedaAgotada</c> (<paramref name="modo"/>,
+    /// normalizado) y lo que dijo la base (<paramref name="estado"/>; <c>null</c> si no se consultó).
+    /// </summary>
+    public static HealthCheckResult ConAvisoScript07(HealthCheckResult sana, string modo, EstadoScript07? estado) => modo switch
+    {
+        clsOpcionesBaseDatos.ModoDeshabilitado => HealthCheckResult.Healthy(DescripcionMotivoDeshabilitado),
+        clsOpcionesBaseDatos.ModoHabilitado => estado == EstadoScript07.NoAplicado ? HealthCheckResult.Healthy(DescripcionMotivoHabilitadoSin07) : sana,
+        _ => estado switch
+        {
+            EstadoScript07.Aplicado => sana,
+            EstadoScript07.NoVerificable => HealthCheckResult.Healthy(DescripcionSin07NoVerificable),
+            _ => HealthCheckResult.Healthy(DescripcionSin07),
+        },
+    };
 
     /// <summary>Resultado de la sonda según las columnas que faltan (<c>Tabla.columna</c>) y si la base aún tiene <c>Cotizaciones</c>.</summary>
     public static HealthCheckResult Clasificar(IReadOnlyCollection<string> faltantes, bool cotizacionesViejas)

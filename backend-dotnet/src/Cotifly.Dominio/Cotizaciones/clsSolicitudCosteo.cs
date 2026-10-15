@@ -254,7 +254,10 @@ public sealed record clsPosicionCarga(
             clsSolicitudCosteo.Rango($"posiciones[{numero}].ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima),
             clsSolicitudCosteo.Rango($"posiciones[{numero}].alto_cm", AltoCm, MedidaMinima, MedidaMaxima),
             clsSolicitudCosteo.Rango($"posiciones[{numero}].peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso),
-            // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0.
+            // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
+            // revalidar lo guardado (reintento, re-solicitud): una ruta anterior a la regla con tipo de mercancía y sin peso no se reenvía y
+            // responde este mensaje; se corrige con una versión nueva (re-solicitar con la carga completa). Auditoría B2: se deja así a
+            // propósito (relajarla solo al revalidar exige llevar una bandera por las tres rutas de validación).
             VaAlCubicador() && PesoKg is not > 0m
                 ? new clsErrorDominio(codigo, $"La mercancía {numero} debe traer el peso por unidad (peso_kg) mayor que 0: el cubicador lo exige.")
                 : null);

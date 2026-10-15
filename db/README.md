@@ -27,10 +27,12 @@ dejarla con la configuración inicial.
 > `ck_cotizacionLineasSolicitud_motivoSinSeleccion` por uno con los **5 motivos** del contrato vigente del cubicador (agrega
 > `BUSQUEDA_AGOTADA`) y con `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'` (la regla del 02 sin el hueco del NULL, la
 > misma que propone el `pendientes/03`). Va después del 02 y el ejecutador lo corre solo (orden de nombre). Es idempotente (si el CHECK ya
-> tiene `BUSQUEDA_AGOTADA` no hace nada), hace DROP y ADD `WITH CHECK` en una transacción, imprime la definición anterior como respaldo
+> tiene `BUSQUEDA_AGOTADA` **y** el `ISNULL` no hace nada; una versión sin `ISNULL` la corrige), hace DROP y ADD `WITH CHECK` en una transacción, imprime la definición anterior como respaldo
 > y trae la consulta de verificación. **No es obligatorio para arrancar**: el backend lee `sys.check_constraints` y, sin el 07, guarda
 > `BUSQUEDA_AGOTADA` en `NULL` con el motivo real como advertencia de la ruta (`MOTIVO_SIN_SELECCION`); `/health/ready` sigue en 200 y
-> solo lo avisa en la descripción. El `pendientes/03` no lo pisa (solo reemplaza un CHECK sin `isnull`).
+> solo lo avisa en la descripción (la autodetección necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app`; sin él la
+> sonda dice que no se puede verificar, o se fija con `BaseDatos__MotivoBusquedaAgotada`, ver DEPLOY.md). El `pendientes/03` deja
+> exactamente el mismo CHECK y solo lo reemplaza si le falta `BUSQUEDA_AGOTADA` o el `ISNULL`: en cualquier orden terminan iguales.
 >
 > **Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `pendientes/04` y `07`. El entorno local
 > (`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los cuatro en ese orden en cada arranque (son idempotentes).

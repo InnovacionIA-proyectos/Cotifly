@@ -9,8 +9,8 @@
      Reemplaza ck_cotizacionLineasSolicitud_motivoSinSeleccion por uno con los 5 motivos y con
      `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`: conserva la regla del 02 (el
      motivo solo existe cuando el cubicador no pudo escoger) y cierra el hueco del NULL (en el 02,
-     un motivo con resultadoCubicacion NULL pasaba porque el CHECK daba UNKNOWN). Es la misma
-     condición que propone db/scripts/pendientes/03, sin duplicarla: si el 03 corre después, ve el
+     un motivo con resultadoCubicacion NULL pasaba porque el CHECK daba UNKNOWN). Es el mismo
+     CHECK que deja db/scripts/pendientes/03: si el 03 corre después, ve BUSQUEDA_AGOTADA y el
      ISNULL y no toca este CHECK.
 
    Dónde corre: después del 02 (el ejecutador corre los .sql de db/scripts en orden de nombre). Sin el
@@ -18,7 +18,8 @@
    motivo en NULL y deja el motivo real como advertencia de la ruta (MOTIVO_SIN_SELECCION).
    Con el 07 guarda el motivo real. /health/ready solo lo avisa (no deja de estar listo).
 
-   Se puede correr varias veces: si el CHECK ya contiene BUSQUEDA_AGOTADA no hace nada. DROP y
+   Se puede correr varias veces: si el CHECK ya contiene BUSQUEDA_AGOTADA y el ISNULL no hace nada (si le falta
+   el ISNULL, por ejemplo una versión aplicada a mano con `AND resultadoCubicacion = ...`, lo reemplaza). DROP y
    ADD ... WITH CHECK van en UNA transacción: si algo falla, queda el CHECK anterior.
 
    Respaldo: el script imprime la definición anterior del CHECK antes de reemplazarla. Para
@@ -50,9 +51,10 @@ BEGIN TRY
         WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'
           AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud'));
 
-    IF @anterior IS NOT NULL AND @anterior LIKE N'%BUSQUEDA[_]AGOTADA%'
+    -- Ya aplicado solo si tiene BUSQUEDA_AGOTADA Y el ISNULL: una versión sin ISNULL (motivo con resultadoCubicacion NULL pasaba) se corrige.
+    IF @anterior IS NOT NULL AND @anterior LIKE N'%BUSQUEDA[_]AGOTADA%' AND @anterior LIKE N'%isnull%'
     BEGIN
-        PRINT N'07 ya estaba aplicado: el CHECK del motivo ya admite BUSQUEDA_AGOTADA. No se cambió nada.';
+        PRINT N'07 ya estaba aplicado: el CHECK del motivo ya admite BUSQUEDA_AGOTADA y exige ISNULL. No se cambió nada.';
         RETURN;
     END;
 
