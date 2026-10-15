@@ -111,7 +111,7 @@ sin ellas, las del encabezado). Los ids de municipio viajan por línea: la fila 
 `destino_municipio_id`) y, si no, Cotifly resuelve el texto con el catálogo de `GET /web/municipios` y la regla determinista de
 HU-005.13; si es ambiguo (`MUNICIPIO_AMBIGUO`) o no aparece (`MUNICIPIO_NO_ENCONTRADO`) es un error de la fila, nunca se elige un
 candidato. Sin catálogo maestro: 503 `CATALOGOS_FLETE_NO_DISPONIBLE` (copia de hasta 24 h, como el formulario); sin catálogo de
-municipios cuando alguna fila lo necesita: 400 `MUNICIPIOS_NO_DISPONIBLE`. Nada se guarda en esos casos.
+municipios cuando alguna fila lo necesita: 503 `MUNICIPIOS_NO_DISPONIBLE`. Nada se guarda en esos casos.
 
 Comparación de `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` (Parte 2) con `clsSolicitudCosteoWebRequest`, `clsPosicionCargaWebRequest`, el envío `clsCosteoNexo.CuerpoCaptura` y `clsCapturaSolicitudRequest`, `clsCapturaLineaRequest` y `clsCapturaPosicionRequest` del swagger. **Ningún campo de la Parte 2 falta en el DTO ni en el spec.** Todos están, con los mismos límites de Nexo. Los gaps son de comportamiento y de catálogos: **17 en total (G1 a G17)**. No se implementan en #97, que es solo SDD; van a una issue nueva.
 

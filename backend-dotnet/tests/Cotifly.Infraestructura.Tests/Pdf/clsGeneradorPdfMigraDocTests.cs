@@ -313,7 +313,11 @@ public sealed class clsGeneradorPdfMigraDocTests
             clsGeneradorPdfMigraDoc.TurnoDeRender.Release();
         }
 
-        (await generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct)).Paginas.Should().Be(3, "al liberarse el turno renderiza normal");
+        // Con la espera por defecto (30 s), no con la de 1 s: el turno es de proceso y otras clases de este ensamblado que no están en
+        // la colección RenderPdf (pliego, correo con PDF...) pueden tomarlo justo al liberarlo; bajo carga su render pasa de 1 s y la
+        // prueba fallaba aquí con RenderOcupado aunque el turno se hubiera liberado bien. Si la espera fallida dejara el turno tomado,
+        // esto seguiría fallando (a los 30 s).
+        (await _generador.GenerarAsync(clsDocumentosPrueba.Nacional(), ct)).Paginas.Should().Be(3, "al liberarse el turno renderiza normal");
     }
 
     [Fact]

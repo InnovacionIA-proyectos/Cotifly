@@ -939,8 +939,9 @@ paths:
                   $ref: '#/components/schemas/Municipio'
         '503':
           description: |
-            `MUNICIPIOS_NO_DISPONIBLE`: el catálogo de municipios de Nexo no respondió (Nexo caído, 5xx, tiempo agotado, 429 o el
-            cupo de lecturas bloqueado, sin configurar, o el comercial sin `idUsuarioExterno`). Antes era 400; desde la deuda de
+            `MUNICIPIOS_NO_DISPONIBLE`: el catálogo de municipios de Nexo no respondió (Nexo caído, 5xx, tiempo agotado, un 429 de
+            Nexo, sin configurar, o el comercial sin `idUsuarioExterno`). Sin `Retry-After`: los municipios no comparten el cupo de
+            lecturas de Nexo (HU-023.4), así que un 429 aquí no bloquea nada en Cotifly; reintentar es seguro. Antes era 400; desde la deuda de
             #122 es 503, como `GET /web/catalogos-flete` y la captura. El frontend deshabilita el buscador y ofrece Reintentar.
           content:
             application/json:

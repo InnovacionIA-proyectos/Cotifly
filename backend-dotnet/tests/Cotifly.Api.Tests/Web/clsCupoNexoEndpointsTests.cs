@@ -87,6 +87,36 @@ public sealed class clsCupoNexoEndpointsTests : IDisposable
         LecturasDeCatalogos.Should().BeGreaterThan(lecturasAlBloquear);
     }
 
+    /// <summary>
+    /// Deuda de #122: <c>GET /web/municipios</c> responde 503 si Nexo responde 429, pero los municipios no comparten el cupo de listados
+    /// (decisión de HU-023.4): ese 429 no bloquea los catálogos ni lleva <c>Retry-After</c>, y un cupo bloqueado por un catálogo no
+    /// deja sin municipios.
+    /// </summary>
+    [Fact]
+    public async Task Un429DeMunicipiosEs503SinRetryAfterYNoBloqueaElCupoDeCatalogos()
+    {
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        _nexo.LecturasLimitadas = 1;
+        _nexo.SegundosRetryAfter = RetryAfter;
+        using (var municipios = await _api.EnviarAsync(HttpMethod.Get, "/web/municipios?q=cal", ana.Access))
+        {
+            await clsEntornoApiWeb.VerificarContratoAsync(municipios, "/web/municipios", HttpMethod.Get, HttpStatusCode.ServiceUnavailable);
+            await clsEntornoApiWeb.VerificarErrorNegocioAsync(municipios, "MUNICIPIOS_NO_DISPONIBLE");
+            municipios.Headers.RetryAfter.Should().BeNull("el cupo de Nexo no limita los municipios: no hay espera que anunciar");
+        }
+
+        var lecturasAntes = LecturasDeCatalogos;
+        (await CatalogosAsync(ana)).Should().Be(HttpStatusCode.OK, "un 429 de municipios no bloquea el cupo de catálogos");
+        LecturasDeCatalogos.Should().BeGreaterThan(lecturasAntes);
+
+        // Al revés: con el cupo de catálogos bloqueado, los municipios siguen saliendo a Nexo.
+        _nexo.LecturasLimitadas = 1;
+        (await CatalogosAsync(ana)).Should().Be(HttpStatusCode.ServiceUnavailable);
+        using var conCupoBloqueado = await _api.EnviarAsync(HttpMethod.Get, "/web/municipios?q=yum", ana.Access);
+        await clsEntornoApiWeb.VerificarContratoAsync(conCupoBloqueado, "/web/municipios", HttpMethod.Get, HttpStatusCode.OK);
+    }
+
     private async Task<HttpStatusCode> CatalogosAsync(clsSesionPrueba sesion)
     {
         using var respuesta = await _api.EnviarAsync(HttpMethod.Get, "/web/catalogos-flete", sesion.Access);

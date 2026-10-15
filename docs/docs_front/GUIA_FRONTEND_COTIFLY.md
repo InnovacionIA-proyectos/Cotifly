@@ -947,7 +947,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 ```
 
 - El servidor lo cachea 60 minutos (`Nexo:MinutosCacheMunicipios`). Cachearlo también en el cliente durante la sesión (`shareReplay`).
-- 503 `ErrorNegocio` `MUNICIPIOS_NO_DISPONIBLE` si el catálogo de Nexo no responde (caído, tiempo agotado, 429 o cupo de Nexo bloqueado, sin configurar, o el comercial sin `idUsuarioExterno`). **Antes era 400**: tratar 400 y 503 igual mientras conviva el frontend anterior. Deshabilitar el buscador y ofrecer Reintentar; no hay texto libre.
+- 503 `ErrorNegocio` `MUNICIPIOS_NO_DISPONIBLE` si el catálogo de Nexo no responde (caído, tiempo agotado, un 429 de Nexo, sin configurar, o el comercial sin `idUsuarioExterno`). **Antes era 400**: tratar 400 y 503 igual mientras conviva el frontend anterior. Deshabilitar el buscador y ofrecer Reintentar; no hay texto libre. Sin `Retry-After`: los municipios no usan el cupo de lecturas de Nexo (HU-023.4), que solo bloquea catálogos y bandeja.
 - Hay nombres repetidos entre departamentos (por ejemplo, "La Unión" o "Sucre"): mostrar siempre "Municipio, Departamento". Qué texto exacto se envía como `origen` o `destino` a `solicitudes-costeo` está **a confirmar** (sección 6.4).
 
 ### 5.13 Catálogos de flete (`GET /web/catalogos-flete`). En QA
@@ -1226,6 +1226,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | `tipo_vehiculo` y `carroceria` se ignoran (decisión 7) | Quitarlos; el vehículo se lee en `rutas[].camiones[]`. Bandera de respaldo del servidor: `Captura:AceptarVehiculoCliente` |
 | `valor_estimado` y `referencia` fuera del contrato (decisión 1); `Licitacion` ya no trae `referencia` | Dejar de enviarlos y de leerlos |
 | Municipios con id obligatorio; 503 `MUNICIPIOS_NO_DISPONIBLE` si el catálogo no responde | Enviar siempre el id; ofrecer Reintentar |
+| Deuda de #122 (2026-10-15): `GET /web/municipios` responde **503** `MUNICIPIOS_NO_DISPONIBLE` cuando Nexo no responde (antes 400), como `GET /web/catalogos-flete` | Tratar 400 y 503 igual mientras conviva el frontend anterior; deshabilitar el buscador y ofrecer Reintentar |
 | Mercancías con `id_tipo_mercancia` (`GET /web/tipos-mercancia`; 503 `CUBICADOR_NO_DISPONIBLE` sin cubicador) | Desplegable del catálogo |
 | HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
 | HU-023.3 (#158): mercancías con `codigo_mercancia` (obligatorio; `id_tipo_mercancia` obsoleto); la respuesta 201 trae `cubicacion[]` con el resultado y los avisos por ruta; `GET .../costeo` trae `resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada` y, por camión, volumen y porcentajes de llenado; nuevo `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Mandar el código del desplegable; mostrar los avisos al crear (no se guardan); llamar a recalcular cuando cambian las mercancías o el peso de una ruta antes de enviarla |
