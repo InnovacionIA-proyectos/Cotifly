@@ -65,6 +65,8 @@ internal sealed class clsCotizacionSolicitudConfiguracion : IEntityTypeConfigura
             .HasConversion(new clsConvertidorCodigoEnum<EstadoCosteo>());
         builder.Property(c => c.CotizacionNexoId).Columna("cotizacionNexoId", "nvarchar(64)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoIdNexo);
         builder.Property(c => c.SolicitudNexoId).Columna("solicitudNexoId", "nvarchar(64)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoIdNexo);
+        // HU-018.1 (#155): db/scripts/09_score_prioridad.sql (sin él, /health/ready dice "falta 09").
+        builder.Property(c => c.ScorePrioridad).Columna("scorePrioridad", "decimal(9,4)");
         builder.Property(c => c.MotivoEstadoCosteo).Columna("motivoEstadoCosteo", "nvarchar(1000)").HasMaxLength(clsCotizacionSolicitud.LargoMaximoMotivoCosteo);
         builder.Property(c => c.CosteoEnviadoAt).Fecha("costeoEnviadoAt");
         builder.Property(c => c.CosteoSiguienteConsultaAt).Fecha("costeoSiguienteConsultaAt");

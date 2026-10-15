@@ -586,7 +586,7 @@ Resumen:
 | `GET /web/metricas/regional` | `gerente_comercial` | En QA |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados** (HU-014.3, #152): responden 404 |
 | Líneas de negocio activas para el comercial | Ambos | **Pendiente** (no existe) |
-| Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`) |
+| Score de urgencia desde Nexo | — | **Pendiente** (el deadline vencido ya lo calcula Cotifly: `deadline_vencidas`). El `score_prioridad` que Nexo da **al crear** la solicitud sí llega desde HU-018.1 (#155), en `CotizacionResumen` y en `GET .../costeo` |
 
 Parámetro común `folio` (ruta): string de hasta 50 caracteres, `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]` (ADR-011), por ejemplo `PCN-DG-25092026-001` o `PCN-9000472281-DG-25092026-002-v2`. También hay folios heredados (`PCN-23072026`). **No validar el formato ni parsearlo**: solo mostrarlo, y codificarlo con `encodeURIComponent` en la ruta.
 
@@ -702,6 +702,8 @@ Ver la sección 3: `POST /api/auth/login-clientepro`, `POST /api/auth/refresh` y
 | `motivo_rechazo` | string o null | — |
 | `pdf_url` | string o null | Absoluta o relativa |
 | `created_at` | fecha y hora o null | UTC |
+| `deadline` | fecha y hora o null | HU-018.1 (#155). Fecha límite del formulario (cabecera), en UTC. null si no se dio |
+| `score_prioridad` | number o null | HU-018.1 (#155). `scorePrioridad` que Nexo devolvió al crear la solicitud (hasta 4 decimales, escala de Nexo: mostrarlo tal cual). null si Nexo no lo mandó, si no se ha enviado o si se envió antes del script 09 |
 
 No trae costo (ni `costo` ni el de Nexo) a propósito.
 
@@ -747,6 +749,8 @@ Vista "Todas las cotizaciones" del gerente comercial: las cotizaciones de los co
       "motivo_rechazo": null,
       "pdf_url": null,
       "created_at": "2026-09-29T15:12:40.113+00:00",
+      "deadline": null,
+      "score_prioridad": null,
       "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
     }
   ]
@@ -1185,6 +1189,8 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 | `servicios_conexos[]` | `id` (id de Nexo como string), `nombre` (string o null), `categoria` (por ejemplo, `logistico`), `cantidad`, `precio` (con el mismo margen) e `incluido` (por defecto true). **Nunca trae el costo** |
 | `costeo_listo_at` | Cuándo quedó costeada |
 | `pdf_url` | null hasta generar el PDF |
+| `deadline` | HU-018.1 (#155). Fecha límite de la solicitud (cabecera, no de cada ruta), en UTC; null si no se dio. Para "Ver detalle" |
+| `score_prioridad` | HU-018.1 (#155). `scorePrioridad` de Nexo al crear la solicitud (hasta 4 decimales, escala de Nexo); null si no lo mandó, si no se ha enviado o si se envió antes del script 09. Es el de la creación: no se actualiza |
 
 - 404 si no es tuya.
 - **HU-021:** el total es `precio_final` (ya incluye los conexos). **No** sumarle el `precio` de los conexos. Todos los conexos que llegan están incluidos (`incluido` siempre es true): excluir uno lo quita de la ruta.

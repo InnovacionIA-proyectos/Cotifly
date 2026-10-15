@@ -119,6 +119,31 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
+    public async Task HU0181_ElScorePrioridadDelCapturaResultDtoSeCaptura()
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada.Replace("\"scorePrioridad\":0.73", "\"scorePrioridad\":62.5", StringComparison.Ordinal));
+
+        var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+
+        resultado.Valor.ScorePrioridad.Should().Be(62.5m, "COTIFLY-CONTRATO.md §5: NEXO lo devuelve en el 201 y antes se descartaba");
+    }
+
+    [Theory]
+    [InlineData("\"scorePrioridad\":0.73,", "")]
+    [InlineData("\"scorePrioridad\":0.73", "\"scorePrioridad\":null")]
+    [InlineData("\"scorePrioridad\":0.73", "\"scorePrioridad\":\"alto\"")]
+    public async Task HU0181_SinScorePrioridadEnNullONoNumericoQuedaNullYElAltaSigue(string original, string reemplazo)
+    {
+        _nexo.Responder(HttpStatusCode.Created, Creada.Replace(original, reemplazo, StringComparison.Ordinal));
+
+        var resultado = await Adaptador().EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+
+        resultado.EsExitoso.Should().BeTrue("un score ausente o raro no tumba el alta: Nexo ya tiene la solicitud");
+        resultado.Valor.Id.Should().Be("3f2b8c1e-0000-4000-8000-000000000001");
+        resultado.Valor.ScorePrioridad.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ConLineasPorCostearOCosteoEnProcesoNoEstaCompleto()
     {
         _nexo.Responder(HttpStatusCode.Created, Creada);

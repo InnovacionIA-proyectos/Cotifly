@@ -80,9 +80,9 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
     /// <c>POST /web/solicitudes-costeo</c> con el formulario ampliado; <paramref name="moneda"/> (HU-013.7) solo viaja si no es <c>null</c>.
     /// Con 201 asocia el alias al folio del servidor.
     /// </summary>
-    public async Task EnviarACosteoAsync(string alias, string nit, string cotizacion, string? moneda)
+    public async Task EnviarACosteoAsync(string alias, string nit, string cotizacion, string? moneda, string? deadline = null)
     {
-        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit, moneda));
+        await web.EnviarAsync(HttpMethod.Post, "/web/solicitudes-costeo", web.Sesion(alias).Access, Formulario(nit, moneda, deadline));
         if (web.UltimoEstado == HttpStatusCode.Created)
         {
             _folios[cotizacion] = web.UltimoJson().GetProperty("folio").GetString()!;
@@ -329,10 +329,12 @@ public sealed class clsPasosCosteo(clsContextoWeb web) : IDisposable
             + $"LEFT JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.cotizacionSolicitudId = c.id AND l.orden = 1 WHERE c.folio = '{folio}'");
     }
 
-    private static string Formulario(string nit, string? moneda)
+    private static string Formulario(string nit, string? moneda, string? deadline = null)
     {
         var json = Formulario(nit);
-        return moneda is null ? json : json[..json.LastIndexOf('}')] + ",\"moneda\":" + System.Text.Json.JsonSerializer.Serialize(moneda) + "}";
+        json = moneda is null ? json : json[..json.LastIndexOf('}')] + ",\"moneda\":" + System.Text.Json.JsonSerializer.Serialize(moneda) + "}";
+        // HU-018.1 (#155): la fecha límite del formulario (cabecera).
+        return deadline is null ? json : json[..json.LastIndexOf('}')] + ",\"deadline\":" + System.Text.Json.JsonSerializer.Serialize(deadline) + "}";
     }
 
     private static string Formulario(string nit) => clsApiWebPruebas.Json(new

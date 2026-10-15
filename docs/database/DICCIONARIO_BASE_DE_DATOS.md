@@ -49,6 +49,7 @@ la línea; ahora esos datos son de la ruta.
 | `estadoCosteo` | Resumen del estado de las rutas ("el más atrasado") | Dominio | API, polling, métricas |
 | `motivoEstadoCosteo` | Explicación del estado (por ejemplo `SOLICITUD_NEXO_DESCONOCIDA`) | Envío, polling | API |
 | `solicitudNexoId` | Id de la **solicitud** de Nexo (lo devuelve el alta; lo consulta el polling). Antes `costeoId` (0010) | Envío a Nexo | Polling, resultado |
+| `scorePrioridad` | `scorePrioridad` que Nexo devuelve al crear la solicitud (`decimal(9,4)`, NULL si no lo mandó o se envió antes del script `09`; se limpia al re-solicitar). HU-018.1 (#155) | Envío a Nexo | "Ver detalle" (`score_prioridad`) |
 | `cotizacionNexoId` | Id de la **cotización** de Nexo | Polling | Conexos, resultado en Nexo |
 | `costeoEnviadoAt`, `costeoSiguienteConsultaAt`, `costeoConsultasFallidas`, `costeoListoAt` | Agenda y seguimiento del polling | Envío, polling | Worker del polling |
 | `versionNegocio` | Versión de negocio: viaja como `ETag` y vuelve en `If-Match` (428/409) | Cada cambio que ve el comercial y el polling cuando cambia algo | Concurrencia optimista (ADR-018) |

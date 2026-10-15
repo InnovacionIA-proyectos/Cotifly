@@ -47,6 +47,18 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
+    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
+    /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
+    /// </summary>
+    public DateTimeOffset? Deadline { get; init; }
+
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud; <c>null</c> si no lo mandó, si no se ha enviado o si
+    /// se envió antes del script 09. Siempre se serializa.
+    /// </summary>
+    public decimal? ScorePrioridad { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -103,7 +115,11 @@ public sealed record clsCotizacionResumen(
             cotizacion.MotivoRechazo,
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
             cotizacion.CreatedAt == default ? null : cotizacion.CreatedAt,
-            cotizacion.TrmAplicada);
+            cotizacion.TrmAplicada)
+        {
+            Deadline = cotizacion.Deadline?.ToUniversalTime(),
+            ScorePrioridad = cotizacion.ScorePrioridad,
+        };
     }
 }
 

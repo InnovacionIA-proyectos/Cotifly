@@ -286,6 +286,31 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida.CosteoConsultasFallidas.Should().Be(0);
     }
 
+    /// <summary>
+    /// HU-018.1 (#155): el <c>scorePrioridad</c> de Nexo se guarda en <c>CotizacionesSolicitud.scorePrioridad</c> (<c>decimal(9,4)</c>, script
+    /// 09) y se lee de vuelta; sin score, la columna queda en NULL.
+    /// </summary>
+    [Fact]
+    public async Task HU0181_ElScorePrioridadSeGuardaEnLaCabeceraConCuatroDecimalesYSeLeeDeVuelta()
+    {
+        var conScore = Formulario(null);
+        conScore.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50), 0.123456m);
+        var sinScore = Formulario(null);
+        sinScore.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50));
+        await GuardarAsync(conScore);
+        await GuardarAsync(sinScore);
+
+        var leida = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(conScore.Id, Ct));
+        var leidaSin = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(sinScore.Id, Ct));
+
+        leida!.ScorePrioridad.Should().Be(0.1235m);
+        leidaSin!.ScorePrioridad.Should().BeNull();
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                $"SELECT CONCAT(CAST(scorePrioridad AS nvarchar(20)), '|', (SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud "
+                + $"WHERE id = '{sinScore.Id}' AND scorePrioridad IS NULL)) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{conScore.Id}'"))
+            .Should().Be("0.1235|1");
+    }
+
     [Fact]
     public async Task LaAgendaDelPollingTraeSoloLasVencidasYElReclamoLaTomaUnaSolaVez()
     {

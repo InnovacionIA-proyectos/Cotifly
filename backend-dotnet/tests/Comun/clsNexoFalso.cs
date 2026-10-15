@@ -54,6 +54,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     public decimal FleteAutocosteo { get; set; } = 2_550_000m;
 
+    /// <summary>HU-018.1 (#155): <c>scorePrioridad</c> que responde el alta (<c>CapturaResultDto</c>); <c>null</c> lo manda en null.</summary>
+    public decimal? ScorePrioridadAlta { get; set; } = 0.5m;
+
     public IReadOnlyList<clsPeticionNexo> Peticiones => [.. _peticiones];
 
     /// <summary>Peticiones que no son de los catálogos maestros (<c>/api/catalogos/*</c>): las del costeo y la búsqueda.</summary>
@@ -484,7 +487,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             lineas = numero,
             rutasCreadas = 0,
             vehiculosCreados = 0,
-            scorePrioridad = 0.5m,
+            scorePrioridad = ScorePrioridadAlta,
             fletesCalculados = AutoCostear && !enProceso ? numero : 0,
             lineasPorCostear = AutoCostear && !enProceso ? 0 : numero,
             costeoEnProceso = enProceso,

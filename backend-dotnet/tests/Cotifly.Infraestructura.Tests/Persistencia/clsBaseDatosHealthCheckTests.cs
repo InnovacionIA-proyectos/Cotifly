@@ -47,6 +47,18 @@ public sealed class clsBaseDatosHealthCheckTests
         cronometro.Elapsed.Should().BeLessThan(clsBaseDatosHealthCheck.TiempoMaximo + TimeSpan.FromSeconds(4));
     }
 
+    [Theory]
+    [InlineData("CotizacionesSolicitud.scorePrioridad", clsBaseDatosHealthCheck.DescripcionEsquemaSin09)]
+    [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.estadoCubicacion", clsBaseDatosHealthCheck.DescripcionEsquemaSin04)]
+    [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
+    public void HU0181_SinEl09LaSondaPideEl09SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
     internal static async Task<HealthCheckResult> EvaluarAsync(string? cadena)
     {
         await using var proveedor = clsServiciosPruebas.Crear(cadena, new clsRelojFalso());
@@ -133,6 +145,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 04");
+    }
+
+    [Fact]
+    public async Task HU0181_ConEl04PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
+    {
+        // HU-018.1 (#155): el modelo EF mapea CotizacionesSolicitud.scorePrioridad de db/scripts/09_score_prioridad.sql.
+        await using var sin09 = await baseDatos.CrearBaseConScriptsAsync("dbSin09", clsBaseDatosPruebas.ScriptsHasta04);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin09.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 09");
     }
 
     [Fact]

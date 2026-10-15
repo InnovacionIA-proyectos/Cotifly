@@ -86,6 +86,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta0009 - 1].Should().Be("0009_reestructuracion_cotizaciones.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta0010 - 1].Should().Be("0010_nombres_municipio.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta02 - 1].Should().Be(clsBaseDatosPruebas.Script02);
+        scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 09");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsSin07 incluye el 09 (el backend mapea scorePrioridad)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -123,6 +125,22 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
 
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem04Inst");
         await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script04);
+    }
+
+    [Fact]
+    public async Task HU0181_ElScript09EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal94Null()
+    {
+        // HU-018.1 (#155): scorePrioridad en la cabecera (db/scripts/09; el 01 no lo trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem09", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script09);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem09Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script09);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(ty.name, '(', c.precision, ',', c.scale, ')|', c.is_nullable) FROM sys.columns c "
+                + "JOIN sys.types ty ON ty.user_type_id = c.user_type_id "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name = N'scorePrioridad'"))
+            .Should().Be("decimal(9,4)|1");
     }
 
     [Fact]

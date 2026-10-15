@@ -79,6 +79,18 @@ public sealed record clsCosteoCotizacion(
     public decimal TrmAplicada { get; init; }
 
     /// <summary>
+    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera, la del formulario de costeo) en UTC; <c>null</c> si no se dio. Es de toda la
+    /// solicitud, no de cada ruta, por eso va aquí y no en <see cref="clsRutaCosteo"/>.
+    /// </summary>
+    public DateTimeOffset? Deadline { get; init; }
+
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud (cabecera); <c>null</c> si Nexo no lo mandó, si la
+    /// solicitud no se ha enviado o si se envió antes del script 09.
+    /// </summary>
+    public decimal? ScorePrioridad { get; init; }
+
+    /// <summary>
     /// HU-021.8 (#135): las rutas en orden, cada una con su margen (aplicado, sugerido y origen), su precio y sus conexos. El ajuste de
     /// margen y los cambios de conexos dicen a cuál aplican con <c>linea_orden</c> o <c>linea_solicitud_id</c>. Nunca trae costos.
     /// </summary>
@@ -1090,6 +1102,8 @@ public sealed class clsCosteoCotizacionService(
             clsTextosCotizacionJson.Leer(cotizacion.TextosCotizacion))
         {
             TrmAplicada = cotizacion.TrmAplicada,
+            Deadline = cotizacion.Deadline?.ToUniversalTime(),
+            ScorePrioridad = cotizacion.ScorePrioridad,
             Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias))],
         };
     }

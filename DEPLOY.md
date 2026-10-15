@@ -153,7 +153,10 @@ ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto. HU-0
 igual: guarda `BUSQUEDA_AGOTADA` en NULL con un aviso y `/health/ready` solo lo informa). La autodetección del 07 lee la
 definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app;`
 (sin él, `/health/ready` dice "no se puede verificar el script 07 (falta VIEW DEFINITION…)" y el motivo se guarda en NULL). Si el DBA no
-otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables). Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
+otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAgotada=habilitado` (ver la tabla de variables).
+HU-018.1 (#155): antes de desplegar se aplica `db/scripts/09_score_prioridad.sql` (`CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`,
+idempotente, sin respaldo porque solo agrega una columna NULL). A diferencia del 07 **sí es obligatorio**: el backend mapea la columna y
+sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo. Para cambiar una hay que declararla en el manifiesto (y `Cubicador__ApiKey` como secreto) antes de cargarla en
 Dokploy. Todas están en `backend-dotnet/.env.example`.
 
 **Base de datos, HU-014.3 (#152):** el backend ya no expone `GET /web/metricas/actividad` ni `/web/metricas/ajustes-margen` (responden
@@ -374,7 +377,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02` y `db/scripts/pendientes/04` aplicados** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/pendientes/04` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -388,10 +391,17 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
      HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
-   - **Excepción, HU-014.3 (#152):** `db/scripts/08_retirar_vistas_actividad.sql` va **después** de la imagen (borra las vistas que
-     lee la versión anterior). El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre, así que si el DBA lo
-     usa antes de la imagen también aplica el 08: no rompe nada que se use, solo los dos endpoints retirados de la versión anterior
-     (`/web/metricas/actividad` y `/ajustes-margen`, que el frontend no consume) responden 500 hasta que sube la imagen nueva.
+   - HU-018.1 (#155): `db/scripts/09_score_prioridad.sql` (`scorePrioridad` de Nexo en la cabecera, idempotente; lo corre el
+     ejecutador después del `08`). **El `09` va ANTES de la imagen** que trae la #155: el backend mapea la columna. Si la imagen
+     sale sin él, la sonda de vida sigue en 200, Swarm retira la versión anterior y **toda la API queda en 503** en
+     `/health/ready`: aplicar el `09` (un `ADD` de columna NULL, segundos) la recupera **sin redesplegar**, porque
+     `/health/ready` revisa el esquema en cada consulta.
+   - **Excepción, HU-014.3 (#152): el `08` va DESPUÉS de la imagen.** `db/scripts/08_retirar_vistas_actividad.sql` borra las
+     vistas que lee la versión anterior. El ejecutador (`db/ejecutar-bd.*`) corre todos los `scripts/` en orden de nombre
+     (`07`, `08`, `09`), así que si el DBA lo usa antes de la imagen para aplicar el `09` también aplica el `08`: no rompe nada
+     que se use, solo los dos endpoints retirados de la versión anterior (`/web/metricas/actividad` y `/ajustes-margen`, que el
+     frontend no consume) responden 500 hasta que sube la imagen nueva.
+   - Orden del release con #152 y #155 juntas: `09` → imagen → `08`.
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
    columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a
@@ -406,6 +416,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 0010` | Está el `0009` pero faltan las columnas del `0010` (nombres de municipio, `solicitudNexoId`, `nombreServicioConexo`) o el `CHECK` `ck_cotizaciones_estadoEnvio` | Aplicar `0010_nombres_municipio.sql` |
    | `esquema incompleto: falta 02` | Faltan las columnas del cubicador (HU-023.3) | Aplicar `db/scripts/02_alter_cubicador.sql` |
    | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, con la aprobación del DBA |
+   | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack
