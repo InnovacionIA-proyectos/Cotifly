@@ -95,6 +95,13 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Si tiene valor, <c>GET /api/captura-solicitudes/municipios</c> responde este estado.</summary>
     public HttpStatusCode? MunicipiosFalla { get; set; }
 
+    /// <summary>
+    /// Si tiene valor, <c>GET /api/captura-solicitudes/municipios</c> y <c>/ciudades</c> lanzan esta excepción en vez de responder (por
+    /// ejemplo un <see cref="TaskCanceledException"/> como el del tiempo agotado de <see cref="HttpClient"/>, o un
+    /// <see cref="HttpRequestException"/> de red).
+    /// </summary>
+    public Exception? MunicipiosExcepcion { get; set; }
+
     /// <summary>Si es mayor que cero, las siguientes N peticiones a <c>/api/catalogos/*</c> responden 503 (fallo transitorio).</summary>
     public int FallasCatalogos { get; set; }
 
@@ -338,6 +345,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         var ruta = request.RequestUri!.AbsolutePath.TrimEnd('/');
+        if (MunicipiosExcepcion is { } excepcionMunicipios && request.Method == HttpMethod.Get
+            && ruta is "/api/captura-solicitudes/municipios" or "/api/captura-solicitudes/ciudades")
+        {
+            throw excepcionMunicipios;
+        }
+
         if (AntesDelAlta is { } gancho && request.Method == HttpMethod.Post && ruta == "/api/captura-solicitudes")
         {
             await gancho();

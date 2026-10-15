@@ -937,8 +937,11 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Municipio'
-        '400':
-          description: El catálogo de municipios en Nexo no está disponible (`MUNICIPIOS_NO_DISPONIBLE`)
+        '503':
+          description: |
+            `MUNICIPIOS_NO_DISPONIBLE`: el catálogo de municipios de Nexo no respondió (Nexo caído, 5xx, tiempo agotado, 429 o el
+            cupo de lecturas bloqueado, sin configurar, o el comercial sin `idUsuarioExterno`). Antes era 400; desde la deuda de
+            #122 es 503, como `GET /web/catalogos-flete` y la captura. El frontend deshabilita el buscador y ofrece Reintentar.
           content:
             application/json:
               schema:
@@ -2390,7 +2393,7 @@ paths:
         Nexo (G6). Todos los errores vuelven juntos en `errores[]` (índice, fila, campo y código), con el encabezado primero y
         luego por línea. Como en `POST /web/solicitudes-costeo`: sin catálogo maestro de Nexo ni una copia de menos de 24 h
         responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE`; si alguna fila necesita resolver su municipio y el catálogo de municipios
-        no responde, 503 `MUNICIPIOS_NO_DISPONIBLE` (en `GET /web/municipios` ese código sigue siendo 400, pendiente de alinear).
+        no responde, 503 `MUNICIPIOS_NO_DISPONIBLE` (el mismo 503 que `GET /web/municipios`).
         En los dos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo (forma, contenedor y
         aprovisionamiento, tipología, carrocería, clase de contenedor), se devuelve primero el reporte 400 con todos ellos y el
         código del catálogo caído en `error.detalle.motivo`: lo que dependía de él se valida al volver a enviarla.

@@ -143,6 +143,8 @@ public sealed class clsMunicipiosNexoTests : IDisposable
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
     public async Task UnErrorHttpEsMunicipiosNoDisponible(HttpStatusCode estado)
     {
         _nexo.Responder(estado);
@@ -178,6 +180,17 @@ public sealed class clsMunicipiosNexoTests : IDisposable
         _nexo.Fallar(new HttpRequestException("Connection refused"));
 
         (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+    }
+
+    [Fact]
+    public async Task UnTiempoAgotadoQueNoPidioElLlamadorEsMunicipiosNoDisponible()
+    {
+        // Así llega el tiempo agotado de HttpClient (deuda de #122: GET /web/municipios lo traduce a 503).
+        _nexo.Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()))
+            .Fallar(new TaskCanceledException("Tiempo agotado (prueba).", new TimeoutException()));
+
+        (await Proveedor().ObtenerAsync(_usuarioId, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
+        (await Proveedor().BuscarAsync(_usuarioId, "bog", null, Ct)).Error.Codigo.Should().Be(clsCodigosError.MunicipiosNoDisponible);
     }
 
     [Fact]
