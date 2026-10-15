@@ -2705,8 +2705,9 @@ paths:
       tags: [sistema]
       summary: Descarga el PDF de una cotización (inline)
       description: |
-        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial de su misma
-        regional; si la regional del gerente no se conoce, solo el dueño) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
+        Requiere sesión. Solo el dueño de la cotización (o un gerente_comercial cuya regional efectiva
+        incluye al dueño, con la misma regla que `GET /web/cotizaciones/regional`; si la regional del gerente
+        no se conoce o la fuente está caída, solo el dueño, 404 para el gerente) puede descargarlo. Como exige `Authorization`, el frontend lo descarga con HttpClient
         como blob (un `<a href>` directo no envía el header).
         En el backend Python este endpoint era público (hallazgo de seguridad corregido).
         La URL firmada sin `Authorization` (`?t=`, ADR-011 §3), que solo emitía Google Chat, se retiró en HU-013.9 (#105):

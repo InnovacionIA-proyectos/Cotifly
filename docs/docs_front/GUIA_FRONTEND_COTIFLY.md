@@ -566,7 +566,7 @@ Resumen:
 | `POST /web/cotizaciones/{folio}/resultado` | Ambos (dueño) | En QA |
 | `GET /web/cotizaciones/{id}/nueva-version` | Ambos | En QA |
 | `GET`, `PUT /web/usuario/telefono` | Ambos | En QA |
-| `GET /pdfs/{archivo}` | Dueño o gerente de su regional | En QA |
+| `GET /pdfs/{archivo}` | Dueño o gerente de su regional efectiva | En QA |
 | `GET /web/clientes?q=` | Ambos | En QA |
 | `GET /web/municipios` | Ambos | En QA |
 | `GET /web/catalogos-flete` | Ambos | En QA |
@@ -771,7 +771,8 @@ Errores:
 
 Las acciones de la fila que exigen ser el dueño (`/resultado`, `/enviar`, `/costeo`, nueva versión...) responden 404 al gerente sobre una
 cotización de otro comercial: en esta vista la fila es de consulta. La descarga del PDF (`GET /pdfs/{archivo}`) sí funciona para el
-gerente de la misma regional (sección 5.6).
+gerente sobre cualquier fila de este listado, porque usa **la misma regla**: el dueño debe ser miembro de la regional efectiva del
+gerente (sección 5.6). Si la fuente de la regional está caída, el listado responde 503 y el PDF ajeno 404.
 
 ### 5.5 Correo: vista previa, envío y destinatarios previos. En QA
 
@@ -811,7 +812,9 @@ gerente de la misma regional (sección 5.6).
 ### 5.6 Descarga del PDF (`GET /pdfs/{archivo}`). En QA
 
 - `archivo` sigue `^[A-Za-z0-9_-]+\.pdf$` (el folio más `.pdf`). Tomarlo de `pdf_url`, nunca construirlo a mano.
-- Acceso con **Bearer**: el dueño, o un `gerente_comercial` de la misma regional (si la regional del gerente no se conoce, solo el dueño).
+- Acceso con **Bearer**: el dueño, o un `gerente_comercial` cuando el dueño es miembro de su **regional efectiva** (la misma regla que
+  `GET /web/cotizaciones/regional`, sección 5.4.1: `DimEjecutivo` primero y `UsuariosWeb.regional` de respaldo, para el gerente y para
+  el dueño). Si el gerente no tiene regional o la fuente de la regional está caída, solo el dueño (404 para el gerente, nunca 409 ni 503).
 - 200 `application/pdf` inline. 401 `ErrorWeb` sin sesión. 404 `ErrorWeb` (no existe o no es tuya), con cuerpo JSON aunque se haya pedido un blob.
 - **URL firmada `?t=`**: se retiró en #105 junto con Google Chat (era el único que la emitía). El endpoint exige siempre Bearer.
 - Un `<a href>` directo no envía `Authorization` y recibe 401. Además, `X-Frame-Options: DENY` impide incrustar la URL en un iframe. Hay que descargar el blob:

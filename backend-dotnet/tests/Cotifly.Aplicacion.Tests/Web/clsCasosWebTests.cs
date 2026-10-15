@@ -4,7 +4,9 @@ using Cotifly.Aplicacion.Auditoria.Services;
 using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Identidad.Services;
 using Cotifly.Aplicacion.Margen.Repositories;
 using Cotifly.Aplicacion.Metricas.DTOs;
 using Cotifly.Aplicacion.Metricas.Repositories;
@@ -14,7 +16,9 @@ using Cotifly.Aplicacion.Pdf.Services;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Dominio.Margen;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Cotifly.Aplicacion.Tests.Web;
 
@@ -31,6 +35,17 @@ public sealed class clsCasosWebTests
     private readonly IClsMetricasRepository _metricas = Substitute.For<IClsMetricasRepository>();
     private readonly IClsCotizacionRepository _cotizaciones = Substitute.For<IClsCotizacionRepository>();
     private readonly IClsAlmacenPdf _almacen = Substitute.For<IClsAlmacenPdf>();
+    private readonly IClsDirectorioEjecutivos _directorio = Substitute.For<IClsDirectorioEjecutivos>();
+    private readonly List<clsUsuarioWeb> _registrados = [];
+
+    public clsCasosWebTests()
+    {
+        // UsuariosWeb en memoria para la regla real de regional efectiva (clsRegionalUsuarioService).
+        _usuarios.ListarPorRegionalONombresAsync(Arg.Any<string>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(c => (IReadOnlyList<clsUsuarioWeb>)[.. _registrados.Where(u =>
+                string.Equals(u.Regional?.Trim(), c.ArgAt<string>(0), StringComparison.OrdinalIgnoreCase)
+                || (u.NombreUsuario is { } n && c.ArgAt<IReadOnlyCollection<string>>(1).Contains(n, StringComparer.OrdinalIgnoreCase)))]);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -159,18 +174,83 @@ public sealed class clsCasosWebTests
     [InlineData(null, null, false)]
     public async Task ElGerenteDescargaSoloPdfDeSuRegionalCuandoLaConoce(string? regionalGerente, string? regionalDueno, bool permitido)
     {
-        var gerente = Usuario(RolInterno.GerenteComercial);
-        var duenoId = Guid.NewGuid();
-        CotizacionConPdf("PCN-DG-25092026-002", duenoId);
-        _usuarios.ObtenerPorIdAsync(gerente.UsuarioId!.Value, Arg.Any<CancellationToken>())
-            .Returns(clsUsuarioWeb.Crear("gerente", null, null, regionalGerente, DateTimeOffset.UtcNow).Valor);
-        _usuarios.ObtenerPorIdAsync(duenoId, Arg.Any<CancellationToken>())
-            .Returns(clsUsuarioWeb.Crear("dueno", null, null, regionalDueno, DateTimeOffset.UtcNow).Valor);
+        var (gerente, _) = Registrar("gerente", regionalGerente, RolInterno.GerenteComercial);
+        var (_, dueno) = Registrar("dueno", regionalDueno, RolInterno.Comercial);
+        CotizacionConPdf("PCN-DG-25092026-002", dueno.Id);
 
         var resultado = await Descarga(gerente).ObtenerAsync("PCN-DG-25092026-002.pdf", Ct);
 
         resultado.EsExitoso.Should().Be(permitido);
+        if (!permitido)
+        {
+            resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
+        }
+
         await _auditoria.Received(1).RegistrarAsync(clsDescargaPdfService.HerramientaAuditoria, Arg.Any<object>(), Arg.Any<object>(), permitido, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task ElGerenteDescargaSiDimEjecutivoPoneAlDuenoEnSuRegionalAunqueUsuariosWebEsteDesactualizado()
+    {
+        // El comercial pasó de Norte a Occidente y no ha vuelto a entrar: UsuariosWeb.regional sigue en Norte.
+        var (gerente, _) = Registrar("gerente.occ", "Occidente", RolInterno.GerenteComercial);
+        var (_, dueno) = Registrar("comercial", "Norte", RolInterno.Comercial);
+        Directorio(("gerente.occ", "Occidente"), ("comercial", "Occidente"));
+        CotizacionConPdf("PCN-DG-25092026-003", dueno.Id);
+
+        var resultado = await Descarga(gerente).ObtenerAsync("PCN-DG-25092026-003.pdf", Ct);
+
+        resultado.Valor.Contenido.Should().Equal(1, 2, 3);
+        await _auditoria.Received(1).RegistrarAsync(clsDescargaPdfService.HerramientaAuditoria, Arg.Any<object>(), Arg.Any<object>(), true, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task ElGerenteAnteriorNoDescargaAunqueUsuariosWebSigaDiciendoSuRegional()
+    {
+        var (gerenteAnterior, _) = Registrar("gerente.norte", "Norte", RolInterno.GerenteComercial);
+        var (_, dueno) = Registrar("comercial", "Norte", RolInterno.Comercial);
+        Directorio(("gerente.norte", "Norte"), ("comercial", "Occidente"));
+        CotizacionConPdf("PCN-DG-25092026-004", dueno.Id);
+
+        var resultado = await Descarga(gerenteAnterior).ObtenerAsync("PCN-DG-25092026-004.pdf", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
+        await _almacen.DidNotReceiveWithAnyArgs().LeerPorReferenciaAsync(default!, Ct);
+        await _auditoria.Received(1).RegistrarAsync(clsDescargaPdfService.HerramientaAuditoria, Arg.Any<object>(), Arg.Any<object>(), false, Arg.Any<int>(), null);
+    }
+
+    [Fact]
+    public async Task SiLaFuenteDeLaRegionalCaeElGerenteRecibeNoEncontrado()
+    {
+        var (gerente, _) = Registrar("gerente.occ", "Occidente", RolInterno.GerenteComercial);
+        var (_, dueno) = Registrar("comercial", "Occidente", RolInterno.Comercial);
+        DirectorioCaido();
+        CotizacionConPdf("PCN-DG-25092026-005", dueno.Id);
+
+        var resultado = await Descarga(gerente).ObtenerAsync("PCN-DG-25092026-005.pdf", Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosAplicacion.NoEncontrado);
+        await _almacen.DidNotReceiveWithAnyArgs().LeerPorReferenciaAsync(default!, Ct);
+        await _auditoria.Received(1).RegistrarAsync(
+            clsDescargaPdfService.HerramientaAuditoria,
+            Arg.Any<object>(),
+            Arg.Is<object>(s => s.ToString()!.Contains(clsCodigosAplicacion.RegionalNoDisponible, StringComparison.Ordinal)),
+            false,
+            Arg.Any<int>(),
+            null);
+    }
+
+    [Fact]
+    public async Task ElDuenoDescargaSuPdfAunqueLaFuenteDeLaRegionalEsteCaida()
+    {
+        var (comercial, dueno) = Registrar("comercial", "Occidente", RolInterno.Comercial);
+        DirectorioCaido();
+        CotizacionConPdf("PCN-DG-25092026-006", dueno.Id);
+
+        var resultado = await Descarga(comercial).ObtenerAsync("PCN-DG-25092026-006.pdf", Ct);
+
+        resultado.Valor.Contenido.Should().Equal(1, 2, 3);
+        await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default!, default!, default, default, default);
     }
 
     [Theory]
@@ -192,7 +272,40 @@ public sealed class clsCasosWebTests
 
     private clsMetricasService Metricas(IClsContextoUsuario usuario) => new(usuario, _usuarios, _metricas);
 
-    private clsDescargaPdfService Descarga(IClsContextoUsuario usuario) => new(usuario, _cotizaciones, _usuarios, _almacen, _auditoria);
+    private clsDescargaPdfService Descarga(IClsContextoUsuario usuario) =>
+        new(usuario, _cotizaciones, _usuarios, new clsRegionalUsuarioService(_directorio, _usuarios, NullLogger<clsRegionalUsuarioService>.Instance), _almacen, _auditoria);
+
+    /// <summary>Registra un usuario en UsuariosWeb (en memoria) y devuelve su sesión.</summary>
+    private (clsUsuarioFalso Sesion, clsUsuarioWeb Usuario) Registrar(string nombre, string? regional, RolInterno rol)
+    {
+        var usuarioWeb = clsUsuarioWeb.Crear(nombre, nombre, null, regional, DateTimeOffset.UtcNow).Valor;
+        _registrados.Add(usuarioWeb);
+        _usuarios.ObtenerPorIdAsync(usuarioWeb.Id, Arg.Any<CancellationToken>()).Returns(usuarioWeb);
+        return (new clsUsuarioFalso(usuarioWeb.Id, rol), usuarioWeb);
+    }
+
+    /// <summary>DimEjecutivo configurada con estas filas (usuario, regional).</summary>
+    private void Directorio(params (string Usuario, string Regional)[] filas)
+    {
+        _directorio.Configurado.Returns(true);
+        _directorio.ObtenerRegionalesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(c => (IReadOnlyDictionary<string, string>)c.Arg<IReadOnlyCollection<string>>()
+                .Select(n => filas.FirstOrDefault(f => string.Equals(f.Usuario, n, StringComparison.OrdinalIgnoreCase)))
+                .Where(f => f.Usuario is not null)
+                .ToDictionary(f => f.Usuario, f => f.Regional, StringComparer.OrdinalIgnoreCase));
+        _directorio.ListarNombresUsuarioAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(c => (IReadOnlyList<string>)[.. filas.Where(f => string.Equals(f.Regional, c.Arg<string>(), StringComparison.OrdinalIgnoreCase)).Select(f => f.Usuario)]);
+    }
+
+    /// <summary>DimEjecutivo configurada pero caída.</summary>
+    private void DirectorioCaido()
+    {
+        _directorio.Configurado.Returns(true);
+        _directorio.ObtenerRegionalesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("DimEjecutivo caída"));
+        _directorio.ListarNombresUsuarioAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("DimEjecutivo caída"));
+    }
 
     private clsCotizacionSolicitud CotizacionConPdf(string folio, Guid dueno)
     {

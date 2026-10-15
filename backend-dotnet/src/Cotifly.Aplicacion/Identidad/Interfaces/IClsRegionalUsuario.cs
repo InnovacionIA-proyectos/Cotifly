@@ -16,6 +16,14 @@ public interface IClsRegionalUsuario
 
     /// <summary>Usuarios de <c>UsuariosWeb</c> cuya regional efectiva es <paramref name="regional"/>.</summary>
     Task<clsResultado<IReadOnlyList<clsUsuarioWeb>>> ListarMiembrosAsync(string regional, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <c>true</c> si <paramref name="usuarioId"/> está entre los miembros de la regional efectiva de <paramref name="gerente"/>
+    /// (la misma regla que <c>GET /web/cotizaciones/regional</c>: <see cref="ResolverAsync"/> y luego
+    /// <see cref="ListarMiembrosAsync"/>). Errores: los mismos de esos dos métodos; quien llama debe negar el acceso ante
+    /// cualquiera de ellos (fail-closed).
+    /// </summary>
+    Task<clsResultado<bool>> EsMiembroDeMiRegionalAsync(clsUsuarioWeb gerente, Guid usuarioId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Regional resuelta de un usuario.</summary>
