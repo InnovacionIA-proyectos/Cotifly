@@ -75,6 +75,23 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
+    public void LosCortesDeLaListaDeScriptsApuntanAlScriptQueNombran()
+    {
+        // HU-014.3 (#152): al fusionar ramas que agregan scripts a clsBaseDatosPruebas.Scripts (08, 09, ...), git puede unir la lista sin
+        // conflicto y dejar una constante de corte apuntando a otro script; las pruebas que la usan siguen pasando sobre una base equivocada.
+        var scripts = clsBaseDatosPruebas.Scripts;
+
+        scripts.Should().OnlyHaveUniqueItems();
+        scripts[clsBaseDatosPruebas.ScriptsAntesDeHu021 - 1].Should().Be("0008_horas_por_linea.sql");
+        scripts[clsBaseDatosPruebas.ScriptsHasta0009 - 1].Should().Be("0009_reestructuracion_cotizaciones.sql");
+        scripts[clsBaseDatosPruebas.ScriptsHasta0010 - 1].Should().Be("0010_nombres_municipio.sql");
+        scripts[clsBaseDatosPruebas.ScriptsHasta02 - 1].Should().Be(clsBaseDatosPruebas.Script02);
+        scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
+        scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
+        scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
+    }
+
+    [Fact]
     public async Task ElScript0010EsIdempotenteYNoHaceNadaSobreUnaInstalacionDesdeCero()
     {
         await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem0010");

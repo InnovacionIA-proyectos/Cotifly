@@ -49,11 +49,18 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
 
-    /// <summary>Scripts hasta el 07 (sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.</summary>
+    /// <summary>
+    /// Scripts hasta el 07 incluido (sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
+    /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
+    /// </summary>
     public const int ScriptsHasta07 = 13;
 
-    /// <summary>Scripts hasta la propuesta 04 (sin el 07 ni el 08): para probar el 07 sobre una base que no lo tiene.</summary>
-    public const int ScriptsHasta04 = 12;
+    /// <summary>
+    /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después): para probar el 07 sobre una base
+    /// que no lo tiene. <c>Scripts[ScriptsSin07]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el
+    /// backend mapea, va antes del 07 en la lista y este número sube.
+    /// </summary>
+    public const int ScriptsSin07 = 12;
 
     /// <summary>Scripts hasta el 02 del cubicador (sin el 04).</summary>
     public const int ScriptsHasta02 = 11;

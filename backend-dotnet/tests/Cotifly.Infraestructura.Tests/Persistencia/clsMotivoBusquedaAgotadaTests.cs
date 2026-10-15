@@ -37,7 +37,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task SinEl07SeGuardaNullConElMotivoRealComoAvisoDeLaRuta()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07", clsBaseDatosPruebas.ScriptsSin07);
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
 
         var (folio, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
@@ -56,7 +56,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task SinEl07LosCuatroMotivosDelScript02SeGuardanTalCual()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07b", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07b", clsBaseDatosPruebas.ScriptsSin07);
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
 
         var (_, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor, "SUPERA_K_MAX");
@@ -85,7 +85,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task El07CorridoDosVecesNoCambiaNadaYEl03DespuesNoLoPisa()
     {
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem07", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem07", clsBaseDatosPruebas.ScriptsSin07);
         var cadena = baseAislada.Cadena;
         const string Definicion = "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'";
         (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Definicion)).Should().NotContain("BUSQUEDA_AGOTADA", "sin el 07");
@@ -145,7 +145,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
         var esperada = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, ConsultaDefinicion);
         esperada.Should().Contain("BUSQUEDA_AGOTADA").And.Contain("isnull");
         await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden" + orden.Replace(",", "", StringComparison.Ordinal),
-            clsBaseDatosPruebas.ScriptsHasta04);
+            clsBaseDatosPruebas.ScriptsSin07);
         var cadena = baseAislada.Cadena;
 
         foreach (var paso in orden.Split(','))
@@ -170,7 +170,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     public async Task El03ConservaLasRutasConBusquedaAgotadaDeLaVersionSinIsnull()
     {
         // Antes (A1): el 03 volvía a 4 motivos y fallaba entero si ya había rutas con BUSQUEDA_AGOTADA.
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSinIsnull03", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSinIsnull03", clsBaseDatosPruebas.ScriptsSin07);
         await AplicarAsync(baseAislada.Cadena, "sinIsnull");
         await using var proveedor = clsServiciosPruebas.Crear(baseAislada.Cadena, Reloj, BaseDatos.CadenaIdentidad);
         var (_, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
@@ -194,7 +194,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task LaSondaDeLaBaseSigueSanaSinEl07ConUnAvisoInformativo()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSonda07", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSonda07", clsBaseDatosPruebas.ScriptsSin07);
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
         await using var ambito = proveedor.CreateAsyncScope();
         var sonda = ActivatorUtilities.CreateInstance<clsBaseDatosHealthCheck>(ambito.ServiceProvider);

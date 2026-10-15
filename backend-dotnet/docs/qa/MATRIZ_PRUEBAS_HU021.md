@@ -55,7 +55,7 @@ Sin inestabilidad: las tres corridas finales dan los mismos conteos y ningún fa
 | 15 | Re-solicitud y `-vN` | `POST .../costeo/re-solicitar`, `GET /web/cotizaciones/{id}/nueva-version` | Sí | Sí | Sí | **Verde** | D9 corregido (mensaje y motivo `VARIAS_RUTAS`); cambios de carga con varias rutas siguen sin soporte |
 | 16 | "Mis cotizaciones" | `GET /web/mis-cotizaciones` · `clsMisCotizacionesService` | Sí | Sí | Sí | **Verde** | — |
 | 17 | `/resultado` y `/seguimiento` | `POST .../resultado`, `POST .../seguimiento` | Sí | Sí | Sí | **Verde** | D4 revisado: el 409 sincroniza el resultado de Nexo, como manda ADR-018 |
-| 18 | Métricas | `GET /web/metricas/{comercial,regional,actividad,ajustes-margen}` | Sí | Sí | Sí | **Con huecos** | `actividad` y `ajustes-margen` en borrador, sin BDD |
+| 18 | Métricas | `GET /web/metricas/{comercial,regional}` | Sí | Sí | Sí | **Con huecos** | `actividad` y `ajustes-margen` (borrador sin BDD) se retiraron en HU-014.3 (#152): responden 404 |
 | 19 | Concurrencia | `clsConcurrenciaHttp`, `GuardarCambiosSiVersionAsync`, `clsCandadoTransaccionalSql` (`sp_getapplock`) | Sí | Sí | Sí | **Con huecos** | `PUT .../servicios-conexos` y `POST .../costeo/pdf` sin BDD de 428/409; idempotencia solo en memoria |
 | 20 | Health/ready (0009 y 0010) | `GET /health`, `/health/ready` · `clsBaseDatosHealthCheck` | Sí | Sí | No | **Con huecos** | "falta 0009/0010" sin prueba HTTP; sin feature |
 | 21 | Correo | `POST .../enviar`, `.../correo/vista-previa`, `GET /web/clientes/{nit}/destinatarios-previos` | Sí | Sí (+1 nuevo) | Sí | **Verde** | — |
