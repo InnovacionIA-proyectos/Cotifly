@@ -76,6 +76,35 @@ public sealed class clsCotizacionesRegionalEndpointsTests(clsEntornoApiWeb entor
         await VerificarErrorNegocioAsync(gerente, "REGIONAL_NO_ASIGNADA");
     }
 
+    /// <summary>
+    /// La fila regional es de consulta (decisión de #154): el gerente descarga el PDF de un comercial de su regional, pero las acciones del
+    /// dueño (seguimiento, nueva versión) le responden 404 igual que a cualquier ajeno, y la cotización no cambia.
+    /// </summary>
+    [Fact]
+    public async Task ElGerenteDescargaElPdfDeLaFilaPeroLasAccionesDelDuenoLeResponden404()
+    {
+        var occidente = Regional();
+        var luis = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente);
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente);
+        var deLuis = await Api.CrearCotizacionAsync(luis.UsuarioId, "800333444");
+
+        using var listado = await Api.EnviarAsync(_get, Ruta, gloria.Access);
+        var json = await VerificarContratoAsync(listado, Ruta, _get, HttpStatusCode.OK);
+        var fila = json.GetProperty("cotizaciones").EnumerateArray().Single(f => f.GetProperty("folio").GetString() == deLuis.Folio);
+        fila.GetProperty("pdf_url").GetString().Should().EndWith($"/pdfs/{deLuis.ArchivoPdf}");
+
+        using var pdf = await Api.EnviarAsync(_get, $"/pdfs/{deLuis.ArchivoPdf}", gloria.Access);
+        using var seguimiento = await Api.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{deLuis.Folio}/seguimiento", gloria.Access, """{"ganada":true}""");
+        using var nuevaVersion = await Api.EnviarAsync(_get, $"/web/cotizaciones/{deLuis.Id}/nueva-version", gloria.Access);
+        var ganada = await clsBaseDatosPruebas.EscalarAsync<int>(entorno.BaseDatos.CadenaCotifly,
+            $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{deLuis.Id}' AND ganada IS NOT NULL");
+
+        pdf.StatusCode.Should().Be(HttpStatusCode.OK, "el PDF es la excepción regional (sección 5.6 de la guía)");
+        seguimiento.StatusCode.Should().Be(HttpStatusCode.NotFound, "el resultado solo lo marca el dueño");
+        nuevaVersion.StatusCode.Should().Be(HttpStatusCode.NotFound, "la nueva versión solo la pide el dueño");
+        ganada.Should().Be(0, "el intento del gerente no cambió la cotización");
+    }
+
     [Fact]
     public async Task SinSesionResponde401()
     {
