@@ -1,5 +1,7 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 | Campo | Valor |
 |---|---|
 | Propósito | Todo lo que el frontend necesita para integrar el módulo Cotifly de ClientePro con la API .NET 10 de Cotifly: contratos, formas de comunicación, flujos, estados y reglas de UI |

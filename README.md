@@ -20,7 +20,7 @@ flowchart LR
     API -->|"captura y polling del costeo"| NEXO["NEXO"]
     API -->|"margen por cliente"| SAP["SAP TM"]
     API --> DB[("SQL Server 2019<br/>dbo_cotifly")]
-    API -->|"identidad (solo lectura)"| ID[("Base de identidad<br/>de ClientePro")]
+    API -->|"identidad (solo lectura)"| ID[("dbSolucionesTI_Prueba<br/>identidad de ClientePro")]
     API -->|"PDF por correo"| SMTP["Relay SMTP"]
     API -.->|"textos del PDF"| IA["Proveedor de IA"]
 ```
@@ -58,6 +58,7 @@ están en [`backend-dotnet/docs/06-ejecucion-local.md`](backend-dotnet/docs/06-e
 ```
 backend-dotnet/   Backend .NET 10: código, pruebas, contrato OpenAPI, escenarios BDD, ADR y documentación técnica
 db/               Esquema dbo_cotifly: instalación desde cero, migraciones, ajustes y seeders
+docker-compose.yml  Solo SQL Server local (servicios sqlserver y db-init) para probar los scripts de db/
 docs/             Documentación funcional: base de datos, NEXO y cubicador, frontend, backlog y archivo
 infra/            Manifiestos de Docker Swarm y Dokploy del backend .NET
 scripts/          Utilidades del repositorio (verificador de enlaces de los .md)

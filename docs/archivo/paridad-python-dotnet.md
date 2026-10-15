@@ -1,5 +1,7 @@
 # Paridad funcional Python vs .NET (HU-003.9, #15)
 
+> **ARCHIVADO — NO VIGENTE.** Este documento se movió a `docs/archivo/` en HU-022.1 (#146, 2026-10-15). HU-003.9 (#15) se cerró sin ejecutarse: el Python se retiró del repositorio (tag `python-final`). Se conserva solo como registro histórico.
+
 Plantilla para el plan y la ejecución de las pruebas de paridad. La define y la ejecuta Kevin (QA). La aprobación explícita de QA queda en el issue #15 antes de que HU-006 considere el backend .NET listo para producción.
 
 - Estado: **Cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar.** No se ejecuta; queda como histórico.
@@ -11,7 +13,7 @@ Plantilla para el plan y la ejecución de las pruebas de paridad. La define y la
 
 Comparar el resultado exacto de al menos **10 casos reales** entre el backend Python actual y el backend .NET, cubriendo distintas líneas de negocio: margen (valor y origen), precio, utilidad y PDF generado. Además, probar con Postman los 5 endpoints `/web/*` del contrato congelado (HU-004.1) y confirmar códigos de estado y forma de respuesta.
 
-La paridad automatizada ya cubre cada caso de `tests/test_precio.py`, `tests/test_margen.py`, SAP TM, PDF, correo, agente y Google Chat (tabla en [08-testing](../08-testing.md#88-paridad-con-el-python)). Esta prueba agrega datos reales y la comparación visual del PDF.
+La paridad automatizada ya cubre cada caso de `tests/test_precio.py`, `tests/test_margen.py`, SAP TM, PDF, correo, agente y Google Chat (tabla en [08-testing](../../backend-dotnet/docs/08-testing.md#88-paridad-con-el-python)). Esta prueba agrega datos reales y la comparación visual del PDF.
 
 ## 2. Diferencias deliberadas (no son hallazgos)
 
@@ -21,7 +23,7 @@ Decididas por el equipo y documentadas; si aparecen, se marcan como "esperada" c
 |---|---|---|---|
 | Redondeo en empates exactos de medio peso | Arrastra el error de `float` | Half-to-even sobre el valor exacto (diferencia máxima 1 peso, ~0,04 % de los casos; ej. 55 con markup 0.1 → 60, Python 61) | ADR-010 §6 |
 | Folio | `PCN-DDMMAAAA`, versión `-v2` en silencio, o el `referencia` del LLM | Generado por el servidor: `PCN-[{nit}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`, con las iniciales del comercial y consecutivo diario por iniciales; una colisión se informa (`FOLIO_DUPLICADO`) | ADR-011 |
-| Firma del PDF | Datos que mandaba el LLM | Nombre y correo de `UsuariosWeb`; "Cel" solo con teléfono registrado | [02-arquitectura](../02-arquitectura.md#28-pdf-correo-y-auditoría) |
+| Firma del PDF | Datos que mandaba el LLM | Nombre y correo de `UsuariosWeb`; "Cel" solo con teléfono registrado | [02-arquitectura](../../backend-dotnet/docs/02-arquitectura.md#28-pdf-correo-y-auditoría) |
 | SAP TM caído | `MARGEN_FUENTE_NO_DISPONIBLE` | Política de la línea con el motivo en `detalle` | Decisión de #13 (HU-009) |
 | Línea con tilde ("Distribución") | Fallaba la cotización entera (issue #44) | Se resuelve | #11 |
 | Costo | Tarifario de Google Drive | Retirado: el costeo viene de Nexo (HU-005); mientras tanto el comercial escribe el costo | Plan de migración |
@@ -30,7 +32,7 @@ Decididas por el equipo y documentadas; si aparecen, se marcan como "esperada" c
 | Endpoints `/web/*` salvo `/web/chat` | Responden 501 desde HU-002.2 | Implementados según el contrato | `docs/docs_front/CONTRATO_API_WEB.md` |
 | Texto del agente | Redacción libre | Validada contra un esquema; con respaldo controlado | ADR-003, HU-003.10 |
 
-Lista completa por módulo: secciones "Diferencias deliberadas con el Python" de [02-arquitectura](../02-arquitectura.md).
+Lista completa por módulo: secciones "Diferencias deliberadas con el Python" de [02-arquitectura](../../backend-dotnet/docs/02-arquitectura.md).
 
 ## 3. Entornos
 
@@ -87,7 +89,7 @@ Comparación del PDF: páginas, orden de los bloques, textos estándar, bloques 
 
 Los "5 endpoints `/web/*`" de HU-003.9 son los que consumía `chat.html` en el Python y que congeló HU-004.1: `POST /web/login`, `POST /web/chat`, `GET /web/mis-cotizaciones`, `POST /web/cotizaciones/{folio}/enviar` y `POST /web/cotizaciones/{folio}/seguimiento`. En el contrato actual `/web/login` ya no existe: lo reemplaza `POST /api/auth/login-clientepro` (login SSO, ADR-009), que se prueba en su lugar (WEB-01). Los otros cuatro conservan ruta y forma (con los renombres de HU-002.2 documentados en `docs/docs_front/CONTRATO_API_WEB.md` §7). El contrato actual tiene además endpoints nuevos, fuera de esta tabla (ver el final de la sección).
 
-Contra el backend .NET, confirmar código de estado y forma de la respuesta contra [`specs/openapi.yaml`](../../specs/openapi.yaml):
+Contra el backend .NET, confirmar código de estado y forma de la respuesta contra [`specs/openapi.yaml`](../../backend-dotnet/specs/openapi.yaml):
 
 | Id | Endpoint | Casos mínimos | Esperado | Obtenido | Estado |
 |---|---|---|---|---|---|
@@ -97,7 +99,7 @@ Contra el backend .NET, confirmar código de estado y forma de la respuesta cont
 | WEB-04 | `POST /web/cotizaciones/{folio}/enviar` | Envío válido; duplicado; folio ajeno; correo deshabilitado | 200 `RespuestaEnvio`; 400 `CORREO_DUPLICADO`; 404; 503 | | |
 | WEB-05 | `POST /web/cotizaciones/{folio}/seguimiento` | Ganada; perdida con motivo; motivo > 2000; folio ajeno | 200 `CotizacionResumen`; 200; 400; 404 | | |
 
-Los endpoints nuevos del contrato (teléfono, nueva versión, destinatarios previos, vista previa, administración, métricas, `/pdfs`) se cubren en la [regresión manual](regresion-manual.md) y en las pruebas automáticas.
+Los endpoints nuevos del contrato (teléfono, nueva versión, destinatarios previos, vista previa, administración, métricas, `/pdfs`) se cubren en la [regresión manual](../../backend-dotnet/docs/qa/regresion-manual.md) y en las pruebas automáticas.
 
 ## 6. Hallazgos y priorización
 

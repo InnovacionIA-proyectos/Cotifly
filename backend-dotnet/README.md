@@ -48,7 +48,7 @@ En Linux, macOS o Git Bash: `sh backend-dotnet/scripts/levantar-local.sh` (y `--
 | [Conexión con el cubicador](docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) | URL, llave, endpoints, ejemplo y errores del cubicador (documento del cubicador, HU-023) |
 | [QA: matriz HU-021](docs/qa/MATRIZ_PRUEBAS_HU021.md) y [matriz HU-023](docs/qa/MATRIZ_PRUEBAS_HU023.md) | Registro de las campañas de pruebas de HU-021 y HU-023 |
 | [QA: regresión manual](docs/qa/regresion-manual.md) | Casos de los 3 flujos principales para la ronda de Kevin (HU-003.8) |
-| [QA: paridad Python vs .NET](docs/qa/paridad-python-dotnet.md) | HU-003.9 (#15): cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar. Se conserva como histórico |
+| [QA: paridad Python vs .NET](../docs/archivo/paridad-python-dotnet.md) | HU-003.9 (#15): cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar. Se conserva como histórico |
 | [Decisiones (ADR)](specs/decisiones/README.md) | ADR-001 a ADR-020 |
 
 ## Convenciones en una línea

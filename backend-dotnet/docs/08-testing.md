@@ -335,7 +335,7 @@ Workflow `.github/workflows/backend-dotnet.yml` (GitHub Actions, `ubuntu-latest`
 | Documento | Para qué | Estado |
 |---|---|---|
 | [qa/regresion-manual.md](qa/regresion-manual.md) | Ronda de regresión de los 3 flujos principales (nueva cotización, mis cotizaciones, envío de correo) contra el backend .NET desplegado en pruebas (HU-003.8) | Pendiente: la ejecuta Kevin (QA) |
-| [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md) | Al menos 10 casos reales comparados entre el Python y el .NET, y prueba de los endpoints `/web/*` con Postman (HU-003.9, #15) | Cerrada por decisión del usuario (2026-10-13): el Python se retiró; la plantilla queda como histórico |
+| [qa/paridad-python-dotnet.md](../../docs/archivo/paridad-python-dotnet.md) | Al menos 10 casos reales comparados entre el Python y el .NET, y prueba de los endpoints `/web/*` con Postman (HU-003.9, #15) | Cerrada por decisión del usuario (2026-10-13): el Python se retiró; la plantilla queda como histórico |
 
 ## 8.10 Licitaciones desde Excel (HU-011, ADR-017)
 

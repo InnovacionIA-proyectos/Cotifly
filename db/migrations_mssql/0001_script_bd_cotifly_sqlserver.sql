@@ -57,7 +57,7 @@
    `SapMapeoTrqType`, etc.) — se probó el prefijo `tbl`/`tblSap` del estándar
    `dotnet-enterprise-architect` primero y el equipo lo retiró (desviación
    explícita, ver docs/archivo/ESQUEMA_OBJETIVO_SQLSERVER_PARTE_B.md §9 y
-   docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md línea 218).
+   docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md, HU-002).
 
    `UsuariosWeb.id` es `UNIQUEIDENTIFIER` (UUID generado por Cotifly), NO el id
    de SAP — no existe columna de id de SAP en este esquema. El aprovisionamiento

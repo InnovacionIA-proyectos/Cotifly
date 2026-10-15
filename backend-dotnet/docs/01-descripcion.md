@@ -49,7 +49,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | #16 | HU-003.10 | Validador de la respuesta final del agente |
 | #14 | HU-003.8 | Integración continua, scripts de ejecución local, cobertura, documentación técnica y casos de regresión manual (este conjunto de documentos) |
 | #20 (PR #65) | HU-005.2, HU-005.3, HU-005.4, HU-005.13 | Fuera del milestone HU-003: integración con Nexo (`GET /web/clientes?q=` y `buscar_cliente`, `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion`) |
-| #15 | HU-003.9 | Paridad funcional Python vs .NET: **cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar** (plantilla histórica en [qa/paridad-python-dotnet.md](qa/paridad-python-dotnet.md)) |
+| #15 | HU-003.9 | Paridad funcional Python vs .NET: **cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar** (plantilla histórica en [qa/paridad-python-dotnet.md](../../docs/archivo/paridad-python-dotnet.md)) |
 
 ## 1.5 Fuera del alcance actual
 

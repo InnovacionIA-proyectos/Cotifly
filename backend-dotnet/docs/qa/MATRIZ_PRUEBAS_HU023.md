@@ -1,5 +1,7 @@
 # Matriz de pruebas HU-021 + HU-023 (campaña de QA de la integración)
 
+> **Estado:** vigente (registro de QA de HU-023) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 **Fecha:** 2026-10-13, actualizada el 2026-10-14 con #174 (§7) y con la integración final (§8) · **Rama:** `hu-023-integracion` (sale de `origin/QA` `cf744ff` + merges de #172, #159 y #160) · **Entorno:** SDK
 `mcr.microsoft.com/dotnet/sdk:10.0` + Testcontainers (SQL Server 2019), **Nexo, cubicador, TRM, relay SMTP y modelo falsos**
 (`tests/Comun/`). Las pruebas contra los sistemas reales no son parte de este documento (las hace otro frente).

@@ -152,3 +152,4 @@ de pruebas están en [`DEPLOY.md`](DEPLOY.md) §6.
 | `TrqType` de SAP TM para `DevolucionContenedor` (falta en `db/seeder/02_sap_mapeo_trqtype.sql`; no se inventa) | Negocio o SAP |
 | Fijar `Roles.idRolExterno` de los roles de ClientePro en cada ambiente (`db/seeder/03_roles.sql`) | DBA |
 | Borrar el respaldo `dbo_cotifly_respaldo_20261008` de la base compartida cuando ya no se necesite | DBA |
+| Borrar las tablas `Respaldo0009_*` cuando el backend esté validado, si en algún ambiente se aplicó el `0009` sobre datos existentes (solo existen en ese caso) | DBA |
