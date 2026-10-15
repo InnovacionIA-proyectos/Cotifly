@@ -2,7 +2,7 @@
 # =============================================================================
 # Cotifly — construir, probar y publicar la imagen del backend .NET en el registry (HU-006.4, #28).
 #
-# Reemplaza a deploy/rebuild-on-worker.sh para el backend .NET: la imagen ya no se construye en el worker con :latest,
+# Reemplaza al rebuild-on-worker.sh del Python (borrado en HU-022.1, tag python-final): la imagen ya no se construye en el worker con :latest,
 # se construye en cualquier equipo con Docker, se prueba y se sube a GHCR con tags inmutables. Dokploy despliega
 # después un tag concreto (DEPLOY.md §4). Mismo resultado que el job publicar-imagen de
 # .github/workflows/backend-dotnet.yml, que hoy no corre porque GitHub Actions está bloqueado por facturación.

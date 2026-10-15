@@ -3,6 +3,9 @@
 - **Estado:** Aceptada (desviación explícita del estándar)
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Se implementa en #14 (HU-003.8) y #27 (HU-006.3). El despliegue es HU-006.
+- **Actualización 2026-10-13 (HU-022.1, #146):** por decisión del usuario ("todo lo referente a python muere en este
+  repo") el stack Python se retiró del repositorio, incluida la carpeta `deploy/` (con `deploy/docker-compose.swarm.yml`). Ya no hay rollback al Python desde
+  aquí: el último estado del Python vive en el tag `python-final`. Las rutas del Python que cita esta ADR quedan como historia.
 
 ## Contexto
 

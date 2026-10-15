@@ -3,6 +3,9 @@
 - **Estado:** Aceptada
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #7 (HU-003.1). Impacta a HU-004 y HU-006.
+- **Actualización 2026-10-13 (HU-022.1, #146):** por decisión del usuario ("todo lo referente a python muere en este
+  repo") el stack Python se retiró del repositorio, incluida la carpeta `deploy/`. Ya no hay rollback al Python desde
+  aquí: el último estado del Python vive en el tag `python-final`. Las rutas del Python que cita esta ADR quedan como historia.
 
 ## Contexto
 
@@ -56,7 +59,7 @@ Hechos que pesan en la decisión:
   - o aceptar un intervalo en el que solo funcione Google Chat.
 
   Lo decide negocio.
-- **Rollback:** se reapunta el webhook de Google Chat al orquestador Python y se reactivan sus servicios. Lo escrito en SQL Server mientras .NET estuvo arriba no será visible para Python, que usa su PostgreSQL. Es aceptable porque no hay datos productivos que migrar, pero hay que comunicarlo en HU-006.
+- **Rollback (reemplazado el 2026-10-13, HU-022.1: el Python ya no está en el repositorio; ver el tag `python-final`):** se reapuntaba el webhook de Google Chat al orquestador Python y se reactivan sus servicios. Lo escrito en SQL Server mientras .NET estuvo arriba no será visible para Python, que usa su PostgreSQL. Es aceptable porque no hay datos productivos que migrar, pero hay que comunicarlo en HU-006.
 - El Angular de HU-004 no puede salir a producción antes que el backend .NET.
 - Secuenciación con HU-005: el tarifario de Drive se retira (HU-003.4) y `buscar_tarifa` queda como stub hasta que llegue el costeo de Nexo. Si HU-004 sale antes que HU-005, la "Nueva cotización" no tendrá fuente de costeo (riesgo ya registrado en HU-003.4).
 - **D8 (fuente de roles, ADR-009) bloquea el login.** Por lo tanto también bloquea la salida de HU-004 y el corte. Se escala aquí como bloqueo del corte.

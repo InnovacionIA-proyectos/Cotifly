@@ -1050,7 +1050,7 @@ paths:
       summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
       description: |
         Opciones del formulario de captura a partir de los **catálogos maestros de Nexo** (HU-013.10, #106, gap G1; ADR-018;
-        `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
+        `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
         tarifas). La forma de la respuesta no cambió:
         - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
           cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten;
@@ -1928,7 +1928,7 @@ paths:
            línea de la cotización de Nexo que corresponde a `linea_orden` (ver `ConexoAgregarWeb`). Cotifly **nunca**
            envía `valorAplicado`: si no viaja, Nexo lo calcula como valor base × cantidad (Nexo es la fuente de verdad del
            costo). Roles de Nexo para este endpoint: `Comercial`, `CoordinadorFletes` y `Admin` (leído del código de
-           Nexo, `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara).
+           Nexo, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`; el swagger no lo declara).
         2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
            conexo con `IClsPrecioService` y los deja `incluido = true`.
 
@@ -5224,7 +5224,7 @@ components:
 
 
         Formulario ampliado (HU-005.3, mapeo aprobado en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` y verificado contra el código
-        el 2026-10-05 en `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
+        el 2026-10-05 en `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`): encabezado y la única línea de `clsCapturaSolicitudRequest`
         / `clsCapturaLineaRequest` de Nexo, con sus mismos límites. Cotifly lo reenvía a `POST /api/captura-solicitudes` en
         camelCase (nombre de Nexo entre paréntesis en cada campo).
 

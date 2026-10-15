@@ -1,5 +1,7 @@
 # 5. Stack tecnológico
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 ## 5.1 Resumen
 
 - .NET 10 / ASP.NET Core 10, C# `latest`, `Nullable` y `TreatWarningsAsErrors` activos, `AnalysisLevel` fijo en `10.0` (`Directory.Build.props`).

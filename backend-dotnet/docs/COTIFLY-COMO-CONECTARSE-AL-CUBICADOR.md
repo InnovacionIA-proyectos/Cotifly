@@ -1,5 +1,7 @@
 # Cómo conectarse al Cubicador (guía para Cotifly)
 
+> **Estado:** vigente (contrato externo) · **Dueño:** equipo del Cubicador; copia de referencia para Cotifly (HU-023) · **Actualizado:** 2026-10-14
+
 Guía práctica, con **lo que ya existe hoy** en el Cubicador: URL, llave, endpoints, un ejemplo
 completo y los errores. Para qué hacer después con la respuesta en NEXO, ver
 [`COTIFLY-CONTRATO.md`](./COTIFLY-CONTRATO.md).

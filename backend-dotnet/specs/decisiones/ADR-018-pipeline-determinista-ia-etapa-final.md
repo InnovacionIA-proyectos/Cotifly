@@ -3,7 +3,7 @@
 - **Estado:** Aceptada (decisión del usuario del 2026-10-05); reemplazada en parte por ADR-019 (§3, §4, §12 y §18, ver la sección siguiente). Se implementa por partes en HU-013.2 a HU-013.9 (#98 a #105); varios puntos quedan pendientes de confirmar con el equipo de Nexo (`docs/conexion_nexo/HU-013-preguntas-nexo.md`).
 - **Fecha:** 2026-10-05
 - **Issue / HU:** #97 (HU-013.1). Lo implementan #98 (HU-013.2), #99 (HU-013.3), #100 (HU-013.4), #101 (HU-013.5), #102 (HU-013.6), #103 (HU-013.7), #104 (HU-013.8) y #105 (HU-013.9).
-- **Relación con otras ADR:** amplía ADR-003 (la IA solo redacta y propone), **reemplaza a ADR-011** en lo que toca a Google Chat (el formato del folio sigue vigente y se retoma en §7), se apoya en ADR-015 (costeo en Nexo, que pasa a ser el único cotizador), ADR-014 (TRM y USD) y ADR-017 (líneas de solicitud). Mapeo de campos Nexo ↔ Cotifly: `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`.
+- **Relación con otras ADR:** amplía ADR-003 (la IA solo redacta y propone), **reemplaza a ADR-011** en lo que toca a Google Chat (el formato del folio sigue vigente y se retoma en §7), se apoya en ADR-015 (costeo en Nexo, que pasa a ser el único cotizador), ADR-014 (TRM y USD) y ADR-017 (líneas de solicitud). Mapeo de campos Nexo ↔ Cotifly: `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`.
 
 ## Reemplazado en parte por ADR-019 (HU-021, 2026-10-08)
 
@@ -122,7 +122,7 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
   3. Lee de nuevo la cotización, aplica el margen y deja el conexo incluido. Si Nexo lo agregó pero la relectura falla: 503 `NEXO_NO_DISPONIBLE` con `detalle.agregado_en_nexo = true`, sin reintentar el POST. El polling lo recoge.
 - **Línea sin cotización en Nexo:** si la línea existe en Cotifly pero no hay línea de la cotización de Nexo asociada (sin flete, o sin su id guardado), 409 `LINEA_SIN_COTIZACION_NEXO`, sin llamar a Nexo. **#99 debe guardar el id de la línea de la cotización de Nexo** (`clsCotizacionLineaDto.id`) junto a `lineaSolicitudId` en `clsLineaCosteoNexo` (`Cotifly.Dominio/Cotizaciones/clsCosteoConsultadoNexo.cs`). Hoy solo se guarda el `lineaSolicitudId`.
 - `items` de 1 a 20; vacío o con más de 20, 400 por esquema y sin llamar a Nexo. La regla de §11 aplica igual que en el margen.
-- Roles de Nexo para agregar: `Comercial`, `CoordinadorFletes` y `Admin` (confirmado en el código de Nexo según `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md`; el swagger no lo declara). 403 → `NEXO_SIN_PERMISO`; 400/404 → `CONEXO_INVALIDO`; caído → `NEXO_NO_DISPONIBLE`.
+- Roles de Nexo para agregar: `Comercial`, `CoordinadorFletes` y `Admin` (confirmado en el código de Nexo según `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`; el swagger no lo declara). 403 → `NEXO_SIN_PERMISO`; 400/404 → `CONEXO_INVALIDO`; caído → `NEXO_NO_DISPONIBLE`.
 - Las licitaciones no admiten conexos en esta iteración (409 `ESTADO_NO_PERMITE` con `detalle.motivo = LICITACION`): su PDF de pliego no los imprime (ADR-017 §6).
 - Excluir un conexo (`PUT .../servicios-conexos`) no lo borra en Nexo: el swagger no tiene DELETE de conexos y el total de Nexo puede diferir del PDF (pregunta abierta).
 
@@ -177,7 +177,7 @@ Guardar los textos que redactó la IA (a) no contradice esta regla: son textos d
 
 ### 9. Estados de Nexo ↔ `estado_costeo` (vigente, ADR-015 §2 y §4)
 
-La Parte 1 de `docs/conexion_nexo/HU-005.1-mapeo-campos-nexo.md` marcaba que los estados de Nexo no correspondían a los de Cotifly. El mapeo vigente en el código (`clsDerivacionEstadoCosteo`) es este:
+La Parte 1 de `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md` marcaba que los estados de Nexo no correspondían a los de Cotifly. El mapeo vigente en el código (`clsDerivacionEstadoCosteo`) es este:
 
 | Nexo | Cotifly |
 |---|---|

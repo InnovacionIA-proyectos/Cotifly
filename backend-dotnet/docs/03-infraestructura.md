@@ -1,5 +1,7 @@
 # 3. Infraestructura
 
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 Contenido:
 
 - [3.1 Contenedor e imagen](#31-contenedor-e-imagen)
@@ -53,7 +55,7 @@ Las pruebas **no** corren dentro de `docker build`: el contexto no incluye `test
 
 **Sin excepción vigente.** Se investigó **CVE-2026-84782** (OpenSSL, divulgación de información en la retransmisión del handshake DTLS) en `libssl3t64`/`openssl` `3.0.13-0ubuntu3.15` de `aspnet:10.0.12-noble-chiseled-extra` (digest `sha256:6385dc0e…`, construida el 2026-09-04). Antes de mergear la excepción propuesta en #86, QA verificó el 2026-10-05 que Microsoft ya había republicado el mismo tag (digest `sha256:00e0ad6a…`, construida el 2026-10-02) con `openssl` ya parchado: `docker pull` + Trivy sin `--ignorefile` dan 0 hallazgos contra la imagen real de Cotifly. No se necesitó `.trivyignore.yaml` (queda con `vulnerabilities: []`, listo para una futura excepción si hiciera falta). Issue #86 cerrada.
 
-**Para HU-006.6 (#30), manifiestos de Swarm/Dokploy** (condiciones que fijó #27; #30 las aplica en `infra/stack.dotnet.*.yml`, ver [`DEPLOY.md`](../../DEPLOY.md) §5). Hoy el Python expone `bot-orquestador` en **8000** (Traefik `loadbalancer.server.port=8000` en `infra/stack.dokploy.yml` e `infra/stack.staging.yml`; `deploy/docker-compose.swarm.yml` publica `8091 → 8000`) y `bot-mcp` en 8080 solo en la red interna. Con el backend .NET:
+**Para HU-006.6 (#30), manifiestos de Swarm/Dokploy** (condiciones que fijó #27; #30 las aplica en `infra/stack.dotnet.*.yml`, ver [`DEPLOY.md`](../../DEPLOY.md) §5). El Python (retirado en HU-022.1; tag `python-final`) exponía su orquestador en **8000** (publicado como `8091 → 8000`) y su servidor MCP en 8080 solo en la red interna. Con el backend .NET:
 - Puerto **8080** en el `target` y en `traefik.http.services.<svc>.loadbalancer.server.port`.
 - Si el stack redefine el healthcheck, en forma exec: `test: ["CMD", "dotnet", "/app/Cotifly.Api.dll", "--healthcheck"]`. Nunca `CMD-SHELL`: la imagen no tiene shell.
 - Readiness con el healthcheck de Traefik contra `/health/ready`: saca la tarea del balanceo mientras la base no está lista, sin que Swarm la reinicie (el `HEALTHCHECK` de la imagen es solo de vida, `/health`).
@@ -244,7 +246,7 @@ Para desarrollo local, `scripts/levantar-local.ps1` y `scripts/levantar-local.sh
 
 SAP TM:
 - **Sin `SapTm__Modo`** (valor por defecto) no se consulta SAP: `obtener_margen` usa la política de la línea con el detalle "SAP TM no configurado".
-- **`export_json`**: el archivo tiene la forma `{"d":{"results":[{SalesOrgId, TrqType, OrderPartyId, Value}]}}` (referencia `datos/sap_export.json` del Python; en las pruebas, `tests/fixtures/sap/rentab_cliente_muestra.json`). Se monta en el contenedor (por ejemplo `-v <carpeta>:/data/sap:ro` y `SapTm__ExportPath=/data/sap/sap_export.json`). Para reemplazarlo sin que una consulta lea un archivo a medio escribir, copiarlo con otro nombre y renombrarlo; se ve en la siguiente consulta, sin reiniciar.
+- **`export_json`**: el archivo tiene la forma `{"d":{"results":[{SalesOrgId, TrqType, OrderPartyId, Value}]}}` (en las pruebas, `backend-dotnet/tests/fixtures/sap/rentab_cliente_muestra.json`). Se monta en el contenedor (por ejemplo `-v <carpeta>:/data/sap:ro` y `SapTm__ExportPath=/data/sap/sap_export.json`). Para reemplazarlo sin que una consulta lea un archivo a medio escribir, copiarlo con otro nombre y renombrarlo; se ve en la siguiente consulta, sin reiniciar.
 - **`odata`**: `GET {SapTm__Url}/RentabClienteSet?$filter=SalesOrgId eq '…' and TrqType eq '…' and OrderPartyId eq '…'&$format=json` con autenticación Basic y `Accept: application/json`. Se toma `d.results[0].Value`. `SapTm__Url` es la URL base del servicio (ej. `https://<host>/sap/opu/odata/sap/ZGW_RENTAB_CLI_SRV`), http o https, sin usuario ni `?consulta`. Si el servicio exige mandante, `SapTm__SapClient=100` (3 dígitos) agrega `&sap-client=100`. `SapTm__User` y `SapTm__Pass` son obligatorios en todo entorno; en `Production` la clave no puede ser un placeholder ni tener menos de 8 caracteres. Las credenciales nunca se registran: la cabecera se arma por petición y los logs de `IHttpClientFactory` ocultan todas las cabeceras.
 - **SAP caído** (export ausente o ilegible, HTTP ≠ 2xx tras los reintentos, más de 10 s, respuesta inválida) → política de la línea con el detalle "SAP TM no disponible: se usa la política de la línea" y un warning en el log (decisión de #13, Gherkin "Resiliencia si SAP no responde" de HU-009). `MARGEN_FUENTE_NO_DISPONIBLE` solo si la línea tampoco tiene política.
 - **Avisos al arrancar** (no impiden arrancar): en `Production` sin `SapTm__Modo`, "SAP TM no configurado (SapTm:Modo vacío): todos los márgenes salen de la política de la línea"; con `export_json` y un archivo que no existe, aviso con la ruta.

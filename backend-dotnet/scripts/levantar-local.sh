@@ -10,6 +10,7 @@
 #                     - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
 #                     - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, pendientes/04 y 07): base vacía -> db/scripts/01_crear_esquema.sql;
 #                       esquema anterior a HU-021 (Cotizaciones) -> 0002 a 0010; ya migrada -> solo el 0010 (idempotente)
+#                       y después los ajustes db/scripts/02_*.sql en adelante (el 02 del cubicador; se pueden repetir)
 #                     - seeders de db/seeder/ (idempotentes: líneas de negocio, mapeo SAP, roles)
 #                     - dbsolucionesti FALSA con usuarios y roles de prueba          (scripts/sql/dev-02-identidad.sql)
 #                     - IDROLES de desarrollo en Roles y login cotifly_app con permisos mínimos
@@ -174,9 +175,10 @@ sqlcmd_archivo master "$DIR_SCRIPTS/sql/dev-01-bases.sql"
 #   - con el esquema anterior (tabla Cotizaciones, p. ej. un volumen de antes de HU-021) -> migraciones 0002 a 0010
 #     (el 0003 y el 0004 exigen Cotizaciones, por eso no se repiten sobre una base ya migrada);
 #   - ya migrada (CotizacionesSolicitud) -> solo el 0010, idempotente.
-# Después, siempre y en este orden (HU-023, #176; los tres son idempotentes): db/scripts/02_alter_cubicador.sql,
-# db/scripts/pendientes/04_cubicacion_segundo_plano.sql (el backend mapea sus columnas: sin él /health/ready da 503 "falta 04")
-# y db/scripts/07_motivo_busqueda_agotada.sql (BUSQUEDA_AGOTADA en el CHECK del motivo).
+# Después van los ajustes db/scripts/02_*.sql en adelante (hoy el 02 del cubicador, HU-023.3, y el 07 de BUSQUEDA_AGOTADA,
+# HU-023 #176), en orden de nombre, igual que db/ejecutar-bd.*: cada uno revisa si su cambio ya está, así que se pueden repetir.
+# De db/scripts/pendientes/ solo entra el 04_cubicacion_segundo_plano.sql (HU-023.5, el backend mapea sus columnas: sin él
+# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, pendientes/04, 07. El resto de pendientes/ no se corre.
 tablas=$(sqlcmd_escalar dbTarifario_Nexo_Pruebas "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'")
 viejo=$(sqlcmd_escalar dbTarifario_Nexo_Pruebas "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END")
 if [ "$tablas" = "0" ]; then
@@ -192,10 +194,23 @@ else
   echo "dbo_cotifly ya está migrado: se aplica solo el 0010 (idempotente)"
   sqlcmd_archivo dbTarifario_Nexo_Pruebas "$DIR_MIGRACIONES/0010_nombres_municipio.sql"
 fi
-for script in scripts/02_alter_cubicador.sql scripts/pendientes/04_cubicacion_segundo_plano.sql scripts/07_motivo_busqueda_agotada.sql; do
-  echo "aplicando db/$script (idempotente)"
-  sqlcmd_archivo dbTarifario_Nexo_Pruebas "$DIR_DB/$script"
+pendiente04="$DIR_DB/scripts/pendientes/04_cubicacion_segundo_plano.sql"
+aplicar_pendiente04() {
+  [ -n "$pendiente04" ] || return 0
+  echo "aplicando db/scripts/pendientes/04_cubicacion_segundo_plano.sql (ajuste, se puede repetir)"
+  sqlcmd_archivo dbTarifario_Nexo_Pruebas "$pendiente04"
+  pendiente04=""
+}
+for ajuste in "$DIR_DB"/scripts/[0-9][0-9]_*.sql; do
+  [ -f "$ajuste" ] || continue
+  nombre=$(basename "$ajuste")
+  case "$nombre" in 01_*) continue ;; esac
+  # el pendientes/04 va por orden de nombre: antes del primer ajuste posterior a "04_"
+  if [ "$nombre" \> "04_cubicacion_segundo_plano.sql" ]; then aplicar_pendiente04; fi
+  echo "aplicando db/scripts/$nombre (ajuste, se puede repetir)"
+  sqlcmd_archivo dbTarifario_Nexo_Pruebas "$ajuste"
 done
+aplicar_pendiente04
 for seeder in 01_lineas_negocio.sql 02_sap_mapeo_trqtype.sql 03_roles.sql; do
   echo "sembrando $seeder"
   sqlcmd_archivo dbTarifario_Nexo_Pruebas "$DIR_DB/seeder/$seeder"

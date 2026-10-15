@@ -1,10 +1,12 @@
 # Contrato NEXO ⇄ Cotifly
 
+> **Estado:** vigente (contrato externo) · **Dueño:** equipo de NEXO; copia de referencia para Cotifly (HU-023) · **Actualizado:** 2026-10-14
+
 Lo que Cotifly **manda a NEXO** y lo que **recibe de vuelta**, con las decisiones ya tomadas por
 negocio. Es el contrato de la *captura de solicitudes*; cómo pedirle la recomendación de vehículo al
 Cubicador está en [`COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`](./COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md).
 
-> **Fuente de verdad.** El detalle campo por campo vive en [`CONTRATO.md`](../CONTRATO.md) §3.3
+> **Fuente de verdad.** El detalle campo por campo vive en `CONTRATO.md` del repositorio de NEXO, §3.3
 > (`POST /api/captura-solicitudes`) y §3.2 (`GET /api/solicitudes/{id}`). Este documento explica
 > **qué decide NEXO y por qué** para que Cotifly no tenga que adivinarlo. Si algo no coincide, manda
 > `CONTRATO.md`.

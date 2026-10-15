@@ -3,8 +3,8 @@
     Cotifly: construir, probar y publicar la imagen del backend .NET en el registry (HU-006.4, #28).
 
 .DESCRIPTION
-    Equivalente de publicar-imagen.sh para PowerShell (Windows PowerShell 5.1 o PowerShell 7). Reemplaza a
-    deploy/rebuild-on-worker.sh para el backend .NET: construye la imagen, hace la prueba de humo (Development sin base:
+    Equivalente de publicar-imagen.sh para PowerShell (Windows PowerShell 5.1 o PowerShell 7). Reemplaza al
+    rebuild-on-worker.sh del Python (borrado en HU-022.1, tag python-final): construye la imagen, hace la prueba de humo (Development sin base:
     HEALTHCHECK healthy, GET /health 200, GET /health/ready 503), la escanea con Trivy (HIGH/CRITICAL con parche fallan;
     COTIFLY_TRIVY_IMAGEN, por defecto aquasec/trivy:0.74.0 fijada por digest) y la sube a GHCR con tags inmutables. Nunca "latest".
 

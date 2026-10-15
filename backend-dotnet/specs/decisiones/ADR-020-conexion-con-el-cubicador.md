@@ -5,7 +5,9 @@
   HU-021.5, #133). Lo demás de ADR-019 sigue vigente.
 - **Fuentes:** `docs/backlog/2026-10-08_HU_Sprint5_Cotifly_Backend.md` (HU-023, decisiones del 2026-10-08),
   `docs/conexion_nexo/2026-10-08_PETICIONES_AL_CUBICADOR.md` (peticiones P1 a P7) y la hoja de ruta del cubicador del 2026-10-08
-  (contrato, sección 2).
+  (contrato, sección 2). Esos dos borradores no se versionaron en este repositorio: la fuente de verdad es la milestone HU-023
+  en GitHub y los contratos [`COTIFLY-CONTRATO.md`](../../docs/COTIFLY-CONTRATO.md) y
+  [`COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`](../../docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) (nota de HU-022.1).
 
 ## Contexto
 

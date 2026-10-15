@@ -1,5 +1,7 @@
 # Matriz de pruebas HU-021 (#139, HU-021.12)
 
+> **Estado:** vigente (registro de QA de HU-021) · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+
 **Fecha:** 2026-10-09 · **Rama:** `139-hu-02112-corrección-con-bd-pruebas-y-qa` (sale de `7b585bf`) · **Entorno:** SDK `mcr.microsoft.com/dotnet/sdk:10.0` + Testcontainers (SQL Server 2019), **Nexo falso** (`tests/Comun/clsNexoFalso.cs`) y **cubicador falso** (`tests/Comun/clsCubicadorFalso.cs`). Las pruebas contra Nexo QA y la base compartida no son parte de este documento.
 
 Rutas relativas a `backend-dotnet/`. `(n)` = métodos `[Fact]`/`[Theory]` de la clase. "Unitarias" = Dominio, Aplicacion, Arquitectura y las clases de Api/Infraestructura sin `Trait Categoria=Integracion`; "Integración" = Trait `Integracion` (Testcontainers); "BDD" = `specs/features/*.feature` (Reqnroll, también contra SQL Server).
@@ -284,7 +286,7 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 ### 5.4 Desviaciones por severidad
 
 **Alta (1, corregida)**
-- **D2 / B1. Margen SAP anómalo sin marca — CORREGIDO en #139.** Antes, `clsEnvioCosteoService.ResolverMargenAsync` descartaba el `Anomalo` de `clsMargenResolverService.cs:97-105` y aplicaba, por ejemplo, un 75 % de SAP como `sap_tm`. La HU-009 pide que "quede marcado explícitamente como anómalo, para que el equipo lo revise antes de confiar en él" (`docs/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:1215-1218`) y `margen.feature` ("Un margen de SAP TM fuera de [0, 60 %] se marca anómalo"). Ahora el margen de SAP se redondea a 4 decimales (la precisión de `decimal(9,4)`, half-to-even) antes de evaluarlo, así lo evaluado y lo guardado coinciden; si es anómalo, la ruta usa el margen de la política de su línea, el de SAP queda en `margenSAPSugerido` como marca (sin columna nueva), no cuenta como sugerido para la justificación, y `GET .../costeo` trae `margen_sap_anomalo` y `aviso_margen` (`specs/openapi.yaml`, `RutaCosteo`). Vale en la captura, la licitación, la re-solicitud y la `-vN` (todas pasan por `ResolverMargenAsync`).
+- **D2 / B1. Margen SAP anómalo sin marca — CORREGIDO en #139.** Antes, `clsEnvioCosteoService.ResolverMargenAsync` descartaba el `Anomalo` de `clsMargenResolverService.cs:97-105` y aplicaba, por ejemplo, un 75 % de SAP como `sap_tm`. La HU-009 pide que "quede marcado explícitamente como anómalo, para que el equipo lo revise antes de confiar en él" (`docs/archivo/backlog/2026-09-21_HU_Backlog_Cotifly_ClientePro.md:1218-1221`) y `margen.feature` ("Un margen de SAP TM fuera de [0, 60 %] se marca anómalo"). Ahora el margen de SAP se redondea a 4 decimales (la precisión de `decimal(9,4)`, half-to-even) antes de evaluarlo, así lo evaluado y lo guardado coinciden; si es anómalo, la ruta usa el margen de la política de su línea, el de SAP queda en `margenSAPSugerido` como marca (sin columna nueva), no cuenta como sugerido para la justificación, y `GET .../costeo` trae `margen_sap_anomalo` y `aviso_margen` (`specs/openapi.yaml`, `RutaCosteo`). Vale en la captura, la licitación, la re-solicitud y la `-vN` (todas pasan por `ResolverMargenAsync`).
 
 **Media**
 - **D3. Cubicador caído → respaldo.** **Decisión vigente mientras no exista el cubicador real** (`RespaldoSiFalla = true`, ADR-019). No se toca.
@@ -304,7 +306,7 @@ Las HU no traen una lista formal de eventos: se derivaron de los Gherkin y check
 - **D14.** HU-021.7 decía "sin `posiciones[]`"; se envían con un único camión (adaptación en ADR-019).
 - **D15.** Herramientas de auditoría sin evento en las HU: `descargar_pdf`, `conexos_pendientes_nexo`, `conexos_envio_nexo`, `resultado_cotizacion_sin_costeo`, `costeo_nexo_consulta`, `editar_textos_costeo`, `redactar_textos_costeo`.
 - **D16.** El escenario de HU-021 "las cotizaciones del agente de chat tienen ruta y camión" quedó obsoleto con #105.
-- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/database/PROPUESTA_REFACTOR_BD_COTIFLY.md:118` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`. ADR-015:87 dice "ningún cambio local" ante `RESULTADO_YA_DEFINIDO`, superado por ADR-018:298.
+- **D17.** ADR-019 cita "decisiones 1 a 11", pero el archivo trae 1-8 y 10; la 11 está en `docs/archivo/PROPUESTA_REFACTOR_BD_COTIFLY.md:121` y la 9 no aparece. `clsSolicitudCosteo` sigue plano (una ruta en la cabecera) aunque HU-021.3 pedía lista de rutas: las rutas viajan como `clsLineaLicitacionEntrada`. ADR-015:87 dice "ningún cambio local" ante `RESULTADO_YA_DEFINIDO`, superado por ADR-018:298.
 
 Verificado sin desviación: "No aplica" al ganar, decisión 6, decisión 8, `conexos_descartados` rehecho, retiro de Google Chat (`clsRetiroGoogleChatTests`), "Mis cotizaciones" tolera filas malas.
 
