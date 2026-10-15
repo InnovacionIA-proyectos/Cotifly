@@ -141,8 +141,17 @@ public static class clsSeguridadHttp
     /// <summary>Métodos que admite CORS (los del contrato).</summary>
     public static readonly string[] MetodosCors = ["GET", "POST", "PUT"];
 
-    /// <summary>Encabezados que admite CORS.</summary>
-    public static readonly string[] EncabezadosCors = ["Authorization", "Content-Type"];
+    /// <summary>
+    /// Encabezados que admite CORS: los de autenticación y cuerpo, el <c>If-Match</c> de la concurrencia optimista (ADR-018 §8) y la
+    /// <c>Idempotency-Key</c> de la captura, los conexos y la re-solicitud (#173). Lista explícita, nunca cualquier encabezado.
+    /// </summary>
+    public static readonly string[] EncabezadosCors = ["Authorization", "Content-Type", "If-Match", "Idempotency-Key"];
+
+    /// <summary>
+    /// Encabezados de respuesta que el navegador deja leer a ClientePro (otro origen): el <c>ETag</c> que vuelve en <c>If-Match</c>, el
+    /// <c>Location</c> del 201 de la re-solicitud, el <c>Retry-After</c> de los 429 y 503 y el <c>Content-Disposition</c> de las descargas.
+    /// </summary>
+    public static readonly string[] EncabezadosExpuestosCors = ["ETag", "Location", "Retry-After", "Content-Disposition"];
 
     /// <summary>Tiempo que el navegador puede cachear la respuesta del preflight.</summary>
     public static readonly TimeSpan CachePreflight = TimeSpan.FromMinutes(10);
@@ -171,6 +180,7 @@ public static class clsSeguridadHttp
                 .WithOrigins([.. opciones.Value.OrigenesPermitidos.Select(o => o.Trim())])
                 .WithMethods(MetodosCors)
                 .WithHeaders(EncabezadosCors)
+                .WithExposedHeaders(EncabezadosExpuestosCors)
                 .DisallowCredentials()
                 .SetPreflightMaxAge(CachePreflight)));
 

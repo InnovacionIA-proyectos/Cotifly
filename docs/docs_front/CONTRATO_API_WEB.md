@@ -229,8 +229,8 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 
 | Forma | Cuándo |
 |---|---|
-| `{"error": "texto"}` | Autenticación, validación, permisos, recurso inexistente. En Python este formato solo lo usaban el 401, el 400 de `sesion_id` y el 404 de cotización; ver §7 para los que cambian. |
-| `{"error": {"codigo", "mensaje", "detalle?"}}` | Error de negocio de una herramienta. Por ejemplo, `/enviar` con `CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO` o `CORREO_ENVIO_FALLIDO`. La lista de códigos está en `ErrorNegocio` del spec. En `/web/chat` los errores de las herramientas no son un HTTP de error: llegan en `errores` de la respuesta 200 (ej. `TRM_NO_DISPONIBLE`, ninguna fuente de la TRM respondió). |
+| `{"error": "texto"}` (`ErrorWeb`) | Autenticación (401), permisos de rol (403), recurso inexistente o ajeno (404), cuerpo demasiado grande (413), tipo de contenido (415), límite de peticiones (429) y el 400 de validación del cuerpo (`Cuerpo inválido...`, correo, teléfono, seguimiento, `Idempotency-Key`). En Python este formato solo lo usaban el 401, el 400 de `sesion_id` y el 404 de cotización; ver §7 para los que cambian. |
+| `{"error": {"codigo", "mensaje", "detalle?"}}` (`ErrorNegocio`) | **El resto de errores de negocio de `/web/*`, que son la mayoría**: los 400 con código (`SOLICITUD_COSTEO_INVALIDA`, `RUTA_REQUERIDA`, los del cubicador...), los 409 de estado y de concurrencia, el 428, el 403 `NEXO_SIN_PERMISO` y los 503 de dependencias. Por ejemplo, `/enviar` con `CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO` o `CORREO_ENVIO_FALLIDO`. La lista de códigos está en `ErrorNegocio` del spec. Un mismo estado HTTP puede traer cualquiera de las dos formas: distinguir por el tipo de `error` (texto u objeto). En `/web/chat` los errores de las herramientas no son un HTTP de error: llegan en `errores` de la respuesta 200 (ej. `TRM_NO_DISPONIBLE`, ninguna fuente de la TRM respondió). |
 
 | Código | Significado para el frontend |
 |---|---|
@@ -239,12 +239,13 @@ no existe: las cotizaciones se crean solo con el formulario (`POST /web/solicitu
 | 404 | No existe o no es del usuario. Son indistinguibles a propósito (mismo cuerpo `{"error":"Cotización no encontrada o no es tuya."}`, también en `/pdfs`). |
 | 413 | El cuerpo de una petición a `/web/*` supera 64 KB. |
 | 429 | Demasiadas peticiones: reintentar después de unos segundos. |
-| 409 | `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `ErrorNegocio` con `REGIONAL_NO_ASIGNADA`. |
+| 409 | `ErrorNegocio`: conflictos de estado del costeo (`ESTADO_NO_PERMITE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `PDF_YA_ENVIADO`...) y `CONFLICTO_CONCURRENCIA` (el `If-Match` no coincide: recargar y repetir). `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` de un gerente sin regional: `REGIONAL_NO_ASIGNADA`. |
+| 428 | `ErrorNegocio` `PRECONDICION_REQUERIDA`: falta `If-Match` en una mutación de la etapa final. **No hay 412**: el conflicto de versión es el 409 `CONFLICTO_CONCURRENCIA`. |
 | 503 | `POST /enviar` con el correo deshabilitado en el servidor: `ErrorNegocio` con `CORREO_DESHABILITADO`. `GET /web/metricas/regional` y `GET /web/cotizaciones/regional` con la fuente de la regional caída: `REGIONAL_NO_DISPONIBLE`. `GET /web/catalogos-flete` y `GET /web/municipios` con Nexo sin responder: `CATALOGOS_FLETE_NO_DISPONIBLE` y `MUNICIPIOS_NO_DISPONIBLE`. |
 
 ## 6. CORS
 
-El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. (origen exacto, `https://host[:puerto]`, sin ruta ni comodines; en producción la API no arranca sin al menos uno). Se permiten los métodos `GET`, `POST` y `PUT` y los headers `Authorization` y `Content-Type`, sin cookies ni credenciales; el preflight se cachea 10 minutos.
+El backend Python no tenía CORS: `chat.html` funcionaba porque se servía desde el mismo origen. **No se agrega CORS al `orquestador` Python**, porque el módulo Angular va a consumir solo el backend .NET (corte único, HU-003.1). En .NET, los orígenes permitidos se configuran con `Cors__OrigenesPermitidos__0`, `__1`, etc. (origen exacto, `https://host[:puerto]`, sin ruta ni comodines; en producción la API no arranca sin al menos uno). Se permiten los métodos `GET`, `POST` y `PUT` (ningún endpoint usa `DELETE` ni `PATCH`) y, como lista explícita, los headers `Authorization`, `Content-Type`, `If-Match` (concurrencia optimista) e `Idempotency-Key` (captura, conexos y re-solicitar), sin cookies ni credenciales; el preflight se cachea 10 minutos. La respuesta expone (`Access-Control-Expose-Headers`) `ETag`, `Location`, `Retry-After` y `Content-Disposition`, para que el frontend lea la versión de la cotización, la URL de la versión `-vN`, la espera de un 429 o un 503 `SERVICIO_OCUPADO` y el nombre de un archivo descargado. Cualquier otro header propio (`X-Request-Id`, `X-Correlation-Id`...) hace fallar el preflight: la API no tiene id de correlación.
 
 **Pendiente:** el dominio real de `clientepro-frontend` en pruebas y en producción. Lo debe confirmar el equipo de frontend.
 
@@ -279,7 +280,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 3 | **`tipo_vehiculo` y `carroceria` se ignoran** (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). | Quitarlos del formulario y del mapeo del Excel. El vehículo se lee de `rutas[].camiones[]`. Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (apagada por defecto) se usan en el camión del respaldo mientras no haya cubicador (HU-021-FE.2). |
 | 4 | **`valor_estimado` y `referencia` salen del contrato** (decisión 1), también `referencia` de la vista `Licitacion`. | Dejar de enviarlos y de leerlos. Si se envían, se ignoran sin error (queda un aviso en el log). |
 | 5 | **Municipios con id obligatorio.** Origen, destino y las ciudades de devolución y de levante van con su id de `GET /web/municipios` y una copia del nombre. Toda captura consulta el catálogo: si no responde, **503 `MUNICIPIOS_NO_DISPONIBLE`** y nada se guarda. HU-023 (#176): el buscador usa `GET /web/municipios?q=<texto>&departamento=<depto>`, que pasa a `GET /api/captura-solicitudes/ciudades` de Nexo (máximo 50, solo Colombia); sin filtros sigue siendo el catálogo completo. | Enviar siempre el `*_municipio_id` elegido en la búsqueda. Ante el 503, ofrecer Reintentar. Ante `MUNICIPIO_AMBIGUO`, mostrar los candidatos y repetir con el id elegido. |
-| 6 | **Mercancías con `id_tipo_mercancia` obligatorio** (catálogo del cubicador, `GET /web/tipos-mercancia`) y `nombre_mercancia` (antes `descripcion`). | Usar el desplegable del catálogo. Sin cubicador, el endpoint responde 503 `CUBICADOR_NO_DISPONIBLE`: el formulario sigue con los tipos que ya conoce. |
+| 6 | **Mercancías con `codigo_mercancia` obligatorio** (HU-023.3, #158: el `codigo` del catálogo del cubicador, `GET /web/tipos-mercancia`; obligatorio con el cubicador configurado) y `nombre_mercancia` (antes `descripcion`). `id_tipo_mercancia` es obsoleto: se acepta y se traduce al código. | Usar el desplegable del catálogo y mandar su `codigo`. Sin cubicador, el endpoint responde 503 `CUBICADOR_NO_DISPONIBLE`: el formulario sigue con los tipos que ya conoce. |
 | 7 | **Margen y conexos por ruta.** `PUT .../costeo/margen` y `PUT`/`POST .../costeo/servicios-conexos` llevan `linea_orden` (o `linea_solicitud_id`). Con varias rutas y sin ruta: **400 `RUTA_REQUERIDA`** con `detalle.rutas`. | Mostrar un selector de ruta y repetir la petición. Los campos de margen de primer nivel de `CosteoCotizacion` son los de la ruta 1 (compatibilidad). |
 | 8 | **`servicios_conexos[].estado_nexo`** (`pendiente`, `enviado`, `incierto`, `fallido_definitivo`) y **`rutas[].aviso_conexos_nexo`**. | Mostrar el aviso cuando venga: el comercial o la Mesa deben revisar ese conexo en Nexo. Nunca reintentar desde el frontend. |
 | 9 | **`/resultado` en vez de `/seguimiento`.** Una cotización que pasó por Nexo responde 409 `USAR_RESULTADO_NEXO` en `/seguimiento`, y el `detalle` dice a dónde ir: `metodo`, `endpoint` y `requiere_if_match`. | Llamar a `POST /web/cotizaciones/{folio}/resultado` con `If-Match` (el `row_version` del costeo). Obligatorio en la perdida sin costeo (428 sin él). |
@@ -295,9 +296,10 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 |---|---|---|---|
 | 400 | `SOLICITUD_COSTEO_INVALIDA` | Captura | Ahora con **todos** los errores en `detalle.errores[]` = `{ruta, campo, codigo, mensaje}` (`ruta` base 0, `null` si es de la raíz). |
 | 400 (en `detalle.errores`) | `MUNICIPIO_INEXISTENTE`, `MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO` | Captura y licitación | El id no existe; el nombre tiene varios candidatos (el mensaje trae los ids) o ninguno. |
-| 400 (en `detalle.errores`) | `TIPO_MERCANCIA_INEXISTENTE` | Captura | `mercancias[i].id_tipo_mercancia` no está en el catálogo del cubicador. |
+| 400 (en `detalle.errores`) | `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` | Captura y licitación | HU-023.3: `mercancias[i].codigo_mercancia` no está activo en el catálogo del cubicador, o no se puede cubicar. |
+| 400 (en `detalle.errores`) | `TIPO_MERCANCIA_INEXISTENTE` | Captura y licitación | Solo con el campo obsoleto: `mercancias[i].id_tipo_mercancia` (sin `codigo_mercancia`) no está en el catálogo del cubicador. |
 | 400 (en `detalle.errores`) | `CONEXO_NO_ENCONTRADO`, `CONEXO_DUPLICADO`, `DEMASIADOS_CONEXOS` | Captura | Conexo fuera del catálogo de Nexo, repetido en la ruta o más de 20. |
-| 400 (en `detalle.errores`) | `CAMPO_REQUERIDO`, `CAMPO_NO_APLICA` | Captura | Falta un id (municipio, tipo de mercancía) o llegó un campo plano junto con `rutas`. |
+| 400 (en `detalle.errores`) | `CAMPO_REQUERIDO`, `CAMPO_NO_APLICA` | Captura | Falta un id de municipio o el `codigo_mercancia`, o llegó un campo plano junto con `rutas`. |
 | 400 | `RUTA_REQUERIDA` | Margen y conexos | Varias rutas y la petición no dice cuál. `detalle.rutas` = `[{linea_orden, linea_solicitud_id, origen, destino}]`. |
 | 400 | `RUTA_INEXISTENTE` | Margen y conexos | La ruta no es de la cotización, o `linea_orden` y `linea_solicitud_id` son de rutas distintas. |
 | 400 | `JUSTIFICACION_REQUERIDA` | Margen | Por debajo del sugerido **de esa ruta**; `detalle` trae `margen_sugerido`, `linea_orden` y `linea_solicitud_id`. |
@@ -308,7 +310,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
 | 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación | HU-023.1: el cubicador rechazó la llave de Cotifly (nunca va al respaldo). No es la sesión del comercial: no cerrar sesión. |
 | 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. |
-| 400 | `CUBICACION_DEMASIADO_GRANDE` | Captura, licitación y `POST /web/cubicacion` | HU-023 (#176): la ruta pasa de 10.000 unidades (tope del cubicador). Partir la carga en varias rutas. No se guarda nada. |
+| 400 | `CUBICACION_DEMASIADO_GRANDE` | Captura, licitación, recálculo de vehículos y `POST /web/cubicacion` | **Vigente** desde HU-023 (#176): la ruta o el cálculo pasa de 10.000 unidades (tope del cubicador; se valida antes de llamarlo, con el cubicador configurado). Partir la carga en varias rutas. No se guarda nada. |
 | 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. |
 
 ### 8.3 Crear la solicitud: `POST /web/solicitudes-costeo`
@@ -415,7 +417,7 @@ Error 400 con todos los errores juntos (nada queda guardado):
       "motivo": "MUNICIPIO_AMBIGUO",
       "errores": [
         { "ruta": 0, "campo": "destino", "codigo": "MUNICIPIO_AMBIGUO", "mensaje": "Ruta 1: el municipio 'Cartago' es ambiguo: Cartago, Valle del Cauca (id 76147); Cartago, Cartago (Costa Rica) (id 99001)." },
-        { "ruta": 1, "campo": "mercancias[0].id_tipo_mercancia", "codigo": "TIPO_MERCANCIA_INEXISTENTE", "mensaje": "Ruta 2: el tipo de mercancía no está en el catálogo del cubicador." }
+        { "ruta": 1, "campo": "mercancias[0].codigo_mercancia", "codigo": "MERCANCIA_DESCONOCIDA", "mensaje": "La mercancía 1 ('CAFE_TOSTADO') no está activa en el catálogo del cubicador (GET /web/tipos-mercancia)." }
       ]
     }
   }
@@ -446,12 +448,13 @@ licitación con cubicador (HU-023.5, #160) se cubica en segundo plano (ver 8.5):
 
 La respuesta 201 de `POST /web/solicitudes-costeo` trae `cubicacion[]` cuando alguna ruta pasó por el cubicador: por ruta
 `{linea_orden, linea_solicitud_id, resultado, motivo_sin_seleccion, condicionada, mercancias_condicionadas, advertencias,
-extradimension}`. Los avisos **no se guardan**: mostrarlos al crear. `GET .../costeo` trae en cada ruta `resultado_cubicacion`,
-`motivo_sin_seleccion` y `condicionada`, y en cada camión `volumen_total_m3`, `porcentaje_llenado_volumen` y
+extradimension}`. Mostrar los avisos al crear. Desde HU-023.5 (#160) los avisos también se guardan en la ruta (columna
+`avisosCubicacion`): `GET .../costeo` los trae en `rutas[].avisos_cubicacion` cuando la ruta los tiene (si no, el campo se omite:
+tratarlo como opcional). `GET .../costeo` trae además en cada ruta `resultado_cubicacion`, `motivo_sin_seleccion` y `condicionada`, y en cada camión `volumen_total_m3`, `porcentaje_llenado_volumen` y
 `porcentaje_llenado_peso`. Para recalcular los camiones de una ruta antes de enviarla a Nexo:
 `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` con `If-Match` (409 `ESTADO_NO_PERMITE` si ya está en Nexo:
 usar re-solicitar; también mientras el envío está en curso). Su respuesta trae en la ruta recalculada `avisos_cubicacion` (los avisos de
-esa llamada).
+esa llamada, que quedan guardados en la ruta).
 
 `GET /web/tipos-carroceria` devuelve `[{codigo, nombre, activo}]` y `GET /web/tipos-vehiculo` `[{codigo, nombre, carrocerias, activo}]`:
 el nombre del vehículo que se muestra en pantalla y en el PDF sale de este último por el código del camión (Cotifly no lo guarda).
@@ -464,7 +467,10 @@ HU-023 (#176): en la captura, cada mercancía con `codigo_mercancia` debe traer 
 ruta `SIN_SELECCION_AUTOMATICA` puede traer el quinto motivo `BUSQUEDA_AGOTADA`; `GET .../costeo` trae en cada ruta
 `mensaje_sin_seleccion` (el texto para el comercial: con `BUSQUEDA_AGOTADA` no dice que la carga no cabe) y, en `avisos_cubicacion`,
 la `extradimension` con la estructura nueva. Si la base todavía no tiene el script `07`, `motivo_sin_seleccion` llega en `null` y el
-motivo real viene en una advertencia con `codigo = "MOTIVO_SIN_SELECCION"`.
+motivo real viene en una advertencia con `codigo = "MOTIVO_SIN_SELECCION"` de `avisos_cubicacion`. Esa advertencia solo existe si la ruta
+guarda sus avisos (columna `avisosCubicacion`, HU-023.5); `avisos_cubicacion` es opcional en todo `CosteoCotizacion`. Regla para la UI:
+con `SIN_SELECCION_AUTOMATICA`, mostrar siempre `mensaje_sin_seleccion` (el servidor ya lo arma con el motivo de la advertencia cuando
+`motivo_sin_seleccion` es `null`).
 
 ### 8.5 Licitación: `POST /web/licitaciones`
 
@@ -887,7 +893,7 @@ HU-023 (#176), contrato vigente del cubicador: cada vehículo trae además `nume
 `cantidad`, `peso_kg` y `volumen_m3`). **Dos filas del mismo camión pueden compartir `codigo_mercancia`: si se agrupan por código, se
 suman.** `extradimension` cambia de forma: `{hay_extradimension, medidas_estandar: {largo_max_cm, ancho_max_cm, alto_max_cm, peso_max_kg},
 piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. Cada ítem debe traer `peso_kg` mayor que 0 (400
-`DIMENSIONES_INVALIDAS`) y la suma de `cantidad` no puede pasar de **10.000** (400 `CUBICACION_DEMASIADO_GRANDE`: partir la carga).
+`DIMENSIONES_INVALIDAS` con `detalle.item`, el índice base 0 del ítem; se valida antes de llamar al cubicador) y la suma de `cantidad` no puede pasar de **10.000** (400 `CUBICACION_DEMASIADO_GRANDE`: partir la carga).
 
 <!-- respuesta: POST /web/cubicacion 200 -->
 ```json
@@ -965,15 +971,16 @@ piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. C
 |---|---|---|---|
 | 400 | `ITEMS_REQUERIDOS` | Sin ítems | Deshabilitar el botón sin bultos |
 | 400 | `MERCANCIA_DESCONOCIDA` | Ítem sin código ni descripción, descripción sin parecido o código que el cubicador no conoce | El mensaje; pedir que escoja la mercancía |
-| 400 | `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador, o un ítem sin `peso_kg` mayor que 0 (HU-023 #176) | El mensaje |
-| 400 | `CUBICACION_DEMASIADO_GRANDE` | HU-023 (#176): más de 10.000 unidades en total (Cotifly no llama al cubicador) | El mensaje: partir la carga |
+| 400 | `DIMENSIONES_INVALIDAS` | HU-023 (#176): un ítem sin `peso_kg` o con `peso_kg` ≤ 0. `detalle.item` = índice base 0 del ítem. Cotifly no llama al cubicador | Marcar el peso de ese ítem |
+| 400 | `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador | El mensaje |
+| 400 | `CUBICACION_DEMASIADO_GRANDE` | Vigente (HU-023, #176): más de 10.000 unidades en total (Cotifly no llama al cubicador) | El mensaje: partir la carga |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | Cubicador sin configurar o caído (un POST sin respuesta se reconsulta antes de rendirse; nunca se repite) | El mensaje y un botón Reintentar |
 | 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada, respuesta fuera del contrato o un 422 del cubicador (petición fuera de su esquema) | "Avisa a soporte" |
 
 **Qué cambia para el frontend de hoy** (que ya usa `/web/cubicacion`):
 
-- La respuesta **cambia de forma**: `sugerencia`, `sugerencia_flota` y su `extradimension` (`hay_extradimension`, `medidas_estandar`,
-  `piezas`) desaparecen. Ahora es `vehiculos[]` y `extradimension` = `{extradimensionado, dimensiones, detalle}` o `null`.
+- La respuesta **cambia de forma**: `sugerencia` y `sugerencia_flota` desaparecen. Ahora es `vehiculos[]`, y `extradimension` va en
+  la raíz con la estructura del cubicador, `{hay_extradimension, medidas_estandar, piezas[]}` (ver la última viñeta), o `null`.
 - No vuelve a llegar la clase de viaje ni la clase de contenedor sugeridas: si el formulario las prellenaba desde aquí, quitarlo.
 - Cada ítem debe llevar `codigo_mercancia`. La `descripcion` sola sigue funcionando mientras llega el desplegable, pero si no se parece
   a ninguna mercancía del catálogo ahora es un 400, y un ítem sin código ni descripción también.
@@ -983,6 +990,6 @@ piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. C
   derivada del **primer** vehículo; `sugerencia_flota` no vuelve. Sin vehículos, el campo no viene. Es temporal: se apaga cuando el
   frontend use `vehiculos[]`.
 - Los códigos de error cambian: `CUBICACION_NO_DISPONIBLE` (400) se retiró; ahora llegan los del cubicador (tabla de arriba), con la
-  caída en **503**. HU-023 (#176): `CUBICACION_DEMASIADO_GRANDE` (400) **vuelve**, con el tope del cubicador (10.000 unidades).
+  caída en **503**. HU-023 (#176): `CUBICACION_DEMASIADO_GRANDE` (400) está **vigente**, con el tope del cubicador (10.000 unidades).
 - HU-023 (#176): `extradimension` vuelve a la estructura del cubicador (`hay_extradimension`, `medidas_estandar`, `piezas[]` con
   `indice_posicion` y `excesos[]`): la forma provisional `{extradimensionado, dimensiones, detalle}` se retira.

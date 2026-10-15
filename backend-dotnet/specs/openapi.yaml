@@ -14,9 +14,16 @@ info:
     - `/api/auth/*` usa los nombres que define el patrón "Login SSO — Cliente Pro"
       (`idUsuario`, `debeCambiarPassword`), que ya produce el frontend de ClientePro.
     - Las operaciones marcadas con `x-estado: borrador` no están congeladas.
-    - Los errores de `/web/*` y `/api/auth/*` usan `ErrorWeb` (`{"error": "texto"}`).
-    - Los errores de negocio que vienen de una herramienta usan `ErrorNegocio`
-      (`{"error": {"codigo", "mensaje", "detalle?"}}`).
+    - Dos formas de error. `ErrorWeb` (`{"error": "texto"}`, sin código): todo `/api/auth/*` y, en `/web/*`, el 401, el 403
+      de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
+      `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo o reutilizada). `ErrorNegocio`
+      (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
+      código, 409 de estado y `CONFLICTO_CONCURRENCIA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
+      dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
+      el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
+    - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
+      (métodos `GET`, `POST` y `PUT`) y leer `ETag`, `Location`, `Retry-After` y `Content-Disposition`
+      (`Access-Control-Expose-Headers`). Ningún otro encabezado propio pasa el preflight; no hay id de correlación.
     - Autenticación: `Authorization: Bearer <access>` emitido por
       `POST /api/auth/login-clientepro` (patrón "Login SSO — Cliente Pro").
     - Las operaciones marcadas con `x-estado: pendiente` tienen el contrato acordado y todavía no
@@ -839,9 +846,10 @@ paths:
       tags: [web]
       summary: Datos de una cotización existente para prellenar una nueva versión
       description: |
-        No modifica la cotización original. El frontend usa estos datos para prellenar
-        "Nueva cotización"; al confirmarse se crea una fila nueva con `version + 1` y
-        folio base con sufijo `-vN`.
+        No modifica la cotización original. El frontend usa estos datos solo para prellenar la pantalla de la
+        versión nueva. La versión (`version + 1`, folio base con sufijo `-vN`) se crea con
+        `POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` o `datos_carga` (HU-013.4); el chat
+        ya no crea versiones (`cotizacion_origen_id` de `POST /web/chat` se ignora desde #105).
       security:
         - bearer: []
       parameters:
@@ -1152,13 +1160,19 @@ paths:
                 $ref: '#/components/schemas/ResultadoCubicacion'
         '400':
           description: |
-            `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `MERCANCIA_DESCONOCIDA` si un ítem no trae `codigo_mercancia` ni
-            `descripcion`, si la descripción no se parece a ninguna mercancía del catálogo o si el cubicador no conoce el código; y los
-            demás rechazos del cubicador con su código: `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS`.
+            `ErrorNegocio`: `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `DIMENSIONES_INVALIDAS` con `detalle.item` (índice
+            base 0) si un ítem no trae `peso_kg` o lo trae ≤ 0 (HU-023, #176: el cubicador exige el peso por unidad; se valida antes de
+            llamarlo, después de comprobar que está configurado); `MERCANCIA_DESCONOCIDA` si un ítem no trae `codigo_mercancia` ni
+            `descripcion` o si la descripción no se parece a ninguna mercancía del catálogo (con `detalle.item`), o si el cubicador no
+            conoce el código; `CUBICACION_DEMASIADO_GRANDE` si los ítems suman más de 10.000 unidades (`cantidad`; el tope del
+            cubicador: partir la carga); y los demás rechazos del cubicador con su código: `MERCANCIA_NO_CUBICABLE`,
+            `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS`. `ErrorWeb` si el cuerpo no es JSON válido (`Cuerpo inválido.`).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorNegocio'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '503':
@@ -1265,7 +1279,8 @@ paths:
         y `avisos: ["RESUMEN_INCOMPLETO"]` (el frontend recarga "Mis cotizaciones"). Con `Idempotency-Key`, una repetición del
         mismo POST (mismo usuario y mismo cuerpo, 24 h) devuelve la cotización de la primera **sin crear otro folio ni otra
         solicitud en Nexo**; toda captura exitosa consume la clave, también la que quedó en `error_envio` (se reintenta con
-        `.../costeo/reintentar`). El frontend debe generar la clave al pulsar Enviar y reutilizarla en los reintentos.
+        `.../costeo/reintentar`). La clave es **opcional** (sin ella cada POST crea otra cotización) pero **recomendada**: el
+        frontend la genera al pulsar Enviar y la reutiliza tal cual en los reintentos de esa misma captura.
       security:
         - bearer: []
       parameters:
@@ -2226,10 +2241,11 @@ paths:
       summary: Genera el PDF de la cotización con el precio sobre el costeo de Nexo
       description: |
         HU-005.7, módulo PDF de HU-003.5. El payload lo arma el servidor desde la cotización: una fila con origen,
-        destino, vehículo y `precio_final`, y solo los servicios conexos incluidos, cada uno con su precio. Una sola
-        vez por cotización (para cambiarla, versión nueva). Solo el dueño. Desde HU-013 (ADR-018 §11, #98) se puede
-        regenerar cuando `pdf_desactualizado = true` (el anterior queda en el historial); con el PDF vigente sigue
-        respondiendo `PDF_YA_GENERADO` y, ya enviada o con resultado, `PDF_YA_ENVIADO`.
+        destino, vehículo y `precio_final`, y los servicios conexos de la ruta, cada uno con su precio. Solo el dueño.
+        Desde HU-013 (ADR-018 §11, #98) ya no es "una sola vez": mientras la cotización no se haya enviado ni tenga resultado,
+        los ajustes (margen, conexos, textos, re-solicitar en el mismo folio) invalidan el PDF (`pdf_desactualizado = true`) y
+        se regenera aquí (el anterior queda en el historial). Con el PDF vigente responde `PDF_YA_GENERADO`; ya enviada o con
+        resultado, `PDF_YA_ENVIADO` (versión `-vN`).
 
         **Por ruta (HU-021.9, #136).** Con una ruta, el PDF sale de la ruta y sus camiones: origen, destino, los camiones
         agrupados ("2 × 3S3 - FURGON (20000 KG)"; un camión sin vehículo es "Vehículo por definir" y uno descartado en Nexo no
@@ -2963,9 +2979,11 @@ components:
                 `CLIENTE_BUSQUEDA_NO_DISPONIBLE`, catálogo de Nexo), `CATALOGOS_FLETE_NO_DISPONIBLE`
                 (503 en `GET /web/catalogos-flete`: catálogos maestros de Nexo sin copia utilizable; también 503 en
                 `POST /web/solicitudes-costeo` si no se puede validar `tipo_vehiculo`/`clase_viaje`, HU-013.10),
-                `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío; `CUBICACION_NO_DISPONIBLE` y
-                `CUBICACION_DEMASIADO_GRANDE` se retiraron con la cubicación de Nexo en HU-023.2, #157: "Calcular cubicaje"
-                responde los códigos del cubicador) y `TRM_NO_DISPONIBLE`
+                `ITEMS_REQUERIDOS` (`POST /web/cubicacion`: falta `items` o viene vacío; `CUBICACION_NO_DISPONIBLE` se retiró con
+                la cubicación de Nexo en HU-023.2, #157: "Calcular cubicaje" responde los códigos del cubicador),
+                `CUBICACION_DEMASIADO_GRANDE` (vigente desde HU-023, #176: 400 cuando las mercancías de una ruta o de un cálculo suman
+                más de 10.000 unidades, el tope del cubicador; Cotifly no llama al cubicador ni guarda nada. Aplica en "Calcular
+                cubicaje", la captura, el recálculo de vehículos y la licitación, siempre con el cubicador configurado) y `TRM_NO_DISPONIBLE`
                 (HU-012.1/HU-012.2, ADR-014: ninguna fuente de la TRM entregó una TRM válida para el día; por defecto
                 DolarApi y, de respaldo, los datos abiertos de la Superintendencia Financiera; no se cotiza en USD y el
                 comercial puede reintentar o cotizar en COP; en `POST /web/licitaciones` con `moneda = USD` también). Solo en la herramienta
@@ -2977,7 +2995,8 @@ components:
                 (Nexo respondió 4xx; el código de Nexo va en `detalle.motivo`), `COSTEO_NEXO_SOLICITUD_INVALIDA` (Nexo respondió 400 al alta:
                 `error_envio` definitivo, no se reintenta), `COSTEO_NO_REINTENTABLE` (409: la
                 cotización no está en `error_envio` ni en `pendiente_envio`), `COSTEO_NO_LISTO` (409: la cotización todavía no
-                tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene PDF, se cambia con una versión nueva).
+                tiene el costeo con margen) y `PDF_YA_GENERADO` (409: ya tiene un PDF **vigente**; un ajuste de la etapa final lo invalida con
+                `pdf_desactualizado = true` y entonces se regenera, ADR-018 §11).
                 Cubicador (HU-021.5, #133; HU-023.1, #156): `CUBICADOR_NO_DISPONIBLE` (503 en `GET /web/tipos-mercancia`,
                 `/web/tipos-carroceria`, `/web/tipos-vehiculo` y `POST /web/cubicacion` (HU-023.2, #157: sin respaldo) sin cubicador o
                 sin respuesta, y en `POST /web/solicitudes-costeo` y
@@ -3562,8 +3581,9 @@ components:
             $ref: '#/components/schemas/CubicacionRuta'
           description: |
             HU-023.3 (#158). Solo en la respuesta de `POST /web/solicitudes-costeo` y solo si alguna ruta pasó por el cubicador: por
-            ruta, el resultado y los avisos (mercancías condicionadas, advertencias y extradimensión). Los avisos **no se guardan**:
-            el frontend los muestra al crear; el resultado y el motivo quedan también en `GET .../costeo`.
+            ruta, el resultado y los avisos (mercancías condicionadas, advertencias y extradimensión). El resultado, el motivo y,
+            desde HU-023.5 (#160), también los avisos se guardan en la ruta: `GET .../costeo` los devuelve en
+            `rutas[].avisos_cubicacion`.
         avisos:
           type: array
           items:
@@ -3615,8 +3635,10 @@ components:
       type: object
       required: [mercancias_condicionadas, advertencias, extradimension]
       description: |
-        HU-023.3 (#158). Solo en la respuesta de `POST .../rutas/{rutaId}/recalcular-vehiculos` (en la ruta recalculada): los avisos
-        del cubicador de esa llamada. No se guardan; en el resto de respuestas no viene.
+        HU-023.3 (#158). Los avisos del cubicador de la última cubicación de la ruta. HU-023.5 (#160): se guardan en la ruta
+        (columna `avisosCubicacion`), así que vienen en la ruta recalculada de `POST .../rutas/{rutaId}/recalcular-vehiculos` y
+        también en cualquier `CosteoCotizacion` (`GET .../costeo`, margen, conexos) cuya ruta los tenga. El campo se **omite** si la
+        ruta no los tiene (sin cubicador, o una ruta anterior a la columna): tratarlo siempre como opcional.
       properties:
         mercancias_condicionadas:
           type: array
@@ -4451,7 +4473,8 @@ components:
           description: |
             HU-023.3. Por qué el cubicador no pudo escoger (solo con `SIN_SELECCION_AUTOMATICA`). HU-023 (#176): si la base no tiene el
             script 07, `BUSQUEDA_AGOTADA` se guarda en `null` y el motivo real queda en la advertencia `MOTIVO_SIN_SELECCION` de
-            `avisos_cubicacion`.
+            `avisos_cubicacion` (solo si la ruta guarda sus avisos, HU-023.5). El texto para el comercial está siempre en
+            `mensaje_sin_seleccion`.
         mensaje_sin_seleccion:
           type: string
           nullable: true

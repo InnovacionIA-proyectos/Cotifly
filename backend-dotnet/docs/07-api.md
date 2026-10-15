@@ -203,7 +203,7 @@ Sin `folio`: `400 ErrorNegocio` `FOLIO_REQUERIDO`. Ante un fallo del asistente o
 | Cuerpo de `/web/*` | 64 KB (413 `ErrorWeb`) | `SeguridadHttp:LimiteCuerpoWebBytes` |
 | Cuerpo de `/web/licitaciones*` (Excel + JSON de hasta 1000 líneas) | 12 MB (413 `ErrorWeb`) | `SeguridadHttp:LimiteCuerpoLicitacionBytes` |
 | Mensaje de chat | 1 a 8000 caracteres; `sesion_id` `^[A-Za-z0-9_-]{8,64}$` | Contrato |
-| CORS | Orígenes exactos; GET, POST y PUT; encabezados `Authorization` y `Content-Type`; sin credenciales; preflight cacheado 10 minutos | `Cors:OrigenesPermitidos` (obligatorio en Production) |
+| CORS | Orígenes exactos; GET, POST y PUT; encabezados `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`; expone `ETag`, `Location`, `Retry-After` y `Content-Disposition`; sin credenciales; preflight cacheado 10 minutos | `Cors:OrigenesPermitidos` (obligatorio en Production) |
 | Encabezados de seguridad | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`; `Cache-Control: no-store` en `/web/*` y `/pdfs/*`; sin `Server` | Fijo; HSTS lo pone Traefik |
 
 Los límites son por proceso: con N réplicas el límite efectivo es N veces mayor ([10-operacion](10-operacion.md#106-riesgos-y-limitaciones-conocidos)). Detalle de la configuración en [03-infraestructura](03-infraestructura.md#seguridad-http).
