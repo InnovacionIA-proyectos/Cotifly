@@ -86,9 +86,19 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         foreach (var linea in alta)
         {
             var grupo = linea["grupoRutaId"]?.GetValue<string>();
-            grupo.Should().NotBeNull("Nexo:EnviarGrupoRutaId está encendida");
-            var orden = rutas.Single(r => string.Equals(r.A, grupo, StringComparison.OrdinalIgnoreCase)).B;
             var recomendacion = linea["idRecomendacionVehiculo"]?.GetValue<string>()?.ToLowerInvariant();
+            var orden = camiones.Single(c => c.A == recomendacion).B;
+            // HU-023 (#176, contrato con Nexo §3.3): la ruta de dos camiones lleva su grupo; la de UN camión (línea suelta), null.
+            if (orden == "1")
+            {
+                grupo.Should().NotBeNull("Nexo:EnviarGrupoRutaId está encendida y la ruta 1 tiene dos camiones");
+                rutas.Single(r => string.Equals(r.A, grupo, StringComparison.OrdinalIgnoreCase)).B.Should().Be(orden);
+            }
+            else
+            {
+                grupo.Should().BeNull("la ruta 2 tiene un solo camión: línea suelta");
+            }
+
             camiones.Should().Contain((recomendacion!, orden), "la recomendación es de un camión de esa misma ruta");
             if (orden == "2")
             {
@@ -266,7 +276,8 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
         var solicitud = _nexo.SolicitudesCreadas[^1];
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray();
         lineas.Should().HaveCount(10);
-        lineas.Should().OnlyContain(l => l!["idRecomendacionVehiculo"] != null && l["grupoRutaId"] != null && l["tipoVehiculo"]!.GetValue<string>() == "3S3");
+        // HU-023 (#176): cada ruta tiene un solo camión, así que todas son líneas sueltas (grupoRutaId = null).
+        lineas.Should().OnlyContain(l => l!["idRecomendacionVehiculo"] != null && l["grupoRutaId"] == null && l["tipoVehiculo"]!.GetValue<string>() == "3S3");
         (await Fila($"SELECT estadoCosteo FROM dbo_cotifly.CotizacionesSolicitud WHERE id = '{id}'")).Should().Be("pendiente_costeo");
 
         _nexo.Costear(solicitud, 1_700_000m);

@@ -344,3 +344,39 @@ Docker Desktop (WSL2) salta entre 0 y +121 s respecto del host** en segundos, y 
 documenta `clsAppLockSql`, #125). Recursos sin presión: SQL de Testcontainers ~1 GB de 31 GB, CPU sin saturar; disco del host al 95 %
 (51 GB libres; 245 GB de imágenes recuperables, no se tocaron). Hace falta repetir las 3 corridas con el reloj sincronizado (reiniciar
 Docker Desktop/WSL, decisión del usuario) para cerrar en 0 fallas.
+
+## 9. Contratos vigentes de NEXO y del cubicador (#176, 2026-10-15)
+
+Contratos: `backend-dotnet/docs/COTIFLY-CONTRATO.md` y `backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`. Decisión en
+ADR-020 ("HU-023 (#176)"). Todo contra el cubicador y el Nexo falsos.
+
+| Caso | Pruebas | Resultado |
+|---|---|---|
+| Banderas de Nexo encendidas por defecto; los dos estados de cada una | `clsCosteoNexoTests.LasTresBanderasDelContratoDeNexoEstanEncendidasPorDefecto`, `ConLasBanderasApagadas…`, `CadaBanderaControlaSusCampos` | OK |
+| `grupoRutaId` = `null` con un camión; un GUID igual y contiguo con varios (flota mixta), con las opciones por defecto | `ConLasBanderasPorDefectoLaLineaSueltaVaSinGrupoYLaRutaDeVariosCamionesConUnGuidContiguo`, E2E F1 y F2 | OK |
+| Emparejamiento de la línea suelta (por `idRecomendacionVehiculo` en MAYÚSCULAS; por contenido sin él) | `clsEmparejadorCamionesTests.LaLineaSuelta…` (2) | OK |
+| Fuzz de cruces con la línea suelta (5 casos nuevos × 1500 cotizaciones) | `FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza(…, lineaSuelta: true)` | Nunca más cruces que QA; 0 con `idRecomendacionVehiculo` en el GET (el caso por defecto). Sin él (bandera de datos apagada) la línea suelta se empareja por contenido como en QA: 1 cruce frente a 3 de QA en el modo 3 |
+| Ejemplos exactos de la guía: ASIGNADO con flota mixta e `indicePosicion` repetido por código (se suma al agrupar), extradimensión vigente, condicionada con el comentario del catálogo | `clsCubicadorHttpTests.ElEjemploDeLaGuia…`, `LaExtradimensionDeLaGuia…`, `LaCondicionadaDeLaGuia…`, `UnIndicePosicionEnNull…` | OK |
+| Los 5 motivos (`BUSQUEDA_AGOTADA` válido; su mensaje no dice que la carga no cabe) | `LosCincoMotivosDeSinSeleccionSonResultadosValidos` (5), `ElMensajeDeBusquedaAgotadaNoDiceQueLaCargaNoCabe` | OK |
+| 422 visible, no al respaldo | `Un422DelCubicadorEsUnErrorVisibleNoUnaCaida` | OK |
+| 10.000 unidades: sin llamar; exactamente 10.000 sí; el 400 del cubicador se traduce igual | `MasDeDiezMilUnidades…`, `ExactamenteDiezMil…`, `El400CubicacionDemasiadoGrande…` | OK |
+| Tiempo agotado y reconsulta: **un solo POST**; corrida creada → se usa; sin corrida → caída; corrida de otra carga → no se usa | `TrasUnTiempoAgotadoDelPost…`, `TrasUnTiempoAgotadoSinCorrida…`, `UnaCorridaReconsultadaDeOtraCarga…` | OK |
+| Catálogo de vehículos desde `/vehiculos-catalogo` | `ElCatalogoDeVehiculosSaleDeVehiculosCatalogo` | OK |
+| `pesoKg` > 0 en la captura y en "Calcular cubicaje" | muestras con peso en todas las mercancías; validación de dominio (`POSICION_INVALIDA`) | OK |
+| Municipios por `/ciudades` | `clsMunicipiosNexoTests.LaBusquedaVaContraCiudades…` | OK |
+| BD: con el 07 se guarda `BUSQUEDA_AGOTADA`; sin el 07, NULL + aviso `MOTIVO_SIN_SELECCION`; los 4 motivos del 02 tal cual; el CHECK rechaza un motivo con `ASIGNADO` o NULL; el 07 dos veces no cambia nada (mismo `object_id`, `WITH CHECK`); 07 → 03 y 03 → 07 dejan los 5 motivos; `/health/ready` sano sin el 07 con el aviso | `clsMotivoBusquedaAgotadaTests` (7, Testcontainers en bases aisladas) | OK |
+| Entorno local (`levantar-local`) con 01 + 02 + `pendientes/04` + 07, desde cero y en una segunda corrida | copia aislada del script (recursos `cotifly-dev176-*`, borrados al final) | ver §9.1 |
+
+### 9.1 Corridas de #176
+
+Build `--no-incremental` en Release dentro de `mcr.microsoft.com/dotnet/sdk:10.0` (socket de Docker montado; el reloj del host va
+atrasado): 0 errores y **0 warnings de código** (los 24 avisos son los NU1902/NU1903 de `System.Security.Cryptography.Pkcs` de siempre).
+
+| Corrida | Total | Correctas | Omitidas | Fallidas |
+|---|---|---|---|---|
+| 1 | 4060 | 4059 | 1 | 0 |
+| 2 | 4060 | 4059 | 1 | 0 |
+
+Entorno local: copia del `levantar-local.sh` con recursos propios (`cotifly-dev176-*`, puertos 18176/14176). Corrida 1 desde cero
+(01 + 02 + `pendientes/04` + 07): `/health/ready` **200**. Corrida 2 sobre la misma base (0010 + 02 + 04 + 07 otra vez): **200**. El
+CHECK quedó con los 5 motivos. Los recursos de la prueba se borraron al final; el entorno `cotifly-local-*` no se tocó.

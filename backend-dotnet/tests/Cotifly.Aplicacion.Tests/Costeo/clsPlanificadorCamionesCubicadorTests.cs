@@ -98,14 +98,15 @@ public sealed class clsPlanificadorCamionesCubicadorTests
     public async Task SinSeleccionAutomaticaElCamionQuedaSinVehiculoConElPesoDeLaRutaParaLaMesa()
     {
         Responder(new clsRecomendacionCubicador(Guid.NewGuid(), clsResultadosRecomendacion.SinSeleccionAutomatica,
-            clsMotivosSinSeleccion.Extradimensionado, false, [], [], [], new clsExtradimensionCubicador(true, ["ALTO"], null)));
+            clsMotivosSinSeleccion.Extradimensionado, false, [], [], [],
+            new clsExtradimensionCubicador(true, null, [new clsPiezaExtradimension(0, null, "VIGAS_ESTRUCTURAS", ["alto 320 cm > 300 cm"])])));
 
         var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
 
         resultado.Valor.Camiones.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
         resultado.Valor.Cubicacion.Should().Match<clsCubicacionRuta>(c =>
             c.Resultado == clsResultadosRecomendacion.SinSeleccionAutomatica && c.MotivoSinSeleccion == clsMotivosSinSeleccion.Extradimensionado
-            && c.Avisos!.Extradimension!.Extradimensionado, "HU-023.3: la ruta guarda el resultado y el motivo");
+            && c.Avisos!.Extradimension!.HayExtradimension, "HU-023.3: la ruta guarda el resultado y el motivo");
         _logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Information && r.Mensaje.Contains("EXTRADIMENSIONADO"));
     }
 

@@ -546,7 +546,12 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             }
 
             var sinSeleccion = clsCubicadorFalso.Condicionada(clsCubicadorFalso.SinSeleccion("EXTRADIMENSIONADO"), CodigoCafe);
-            sinSeleccion["extradimension"] = new { extradimensionado = true, dimensiones = new[] { "ALTO" }, detalle = "Supera el alto." };
+            sinSeleccion["extradimension"] = new
+            {
+                hayExtradimension = true,
+                medidasEstandar = new { largoMaxCm = 1220, anchoMaxCm = 260, altoMaxCm = 300, pesoMaxKg = 34000 },
+                piezas = new[] { new { indicePosicion = 0, idTipoMercancia = (string?)null, codigoMercancia = CodigoCafe, excesos = new[] { "alto 320.0 cm > 300.0 cm" } } },
+            };
             return sinSeleccion;
         };
         var api = Api();
@@ -564,7 +569,8 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         cubicacion[1].GetProperty("motivo_sin_seleccion").GetString().Should().Be("EXTRADIMENSIONADO");
         cubicacion[1].GetProperty("condicionada").GetBoolean().Should().BeTrue();
         cubicacion[1].GetProperty("mercancias_condicionadas")[0].GetProperty("codigo_mercancia").GetString().Should().Be(CodigoCafe);
-        cubicacion[1].GetProperty("extradimension").GetProperty("extradimensionado").GetBoolean().Should().BeTrue();
+        cubicacion[1].GetProperty("extradimension").GetProperty("hay_extradimension").GetBoolean().Should().BeTrue();
+        cubicacion[1].GetProperty("extradimension").GetProperty("piezas")[0].GetProperty("indice_posicion").GetInt32().Should().Be(0);
 
         // En la base: la ruta con su corrida, resultado, motivo y marca; cada camión con su volumen y porcentajes; la mercancía con su código.
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,

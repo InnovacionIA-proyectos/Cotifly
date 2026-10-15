@@ -61,6 +61,11 @@ public sealed class clsMunicipiosEnCache(
     ILogger<clsMunicipiosEnCache> logger)
     : IClsMunicipiosProvider
 {
+    /// <summary>HU-023 (#176): la búsqueda (<c>/ciudades</c>) no se guarda en memoria: va directo a Nexo.</summary>
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> BuscarAsync(
+        Guid usuarioId, string? texto, string? departamento, CancellationToken cancellationToken = default) =>
+        interno.BuscarAsync(usuarioId, texto, departamento, cancellationToken);
+
     public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
     {
         if (Vigente() is { } foto)

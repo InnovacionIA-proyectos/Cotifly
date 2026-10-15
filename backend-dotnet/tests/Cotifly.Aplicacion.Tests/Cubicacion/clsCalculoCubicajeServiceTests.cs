@@ -51,7 +51,10 @@ public sealed class clsCalculoCubicajeServiceTests
             condicionada ? [new clsMercanciaCondicionada("QUIMICOS", "Requiere aprobación")] : [],
             vehiculos,
             [new clsAdvertenciaCubicador("REFRIGERADO", "Confirmar el equipo de frío.")],
-            motivo == clsMotivosSinSeleccion.Extradimensionado ? new clsExtradimensionCubicador(true, ["ALTO"], "Supera el alto.") : null);
+            motivo == clsMotivosSinSeleccion.Extradimensionado
+                ? new clsExtradimensionCubicador(true, new clsMedidasEstandarCubicador(1220m, 260m, 300m, 34000m),
+                    [new clsPiezaExtradimension(0, null, "VIGAS_ESTRUCTURAS", ["alto 320.0 cm > 300.0 cm"])])
+                : null);
 
     private void Responder(clsResultado<clsRecomendacionCubicador> respuesta) =>
         _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(respuesta);
@@ -172,9 +175,9 @@ public sealed class clsCalculoCubicajeServiceTests
         if (motivo == clsMotivosSinSeleccion.Extradimensionado)
         {
             resultado.Extradimension.Should().NotBeNull();
-            resultado.Extradimension!.Extradimensionado.Should().BeTrue();
-            resultado.Extradimension.Dimensiones.Should().Equal("ALTO");
-            resultado.Extradimension.Detalle.Should().Be("Supera el alto.");
+            resultado.Extradimension!.HayExtradimension.Should().BeTrue();
+            resultado.Extradimension.MedidasEstandar!.AltoMaxCm.Should().Be(300m);
+            resultado.Extradimension.Piezas.Should().ContainSingle().Which.Excesos.Should().Equal("alto 320.0 cm > 300.0 cm");
         }
 
         await _cubicador.DidNotReceive().ListarTiposVehiculoAsync(Arg.Any<CancellationToken>());

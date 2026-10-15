@@ -70,6 +70,13 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
 
     public const string DescripcionDisponible = "La base de datos de Cotifly responde.";
 
+    /// <summary>
+    /// HU-023 (#176): sana, con un aviso informativo: falta <c>db/scripts/07_motivo_busqueda_agotada.sql</c> (el motivo
+    /// <c>BUSQUEDA_AGOTADA</c> se guarda en NULL y queda como advertencia de la ruta).
+    /// </summary>
+    public const string DescripcionSin07 =
+        "La base de datos de Cotifly responde. Aviso: falta el script 07 (BUSQUEDA_AGOTADA se guarda en NULL con un aviso en la ruta).";
+
     /// <summary>Tiempo máximo de la sonda completa (conexión + verificación de esquema).</summary>
     public static readonly TimeSpan TiempoMaximo = TimeSpan.FromSeconds(5);
 
@@ -112,7 +119,16 @@ public sealed class clsBaseDatosHealthCheck(clsCotiflyDbContext contexto, IOptio
             var cotizacionesViejas = faltantes.Count > 0
                 && await contexto.Database.SqlQueryRaw<int>(
                     "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END AS [Value]").SingleAsync(limite.Token) == 1;
-            return Clasificar(faltantes, cotizacionesViejas);
+            var clasificado = Clasificar(faltantes, cotizacionesViejas);
+            if (clasificado.Status != HealthStatus.Healthy)
+            {
+                return clasificado;
+            }
+
+            // HU-023 (#176): el 07 (BUSQUEDA_AGOTADA en el CHECK del motivo) no es obligatorio: sin él, el motivo se guarda en NULL con
+            // un aviso. Solo se informa en la descripción; la sonda sigue sana.
+            var con07 = await contexto.Database.SqlQueryRaw<int>(clsDetectorMotivosBd.Consulta + " AS [Value]").SingleAsync(limite.Token) == 1;
+            return con07 ? clasificado : HealthCheckResult.Healthy(DescripcionSin07);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {

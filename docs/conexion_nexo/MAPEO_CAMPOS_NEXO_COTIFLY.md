@@ -158,16 +158,18 @@ Verificado contra la rama `QA` de Nexo (fusionada, **todavía no desplegada**): 
 | Dato de Cotifly | Campo de Nexo | Nivel | Regla en Cotifly |
 |---|---|---|---|
 | `UsuariosWeb.idUsuarioExterno` del comercial | Encabezado HTTP **`X-Portal-clsUsuario-Id`** | Toda petición | Siempre. Nexo responde 401 al nombre anterior (`X-Portal-Usuario-Id`). Un solo lugar: `clsIdentidadNexo` |
-| Id de la ruta (`CotizacionLineasSolicitud.id`) | `grupoRutaId` (`Guid?`), también en `clsLineaCosteoDto` del GET | Línea | Con `Nexo:EnviarGrupoRutaId` (apagada). Antes `referenciaRuta` (N1) |
-| `CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo` | `idRecomendacionVehiculo` (texto, máx. 64), también en el GET | Línea | Con `Nexo:EnviarDatosCubicador` (apagada). GUID en texto (36) |
+| Id de la ruta (`CotizacionLineasSolicitud.id`) | `grupoRutaId` (`Guid?`), también en `clsLineaCosteoDto` del GET | Línea | Con `Nexo:EnviarGrupoRutaId` (encendida por defecto desde #176). Solo en las líneas de una ruta con **varios** camiones (contiguas); una ruta de un solo camión ("línea suelta") va con `null` (contrato §3.3). Antes `referenciaRuta` (N1) |
+| `CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo` | `idRecomendacionVehiculo` (texto, máx. 64), también en el GET | Línea | Con `Nexo:EnviarDatosCubicador` (encendida por defecto desde #176). GUID en texto (36); el cubicador lo da en MAYÚSCULAS y se compara como GUID |
 | `CotizacionMercancias.codigoMercancia` | — | — | **No viaja** (contrato #297): Cotifly lo guarda solo para el cubicador |
 | Orden de envío (rutas por `orden`, camiones por `OrdenCreacion`) | `numeroLinea` (solo en el GET, desde 1) | Línea | Sin campo de entrada: Nexo numera por el orden del arreglo. Desempate fuerte de camiones idénticos de un mismo `grupoRutaId` |
-| `tipoVehiculo` / `carroceria` del camión del cubicador (`2S2`, `FURGON`) | `tipoVehiculo` / `carroceria` | Línea | Con `Nexo:EnviarCodigosCubicador` (apagada). Apagada, la línea va sin vehículo y la resuelve la Mesa (con #297 no se autocostea): hoy un código desconocido crea un vehículo duplicado en Nexo. Se enciende con la cuarentena (18.4) y #297 |
+| `tipoVehiculo` / `carroceria` del camión del cubicador (`2S2`, `FURGON`) | `tipoVehiculo` / `carroceria` | Línea | Con `Nexo:EnviarCodigosCubicador` (encendida por defecto desde #176: Nexo ya desplegó la cuarentena, 18.4, y un código desconocido nace en cuarentena). En `false` (emergencia), la línea va sin vehículo y la resuelve la Mesa |
+| `origenMunicipioId` / `destinoMunicipioId` | `origenMunicipioId` / `destinoMunicipioId` | Línea | HU-023 (#176): el id sale de la búsqueda `GET /api/captura-solicitudes/ciudades` (`GET /web/municipios?q=`); es el mismo id de `tbl_municipios` que el catálogo completo de `/municipios` |
 | `tipoVehiculo` / `carroceria` del respaldo (`Captura:AceptarVehiculoCliente`) | `tipoVehiculo` / `carroceria` | Línea | Siempre: es un código del catálogo de Nexo |
 | Peso | `peso` | Línea | Un solo camión: el **peso declarado de la ruta** (con las posiciones; cuadra al 1 % y evita `PESO_INCONSISTENTE`). Varios camiones: el `pesoTotalKg` de cada camión, sin posiciones. El peso del cubicador se guarda y se muestra en Cotifly |
 | Camión sin vehículo | `tipoVehiculo`/`carroceria` vacíos | Línea | Sin cambios; se espera la 19.2 de Nexo (`PorCostear`) |
 
-**Emparejamiento en el polling:** con `grupoRutaId` + `idRecomendacionVehiculo` en el GET, por esos campos (únicos por camión); solo con
+**Emparejamiento en el polling:** con `idRecomendacionVehiculo` en el GET, por ese campo y por `grupoRutaId` si viene (la línea suelta
+no lo trae, HU-023 #176; el camión del cubicador es único igual); solo con
 `grupoRutaId`, por grupo, luego por contenido y, entre camiones idénticos, por `numeroLinea`; sin ellos, por contenido y orden estable
 (como antes). El payload acordado completo está en ADR-020 ("Ajuste al contrato acordado con Nexo").
 

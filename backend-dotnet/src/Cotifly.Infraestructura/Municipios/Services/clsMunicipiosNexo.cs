@@ -40,20 +40,38 @@ public sealed class clsMunicipiosNexo(
 
     public bool EstaConfigurada => _urlBase is not null;
 
-    public async Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default)
-    {
-        if (_urlBase is null)
-        {
-            return NoDisponible("Nexo sin configurar (Nexo:UrlBase)");
-        }
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default) =>
+        _urlBase is null
+            ? Task.FromResult(NoDisponible("Nexo sin configurar (Nexo:UrlBase)"))
+            : ConsultarAsync(usuarioId, ConstruirUrl(_urlBase), null, cancellationToken);
 
+    /// <summary>
+    /// HU-023 (#176): <c>GET /api/captura-solicitudes/ciudades?q=&amp;departamento=</c> (contrato con Nexo §3.1: de aquí salen los
+    /// <c>origenMunicipioId</c>/<c>destinoMunicipioId</c>). Nexo devuelve como mucho 50 filas de Colombia (<c>CiudadBusquedaDto</c>, sin
+    /// <c>pais</c>: se completa con <see cref="PaisCiudades"/>).
+    /// </summary>
+    public Task<clsResultado<IReadOnlyList<clsMunicipio>>> BuscarAsync(
+        Guid usuarioId, string? texto, string? departamento, CancellationToken cancellationToken = default) =>
+        _urlBase is null
+            ? Task.FromResult(NoDisponible("Nexo sin configurar (Nexo:UrlBase)"))
+            : ConsultarAsync(usuarioId, ConstruirUrlCiudades(_urlBase, texto, departamento), PaisCiudades, cancellationToken);
+
+    /// <summary>País de las filas de <c>/ciudades</c> (Nexo las filtra a Colombia y no devuelve la columna).</summary>
+    public const string PaisCiudades = "Colombia";
+
+    /// <summary>Largo máximo de los filtros de la búsqueda que viajan a Nexo.</summary>
+    public const int LargoMaximoFiltro = 100;
+
+    private async Task<clsResultado<IReadOnlyList<clsMunicipio>>> ConsultarAsync(
+        Guid usuarioId, Uri url, string? paisPorOmision, CancellationToken cancellationToken)
+    {
         var usuario = await usuarios.ObtenerPorIdAsync(usuarioId, cancellationToken);
         if (usuario?.IdUsuarioExterno is not { } idUsuarioExterno)
         {
             return NoDisponible(usuario is null ? "el comercial no existe" : "el comercial no tiene idUsuarioExterno (almacén corporativo)");
         }
 
-        using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(_urlBase));
+        using var peticion = new HttpRequestMessage(HttpMethod.Get, url);
         clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -73,7 +91,7 @@ public sealed class clsMunicipiosNexo(
                 return NoDisponible("la respuesta no es un arreglo");
             }
 
-            return clsResultado<IReadOnlyList<clsMunicipio>>.Exito(LeerMunicipios(documento.RootElement));
+            return clsResultado<IReadOnlyList<clsMunicipio>>.Exito(LeerMunicipios(documento.RootElement, paisPorOmision));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -102,8 +120,32 @@ public sealed class clsMunicipiosNexo(
         return new Uri($"{urlBase.TrimEnd('/')}/api/captura-solicitudes/municipios", UriKind.Absolute);
     }
 
-    /// <summary><c>MunicipioDto[]</c> de Nexo: filas sin <c>id</c> numérico se descartan (no identifican nada sin id).</summary>
-    private static IReadOnlyList<clsMunicipio> LeerMunicipios(JsonElement raiz)
+    /// <summary><c>GET /api/captura-solicitudes/ciudades</c> con los filtros que traigan texto (recortados a <see cref="LargoMaximoFiltro"/>).</summary>
+    public static Uri ConstruirUrlCiudades(string urlBase, string? texto, string? departamento)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(urlBase);
+        var filtros = new List<string>();
+        if (Filtro(departamento) is { } d)
+        {
+            filtros.Add($"departamento={Uri.EscapeDataString(d)}");
+        }
+
+        if (Filtro(texto) is { } q)
+        {
+            filtros.Add($"q={Uri.EscapeDataString(q)}");
+        }
+
+        var consulta = filtros.Count == 0 ? string.Empty : "?" + string.Join('&', filtros);
+        return new Uri($"{urlBase.TrimEnd('/')}/api/captura-solicitudes/ciudades{consulta}", UriKind.Absolute);
+    }
+
+    private static string? Filtro(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) ? null : valor.Trim() is var t && t.Length > LargoMaximoFiltro ? t[..LargoMaximoFiltro] : valor.Trim();
+
+    /// <summary>
+    /// <c>MunicipioDto[]</c> o <c>CiudadBusquedaDto[]</c> de Nexo: filas sin <c>id</c> numérico se descartan (no identifican nada sin id).
+    /// </summary>
+    private static IReadOnlyList<clsMunicipio> LeerMunicipios(JsonElement raiz, string? paisPorOmision)
     {
         var municipios = new List<clsMunicipio>();
         foreach (var fila in raiz.EnumerateArray())
@@ -113,7 +155,8 @@ public sealed class clsMunicipiosNexo(
                 continue;
             }
 
-            municipios.Add(new clsMunicipio(id, Texto(fila, "codigoDane"), Texto(fila, "municipio"), Texto(fila, "departamento"), Texto(fila, "pais")));
+            municipios.Add(new clsMunicipio(
+                id, Texto(fila, "codigoDane"), Texto(fila, "municipio"), Texto(fila, "departamento"), Texto(fila, "pais") ?? paisPorOmision));
         }
 
         return municipios;

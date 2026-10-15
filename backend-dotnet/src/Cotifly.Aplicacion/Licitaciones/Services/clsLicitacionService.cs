@@ -200,7 +200,7 @@ public sealed class clsLicitacionService(
 
     private static Dictionary<string, string> PorCodigo(IEnumerable<(string Codigo, string Nombre)> filas)
     {
-        var diccionario = new Dictionary<string, string>(StringComparer.Ordinal);
+        var diccionario = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (codigo, nombre) in filas)
         {
             if (!string.IsNullOrWhiteSpace(codigo) && !string.IsNullOrWhiteSpace(nombre))

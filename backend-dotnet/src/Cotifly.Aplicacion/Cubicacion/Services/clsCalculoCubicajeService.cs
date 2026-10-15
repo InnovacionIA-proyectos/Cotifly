@@ -47,6 +47,7 @@ public sealed class clsCalculoCubicajeService(
         clsCodigosError.MercanciaDesconocida,
         clsCodigosError.MercanciaNoCubicable,
         clsCodigosError.DimensionesInvalidas,
+        clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorNoAutorizado,
         clsCodigosError.CubicadorRespuestaInvalida,
     };
@@ -59,6 +60,19 @@ public sealed class clsCalculoCubicajeService(
         {
             logger.LogWarning("Calcular cubicaje: Cubicador:UrlBase vacía; responde CUBICADOR_NO_DISPONIBLE.");
             return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoConfigurado);
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            // HU-023 (#176): el cubicador exige peso por unidad mayor que 0 en cada mercancía.
+            if (items[i] is { } item && item.PesoKg is not > 0m)
+            {
+                return new clsErrorDominio(clsCodigosError.DimensionesInvalidas,
+                    $"El ítem {(i + 1).ToString(CultureInfo.InvariantCulture)} debe traer el peso por unidad (peso_kg) mayor que 0.")
+                {
+                    Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = i },
+                };
+            }
         }
 
         var mercancias = await ResolverMercanciasAsync(items, cancellationToken);
@@ -95,7 +109,10 @@ public sealed class clsCalculoCubicajeService(
             respuesta.Advertencias,
             respuesta.Extradimension,
             mercancias.Valor,
-            legada);
+            legada)
+        {
+            MensajeSinSeleccion = respuesta.SinSeleccion ? clsMotivosSinSeleccion.Mensaje(respuesta.MotivoSinSeleccion) : null,
+        };
     }
 
     /// <summary>
@@ -212,12 +229,18 @@ public sealed class clsCalculoCubicajeService(
             v.PesoTotalKg,
             v.VolumenTotalM3,
             v.PorcentajeLlenadoVolumen,
-            v.PorcentajeLlenadoPeso))];
+            v.PorcentajeLlenadoPeso)
+        {
+            NumeroVehiculo = v.NumeroVehiculo,
+            AlertaBajoLlenado = v.AlertaBajoLlenado,
+            Heterogenea = v.Heterogenea,
+            Mercancias = v.Mercancias ?? [],
+        })];
     }
 
     private static Dictionary<string, string> Nombres(IEnumerable<(string Codigo, string Nombre)> filas)
     {
-        var nombres = new Dictionary<string, string>(StringComparer.Ordinal);
+        var nombres = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (codigo, nombre) in filas)
         {
             if (!string.IsNullOrWhiteSpace(codigo) && !string.IsNullOrWhiteSpace(nombre))

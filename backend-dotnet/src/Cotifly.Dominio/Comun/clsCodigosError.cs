@@ -335,4 +335,10 @@ public static class clsCodigosError
 
     /// <summary>HU-023.1 (#156): 400 del cubicador, medidas o peso inválidos (<c>DIMENSIONES_INVALIDAS</c>). 400.</summary>
     public const string DimensionesInvalidas = "DIMENSIONES_INVALIDAS";
+
+    /// <summary>
+    /// HU-023 (#176): la ruta pide más de <c>10.000</c> unidades en total (suma de <c>cantidad</c> de sus mercancías), el tope del
+    /// cubicador por petición. Cotifly lo valida antes de llamar y traduce igual el 400 del cubicador. Se resuelve partiendo la carga. 400.
+    /// </summary>
+    public const string CubicacionDemasiadoGrande = "CUBICACION_DEMASIADO_GRANDE";
 }
