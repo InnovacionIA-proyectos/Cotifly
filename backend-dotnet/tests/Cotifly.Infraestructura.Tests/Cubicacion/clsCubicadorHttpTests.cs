@@ -687,7 +687,8 @@ public sealed class clsCubicadorHttpTests : IDisposable
     [InlineData("12.35", "exacto")]
     public void LaHuellaToleraElRedondeoDelCubicadorEnUnaFilaConDecimales(string pesoFila, string porque)
     {
-        // Auditoría de f3c79d5: 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); la guía no fija los decimales del pesoKg de la fila.
+        // Auditoría de f3c79d5: 1 unidad de 12,35 kg (máximo 2 decimales en Cotifly); el cubicador confirmó (2026-10-15) que redondea
+        // el pesoKg a 2 decimales; estos casos más gruesos (un decimal, kilo entero) siguen cubiertos por la tolerancia de 0,5 kg.
         var peticion = new clsPeticionRecomendacion(
             RutaId, "Carga Suelta", "1234567", [new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 1, 120m, 100m, 150m, 12.35m)]);
         var json = "{\"resultado\":\"ASIGNADO\",\"vehiculos\":[{\"mercancias\":[{\"indicePosicion\":0,\"codigoMercancia\":\"CAFE_EN_ESTIBAS\","
