@@ -34,7 +34,12 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/pendientes/04, pendiente de aprobación;
         // el backend mapea sus columnas, así que las pruebas lo aplican en las dos cadenas).
         Script04,
+        // HU-023 (#176): BUSQUEDA_AGOTADA en el CHECK del motivo (db/scripts/07, lo aplica @scalderon-bs).
+        Script07,
     ];
+
+    /// <summary>HU-023 (#176): el 07 del quinto motivo (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
 
     /// <summary>HU-023.5 (#160): la propuesta 04 de la cubicación en segundo plano (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script04 = "../scripts_bd/pendientes/04_cubicacion_segundo_plano.sql";
@@ -120,6 +125,8 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
                 // HU-023.5: la propuesta 04 (pendiente de aprobación) también, porque el backend mapea sus columnas.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+                // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
                 if (conSeeders)
                 {
                     foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
@@ -159,6 +166,7 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
             // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
             foreach (var seeder in Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "scripts_bd", "seeder"), "*.sql").Order(StringComparer.Ordinal))
             {
                 await EjecutarScriptAsync(CadenaCotifly, seeder);

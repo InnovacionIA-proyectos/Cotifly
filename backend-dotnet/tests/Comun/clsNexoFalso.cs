@@ -346,6 +346,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
             {
                 ("GET", var r) when r.StartsWith("/api/catalogos/", StringComparison.Ordinal) => Catalogo(r["/api/catalogos/".Length..]),
                 ("GET", "/api/captura-solicitudes/clientes") => Clientes(request.RequestUri),
+                ("GET", "/api/captura-solicitudes/ciudades") => MunicipiosFalla is { } fallaCiudades
+                    ? Error(fallaCiudades, "NEXO_CAIDO", "Ciudades no disponibles (prueba).")
+                    : Ciudades(request.RequestUri!),
                 ("GET", "/api/captura-solicitudes/municipios") => MunicipiosFalla is { } fallaMunicipios
                     ? Error(fallaMunicipios, "NEXO_CAIDO", "Municipios no disponibles (prueba).")
                     : Json(HttpStatusCode.OK, Municipios.Select(m => new { id = m.Id, codigoDane = m.CodigoDane, municipio = m.Municipio, departamento = m.Departamento, pais = "Colombia" }).ToList()),
@@ -410,6 +413,29 @@ public sealed class clsNexoFalso : HttpMessageHandler
             .ToList();
         return Json(HttpStatusCode.OK, filas);
     }
+
+    /// <summary>
+    /// HU-023 (#176): <c>GET /api/captura-solicitudes/ciudades?departamento=&amp;q=</c> como Nexo (<c>clsBuscarCiudadesQueryHandler</c>):
+    /// sin tildes ni mayúsculas, el texto dentro del municipio y el departamento exacto, ordenado por nombre, máximo 50, sin <c>pais</c>.
+    /// </summary>
+    private HttpResponseMessage Ciudades(Uri url)
+    {
+        var consulta = System.Web.HttpUtility.ParseQueryString(url.Query);
+        CiudadesConsultadas.Enqueue(url.Query);
+        var q = Cotifly.Aplicacion.Municipios.Interfaces.IClsMunicipiosProvider.Normalizar(consulta["q"]);
+        var departamento = Cotifly.Aplicacion.Municipios.Interfaces.IClsMunicipiosProvider.Normalizar(consulta["departamento"]);
+        var filas = Municipios
+            .Where(m => departamento.Length == 0 || Cotifly.Aplicacion.Municipios.Interfaces.IClsMunicipiosProvider.Normalizar(m.Departamento) == departamento)
+            .Where(m => q.Length == 0 || Cotifly.Aplicacion.Municipios.Interfaces.IClsMunicipiosProvider.Normalizar(m.Municipio).Contains(q, StringComparison.Ordinal))
+            .OrderBy(m => m.Municipio, StringComparer.Ordinal)
+            .Take(50)
+            .Select(m => new { id = m.Id, codigoDane = m.CodigoDane, municipio = m.Municipio, departamento = m.Departamento, nombreTarifasPlaza = (string?)null, zonaTarificacion = (string?)null })
+            .ToList();
+        return Json(HttpStatusCode.OK, filas);
+    }
+
+    /// <summary>HU-023 (#176): la query de cada <c>GET /api/captura-solicitudes/ciudades</c> recibida.</summary>
+    public ConcurrentQueue<string> CiudadesConsultadas { get; } = new();
 
     private HttpResponseMessage Alta(string? cuerpo)
     {

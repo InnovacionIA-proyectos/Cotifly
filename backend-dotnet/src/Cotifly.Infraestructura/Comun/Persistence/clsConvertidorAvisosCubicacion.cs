@@ -41,7 +41,9 @@ public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCub
             [.. (avisos.MercanciasCondicionadas ?? []).Take(MaximoElementos).Select(m => new clsMercanciaCondicionada(Recortar(m.CodigoMercancia)!, Recortar(m.Comentario)))],
             [.. (avisos.Advertencias ?? []).Take(MaximoElementos).Select(a => new clsAdvertenciaCubicador(Recortar(a.Codigo), Recortar(a.Mensaje)!))],
             avisos.Extradimension is { } e
-                ? new clsExtradimensionCubicador(e.Extradimensionado, [.. (e.Dimensiones ?? []).Take(MaximoElementos).Select(d => Recortar(d)!)], Recortar(e.Detalle))
+                ? new clsExtradimensionCubicador(e.HayExtradimension, e.MedidasEstandar, [.. (e.Piezas ?? []).Take(MaximoElementos).Select(p => new clsPiezaExtradimension(
+                    p.IndicePosicion, Recortar(p.IdTipoMercancia), Recortar(p.CodigoMercancia),
+                    [.. (p.Excesos ?? []).Take(MaximoElementos).Select(x => Recortar(x)!)]))])
                 : null);
         return JsonSerializer.Serialize(acotados, _opciones);
     }
@@ -56,15 +58,26 @@ public sealed class clsConvertidorAvisosCubicacion : ValueConverter<clsAvisosCub
         try
         {
             var leidos = JsonSerializer.Deserialize<clsAvisosCubicacion>(json, _opciones);
-            return leidos is null
-                ? null
-                : new clsAvisosCubicacion(leidos.MercanciasCondicionadas ?? [], leidos.Advertencias ?? [], leidos.Extradimension);
+            if (leidos is null)
+            {
+                return null;
+            }
+
+            var extradimension = leidos.Extradimension is { } e
+                ? e with { HayExtradimension = e.HayExtradimension || MarcaVieja(json), Piezas = [.. (e.Piezas ?? []).Select(p => p with { Excesos = p.Excesos ?? [] })] }
+                : null;
+            return new clsAvisosCubicacion(leidos.MercanciasCondicionadas ?? [], leidos.Advertencias ?? [], extradimension);
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>HU-023 (#176): la forma anterior de la extradimensión (<c>{extradimensionado: true, …}</c>) se lee como <c>hayExtradimension</c>.</summary>
+    private static bool MarcaVieja(string json) =>
+        System.Text.Json.Nodes.JsonNode.Parse(json)?["extradimension"]?["extradimensionado"] is System.Text.Json.Nodes.JsonValue marca
+        && marca.TryGetValue<bool>(out var valor) && valor;
 
     private static string? Recortar(string? texto) =>
         texto is null ? null : texto.Length > LargoMaximoTexto ? texto[..LargoMaximoTexto] : texto;

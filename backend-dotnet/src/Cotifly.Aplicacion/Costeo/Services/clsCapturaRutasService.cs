@@ -284,7 +284,7 @@ public sealed class clsCapturaRutasService(
 
         // HU-023: el catálogo es por código; el uuid (si el cubicador lo publica) solo traduce el id_tipo_mercancia obsoleto.
         var porId = new Dictionary<Guid, clsTipoMercanciaCubicador>();
-        var porCodigo = new Dictionary<string, clsTipoMercanciaCubicador>(StringComparer.Ordinal);
+        var porCodigo = new Dictionary<string, clsTipoMercanciaCubicador>(StringComparer.OrdinalIgnoreCase);
         foreach (var tipo in catalogo.Valor)
         {
             porCodigo.TryAdd(tipo.Codigo, tipo);

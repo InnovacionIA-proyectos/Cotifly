@@ -231,7 +231,7 @@ public sealed class clsValidadorCatalogosCaptura(
             }
             else
             {
-                vehiculos = catalogo.Valor.Where(v => v.Activo).Select(v => v.Codigo).ToHashSet(StringComparer.Ordinal);
+                vehiculos = catalogo.Valor.Where(v => v.Activo).Select(v => v.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
 
             _vehiculosCubicador = (vehiculos, true);
@@ -247,7 +247,7 @@ public sealed class clsValidadorCatalogosCaptura(
             }
             else
             {
-                carrocerias = catalogo.Valor.Where(c => c.Activo).Select(c => c.Codigo).ToHashSet(StringComparer.Ordinal);
+                carrocerias = catalogo.Valor.Where(c => c.Activo).Select(c => c.Codigo).ToHashSet(StringComparer.OrdinalIgnoreCase);
             }
 
             _carroceriasCubicador = (carrocerias, true);

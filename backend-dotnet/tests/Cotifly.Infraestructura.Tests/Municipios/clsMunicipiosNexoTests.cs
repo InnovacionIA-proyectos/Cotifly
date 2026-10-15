@@ -1,5 +1,6 @@
 using System.Net;
 using Cotifly.Aplicacion.Identidad.Repositories;
+using Cotifly.Aplicacion.Municipios.DTOs;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Infraestructura.Configuracion;
@@ -48,6 +49,29 @@ public sealed class clsMunicipiosNexoTests : IDisposable
         peticion.IdPortalUsuario.Should().Be("1007");
         peticion.Accept.Should().Be("application/json");
     }
+
+    [Fact]
+    public async Task LaBusquedaVaContraCiudadesConElTextoYElDepartamentoYCompletaElPais()
+    {
+        // HU-023 (#176, contrato con Nexo §3.1): los ids de origen/destino salen de GET /api/captura-solicitudes/ciudades (sin "pais").
+        _nexo.ResponderCandidatos(
+            """
+            [{"id":5001,"codigoDane":"05001","municipio":"Medellín","departamento":"Antioquia","nombreTarifasPlaza":null,"zonaTarificacion":null}]
+            """);
+
+        var resultado = await Proveedor().BuscarAsync(_usuarioId, " medellín ", "Antioquia", Ct);
+
+        var peticion = _nexo.Peticiones.Should().ContainSingle().Subject;
+        peticion.Url.AbsolutePath.Should().Be("/api/captura-solicitudes/ciudades");
+        peticion.Url.Query.Should().Be("?departamento=Antioquia&q=medell%C3%ADn");
+        peticion.IdPortalUsuario.Should().Be("1007");
+        resultado.Valor.Should().ContainSingle().Which.Should().Be(new clsMunicipio(5001, "05001", "Medellín", "Antioquia", "Colombia"));
+    }
+
+    [Fact]
+    public void LaBusquedaSinFiltrosNoMandaQuery() =>
+        clsMunicipiosNexo.ConstruirUrlCiudades(clsNexoClientesFalso.UrlBase, " ", null).AbsoluteUri
+            .Should().Be(clsNexoClientesFalso.UrlBase + "/api/captura-solicitudes/ciudades");
 
     [Fact]
     public async Task MapeaLosMunicipiosConTodosSusCampos()

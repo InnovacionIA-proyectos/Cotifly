@@ -907,13 +907,28 @@ paths:
     get:
       operationId: listarMunicipios
       tags: [web]
-      summary: Catálogo completo de municipios para origen/destino
+      summary: Búsqueda de ciudades (o catálogo completo) para origen/destino
       description: |
-        Mismo catálogo de municipios (sin paginar) que usa el formulario "Nueva solicitud" de Nexo para el
-        origen y el destino. Se omiten los campos de costeo interno (`nombreTarifasPlaza`, `zonaTarificacion`
-        en la respuesta de Nexo): el frontend no los necesita.
+        HU-023 (#176, contrato con Nexo §3.1 y §7). Con `q` o `departamento`, es la búsqueda de Nexo
+        `GET /api/captura-solicitudes/ciudades`: solo Colombia, el texto dentro del nombre y el departamento exacto (sin tildes ni
+        mayúsculas), ordenada por nombre y con **máximo 50 filas**. De aquí salen los `origen_municipio_id`/`destino_municipio_id` que
+        viajan a Nexo. Sin filtros, el catálogo completo de municipios (sin paginar; la misma tabla y los mismos ids). Se omiten los
+        campos de costeo interno (`nombreTarifasPlaza`, `zonaTarificacion`): el frontend no los necesita.
       security:
         - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Texto dentro del nombre del municipio (sin tildes ni mayúsculas). Hasta 100 caracteres.
+          schema:
+            type: string
+        - name: departamento
+          in: query
+          required: false
+          description: Departamento exacto (sin tildes ni mayúsculas).
+          schema:
+            type: string
       responses:
         '200':
           description: Catálogo completo de municipios
@@ -1003,7 +1018,7 @@ paths:
       tags: [web]
       summary: Catálogo de tipos de vehículo del cubicador
       description: |
-        HU-023.1 (#156). Pasa `GET /tipos-vehiculo` del cubicador (petición P1; con la caché de `Cubicador:MinutosCacheCatalogos`).
+        HU-023.1 (#156). Pasa el catálogo canónico `GET /vehiculos-catalogo` del cubicador (HU-023, #176; antes `/tipos-vehiculo`), con la caché de `Cubicador:MinutosCacheCatalogos`.
         Cotifly no guarda el nombre del vehículo (decisión 4 de HU-023): la pantalla y el PDF lo sacan de aquí por su `codigo`.
         `carrocerias` son los códigos de carrocería compatibles.
       security:
@@ -1021,7 +1036,7 @@ paths:
           $ref: '#/components/responses/SesionExpirada'
         '503':
           description: |
-            `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado, no respondió o todavía no publica `GET /tipos-vehiculo`
+            `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado, no respondió o no publica `GET /vehiculos-catalogo`
             (petición P1).
           content:
             application/json:
@@ -3057,6 +3072,7 @@ components:
                 - MERCANCIA_DESCONOCIDA
                 - MERCANCIA_NO_CUBICABLE
                 - DIMENSIONES_INVALIDAS
+                - CUBICACION_DEMASIADO_GRANDE
                 - ESTADO_NO_PERMITE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
@@ -3556,7 +3572,7 @@ components:
         motivo_sin_seleccion:
           type: string
           nullable: true
-          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, BUSQUEDA_AGOTADA, null]
         condicionada:
           type: boolean
           description: La ruta va a la Mesa de Costeo por una mercancía condicionada.
@@ -3569,20 +3585,10 @@ components:
           items:
             $ref: '#/components/schemas/AdvertenciaCubicador'
         extradimension:
-          type: object
-          nullable: true
-          description: Forma de `ExtradimensionCubicador`; `null` si el cubicador no la informó.
-          required: [extradimensionado, dimensiones, detalle]
-          properties:
-            extradimensionado:
-              type: boolean
-            dimensiones:
-              type: array
-              items:
-                type: string
-            detalle:
-              type: string
-              nullable: true
+          description: HU-023 (#176). `ExtradimensionCubicador` con la estructura vigente, o `null` si el cubicador no la informó.
+          oneOf:
+            - $ref: '#/components/schemas/ExtradimensionCubicador'
+            - $ref: '#/components/schemas/Nulo'
 
     AvisosCubicacion:
       type: object
@@ -3600,19 +3606,10 @@ components:
           items:
             $ref: '#/components/schemas/AdvertenciaCubicador'
         extradimension:
-          type: object
-          nullable: true
-          required: [extradimensionado, dimensiones, detalle]
-          properties:
-            extradimensionado:
-              type: boolean
-            dimensiones:
-              type: array
-              items:
-                type: string
-            detalle:
-              type: string
-              nullable: true
+          description: HU-023 (#176). `ExtradimensionCubicador` con la estructura vigente, o `null` si el cubicador no la informó.
+          oneOf:
+            - $ref: '#/components/schemas/ExtradimensionCubicador'
+            - $ref: '#/components/schemas/Nulo'
 
     MercanciaCondicionada:
       type: object
@@ -3636,18 +3633,87 @@ components:
 
     ExtradimensionCubicador:
       type: object
-      required: [extradimensionado, dimensiones, detalle]
-      description: Forma provisional hasta que el cubicador publique sus ejemplos (petición P2).
+      required: [hay_extradimension, medidas_estandar, piezas]
+      description: |
+        HU-023 (#176). Estructura vigente del cubicador (guía §5.3): si alguna pieza excede las medidas estándar, las medidas con las
+        que se comparó y cada pieza que las excede, con su posición en las mercancías de la ruta (`indice_posicion`, base 0).
       properties:
-        extradimensionado:
+        hay_extradimension:
           type: boolean
-        dimensiones:
+        medidas_estandar:
+          oneOf:
+            - $ref: '#/components/schemas/MedidasEstandarCubicador'
+            - $ref: '#/components/schemas/Nulo'
+        piezas:
+          type: array
+          items:
+            $ref: '#/components/schemas/PiezaExtradimension'
+
+    MedidasEstandarCubicador:
+      type: object
+      required: [largo_max_cm, ancho_max_cm, alto_max_cm, peso_max_kg]
+      description: HU-023 (#176). Medidas estándar con las que el cubicador decide la extradimensión (cm y kg).
+      properties:
+        largo_max_cm:
+          type: number
+          nullable: true
+        ancho_max_cm:
+          type: number
+          nullable: true
+        alto_max_cm:
+          type: number
+          nullable: true
+        peso_max_kg:
+          type: number
+          nullable: true
+
+    PiezaExtradimension:
+      type: object
+      required: [indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos]
+      description: |
+        HU-023 (#176). Una pieza que excede las medidas estándar. `indice_posicion` es la posición (base 0) en las mercancías de la
+        ruta; puede ser `null` en corridas guardadas antes de S5-HU-17.8.
+      properties:
+        indice_posicion:
+          type: integer
+          nullable: true
+          minimum: 0
+        id_tipo_mercancia:
+          type: string
+          nullable: true
+        codigo_mercancia:
+          type: string
+          nullable: true
+        excesos:
           type: array
           items:
             type: string
-        detalle:
+          example: ['largo 1400.0 cm > 1220.0 cm']
+
+    MercanciaVehiculo:
+      type: object
+      required: [indice_posicion, id_tipo_mercancia, codigo_mercancia, cantidad, peso_kg, volumen_m3]
+      description: |
+        HU-023 (#176). Lo que lleva un camión de la recomendación, una fila por posición de la petición. Dos filas del mismo camión pueden
+        compartir `codigo_mercancia` (posiciones con medidas distintas): quien agrupe por código **debe sumar**. `indice_posicion` (base 0)
+        puede ser `null` en corridas viejas.
+      properties:
+        indice_posicion:
+          type: integer
+          nullable: true
+          minimum: 0
+        id_tipo_mercancia:
           type: string
           nullable: true
+        codigo_mercancia:
+          type: string
+        cantidad:
+          type: integer
+        peso_kg:
+          type: number
+          description: Peso total de esa fila en el camión (kg).
+        volumen_m3:
+          type: number
 
     MisCotizaciones:
       type: object
@@ -4380,8 +4446,17 @@ components:
         motivo_sin_seleccion:
           type: string
           nullable: true
-          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
-          description: HU-023.3. Por qué el cubicador no pudo escoger (solo con `SIN_SELECCION_AUTOMATICA`).
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, BUSQUEDA_AGOTADA, null]
+          description: |
+            HU-023.3. Por qué el cubicador no pudo escoger (solo con `SIN_SELECCION_AUTOMATICA`). HU-023 (#176): si la base no tiene el
+            script 07, `BUSQUEDA_AGOTADA` se guarda en `null` y el motivo real queda en la advertencia `MOTIVO_SIN_SELECCION` de
+            `avisos_cubicacion`.
+        mensaje_sin_seleccion:
+          type: string
+          nullable: true
+          description: |
+            HU-023 (#176). Con `SIN_SELECCION_AUTOMATICA`, el texto para el comercial según el motivo (con `BUSQUEDA_AGOTADA` no dice que
+            la carga no cabe: es un límite del algoritmo del cubicador); `null` en los demás casos.
         condicionada:
           type: boolean
           description: HU-023.3. La ruta va a la Mesa de Costeo por una mercancía condicionada.
@@ -5809,7 +5884,7 @@ components:
         motivo_sin_seleccion:
           type: string
           nullable: true
-          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, BUSQUEDA_AGOTADA, null]
         condicionada:
           type: boolean
         camiones:
@@ -5975,12 +6050,25 @@ components:
     VehiculoCubicacion:
       type: object
       required: [codigo_vehiculo, nombre_vehiculo, codigo_carroceria, nombre_carroceria, peso_total_kg, volumen_total_m3,
-        porcentaje_llenado_volumen, porcentaje_llenado_peso]
+        porcentaje_llenado_volumen, porcentaje_llenado_peso, numero_vehiculo, alerta_bajo_llenado, heterogenea, mercancias]
       description: |
-        HU-023.2 (#157). Un vehículo recomendado por el cubicador. Los nombres salen de `GET /web/tipos-vehiculo` y
-        `GET /web/tipos-carroceria`; si el catálogo no responde o no trae el código, el nombre es el código (o, para el vehículo, el
-        nombre que mandó el cubicador).
+        HU-023.2 (#157). Un vehículo recomendado por el cubicador. Los nombres salen de `GET /web/tipos-vehiculo` (catálogo canónico
+        `GET /vehiculos-catalogo` del cubicador, HU-023 #176) y `GET /web/tipos-carroceria`; si el catálogo no responde o no trae el
+        código, el nombre es el código (o, para el vehículo, el nombre que mandó el cubicador). HU-023 (#176): `numero_vehiculo`,
+        `alerta_bajo_llenado`, `heterogenea` y lo que lleva el camión por posición (`mercancias`).
       properties:
+        numero_vehiculo:
+          type: integer
+          nullable: true
+          minimum: 1
+        alerta_bajo_llenado:
+          type: boolean
+        heterogenea:
+          type: boolean
+        mercancias:
+          type: array
+          items:
+            $ref: '#/components/schemas/MercanciaVehiculo'
         codigo_vehiculo:
           type: string
         nombre_vehiculo:
@@ -6024,8 +6112,8 @@ components:
 
     ResultadoCubicacion:
       type: object
-      required: [resultado, motivo_sin_seleccion, condicionada, vehiculos, mercancias_condicionadas, advertencias, extradimension,
-        mercancias]
+      required: [resultado, motivo_sin_seleccion, mensaje_sin_seleccion, condicionada, vehiculos, mercancias_condicionadas, advertencias,
+        extradimension, mercancias]
       description: |
         HU-023.2 (#157). Respuesta de "Calcular cubicaje": la recomendación del cubicador para una corrida de prueba que no se guarda.
         **Cambió de forma** respecto a la cubicación de Nexo: ya no trae `sugerencia`, `sugerencia_flota` ni las clases de viaje y de
@@ -6033,6 +6121,7 @@ components:
       example:
         resultado: ASIGNADO
         motivo_sin_seleccion: null
+        mensaje_sin_seleccion: null
         condicionada: false
         vehiculos:
           - codigo_vehiculo: 3S3
@@ -6043,6 +6132,22 @@ components:
             volumen_total_m3: 62.5
             porcentaje_llenado_volumen: 81.25
             porcentaje_llenado_peso: 47.06
+            numero_vehiculo: 1
+            alerta_bajo_llenado: false
+            heterogenea: false
+            mercancias:
+              - indice_posicion: 0
+                id_tipo_mercancia: 2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A
+                codigo_mercancia: CAFE_EN_ESTIBAS
+                cantidad: 500
+                peso_kg: 10000
+                volumen_m3: 18
+              - indice_posicion: 2
+                id_tipo_mercancia: 2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A
+                codigo_mercancia: CAFE_EN_ESTIBAS
+                cantidad: 300
+                peso_kg: 6000
+                volumen_m3: 44.5
           - codigo_vehiculo: C2
             nombre_vehiculo: Sencillo C2
             codigo_carroceria: ESTACAS
@@ -6051,6 +6156,16 @@ components:
             volumen_total_m3: 18.25
             porcentaje_llenado_volumen: 60
             porcentaje_llenado_peso: 75.01
+            numero_vehiculo: 2
+            alerta_bajo_llenado: false
+            heterogenea: false
+            mercancias:
+              - indice_posicion: 1
+                id_tipo_mercancia: null
+                codigo_mercancia: BOBINAS_ACERO
+                cantidad: 3
+                peso_kg: 4500.5
+                volumen_m3: 18.25
         mercancias_condicionadas: []
         advertencias:
           - codigo: REFRIGERADO
@@ -6072,8 +6187,16 @@ components:
         motivo_sin_seleccion:
           type: string
           nullable: true
-          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, null]
-          description: Solo con `SIN_SELECCION_AUTOMATICA`.
+          enum: [EXTRADIMENSIONADO, SIN_CANDIDATOS_DIMENSIONALES, SUPERA_K_MAX, SIN_CARROCERIA_COMPATIBLE, BUSQUEDA_AGOTADA, null]
+          description: |
+            Solo con `SIN_SELECCION_AUTOMATICA`. `BUSQUEDA_AGOTADA` (HU-023, #176) es un límite del algoritmo del cubicador, no de la
+            carga: no se le dice al comercial que su carga no cabe.
+        mensaje_sin_seleccion:
+          type: string
+          nullable: true
+          description: |
+            HU-023 (#176). Con `SIN_SELECCION_AUTOMATICA`, el texto para el comercial según el motivo (con `BUSQUEDA_AGOTADA` no dice que
+            la carga no cabe); `null` con `ASIGNADO`.
         condicionada:
           type: boolean
           description: Alguna mercancía requiere aprobación (en una solicitud real la ruta iría a la Mesa de Costeo).

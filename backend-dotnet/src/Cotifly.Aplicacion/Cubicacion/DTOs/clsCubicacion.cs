@@ -46,7 +46,14 @@ public sealed record clsResultadoCubicacion(
     IReadOnlyList<clsAdvertenciaCubicador> Advertencias,
     clsExtradimensionCubicador? Extradimension,
     IReadOnlyList<clsMercanciaCubicada> Mercancias,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] clsSugerenciaVehiculoLegada? Sugerencia = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] clsSugerenciaVehiculoLegada? Sugerencia = null)
+{
+    /// <summary>
+    /// HU-023 (#176): con <c>SIN_SELECCION_AUTOMATICA</c>, el texto para el comercial según el motivo (<c>BUSQUEDA_AGOTADA</c> no dice que
+    /// la carga no cabe: es un límite del algoritmo); <c>null</c> con <c>ASIGNADO</c>.
+    /// </summary>
+    public string? MensajeSinSeleccion { get; init; }
+}
 
 /// <summary>
 /// Forma anterior de <c>sugerencia</c> (<c>SugerenciaVehiculo</c> de la cubicación de Nexo, <c>deprecated</c>), derivada del primer vehículo
@@ -98,7 +105,23 @@ public sealed record clsVehiculoCubicacion(
     decimal PesoTotalKg,
     decimal VolumenTotalM3,
     decimal PorcentajeLlenadoVolumen,
-    decimal PorcentajeLlenadoPeso);
+    decimal PorcentajeLlenadoPeso)
+{
+    /// <summary>HU-023 (#176): número del camión en la recomendación (desde 1), si el cubicador lo trae.</summary>
+    public int? NumeroVehiculo { get; init; }
+
+    /// <summary>HU-023 (#176): el cubicador avisa que el camión va con poco llenado.</summary>
+    public bool AlertaBajoLlenado { get; init; }
+
+    /// <summary>HU-023 (#176): el camión lleva mercancías de tipos distintos.</summary>
+    public bool Heterogenea { get; init; }
+
+    /// <summary>
+    /// HU-023 (#176): lo que lleva el camión, una fila por posición de la petición (<c>indice_posicion</c>, base 0, puede faltar). Dos
+    /// filas pueden compartir código: quien agrupe por código debe sumar.
+    /// </summary>
+    public IReadOnlyList<clsMercanciaVehiculo> Mercancias { get; init; } = [];
+}
 
 /// <summary>
 /// El tipo de mercancía con el que viajó un ítem al cubicador. <paramref name="Sugerida"/> es <c>true</c> si se resolvió por parecido

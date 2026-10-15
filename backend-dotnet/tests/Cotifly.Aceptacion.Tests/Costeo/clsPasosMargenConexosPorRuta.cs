@@ -110,9 +110,12 @@ public sealed class clsPasosMargenConexosPorRuta(clsContextoWeb web, clsPasosCos
     [Then("quedó auditado que se quitó el servicio conexo {string} de {string}")]
     public async Task EntoncesAuditado(string nombre, string cotizacion)
     {
+        // Determinista: el cambio de cantidad y el quitar pueden quedar con el mismo createdAt (y el id es NEWID, no sirve de
+        // desempate), así que se busca el evento del quitar en vez de "el último".
         var salida = await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             "SELECT TOP 1 outputResumen FROM dbo_cotifly.EventosHerramienta "
-            + $"WHERE herramienta = 'cambiar_servicios_conexos' AND exito = 1 AND input LIKE '%{costeo.Folio(cotizacion)}%' ORDER BY createdAt DESC");
+            + $"WHERE herramienta = 'cambiar_servicios_conexos' AND exito = 1 AND input LIKE '%{costeo.Folio(cotizacion)}%' "
+            + "AND outputResumen LIKE '%\"quitado\":true%' ORDER BY createdAt DESC");
         salida.Should().Contain(nombre).And.Contain("\"quitado\":true");
     }
 

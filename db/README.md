@@ -20,9 +20,12 @@ dejarla con la configuración inicial.
 | `migrations_mssql/0010_nombres_municipio.sql` | HU-021 | Borrador pendiente de revisión de scalderon-bs y del DBA |
 | `scripts/02_alter_cubicador.sql` | HU-023.3 (#158) | En el ejecutador. Columnas para guardar la respuesta del cubicador; va después del `01` (o del `0010` en una base migrada) |
 | `scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158) | Propuesta. El backend no mapea sus columnas |
-| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen |
+| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. Solo en local, `levantar-local` también lo aplica |
+| `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador. Reemplaza el CHECK `ck_cotizacionLineasSolicitud_motivoSinSeleccion` por uno con los 5 motivos vigentes del cubicador (agrega `BUSQUEDA_AGOTADA`). Idempotente; no obligatorio para arrancar (sin él, el backend guarda el motivo como advertencia y `/health/ready` solo lo avisa). El `pendientes/03` deja el mismo CHECK |
 | `scripts/pendientes/05_categoria_conexo.sql` | #173 | Propuesta. El backend no mapea la columna |
 | `scripts/pendientes/06_idempotencia_captura.sql` | #173 | Propuesta (deuda). El backend no mapea la tabla |
+
+**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `07` y, solo en local, `pendientes/04`.
 
 ## Estructura
 
@@ -34,6 +37,7 @@ db/
 ├── scripts/
 │   ├── 01_crear_esquema.sql   schema, tablas, restricciones, índices y vistas, en su forma final
 │   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
+│   ├── 07_motivo_busqueda_agotada.sql  quinto motivo de "sin selección" en el CHECK (se puede repetir)
 │   ├── pendientes/            propuestas 03 a 06, pendientes de revisión (el ejecutador no las corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -124,7 +128,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 
 1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
 2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
-   `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/07_motivo_busqueda_agotada.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -133,6 +137,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 ```
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/07_motivo_busqueda_agotada.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -201,6 +206,7 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 | Script | HU | Qué cambia |
 |---|---|---|
 | `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
+| `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` admite los 5 motivos (`BUSQUEDA_AGOTADA`) y exige `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`. Idempotente, DROP + ADD `WITH CHECK` en una transacción; se detiene sin tocar nada si alguna ruta tiene motivo sin `SIN_SELECCION_AUTOMATICA` |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.

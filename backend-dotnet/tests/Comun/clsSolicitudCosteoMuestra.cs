@@ -50,8 +50,8 @@ public static class clsSolicitudCosteoMuestra
         DestinoMunicipioId = 11001,
         Posiciones =
         [
-            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1425m, TipoMercancia, CodigoMercancia),
-            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, null, TipoMercancia, CodigoMercancia),
+            new clsPosicionCarga("Estiba de café", 20, 120m, 100m, 150m, 1424.95m, TipoMercancia, CodigoMercancia),
+            new clsPosicionCarga(null, 1, 1200m, 235m, 269m, 1m, TipoMercancia, CodigoMercancia),
         ],
     };
 

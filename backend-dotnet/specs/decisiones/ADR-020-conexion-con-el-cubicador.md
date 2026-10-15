@@ -306,9 +306,10 @@ hasta 40) y los dos primeros devueltos en `clsLineaCosteoDto` de `GET /api/solic
    análisis del Excel de licitación. Los Nexo falsos de las pruebas exigen el nombre nuevo (401 sin él) y una prueba impide volver a
    escribir el nombre a mano en `src/`.
 2. **`grupoRutaId`** (antes `referenciaRuta`, petición N1): el id de la ruta de Cotifly (GUID en texto) en cada línea, al enviar y al
-   leer el GET. Bandera **`Nexo:EnviarGrupoRutaId`** (antes `Nexo:EnviarReferenciaRuta`), **apagada** por defecto.
+   leer el GET. Bandera **`Nexo:EnviarGrupoRutaId`** (antes `Nexo:EnviarReferenciaRuta`), **encendida** por defecto desde #176 (antes
+   apagada); una ruta de un solo camión va con `grupoRutaId = null`.
 3. **`idRecomendacionVehiculo`** por línea: el camión del cubicador (`CotizacionVehiculosLineaSolicitud.idRecomendacionVehiculo`, GUID en
-   texto, 36 caracteres). Bandera **`Nexo:EnviarDatosCubicador`**, **apagada** por defecto.
+   texto, 36 caracteres). Bandera **`Nexo:EnviarDatosCubicador`**, **encendida** por defecto desde #176 (antes apagada).
 4. ~~**`codigoTipoMercancia`** por posición~~ — **retirado** con el contrato de Nexo #297 (ver el ajuste de abajo): el código de
    mercancía no va a Nexo.
 5. **Emparejamiento en el polling** (`clsEmparejadorLineasNexo`):
@@ -357,7 +358,8 @@ Reemplaza los puntos 4 y 7 de arriba. Respuestas de Nexo (decididas por Sara) en
   se asignan por `numeroLinea` en vez de por el id de Nexo.
 - **Código de mercancía:** **no viaja** a Nexo (ni `codigoTipoMercancia`). Se quitó del payload; Cotifly lo sigue guardando para el
   cubicador.
-- **Códigos del cubicador** (`2S2`, `FURGON`...): nueva bandera **`Nexo:EnviarCodigosCubicador`** (`false` por defecto). Apagada, la
+- **Códigos del cubicador** (`2S2`, `FURGON`...): nueva bandera **`Nexo:EnviarCodigosCubicador`** (`false` por defecto hasta #176; desde
+  #176, `true`, porque Nexo ya desplegó la cuarentena). Apagada, la
   línea de un camión del cubicador (la que trae `idRecomendacionVehiculo` en Cotifly) va **sin `tipoVehiculo` ni `carroceria`**; con #297,
   esa línea no se autocostea y queda para la Mesa. **Revierte** el "se mandan ya" del punto 7: hoy un código que Nexo no conoce crea un
   vehículo duplicado en su catálogo. Se enciende cuando Nexo despliegue la cuarentena de vehículos (S5-HU-18.4) y S5-HU-20.5.
@@ -411,6 +413,66 @@ con un camión del respaldo con vehículo digitado (con vehículo, posiciones y 
 
 En el GET (`clsLineaCosteoDto`), Nexo devuelve por línea `grupoRutaId`, `idRecomendacionVehiculo` y `numeroLinea` (1, 2, 3).
 
+## Decisión — HU-023 (#176): alineación con los contratos vigentes de NEXO y del cubicador (2026-10-15)
+
+Contratos que mandan: `backend-dotnet/docs/COTIFLY-CONTRATO.md` (NEXO) y `backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`.
+Según el usuario, NEXO ya desplegó `grupoRutaId`, `idRecomendacionVehiculo`, `numeroLinea`, la cuarentena de vehículos y la
+normalización de nombres.
+
+### NEXO
+
+- **Banderas encendidas por defecto.** `Nexo:EnviarGrupoRutaId`, `Nexo:EnviarDatosCubicador` y `Nexo:EnviarCodigosCubicador` pasan a
+  `true`: quedan solo como **interruptor de emergencia**. Reemplaza lo de "apagada por defecto" de las secciones de HU-023.4 y #297.
+  El polling sigue comparando contra lo que viajó (`envio_nexo_registrado`), no contra la bandera actual.
+- **`grupoRutaId` = `null` para la línea suelta** (contrato §3.3): una ruta con un solo camión no lleva grupo; una ruta con varios lleva
+  el id de la ruta de Cotifly (un GUID por recomendación, igual en todas sus líneas) y sus líneas van contiguas (se arman ruta por ruta).
+  La cuenta de camiones es la del alta (`clsCosteoNexo.GrupoRutaId`).
+- **Emparejamiento con la línea suelta.** Sin `grupoRutaId`, el par se arma solo con `idRecomendacionVehiculo` (único por camión, se
+  compara como GUID: los ids llegan en MAYÚSCULAS); sin ninguno de los dos (respaldo), sigue por el texto de la ruta y el contenido como
+  antes. Fuzz de cruces con la línea suelta: no cruza más que QA (`FuzzConElCubicadorNoCruzaMasQueAntesYConGrupoRutaNuncaCruza`).
+- **Municipios.** El buscador de origen/destino va contra `GET /api/captura-solicitudes/ciudades` (`GET /web/municipios?q=&departamento=`,
+  máximo 50, solo Colombia): de ahí salen los `origenMunicipioId`/`destinoMunicipioId`. Sin filtros, `GET /web/municipios` sigue siendo
+  el catálogo completo de `/municipios` (misma tabla `tbl_municipios`, mismos ids): `/ciudades` corta en 50 filas y no filtra por id,
+  así que no sirve para validar un id ni para resolver por nombre las filas de una licitación.
+
+### Cubicador
+
+- **Catálogo de vehículos** desde `GET /vehiculos-catalogo` (canónico: `2L2`, `C2`, `3S3`…), no `/tipos-vehiculo` ni `/vehiculos`
+  (presets del motor 3D). El lector acepta `codigoVehiculo`/`codigo`, `nombreVehiculo`/`nombre`, `carrocerias` y `activo`, en un arreglo
+  raíz o bajo `items`/`vehiculos`. La forma exacta no está publicada en la guía: queda en la lista de pendientes.
+- **Reconsulta tras un POST sin respuesta.** El `POST /recomendaciones` nunca se reintenta. Si se agota el tiempo o falla la red (no con
+  el circuito abierto: la petición no salió), se consulta `GET /recomendaciones?idLineaSolicitud=…&origenSistema=COTIFLY`: si la corrida
+  existe, cumple el contrato y su **huella** coincide con la petición, se usa; si no, sigue la caída de siempre. Huella (auditoría A3):
+  con `ASIGNADO`, por posición (`indicePosicion`) la suma de `cantidad` debe ser la pedida y la suma de `pesoKg` la de `cantidad × pesoKg`
+  pedido (tolerancia de 0,05 kg por fila, solo el redondeo), y el código y las medidas por unidad si vienen; si la respuesta repite las
+  mercancías de la petición en la raíz, también se comparan. Lo que no se puede comprobar (una `SIN_SELECCION_AUTOMATICA` sin ese eco, un
+  `ASIGNADO` sin `indicePosicion`, una petición sin peso) **no se acepta**: recalcular con el mismo `rutaId` deja la corrida anterior como
+  la última y no debe confundirse con la nueva. El `volumenM3` no se compara (el ejemplo de la guía no cuadra con largo × ancho × alto).
+- **Tope de 10.000 unidades** por petición: se valida antes de llamar (`CUBICACION_DEMASIADO_GRANDE`, 400, vuelve al catálogo de
+  errores) y el 400 del cubicador con ese código se traduce igual. Nunca va al respaldo.
+- **422** (validación del esquema del cubicador) es `CUBICADOR_RESPUESTA_INVALIDA` con un mensaje propio: visible, nunca al respaldo.
+- **`pesoKg` > 0** obligatorio en cada mercancía que va al cubicador: lo valida la captura (`POSICION_INVALIDA`) y "Calcular cubicaje"
+  (`DIMENSIONES_INVALIDAS`).
+- **`extradimension` vigente**: `{hayExtradimension, medidasEstandar{largoMaxCm, anchoMaxCm, altoMaxCm, pesoMaxKg}, piezas[]{indicePosicion,
+  idTipoMercancia, codigoMercancia, excesos[]}}`. Sale en "Calcular cubicaje" y en `GET …/costeo` (`avisos_cubicacion`). La forma
+  provisional `{extradimensionado, dimensiones, detalle}` se retira; un JSON viejo guardado se lee con `hayExtradimension` y sin piezas.
+- **Condicionada**: `mercanciasCondicionadas` llega como lista de códigos; el `comentarioCondicion` se une desde `GET /tipos-mercancia`
+  (con caché; si no responde, sin comentario).
+- **Vehículo**: se leen `numeroVehiculo`, `nombreVehiculo`, `alertaBajoLlenado`, `heterogenea` y `mercancias[]` por posición
+  (`indicePosicion` puede ser `null`). Dos filas pueden compartir código: `clsVehiculoRecomendado.TotalesPorCodigo` **suma**. Los códigos
+  se comparan con `OrdinalIgnoreCase`.
+
+### `BUSQUEDA_AGOTADA` (quinto motivo)
+
+- Es un motivo válido de `SIN_SELECCION_AUTOMATICA` (dominio, wire y openapi): deja de responder `CUBICADOR_RESPUESTA_INVALIDA`. El texto
+  para el comercial (`mensaje_sin_seleccion`) **no** dice que la carga no cabe: es un límite del algoritmo.
+- **Base de datos.** El CHECK del 02 admite 4 motivos. `db/scripts/07_motivo_busqueda_agotada.sql` (lo aplica @scalderon-bs; el
+  ejecutador lo corre después del 02) lo reemplaza por uno con los 5 y con `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`.
+  El backend **autodetecta** el 07 (`clsDetectorMotivosBd` lee `sys.check_constraints`, con caché de 5 minutos por base): con él guarda el
+  motivo real; sin él, `clsMotivoSinSeleccionInterceptor` lo guarda en `NULL` y deja el motivo real en una advertencia de la ruta
+  (`MOTIVO_SIN_SELECCION`). Funciona en cualquier ambiente sin configurar nada. `/health/ready` no lo exige: solo lo avisa en la
+  descripción.
+
 ## Consecuencias
 
 - HU-023.4: sin desplegar el encabezado nuevo, **ninguna** llamada a Nexo autentica (401). Es un cambio que hay que desplegar ya.
@@ -429,7 +491,9 @@ En el GET (`clsLineaCosteoDto`), Nexo devuelve por línea `grupoRutaId`, `idReco
 | Revisar y aplicar `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (orden del camión e id del catálogo del conexo). Hasta entonces `ordenVehiculo` queda NULL y el backend no la mapea (#173) | @scalderon-bs |
 | Revisar y aplicar `db/scripts/pendientes/05_categoria_conexo.sql` (categoría del conexo, #173) y mapearla después | @scalderon-bs y DBA |
 | Prueba de punta a punta de la solicitud con flota mixta contra el cubicador de QA (reconsultar el `idRecomendacionVehiculo` guardado) | Duban y Kevin, cuando exista P3 |
-| P1 `GET /tipos-vehiculo`, P2 ejemplos reales, P3 URL de QA, P7 endpoint de salud; confirmar la forma de `advertencias`, `mercanciasCondicionadas` y `extradimension` | Equipo del cubicador |
+| P2 ejemplos reales (en especial la forma de `GET /vehiculos-catalogo` y la respuesta de `GET /recomendaciones` cuando no hay corrida), P3 URL de QA, P7 endpoint de salud | Equipo del cubicador |
+| Aplicar `db/scripts/07_motivo_busqueda_agotada.sql` en la base compartida (#176) | @scalderon-bs |
+| Frontend: buscador de municipios con `GET /web/municipios?q=` y `mensaje_sin_seleccion` (#176) | Frontend |
 | Prueba de punta a punta contra el cubicador de QA (con Kevin) | Duban y Kevin, cuando exista P3 |
 | **Confirmar la fecha real del corte de `POST /api/cubicacion`** (Nexo tampoco consume `/recomendaciones`) y verificar "Calcular cubicaje" contra el cubicador de QA (flota mixta, código desconocido) | Duban con Nexo y el equipo del cubicador, antes del viernes 16 |
 | Frontend: pintar la lista de vehículos de `POST /web/cubicacion` y mandar `codigo_mercancia` (HU-023.2) | Frontend (HU-023-FE) |

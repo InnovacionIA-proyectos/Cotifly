@@ -18,7 +18,11 @@ public static class clsResultadosRecomendacion
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.Ordinal) { Asignado, SinSeleccionAutomatica };
 }
 
-/// <summary>Valores de <c>motivoSinSeleccion</c> (contrato del cubicador y <c>CHECK</c> del script <c>02</c>).</summary>
+/// <summary>
+/// Valores de <c>motivoSinSeleccion</c> (contrato del cubicador). Los cuatro primeros son los del <c>CHECK</c> del script <c>02</c>;
+/// <see cref="BusquedaAgotada"/> (HU-023, #176) lo agrega el script <c>07</c>: sin él, la ruta guarda el motivo en <c>NULL</c> y lo deja
+/// como advertencia (Infraestructura lo detecta en <c>sys.check_constraints</c>).
+/// </summary>
 public static class clsMotivosSinSeleccion
 {
     public const string Extradimensionado = "EXTRADIMENSIONADO";
@@ -26,9 +30,36 @@ public static class clsMotivosSinSeleccion
     public const string SuperaKMax = "SUPERA_K_MAX";
     public const string SinCarroceriaCompatible = "SIN_CARROCERIA_COMPATIBLE";
 
+    /// <summary>
+    /// El buscador del cubicador se quedó sin intentos: es del algoritmo, no del negocio. Al comercial NO se le dice que la carga no cabe.
+    /// </summary>
+    public const string BusquedaAgotada = "BUSQUEDA_AGOTADA";
+
+    /// <summary>Los cinco motivos del contrato vigente.</summary>
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.Ordinal)
     {
+        Extradimensionado, SinCandidatosDimensionales, SuperaKMax, SinCarroceriaCompatible, BusquedaAgotada,
+    };
+
+    /// <summary>Los cuatro motivos que admite el <c>CHECK</c> del script <c>02</c> (sin el <c>07</c>).</summary>
+    public static readonly IReadOnlySet<string> DelScript02 = new HashSet<string>(StringComparer.Ordinal)
+    {
         Extradimensionado, SinCandidatosDimensionales, SuperaKMax, SinCarroceriaCompatible,
+    };
+
+    /// <summary>
+    /// Mensaje para el comercial de cada motivo. El de <see cref="BusquedaAgotada"/> no dice que la carga no cabe: el buscador se quedó
+    /// sin intentos y la Mesa de Costeo escoge el vehículo.
+    /// </summary>
+    public static string Mensaje(string? motivo) => motivo switch
+    {
+        Extradimensionado => "Hay piezas que exceden las medidas estándar: la Mesa de Costeo escoge el vehículo.",
+        SinCandidatosDimensionales => "Ningún vehículo de la flota cumple las medidas de la carga: la Mesa de Costeo escoge el vehículo.",
+        SuperaKMax => "La carga necesita más vehículos de los que combina el cubicador: la Mesa de Costeo escoge los vehículos.",
+        SinCarroceriaCompatible => "Ninguna carrocería es compatible con las mercancías: la Mesa de Costeo escoge el vehículo.",
+        BusquedaAgotada =>
+            "El cubicador no alcanzó a terminar la búsqueda de vehículos (es un límite de su algoritmo, no de tu carga): la Mesa de Costeo escoge el vehículo.",
+        _ => "El cubicador no seleccionó vehículo: la Mesa de Costeo escoge el vehículo.",
     };
 }
 
@@ -72,6 +103,20 @@ public sealed record clsPeticionRecomendacion(
 /// </summary>
 public sealed record clsMercanciaCubicador(string CodigoMercancia, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg)
 {
+    /// <summary>Tope del cubicador: unidades en total por petición (suma de <c>cantidad</c>; si no, <c>CUBICACION_DEMASIADO_GRANDE</c>).</summary>
+    public const int MaximoUnidades = 10_000;
+
+    /// <summary>Mensaje de <c>CUBICACION_DEMASIADO_GRANDE</c> para el comercial.</summary>
+    public const string MensajeDemasiadoGrande =
+        "La ruta lleva más de 10.000 unidades en total y el cubicador recibe como máximo 10.000 por cálculo: parte la carga en varias rutas.";
+
+    /// <summary>¿Las mercancías suman más de <see cref="MaximoUnidades"/> unidades?</summary>
+    public static bool ExcedeTope(IEnumerable<clsMercanciaCubicador> mercancias)
+    {
+        ArgumentNullException.ThrowIfNull(mercancias);
+        return mercancias.Sum(m => (long)Math.Max(m.Cantidad, 0)) > MaximoUnidades;
+    }
+
     /// <summary>La mercancía de la captura tal como viaja al cubicador, o <c>null</c> si no tiene <c>codigoMercancia</c>.</summary>
     public static clsMercanciaCubicador? Desde(clsPosicionCarga posicion)
     {
@@ -84,10 +129,12 @@ public sealed record clsMercanciaCubicador(string CodigoMercancia, int Cantidad,
 }
 
 /// <summary>
-/// Un vehículo recomendado (respuesta <c>ASIGNADO</c>). Todos los campos son obligatorios en el contrato: si falta alguno, el adaptador
-/// rechaza la respuesta con <c>CUBICADOR_RESPUESTA_INVALIDA</c> (contra el fallo silencioso). <paramref name="PesoTotalKg"/> es el peso
-/// que lleva ese camión y el que viaja a Nexo en su línea; <paramref name="NombreVehiculo"/> es opcional (el nombre sale del catálogo
-/// <c>GET /tipos-vehiculo</c>, decisión 4 de HU-023).
+/// Un vehículo recomendado (respuesta <c>ASIGNADO</c>). Los siete primeros campos son obligatorios en el contrato: si falta alguno, el
+/// adaptador rechaza la respuesta con <c>CUBICADOR_RESPUESTA_INVALIDA</c> (contra el fallo silencioso). <paramref name="PesoTotalKg"/> es
+/// el peso que lleva ese camión y el que viaja a Nexo en su línea; <paramref name="NombreVehiculo"/> es opcional (el nombre sale del
+/// catálogo <c>GET /vehiculos-catalogo</c>, decisión 4 de HU-023). HU-023 (#176): <paramref name="NumeroVehiculo"/> (desde 1),
+/// <paramref name="AlertaBajoLlenado"/>, <paramref name="Heterogenea"/> y lo que lleva el camión por posición
+/// (<paramref name="Mercancias"/>; dos filas pueden compartir código: quien agrupe por código suma, ver <see cref="TotalesPorCodigo"/>).
 /// </summary>
 public sealed record clsVehiculoRecomendado(
     Guid IdRecomendacionVehiculo,
@@ -97,7 +144,26 @@ public sealed record clsVehiculoRecomendado(
     decimal VolumenTotalM3,
     decimal PorcentajeLlenadoVolumen,
     decimal PorcentajeLlenadoPeso,
-    string? NombreVehiculo = null);
+    string? NombreVehiculo = null,
+    int? NumeroVehiculo = null,
+    bool AlertaBajoLlenado = false,
+    bool Heterogenea = false,
+    IReadOnlyList<clsMercanciaVehiculo>? Mercancias = null)
+{
+    /// <summary>Lo que lleva el camión agrupado por código de mercancía (sin distinguir mayúsculas), <b>sumando</b> las filas repetidas.</summary>
+    public IReadOnlyList<clsMercanciaVehiculo> TotalesPorCodigo() =>
+        [.. (Mercancias ?? [])
+            .GroupBy(m => m.CodigoMercancia, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new clsMercanciaVehiculo(
+                null, g.First().IdTipoMercancia, g.First().CodigoMercancia, g.Sum(m => m.Cantidad), g.Sum(m => m.PesoKg), g.Sum(m => m.VolumenM3)))];
+}
+
+/// <summary>
+/// Una fila de lo que lleva un camión (<c>vehiculos[].mercancias[]</c>): <paramref name="IndicePosicion"/> es la posición (base 0) en
+/// las mercancías de la petición; llega en <c>null</c> al reconsultar una corrida guardada antes de S5-HU-17.8 (agrupada por código).
+/// </summary>
+public sealed record clsMercanciaVehiculo(
+    int? IndicePosicion, string? IdTipoMercancia, string CodigoMercancia, int Cantidad, decimal PesoKg, decimal VolumenM3);
 
 /// <summary>
 /// Respuesta de <c>POST /recomendaciones</c> para una ruta (HU-023.1, #156), ya validada por el adaptador:
@@ -150,7 +216,8 @@ public sealed record clsTipoMercanciaCubicador(
 public sealed record clsTipoCarroceriaCubicador(string Codigo, string Nombre, bool Activo);
 
 /// <summary>
-/// Un tipo de vehículo del catálogo del cubicador (<c>GET /tipos-vehiculo</c>, petición P1): el código que guarda el camión, el nombre que
-/// se muestra en pantalla y en el PDF, y las carrocerías compatibles.
+/// Un tipo de vehículo del catálogo canónico del cubicador (<c>GET /vehiculos-catalogo</c>, HU-023 #176; antes <c>/tipos-vehiculo</c>):
+/// el código que guarda el camión (<c>2L2</c>, <c>C2</c>, <c>3S3</c>…), el nombre que se muestra en pantalla y en el PDF, y las
+/// carrocerías compatibles (vacía si el catálogo no las trae).
 /// </summary>
 public sealed record clsTipoVehiculoCubicador(string Codigo, string Nombre, IReadOnlyList<string> Carrocerias, bool Activo);
