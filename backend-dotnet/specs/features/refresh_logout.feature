@@ -11,7 +11,7 @@ Característica: Refresh y logout de la sesión
   Para trabajar sin interrupciones y que nadie reutilice mis tokens
 
   Antecedentes:
-    Dado la persona "rafa.sso" con ID externo 5201 y nombre "Rafa SSO" en el almacén corporativo con los roles externos "34"
+    Dado la persona "rafa.sso" con ID externo 5201 y nombre "Rafa SSO" en el almacén corporativo con los roles externos "32"
     Y "rafa.sso" inició sesión desde ClientePro
 
   Escenario: El refresh emite un par nuevo e invalida el anterior
@@ -30,7 +30,7 @@ Característica: Refresh y logout de la sesión
     Entonces exactamente una renovación emite un par nuevo
 
   Escenario: Si el rol externo cambió, el refresh se rechaza
-    Dado en el almacén corporativo "rafa.sso" pasa a tener los roles externos "35"
+    Dado en el almacén corporativo "rafa.sso" pasa a tener los roles externos "31"
     Cuando "rafa.sso" renueva su sesión
     Entonces la renovación responde sesión expirada
 

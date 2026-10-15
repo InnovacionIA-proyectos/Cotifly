@@ -207,6 +207,9 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsHojaExcel), "HojaExcel"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLicitacion), "Licitacion"),
         (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsLineaLicitacion), "LineaLicitacion"),
+        // HU-023.5 (#160): código de mercancía sugerido por fila y camiones de cada ruta de la licitación.
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCodigoMercanciaFila), "CodigoMercanciaFila"),
+        (typeof(Cotifly.Aplicacion.Licitaciones.DTOs.clsCamionLicitacion), "CamionLicitacion"),
         // #138: los esquemas alcanzables desde /web/* que no tenían DTO en esta lista.
         (typeof(Cotifly.Api.Costeo.DTOs.clsRutaCapturaWebRequest), "RutaCapturaWeb"),
         (typeof(Cotifly.Api.Costeo.DTOs.clsConexoCapturaWebRequest), "ConexoCapturaWeb"),

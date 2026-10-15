@@ -85,6 +85,12 @@ public sealed record clsSolicitudNexo
 /// <param name="CosteoEnProceso">True si Nexo difirió el auto-costeo a segundo plano (más de 10 líneas).</param>
 public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCalculados, int LineasPorCostear, bool CosteoEnProceso)
 {
+    /// <summary>
+    /// HU-023.4: ¿las líneas de los camiones del cubicador llevaron sus códigos de vehículo y carrocería (<c>Nexo:EnviarCodigosCubicador</c>
+    /// al enviar)? El envío lo registra (<see cref="clsEnvioNexoRegistrado"/>) para que el polling compare contra lo que viajó.
+    /// </summary>
+    public bool CodigosCubicadorEnviados { get; init; }
+
     /// <summary>¿Nexo ya costeó todas las líneas? (la cotización nace en <c>autocosteo</c>).</summary>
     public bool CosteoCompleto => !CosteoEnProceso && Lineas > 0 && LineasPorCostear == 0;
 }

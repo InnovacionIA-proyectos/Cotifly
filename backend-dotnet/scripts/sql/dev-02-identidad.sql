@@ -1,15 +1,18 @@
 /* ============================================================================
    Cotifly — SOLO DESARROLLO LOCAL (scripts/levantar-local.*, #14). Nunca en QA ni producción.
    dbsolucionesti FALSA con las tres tablas del login SSO (ADR-009) y sus tipos reales, igual que la de
-   las pruebas (tests/Comun/clsBaseDatosPruebas). Datos ficticios:
+   las pruebas (tests/Comun/clsBaseDatosPruebas). Imita a dbSolucionesTI_Prueba, la base de identidad de QA que
+   comparte con Nexo (#172): ID NUMERIC(18,0), IDUSUARIO e IDROLES INT; tblSAPUsuarioRoles sin columna ID porque
+   Cotifly no la lee. En local conserva el nombre dbsolucionesti. Datos ficticios:
 
      NOMBREUSUARIO  ID    Rol externo (IDROLES)       Resultado del login
-     APEREZ         101   34 COMERCIAL                comercial
-     LGOMEZ         102   35 GERENTE COMERCIAL        gerente_comercial
-     KCANO          103   34 COMERCIAL                comercial (usuario de QA para la regresión manual)
+     APEREZ         101   32 CLIENTEPROCOMERCIAL      comercial
+     LGOMEZ         102   31 CLIENTEPROGERENCIAL      gerente_comercial
+     KCANO          103   32 CLIENTEPROCOMERCIAL      comercial (usuario de QA para la regresión manual)
      JCONSULTA      104   40 CONSULTA (sin mapeo)     401: sin rol interno
 
-   Los IDROLES 34/35/40 son de desarrollo: los reales de ClientePro están pendientes (ADR-009).
+   Los IDROLES 32 y 31 son los de dbSolucionesTI_Prueba (ClienteProComercial y ClienteProGerencial, ADR-009, #173);
+   el 40 es un rol cualquiera sin mapeo. Ojo: en dbSolucionesTI_Prueba el 34 es AdministracionZonasGeocerca.
    Idempotente. Se ejecuta en dbsolucionesti con sqlcmd -I.
    ============================================================================ */
 SET NOCOUNT ON;
@@ -31,13 +34,12 @@ IF OBJECT_ID(N'dbo.tblSAPRoles', N'U') IS NULL
 GO
 IF OBJECT_ID(N'dbo.tblSAPUsuarioRoles', N'U') IS NULL
     CREATE TABLE dbo.tblSAPUsuarioRoles (
-        ID                  INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
         IDUSUARIO           INT           NOT NULL,
         IDROLES             INT           NOT NULL
     );
 GO
 MERGE dbo.tblSAPRoles AS destino
-USING (VALUES (34, 'COMERCIAL'), (35, 'GERENTE COMERCIAL'), (40, 'CONSULTA')) AS origen (IDROLES, DESCRIPCION)
+USING (VALUES (32, 'CLIENTEPROCOMERCIAL'), (31, 'CLIENTEPROGERENCIAL'), (40, 'CONSULTA')) AS origen (IDROLES, DESCRIPCION)
     ON destino.IDROLES = origen.IDROLES
 WHEN NOT MATCHED THEN INSERT (IDROLES, DESCRIPCION) VALUES (origen.IDROLES, origen.DESCRIPCION);
 GO
@@ -55,7 +57,7 @@ WHEN NOT MATCHED THEN
 GO
 INSERT INTO dbo.tblSAPUsuarioRoles (IDUSUARIO, IDROLES)
 SELECT origen.IDUSUARIO, origen.IDROLES
-FROM (VALUES (101, 34), (102, 35), (103, 34), (104, 40)) AS origen (IDUSUARIO, IDROLES)
+FROM (VALUES (101, 32), (102, 31), (103, 32), (104, 40)) AS origen (IDUSUARIO, IDROLES)
 WHERE NOT EXISTS (
     SELECT 1 FROM dbo.tblSAPUsuarioRoles r WHERE r.IDUSUARIO = origen.IDUSUARIO AND r.IDROLES = origen.IDROLES);
 GO

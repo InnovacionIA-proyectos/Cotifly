@@ -92,8 +92,8 @@ flowchart LR
     AUTH --> DBS
     AUTH --> DBC
     WEB --> DBC
-    WEB -- "X-Portal-Usuario-Id" --> NEXO
-    WRK -- "X-Portal-Usuario-Id" --> NEXO
+    WEB -- "X-Portal-clsUsuario-Id" --> NEXO
+    WRK -- "X-Portal-clsUsuario-Id" --> NEXO
     WEB --> SAP
     WEB --> TRM
     WEB --> IA
@@ -101,7 +101,7 @@ flowchart LR
 ```
 
 - El navegador **solo** habla con la API de Cotifly (y, para crear prospectos, con el backend de ClientePro por su canal existente `RequestDataService`, ver ADR-005 §3). Nunca llama a Nexo, SAP, la TRM ni la IA directamente.
-- La API llama a Nexo en nombre del comercial con `X-Portal-Usuario-Id` = `UsuariosWeb.idUsuarioExterno`, que sale del `sub` del JWT y nunca del cliente. El frontend no envía nada de Nexo.
+- La API llama a Nexo en nombre del comercial con `X-Portal-clsUsuario-Id` = `UsuariosWeb.idUsuarioExterno`, que sale del `sub` del JWT y nunca del cliente. El frontend no envía nada de Nexo.
 - Google Chat se retiró en #105 (HU-013.9, ADR-018): `POST /chat/events` ya no existe (404). La consola web es el único canal.
 
 ### 2.2 URL base por ambiente
@@ -220,7 +220,7 @@ Cotifly no tiene login propio (ADR-009). ClientePro ya autenticó a la persona y
 {
   "idUsuario": "APEREZ",
   "nombreUsuario": "Ana Pérez",
-  "roles": ["34"]
+  "roles": ["32"]
 }
 ```
 
@@ -493,6 +493,15 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `GET /web/metricas/comercial` (PR de #45) | 400 (fechas), 401 | — |
 | `GET /web/metricas/regional` (PR de #45) | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /pdfs/{archivo}` | 401, 404 (JSON aunque se pidió un blob) | — |
+
+> **Captura idempotente (#173), obligatorio:** `POST /web/solicitudes-costeo` **debe** llevar el encabezado `Idempotency-Key`
+> (8 a 64 caracteres; un UUID). Se genera **al pulsar Enviar** y se **reutiliza tal cual en cada reintento** de esa misma captura
+> (timeout, error de red, 500); una captura nueva lleva una clave nueva. Con la misma clave el backend no crea otro folio ni otra
+> solicitud en Nexo: responde la cotización de la primera (201) o, si la primera no terminó de registrar el envío, 409
+> `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` y `detalle.folio`: no reintentar, llevar al comercial a "Mis
+> cotizaciones" con ese folio. La misma clave con otro cuerpo es 400. Si el 201 trae `avisos: ["RESUMEN_INCOMPLETO"]`, la cotización
+> sí quedó creada: recargar "Mis cotizaciones" (no reenviar). Limitación conocida: la clave vive en la memoria del servidor (se pierde
+> al reiniciar; tabla propuesta en `db/scripts/pendientes/06`).
 
 Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA` → 404 `ErrorWeb`; `SIN_PERMISO` → 403; validaciones → 400 `ErrorWeb`; `CORREO_DESHABILITADO` (y en PR #77 `COSTEO_NEXO_NO_DISPONIBLE` y `COSTEO_NEXO_TIEMPO_AGOTADO`) → 503 `ErrorNegocio`; los de conflicto de estado del costeo → 409 `ErrorNegocio`; el resto de códigos de negocio → 400 `ErrorNegocio`.
 
@@ -1093,6 +1102,7 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 
 - Sin cuerpo. Reenvía el formulario y las posiciones guardados (no hay que volver a llenarlos).
 - Permitido solo si `ganada` es null **y** (`estado_costeo = error_envio` sin rechazo definitivo, **o** `pendiente_envio` con más de 2 minutos sin cambios).
+- **Licitación con cubicador (HU-023.5, #160):** mientras `progreso_cubicacion.estado` sea `en_curso` o `con_fallas`, el reintento responde **409 `COSTEO_NO_REINTENTABLE` aunque hayan pasado los 2 minutos**: la licitación no sale a Nexo hasta que todas sus rutas estén cubicadas. No mostrar **Reintentar envío** en ese caso; usar el flujo de 5.23.1 (progreso y `/cubicacion/reintentar`).
 - 200 `CotizacionResumen` (otra vez `pendiente_costeo`/`autocosteo`, o `error_envio` con un motivo nuevo). 404. 409 `COSTEO_NO_REINTENTABLE`. 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa una regla nueva.
 - Si el motivo anterior fue tiempo agotado, Nexo pudo haber creado la solicitud: mostrar la advertencia "Verifica en Nexo antes de reintentar" (no hay clave de idempotencia).
 - Rechazo definitivo: `motivo_estado_costeo` empieza por `Rechazo definitivo de Nexo (corrige el formulario en una versión nueva): `. En ese caso **ocultar** Reintentar.
@@ -1168,6 +1178,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
 | HU-023.3 (#158): mercancías con `codigo_mercancia` (obligatorio; `id_tipo_mercancia` obsoleto); la respuesta 201 trae `cubicacion[]` con el resultado y los avisos por ruta; `GET .../costeo` trae `resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada` y, por camión, volumen y porcentajes de llenado; nuevo `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Mandar el código del desplegable; mostrar los avisos al crear (no se guardan); llamar a recalcular cuando cambian las mercancías o el peso de una ruta antes de enviarla |
 | HU-023.1: la captura puede responder 400 `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` (el cubicador rechazó una ruta) y 503 `CUBICADOR_RESPUESTA_INVALIDA` o `CUBICADOR_NO_AUTORIZADO` | Mostrar `error.mensaje` (trae el detalle del cubicador); no se guardó nada. `CUBICADOR_NO_AUTORIZADO` no es la sesión: no cerrar sesión |
+| HU-023.4 (#159): sin cambios de contrato web. Con el contrato de Nexo #297, por defecto (`Nexo:EnviarCodigosCubicador` apagada) los camiones del cubicador llegan a Nexo sin vehículo y los costea la Mesa: es normal que esas rutas tarden más en `autocosteo`; `GET .../costeo` sigue mostrando el vehículo y la carrocería del cubicador. Con un solo camión, Nexo recibe el **peso declarado de la ruta**; el `peso_kg` del camión en `GET .../costeo` sigue siendo el del cubicador (puede diferir del de la ruta). Un 429 de Nexo (cupo por rol agotado) solo afecta los catálogos: sin copia de respaldo, `CATALOGOS_FLETE_NO_DISPONIBLE` durante unos 30 s | Mostrar el peso del cubicador como dato del camión, no como el peso cotizado; ante "no disponible", ofrecer Reintentar pasado medio minuto |
 | Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
 | `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Mostrar el aviso; no reintentar desde el frontend |
 | `/seguimiento` responde 409 `USAR_RESULTADO_NEXO` con `detalle.metodo`, `detalle.endpoint` y `detalle.requiere_if_match` | Llamar a `/resultado` con `If-Match` |
@@ -1655,6 +1666,22 @@ Formato y mapeo: `docs/conexion_nexo/HU-011-formato-excel-licitacion.md`. Cotifl
 - **Numeración que ve el comercial (HU-013.15, #124): la fila del Excel.** `filas_excel[i]` es el número de fila de la hoja de Excel (base 1, encabezado incluido) de `filas[i]`: en el ejemplo, la portada ocupa la fila 1, el encabezado la 3 y los datos empiezan en la 4. Mostrar siempre esa numeración en la tabla del mapeo y en los errores ("Fila 7 del Excel"); el índice `fila` (base 0) es técnico y no se muestra. Si `filas_excel` es `null` (la hoja no cuadra con el análisis de Nexo), mostrar la posición base 1 (`i + 1`) como "línea".
 - 400 `ErrorNegocio`: `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`. 403 `ErrorNegocio` `NEXO_SIN_PERMISO`: el comercial no tiene el rol de Cabina de Fletes en Nexo ("Pide a soporte el rol Comercial en Nexo"; no cerrar la sesión de Cotifly). 503 `COSTEO_NEXO_NO_DISPONIBLE` / `COSTEO_NEXO_TIEMPO_AGOTADO`; `detalle.motivo` lleva solo el código de Nexo (por ejemplo `SESION_INVALIDA`), nunca su texto (#124): mostrar el `mensaje`. 413 `ErrorWeb` si el cuerpo pasa de 12 MB.
 
+### 5.23.1 Código de mercancía sugerido y cubicación en segundo plano (HU-023.5, #160)
+
+- **Al analizar el Excel** cada hoja trae `mercancias[]`: por fila, el `codigo_mercancia` de la columna de código del Excel
+  (`origen = excel`) o el más parecido del catálogo del cubicador (`origen = parecido`, `sugerido = true`, con `similitud` de 0 a 1).
+  Precargar el desplegable de mercancía con ese código **marcado como sugerido** (por ejemplo con un chip "Sugerido") para que el
+  comercial lo confirme o lo cambie; si `codigo_mercancia` es `null`, dejarlo vacío y obligatorio.
+- **Al crear la licitación con cubicador** el 201 llega enseguida con `progreso_cubicacion.estado = en_curso`: mostrar una barra
+  "Calculando vehículos: `cubicadas` de `total`" y consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s mientras siga `en_curso`.
+  Al quedar `completa` la licitación sale sola a Nexo. Con `con_fallas`, mostrar por ruta `error_cubicacion` y dos botones:
+  **Reintentar** (`POST /web/licitaciones/{folio}/cubicacion/reintentar` sin cuerpo) y, solo si el error empieza por
+  `CUBICADOR_NO_DISPONIBLE`, **Enviar sin vehículo** (`{"usar_respaldo": true}`: la Mesa de Costeo escoge el vehículo; un rechazo de
+  la mercancía o las medidas responde 409).
+- Cada línea trae `camiones[]` (vehículo y carrocería por código: el nombre sale de `GET /web/tipos-vehiculo` y
+  `GET /web/tipos-carroceria`) y `cubicacion[]` trae los avisos del cubicador por ruta, como en el formulario.
+- La descarga del Excel trae la columna y la hoja `Camiones Cotifly`.
+
 ### 5.24 Crear la licitación (`POST /web/licitaciones`). PR de #47
 
 Valida **todas** las filas antes de guardar nada; si son válidas crea la cotización `licitacion` con sus N líneas y el Excel original, y la envía a Nexo como **una sola solicitud con N líneas**. **Responde 201 aunque Nexo falle** (igual que `POST /web/solicitudes-costeo`).
@@ -1682,7 +1709,11 @@ Valida **todas** las filas antes de guardar nada; si son válidas crea la cotiza
 }
 ```
 
-- 201 `Licitacion` (ver 5.25), con `estado_costeo` = `pendiente_costeo` (o `error_envio` si Nexo falló; reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar`, que reenvía todas las líneas).
+- 201 `Licitacion` (ver 5.25). **Sin cubicador**, con `estado_costeo` = `pendiente_costeo` (o `error_envio` si Nexo falló; reintentar con `POST /web/cotizaciones/{folio}/costeo/reintentar`, que reenvía todas las líneas).
+- **Con cubicador (HU-023.5, #160), el 201 cambia:** llega enseguida con `estado_costeo = pendiente_envio` (todavía no está en Nexo), `progreso_cubicacion.estado = en_curso` y cada línea con `estado_cubicacion = pendiente` y un camión provisional sin vehículo. Flujo:
+  1. **Progreso:** consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s mientras `progreso_cubicacion.estado = en_curso` y mostrar "Calculando vehículos: `cubicadas` de `total`". No ofrecer **Reintentar envío** (responde 409 aunque pasen 2 minutos).
+  2. **`completa`:** la licitación sale sola a Nexo; `estado_costeo` pasa a `pendiente_costeo` (o `error_envio`, y ahí sí aplica el reintento normal). Seguir con el polling del costeo.
+  3. **`con_fallas`:** alguna línea quedó `estado_cubicacion = fallida` con `error_cubicacion` (`CODIGO: mensaje`). Mostrar el error por línea y el botón **Reintentar cubicación** (`POST /web/licitaciones/{folio}/cubicacion/reintentar` sin cuerpo: vuelven a la cola y se vuelve al paso 1). Solo si el error empieza por `CUBICADOR_NO_DISPONIBLE` (el cubicador no respondió) mostrar además **Enviar sin vehículo** (`{"usar_respaldo": true}`: la Mesa de Costeo escoge el vehículo y, si no queda nada pendiente, sale a Nexo). Un rechazo de la mercancía o las medidas (`MERCANCIA_DESCONOCIDA`, `DIMENSIONES_INVALIDAS`...) no se puede enviar sin vehículo: 409 `ESTADO_NO_PERMITE`; corregir la carga en una versión nueva.
 - 400 `ReporteLicitacionInvalida`: **todas** las filas con error, para pintarlas en la tabla del mapeo:
 
 ```json
@@ -1908,7 +1939,8 @@ Tabla de acciones por fila (con las dos pilas fusionadas):
 | Ganada / Perdida | `ganada` es null **y** (`estado_costeo` es null, **o** `estado_costeo = entregada`) | Chat: `/seguimiento` `{ganada, motivo_rechazo}`. Nexo: `/resultado` `{resultado, motivo, comentario}` |
 | Limpiar resultado | Solo cotizaciones del chat (`estado_costeo` null) con `ganada` con valor | `/seguimiento` con `{"ganada": null}` |
 | Ganada / Perdida en `descartada` o `costeo_vencido` | El backend lo permite por `/seguimiento`, solo en Cotifly. **A confirmar** con negocio si se muestra | `/seguimiento` |
-| Reintentar envío a Nexo | `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` antiguo, y `ganada` null | `/costeo/reintentar` |
+| Reintentar envío a Nexo | `estado_costeo = error_envio` sin "Rechazo definitivo", o `pendiente_envio` antiguo sin cubicación en curso (`progreso_cubicacion` null o `completa`), y `ganada` null | `/costeo/reintentar` |
+| Reintentar cubicación / Enviar sin vehículo (HU-023.5) | Licitación con `progreso_cubicacion.estado = con_fallas`; "sin vehículo" solo si el error es `CUBICADOR_NO_DISPONIBLE` | `/web/licitaciones/{folio}/cubicacion/reintentar` |
 | Ver costeo y conexos | `estado_costeo` con valor | `GET /costeo` |
 | Nueva versión | Cotizaciones del chat | `GET /nueva-version` y luego `/web/chat` con `cotizacion_origen_id` |
 
@@ -2164,7 +2196,7 @@ UI por estado:
 | `estado_costeo` | Etiqueta sugerida | Precio | Acciones | Polling del frontend |
 |---|---|---|---|---|
 | `null` | (sin etiqueta, "Chat") | `precio_final` | PDF, Enviar, Ganada/Perdida/Limpiar por `/seguimiento`, Nueva versión | No |
-| `pendiente_envio` | "Enviando a Nexo" | "—" | Reintentar tras 2 minutos | Sí, corto |
+| `pendiente_envio` | "Enviando a Nexo" (licitación con `progreso_cubicacion` en curso: "Calculando vehículos") | "—" | Reintentar tras 2 minutos (no mientras la licitación se cubica: 409) | Sí, corto |
 | `error_envio` | "No llegó a Nexo" (rojo) y `motivo_estado_costeo` | "—" | Reintentar (salvo "Rechazo definitivo") | No |
 | `pendiente_costeo` | "En costeo" (ámbar) | "Pendiente" | Ninguna de resultado | Sí |
 | `autocosteo` | "Costeada (borrador Nexo)" | `precio_final` cuando llegue | Conexos y PDF (a confirmar si solo en `entregada`); resultado deshabilitado | Hasta tener `precio_final` |
@@ -2266,7 +2298,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 | Nexo: urgencia | Score de urgencia mayor a 75: **no implementado** (ADR-016). No hay contrato de Nexo. Llegará como campo nuevo de `indicadores` (cambio compatible). El "deadline vencido" sí está (`deadline_vencidas`, calculado por Cotifly; `null` sin el `0004`) | Duban + equipo Nexo | Tablero del gerente (HU-010.3): no mostrar la tarjeta de urgencia todavía |
 | Métricas: servicios conexos | Los montos del tablero no suman conexos todavía; se integran después de #42 | Duban | Aviso "valores sin servicios conexos" si hace falta |
 | Nexo: idempotencia del alta | Sin clave de idempotencia: un reintento tras tiempo agotado puede duplicar | Equipo Nexo | Advertencia en Reintentar |
-| Nexo: autenticación | Hoy `X-Portal-Usuario-Id` del comercial, sin token. ¿API key o JWT de servicio? | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
+| Nexo: autenticación | Hoy `X-Portal-clsUsuario-Id` del comercial, sin token. ¿API key o JWT de servicio? | Duban + equipo Nexo | Ninguno directo; un comercial sin `idUsuarioExterno` recibe `*_NO_DISPONIBLE` |
 | Nexo: polling | Intervalos (5 s a 15 min, 72 h) pendientes de aprobar por Nexo | Equipo Nexo | Tiempo que una fila queda "En costeo" |
 | Negocio: PDF en `autocosteo` | ¿Se permite el PDF con el costeo automático o solo en `entregada`? | Gerencia Comercial | Habilitar el botón PDF y los conexos |
 | Negocio: `margen_aplicado` visible | Junto a `precio_final` permite deducir el costo de Nexo. ¿Ocultarlo en el flujo de Nexo? | Gerencia Comercial | Columna de margen |

@@ -37,6 +37,18 @@ public interface IClsCotizacionRepository
     Task<clsConexosPendientesNexo?> ObtenerConexosPendientesNexoAsync(string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// HU-023.4 (#159): guarda lo que viajó en el alta a Nexo (<see cref="clsEnvioNexoRegistrado"/>) en <c>EventosHerramienta</c>, en la
+    /// misma unidad de trabajo que el <c>solicitudNexoId</c>.
+    /// </summary>
+    void RegistrarEnvioNexo(clsEnvioNexoRegistrado envio);
+
+    /// <summary>
+    /// ¿Viajaron los códigos del cubicador en el alta de la solicitud de Nexo <paramref name="solicitudNexoId"/>? <c>null</c> si no hay
+    /// registro (quien lo usa asume que no viajaron).
+    /// </summary>
+    Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Decisión 10 (HU-021.9): agrega un registro del envío diferido de conexos a Nexo (<see cref="clsEnvioConexosNexo"/>) en
     /// <c>EventosHerramienta</c>; se escribe al guardar la unidad de trabajo.
     /// </summary>
@@ -70,6 +82,29 @@ public interface IClsCotizacionRepository
     /// Escribe de inmediato, fuera de la unidad de trabajo: el llamador debe recargar la cotización.
     /// </summary>
     Task<bool> ReclamarReenvioCosteoAsync(Guid cotizacionId, DateTimeOffset updatedAtLeido, DateTimeOffset ahora, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-023.5 (#160): la cola de la cubicación en segundo plano: hasta <paramref name="lote"/> rutas en <c>pendiente</c> con
+    /// <c>cubicacionDisponibleAt</c> vacío o vencido (<c>&lt;= ahora</c>), de la más antigua a la más reciente (índice filtrado de la propuesta 04).
+    /// Con <paramref name="cotizacionId"/>, solo las de esa cotización.
+    /// </summary>
+    Task<IReadOnlyList<clsRutaPorCubicar>> ListarRutasPorCubicarAsync(
+        DateTimeOffset ahora, int lote, Guid? cotizacionId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-023.5: reclamo optimista de una ruta de la cola: si sigue en <c>pendiente</c> con el <c>cubicacionDisponibleAt</c> leído, lo
+    /// mueve a <paramref name="reclamoHasta"/> y devuelve <c>true</c>; si otra réplica la tomó antes, <c>false</c>. Escribe de inmediato,
+    /// fuera de la unidad de trabajo.
+    /// </summary>
+    Task<bool> ReclamarRutaPorCubicarAsync(Guid rutaId, DateTimeOffset? disponibleLeido, DateTimeOffset reclamoHasta, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HU-023.5: licitaciones con la cubicación terminada que no salieron a Nexo (el proceso se cortó entre la última ruta y el envío):
+    /// <c>pendiente_envio</c>, sin <c>solicitudNexoId</c>, sin cambios desde <paramref name="sinCambiosDesde"/>, con alguna ruta que pasó
+    /// por la cola y ninguna pendiente ni fallida. Hasta <paramref name="lote"/> ids; con <paramref name="cotizacionId"/>, solo esa.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListarCubicadasSinEnviarAsync(
+        DateTimeOffset sinCambiosDesde, int lote, Guid? cotizacionId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Agenda del polling de Nexo (HU-005.6): hasta <paramref name="lote"/> cotizaciones con <c>costeoSiguienteConsultaAt &lt;=

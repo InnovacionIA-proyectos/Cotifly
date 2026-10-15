@@ -73,6 +73,12 @@ public sealed class clsCotizacionPdfPayload
     /// </summary>
     public List<clsServicioConexoPayload>? ServiciosConexos { get; set; }
 
+    /// <summary>#173: horas de cargue de la ruta (captura); la nota general las usa en lugar de las 4 h fijas.</summary>
+    public decimal? HorasCargue { get; set; }
+
+    /// <summary>#173: horas de descargue de la ruta (captura).</summary>
+    public decimal? HorasDescargue { get; set; }
+
     /// <summary>
     /// Lee un payload JSON con las opciones del proyecto (snake_case). Nunca lanza: JSON mal formado, tipos erróneos,
     /// sustitutos UTF-16 sueltos o un JSON vacío/<c>null</c> → <c>PDF_PAYLOAD_INVALIDO</c> (el LLM puede mandar cualquier cosa).

@@ -284,6 +284,10 @@ public sealed class clsCotizacionSolicitud
             }
 
             ruta.RegistrarCubicacion(capturada.Cubicacion);
+            if (capturada.CubicacionPendiente)
+            {
+                ruta.MarcarCubicacionPendiente();
+            }
 
             foreach (var conexo in capturada.Conexos ?? [])
             {
@@ -384,6 +388,7 @@ public sealed class clsCotizacionSolicitud
     /// </summary>
     public bool PuedeReenviarCosteo(DateTimeOffset ahora) =>
         Ganada is null
+        && !CubicacionEnCurso
         && ((EstadoCosteo == Cotizaciones.EstadoCosteo.ErrorEnvio && !ErrorEnvioDefinitivo)
             || (EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && ahora - UpdatedAt >= EsperaReenvioPendiente));
 
@@ -393,6 +398,79 @@ public sealed class clsCotizacionSolicitud
     /// <see cref="PuedeReenviarCosteo"/> (un <c>pendiente_envio</c> reciente puede estar esperando a Nexo).
     /// </summary>
     public bool PuedeRecalcularCamiones(DateTimeOffset ahora) => SolicitudNexoId is null && PuedeReenviarCosteo(ahora);
+
+    // ------------------------------------------------------------------ Cubicación en segundo plano (HU-023.5, #160)
+
+    /// <summary>
+    /// HU-023.5 (#160): ¿alguna ruta espera la cubicación en segundo plano o falló? Mientras tanto la solicitud no viaja a Nexo (ni por el
+    /// reintento ni por el recálculo de una ruta): "todo o nada" hacia Nexo.
+    /// </summary>
+    public bool CubicacionEnCurso =>
+        _rutas.Any(r => r.EstadoCubicacion is Cotizaciones.EstadoCubicacion.Pendiente or Cotizaciones.EstadoCubicacion.Fallida);
+
+    /// <summary>
+    /// HU-023.5: ¿la cubicación en segundo plano terminó y la solicitud todavía no salió a Nexo? (alguna ruta pasó por la cola, todas
+    /// quedaron cubicadas y sigue en <c>pendiente_envio</c> sin <see cref="SolicitudNexoId"/>.)
+    /// </summary>
+    public bool ListaParaEnviarTrasCubicar =>
+        Ganada is null && EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && SolicitudNexoId is null
+        && _rutas.Any(r => r.EstadoCubicacion is not null) && !CubicacionEnCurso;
+
+    /// <summary>
+    /// HU-023.5: ¿la ruta se puede cubicar en segundo plano? La solicitud no ha salido a Nexo, sigue en <c>pendiente_envio</c> y la ruta
+    /// está pendiente. Si no, el procesador la marca fallida (la cotización cambió por otro camino).
+    /// </summary>
+    public bool AdmiteCubicacionEnSegundoPlano(Guid rutaId) =>
+        Ganada is null && EstadoCosteo == Cotizaciones.EstadoCosteo.PendienteEnvio && SolicitudNexoId is null
+        && _rutas.Any(r => r.Id == rutaId && r.EstadoCubicacion == Cotizaciones.EstadoCubicacion.Pendiente);
+
+    /// <summary>
+    /// HU-023.5: guarda el plan del cubicador en la ruta pendiente <paramref name="rutaId"/> (reemplaza el camión provisional) y recalcula
+    /// los totales. <c>ESTADO_NO_PERMITE</c> si la ruta ya no se puede cubicar (<see cref="AdmiteCubicacionEnSegundoPlano"/>).
+    /// </summary>
+    public clsResultado<clsLineaSolicitud> CompletarCubicacionDeRuta(Guid rutaId, clsPlanRuta plan, DateTimeOffset ahora)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (!AdmiteCubicacionEnSegundoPlano(rutaId))
+        {
+            return new clsErrorDominio(clsCodigosError.EstadoNoPermite,
+                $"La ruta {rutaId} de la cotización {Folio} ya no espera la cubicación (la solicitud cambió de estado o la ruta ya se cubicó).");
+        }
+
+        var ruta = _rutas.First(r => r.Id == rutaId);
+        ruta.CompletarCubicacion(plan);
+        var recalculo = RecalcularTotales(ahora);
+        return recalculo.EsFallo ? recalculo.Error : ruta;
+    }
+
+    /// <summary>
+    /// HU-023.5: registra un intento fallido de cubicar la ruta <paramref name="rutaId"/> (ver <see cref="clsLineaSolicitud.RegistrarFalloCubicacion"/>).
+    /// No hace nada si la ruta no es de esta cotización o ya no está pendiente.
+    /// </summary>
+    public bool RegistrarFalloCubicacionDeRuta(Guid rutaId, string codigo, string mensaje, DateTimeOffset? reintentarEn)
+    {
+        if (_rutas.FirstOrDefault(r => r.Id == rutaId) is not { EstadoCubicacion: Cotizaciones.EstadoCubicacion.Pendiente } ruta)
+        {
+            return false;
+        }
+
+        ruta.RegistrarFalloCubicacion(codigo, mensaje, reintentarEn);
+        return true;
+    }
+
+    /// <summary>
+    /// HU-023.5: el comercial reintenta las rutas fallidas (vuelven a la cola) o, con <paramref name="usarRespaldo"/>, las acepta con el
+    /// camión sin vehículo. Devuelve cuántas cambió (0 = no había fallidas o la solicitud ya salió a Nexo).
+    /// </summary>
+    public int ReintentarCubicacionFallida(bool usarRespaldo)
+    {
+        if (Ganada is not null || SolicitudNexoId is not null || EstadoCosteo != Cotizaciones.EstadoCosteo.PendienteEnvio)
+        {
+            return 0;
+        }
+
+        return _rutas.Count(r => r.ReintentarCubicacion(usarRespaldo));
+    }
 
     /// <summary>¿La cotización nació del flujo de costeo en Nexo? (<see cref="EstadoCosteo"/> con valor).</summary>
     public bool EnFlujoCosteo => EstadoCosteo is not null;

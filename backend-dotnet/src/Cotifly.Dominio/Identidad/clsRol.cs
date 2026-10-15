@@ -4,7 +4,7 @@ namespace Cotifly.Dominio.Identidad;
 
 /// <summary>
 /// Rol interno de Cotifly y su rol externo de ClientePro (<c>dbo_cotifly.Roles</c>, script 0002, ADR-009).
-/// <see cref="IdRolExterno"/> es el <c>IDROLES</c> de <c>dbsolucionesti.tblSAPRoles</c>; mientras sea <c>null</c>
+/// <see cref="IdRolExterno"/> es el <c>IDROLES</c> de <c>tblSAPRoles</c> en la base de identidad del portal (QA: <c>dbSolucionesTI_Prueba</c>, #172); mientras sea <c>null</c>
 /// ningún rol externo da acceso con este rol (fail-closed). El script siembra <c>comercial</c> y
 /// <c>gerente_comercial</c> sin rol externo: los IDROLES reales los fija el DBA.
 /// </summary>

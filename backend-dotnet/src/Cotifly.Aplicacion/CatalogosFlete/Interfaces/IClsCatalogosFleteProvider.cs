@@ -7,7 +7,7 @@ namespace Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 /// Puerto de los catálogos de flete de <c>GET /web/catalogos-flete</c>: tipos de vehículo, tipos de carrocería y
 /// clases de viaje del formulario de captura. La implementación real (<c>clsCatalogosFleteNexo</c>) consume
 /// <c>GET /api/biblioteca-sap-historico/filtros</c> de Nexo, identificando al comercial ante Nexo con
-/// <c>X-Portal-Usuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que reciba <paramref name="usuarioId"/>. Sin
+/// <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> — de ahí que reciba <paramref name="usuarioId"/>. Sin
 /// adaptador real, Infraestructura registra uno que responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>.
 /// </summary>
 public interface IClsCatalogosFleteProvider

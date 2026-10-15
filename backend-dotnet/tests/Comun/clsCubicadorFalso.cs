@@ -66,6 +66,18 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, la recomendación responde ese error con <c>{codigo, mensaje}</c>.</summary>
     public (HttpStatusCode Estado, string Codigo)? ErrorRecomendacion { get; set; }
 
+    /// <summary>HU-023.5: error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
+    public Func<JsonNode, (HttpStatusCode Estado, string Codigo)?>? ErrorPara { get; set; }
+
+    /// <summary>HU-023.5: espera de cada <c>POST /recomendaciones</c> (para medir cuántas llamadas hay en paralelo).</summary>
+    public TimeSpan? DemoraRecomendacion { get; set; }
+
+    private int _enCurso;
+    private int _maximoEnCurso;
+
+    /// <summary>HU-023.5: máximo de <c>POST /recomendaciones</c> en curso a la vez que ha visto el falso (petición P6).</summary>
+    public int MaximoEnParalelo => Volatile.Read(ref _maximoEnCurso);
+
     /// <summary>Un vehículo de la respuesta <c>ASIGNADO</c>, con un id nuevo.</summary>
     public static Dictionary<string, object?> Vehiculo(
         string codigoVehiculo, string codigoCarroceria, decimal pesoTotalKg, decimal volumenTotalM3 = 40m,
@@ -176,22 +188,53 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
 
         if (request.Method == HttpMethod.Post && ruta.EndsWith("/recomendaciones", StringComparison.Ordinal))
         {
-            if (ErrorRecomendacion is { } error)
+            var enCurso = Interlocked.Increment(ref _enCurso);
+            try
             {
-                return Json(error.Estado, JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
-            }
+                for (var maximo = Volatile.Read(ref _maximoEnCurso); enCurso > maximo; maximo = Volatile.Read(ref _maximoEnCurso))
+                {
+                    if (Interlocked.CompareExchange(ref _maximoEnCurso, enCurso, maximo) == maximo)
+                    {
+                        break;
+                    }
+                }
 
-            if (CuerpoRecomendacion is not null)
+                if (DemoraRecomendacion is { } espera)
+                {
+                    await Task.Delay(espera, cancellationToken);
+                }
+
+                return Recomendacion(cuerpo);
+            }
+            finally
             {
-                return Json(HttpStatusCode.OK, CuerpoRecomendacion);
+                Interlocked.Decrement(ref _enCurso);
             }
-
-            var peticion = JsonNode.Parse(cuerpo!)!;
-            var respuesta = Recomendar?.Invoke(peticion) ?? Asignado(Vehiculo("3S3", "FURGON", PesoTotal(peticion)));
-            return Json(HttpStatusCode.OK, JsonSerializer.Serialize(respuesta));
         }
 
         return Json(HttpStatusCode.NotFound, """{"codigo":"NO_ENCONTRADO","mensaje":"ruta desconocida"}""");
+    }
+
+    private HttpResponseMessage Recomendacion(string? cuerpo)
+    {
+        if (ErrorPara?.Invoke(JsonNode.Parse(cuerpo!)!) is { } puntual)
+        {
+            return Json(puntual.Estado, JsonSerializer.Serialize(new { codigo = puntual.Codigo, mensaje = $"Error {puntual.Codigo} del cubicador falso." }));
+        }
+
+        if (ErrorRecomendacion is { } error)
+        {
+            return Json(error.Estado, JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
+        }
+
+        if (CuerpoRecomendacion is not null)
+        {
+            return Json(HttpStatusCode.OK, CuerpoRecomendacion);
+        }
+
+        var peticion = JsonNode.Parse(cuerpo!)!;
+        var respuesta = Recomendar?.Invoke(peticion) ?? Asignado(Vehiculo("3S3", "FURGON", PesoTotal(peticion)));
+        return Json(HttpStatusCode.OK, JsonSerializer.Serialize(respuesta));
     }
 
     /// <summary>Suma de <c>cantidad × pesoKg</c> de las mercancías de la petición.</summary>

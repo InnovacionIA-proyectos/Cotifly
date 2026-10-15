@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Cotifly.Aplicacion.Clientes.DTOs;
@@ -16,7 +15,7 @@ namespace Cotifly.Infraestructura.Clientes.Services;
 /// <summary>
 /// Búsqueda de clientes contra Nexo en vivo (HU-005.2, ADR-005): <c>GET {Nexo:UrlBase}/api/captura-solicitudes/clientes?q=</c>,
 /// el mismo catálogo (clientes de <c>DimBPSolicitante</c> y prospectos) que usa el formulario "Nueva solicitud" de Nexo.
-/// Nexo no tiene login propio: cada petición identifica al comercial con <c>X-Portal-Usuario-Id: {idUsuarioExterno}</c>
+/// Nexo no tiene login propio: cada petición identifica al comercial con <c>X-Portal-clsUsuario-Id: {idUsuarioExterno}</c>
 /// (<c>UsuariosWeb.idUsuarioExterno</c>, la misma fila de <c>tblSAPUsuariosApp</c> que usa el login de ClientePro) — nunca un
 /// token de Cotifly. Se registra vía <c>clsFabricaBuscadorClientes</c>: sin <c>Nexo:UrlBase</c> configurada se usa
 /// <see cref="clsBuscadorClientesNoDisponible"/> en su lugar.
@@ -28,7 +27,7 @@ namespace Cotifly.Infraestructura.Clientes.Services;
 /// <para><b>Fallos.</b> Nunca lanza: usuario sin <c>idUsuarioExterno</c>, HTTP, red o tiempo agotado devuelven
 /// <c>CLIENTE_BUSQUEDA_NO_DISPONIBLE</c> (Result), igual que <see cref="clsBuscadorClientesNoDisponible"/> — el llamante
 /// (la herramienta del agente o <c>GET /web/clientes</c>) decide qué mostrar. Una sola línea de warning por fallo, sin la
-/// traza completa ni el header <c>X-Portal-Usuario-Id</c> (no es secreto, pero no aporta al log).</para>
+/// traza completa ni el header <c>X-Portal-clsUsuario-Id</c> (no es secreto, pero no aporta al log).</para>
 /// </remarks>
 public sealed class clsBuscadorClientesNexo(
     HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsBuscadorClientesNexo> logger)
@@ -69,7 +68,7 @@ public sealed class clsBuscadorClientesNexo(
         }
 
         using var peticion = new HttpRequestMessage(HttpMethod.Get, ConstruirUrl(_urlBase, texto));
-        peticion.Headers.Add("X-Portal-Usuario-Id", idUsuarioExterno.ToString(CultureInfo.InvariantCulture));
+        clsIdentidadNexo.Identificar(peticion, idUsuarioExterno);
         peticion.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         try
@@ -123,6 +122,8 @@ public sealed class clsBuscadorClientesNexo(
         resiliencia.Retry.Delay = _esperaEntreIntentos;
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
+        // HU-023.4 (#159): un 429 no se reintenta; lo maneja clsCupoNexoHandler con el Retry-After (el cupo de Nexo es por rol).
+        Comun.clsCupoNexoHandler.NoReintentar429(resiliencia);
         resiliencia.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
     }
 

@@ -57,7 +57,43 @@ public sealed class clsPasosEnvioPorCamion(clsPasosCosteo costeo)
     public Task CuandoElCamionQuedaDescartado(int pesoKg, string cotizacion) =>
         clsBaseDatosPruebas.EjecutarAsync(Cadena, $"UPDATE v SET estadoCosteo = 'descartada' {DelCamion(costeo.Folio(cotizacion), pesoKg)}");
 
+    [When("los camiones de {string} tienen su recomendación del cubicador")]
+    public Task CuandoLosCamionesTienenRecomendacion(string cotizacion) =>
+        clsBaseDatosPruebas.EjecutarAsync(Cadena,
+            $"UPDATE v SET idRecomendacionVehiculo = NEWID() {DeLosCamiones(costeo.Folio(cotizacion))} AND v.idRecomendacionVehiculo IS NULL");
+
     // --- Verificaciones ---
+
+    [Then("cada línea que recibió Nexo lleva el grupo de su ruta y la recomendación de su camión")]
+    public async Task EntoncesGrupoYRecomendacion()
+    {
+        var lineas = Lineas();
+        foreach (var linea in lineas)
+        {
+            var grupo = linea["grupoRutaId"]!.GetValue<string>();
+            var recomendacion = linea["idRecomendacionVehiculo"]!.GetValue<string>();
+            var ruta = await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+                "SELECT CAST(l.id AS nvarchar(36)) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+                + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+                + $"WHERE v.idRecomendacionVehiculo = '{Guid.Parse(recomendacion)}'");
+            ruta.Should().NotBeNull("la recomendación es la de un camión de Cotifly");
+            Guid.Parse(ruta!).Should().Be(Guid.Parse(grupo), "grupoRutaId es el id de la ruta del camión");
+        }
+
+        lineas.Select(l => l["idRecomendacionVehiculo"]!.GetValue<string>()).Should().OnlyHaveUniqueItems("cada camión tiene su recomendación");
+    }
+
+    [Then("el camión de la línea {int} de la solicitud de {string} tiene el flete {int} y el estado {string}")]
+    public async Task EntoncesElCamionDeLaLinea(int linea, string cotizacion, int flete, string estado)
+    {
+        var recomendacion = Guid.Parse(Lineas()[linea - 1]["idRecomendacionVehiculo"]!.GetValue<string>());
+        var valor = await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+            $"SELECT CONCAT(CAST(v.costoFlete AS nvarchar(30)), '|', v.estadoCosteo) {DeLosCamiones(costeo.Folio(cotizacion))} "
+            + $"AND v.idRecomendacionVehiculo = '{recomendacion}'");
+        var partes = valor!.Split('|');
+        decimal.Parse(partes[0], CultureInfo.InvariantCulture).Should().Be(flete, "el polling emparejó la línea con SU camión por la recomendación");
+        partes[1].Should().Be(estado);
+    }
 
     [Then("Nexo recibió {int} líneas de {string} a {string}, una por camión y sin posiciones")]
     public void EntoncesNexoRecibioLineas(int cantidad, string origen, string destino)

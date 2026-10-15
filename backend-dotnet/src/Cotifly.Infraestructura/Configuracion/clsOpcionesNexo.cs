@@ -4,7 +4,7 @@ namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
 /// Base URL de Nexo (sección <c>Nexo</c>, variable <c>Nexo__UrlBase</c>), consumida por la búsqueda de clientes
-/// (HU-005.2, ADR-005), municipios, catálogos de flete, cubicación y el costeo (ADR-015). Sin autenticación propia: cada petición manda <c>X-Portal-Usuario-Id</c> (el <c>idUsuarioExterno</c>
+/// (HU-005.2, ADR-005), municipios, catálogos de flete, cubicación y el costeo (ADR-015). Sin autenticación propia: cada petición manda <c>X-Portal-clsUsuario-Id</c> (el <c>idUsuarioExterno</c>
 /// del comercial), no un token — Nexo resuelve el rol contra el mismo almacén corporativo que ClientePro.
 /// Sin <see cref="UrlBase"/> (vacía, valor por defecto), <c>clsFabricaBuscadorClientes</c> usa
 /// <see cref="Clientes.Services.clsBuscadorClientesNoDisponible"/>: no hay <c>[Required]</c> porque Nexo aún no es
@@ -21,12 +21,30 @@ public sealed class clsOpcionesNexo
     public string? UrlBase { get; set; }
 
     /// <summary>
-    /// ¿Cada línea de <c>POST /api/captura-solicitudes</c> lleva <c>referenciaRuta</c> (el id de la ruta de Cotifly)? Es la petición N1
-    /// a Nexo (#134, <c>docs/conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md</c> §3): se enciende cuando Nexo acepte el campo en
-    /// <c>CapturaLineaRequest</c> y lo devuelva en <c>GET /api/solicitudes/{id}</c>. Por defecto <c>false</c>: hoy Nexo no lo tiene y su
-    /// swagger declara <c>additionalProperties: false</c>, así que mandarlo antes podría hacer que rechace el alta.
+    /// ¿Cada línea de <c>POST /api/captura-solicitudes</c> lleva <c>grupoRutaId</c> (el id de la ruta de Cotifly, GUID en texto)? Es la
+    /// petición N1 a Nexo (#134), que Nexo implementó como <c>GrupoRutaId</c> (S5-HU-18.3, #275) en <c>clsCapturaLineaRequest</c> y que
+    /// devuelve en cada línea de <c>GET /api/solicitudes/{id}</c> (HU-023.4, #159). Antes se llamaba <c>Nexo:EnviarReferenciaRuta</c> (y así
+    /// la nombra el texto de Nexo #297); Cotifly la renombró a <c>Nexo:EnviarGrupoRutaId</c>. Por
+    /// defecto <c>false</c>: se enciende cuando el cambio de Nexo esté desplegado en su ambiente (su swagger declara
+    /// <c>additionalProperties: false</c>, así que mandarlo antes podría hacer que rechace el alta).
     /// </summary>
-    public bool EnviarReferenciaRuta { get; set; }
+    public bool EnviarGrupoRutaId { get; set; }
+
+    /// <summary>
+    /// ¿Viaja a Nexo el camión del cubicador (HU-023.4, #159)? Con <c>true</c>, cada línea lleva <c>idRecomendacionVehiculo</c> (el camión
+    /// de la recomendación, S5-HU-18.2 de Nexo). Por defecto <c>false</c>, por la misma razón que <see cref="EnviarGrupoRutaId"/>. El código
+    /// de mercancía no viaja nunca (contrato con Nexo #297).
+    /// </summary>
+    public bool EnviarDatosCubicador { get; set; }
+
+    /// <summary>
+    /// ¿Viajan los códigos de vehículo y carrocería del cubicador (<c>2S2</c>, <c>FURGON</c>...) en <c>tipoVehiculo</c>/<c>carroceria</c>?
+    /// Por defecto <c>false</c>: la línea de un camión del cubicador va sin vehículo ni carrocería y la resuelve la Mesa (con Nexo #297 no se
+    /// autocostea). Motivo: hoy un código que Nexo no conoce crea un vehículo duplicado en su catálogo; se enciende cuando Nexo despliegue
+    /// la cuarentena de vehículos (S5-HU-18.4) y S5-HU-20.5 (#297). No afecta al vehículo digitado del respaldo
+    /// (<c>Captura:AceptarVehiculoCliente</c>), que es del catálogo de Nexo y sí viaja.
+    /// </summary>
+    public bool EnviarCodigosCubicador { get; set; }
 
     /// <summary>
     /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta

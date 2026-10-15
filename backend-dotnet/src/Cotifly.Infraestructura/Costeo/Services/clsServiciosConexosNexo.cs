@@ -10,7 +10,7 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// <summary>
 /// Servicios conexos contra Nexo en vivo (HU-013.3, ADR-018 §4): <c>GET /api/servicios-conexos</c>, <c>GET /api/cotizaciones/{id}</c>
 /// y <c>POST /api/cotizaciones/{id}/conexos</c>. Reutiliza el envío de <see cref="clsCosteoNexo"/> (cliente <c>NexoCosteo</c>: 30 s,
-/// reintentos solo en GET, el POST nunca se reintenta; identidad <c>X-Portal-Usuario-Id</c> del comercial; una línea de warning por
+/// reintentos solo en GET, el POST nunca se reintenta; identidad <c>X-Portal-clsUsuario-Id</c> del comercial; una línea de warning por
 /// fallo) con un límite de <see cref="LimiteRespuestaBytes"/> por respuesta, y traduce los errores al vocabulario del contrato:
 /// 403 → <c>NEXO_SIN_PERMISO</c>; al agregar, otro 4xx → <c>CONEXO_INVALIDO</c> con el código de Nexo en el detalle; todo lo demás
 /// (sin configurar, caído, 5xx, 401, tiempo agotado, comercial sin <c>idUsuarioExterno</c>, respuesta demasiado grande o sin forma)

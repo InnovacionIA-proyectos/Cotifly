@@ -10,6 +10,8 @@
     <Compile Include="..\Comun\clsFuenteMargenMuestra.cs" Link="Comun\clsFuenteMargenMuestra.cs" />
     <Compile Include="..\Comun\clsLoggerFalso.cs" Link="Comun\clsLoggerFalso.cs" />
     <Compile Include="..\Comun\clsRelojFalso.cs" Link="Comun\clsRelojFalso.cs" />
+    <!-- Reloj manual de TimeProvider: la espera del candado del envío de la licitación (#174) sin esperar de verdad. -->
+    <Compile Include="..\Comun\clsTiempoManual.cs" Link="Comun\clsTiempoManual.cs" />
     <!-- Formulario ampliado de muestra del costeo en Nexo (ADR-015). -->
     <Compile Include="..\Comun\clsSolicitudCosteoMuestra.cs" Link="Comun\clsSolicitudCosteoMuestra.cs" />
     <Compile Include="..\Comun\clsCotizacionMuestra.cs" Link="Comun\clsCotizacionMuestra.cs" />
