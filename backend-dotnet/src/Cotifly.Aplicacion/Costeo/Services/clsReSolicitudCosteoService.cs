@@ -30,8 +30,8 @@ public interface IClsReSolicitudCosteoService
     /// <summary>
     /// Vuelve a pedir el costeo a Nexo, en el mismo folio (sin cambios de carga ni <c>nueva_version</c>) o en la versión <c>-vN</c>.
     /// Errores: <c>COTIZACION_NO_ENCONTRADA</c> (404, también si no es suya), <c>SOLICITUD_COSTEO_INVALIDA</c> (400: motivo, cambios
-    /// de carga o reglas de la captura), <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>: <c>Idempotency-Key</c> inválida o reutilizada
-    /// con otra petición), <c>CONFLICTO_CONCURRENCIA</c>, <c>ESTADO_NO_PERMITE</c> y <c>PDF_YA_ENVIADO</c> (409). Si Nexo falla, la
+    /// de carga o reglas de la captura), <c>SOLICITUD_INVALIDA</c> (400 <c>ErrorWeb</c>: <c>Idempotency-Key</c> fuera de largo),
+    /// <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409: la misma clave con otra petición, D4), <c>CONFLICTO_CONCURRENCIA</c>, <c>ESTADO_NO_PERMITE</c> y <c>PDF_YA_ENVIADO</c> (409). Si Nexo falla, la
     /// cotización (o la versión nueva) se devuelve igual, en <c>error_envio</c> con el motivo.
     /// </summary>
     Task<clsResultado<clsReSolicitudCosteo>> ReSolicitarAsync(

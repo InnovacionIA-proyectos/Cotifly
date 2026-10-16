@@ -54,14 +54,15 @@ public sealed class clsAlmacenIdempotenciaEnMemoriaTests
     }
 
     [Fact]
-    public async Task LaMismaClaveConOtraHuellaEsSolicitudInvalida()
+    public async Task LaMismaClaveConOtraHuellaEsIdempotencyKeyReutilizada()
     {
         var almacen = new clsAlmacenIdempotenciaEnMemoria(_reloj);
         await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h1", Accion("v1"), null, Ct);
 
         var otra = await almacen.EjecutarUnaVezAsync(Ambito, Clave, "h2", Accion("v2"), null, Ct);
 
-        otra.Error.Codigo.Should().Be(clsCodigosAplicacion.SolicitudInvalida);
+        // D4 (E2E 2026-10-16): un código estable (409 ErrorNegocio), no SOLICITUD_INVALIDA (400 ErrorWeb).
+        otra.Error.Codigo.Should().Be(clsCodigosAplicacion.IdempotencyKeyReutilizada);
         _ejecuciones.Should().Be(1);
     }
 

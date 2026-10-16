@@ -74,6 +74,8 @@ public static class clsRespuestasWeb
         clsCodigosError.PdfYaEnviado,
         clsCodigosError.LineaSinCotizacionNexo,
         clsCodigosError.EstadoNoPermite,
+        // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
+        clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };
 
     public static IActionResult Error(clsErrorDominio error)

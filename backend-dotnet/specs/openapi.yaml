@@ -16,9 +16,9 @@ info:
     - Las operaciones marcadas con `x-estado: borrador` no están congeladas.
     - Dos formas de error. `ErrorWeb` (`{"error": "texto"}`, sin código): todo `/api/auth/*` y, en `/web/*`, el 401, el 403
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
-      `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo o reutilizada). `ErrorNegocio`
+      `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado y `CONFLICTO_CONCURRENCIA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
       dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
@@ -1334,6 +1334,8 @@ paths:
             #173. `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`: la `Idempotency-Key` ya creó un folio cuyo envío a Nexo
             no terminó de registrarse (la primera petición falló después de confirmar el folio). No se vuelve a llamar a Nexo;
             `detalle.folio` y `detalle.solicitud_nexo_id` dicen qué revisar. No reintentar: llevar al comercial a "Mis cotizaciones".
+            `IDEMPOTENCY_KEY_REUTILIZADA` (D4, E2E 2026-10-16; antes 400 `ErrorWeb`): la misma `Idempotency-Key` con otro cuerpo; no se
+            hace nada. Generar una clave nueva para cada intención.
           content:
             application/json:
               schema:
@@ -1848,7 +1850,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
+          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
           content:
             application/json:
               schema:
@@ -2038,7 +2040,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
           content:
             application/json:
               schema:
@@ -2859,7 +2861,8 @@ components:
         Opcional (ADR-018 §8). Clave única por intención del usuario (UUID generado al pulsar Confirmar o el botón). Una
         repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada de la primera petición sin
         volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
-        cuerpo responde 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
+        cuerpo responde 409 `ErrorNegocio` con `codigo = IDEMPOTENCY_KEY_REUTILIZADA` (D4, E2E 2026-10-16; antes 400 `ErrorWeb`
+        con el texto) y no ejecuta nada; una clave fuera de 8 a 64 caracteres sigue siendo 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
         falló) tampoco la consume, y repetirla vuelve a ejecutar (con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA`:
         recargar y reintentar). En `POST /web/solicitudes-costeo` (#173) toda captura 201 la consume, también con `error_envio`.
       schema:
@@ -3096,6 +3099,7 @@ components:
                 - LICITACION_INVALIDA
                 - NEXO_SIN_PERMISO
                 - CONFLICTO_CONCURRENCIA
+                - IDEMPOTENCY_KEY_REUTILIZADA
                 - FOLIO_REQUERIDO
                 - COTIZACION_CHAT_RETIRADA
                 - CUBICADOR_NO_DISPONIBLE

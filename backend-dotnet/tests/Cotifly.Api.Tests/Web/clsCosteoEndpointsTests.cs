@@ -467,7 +467,11 @@ public sealed class clsCosteoEndpointsTests : IDisposable
             .Should().Be(1, "un solo folio");
 
         using var otroCuerpo = await CapturarConClaveAsync(ana.Access, clave, Formulario(linea: "Nacional"));
-        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo es SOLICITUD_INVALIDA");
+        // D4 (E2E 2026-10-16): antes 400 {"error": "texto"}; ahora 409 ErrorNegocio con un código estable.
+        var reutilizada = await VerificarContratoAsync(otroCuerpo, "/web/solicitudes-costeo", _post, HttpStatusCode.Conflict);
+        reutilizada.GetProperty("error").GetProperty("codigo").GetString().Should().Be("IDEMPOTENCY_KEY_REUTILIZADA");
+        reutilizada.GetProperty("error").GetProperty("mensaje").GetString().Should().Contain("Idempotency-Key");
+        _nexo.SolicitudesCreadas.Count.Should().Be(antes + 1, "la clave reutilizada no llega a Nexo");
 
         using var sinClave = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
         (await VerificarContratoAsync(sinClave, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()

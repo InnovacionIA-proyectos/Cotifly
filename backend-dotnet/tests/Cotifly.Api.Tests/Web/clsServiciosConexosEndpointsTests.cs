@@ -133,7 +133,8 @@ public sealed class clsServiciosConexosEndpointsTests : IDisposable
         (await segunda.Content.ReadAsStringAsync(Ct)).Should().Be(await primera.Content.ReadAsStringAsync(Ct));
         segunda.Headers.ETag.Should().Be(primera.Headers.ETag);
         _nexo.PeticionesConexos(_nexo.CotizacionDe(solicitud)!).Should().ContainSingle("el POST de Nexo no es idempotente");
-        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo");
+        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.Conflict, "D4: la misma clave con otro cuerpo");
+        await VerificarErrorNegocioAsync(otroCuerpo, "IDEMPOTENCY_KEY_REUTILIZADA");
     }
 
     [Fact]

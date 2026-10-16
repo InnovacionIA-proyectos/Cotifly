@@ -53,7 +53,7 @@ public interface IClsEnvioCosteoService
     /// #173: <see cref="CapturarAsync"/> con <c>Idempotency-Key</c> (<see cref="IClsAlmacenIdempotencia"/>, ámbito
     /// <c>capturar_costeo:{usuarioId}</c>). Una repetición con la misma clave y el mismo cuerpo en 24 h devuelve la cotización de la
     /// primera sin crear otro folio ni otra solicitud en Nexo (el cliente reintenta tras un timeout o un 500); con otro cuerpo,
-    /// <c>SOLICITUD_INVALIDA</c>. Toda captura exitosa (también la que quedó en <c>error_envio</c>, que ya tiene folio) consume la clave.
+    /// <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409, D4). Toda captura exitosa (también la que quedó en <c>error_envio</c>, que ya tiene folio) consume la clave.
     /// Sin clave se comporta igual que <see cref="CapturarAsync"/>.
     /// </summary>
     Task<clsResultado<clsCotizacionSolicitud>> CapturarUnaVezAsync(
@@ -163,8 +163,7 @@ public sealed class clsEnvioCosteoService(
     {
         if (previa.Huella != huella)
         {
-            return new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
-                "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
+            return new clsErrorDominio(clsCodigosAplicacion.IdempotencyKeyReutilizada, clsCodigosAplicacion.MensajeIdempotencyKeyReutilizada);
         }
 
         var guardada = await cotizaciones.ObtenerPorFolioDelUsuarioAsync(previa.Folio, usuarioId, cancellationToken);
@@ -181,7 +180,7 @@ public sealed class clsEnvioCosteoService(
             MotivoCapturaEnCurso) { Datos = datos };
     }
 
-    /// <summary>Huella (SHA-256) del cuerpo de la captura: la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.</summary>
+    /// <summary>Huella (SHA-256) del cuerpo de la captura: la misma clave con otro cuerpo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409, D4).</summary>
     public static string Huella(clsEntradaCaptura entrada)
     {
         ArgumentNullException.ThrowIfNull(entrada);
