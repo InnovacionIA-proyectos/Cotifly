@@ -53,6 +53,16 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         contexto.EventosHerramienta.Add(evento.Valor);
     }
 
+    public async Task<string?> ObtenerCotizacionNexoIdAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);
+        var id = solicitudNexoId.Trim();
+        return await contexto.CotizacionesSolicitud.AsNoTracking()
+            .Where(c => c.SolicitudNexoId == id && c.CotizacionNexoId != null)
+            .Select(c => c.CotizacionNexoId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);

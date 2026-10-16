@@ -20,7 +20,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 /// <summary>
 /// Costeo contra Nexo en vivo (ADR-015). Rutas de <c>CONTRATO.md</c> de Nexo bajo <c>{Nexo:UrlBase}</c> (la raíz del servicio, sin
 /// <c>/api</c>): <c>POST /api/captura-solicitudes</c> (HU-005.5), <c>GET /api/solicitudes/{id}</c> y
-/// <c>POST /api/cotizaciones</c> (HU-005.6). Igual que el resto de adaptadores de Nexo, identifica al comercial
+/// <c>GET /api/cotizaciones/por-solicitud/{id}</c> (HU-005.6; sin escribir en Nexo, E2E 2026-10-16) y, solo al marcar el resultado o con
+/// un Nexo sin esa ruta, <c>POST /api/cotizaciones</c> ("crear o recuperar"). Igual que el resto de adaptadores de Nexo, identifica al comercial
 /// con <c>X-Portal-clsUsuario-Id: {UsuariosWeb.idUsuarioExterno}</c> y nunca un token de Cotifly; se registra vía
 /// <c>clsFabricaCosteoNexo</c> (sin <c>Nexo:UrlBase</c> → <see cref="clsCosteoNexoNoDisponible"/>).
 /// </summary>
@@ -126,7 +127,17 @@ public sealed class clsCosteoNexo(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitudId);
         var id = solicitudId.Trim();
-        var solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, $"/api/solicitudes/{Uri.EscapeDataString(id)}", null, cancellationToken);
+        var rutaSolicitud = $"/api/solicitudes/{Uri.EscapeDataString(id)}";
+        var solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, rutaSolicitud, null, cancellationToken);
+        if (solicitud.EsFallo && EsConflictoPasajero(solicitud.Error))
+        {
+            // E2E 2026-10-16 (observación 2): "abrir" la solicitud en Nexo cambia su estado, y dos lecturas a la vez (el polling y la Mesa
+            // o el comercial) chocan con un 409 de concurrencia que al reintentar da 200. Se reintenta UNA vez, tras una espera corta.
+            logger.LogInformation("Nexo respondió un 409 pasajero a GET {Ruta}; se reintenta una vez.", rutaSolicitud);
+            await Task.Delay(EsperaConflictoPasajero, cancellationToken);
+            solicitud = await EnviarAsync(usuarioId, HttpMethod.Get, rutaSolicitud, null, cancellationToken);
+        }
+
         if (solicitud.EsFallo)
         {
             // ObtenerCosteoQuery de Nexo responde 409 SOLICITUD_DESCARTADA (nunca 200 con "Descartada") y 404
@@ -177,17 +188,111 @@ public sealed class clsCosteoNexo(
             return new clsCosteoConsultadoNexo(estado, lineas, null) { Detalle = contenidoLineas, CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken) };
         }
 
-        var cotizacion = await ObtenerCotizacionAsync(usuarioId, id, cancellationToken);
-        if (cotizacion.EsFallo)
+        var (cotizacion, error) = await CotizacionDeSolicitudAsync(usuarioId, id, cancellationToken);
+        if (error is not null)
         {
-            return cotizacion.Error;
+            return error;
         }
 
-        return new clsCosteoConsultadoNexo(estado, lineas, cotizacion.Valor)
+        return new clsCosteoConsultadoNexo(estado, lineas, cotizacion)
         {
             Detalle = contenidoLineas,
             CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken),
         };
+    }
+
+    /// <summary>El <c>cotizacionNexoId</c> guardado para la solicitud, o <c>null</c> (sin repositorio o si la lectura falla).</summary>
+    private async Task<string?> CotizacionGuardadaAsync(string solicitudId, CancellationToken cancellationToken)
+    {
+        if (cotizaciones is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await cotizaciones.ObtenerCotizacionNexoIdAsync(solicitudId, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("No se pudo leer el id de la cotización de Nexo de la solicitud {Solicitud} ({Tipo}): se busca por la solicitud.",
+                solicitudId, ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>Espera antes de repetir un <c>GET /api/solicitudes/{id}</c> que chocó con otra lectura (409 pasajero).</summary>
+    public static readonly TimeSpan EsperaConflictoPasajero = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// ¿Un 409 de <c>GET /api/solicitudes/{id}</c> que no es <c>SOLICITUD_DESCARTADA</c>? Es el choque de dos lecturas (el GET de Nexo
+    /// "abre" la solicitud y cambia su estado): se reintenta una vez.
+    /// </summary>
+    private static bool EsConflictoPasajero(clsErrorDominio error) =>
+        error.Codigo == clsCodigosError.CosteoNexoRechazada
+        && error.Detalle?.StartsWith("HTTP 409", StringComparison.Ordinal) == true
+        && !error.Detalle.StartsWith("HTTP 409 " + CodigoNexoDescartada, StringComparison.Ordinal);
+
+    /// <summary>Ruta de Nexo que devuelve la cotización de una solicitud SIN crearla (S5-HU-20.1, #286): 200 con ella o 204 si no hay.</summary>
+    public const string RutaCotizacionPorSolicitud = "/api/cotizaciones/por-solicitud/";
+
+    /// <summary>
+    /// La cotización de Nexo de la solicitud SIN escribir en Nexo (E2E 2026-10-16: el polling hacía un <c>POST /api/cotizaciones</c>,
+    /// "crear o recuperar", en cada ciclo: 69 escrituras en 20 minutos para 5 solicitudes).
+    /// <list type="number">
+    /// <item>Con el id ya guardado (<c>cotizacionNexoId</c>, lo guarda el polling la primera vez que la ve): <c>GET /api/cotizaciones/{id}</c>.
+    /// Si esa lectura no la trae (Nexo ya no la reconoce o falló), se busca por la solicitud.</item>
+    /// <item><c>GET /api/cotizaciones/por-solicitud/{id}</c>: 200 → la cotización (con sus fletes y conexos); 204 → <c>null</c> (Nexo
+    /// todavía no la crea: no hay fletes; la crean el autocosteo o la Mesa al costear).</item>
+    /// <item>Solo si esa ruta no existe (404/405 sin código de Nexo: un Nexo anterior a #286) se usa el "crear o recuperar" de siempre, que
+    /// con el id guardado ocurre una sola vez por solicitud.</item>
+    /// </list>
+    /// </summary>
+    private async Task<(clsCotizacionNexo? Cotizacion, clsErrorDominio? Error)> CotizacionDeSolicitudAsync(
+        Guid usuarioId, string solicitudId, CancellationToken cancellationToken)
+    {
+        if (await CotizacionGuardadaAsync(solicitudId, cancellationToken) is { Length: > 0 } cotizacionNexoId)
+        {
+            var porId = await EnviarAsync(usuarioId, HttpMethod.Get, $"/api/cotizaciones/{Uri.EscapeDataString(cotizacionNexoId)}", null, cancellationToken);
+            if (porId.EsExitoso)
+            {
+                using var documento = porId.Valor;
+                if (LeerCotizacion(documento.RootElement) is { } guardada)
+                {
+                    return (guardada, null);
+                }
+            }
+
+            // Si Nexo no la devuelve (ya no la reconoce, o falló esa lectura), se busca por la solicitud: otra lectura, nunca una escritura.
+            logger.LogWarning("Nexo no devolvió la cotización {Cotizacion} guardada para la solicitud {Solicitud} ({Codigo}): se busca por la solicitud.",
+                cotizacionNexoId, solicitudId, porId.EsFallo ? porId.Error.Codigo : "sin id");
+        }
+
+        var ruta = RutaCotizacionPorSolicitud + Uri.EscapeDataString(solicitudId);
+        var leida = await EnviarAsync(usuarioId, HttpMethod.Get, ruta, null, cancellationToken, vacioEsNulo: true);
+        if (leida.EsFallo)
+        {
+            var detalle = leida.Error.Detalle ?? string.Empty;
+            if (leida.Error.Codigo == clsCodigosError.CosteoNexoRechazada
+                && (detalle.StartsWith("HTTP 404", StringComparison.Ordinal) || detalle.StartsWith("HTTP 405", StringComparison.Ordinal))
+                && CodigoNexo(detalle) is null or "RUTA_NO_ENCONTRADA")
+            {
+                logger.LogWarning("Nexo no publica GET {Ruta} ({Detalle}): se usa POST /api/cotizaciones (crear o recuperar).", RutaCotizacionPorSolicitud, detalle);
+                var creada = await ObtenerCotizacionAsync(usuarioId, solicitudId, cancellationToken);
+                return creada.EsFallo ? (null, creada.Error) : (creada.Valor, null);
+            }
+
+            return (null, leida.Error);
+        }
+
+        using var cuerpo = leida.Valor;
+        if (cuerpo.RootElement.ValueKind == JsonValueKind.Null)
+        {
+            return (null, null);
+        }
+
+        var cotizacion = LeerCotizacion(cuerpo.RootElement);
+        return cotizacion is null ? (null, NoDisponible("respuesta de la cotización sin id")) : (cotizacion, null);
     }
 
     /// <summary>
@@ -215,8 +320,9 @@ public sealed class clsCosteoNexo(
     }
 
     /// <summary>
-    /// "Crear o recuperar" (Nexo no tiene GET de la cotización por solicitud): devuelve la entregada, el borrador existente o uno
-    /// vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la solicitud). Pendiente de confirmar con el equipo de Nexo.
+    /// "Crear o recuperar": devuelve la entregada, el borrador existente o uno vacío nuevo (lo mismo que hace la Mesa de Nexo al abrir la
+    /// solicitud). ES UNA ESCRITURA en Nexo: el polling ya no la usa (lee con <see cref="RutaCotizacionPorSolicitud"/>); queda para marcar el
+    /// resultado cuando Cotifly todavía no conoce el id de la cotización y para un Nexo sin la ruta de lectura.
     /// </summary>
     public async Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default)
     {
@@ -461,7 +567,8 @@ public sealed class clsCosteoNexo(
     /// (<c>COSTEO_NEXO_NO_DISPONIBLE</c>, "respuesta demasiado grande"); lo usan los servicios conexos (HU-013.3).
     /// </summary>
     internal async Task<clsResultado<JsonDocument>> EnviarAsync(
-        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, long? limiteBytes = null)
+        Guid usuarioId, HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, long? limiteBytes = null,
+        bool vacioEsNulo = false)
     {
         if (_urlBase is null)
         {
@@ -526,6 +633,12 @@ public sealed class clsCosteoNexo(
             if (!respuesta.IsSuccessStatusCode)
             {
                 return NoDisponible($"HTTP {(int)respuesta.StatusCode} ({respuesta.StatusCode})");
+            }
+
+            if (vacioEsNulo && respuesta.StatusCode == HttpStatusCode.NoContent)
+            {
+                // GET /api/cotizaciones/por-solicitud/{id} sin cotización: un JSON null para el llamador.
+                return JsonDocument.Parse("null");
             }
 
             await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);

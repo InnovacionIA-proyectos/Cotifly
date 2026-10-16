@@ -23,13 +23,17 @@ public interface IClsCosteoNexo
     Task<clsResultado<clsSolicitudCreadaNexo>> EnviarSolicitudAsync(Guid usuarioId, clsSolicitudNexo solicitud, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Estado y costeo de una solicitud (HU-005.6): <c>GET /api/solicitudes/{id}</c> (estado y líneas) y, salvo que esté
-    /// <c>Descartada</c>, <c>POST /api/cotizaciones {solicitudId}</c> ("crear o recuperar" la cotización de Nexo con sus fletes y
-    /// servicios conexos). Un id que Nexo ya no reconoce responde <c>COSTEO_NEXO_RECHAZADA</c> con <c>HTTP 404</c> en el detalle.
+    /// Estado y costeo de una solicitud (HU-005.6): <c>GET /api/solicitudes/{id}</c> (estado y líneas; un 409 pasajero de concurrencia se
+    /// reintenta una vez) y, salvo que esté <c>Descartada</c>, <c>GET /api/cotizaciones/por-solicitud/{id}</c> (la cotización de Nexo con
+    /// sus fletes y servicios conexos, o ninguna si Nexo todavía no la crea). Solo LEE: E2E 2026-10-16, el "crear o recuperar" por ciclo
+    /// escribía en Nexo cada vez. Un id que Nexo ya no reconoce responde <c>COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA</c>.
     /// </summary>
     Task<clsResultado<clsCosteoConsultadoNexo>> ConsultarCosteoAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
 
-    /// <summary>"Crear o recuperar" la cotización de Nexo de una solicitud (<c>POST /api/cotizaciones {solicitudId}</c>).</summary>
+    /// <summary>
+    /// "Crear o recuperar" la cotización de Nexo de una solicitud (<c>POST /api/cotizaciones {solicitudId}</c>). Escribe en Nexo: solo
+    /// cuando hace falta el id de la cotización y no se conoce (marcar el resultado), una vez por solicitud.
+    /// </summary>
     Task<clsResultado<clsCotizacionNexo>> ObtenerCotizacionAsync(Guid usuarioId, string solicitudId, CancellationToken cancellationToken = default);
 
     /// <summary>
