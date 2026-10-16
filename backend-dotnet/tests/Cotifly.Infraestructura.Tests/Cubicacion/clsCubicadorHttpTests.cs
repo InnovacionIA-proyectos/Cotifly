@@ -418,6 +418,26 @@ public sealed class clsCubicadorHttpTests : IDisposable
         new clsValidadorOpcionesCubicacionLicitacion(Options.Create(opciones)).Validate(null, licitacion).Succeeded.Should().BeTrue();
     }
 
+    /// <summary>D7 (E2E 2026-10-16): <c>.env.example</c> decía 15 s y el código usaba 30. Los valores documentados son los del código.</summary>
+    [Fact]
+    public void ElEnvExampleDocumentaLosTiemposDelCodigo()
+    {
+        var directorio = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directorio is not null && !File.Exists(Path.Combine(directorio.FullName, "Cotifly.sln")))
+        {
+            directorio = directorio.Parent;
+        }
+
+        var ejemplo = File.ReadAllText(Path.Combine(directorio!.FullName, ".env.example")).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var opciones = new clsOpcionesCubicador();
+        var licitacion = new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion();
+
+        ejemplo.Should().Contain($"# Cubicador__TiempoEsperaSegundos={opciones.TiempoEsperaSegundos}\n")
+            .And.Contain($"# Cubicador__TiempoEsperaRecomendacionSegundos={opciones.TiempoEsperaRecomendacionSegundos}\n")
+            .And.Contain($"# Cubicador__PresupuestoCapturaSegundos={opciones.PresupuestoCapturaSegundos}\n")
+            .And.Contain($"# Cubicador__ReclamoSegundos={licitacion.ReclamoSegundos}\n");
+    }
+
     [Theory]
     [InlineData(30, 20, 120, "TiempoEsperaRecomendacionSegundos")]
     [InlineData(15, 60, 45, "PresupuestoCapturaSegundos")]
