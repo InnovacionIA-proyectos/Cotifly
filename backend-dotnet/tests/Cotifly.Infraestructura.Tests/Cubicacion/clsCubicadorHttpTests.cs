@@ -543,16 +543,39 @@ public sealed class clsCubicadorHttpTests : IDisposable
     }
 
     [Fact]
-    public async Task Un422DelCubicadorEsUnErrorVisibleNoUnaCaida()
+    public async Task Un422DelCubicadorSinMercanciaEsUnRechazoVisibleNoUnaCaida()
     {
         _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
 
         var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
 
-        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorRespuestaInvalida);
-        r.Error.Mensaje.Should().Contain("422");
+        // D1 (E2E 2026-10-16): antes era CUBICADOR_RESPUESTA_INVALIDA (503, "avisa a soporte").
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorPeticionRechazada);
+        r.Error.Mensaje.Should().StartWith(clsCubicadorHttp.MensajePeticionRechazada);
+        r.Error.Detalle.Should().Contain("422");
         clsErroresCubicador.EsCaida(r.Error).Should().BeFalse("un 422 nunca va al respaldo");
+        _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Post).Should().Be(1, "un 422 no se reintenta");
     }
+
+    /// <summary>D1 (E2E 2026-10-16): el 422 de FastAPI que señala una mercancía llega como 400 con el ítem (base 0) y el campo.</summary>
+    [Theory]
+    [InlineData("largoCm", "DIMENSIONES_INVALIDAS")]
+    [InlineData("pesoKg", "DIMENSIONES_INVALIDAS")]
+    [InlineData("cantidad", "POSICION_INVALIDA")]
+    public async Task Un422QueSenalaUnaMercanciaEsElRechazoDeEsaMercancia(string campo, string codigo)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
+        _cubicador.CuerpoErrorRecomendacion =
+            $$"""{"detail":[{"type":"greater_than","loc":["body","mercancias",1,"{{campo}}"],"msg":"Input should be greater than 0","input":0}]}""";
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(codigo);
+        r.Error.Mensaje.Should().Contain("mercancía 2").And.Contain("Input should be greater than 0");
+        r.Error.Datos.Should().Contain("item", 1).And.Contain("campo", campo);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeFalse();
+    }
+
 
     [Fact]
     public async Task MasDeDiezMilUnidadesNoLlamaAlCubicadorYDevuelveCubicacionDemasiadoGrande()

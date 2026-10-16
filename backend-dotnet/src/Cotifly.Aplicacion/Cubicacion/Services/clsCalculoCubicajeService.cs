@@ -50,6 +50,9 @@ public sealed class clsCalculoCubicajeService(
         clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorNoAutorizado,
         clsCodigosError.CubicadorRespuestaInvalida,
+        // D1 (E2E 2026-10-16): el 422 del cubicador es un rechazo de los datos (400), con el ítem si lo señala.
+        clsCodigosLineaSolicitud.PosicionInvalida,
+        clsCodigosError.CubicadorPeticionRechazada,
     };
 
     public async Task<clsResultado<clsResultadoCubicacion>> CalcularAsync(
@@ -64,14 +67,9 @@ public sealed class clsCalculoCubicajeService(
 
         for (var i = 0; i < items.Count; i++)
         {
-            // HU-023 (#176): el cubicador exige peso por unidad mayor que 0 en cada mercancía.
-            if (items[i] is { } item && item.PesoKg is not > 0m)
+            if (items[i] is { } item && ValidarItem(item, i) is { } invalido)
             {
-                return new clsErrorDominio(clsCodigosError.DimensionesInvalidas,
-                    $"El ítem {(i + 1).ToString(CultureInfo.InvariantCulture)} debe traer el peso por unidad (peso_kg) mayor que 0.")
-                {
-                    Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = i },
-                };
+                return invalido;
             }
         }
 
@@ -112,6 +110,34 @@ public sealed class clsCalculoCubicajeService(
             legada)
         {
             MensajeSinSeleccion = respuesta.SinSeleccion ? clsMotivosSinSeleccion.Mensaje(respuesta.MotivoSinSeleccion) : null,
+        };
+    }
+
+    /// <summary>
+    /// Código con el que se valida un ítem: en "Calcular cubicaje" todo ítem viaja al cubicador, así que rige siempre la regla del peso por
+    /// unidad mayor que 0 de <see cref="clsPosicionCarga.PrimerError"/> (el código real lo valida el catálogo).
+    /// </summary>
+    private const string CodigoValidacion = "CUBICACION";
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): las MISMAS reglas de la captura (<see cref="clsPosicionCarga.PrimerError"/>: cantidad de 1 a 100.000, medidas de
+    /// 0,1 a 999.999 cm, peso por unidad mayor que 0, máximo 2 decimales) antes de llamar al cubicador, que con un valor fuera de rango
+    /// responde 422. Medidas y peso: <c>DIMENSIONES_INVALIDAS</c>; la cantidad: <c>POSICION_INVALIDA</c> (el código de la captura). Los dos
+    /// con <c>detalle.item</c> (base 0) y <c>detalle.campo</c>.
+    /// </summary>
+    public static clsErrorDominio? ValidarItem(clsItemCubicacion item, int indice)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var posicion = new clsPosicionCarga(null, item.Cantidad, item.LargoCm, item.AnchoCm, item.AltoCm, item.PesoKg, CodigoMercancia: CodigoValidacion);
+        if (posicion.PrimerError(indice + 1) is not { } error)
+        {
+            return null;
+        }
+
+        var codigo = error.Campo == clsPosicionCarga.CampoCantidad ? clsCodigosLineaSolicitud.PosicionInvalida : clsCodigosError.DimensionesInvalidas;
+        return new clsErrorDominio(codigo, error.Mensaje)
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = indice, ["campo"] = error.Campo },
         };
     }
 
@@ -193,8 +219,25 @@ public sealed class clsCalculoCubicajeService(
     {
         logger.LogWarning("Calcular cubicaje ({Contexto}): el cubicador respondió {Codigo} ({Detalle}).", contexto, error.Codigo, error.Detalle);
         return _codigosPropios.Contains(error.Codigo)
-            ? new clsErrorDominio(error.Codigo, error.Mensaje)
+            ? new clsErrorDominio(error.Codigo, error.Mensaje) { Datos = DatosItem(error.Datos) }
             : new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoDisponible);
+    }
+
+    /// <summary>Solo <c>item</c> y <c>campo</c> (el rechazo de una mercancía, D1) pasan al comercial; las marcas internas no.</summary>
+    private static Dictionary<string, object?>? DatosItem(IReadOnlyDictionary<string, object?>? datos)
+    {
+        if (datos is null || !datos.TryGetValue("item", out var item))
+        {
+            return null;
+        }
+
+        var visibles = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = item };
+        if (datos.TryGetValue("campo", out var campo) && campo is not null)
+        {
+            visibles["campo"] = campo;
+        }
+
+        return visibles;
     }
 
     private async Task<string?> UsuarioExternoAsync(Guid usuarioId, CancellationToken cancellationToken)

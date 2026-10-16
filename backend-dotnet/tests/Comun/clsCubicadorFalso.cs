@@ -83,6 +83,9 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, la recomendación responde ese error con <c>{codigo, mensaje}</c>.</summary>
     public (HttpStatusCode Estado, string Codigo)? ErrorRecomendacion { get; set; }
 
+    /// <summary>D1: cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
+    public string? CuerpoErrorRecomendacion { get; set; }
+
     /// <summary>HU-023.5: error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
     public Func<JsonNode, (HttpStatusCode Estado, string Codigo)?>? ErrorPara { get; set; }
 
@@ -303,7 +306,8 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
 
         if (ErrorRecomendacion is { } error)
         {
-            return Json(error.Estado, JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
+            return Json(error.Estado, CuerpoErrorRecomendacion
+                ?? JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
         }
 
         if (CuerpoRecomendacion is not null)

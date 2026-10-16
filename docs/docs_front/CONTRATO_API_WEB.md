@@ -893,8 +893,10 @@ HU-023 (#176), contrato vigente del cubicador: cada vehículo trae además `nume
 `mercancias[]` (una fila por posición de `items`, con `indice_posicion` base 0 —puede venir `null` en corridas viejas—, `codigo_mercancia`,
 `cantidad`, `peso_kg` y `volumen_m3`). **Dos filas del mismo camión pueden compartir `codigo_mercancia`: si se agrupan por código, se
 suman.** `extradimension` cambia de forma: `{hay_extradimension, medidas_estandar: {largo_max_cm, ancho_max_cm, alto_max_cm, peso_max_kg},
-piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. Cada ítem debe traer `peso_kg` mayor que 0 (400
-`DIMENSIONES_INVALIDAS` con `detalle.item`, el índice base 0 del ítem; se valida antes de llamar al cubicador) y la suma de `cantidad` no puede pasar de **10.000** (400 `CUBICACION_DEMASIADO_GRANDE`: partir la carga).
+piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. Cada ítem debe traer `peso_kg` mayor que 0 y
+`largo_cm`, `ancho_cm` y `alto_cm` entre 0,1 y 999.999 (400 `DIMENSIONES_INVALIDAS` con `detalle.item`, el índice base 0 del ítem, y
+`detalle.campo`), y una `cantidad` entre 1 y 100.000 (400 `POSICION_INVALIDA`, con `detalle.item` y `detalle.campo = "cantidad"`): las reglas
+de la captura, validadas antes de llamar al cubicador (E2E 2026-10-16, D1) y la suma de `cantidad` no puede pasar de **10.000** (400 `CUBICACION_DEMASIADO_GRANDE`: partir la carga).
 
 <!-- respuesta: POST /web/cubicacion 200 -->
 ```json
@@ -972,11 +974,13 @@ piezas: [{indice_posicion, id_tipo_mercancia, codigo_mercancia, excesos[]}]}`. C
 |---|---|---|---|
 | 400 | `ITEMS_REQUERIDOS` | Sin ítems | Deshabilitar el botón sin bultos |
 | 400 | `MERCANCIA_DESCONOCIDA` | Ítem sin código ni descripción, descripción sin parecido o código que el cubicador no conoce | El mensaje; pedir que escoja la mercancía |
-| 400 | `DIMENSIONES_INVALIDAS` | HU-023 (#176): un ítem sin `peso_kg` o con `peso_kg` ≤ 0. `detalle.item` = índice base 0 del ítem. Cotifly no llama al cubicador | Marcar el peso de ese ítem |
+| 400 | `DIMENSIONES_INVALIDAS` | HU-023 (#176) y D1 (2026-10-16): un ítem sin `peso_kg` o con `peso_kg` ≤ 0, o con `largo_cm`, `ancho_cm` o `alto_cm` fuera de 0,1 a 999.999. `detalle.item` = índice base 0 del ítem y `detalle.campo` el campo. Cotifly no llama al cubicador | Marcar ese campo del ítem |
+| 400 | `POSICION_INVALIDA` | D1 (2026-10-16): `cantidad` fuera de 1 a 100.000 (`detalle.item`, `detalle.campo = "cantidad"`). Cotifly no llama al cubicador | Marcar la cantidad del ítem |
+| 400 | `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` | D1 (2026-10-16): el cubicador respondió 422 (validación de su esquema). Con `detalle.item` si señala una mercancía; `CUBICADOR_PETICION_RECHAZADA` si no. Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA` | El mensaje; revisar la carga |
 | 400 | `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador | El mensaje |
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | Vigente (HU-023, #176): más de 10.000 unidades en total (Cotifly no llama al cubicador) | El mensaje: partir la carga |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | Cubicador sin configurar o caído (un POST sin respuesta se reconsulta antes de rendirse; nunca se repite) | El mensaje y un botón Reintentar |
-| 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada, respuesta fuera del contrato o un 422 del cubicador (petición fuera de su esquema) | "Avisa a soporte" |
+| 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada o respuesta fuera del contrato (un 422 del `POST /recomendaciones` ya no cae aquí: es 400, ver arriba) | "Avisa a soporte" |
 
 **Qué cambia para el frontend de hoy** (que ya usa `/web/cubicacion`):
 

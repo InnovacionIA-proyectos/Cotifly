@@ -461,7 +461,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST /web/cotizaciones/{folio}/enviar` | 400 `CORREO_INVALIDO` (sin código visible), 404 | 400 (`CORREO_DUPLICADO`, `CORREO_PDF_NO_ENCONTRADO`, `CORREO_ENVIO_FALLIDO`...), 503 `CORREO_DESHABILITADO` |
 | `POST .../seguimiento` | 400 (motivo de más de 2000), 404 | 409 `USAR_RESULTADO_NEXO` |
 | `GET /web/clientes` | 400 si falta `q` (`Falta el texto de búsqueda (q).`) | 400 `CLIENTE_BUSQUEDA_NO_DISPONIBLE` |
-| `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401; 400 `Cuerpo inválido.` en `/web/cubicacion` | 503 `MUNICIPIOS_NO_DISPONIBLE` y `CATALOGOS_FLETE_NO_DISPONIBLE`; 400 `ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS` (peso por unidad ≤ 0, con `detalle.item`), `MERCANCIA_DESCONOCIDA`, `CUBICACION_DEMASIADO_GRANDE` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
+| `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion` | 401; 400 `Cuerpo inválido.` en `/web/cubicacion` | 503 `MUNICIPIOS_NO_DISPONIBLE` y `CATALOGOS_FLETE_NO_DISPONIBLE`; 400 `ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS` (peso por unidad ≤ 0 o medidas fuera de 0,1 a 999.999, con `detalle.item`), `POSICION_INVALIDA` (cantidad), `MERCANCIA_DESCONOCIDA`, `CUBICACION_DEMASIADO_GRANDE` y los rechazos del cubicador; 503 `CUBICADOR_NO_DISPONIBLE` en `/web/cubicacion` (HU-023.2) |
 | `POST /web/solicitudes-costeo` | 400 si el JSON es inválido | 400 `SOLICITUD_COSTEO_INVALIDA`, `MARGEN_LINEA_DESCONOCIDA`, `FOLIO_CONSECUTIVO_AGOTADO` |
 | `POST .../costeo/reintentar` | 404 | 409 `COSTEO_NO_REINTENTABLE`; 400 `SOLICITUD_COSTEO_INVALIDA` si lo guardado ya no pasa la validación |
 | `GET .../costeo`, `PUT .../servicios-conexos`, `POST .../costeo/pdf` | 404; 400 en `PUT .../servicios-conexos` si vienen `conexos` e `incluidos` juntos o ninguno | 400 `SOLICITUD_COSTEO_INVALIDA` (id de conexo desconocido), `PDF_PAYLOAD_INVALIDO`; 409 `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` y, solo en el PDF, `PDF_YA_GENERADO`; 428 `PRECONDICION_REQUERIDA`; 503 `PDF_RENDER_NO_DISPONIBLE` (#92) |
@@ -1021,8 +1021,11 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 }
 ```
 
-- Errores: 400 `ITEMS_REQUERIDOS`; 400 `DIMENSIONES_INVALIDAS` con `detalle.item` (índice base 0) si un ítem no trae `peso_kg` o lo
-  trae ≤ 0 (se valida antes de llamar al cubicador, después de comprobar que está configurado); 400 `CUBICACION_DEMASIADO_GRANDE` si
+- Errores: 400 `ITEMS_REQUERIDOS`; 400 `DIMENSIONES_INVALIDAS` con `detalle.item` (índice base 0) y `detalle.campo` si un ítem no trae
+  `peso_kg` o lo trae ≤ 0, o si `largo_cm`, `ancho_cm` o `alto_cm` no están entre 0,1 y 999.999; 400 `POSICION_INVALIDA` (`detalle.item`,
+  `detalle.campo = "cantidad"`) si la cantidad no está entre 1 y 100.000 (las reglas de la captura; se valida antes de llamar al
+  cubicador, después de comprobar que está configurado; D1 del E2E 2026-10-16). Un 422 del cubicador ya no es 503: llega como 400
+  `DIMENSIONES_INVALIDAS`/`POSICION_INVALIDA` con `detalle.item` o, si no señala una mercancía, `CUBICADOR_PETICION_RECHAZADA`; 400 `CUBICACION_DEMASIADO_GRANDE` si
   los ítems suman más de 10.000 unidades (partir la carga); 400 `MERCANCIA_DESCONOCIDA` (ítem sin código ni descripción, descripción que no se parece a
   ninguna mercancía o código que el cubicador no conoce; el mensaje dice qué ítem); 400 `MERCANCIA_NO_CUBICABLE`,
   `DIMENSIONES_INVALIDAS` o `MERCANCIAS_REQUERIDAS` (rechazo del cubicador); **503 `CUBICADOR_NO_DISPONIBLE`** (cubicador sin

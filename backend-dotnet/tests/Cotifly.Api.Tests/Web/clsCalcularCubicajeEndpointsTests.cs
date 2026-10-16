@@ -227,6 +227,50 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
         json.GetProperty("error").GetProperty("mensaje").GetString().Should().Contain("no está configurado");
     }
 
+    /// <summary>
+    /// D1 (E2E 2026-10-16): con largo, ancho o alto ≤ 0 o cantidad 0 el cubicador real respondía 422 y el comercial veía 503
+    /// CUBICADOR_RESPUESTA_INVALIDA ("Avisa a soporte"). Ahora Cotifly valida antes con las reglas de la captura y no llama al cubicador.
+    /// </summary>
+    [Theory]
+    [InlineData("largo_cm", 0, "DIMENSIONES_INVALIDAS")]
+    [InlineData("ancho_cm", 0, "DIMENSIONES_INVALIDAS")]
+    [InlineData("alto_cm", -5, "DIMENSIONES_INVALIDAS")]
+    [InlineData("peso_kg", 0, "DIMENSIONES_INVALIDAS")]
+    [InlineData("cantidad", 0, "POSICION_INVALIDA")]
+    public async Task MedidasOCantidadFueraDeRangoResponden400ConElItemSinLlamarAlCubicador(string campo, int valor, string codigo)
+    {
+        var (api, token) = await SesionAsync();
+
+        using var respuesta = await api.EnviarAsync(_post, Ruta, token, Cuerpo(new { codigo_mercancia = "CAFE_EN_ESTIBAS" }, cambio: (campo, valor)));
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.BadRequest);
+
+        var error = json.GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be(codigo);
+        error.GetProperty("mensaje").GetString().Should().StartWith("Mercancía 1: ").And.NotContain("soporte");
+        error.GetProperty("detalle").GetProperty("item").GetInt32().Should().Be(0);
+        error.GetProperty("detalle").GetProperty("campo").GetString().Should().Be(campo);
+        _cubicador.Recomendaciones.Should().BeEmpty("se valida antes de llamar");
+    }
+
+    [Fact]
+    public async Task Un422DelCubicadorEsUn400ConLaMercanciaNoUn503()
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
+        _cubicador.CuerpoErrorRecomendacion =
+            """{"detail":[{"type":"greater_than","loc":["body","mercancias",0,"anchoCm"],"msg":"Input should be greater than 0","input":0}]}""";
+        var (api, token) = await SesionAsync();
+
+        using var respuesta = await api.EnviarAsync(_post, Ruta, token, Cuerpo(new { codigo_mercancia = "CAFE_EN_ESTIBAS" }));
+        var json = await VerificarContratoAsync(respuesta, Ruta, _post, HttpStatusCode.BadRequest);
+
+        var error = json.GetProperty("error");
+        error.GetProperty("codigo").GetString().Should().Be("DIMENSIONES_INVALIDAS");
+        error.GetProperty("mensaje").GetString().Should().Contain("mercancía 1").And.NotContain("soporte");
+        error.GetProperty("detalle").GetProperty("item").GetInt32().Should().Be(0);
+        error.GetProperty("detalle").TryGetProperty("motivo", out _).Should().BeFalse("el detalle técnico solo va al log");
+        _cubicador.Recomendaciones.Should().ContainSingle("un 422 no se reintenta");
+    }
+
     [Fact]
     public async Task SinItemsRespondeItemsRequeridos()
     {
@@ -259,7 +303,7 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
     }
 
     /// <summary>Un ítem (10 estibas de 120 × 100 × 150 cm y 800 kg) con el tipo de mercancía dado.</summary>
-    private static string Cuerpo(object mercancia, string? claseViaje = null)
+    private static string Cuerpo(object mercancia, string? claseViaje = null, (string Campo, int Valor)? cambio = null)
     {
         var item = JsonSerializer.SerializeToNode(mercancia)!.AsObject();
         item["cantidad"] = 10;
@@ -267,6 +311,11 @@ public sealed class clsCalcularCubicajeEndpointsTests : IDisposable
         item["ancho_cm"] = 100;
         item["alto_cm"] = 150;
         item["peso_kg"] = 800;
+        if (cambio is { } c)
+        {
+            item[c.Campo] = c.Valor;
+        }
+
         return clsApiWebPruebas.Json(new { items = new[] { item }, clase_viaje = claseViaje });
     }
 

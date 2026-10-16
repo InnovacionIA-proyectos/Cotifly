@@ -28,7 +28,9 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// (<see cref="clsCacheCatalogoCubicador{TFila}"/>).</item>
 /// <item>HU-023 (#176): tope de 10.000 unidades antes de llamar (<c>CUBICACION_DEMASIADO_GRANDE</c>); un POST sin respuesta (tiempo agotado
 /// o red) no se reintenta: se reconsulta <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c> y, si la corrida existe y
-/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 es <c>CUBICADOR_RESPUESTA_INVALIDA</c> (visible, nunca al respaldo); el
+/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 del POST es un rechazo de los datos (D1: 400
+/// <c>DIMENSIONES_INVALIDAS</c>, <c>POSICION_INVALIDA</c> o <c>CUBICADOR_PETICION_RECHAZADA</c>) y el de una consulta
+/// <c>CUBICADOR_RESPUESTA_INVALIDA</c> (los dos visibles, nunca al respaldo); el
 /// <c>comentarioCondicion</c> de las mercancías condicionadas sale de <c>GET /tipos-mercancia</c>. Los códigos se comparan sin distinguir
 /// mayúsculas.</item>
 /// </list>
@@ -74,8 +76,15 @@ public sealed class clsCubicadorHttp(
 
     public const string MensajeNoAutorizado = "El cubicador rechazó la llave de Cotifly: avisa a soporte (Cubicador:ApiKey).";
 
-    /// <summary>HU-023 (#176): mensaje de un 422 del cubicador (la petición de Cotifly no cumple su esquema).</summary>
+    /// <summary>
+    /// D1 (E2E 2026-10-16): mensaje de un 422 de <c>POST /recomendaciones</c> que no señala una mercancía (<c>CUBICADOR_PETICION_RECHAZADA</c>,
+    /// 400). Un 422 de una consulta (GET) sigue siendo <c>CUBICADOR_RESPUESTA_INVALIDA</c> con <see cref="MensajeConsultaRechazada"/>.
+    /// </summary>
     public const string MensajePeticionRechazada =
+        "El cubicador rechazó los datos de la carga (medidas, peso o cantidad): revísalos y vuelve a intentarlo. No se guardó nada.";
+
+    /// <summary>HU-023 (#176): mensaje de un 422 de una consulta al cubicador (la petición de Cotifly no cumple su esquema).</summary>
+    public const string MensajeConsultaRechazada =
         "El cubicador rechazó el formato de la petición de Cotifly (422): no se guardó nada. Avisa a soporte.";
 
     /// <summary>Reintentos de las consultas GET (los POST no se reintentan nunca).</summary>
@@ -728,12 +737,19 @@ public sealed class clsCubicadorHttp(
                 return await RechazoAsync(respuesta, metodo, ruta, cancellationToken);
             }
 
+            if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity && metodo == HttpMethod.Post)
+            {
+                // D1 (E2E 2026-10-16): el 422 del POST es la validación de los DATOS de la carga (medida, peso o cantidad fuera de rango):
+                // un 400 para el comercial con la mercancía, no "avisa a soporte". Cotifly ya valida antes; esto cubre lo que se escape.
+                return await PeticionRechazadaAsync(respuesta, ruta, cancellationToken);
+            }
+
             if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity)
             {
                 // HU-023 (#176): un 422 es la validación del esquema del cubicador (falta un campo o llega uno viejo): un error de contrato
                 // de Cotifly, visible y nunca al respaldo.
                 logger.LogError("El cubicador respondió 422 a {Metodo} {Ruta}: la petición de Cotifly no cumple su esquema.", metodo, ruta);
-                return new clsErrorDominio(clsCodigosError.CubicadorRespuestaInvalida, MensajePeticionRechazada, $"HTTP 422 en {metodo} {ruta}");
+                return new clsErrorDominio(clsCodigosError.CubicadorRespuestaInvalida, MensajeConsultaRechazada, $"HTTP 422 en {metodo} {ruta}");
             }
 
             if (!respuesta.IsSuccessStatusCode)
@@ -806,6 +822,69 @@ public sealed class clsCubicadorHttp(
         }
 
         return NoDisponible($"HTTP 400 ({codigo ?? "sin código"}) en {metodo} {ruta}");
+    }
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): un 422 de <c>POST /recomendaciones</c> (FastAPI: <c>{"detail": [{"loc": ["body", "mercancias", 0, "largoCm"],
+    /// "msg": "..."}]}</c>). Si señala una mercancía: <c>DIMENSIONES_INVALIDAS</c> (medidas o peso) o <c>POSICION_INVALIDA</c> (cantidad), con
+    /// <c>item</c> (base 0) y <c>campo</c> en los datos; si no, <c>CUBICADOR_PETICION_RECHAZADA</c>. Los tres son 400 para el comercial y
+    /// nunca van al respaldo (no son una caída).
+    /// </summary>
+    private async Task<clsErrorDominio> PeticionRechazadaAsync(HttpResponseMessage respuesta, string ruta, CancellationToken cancellationToken)
+    {
+        int? item = null;
+        string? campo = null;
+        string? motivo = null;
+        try
+        {
+            using var documento = await LeerJsonAsync(respuesta, cancellationToken);
+            if (documento?.RootElement is { ValueKind: JsonValueKind.Object } raiz
+                && Propiedad(raiz, "detail") is { ValueKind: JsonValueKind.Array } detalles && detalles.GetArrayLength() > 0
+                && detalles[0] is { ValueKind: JsonValueKind.Object } primero)
+            {
+                motivo = Recortar(Texto(primero, "msg"));
+                if (Propiedad(primero, "loc") is { ValueKind: JsonValueKind.Array } loc)
+                {
+                    var partes = loc.EnumerateArray().ToList();
+                    var mercancias = partes.FindIndex(p => p.ValueKind == JsonValueKind.String && p.GetString() == "mercancias");
+                    if (mercancias >= 0 && mercancias + 1 < partes.Count && partes[mercancias + 1].ValueKind == JsonValueKind.Number
+                        && partes[mercancias + 1].TryGetInt32(out var indice) && indice >= 0)
+                    {
+                        item = indice;
+                        campo = mercancias + 2 < partes.Count && partes[mercancias + 2].ValueKind == JsonValueKind.String
+                            ? partes[mercancias + 2].GetString()
+                            : null;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Cuerpo ilegible: rechazo sin mercancía.
+        }
+
+        logger.LogWarning("El cubicador rechazó con 422 POST {Ruta} (mercancía {Item}, campo {Campo}).", ruta, item, campo);
+        var detalle = motivo is null ? string.Empty : $" Detalle del cubicador: {(motivo.Length > LargoMensajeCubicador ? motivo[..LargoMensajeCubicador] : motivo)}";
+        if (item is not { } i)
+        {
+            return new clsErrorDominio(clsCodigosError.CubicadorPeticionRechazada, MensajePeticionRechazada + detalle, $"HTTP 422 en POST {ruta}");
+        }
+
+        var esCantidad = string.Equals(campo, "cantidad", StringComparison.OrdinalIgnoreCase);
+        var numero = (i + 1).ToString(CultureInfo.InvariantCulture);
+        var mensaje = esCantidad
+            ? $"El cubicador rechazó la cantidad de la mercancía {numero}: debe ser un entero mayor que 0.{detalle}"
+            : $"El cubicador rechazó las medidas o el peso de la mercancía {numero}{(campo is null ? string.Empty : $" ({campo})")}: deben ser mayores que 0.{detalle}";
+        var datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = i };
+        if (campo is not null)
+        {
+            datos["campo"] = campo;
+        }
+
+        return new clsErrorDominio(esCantidad ? clsCodigosLineaSolicitud.PosicionInvalida : clsCodigosError.DimensionesInvalidas, mensaje, $"HTTP 422 en POST {ruta}")
+        {
+            Datos = datos,
+        };
     }
 
     private static async Task<JsonDocument?> LeerJsonAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)

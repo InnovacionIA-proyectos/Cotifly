@@ -318,6 +318,13 @@ public static class clsCodigosError
     public const string CubicadorRespuestaInvalida = "CUBICADOR_RESPUESTA_INVALIDA";
 
     /// <summary>
+    /// D1 (E2E 2026-10-16): el cubicador rechazó con 422 (validación de su esquema) los datos de <c>POST /recomendaciones</c> y el
+    /// rechazo no señala una medida, un peso o una cantidad de una mercancía (esos llegan como <c>DIMENSIONES_INVALIDAS</c> o
+    /// <c>POSICION_INVALIDA</c> con <c>detalle.item</c>). Es un rechazo de los datos, no una caída: 400, nunca va al respaldo.
+    /// </summary>
+    public const string CubicadorPeticionRechazada = "CUBICADOR_PETICION_RECHAZADA";
+
+    /// <summary>
     /// HU-023.1 (#156): el cubicador rechazó la llave de Cotifly (401 <c>NO_AUTORIZADO</c> del contrato). Es un problema de configuración
     /// de Cotifly (<c>Cubicador:ApiKey</c>), no de la sesión del comercial: 503, nunca 401. Nunca va al respaldo (auditoría de HU-023): la
     /// captura falla aunque <c>Cubicador:RespaldoSiFalla</c> esté encendido.

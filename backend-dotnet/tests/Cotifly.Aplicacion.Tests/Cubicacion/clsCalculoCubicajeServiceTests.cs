@@ -289,4 +289,61 @@ public sealed class clsCalculoCubicajeServiceTests
 
         resultado.Error.Should().Be(new clsErrorDominio(codigo, "Mensaje para el comercial."));
     }
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): con largo, ancho o alto fuera de 0,1 a 999.999 o el peso por unidad en 0, el cubicador respondía 422 y el
+    /// comercial veía 503 "Avisa a soporte". Cotifly valida antes con las reglas de la captura: 400 DIMENSIONES_INVALIDAS con el ítem.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 100, 150, 800, "largo_cm")]
+    [InlineData(120, 0, 150, 800, "ancho_cm")]
+    [InlineData(120, 100, -5, 800, "alto_cm")]
+    [InlineData(120, 100, 150, 0, "peso_kg")]
+    [InlineData(120.001, 100, 150, 800, "largo_cm")]
+    public async Task MedidasOPesoFueraDeRangoSonDimensionesInvalidasConElItemSinLlamarAlCubicador(
+        double largo, double ancho, double alto, double peso, string campo)
+    {
+        var malo = new clsItemCubicacion("CAFE_EN_ESTIBAS", null, 10, (decimal)largo, (decimal)ancho, (decimal)alto, (decimal)peso);
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(), malo], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.DimensionesInvalidas);
+        resultado.Error.Mensaje.Should().StartWith("Mercancía 2: ").And.Contain(campo);
+        resultado.Error.Datos.Should().Contain("item", 1).And.Contain("campo", campo);
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    [InlineData(100_001)]
+    public async Task UnaCantidadFueraDeRangoEsPosicionInvalidaComoEnLaCaptura(int cantidad)
+    {
+        var malo = new clsItemCubicacion("CAFE_EN_ESTIBAS", null, cantidad, 120m, 100m, 150m, 800m);
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [malo], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosLineaSolicitud.PosicionInvalida);
+        resultado.Error.Mensaje.Should().StartWith("Mercancía 1: la cantidad");
+        resultado.Error.Datos.Should().Contain("item", 0).And.Contain("campo", "cantidad");
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(clsCodigosError.DimensionesInvalidas)]
+    [InlineData(clsCodigosLineaSolicitud.PosicionInvalida)]
+    [InlineData(clsCodigosError.CubicadorPeticionRechazada)]
+    public async Task UnRechazo422DelCubicadorLlegaComo400ConElItemYSinMarcasInternas(string codigo)
+    {
+        Responder(new clsErrorDominio(codigo, "El cubicador rechazó la mercancía 1.", "HTTP 422 en POST /recomendaciones")
+        {
+            Datos = new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "largoCm", ["interno"] = true },
+        });
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item()], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+        resultado.Error.Detalle.Should().BeNull();
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "largoCm" });
+    }
 }

@@ -19,8 +19,10 @@ public sealed class clsCubicacionController(IClsContextoUsuario usuario, IClsCal
 
     /// <summary>
     /// 200 <c>ResultadoCubicacion</c> (lista de vehículos, resultado, motivo, condicionada, advertencias y extradimensión); 400 si falta
-    /// <c>items</c> (<c>ITEMS_REQUERIDOS</c>), si una mercancía no se reconoce (<c>MERCANCIA_DESCONOCIDA</c>) o si el cubicador rechaza la
-    /// carga (<c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>MERCANCIAS_REQUERIDAS</c>); 503 si el cubicador no está
+    /// <c>items</c> (<c>ITEMS_REQUERIDOS</c>), si un ítem tiene medidas o peso fuera de rango (<c>DIMENSIONES_INVALIDAS</c>) o una cantidad
+    /// fuera de rango (<c>POSICION_INVALIDA</c>), los dos con <c>detalle.item</c> y validados antes de llamar (D1), si una mercancía no se
+    /// reconoce (<c>MERCANCIA_DESCONOCIDA</c>) o si el cubicador rechaza la carga (<c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>,
+    /// <c>MERCANCIAS_REQUERIDAS</c>, o un 422: <c>CUBICADOR_PETICION_RECHAZADA</c>); 503 si el cubicador no está
     /// configurado o no responde (<c>CUBICADOR_NO_DISPONIBLE</c>), rechazó la llave (<c>CUBICADOR_NO_AUTORIZADO</c>) o respondió fuera
     /// del contrato (<c>CUBICADOR_RESPUESTA_INVALIDA</c>).
     /// </summary>
