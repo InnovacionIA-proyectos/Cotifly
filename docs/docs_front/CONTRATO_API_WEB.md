@@ -463,7 +463,8 @@ HU-023 (#176): sale del catálogo **canónico** del cubicador `GET /vehiculos-ca
 comparan sin distinguir mayúsculas.
 
 HU-023 (#176): en la captura, cada mercancía con `codigo_mercancia` debe traer `peso_kg` (por unidad) **mayor que 0** (400
-`POSICION_INVALIDA` en `detalle.errores`), y una ruta no puede pasar de 10.000 unidades en total (400 `CUBICACION_DEMASIADO_GRANDE`). Una
+`POSICION_INVALIDA` en `detalle.errores`, con `campo = mercancias[i].peso_kg`: índice base 0 en el campo y la mercancía en base 1 en el
+mensaje, `Mercancía 1: ...`; antes el campo era `posiciones[i]` y el mensaje repetía otro índice), y una ruta no puede pasar de 10.000 unidades en total (400 `CUBICACION_DEMASIADO_GRANDE`). Una
 ruta `SIN_SELECCION_AUTOMATICA` puede traer el quinto motivo `BUSQUEDA_AGOTADA`; `GET .../costeo` trae en cada ruta
 `mensaje_sin_seleccion` (el texto para el comercial: con `BUSQUEDA_AGOTADA` no dice que la carga no cabe) y, en `avisos_cubicacion`,
 la `extradimension` con la estructura nueva. Si la base todavía no tiene el script `07`, `motivo_sin_seleccion` llega en `null` y el

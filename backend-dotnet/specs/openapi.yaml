@@ -1315,6 +1315,9 @@ paths:
             `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
             HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia` si el id no está en el catálogo del cubicador.
+            `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
+            `peso_kg`, `descripcion` o `codigo_mercancia`) y su mensaje nombra la mercancía en base 1 (`Mercancía 1: ...`), sin
+            índices; `DEMASIADAS_POSICIONES` va en `mercancias` (antes `posiciones[i]` y `posiciones`, E2E 2026-10-16).
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:

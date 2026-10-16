@@ -55,8 +55,29 @@ public sealed class clsLineasSolicitudTests
 
         var errores = linea.Errores();
 
-        errores.Should().Contain(e => e.Campo == "posiciones" && e.Codigo == clsCodigosLineaSolicitud.DemasiadasPosiciones);
-        errores.Should().Contain(e => e.Campo == "posiciones[0]" && e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida);
+        errores.Should().Contain(e => e.Campo == "mercancias" && e.Codigo == clsCodigosLineaSolicitud.DemasiadasPosiciones);
+        errores.Should().Contain(e => e.Campo == "mercancias[0].cantidad" && e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida);
+    }
+
+    /// <summary>
+    /// D6 (E2E 2026-10-16): el mensaje de POSICION_INVALIDA decía <c>posiciones[1].largo_cm</c> y el campo <c>posiciones[0]</c> para la
+    /// misma mercancía. Ahora el campo va en base 0 con el nombre del contrato y el mensaje nombra la mercancía en base 1, sin índices.
+    /// </summary>
+    [Theory]
+    [InlineData(0, "largo_cm")]
+    [InlineData(1, "ancho_cm")]
+    [InlineData(2, "alto_cm")]
+    public void PosicionInvalidaUsaElCampoBaseCeroYElMensajeBaseUnoSinIndices(int indice, string subcampo)
+    {
+        var mala = new clsPosicionCarga("Caja", 1, subcampo == "largo_cm" ? 0m : 10m, subcampo == "ancho_cm" ? 0m : 10m, subcampo == "alto_cm" ? -1m : 10m, 5m);
+        var buena = new clsPosicionCarga("Caja", 1, 10m, 10m, 10m, 5m);
+        var linea = Linea(peso: null) with { Posiciones = [.. Enumerable.Range(0, 3).Select(i => i == indice ? mala : buena)] };
+
+        var error = linea.Errores().Should().ContainSingle(e => e.Codigo == clsCodigosLineaSolicitud.PosicionInvalida).Subject;
+
+        error.Campo.Should().Be($"mercancias[{indice}].{subcampo}");
+        error.Mensaje.Should().StartWith($"Mercancía {indice + 1}: el campo '{subcampo}' debe estar entre");
+        error.Mensaje.Should().NotContain("[", "el índice del arreglo solo va en el campo");
     }
 
     [Fact]
