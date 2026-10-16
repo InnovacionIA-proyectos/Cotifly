@@ -110,6 +110,44 @@ public sealed class clsCosteoPorCamionTests
         cotizacion.Vehiculos.Single(v => v.LineaSolicitudNexoId == "N-b").TipoVehiculo.Should().Be("2S2", "la misma sigla no es un cambio");
     }
 
+    /// <summary>
+    /// D2 (E2E 2026-10-16): Nexo devolvió la carrocería del C2 como <c>Furgón</c> y el polling la guardó sobre el código <c>FURGON</c> del
+    /// cubicador. El código de un camión del cubicador se conserva; Nexo solo llena lo que falte.
+    /// </summary>
+    [Fact]
+    public void ElCodigoDelCubicadorNoSePisaConElNombreNiConOtroCodigoDeNexo()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var ruta = cotizacion.PrimeraRuta!;
+        var c2 = ruta.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
+        var refrigerado = ruta.AgregarVehiculo("2L2", "FURGON_REFRIGERADO", 1_000m, Guid.NewGuid());
+        var sinCarroceria = ruta.AgregarVehiculo("2S2", null, 8_000m, Guid.NewGuid());
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(c2.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, "C2", "Furgón"),
+            new clsCosteoCamionNexo(refrigerado.Id, EstadoCosteo.Autocosteo, true, 300_000m, null, "2L2", "FURGON REFRIGERADO"),
+            new clsCosteoCamionNexo(sinCarroceria.Id, EstadoCosteo.Autocosteo, true, 900_000m, null, "3S3", "ESTACAS"),
+        ], _ahora);
+
+        (c2.TipoVehiculo, c2.Carroceria).Should().Be(("C2", "FURGON"), "el nombre de Nexo no reemplaza el código del cubicador");
+        refrigerado.Carroceria.Should().Be("FURGON_REFRIGERADO");
+        (sinCarroceria.TipoVehiculo, sinCarroceria.Carroceria).Should().Be(("2S2", "ESTACAS"),
+            "el código del cubicador se conserva y Nexo solo llena la carrocería que faltaba");
+        c2.CostoFlete.Should().Be(500_000m, "el costo sí se toma de Nexo");
+    }
+
+    [Fact]
+    public void EnUnCamionSinRecomendacionLaMismaSiglaEscritaDistintoNoEsUnCambio()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON_REFRIGERADO", 4_000m);
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, "c2", "Furgón refrigerado")], _ahora);
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("C2", "FURGON_REFRIGERADO"));
+    }
+
     [Fact]
     public void SiLaMesaBorraLaLineaEnNexoElCamionQuedaDescartadoYNoFrenaNiRecibeConexos()
     {

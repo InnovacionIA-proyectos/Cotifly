@@ -136,15 +136,19 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió. Lo que
-    /// Nexo trae manda; un valor vacío de Nexo no borra el de Cotifly, y la misma sigla con otras mayúsculas no cuenta como cambio.
-    /// Devuelve <c>true</c> si cambió.
+    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió. Un
+    /// valor vacío de Nexo no borra el de Cotifly, y la misma sigla escrita de otra forma (mayúsculas, tildes, <c>_</c> o espacios: Nexo
+    /// devuelve <c>Furgón</c> por <c>FURGON</c>) no cuenta como cambio. D2 (E2E 2026-10-16): el código de un camión del cubicador
+    /// (<see cref="IdRecomendacionVehiculo"/>) es el canónico y NO se pisa con lo que devuelva Nexo (ni su nombre ni otro código): Nexo
+    /// solo llena el que falte. Lo demás (camiones sin recomendación) sigue la regla anterior: lo que Nexo trae manda. Devuelve
+    /// <c>true</c> si cambió.
     /// </summary>
     internal bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
     {
         var antes = (TipoVehiculo, Carroceria);
-        TipoVehiculo = Elegir(TipoVehiculo, tipoVehiculo);
-        Carroceria = Elegir(Carroceria, carroceria);
+        var delCubicador = IdRecomendacionVehiculo is not null;
+        TipoVehiculo = Elegir(TipoVehiculo, tipoVehiculo, delCubicador);
+        Carroceria = Elegir(Carroceria, carroceria, delCubicador);
         return antes != (TipoVehiculo, Carroceria);
     }
 
@@ -165,8 +169,13 @@ public sealed class clsVehiculoLineaSolicitud
         return true;
     }
 
-    private static string? Elegir(string? actual, string? deNexo) =>
-        Normalizar(deNexo) is { } nuevo && !string.Equals(nuevo, actual, StringComparison.OrdinalIgnoreCase) ? nuevo : actual;
+    private static string? Elegir(string? actual, string? deNexo, bool conservarActual) =>
+        Normalizar(deNexo) is not { } nuevo || (actual is not null && (conservarActual || MismoCodigo(actual, nuevo))) ? actual : nuevo;
+
+    /// <summary>¿Es el mismo código escrito de otra forma? Sin tildes, en mayúsculas y con <c>_</c>, <c>-</c> y espacios como uno solo.</summary>
+    internal static bool MismoCodigo(string a, string b) =>
+        clsEmparejadorLineasNexo.Normalizar(a.Replace('_', ' ').Replace('-', ' '))
+        == clsEmparejadorLineasNexo.Normalizar(b.Replace('_', ' ').Replace('-', ' '));
 
     /// <summary>Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud.</summary>
     internal bool RegistrarEstado(EstadoCosteo estado)
