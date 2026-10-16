@@ -234,9 +234,10 @@ public sealed class clsCubicadorHttp(
         $"{RutaRecomendaciones}?idLineaSolicitud={Uri.EscapeDataString(idLineaSolicitud)}&origenSistema={OrigenSistema}";
 
     /// <summary>
-    /// Tolerancia del peso por fila del detalle (kg): solo el redondeo del <c>pesoKg</c> de cada fila. La guía no fija con cuántos
-    /// decimales lo devuelve el cubicador (el ejemplo trae <c>10000.0</c>), así que se tolera medio kilo por fila: cubre un redondeo a
-    /// kilo entero, a un decimal y el ruido de un <c>double</c> serializado (con 0,05 justo en el borde, <c>12.299999999999999</c> por
+    /// Tolerancia del peso por fila del detalle (kg): solo el redondeo del <c>pesoKg</c> de cada fila. El cubicador
+    /// confirmó (2026-10-15) que redondea el <c>pesoKg</c> a 2 decimales (la guía no lo fijaba y el ejemplo trae <c>10000.0</c>): la
+    /// diferencia por fila es de 0,005 kg como mucho, así que el medio kilo por fila que se tolera tiene margen de sobra. Se dejó en
+    /// medio kilo porque también cubre un redondeo a kilo entero, a un decimal y el ruido de un <c>double</c> serializado (con 0,05 justo en el borde, <c>12.299999999999999</c> por
     /// <c>12.35</c> se rechazaba). Se suma por fila de la posición; nada relativo: un cambio de peso de medio kilo o más por fila no pasa,
     /// y uno menor no cambia ni el camión ni el costeo (auditoría de f3c79d5).
     /// </summary>

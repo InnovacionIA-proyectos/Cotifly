@@ -8,10 +8,11 @@ dejarla con la configuración inicial.
 ## Estado
 
 - **Instalación desde cero probada.** `scripts/01_crear_esquema.sql` y `seeder/` se corrieron el 2026-10-08 sobre
-  `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos y 2 roles, sin errores.
+  `dbTarifario_Nexo_Pruebas`: 20 tablas, 2 vistas, 6 líneas de negocio, 5 mapeos y 2 roles, sin errores. Desde HU-014.3 (#152)
+  el `01` ya no crea las 2 vistas del borrador de métricas y el `08` las retira de las bases que ya las tienen.
 - **Verificación continua.** Las pruebas de integración (Testcontainers,
   `backend-dotnet/tests/Cotifly.Infraestructura.Tests/Persistencia/clsEsquemaTests.cs`) comprueban en cada corrida que la
-  instalación desde cero y las migraciones `0001` a `0010` (más el `02`) dejan el mismo esquema, que el `0010` es
+  instalación desde cero y las migraciones `0001` a `0010` (más el `02`, el `pendientes/04`, el `07`, el `08` y el `09`) dejan el mismo esquema, que el `0010` es
   idempotente y que el `0009` migra los datos del esquema anterior sin perder ajustes, correos ni auditoría.
 - **Scripts posteriores al `0010`** y lo que falta aprobar (aprobación, no prueba):
 
@@ -20,12 +21,52 @@ dejarla con la configuración inicial.
 | `migrations_mssql/0010_nombres_municipio.sql` | HU-021 | Borrador pendiente de revisión de scalderon-bs y del DBA |
 | `scripts/02_alter_cubicador.sql` | HU-023.3 (#158) | En el ejecutador. Columnas para guardar la respuesta del cubicador; va después del `01` (o del `0010` en una base migrada) |
 | `scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` | HU-023.3 (#158) | Propuesta. El backend no mapea sus columnas |
-| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. Solo en local, `levantar-local` también lo aplica |
-| `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador. Reemplaza el CHECK `ck_cotizacionLineasSolicitud_motivoSinSeleccion` por uno con los 5 motivos vigentes del cubicador (agrega `BUSQUEDA_AGOTADA`). Idempotente; no obligatorio para arrancar (sin él, el backend guarda el motivo como advertencia y `/health/ready` solo lo avisa). El `pendientes/03` deja el mismo CHECK |
+| `scripts/pendientes/04_cubicacion_segundo_plano.sql` | HU-023.5 (#160) | Propuesta, pendiente de scalderon-bs y del DBA. **El backend sí mapea sus columnas**: sin él, `/health/ready` responde "esquema incompleto: falta 04". Se aplica antes de desplegar la imagen. El ejecutador no lo corre; el entorno local (`levantar-local.*`) sí |
 | `scripts/pendientes/05_categoria_conexo.sql` | #173 | Propuesta. El backend no mapea la columna |
 | `scripts/pendientes/06_idempotencia_captura.sql` | #173 | Propuesta (deuda). El backend no mapea la tabla |
+| `scripts/07_motivo_busqueda_agotada.sql` | HU-023 (#176) | En el ejecutador (orden de nombre, después del `02`); lo aplica @scalderon-bs en la base compartida. Quinto motivo `BUSQUEDA_AGOTADA` en el CHECK del motivo. No es obligatorio para arrancar (ver abajo) |
+| `scripts/08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | En el ejecutador (después del `07`); **lo aplica el DBA** en la base compartida, después de desplegar el backend sin el borrador de métricas. `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (ver abajo) |
+| `scripts/09_score_prioridad.sql` | HU-018.1 (#155) | En el ejecutador (orden de nombre, después del `08`). `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`. **El backend mapea la columna**: sin él, `/health/ready` responde "esquema incompleto: falta 09". Se aplica antes de desplegar la imagen (ver abajo) |
 
-**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `07` y, solo en local, `pendientes/04`.
+**`scripts/pendientes/04_cubicacion_segundo_plano.sql`** (HU-023.5, #160) agrega a la ruta la cola de la cubicación de la
+licitación en segundo plano (`estadoCubicacion`, `cubicacionIntentos`, `cubicacionDisponibleAt`, `errorCubicacion`,
+`avisosCubicacion` y el índice filtrado `(cubicacionDisponibleAt, createdAt)`), con un respaldo previo de la tabla si tiene
+datos. Es idempotente y no destructivo. **No** está en el 01 ni lo corre el ejecutador: queda en un solo lugar hasta su
+aprobación. Pero el backend de la #160 SÍ mapea sus columnas: **no desplegar sin aplicar antes el 0010 y el 04**.
+
+**`scripts/07_motivo_busqueda_agotada.sql`** (HU-023, #176) reemplaza el CHECK
+`ck_cotizacionLineasSolicitud_motivoSinSeleccion` por uno con los **5 motivos** del contrato vigente del cubicador (agrega
+`BUSQUEDA_AGOTADA`) y con `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'` (la regla del 02 sin el hueco del NULL, la
+misma que propone el `pendientes/03`). Es idempotente (si el CHECK ya tiene `BUSQUEDA_AGOTADA` **y** el `ISNULL` no hace nada; una
+versión sin `ISNULL` la corrige), hace DROP y ADD `WITH CHECK` en una transacción, imprime la definición anterior como respaldo
+y trae la consulta de verificación. **No es obligatorio para arrancar**: el backend lee `sys.check_constraints` y, sin el 07, guarda
+`BUSQUEDA_AGOTADA` en `NULL` con el motivo real como advertencia de la ruta (`MOTIVO_SIN_SELECCION`); `/health/ready` sigue en 200 y
+solo lo avisa en la descripción (la autodetección necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app`; sin él la
+sonda dice que no se puede verificar, o se fija con `BaseDatos__MotivoBusquedaAgotada`, ver DEPLOY.md). El `pendientes/03` deja
+exactamente el mismo CHECK y solo lo reemplaza si le falta `BUSQUEDA_AGOTADA` o el `ISNULL`: en cualquier orden terminan iguales.
+
+**`scripts/08_retirar_vistas_actividad.sql`** (HU-014.3, #152) borra las vistas `vActividadPorComercial` y
+`vAjustesMargenPorComercial`, que solo leían `GET /web/metricas/actividad` y `/ajustes-margen` (el borrador del tablero, retirado
+del backend y del contrato; el tablero de HU-010 lee las tablas y no usa vistas). Cada `DROP VIEW` va con
+`IF OBJECT_ID(...) IS NOT NULL`: se puede repetir y sobre una instalación desde cero (el `01` ya no las crea) no hace nada. No toca
+tablas ni datos. **Orden:** aplicarlo **después** de desplegar el backend de la #152; la versión anterior respondería 500 en esos
+dos endpoints sin las vistas. Respaldo: su definición está en `migrations_mssql/0009` (sección de vistas).
+
+**`scripts/09_score_prioridad.sql`** (HU-018.1, #155) agrega a la cabecera (`dbo_cotifly.CotizacionesSolicitud`, la fila que guarda
+`solicitudNexoId`) la columna `scorePrioridad DECIMAL(9,4) NULL`: el `scorePrioridad` que Nexo devuelve al crear la solicitud
+(`201 CapturaResultDto` de `POST /api/captura-solicitudes`, `backend-dotnet/docs/COTIFLY-CONTRATO.md` §5), que antes se descartaba. Va en
+la cabecera porque es un dato de la **solicitud** de Nexo, no de la ruta. `DECIMAL(9,4)` porque el contrato no fija la escala (el ejemplo
+de Nexo trae `62.5` y sus pruebas `0.73`): guarda 4 decimales y hasta `99999.9999`; el backend redondea a 4 decimales y deja `NULL` un
+valor fuera de rango sin fallar el envío. `NULL` = Nexo no lo mandó, la solicitud no se ha enviado o se envió antes del 09. Es un `ADD`
+de una columna `NULL` (sin respaldo: no toca filas), idempotente y en una transacción. **Sí es obligatorio para arrancar**, igual que el
+`04`: el modelo EF lee la columna en cada consulta de la cabecera, así que sin ella `/health/ready` responde 503 "esquema incompleto:
+falta 09" y Traefik no manda tráfico a la versión nueva. A diferencia del `07` no hay degradación (el `07` cambia un `CHECK` que el
+backend puede esquivar guardando `NULL`; una columna mapeada no se puede esquivar sin dejar de leerla). Como está en `scripts/`, el
+ejecutador y `db-init` lo aplican solos.
+
+**Orden completo** de una base nueva: `01` (o `0001` a `0010`), `02`, `pendientes/04`, `07`, `08` y `09`. El entorno local
+(`backend-dotnet/scripts/levantar-local.ps1` / `.sh`) aplica los ajustes `02` en adelante (hoy `02`, `07`, `08` y `09`) y el
+`pendientes/04` en ese orden en cada arranque (son idempotentes).
 
 ## Estructura
 
@@ -35,9 +76,11 @@ db/
 ├── ejecutar-bd.ps1        ejecutador para Windows (PowerShell)
 ├── ejecutar-bd.sh         ejecutador para Linux / contenedores (bash)
 ├── scripts/
-│   ├── 01_crear_esquema.sql   schema, tablas, restricciones, índices y vistas, en su forma final
+│   ├── 01_crear_esquema.sql   schema, tablas, restricciones e índices, en su forma final (sin vistas desde HU-014.3)
 │   ├── 02_alter_cubicador.sql columnas para la respuesta del cubicador (ALTER; se puede repetir)
 │   ├── 07_motivo_busqueda_agotada.sql  quinto motivo de "sin selección" en el CHECK (se puede repetir)
+│   ├── 08_retirar_vistas_actividad.sql retira las vistas del borrador de métricas (se puede repetir)
+│   ├── 09_score_prioridad.sql          scorePrioridad de Nexo en la cabecera (se puede repetir)
 │   ├── pendientes/            propuestas 03 a 06, pendientes de revisión (el ejecutador no las corre)
 │   └── operacion/             scripts de datos de una sola vez que corre el DBA con aprobación
 ├── seeder/
@@ -128,7 +171,7 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 
 1. Selecciona la base de datos destino arriba a la izquierda: los scripts corren sobre la que tengas seleccionada.
 2. Abre y ejecuta, en este orden: `scripts/01_crear_esquema.sql`, `scripts/02_alter_cubicador.sql`,
-   `scripts/07_motivo_busqueda_agotada.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
+   `scripts/07_motivo_busqueda_agotada.sql`, `scripts/08_retirar_vistas_actividad.sql`, `scripts/09_score_prioridad.sql`, `seeder/01_lineas_negocio.sql`, `seeder/02_sap_mapeo_trqtype.sql` y `seeder/03_roles.sql`.
 3. Si `dbo_cotifly` ya tiene tablas, el `01` avisa y no crea nada. Si falla otro paso, mira el error antes de seguir con
    los siguientes.
 
@@ -138,6 +181,8 @@ día se corren contra otra base, hay que cambiar esa línea. No aplica a la inst
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/01_crear_esquema.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/02_alter_cubicador.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/07_motivo_busqueda_agotada.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/08_retirar_vistas_actividad.sql
+sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i scripts/09_score_prioridad.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/01_lineas_negocio.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/02_sap_mapeo_trqtype.sql
 sqlcmd -S <servidor> -d <base> -E -C -I -b -f 65001 -i seeder/03_roles.sql
@@ -149,7 +194,8 @@ siguen ejecutando después de un error.
 
 ## Qué crea
 
-**Esquema** (`scripts/01_crear_esquema.sql`): 20 tablas y 2 vistas en el schema `dbo_cotifly`.
+**Esquema** (`scripts/01_crear_esquema.sql`): 20 tablas en el schema `dbo_cotifly`, sin vistas (las 2 del borrador de métricas
+se retiraron en HU-014.3, #152).
 
 | Grupo | Tablas |
 |---|---|
@@ -158,7 +204,6 @@ siguen ejecutando después de un error.
 | Conversación del agente | `Sesiones`, `EventosConversacion`, `EventosHerramienta` |
 | Cotizaciones | `CotizacionesSolicitud` (cabecera), `CotizacionLineasSolicitud` (ruta), `CotizacionVehiculosLineaSolicitud` (camiones), `CotizacionMercancias`, `CotizacionServiciosConexos`, `CotizacionArchivosLicitacion`, `CotizacionPdfsHistorial` |
 | Márgenes y correo | `MargenAjustes`, `Correos`, `CorreoDestinatarios` |
-| Vistas | `vAjustesMargenPorComercial`, `vActividadPorComercial` |
 
 El esquema vigente con su diagrama ER está en [`docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md`](../docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md)
 y el significado de cada columna en [`docs/database/DICCIONARIO_BASE_DE_DATOS.md`](../docs/database/DICCIONARIO_BASE_DE_DATOS.md).
@@ -207,6 +252,8 @@ Cambios pequeños al esquema que todavía no se consolidan en el `01`. Van como 
 |---|---|---|
 | `02_alter_cubicador.sql` | HU-023.3 (#158) | `CotizacionMercancias`: `idTipoMercancia` (uuid) se reemplaza por `codigoMercancia`. Camión (`CotizacionVehiculosLineaSolicitud`): `volumenTotalM3`, `porcentajeLlenadoVolumen` y `porcentajeLlenadoPeso` (0 a 100). Ruta (`CotizacionLineasSolicitud`): `idRecomendacion`, `resultadoCubicacion`, `motivoSinSeleccion` y `condicionada` |
 | `07_motivo_busqueda_agotada.sql` | HU-023 (#176) | `ck_cotizacionLineasSolicitud_motivoSinSeleccion` admite los 5 motivos (`BUSQUEDA_AGOTADA`) y exige `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`. Idempotente, DROP + ADD `WITH CHECK` en una transacción; se detiene sin tocar nada si alguna ruta tiene motivo sin `SIN_SELECCION_AUTOMATICA` |
+| `08_retirar_vistas_actividad.sql` | HU-014.3 (#152) | `DROP VIEW` de `vActividadPorComercial` y `vAjustesMargenPorComercial` (borrador de métricas retirado), cada uno solo si la vista existe. No toca tablas ni datos |
+| `09_score_prioridad.sql` | HU-018.1 (#155) | `CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL` (el `scorePrioridad` de Nexo). Idempotente, `ADD` de columna NULL en una transacción. Obligatorio: el backend mapea la columna |
 
 El `02` se detiene sin tocar nada si `idTipoMercancia` todavía tiene valores (un uuid no se puede convertir a código).
 Cuando el diseño se estabilice, estos cambios se pasan al `01` y el script se retira.

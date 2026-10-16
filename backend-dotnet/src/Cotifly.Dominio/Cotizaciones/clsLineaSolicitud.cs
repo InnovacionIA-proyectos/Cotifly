@@ -288,7 +288,7 @@ public sealed class clsLineaSolicitud
 
     /// <summary>
     /// HU-023.3: guarda lo que respondió el cubicador para la ruta (<c>null</c> = sin cubicador: se limpian el resultado, el motivo y la
-    /// corrida). Los avisos quedan solo en memoria (<see cref="AvisosCubicacion"/>).
+    /// corrida). Los avisos se guardan con la ruta (<see cref="AvisosCubicacion"/>, HU-023.5).
     /// </summary>
     public void RegistrarCubicacion(clsCubicacionRuta? cubicacion)
     {

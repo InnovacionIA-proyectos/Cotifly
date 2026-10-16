@@ -84,6 +84,21 @@ public sealed class clsCotizacionSolicitud
     /// <summary>Id de la COTIZACIÓN (borrador o entregada) de Nexo; lo exigen el resultado y los conexos.</summary>
     public string? CotizacionNexoId { get; private set; }
 
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud (<c>201 CapturaResultDto</c> de
+    /// <c>POST /api/captura-solicitudes</c>, script <c>db/scripts/09</c>). <c>null</c> si Nexo no lo mandó, si todavía no se envió o si
+    /// se envió antes del 09. Se guarda redondeado a <see cref="DecimalesScorePrioridad"/> decimales; uno fuera de
+    /// ±<see cref="MaximoScorePrioridad"/> (lo que cabe en <c>decimal(9,4)</c>) se descarta. Consultarlo después por solicitud
+    /// (<c>scoreUrgencia</c>) sigue bloqueado por el contrato de Nexo (ADR-016).
+    /// </summary>
+    public decimal? ScorePrioridad { get; private set; }
+
+    /// <summary>Decimales con que se guarda <see cref="ScorePrioridad"/> (<c>decimal(9,4)</c>).</summary>
+    public const int DecimalesScorePrioridad = 4;
+
+    /// <summary>Valor absoluto máximo de <see cref="ScorePrioridad"/> que cabe en <c>decimal(9,4)</c>.</summary>
+    public const decimal MaximoScorePrioridad = 99999.9999m;
+
     /// <summary>Motivo legible de <see cref="EstadoCosteo"/> (error al enviar, rechazo de Nexo, costeo vencido...).</summary>
     public string? MotivoEstadoCosteo { get; private set; }
     public DateTimeOffset? CosteoEnviadoAt { get; private set; }
@@ -503,15 +518,34 @@ public sealed class clsCotizacionSolicitud
     /// <see cref="Cotizaciones.EstadoCosteo.Autocosteo"/> si Nexo ya costeó todo o en <see cref="Cotizaciones.EstadoCosteo.PendienteCosteo"/>
     /// si no, y agenda la primera consulta del polling (HU-005.6).
     /// </summary>
-    public void RegistrarEnvioCosteo(string solicitudNexoId, bool costeoCompleto, DateTimeOffset enviadoAt, DateTimeOffset primeraConsulta)
+    /// <param name="scorePrioridad">HU-018.1 (#155): el <c>scorePrioridad</c> de la respuesta de Nexo (ver <see cref="ScorePrioridad"/>);
+    /// <c>null</c> lo deja vacío.</param>
+    public void RegistrarEnvioCosteo(
+        string solicitudNexoId, bool costeoCompleto, DateTimeOffset enviadoAt, DateTimeOffset primeraConsulta, decimal? scorePrioridad = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);
         SolicitudNexoId = RecortarId(solicitudNexoId);
+        ScorePrioridad = NormalizarScorePrioridad(scorePrioridad);
         RegistrarEstadoSolicitud(costeoCompleto ? Cotizaciones.EstadoCosteo.Autocosteo : Cotizaciones.EstadoCosteo.PendienteCosteo);
         MotivoEstadoCosteo = null;
         CosteoEnviadoAt = enviadoAt;
         CosteoSiguienteConsultaAt = primeraConsulta;
         CosteoConsultasFallidas = 0;
+    }
+
+    /// <summary>
+    /// HU-018.1 (#155): <paramref name="score"/> redondeado a <see cref="DecimalesScorePrioridad"/> decimales, o <c>null</c> si no vino o
+    /// no cabe en <c>decimal(9,4)</c> (un valor raro de Nexo no debe tumbar el registro del envío).
+    /// </summary>
+    public static decimal? NormalizarScorePrioridad(decimal? score)
+    {
+        if (score is not { } valor)
+        {
+            return null;
+        }
+
+        var redondeado = Math.Round(valor, DecimalesScorePrioridad, MidpointRounding.AwayFromZero);
+        return Math.Abs(redondeado) <= MaximoScorePrioridad ? redondeado : null;
     }
 
     /// <summary>
@@ -1254,6 +1288,7 @@ public sealed class clsCotizacionSolicitud
     public void PrepararReSolicitud()
     {
         SolicitudNexoId = null;
+        ScorePrioridad = null;
         CotizacionNexoId = null;
         PrecioFinal = null;
         CosteoListoAt = null;

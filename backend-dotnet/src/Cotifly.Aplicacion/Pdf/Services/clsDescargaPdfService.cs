@@ -5,6 +5,7 @@ using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Correo.Services;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
+using Cotifly.Aplicacion.Identidad.Interfaces;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Aplicacion.Pdf.Interfaces;
 using Cotifly.Dominio.Comun;
@@ -18,7 +19,7 @@ public sealed record clsArchivoPdf(string Nombre, byte[] Contenido);
 
 /// <summary>
 /// Descarga autenticada del PDF de una cotización (<c>GET /pdfs/{archivo}</c>; en el Python era público). Puede descargarlo el
-/// dueño de la cotización o un <c>gerente_comercial</c> de la misma regional; cualquier otro caso es
+/// dueño de la cotización o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño; cualquier otro caso es
 /// <see cref="clsCodigosAplicacion.NoEncontrado"/> (404, igual que si no existiera).
 /// </summary>
 public interface IClsDescargaPdfService
@@ -32,9 +33,11 @@ public interface IClsDescargaPdfService
 /// <list type="bullet">
 /// <item>El archivo debe cumplir <c>^[A-Za-z0-9_-]+\.pdf$</c> y ser el PDF guardado de la cotización con ese folio.</item>
 /// <item>Dueño: siempre.</item>
-/// <item><c>gerente_comercial</c>: solo PDF de comerciales de su misma regional (<c>UsuariosWeb.regional</c>, que el login refresca desde
-/// <c>DimEjecutivo</c>, #81). Si la regional del
-/// gerente es nula (no está en DimEjecutivo, o no hay conexión, y el DBA no la llenó), no se puede comprobar el alcance y se niega (fail-closed): solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
+/// <item><c>gerente_comercial</c>: solo PDF de los miembros de su regional efectiva, con la misma regla que el listado
+/// <c>GET /web/cotizaciones/regional</c> (<see cref="IClsRegionalUsuario.EsMiembroDeMiRegionalAsync"/>: <c>DimEjecutivo</c> primero,
+/// <c>UsuariosWeb.regional</c> de respaldo; HU-016.1, #154). Si el gerente no tiene regional (<c>REGIONAL_NO_ASIGNADA</c>) o la
+/// fuente viva está caída (<c>REGIONAL_NO_DISPONIBLE</c>), no se puede comprobar el alcance y se niega con 404 (fail-closed):
+/// solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
 /// (<c>descargar_pdf</c>).</item>
 /// </list>
 /// </summary>
@@ -42,6 +45,7 @@ public sealed partial class clsDescargaPdfService(
     IClsContextoUsuario usuario,
     IClsCotizacionRepository cotizaciones,
     IClsUsuarioWebRepository usuarios,
+    IClsRegionalUsuario regionales,
     IClsAlmacenPdf almacen,
     IClsAuditoriaService auditoria) : IClsDescargaPdfService
 {
@@ -69,11 +73,13 @@ public sealed partial class clsDescargaPdfService(
         if (!cotizacion.EsDe(usuarioId))
         {
             var reloj = Stopwatch.StartNew();
-            var permitido = usuario.Rol == RolInterno.GerenteComercial && await EsDeSuRegionalAsync(usuarioId, cotizacion, cancellationToken);
+            var (permitido, motivo) = usuario.Rol == RolInterno.GerenteComercial
+                ? await EsDeSuRegionalAsync(usuarioId, cotizacion, cancellationToken)
+                : (false, null);
             await auditoria.RegistrarAsync(
                 HerramientaAuditoria,
                 new { archivo, usuario_id = usuarioId, rol = usuario.Rol is { } rol ? clsCodigoEnum.ACodigo(rol) : null },
-                new { permitido, dueno_id = cotizacion.UsuarioId },
+                new { permitido, dueno_id = cotizacion.UsuarioId, motivo },
                 permitido,
                 (int)reloj.ElapsedMilliseconds,
                 null);
@@ -87,22 +93,25 @@ public sealed partial class clsDescargaPdfService(
         return contenido is null ? NoEncontrado() : new clsArchivoPdf(archivo, contenido);
     }
 
-    private async Task<bool> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
+    /// <summary>
+    /// ¿El dueño de <paramref name="cotizacion"/> es miembro de la regional efectiva del gerente? Cualquier error de la regional
+    /// niega (fail-closed); <c>motivo</c> lleva su código para la auditoría.
+    /// </summary>
+    private async Task<(bool Permitido, string? Motivo)> EsDeSuRegionalAsync(Guid gerenteId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
+        if (cotizacion.UsuarioId is not { } duenoId)
+        {
+            return (false, null);
+        }
+
         var gerente = await usuarios.ObtenerPorIdAsync(gerenteId, cancellationToken);
         if (gerente is null)
         {
-            return false;
+            return (false, null);
         }
 
-        if (string.IsNullOrWhiteSpace(gerente.Regional))
-        {
-            // Fail-closed (#12, auditoría F1): sin la regional del gerente no se puede comprobar el alcance; solo el dueño.
-            return false;
-        }
-
-        var dueno = cotizacion.UsuarioId is { } duenoId ? await usuarios.ObtenerPorIdAsync(duenoId, cancellationToken) : null;
-        return string.Equals(dueno?.Regional?.Trim(), gerente.Regional.Trim(), StringComparison.OrdinalIgnoreCase);
+        var miembro = await regionales.EsMiembroDeMiRegionalAsync(gerente, duenoId, cancellationToken);
+        return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
     }
 
     private static clsErrorDominio NoEncontrado() => new(clsCodigosAplicacion.NoEncontrado, "Cotización no encontrada o no es tuya.");

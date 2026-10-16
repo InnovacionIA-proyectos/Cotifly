@@ -106,8 +106,8 @@ public static class clsCodigosError
 
     /// <summary>
     /// <c>POST /web/cubicacion</c> sin <c>items</c> (falta o viene vacío). Nació con la cubicación rápida de Nexo; se conserva con
-    /// "Calcular cubicaje" contra el cubicador (HU-023.2, #157). Los códigos <c>CUBICACION_NO_DISPONIBLE</c> y
-    /// <c>CUBICACION_DEMASIADO_GRANDE</c> se retiraron con esa cubicación: ahora son los del cubicador.
+    /// "Calcular cubicaje" contra el cubicador (HU-023.2, #157). <c>CUBICACION_NO_DISPONIBLE</c> se retiró con esa cubicación (ahora
+    /// son los del cubicador); <c>CUBICACION_DEMASIADO_GRANDE</c> volvió en HU-023 (#176) con el tope de 10.000 unidades del cubicador.
     /// Código nuevo del backend .NET.
     /// </summary>
     public const string ItemsRequeridos = "ITEMS_REQUERIDOS";

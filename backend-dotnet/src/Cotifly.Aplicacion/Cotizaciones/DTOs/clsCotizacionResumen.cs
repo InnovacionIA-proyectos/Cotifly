@@ -47,6 +47,18 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
+    /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
+    /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
+    /// </summary>
+    public DateTimeOffset? Deadline { get; init; }
+
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> que Nexo devolvió al crear la solicitud; <c>null</c> si no lo mandó, si no se ha enviado o si
+    /// se envió antes del script 09. Siempre se serializa.
+    /// </summary>
+    public decimal? ScorePrioridad { get; init; }
+
+    /// <summary>
     /// Solo en la respuesta de <c>POST /web/solicitudes-costeo</c> (HU-023.3, #158): por cada ruta que pasó por el cubicador, su resultado
     /// y sus avisos (mercancías condicionadas, advertencias y extradimensión, que no se guardan). <c>null</c> (no se serializa) si ninguna
     /// ruta llamó al cubicador o en el resto de respuestas.
@@ -60,6 +72,13 @@ public sealed record clsCotizacionResumen(
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Avisos { get; init; }
+
+    /// <summary>
+    /// Solo en <c>GET /web/cotizaciones/regional</c> (HU-016.1, #154): el comercial dueño de la cotización. <c>null</c> (no se serializa) en
+    /// el resto de respuestas, donde la cotización siempre es del usuario autenticado.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public clsComercialCotizacion? Comercial { get; init; }
 
     /// <summary>
     /// Resumen de una cotización con el nombre de su línea y la base pública de los PDF. El margen y su origen son los de la ruta 1
@@ -96,7 +115,11 @@ public sealed record clsCotizacionResumen(
             cotizacion.MotivoRechazo,
             clsUrlPdf.DesdeReferencia(baseUrlPdf, cotizacion.PdfPath),
             cotizacion.CreatedAt == default ? null : cotizacion.CreatedAt,
-            cotizacion.TrmAplicada);
+            cotizacion.TrmAplicada)
+        {
+            Deadline = cotizacion.Deadline?.ToUniversalTime(),
+            ScorePrioridad = cotizacion.ScorePrioridad,
+        };
     }
 }
 
@@ -113,6 +136,16 @@ public sealed record clsCotizacionConLinea(
 
 /// <summary><c>MisCotizaciones</c>: <c>{total, cotizaciones}</c>, máximo 100, de la más reciente a la más antigua.</summary>
 public sealed record clsMisCotizaciones(int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
+
+/// <summary><c>ComercialCotizacion</c> (HU-016.1, #154): dueño de una cotización del listado regional (<c>UsuariosWeb</c>).</summary>
+public sealed record clsComercialCotizacion(Guid UsuarioId, string? NombreUsuario, string? NombreCompleto);
+
+/// <summary>
+/// <c>CotizacionesRegional</c> (HU-016.1, #154): las cotizaciones de los miembros de la regional del gerente comercial, con la forma de
+/// <c>MisCotizaciones</c> y el comercial dueño en cada fila. Máximo 100 en total, de la más reciente a la más antigua.
+/// </summary>
+/// <param name="FuenteRegional"><c>dim_ejecutivo</c> o <c>usuarios_web</c> (de dónde salió la regional del gerente).</param>
+public sealed record clsCotizacionesRegional(string Regional, string FuenteRegional, int Total, IReadOnlyList<clsCotizacionResumen> Cotizaciones);
 
 /// <summary>
 /// <c>DatosNuevaVersion</c>: datos de una cotización existente para prellenar una versión nueva. No se persiste nada;

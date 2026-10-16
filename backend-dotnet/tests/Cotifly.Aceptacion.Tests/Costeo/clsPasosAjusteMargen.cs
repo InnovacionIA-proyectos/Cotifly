@@ -107,14 +107,6 @@ public sealed class clsPasosAjusteMargen(clsContextoWeb web, clsPasosCosteo cost
         (await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
             $"SELECT COUNT(*) FROM dbo_cotifly.MargenAjustes WHERE folio = '{costeo.Folio(cotizacion)}'")).Should().Be(0);
 
-    [Then("las métricas de ajustes de {string} marcan {int} ajuste por debajo del sugerido")]
-    public async Task EntoncesLasMetricas(string alias, int ajustes)
-    {
-        await web.EnviarAsync(HttpMethod.Get, "/web/metricas/ajustes-margen", web.Sesion(alias).Access);
-        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
-        web.UltimoJson().EnumerateArray().Sum(f => f.GetProperty("num_ajustes_bajo_sugerido").GetInt32()).Should().Be(ajustes);
-    }
-
     [Then("el servicio conexo {string} de {string} tiene el precio {int}")]
     public async Task EntoncesElConexo(string nombre, string cotizacion, int precio) =>
         (await CosteoAsync(cotizacion)).GetProperty("servicios_conexos").EnumerateArray()

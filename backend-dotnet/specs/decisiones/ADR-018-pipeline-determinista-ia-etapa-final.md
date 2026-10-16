@@ -276,7 +276,7 @@ Con esto queda cerrado el pendiente "¿permitir regenerar el PDF tras ajustar?".
 - **Municipios sin adivinar.** Si la fila no trae `origen_municipio_id`/`destino_municipio_id`, se resuelve el texto con el catálogo de `GET /web/municipios` y la regla determinista de HU-005.13. Una sola coincidencia no aproximada se usa; varias o una aproximada es `MUNICIPIO_AMBIGUO`; ninguna, `MUNICIPIO_NO_ENCONTRADO`.
 - **El reenvío también valida.** El reintento y la re-solicitud (mismo folio o `-vN`) de una licitación vuelven a pasar sus filas guardadas por todas las reglas (forma, G3, catálogos y municipios). Las filas sin id que se resuelven guardan su id con el envío. Si una fila ya no pasa (una licitación guardada antes de #108 con texto libre, o un G3 inválido), responde 400 `LICITACION_INVALIDA` con `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` y `detalle.errores[]`, y nada llega a Nexo: ni el reintento ni la `-vN` (que copia las mismas filas) la arreglan; se carga de nuevo con `POST /web/licitaciones`.
 - **Catálogos caídos.** En las licitaciones, `CATALOGOS_FLETE_NO_DISPONIBLE` y `MUNICIPIOS_NO_DISPONIBLE` son 503 (nada se guarda). Si además hay errores que se detectan sin ese catálogo (forma, G3, tipología, carrocería, clase de contenedor fija), se devuelve primero el reporte 400 con todos ellos y el código del catálogo caído en `error.detalle.motivo`: el comercial no pierde errores que puede corregir ya.
-- **`GET /web/municipios` sigue respondiendo 400** con `MUNICIPIOS_NO_DISPONIBLE` (contrato vigente, el controlador lo fija). Conviene alinearlo a 503 como el resto de catálogos en una issue propia, junto con el frontend.
+- **`GET /web/municipios` respondía 400** con `MUNICIPIOS_NO_DISPONIBLE`. Alineado a 503 como el resto de catálogos (deuda de #122, 2026-10-15): el controlador usa la traducción única de `clsRespuestasWeb`.
 - **Script `0008_horas_por_linea.sql`.** Horas de cargue y descargue por línea (G5). Orden de aplicación: 0006 → 0007 → 0008.
 
 ### 17. Consistencia del costeo al entregar y al registrar el resultado (#123, HU-013.14)
@@ -433,6 +433,6 @@ Complementa §2b y §14. Ninguna regla de seguridad cambia: el modelo sigue sin 
 | Integrar #50 (PR #96) antes de HU-013.7 | Duban |
 | Issue de gaps del formulario y migración de catálogos (`docs/conexion_nexo/HU-013-preguntas-nexo.md` §Gaps) | Coordinador + Duban |
 | Compartir el contrato con el desarrollador del frontend | Duban |
-| Alinear `GET /web/municipios` a 503 con `MUNICIPIOS_NO_DISPONIBLE` (hoy 400; en licitaciones ya es 503, §16) | Duban + frontend |
+| ~~Alinear `GET /web/municipios` a 503 con `MUNICIPIOS_NO_DISPONIBLE`~~ Hecho en el backend (2026-10-15); falta que el frontend trate el 503 | Frontend |
 | Script `0008_horas_por_linea.sql` (#108): pendiente de aprobación; se aplica después del 0007 | Duban + DBA |
 | ¿Una licitación debe viajar a Nexo con la línea `Licitaciones` (y el margen salir de la línea de Cotifly)? Hoy viaja el `mapeoLineasNexo` de la línea elegida (§18, pregunta 16) | Negocio + equipo de Nexo |

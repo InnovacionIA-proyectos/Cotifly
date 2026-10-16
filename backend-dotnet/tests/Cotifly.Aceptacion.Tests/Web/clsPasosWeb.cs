@@ -79,9 +79,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     public Task CuandoDescarga(string alias, string cotizacion) =>
         web.EnviarAsync(_get, $"/pdfs/{web.Cotizacion(cotizacion).ArchivoPdf}", web.Sesion(alias).Access);
 
-    [When("{string} consulta las métricas de actividad")]
-    public Task CuandoConsultaMetricas(string alias) => web.EnviarAsync(_get, "/web/metricas/actividad", web.Sesion(alias).Access);
-
     [When("{string} marca la cotización {string} como ganada {string} con el motivo {string}")]
     public Task CuandoMarca(string alias, string cotizacion, string ganada, string motivo) =>
         web.EnviarAsync(_post, $"/web/cotizaciones/{web.Cotizacion(cotizacion).Folio}/seguimiento", web.Sesion(alias).Access,
@@ -217,16 +214,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
         json.GetProperty("cc").GetArrayLength().Should().Be(0);
     }
 
-    [Then("las métricas incluyen solo a {string}")]
-    public void EntoncesSoloA(string alias) => UsuariosDeMetricas().Should().Equal(web.Sesion(alias).UsuarioId.ToString());
-
-    [Then("las métricas incluyen a {string} y a {string}")]
-    public void EntoncesAYA(string uno, string otro) =>
-        UsuariosDeMetricas().Should().BeEquivalentTo([web.Sesion(uno).UsuarioId.ToString(), web.Sesion(otro).UsuarioId.ToString()]);
-
-    [Then("las métricas están vacías")]
-    public void EntoncesVacias() => UsuariosDeMetricas().Should().BeEmpty();
-
     private async Task IniciarSesionAsync(string alias, int rolExterno, string regional) =>
         web.Sesiones[alias] = await web.Api.IniciarSesionAsync(rolExterno, web.Regional(regional), $"Persona {alias}");
 
@@ -240,14 +227,6 @@ public sealed class clsPasosWeb(clsContextoWeb web)
     {
         web.UltimoEstado.Should().Be(HttpStatusCode.OK);
         return [.. web.UltimoJson().GetProperty("cotizaciones").EnumerateArray().Select(c => c.GetProperty("folio").GetString())];
-    }
-
-    private List<string?> UsuariosDeMetricas()
-    {
-        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
-        var json = web.UltimoJson();
-        json.ValueKind.Should().Be(JsonValueKind.Array);
-        return [.. json.EnumerateArray().Select(f => f.GetProperty("usuario_id").GetString())];
     }
 
     private Task OperarAsync(string operacion, string token, clsCotizacionPrueba cotizacion) => operacion switch

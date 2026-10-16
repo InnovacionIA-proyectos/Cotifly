@@ -27,8 +27,13 @@ public interface IClsRegistroCapturasIdempotentes
     clsCapturaIdempotente? BuscarPorFolio(string folio);
 }
 
-/// <summary>Una captura con clave: la huella del cuerpo, el folio confirmado y el id de la solicitud de Nexo en cuanto se conoce.</summary>
-public sealed record clsCapturaIdempotente(string Huella, Guid CotizacionId, string Folio, string? SolicitudNexoId, DateTimeOffset RegistradaAt);
+/// <summary>
+/// Una captura con clave: la huella del cuerpo, el folio confirmado y el id de la solicitud de Nexo en cuanto se conoce, con el
+/// <c>scorePrioridad</c> que Nexo devolvió con ese id (HU-018.1, #155). El reintento que vincula por el registro (#173) lo guarda igual
+/// que el primer envío; <c>null</c> si Nexo no lo mandó o el registro es anterior a este campo (el vínculo sigue, sin score).
+/// </summary>
+public sealed record clsCapturaIdempotente(
+    string Huella, Guid CotizacionId, string Folio, string? SolicitudNexoId, DateTimeOffset RegistradaAt, decimal? ScorePrioridad = null);
 
 /// <summary>Implementación en memoria de <see cref="IClsRegistroCapturasIdempotentes"/> (vigencia de 24 h, como la clave).</summary>
 public sealed class clsRegistroCapturasIdempotentesEnMemoria(IClsReloj reloj) : IClsRegistroCapturasIdempotentes

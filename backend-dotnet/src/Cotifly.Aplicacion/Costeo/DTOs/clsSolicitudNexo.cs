@@ -91,6 +91,12 @@ public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCal
     /// </summary>
     public bool CodigosCubicadorEnviados { get; init; }
 
+    /// <summary>
+    /// HU-018.1 (#155): <c>scorePrioridad</c> del <c>CapturaResultDto</c> (COTIFLY-CONTRATO.md §5); <c>null</c> si Nexo no lo mandó, vino
+    /// en <c>null</c> o no es un número. Se guarda en la cabecera (<c>CotizacionesSolicitud.scorePrioridad</c>, script 09).
+    /// </summary>
+    public decimal? ScorePrioridad { get; init; }
+
     /// <summary>¿Nexo ya costeó todas las líneas? (la cotización nace en <c>autocosteo</c>).</summary>
     public bool CosteoCompleto => !CosteoEnProceso && Lineas > 0 && LineasPorCostear == 0;
 }

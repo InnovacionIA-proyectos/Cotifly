@@ -54,6 +54,9 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     public decimal FleteAutocosteo { get; set; } = 2_550_000m;
 
+    /// <summary>HU-018.1 (#155): <c>scorePrioridad</c> que responde el alta (<c>CapturaResultDto</c>); <c>null</c> lo manda en null.</summary>
+    public decimal? ScorePrioridadAlta { get; set; } = 0.5m;
+
     public IReadOnlyList<clsPeticionNexo> Peticiones => [.. _peticiones];
 
     /// <summary>Peticiones que no son de los catálogos maestros (<c>/api/catalogos/*</c>): las del costeo y la búsqueda.</summary>
@@ -91,6 +94,13 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     /// <summary>Si tiene valor, <c>GET /api/captura-solicitudes/municipios</c> responde este estado.</summary>
     public HttpStatusCode? MunicipiosFalla { get; set; }
+
+    /// <summary>
+    /// Si tiene valor, <c>GET /api/captura-solicitudes/municipios</c> y <c>/ciudades</c> lanzan esta excepción en vez de responder (por
+    /// ejemplo un <see cref="TaskCanceledException"/> como el del tiempo agotado de <see cref="HttpClient"/>, o un
+    /// <see cref="HttpRequestException"/> de red).
+    /// </summary>
+    public Exception? MunicipiosExcepcion { get; set; }
 
     /// <summary>Si es mayor que cero, las siguientes N peticiones a <c>/api/catalogos/*</c> responden 503 (fallo transitorio).</summary>
     public int FallasCatalogos { get; set; }
@@ -335,6 +345,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
         }
 
         var ruta = request.RequestUri!.AbsolutePath.TrimEnd('/');
+        if (MunicipiosExcepcion is { } excepcionMunicipios && request.Method == HttpMethod.Get
+            && ruta is "/api/captura-solicitudes/municipios" or "/api/captura-solicitudes/ciudades")
+        {
+            throw excepcionMunicipios;
+        }
+
         if (AntesDelAlta is { } gancho && request.Method == HttpMethod.Post && ruta == "/api/captura-solicitudes")
         {
             await gancho();
@@ -484,7 +500,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
             lineas = numero,
             rutasCreadas = 0,
             vehiculosCreados = 0,
-            scorePrioridad = 0.5m,
+            scorePrioridad = ScorePrioridadAlta,
             fletesCalculados = AutoCostear && !enProceso ? numero : 0,
             lineasPorCostear = AutoCostear && !enProceso ? 0 : numero,
             costeoEnProceso = enProceso,

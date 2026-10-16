@@ -139,6 +139,8 @@ Regla: `regional efectiva(u) = DimEjecutivo[u.nombreUsuario] ?? UsuariosWeb.regi
 
 `/web/metricas/actividad` y `/ajustes-margen` siguen funcionando igual y quedan `deprecated: true` en el contrato. Se retirarán cuando el frontend use los nuevos.
 
+> **Actualización (2026-10-15, HU-014.3 #152):** retirados. Los dos endpoints responden 404 y salieron del contrato; las vistas las borra `db/scripts/08_retirar_vistas_actividad.sql` (el `01` ya no las crea). Lo que sigue en esta sección es el historial de la decisión.
+
 - **HU-021.10 (#137) y HU-014.4:** HU-014.4 (retirar estos borradores y sus vistas) depende de que el tablero de HU-010 esté validado en producción, y todavía no lo está. Por eso #137 **conserva** las vistas: `vAjustesMargenPorComercial` y `vActividadPorComercial` ya las redefinió el `0009` (y `01_crear_esquema.sql`) para el esquema de rutas, y #137 las verificó con pruebas de integración. No hace falta un script `0011`. Cuando se haga HU-014.4, su script de retiro (`000N_retirar_vistas_actividad.sql`) cubre también la instalación desde cero.
 
 ### 10. Rutas: conteos por cotización, valores por ruta (HU-021.10, #137)

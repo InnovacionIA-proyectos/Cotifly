@@ -150,3 +150,19 @@ Característica: Costeo de la cotización en Nexo
     Y "ana" marca el resultado de "C1" como "ganada" con el motivo "Mejor precio" y el comentario "-"
     Entonces la respuesta tiene el estado 409 con el código de negocio "COTIZACION_NO_ENTREGADA"
     Y la cotización "C1" sigue sin resultado
+
+  # HU-018.1 (#155) — "Ver detalle": la fecha límite (cabecera) y el scorePrioridad que Nexo da al crear la solicitud
+  Escenario: Ver detalle muestra la fecha límite y el score de prioridad que Nexo dio al crear la solicitud
+    Dado que Nexo responde el alta con el score de prioridad "62.5"
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" con la fecha límite "2026-10-20T17:00:00-05:00" como "C1"
+    Y "ana" abre el costeo de "C1"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y la respuesta trae la fecha límite "2026-10-20T22:00:00+00:00" y el score de prioridad "62.5"
+    Y la cotización "C1" guarda el score de prioridad "62.5"
+
+  Escenario: Si Nexo no manda el score de prioridad el detalle lo muestra vacío
+    Dado que Nexo responde el alta sin score de prioridad
+    Cuando "ana" envía a costeo el formulario ampliado del cliente "900555111" como "C1"
+    Y "ana" abre el costeo de "C1"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CosteoCotizacion" del contrato
+    Y la respuesta trae la fecha límite vacía y el score de prioridad vacío

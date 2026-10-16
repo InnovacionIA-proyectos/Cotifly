@@ -117,6 +117,7 @@ public sealed class clsCosteoNexo(
             raiz.TryGetProperty("costeoEnProceso", out var enProceso) && enProceso.ValueKind == JsonValueKind.True)
         {
             CodigosCubicadorEnviados = _enviarCodigosCubicador,
+            ScorePrioridad = Decimal(raiz, "scorePrioridad"),
         };
     }
 
