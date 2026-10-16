@@ -655,7 +655,8 @@ public sealed class clsLicitacionService(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            cotizacion.Deadline,
+            // D5 (E2E 2026-10-16): en UTC, como la captura, el costeo y "Mis cotizaciones" (la base lo guarda con el -05:00 de Bogotá).
+            cotizacion.Deadline?.ToUniversalTime(),
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,
