@@ -43,6 +43,19 @@ public sealed class clsValidadorOpcionesCubicador : IValidateOptions<clsOpciones
             errores.Add($"'{Prefijo}ApiKey' es obligatoria con {Prefijo}UrlBase (viaja como Authorization: Bearer).");
         }
 
+        // D3b (E2E 2026-10-16): el POST /recomendaciones tiene su propio límite, coherente con el de las consultas y con el presupuesto.
+        if (options.TiempoEsperaRecomendacionSegundos < options.TiempoEsperaSegundos)
+        {
+            errores.Add($"'{Prefijo}TiempoEsperaRecomendacionSegundos' ({options.TiempoEsperaRecomendacionSegundos}) no puede ser menor que "
+                + $"'{Prefijo}TiempoEsperaSegundos' ({options.TiempoEsperaSegundos}): la recomendación es la llamada más lenta del cubicador.");
+        }
+
+        if (options.PresupuestoCapturaSegundos < options.TiempoEsperaRecomendacionSegundos)
+        {
+            errores.Add($"'{Prefijo}PresupuestoCapturaSegundos' ({options.PresupuestoCapturaSegundos}) debe ser al menos "
+                + $"'{Prefijo}TiempoEsperaRecomendacionSegundos' ({options.TiempoEsperaRecomendacionSegundos}): si no, una sola ruta lenta agota la captura.");
+        }
+
         return errores.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errores);
     }
 }

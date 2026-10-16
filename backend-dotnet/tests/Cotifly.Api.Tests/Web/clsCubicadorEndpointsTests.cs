@@ -300,7 +300,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             _cubicador.Caido = HttpStatusCode.ServiceUnavailable;
         }
 
-        var api = Api(new Dictionary<string, string?> { ["Cubicador:TiempoEsperaSegundos"] = "1" });
+        var api = Api(new Dictionary<string, string?> { ["Cubicador:TiempoEsperaSegundos"] = "1", ["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());

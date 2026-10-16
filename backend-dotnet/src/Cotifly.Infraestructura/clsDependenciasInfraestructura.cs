@@ -338,7 +338,8 @@ public static class clsDependenciasInfraestructura
     /// <summary>
     /// Cubicador (HU-021.5, #133) elegido por <c>Cubicador:UrlBase</c> al resolver (<see cref="clsFabricaCubicador.Crear"/>): configurado →
     /// <see cref="clsCubicadorHttp"/>; vacío → <see cref="clsCubicadorNoDisponible"/> (la captura crea un camión sin vehículo por ruta). Cliente
-    /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: el tiempo de <c>Cubicador:TiempoEsperaSegundos</c>, sin
+    /// HTTP propio (<see cref="clsCubicadorHttp.NombreCliente"/>) con su tubería: <c>Cubicador:TiempoEsperaSegundos</c> para las consultas y
+    /// <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> para el POST (D3b), sin
     /// reintentar los POST y sin registrar cabeceras (la llave viaja en <c>Authorization</c>). Los eventos de Polly de cada intento bajan a
     /// Debug, como en SAP TM. Los catálogos (tipos de mercancía, carrocerías y vehículos, HU-023.1) se guardan en <see cref="clsCacheCatalogoCubicador{TFila}"/> (singleton por catálogo). TryAdd: un
     /// adaptador registrado antes (pruebas) se respeta.
@@ -352,7 +353,8 @@ public static class clsDependenciasInfraestructura
             .AddStandardResilienceHandler();
         servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
             .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
-                clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos)));
+                clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos),
+                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaRecomendacionSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
 
         // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).

@@ -126,7 +126,7 @@ public sealed class clsCubicacionLicitacionServiceTests
         var cola = Cola(1);
         await Servicio().CubicarAsync(cola, Ct);
 
-        await _cotizaciones.Received(1).ReclamarRutaPorCubicarAsync(cola.RutaId, null, _reloj.AhoraUtc + TimeSpan.FromSeconds(120), Arg.Any<CancellationToken>());
+        await _cotizaciones.Received(1).ReclamarRutaPorCubicarAsync(cola.RutaId, null, _reloj.AhoraUtc + TimeSpan.FromSeconds(180), Arg.Any<CancellationToken>());
     }
 
     // ------------------------------------------------------------------ Ruta cubicada y envío único

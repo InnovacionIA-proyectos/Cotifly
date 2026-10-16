@@ -38,11 +38,13 @@ public sealed class clsOpcionesCubicacionLicitacion
     public int LoteRutas { get; set; } = 50;
 
     /// <summary>
-    /// Cuánto tiene una réplica la ruta reclamada (s). Pasado, otra la puede tomar (la réplica se cayó a mitad). Debe ser mayor que
-    /// <c>Cubicador:TiempoEsperaSegundos</c> (30 por defecto): una llamada en curso no se repite en otra réplica.
+    /// Cuánto tiene una réplica la ruta reclamada (s). Pasado, otra la puede tomar (la réplica se cayó a mitad). Debe ser mayor que lo que
+    /// puede durar la llamada de la ruta más 30 s de margen (D3b, E2E 2026-10-16: <c>Cubicador:TiempoEsperaRecomendacionSegundos</c>, 60 por
+    /// defecto, más la reconsulta con reintentos de <c>Cubicador:TiempoEsperaSegundos</c>, 47 s con 15; 137 en total): una llamada en curso no
+    /// se repite en otra réplica. Por defecto 180.
     /// </summary>
     [Range(31, 3600)]
-    public int ReclamoSegundos { get; set; } = 120;
+    public int ReclamoSegundos { get; set; } = 180;
 
     /// <summary>
     /// Intentos por ruta cuando el cubicador está caído (sin respaldo, <c>CUBICADOR_NO_DISPONIBLE</c>). Agotados, la ruta queda

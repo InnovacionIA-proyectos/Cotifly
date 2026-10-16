@@ -624,21 +624,29 @@ public sealed class clsCubicadorHttp(
     }
 
     /// <summary>
-    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento; en total, lo que caben el intento y los
-    /// <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>; un POST no se reintenta, así que
-    /// su límite real es el del intento). El circuito con una ventana de al menos el doble del intento (lo exige la tubería estándar).
+    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento de cada GET (catálogos, reconsulta, salud) y
+    /// <paramref name="tiempoRecomendacion"/> para el POST (D3b, E2E 2026-10-16: <c>Cubicador:TiempoEsperaRecomendacionSegundos</c>; el
+    /// motor tarda hasta ~30 s con cargas grandes). En total, lo que caben el intento y los <see cref="ReintentosLectura"/> reintentos de un
+    /// GET con sus esperas (<see cref="TiempoTotal"/>) o el POST, lo que sea mayor (un POST no se reintenta). El circuito con una ventana
+    /// de al menos el doble del intento más largo (lo exige la tubería estándar). Sin <paramref name="tiempoRecomendacion"/>, el POST usa
+    /// <paramref name="tiempo"/>.
     /// </summary>
-    public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, TimeSpan tiempo)
+    public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, TimeSpan tiempo, TimeSpan? tiempoRecomendacion = null)
     {
         ArgumentNullException.ThrowIfNull(resiliencia);
-        resiliencia.TotalRequestTimeout.Timeout = TiempoTotal(tiempo);
+        var post = tiempoRecomendacion ?? tiempo;
+        var totalPost = post + TimeSpan.FromSeconds(2);
+        resiliencia.TotalRequestTimeout.Timeout = totalPost > TiempoTotal(tiempo) ? totalPost : TiempoTotal(tiempo);
         resiliencia.AttemptTimeout.Timeout = tiempo;
+        resiliencia.AttemptTimeout.TimeoutGenerator = argumentos =>
+            ValueTask.FromResult(argumentos.Context.GetRequestMessage()?.Method == HttpMethod.Post ? post : tiempo);
         resiliencia.Retry.MaxRetryAttempts = ReintentosLectura;
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
         resiliencia.Retry.DisableForUnsafeHttpMethods();
-        resiliencia.CircuitBreaker.SamplingDuration = tiempo * 2 > TimeSpan.FromSeconds(30) ? tiempo * 2 : TimeSpan.FromSeconds(30);
+        var mayor = post > tiempo ? post : tiempo;
+        resiliencia.CircuitBreaker.SamplingDuration = mayor * 2 > TimeSpan.FromSeconds(30) ? mayor * 2 : TimeSpan.FromSeconds(30);
     }
 
     /// <summary>Límite total de una petición: el intento más los reintentos de un GET y sus esperas (300 ms, 600 ms y holgura del jitter).</summary>

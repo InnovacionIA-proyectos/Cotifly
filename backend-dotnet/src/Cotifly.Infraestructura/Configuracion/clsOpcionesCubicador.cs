@@ -23,11 +23,21 @@ public sealed class clsOpcionesCubicador
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Límite de cada petición al cubicador (segundos). Un POST nunca se reintenta. Por defecto 30 (HU-023.1: el objetivo del cubicador
-    /// es 10 s por respuesta).
+    /// Límite de cada intento de las consultas al cubicador (segundos): los catálogos, la reconsulta <c>GET /recomendaciones</c> y la
+    /// sonda de salud. Corto a propósito: un GET que no responde se reintenta. Por defecto 15. D3b/D7 (E2E 2026-10-16): el
+    /// <c>POST /recomendaciones</c> tiene su propio límite, <see cref="TiempoEsperaRecomendacionSegundos"/>.
     /// </summary>
     [Range(1, 120)]
-    public int TiempoEsperaSegundos { get; set; } = 30;
+    public int TiempoEsperaSegundos { get; set; } = 15;
+
+    /// <summary>
+    /// D3b (E2E 2026-10-16): límite del <c>POST /recomendaciones</c> (segundos). El motor del cubicador tarda 26 a 31 s con cargas grandes
+    /// (1.100 unidades), así que el límite general (<see cref="TiempoEsperaSegundos"/>) dejaba esas cargas en el respaldo o en 503. Un POST
+    /// nunca se reintenta: sin respuesta se reconsulta con GET. Por defecto 60; de 1 a 90 (por debajo de los 100 s del <c>HttpClient</c>),
+    /// nunca menor que <see cref="TiempoEsperaSegundos"/> ni mayor que <see cref="PresupuestoCapturaSegundos"/> (se valida al arrancar).
+    /// </summary>
+    [Range(1, 90)]
+    public int TiempoEsperaRecomendacionSegundos { get; set; } = 60;
 
     /// <summary>Minutos que se reutiliza en memoria el catálogo de tipos de mercancía (solo respuestas exitosas). <c>0</c> la desactiva. Por defecto 30.</summary>
     [Range(0, 1440)]
@@ -41,11 +51,13 @@ public sealed class clsOpcionesCubicador
     public bool RespaldoSiFalla { get; set; } = true;
 
     /// <summary>
-    /// Tiempo máximo de llamadas al cubicador en una misma captura (segundos; una licitación hace un POST por fila). Pasado, las rutas
-    /// restantes no lo llaman: van al respaldo o, con <see cref="RespaldoSiFalla"/> = <c>false</c>, la captura falla con 503. Por defecto 60.
+    /// Tiempo máximo de llamadas al cubicador en una misma captura (segundos; una licitación hace un POST por fila). Se revisa antes de
+    /// cada llamada: pasado, las rutas restantes no lo llaman y van al respaldo o, con <see cref="RespaldoSiFalla"/> = <c>false</c>, la
+    /// captura falla con 503. Por defecto 120 (D3b: caben dos recomendaciones lentas); debe ser al menos
+    /// <see cref="TiempoEsperaRecomendacionSegundos"/>, para que una sola ruta lenta no agote la captura (se valida al arrancar).
     /// </summary>
     [Range(1, 3600)]
-    public int PresupuestoCapturaSegundos { get; set; } = 60;
+    public int PresupuestoCapturaSegundos { get; set; } = 120;
 
     /// <summary>
     /// Tope total (segundos, reintentos incluidos) de <c>GET /tipos-mercancia</c>. Agotado, el catálogo cuenta como no disponible: la

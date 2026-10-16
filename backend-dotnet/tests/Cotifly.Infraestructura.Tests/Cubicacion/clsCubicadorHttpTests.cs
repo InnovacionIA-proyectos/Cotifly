@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -65,6 +66,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
         return await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
     }
@@ -398,8 +400,94 @@ public sealed class clsCubicadorHttpTests : IDisposable
         leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Cubicador:RutaSalud");
     }
 
+    /// <summary>
+    /// D3b/D7 (E2E 2026-10-16): el motor tarda 26-31 s con cargas grandes. El POST /recomendaciones espera 60 s; las consultas (catálogos,
+    /// reconsulta, salud) siguen cortas (15 s, lo que decía <c>.env.example</c>); el presupuesto y el reclamo de la licitación alcanzan.
+    /// </summary>
     [Fact]
-    public void ElTiempoDeEsperaPorDefectoEsDe30Segundos() => new clsOpcionesCubicador().TiempoEsperaSegundos.Should().Be(30);
+    public void LosTiemposPorDefectoSonCoherentes()
+    {
+        var opciones = new clsOpcionesCubicador();
+
+        opciones.TiempoEsperaRecomendacionSegundos.Should().Be(60);
+        opciones.TiempoEsperaSegundos.Should().Be(15);
+        opciones.PresupuestoCapturaSegundos.Should().Be(120);
+        new clsValidadorOpcionesCubicador().Validate(null, Valido(opciones)).Succeeded.Should().BeTrue();
+        var licitacion = new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion();
+        licitacion.ReclamoSegundos.Should().BeGreaterThan(clsValidadorOpcionesCubicacionLicitacion.Minimo(opciones));
+        new clsValidadorOpcionesCubicacionLicitacion(Options.Create(opciones)).Validate(null, licitacion).Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(30, 20, 120, "TiempoEsperaRecomendacionSegundos")]
+    [InlineData(15, 60, 45, "PresupuestoCapturaSegundos")]
+    public void TiemposIncoherentesNoArrancan(int espera, int recomendacion, int presupuesto, string clave)
+    {
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = espera.ToString(CultureInfo.InvariantCulture);
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = recomendacion.ToString(CultureInfo.InvariantCulture);
+        valores["Cubicador:PresupuestoCapturaSegundos"] = presupuesto.ToString(CultureInfo.InvariantCulture);
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Cubicador:" + clave);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(91)]
+    public void ElTiempoDeLaRecomendacionVaDe1A90(int segundos)
+    {
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = segundos.ToString(CultureInfo.InvariantCulture);
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("TiempoEsperaRecomendacionSegundos");
+    }
+
+    [Fact]
+    public void UnReclamoMenorQueLaLlamadaMasLentaNoArranca()
+    {
+        // 60 s del POST + 47 s de la reconsulta con reintentos (15 s × 3 + 2) + 30 s de margen = 137.
+        var validador = new clsValidadorOpcionesCubicacionLicitacion(Options.Create(new clsOpcionesCubicador()));
+
+        validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { ReclamoSegundos = 137 }).Failed.Should().BeTrue();
+        validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { ReclamoSegundos = 138 }).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// D3b: una recomendación que tarda más que el límite de las consultas pero menos que el suyo responde; un catálogo con la misma demora
+    /// agota su límite corto.
+    /// </summary>
+    [Fact]
+    public async Task ElPostTieneSuPropioLimiteYLasConsultasSiguenCortas()
+    {
+        _cubicador.DemoraRecomendacion = TimeSpan.FromSeconds(3);
+        _cubicador.DemoraCatalogo = TimeSpan.FromSeconds(3);
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "10";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var cubicador = proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>();
+
+        var recomendacion = await cubicador.RecomendarAsync(Peticion(), Ct);
+        var catalogo = await cubicador.ListarTiposCarroceriaAsync(Ct);
+
+        recomendacion.EsExitoso.Should().BeTrue("3 s caben en los 10 s del POST");
+        _cubicador.Recomendaciones.Should().ContainSingle();
+        _cubicador.Reconsultas.Should().BeEmpty("el POST respondió a tiempo");
+        catalogo.EsFallo.Should().BeTrue("3 s no caben en el segundo de las consultas");
+    }
+
+    private static clsOpcionesCubicador Valido(clsOpcionesCubicador opciones)
+    {
+        opciones.UrlBase = clsCubicadorFalso.UrlBase;
+        opciones.ApiKey = clsCubicadorFalso.ApiKey;
+        return opciones;
+    }
 
     [Fact]
     public async Task UnPostFallidoNoSeReintenta()
@@ -431,6 +519,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.Demora = TimeSpan.FromSeconds(10);
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var resultado = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
@@ -617,6 +706,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoTrasGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
@@ -634,6 +724,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
@@ -654,6 +745,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
