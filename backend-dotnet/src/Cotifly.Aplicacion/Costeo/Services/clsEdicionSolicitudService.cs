@@ -439,7 +439,7 @@ public sealed class clsEdicionSolicitudService(
         // id de la fila de Nexo y el GET lo muestra con el del catálogo: se comparan por el id del catálogo (solo se consulta si hace falta).
         var pedidos = validadas.Lineas.SelectMany(l => l.Conexos ?? []).Select(c => Limpio(c?.IdServicioConexo)).OfType<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var catalogoGuardados = cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => pedidos.Contains(c.IdServicioConexo))
+        var catalogoGuardados = cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => pedidos.Contains(c.IdServicioConexoCatalogo ?? c.IdServicioConexo))
             ? new Dictionary<string, clsCostoConexoNexo>()
             : await ConexosDelCatalogoAsync(usuarioId, cotizacion, cancellationToken);
         if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados))
@@ -760,7 +760,7 @@ public sealed class clsEdicionSolicitudService(
         [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
             .Select(c => catalogo.TryGetValue(c.IdServicioConexo, out var deCatalogo)
                 ? new clsConexoEditable(deCatalogo.Id, deCatalogo.Nombre ?? c.Nombre, c.Cantidad)
-                : new clsConexoEditable(c.IdServicioConexo, c.Nombre, c.Cantidad))
+                : new clsConexoEditable(c.IdServicioConexoCatalogo ?? c.IdServicioConexo, c.Nombre, c.Cantidad))
             .GroupBy(c => c.IdServicioConexo, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Count() == 1 ? g.First() : g.First() with { Cantidad = g.Sum(c => c.Cantidad) })];
 
@@ -771,7 +771,7 @@ public sealed class clsEdicionSolicitudService(
     private async Task<IReadOnlyDictionary<string, clsCostoConexoNexo>> ConexosDelCatalogoAsync(
         Guid usuarioId, clsCotizacionSolicitud cotizacion, CancellationToken cancellationToken)
     {
-        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => (c.IdServicioConexo, c.Nombre)).ToList();
+        var conexos = cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => (c.IdServicioConexo, c.IdServicioConexoCatalogo, c.Nombre)).ToList();
         if (conexos.Count == 0)
         {
             return new Dictionary<string, clsCostoConexoNexo>();
@@ -800,7 +800,7 @@ public sealed class clsEdicionSolicitudService(
 
     /// <summary>Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador.</summary>
     private static clsPlanRuta PlanVigente(clsLineaSolicitud ruta) =>
-        new([.. ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id).Select(v => new clsCamionPlaneado(
+        new([.. clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).Select(v => new clsCamionPlaneado(
                 v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))],
             ruta.ResultadoCubicacion is { } resultado ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada) : null);
 

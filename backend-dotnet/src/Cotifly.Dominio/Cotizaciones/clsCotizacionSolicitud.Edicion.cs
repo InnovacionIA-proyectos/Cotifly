@@ -277,7 +277,7 @@ public sealed partial class clsCotizacionSolicitud
         ruta.RegistrarCubicacion(capturada.Cubicacion);
         foreach (var conexo in capturada.Conexos ?? [])
         {
-            ruta.AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+            ruta.AgregarOActualizarConexo(conexo);
         }
 
         return ruta;

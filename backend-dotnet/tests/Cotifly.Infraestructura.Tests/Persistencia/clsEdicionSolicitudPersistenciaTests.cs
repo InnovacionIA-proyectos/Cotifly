@@ -44,6 +44,11 @@ public sealed class clsEdicionSolicitudPersistenciaTests(clsBaseDatosPruebas bas
                 + $"+ (SELECT COUNT(*) FROM dbo_cotifly.CotizacionMercancias WHERE lineaSolicitudId = '{rutas[0]}') "
                 + $"+ (SELECT COUNT(*) FROM dbo_cotifly.CotizacionServiciosConexos WHERE lineaSolicitudId = '{rutas[0]}')"))
             .Should().Be(0, "la ruta quitada se va con sus camiones, mercancías y conexos");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT STRING_AGG(CONCAT(l.orden, ':', v.ordenVehiculo), ',') WITHIN GROUP (ORDER BY l.orden, v.ordenVehiculo) "
+                + "FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionVehiculosLineaSolicitud v ON v.lineaSolicitudId = l.id "
+                + $"WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("1:1,2:1,3:1", "HU-014 (#188): el camión recubicado reemplaza al anterior con ordenVehiculo 1 sin violar el índice único");
     }
 
     [Fact]

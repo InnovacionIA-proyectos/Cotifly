@@ -284,6 +284,28 @@ public sealed class clsEdicionSolicitudTests
         nueva.NitCliente.Should().Be(original.NitCliente);
     }
 
+    [Fact]
+    public void HU014LaEdicionNumeraLosCamionesYGuardaElIdDelCatalogoYLaCategoriaDelConexo()
+    {
+        // Integración #188 → #186: ordenVehiculo 1..n en la ruta recubicada y en la nueva; el conexo con su id del catálogo y su categoría.
+        var cotizacion = DeDosRutas();
+        var r1 = cotizacion.RutasOrdenadas[0];
+
+        cotizacion.AplicarEdicion(Edicion(
+            new clsRutaEditada(r1.Id, Capturada(Linea(), 3,
+                camiones: [new clsCamionPlaneado("2S2", "FURGON", 16_000m), new clsCamionPlaneado("C2", "ESTACAS", 12_500m)],
+                conexos: [new clsCambioConexo("CX-9", "Precinto", 10_000m, 1m, "CX-9", "adicional")]), true),
+            new clsRutaEditada(null, Capturada(Linea(), 3,
+                camiones: [new clsCamionPlaneado("3S3", "FURGON", 20_000m), new clsCamionPlaneado("C2", "ESTACAS", 8_500m)],
+                conexos: [new clsCambioConexo("CX-1", "Cargue", 85_000m, 1m, "CX-1", "logistico")]), true)), _ahora);
+
+        var nueva = cotizacion.RutasOrdenadas[1];
+        r1.VehiculosOrdenados.Select(v => v.OrdenVehiculo).Should().Equal(1, 2);
+        nueva.VehiculosOrdenados.Select(v => (v.OrdenVehiculo, v.TipoVehiculo)).Should().Equal((1, "3S3"), (2, "C2"));
+        r1.Conexos.Should().ContainSingle().Which.Should().Match<clsServicioConexoRuta>(c => c.IdServicioConexoCatalogo == "CX-9" && c.Categoria == "adicional");
+        nueva.Conexos.Should().ContainSingle().Which.Should().Match<clsServicioConexoRuta>(c => c.IdServicioConexoCatalogo == "CX-1" && c.Categoria == "logistico");
+    }
+
     // --- Recubicar (defecto C) ---
 
     [Fact]

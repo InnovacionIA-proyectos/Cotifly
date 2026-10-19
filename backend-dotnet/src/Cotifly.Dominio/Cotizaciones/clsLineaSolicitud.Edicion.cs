@@ -52,7 +52,7 @@ public sealed partial class clsLineaSolicitud
         ConservarConexos(conexos.Select(c => c.IdServicioConexo).ToHashSet(StringComparer.OrdinalIgnoreCase));
         foreach (var conexo in conexos)
         {
-            AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+            AgregarOActualizarConexo(conexo);
         }
     }
 
