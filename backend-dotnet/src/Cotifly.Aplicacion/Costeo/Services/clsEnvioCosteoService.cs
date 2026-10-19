@@ -589,10 +589,20 @@ public sealed class clsEnvioCosteoService(
     /// Las rutas guardadas como líneas de la captura (en orden, cada una con sus mercancías y el vehículo de su camión): lo que se
     /// revalida con las reglas de la captura antes de reenviar (HU-021, "una ruta y un camión").
     /// </summary>
+    /// <remarks>
+    /// HU-014 (#188, revisión de M1): el vehículo y la carrocería de un camión del CUBICADOR (con <c>idRecomendacionVehiculo</c>) no son
+    /// datos digitados: son códigos del cubicador (<c>2S2</c>, <c>CAMA_BAJA</c>...) que Nexo puede no conocer, y lo que viaja de ellos lo
+    /// decide <c>Nexo:EnviarCodigosCubicador</c> al enviar (desde los camiones, no desde estas líneas). Por eso no pasan por el catálogo de
+    /// Nexo de la captura (M1): si pasaran, el reintento o la re-solicitud de una licitación cubicada respondería
+    /// <c>LICITACION_INVALIDA</c> ("requiere nueva carga") por un código que Cotifly nunca digitó. El vehículo del camión del respaldo
+    /// (sin recomendación, el digitado) sí se revalida.
+    /// </remarks>
     public static IReadOnlyList<clsLineaSolicitudCosteo> LineasGuardadas(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        return [.. cotizacion.RutasOrdenadas.Select(r => r.ALinea())];
+        return [.. cotizacion.RutasOrdenadas.Select(r => r.Vehiculos is [{ IdRecomendacionVehiculo: not null }]
+            ? r.ALinea() with { TipoVehiculo = null, Carroceria = null }
+            : r.ALinea())];
     }
 
     public async Task<clsResultado<clsCotizacionSolicitud>> ReintentarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
