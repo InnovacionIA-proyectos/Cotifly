@@ -19,4 +19,17 @@ public sealed class clsMargenAjusteRepository(clsCotiflyDbContext contexto) : IC
             .Where(a => a.CotizacionId == cotizacionId)
             .OrderBy(a => a.CreatedAt)
             .ToListAsync(cancellationToken);
+
+    public async Task<int> DesvincularRutasAsync(IReadOnlyCollection<Guid> rutas, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rutas);
+        if (rutas.Count == 0)
+        {
+            return 0;
+        }
+
+        var ids = rutas.Select(r => (Guid?)r).ToList();
+        var vinculados = await contexto.MargenAjustes.Where(a => ids.Contains(a.LineaSolicitudId)).ToListAsync(cancellationToken);
+        return vinculados.Count(a => a.DesvincularRuta());
+    }
 }
