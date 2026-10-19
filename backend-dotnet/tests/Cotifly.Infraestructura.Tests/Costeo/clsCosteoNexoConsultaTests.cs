@@ -286,7 +286,7 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
         cotizaciones.ObtenerCodigosCubicadorEnviadosAsync("SOL-1", Arg.Any<CancellationToken>()).Returns(registrado);
         _nexo.Responder(HttpStatusCode.OK, Solicitud).Responder(HttpStatusCode.Created, Cotizacion);
-        var adaptador = new clsCosteoNexo(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, EnviarCodigosCubicador = banderaActual }),
+        var adaptador = new clsCosteoNexo(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, EnviarCodigosCubicador = banderaActual ? "siempre" : "nunca" }),
             _usuarios, NullLogger<clsCosteoNexo>.Instance, cotizaciones);
 
         var foto = (await adaptador.ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Valor;

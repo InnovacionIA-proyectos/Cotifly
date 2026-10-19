@@ -10,7 +10,7 @@
      `ISNULL(resultadoCubicacion, '') = 'SIN_SELECCION_AUTOMATICA'`: conserva la regla del 02 (el
      motivo solo existe cuando el cubicador no pudo escoger) y cierra el hueco del NULL (en el 02,
      un motivo con resultadoCubicacion NULL pasaba porque el CHECK daba UNKNOWN). Es el mismo
-     CHECK que deja db/scripts/pendientes/03: si el 03 corre después, ve BUSQUEDA_AGOTADA y el
+     CHECK que deja db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql: si el 03 corre después, ve BUSQUEDA_AGOTADA y el
      ISNULL y no toca este CHECK.
 
    Dónde corre: después del 02 (el ejecutador corre los .sql de db/scripts en orden de nombre). Sin el

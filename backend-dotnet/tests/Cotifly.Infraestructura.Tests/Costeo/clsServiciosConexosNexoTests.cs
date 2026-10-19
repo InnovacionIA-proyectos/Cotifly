@@ -76,7 +76,7 @@ public sealed class clsServiciosConexosNexoTests
             $$"""{"id":"S-{{i}}","tipoServicio":"Servicio {{i}}","costoUnitario":{{1000 + i}},"activo":true}"""));
         var nexo = new clsNexoClientesFalso()
             .Responder(HttpStatusCode.OK, $$"""{"items":[{{primera}}],"total":102}""")
-            .Responder(HttpStatusCode.OK, """{"items":[{"id":"S-100","tipoServicio":"Cargue","costoUnitario":150000,"activo":true},{"id":"S-101","costoUnitario":9,"activo":false}],"total":102}""");
+            .Responder(HttpStatusCode.OK, """{"items":[{"id":"S-100","tipoServicio":"Cargue","categoria":"adicional","costoUnitario":150000,"activo":true},{"id":"S-101","costoUnitario":9,"activo":false}],"total":102}""");
         using var proveedor = Proveedor(new() { ["Nexo:UrlBase"] = clsNexoClientesFalso.UrlBase }, nexo);
         using var ambito = proveedor.CreateScope();
 
@@ -86,8 +86,9 @@ public sealed class clsServiciosConexosNexoTests
         nexo.Peticiones.Select(p => p.Url.Query).Should().AllSatisfy(q => q.Should().Contain("soloActivos=true").And.Contain($"pageSize={clsCostosConexosNexo.TamanoPagina}"));
         nexo.Peticiones[1].Url.Query.Should().Contain("page=2");
         costos.Valor.Keys.Should().BeEquivalentTo(["S-7", "S-100"], "un servicio inactivo o inexistente no viene: lo reporta la captura");
-        costos.Valor["S-100"].Should().Be(new clsCostoConexoNexo("S-100", "Cargue", 150_000m));
+        costos.Valor["S-100"].Should().Be(new clsCostoConexoNexo("S-100", "Cargue", 150_000m, "adicional"), "HU-014 (#188): con la categoría del catálogo");
         costos.Valor["s-7"].CostoUnitario.Should().Be(1007m);
+        costos.Valor["s-7"].Categoria.Should().BeNull("sin categoría en el catálogo no se inventa una");
     }
 
     [Fact]

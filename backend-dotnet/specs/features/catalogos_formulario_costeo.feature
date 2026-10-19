@@ -68,10 +68,13 @@ Característica: Solo códigos de catálogo en el formulario de costeo
     Y Nexo recibió la solicitud de "C1" con el claseViaje "Contenedor"
 
   # HU-021.6 (decisión 7 de HU-021): el comercial ya no digita vehículo ni carrocería; los define el cubicador o la Mesa de Costeo.
-  Escenario: El tipo de vehículo que llega en el formulario se ignora y la línea viaja sin vehículo
+  # HU-014 (#188, decisión del 2026-10-19): la bandera de respaldo Captura:AceptarVehiculoCliente está encendida por defecto, así que el
+  # vehículo que llega se valida contra el catálogo de Nexo (va solo en el camión del respaldo) y un texto libre se rechaza.
+  Escenario: Un tipo de vehículo que no es código del catálogo se rechaza y no llega a Nexo
     Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con el tipo de vehículo "Tractomula"
-    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
-    Y Nexo recibió la solicitud de "C1" sin tipoVehiculo
+    Entonces la respuesta tiene el estado 400 con el código de negocio "SOLICITUD_COSTEO_INVALIDA"
+    Y el mensaje del error menciona "tipo_vehiculo"
+    Y Nexo no recibió solicitudes
 
   Esquema del escenario: Una clase de viaje que no es código de catálogo se rechaza y no llega a Nexo
     Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "<texto>"

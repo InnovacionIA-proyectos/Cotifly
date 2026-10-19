@@ -226,6 +226,8 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
             t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_llenado",
                 "(volumenTotalM3 IS NULL OR volumenTotalM3 >= 0) AND (porcentajeLlenadoVolumen IS NULL OR (porcentajeLlenadoVolumen >= 0 AND porcentajeLlenadoVolumen <= 100)) "
                 + "AND (porcentajeLlenadoPeso IS NULL OR (porcentajeLlenadoPeso >= 0 AND porcentajeLlenadoPeso <= 100))");
+            // HU-014 (#188): db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql.
+            t.HasCheckConstraint("ck_cotizacionVehiculosLineaSolicitud_ordenVehiculo", "ordenVehiculo IS NULL OR ordenVehiculo >= 1");
         });
 
         builder.HasKey(v => v.Id).HasName("pk_cotizacionVehiculosLineaSolicitud");
@@ -247,10 +249,14 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
         builder.Property(v => v.CreatedAt).Fecha("createdAt");
         builder.Property(v => v.UpdatedAt).Fecha("updatedAt");
 
-        // HU-021.5: el orden del camión en su ruta no tiene columna; el interceptor lo lleva a createdAt (deuda: script ≥ 0011).
-        builder.Ignore(v => v.OrdenCreacion);
+        // HU-014 (#188, script 03): el orden del camión en su ruta (antes, un desfase de 1 ms en createdAt). NULL en filas viejas.
+        builder.Property(v => v.OrdenVehiculo).Columna("ordenVehiculo", "int");
 
         builder.HasIndex(v => v.LineaSolicitudId).HasDatabaseName("ix_cotizacionVehiculosLineaSolicitud_lineaSolicitudId");
+        // Único por ruta y FILTRADO (las filas viejas en NULL no chocan). Declararlo aquí también le sirve a EF para ordenar un recálculo
+        // (borra los camiones anteriores e inserta 1..n en el mismo SaveChanges): ejecuta los DELETE antes de los INSERT del mismo orden.
+        builder.HasIndex(v => new { v.LineaSolicitudId, v.OrdenVehiculo }).IsUnique()
+            .HasDatabaseName("uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo").HasFilter("[ordenVehiculo] IS NOT NULL");
     }
 }
 
@@ -296,6 +302,9 @@ internal sealed class clsServicioConexoRutaConfiguracion : IEntityTypeConfigurat
         builder.Property(c => c.LineaSolicitudId).Columna("lineaSolicitudId", "uniqueidentifier");
         builder.Property(c => c.IdServicioConexo).Columna("idServicioConexo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId).IsRequired();
         builder.Property(c => c.Nombre).Columna("nombreServicioConexo", "nvarchar(200)").HasMaxLength(clsServicioConexoRuta.LargoMaximoNombre);
+        // HU-014 (#188): id del catálogo de Nexo (script 03) y su categoría (script 05). NULL en las filas anteriores a #188.
+        builder.Property(c => c.IdServicioConexoCatalogo).Columna("idServicioConexoCatalogo", "nvarchar(64)").HasMaxLength(clsServicioConexoRuta.LargoMaximoId);
+        builder.Property(c => c.Categoria).Columna("categoriaServicioConexo", "nvarchar(20)").HasMaxLength(clsServicioConexoRuta.LargoMaximoCategoria);
         builder.Property(c => c.Precio).Columna("precio", "decimal(18,2)");
         builder.Property(c => c.Cantidad).Columna("cantidad", "decimal(10,2)");
         builder.Property(c => c.CreatedAt).Fecha("createdAt");

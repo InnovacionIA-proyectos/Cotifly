@@ -374,6 +374,33 @@ public sealed class clsReSolicitudCosteoServiceTests
         (copiado.IdServicioConexo, copiado.Cantidad, copiado.Precio).Should().Be((catalogo, 3m, 160_000m), "id y costo del catálogo; 1 + 2 unidades");
     }
 
+    /// <summary>
+    /// HU-014 (#188, script 03): un conexo importado de Nexo guarda el id de la FILA en <c>idServicioConexo</c> y el del CATÁLOGO en
+    /// <c>idServicioConexoCatalogo</c>. La -vN lo resuelve directo por ese id (sin buscar por nombre en el catálogo) y la copia guarda el id
+    /// del catálogo y la categoría (script 05).
+    /// </summary>
+    [Fact]
+    public async Task HU014_ConElIdDelCatalogoGuardadoLaVersionNuevaNoBuscaPorNombreYCopiaIdYCategoria()
+    {
+        var licitacion = VencidaDeDosRutas();
+        var catalogo = Guid.NewGuid().ToString("D");
+        var filaNexo = Guid.NewGuid().ToString("D");
+        licitacion.RutasOrdenadas[0].AgregarOActualizarConexo(new clsCambioConexo(filaNexo, "Cargue en puerto", 150_000m, 2m, catalogo, null));
+        _costos.CostosAsync(_ana, Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(clsResultado<IReadOnlyDictionary<string, clsCostoConexoNexo>>.Exito(
+                ci.ArgAt<IReadOnlyCollection<string>>(1).Where(id => id == catalogo)
+                    .ToDictionary(id => id, id => new clsCostoConexoNexo(id, "Cargue en puerto", 160_000m, "adicional")))));
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        var copiado = _agregada!.RutasOrdenadas[0].Conexos.Should().ContainSingle().Subject;
+        (copiado.IdServicioConexo, copiado.IdServicioConexoCatalogo, copiado.Categoria, copiado.Cantidad, copiado.Precio)
+            .Should().Be((catalogo, catalogo, "adicional", 2m, 160_000m));
+        await _catalogoNexo.DidNotReceive().BuscarAsync(
+            Arg.Any<Guid>(), Arg.Is<clsFiltroCatalogoConexos>(f => f.Q == "Cargue en puerto"), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task SinCatalogoDeConexosLaVersionNuevaNoSeCrea()
     {

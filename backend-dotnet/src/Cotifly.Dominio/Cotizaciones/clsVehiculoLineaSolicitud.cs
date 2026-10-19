@@ -58,15 +58,26 @@ public sealed class clsVehiculoLineaSolicitud
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>
-    /// Posición del camión en su ruta al crearlo (1 = el primero; la fila de la recomendación del cubicador, HU-021.5). No es una
-    /// columna (el esquema no tiene orden de camión, deuda para un script ≥ 0011): sirve para ordenar los camiones nuevos antes de
-    /// guardarlos y la persistencia la convierte en un desfase determinista de <see cref="CreatedAt"/> (<see cref="DesfaseCreacion"/>), así
-    /// que leídos de la base quedan en el mismo orden. Leído de la base vale 0.
+    /// Posición del camión en su ruta (<c>ordenVehiculo</c>, <c>db/scripts/03</c>, HU-014 #188): 1 = el primero, la fila de la
+    /// recomendación del cubicador (HU-021.5), que lleva los conexos en Nexo (decisión 3). La ruta la numera al crear el camión
+    /// (<see cref="clsLineaSolicitud.AgregarVehiculo(clsCamionPlaneado)"/>) y es única por ruta (índice filtrado del 03). <c>null</c> en
+    /// las filas escritas sin ella (antes del backfill del 03, o por la imagen anterior a #188 con el 03 ya aplicado): esas se ordenan por
+    /// <see cref="CreatedAt"/>, que antes llevaba un desfase de 1 ms por posición (<see cref="EnOrden"/>).
     /// </summary>
-    public int OrdenCreacion { get; private set; }
+    public int? OrdenVehiculo { get; private set; }
 
-    /// <summary>Desfase de <see cref="CreatedAt"/> por cada posición de <see cref="OrdenCreacion"/> (1 ms: lo conserva <c>datetimeoffset</c>).</summary>
-    public static readonly TimeSpan DesfaseCreacion = TimeSpan.FromMilliseconds(1);
+    /// <summary>
+    /// Orden estable de los camiones de una ruta (HU-014 #188): por <see cref="OrdenVehiculo"/> y, si es <c>null</c> (filas escritas sin
+    /// él), por <see cref="CreatedAt"/>, que conserva el desfase de 1 ms por posición con que se escribieron; el id desempata. Los
+    /// numerados van antes que los que no tienen número. En una ruta nueva todos están numerados; en una ruta vieja, ninguno (y un camión
+    /// que se le agregue tampoco: <see cref="clsLineaSolicitud.AgregarVehiculo(clsCamionPlaneado)"/> lo deja sin número para que vaya al
+    /// final por su <see cref="CreatedAt"/>). Es el orden en que viajan a Nexo (<c>numeroLinea</c>), el del PDF y el del emparejamiento.
+    /// </summary>
+    public static IOrderedEnumerable<clsVehiculoLineaSolicitud> EnOrden(IEnumerable<clsVehiculoLineaSolicitud> camiones)
+    {
+        ArgumentNullException.ThrowIfNull(camiones);
+        return camiones.OrderBy(v => v.OrdenVehiculo is null ? 1 : 0).ThenBy(v => v.OrdenVehiculo).ThenBy(v => v.CreatedAt).ThenBy(v => v.Id);
+    }
 
     /// <summary>¿Nexo ya le puso flete? (<c>autocosteo</c> o <c>entregada</c> con flete.)</summary>
     public bool TieneCosteo => CostoFlete is not null && EstadoCosteo is { } estado && clsDerivacionEstadoCosteo.TieneCosteo(estado);
@@ -80,11 +91,16 @@ public sealed class clsVehiculoLineaSolicitud
     /// </summary>
     internal static clsVehiculoLineaSolicitud Crear(
         Guid lineaSolicitudId, string? tipoVehiculo, string? carroceria, decimal? pesoKg, decimal? levante, Guid? idRecomendacionVehiculo,
-        int ordenCreacion = 0, decimal? volumenTotalM3 = null, decimal? porcentajeLlenadoVolumen = null, decimal? porcentajeLlenadoPeso = null)
+        int? ordenVehiculo = null, decimal? volumenTotalM3 = null, decimal? porcentajeLlenadoVolumen = null, decimal? porcentajeLlenadoPeso = null)
     {
         if (pesoKg is < 0m || levante is < 0m || volumenTotalM3 is < 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(pesoKg), "El peso, el volumen y el levante del camión no pueden ser negativos.");
+        }
+
+        if (ordenVehiculo is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(ordenVehiculo), "El orden del camión en su ruta empieza en 1.");
         }
 
         if (porcentajeLlenadoVolumen is < 0m or > 100m || porcentajeLlenadoPeso is < 0m or > 100m)
@@ -104,7 +120,7 @@ public sealed class clsVehiculoLineaSolicitud
             PorcentajeLlenadoVolumen = porcentajeLlenadoVolumen,
             PorcentajeLlenadoPeso = porcentajeLlenadoPeso,
             CostoLevanteContenedor = levante ?? 0m,
-            OrdenCreacion = ordenCreacion,
+            OrdenVehiculo = ordenVehiculo,
         };
     }
 

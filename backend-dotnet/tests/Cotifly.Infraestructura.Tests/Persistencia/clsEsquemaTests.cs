@@ -86,7 +86,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta0009 - 1].Should().Be("0009_reestructuracion_cotizaciones.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta0010 - 1].Should().Be("0010_nombres_municipio.sql");
         scripts[clsBaseDatosPruebas.ScriptsHasta02 - 1].Should().Be(clsBaseDatosPruebas.Script02);
-        scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 09");
+        scripts[clsBaseDatosPruebas.ScriptsHasta03 - 1].Should().Be(clsBaseDatosPruebas.Script03, "ScriptsHasta03 incluye el 03 y no el 04");
+        scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 05");
+        scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 09");
         scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsSin07 incluye el 09 (el backend mapea scorePrioridad)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
@@ -114,6 +116,49 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
             "SELECT CASE WHEN COL_LENGTH(N'dbo_cotifly.CotizacionMercancias', N'idTipoMercancia') IS NULL "
             + "AND COL_LENGTH(N'dbo_cotifly.CotizacionMercancias', N'codigoMercancia') IS NOT NULL THEN 1 ELSE 0 END"))
             .Should().Be(1, "el 02 cambia idTipoMercancia por codigoMercancia");
+    }
+
+    [Fact]
+    public async Task HU014_ElScript05EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-014 (#188): db/scripts/05 (categoría del conexo; el 01 no la trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem05", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script05);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem05Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script05);
+    }
+
+    [Fact]
+    public async Task HU014_El03NumeraLosCamionesExistentesPorCreatedAtYElIndiceFiltradoRechazaUnOrdenRepetido()
+    {
+        // HU-014 (#188): sobre una base con camiones escritos SIN ordenVehiculo (02 sin el 03, como la base compartida antes de aplicarlo),
+        // el 03 los numera 1..n por ruta en el orden de createdAt (el desfase de 1 ms de antes de #188); después el índice único filtrado
+        // rechaza un orden repetido en la misma ruta y admite varios NULL.
+        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden03", clsBaseDatosPruebas.ScriptsHasta02);
+        var cadena = baseAislada.Cadena;
+        Guid cotizacion = Guid.NewGuid(), ruta = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            "INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio) VALUES "
+            + $"('{cotizacion}', 'PCN-ORD-03'); "
+            + "INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (id, cotizacionSolicitudId, orden) VALUES "
+            + $"('{ruta}', '{cotizacion}', 1); "
+            + "INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, tipoVehiculo, createdAt) VALUES "
+            + $"(NEWID(), '{ruta}', N'TERCERO', '2026-10-01T10:00:00.002+00:00'), "
+            + $"(NEWID(), '{ruta}', N'PRIMERO', '2026-10-01T10:00:00.000+00:00'), "
+            + $"(NEWID(), '{ruta}', N'SEGUNDO', '2026-10-01T10:00:00.001+00:00');");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(cadena, clsBaseDatosPruebas.Script03);
+
+        (await LeerAsync(
+                $"SELECT CONCAT(ordenVehiculo, '=', tipoVehiculo) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE lineaSolicitudId = '{ruta}' ORDER BY ordenVehiculo",
+                r => r.GetString(0), cadena))
+            .Should().Equal("1=PRIMERO", "2=SEGUNDO", "3=TERCERO");
+        var repetido = () => clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, ordenVehiculo) VALUES (NEWID(), '{ruta}', 2)");
+        (await repetido.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo");
+        await clsBaseDatosPruebas.EjecutarAsync(cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId) VALUES (NEWID(), '{ruta}'), (NEWID(), '{ruta}')");
     }
 
     [Fact]
@@ -156,11 +201,12 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
     }
 
     [Fact]
-    public async Task LaPropuesta03PendienteSeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
+    public async Task ElScript03SeAplicaSobreEl02EsIdempotenteYCorrigeElCheckDelMotivo()
     {
-        // HU-023.3 (#158): db/scripts/pendientes/03 (pendiente de revisión de @scalderon-bs; el backend no la mapea). En una base aislada.
-        const string Script03 = "../scripts_bd/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql";
-        await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbPropuesta03");
+        // HU-023.3 (#158); desde HU-014 (#188) está en db/scripts/ y el backend mapea sus columnas. En una base aislada (01 + 02 + 03 + ...),
+        // se vuelve a correr.
+        const string Script03 = clsBaseDatosPruebas.Script03;
+        await using var baseAislada = await BaseDatos.CrearBaseInstaladaAsync("dbScript03");
 
         await clsBaseDatosPruebas.AplicarScriptAsync(baseAislada.Cadena, Script03);
         await ReaplicarYVerificarIdempotenciaAsync(baseAislada.Cadena, Script03);

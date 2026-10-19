@@ -389,14 +389,14 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, _) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: false, enviarDatosCubicador: false, enviarCodigosCubicador: false).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: false, enviarDatosCubicador: false, enviarCodigosCubicador: "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Should().NotContain("grupoRutaId").And.NotContain("idRecomendacionVehiculo").And.NotContain("codigoTipoMercancia")
             .And.NotContain("referenciaRuta").And.NotContain("\"orden\"").And.NotContain("numeroLinea").And.NotContain("codigoMercancia");
         using var json = JsonDocument.Parse(cuerpo);
         var linea = json.RootElement.GetProperty("lineas").EnumerateArray().Single();
-        linea.TryGetProperty("tipoVehiculo", out _).Should().BeFalse("Nexo:EnviarCodigosCubicador apagada: sin vehículo");
+        linea.TryGetProperty("tipoVehiculo", out _).Should().BeFalse("Nexo:EnviarCodigosCubicador = nunca: sin vehículo");
         linea.TryGetProperty("carroceria", out _).Should().BeFalse();
         linea.GetProperty("peso").GetDecimal().Should().Be(28_500.5m, "un solo camión: el peso declarado de la ruta, no el del cubicador");
     }
@@ -407,7 +407,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, ruta) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: true).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: "siempre").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Should().NotContain("codigoTipoMercancia").And.NotContain("codigoMercancia").And.NotContain("\"orden\"");
@@ -429,7 +429,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var (solicitud, _) = SolicitudCubicada();
 
-        await Adaptador(enviarGrupoRutaId: grupo, enviarDatosCubicador: cubicador, enviarCodigosCubicador: codigos).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: grupo, enviarDatosCubicador: cubicador, enviarCodigosCubicador: codigos ? "siempre" : "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         var cuerpo = _nexo.Peticiones.Single().Cuerpo!;
         cuerpo.Contains("\"grupoRutaId\"", StringComparison.Ordinal).Should().BeFalse(
@@ -444,7 +444,7 @@ public sealed class clsCosteoNexoTests : IDisposable
     {
         // Nexo #297 numera las líneas por el orden del arreglo (numeroLinea): ruta 1 con sus dos camiones del cubicador en el orden de la
         // recomendación y luego la ruta 2 (respaldo con Captura:AceptarVehiculoCliente: vehículo digitado, del catálogo de Nexo, sin
-        // recomendación), que SÍ lleva su vehículo aunque Nexo:EnviarCodigosCubicador esté apagada.
+        // recomendación), que SÍ lleva su vehículo aunque Nexo:EnviarCodigosCubicador sea "nunca".
         _nexo.Responder(HttpStatusCode.Created, Creada);
         var segunda = Guid.Parse("f6f8c1e0-0000-4000-8000-000000000006");
         var cotizacion = Dominio.Cotizaciones.clsCotizacionSolicitud.Crear(new Dominio.Cotizaciones.clsDatosCotizacion { Folio = "PCN-ORD-1" }).Valor;
@@ -458,7 +458,7 @@ public sealed class clsCosteoNexoTests : IDisposable
         var solicitud = new clsSolicitudNexo(clsClienteNexo.PorBp("15927"), cotizacion.EncabezadoSolicitud!,
             [.. cotizacion.LineasNexo().Select(l => l.Linea)], "PuertoAInterior");
 
-        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: false).EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
+        await Adaptador(enviarGrupoRutaId: true, enviarDatosCubicador: true, enviarCodigosCubicador: "nunca").EnviarSolicitudAsync(_usuarioId, solicitud, Ct);
 
         using var json = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
         var lineas = json.RootElement.GetProperty("lineas").EnumerateArray().ToList();
@@ -471,14 +471,16 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void LasTresBanderasDelContratoDeNexoEstanEncendidasPorDefecto()
+    public void HU014_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSoloConocidosPorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo, numeroLinea, la cuarentena y la normalización.
+        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-014 (#188, decisión del 2026-10-19,
+        // "enviar solo códigos conocidos"): los códigos del cubicador viajan solo si Nexo los conoce.
         var opciones = new clsOpcionesNexo();
 
         opciones.EnviarGrupoRutaId.Should().BeTrue();
         opciones.EnviarDatosCubicador.Should().BeTrue();
-        opciones.EnviarCodigosCubicador.Should().BeTrue();
+        opciones.EnviarCodigosCubicador.Should().BeNull();
+        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.SoloConocidos);
     }
 
     [Fact]
@@ -512,8 +514,9 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
-        lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
-        lineas.Select(l => l.GetProperty("carroceria").GetString()).Should().Equal("FURGON", "FURGON", "ESTACAS", "FURGON");
+        // HU-014 (#188): por defecto (solo_conocidos) y sin catálogo de tipos de vehículo de Nexo, ningún código es conocido: no viajan;
+        // el camión va por su idRecomendacionVehiculo y su peso.
+        lineas.Select(l => l.TryGetProperty("tipoVehiculo", out _) || l.TryGetProperty("carroceria", out _)).Should().OnlyContain(conCodigos => !conCodigos);
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
 
@@ -554,7 +557,7 @@ public sealed class clsCosteoNexoTests : IDisposable
 
     private clsCosteoNexo Adaptador(
         string? url = clsNexoClientesFalso.UrlBase, Microsoft.Extensions.Logging.ILogger<clsCosteoNexo>? logger = null, bool enviarGrupoRutaId = true,
-        bool enviarDatosCubicador = true, bool enviarCodigosCubicador = true) =>
+        bool enviarDatosCubicador = true, string enviarCodigosCubicador = "siempre") =>
         new(_http, Options.Create(new clsOpcionesNexo
             {
                 UrlBase = url, EnviarGrupoRutaId = enviarGrupoRutaId, EnviarDatosCubicador = enviarDatosCubicador, EnviarCodigosCubicador = enviarCodigosCubicador,

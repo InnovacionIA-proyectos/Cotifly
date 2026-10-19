@@ -159,9 +159,11 @@ Reglas para el frontend (HU-013.10, #106):
 - **`tipo_vehiculo` y `carroceria` ya no se envían** (decisión 7 de HU-021: los define el cubicador o la Mesa de Costeo de Nexo;
   si llegan, se ignoran). Lo que sigue aplica a ellos solo con la bandera del servidor `Captura:AceptarVehiculoCliente`.
 - **Solo códigos de catálogo** en `tipo_vehiculo`, `carroceria` y `clase_viaje` (el `valor` de `GET /web/catalogos-flete`,
-  nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (el `valor` de `clases_contenedor` de
-  `GET /web/catalogos-flete`: `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`; más la lista provisional `CNT20.FT`,
-  `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo). Otro texto es 400
+  nunca la `etiqueta`; HU-014 #188: `tipo_vehiculo` y `carroceria` deben ser códigos que **Nexo** conozca, ya no basta el catálogo
+  del cubicador, y se aceptan con otras mayúsculas, sin tildes o con `_`/`-` por espacio: `FURGON_REFRIGERADO` = `FURGON REFRIGERADO`),
+  `tipologia` (enum de 7 valores) y `clase_contenedor` (el `valor` de `clases_contenedor` de `GET /web/catalogos-flete`: `CNT20.IT`,
+  `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`; más la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene
+  en el catálogo). Otro texto es 400
   `SOLICITUD_COSTEO_INVALIDA` con el campo en el mensaje. Si los catálogos de Nexo no están disponibles (ni su copia en
   memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
   `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
@@ -283,7 +285,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 |---|---|---|
 | 1 | **`precio_final` incluye los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es fletes + retorno + levante + conexos, con su margen. | No sumar el `precio` de `servicios_conexos`: es el desglose. El PDF muestra la tarifa del transporte y los conexos aparte, y tarifa + conexos = precio de la ruta. |
 | 2 | **`POST /web/solicitudes-costeo` recibe `rutas[]`** (hasta 100). Sin `rutas`, el formato plano anterior sigue funcionando como una sola ruta, pero está `deprecated` y **se retira cuando salga HU-021-FE**. | Migrar el formulario a `rutas[]`. No mezclar: `rutas` y un campo de ruta en la raíz es 400 `SOLICITUD_COSTEO_INVALIDA` con `CAMPO_NO_APLICA`. |
-| 3 | **`tipo_vehiculo` y `carroceria` se ignoran** (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). | Quitarlos del formulario y del mapeo del Excel. El vehículo se lee de `rutas[].camiones[]`. Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (apagada por defecto) se usan en el camión del respaldo mientras no haya cubicador (HU-021-FE.2). |
+| 3 | **`tipo_vehiculo` y `carroceria` se ignoran** (decisión 7: los define el cubicador o la Mesa de Costeo de Nexo). | Quitarlos del formulario y del mapeo del Excel. El vehículo se lee de `rutas[].camiones[]`. Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente = true` (encendida por defecto desde #188) se usan en el camión del respaldo mientras no haya cubicador (HU-021-FE.2). |
 | 4 | **`valor_estimado` y `referencia` salen del contrato** (decisión 1), también `referencia` de la vista `Licitacion`. | Dejar de enviarlos y de leerlos. Si se envían, se ignoran sin error (queda un aviso en el log). |
 | 5 | **Municipios con id obligatorio.** Origen, destino y las ciudades de devolución y de levante van con su id de `GET /web/municipios` y una copia del nombre. Toda captura consulta el catálogo: si no responde, **503 `MUNICIPIOS_NO_DISPONIBLE`** y nada se guarda. HU-023 (#176): el buscador usa `GET /web/municipios?q=<texto>&departamento=<depto>`, que pasa a `GET /api/captura-solicitudes/ciudades` de Nexo (máximo 50, solo Colombia); sin filtros sigue siendo el catálogo completo. | Enviar siempre el `*_municipio_id` elegido en la búsqueda. Ante el 503, ofrecer Reintentar. Ante `MUNICIPIO_AMBIGUO`, mostrar los candidatos y repetir con el id elegido. |
 | 6 | **Mercancías con `codigo_mercancia` obligatorio** (HU-023.3, #158: el `codigo` del catálogo del cubicador, `GET /web/tipos-mercancia`; obligatorio con el cubicador configurado) y `nombre_mercancia` (antes `descripcion`). `id_tipo_mercancia` es obsoleto: se acepta y se traduce al código. | Usar el desplegable del catálogo y mandar su `codigo`. Sin cubicador, el endpoint responde 503 `CUBICADOR_NO_DISPONIBLE`: el formulario sigue con los tipos que ya conoce. |
@@ -871,7 +873,7 @@ cotizaciones de otra regional. El propio gerente es miembro de su regional, así
 |---|---|
 | Formato plano de `POST /web/solicitudes-costeo` (una ruta en la raíz, `deprecated`) | Cuando salga HU-021-FE |
 | `conexos_descartados` en la respuesta de re-solicitar (siempre `[]`, `deprecated`) | Cuando salga HU-021-FE |
-| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, aceptan los códigos del cubicador, HU-023.1) | Cuando exista el cubicador (C1) |
+| `tipo_vehiculo` y `carroceria` en la ruta (`deprecated`; se ignoran salvo `Captura:AceptarVehiculoCliente`; con la bandera, solo códigos que Nexo conozca: HU-014 #188 retiró los del catálogo del cubicador que Nexo no conoce, HU-023.1) | Cuando exista el cubicador (C1) |
 | `incluidos` en `PUT .../costeo/servicios-conexos` (compatibilidad de HU-005.7) | Sin fecha |
 | `valor_estimado` y `referencia` en la petición: ya no están en el contrato, pero si llegan se ignoran sin error | Sin fecha |
 

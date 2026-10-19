@@ -222,6 +222,55 @@ public sealed class clsAgregadoRutasTests
         FluentActions.Invoking(() => ruta.AgregarOActualizarConexo("CX-3", null, 1m, 0m)).Should().Throw<ArgumentOutOfRangeException>("la cantidad es mayor que 0");
     }
 
+    [Fact]
+    public void HU014_ElIdDelCatalogoYLaCategoriaSeGuardanAlCrearYCompletanUnaFilaViejaSinPisarLosGuardados()
+    {
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
+        ruta.AgregarOActualizarConexo("FILA-1", "Cargue", 10_000m, 1m);   // fila anterior a #188: sin id del catálogo ni categoría
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-2", "Escolta", 5_000m, 1m, "CAT-2", " adicional "));
+
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("fila-1", null, 10_000m, 1m, "CAT-1", "logistico"))
+            .Should().BeFalse("completar el id del catálogo y la categoría no cambia el precio, la cantidad ni el nombre");
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-2", null, 5_000m, 1m, "OTRO", "otra"));
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-3", null, 1m, 1m, null, "una-categoria-de-mas-de-20"));
+
+        ruta.Conexos.Select(c => (c.IdServicioConexo, c.IdServicioConexoCatalogo, c.Categoria)).Should().BeEquivalentTo(
+        [
+            ("FILA-1", (string?)"CAT-1", (string?)"logistico"),
+            ("CAT-2", "CAT-2", "adicional"),
+            ("CAT-3", null, null),
+        ], "una categoría que no cabe en la columna no se trunca: queda NULL y el costeo la lee del catálogo");
+    }
+
+    [Fact]
+    public void HU014_EnOrdenConFilasMezcladasPoneLosNumeradosPrimeroYLosNullDetras()
+    {
+        var ruta = Guid.NewGuid();
+        var sinNumeroA = clsVehiculoLineaSolicitud.Crear(ruta, "N1", null, 1m, null, null, null);
+        var tercero = clsVehiculoLineaSolicitud.Crear(ruta, "C3", null, 1m, null, null, 3);
+        var primero = clsVehiculoLineaSolicitud.Crear(ruta, "C1", null, 1m, null, null, 1);
+        var sinNumeroB = clsVehiculoLineaSolicitud.Crear(ruta, "N2", null, 1m, null, null, null);
+
+        clsVehiculoLineaSolicitud.EnOrden([sinNumeroA, tercero, sinNumeroB, primero]).Take(2).Select(v => v.TipoVehiculo)
+            .Should().Equal("C1", "C3");
+        clsVehiculoLineaSolicitud.EnOrden([sinNumeroA, tercero, sinNumeroB, primero]).Skip(2).Select(v => v.OrdenVehiculo)
+            .Should().AllSatisfy(o => o.Should().BeNull());
+        FluentActions.Invoking(() => clsVehiculoLineaSolicitud.Crear(ruta, "X", null, 1m, null, null, 0))
+            .Should().Throw<ArgumentOutOfRangeException>("el orden empieza en 1 (CHECK del 03)");
+    }
+
+    [Fact]
+    public void HU014_AgregarVehiculoNumeraDespuesDelMayorYNuncaRepite()
+    {
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
+        var antes = ruta.VehiculosOrdenados.Select(v => v.OrdenVehiculo).ToList();
+        antes.Should().OnlyContain(o => o != null);
+        var nuevo = ruta.AgregarVehiculo("2", null, 1m);
+        nuevo.OrdenVehiculo.Should().Be(antes.Max()!.Value + 1);
+        ruta.VehiculosOrdenados.Select(v => v.OrdenVehiculo).Should().OnlyHaveUniqueItems();
+        ruta.VehiculosOrdenados.Last().Should().BeSameAs(nuevo);
+    }
+
     // ------------------------------------------------------------------ Margen por ruta (HU-021.8, #135, decisión 6)
 
     [Fact]

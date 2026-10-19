@@ -273,7 +273,8 @@ public sealed class clsEnvioConexosNexoService(
         // El id guardado puede ser el de la FILA de otra cotización de Nexo (agregado con el POST o importado): a Nexo va el id del
         // CATÁLOGO, resuelto por id o por nombre (clsResolutorConexosCatalogo). Los que ya traen un id del catálogo no dependen de la
         // búsqueda de los demás.
-        var resolucion = await resolutor.ResolverAsync(usuarioId, [.. porEnviar.Select(c => (c.IdServicioConexo, c.Nombre))], CancellationToken.None);
+        var resolucion = await resolutor.ResolverAsync(
+            usuarioId, [.. porEnviar.Select(c => (c.IdServicioConexo, c.IdServicioConexoCatalogo, c.Nombre))], CancellationToken.None);
         var catalogo = resolucion.Resueltos;
 
         // Catálogo caído para algunos: esos esperan al siguiente ciclo SIN consumir un intento (no hubo POST) y nunca pasan a
