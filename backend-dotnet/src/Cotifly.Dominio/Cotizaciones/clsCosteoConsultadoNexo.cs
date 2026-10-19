@@ -63,8 +63,9 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
     /// emparejador compara con ese peso en una sola pasada; comparar primero con el del cubicador cruzaba costos entre rutas.
     /// </summary>
     /// <remarks>
-    /// Con <paramref name="codigosCubicador"/> en <c>false</c> (<c>Nexo:EnviarCodigosCubicador</c> apagada) un camión del cubicador viajó sin
-    /// vehículo ni carrocería: se empareja sin ellos (lo que la Mesa le ponga en Nexo no lo contradice).
+    /// Con <paramref name="codigosCubicador"/> en <c>false</c> (<c>Nexo:EnviarCodigosCubicador</c> distinta de <c>siempre</c>) un camión del
+    /// cubicador pudo viajar sin vehículo ni carrocería (o con ellos escritos como en Nexo, HU-014 #188): se empareja sin ellos (lo que la
+    /// Mesa le ponga en Nexo no lo contradice).
     /// </remarks>
     public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion, bool codigosCubicador = true)
     {

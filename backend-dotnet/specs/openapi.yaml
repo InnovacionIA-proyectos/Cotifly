@@ -5350,8 +5350,9 @@ components:
           description: |
             Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Con la bandera de respaldo apagada
             se acepta y se ignora con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con
-            `Captura:AceptarVehiculoCliente = true` (el valor por defecto desde #188) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
-            `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
+            `Captura:AceptarVehiculoCliente = true` (el valor por defecto desde #188) debe ser un código que **Nexo** conozca (el
+            `valor` de `tipos_vehiculo` de `GET /web/catalogos-flete`; HU-014 #188: un código que solo conoce el cubicador ya no se
+            acepta; se admiten otras mayúsculas, sin tildes o con `_`/`-` por espacio) o es `CODIGO_NO_CATALOGO`, y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
             tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
             valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). El campo se retira con HU-021-FE.
         carroceria:
@@ -5359,7 +5360,10 @@ components:
           nullable: true
           deprecated: true
           maxLength: 100
-          description: Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`).
+          description: |
+            Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`): debe ser una carrocería de Nexo
+            (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`; con
+            la misma equivalencia: `FURGON_REFRIGERADO` sirve) o es `CODIGO_NO_CATALOGO` (HU-014 #188).
 
     SolicitudCosteoWeb:
       type: object

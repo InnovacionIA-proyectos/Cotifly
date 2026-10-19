@@ -1,8 +1,6 @@
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
 using Cotifly.Aplicacion.Costeo.Services;
-using Cotifly.Aplicacion.Cubicacion.DTOs;
-using Cotifly.Aplicacion.Cubicacion.Interfaces;
 using Cotifly.Dominio.Comun;
 using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Margen;
@@ -15,7 +13,8 @@ namespace Cotifly.Aplicacion.Tests.Costeo;
 /// <summary>
 /// HU-013.10 (#106, G2, G11 y G15): solo códigos de catálogo hacia Nexo. Tipo de vehículo, clase de viaje y clase de contenedor contra el
 /// catálogo maestro de Nexo (HU-023.1, #156: sin la lista fija de clases de contenedor, solo la provisional de extradimensionado);
-/// carrocería y tipología en código. HU-023.1: los códigos de vehículo y de carrocería del cubicador se aceptan contra su catálogo.
+/// carrocería y tipología en código. HU-014 (#188, M1): el vehículo y la carrocería digitados (respaldo) deben ser códigos que Nexo
+/// conozca (ya no basta el catálogo del cubicador), con la equivalencia de Nexo (sin tildes ni mayúsculas, <c>_</c>/<c>-</c> = espacio).
 /// </summary>
 public sealed class clsValidadorCatalogosCapturaTests
 {
@@ -41,8 +40,10 @@ public sealed class clsValidadorCatalogosCapturaTests
     [Theory]
     [InlineData("Tractomula")]
     [InlineData("tractocamión 3 ejes semi 3")]
-    [InlineData("3s3")]
+    [InlineData("Tractocamión 3 ejes, semi 3")]
     [InlineData("3S3 refrigerado")]
+    [InlineData("3 S 3")]
+    [InlineData("2S2")]
     public async Task UnTipoDeVehiculoQueNoEsCodigoSeRechaza(string texto)
     {
         var error = await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = texto }, Ct);
@@ -53,7 +54,7 @@ public sealed class clsValidadorCatalogosCapturaTests
 
     [Theory]
     [InlineData("tipologia", "Mercancía general")]
-    [InlineData("carroceria", "Furgón")]
+    [InlineData("carroceria", "Tolva")]
     [InlineData("clase_viaje", "CargaSuelta")]
     [InlineData("clase_contenedor", "CNT40")]
     public async Task OtrosCatalogosFueraDeCodigoSeRechazan(string campo, string valor)
@@ -109,40 +110,38 @@ public sealed class clsValidadorCatalogosCapturaTests
         await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
     }
 
-    [Fact]
-    public async Task LosCodigosDeVehiculoYCarroceriaDelCubicadorSeAceptanSinConsultarNexoPorElVehiculo()
-    {
-        var cubicador = Cubicador();
-        var linea = Linea() with { TipoVehiculo = "C2", Carroceria = "CAMA_BAJA", ClaseViaje = null, ClaseContenedor = null };
+    [Theory]
+    [InlineData("3s3", "FURGON")]
+    [InlineData(" 3S3 ", "furgón")]
+    [InlineData("2s3", "FURGON_REFRIGERADO")]
+    [InlineData("2S3", "Furgon-Refrigerado")]
+    [InlineData("3S3", "estibas")]
+    public async Task HU014_LaMismaSiglaEscritaDeOtraFormaEsUnCodigoConocido(string tipo, string carroceria) =>
+        (await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = tipo, Carroceria = carroceria }, Ct)).Should().BeNull();
 
-        (await Validador(cubicador).ValidarAsync(_usuarioId, linea, Ct)).Should().BeNull();
-        await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
+    [Fact]
+    public async Task HU014_M1_UnCodigoQueSoloConoceElCubicadorSeRechazaConUn400Claro()
+    {
+        // M1 del auditor de #188: C2 y CAMA_BAJA son del catálogo del cubicador pero Nexo no los conoce; antes viajaban y la línea nacía en
+        // cuarentena. Ahora la captura los rechaza (CODIGO_NO_CATALOGO → 400) y dice qué espera.
+        var vehiculo = await Validador().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "C2" }, Ct);
+        var carroceria = await Validador().ValidarAsync(_usuarioId, Linea() with { Carroceria = "CAMA_BAJA" }, Ct);
+
+        vehiculo!.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        vehiculo.Mensaje.Should().Contain("tipo_vehiculo").And.Contain("'C2'").And.Contain("catálogo de Nexo");
+        carroceria!.Codigo.Should().Be(clsCodigosError.SolicitudCosteoInvalida);
+        carroceria.Mensaje.Should().Contain("carroceria").And.Contain("FURGON REFRIGERADO", "las opciones son las carrocerías de Nexo");
     }
 
     [Fact]
-    public async Task UnCodigoInactivoODesconocidoDelCubicadorCaeAlRespaldoDeNexoYDeLaListaFija()
+    public async Task HU014_UnTipoDeVehiculoSiempreSeValidaContraNexoYSinCatalogoNoSeAcepta()
     {
-        var cubicador = Cubicador();
+        // Antes, un código del cubicador no consultaba Nexo. Ahora todo tipo_vehiculo se valida contra Nexo: sin catálogo no se acepta.
+        _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsCatalogosMaestros>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
+        var linea = Linea() with { TipoVehiculo = "3S3", ClaseViaje = null, ClaseContenedor = null };
 
-        var inactivo = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "C9" }, Ct);
-        var respaldo = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "2S3", Carroceria = "VOLCO" }, Ct);
-        var carroceria = await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { Carroceria = "TOLVA" }, Ct);
-
-        inactivo!.Mensaje.Should().Contain("tipo_vehiculo");
-        respaldo.Should().BeNull("el vehículo digitado del respaldo se valida contra Nexo y la lista fija");
-        carroceria!.Mensaje.Should().Contain("carroceria").And.Contain("CAMA_BAJA", "las opciones son las del cubicador");
-    }
-
-    [Fact]
-    public async Task SinCatalogosDelCubicadorSeValidaConElRespaldo()
-    {
-        var cubicador = Substitute.For<IClsCubicador>();
-        cubicador.EstaConfigurado.Returns(true);
-        cubicador.ListarTiposVehiculoAsync(Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
-        cubicador.ListarTiposCarroceriaAsync(Arg.Any<CancellationToken>()).Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído"));
-
-        (await Validador(cubicador).ValidarAsync(_usuarioId, Linea(), Ct)).Should().BeNull();
-        (await Validador(cubicador).ValidarAsync(_usuarioId, Linea() with { Carroceria = "CAMA_BAJA" }, Ct))!.Mensaje.Should().Contain("carroceria");
+        (await Validador().ValidarAsync(_usuarioId, linea, Ct))!.Codigo.Should().Be(clsCodigosError.CatalogosFleteNoDisponible);
     }
 
     [Fact]
@@ -187,7 +186,7 @@ public sealed class clsValidadorCatalogosCapturaTests
         clsLineaSolicitudCosteo[] lineas =
         [
             Linea(),
-            Linea() with { TipoVehiculo = "3s3", Carroceria = "Furgón" },
+            Linea() with { TipoVehiculo = "3S3 refrigerado", Carroceria = "Tolva" },
             Linea() with { Tipologia = "carga seca", ClaseViaje = "contenedor", ClaseContenedor = "CNT40" },
             Linea() with { ClaseContenedor = " CNT40.OP " },
             null!,
@@ -236,22 +235,5 @@ public sealed class clsValidadorCatalogosCapturaTests
 
     private static clsLineaSolicitudCosteo Linea() => clsSolicitudCosteoMuestra.Crear().ALinea();
 
-    private clsValidadorCatalogosCaptura Validador(IClsCubicador? cubicador = null) =>
-        new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance, cubicador);
-
-    /// <summary>Cubicador con <c>C2</c> y <c>2S2</c> activos, <c>C9</c> inactivo y las carrocerías <c>CAMA_BAJA</c> y <c>FURGON</c>.</summary>
-    private static IClsCubicador Cubicador()
-    {
-        var cubicador = Substitute.For<IClsCubicador>();
-        cubicador.EstaConfigurado.Returns(true);
-        cubicador.ListarTiposVehiculoAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>.Exito(
-        [
-            new clsTipoVehiculoCubicador("C2", "Sencillo", ["FURGON"], true),
-            new clsTipoVehiculoCubicador("2S2", "Tractocamión 2S2", ["CAMA_BAJA"], true),
-            new clsTipoVehiculoCubicador("C9", "Retirado", [], false),
-        ]));
-        cubicador.ListarTiposCarroceriaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>.Exito(
-            [new clsTipoCarroceriaCubicador("CAMA_BAJA", "Cama baja", true), new clsTipoCarroceriaCubicador("FURGON", "Furgón", true)]));
-        return cubicador;
-    }
+    private clsValidadorCatalogosCaptura Validador() => new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
 }

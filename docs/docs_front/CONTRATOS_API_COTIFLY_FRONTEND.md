@@ -59,6 +59,7 @@ Contexto de NEXO y del cubicador que conviene conocer (el frontend no habla con 
 |---|---|
 | NEXO crea **una línea por camión**. Una ruta puede tener varios camiones (flota mixta). | `rutas[].camiones[]` puede traer varios camiones. |
 | Una línea **sin vehículo** en clase de viaje "Cupo" no se autocostea en NEXO: la costea a mano la Mesa de Costeo. | Esas rutas tardan más en tener precio. Es normal. |
+| Cotifly manda a NEXO el vehículo del cubicador **solo si NEXO conoce el código** (está en su catálogo de tipos de vehículo; decisión del 2026-10-19, HU-014 #188). Si no lo conoce, el camión viaja sin vehículo (así no queda en cuarentena) y lo resuelve la Mesa de Costeo. | `camiones[]` sigue mostrando el vehículo del cubicador. Un camión con un código que NEXO no conoce tarda más en tener precio, como uno sin vehículo. |
 | NEXO autocostea en la misma petición hasta 10 líneas; con más, el costeo sigue en segundo plano. | La captura puede salir en `autocosteo` con precio o en `pendiente_costeo`. |
 | El cubicador responde `SIN_SELECCION_AUTOMATICA` cuando no puede escoger vehículo. Es una respuesta válida, no un error. | La ruta queda con un camión sin vehículo que resuelve la Mesa de Costeo. |
 | `BUSQUEDA_AGOTADA` es un límite del algoritmo del cubicador, **no de la carga**. | Nunca decirle al comercial que su carga no cabe. |
@@ -1177,7 +1178,7 @@ Cada ruta (`RutaCapturaWeb`):
 | `peso_kg` | número o null | Condicional | 0 a 999.999,99. Peso total de la ruta. Puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno). Si vienen los dos, deben coincidir dentro del 1 % con `sum(cantidad × peso_kg)` (`PESO_INCONSISTENTE`) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200 |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 por ruta, sin repetir el mismo servicio |
-| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo) |
+| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo). Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente` (encendida por defecto) van en el camión del respaldo y **deben ser códigos que NEXO conozca**: `tipo_vehiculo` del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`) y `carroceria` de la lista de carrocerías de NEXO. Se aceptan con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio (`FURGON_REFRIGERADO` = `FURGON REFRIGERADO`). Un código que solo conoce el cubicador (HU-014 #188) es **400** `SOLICITUD_COSTEO_INVALIDA` (`CODIGO_NO_CATALOGO` en `detalle.errores`) con el campo en el mensaje |
 
 Cada mercancía (`PosicionCargaWeb`):
 

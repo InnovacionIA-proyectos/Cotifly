@@ -378,8 +378,9 @@ Reemplaza los puntos 4 y 7 de arriba. Respuestas de Nexo (decididas por Sara) en
   `{codigos_cubicador}`) en la misma transacción que el `solicitudNexoId`, sin esquema nuevo, y `clsCosteoNexo.ConsultarCosteoAsync` lo
   lee por solicitud. **Sin registro** (solicitudes enviadas antes de este cambio, o si la lectura falla) se asume que **no viajaron**: no
   se compara el vehículo, que es el caso seguro.
-- **Respaldo con `Captura:AceptarVehiculoCliente`:** el camión del respaldo no tiene `idRecomendacionVehiculo` y su vehículo digitado es
-  del catálogo de Nexo: **sí viaja** aunque `Nexo:EnviarCodigosCubicador` esté apagada.
+- **Respaldo con `Captura:AceptarVehiculoCliente`:** el camión del respaldo no tiene `idRecomendacionVehiculo` y su vehículo digitado
+  **sí viaja** aunque `Nexo:EnviarCodigosCubicador` esté apagada. (HU-014 #188, M1: hasta #188 "del catálogo de Nexo" no era cierto, porque
+  la captura también aceptaba los códigos del catálogo del cubicador; ver la decisión de HU-014 abajo.)
 - **Nombre de la bandera:** el texto de Nexo #297 la llama `Nexo:EnviarReferenciaRuta`; en Cotifly se renombró a
   **`Nexo:EnviarGrupoRutaId`** (el campo es `grupoRutaId`). `Nexo__EnviarReferenciaRuta` ya no se lee.
 
@@ -482,6 +483,51 @@ normalización de nombres.
   (`MOTIVO_SIN_SELECCION`). Funciona en cualquier ambiente sin configurar nada. `/health/ready` no lo exige: solo lo avisa en la
   descripción.
 
+## Decisión — HU-014 (#188): enviar solo códigos conocidos (decisión del usuario del 2026-10-19)
+
+Reemplaza "bandera apagada = no mandar nada", que dejaba el 100 % de las rutas Cupo en `PorCostear` y costeaba Carga suelta y
+Extradimensionado con el piso SICE-TAC sin revisión (`COTIFLY-CONTRATO.md` §4). Decisión: **"Enviar solo códigos conocidos."**
+
+- **`Nexo:EnviarCodigosCubicador` pasa a tener tres modos**: `solo_conocidos` (por defecto y en los manifiestos), `siempre` y `nunca`.
+  Compatibilidad con el booleano: `true` = `siempre`; `false` = `solo_conocidos` (la intención de `false` era no generar cuarentenas, y
+  `solo_conocidos` tampoco las genera; así un ambiente que ya tenía `false` recibe la decisión nueva). Vacía = `solo_conocidos`. Otro
+  valor no deja arrancar (`clsOpcionesNexo : IValidatableObject`, validado con `ValidateDataAnnotations` + `ValidateOnStart`). Se eligió el
+  texto (`string`) y no un `enum` enlazado para que `true`/`false` sigan funcionando sin error de enlace.
+- **"Conocido"** (`clsCodigosConocidosNexo`, Dominio): el código del cubicador está en el `codigo` de `GET /api/catalogos/tipos-vehiculo`
+  de Nexo (el que ya se consulta y se cachea, `IClsCatalogosMaestrosProvider`; solo los oficiales: un código en cuarentena,
+  `esCatalogoOficial = false`, no es conocido y no viaja), con la misma equivalencia que Nexo y que el resto de
+  Cotifly (`clsVehiculoLineaSolicitud.MismoCodigo`, D2: sin tildes, `ToUpperInvariant`, `_`/`-` = espacio). Primero la coincidencia
+  exacta; si no hay, la única equivalente; dos equivalentes distintas sin exacta (`C-2` y `C 2` para `C_2`) es ambiguo = desconocido.
+  Nunca contra la descripción (`Camión 2 ejes`): podría asignar un vehículo equivocado y cambiar el precio.
+- **Se manda escrito como en el catálogo de Nexo**, no como lo devolvió el cubicador: Nexo lo reconoce sin depender de su normalización
+  (que no controlamos) y la línea nunca nace en cuarentena. Cotifly conserva el código del cubicador en el camión; el emparejamiento y la
+  regla "la Mesa manda" (D2) comparan con `MismoCodigo`, que trata igual las dos escrituras, así que no cambian.
+- **Carrocería**: Nexo no publica un catálogo de carrocerías que Cotifly lea; la lista de Nexo vive en código
+  (`clsCatalogosCaptura.Carrocerias`). Regla: la carrocería viaja **solo si el vehículo viaja** y está en esa lista (con la misma
+  equivalencia: `FURGON_REFRIGERADO` → `FURGON REFRIGERADO`). Una carrocería sin vehículo no sirve para autocostear (Cupo queda
+  `PorCostear` igual) y la línea "sin vehículo" debe ser idéntica a la de antes. Con vehículo conocido y carrocería desconocida, viaja
+  el vehículo sin carrocería (sin cuarentena).
+- **Catálogo de Nexo caído**: ningún código es conocido y las líneas de los camiones del cubicador van sin vehículo (seguro: no hay
+  cuarentena) con un warning; el envío nunca falla por el catálogo. Se usa la copia de respaldo que ya da la caché (vigente
+  `Nexo:MinutosCacheCatalogos`; con Nexo caído, la vencida hasta `Nexo:HorasCatalogosVencidos`, 24 h). No se usa una copia más vieja:
+  el límite es el mismo que el de la captura y es configurable.
+- **Registro del envío**: `codigos_cubicador = true` solo con `siempre` (viajaron todos). Con `solo_conocidos` viajan unos sí y otros no:
+  se registra `false`, el caso seguro de siempre (el emparejador no compara el vehículo de los camiones del cubicador; los asocia por
+  `grupoRutaId` + `idRecomendacionVehiculo` + `numeroLinea`). El emparejamiento no cambia.
+- **Log**: con `solo_conocidos`, una línea informativa por envío con los códigos del cubicador que Nexo no conoce, para pedir su alta.
+- **M1 (auditor de #188)**: con `Captura:AceptarVehiculoCliente`, el vehículo digitado del respaldo se validaba contra el catálogo del
+  cubicador **o** el de Nexo; un código que solo conocía el cubicador viajaba y caía en cuarentena. Ahora `clsValidadorCatalogosCaptura`
+  exige que `tipo_vehiculo` esté en el catálogo de tipos de vehículo de Nexo y `carroceria` en la lista de Nexo (misma equivalencia) y,
+  si no, responde **400** (`SOLICITUD_COSTEO_INVALIDA`, `CODIGO_NO_CATALOGO` con el campo y las opciones). Se rechaza en vez de mandarlo
+  sin vehículo porque (1) el comercial digitó ese vehículo y descartarlo en silencio le haría creer que se cotizó con él, y (2) el camión
+  del respaldo no tiene `idRecomendacionVehiculo`: el emparejamiento compara su vehículo con el de la línea de Nexo, y quitarlo solo del
+  envío haría que un vehículo que ponga la Mesa lo contradiga. El validador ya no consulta el catálogo del cubicador. Ese vehículo viaja
+  siempre (en cualquier modo), escrito como en Nexo si se puede resolver.
+- **Pruebas**: `clsCodigosConocidosNexoTests` (equivalencias, ambigüedad, cultura `tr-TR`), `clsCodigosConocidosEnvioNexoTests` (tres modos,
+  catálogo caído o que lanza, respaldo, configuración y arranque), `clsValidadorCatalogosCapturaTests` (M1) y, por HTTP con el Nexo falso
+  que aplica §3.4 y §4 (`AutoCostearSegunContrato`), `HU014_SoloViajanLosCodigosQueNexoConoceYElDesconocidoQuedaPorCostearEnCupoSinCuarentena`
+  y `HU014_ConSiempreUnCodigoQueNexoNoConoceViajaYNaceEnCuarentena`.
+
 ## Consecuencias
 
 - HU-023.4: sin desplegar el encabezado nuevo, **ninguna** llamada a Nexo autentica (401). Es un cambio que hay que desplegar ya.
@@ -506,5 +552,6 @@ normalización de nombres.
 | **Confirmar la fecha real del corte de `POST /api/cubicacion`** (Nexo tampoco consume `/recomendaciones`) y verificar "Calcular cubicaje" contra el cubicador de QA (flota mixta, código desconocido) | Duban con Nexo y el equipo del cubicador, antes del viernes 16 |
 | Frontend: pintar la lista de vehículos de `POST /web/cubicacion` y mandar `codigo_mercancia` (HU-023.2) | Frontend (HU-023-FE) |
 | Llave por ambiente en los secretos de Dokploy (`Cubicador__ApiKey`) | Duban (sin tocar el clúster sin autorización) |
+| HU-014 (#188): revisar en el log los códigos del cubicador que Nexo no conoce ("viajan a Nexo sin vehículo") y pedir a Nexo que los dé de alta o los mapee; pasar a `siempre` cuando Nexo tenga la bandeja de cuarentena (S5-HU-19.3) | Duban con Nexo |
 | Aprobar y aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación, HU-023.5) | DBA |
 | P6: confirmar cuántas llamadas en paralelo aguanta el cubicador y fijar `Cubicador__MaximoParalelo` | Equipo del cubicador |

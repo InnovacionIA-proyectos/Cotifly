@@ -71,6 +71,17 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     public decimal FleteAutocosteo { get; set; } = 2_550_000m;
 
+    /// <summary>
+    /// HU-014 (#188): si es verdadero, el alta auto-costea como Nexo según su contrato (<c>COTIFLY-CONTRATO.md</c> §3.4 y §4): una línea
+    /// con un <c>tipoVehiculo</c> que no está entre los oficiales de <see cref="TiposVehiculo"/> (comparado como Nexo: sin tildes ni mayúsculas, con <c>_</c>
+    /// y <c>-</c> como espacio) nace en cuarentena (<see cref="Cuarentenas"/>) y no se costea; una línea de Cupo (o sin clase de viaje)
+    /// sin vehículo queda <c>PorCostear</c>; las demás se costean con <see cref="FleteAutocosteo"/>.
+    /// </summary>
+    public bool AutoCostearSegunContrato { get; set; }
+
+    /// <summary>Líneas que nacieron en cuarentena (código de vehículo que Nexo no conoce) con <see cref="AutoCostearSegunContrato"/>.</summary>
+    public int Cuarentenas { get; private set; }
+
     /// <summary>HU-018.1 (#155): <c>scorePrioridad</c> que responde el alta (<c>CapturaResultDto</c>); <c>null</c> lo manda en null.</summary>
     public decimal? ScorePrioridadAlta { get; set; } = 0.5m;
 
@@ -194,6 +205,24 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public void AsignarVehiculo(string solicitudId, int indice, string tipoVehiculo, string? carroceria) =>
         Con(solicitudId, s => s.Lineas[indice] = s.Lineas[indice] with { TipoVehiculo = tipoVehiculo, Carroceria = carroceria });
+
+    /// <summary>Estado de cada línea de la solicitud en Nexo (<c>AutoResuelta</c> o <c>PorCostear</c>), en el orden de captura.</summary>
+    public IReadOnlyList<string> EstadosLinea(string solicitudId)
+    {
+        lock (_candado)
+        {
+            var s = _solicitudes[solicitudId];
+            return [.. Enumerable.Range(0, s.LineaIds.Count).Select(i => s.Cotizacion?.Fletes.ContainsKey(i) == true ? "AutoResuelta" : "PorCostear")];
+        }
+    }
+
+    /// <summary>Como Nexo compara los nombres (§3.4): sin tildes, en mayúsculas y con <c>_</c> y <c>-</c> como espacio.</summary>
+    private static string NormalizarComoNexo(string texto)
+    {
+        var sinTildes = new string([.. texto.Normalize(NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)]);
+        return string.Join(' ', sinTildes.Replace('_', ' ').Replace('-', ' ').ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
 
     /// <summary>Ids de las líneas de la solicitud en Nexo, en el orden de captura.</summary>
     public IReadOnlyList<string> LineasDe(string solicitudId)
@@ -509,6 +538,27 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 solicitud.Cotizacion.Fletes[i] = (FleteAutocosteo, null, null);
             }
         }
+        else if (AutoCostearSegunContrato && UltimaAlta?["lineas"] is JsonArray segunContrato)
+        {
+            solicitud.Cotizacion = new clsCotizacionFalsa(Guid.NewGuid().ToString());
+            for (var i = 0; i < segunContrato.Count; i++)
+            {
+                var vehiculo = segunContrato[i]?["tipoVehiculo"]?.GetValue<string>();
+                var clase = segunContrato[i]?["claseViaje"]?.GetValue<string>();
+                if (vehiculo is not null && !TiposVehiculo.Any(t => t.Oficial && t.Codigo is not null && NormalizarComoNexo(t.Codigo) == NormalizarComoNexo(vehiculo)))
+                {
+                    Cuarentenas++;
+                    continue;
+                }
+
+                if (vehiculo is null && (clase is null || clase == "Cupo"))
+                {
+                    continue; // "Línea sin vehículo: requiere consulta completa" (§4): PorCostear
+                }
+
+                solicitud.Cotizacion.Fletes[i] = (FleteAutocosteo, null, null);
+            }
+        }
 
         // Como Nexo: con más de 10 líneas el auto-costeo va en segundo plano (costeoEnProceso).
         var enProceso = numero > 10;
@@ -520,8 +570,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
             rutasCreadas = 0,
             vehiculosCreados = 0,
             scorePrioridad = ScorePrioridadAlta,
-            fletesCalculados = AutoCostear && !enProceso ? numero : 0,
-            lineasPorCostear = AutoCostear && !enProceso ? 0 : numero,
+            fletesCalculados = enProceso ? 0 : solicitud.Cotizacion?.Fletes.Count ?? 0,
+            lineasPorCostear = enProceso ? numero : numero - (solicitud.Cotizacion?.Fletes.Count ?? 0),
             costeoEnProceso = enProceso,
         });
     }
