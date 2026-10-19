@@ -165,6 +165,81 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         await VerificarContratoAsync(respuesta, "/web/metricas/regional", _get, HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task ElGerenteFiltraPorAnioYMesCompletosEnBogotaYElAnioReemplazaADesdeYHasta()
+    {
+        // HU-010.5 (#187).
+        var occidente = Regional();
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Anio");
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Anio");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2025-12-15");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2026-04-30T23:30:00-05:00"); // 2026-05-01 04:30 UTC
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, false, "2026-05-01T00:30:00-05:00");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-10-05");
+
+        var anio = await RegionalAsync(gloria, "anio=2026");
+        var abril = await RegionalAsync(gloria, "anio=2026&mes=4");
+        var mayo = await RegionalAsync(gloria, $"anio=2026&mes=5&usuario_id={ana.UsuarioId}");
+        var anterior = await RegionalAsync(gloria, "anio=2025");
+        var reemplaza = await RegionalAsync(gloria, "anio=2026&mes=4&desde=2026-05-01&hasta=2026-05-31");
+
+        PeriodoDe(anio).Should().Be(("2026-01-01", "2026-12-31"));
+        Cantidad(anio).Should().Be(3);
+        anio.GetProperty("serie_mensual").GetArrayLength().Should().Be(12);
+        PeriodoDe(abril).Should().Be(("2026-04-01", "2026-04-30"));
+        Cantidad(abril).Should().Be(1, "las 23:30 del 30 de abril en Bogotá son de abril aunque en UTC ya sea mayo");
+        PeriodoDe(mayo).Should().Be(("2026-05-01", "2026-05-31"));
+        Cantidad(mayo).Should().Be(1);
+        Cantidad(anterior).Should().Be(1);
+        PeriodoDe(reemplaza).Should().Be(("2026-04-01", "2026-04-30"));
+        Cantidad(reemplaza).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("mes=4")]
+    [InlineData("mes=4&desde=2026-01-01&hasta=2026-12-31")]
+    [InlineData("anio=&mes=4")]
+    [InlineData("anio=2026&mes=0")]
+    [InlineData("anio=2026&mes=13")]
+    [InlineData("anio=2026&mes=abc")]
+    [InlineData("anio=2019")]
+    [InlineData("anio=2099")]
+    [InlineData("anio=dosmil")]
+    public async Task UnAnioOMesInvalidoEnLaRegionalResponde400(string consulta)
+    {
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, Regional());
+
+        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/regional?{consulta}", gloria.Access);
+
+        var json = await VerificarContratoAsync(respuesta, "/web/metricas/regional", _get, HttpStatusCode.BadRequest);
+        json.GetProperty("error").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ElTableroDelComercialNoCambiaConAnioYMes()
+    {
+        // /web/metricas/comercial no tiene estos parámetros: se ignoran, incluso inválidos, y mandan desde/hasta.
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, true, "2026-03-10");
+
+        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/comercial?{Periodo}&anio=1999&mes=99", ana.Access);
+        var json = await VerificarContratoAsync(respuesta, "/web/metricas/comercial", _get, HttpStatusCode.OK);
+
+        PeriodoDe(json).Should().Be(("2026-01-01", "2026-12-31"));
+        Cantidad(json).Should().Be(1);
+    }
+
+    private async Task<JsonElement> RegionalAsync(clsSesionPrueba sesion, string consulta)
+    {
+        using var respuesta = await Api.EnviarAsync(_get, $"/web/metricas/regional?{consulta}", sesion.Access);
+        return await VerificarContratoAsync(respuesta, "/web/metricas/regional", _get, HttpStatusCode.OK);
+    }
+
+    private static (string?, string?) PeriodoDe(JsonElement json) =>
+        (json.GetProperty("periodo").GetProperty("desde").GetString(), json.GetProperty("periodo").GetProperty("hasta").GetString());
+
+    private static int Cantidad(JsonElement json) => json.GetProperty("indicadores").GetProperty("cantidad").GetInt32();
+
     /// <summary>Cotización del comercial con los valores del tablero fijados por SQL (moneda, TRM, precio, costo, resultado, fecha).</summary>
     private async Task<clsCotizacionPrueba> CrearAsync(Guid usuarioId, string moneda, decimal precio, decimal trm, decimal costo, bool? ganada, string creada)
     {
@@ -172,7 +247,7 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         await clsBaseDatosPruebas.EjecutarAsync(entorno.BaseDatos.CadenaCotifly, $"""
             UPDATE dbo_cotifly.CotizacionesSolicitud
             SET moneda = N'{moneda}', trmAplicada = {clsApiWebPruebas.Numero(trm)}, precioFinal = {clsApiWebPruebas.Numero(precio)},
-                ganada = {(ganada is null ? "NULL" : ganada.Value ? "1" : "0")}, createdAt = '{creada}T12:00:00-05:00'
+                ganada = {(ganada is null ? "NULL" : ganada.Value ? "1" : "0")}, createdAt = '{(creada.Contains('T', StringComparison.Ordinal) ? creada : creada + "T12:00:00-05:00")}'
             WHERE id = '{cotizacion.Id}';
             UPDATE dbo_cotifly.CotizacionLineasSolicitud SET costoFinal = {clsApiWebPruebas.Numero(costo)} WHERE cotizacionSolicitudId = '{cotizacion.Id}';
             """);

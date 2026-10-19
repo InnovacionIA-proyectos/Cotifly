@@ -2,8 +2,11 @@ using Cotifly.Dominio.Metricas;
 
 namespace Cotifly.Aplicacion.Metricas.DTOs;
 
-/// <summary>Parámetros de consulta del tablero tal como llegan (<c>desde</c>, <c>hasta</c>, <c>usuario_id</c>); los valida el caso de uso.</summary>
-public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = null, string? UsuarioId = null);
+/// <summary>
+/// Parámetros de consulta del tablero tal como llegan (<c>desde</c>, <c>hasta</c>, <c>usuario_id</c> y, solo en la regional, <c>anio</c> y
+/// <c>mes</c> de HU-010.5); los valida el caso de uso.
+/// </summary>
+public sealed record clsConsultaMetricas(string? Desde = null, string? Hasta = null, string? UsuarioId = null, string? Anio = null, string? Mes = null);
 
 /// <summary>Periodo aplicado (esquema <c>PeriodoMetricas</c>).</summary>
 public sealed record clsPeriodoMetricas(DateOnly Desde, DateOnly Hasta, string ZonaHoraria);

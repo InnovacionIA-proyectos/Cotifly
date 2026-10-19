@@ -2394,6 +2394,13 @@ regional: sus cotizaciones también cuentan y salen.
 |---|---|---|---|
 | `desde`, `hasta` | query | No | Como en 4.10 |
 | `usuario_id` | query | No | UUID de un comercial de la regional: filtra `indicadores`, `serie_mensual`, `concentracion_ciudades` y `por_linea_negocio` |
+| `anio` | query | No | HU-010.5 (#187). Entero de 2020 al año en curso más uno. El periodo es ese **año completo** (1 de enero a 31 de diciembre, fechas de Bogotá). Si llega, **reemplaza** a `desde`/`hasta` (se ignoran, no se combinan) |
+| `mes` | query | No | HU-010.5. Entero de 1 a 12; **exige `anio`**. El periodo es ese **mes completo** de `anio` (fechas de Bogotá) |
+
+Ejemplos: `?anio=2026` (todo 2026), `?anio=2026&mes=10` (octubre de 2026), `?anio=2026&mes=10&usuario_id=...`. `periodo` de la
+respuesta trae siempre el rango aplicado. 400 `ErrorWeb` si `mes` llega sin `anio`, si `mes` no es un entero de 1 a 12 o si `anio`
+no es un entero de 2020 al año en curso más uno. Sin `anio` ni `mes` todo sigue igual. `/web/metricas/comercial` no tiene estos
+parámetros.
 
 ```json
 {
@@ -3032,6 +3039,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 39 | **D2:** si la Mesa cambia el vehículo, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` del camión llegan en `null` | Cambia | Mostrar "—", nunca 0 % |
 | 40 | Tope del polling de `GET /web/cubicacion/{id}`: **4 minutos** | Cambia | Ajustar el tope (antes se sugerían 2-3 minutos) |
 | 41 | **D-1019-1:** `POST /web/cubicacion` valida `codigo_mercancia` contra el catálogo antes de llamar al cubicador: 400 `MERCANCIA_DESCONOCIDA` (desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE`, ahora con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`; el código se compara sin mayúsculas. En la captura, el rechazo del cubicador trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es | Agrega | Marcar el ítem con `detalle.item`, igual que D1 |
+| 42 | **HU-010.5 (#187):** `GET /web/metricas/regional` acepta `anio` (año completo) y `anio`+`mes` (mes completo), en fechas de Bogotá; si llega `anio`, reemplaza a `desde`/`hasta`. 400 si `mes` llega sin `anio`, está fuera de 1-12 o `anio` no está entre 2020 y el año en curso más uno | Agrega | Selector de año y mes en el tablero del gerente (#51); leer `periodo` de la respuesta |
 
 ---
 
@@ -3141,7 +3149,10 @@ fila_excel, campo, codigo, mensaje}`.
   `MERCANCIA_NO_CUBICABLE`, con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`. Antes llegaba sin `detalle.item`. Si el
   catálogo no responde, decide el cubicador como antes; su rechazo trae el ítem cuando se sabe cuál es. En la captura, ese rechazo
   trae también `detalle.ruta`.
-- Cambios con su "qué hacer": sección 7, filas 31 a 41.
+- **HU-010.5 (#187).** `GET /web/metricas/regional` acepta `anio` y `mes`: `?anio=2026` es el año completo y `?anio=2026&mes=10` ese
+  mes, en fechas de Bogotá. Si llega `anio`, reemplaza a `desde`/`hasta`. 400 si `mes` llega sin `anio`, está fuera de 1-12 o `anio`
+  no está entre 2020 y el año en curso más uno (sección 4.11.1). `/web/metricas/comercial` no cambia.
+- Cambios con su "qué hacer": sección 7, filas 31 a 42.
 
 **PR #178 (commit `fa96f5e`, 2026-10-15).** Esta versión cierra las diferencias que había entre el código, el openapi y las guías del
 frontend. Este documento ya refleja todo lo siguiente:

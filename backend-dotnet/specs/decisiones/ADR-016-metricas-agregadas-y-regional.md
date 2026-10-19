@@ -93,6 +93,7 @@ Otras reglas:
 - `desde` y `hasta` opcionales, fechas `AAAA-MM-DD` de America/Bogota, ambas incluidas: de `desde` 00:00 a `hasta` 24:00 en la zona de negocio (`IClsCalendarioNegocio`), comparado con la primera creación de la cadena (sección 2).
 - Por defecto: del 1 de enero del año en curso a hoy (Bogotá). Se eligió el año en curso y no "todo" para que la serie mensual tenga un tamaño acotado y el tablero cargue rápido.
 - `hasta < desde`, fechas mal formadas o un rango de más de 3 años responden 400.
+- **Año y mes (HU-010.5, #187), solo en `/web/metricas/regional`:** `?anio=2026` es el año completo (2026-01-01 a 2026-12-31) y `?anio=2026&mes=10` ese mes completo, en las mismas fechas de Bogotá que `desde`/`hasta` (el periodo se resuelve en fechas de negocio y `IClsCalendarioNegocio.InicioDelDia` da los límites, así que un mes termina a las 24:00 de Bogotá de su último día). Si llega `anio`, reemplaza a `desde`/`hasta`, que se ignoran: no se combinan, para que no haya que definir intersecciones. `mes` sin `anio`, `mes` fuera de 1 a 12, o `anio` fuera de 2020 al año en curso (Bogotá) más uno, o que no sean enteros, responden 400 `ErrorWeb` (`SOLICITUD_INVALIDA`, como el resto de parámetros del tablero). El límite de 3 años no aplica porque un año completo nunca lo supera. `/web/metricas/comercial` no los acepta: el tablero del comercial no tiene ese selector y su comportamiento no cambia.
 
 ### 6. Regional del usuario
 

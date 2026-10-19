@@ -29,7 +29,9 @@ public sealed class clsMetricasController(
     }
 
     /// <summary>
-    /// 200 <c>MetricasRegional</c>; 400 fechas o <c>usuario_id</c> inválidos; 403 si no es gerente; 404 comercial fuera de la
+    /// 200 <c>MetricasRegional</c>. HU-010.5 (#187): <c>anio</c> (año completo) y <c>anio</c>+<c>mes</c> (mes completo), en fechas de
+    /// Bogotá, reemplazan a <c>desde</c>/<c>hasta</c>. 400 fechas, <c>anio</c>, <c>mes</c> o <c>usuario_id</c> inválidos (o <c>mes</c> sin
+    /// <c>anio</c>); 403 si no es gerente; 404 comercial fuera de la
     /// regional; 409 <c>REGIONAL_NO_ASIGNADA</c>; 503 <c>REGIONAL_NO_DISPONIBLE</c>.
     /// </summary>
     [HttpGet("regional")]
@@ -44,9 +46,11 @@ public sealed class clsMetricasController(
         [FromQuery] string? desde,
         [FromQuery] string? hasta,
         [FromQuery(Name = "usuario_id")] string? usuarioId,
+        [FromQuery] string? anio,
+        [FromQuery] string? mes,
         CancellationToken cancellationToken)
     {
-        var resultado = await tablero.ObtenerRegionalAsync(new clsConsultaMetricas(desde, hasta, usuarioId), cancellationToken);
+        var resultado = await tablero.ObtenerRegionalAsync(new clsConsultaMetricas(desde, hasta, usuarioId, anio, mes), cancellationToken);
         return resultado.Coincidir<IActionResult>(m => Ok(m), Error);
     }
 }

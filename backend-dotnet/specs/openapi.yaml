@@ -639,6 +639,12 @@ paths:
           (valor cotizado de las ganadas, no dinero recaudado).
         - La regional resuelta se reutiliza 60 s por usuario (los cambios del selector no vuelven a consultar
           `DimEjecutivo`); los fallos no se guardan.
+        - **Filtro por año y mes (HU-010.5, #187).** `?anio=2026` es el año completo (2026-01-01 a 2026-12-31) y
+          `?anio=2026&mes=10` ese mes completo (2026-10-01 a 2026-10-31), en fechas de America/Bogota como `desde`/`hasta`
+          (de 00:00 del primer día a 24:00 del último, UTC−5). Si llega `anio`, **reemplaza** a `desde`/`hasta`, que se
+          ignoran (no se combinan). `periodo` de la respuesta trae el rango aplicado. 400 `ErrorWeb` si `mes` llega sin
+          `anio`, si `mes` no es un entero de 1 a 12 o si `anio` no es un entero de 2020 al año en curso más uno. Sin
+          `anio` ni `mes`, todo sigue igual. Solo en este endpoint: `/web/metricas/comercial` no los acepta (los ignora).
       security:
         - bearer: []
       parameters:
@@ -651,6 +657,27 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: anio
+          in: query
+          required: false
+          description: |
+            HU-010.5 (#187). Año completo del periodo (fechas de America/Bogota), de 2020 al año en curso más uno. Si llega,
+            reemplaza a `desde`/`hasta` (se ignoran). Con `mes`, solo ese mes de ese año.
+          schema:
+            type: integer
+            minimum: 2020
+          example: 2026
+        - name: mes
+          in: query
+          required: false
+          description: |
+            HU-010.5 (#187). Mes del periodo (1 a 12) dentro de `anio`; exige `anio` (sin él, 400). El periodo es el mes
+            completo en fechas de America/Bogota.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 10
       responses:
         '200':
           description: Indicadores de la regional (o del comercial filtrado)
@@ -761,7 +788,10 @@ paths:
                      valor_ganado_cop: 4800000.00, ganancias: 800000.00, margen_ponderado: 0.1518, ajustes_margen: 1,
                      desviacion_promedio_margen: -0.01}
         '400':
-          description: Fechas inválidas (como en `/web/metricas/comercial`) o `usuario_id` que no es un UUID
+          description: |
+            Fechas inválidas (como en `/web/metricas/comercial`), `usuario_id` que no es un UUID o, desde HU-010.5, `anio`
+            fuera de 2020 al año en curso más uno (o que no es un entero), `mes` fuera de 1 a 12 (o que no es un entero) o
+            `mes` sin `anio`
           content:
             application/json:
               schema:
