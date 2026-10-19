@@ -42,8 +42,12 @@ public interface IClsValidadorCatalogosCaptura
 /// <summary>
 /// Resultado de <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>: por línea, los campos que no son códigos de catálogo, y
 /// <see cref="NoDisponible"/> si <c>tipo_vehiculo</c>/<c>clase_viaje</c> no se pudieron validar (catálogo maestro caído y sin copia).
+/// <see cref="Canonicas"/> (D-1019B-2, #188 M1): las mismas líneas con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en el
+/// catálogo de Nexo (<c>2s2</c>/<c>furgon</c> → <c>2S2</c>/<c>FURGON</c>), para que el camión del respaldo se guarde y se muestre con la
+/// misma escritura que viaja a Nexo; <c>null</c> = sin cambios.
 /// </summary>
-public sealed record clsValidacionCatalogoLineas(IReadOnlyList<IReadOnlyList<clsErrorCampo>> Errores, clsErrorDominio? NoDisponible);
+public sealed record clsValidacionCatalogoLineas(
+    IReadOnlyList<IReadOnlyList<clsErrorCampo>> Errores, clsErrorDominio? NoDisponible, IReadOnlyList<clsLineaSolicitudCosteo>? Canonicas = null);
 
 /// <summary>Implementación de <see cref="IClsValidadorCatalogosCaptura"/>.</summary>
 /// <remarks>
@@ -129,7 +133,24 @@ public sealed class clsValidadorCatalogosCaptura(IClsCatalogosMaestrosProvider m
         IReadOnlyList<IReadOnlyList<clsErrorCampo>> errores = [.. lineas.Select(l => l is null
             ? (IReadOnlyList<clsErrorCampo>)[]
             : [.. ErroresEnCodigo(l), .. catalogos is null ? [] : ErroresMaestros(l, catalogos)])];
-        return new clsValidacionCatalogoLineas(errores, noDisponible);
+        return new clsValidacionCatalogoLineas(errores, noDisponible, [.. lineas.Select(l => l is null ? l! : Canonica(l, catalogos))]);
+    }
+
+    /// <summary>
+    /// D-1019B-2 (#188 M1): la línea con <c>tipo_vehiculo</c> y <c>carroceria</c> escritos como en Nexo (la equivalencia de
+    /// <see cref="clsCodigosConocidosNexo"/>), la misma escritura con la que viajan. Un código que no se puede resolver (o el tipo sin el
+    /// catálogo maestro) queda recortado y tal cual: ya trae su error.
+    /// </summary>
+    public static clsLineaSolicitudCosteo Canonica(clsLineaSolicitudCosteo linea, clsCatalogosMaestros? catalogos)
+    {
+        ArgumentNullException.ThrowIfNull(linea);
+        var tipo = Recortar(linea.TipoVehiculo);
+        var carroceria = Recortar(linea.Carroceria);
+        var tipoNexo = tipo is null || catalogos is null ? tipo : clsCodigosConocidosNexo.Resolver(catalogos.TiposVehiculo.Select(t => t.Valor), tipo) ?? tipo;
+        var carroceriaNexo = carroceria is null ? null : clsCodigosConocidosNexo.Carroceria(carroceria) ?? carroceria;
+        return string.Equals(tipoNexo, linea.TipoVehiculo, StringComparison.Ordinal) && string.Equals(carroceriaNexo, linea.Carroceria, StringComparison.Ordinal)
+            ? linea
+            : linea with { TipoVehiculo = tipoNexo, Carroceria = carroceriaNexo };
     }
 
     /// <summary>Tipología (enum) y carrocería (lista de carrocerías de Nexo, con la equivalencia de <see cref="clsCodigosConocidosNexo"/>).</summary>

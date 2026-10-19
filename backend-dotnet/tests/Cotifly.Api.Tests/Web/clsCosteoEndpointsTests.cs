@@ -354,6 +354,28 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task D1019B2_ElVehiculoDigitadoSeGuardaEscritoComoEnElCatalogoDeNexo()
+    {
+        // E2E real 2026-10-19 (D-1019B-2, #188 M1): " 3s3 "/"furgón" se aceptan por la equivalencia de Nexo y viajan como 3S3/FURGON; también
+        // se guardan así (antes quedaban como los digitó el comercial y así los mostraba GET .../costeo).
+        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\" 3s3 \",\"carroceria\":\"furgón\",\"tipologia\":", StringComparison.Ordinal);
+
+        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("3S3");
+        _nexo.UltimaAlta!["lineas"]![0]!["carroceria"]!.GetValue<string>().Should().Be("FURGON");
+        var guardado = await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+            "SELECT CONCAT(v.tipoVehiculo, '|', v.carroceria) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = v.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
+        string.Equals(guardado, "3S3|FURGON", StringComparison.Ordinal).Should().BeTrue($"se guarda como en Nexo (se guardó '{guardado}')");
+        using var costeo = await _api.EnviarAsync(HttpMethod.Get, $"/web/cotizaciones/{folio}/costeo", ana.Access);
+        var texto = await costeo.Content.ReadAsStringAsync(Ct);
+        texto.Should().Contain("\"3S3\"").And.NotContain("3s3").And.NotContain("furgón");
+    }
+
+    [Fact]
     public async Task ConLaBanderaDeRespaldoUnVehiculoFueraDelCatalogoEsCodigoNoCatalogo()
     {
         using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "true" });

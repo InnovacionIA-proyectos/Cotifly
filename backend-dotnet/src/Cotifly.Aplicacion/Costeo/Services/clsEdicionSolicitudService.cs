@@ -806,17 +806,25 @@ public sealed class clsEdicionSolicitudService(
 
     /// <summary>
     /// ¿La edición deja todo como está? Compara el encabezado, la moneda y, ruta por ruta y en orden, la misma ruta guardada, los municipios
-    /// por id, las condiciones, las horas, los valores, el peso, las mercancías (por código, cantidad, medidas y peso) y los conexos (id y
-    /// cantidad). Los nombres copiados de los catálogos no cuentan.
+    /// por id, las condiciones, las horas, los valores, el peso, las mercancías (en orden, por código, cantidad, medidas y peso) y los
+    /// conexos (id y cantidad, sin importar el orden). Los nombres copiados de los catálogos no cuentan.
+    /// <para>
+    /// D-1019B-1 (E2E 2026-10-19): la comparación es por VALOR, nunca por el texto. Un <c>decimal</c> leído de SQL Server conserva la escala
+    /// de la columna (<c>36666.60</c>) y el que llega en el JSON reenviado no (<c>36666.6</c>): son iguales con <c>==</c> pero no como texto.
+    /// El <c>deadline</c> se compara como instante (el cuerpo puede traerlo en otra zona horaria), los códigos sin mayúsculas ni espacios, un
+    /// texto vacío como <c>null</c> y la moneda guardada vacía como pesos (la que muestra el GET).
+    /// </para>
     /// </summary>
     private static bool MismoContenido(
         clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
         IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo)
     {
         var guardadas = cotizacion.RutasOrdenadas;
-        if (guardadas.Count != validadas.Count || cotizacion.Deadline != encabezado.Deadline
-            || !string.Equals(cotizacion.Notas, Limpio(encabezado.Notas), StringComparison.Ordinal)
-            || !string.Equals(cotizacion.Moneda, moneda, StringComparison.OrdinalIgnoreCase))
+        if (guardadas.Count != validadas.Count || entradas.Count != validadas.Count
+            || !MismoInstante(cotizacion.Deadline, encabezado.Deadline)
+            || !string.Equals(Limpio(cotizacion.Notas), Limpio(encabezado.Notas), StringComparison.Ordinal)
+            || !string.Equals(Limpio(cotizacion.Moneda) ?? clsCotizacionSolicitud.MonedaPesos, Limpio(moneda) ?? clsCotizacionSolicitud.MonedaPesos,
+                StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -834,9 +842,9 @@ public sealed class clsEdicionSolicitudService(
                 HorasCargue = validadas[i].Linea.HorasCargue ?? encabezado.HorasCargue,
                 HorasDescargue = validadas[i].Linea.HorasDescargue ?? encabezado.HorasDescargue,
             };
-            var conexos = (validadas[i].Conexos ?? []).Select(c => (Limpio(c?.IdServicioConexo)?.ToUpperInvariant(), c?.Cantidad));
-            if (Contenido(guardada.ALinea(), ConexosEditables(guardada, catalogo).Select(c => ((string?)c.IdServicioConexo.ToUpperInvariant(), (decimal?)c.Cantidad)))
-                != Contenido(nueva, conexos))
+            var conexosNuevos = (validadas[i].Conexos ?? []).Where(c => c is not null).Select(c => (c!.IdServicioConexo, (decimal?)c.Cantidad));
+            var conexosGuardados = ConexosEditables(guardada, catalogo).Select(c => ((string?)c.IdServicioConexo, (decimal?)c.Cantidad));
+            if (!MismaRuta(guardada.ALinea(), nueva) || !MismosConexos(conexosGuardados, conexosNuevos))
             {
                 return false;
             }
@@ -845,16 +853,47 @@ public sealed class clsEdicionSolicitudService(
         return true;
     }
 
-    private static string Contenido(clsLineaSolicitudCosteo l, IEnumerable<(string? Id, decimal? Cantidad)> conexos) =>
-        JsonSerializer.Serialize(new object?[]
-        {
-            l.OrigenMunicipioId, l.DestinoMunicipioId, Texto(l.Tipologia), Texto(l.ClaseViaje), Texto(l.ClaseContenedor), l.Exclusivo, l.Consolidado,
+    /// <summary>Dos instantes iguales aunque vengan en zonas horarias distintas (<see cref="DateTimeOffset"/> compara en UTC).</summary>
+    public static bool MismoInstante(DateTimeOffset? a, DateTimeOffset? b) =>
+        a is null || b is null ? a is null && b is null : a.Value.UtcDateTime == b.Value.UtcDateTime;
+
+    /// <summary>
+    /// ¿La misma ruta? Por valor: los decimales con <c>==</c> (la escala no cuenta), los códigos sin mayúsculas ni espacios, y
+    /// <c>retorna_contenedor</c>/<c>levante_contenedor_diferente</c> sin valor como <c>false</c> (así se envían a Nexo).
+    /// </summary>
+    public static bool MismaRuta(clsLineaSolicitudCosteo a, clsLineaSolicitudCosteo b) =>
+        Clave(a) == Clave(b)
+        && a.Posiciones.Count == b.Posiciones.Count
+        && a.Posiciones.Zip(b.Posiciones).All(p => ClaveMercancia(p.First) == ClaveMercancia(p.Second));
+
+    /// <summary>¿Los mismos conexos? Por id (sin mayúsculas ni espacios) con la cantidad sumada por id; el orden no cuenta.</summary>
+    public static bool MismosConexos(IEnumerable<(string? Id, decimal? Cantidad)> a, IEnumerable<(string? Id, decimal? Cantidad)> b)
+    {
+        static Dictionary<string, decimal?> Agrupar(IEnumerable<(string? Id, decimal? Cantidad)> conexos) =>
+            conexos.Select(c => (Id: Texto(c.Id) ?? string.Empty, c.Cantidad))
+                .GroupBy(c => c.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Any(c => c.Cantidad is null) ? null : g.Sum(c => c.Cantidad), StringComparer.Ordinal);
+
+        var x = Agrupar(a);
+        var y = Agrupar(b);
+        return x.Count == y.Count && x.All(par => y.TryGetValue(par.Key, out var cantidad) && cantidad == par.Value);
+    }
+
+    /// <summary>Lo que se compara de una ruta (sin las mercancías). Un <c>record</c> compara los <c>decimal</c> por valor, no por escala.</summary>
+    private sealed record clsClaveRuta(
+        int? Origen, int? Destino, string? Tipologia, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
+        bool RetornaContenedor, int? CiudadDevolucion, bool LevanteDiferente, int? CiudadLevante, decimal? ValorLevante, decimal? HorasCargue,
+        decimal? HorasDescargue, decimal? PesoKg, decimal? ValorMercancia);
+
+    private sealed record clsClaveMercancia(string? Codigo, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
+
+    private static clsClaveRuta Clave(clsLineaSolicitudCosteo l) =>
+        new(l.OrigenMunicipioId, l.DestinoMunicipioId, Texto(l.Tipologia), Texto(l.ClaseViaje), Texto(l.ClaseContenedor), l.Exclusivo, l.Consolidado,
             l.RetornaContenedor ?? false, l.CiudadDevolucionMunicipioId, l.LevanteContenedorDiferente ?? false, l.CiudadLevanteMunicipioId,
-            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg,
-            l.ValorMercancia,
-            l.Posiciones.Select(p => new object?[] { Texto(p.CodigoMercancia), p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg }).ToArray(),
-            conexos.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => new object?[] { c.Id, c.Cantidad }).ToArray(),
-        }, _jsonHuella);
+            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg, l.ValorMercancia);
+
+    private static clsClaveMercancia? ClaveMercancia(clsPosicionCarga? p) =>
+        p is null ? null : new(Texto(p.CodigoMercancia), p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg);
 
     private static string? Texto(string? valor) => Limpio(valor)?.ToUpperInvariant();
 

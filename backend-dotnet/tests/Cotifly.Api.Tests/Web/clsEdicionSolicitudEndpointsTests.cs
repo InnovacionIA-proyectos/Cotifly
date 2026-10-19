@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -21,7 +22,11 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     private static readonly HttpMethod _get = HttpMethod.Get;
     private static readonly HttpMethod _put = HttpMethod.Put;
     private static readonly HttpMethod _post = HttpMethod.Post;
-    private readonly clsNexoFalso _nexo = new clsNexoFalso().ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.");
+    private const string Cargue = "8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d";
+    private const string Almacenamiento = "1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d";
+    private readonly clsNexoFalso _nexo = new clsNexoFalso().ConCliente(clsCosteoEndpointsTests.Nit, "LONGYIN S.A.S.")
+        .ConServicioConexo(Cargue, "CAR-01", "Cargue en puerto", "logistico", "UND", 150_000m)
+        .ConServicioConexo(Almacenamiento, "ALM-01", "Almacenamiento", "logistico", "Día", 120_000m);
     private readonly clsBaseDatosPruebas _baseDatos;
     private readonly clsApiWebPruebas _api;
 
@@ -216,6 +221,68 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
     }
 
     [Fact]
+    public async Task D1019B1_ElGetReenviadoComoLoReescribeUnClienteEsSinCambiosYNoTocaNexo()
+    {
+        // E2E real 2026-10-19 (D-1019B-1): el decimal leído de SQL Server conserva la escala de la columna (28500.50) y el que reenvía un
+        // cliente que reescribe el JSON no (28500.5); el deadline puede volver en otra zona y los conexos en otro orden. Es la misma
+        // solicitud: 200 sin_cambios, sin rechazar ni capturar en Nexo, sin subir la versión.
+        var (sesion, folio) = await EnviarAsync(ConConexos());
+        var (modelo, etag) = await ModeloAsync(sesion, folio);
+        modelo["rutas"]![0]!["peso_kg"]!.ToJsonString().Should().Contain(".50", "el GET devuelve la escala de la columna DECIMAL de SQL Server");
+        var escrituras = EscriturasNexo();
+
+        using var respuesta = await EditarAsync(sesion, folio, ComoLoReenviaUnCliente(modelo), etag);
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _put, HttpStatusCode.OK);
+        json.GetProperty("sin_cambios").GetBoolean().Should().BeTrue(json.ToString());
+        json.GetProperty("avisos")[0].GetProperty("codigo").GetString().Should().Be("SIN_CAMBIOS");
+        _nexo.IntentosRechazo.Should().Be(0, "sin cambios no se rechaza nada en Nexo");
+        _nexo.SolicitudesCreadas.Should().ContainSingle("sin cambios no se captura otra solicitud");
+        EscriturasNexo().Should().Be(escrituras, "ninguna escritura a Nexo");
+        respuesta.Headers.ETag!.Tag.Should().Be(etag, "la versión no cambia");
+
+        // El cuerpo tal cual (con la escala del GET) también es sin cambios.
+        using var tal = await EditarAsync(sesion, folio, modelo, etag);
+        (await VerificarContratoAsync(tal, Ruta, _put, HttpStatusCode.OK)).GetProperty("sin_cambios").GetBoolean().Should().BeTrue();
+        _nexo.IntentosRechazo.Should().Be(0);
+        _nexo.SolicitudesCreadas.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task D1019B1_UnKiloMasSiEsUnCambioAunqueElRestoVengaConOtraEscala()
+    {
+        var (sesion, folio) = await EnviarAsync(ConConexos());
+        var (modelo, etag) = await ModeloAsync(sesion, folio);
+        var cuerpo = ComoLoReenviaUnCliente(modelo);
+        cuerpo["rutas"]![0]!["peso_kg"] = cuerpo["rutas"]![0]!["peso_kg"]!.GetValue<decimal>() + 1m;
+
+        using var respuesta = await EditarAsync(sesion, folio, cuerpo, etag);
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _put, HttpStatusCode.OK);
+        json.GetProperty("sin_cambios").GetBoolean().Should().BeFalse();
+        json.GetProperty("modo").GetString().Should().Be("reemplazo");
+        json.GetProperty("rutas_replanificadas").EnumerateArray().Select(e => e.GetInt32()).Should().Equal([1], "el peso viaja al cubicador");
+        _nexo.IntentosRechazo.Should().Be(1);
+        _nexo.SolicitudesCreadas.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task D1019B1_CambiarLaCantidadDeUnConexoSiEsUnCambioYNoRecubica()
+    {
+        var (sesion, folio) = await EnviarAsync(ConConexos());
+        var (modelo, etag) = await ModeloAsync(sesion, folio);
+        var cuerpo = ComoLoReenviaUnCliente(modelo);
+        cuerpo["rutas"]![0]!["servicios_conexos"]![0]!["cantidad"] = 3;
+
+        using var respuesta = await EditarAsync(sesion, folio, cuerpo, etag);
+
+        var json = await VerificarContratoAsync(respuesta, Ruta, _put, HttpStatusCode.OK);
+        json.GetProperty("sin_cambios").GetBoolean().Should().BeFalse();
+        json.GetProperty("rutas_replanificadas").GetArrayLength().Should().Be(0, "un conexo no cambia la carga");
+        _nexo.IntentosRechazo.Should().Be(1);
+    }
+
+    [Fact]
     public async Task CambiarElClienteEsCampoNoEditable()
     {
         var (sesion, folio) = await EnviarAsync();
@@ -277,10 +344,10 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
         _nexo.SolicitudesCreadas.Should().HaveCount(2);
     }
 
-    private async Task<(clsSesionPrueba Sesion, string Folio)> EnviarAsync()
+    private async Task<(clsSesionPrueba Sesion, string Folio)> EnviarAsync(string? formulario = null)
     {
         var sesion = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
-        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, clsCosteoEndpointsTests.Formulario());
+        using var respuesta = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", sesion.Access, formulario ?? clsCosteoEndpointsTests.Formulario());
         var json = await VerificarContratoAsync(respuesta, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
         return (sesion, json.GetProperty("folio").GetString()!);
     }
@@ -325,6 +392,76 @@ public sealed class clsEdicionSolicitudEndpointsTests : IDisposable
         peticion.Content = new StringContent(cuerpo.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
         return await _api.Cliente.SendAsync(peticion, Ct);
     }
+
+    /// <summary>El formulario de siempre con dos conexos en la ruta.</summary>
+    private static string ConConexos()
+    {
+        var formulario = JsonNode.Parse(clsCosteoEndpointsTests.Formulario())!;
+        formulario["rutas"]![0]!["servicios_conexos"] = new JsonArray(
+            new JsonObject { ["id_servicio_conexo"] = Cargue, ["cantidad"] = 2 },
+            new JsonObject { ["id_servicio_conexo"] = Almacenamiento, ["cantidad"] = 1.5m });
+        return formulario.ToJsonString();
+    }
+
+    /// <summary>
+    /// El modelo del GET como lo reenvía un cliente que reescribe el JSON (JavaScript, Python): los números sin ceros a la derecha
+    /// (<c>28500.50</c> → <c>28500.5</c>), el <c>deadline</c> en otra zona horaria (el mismo instante), los conexos en otro orden y la
+    /// moneda en minúsculas.
+    /// </summary>
+    private static JsonNode ComoLoReenviaUnCliente(JsonNode modelo)
+    {
+        var copia = modelo.DeepClone();
+        SinCeros(copia);
+        if (copia["deadline"]?.GetValue<string>() is { } deadline)
+        {
+            copia["deadline"] = DateTimeOffset.Parse(deadline, CultureInfo.InvariantCulture).ToOffset(TimeSpan.FromHours(2)).ToString("o", CultureInfo.InvariantCulture);
+        }
+
+        if (copia["moneda"]?.GetValue<string>() is { } moneda)
+        {
+            copia["moneda"] = moneda.ToLowerInvariant();
+        }
+
+        foreach (var ruta in copia["rutas"]!.AsArray())
+        {
+            if (ruta!["servicios_conexos"] is JsonArray conexos && conexos.Count > 1)
+            {
+                ruta["servicios_conexos"] = new JsonArray([.. conexos.Reverse().Select(c => c!.DeepClone())]);
+            }
+        }
+
+        return copia;
+    }
+
+    private static void SinCeros(JsonNode? nodo)
+    {
+        switch (nodo)
+        {
+            case JsonObject objeto:
+                foreach (var (clave, valor) in objeto.ToList())
+                {
+                    if (valor is JsonValue v && v.GetValueKind() == JsonValueKind.Number)
+                    {
+                        objeto[clave] = JsonValue.Create(decimal.Parse(v.GetValue<decimal>().ToString("G29", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        SinCeros(valor);
+                    }
+                }
+
+                break;
+            case JsonArray arreglo:
+                foreach (var elemento in arreglo)
+                {
+                    SinCeros(elemento);
+                }
+
+                break;
+        }
+    }
+
+    private int EscriturasNexo() => _nexo.Peticiones.Count(p => p.Metodo != _get);
 
     private Task<string?> RutaIdAsync(string folio, int orden) =>
         EscalarAsync<string>("SELECT LOWER(CAST(l.id AS nvarchar(36))) FROM dbo_cotifly.CotizacionLineasSolicitud l JOIN dbo_cotifly.CotizacionesSolicitud c "
