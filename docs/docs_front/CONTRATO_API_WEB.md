@@ -71,7 +71,7 @@ ClientePro (ya autenticado)
 | `GET /web/admin/lineas-negocio` | gerente_comercial | Políticas de margen |
 | `PUT /web/admin/lineas-negocio/{id}` | gerente_comercial | Edita margen, método y estado |
 | `GET /web/metricas/comercial` | ambos | Tablero del comercial (HU-010.2): indicadores y serie mensual de sus cotizaciones. Ver §3.1 |
-| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id`, con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
+| `GET /web/metricas/regional` | gerente_comercial | Tablero del gerente (HU-010.3): su regional, filtrable por `usuario_id` y por `anio`/`mes` (HU-010.5), con lista de comerciales, serie mensual y concentración por ciudad. Ver §3.1 |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | **Retirados (HU-014.3, #152):** responden 404. Eran el borrador del tablero; usar `/web/metricas/comercial` y `/regional` |
 | `GET /pdfs/{archivo}` | dueño o gerente de su regional | Descarga del PDF. Exige `Authorization`, así que se baja con HttpClient como blob, no con un `<a href>`. El enlace firmado `?t=` (ADR-011) se retiró en #105 junto con Google Chat |
 
@@ -86,6 +86,7 @@ Todos los campos de `/web/*` van en snake_case, incluidos los de los endpoints n
 Decisiones completas en `backend-dotnet/specs/decisiones/ADR-016-metricas-agregadas-y-regional.md`; esquemas y ejemplos en el tag `metricas` del spec.
 
 **Parámetros.** `desde` y `hasta` son opcionales (`AAAA-MM-DD`, fechas de Bogotá, ambas incluidas). Por defecto van del 1 de enero del año en curso a hoy; máximo 3 años. En `/regional`, `usuario_id` es opcional (UUID de un comercial de la regional). Fechas mal formadas, `hasta < desde` o un `usuario_id` que no es UUID: 400.
+**Año y mes (HU-010.5, #187), solo en `/regional`:** `?anio=2026` es el año completo y `?anio=2026&mes=10` ese mes completo (fechas de Bogotá). Si llega `anio`, reemplaza a `desde`/`hasta` (se ignoran). `mes` sin `anio`, `mes` fuera de 1 a 12 o `anio` fuera de 2020 al año en curso más uno (o no enteros): 400. Sin `anio` ni `mes`, nada cambia; `/comercial` no los acepta.
 
 **Quién ve qué.** El rol sale del token de la sesión (claim `rol`, emitido en el login SSO con la verificación doble de ClientePro); no se lee de ninguna columna.
 - `/comercial`: las cotizaciones propias (también para un gerente, que cotiza).

@@ -468,7 +468,7 @@ export function esErrorNegocio(b: unknown): b is ErrorNegocio {
 | `POST .../resultado` | 400 (`resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500), 404 | 400 `COSTEO_NEXO_RECHAZADA`; 409 `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `SOLICITUD_NO_TRANSICIONABLE`, `COSTEO_NO_LISTO`; 503 `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` |
 | `PUT /web/admin/lineas-negocio/{id}` | 400, 403, 404 | — |
 | `GET /web/metricas/comercial` | 400 (fechas), 401 | — |
-| `GET /web/metricas/regional` | 400 (fechas o `usuario_id`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
+| `GET /web/metricas/regional` | 400 (fechas, `usuario_id`, `anio` o `mes`; `mes` sin `anio`), 401, 403, 404 `Comercial no encontrado en tu regional.` | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /web/cotizaciones/regional` | 401, 403 | 409 `REGIONAL_NO_ASIGNADA`, 503 `REGIONAL_NO_DISPONIBLE` |
 | `GET /pdfs/{archivo}` | 401, 404 (JSON aunque se pidió un blob) | — |
 
@@ -1347,7 +1347,7 @@ Fuentes: `openapi.yaml` (tag `metricas`), `docs/docs_front/CONTRATO_API_WEB.md` 
 | Endpoint | Rol | Uso | Estado |
 |---|---|---|---|
 | `GET /web/metricas/comercial?desde&hasta` | `comercial` y `gerente_comercial` (política `Comercial`) | Tablero del comercial (HU-010.2, #50): **las cotizaciones propias**. El gerente también ve aquí solo las suyas | En QA |
-| `GET /web/metricas/regional?desde&hasta&usuario_id` | Solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 | Tablero del gerente (HU-010.3, #51): **su regional**, filtrable por comercial | En QA |
+| `GET /web/metricas/regional?desde&hasta&usuario_id&anio&mes` | Solo `gerente_comercial` (política `GerenteComercial`); un `comercial` recibe 403 | Tablero del gerente (HU-010.3, #51): **su regional**, filtrable por comercial | En QA |
 | `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` | — | Borrador anterior. **Retirados** en HU-014.3 (#152): responden 404 | Retirados |
 
 El rol sale del claim `rol` del access token (login SSO con la verificación doble, ADR-009) y el caso de uso lo revalida. No se lee de `UsuariosWeb` ni se pide a ClientePro en cada consulta.
@@ -1555,6 +1555,7 @@ Comercial sin cotizaciones (200, estado vacío; construido con las reglas del co
 - **Caché de 60 s:** la regional resuelta (y los miembros de cada regional) se reutilizan 60 s por proceso. Cambiar el selector no vuelve a consultar `DimEjecutivo`. Los fallos no se guardan, así que un reintento tras un 503 sí vuelve a consultar. Un cambio de regional hecho por el DBA puede tardar hasta 60 s en verse.
 - **El gerente es miembro de su regional:** aparece en `comerciales[]` con `rol: "gerente_comercial"` y sus propias cotizaciones **cuentan en el agregado** de la regional.
 - `usuario_id` filtra `indicadores`, `serie_mensual` y `concentracion_ciudades`. **`comerciales` siempre trae a todos** los usuarios de la regional (ordenados por nombre), cada uno con su `rol` y sus indicadores del periodo, aunque se filtre.
+- **Año y mes (HU-010.5, #187):** `?anio=2026` es el año completo y `?anio=2026&mes=10` ese mes completo, en fechas de Bogotá. Si llega `anio`, **reemplaza** a `desde`/`hasta` (se ignoran, no se combinan). 400 `ErrorWeb` si `mes` llega sin `anio`, si `mes` no es un entero de 1 a 12 o si `anio` no es un entero de 2020 al año en curso más uno. Sin `anio` ni `mes` nada cambia. Mostrar el rango con `periodo` de la respuesta. Solo en este endpoint: `/web/metricas/comercial` no tiene estos parámetros.
 - 200 (`MetricasRegional`):
 
 | Campo | Tipo | Significado |

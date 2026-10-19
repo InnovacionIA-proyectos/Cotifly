@@ -132,3 +132,69 @@ Característica: Tablero de métricas del comercial y del gerente comercial
     Dado el gerente comercial "hugo" con sesión y sin regional
     Cuando "hugo" consulta las métricas de su regional del "2026-01-01" al "2026-12-31"
     Entonces la respuesta tiene el estado 409 con el código de negocio "REGIONAL_NO_ASIGNADA"
+
+  # HU-010.5 (#187): filtro por año y mes en el tablero del gerente. Fechas de America/Bogota; anio reemplaza a desde/hasta.
+  Escenario: El gerente filtra el tablero por un año completo
+    Cuando "gloria" consulta las métricas de su regional del año "2026"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y el periodo de las métricas va del "2026-01-01" al "2026-12-31"
+    Y los indicadores son:
+      | campo    | valor |
+      | cantidad | 5     |
+      | ganadas  | 3     |
+    Y la serie mensual tiene el mes "2026-12" con 0 cotizaciones y 0 ganadas
+
+  Escenario: El gerente filtra el tablero por un mes completo
+    Cuando "gloria" consulta las métricas de su regional del mes "4" de "2026"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y el periodo de las métricas va del "2026-04-01" al "2026-04-30"
+    Y los indicadores son:
+      | campo    | valor |
+      | cantidad | 3     |
+      | ganadas  | 2     |
+    Y la serie mensual tiene el mes "2026-04" con 3 cotizaciones y 2 ganadas
+
+  Escenario: El año y el mes reemplazan a desde y hasta
+    Cuando "gloria" consulta las métricas de su regional con "anio=2026&mes=3&desde=2026-04-01&hasta=2026-04-30"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasRegional" del contrato
+    Y el periodo de las métricas va del "2026-03-01" al "2026-03-31"
+    Y los indicadores son:
+      | campo    | valor |
+      | cantidad | 2     |
+
+  Escenario: Los límites del mes son los de Bogotá y no los de UTC
+    Dado que "luis" tiene estas cotizaciones:
+      | cotizacion | moneda | precio | trm | costo  | margen | resultado | creada                    |
+      | L2         | COP    | 100000 | 0   | 80000  | 0.20   | ganada    | 2026-04-30T23:30:00-05:00 |
+      | L3         | COP    | 100000 | 0   | 80000  | 0.20   | perdida   | 2026-05-01T00:30:00-05:00 |
+    Cuando "gloria" consulta las métricas de su regional del mes "4" de "2026"
+    Entonces los indicadores son:
+      | campo    | valor |
+      | cantidad | 4     |
+    Cuando "gloria" consulta las métricas de su regional del mes "5" de "2026"
+    Entonces los indicadores son:
+      | campo    | valor |
+      | cantidad | 1     |
+      | perdidas | 1     |
+
+  Esquema del escenario: Un año o un mes inválidos responden 400
+    Cuando "gloria" consulta las métricas de su regional con "<consulta>"
+    Entonces la respuesta tiene el estado 400 con un ErrorWeb
+
+    Ejemplos:
+      | consulta              |
+      | mes=4                 |
+      | anio=2026&mes=0       |
+      | anio=2026&mes=13      |
+      | anio=2026&mes=abril   |
+      | anio=2019             |
+      | anio=2099             |
+      | anio=dosmil           |
+
+  Escenario: El tablero del comercial no cambia con año y mes
+    Cuando "ana" consulta sus métricas con "desde=2026-04-01&hasta=2026-04-30&anio=2025&mes=99"
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "MetricasComercial" del contrato
+    Y el periodo de las métricas va del "2026-04-01" al "2026-04-30"
+    Y los indicadores son:
+      | campo    | valor |
+      | cantidad | 2     |

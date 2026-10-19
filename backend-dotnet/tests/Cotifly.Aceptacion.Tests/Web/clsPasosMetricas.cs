@@ -36,7 +36,7 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
             await clsBaseDatosPruebas.EjecutarAsync(CadenaCotifly, $"""
                 UPDATE dbo_cotifly.CotizacionesSolicitud
                 SET moneda = N'{fila["moneda"]}', trmAplicada = {Numero(fila["trm"]) ?? "0"}, precioFinal = {Numero(fila["precio"]) ?? "NULL"},
-                    ganada = {Resultado(fila["resultado"])}, createdAt = '{fila["creada"]}T12:00:00-05:00'
+                    ganada = {Resultado(fila["resultado"])}, createdAt = '{Creada(fila["creada"])}'
                 WHERE id = '{cotizacion.Id}';
                 UPDATE dbo_cotifly.CotizacionLineasSolicitud
                 SET costoFinal = {Numero(fila["costo"]) ?? "NULL"}, margenAplicado = {Numero(fila["margen"]) ?? "NULL"}
@@ -98,6 +98,31 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     public Task CuandoConsultaLaRegionalFiltrada(string alias, string desde, string hasta, string comercial) =>
         web.EnviarAsync(_get, $"/web/metricas/regional?desde={desde}&hasta={hasta}&usuario_id={web.Sesion(comercial).UsuarioId}",
             web.Sesion(alias).Access);
+
+    [When("{string} consulta las métricas de su regional del año {string}")]
+    public Task CuandoConsultaLaRegionalDelAnio(string alias, string anio) =>
+        web.EnviarAsync(_get, $"/web/metricas/regional?anio={anio}", web.Sesion(alias).Access);
+
+    [When("{string} consulta las métricas de su regional del mes {string} de {string}")]
+    public Task CuandoConsultaLaRegionalDelMes(string alias, string mes, string anio) =>
+        web.EnviarAsync(_get, $"/web/metricas/regional?anio={anio}&mes={mes}", web.Sesion(alias).Access);
+
+    [When("{string} consulta las métricas de su regional con {string}")]
+    public Task CuandoConsultaLaRegionalCon(string alias, string consulta) =>
+        web.EnviarAsync(_get, $"/web/metricas/regional?{consulta}", web.Sesion(alias).Access);
+
+    [When("{string} consulta sus métricas con {string}")]
+    public Task CuandoConsultaSusMetricasCon(string alias, string consulta) =>
+        web.EnviarAsync(_get, $"/web/metricas/comercial?{consulta}", web.Sesion(alias).Access);
+
+    [Then("el periodo de las métricas va del {string} al {string}")]
+    public void EntoncesElPeriodo(string desde, string hasta)
+    {
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        var periodo = web.UltimoJson().GetProperty("periodo");
+        (periodo.GetProperty("desde").GetString(), periodo.GetProperty("hasta").GetString()).Should().Be((desde, hasta));
+        periodo.GetProperty("zona_horaria").GetString().Should().Be("America/Bogota");
+    }
 
     [Then("los indicadores son:")]
     public void EntoncesLosIndicadores(DataTable tabla)
@@ -169,6 +194,10 @@ public sealed class clsPasosMetricas(clsContextoWeb web)
     public void EntoncesLosComerciales(string uno, string dos, string tres) =>
         web.UltimoJson().GetProperty("comerciales").EnumerateArray().Select(c => c.GetProperty("usuario_id").GetString())
             .Should().BeEquivalentTo([.. new[] { uno, dos, tres }.Select(a => web.Sesion(a).UsuarioId.ToString())]);
+
+    /// <summary>Una fecha sola es el mediodía en Bogotá; con hora (<c>2026-04-30T23:30:00-05:00</c>) va tal cual (límites de mes, HU-010.5).</summary>
+    private static string Creada(string texto) =>
+        texto.Contains('T', StringComparison.Ordinal) ? texto : $"{texto}T12:00:00-05:00";
 
     private static string? Numero(string texto) =>
         string.IsNullOrWhiteSpace(texto) ? null : clsApiWebPruebas.Numero(decimal.Parse(texto, CultureInfo.InvariantCulture));
