@@ -55,7 +55,7 @@ public sealed class clsCosteoNexo(
     public const string MensajeSolicitudInvalida = "Nexo rechazó los datos de la solicitud.";
 
     public const string MensajeSinPermiso =
-        "Tu usuario no tiene permiso en Nexo (Cabina de Fletes) para esta operación: pide al administrador de Nexo el rol Comercial.";
+        "Tu usuario no tiene permiso en Nexo (Cabina de Fletes) para esta operación: pide al administrador de Nexo el rol Comercial o Admin.";
 
     /// <summary>¿Nexo respondió 403 (identidad válida sin el rol que pide la operación)?</summary>
     public static bool EsSinPermiso(clsErrorDominio error) =>

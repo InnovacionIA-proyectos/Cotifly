@@ -2048,8 +2048,8 @@ paths:
            swagger de Nexo; `lineaId` y `servicioConexoId` obligatorios, `cantidad` de 0,01 a 999.999,99). `lineaId` es la
            línea de la cotización de Nexo que corresponde a `linea_orden` (ver `ConexoAgregarWeb`). Cotifly **nunca**
            envía `valorAplicado`: si no viaja, Nexo lo calcula como valor base × cantidad (Nexo es la fuente de verdad del
-           costo). Roles de Nexo para este endpoint: `Comercial`, `CoordinadorFletes` y `Admin` (leído del código de
-           Nexo, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`; el swagger no lo declara).
+           costo). Roles de Nexo para este endpoint: `Comercial` y `Admin` (NEXO#307, S6-HU-25.1: `CoordinadorFletes` pasa
+           a `AdminBiblioteca` y sale de cotizaciones; el swagger de Nexo no lo declara).
         2. Lee de nuevo la cotización de Nexo (`GET /api/cotizaciones/{id}`), aplica el margen de la cotización a cada
            conexo con `IClsPrecioService` y los deja `incluido = true`.
 
@@ -2126,7 +2126,7 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
         '403':
-          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 (el comercial no tiene `Comercial`, `CoordinadorFletes` ni `Admin` en Nexo)'
+          description: '`NEXO_SIN_PERMISO`: Nexo respondió 403 (el comercial no tiene `Comercial` ni `Admin` en Nexo)'
           content:
             application/json:
               schema:
