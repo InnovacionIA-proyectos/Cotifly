@@ -200,6 +200,37 @@ public sealed class clsReSolicitudCotizacionTests
     }
 
     [Fact]
+    public void LasCiudadesDelContenedorLlevanSuIdYUnNombreNuevoSinIdBorraElAnterior()
+    {
+        // HU-028 (#186), defecto B: datos_carga llevaba las ciudades de devolución y de levante solo como texto.
+        var linea = Solicitud().ALinea() with { CiudadDevolucionContenedor = "Buenaventura", CiudadDevolucionMunicipioId = 76109 };
+        var conId = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string>
+            {
+                clsCambiosCarga.CampoCiudadLevanteContenedor, clsCambiosCarga.CampoCiudadLevanteMunicipioId, clsCambiosCarga.CampoLevanteContenedorDiferente,
+            },
+            LevanteContenedorDiferente = true,
+            CiudadLevanteContenedor = "Cali",
+            CiudadLevanteMunicipioId = 76001,
+        };
+        var soloNombre = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string> { clsCambiosCarga.CampoCiudadDevolucionContenedor },
+            CiudadDevolucionContenedor = "Cartagena",
+        };
+
+        var nueva = conId.Aplicar(linea);
+        var sinId = soloNombre.Aplicar(linea);
+
+        (nueva.CiudadLevanteContenedor, nueva.CiudadLevanteMunicipioId).Should().Be(("Cali", 76001));
+        nueva.CiudadDevolucionMunicipioId.Should().Be(76109, "lo que no viene se conserva");
+        (sinId.CiudadDevolucionContenedor, sinId.CiudadDevolucionMunicipioId).Should().Be(("Cartagena", (int?)null),
+            "el id de Buenaventura ya no corresponde al nombre nuevo");
+        clsCambiosCarga.Campos.Should().Contain([clsCambiosCarga.CampoCiudadDevolucionMunicipioId, clsCambiosCarga.CampoCiudadLevanteMunicipioId]);
+    }
+
+    [Fact]
     public void LasPosicionesNuevasReemplazanTodasYLasHorasVanALaLineaYAlEncabezado()
     {
         var solicitud = Solicitud();

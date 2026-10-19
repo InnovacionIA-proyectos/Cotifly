@@ -234,6 +234,44 @@ public sealed class clsReSolicitudCosteoServiceTests
         await _catalogos.Received(1).ValidarAsync(_ana, Arg.Is<clsLineaSolicitudCosteo>(l => l.TipoVehiculo != "2S3"), Arg.Any<CancellationToken>());
     }
 
+    // --- HU-028 (#186): defectos A y C de datos_carga ---
+
+    [Fact]
+    public async Task CambiarSoloLaClaseDeViajeVuelveAPlanificarLosCamiones()
+    {
+        // Defecto C: la clase de viaje viaja al cubicador; antes solo contaban el peso y las mercancías.
+        var cambios = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string> { clsCambiosCarga.CampoClaseViaje, clsCambiosCarga.CampoClaseContenedor },
+            ClaseViaje = "Carga Suelta",
+            ClaseContenedor = null,
+        };
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.Valor.RutasReplanificadas.Should().Equal(1);
+        _agregada!.PrimeraRuta!.ClaseViaje.Should().Be("Carga Suelta");
+    }
+
+    [Fact]
+    public async Task LasMercanciasDeDatosCargaConservanSuCodigoYSePidenAlCubicador()
+    {
+        // Defecto A: sin codigo_mercancia la -vN caía en el respaldo de un camión sin vehículo.
+        var cambios = new clsCambiosCarga
+        {
+            Presentes = new HashSet<string> { clsCambiosCarga.CampoPosiciones, clsCambiosCarga.CampoPesoKg },
+            PesoKg = 2_000m,
+            Posiciones = [new clsPosicionCarga("Bebidas", 10, 120m, 100m, 150m, 200m, CodigoMercancia: "BEBIDAS")],
+        };
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, _cotizacion.Folio, Entrada() with { DatosCarga = cambios }, Version, null, Ct);
+
+        resultado.Valor.RutasReplanificadas.Should().Equal(1);
+        await _planificador.Received(1).PlanificarAsync(_ana, Arg.Any<Guid>(),
+            Arg.Is<clsLineaSolicitudCosteo>(l => l.Posiciones.Single().CodigoMercancia == "BEBIDAS"), Arg.Any<CancellationToken>());
+        _agregada!.PrimeraRuta!.Mercancias.Should().ContainSingle().Which.CodigoMercancia.Should().Be("BEBIDAS");
+    }
+
     // --- HU-021.9 (#136): la versión nueva copia por ruta y vuelve a planificar los camiones solo si cambian el peso o las mercancías ---
 
     [Fact]

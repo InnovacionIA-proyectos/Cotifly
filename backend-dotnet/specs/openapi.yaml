@@ -2004,6 +2004,147 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
 
+  /web/cotizaciones/{folio}/solicitud:
+    get:
+      operationId: obtenerSolicitudEditable
+      tags: [web]
+      summary: La solicitud para editarla ("Editar solicitud")
+      x-issue: '#186 (HU-028)'
+      description: |
+        HU-028 (#186, ADR-021). El modelo editable completo de la solicitud: cada ruta con su `linea_solicitud_id`, sus municipios
+        (origen, destino, devolución y levante) por **id y nombre**, sus condiciones, horas, valores, peso, mercancías con
+        `codigo_mercancia` y conexos con el **id del catálogo de Nexo** (sin precios ni costos), y su margen. También los campos
+        bloqueados con su valor (`bloqueados`, `campos_bloqueados`) y cómo se aplicaría la edición ahora (`edicion`):
+        - `modo`: `en_sitio` (nunca llegó a Nexo), `reemplazo` (está en Nexo sin entregar al cliente ni resultado: se rechaza la
+          solicitud anterior en Nexo y se captura de nuevo en el mismo folio) o `nueva_version` (ya entregada o con resultado: se crea
+          `-vN`);
+        - `permitida = false` con `motivo_no_permitida` (`LICITACION`: fase 2; `SIN_FORMULARIO`: cotización del chat;
+          `ENVIO_EN_CURSO`; `CUBICACION_EN_CURSO`) y `mensaje`;
+        - `avisos` para confirmar antes de guardar (`REEMPLAZA_SOLICITUD_NEXO`, `PIERDE_TRABAJO_MESA`, `PIERDE_COSTEO_ACTUAL`,
+          `INVALIDA_PDF`, `CREA_VERSION_NUEVA`).
+        Trae el `ETag` para el `If-Match` del `PUT`. Solo el dueño. Reemplaza a `GET .../nueva-version` para prellenar.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+      responses:
+        '200':
+          description: El modelo editable
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitudEditable'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+    put:
+      operationId: editarSolicitud
+      tags: [web]
+      summary: Edita la solicitud (en sitio, reemplazo en Nexo o versión nueva según el estado)
+      x-issue: '#186 (HU-028)'
+      description: |
+        HU-028 (#186, ADR-021). **Reemplazo completo** del contenido editable con la forma de la captura: cada ruta con
+        `linea_solicitud_id` es la misma ruta (conserva su id, su línea de negocio y su margen negociado); sin él, una ruta nueva; las
+        guardadas que no vienen se quitan (sus ajustes de margen quedan sin ruta). Las rutas que se conservan no se reordenan
+        (`RUTAS_REORDENADAS`); las nuevas van en cualquier posición.
+
+        **Bloqueados** (400 `CAMPO_NO_EDITABLE` con `detalle.campo`, `detalle.campos` y `detalle.errores`): el cliente (`nit_cliente`,
+        `cliente_nombre`, `origen_cliente`), el `tipo` (spot/licitación) y la `linea_negocio` de cada ruta. Si vienen con el valor
+        guardado se aceptan. Una ruta nueva solo usa una línea de negocio que ya exista en la solicitud.
+
+        **Modo** (lo decide el estado; `modo_esperado` opcional: si cambió, 409 `ESTADO_NO_PERMITE` con `detalle.motivo = MODO_CAMBIO`):
+        - `en_sitio`: nunca llegó a Nexo (`error_envio`, incluido el rechazo definitivo, o `pendiente_envio` abandonado). Se edita y se envía.
+        - `reemplazo`: en Nexo sin entregar al cliente ni resultado (también en `pendiente_costeo`: se pierde el trabajo de la Mesa,
+          aviso `PIERDE_TRABAJO_MESA`). Cotifly reserva la versión, rechaza la solicitud anterior en Nexo
+          (`POST /api/solicitudes/{id}/rechazar`, motivo "Edición de la solicitud desde Cotifly"; si ya estaba descartada o Nexo no la
+          conoce, sigue) y solo entonces aplica la edición, invalida el PDF (`pdf_desactualizado`) y captura de nuevo en el **mismo
+          folio**. Si el rechazo falla, **no** se captura otra solicitud: 503 `NEXO_NO_DISPONIBLE` (403 `NEXO_SIN_PERMISO`) con
+          `detalle.motivo = RECHAZO_NEXO_FALLIDO` y `detalle.version_negocio` (la versión subió: recargar).
+        - `nueva_version`: ya entregada al cliente o con resultado. Se crea `-vN` (201 y `Location`) con lo editado y el margen
+          negociado de las rutas que se conservan; la original no cambia ni se rechaza en Nexo.
+        - Las licitaciones no se editan en esta fase (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
+
+        **Validación y camiones:** las mismas reglas que `POST /web/solicitudes-costeo` (todos los errores en `detalle.errores`) y el
+        mismo planificador con el cupo del cubicador. Solo se vuelven a cubicar las rutas nuevas y aquellas cuyo peso, mercancías o
+        clase de viaje cambiaron (`rutas_replanificadas`); las demás conservan sus camiones, también el vehículo que la Mesa haya
+        cambiado en Nexo. Los conexos toman el costo unitario del catálogo de Nexo de hoy. `moneda` ausente conserva la guardada; si
+        cambia, se fija la TRM del día. Sin cambios reales responde 200 con `sin_cambios = true` y no toca nada.
+
+        `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional (ámbito `editar_solicitud` por comercial; la misma clave con
+        otro cuerpo, 409 `IDEMPOTENCY_KEY_REUTILIZADA`). Si la captura en Nexo falla, la cotización queda en `error_envio` y se responde
+        igual. Auditado en `EventosHerramienta` (`editar_solicitud`, sin `ThreadId`). Solo el dueño.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: '#/components/parameters/Folio'
+        - $ref: '#/components/parameters/IfMatchObligatorio'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdicionSolicitudWeb'
+      responses:
+        '200':
+          description: Edición aplicada en el mismo folio (`en_sitio` o `reemplazo`) o sin cambios
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdicionSolicitudResultado'
+        '201':
+          description: Versión nueva (`-vN`) creada con lo editado y enviada a Nexo; la original no cambia
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Location:
+              description: '`/web/cotizaciones/{folio nuevo}/costeo`'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdicionSolicitudResultado'
+        '400':
+          description: '`CAMPO_NO_EDITABLE` (`detalle.campo`, `detalle.campos`, `detalle.errores`), `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores` por ruta y campo: reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`, `motivo` largo), un rechazo del cubicador (`MERCANCIA_DESCONOCIDA`...) o `TRM_NO_DISPONIBLE`. Nada cambia'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorNegocio'
+                  - $ref: '#/components/schemas/ErrorWeb'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '403':
+          description: '`NEXO_SIN_PERMISO`: Nexo no deja rechazar la solicitud anterior (rol o solicitud ajena). Nada se capturó'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '404':
+          $ref: '#/components/responses/NoEsTuya'
+        '409':
+          description: '`CONFLICTO_CONCURRENCIA`, `ESTADO_NO_PERMITE` (`detalle.motivo`: `LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`, `MODO_CAMBIO`) o `IDEMPOTENCY_KEY_REUTILIZADA`; sin cambios'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '428':
+          $ref: '#/components/responses/PrecondicionRequerida'
+        '503':
+          description: '`NEXO_NO_DISPONIBLE` con `detalle.motivo = RECHAZO_NEXO_FALLIDO` (el rechazo de la solicitud anterior falló: no se capturó otra), `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` (conexos) o `CUBICADOR_NO_DISPONIBLE`. Nada se aplicó'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+
   /web/servicios-conexos:
     get:
       operationId: buscarServiciosConexos
@@ -3253,6 +3394,7 @@ components:
                 - POSICION_INVALIDA
                 - CUBICADOR_PETICION_RECHAZADA
                 - ESTADO_NO_PERMITE
+                - CAMPO_NO_EDITABLE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
                 - NEXO_NO_DISPONIBLE
@@ -4933,6 +5075,7 @@ components:
     DatosCargaWeb:
       type: object
       minProperties: 1
+      deprecated: true
       description: |
         HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
         `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
@@ -4975,6 +5118,11 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-028 (#186, defecto B). Id de `GET /web/municipios`; si cambia el nombre sin el id, el id anterior se borra.
         levante_contenedor_diferente:
           type: boolean
           nullable: true
@@ -4982,6 +5130,11 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-028 (#186, defecto B). Igual que `ciudad_devolucion_municipio_id`.
         valor_aprovisionamiento:
           type: number
           nullable: true
@@ -5025,7 +5178,12 @@ components:
           maxLength: 300
           description: Por qué se vuelve a pedir el costeo; queda en la auditoría.
         datos_carga:
-          description: Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva.
+          deprecated: true
+          description: |
+            Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva. **Obsoleto (HU-028, #186):** usar
+            `PUT /web/cotizaciones/{folio}/solicitud` (varias rutas, todos los campos y el modo según el estado). Se sigue aceptando
+            mientras el frontend migra, con los defectos corregidos: las mercancías conservan `codigo_mercancia` y `nombre_mercancia`,
+            las ciudades de devolución y levante llevan su id de municipio, y un cambio de `clase_viaje` vuelve a cubicar.
           oneOf:
             - $ref: '#/components/schemas/DatosCargaWeb'
             - $ref: '#/components/schemas/Nulo'
@@ -5411,6 +5569,504 @@ components:
             Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`): debe ser una carrocería de Nexo
             (`ESTACAS`, `ESTIBAS`, `FURGON`, `FURGON REFRIGERADO`, `PLATAFORMA`, `PORTACONTENEDORES`, `TANQUE`, `TRAYLER`, `VOLCO`; con
             la misma equivalencia: `FURGON_REFRIGERADO` sirve) o es `CODIGO_NO_CATALOGO` (HU-014 #188).
+
+    EdicionSolicitudWeb:
+      type: object
+      required: [rutas]
+      description: |
+        HU-028 (#186). Cuerpo de `PUT /web/cotizaciones/{folio}/solicitud`: el contenido editable completo con la forma de
+        `SolicitudCosteoWeb` por rutas, más `linea_solicitud_id` en cada ruta que se conserva. Los campos bloqueados son opcionales y,
+        si vienen, deben traer el valor guardado (si no, `CAMPO_NO_EDITABLE`).
+      properties:
+        tipo:
+          type: string
+          nullable: true
+          description: Bloqueado. Si viene, debe ser el guardado (`spot`).
+        nit_cliente:
+          type: string
+          nullable: true
+          description: Bloqueado. Si viene, debe ser el guardado (se comparan los dígitos).
+        cliente_nombre:
+          type: string
+          nullable: true
+          description: Bloqueado. Si viene, debe ser el guardado (sin distinguir mayúsculas).
+        origen_cliente:
+          type: string
+          nullable: true
+          description: Bloqueado (`cliente` o `prospecto`). Si viene, debe ser el guardado.
+        linea_negocio:
+          type: string
+          nullable: true
+          description: Línea de negocio por defecto de una ruta nueva; debe ser una de la solicitud (`lineas_negocio_disponibles`).
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601; sin zona se interpreta en hora de Bogotá. Ausente = sin deadline.
+        notas:
+          type: string
+          nullable: true
+          maxLength: 2000
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Horas por defecto de las rutas que no traen las suyas.
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        moneda:
+          type: string
+          nullable: true
+          enum: [COP, USD, null]
+          description: Ausente conserva la moneda guardada; si cambia, se fija la TRM del día.
+        motivo:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Por qué se edita (opcional). Queda en la auditoría y viaja a Nexo como comentario del rechazo.
+        modo_esperado:
+          type: string
+          nullable: true
+          enum: [en_sitio, reemplazo, nueva_version, null]
+          description: El `edicion.modo` que mostró el GET; si el estado cambió entretanto, 409 `ESTADO_NO_PERMITE` (`MODO_CAMBIO`).
+        rutas:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RutaEdicionWeb'
+
+    EdicionSolicitudResultado:
+      type: object
+      required: [modo, folio, folio_origen, sin_cambios, cotizacion, avisos, rutas_replanificadas, rutas_agregadas, rutas_quitadas]
+      description: HU-028 (#186). Respuesta de `PUT /web/cotizaciones/{folio}/solicitud`.
+      properties:
+        modo:
+          type: string
+          enum: [en_sitio, reemplazo, nueva_version]
+          description: El modo que se aplicó.
+        folio:
+          type: string
+          description: Folio de la cotización resultante (el mismo, o el de la `-vN`).
+        folio_origen:
+          type: string
+          description: Folio que se editó.
+        sin_cambios:
+          type: boolean
+          description: '`true` si el cuerpo equivale a lo guardado: no se tocó nada (ni Nexo, ni el PDF, ni la versión).'
+        cotizacion:
+          $ref: '#/components/schemas/CotizacionResumen'
+        avisos:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvisoEdicion'
+        rutas_replanificadas:
+          type: array
+          description: Orden (base 1) de las rutas cuyos camiones se volvieron a pedir al cubicador (nuevas o con la carga o la clase de viaje cambiada).
+          items:
+            type: integer
+        rutas_agregadas:
+          type: array
+          description: Orden (base 1) de las rutas nuevas.
+          items:
+            type: integer
+        rutas_quitadas:
+          type: array
+          description: '`linea_solicitud_id` de las rutas que se quitaron.'
+          items:
+            type: string
+            format: uuid
+        solicitud_nexo_reemplazada:
+          type: string
+          nullable: true
+          enum: [descartada, ya_descartada, no_encontrada, null]
+          description: En el `reemplazo`, cómo quedó la solicitud anterior en Nexo; `null` en los demás modos.
+
+    AvisoEdicion:
+      type: object
+      required: [codigo, mensaje]
+      description: |
+        HU-028. Aviso para el comercial: `REEMPLAZA_SOLICITUD_NEXO`, `PIERDE_TRABAJO_MESA` (estaba en `pendiente_costeo`),
+        `PIERDE_COSTEO_ACTUAL`, `INVALIDA_PDF`, `CREA_VERSION_NUEVA`, `MARGEN_RUTA_QUITADA` (se quitó una ruta con margen ajustado) o
+        `SIN_CAMBIOS`.
+      properties:
+        codigo:
+          type: string
+        mensaje:
+          type: string
+
+    SolicitudEditable:
+      type: object
+      required: [folio, version, version_negocio, bloqueados, campos_bloqueados, edicion, moneda, lineas_negocio_disponibles, rutas]
+      description: HU-028 (#186). Respuesta de `GET /web/cotizaciones/{folio}/solicitud`. Sin costos de Nexo ni precios.
+      properties:
+        folio:
+          type: string
+        version:
+          type: integer
+          description: Versión del folio (`-vN`).
+        version_negocio:
+          type: integer
+          description: La misma versión que el `ETag` (para el `If-Match` del `PUT`).
+        bloqueados:
+          $ref: '#/components/schemas/BloqueadosSolicitud'
+        campos_bloqueados:
+          type: array
+          description: Nombres de los campos que no se editan (`rutas[].linea_negocio` = la línea de cada ruta guardada).
+          items:
+            type: string
+        edicion:
+          $ref: '#/components/schemas/EstadoEdicion'
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        notas:
+          type: string
+          nullable: true
+        moneda:
+          type: string
+          enum: [COP, USD]
+        linea_negocio:
+          type: string
+          nullable: true
+          description: Línea de negocio de la ruta 1.
+        lineas_negocio_disponibles:
+          type: array
+          description: Las líneas de negocio de la solicitud; las únicas que puede usar una ruta nueva.
+          items:
+            type: string
+        rutas:
+          type: array
+          items:
+            $ref: '#/components/schemas/RutaEditable'
+
+    BloqueadosSolicitud:
+      type: object
+      description: HU-028. Los campos que no se editan, con su valor guardado.
+      properties:
+        tipo:
+          type: string
+          nullable: true
+          enum: [spot, licitacion, null]
+        nit_cliente:
+          type: string
+          nullable: true
+        cliente_nombre:
+          type: string
+          nullable: true
+        origen_cliente:
+          type: string
+          nullable: true
+          enum: [cliente, prospecto, null]
+
+    EstadoEdicion:
+      type: object
+      required: [permitida, avisos]
+      description: HU-028. Cómo se aplicaría una edición en el estado actual.
+      properties:
+        modo:
+          type: string
+          nullable: true
+          enum: [en_sitio, reemplazo, nueva_version, null]
+          description: '`null` si la edición no se permite.'
+        permitida:
+          type: boolean
+        motivo_no_permitida:
+          type: string
+          nullable: true
+          description: '`LICITACION` (fase 2), `SIN_FORMULARIO`, `ENVIO_EN_CURSO` o `CUBICACION_EN_CURSO`.'
+        mensaje:
+          type: string
+          nullable: true
+        avisos:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvisoEdicion'
+
+    RutaEditable:
+      type: object
+      required: [linea_solicitud_id, linea_orden, linea_negocio_bloqueada, retorna_contenedor, levante_contenedor_diferente, mercancias, servicios_conexos, margen_negociado]
+      description: |
+        HU-028. Una ruta de la solicitud con todo lo que se captura (los mismos nombres que `RutaCapturaWeb`, más `linea_solicitud_id`
+        para devolverla en el `PUT`), los municipios por id y nombre, y su margen. Sin costos.
+      properties:
+        linea_solicitud_id:
+          type: string
+          format: uuid
+        linea_orden:
+          type: integer
+        linea_negocio:
+          type: string
+          nullable: true
+        linea_negocio_bloqueada:
+          type: boolean
+          description: Siempre `true`; la línea de negocio de una ruta no se edita.
+        origen_municipio_id:
+          type: integer
+          nullable: true
+        origen:
+          type: string
+          nullable: true
+        destino_municipio_id:
+          type: integer
+          nullable: true
+        destino:
+          type: string
+          nullable: true
+        tipologia:
+          type: string
+          nullable: true
+        clase_viaje:
+          type: string
+          nullable: true
+        clase_contenedor:
+          type: string
+          nullable: true
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+        levante_contenedor_diferente:
+          type: boolean
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+        horas_cargue:
+          type: number
+          nullable: true
+        horas_descargue:
+          type: number
+          nullable: true
+        valor_levante_contenedor:
+          type: number
+          nullable: true
+        valor_mercancia:
+          type: number
+          nullable: true
+        peso_kg:
+          type: number
+          nullable: true
+        mercancias:
+          type: array
+          items:
+            $ref: '#/components/schemas/MercanciaEditable'
+        servicios_conexos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConexoEditable'
+        margen_aplicado:
+          type: number
+          nullable: true
+          description: Margen de la ruta (fracción). Se conserva si la ruta se edita sin quitarla.
+        origen_margen:
+          type: string
+          nullable: true
+          enum: [sap_tm, politica_linea, negociado, null]
+        margen_negociado:
+          type: boolean
+
+    MercanciaEditable:
+      type: object
+      required: [cantidad, largo_cm, ancho_cm, alto_cm]
+      description: HU-028. Una mercancía de la ruta, con su código del catálogo del cubicador (se devuelve tal cual como `PosicionCargaWeb`).
+      properties:
+        codigo_mercancia:
+          type: string
+          nullable: true
+          description: '`null` solo en filas anteriores al cubicador: para recubicar hay que escogerla de nuevo.'
+        nombre_mercancia:
+          type: string
+          nullable: true
+        cantidad:
+          type: integer
+        largo_cm:
+          type: number
+        ancho_cm:
+          type: number
+        alto_cm:
+          type: number
+        peso_kg:
+          type: number
+          nullable: true
+
+    ConexoEditable:
+      type: object
+      required: [id_servicio_conexo, cantidad]
+      description: |
+        HU-028. Un servicio conexo de la ruta con el id del catálogo de Nexo de hoy (se devuelve como `ConexoCapturaWeb`), sin precio. Una
+        fila por servicio: si el mismo servicio está capturado y además se agregó en Nexo, sale una vez con las cantidades sumadas.
+      properties:
+        id_servicio_conexo:
+          type: string
+        nombre:
+          type: string
+          nullable: true
+        cantidad:
+          type: number
+
+    RutaEdicionWeb:
+      type: object
+      description: |
+        HU-028 (#186). Una ruta de la edición: los mismos campos y reglas que `RutaCapturaWeb`, más `linea_solicitud_id` (el id de
+        la ruta guardada que se edita, de `GET .../solicitud`; sin él, es una ruta nueva). La `linea_negocio` de una ruta guardada no
+        cambia (`CAMPO_NO_EDITABLE`); una ruta nueva usa una línea de la solicitud.
+      properties:
+        linea_solicitud_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Id de la ruta guardada (`RutaEditable.linea_solicitud_id`); ausente = ruta nueva.
+        linea_negocio:
+          type: string
+          nullable: true
+          description: Línea de negocio de Cotifly de la ruta (da su margen). Sin ella, la `linea_negocio` de la solicitud.
+        origen_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Id de `GET /web/municipios`. **Obligatorio**: si no viene, Cotifly lo resuelve por `origen` y si es ambiguo responde
+            `MUNICIPIO_AMBIGUO` con los candidatos (nunca adivina). Con el id y sin `origen`, el nombre se copia del catálogo.
+        origen:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre del municipio de origen (la columna `municipio` de `GET /web/municipios`).
+        destino_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Igual que `origen_municipio_id`, para el destino.
+        destino:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre del municipio de destino.
+        tipologia:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Igual que `SolicitudCosteoWeb.tipologia`.
+        clase_viaje:
+          type: string
+          nullable: true
+          maxLength: 50
+          description: Igual que `SolicitudCosteoWeb.clase_viaje` (catálogo maestro de Nexo).
+        clase_contenedor:
+          type: string
+          nullable: true
+          maxLength: 20
+          description: Igual que `SolicitudCosteoWeb.clase_contenedor` (G3).
+        exclusivo:
+          type: boolean
+          nullable: true
+        consolidado:
+          type: boolean
+          nullable: true
+        retorna_contenedor:
+          type: boolean
+          nullable: true
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Id del municipio donde se devuelve el contenedor; con solo el nombre se resuelve igual que el origen.
+        ciudad_devolucion_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre de la ciudad de devolución.
+        levante_contenedor_diferente:
+          type: boolean
+          nullable: true
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Id del municipio donde se levanta el contenedor; con solo el nombre se resuelve igual que el origen.
+        ciudad_levante_contenedor:
+          type: string
+          nullable: true
+          maxLength: 150
+          description: Copia del nombre de la ciudad de levante.
+        horas_cargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+          description: Horas de cargue de la ruta; sin valor, las de la solicitud.
+        horas_descargue:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 240
+        valor_levante_contenedor:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+          description: |
+            Valor de UN levante del contenedor en la ruta (ex `valor_aprovisionamiento`); se copia a cada camión (decisión 4). Solo
+            con una ciudad de levante distinta del origen (G3): sin ella es `CAMPO_NO_APLICA` en `valor_aprovisionamiento`.
+        valor_mercancia:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 9999999999999.99
+        peso_kg:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 999999.99
+          description: Peso total de la ruta (es el del camión que se crea mientras no haya cubicador).
+        mercancias:
+          type: array
+          nullable: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/PosicionCargaWeb'
+        servicios_conexos:
+          type: array
+          nullable: true
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ConexoCapturaWeb'
+        tipo_vehiculo:
+          type: string
+          nullable: true
+          deprecated: true
+          maxLength: 100
+          description: |
+            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Por defecto se acepta y se ignora
+            con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con `Captura:AceptarVehiculoCliente =
+            true` (apagada por defecto) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
+            `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
+            tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
+            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). Cuando el cubicador exista, la bandera se apaga y el campo se retira.
+        carroceria:
+          type: string
+          nullable: true
+          deprecated: true
+          maxLength: 100
+          description: Igual que `tipo_vehiculo` (decisión 7; bandera `Captura:AceptarVehiculoCliente`).
 
     SolicitudCosteoWeb:
       type: object

@@ -362,6 +362,53 @@ public sealed class clsCosteoNexo(
         return leida is null ? NoDisponible("respuesta del resultado sin id") : leida;
     }
 
+    /// <summary>Código de Nexo de <c>POST /api/solicitudes/{id}/rechazar</c> sobre una solicitud ya descartada (409).</summary>
+    public const string CodigoNexoYaDescartada = "SOLICITUD_YA_DESCARTADA";
+
+    /// <summary>Largo máximo del <c>motivo</c> del rechazo en Nexo (<c>clsRechazarSolicitudRequest</c>).</summary>
+    public const int LargoMotivoRechazo = 100;
+
+    /// <summary>Largo máximo del <c>comentario</c> del rechazo en Nexo.</summary>
+    public const int LargoComentarioRechazo = 500;
+
+    public async Task<clsResultado<ResultadoRechazoNexo>> RechazarSolicitudAsync(
+        Guid usuarioId, string solicitudId, string motivo, string? comentario, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(solicitudId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(motivo);
+        var cuerpo = new clsRechazoWire(Recortar(motivo, LargoMotivoRechazo)!, Recortar(comentario, LargoComentarioRechazo));
+        var respuesta = await EnviarAsync(
+            usuarioId, HttpMethod.Post, $"/api/solicitudes/{Uri.EscapeDataString(solicitudId.Trim())}/rechazar", cuerpo, cancellationToken, vacioEsNulo: true);
+        if (respuesta.EsExitoso)
+        {
+            respuesta.Valor.Dispose();
+            return ResultadoRechazoNexo.Descartada;
+        }
+
+        var error = respuesta.Error;
+        var codigo = error.Detalle is { } detalle ? CodigoNexo(detalle) : null;
+        if (error.Codigo == clsCodigosError.CosteoNexoRechazada && error.Detalle?.StartsWith("HTTP 409", StringComparison.Ordinal) == true
+            && codigo == CodigoNexoYaDescartada)
+        {
+            return ResultadoRechazoNexo.YaDescartada;
+        }
+
+        if (error.Codigo == clsCodigosError.CosteoNexoRechazada && error.Detalle?.StartsWith("HTTP 404", StringComparison.Ordinal) == true
+            && codigo == CodigoNexoNoEncontrada)
+        {
+            return ResultadoRechazoNexo.NoEncontrada;
+        }
+
+        return EsSinPermiso(error) ? new clsErrorDominio(clsCodigosError.NexoSinPermiso, MensajeSinPermiso, error.Detalle) : error;
+    }
+
+    /// <summary>El texto sin espacios al borde y recortado a <paramref name="largo"/>; <c>null</c> si queda vacío.</summary>
+    private static string? Recortar(string? texto, int largo)
+    {
+        var limpio = texto?.Trim();
+        return string.IsNullOrEmpty(limpio) ? null : limpio.Length <= largo ? limpio : limpio[..largo];
+    }
+
     /// <summary>Códigos 400 de <c>POST /api/captura-solicitudes</c> de catálogo, línea o peso (G16): los datos de la solicitud.</summary>
     public static readonly IReadOnlySet<string> CodigosCapturaDatos =
         new HashSet<string>(StringComparer.Ordinal) { "ENUM_INVALIDO", "LINEA_INCOMPLETA", "PESO_REQUERIDO", "PESO_INCONSISTENTE" };
@@ -968,6 +1015,9 @@ public sealed class clsCosteoNexo(
         IReadOnlyList<clsCapturaPosicionWire>? Posiciones, string? GrupoRutaId, string? IdRecomendacionVehiculo);
 
     private sealed record clsResultadoWire(string Resultado, string? Motivo, string? Comentario);
+
+    /// <summary><c>clsRechazarSolicitudRequest</c> de Nexo (HU-028): <c>motivo</c> (1-100) y <c>comentario</c> opcional (hasta 500).</summary>
+    private sealed record clsRechazoWire(string Motivo, string? Comentario);
 
     private sealed record clsCapturaPosicionWire(string? Descripcion, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 }

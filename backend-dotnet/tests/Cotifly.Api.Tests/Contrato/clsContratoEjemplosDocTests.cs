@@ -56,6 +56,12 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: POST /web/cubicacion 202",
             "respuesta: GET /web/cubicacion/{id} 200",
             "respuesta: GET /web/cubicacion/{id} 404",
+            // HU-028 (#186): editar la solicitud.
+            "respuesta: GET /web/cotizaciones/{folio}/solicitud 200",
+            "esquema: EdicionSolicitudWeb",
+            "respuesta: PUT /web/cotizaciones/{folio}/solicitud 200",
+            "respuesta: PUT /web/cotizaciones/{folio}/solicitud 400",
+            "respuesta: PUT /web/cotizaciones/{folio}/solicitud 503",
         ]);
     }
 

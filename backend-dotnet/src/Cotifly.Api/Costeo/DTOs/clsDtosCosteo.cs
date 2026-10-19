@@ -181,7 +181,7 @@ public sealed class clsSolicitudCosteoWebRequest
 /// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
 /// nombre; igual las ciudades de devolución y de levante del contenedor. Sin vehículo ni carrocería (decisión 7).
 /// </summary>
-public sealed class clsRutaCapturaWebRequest
+public class clsRutaCapturaWebRequest
 {
     /// <summary>Línea de negocio de la ruta; sin ella, la de la solicitud.</summary>
     public string? LineaNegocio { get; init; }
@@ -359,8 +359,14 @@ public sealed class clsDatosCargaWebRequest
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: el id del municipio de devolución, como en la captura.</summary>
+    public int? CiudadDevolucionMunicipioId { get; init; }
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: el id del municipio de levante.</summary>
+    public int? CiudadLevanteMunicipioId { get; init; }
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
@@ -416,8 +422,10 @@ public sealed class clsDatosCargaWebRequest
             Consolidado = leido.Consolidado,
             RetornaContenedor = leido.RetornaContenedor,
             CiudadDevolucionContenedor = leido.CiudadDevolucionContenedor,
+            CiudadDevolucionMunicipioId = leido.CiudadDevolucionMunicipioId,
             LevanteContenedorDiferente = leido.LevanteContenedorDiferente,
             CiudadLevanteContenedor = leido.CiudadLevanteContenedor,
+            CiudadLevanteMunicipioId = leido.CiudadLevanteMunicipioId,
             ValorAprovisionamiento = leido.ValorAprovisionamiento,
             HorasCargue = leido.HorasCargue,
             HorasDescargue = leido.HorasDescargue,
@@ -425,9 +433,8 @@ public sealed class clsDatosCargaWebRequest
             ValorMercancia = leido.ValorMercancia,
             Posiciones = leido.Posiciones is null
                 ? null
-                : [.. leido.Posiciones.Select(p => p is null
-                    ? null!
-                    : new clsPosicionCarga(p.Descripcion, p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg))],
+                // HU-028 (#186), defecto A: con codigo_mercancia y nombre_mercancia (antes se perdían y la -vN caía en el respaldo).
+                : [.. leido.Posiciones.Select(p => p is null ? null! : p.APosicion())],
         };
     }
 

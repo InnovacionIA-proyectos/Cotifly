@@ -549,6 +549,68 @@ public sealed class clsCosteoNexoTests : IDisposable
         clsCosteoNexo.LeerCotizacion(documento.RootElement)!.Conexos.Should().ContainSingle().Which.CotizacionLineaId.Should().Be("LC-7");
     }
 
+    // --- HU-028 (#186): rechazar la solicitud anterior al editarla ---
+
+    [Fact]
+    public async Task ElRechazoVaASolicitudesRechazarConElMotivoRecortadoA100YElComentario()
+    {
+        _nexo.Responder(HttpStatusCode.NoContent);
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, " SOL-9 ", new string('m', 120), "Reemplazada por la edición", Ct);
+
+        resultado.Valor.Should().Be(ResultadoRechazoNexo.Descartada);
+        var peticion = _nexo.Peticiones.Should().ContainSingle().Subject;
+        (peticion.Metodo, peticion.Url.AbsoluteUri, peticion.IdPortalUsuario).Should().Be(
+            (HttpMethod.Post, "http://nexo-test.local/api/solicitudes/SOL-9/rechazar", "1007"));
+        using var cuerpo = JsonDocument.Parse(peticion.Cuerpo!);
+        cuerpo.RootElement.GetProperty("motivo").GetString().Should().HaveLength(100);
+        cuerpo.RootElement.GetProperty("comentario").GetString().Should().Be("Reemplazada por la edición");
+    }
+
+    [Fact]
+    public async Task SinComentarioNoViajaElCampo()
+    {
+        _nexo.Responder(HttpStatusCode.NoContent);
+
+        await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición de la solicitud desde Cotifly", "  ", Ct);
+
+        using var cuerpo = JsonDocument.Parse(_nexo.Peticiones.Single().Cuerpo!);
+        cuerpo.RootElement.TryGetProperty("comentario", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "SOLICITUD_YA_DESCARTADA", ResultadoRechazoNexo.YaDescartada)]
+    [InlineData(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", ResultadoRechazoNexo.NoEncontrada)]
+    public async Task UnaSolicitudYaDescartadaOInexistenteNoQuedaViva(HttpStatusCode estado, string codigo, ResultadoRechazoNexo esperado)
+    {
+        _nexo.Responder(estado, $$"""{"code":"{{codigo}}","message":"x"}""");
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Valor.Should().Be(esperado);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "SOLICITUD_AJENA", clsCodigosError.NexoSinPermiso)]
+    [InlineData(HttpStatusCode.InternalServerError, "ERROR_INTERNO", clsCodigosError.CosteoNexoNoDisponible)]
+    [InlineData(HttpStatusCode.Conflict, "OTRO_CONFLICTO", clsCodigosError.CosteoNexoRechazada)]
+    public async Task OtroFalloDelRechazoEsUnError(HttpStatusCode estado, string codigo, string esperado)
+    {
+        _nexo.Responder(estado, $$"""{"code":"{{codigo}}","message":"x"}""");
+
+        var resultado = await Adaptador().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Error.Codigo.Should().Be(esperado);
+    }
+
+    [Fact]
+    public async Task SinNexoConfiguradoElRechazoNoEstaDisponible()
+    {
+        var resultado = await new clsCosteoNexoNoDisponible().RechazarSolicitudAsync(_usuarioId, "SOL-9", "Edición", null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.CosteoNexoNoDisponible);
+    }
+
     private void UsuarioResuelto(clsUsuarioWeb? usuario) =>
         _usuarios.ObtenerPorIdAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(usuario);
 

@@ -18,8 +18,10 @@ public sealed record clsCambiosCarga
     public const string CampoConsolidado = "consolidado";
     public const string CampoRetornaContenedor = "retorna_contenedor";
     public const string CampoCiudadDevolucionContenedor = "ciudad_devolucion_contenedor";
+    public const string CampoCiudadDevolucionMunicipioId = "ciudad_devolucion_municipio_id";
     public const string CampoLevanteContenedorDiferente = "levante_contenedor_diferente";
     public const string CampoCiudadLevanteContenedor = "ciudad_levante_contenedor";
+    public const string CampoCiudadLevanteMunicipioId = "ciudad_levante_municipio_id";
     public const string CampoValorAprovisionamiento = "valor_aprovisionamiento";
     public const string CampoHorasCargue = "horas_cargue";
     public const string CampoHorasDescargue = "horas_descargue";
@@ -31,7 +33,8 @@ public sealed record clsCambiosCarga
     public static readonly IReadOnlySet<string> Campos = new HashSet<string>(StringComparer.Ordinal)
     {
         CampoTipoVehiculo, CampoCarroceria, CampoTipologia, CampoClaseViaje, CampoClaseContenedor, CampoExclusivo, CampoConsolidado,
-        CampoRetornaContenedor, CampoCiudadDevolucionContenedor, CampoLevanteContenedorDiferente, CampoCiudadLevanteContenedor,
+        CampoRetornaContenedor, CampoCiudadDevolucionContenedor, CampoCiudadDevolucionMunicipioId, CampoLevanteContenedorDiferente,
+        CampoCiudadLevanteContenedor, CampoCiudadLevanteMunicipioId,
         CampoValorAprovisionamiento, CampoHorasCargue, CampoHorasDescargue, CampoPesoKg, CampoValorMercancia, CampoPosiciones,
     };
 
@@ -47,8 +50,16 @@ public sealed record clsCambiosCarga
     public bool? Consolidado { get; init; }
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: id del municipio de devolución (<c>GET /web/municipios</c>), como en la captura.</summary>
+    public int? CiudadDevolucionMunicipioId { get; init; }
+
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
+
+    /// <summary>HU-028 (#186), defecto B: id del municipio de levante.</summary>
+    public int? CiudadLevanteMunicipioId { get; init; }
+
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? HorasCargue { get; init; }
     public decimal? HorasDescargue { get; init; }
@@ -87,8 +98,10 @@ public sealed record clsCambiosCarga
             Consolidado = Valor(CampoConsolidado, Consolidado, linea.Consolidado),
             RetornaContenedor = Valor(CampoRetornaContenedor, RetornaContenedor, linea.RetornaContenedor),
             CiudadDevolucionContenedor = Valor(CampoCiudadDevolucionContenedor, CiudadDevolucionContenedor, linea.CiudadDevolucionContenedor),
+            CiudadDevolucionMunicipioId = Municipio(CampoCiudadDevolucionMunicipioId, CampoCiudadDevolucionContenedor, CiudadDevolucionMunicipioId, linea.CiudadDevolucionMunicipioId),
             LevanteContenedorDiferente = Valor(CampoLevanteContenedorDiferente, LevanteContenedorDiferente, linea.LevanteContenedorDiferente),
             CiudadLevanteContenedor = Valor(CampoCiudadLevanteContenedor, CiudadLevanteContenedor, linea.CiudadLevanteContenedor),
+            CiudadLevanteMunicipioId = Municipio(CampoCiudadLevanteMunicipioId, CampoCiudadLevanteContenedor, CiudadLevanteMunicipioId, linea.CiudadLevanteMunicipioId),
             ValorAprovisionamiento = Valor(CampoValorAprovisionamiento, ValorAprovisionamiento, linea.ValorAprovisionamiento),
             PesoKg = Valor(CampoPesoKg, PesoKg, linea.PesoKg),
             ValorMercancia = Valor(CampoValorMercancia, ValorMercancia, linea.ValorMercancia),
@@ -101,4 +114,11 @@ public sealed record clsCambiosCarga
     }
 
     private T Valor<T>(string campo, T nuevo, T anterior) => Presentes.Contains(campo) ? nuevo : anterior;
+
+    /// <summary>
+    /// Defecto B: el id de la ciudad del contenedor. Si viene, el nuevo; si solo cambia el nombre (sin el id), el id anterior ya no le
+    /// corresponde y se borra (la revalidación lo exige o lo resuelve); si no cambia nada, se conserva.
+    /// </summary>
+    private int? Municipio(string campoId, string campoNombre, int? nuevo, int? anterior) =>
+        Presentes.Contains(campoId) ? nuevo : Presentes.Contains(campoNombre) ? null : anterior;
 }
