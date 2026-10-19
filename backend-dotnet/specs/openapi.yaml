@@ -1183,7 +1183,11 @@ paths:
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía) o no respondió (caída, 5xx, tiempo
             agotado); no hay respaldo. `CUBICADOR_NO_AUTORIZADO`: el cubicador rechazó la llave de Cotifly. `CUBICADOR_RESPUESTA_INVALIDA`:
-            la respuesta no cumple el contrato. El detalle técnico solo queda en el log.
+            la respuesta no cumple el contrato. `CUBICADOR_OCUPADO` (opción C, con `Retry-After: 10`): el cubicador está calculando
+            otras cargas y no se liberó el cupo a tiempo; reintentar en unos segundos. El detalle técnico solo queda en el log.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
@@ -2881,8 +2885,8 @@ components:
       example: '"7"'
     RetryAfter:
       description: |
-        Solo con `SERVICIO_OCUPADO` (#125): segundos que conviene esperar antes de reintentar (siempre 1). Las demás causas del
-        503 no lo envían.
+        Segundos que conviene esperar antes de reintentar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con `CUBICADOR_OCUPADO`
+        (opción C) 10. Las demás causas del 503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3012,7 +3016,9 @@ components:
                 sin respuesta, y en `POST /web/solicitudes-costeo` y
                 `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`), `CUBICADOR_NO_AUTORIZADO` (503: el cubicador
                 rechazó la llave de Cotifly; nunca va al respaldo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
-                la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada) y los
+                la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada),
+                `CUBICADOR_OCUPADO` (opción C, E2E 2026-10-16: 503 con `Retry-After: 10` en `POST /web/cubicacion`: el cupo global de
+                llamadas al cubicador no se liberó a tiempo; en la captura, el recálculo y la licitación cuenta como una caída) y los
                 rechazos 400 del cubicador con su mismo código: `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
                 `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada). D1 (E2E 2026-10-16): un 422 del cubicador
                 (validación de su esquema en `POST /recomendaciones`) es 400: `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` con
@@ -3104,6 +3110,7 @@ components:
                 - COTIZACION_CHAT_RETIRADA
                 - CUBICADOR_NO_DISPONIBLE
                 - CUBICADOR_RESPUESTA_INVALIDA
+                - CUBICADOR_OCUPADO
                 - CUBICADOR_NO_AUTORIZADO
                 - MERCANCIAS_REQUERIDAS
                 - MERCANCIA_DESCONOCIDA

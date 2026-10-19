@@ -348,13 +348,17 @@ public static class clsDependenciasInfraestructura
     {
         servicios.TryAddScoped<clsCubicadorNoDisponible>();
         servicios.TryAddSingleton(typeof(clsCacheCatalogoCubicador<>));
-        var tuberia = servicios.AddHttpClient<clsCubicadorHttp>(clsCubicadorHttp.NombreCliente)
+        // Opción C: un solo cupo global por proceso para POST /recomendaciones (Cubicador:MaximoConcurrente).
+        servicios.TryAddSingleton<clsCupoLlamadasCubicador>();
+        // Sin el límite de 100 s del HttpClient: los límites los pone la tubería (el POST puede esperar hasta 300 s).
+        var tuberia = servicios.AddHttpClient<clsCubicadorHttp>(clsCubicadorHttp.NombreCliente, cliente => cliente.Timeout = Timeout.InfiniteTimeSpan)
             .RedactLoggedHeaders(_ => true)
             .AddStandardResilienceHandler();
         servicios.AddOptions<HttpStandardResilienceOptions>(tuberia.PipelineName)
             .Configure<IOptions<clsOpcionesCubicador>>((resiliencia, opciones) =>
                 clsCubicadorHttp.ConfigurarResiliencia(resiliencia, TimeSpan.FromSeconds(opciones.Value.TiempoEsperaSegundos),
-                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaRecomendacionSegundos)));
+                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaRecomendacionSegundos),
+                    TimeSpan.FromSeconds(opciones.Value.TiempoEsperaReconsultaSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
 
         // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).

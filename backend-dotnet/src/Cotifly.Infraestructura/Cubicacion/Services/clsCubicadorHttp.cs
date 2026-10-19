@@ -47,6 +47,10 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// llave ni la traza. La cancelación del llamador se propaga.</item>
 /// <item><b>Observabilidad</b>: el resultado de cada recomendación queda en un log informativo con la ruta, el resultado, el motivo, la
 /// marca de condicionada y el número de vehículos (sin datos del cliente).</item>
+/// <item><b>Cupo global</b> (opción C, D3 del E2E 2026-10-16): el POST y su reconsulta ocupan uno de los
+/// <c>Cubicador:MaximoConcurrente</c> cupos del proceso (<see cref="clsCupoLlamadasCubicador"/>). Si no se libera ninguno en
+/// <c>Cubicador:EsperaMaximaCupoSegundos</c>, no se llama: <c>CUBICADOR_OCUPADO</c> marcado como caída (log <see cref="EventoOcupado"/>).
+/// Los catálogos y la salud van fuera del cupo.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCubicadorHttp(
@@ -55,7 +59,8 @@ public sealed class clsCubicadorHttp(
     clsCacheCatalogoCubicador<clsTipoMercanciaCubicador> cacheMercancias,
     clsCacheCatalogoCubicador<clsTipoCarroceriaCubicador> cacheCarrocerias,
     clsCacheCatalogoCubicador<clsTipoVehiculoCubicador> cacheVehiculos,
-    ILogger<clsCubicadorHttp> logger) : IClsCubicador
+    ILogger<clsCubicadorHttp> logger,
+    clsCupoLlamadasCubicador? cupo = null) : IClsCubicador
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del cubicador (las pruebas le cambian el manejador primario).</summary>
     public const string NombreCliente = "Cubicador";
@@ -128,6 +133,32 @@ public sealed class clsCubicadorHttp(
 
     public TimeSpan PresupuestoCaptura => TimeSpan.FromSeconds(opciones.Value.PresupuestoCapturaSegundos);
 
+    /// <summary>Opción C: log de una recomendación que no consiguió cupo a tiempo (código estable para alertas).</summary>
+    public static readonly EventId EventoOcupado = new(2102, "CUBICADOR_OCUPADO");
+
+    /// <summary>Opción C: log de una recomendación que esperó el cupo global (cuánto) antes de llamar.</summary>
+    public static readonly EventId EventoEsperaCupo = new(2103, "CUBICADOR_ESPERA_CUPO");
+
+    /// <summary>Mensaje de <c>CUBICADOR_OCUPADO</c> para el comercial.</summary>
+    public const string MensajeOcupado =
+        "El cubicador está calculando otras cargas en este momento: intenta de nuevo en unos segundos.";
+
+    /// <summary>Marca de la petición de reconsulta (su intento usa <c>Cubicador:TiempoEsperaReconsultaSegundos</c>).</summary>
+    public static readonly HttpRequestOptionsKey<bool> OpcionReconsulta = new("Cotifly.Cubicador.Reconsulta");
+
+    private readonly clsCupoLlamadasCubicador _cupo = cupo ?? new clsCupoLlamadasCubicador(opciones);
+
+    /// <summary>
+    /// Opción C: lo más que puede durar una llamada a <see cref="RecomendarAsync"/>: la espera por el cupo, el POST (con su holgura de
+    /// 2 s), la espera antes de reconsultar y la reconsulta. Lo usa la validación del reclamo de la licitación.
+    /// </summary>
+    public static TimeSpan DuracionMaximaLlamada(clsOpcionesCubicador opciones)
+    {
+        ArgumentNullException.ThrowIfNull(opciones);
+        return TimeSpan.FromSeconds(opciones.EsperaMaximaCupoSegundos + opciones.TiempoEsperaRecomendacionSegundos + 2
+                                    + opciones.EsperaAntesReconsultaSegundos + opciones.TiempoEsperaReconsultaSegundos);
+    }
+
     public async Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
         clsPeticionRecomendacion peticion, CancellationToken cancellationToken = default)
     {
@@ -138,6 +169,34 @@ public sealed class clsCubicadorHttp(
             logger.LogWarning("La ruta {IdLineaSolicitud} supera las {Maximo} unidades del cubicador: no se le llama.",
                 peticion.IdLineaSolicitud, clsMercanciaCubicador.MaximoUnidades);
             return new clsErrorDominio(clsCodigosError.CubicacionDemasiadoGrande, clsMercanciaCubicador.MensajeDemasiadoGrande);
+        }
+
+        if (!EstaConfigurado)
+        {
+            return NoDisponible("cubicador sin configurar (Cubicador:UrlBase y Cubicador:ApiKey)");
+        }
+
+        // Opción C: un cupo global para el POST y su reconsulta. La espera cuenta dentro del tiempo de quien llama y se cancela con él.
+        var espera = TimeSpan.FromSeconds(opciones.Value.EsperaMaximaCupoSegundos);
+        var inicioEspera = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var turno = await _cupo.TomarAsync(espera, cancellationToken);
+        var esperado = System.Diagnostics.Stopwatch.GetElapsedTime(inicioEspera);
+        if (turno is null)
+        {
+            logger.LogWarning(EventoOcupado,
+                "CUBICADOR_OCUPADO: la ruta {IdLineaSolicitud} esperó {Segundos} s sin cupo para el cubicador (Cubicador:MaximoConcurrente = {Maximo}): no se le llama.",
+                peticion.IdLineaSolicitud, (int)espera.TotalSeconds, _cupo.Maximo);
+            return new clsErrorDominio(clsCodigosError.CubicadorOcupado, MensajeOcupado,
+                $"sin cupo tras {((int)espera.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s (Cubicador:MaximoConcurrente = {_cupo.Maximo.ToString(CultureInfo.InvariantCulture)})")
+            {
+                Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
+            };
+        }
+
+        if (esperado >= TimeSpan.FromSeconds(1))
+        {
+            logger.LogInformation(EventoEsperaCupo, "La ruta {IdLineaSolicitud} esperó {Milisegundos} ms el cupo del cubicador.",
+                peticion.IdLineaSolicitud, (long)esperado.TotalMilliseconds);
         }
 
         var cuerpo = new clsRecomendacionWire(
@@ -195,8 +254,31 @@ public sealed class clsCubicadorHttp(
     /// </summary>
     private async Task<clsRecomendacionCubicador?> ReconsultarAsync(clsPeticionRecomendacion peticion, CancellationToken cancellationToken)
     {
+        // Opción C: el motor del cubicador sigue calculando (bloquea su API); se le da un respiro y la reconsulta espera a que termine
+        // con su propio límite (Cubicador:TiempoEsperaReconsultaSegundos, reintentos incluidos), sin soltar el cupo.
+        var config = opciones.Value;
+        if (config.EsperaAntesReconsultaSegundos > 0)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(config.EsperaAntesReconsultaSegundos), cancellationToken);
+        }
+
         var ruta = RutaReconsulta(peticion.IdLineaSolicitud);
-        var respuesta = await EnviarAsync(HttpMethod.Get, ruta, null, cancellationToken);
+        clsResultado<JsonDocument> respuesta;
+        using (var tope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            tope.CancelAfter(TimeSpan.FromSeconds(config.TiempoEsperaReconsultaSegundos));
+            try
+            {
+                respuesta = await EnviarAsync(HttpMethod.Get, ruta, null, tope.Token, reconsulta: true);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Reconsulta de la recomendación de {IdLineaSolicitud} sin respuesta en {Segundos} s.",
+                    peticion.IdLineaSolicitud, config.TiempoEsperaReconsultaSegundos);
+                return null;
+            }
+        }
+
         if (respuesta.EsFallo)
         {
             logger.LogWarning("Reconsulta de la recomendación de {IdLineaSolicitud} sin corrida ({Codigo}: {Detalle}).",
@@ -624,28 +706,42 @@ public sealed class clsCubicadorHttp(
     }
 
     /// <summary>
-    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento de cada GET (catálogos, reconsulta, salud) y
+    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento de cada GET (catálogos, salud),
     /// <paramref name="tiempoRecomendacion"/> para el POST (D3b, E2E 2026-10-16: <c>Cubicador:TiempoEsperaRecomendacionSegundos</c>; el
-    /// motor tarda hasta ~30 s con cargas grandes). En total, lo que caben el intento y los <see cref="ReintentosLectura"/> reintentos de un
-    /// GET con sus esperas (<see cref="TiempoTotal"/>) o el POST, lo que sea mayor (un POST no se reintenta). El circuito con una ventana
-    /// de al menos el doble del intento más largo (lo exige la tubería estándar). Sin <paramref name="tiempoRecomendacion"/>, el POST usa
-    /// <paramref name="tiempo"/>.
+    /// motor tarda hasta ~30 s con cargas grandes) y <paramref name="tiempoReconsulta"/> por intento de la reconsulta (opción C:
+    /// <c>Cubicador:TiempoEsperaReconsultaSegundos</c>; la petición lleva <see cref="OpcionReconsulta"/>). En total, lo que caben el intento
+    /// y los <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>), el POST o la reconsulta, lo
+    /// que sea mayor (un POST no se reintenta; la reconsulta y los catálogos tienen además su propio tope). El circuito con una ventana de
+    /// al menos el doble del intento más largo (lo exige la tubería estándar). Sin <paramref name="tiempoRecomendacion"/> ni
+    /// <paramref name="tiempoReconsulta"/>, usan <paramref name="tiempo"/>.
     /// </summary>
-    public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, TimeSpan tiempo, TimeSpan? tiempoRecomendacion = null)
+    public static void ConfigurarResiliencia(
+        HttpStandardResilienceOptions resiliencia, TimeSpan tiempo, TimeSpan? tiempoRecomendacion = null, TimeSpan? tiempoReconsulta = null)
     {
         ArgumentNullException.ThrowIfNull(resiliencia);
         var post = tiempoRecomendacion ?? tiempo;
+        var reconsulta = tiempoReconsulta ?? tiempo;
         var totalPost = post + TimeSpan.FromSeconds(2);
-        resiliencia.TotalRequestTimeout.Timeout = totalPost > TiempoTotal(tiempo) ? totalPost : TiempoTotal(tiempo);
+        var total = TiempoTotal(tiempo);
+        total = totalPost > total ? totalPost : total;
+        total = reconsulta > total ? reconsulta : total;
+        resiliencia.TotalRequestTimeout.Timeout = total;
         resiliencia.AttemptTimeout.Timeout = tiempo;
         resiliencia.AttemptTimeout.TimeoutGenerator = argumentos =>
-            ValueTask.FromResult(argumentos.Context.GetRequestMessage()?.Method == HttpMethod.Post ? post : tiempo);
+        {
+            var mensaje = argumentos.Context.GetRequestMessage();
+            return ValueTask.FromResult(
+                mensaje?.Method == HttpMethod.Post ? post
+                : mensaje is not null && mensaje.Options.TryGetValue(OpcionReconsulta, out var esReconsulta) && esReconsulta ? reconsulta
+                : tiempo);
+        };
         resiliencia.Retry.MaxRetryAttempts = ReintentosLectura;
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
         resiliencia.Retry.DisableForUnsafeHttpMethods();
         var mayor = post > tiempo ? post : tiempo;
+        mayor = reconsulta > mayor ? reconsulta : mayor;
         resiliencia.CircuitBreaker.SamplingDuration = mayor * 2 > TimeSpan.FromSeconds(30) ? mayor * 2 : TimeSpan.FromSeconds(30);
     }
 
@@ -711,7 +807,8 @@ public sealed class clsCubicadorHttp(
         return clsResultado<IReadOnlyList<TFila>>.Exito(ordenada);
     }
 
-    private async Task<clsResultado<JsonDocument>> EnviarAsync(HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
+    private async Task<clsResultado<JsonDocument>> EnviarAsync(
+        HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, bool reconsulta = false)
     {
         if (!EstaConfigurado)
         {
@@ -719,6 +816,11 @@ public sealed class clsCubicadorHttp(
         }
 
         using var peticion = new HttpRequestMessage(metodo, ConstruirUrl(_urlBase!, ruta));
+        if (reconsulta)
+        {
+            peticion.Options.Set(OpcionReconsulta, true);
+        }
+
         if (cuerpo is not null)
         {
             peticion.Content = JsonContent.Create(cuerpo, cuerpo.GetType(), options: _json);

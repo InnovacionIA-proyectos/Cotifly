@@ -50,6 +50,13 @@ public sealed class clsValidadorOpcionesCubicador : IValidateOptions<clsOpciones
                 + $"'{Prefijo}TiempoEsperaSegundos' ({options.TiempoEsperaSegundos}): la recomendación es la llamada más lenta del cubicador.");
         }
 
+        // Opción C: la reconsulta espera a que el motor termine; nunca más corta que una consulta normal.
+        if (options.TiempoEsperaReconsultaSegundos < options.TiempoEsperaSegundos)
+        {
+            errores.Add($"'{Prefijo}TiempoEsperaReconsultaSegundos' ({options.TiempoEsperaReconsultaSegundos}) no puede ser menor que "
+                + $"'{Prefijo}TiempoEsperaSegundos' ({options.TiempoEsperaSegundos}): el cubicador responde la reconsulta cuando el motor termina.");
+        }
+
         if (options.PresupuestoCapturaSegundos < options.TiempoEsperaRecomendacionSegundos)
         {
             errores.Add($"'{Prefijo}PresupuestoCapturaSegundos' ({options.PresupuestoCapturaSegundos}) debe ser al menos "

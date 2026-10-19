@@ -50,6 +50,8 @@ public sealed class clsCalculoCubicajeService(
         clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorNoAutorizado,
         clsCodigosError.CubicadorRespuestaInvalida,
+        // Opción C: sin cupo para llamar al cubicador (503 con Retry-After).
+        clsCodigosError.CubicadorOcupado,
         // D1 (E2E 2026-10-16): el 422 del cubicador es un rechazo de los datos (400), con el ítem si lo señala.
         clsCodigosLineaSolicitud.PosicionInvalida,
         clsCodigosError.CubicadorPeticionRechazada,

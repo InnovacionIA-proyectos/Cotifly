@@ -50,6 +50,9 @@ public static class clsRespuestasWeb
     /// <summary>Segundos del encabezado <c>Retry-After</c> del 503 <c>SERVICIO_OCUPADO</c> (#125).</summary>
     public const int SegundosReintentoServicioOcupado = 1;
 
+    /// <summary>Opción C: segundos del encabezado <c>Retry-After</c> del 503 <c>CUBICADOR_OCUPADO</c> (el cubicador calcula otra carga).</summary>
+    public const int SegundosReintentoCubicadorOcupado = 10;
+
     /// <summary>Códigos que responden 400 con <c>ErrorWeb</c> (validación); el resto de errores de negocio va como <c>ErrorNegocio</c>.</summary>
     private static readonly HashSet<string> _validacion = new(StringComparer.Ordinal)
     {
@@ -86,6 +89,8 @@ public static class clsRespuestasWeb
             // #125: reintentable de inmediato; Retry-After le dice al cliente cuándo.
             clsCodigosError.ServicioOcupado =>
                 new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoServicioOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
+            clsCodigosError.CubicadorOcupado =>
+                new clsResultadoReintentable(clsErrorNegocioWeb.Desde(error), SegundosReintentoCubicadorOcupado) { StatusCode = StatusCodes.Status503ServiceUnavailable },
             clsCodigosError.CotizacionNoEncontrada => new NotFoundObjectResult(new clsErrorWeb(MensajeNoEsTuya)),
             clsCodigosAplicacion.NoEncontrado => new NotFoundObjectResult(new clsErrorWeb(error.Mensaje)),
             clsCodigosAplicacion.NoAutenticado or clsTelefonoComercialService.CodigoUsuarioNoEncontrado =>
