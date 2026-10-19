@@ -373,7 +373,6 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         leida.TrmAplicada.Should().Be(4123.4567m);
     }
 
-    /// <summary>Formulario de una ruta y un camión (HU-021) con folio único, sin guardar.</summary>
     /// <summary>
     /// HU-014 (#188, script 03): los camiones se guardan numerados 1..n en <c>ordenVehiculo</c> en el orden de la recomendación, y un
     /// recálculo (<see cref="clsLineaSolicitud.ReemplazarCamiones"/>: borra los anteriores e inserta los nuevos en el mismo guardado) los
@@ -435,6 +434,59 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         releida!.PrimeraRuta!.VehiculosOrdenados.Select(v => v.TipoVehiculo).Should().Equal("2", "3S3", "2S3", "4X2");
     }
 
+    /// <summary>
+    /// Validación de #188: recálculos que reusan TODOS los números anteriores (3 → 3 en otro orden) y que los superan (3 → 5, y luego
+    /// 5 → 1) en el mismo guardado: EF borra antes de insertar y el índice único filtrado no salta.
+    /// </summary>
+    [Fact]
+    public async Task HU014_RecalculosQueReusanOSuperanLosNumerosNoChocanConElIndiceUnico()
+    {
+        var cotizacion = CapturaDeTresCamiones();
+        await GuardarAsync(cotizacion);
+
+        async Task RecalcularAsync(params clsCamionPlaneado[] camiones)
+        {
+            await using var ambito = NuevoAmbito();
+            var leida = (await ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+            leida.PrimeraRuta!.ReemplazarCamiones(camiones, null);
+            await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        }
+
+        await RecalcularAsync(new("2", "FURGON", 1_000m), new("2S3", "ESTACAS", 12_000m), new("3S3", "FURGON", 16_000m));
+        (await OrdenesAsync(cotizacion.Id)).Should().Be("1=2,2=2S3,3=3S3");
+
+        await RecalcularAsync(new("A1", null, 1m), new("A2", null, 1m), new("A3", null, 1m), new("A4", null, 1m), new("A5", null, 1m));
+        (await OrdenesAsync(cotizacion.Id)).Should().Be("1=A1,2=A2,3=A3,4=A4,5=A5");
+
+        await RecalcularAsync(new clsCamionPlaneado("B1", null, 1m));
+        (await OrdenesAsync(cotizacion.Id)).Should().Be("1=B1");
+    }
+
+    /// <summary>
+    /// Validación de #188 (concurrencia): dos recálculos de la misma ruta leídos a la vez y guardados sin control de versión. El segundo
+    /// falla (sus DELETE ya no encuentran filas o su INSERT choca con el índice único) y la base queda con UNA numeración 1..n, sin
+    /// números repetidos ni camiones de las dos versiones mezclados.
+    /// </summary>
+    [Fact]
+    public async Task HU014_DosRecalculosConcurrentesDeLaMismaRutaNoDejanNumerosRepetidos()
+    {
+        var cotizacion = CapturaDeTresCamiones();
+        await GuardarAsync(cotizacion);
+
+        await using var ambitoA = NuevoAmbito();
+        await using var ambitoB = NuevoAmbito();
+        var a = (await ambitoA.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+        var b = (await ambitoB.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+        a.PrimeraRuta!.ReemplazarCamiones([new clsCamionPlaneado("A1", null, 1m), new clsCamionPlaneado("A2", null, 1m)], null);
+        b.PrimeraRuta!.ReemplazarCamiones([new clsCamionPlaneado("B1", null, 1m), new clsCamionPlaneado("B2", null, 1m), new clsCamionPlaneado("B3", null, 1m)], null);
+
+        await ambitoA.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        await FluentActions.Awaiting(() => ambitoB.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct))
+            .Should().ThrowAsync<Exception>("el segundo recálculo trabaja sobre camiones que ya no existen");
+
+        (await OrdenesAsync(cotizacion.Id)).Should().Be("1=A1,2=A2", "queda solo el primer recálculo, numerado 1..n");
+    }
+
     private static clsCotizacionSolicitud CapturaDeTresCamiones()
     {
         var cotizacion = clsCotizacionSolicitud.Crear(new clsDatosCotizacion { Folio = FolioUnico() }).Valor;
@@ -453,6 +505,7 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
         + "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
         + $"WHERE l.cotizacionSolicitudId = '{cotizacionId}'");
 
+    /// <summary>Formulario de una ruta y un camión (HU-021) con folio único, sin guardar.</summary>
     private static clsCotizacionSolicitud Formulario(Guid? usuarioId) =>
         clsCotizacionMuestra.Formulario(folio: FolioUnico(), usuarioId: usuarioId, lineaNegocioId: 1);
 }

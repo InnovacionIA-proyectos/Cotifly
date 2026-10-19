@@ -242,6 +242,35 @@ public sealed class clsAgregadoRutasTests
         ], "una categoría que no cabe en la columna no se trunca: queda NULL y el costeo la lee del catálogo");
     }
 
+    [Fact]
+    public void HU014_EnOrdenConFilasMezcladasPoneLosNumeradosPrimeroYLosNullDetras()
+    {
+        var ruta = Guid.NewGuid();
+        var sinNumeroA = clsVehiculoLineaSolicitud.Crear(ruta, "N1", null, 1m, null, null, null);
+        var tercero = clsVehiculoLineaSolicitud.Crear(ruta, "C3", null, 1m, null, null, 3);
+        var primero = clsVehiculoLineaSolicitud.Crear(ruta, "C1", null, 1m, null, null, 1);
+        var sinNumeroB = clsVehiculoLineaSolicitud.Crear(ruta, "N2", null, 1m, null, null, null);
+
+        clsVehiculoLineaSolicitud.EnOrden([sinNumeroA, tercero, sinNumeroB, primero]).Take(2).Select(v => v.TipoVehiculo)
+            .Should().Equal("C1", "C3");
+        clsVehiculoLineaSolicitud.EnOrden([sinNumeroA, tercero, sinNumeroB, primero]).Skip(2).Select(v => v.OrdenVehiculo)
+            .Should().AllSatisfy(o => o.Should().BeNull());
+        FluentActions.Invoking(() => clsVehiculoLineaSolicitud.Crear(ruta, "X", null, 1m, null, null, 0))
+            .Should().Throw<ArgumentOutOfRangeException>("el orden empieza en 1 (CHECK del 03)");
+    }
+
+    [Fact]
+    public void HU014_AgregarVehiculoNumeraDespuesDelMayorYNuncaRepite()
+    {
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
+        var antes = ruta.VehiculosOrdenados.Select(v => v.OrdenVehiculo).ToList();
+        antes.Should().OnlyContain(o => o != null);
+        var nuevo = ruta.AgregarVehiculo("2", null, 1m);
+        nuevo.OrdenVehiculo.Should().Be(antes.Max()!.Value + 1);
+        ruta.VehiculosOrdenados.Select(v => v.OrdenVehiculo).Should().OnlyHaveUniqueItems();
+        ruta.VehiculosOrdenados.Last().Should().BeSameAs(nuevo);
+    }
+
     // ------------------------------------------------------------------ Margen por ruta (HU-021.8, #135, decisión 6)
 
     [Fact]
