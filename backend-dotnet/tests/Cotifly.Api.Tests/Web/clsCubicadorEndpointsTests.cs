@@ -268,6 +268,30 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
             $"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE usuarioId = '{ana.UsuarioId}'")).Should().Be(0);
     }
 
+    /// <summary>
+    /// D-1019-1: sin el catálogo de mercancías la captura no valida el código (lo decide el cubicador); su rechazo llega con la ruta y la
+    /// mercancía (<c>detalle.ruta</c> y <c>detalle.item</c>, base 0, y <c>detalle.campo</c>) para marcarla en el formulario.
+    /// </summary>
+    [Fact]
+    public async Task SinCatalogoElRechazoDeUnaMercanciaLlegaConLaRutaYElItem()
+    {
+        _cubicador.TiposMercancia.Clear();
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, "MERCANCIA_DESCONOCIDA");
+        _cubicador.CuerpoErrorRecomendacion =
+            $$"""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'{{CodigoCafe}}' no esta en el catalogo de tipos de mercancia."}""";
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+
+        envio.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var detalle = JsonNode.Parse(await envio.Content.ReadAsStringAsync(Ct))!["error"]!["detalle"]!;
+        detalle["ruta"]!.GetValue<int>().Should().Be(0);
+        detalle["item"]!.GetValue<int>().Should().Be(0);
+        detalle["campo"]!.GetValue<string>().Should().Be("codigo_mercancia");
+        _nexo.UltimaAlta.Should().BeNull();
+    }
+
     [Fact]
     public async Task UnaRespuestaIncompletaDelCubicadorSeRechazaAunqueHayaRespaldoYNoSeGuardaNada()
     {

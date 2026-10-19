@@ -14,8 +14,9 @@ namespace Cotifly.Aplicacion.Cubicacion.Services;
 /// Nexo. Pasos:
 /// <list type="number">
 /// <item>Sin cubicador configurado: 503 <c>CUBICADOR_NO_DISPONIBLE</c> sin llamar a nadie.</item>
-/// <item>Cada ítem viaja con su <c>codigoMercancia</c>; sin código, la descripción se resuelve al tipo activo más parecido del catálogo
-/// (<see cref="clsSugeridorMercancia"/>, una lectura con caché). Sin coincidencia: 400 <c>MERCANCIA_DESCONOCIDA</c> con el ítem.</item>
+/// <item>Cada ítem viaja con su <c>codigoMercancia</c>, validado antes contra el catálogo del cubicador (una lectura con caché; D-1019-1);
+/// sin código, la descripción se resuelve al tipo activo y cubicable más parecido (<see cref="clsSugeridorMercancia"/>). Un código
+/// desconocido, inactivo o no cubicable, o una descripción sin coincidencia: 400 con el ítem, sin llamar al cubicador.</item>
 /// <item><c>POST /recomendaciones</c> con <c>idLineaSolicitud = "PRUEBA-&lt;guid&gt;"</c>, <c>origenSistema = COTIFLY</c>, la clase de viaje
 /// como preferencia y el <c>idUsuarioExterno</c> del comercial. El POST nunca se reintenta (lo garantiza el adaptador).</item>
 /// <item>La respuesta se devuelve como una lista de vehículos con los nombres de los catálogos del cubicador (si no responden, los
@@ -155,13 +156,21 @@ public sealed class clsCalculoCubicajeService(
     }
 
     /// <summary>
-    /// El código con el que viaja cada ítem: el suyo o el del tipo más parecido a su descripción. El catálogo se lee solo si algún ítem
-    /// no trae código.
+    /// El código con el que viaja cada ítem: el suyo o el del tipo cubicable más parecido a su descripción. El catálogo de tipos de
+    /// mercancía del cubicador (con caché) se lee una vez, la primera vez que hace falta.
+    /// <list type="bullet">
+    /// <item>D-1019-1 (E2E 2026-10-19): un <c>codigo_mercancia</c> que no está en el catálogo o está inactivo es 400
+    /// <c>MERCANCIA_DESCONOCIDA</c>, y uno con <c>cubicable: false</c> es 400 <c>MERCANCIA_NO_CUBICABLE</c>, los dos con <c>detalle.item</c>
+    /// (base 0) y <c>detalle.campo = codigo_mercancia</c>, <b>sin llamar</b> a <c>POST /recomendaciones</c> (no ocupa el cupo ni el
+    /// motor). Las mismas reglas que la captura (HU-023.3). Se compara sin distinguir mayúsculas y viaja el código del catálogo.</item>
+    /// <item>Sin catálogo (caído o no responde), un ítem con código no se bloquea: viaja como llegó y el cubicador decide (su rechazo trae
+    /// el ítem si se puede saber cuál es). Un ítem con solo descripción sí necesita el catálogo.</item>
+    /// </list>
     /// </summary>
     private async Task<clsResultado<IReadOnlyList<clsMercanciaCubicada>>> ResolverMercanciasAsync(
         IReadOnlyList<clsItemCubicacion> items, CancellationToken cancellationToken)
     {
-        IReadOnlyList<clsTipoMercanciaCubicador>? catalogo = null;
+        clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>? catalogo = null;
         var resueltas = new List<clsMercanciaCubicada>(items.Count);
         for (var i = 0; i < items.Count; i++)
         {
@@ -173,7 +182,28 @@ public sealed class clsCalculoCubicajeService(
 
             if (!string.IsNullOrWhiteSpace(item.CodigoMercancia))
             {
-                resueltas.Add(new clsMercanciaCubicada(item.CodigoMercancia.Trim(), null, Texto(item.Descripcion), Sugerida: false));
+                var codigo = item.CodigoMercancia.Trim();
+                catalogo ??= await LeerCatalogoAsync(cancellationToken);
+                if (catalogo.EsFallo)
+                {
+                    resueltas.Add(new clsMercanciaCubicada(codigo, null, Texto(item.Descripcion), Sugerida: false));
+                    continue;
+                }
+
+                var tipo = catalogo.Valor.FirstOrDefault(t => string.Equals(t.Codigo?.Trim(), codigo, StringComparison.OrdinalIgnoreCase));
+                if (tipo is not { Activo: true })
+                {
+                    return CodigoRechazado(clsCodigosError.MercanciaDesconocida, i,
+                        $"La mercancía del ítem {Numero(i)} ('{codigo}') no está activa en el catálogo del cubicador: escógela del catálogo.");
+                }
+
+                if (!tipo.Cubicable)
+                {
+                    return CodigoRechazado(clsCodigosError.MercanciaNoCubicable, i,
+                        $"La mercancía del ítem {Numero(i)} ('{codigo}') no se puede cubicar según el catálogo del cubicador: escoge otra.");
+                }
+
+                resueltas.Add(new clsMercanciaCubicada(tipo.Codigo.Trim(), null, Texto(item.Descripcion), Sugerida: false));
                 continue;
             }
 
@@ -184,19 +214,15 @@ public sealed class clsCalculoCubicajeService(
                 return SinMercancia(i, null);
             }
 
-            if (catalogo is null)
+            catalogo ??= await LeerCatalogoAsync(cancellationToken);
+            if (catalogo.EsFallo)
             {
-                var leido = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
-                if (leido.EsFallo)
-                {
-                    return Traducir(leido.Error, "catálogo de tipos de mercancía");
-                }
-
-                catalogo = leido.Valor;
+                return Traducir(catalogo.Error, "catálogo de tipos de mercancía");
             }
 
+            // Como la licitación: solo se sugiere un tipo cubicable (el cubicador rechazaría uno que no lo es).
             var sugerida = clsSugeridorMercancia.Sugerir(
-                item.Descripcion, catalogo, _opciones.ParecidoMinimoMercancia, _opciones.MargenAmbiguedadMercancia);
+                item.Descripcion, catalogo.Valor.Where(t => t.Cubicable), _opciones.ParecidoMinimoMercancia, _opciones.MargenAmbiguedadMercancia);
             if (sugerida is null)
             {
                 return SinMercancia(i, item.Descripcion.Trim());
@@ -209,6 +235,31 @@ public sealed class clsCalculoCubicajeService(
 
         return resueltas;
     }
+
+    /// <summary>El catálogo de tipos de mercancía del cubicador (con caché en el adaptador); un fallo queda en el log.</summary>
+    private async Task<clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>> LeerCatalogoAsync(CancellationToken cancellationToken)
+    {
+        var leido = await cubicador.ListarTiposMercanciaAsync(cancellationToken);
+        if (leido.EsFallo)
+        {
+            logger.LogInformation(
+                "Calcular cubicaje: el catálogo de tipos de mercancía del cubicador no respondió ({Codigo}); los códigos los valida el cubicador.",
+                leido.Error.Codigo);
+        }
+
+        return leido;
+    }
+
+    /// <summary>Nombre del campo del código de mercancía en <c>detalle.campo</c> (el del cuerpo de <c>POST /web/cubicacion</c>).</summary>
+    public const string CampoCodigoMercancia = "codigo_mercancia";
+
+    private static string Numero(int indice) => (indice + 1).ToString(CultureInfo.InvariantCulture);
+
+    private static clsErrorDominio CodigoRechazado(string codigo, int indice, string mensaje) =>
+        new(codigo, mensaje)
+        {
+            Datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = indice, ["campo"] = CampoCodigoMercancia },
+        };
 
     private static string? Texto(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
 

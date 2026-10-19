@@ -201,6 +201,22 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         _logger.Registros.Should().Contain(r => r.Mensaje.Contains("detalle interno"));
     }
 
+    /// <summary>D-1019-1: el rechazo conserva la mercancía que señala el cubicador (item y campo); las marcas internas no pasan.</summary>
+    [Fact]
+    public async Task UnRechazoDeMercanciaConservaElItemYElCampoSinMarcasInternas()
+    {
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.MercanciaDesconocida, "mensaje para el comercial", "HTTP 400")
+            {
+                Datos = new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "codigo_mercancia", [clsErroresCubicador.ClaveCaida] = false },
+            });
+
+        var resultado = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MercanciaDesconocida);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "codigo_mercancia" });
+    }
+
     [Fact]
     public async Task UnRechazoNoPrevistoDeUnaRutaSoloAfectaASuRuta()
     {

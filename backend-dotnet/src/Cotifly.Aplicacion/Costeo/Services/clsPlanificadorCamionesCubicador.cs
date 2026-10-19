@@ -183,8 +183,9 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             {
                 _logger.LogWarning("El cubicador no aceptó la ruta {RutaId} ({Codigo}: {Detalle}): no se guarda la captura.",
                     rutaId, recomendacion.Error.Codigo, recomendacion.Error.Detalle);
-                // Solo el código y el mensaje: el detalle interno (qué campo faltó, estado HTTP) queda en el log.
-                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje);
+                // Solo el código, el mensaje y la mercancía señalada (item y campo; D-1019-1): el detalle interno (estado HTTP) y las marcas
+                // internas quedan en el log.
+                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje) { Datos = DatosMercancia(recomendacion.Error.Datos) };
             }
 
             var caida = clsErroresCubicador.EsCaida(recomendacion.Error);
@@ -192,6 +193,26 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         }
 
         return Camiones(rutaId, ruta, recomendacion.Valor);
+    }
+
+    /// <summary>
+    /// D-1019-1: de los datos de un rechazo del cubicador solo pasan <c>item</c> (la mercancía, base 0) y <c>campo</c>; sin <c>item</c>,
+    /// ninguno.
+    /// </summary>
+    public static Dictionary<string, object?>? DatosMercancia(IReadOnlyDictionary<string, object?>? datos)
+    {
+        if (datos is null || !datos.TryGetValue("item", out var item) || item is null)
+        {
+            return null;
+        }
+
+        var visibles = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = item };
+        if (datos.TryGetValue("campo", out var campo) && campo is not null)
+        {
+            visibles["campo"] = campo;
+        }
+
+        return visibles;
     }
 
     /// <summary>

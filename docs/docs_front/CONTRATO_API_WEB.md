@@ -2,7 +2,7 @@
 
 Contrato congelado que consume el módulo Angular de ClientePro (HU-004, `clientepro-frontend`) y que implementa el backend .NET 10 (HU-003). La fuente de verdad es [`backend-dotnet/specs/openapi.yaml`](../../backend-dotnet/specs/openapi.yaml); este documento resume lo que el frontend necesita saber para integrarse sin leer el código.
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-19
 
 - Fecha de congelamiento: 2026-09-24
 - Issue: #17 (HU-004.1)
@@ -290,6 +290,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE` con `detalle.motivo` = `VARIAS_RUTAS` en un formulario o `LICITACION` en una licitación; D9, #139). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
 | 14 | **`POST /web/cubicacion` ("Calcular cubicaje") cambia de forma** (HU-023.2, #157): ahora pregunta al cubicador y responde una **lista de vehículos** (`vehiculos[]`) con el resultado, el motivo, la condicionada, las advertencias y la extradimensión. Ya no trae `sugerencia`, `sugerencia_flota`, clase de viaje ni clase de contenedor. Cada ítem lleva `codigo_mercancia`; **un ítem sin `codigo_mercancia` ni `descripcion` (antes se cubicaba) ahora es 400 `MERCANCIA_DESCONOCIDA`**, porque el cubicador necesita el tipo de mercancía. Los errores pasan a ser los del cubicador (503 `CUBICADOR_NO_DISPONIBLE` en vez de 400 `CUBICACION_NO_DISPONIBLE`). | Ver §8.12. Pintar la lista de vehículos y quitar el prellenado de clase de viaje y de contenedor. Mandar `codigo_mercancia` del desplegable (mientras tanto sirve `descripcion`). |
 | 15 | **`POST /web/cubicacion` puede responder 202** (opción D, 2026-10-19): si el cubicador no termina en 8 s, responde 202 con `{id, estado: "en_proceso", consultar_en}` y el resultado se consulta en `GET /web/cubicacion/{id}`. Nuevo 503 `CUBICADOR_OCUPADO` con `Retry-After`. | Ver §8.12.1: "Calculando…", consultar cada 2-3 s, 404 = volver a calcular. |
+| 16 | **`POST /web/cubicacion` valida `codigo_mercancia` contra el catálogo antes de llamar al cubicador** (D-1019-1, E2E 2026-10-19). Un código desconocido o inactivo es 400 `MERCANCIA_DESCONOCIDA` y uno no cubicable 400 `MERCANCIA_NO_CUBICABLE`, ahora **con `detalle.item`** (base 0) y `detalle.campo = "codigo_mercancia"`. Antes llegaba sin `detalle.item`, con el texto del cubicador, y después de ocuparlo. El código se compara sin mayúsculas y viaja como está en el catálogo. Si el catálogo no responde, decide el cubicador como antes. En la captura, el rechazo del cubicador con el catálogo caído trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es. | Marcar el ítem con `detalle.item`, igual que D1. No hace falta otro cambio. |
 
 ### 8.2 Códigos de error nuevos de HU-021
 
@@ -310,7 +311,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 503 | `CUBICADOR_NO_DISPONIBLE` | `GET /web/tipos-mercancia`, `/web/tipos-carroceria`, `/web/tipos-vehiculo`; `POST /web/cubicacion` (HU-023.2, sin respaldo); captura (solo con `Cubicador:RespaldoSiFalla = false`) | El cubicador no está configurado o no respondió. |
 | 503 | `CUBICADOR_RESPUESTA_INVALIDA` | Captura y licitación | HU-023.1: el cubicador respondió algo fuera del contrato (por ejemplo un camión sin peso). No se guarda nada; reintentar o avisar a soporte. |
 | 503 | `CUBICADOR_NO_AUTORIZADO` | Captura y licitación | HU-023.1: el cubicador rechazó la llave de Cotifly (nunca va al respaldo). No es la sesión del comercial: no cerrar sesión. |
-| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. |
+| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS` | Captura y licitación | HU-023.1: el cubicador rechazó las mercancías de una ruta; `mensaje` trae el detalle del cubicador. No se guarda nada. D-1019-1: cuando se sabe qué mercancía es, `detalle.ruta` y `detalle.item` (base 0) y `detalle.campo`. |
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | Captura, licitación, recálculo de vehículos y `POST /web/cubicacion` | **Vigente** desde HU-023 (#176): la ruta o el cálculo pasa de 10.000 unidades (tope del cubicador; se valida antes de llamarlo, con el cubicador configurado). Partir la carga en varias rutas. No se guarda nada. |
 | 503 / 403 | `NEXO_NO_DISPONIBLE` / `NEXO_SIN_PERMISO` | Captura con conexos | No se pudo leer el costo del conexo en el catálogo de Nexo. |
 
@@ -879,8 +880,17 @@ responde 503 `CUBICADOR_NO_DISPONIBLE`.
 desplegable, puede mandar solo `descripcion`: Cotifly la resuelve al tipo **activo** más parecido del catálogo (sin tildes ni
 mayúsculas) y lo devuelve en `mercancias[]` con `sugerida = true`. Prefiere no sugerir antes que sugerir mal: si no se parece lo
 suficiente, si el tipo tiene números que el texto no trae ("Contenedor 40 pies" nunca es `CONTENEDOR_20`) o si dos tipos quedan casi
-empatados, responde 400 `MERCANCIA_DESCONOCIDA` con el número del ítem en el mensaje y en `detalle.item` (base 0). Un ítem **sin
-`codigo_mercancia` ni `descripcion`** también es 400 `MERCANCIA_DESCONOCIDA` (antes se cubicaba sin tipo). `clase_viaje` es opcional: viaja al cubicador como preferencia.
+empatados, responde 400 `MERCANCIA_DESCONOCIDA` con el número del ítem en el mensaje y en `detalle.item` (base 0). Solo sugiere tipos
+cubicables. Un ítem **sin `codigo_mercancia` ni `descripcion`** también es 400 `MERCANCIA_DESCONOCIDA` (antes se cubicaba sin tipo). `clase_viaje` es opcional: viaja al cubicador como preferencia.
+
+**Código contra el catálogo** (D-1019-1, E2E 2026-10-19). Antes de llamar al cubicador, Cotifly busca cada `codigo_mercancia` en el
+catálogo de `GET /web/tipos-mercancia` (el mismo, con caché), sin distinguir mayúsculas, y manda el código como está en el catálogo:
+
+- Si el código no está o está inactivo, responde 400 `MERCANCIA_DESCONOCIDA`.
+- Si tiene `cubicable: false`, responde 400 `MERCANCIA_NO_CUBICABLE`.
+- Los dos traen `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`, como D1. El cubicador no se llama.
+- Si el catálogo no responde, no se bloquea: el código viaja como llegó y decide el cubicador. Su rechazo trae `detalle.item` y
+  `detalle.campo` cuando se sabe qué mercancía es (el cubicador cita el código en su mensaje); si no, viene sin ellos.
 
 <!-- esquema: CubicacionRequest -->
 ```json
@@ -972,6 +982,17 @@ de la captura, validadas antes de llamar al cubicador (E2E 2026-10-16, D1) y la 
 }
 ```
 
+<!-- respuesta: POST /web/cubicacion 400 -->
+```json
+{
+  "error": {
+    "codigo": "MERCANCIA_DESCONOCIDA",
+    "mensaje": "La mercancía del ítem 2 ('NO_EXISTE_XYZ') no está activa en el catálogo del cubicador: escógela del catálogo.",
+    "detalle": { "item": 1, "campo": "codigo_mercancia" }
+  }
+}
+```
+
 <!-- respuesta: POST /web/cubicacion 503 -->
 ```json
 {
@@ -985,11 +1006,12 @@ de la captura, validadas antes de llamar al cubicador (E2E 2026-10-16, D1) y la 
 | HTTP | Código | Cuándo | Qué mostrar |
 |---|---|---|---|
 | 400 | `ITEMS_REQUERIDOS` | Sin ítems | Deshabilitar el botón sin bultos |
-| 400 | `MERCANCIA_DESCONOCIDA` | Ítem sin código ni descripción, descripción sin parecido o código que el cubicador no conoce | El mensaje; pedir que escoja la mercancía |
+| 400 | `MERCANCIA_DESCONOCIDA` | Ítem sin código ni descripción, descripción sin parecido (`detalle.item`, `detalle.descripcion`), o código desconocido o inactivo (`detalle.item`, `detalle.campo = "codigo_mercancia"`; D-1019-1: Cotifly no llama al cubicador) | El mensaje; marcar el ítem y pedir que escoja la mercancía |
+| 400 | `MERCANCIA_NO_CUBICABLE` | D-1019-1: código con `cubicable: false` (`detalle.item`, `detalle.campo = "codigo_mercancia"`). Cotifly no llama al cubicador | Marcar el ítem y pedir otra mercancía |
 | 400 | `DIMENSIONES_INVALIDAS` | HU-023 (#176) y D1 (2026-10-16): un ítem sin `peso_kg` o con `peso_kg` ≤ 0, o con `largo_cm`, `ancho_cm` o `alto_cm` fuera de 0,1 a 999.999. `detalle.item` = índice base 0 del ítem y `detalle.campo` el campo. Cotifly no llama al cubicador | Marcar ese campo del ítem |
 | 400 | `POSICION_INVALIDA` | D1 (2026-10-16): `cantidad` fuera de 1 a 100.000 (`detalle.item`, `detalle.campo = "cantidad"`). Cotifly no llama al cubicador | Marcar la cantidad del ítem |
 | 400 | `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` | D1 (2026-10-16): el cubicador respondió 422 (validación de su esquema). Con `detalle.item` si señala una mercancía; `CUBICADOR_PETICION_RECHAZADA` si no. Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA` | El mensaje; revisar la carga |
-| 400 | `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador | El mensaje |
+| 400 | `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS` | Rechazo del cubicador (por ejemplo, con el catálogo caído). Las de mercancía traen `detalle.item` cuando se sabe cuál es | El mensaje; marcar el ítem si viene `detalle.item` |
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | Vigente (HU-023, #176): más de 10.000 unidades en total (Cotifly no llama al cubicador) | El mensaje: partir la carga |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | Cubicador sin configurar o caído (un POST sin respuesta se reconsulta antes de rendirse; nunca se repite) | El mensaje y un botón Reintentar |
 | 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada o respuesta fuera del contrato (un 422 del `POST /recomendaciones` ya no cae aquí: es 400, ver arriba) | "Avisa a soporte" |

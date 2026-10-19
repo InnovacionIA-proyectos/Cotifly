@@ -225,6 +225,41 @@ public sealed class clsCubicadorHttpTests : IDisposable
         clsErroresCubicador.EsCaida(resultado.Error).Should().BeFalse();
     }
 
+    /// <summary>
+    /// D-1019-1 (E2E 2026-10-19): el 400 MERCANCIA_DESCONOCIDA/MERCANCIA_NO_CUBICABLE del cubicador no trae el índice, pero cita el código
+    /// entre comillas: Cotifly señala esa mercancía (base 0) con <c>campo = codigo_mercancia</c>. Si el cuerpo trae <c>item</c>, manda ese.
+    /// </summary>
+    [Theory]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'bobinas' no esta en el catalogo de tipos de mercancia."}""", 1)]
+    [InlineData("MERCANCIA_NO_CUBICABLE", """{"codigo":"MERCANCIA_NO_CUBICABLE","mensaje":"'CAFE_EN_ESTIBAS' no es cubicable."}""", 0)]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Mercancía desconocida.","item":1}""", 1)]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"error":{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'CAFE_EN_ESTIBAS'","detalle":{"item":1}}}""", 1)]
+    public async Task UnRechazoDeMercanciaSenalaElItem(string codigo, string cuerpo, int item)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, codigo);
+        _cubicador.CuerpoErrorRecomendacion = cuerpo;
+
+        var resultado = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = item, ["campo"] = "codigo_mercancia" });
+    }
+
+    [Theory]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Una mercancía no está en el catálogo."}""")]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'CAFE_EN_ESTIBAS' y 'BOBINAS' no estan en el catalogo."}""")]
+    [InlineData("""{"codigo":"DIMENSIONES_INVALIDAS","mensaje":"'BOBINAS' mide demasiado."}""")]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Mercancía desconocida.","item":7}""")]
+    public async Task SiNoSePuedeSaberLaMercanciaElRechazoQuedaSinItem(string cuerpo)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, "MERCANCIA_DESCONOCIDA");
+        _cubicador.CuerpoErrorRecomendacion = cuerpo;
+
+        var resultado = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        resultado.Error.Datos.Should().BeNull();
+    }
+
     [Fact]
     public async Task Un400SinCodigoDelContratoEsUnRechazoNoDisponible()
     {

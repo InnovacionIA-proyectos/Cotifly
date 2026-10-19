@@ -210,7 +210,7 @@ public sealed class clsCubicadorHttp(
         {
             if (!SinRespuesta(respuesta.Error))
             {
-                return respuesta.Error;
+                return ConMercanciaSenalada(respuesta.Error, peticion);
             }
 
             // HU-023 (#176, guía §4 y §7): el POST no se reintenta a ciegas. Sin respuesta (tiempo agotado o red), la corrida pudo quedar
@@ -239,6 +239,54 @@ public sealed class clsCubicadorHttp(
 
         return await CompletarAsync(peticion, leida.Valor, "POST", cancellationToken);
     }
+
+    /// <summary>Valor de <c>campo</c> en los datos de un rechazo de mercancía (<c>MERCANCIA_DESCONOCIDA</c>, <c>MERCANCIA_NO_CUBICABLE</c>).</summary>
+    public const string CampoCodigoMercancia = "codigo_mercancia";
+
+    /// <summary>
+    /// D-1019-1 (E2E 2026-10-19): un 400 <c>MERCANCIA_DESCONOCIDA</c> o <c>MERCANCIA_NO_CUBICABLE</c> del cubicador llega con la mercancía
+    /// (<c>item</c>, base 0, y <c>campo = codigo_mercancia</c>): la que señala el cuerpo (<c>item</c>/<c>indice</c>, si existe en la petición)
+/// o, si no la señala, la
+    /// única cuyo código cita el mensaje entre comillas (<c>'NO_EXISTE_XYZ' no esta en el catalogo…</c>). Si no se puede saber cuál es
+    /// (ningún código citado, o dos códigos distintos), queda sin ítem como antes.
+    /// </summary>
+    private static clsErrorDominio ConMercanciaSenalada(clsErrorDominio error, clsPeticionRecomendacion peticion)
+    {
+        if (error.Codigo is not (clsCodigosError.MercanciaDesconocida or clsCodigosError.MercanciaNoCubicable))
+        {
+            return error;
+        }
+
+        if (error.Datos?.TryGetValue("item", out var senalado) == true)
+        {
+            // Un índice fuera de la petición no señala nada: se descarta.
+            return senalado is int n && n >= 0 && n < peticion.Mercancias.Count ? error : error with { Datos = null };
+        }
+
+        int? item = null;
+        string? citado = null;
+        for (var i = 0; i < peticion.Mercancias.Count; i++)
+        {
+            var codigo = peticion.Mercancias[i]?.CodigoMercancia?.Trim();
+            if (string.IsNullOrEmpty(codigo) || !error.Mensaje.Contains($"'{codigo}'", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (citado is not null && !string.Equals(citado, codigo, StringComparison.OrdinalIgnoreCase))
+            {
+                return error;
+            }
+
+            citado ??= codigo;
+            item ??= i;
+        }
+
+        return item is { } indice ? error with { Datos = DatosMercancia(indice) } : error;
+    }
+
+    private static Dictionary<string, object?> DatosMercancia(int indice) =>
+        new(StringComparer.Ordinal) { ["item"] = indice, ["campo"] = CampoCodigoMercancia };
 
     /// <summary>Clave de <see cref="clsErrorDominio.Datos"/> que marca un fallo sin respuesta del cubicador (tiempo agotado o red).</summary>
     public const string ClaveSinRespuesta = "sinRespuesta";
@@ -909,6 +957,7 @@ public sealed class clsCubicadorHttp(
     {
         string? codigo = null;
         string? mensaje = null;
+        int? item = null;
         try
         {
             using var documento = await LeerJsonAsync(respuesta, cancellationToken);
@@ -917,6 +966,12 @@ public sealed class clsCubicadorHttp(
                 var error = Propiedad(raiz, "error") is { ValueKind: JsonValueKind.Object } anidado ? anidado : raiz;
                 codigo = Texto(error, "codigo", "code")?.Trim().ToUpperInvariant();
                 mensaje = Recortar(Texto(error, "mensaje", "message"));
+                // D-1019-1: si el cubicador señala la mercancía (hoy no lo hace), se conserva.
+                var senal = Propiedad(error, "detalle", "detail") is { ValueKind: JsonValueKind.Object } detalle ? detalle : error;
+                if (Propiedad(senal, "item", "indice") is { ValueKind: JsonValueKind.Number } numero && numero.TryGetInt32(out var indice) && indice >= 0)
+                {
+                    item = indice;
+                }
             }
         }
         catch (JsonException)
@@ -928,7 +983,10 @@ public sealed class clsCubicadorHttp(
         {
             logger.LogWarning("El cubicador rechazó {Metodo} {Ruta} con {Codigo}.", metodo, ruta, codigo);
             var texto = mensaje is null ? propio : $"{propio} Detalle del cubicador: {(mensaje.Length > LargoMensajeCubicador ? mensaje[..LargoMensajeCubicador] : mensaje)}";
-            return new clsErrorDominio(codigo, texto, $"HTTP 400 {codigo} en {metodo} {ruta}");
+            return new clsErrorDominio(codigo, texto, $"HTTP 400 {codigo} en {metodo} {ruta}")
+            {
+                Datos = item is { } i && codigo is clsCodigosError.MercanciaDesconocida or clsCodigosError.MercanciaNoCubicable ? DatosMercancia(i) : null,
+            };
         }
 
         return NoDisponible($"HTTP 400 ({codigo ?? "sin código"}) en {metodo} {ruta}");

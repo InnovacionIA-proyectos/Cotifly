@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Fecha** | 2026-10-19 |
-| **Versión de referencia** | Rama `hu-023-defectos-e2e-1016` hasta `44f25a7` (`4328e4c` más la corrección del apagado de "Calcular cubicaje", B1), sobre PR #178 |
+| **Versión de referencia** | Rama `hu-023-defectos-e2e-1016`: `44f25a7` (`4328e4c` más la corrección del apagado de "Calcular cubicaje", B1) más la corrección D-1019-1 (código de mercancía validado antes de llamar al cubicador), sobre PR #178 |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -929,8 +929,8 @@ Cuerpo `CubicacionRequest`:
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
 | `items` | `ItemCubicacion[]` | Sí | Al menos uno (si no, 400 `ITEMS_REQUERIDOS`). La suma de `cantidad` no puede pasar de 10.000 (400 `CUBICACION_DEMASIADO_GRANDE`) |
-| `items[].codigo_mercancia` | string o null | Uno de los dos | Código de `GET /web/tipos-mercancia`. Gana sobre `descripcion` |
-| `items[].descripcion` | string o null | Uno de los dos | Texto libre mientras no haya desplegable: el servidor lo resuelve al tipo activo más parecido; si no hay uno claro, 400 `MERCANCIA_DESCONOCIDA` |
+| `items[].codigo_mercancia` | string o null | Uno de los dos | Código de `GET /web/tipos-mercancia`. Gana sobre `descripcion`. Se valida contra ese catálogo **antes** de llamar al cubicador, sin distinguir mayúsculas: desconocido o inactivo, 400 `MERCANCIA_DESCONOCIDA`; con `cubicable: false`, 400 `MERCANCIA_NO_CUBICABLE`; los dos con `detalle.item` y `detalle.campo = "codigo_mercancia"` (D-1019-1) |
+| `items[].descripcion` | string o null | Uno de los dos | Texto libre mientras no haya desplegable: el servidor lo resuelve al tipo activo y cubicable más parecido; si no hay uno claro, 400 `MERCANCIA_DESCONOCIDA` |
 | `items[].cantidad` | entero | Sí | Bultos idénticos, de 1 a 100.000 (si no, 400 `POSICION_INVALIDA` con `detalle.item` y `detalle.campo = "cantidad"`) |
 | `items[].largo_cm`, `ancho_cm`, `alto_cm` | número | Sí | Centímetros, de 0,1 a 999.999 con hasta 2 decimales (si no, 400 `DIMENSIONES_INVALIDAS` con `detalle.item` y `detalle.campo`) |
 | `items[].peso_kg` | número | Sí | Peso **por bulto** en kg, **mayor que 0** (si no, 400 `DIMENSIONES_INVALIDAS` con `detalle.item` y `detalle.campo = "peso_kg"`) |
@@ -938,7 +938,28 @@ Cuerpo `CubicacionRequest`:
 
 D1 (E2E 2026-10-16): las medidas, el peso y la cantidad se validan con **las mismas reglas de la captura** y **antes** de llamar al
 cubicador (después de comprobar que está configurado). `detalle.item` es el índice **base 0** del ítem en `items` y `detalle.campo` el
-campo (`largo_cm`, `ancho_cm`, `alto_cm`, `peso_kg` o `cantidad`): marcar ese campo de ese ítem. Ejemplo de error **400**:
+campo (`largo_cm`, `ancho_cm`, `alto_cm`, `peso_kg` o `cantidad`): marcar ese campo de ese ítem.
+
+D-1019-1 (E2E 2026-10-19): el `codigo_mercancia` de cada ítem también se valida antes de llamar al cubicador, contra el catálogo de
+`GET /web/tipos-mercancia` (el mismo, con caché). Sin distinguir mayúsculas, y viaja el código como está en el catálogo:
+
+- Si no está o está inactivo, responde 400 `MERCANCIA_DESCONOCIDA`.
+- Si tiene `cubicable: false`, responde 400 `MERCANCIA_NO_CUBICABLE`.
+- Los dos traen `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`. El cubicador no se llama.
+- Si el catálogo no responde, no se bloquea: decide el cubicador. Su rechazo trae `detalle.item` y `detalle.campo` cuando se sabe qué
+  mercancía es; si no, viene sin ellos.
+
+```json
+{
+  "error": {
+    "codigo": "MERCANCIA_DESCONOCIDA",
+    "mensaje": "La mercancía del ítem 2 ('NO_EXISTE_XYZ') no está activa en el catálogo del cubicador: escógela del catálogo.",
+    "detalle": { "item": 1, "campo": "codigo_mercancia" }
+  }
+}
+```
+
+Ejemplo de error **400** de D1:
 
 ```json
 {
@@ -1022,11 +1043,12 @@ Respuesta **200** sin selección automática (es válida, no es un error):
 |---|---|---|
 | 200 | `ResultadoCubicacion` | Una fila por vehículo (pueden ser de tipos distintos). Con `SIN_SELECCION_AUTOMATICA`, mostrar `mensaje_sin_seleccion` tal cual. Con `condicionada = true`, mostrar `mercancias_condicionadas[].comentario`. Con `mercancias[].sugerida = true`, pedir que el comercial confirme la mercancía. Si se agrupa `vehiculos[].mercancias` por código, **sumar** |
 | 400 | `ITEMS_REQUERIDOS` | Deshabilitar el botón sin bultos |
-| 400 | `MERCANCIA_DESCONOCIDA` (`detalle.item` base 0 y `detalle.descripcion` cuando aplica) | Pedir que escoja la mercancía del catálogo en ese ítem |
+| 400 | `MERCANCIA_DESCONOCIDA` (`detalle.item` base 0; `detalle.descripcion` si vino por descripción o `detalle.campo = "codigo_mercancia"` si el código es desconocido o inactivo) | Pedir que escoja la mercancía del catálogo en ese ítem. Con un código, Cotifly no llamó al cubicador |
+| 400 | `MERCANCIA_NO_CUBICABLE` (`detalle.item`, `detalle.campo = "codigo_mercancia"`) | El tipo tiene `cubicable: false`: pedir otra mercancía en ese ítem. Cotifly no llamó al cubicador |
 | 400 | `DIMENSIONES_INVALIDAS` (`detalle.item` y `detalle.campo`: medida fuera de 0,1 a 999.999 o peso ≤ 0) | Marcar ese campo del ítem. Cotifly no llamó al cubicador |
 | 400 | `POSICION_INVALIDA` (`detalle.item`, `detalle.campo = "cantidad"`) | Marcar la cantidad del ítem (1 a 100.000) |
 | 400 | `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` (con `detalle.item` si el cubicador señala una mercancía) o `CUBICADOR_PETICION_RECHAZADA` (si no la señala) | El cubicador respondió 422 (su validación de esquema). Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA`. Mostrar `mensaje` y pedir que revise la carga; no es una caída, no ofrecer Reintentar sin cambios |
-| 400 | `MERCANCIA_NO_CUBICABLE`, `MERCANCIAS_REQUERIDAS` | Mostrar `mensaje` |
+| 400 | `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `MERCANCIAS_REQUERIDAS` (rechazo del cubicador, por ejemplo con el catálogo caído) | Mostrar `mensaje`; marcar el ítem si viene `detalle.item` |
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | "Parte la carga en varias rutas" |
 | 202 | `CubicacionEnProceso` `{id, estado: "en_proceso", consultar_en}` con `Location` y `Retry-After: 2` | El cubicador no terminó en 8 s: mostrar "Calculando…" y consultar `GET /web/cubicacion/{id}` (4.3.2) |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el mensaje y Reintentar. También llega, con el mensaje "Cotifly se está reiniciando…", si la petición entra mientras el servidor se apaga (nunca un 500) |
@@ -1327,7 +1349,7 @@ Error **409** de la clave de idempotencia:
 | 400 | `MARGEN_LINEA_DESCONOCIDA` | Marcar la línea de negocio |
 | 400 | `FOLIO_CONSECUTIVO_AGOTADO` | "Límite diario de folios alcanzado. Contacta a soporte" |
 | 400 | `TRM_NO_DISPONIBLE` | "No se pudo obtener la TRM": botones Reintentar y Cambiar a COP |
-| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `CUBICACION_DEMASIADO_GRANDE` | El cubicador rechazó una ruta: mostrar `mensaje`. Nada se guardó |
+| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `CUBICACION_DEMASIADO_GRANDE` | El cubicador rechazó una ruta: mostrar `mensaje`. Nada se guardó. Cuando se sabe qué mercancía es (D-1019-1), vienen `detalle.ruta` y `detalle.item` (base 0) y `detalle.campo`: marcar esa mercancía |
 | 400 | `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` (como `error.codigo`) | D1: el cubicador respondió 422 a una ruta (antes 503 `CUBICADOR_RESPUESTA_INVALIDA`). Mostrar `mensaje`; nada se guardó. Corregir la carga antes de reenviar |
 | 400 | `ErrorWeb` | JSON inválido, o `Idempotency-Key` fuera de 8 a 64 caracteres |
 | 403 | `NEXO_SIN_PERMISO` | Rol del comercial en NEXO (al leer el costo de los conexos): avisar a soporte |
@@ -2889,8 +2911,8 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `LICITACION_INVALIDA` | 400 | Filas inválidas (`errores[]`) o filas guardadas que ya no pasan | Pintar errores por fila |
 | `LINEA_SIN_COTIZACION_NEXO` | 409 | La ruta aún no tiene línea en la cotización de NEXO | Esperar el costeo |
 | `MARGEN_LINEA_DESCONOCIDA` | 400 | Línea de negocio inexistente o inactiva | Marcar la línea; ofrecer `detalle.lineas_validas` si vienen |
-| `MERCANCIA_DESCONOCIDA` | 400 | Mercancía sin código ni descripción, sin parecido, inactiva o desconocida | Pedir que la escoja del catálogo |
-| `MERCANCIA_NO_CUBICABLE` | 400 | Tipo con `cubicable = false` | No ofrecerlo |
+| `MERCANCIA_DESCONOCIDA` | 400 | Mercancía sin código ni descripción, sin parecido, inactiva o desconocida. En "Calcular cubicaje" con `detalle.item` (base 0) y, si es por el código, `detalle.campo = "codigo_mercancia"` (D-1019-1) | Pedir que la escoja del catálogo; marcar el ítem |
+| `MERCANCIA_NO_CUBICABLE` | 400 | Tipo con `cubicable = false`. En "Calcular cubicaje" con `detalle.item` y `detalle.campo = "codigo_mercancia"` (D-1019-1) | No ofrecerlo; marcar el ítem |
 | `MERCANCIAS_REQUERIDAS` | 400 | El cubicador recibió una lista vacía | Validar antes de enviar |
 | `MUNICIPIOS_NO_DISPONIBLE` | 503 | El catálogo de municipios no respondió | Deshabilitar el buscador, Reintentar |
 | `NEXO_NO_DISPONIBLE` | 503 | NEXO caído al consultar o agregar conexos (ver `detalle.agregado_en_nexo`) | Según `agregado_en_nexo` (4.4.5) |
@@ -3009,6 +3031,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 38 | **D6:** `POSICION_INVALIDA` en la captura va en `campo = mercancias[i].<subcampo>` (base 0) y su mensaje nombra la mercancía en base 1 sin índices; `DEMASIADAS_POSICIONES` va en `mercancias` | Rompe | Marcar el campo con el índice de `campo` |
 | 39 | **D2:** si la Mesa cambia el vehículo, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` del camión llegan en `null` | Cambia | Mostrar "—", nunca 0 % |
 | 40 | Tope del polling de `GET /web/cubicacion/{id}`: **4 minutos** | Cambia | Ajustar el tope (antes se sugerían 2-3 minutos) |
+| 41 | **D-1019-1:** `POST /web/cubicacion` valida `codigo_mercancia` contra el catálogo antes de llamar al cubicador: 400 `MERCANCIA_DESCONOCIDA` (desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE`, ahora con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`; el código se compara sin mayúsculas. En la captura, el rechazo del cubicador trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es | Agrega | Marcar el ítem con `detalle.item`, igual que D1 |
 
 ---
 
@@ -3088,7 +3111,7 @@ fila_excel, campo, codigo, mensaje}`.
 
 ## 9. Notas de versión
 
-**2026-10-19 (rama `hu-023-defectos-e2e-1016` hasta `44f25a7`: `4328e4c` más la corrección B1 del apagado).** Defectos del E2E real del 2026-10-16:
+**2026-10-19 (rama `hu-023-defectos-e2e-1016`: `44f25a7` —`4328e4c` más la corrección B1 del apagado— más D-1019-1).** Defectos del E2E real del 2026-10-16 y del 2026-10-19:
 
 - **"Calcular cubicaje" asíncrono (D3, opción D).** El motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API mientras
   calcula. `POST /web/cubicacion` responde **200 como siempre** si el cubicador termina en 8 s; si no, **202**
@@ -3113,7 +3136,12 @@ fila_excel, campo, codigo, mensaje}`.
 - **Apagado ordenado (B1).** Una petición a "Calcular cubicaje" que llega mientras Cotifly se apaga responde 503
   `CUBICADOR_NO_DISPONIBLE` ("Cotifly se está reiniciando…") en vez de un 500, y el apagado espera también los cálculos que entraron en
   ese momento.
-- Cambios con su "qué hacer": sección 7, filas 31 a 40.
+- **D-1019-1 (E2E 2026-10-19).** "Calcular cubicaje" valida `codigo_mercancia` contra el catálogo de `GET /web/tipos-mercancia` antes
+  de llamar al cubicador (sin ocupar su cupo ni su motor): 400 `MERCANCIA_DESCONOCIDA` (desconocido o inactivo) o
+  `MERCANCIA_NO_CUBICABLE`, con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`. Antes llegaba sin `detalle.item`. Si el
+  catálogo no responde, decide el cubicador como antes; su rechazo trae el ítem cuando se sabe cuál es. En la captura, ese rechazo
+  trae también `detalle.ruta`.
+- Cambios con su "qué hacer": sección 7, filas 31 a 41.
 
 **PR #178 (commit `fa96f5e`, 2026-10-15).** Esta versión cierra las diferencias que había entre el código, el openapi y las guías del
 frontend. Este documento ya refleja todo lo siguiente:

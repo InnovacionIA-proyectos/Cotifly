@@ -1,6 +1,6 @@
 # Guía de integración frontend: módulo Cotifly en ClientePro (Angular) contra el backend .NET 10
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-19
 
 | Campo | Valor |
 |---|---|
@@ -9,7 +9,7 @@
 | Estado | Vigente |
 | Dueño | Duban Guerra (backend) |
 | Fecha de creación | 2026-09-29 |
-| Actualizado | 2026-10-15 |
+| Actualizado | 2026-10-19 |
 | Fuentes verificadas | `backend-dotnet/specs/openapi.yaml`, `docs/docs_front/CONTRATO_API_WEB.md`, `backend-dotnet/docs/07-api.md` y `04-flujo-del-sistema.md`, ADR-005, ADR-009, ADR-011, ADR-014, ADR-015, `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`, el backlog de HU-001 a HU-013 (archivado en `docs/archivo/backlog/`) y los controllers de `backend-dotnet/src/Cotifly.Api` en `origin/QA` |
 | Fuente de verdad | `backend-dotnet/specs/openapi.yaml`. Si esta guía y el spec difieren, manda el spec, y hay que avisar al backend |
 
@@ -1027,8 +1027,11 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
   `detalle.campo = "cantidad"`) si la cantidad no está entre 1 y 100.000 (las reglas de la captura; se valida antes de llamar al
   cubicador, después de comprobar que está configurado; D1 del E2E 2026-10-16). Un 422 del cubicador ya no es 503: llega como 400
   `DIMENSIONES_INVALIDAS`/`POSICION_INVALIDA` con `detalle.item` o, si no señala una mercancía, `CUBICADOR_PETICION_RECHAZADA`; 400 `CUBICACION_DEMASIADO_GRANDE` si
-  los ítems suman más de 10.000 unidades (partir la carga); 400 `MERCANCIA_DESCONOCIDA` (ítem sin código ni descripción, descripción que no se parece a
-  ninguna mercancía o código que el cubicador no conoce; el mensaje dice qué ítem); 400 `MERCANCIA_NO_CUBICABLE`,
+  los ítems suman más de 10.000 unidades (partir la carga); 400 `MERCANCIA_DESCONOCIDA` (ítem sin código ni descripción, o descripción que no se parece a
+  ninguna mercancía cubicable, con `detalle.item`); 400 `MERCANCIA_DESCONOCIDA` (código desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE`
+  (código con `cubicable: false`) con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`: Cotifly los valida contra el
+  catálogo de `GET /web/tipos-mercancia` **antes** de llamar al cubicador, sin distinguir mayúsculas (D-1019-1 del E2E 2026-10-19; si el
+  catálogo no responde, decide el cubicador y su rechazo trae `detalle.item` cuando se sabe qué mercancía es); 400 `MERCANCIA_NO_CUBICABLE`,
   `DIMENSIONES_INVALIDAS` o `MERCANCIAS_REQUERIDAS` (rechazo del cubicador); **503 `CUBICADOR_NO_DISPONIBLE`** (cubicador sin
   configurar o caído: no hay respaldo, ofrecer Reintentar); 503 `CUBICADOR_NO_AUTORIZADO` o `CUBICADOR_RESPUESTA_INVALIDA` (avisar a
   soporte; no cerrar sesión).
@@ -1289,6 +1292,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
 | HU-023.3 (#158): mercancías con `codigo_mercancia` (obligatorio; `id_tipo_mercancia` obsoleto); la respuesta 201 trae `cubicacion[]` con el resultado y los avisos por ruta; `GET .../costeo` trae `resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada` y, por camión, volumen y porcentajes de llenado; nuevo `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Mandar el código del desplegable; mostrar los avisos al crear (desde HU-023.5 se guardan en la ruta y vuelven en `rutas[].avisos_cubicacion` de `GET .../costeo`, campo opcional); llamar a recalcular cuando cambian las mercancías o el peso de una ruta antes de enviarla |
 | HU-023.1: la captura puede responder 400 `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` (el cubicador rechazó una ruta) y 503 `CUBICADOR_RESPUESTA_INVALIDA` o `CUBICADOR_NO_AUTORIZADO` | Mostrar `error.mensaje` (trae el detalle del cubicador); no se guardó nada. `CUBICADOR_NO_AUTORIZADO` no es la sesión: no cerrar sesión |
+| D-1019-1 (E2E 2026-10-19): en `POST /web/cubicacion`, un `codigo_mercancia` desconocido, inactivo o no cubicable se rechaza **antes** de llamar al cubicador (400 `MERCANCIA_DESCONOCIDA` o `MERCANCIA_NO_CUBICABLE`) con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`; antes llegaba sin `detalle.item`. En la captura, el rechazo del cubicador (con el catálogo caído) trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es | Marcar el ítem (o la mercancía de la ruta) con `detalle.item`, igual que D1 |
 | HU-023.4 (#159): sin cambios de contrato web. Con el contrato de Nexo #297, por defecto (`Nexo:EnviarCodigosCubicador` apagada) los camiones del cubicador llegan a Nexo sin vehículo y los costea la Mesa: es normal que esas rutas tarden más en `autocosteo`; `GET .../costeo` muestra el vehículo y la carrocería del cubicador hasta que la Mesa los cambie: **la Mesa manda** (D2, decisión del 2026-10-19; ver la sección 5.17). Con un solo camión, Nexo recibe el **peso declarado de la ruta**; el `peso_kg` del camión en `GET .../costeo` sigue siendo el del cubicador (puede diferir del de la ruta). Un 429 de Nexo (cupo por rol agotado) solo afecta los catálogos: sin copia de respaldo, `CATALOGOS_FLETE_NO_DISPONIBLE` durante unos 30 s | Mostrar el peso del cubicador como dato del camión, no como el peso cotizado; ante "no disponible", ofrecer Reintentar pasado medio minuto |
 | HU-023 (#176), contratos vigentes de NEXO y del cubicador: (1) `BUSQUEDA_AGOTADA` es un quinto `motivo_sin_seleccion` y `GET .../costeo` y `POST /web/cubicacion` traen `mensaje_sin_seleccion`; (2) `extradimension` cambia a `{hay_extradimension, medidas_estandar, piezas[]}` (cada pieza con `indice_posicion` y `excesos[]`); (3) en "Calcular cubicaje" cada vehículo trae `numero_vehiculo`, `alerta_bajo_llenado`, `heterogenea` y `mercancias[]` por posición; (4) cada mercancía con `codigo_mercancia` exige `peso_kg` > 0 y una ruta no pasa de 10.000 unidades (400 `CUBICACION_DEMASIADO_GRANDE`); (5) `mercancias_condicionadas[].comentario` sale del catálogo; (6) `GET /web/municipios?q=&departamento=` busca en `/ciudades` de Nexo (máx. 50); (7) Nexo recibe ahora el vehículo y la carrocería del cubicador (banderas encendidas por defecto) | (1) Mostrar `mensaje_sin_seleccion`; **con `BUSQUEDA_AGOTADA` nunca decir que la carga no cabe**; si `motivo_sin_seleccion` es `null` con `SIN_SELECCION_AUTOMATICA`, el motivo real está en la advertencia `MOTIVO_SIN_SELECCION`. (2) Pintar las piezas que exceden con su posición. (3) Al agrupar `mercancias[]` por código, **sumar**; `indice_posicion` puede ser `null`. (4) Pedir el peso por unidad y partir cargas grandes. (5) Mostrar el comentario de la condicionada. (6) Buscador con `q` (desde 3 letras) y guardar el `id` elegido |
 | Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
