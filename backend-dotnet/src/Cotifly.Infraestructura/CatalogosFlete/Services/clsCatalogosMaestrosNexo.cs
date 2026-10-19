@@ -25,7 +25,9 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// <remarks>
 /// <para><b>Obligatorios y opcionales.</b> Los cuatro catálogos se piden juntos. <c>tipos-vehiculo</c> y <c>clases-viaje</c> son
 /// obligatorios: si uno falla (o queda vacío) el resultado es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>. Si fallan
-/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning y el formulario sigue (ya no hay lista fija de
+/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning, marcados como no disponibles (<see cref="clsCatalogosMaestros.ClasesContenedorNoDisponible"/>,
+/// <see cref="clsCatalogosMaestros.LineasNegocioNoDisponible"/>; un <c>[]</c> real de Nexo no se marca) para que la caché conserve la
+/// copia anterior, y el formulario sigue (ya no hay lista fija de
 /// clases de contenedor: con la lista vacía <c>GET /web/catalogos-flete</c> la entrega vacía y la captura de una clase que no es
 /// provisional responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, HU-023.1 y HU-027.1). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
 /// también los tipos de vehículo con <c>esCatalogoOficial = false</c> (no se ofrecen ni se aceptan).</para>
@@ -90,7 +92,11 @@ public sealed class clsCatalogosMaestrosNexo(
         }
 
         return new clsCatalogosMaestros(
-            tipos.Result.Valor, clases.Result.Valor, Opcional(contenedores.Result, RutaClasesContenedor), Opcional(lineas.Result, RutaLineasNegocio));
+            tipos.Result.Valor, clases.Result.Valor, Opcional(contenedores.Result, RutaClasesContenedor), Opcional(lineas.Result, RutaLineasNegocio))
+        {
+            ClasesContenedorNoDisponible = contenedores.Result.EsFallo,
+            LineasNegocioNoDisponible = lineas.Result.EsFallo,
+        };
     }
 
     /// <summary><c>{urlBase}{ruta}</c>, con <paramref name="ruta"/> empezando por <c>/api/</c>.</summary>

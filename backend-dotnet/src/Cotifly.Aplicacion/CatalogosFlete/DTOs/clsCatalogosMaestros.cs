@@ -16,4 +16,14 @@ public sealed record clsCatalogosMaestros(
     IReadOnlyList<clsOpcionCatalogo> TiposVehiculo,
     IReadOnlyList<clsOpcionCatalogo> ClasesViaje,
     IReadOnlyList<clsOpcionCatalogo> ClasesContenedor,
-    IReadOnlyList<clsOpcionCatalogo> LineasNegocio);
+    IReadOnlyList<clsOpcionCatalogo> LineasNegocio)
+{
+    /// <summary>
+    /// <c>true</c> si <see cref="ClasesContenedor"/> está vacía porque <c>clases-contenedor</c> <b>falló</b> (HTTP, red, JSON…), no porque
+    /// Nexo respondiera <c>[]</c>. La caché lo usa para conservar las clases de la copia anterior ante un fallo pasajero.
+    /// </summary>
+    public bool ClasesContenedorNoDisponible { get; init; }
+
+    /// <summary>Igual que <see cref="ClasesContenedorNoDisponible"/>, para <c>lineas-negocio</c>.</summary>
+    public bool LineasNegocioNoDisponible { get; init; }
+}

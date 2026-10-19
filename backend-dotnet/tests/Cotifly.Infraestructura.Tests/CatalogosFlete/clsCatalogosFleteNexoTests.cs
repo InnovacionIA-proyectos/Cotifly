@@ -96,7 +96,42 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
         resultado.Valor.TiposVehiculo.Should().NotBeEmpty();
         resultado.Valor.ClasesContenedor.Should().BeEmpty();
         resultado.Valor.LineasNegocio.Should().BeEmpty();
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeTrue("falló: la caché puede conservar la copia anterior");
+        resultado.Valor.LineasNegocioNoDisponible.Should().BeTrue();
         logger.Registros.Should().Contain(r => r.Nivel == Microsoft.Extensions.Logging.LogLevel.Warning && r.Mensaje.Contains("opcional", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnaListaVaciaRealDeNexoNoSeMarcaComoFallo()
+    {
+        // Hallazgo M de #179: [] (base de SAP sin configurar) es una respuesta legítima, no un fallo pasajero.
+        _nexo.ClasesContenedor.Clear();
+        _nexo.LineasNegocio.Clear();
+
+        var resultado = await Maestros().ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.ClasesContenedorNoDisponible.Should().BeFalse();
+        resultado.Valor.LineasNegocioNoDisponible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ConLaCacheUnFalloPasajeroDeClasesDeContenedorConservaLasDeLaCopiaAnterior()
+    {
+        // Hallazgo M de #179, de punta a punta con el Nexo falso: la copia nueva (vigente 30 min) no deja el selector vacío.
+        var reloj = new clsRelojFalso();
+        var cache = new clsCacheCatalogosMaestros();
+        clsCatalogosMaestrosEnCache Proveedor() => new(
+            Maestros(), cache, reloj, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoFalso.UrlBase }),
+            NullLogger<clsCatalogosMaestrosEnCache>.Instance);
+
+        await Proveedor().ObtenerAsync(_usuarioId, Ct);
+        _nexo.CatalogosFallidos.Add("clases-contenedor");
+        reloj.Avanzar(TimeSpan.FromMinutes(31));
+
+        var resultado = await new clsCatalogosFleteNexo(Proveedor()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.Valor.ClasesContenedor.Select(c => c.Valor).Should().Contain("CNT40.HC");
     }
 
     [Fact]
