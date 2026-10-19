@@ -181,7 +181,7 @@ public sealed class clsSolicitudCosteoWebRequest
 /// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
 /// nombre; igual las ciudades de devolución y de levante del contenedor. Sin vehículo ni carrocería (decisión 7).
 /// </summary>
-public sealed class clsRutaCapturaWebRequest
+public class clsRutaCapturaWebRequest
 {
     /// <summary>Línea de negocio de la ruta; sin ella, la de la solicitud.</summary>
     public string? LineaNegocio { get; init; }
