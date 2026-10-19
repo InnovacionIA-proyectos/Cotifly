@@ -229,6 +229,34 @@ public sealed class clsEdicionSolicitudServiceTests
         await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
     }
 
+    [Fact]
+    public async Task SiElPollingGuardaEntreElRechazoYLaEdicionSeRecargaYSeAplicaUnaVezMas()
+    {
+        // Validación HU-028: el polling ve la solicitud anterior descartada y guarda (v5 → v6) entre el rechazo y la edición. Sigue siendo
+        // la misma solicitud y se puede reemplazar: se recarga, se aplica sobre v6 y se captura UNA sola vez.
+        var cotizacion = Registrar(EnNexo());
+        _unidad.GuardarCambiosSiVersionAsync(cotizacion.Id, 5, Arg.Any<CancellationToken>()).Returns(_ =>
+        {
+            _eventos.Add("guardar:v5 (gana el polling)");
+            return false;
+        });
+        _cotizaciones.When(r => r.RecargarAsync(cotizacion, Arg.Any<CancellationToken>())).Do(_ =>
+        {
+            // La recarga real devuelve lo guardado: la solicitud anterior (SOL-1, que el intento fallido había olvidado en memoria) y la
+            // versión que guardó el polling (6, la misma que ya tiene el agregado en memoria tras el intento fallido).
+            _eventos.Add("recargar");
+            cotizacion.RegistrarEnvioCosteo("SOL-1", false, clsCotizacionMuestra.Ahora, clsCotizacionMuestra.Ahora);
+        });
+
+        var resultado = await Servicio().EditarAsync(_ana, Folio, EntradaDe(cotizacion, (i, l) => l with { HorasCargue = 9m }), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        _eventos.Should().Equal("guardar:v4", "rechazar", "guardar:v5 (gana el polling)", "recargar", "guardar:v6", "capturar");
+        await _nexo.ReceivedWithAnyArgs(1).RechazarSolicitudAsync(default, default!, default!, default, Ct);
+        resultado.Valor.Respuesta.SolicitudNexoReemplazada.Should().Be("descartada");
+        cotizacion.SolicitudNexoId.Should().Be("sol-nueva");
+    }
+
     // --- Margen y rutas (decisiones 3 y 4) ---
 
     [Fact]
