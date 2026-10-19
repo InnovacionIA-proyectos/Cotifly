@@ -99,7 +99,8 @@ public sealed class clsCubicacionLicitacionServiceTests
     [Fact]
     public async Task SinCupoLibreLaRutaEsperaSinReclamarlaNiLlamarAlCubicador()
     {
-        _cupos.IntentarTomarAsync(4, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IAsyncDisposable?>(null));
+        // Opción C: Cubicador:MaximoParalelo vale 1 por defecto (el cubicador calcula una carga a la vez).
+        _cupos.IntentarTomarAsync(1, Arg.Any<CancellationToken>()).Returns(Task.FromResult<IAsyncDisposable?>(null));
 
         (await Servicio().CubicarAsync(Cola(1), Ct)).Should().Be(ResultadoCubicacionRuta.SinCupo);
 
@@ -126,7 +127,7 @@ public sealed class clsCubicacionLicitacionServiceTests
         var cola = Cola(1);
         await Servicio().CubicarAsync(cola, Ct);
 
-        await _cotizaciones.Received(1).ReclamarRutaPorCubicarAsync(cola.RutaId, null, _reloj.AhoraUtc + TimeSpan.FromSeconds(180), Arg.Any<CancellationToken>());
+        await _cotizaciones.Received(1).ReclamarRutaPorCubicarAsync(cola.RutaId, null, _reloj.AhoraUtc + TimeSpan.FromSeconds(300), Arg.Any<CancellationToken>());
     }
 
     // ------------------------------------------------------------------ Ruta cubicada y envío único
