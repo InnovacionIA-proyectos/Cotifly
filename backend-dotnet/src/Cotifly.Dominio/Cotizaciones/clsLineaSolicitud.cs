@@ -19,7 +19,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// (<see cref="clsResumenEstadoCosteo"/>). Los costos son internos: el comercial ve el precio. <see cref="CreatedAt"/> y
 /// <see cref="UpdatedAt"/> los asigna la persistencia.
 /// </summary>
-public sealed class clsLineaSolicitud
+public sealed partial class clsLineaSolicitud
 {
     public const string CodigoError = clsCodigosError.SolicitudCosteoInvalida;
     public const int LargoMaximoNombreMunicipio = 150;

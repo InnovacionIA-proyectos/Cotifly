@@ -20,7 +20,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// Una nueva versión es una fila nueva con <see cref="Version"/> + 1 y folio <c>-vN</c>, sin FK a la original (HU-002.4 Fase 2).
 /// <see cref="CreatedAt"/> y <see cref="UpdatedAt"/> los asigna la persistencia con el reloj de la aplicación.
 /// </summary>
-public sealed class clsCotizacionSolicitud
+public sealed partial class clsCotizacionSolicitud
 {
     public const string CodigoError = "COTIZACION_INVALIDA";
     public const string MonedaPesos = "COP";

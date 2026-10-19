@@ -294,6 +294,13 @@ public static class clsCodigosError
     public const string EstadoNoPermite = "ESTADO_NO_PERMITE";
 
     /// <summary>
+    /// HU-028 (#186): la edición de la solicitud intenta cambiar un campo bloqueado (el cliente, el <c>tipo</c> spot/licitación o la
+    /// línea de negocio de una ruta; o una ruta nueva con una línea que la solicitud no tiene); 400 con <c>detalle.campo</c> (el primero)
+    /// y <c>detalle.campos</c> (todos). Nada cambia. Código nuevo del backend .NET.
+    /// </summary>
+    public const string CampoNoEditable = "CAMPO_NO_EDITABLE";
+
+    /// <summary>
     /// HU-013.6 (#102, ADR-018 §2b): <c>POST /web/chat</c> sin <c>folio</c> (o vacío): el asistente solo trabaja sobre una cotización
     /// ya creada (la creación por chat se retiró, HU-013.9); 400. Código nuevo del backend .NET.
     /// </summary>
