@@ -251,6 +251,61 @@ public sealed class clsCubicacionRapidaTests
         (await entorno.Servicio.IniciarAsync(_ana, _items, null, Ct)).Error.Mensaje.Should().Be(clsCubicacionRapidaService.MensajeApagando);
     }
 
+    [Fact]
+    public async Task TrasDesecharseUnaPeticionNuevaEsCubicadorNoDisponibleSinExcepcion()
+    {
+        // B1: antes, IniciarAsync leía _apagado.Token con la fuente ya desechada -> ObjectDisposedException -> 500.
+        var entorno = new clsEntorno(_reloj, 0, _ => Task.FromResult<clsResultado<clsResultadoCubicacion>>(Resultado()));
+        await entorno.Servicio.StopAsync(Ct);
+        entorno.Dispose();
+
+        var inicio = await entorno.Servicio.IniciarAsync(_ana, _items, null, Ct);
+
+        (inicio.Error.Codigo, inicio.Error.Mensaje).Should().Be((clsCodigosError.CubicadorNoDisponible, clsCubicacionRapidaService.MensajeApagando));
+        entorno.Almacen.Cantidad.Should().Be(0, "una petición rechazada no deja registro");
+        await entorno.Servicio.StopAsync(Ct); // Detener después de desechar no falla.
+    }
+
+    [Fact]
+    public async Task LasPeticionesQueEntranDuranteElApagadoSeRechazanOSeEsperanTodas()
+    {
+        // B1: Task.WhenAll(_enCurso.Values) tomaba la foto antes de que entrara la última tarea. Ahora toda petición concurrente con
+        // StopAsync o se rechaza (CUBICADOR_NO_DISPONIBLE) o queda registrada antes de la foto y StopAsync la espera.
+        using var entorno = new clsEntorno(_reloj, 0, async token =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            return Resultado();
+        });
+        using var arranque = new ManualResetEventSlim(false);
+        var peticiones = Enumerable.Range(0, 64)
+            .Select(_ => Task.Run(() =>
+            {
+                arranque.Wait(Ct);
+                return entorno.Servicio.IniciarAsync(_ana, _items, null, Ct);
+            }, Ct))
+            .ToArray();
+
+        arranque.Set();
+        await entorno.Servicio.StopAsync(Ct);
+        var inicios = await Task.WhenAll(peticiones);
+
+        entorno.Servicio.EnCurso.Should().Be(0, "StopAsync esperó también las que entraron en la ventana");
+        foreach (var inicio in inicios)
+        {
+            if (inicio.EsExitoso)
+            {
+                var cubicacion = entorno.Servicio.Obtener(_ana, inicio.Valor.IdPendiente!.Value)!;
+                (cubicacion.Estado, cubicacion.Error!.Codigo).Should().Be((clsEstadosCubicacionRapida.Fallida, clsCodigosError.CubicadorNoDisponible));
+            }
+            else
+            {
+                inicio.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+            }
+        }
+
+        (await entorno.Servicio.IniciarAsync(_ana, _items, null, Ct)).Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+    }
+
     private static async Task EsperarAsync(Func<bool> condicion)
     {
         for (var i = 0; i < 200 && !condicion(); i++)

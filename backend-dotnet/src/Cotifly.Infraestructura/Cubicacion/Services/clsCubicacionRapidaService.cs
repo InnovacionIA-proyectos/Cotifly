@@ -48,6 +48,13 @@ public sealed class clsCubicacionRapidaService(
     private readonly CancellationTokenSource _apagado = new();
     private readonly ConcurrentDictionary<Guid, Task> _enCurso = new();
 
+    // B1: el registro de un cálculo nuevo y el inicio del apagado se excluyen. Una petición que entra durante StopAsync/Dispose ve
+    // _cerrado y responde CUBICADOR_NO_DISPONIBLE (503) sin tocar _apagado.Token (la fuente puede estar desechada), y StopAsync espera
+    // la foto de _enCurso tomada después de cerrar: ninguna tarea se registra tras esa foto.
+    private readonly Lock _cerrojo = new();
+    private bool _cerrado;
+    private bool _desechado;
+
     /// <summary>Cálculos en segundo plano que siguen corriendo (para pruebas y diagnóstico).</summary>
     public int EnCurso => _enCurso.Count;
 
@@ -55,24 +62,32 @@ public sealed class clsCubicacionRapidaService(
         Guid usuarioId, IReadOnlyList<clsItemCubicacion> items, string? claseViaje, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
-        if (_apagado.IsCancellationRequested)
-        {
-            return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeApagando);
-        }
-
-        if (almacen.Crear(usuarioId) is not { } registro)
-        {
-            logger.LogWarning(EventoLleno, "CUBICACION_RAPIDA_SIN_ESPACIO: {Maximo} cubicaciones en proceso; se responde CUBICADOR_OCUPADO.",
-                opciones.Value.MaximoCubicacionesEnMemoria);
-            return new clsErrorDominio(clsCodigosError.CubicadorOcupado, MensajeLleno);
-        }
-
-        var id = registro.Id;
         var copia = items.ToList();
-        var tarea = Task.Run(() => EjecutarAsync(id, usuarioId, copia, claseViaje, _apagado.Token), CancellationToken.None);
-        _enCurso[id] = tarea;
-        _ = tarea.ContinueWith(_ => _enCurso.TryRemove(id, out Task? _), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        Guid id;
+        Task<clsResultado<clsResultadoCubicacion>> tarea;
+        lock (_cerrojo)
+        {
+            if (_cerrado)
+            {
+                return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeApagando);
+            }
+
+            if (almacen.Crear(usuarioId) is not { } registro)
+            {
+                logger.LogWarning(EventoLleno, "CUBICACION_RAPIDA_SIN_ESPACIO: {Maximo} cubicaciones en proceso; se responde CUBICADOR_OCUPADO.",
+                    opciones.Value.MaximoCubicacionesEnMemoria);
+                return new clsErrorDominio(clsCodigosError.CubicadorOcupado, MensajeLleno);
+            }
+
+            id = registro.Id;
+            var tokenApagado = _apagado.Token; // Seguro: con _cerrado en false la fuente no se ha desechado.
+            tarea = Task.Run(() => EjecutarAsync(id, usuarioId, copia, claseViaje, tokenApagado), CancellationToken.None);
+            _enCurso[id] = tarea;
+        }
+
+        var idRegistrado = id;
+        _ = tarea.ContinueWith(_ => _enCurso.TryRemove(idRegistrado, out Task? _), CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
         clsResultado<clsResultadoCubicacion> resultado;
         try
@@ -134,22 +149,38 @@ public sealed class clsCubicacionRapidaService(
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>Apagado ordenado: cancela los cálculos en curso y los espera (hasta que el host deje de esperar).</summary>
+    /// <summary>
+    /// Apagado ordenado: cierra la entrada (las peticiones nuevas reciben <c>CUBICADOR_NO_DISPONIBLE</c>), cancela los cálculos en curso
+    /// y los espera (hasta que el host deje de esperar).
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        Task[] pendientes;
+        lock (_cerrojo)
+        {
+            if (_desechado)
+            {
+                // El contenedor ya desechó el servicio (el host se desechó sin detenerse antes): no queda nada en curso que esperar.
+                return;
+            }
+
+            _cerrado = true;
+            // Tras cerrar no se registra ninguna tarea más: esta foto incluye la última que entró.
+            pendientes = [.. _enCurso.Values];
+        }
+
         try
         {
             await _apagado.CancelAsync();
         }
         catch (ObjectDisposedException)
         {
-            // El contenedor ya desechó el servicio (el host se desechó sin detenerse antes): no queda nada en curso que esperar.
-            return;
+            // Dispose concurrente con StopAsync: las tareas ya tienen su token y la fuente cancelada o desechada; se esperan igual.
         }
 
         try
         {
-            await Task.WhenAll(_enCurso.Values).WaitAsync(cancellationToken);
+            await Task.WhenAll(pendientes).WaitAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -157,5 +188,29 @@ public sealed class clsCubicacionRapidaService(
         }
     }
 
-    public void Dispose() => _apagado.Dispose();
+    public void Dispose()
+    {
+        lock (_cerrojo)
+        {
+            if (_desechado)
+            {
+                return;
+            }
+
+            _cerrado = true;
+            _desechado = true;
+        }
+
+        try
+        {
+            // Si nadie llamó StopAsync (o perdió la carrera con Dispose), los cálculos en curso se cancelan igual.
+            _apagado.Cancel();
+        }
+        catch (AggregateException ex)
+        {
+            logger.LogWarning(ex, "Apagado: una cancelación de cubicación rápida falló al desechar el servicio.");
+        }
+
+        _apagado.Dispose();
+    }
 }
