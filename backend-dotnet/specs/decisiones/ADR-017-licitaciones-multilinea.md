@@ -106,7 +106,7 @@ El script `0009` reestructuró la cotización en solicitud → rutas → camione
 - **Analizar el Excel en Cotifly en vez de en Nexo:** duplicaría el analizador; se reutiliza el de Nexo y Cotifly solo porta la detección de filas para ubicar la fila al exportar.
 - **Guardar el Excel original en disco o en el almacén de PDF:** otro volumen que respaldar y otro control de acceso; en la base queda con la cotización, con el mismo aislamiento por dueño y los mismos respaldos.
 - **Usar `exportar-excel` de Nexo y agregarle columnas:** no es el archivo del cliente y trae los costos de Nexo; descartada.
-- **Endpoint `lineas:bulk` de Nexo (cabecera + carga masiva):** es de `CoordinadorFletes` y `Admin`, no del comercial, y no resuelve rutas por texto libre; `captura-solicitudes` con `lineas[]` sí.
+- **Endpoint `lineas:bulk` de Nexo (cabecera + carga masiva):** es solo de `Admin` desde NEXO#307 (decisión D5; antes `CoordinadorFletes` y `Admin`), no del comercial, y no resuelve rutas por texto libre; `captura-solicitudes` con `lineas[]` sí.
 
 ## Consecuencias
 
