@@ -1,6 +1,6 @@
 # Documentación de Cotifly
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-15
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-19
 
 Índice único de la documentación del proyecto. Cada tema tiene **un solo documento de referencia**; los demás lo
 enlazan en vez de repetirlo. El punto de entrada general es el [`README.md`](../README.md) de la raíz.
@@ -13,7 +13,7 @@ enlazan en vez de repetirlo. El punto de entrada general es el [`README.md`](../
 | Arquitectura del backend | [`backend-dotnet/docs/02-arquitectura.md`](../backend-dotnet/docs/02-arquitectura.md) | [`04-flujo-del-sistema.md`](../backend-dotnet/docs/04-flujo-del-sistema.md), [`05-stack.md`](../backend-dotnet/docs/05-stack.md), [`09-estructura-del-proyecto.md`](../backend-dotnet/docs/09-estructura-del-proyecto.md) |
 | Decisiones de arquitectura (ADR) | [`backend-dotnet/specs/decisiones/README.md`](../backend-dotnet/specs/decisiones/README.md) | ADR-001 a ADR-020 |
 | Contrato HTTP (fuente de verdad) | [`backend-dotnet/specs/openapi.yaml`](../backend-dotnet/specs/openapi.yaml) | Escenarios BDD en [`backend-dotnet/specs/features/`](../backend-dotnet/specs/features/), resumen en [`07-api.md`](../backend-dotnet/docs/07-api.md) |
-| API para el frontend (ClientePro) | [`docs_front/CONTRATO_API_WEB.md`](docs_front/CONTRATO_API_WEB.md) | [`docs_front/GUIA_FRONTEND_COTIFLY.md`](docs_front/GUIA_FRONTEND_COTIFLY.md) (flujos, estados y reglas de UI) y el [manual de conexión con ClientePro](<docs_front/Manual de Conexión ClientePro - Grovity.pdf>) (PDF) |
+| API para el frontend (ClientePro) | [`docs_front/CONTRATO_API_WEB.md`](docs_front/CONTRATO_API_WEB.md) | [`docs_front/GUIA_FRONTEND_COTIFLY.md`](docs_front/GUIA_FRONTEND_COTIFLY.md) (flujos, estados y reglas de UI), [`docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md`](docs_front/CONTRATOS_API_COTIFLY_FRONTEND.md) (referencia consolidada de los 46 endpoints, errores y checklist de integración) y el [manual de conexión con ClientePro](<docs_front/Manual de Conexión ClientePro - Grovity.pdf>) (PDF) |
 | Integración con Nexo | [`backend-dotnet/docs/COTIFLY-CONTRATO.md`](../backend-dotnet/docs/COTIFLY-CONTRATO.md) (contrato de captura que publicó Nexo) | [`conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`](conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md), [`conexion_nexo/HU-013-preguntas-nexo.md`](conexion_nexo/HU-013-preguntas-nexo.md), [ADR-015](../backend-dotnet/specs/decisiones/ADR-015-costeo-nexo.md) |
 | Integración con el cubicador | [`backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md`](../backend-dotnet/docs/COTIFLY-COMO-CONECTARSE-AL-CUBICADOR.md) (guía que publicó el cubicador) | [ADR-020](../backend-dotnet/specs/decisiones/ADR-020-conexion-con-el-cubicador.md) |
 | Peticiones abiertas a Nexo y al cubicador | [`conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md`](conexion_nexo/2026-10-08_CONSIDERACIONES_PARA_NEXO.md) | [`conexion_nexo/PROXIMOS_ALCANCES.md`](conexion_nexo/PROXIMOS_ALCANCES.md) |
@@ -34,7 +34,7 @@ enlazan en vez de repetirlo. El punto de entrada general es el [`README.md`](../
 | [`backlog/`](backlog/) | Borradores de HU vigentes. Cada archivo lleva al inicio la fecha en que se creó (`AAAA-MM-DD_...`) |
 | [`conexion_nexo/`](conexion_nexo/) | Mapeo de campos, preguntas y peticiones a Nexo y al cubicador, formato del Excel de licitación y próximos alcances |
 | [`database/`](database/) | Documentación de la base de datos. Los scripts, seeders y el ejecutador están en [`db/`](../db/) |
-| [`docs_front/`](docs_front/) | Lo que consume el frontend: contrato de la API web, guía del frontend y manual de ClientePro |
+| [`docs_front/`](docs_front/) | Lo que consume el frontend: contrato de la API web, guía del frontend, referencia consolidada de contratos y manual de ClientePro |
 | [`infra/`](infra/) | Diagnósticos de infraestructura |
 | [`archivo/`](archivo/) | Documentos históricos que ya no se mantienen (ver abajo) |
 

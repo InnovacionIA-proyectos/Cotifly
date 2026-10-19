@@ -134,6 +134,9 @@ public sealed record clsLineaSolicitudCosteo
     /// <summary>Horas de descargue propias de la línea (<c>horasDescargue</c>); <c>null</c> = las del encabezado.</summary>
     public decimal? HorasDescargue { get; init; }
 
+    /// <summary>Nombre del arreglo de mercancías en el contrato web (<c>mercancias[]</c>): los errores por mercancía lo usan con índice base 0.</summary>
+    public const string CampoMercancias = "mercancias";
+
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario o del pliego.</summary>
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
@@ -208,19 +211,22 @@ public sealed record clsLineaSolicitudCosteo
 
         if (Posiciones.Count > clsSolicitudCosteo.MaximoPosiciones)
         {
-            errores.Add(new clsErrorCampo("posiciones", clsCodigosLineaSolicitud.DemasiadasPosiciones,
-                $"Una línea admite máximo {clsSolicitudCosteo.MaximoPosiciones} posiciones."));
+            errores.Add(new clsErrorCampo(CampoMercancias, clsCodigosLineaSolicitud.DemasiadasPosiciones,
+                $"Una ruta admite máximo {clsSolicitudCosteo.MaximoPosiciones} mercancías."));
         }
 
         for (var i = 0; i < Posiciones.Count; i++)
         {
+            // D6 (E2E 2026-10-16): el campo va en base 0 y con el nombre del contrato (mercancias[i].subcampo, como
+            // mercancias[i].codigo_mercancia); el mensaje nombra la mercancía en base 1 ("Mercancía 2: ..."), sin rutas con índice.
             var posicion = Posiciones[i];
             var error = posicion is null
-                ? new clsErrorDominio(clsSolicitudCosteo.CodigoError, $"La posición {i + 1} está vacía.")
-                : posicion.Validar(i + 1);
+                ? new clsErrorPosicion(string.Empty, $"La mercancía {i + 1} está vacía.")
+                : posicion.PrimerError(i + 1);
             if (error is not null)
             {
-                errores.Add(new clsErrorCampo($"posiciones[{i}]", clsCodigosLineaSolicitud.PosicionInvalida, error.Mensaje));
+                var campo = error.Campo.Length == 0 ? $"{CampoMercancias}[{i}]" : $"{CampoMercancias}[{i}].{error.Campo}";
+                errores.Add(new clsErrorCampo(campo, clsCodigosLineaSolicitud.PosicionInvalida, error.Mensaje));
             }
         }
 

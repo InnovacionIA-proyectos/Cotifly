@@ -26,4 +26,14 @@ public static class clsCodigosAplicacion
 
     /// <summary>La fuente de la regional (<c>DimEjecutivo</c>) está configurada pero falla: 503 con <c>ErrorNegocio</c>.</summary>
     public const string RegionalNoDisponible = "REGIONAL_NO_DISPONIBLE";
+
+    /// <summary>
+    /// D4 (E2E 2026-10-16): la misma <c>Idempotency-Key</c> llegó con otro cuerpo (ADR-018 §8). Antes era 400 <c>ErrorWeb</c>
+    /// (<c>{"error": "texto"}</c>); ahora 409 con <c>ErrorNegocio</c> y un código estable, como los demás conflictos de estado.
+    /// </summary>
+    public const string IdempotencyKeyReutilizada = "IDEMPOTENCY_KEY_REUTILIZADA";
+
+    /// <summary>Mensaje de <see cref="IdempotencyKeyReutilizada"/>.</summary>
+    public const string MensajeIdempotencyKeyReutilizada =
+        "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.";
 }

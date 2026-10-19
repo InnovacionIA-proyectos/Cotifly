@@ -47,3 +47,19 @@ Característica: Calcular cubicaje contra el cubicador
     Cuando "ana" calcula el cubicaje con el código de mercancía "CAFE_EN_ESTIBAS"
     Entonces la respuesta tiene el estado 503 con el código de negocio "CUBICADOR_NO_DISPONIBLE"
     Y "ana" no tiene cotizaciones guardadas
+
+  # Opción D (E2E 2026-10-16, D3): el motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API. Si no responde dentro de
+  # Cubicador:EsperaSincronaCubicacionSegundos (2 s en estas pruebas, 8 por defecto), POST /web/cubicacion responde 202 y el cálculo
+  # sigue en segundo plano; el front consulta GET /web/cubicacion/{id} hasta que termina. Solo el comercial que la pidió la ve.
+  Escenario: Con el cubicador lento la UI recibe 202 y consulta la cubicación hasta que termina
+    Dado que el cubicador asigna para cada ruta estos vehículos:
+      | vehiculo | carroceria | peso_kg |
+      | 3S3      | FURGON     | 16000   |
+    Y que el cubicador se demora calculando la carga
+    Y el comercial "luis" con sesión en la regional "Occidente"
+    Cuando "ana" calcula el cubicaje con el código de mercancía "CAFE_EN_ESTIBAS"
+    Entonces la respuesta tiene el estado 202
+    Y la cubicación de "ana" está "en_proceso"
+    Y "luis" no puede ver la cubicación de "ana"
+    Cuando el cubicador termina de calcular
+    Entonces la cubicación de "ana" termina "completada" con el vehículo "3S3"

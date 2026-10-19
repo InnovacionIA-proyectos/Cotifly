@@ -474,6 +474,22 @@ public sealed class clsCotizacionSolicitud
     }
 
     /// <summary>
+    /// Opción C: el cubicador estaba ocupado para la ruta <paramref name="rutaId"/>; vuelve a la cola desde <paramref name="disponibleAt"/>
+    /// sin gastar un intento (<see cref="clsLineaSolicitud.PosponerCubicacion"/>). No hace nada si la ruta no es de esta cotización o ya no
+    /// está pendiente.
+    /// </summary>
+    public bool PosponerCubicacionDeRuta(Guid rutaId, DateTimeOffset disponibleAt)
+    {
+        if (_rutas.FirstOrDefault(r => r.Id == rutaId) is not { EstadoCubicacion: Cotizaciones.EstadoCubicacion.Pendiente } ruta)
+        {
+            return false;
+        }
+
+        ruta.PosponerCubicacion(disponibleAt);
+        return true;
+    }
+
+    /// <summary>
     /// HU-023.5: el comercial reintenta las rutas fallidas (vuelven a la cola) o, con <paramref name="usarRespaldo"/>, las acepta con el
     /// camión sin vehículo. Devuelve cuántas cambió (0 = no había fallidas o la solicitud ya salió a Nexo).
     /// </summary>

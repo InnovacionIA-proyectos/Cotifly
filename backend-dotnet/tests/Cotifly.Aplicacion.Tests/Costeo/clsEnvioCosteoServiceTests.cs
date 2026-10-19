@@ -1201,7 +1201,7 @@ public sealed class clsEnvioCosteoServiceTests
         var otroCuerpo = await servicio.CapturarUnaVezAsync(_ana, entrada with { ClienteNombre = "Otro" }, "clave-173-cd", Ct);
 
         reintento.Valor.Folio.Should().Be(primera.Folio);
-        otroCuerpo.Error.Codigo.Should().Be(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.SolicitudInvalida);
+        otroCuerpo.Error.Codigo.Should().Be(Cotifly.Aplicacion.Comun.clsCodigosAplicacion.IdempotencyKeyReutilizada, "D4: código estable, 409");
         await _nexo.Received(1).EnviarSolicitudAsync(Arg.Any<Guid>(), Arg.Any<clsSolicitudNexo>(), Arg.Any<CancellationToken>());
     }
 

@@ -16,9 +16,9 @@ info:
     - Las operaciones marcadas con `x-estado: borrador` no están congeladas.
     - Dos formas de error. `ErrorWeb` (`{"error": "texto"}`, sin código): todo `/api/auth/*` y, en `/web/*`, el 401, el 403
       de rol, el 404 (no existe o no es tuya), el 413, el 415, el 429 y el 400 de validación del cuerpo (`Cuerpo inválido...`,
-      `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo o reutilizada). `ErrorNegocio`
+      `CORREO_INVALIDO`, teléfono, seguimiento, `Idempotency-Key` fuera de largo). `ErrorNegocio`
       (`{"error": {"codigo", "mensaje", "detalle?"}}`): el resto de errores de negocio de `/web/*`, que son la mayoría (400 con
-      código, 409 de estado y `CONFLICTO_CONCURRENCIA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
+      código, 409 de estado, `CONFLICTO_CONCURRENCIA` e `IDEMPOTENCY_KEY_REUTILIZADA`, 428 `PRECONDICION_REQUERIDA`, 403 `NEXO_SIN_PERMISO` y los 503 de
       dependencias). Un mismo estado puede traer cualquiera de las dos (por ejemplo, el 400 de `POST /web/solicitudes-costeo`):
       el cliente distingue por el tipo de `error` (texto u objeto). El servidor nunca responde 412.
     - CORS (#12, deuda de #178): el navegador puede enviar `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key`
@@ -1124,10 +1124,29 @@ paths:
         desplegable, se acepta `descripcion` sin código: Cotifly la resuelve al tipo **activo** más parecido del catálogo, comparando
         sin tildes, sin mayúsculas y sin signos contra el nombre y el código (la misma lógica que usará la licitación, HU-023.5). El
         código usado y si fue sugerido vuelven en `mercancias[]`. Si la descripción no se parece a ninguno: 400
-        `MERCANCIA_DESCONOCIDA` con el ítem en `detalle.item` (base 0).
+        `MERCANCIA_DESCONOCIDA` con el ítem en `detalle.item` (base 0). Solo se sugieren tipos cubicables.
+
+        **Validación del código contra el catálogo** (E2E 2026-10-19, D-1019-1): antes de llamar al cubicador, cada
+        `codigo_mercancia` se busca en el catálogo de tipos de mercancía del cubicador (el mismo de `GET /web/tipos-mercancia`, con
+        caché), sin distinguir mayúsculas; viaja el código como está en el catálogo. Un código que no está o está inactivo es 400
+        `MERCANCIA_DESCONOCIDA` y uno con `cubicable: false` es 400 `MERCANCIA_NO_CUBICABLE`, los dos con `detalle.item` (base 0) y
+        `detalle.campo = codigo_mercancia`, sin llamar al cubicador. Si el catálogo no responde no se bloquea: el código viaja como
+        llegó y decide el cubicador; su rechazo trae `detalle.item` y `detalle.campo` cuando se puede saber qué mercancía es (el
+        cubicador cita el código en su mensaje).
 
         **Sin respaldo** (es solo una vista previa): sin cubicador configurado o con el cubicador caído responde 503
         `CUBICADOR_NO_DISPONIBLE`.
+
+        **Asíncrono (opción D, E2E 2026-10-16, D3).** El motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API
+        mientras calcula. Cotifly valida primero (los 400 de los ítems siempre son síncronos) y lanza el cálculo en segundo plano:
+        si termina dentro de `Cubicador:EsperaSincronaCubicacionSegundos` (8 s por defecto) responde **200 como siempre**; si no,
+        responde **202** `CubicacionEnProceso` con `Location` y `Retry-After: 2`, y el cálculo **sigue** aunque el cliente corte la
+        conexión. El front consulta `GET /web/cubicacion/{id}` cada 2-3 s hasta `completada` o `fallida`.
+
+        **Cupo global (opción C).** Cotifly hace una sola llamada a la vez al cubicador (`Cubicador:MaximoConcurrente`, compartido con
+        la captura, el recálculo y la licitación). Si el cupo no se libera en `Cubicador:EsperaMaximaCupoSegundos` (60 s), la
+        cubicación termina con `CUBICADOR_OCUPADO`: 503 con `Retry-After: 10` si pasa dentro de la espera síncrona, o `fallida` con ese
+        código en el `GET`.
       security:
         - bearer: []
       requestBody:
@@ -1153,20 +1172,46 @@ paths:
                   peso_kg: 2250.25
       responses:
         '200':
-          description: La recomendación del cubicador (no se guarda)
+          description: La recomendación del cubicador (no se guarda), si respondió dentro de la espera síncrona
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResultadoCubicacion'
+        '202':
+          description: |
+            Opción D: el cubicador sigue calculando. El cálculo continúa en segundo plano (aunque el cliente corte); consultar
+            `consultar_en` (`GET /web/cubicacion/{id}`) cada 2-3 s. Se guarda en memoria `Cubicador:RetencionCubicacionMinutos` (15 min).
+          headers:
+            Location:
+              description: '`/web/cubicacion/{id}`'
+              schema:
+                type: string
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CubicacionEnProceso'
+              example:
+                id: 7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
+                estado: en_proceso
+                consultar_en: /web/cubicacion/7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
         '400':
           description: |
             `ErrorNegocio`: `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `DIMENSIONES_INVALIDAS` con `detalle.item` (índice
-            base 0) si un ítem no trae `peso_kg` o lo trae ≤ 0 (HU-023, #176: el cubicador exige el peso por unidad; se valida antes de
-            llamarlo, después de comprobar que está configurado); `MERCANCIA_DESCONOCIDA` si un ítem no trae `codigo_mercancia` ni
-            `descripcion` o si la descripción no se parece a ninguna mercancía del catálogo (con `detalle.item`), o si el cubicador no
-            conoce el código; `CUBICACION_DEMASIADO_GRANDE` si los ítems suman más de 10.000 unidades (`cantidad`; el tope del
-            cubicador: partir la carga); y los demás rechazos del cubicador con su código: `MERCANCIA_NO_CUBICABLE`,
-            `DIMENSIONES_INVALIDAS`, `MERCANCIAS_REQUERIDAS`. `ErrorWeb` si el cuerpo no es JSON válido (`Cuerpo inválido.`).
+            base 0) y `detalle.campo` si un ítem no trae `peso_kg` o lo trae ≤ 0 (HU-023, #176: el cubicador exige el peso por unidad) o
+            si `largo_cm`, `ancho_cm` o `alto_cm` no están entre 0,1 y 999.999 (o traen más de 2 decimales); `POSICION_INVALIDA` con
+            `detalle.item` y `detalle.campo = cantidad` si la `cantidad` no está entre 1 y 100.000. Son las reglas de la captura y se
+            validan antes de llamar al cubicador, después de comprobar que está configurado (E2E 2026-10-16, D1). Un 422 del cubicador
+            (su validación de esquema) también llega como 400: `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` con `detalle.item` si
+            señala una mercancía, o `CUBICADOR_PETICION_RECHAZADA` si no; `MERCANCIA_DESCONOCIDA` si un ítem no trae `codigo_mercancia` ni
+            `descripcion` o si la descripción no se parece a ninguna mercancía del catálogo (con `detalle.item`); `MERCANCIA_DESCONOCIDA`
+            (código desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE` (`cubicable: false`) con `detalle.item` (base 0) y
+            `detalle.campo = codigo_mercancia`, validados contra el catálogo del cubicador **antes** de llamarlo (D-1019-1; si el
+            catálogo no responde, decide el cubicador y su rechazo trae `detalle.item` cuando se sabe qué mercancía es);
+            `CUBICACION_DEMASIADO_GRANDE` si los ítems suman más de 10.000 unidades (`cantidad`; el tope del cubicador: partir la
+            carga); y los demás rechazos del cubicador con su código: `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`,
+            `MERCANCIAS_REQUERIDAS`. `ErrorWeb` si el cuerpo no es JSON válido (`Cuerpo inválido.`).
           content:
             application/json:
               schema:
@@ -1179,11 +1224,62 @@ paths:
           description: |
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía) o no respondió (caída, 5xx, tiempo
             agotado); no hay respaldo. `CUBICADOR_NO_AUTORIZADO`: el cubicador rechazó la llave de Cotifly. `CUBICADOR_RESPUESTA_INVALIDA`:
-            la respuesta no cumple el contrato. El detalle técnico solo queda en el log.
+            la respuesta no cumple el contrato. `CUBICADOR_OCUPADO` (opción C, con `Retry-After: 10`): el cubicador está calculando
+            otras cargas y no se liberó el cupo a tiempo, o hay demasiadas cubicaciones en curso; reintentar en unos segundos. El
+            detalle técnico solo queda en el log.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/cubicacion/{id}:
+    get:
+      operationId: consultarCubicacion
+      tags: [web]
+      summary: Estado de una cubicación que siguió en segundo plano (opción D)
+      description: |
+        **Opción D (E2E 2026-10-16, D3).** El `id` del 202 de `POST /web/cubicacion`. `estado`:
+        - `en_proceso`: el cubicador sigue calculando (con `Retry-After: 2`). Volver a consultar en 2-3 s.
+        - `completada`: `resultado` trae la misma forma del 200 de `POST /web/cubicacion` (`ResultadoCubicacion`).
+        - `fallida`: `error` trae `{codigo, mensaje, detalle?}` con los mismos códigos que respondería el `POST` (por ejemplo un
+          rechazo del cubicador como `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` con `detalle.item`, `CUBICADOR_NO_DISPONIBLE` o
+          `CUBICADOR_OCUPADO`).
+
+        Solo el comercial que la pidió la ve. Se guarda en la memoria de Cotifly `Cubicador:RetencionCubicacionMinutos` (15 min)
+        desde su último cambio: vencida, de otro usuario, inexistente o perdida porque Cotifly se reinició, responde **404** igual
+        (sin distinguir): el front vuelve a calcular.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: El estado de la cubicación
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoCubicacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly o es de otro usuario'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: 'La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje.'
 
   /web/solicitudes-costeo:
     post:
@@ -1212,7 +1308,9 @@ paths:
         - **Mercancías:** con el catálogo del cubicador disponible (`GET /web/tipos-mercancia`), `nombre_mercancia` se copia del
           catálogo por `codigo_mercancia` (un nombre distinto del cliente se ignora); un código inactivo o desconocido es
           `MERCANCIA_DESCONOCIDA` y uno no cubicable `MERCANCIA_NO_CUBICABLE` (HU-023.3). Sin catálogo se guarda el nombre que manda
-          el cliente. **Todo o nada:** si una ruta falla en el cubicador, no se guarda ninguna ni se envía nada a Nexo. La ruta guarda
+          el cliente y el código lo valida el cubicador: su rechazo (`MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o un 422 que
+          señala una mercancía) trae `detalle.ruta` y `detalle.item` (base 0) y `detalle.campo` cuando se sabe qué mercancía es
+          (D-1019-1). **Todo o nada:** si una ruta falla en el cubicador, no se guarda ninguna ni se envía nada a Nexo. La ruta guarda
           `resultado_cubicacion`, `motivo_sin_seleccion` y `condicionada`, y cada camión su volumen y sus porcentajes de llenado; la
           respuesta trae `cubicacion` con los avisos.
         - **Municipios:** el nombre que se guarda **siempre sale del catálogo** de `GET /web/municipios` por el id (un nombre
@@ -1315,6 +1413,9 @@ paths:
             `CONEXO_DUPLICADO`, `CONEXO_NO_ENCONTRADO` y `DEMASIADOS_CONEXOS`. `CAMPO_REQUERIDO` en
             `origen_municipio_id`/`destino_municipio_id` o `mercancias[i].id_tipo_mercancia` cuando falta el id.
             HU-021.5: `TIPO_MERCANCIA_INEXISTENTE` en `mercancias[i].id_tipo_mercancia` si el id no está en el catálogo del cubicador.
+            `POSICION_INVALIDA` va en `mercancias[i].<subcampo>` (índice base 0: `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`,
+            `peso_kg`, `descripcion` o `codigo_mercancia`) y su mensaje nombra la mercancía en base 1 (`Mercancía 1: ...`), sin
+            índices; `DEMASIADAS_POSICIONES` va en `mercancias` (antes `posiciones[i]` y `posiciones`, E2E 2026-10-16).
             Nada queda guardado. `ErrorWeb` si el cuerpo no es JSON válido.
           content:
             application/json:
@@ -1327,6 +1428,8 @@ paths:
             #173. `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`: la `Idempotency-Key` ya creó un folio cuyo envío a Nexo
             no terminó de registrarse (la primera petición falló después de confirmar el folio). No se vuelve a llamar a Nexo;
             `detalle.folio` y `detalle.solicitud_nexo_id` dicen qué revisar. No reintentar: llevar al comercial a "Mis cotizaciones".
+            `IDEMPOTENCY_KEY_REUTILIZADA` (D4, E2E 2026-10-16; antes 400 `ErrorWeb`): la misma `Idempotency-Key` con otro cuerpo; no se
+            hace nada. Generar una clave nueva para cada intención.
           content:
             application/json:
               schema:
@@ -1841,7 +1944,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
+          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
           content:
             application/json:
               schema:
@@ -2031,7 +2134,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
           content:
             application/json:
               schema:
@@ -2852,7 +2955,8 @@ components:
         Opcional (ADR-018 §8). Clave única por intención del usuario (UUID generado al pulsar Confirmar o el botón). Una
         repetición con la misma clave y el mismo usuario en 24 h devuelve la respuesta guardada de la primera petición sin
         volver a ejecutarla (un doble clic no duplica el conexo en Nexo ni crea `-v2` y `-v3`). La misma clave con otro
-        cuerpo responde 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
+        cuerpo responde 409 `ErrorNegocio` con `codigo = IDEMPOTENCY_KEY_REUTILIZADA` (D4, E2E 2026-10-16; antes 400 `ErrorWeb`
+        con el texto) y no ejecuta nada; una clave fuera de 8 a 64 caracteres sigue siendo 400 `ErrorWeb`. Solo los éxitos consumen la clave: en `re-solicitar`, un 200 con `error_envio` (Nexo
         falló) tampoco la consume, y repetirla vuelve a ejecutar (con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA`:
         recargar y reintentar). En `POST /web/solicitudes-costeo` (#173) toda captura 201 la consume, también con `error_envio`.
       schema:
@@ -2871,8 +2975,9 @@ components:
       example: '"7"'
     RetryAfter:
       description: |
-        Solo con `SERVICIO_OCUPADO` (#125): segundos que conviene esperar antes de reintentar (siempre 1). Las demás causas del
-        503 no lo envían.
+        Segundos que conviene esperar antes de reintentar o volver a consultar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con
+        `CUBICADOR_OCUPADO` (opción C) 10; en el 202 de `POST /web/cubicacion` y en `GET /web/cubicacion/{id}` con `en_proceso`
+        (opción D) 2. Las demás causas del 503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3002,9 +3107,17 @@ components:
                 sin respuesta, y en `POST /web/solicitudes-costeo` y
                 `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`), `CUBICADOR_NO_AUTORIZADO` (503: el cubicador
                 rechazó la llave de Cotifly; nunca va al respaldo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
-                la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada) y los
+                la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada),
+                `CUBICADOR_OCUPADO` (opción C, E2E 2026-10-16: 503 con `Retry-After: 10` en `POST /web/cubicacion` o `fallida` en
+                `GET /web/cubicacion/{id}`: el cupo global de llamadas al cubicador no se liberó a tiempo o hay demasiadas cubicaciones en
+                curso; en la captura, el recálculo y la licitación cuenta como una caída) y los
                 rechazos 400 del cubicador con su mismo código: `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
-                `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada).
+                `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada). D1 (E2E 2026-10-16): un 422 del cubicador
+                (validación de su esquema en `POST /recomendaciones`) es 400: `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` con
+                `detalle.item` si señala una mercancía, o `CUBICADOR_PETICION_RECHAZADA` si no; nunca va al respaldo. En
+                `POST /web/cubicacion`, `POSICION_INVALIDA` también es la cantidad de un ítem fuera de 1 a 100.000. D-1019-1
+                (E2E 2026-10-19): `MERCANCIA_DESCONOCIDA` y `MERCANCIA_NO_CUBICABLE` traen `detalle.item` (base 0) y
+                `detalle.campo = codigo_mercancia` cuando se sabe qué mercancía es (en la captura, también `detalle.ruta`).
                 Resultado en Nexo (HU-005.14), con el mismo código de Nexo: `RESULTADO_YA_DEFINIDO` y
                 `COTIZACION_NO_ENTREGADA` (409, sin cambio local) y `USAR_RESULTADO_NEXO` (409: `/seguimiento`
                 sobre una cotización que pasó por Nexo).
@@ -3086,16 +3199,20 @@ components:
                 - LICITACION_INVALIDA
                 - NEXO_SIN_PERMISO
                 - CONFLICTO_CONCURRENCIA
+                - IDEMPOTENCY_KEY_REUTILIZADA
                 - FOLIO_REQUERIDO
                 - COTIZACION_CHAT_RETIRADA
                 - CUBICADOR_NO_DISPONIBLE
                 - CUBICADOR_RESPUESTA_INVALIDA
+                - CUBICADOR_OCUPADO
                 - CUBICADOR_NO_AUTORIZADO
                 - MERCANCIAS_REQUERIDAS
                 - MERCANCIA_DESCONOCIDA
                 - MERCANCIA_NO_CUBICABLE
                 - DIMENSIONES_INVALIDAS
                 - CUBICACION_DEMASIADO_GRANDE
+                - POSICION_INVALIDA
+                - CUBICADOR_PETICION_RECHAZADA
                 - ESTADO_NO_PERMITE
                 - JUSTIFICACION_REQUERIDA
                 - CONEXO_INVALIDO
@@ -6044,6 +6161,8 @@ components:
       description: |
         HU-023.2 (#157). Un bulto o grupo de bultos idénticos. Debe traer `codigo_mercancia` o, mientras el frontend no tenga el
         desplegable, `descripcion` (se resuelve al tipo más parecido del catálogo); sin ninguno de los dos, 400 `MERCANCIA_DESCONOCIDA`.
+        Un `codigo_mercancia` desconocido o inactivo (`MERCANCIA_DESCONOCIDA`) o no cubicable (`MERCANCIA_NO_CUBICABLE`) se rechaza
+        antes de llamar al cubicador, con `detalle.item` y `detalle.campo = codigo_mercancia` (D-1019-1).
       properties:
         codigo_mercancia:
           type: string
@@ -6147,6 +6266,56 @@ components:
         sugerida:
           type: boolean
 
+    CubicacionEnProceso:
+      type: object
+      required: [id, estado, consultar_en]
+      description: Opción D (E2E 2026-10-16, D3). 202 de `POST /web/cubicacion`; el cálculo sigue en segundo plano.
+      properties:
+        id:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          enum: [en_proceso]
+        consultar_en:
+          type: string
+          description: '`/web/cubicacion/{id}` (igual que `Location`)'
+    EstadoCubicacion:
+      type: object
+      required: [id, estado]
+      description: |
+        Opción D. `GET /web/cubicacion/{id}`: `resultado` solo con `completada`, `error` solo con `fallida` (cuando no aplican, no
+        vienen).
+      properties:
+        id:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          enum: [en_proceso, completada, fallida]
+        resultado:
+          $ref: '#/components/schemas/ResultadoCubicacion'
+        error:
+          $ref: '#/components/schemas/ErrorCubicacion'
+      example:
+        id: 7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
+        estado: fallida
+        error:
+          codigo: MERCANCIA_NO_CUBICABLE
+          mensaje: 'Una de las mercancías no se puede cubicar: revisa el tipo de mercancía.'
+    ErrorCubicacion:
+      type: object
+      required: [codigo, mensaje]
+      description: Opción D. Error de una cubicación `fallida`, con los mismos códigos que respondería `POST /web/cubicacion`.
+      properties:
+        codigo:
+          type: string
+        mensaje:
+          type: string
+        detalle:
+          type: object
+          description: '`item` (base 0), `campo` y `descripcion` cuando el error señala un ítem'
+          additionalProperties: true
     ResultadoCubicacion:
       type: object
       required: [resultado, motivo_sin_seleccion, mensaje_sin_seleccion, condicionada, vehiculos, mercancias_condicionadas, advertencias,

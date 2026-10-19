@@ -159,7 +159,7 @@ public sealed class clsLicitacionService(
     {
         ArgumentNullException.ThrowIfNull(ruta);
         static string? Nombre(string? codigo, IReadOnlyDictionary<string, string>? catalogo) =>
-            codigo is null ? null : catalogo is not null && catalogo.TryGetValue(codigo, out var nombre) ? nombre : codigo;
+            clsNombresCatalogoCubicadorExtensiones.Nombre(catalogo, codigo);
         return [.. ruta.VehiculosOrdenados.Select((v, i) => new clsCamionExportacion(
             i + 1, Nombre(v.TipoVehiculo, vehiculos), Nombre(v.Carroceria, carrocerias), v.PesoKg, v.VolumenTotalM3,
             v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
@@ -655,7 +655,8 @@ public sealed class clsLicitacionService(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            cotizacion.Deadline,
+            // D5 (E2E 2026-10-16): en UTC, como la captura, el costeo y "Mis cotizaciones" (la base lo guarda con el -05:00 de Bogotá).
+            cotizacion.Deadline?.ToUniversalTime(),
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,
             cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos,

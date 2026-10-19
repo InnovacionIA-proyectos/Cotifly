@@ -67,6 +67,9 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         // HU-023 (#176): más de 10.000 unidades (lo valida el adaptador antes de llamar, o el 400 del cubicador): se parte la carga.
         clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorRespuestaInvalida,
+        // D1 (E2E 2026-10-16): el 422 del cubicador es un rechazo de los datos de la carga (con la mercancía si la señala).
+        clsCodigosLineaSolicitud.PosicionInvalida,
+        clsCodigosError.CubicadorPeticionRechazada,
         // Auditoría de HU-023: una llave mala no puede convertirse en silencio en rutas sin vehículo.
         clsCodigosError.CubicadorNoAutorizado,
     };
@@ -101,8 +104,20 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             description: "Rutas que quedaron con un camión sin vehículo porque el cubicador falló (etiqueta motivo).");
     }
 
-    public async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
-        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsPlanRuta>> PlanificarAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: false, cancellationToken);
+
+    /// <summary>
+    /// Validación de la rama de los defectos del 2026-10-16 (punto a): en la licitación en segundo plano, <c>CUBICADOR_OCUPADO</c> vuelve tal
+    /// cual (sin respaldo y sin marcar la captura como caída) para que la ruta vuelva a la cola sin gastar un intento.
+    /// </summary>
+    public Task<clsResultado<clsPlanRuta>> PlanificarEnSegundoPlanoAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: true, cancellationToken);
+
+    private async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, bool ocupadoEsError, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         if (_cubicador is not { EstaConfigurado: true } cubicador)
@@ -157,12 +172,20 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         var recomendacion = await cubicador.RecomendarAsync(peticion, cancellationToken);
         if (recomendacion.EsFallo)
         {
+            if (ocupadoEsError && recomendacion.Error.Codigo == clsCodigosError.CubicadorOcupado)
+            {
+                _logger.LogInformation("El cubicador está ocupado para la ruta {RutaId} ({Detalle}): vuelve a la cola sin respaldo.",
+                    rutaId, recomendacion.Error.Detalle);
+                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje);
+            }
+
             if (CodigosSinRespaldo.Contains(recomendacion.Error.Codigo))
             {
                 _logger.LogWarning("El cubicador no aceptó la ruta {RutaId} ({Codigo}: {Detalle}): no se guarda la captura.",
                     rutaId, recomendacion.Error.Codigo, recomendacion.Error.Detalle);
-                // Solo el código y el mensaje: el detalle interno (qué campo faltó, estado HTTP) queda en el log.
-                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje);
+                // Solo el código, el mensaje y la mercancía señalada (item y campo; D-1019-1): el detalle interno (estado HTTP) y las marcas
+                // internas quedan en el log.
+                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje) { Datos = DatosMercancia(recomendacion.Error.Datos) };
             }
 
             var caida = clsErroresCubicador.EsCaida(recomendacion.Error);
@@ -170,6 +193,26 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         }
 
         return Camiones(rutaId, ruta, recomendacion.Valor);
+    }
+
+    /// <summary>
+    /// D-1019-1: de los datos de un rechazo del cubicador solo pasan <c>item</c> (la mercancía, base 0) y <c>campo</c>; sin <c>item</c>,
+    /// ninguno.
+    /// </summary>
+    public static Dictionary<string, object?>? DatosMercancia(IReadOnlyDictionary<string, object?>? datos)
+    {
+        if (datos is null || !datos.TryGetValue("item", out var item) || item is null)
+        {
+            return null;
+        }
+
+        var visibles = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = item };
+        if (datos.TryGetValue("campo", out var campo) && campo is not null)
+        {
+            visibles["campo"] = campo;
+        }
+
+        return visibles;
     }
 
     /// <summary>

@@ -92,8 +92,7 @@ public sealed class clsAlmacenIdempotenciaEnMemoria : IClsAlmacenIdempotencia
                 {
                     return entrada.Huella == huella
                         ? (clsResultado<T>)guardado
-                        : new clsErrorDominio(clsCodigosAplicacion.SolicitudInvalida,
-                            "Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.");
+                        : new clsErrorDominio(clsCodigosAplicacion.IdempotencyKeyReutilizada, clsCodigosAplicacion.MensajeIdempotencyKeyReutilizada);
                 }
 
                 var resultado = await accion(ct);

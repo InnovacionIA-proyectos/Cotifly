@@ -83,11 +83,35 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
     /// <summary>Si tiene valor, la recomendación responde ese error con <c>{codigo, mensaje}</c>.</summary>
     public (HttpStatusCode Estado, string Codigo)? ErrorRecomendacion { get; set; }
 
+    /// <summary>D1: cuerpo crudo del error de <see cref="ErrorRecomendacion"/> (por ejemplo el <c>{"detail": [...]}</c> de un 422 de FastAPI).</summary>
+    public string? CuerpoErrorRecomendacion { get; set; }
+
     /// <summary>HU-023.5: error de la recomendación según la petición (por ejemplo, una sola ruta); <c>null</c> = responde normal.</summary>
     public Func<JsonNode, (HttpStatusCode Estado, string Codigo)?>? ErrorPara { get; set; }
 
     /// <summary>HU-023.5: espera de cada <c>POST /recomendaciones</c> (para medir cuántas llamadas hay en paralelo).</summary>
     public TimeSpan? DemoraRecomendacion { get; set; }
+
+    /// <summary>
+    /// Opción C/D: si tiene valor, cada <c>POST /recomendaciones</c> espera a que se complete (simula el motor calculando una carga grande
+    /// el tiempo que la prueba quiera). <see cref="RecomendacionesIniciadas"/> cuenta los POST que ya llegaron.
+    /// </summary>
+    public TaskCompletionSource? CompuertaRecomendacion { get; set; }
+
+    /// <summary>Opción C: espera de cada reconsulta <c>GET /recomendaciones</c> (el cubicador la responde cuando el motor termina).</summary>
+    public TimeSpan? DemoraReconsulta { get; set; }
+
+    private int _iniciadas;
+
+    /// <summary>POST a <c>/recomendaciones</c> que ya llegaron al falso (estén o no esperando la compuerta).</summary>
+    public int RecomendacionesIniciadas => Volatile.Read(ref _iniciadas);
+
+    /// <summary>Crea una compuerta nueva (cerrada) y la deja en <see cref="CompuertaRecomendacion"/>.</summary>
+    public TaskCompletionSource CerrarCompuerta()
+    {
+        CompuertaRecomendacion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        return CompuertaRecomendacion;
+    }
 
     private int _enCurso;
     private int _maximoEnCurso;
@@ -219,6 +243,11 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
         if (request.Method == HttpMethod.Get && ruta.EndsWith("/recomendaciones", StringComparison.Ordinal))
         {
             var consulta = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
+            if (DemoraReconsulta is { } demoraReconsulta)
+            {
+                await Task.Delay(demoraReconsulta, cancellationToken);
+            }
+
             if (!string.Equals(consulta["origenSistema"], "COTIFLY", StringComparison.Ordinal))
             {
                 return Json(HttpStatusCode.UnprocessableEntity, """{"detail":"origenSistema es obligatorio"}""");
@@ -246,6 +275,7 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
         if (request.Method == HttpMethod.Post && ruta.EndsWith("/recomendaciones", StringComparison.Ordinal))
         {
             var enCurso = Interlocked.Increment(ref _enCurso);
+            Interlocked.Increment(ref _iniciadas);
             try
             {
                 for (var maximo = Volatile.Read(ref _maximoEnCurso); enCurso > maximo; maximo = Volatile.Read(ref _maximoEnCurso))
@@ -259,6 +289,11 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
                 if (DemoraRecomendacion is { } espera)
                 {
                     await Task.Delay(espera, cancellationToken);
+                }
+
+                if (CompuertaRecomendacion is { } compuerta)
+                {
+                    await compuerta.Task.WaitAsync(cancellationToken);
                 }
 
                 if (TiempoAgotadoSinGuardar)
@@ -303,7 +338,8 @@ public sealed class clsCubicadorFalso : HttpMessageHandler
 
         if (ErrorRecomendacion is { } error)
         {
-            return Json(error.Estado, JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
+            return Json(error.Estado, CuerpoErrorRecomendacion
+                ?? JsonSerializer.Serialize(new { codigo = error.Codigo, mensaje = $"Error {error.Codigo} del cubicador falso." }));
         }
 
         if (CuerpoRecomendacion is not null)

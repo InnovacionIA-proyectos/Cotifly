@@ -112,7 +112,7 @@ public sealed class clsSolicitudCosteoTests
     public void CadaPosicionSeValidaConSuNumero()
     {
         var solicitud = Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 10m, 10m, 10m, null), new clsPosicionCarga(null, 0, 10m, 10m, 10m, null)] };
-        solicitud.Validar()!.Mensaje.Should().Contain("posición 2");
+        solicitud.Validar()!.Mensaje.Should().StartWith("Mercancía 2: la cantidad", "D6: la mercancía en base 1, sin índices");
 
         (Valida() with { Posiciones = [new clsPosicionCarga(null, 1, 0.05m, 10m, 10m, null)] }).Validar()!.Mensaje.Should().Contain("largo_cm");
     }

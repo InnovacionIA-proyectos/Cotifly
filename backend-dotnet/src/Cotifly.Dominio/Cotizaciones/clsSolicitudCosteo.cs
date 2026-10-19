@@ -93,7 +93,7 @@ public sealed record clsSolicitudCosteo
         return error
             ?? ValidarCondicionales()
             ?? Posiciones.Select((p, i) => p is null
-                ? new clsErrorDominio(CodigoError, $"La posición {i + 1} está vacía.")
+                ? new clsErrorDominio(CodigoError, $"La mercancía {i + 1} está vacía.")
                 : p.Validar(i + 1)).FirstOrDefault(e => e is not null)
             ?? ValidarPeso();
     }
@@ -240,29 +240,52 @@ public sealed record clsPosicionCarga(
     public const decimal MedidaMinima = 0.1m;
     public const decimal MedidaMaxima = 999_999m;
 
+    /// <summary>Subcampo de la cantidad en <see cref="clsErrorPosicion.Campo"/>.</summary>
+    public const string CampoCantidad = "cantidad";
+
     /// <summary>Primer error de la posición número <paramref name="numero"/> (1 = la primera), o <c>null</c>.</summary>
-    public clsErrorDominio? Validar(int numero)
+    public clsErrorDominio? Validar(int numero) =>
+        PrimerError(numero) is { } error ? new clsErrorDominio(clsSolicitudCosteo.CodigoError, error.Mensaje) : null;
+
+    /// <summary>
+    /// Primer error de la mercancía número <paramref name="numero"/> (1 = la primera) con el subcampo que lo causa
+    /// (<c>descripcion</c>, <c>codigo_mercancia</c>, <see cref="CampoCantidad"/>, <c>largo_cm</c>, <c>ancho_cm</c>, <c>alto_cm</c> o
+    /// <c>peso_kg</c>), o <c>null</c>. D6 (E2E 2026-10-16): el mensaje nombra la mercancía en lenguaje natural con el número base 1
+    /// ("Mercancía 2: …") y nunca una ruta con índice (<c>posiciones[2]</c>), que chocaba con el campo base 0 del error; el campo con índice
+    /// lo arma quien reporta (<c>mercancias[i]</c>, base 0, como el resto de errores de la captura). La misma regla la usa
+    /// "Calcular cubicaje" (D1) antes de llamar al cubicador.
+    /// </summary>
+    public clsErrorPosicion? PrimerError(int numero)
     {
         var codigo = clsSolicitudCosteo.CodigoError;
-        return clsValidacion.Primero(
-            clsValidacion.LargoMaximo(codigo, $"posiciones[{numero}].descripcion", Descripcion, LargoDescripcion),
-            clsValidacion.LargoMaximo(codigo, $"posiciones[{numero}].codigo_mercancia", CodigoMercancia, LargoCodigoMercancia),
-            Cantidad is < 1 or > CantidadMaxima
-                ? new clsErrorDominio(codigo, $"La cantidad de la posición {numero} debe estar entre 1 y {CantidadMaxima}.")
-                : null,
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].largo_cm", LargoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].alto_cm", AltoCm, MedidaMinima, MedidaMaxima),
-            clsSolicitudCosteo.Rango($"posiciones[{numero}].peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso),
+        var prefijo = $"Mercancía {numero.ToString(System.Globalization.CultureInfo.InvariantCulture)}: ";
+        clsErrorPosicion? Con(string campo, clsErrorDominio? error) =>
+            error is null ? null : new clsErrorPosicion(campo, prefijo + char.ToLowerInvariant(error.Mensaje[0]) + error.Mensaje[1..]);
+
+        return Con("descripcion", clsValidacion.LargoMaximo(codigo, "descripcion", Descripcion, LargoDescripcion))
+            ?? Con("codigo_mercancia", clsValidacion.LargoMaximo(codigo, "codigo_mercancia", CodigoMercancia, LargoCodigoMercancia))
+            ?? (Cantidad is < 1 or > CantidadMaxima
+                ? new clsErrorPosicion(CampoCantidad, $"{prefijo}la cantidad debe estar entre 1 y {CantidadMaxima}.")
+                : null)
+            ?? Con("largo_cm", clsSolicitudCosteo.Rango("largo_cm", LargoCm, MedidaMinima, MedidaMaxima))
+            ?? Con("ancho_cm", clsSolicitudCosteo.Rango("ancho_cm", AnchoCm, MedidaMinima, MedidaMaxima))
+            ?? Con("alto_cm", clsSolicitudCosteo.Rango("alto_cm", AltoCm, MedidaMinima, MedidaMaxima))
+            ?? Con("peso_kg", clsSolicitudCosteo.Rango("peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso))
             // HU-023 (#176): la mercancía que viaja al cubicador (con tipo de mercancía) exige peso por unidad mayor que 0. También rige al
             // revalidar lo guardado (reintento, re-solicitud): una ruta anterior a la regla con tipo de mercancía y sin peso no se reenvía y
             // responde este mensaje; se corrige con una versión nueva (re-solicitar con la carga completa). Auditoría B2: se deja así a
             // propósito (relajarla solo al revalidar exige llevar una bandera por las tres rutas de validación).
-            VaAlCubicador() && PesoKg is not > 0m
-                ? new clsErrorDominio(codigo, $"La mercancía {numero} debe traer el peso por unidad (peso_kg) mayor que 0: el cubicador lo exige.")
+            ?? (VaAlCubicador() && PesoKg is not > 0m
+                ? new clsErrorPosicion("peso_kg", $"{prefijo}el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.")
                 : null);
     }
 
     /// <summary>¿La posición viaja al cubicador? (trae su tipo de mercancía: el código o, en la transición, el uuid anterior).</summary>
     public bool VaAlCubicador() => !string.IsNullOrWhiteSpace(CodigoMercancia) || IdTipoMercancia is { } id && id != Guid.Empty;
 }
+
+/// <summary>
+/// Error de una mercancía (<see cref="clsPosicionCarga.PrimerError"/>): <paramref name="Campo"/> es el subcampo del contrato
+/// (<c>cantidad</c>, <c>largo_cm</c>…) y <paramref name="Mensaje"/> el texto para el comercial, con el número de la mercancía en base 1.
+/// </summary>
+public sealed record clsErrorPosicion(string Campo, string Mensaje);

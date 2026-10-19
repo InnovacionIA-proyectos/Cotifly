@@ -240,6 +240,10 @@ public sealed partial class clsContratoRutasTests(clsCotiflyApiFactory factory) 
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsVehiculoCubicacion), "VehiculoCubicacion"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsMercanciaCubicada), "MercanciaCubicada"),
         (typeof(Cotifly.Aplicacion.Cubicacion.DTOs.clsSugerenciaVehiculoLegada), "SugerenciaVehiculoLegada"),
+        // Opción D (E2E 2026-10-16, D3): "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
+        (typeof(Cotifly.Api.Cubicacion.DTOs.clsCubicacionEnProcesoWeb), "CubicacionEnProceso"),
+        (typeof(Cotifly.Api.Cubicacion.DTOs.clsEstadoCubicacionWeb), "EstadoCubicacion"),
+        (typeof(Cotifly.Api.Cubicacion.DTOs.clsErrorCubicacionWeb), "ErrorCubicacion"),
         (typeof(Cotifly.Aplicacion.Precio.DTOs.clsSalidaPrecio), "SalidaPrecio"),
         (typeof(Cotifly.Aplicacion.Margen.DTOs.clsSalidaMargen), "SalidaMargen"),
         (typeof(Cotifly.Aplicacion.Pdf.DTOs.clsSalidaPdf), "SalidaPdf"),

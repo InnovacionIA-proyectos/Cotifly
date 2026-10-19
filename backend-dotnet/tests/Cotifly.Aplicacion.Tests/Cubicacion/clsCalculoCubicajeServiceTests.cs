@@ -155,7 +155,8 @@ public sealed class clsCalculoCubicajeServiceTests
         peticiones[1].ClaseViajeSeleccionada.Should().BeNull();
         peticiones[0].UsuarioId.Should().Be("987654");
         peticiones[0].Mercancias.Should().Equal(new clsMercanciaCubicador("CAFE_EN_ESTIBAS", 10, 120m, 100m, 150m, 800m));
-        await _cubicador.DidNotReceive().ListarTiposMercanciaAsync(Arg.Any<CancellationToken>());
+        // D-1019-1: el código se valida contra el catálogo (con caché en el adaptador), una lectura por cálculo.
+        await _cubicador.Received(2).ListarTiposMercanciaAsync(Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -285,8 +286,163 @@ public sealed class clsCalculoCubicajeServiceTests
     {
         Responder(new clsErrorDominio(codigo, "Mensaje para el comercial.", "detalle interno"));
 
-        var resultado = await Servicio().CalcularAsync(_usuario, [Item("DESCONOCIDO")], null, Ct);
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item()], null, Ct);
 
         resultado.Error.Should().Be(new clsErrorDominio(codigo, "Mensaje para el comercial."));
+    }
+
+    /// <summary>
+    /// D-1019-1 (E2E 2026-10-19): un código que no está en el catálogo, o que está inactivo, es 400 MERCANCIA_DESCONOCIDA con el ítem (base
+    /// 0) y el campo, y no se llama al cubicador (no ocupa el cupo ni el motor). Antes lo detectaba el cubicador y llegaba sin el ítem.
+    /// </summary>
+    [Theory]
+    [InlineData("NO_EXISTE_XYZ")]
+    [InlineData("ACERO_VIEJO")]
+    [InlineData("acero_viejo")]
+    public async Task UnCodigoDesconocidoOInactivoEsMercanciaDesconocidaConElItemSinLlamarAlCubicador(string codigo)
+    {
+        CatalogoCon(new clsTipoMercanciaCubicador("ACERO_VIEJO", "Acero (retirado)", "GENERAL", true, false, null, false));
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(), Item(codigo)], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MercanciaDesconocida);
+        resultado.Error.Mensaje.Should().Contain("ítem 2").And.Contain(codigo);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 1, ["campo"] = "codigo_mercancia" });
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+        _cubicador.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IClsCubicador.RecomendarAsync)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task UnCodigoNoCubicableEsMercanciaNoCubicableConElItemSinLlamarAlCubicador()
+    {
+        CatalogoCon(new clsTipoMercanciaCubicador("GRANEL", "Granel", "GENERAL", false, false, null, true));
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item("granel")], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MercanciaNoCubicable);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "codigo_mercancia" });
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UnCodigoSeComparaSinMayusculasYViajaComoEnElCatalogo()
+    {
+        var peticiones = new List<clsPeticionRecomendacion>();
+        _cubicador.RecomendarAsync(Arg.Do<clsPeticionRecomendacion>(peticiones.Add), Arg.Any<CancellationToken>())
+            .Returns(Respuesta(clsResultadosRecomendacion.SinSeleccionAutomatica, clsMotivosSinSeleccion.SuperaKMax));
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(" cafe_en_estibas ")], null, Ct);
+
+        resultado.Valor.Mercancias.Should().Equal(new clsMercanciaCubicada("CAFE_EN_ESTIBAS", null, null, false));
+        peticiones.Should().ContainSingle().Which.Mercancias[0].CodigoMercancia.Should().Be("CAFE_EN_ESTIBAS");
+    }
+
+    /// <summary>D-1019-1: sin catálogo no se bloquea; el código viaja tal cual y el rechazo del cubicador conserva el ítem que señala.</summary>
+    [Fact]
+    public async Task ConElCatalogoCaidoElCodigoSigueHaciaElCubicadorYSuRechazoTraeElItem()
+    {
+        _cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído", "tiempo agotado"));
+        Responder(new clsErrorDominio(clsCodigosError.MercanciaDesconocida, "El cubicador no reconoce una de las mercancías.", "HTTP 400")
+        {
+            Datos = new Dictionary<string, object?> { ["item"] = 1, ["campo"] = "codigo_mercancia" },
+        });
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(), Item("NO_EXISTE_XYZ")], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MercanciaDesconocida);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 1, ["campo"] = "codigo_mercancia" });
+        await _cubicador.Received(1).RecomendarAsync(
+            Arg.Is<clsPeticionRecomendacion>(p => p.Mercancias[1].CodigoMercancia == "NO_EXISTE_XYZ"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConElCatalogoCaidoUnCodigoValidoSeCubicaComoAntes()
+    {
+        _cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>())
+            .Returns(new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, "caído", "tiempo agotado"));
+        Responder(Respuesta(clsResultadosRecomendacion.SinSeleccionAutomatica, clsMotivosSinSeleccion.SuperaKMax));
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(" CAFE_EN_ESTIBAS ")], null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.Mercancias.Should().Equal(new clsMercanciaCubicada("CAFE_EN_ESTIBAS", null, null, false));
+    }
+
+    [Fact]
+    public async Task LaDescripcionSoloSeResuelveATiposCubicables()
+    {
+        CatalogoCon(new clsTipoMercanciaCubicador("CEMENTO_GRANEL", "Cemento a granel", "GRANEL", false, false, null, true));
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(null, "cemento a granel")], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.MercanciaDesconocida, "un tipo no cubicable no se sugiere");
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>El catálogo del constructor más <paramref name="extra"/>.</summary>
+    private void CatalogoCon(params clsTipoMercanciaCubicador[] extra) =>
+        _cubicador.ListarTiposMercanciaAsync(Arg.Any<CancellationToken>()).Returns(clsResultado<IReadOnlyList<clsTipoMercanciaCubicador>>.Exito(
+        [
+            new clsTipoMercanciaCubicador("CAFE_EN_ESTIBAS", "Café en estibas", "GENERAL", true, false, null, true),
+            new clsTipoMercanciaCubicador("QUIMICOS", "Tambor de químicos", "PELIGROSA", true, true, "Requiere aprobación", true),
+            .. extra,
+        ]));
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): con largo, ancho o alto fuera de 0,1 a 999.999 o el peso por unidad en 0, el cubicador respondía 422 y el
+    /// comercial veía 503 "Avisa a soporte". Cotifly valida antes con las reglas de la captura: 400 DIMENSIONES_INVALIDAS con el ítem.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 100, 150, 800, "largo_cm")]
+    [InlineData(120, 0, 150, 800, "ancho_cm")]
+    [InlineData(120, 100, -5, 800, "alto_cm")]
+    [InlineData(120, 100, 150, 0, "peso_kg")]
+    [InlineData(120.001, 100, 150, 800, "largo_cm")]
+    public async Task MedidasOPesoFueraDeRangoSonDimensionesInvalidasConElItemSinLlamarAlCubicador(
+        double largo, double ancho, double alto, double peso, string campo)
+    {
+        var malo = new clsItemCubicacion("CAFE_EN_ESTIBAS", null, 10, (decimal)largo, (decimal)ancho, (decimal)alto, (decimal)peso);
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item(), malo], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.DimensionesInvalidas);
+        resultado.Error.Mensaje.Should().StartWith("Mercancía 2: ").And.Contain(campo);
+        resultado.Error.Datos.Should().Contain("item", 1).And.Contain("campo", campo);
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    [InlineData(100_001)]
+    public async Task UnaCantidadFueraDeRangoEsPosicionInvalidaComoEnLaCaptura(int cantidad)
+    {
+        var malo = new clsItemCubicacion("CAFE_EN_ESTIBAS", null, cantidad, 120m, 100m, 150m, 800m);
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [malo], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosLineaSolicitud.PosicionInvalida);
+        resultado.Error.Mensaje.Should().StartWith("Mercancía 1: la cantidad");
+        resultado.Error.Datos.Should().Contain("item", 0).And.Contain("campo", "cantidad");
+        await _cubicador.DidNotReceive().RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(clsCodigosError.DimensionesInvalidas)]
+    [InlineData(clsCodigosLineaSolicitud.PosicionInvalida)]
+    [InlineData(clsCodigosError.CubicadorPeticionRechazada)]
+    public async Task UnRechazo422DelCubicadorLlegaComo400ConElItemYSinMarcasInternas(string codigo)
+    {
+        Responder(new clsErrorDominio(codigo, "El cubicador rechazó la mercancía 1.", "HTTP 422 en POST /recomendaciones")
+        {
+            Datos = new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "largoCm", ["interno"] = true },
+        });
+
+        var resultado = await Servicio().CalcularAsync(_usuario, [Item()], null, Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+        resultado.Error.Detalle.Should().BeNull();
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = 0, ["campo"] = "largoCm" });
     }
 }

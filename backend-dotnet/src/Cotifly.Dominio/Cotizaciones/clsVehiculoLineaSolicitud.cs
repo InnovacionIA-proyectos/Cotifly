@@ -136,15 +136,33 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     /// <summary>
-    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió. Lo que
-    /// Nexo trae manda; un valor vacío de Nexo no borra el de Cotifly, y la misma sigla con otras mayúsculas no cuenta como cambio.
-    /// Devuelve <c>true</c> si cambió.
+    /// El vehículo y la carrocería de la línea en Nexo (#134): la Mesa de Costeo se los puso a una línea que iba vacía o los cambió.
+    /// Decisión de negocio del 2026-10-19 (D2): "si la Mesa de Costeo realiza un cambio, nos acogemos a dichos cambios, incluido el tipo de
+    /// vehículo". Lo que Nexo trae manda, también en un camión del cubicador (con <see cref="IdRecomendacionVehiculo"/>), salvo dos casos:
+    /// <list type="bullet">
+    /// <item>un valor vacío de Nexo no borra el de Cotifly;</item>
+    /// <item>la misma sigla escrita de otra forma (<see cref="MismoCodigo"/>: mayúsculas, tildes, <c>_</c>, <c>-</c> o espacios; Nexo
+    /// devuelve <c>Furgón</c> por <c>FURGON</c>) no es un cambio y se conserva el código de Cotifly (el canónico del cubicador).</item>
+    /// </list>
+    /// El <see cref="IdRecomendacionVehiculo"/> se conserva: es el vínculo con la línea de Nexo (<c>grupoRutaId</c> +
+    /// <c>idRecomendacionVehiculo</c> + <c>numeroLinea</c>), que no cambia porque la Mesa cambie el vehículo. Devuelve <c>true</c> si cambió.
+    /// Si la Mesa cambia de verdad un vehículo o una carrocería que ya tenía el camión (no si llena uno vacío), los porcentajes de llenado
+    /// del cubicador (<see cref="PorcentajeLlenadoVolumen"/>, <see cref="PorcentajeLlenadoPeso"/>) quedan en <c>null</c>: se calcularon
+    /// para el vehículo anterior y mostrarlos sería un dato falso. El peso y el volumen de la carga se conservan (no dependen del vehículo).
+    /// Si después la Mesa vuelve al vehículo original, los porcentajes no se recuperan.
     /// </summary>
     internal bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
     {
         var antes = (TipoVehiculo, Carroceria);
         TipoVehiculo = Elegir(TipoVehiculo, tipoVehiculo);
         Carroceria = Elegir(Carroceria, carroceria);
+        if ((antes.TipoVehiculo is not null && antes.TipoVehiculo != TipoVehiculo)
+            || (antes.Carroceria is not null && antes.Carroceria != Carroceria))
+        {
+            PorcentajeLlenadoVolumen = null;
+            PorcentajeLlenadoPeso = null;
+        }
+
         return antes != (TipoVehiculo, Carroceria);
     }
 
@@ -166,7 +184,12 @@ public sealed class clsVehiculoLineaSolicitud
     }
 
     private static string? Elegir(string? actual, string? deNexo) =>
-        Normalizar(deNexo) is { } nuevo && !string.Equals(nuevo, actual, StringComparison.OrdinalIgnoreCase) ? nuevo : actual;
+        Normalizar(deNexo) is not { } nuevo || (actual is not null && MismoCodigo(actual, nuevo)) ? actual : nuevo;
+
+    /// <summary>¿Es el mismo código escrito de otra forma? Sin tildes, en mayúsculas y con <c>_</c>, <c>-</c> y espacios como uno solo.</summary>
+    public static bool MismoCodigo(string a, string b) =>
+        clsEmparejadorLineasNexo.Normalizar(a.Replace('_', ' ').Replace('-', ' '))
+        == clsEmparejadorLineasNexo.Normalizar(b.Replace('_', ' ').Replace('-', ' '));
 
     /// <summary>Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud.</summary>
     internal bool RegistrarEstado(EstadoCosteo estado)

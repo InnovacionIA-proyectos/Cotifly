@@ -244,7 +244,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
 
         // Cuatro llamadas en paralelo y el cubicador sin demora: las dos últimas rutas pueden terminar juntas (B2, #174). La que no obtiene
         // el candado del envío espera y vuelve a revisar, así que la licitación sale de una vez y una sola vez.
-        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4" });
+        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4", ["Cubicador:MaximoConcurrente"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using (var analisis = await api.EnviarContenidoAsync(_post, "/web/licitaciones/analizar-excel", ana.Access, clsApiWebPruebas.Archivo(clsPliegoMuestra.Excel(10))))
@@ -309,7 +309,7 @@ public sealed class clsE2EFlujosHU023Tests : IAsyncDisposable
     [Fact]
     public async Task F2_LasDosUltimasRutasQueTerminanJuntasEnvianLaLicitacionUnaSolaVezEnVeinteRepeticiones()
     {
-        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4" });
+        var api = Api(conCubicador: true, datosCubicador: true, mas: new Dictionary<string, string?> { ["Cubicador:MaximoParalelo"] = "4", ["Cubicador:MaximoConcurrente"] = "4" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         // COTIFLY_REPETICIONES_B2 sube las repeticiones para las corridas de carga (50 en la revisión de #174).

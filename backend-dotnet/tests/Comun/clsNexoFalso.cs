@@ -43,6 +43,23 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// </summary>
     public bool FallarConsultaTrasResultado { get; set; }
 
+    /// <summary>
+    /// E2E 2026-10-16: si es mayor que cero, los siguientes N <c>GET /api/solicitudes/{id}</c> responden <c>409 CONFLICTO_CONCURRENCIA</c>
+    /// (dos lecturas a la vez: "abrir" la solicitud cambia su estado en Nexo).
+    /// </summary>
+    public int ConflictosPasajerosSolicitud { get; set; }
+
+    /// <summary>Si es verdadero, <c>GET /api/cotizaciones/por-solicitud/{id}</c> no existe (un Nexo anterior a S5-HU-20.1, #286): 404.</summary>
+    public bool SinCotizacionPorSolicitud { get; set; }
+
+    /// <summary>Cuántas peticiones con <paramref name="metodo"/> recibió <paramref name="ruta"/> (ruta exacta, sin la consulta).</summary>
+    public int Llamadas(HttpMethod metodo, string ruta) =>
+        Peticiones.Count(p => p.Metodo == metodo && p.Url.AbsolutePath.TrimEnd('/') == ruta);
+
+    /// <summary>Escrituras recibidas (POST, PUT, PATCH, DELETE) en <c>/api/cotizaciones</c> y sus subrutas.</summary>
+    public int EscriturasCotizaciones =>
+        Peticiones.Count(p => p.Metodo != HttpMethod.Get && p.Url.AbsolutePath.StartsWith("/api/cotizaciones", StringComparison.Ordinal));
+
     /// <summary>Si es mayor que cero, los siguientes N GET responden <c>429 DEMASIADAS_SOLICITUDES</c> con <c>Retry-After</c> (<see cref="SegundosRetryAfter"/>).</summary>
     public int LecturasLimitadas { get; set; }
 
@@ -228,7 +245,7 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     /// <summary>
     /// Si es verdadero, después de agregar conexos <c>GET /api/cotizaciones/{id}</c> responde 503 (Nexo agregó el conexo pero la
-    /// relectura falla); "crear o recuperar" (el polling) sigue respondiendo.
+    /// relectura falla); <c>GET /api/cotizaciones/por-solicitud/{id}</c> y "crear o recuperar" (el polling) siguen respondiendo.
     /// </summary>
     public bool FallarRelecturaTrasConexos { get; set; }
 
@@ -378,6 +395,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                     MarcarResultado(r["/api/cotizaciones/".Length..^"/resultado".Length], cuerpo),
                 ("POST", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) && r.EndsWith("/conexos", StringComparison.Ordinal) =>
                     AgregarConexos(r["/api/cotizaciones/".Length..^"/conexos".Length], cuerpo),
+                ("GET", var r) when r.StartsWith("/api/cotizaciones/por-solicitud/", StringComparison.Ordinal) =>
+                    CotizacionPorSolicitud(r["/api/cotizaciones/por-solicitud/".Length..]),
                 ("GET", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) => LeerCotizacion(r["/api/cotizaciones/".Length..]),
                 ("GET", "/api/servicios-conexos") => CatalogoConexos(request.RequestUri),
                 _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"{request.Method} {ruta}"),
@@ -514,6 +533,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
             return Error(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", "Solicitud no encontrada.");
         }
 
+        if (ConflictosPasajerosSolicitud > 0)
+        {
+            ConflictosPasajerosSolicitud--;
+            return Error(HttpStatusCode.Conflict, "CONFLICTO_CONCURRENCIA", "La solicitud cambió mientras se leía (prueba).");
+        }
+
         if (FallarConsultaTrasResultado && s.Cotizacion is { Resultado: not "SinDefinir" })
         {
             return Error(HttpStatusCode.ServiceUnavailable, "NEXO_CAIDO", "Consulta no disponible tras el resultado (prueba).");
@@ -560,6 +585,25 @@ public sealed class clsNexoFalso : HttpMessageHandler
                 numeroLinea = i + 1,
             }).ToArray(),
         });
+    }
+
+    /// <summary>
+    /// <c>GET /api/cotizaciones/por-solicitud/{solicitudId}</c> (Nexo S5-HU-20.1, #286): la cotización que ya existe, SIN crear nada; 204 si
+    /// todavía no hay (la crean el autocosteo, la Mesa o el "crear o recuperar").
+    /// </summary>
+    private HttpResponseMessage CotizacionPorSolicitud(string solicitudId)
+    {
+        if (SinCotizacionPorSolicitud)
+        {
+            return Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"GET /api/cotizaciones/por-solicitud/{solicitudId}");
+        }
+
+        if (!_solicitudes.TryGetValue(solicitudId, out var s))
+        {
+            return Error(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", "Solicitud no encontrada.");
+        }
+
+        return s.Cotizacion is null ? new HttpResponseMessage(HttpStatusCode.NoContent) : Json(HttpStatusCode.OK, Cotizacion(s));
     }
 
     private HttpResponseMessage CrearORecuperar(string? cuerpo)

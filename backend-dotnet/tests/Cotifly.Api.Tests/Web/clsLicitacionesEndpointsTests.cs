@@ -100,6 +100,13 @@ public sealed class clsLicitacionesEndpointsTests : IDisposable
         var json = await VerificarContratoAsync(respuesta, "/web/licitaciones", HttpMethod.Post, HttpStatusCode.Created);
         json.GetProperty("archivo_nombre").ValueKind.Should().Be(JsonValueKind.Null);
         json.GetProperty("lineas").GetArrayLength().Should().Be(2);
+
+        // D5 (E2E 2026-10-16): el pliego manda 2026-10-20T17:00:00-05:00; la licitación respondía con el -05:00. Sale en UTC, como el resto.
+        json.GetProperty("deadline").GetString().Should().Be("2026-10-20T22:00:00+00:00");
+        var folio = json.GetProperty("folio").GetString();
+        using var leida = await _api.EnviarAsync(HttpMethod.Get, $"/web/licitaciones/{folio}", sesion.Access);
+        (await VerificarContratoAsync(leida, "/web/licitaciones/{folio}", HttpMethod.Get, HttpStatusCode.OK))
+            .GetProperty("deadline").GetString().Should().Be("2026-10-20T22:00:00+00:00", "leída de la base (datetimeoffset con -05:00) sale en UTC");
     }
 
     [Fact]

@@ -311,11 +311,26 @@ public static class clsCodigosError
     public const string CubicadorNoDisponible = "CUBICADOR_NO_DISPONIBLE";
 
     /// <summary>
+    /// Opción C (E2E 2026-10-16, D3): todas las llamadas permitidas a <c>POST /recomendaciones</c> (<c>Cubicador:MaximoConcurrente</c>, 1 por
+    /// defecto) siguen en curso y no se liberó ninguna dentro de <c>Cubicador:EsperaMaximaCupoSegundos</c>. Nada se pidió al cubicador; se
+    /// puede reintentar: 503 con <c>Retry-After</c>. En la captura, el recálculo y la licitación cuenta como una caída (respaldo o
+    /// <c>CUBICADOR_NO_DISPONIBLE</c>); en "Calcular cubicaje" llega tal cual.
+    /// </summary>
+    public const string CubicadorOcupado = "CUBICADOR_OCUPADO";
+
+    /// <summary>
     /// HU-023.1 (#156): el cubicador respondió 200 pero la respuesta no cumple el contrato (por ejemplo <c>ASIGNADO</c> con un vehículo
     /// sin peso, volumen, porcentajes o códigos; un resultado o un motivo desconocido; un porcentaje fuera de 0 a 100). Se rechaza para no
     /// guardar datos incompletos (el fallo silencioso): no se guarda nada y nunca va al respaldo. 503.
     /// </summary>
     public const string CubicadorRespuestaInvalida = "CUBICADOR_RESPUESTA_INVALIDA";
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): el cubicador rechazó con 422 (validación de su esquema) los datos de <c>POST /recomendaciones</c> y el
+    /// rechazo no señala una medida, un peso o una cantidad de una mercancía (esos llegan como <c>DIMENSIONES_INVALIDAS</c> o
+    /// <c>POSICION_INVALIDA</c> con <c>detalle.item</c>). Es un rechazo de los datos, no una caída: 400, nunca va al respaldo.
+    /// </summary>
+    public const string CubicadorPeticionRechazada = "CUBICADOR_PETICION_RECHAZADA";
 
     /// <summary>
     /// HU-023.1 (#156): el cubicador rechazó la llave de Cotifly (401 <c>NO_AUTORIZADO</c> del contrato). Es un problema de configuración

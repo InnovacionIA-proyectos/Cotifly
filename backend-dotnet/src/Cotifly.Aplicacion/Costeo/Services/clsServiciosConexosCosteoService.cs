@@ -38,7 +38,7 @@ public interface IClsServiciosConexosCosteoService
     /// (409), <c>CONEXO_INVALIDO</c> (400, línea inexistente), <c>LINEA_SIN_COTIZACION_NEXO</c> (409) y los de Nexo. Si Nexo aceptó
     /// pero la relectura falla, <c>NEXO_NO_DISPONIBLE</c> con <c>agregado_en_nexo = true</c> (el polling lo recoge).
     /// <paramref name="claveIdempotencia"/> (<c>Idempotency-Key</c>, opcional): la repetición con la misma clave devuelve el resultado
-    /// guardado (<see cref="IClsAlmacenIdempotencia"/>); la misma clave con otro cuerpo es <c>SOLICITUD_INVALIDA</c>.
+    /// guardado (<see cref="IClsAlmacenIdempotencia"/>); la misma clave con otro cuerpo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409, D4).
     /// </summary>
     Task<clsResultado<clsCosteoCotizacion>> AgregarAsync(
         Guid usuarioId, string folio, IReadOnlyList<clsConexoAgregarEntrada>? items, int versionEsperada, string? claveIdempotencia,

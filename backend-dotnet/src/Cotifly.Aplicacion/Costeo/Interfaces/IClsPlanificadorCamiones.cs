@@ -18,4 +18,14 @@ public interface IClsPlanificadorCamiones
     /// </summary>
     Task<clsResultado<clsPlanRuta>> PlanificarAsync(
         Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Igual que <see cref="PlanificarAsync"/> para quien procesa en segundo plano (la licitación, HU-023.5): un
+    /// <c>CUBICADOR_OCUPADO</c> (opción C: el cupo global del cubicador siguió tomado, por ejemplo por un "Calcular cubicaje" largo) vuelve
+    /// como error, nunca como respaldo ni como <c>CUBICADOR_NO_DISPONIBLE</c>: no es una caída, así que la ruta no debe quedar con el
+    /// camión sin vehículo ni gastar un intento; quien llama la devuelve a la cola. Por defecto, <see cref="PlanificarAsync"/>.
+    /// </summary>
+    Task<clsResultado<clsPlanRuta>> PlanificarEnSegundoPlanoAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        PlanificarAsync(usuarioId, rutaId, ruta, cancellationToken);
 }

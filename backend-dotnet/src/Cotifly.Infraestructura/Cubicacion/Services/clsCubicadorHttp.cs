@@ -28,7 +28,9 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// (<see cref="clsCacheCatalogoCubicador{TFila}"/>).</item>
 /// <item>HU-023 (#176): tope de 10.000 unidades antes de llamar (<c>CUBICACION_DEMASIADO_GRANDE</c>); un POST sin respuesta (tiempo agotado
 /// o red) no se reintenta: se reconsulta <c>GET /recomendaciones?idLineaSolicitud=…&amp;origenSistema=COTIFLY</c> y, si la corrida existe y
-/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 es <c>CUBICADOR_RESPUESTA_INVALIDA</c> (visible, nunca al respaldo); el
+/// su huella coincide con la petición (<see cref="DiferenciaConLaCarga"/>), se usa; un 422 del POST es un rechazo de los datos (D1: 400
+/// <c>DIMENSIONES_INVALIDAS</c>, <c>POSICION_INVALIDA</c> o <c>CUBICADOR_PETICION_RECHAZADA</c>) y el de una consulta
+/// <c>CUBICADOR_RESPUESTA_INVALIDA</c> (los dos visibles, nunca al respaldo); el
 /// <c>comentarioCondicion</c> de las mercancías condicionadas sale de <c>GET /tipos-mercancia</c>. Los códigos se comparan sin distinguir
 /// mayúsculas.</item>
 /// </list>
@@ -45,6 +47,10 @@ namespace Cotifly.Infraestructura.Cubicacion.Services;
 /// llave ni la traza. La cancelación del llamador se propaga.</item>
 /// <item><b>Observabilidad</b>: el resultado de cada recomendación queda en un log informativo con la ruta, el resultado, el motivo, la
 /// marca de condicionada y el número de vehículos (sin datos del cliente).</item>
+/// <item><b>Cupo global</b> (opción C, D3 del E2E 2026-10-16): el POST y su reconsulta ocupan uno de los
+/// <c>Cubicador:MaximoConcurrente</c> cupos del proceso (<see cref="clsCupoLlamadasCubicador"/>). Si no se libera ninguno en
+/// <c>Cubicador:EsperaMaximaCupoSegundos</c>, no se llama: <c>CUBICADOR_OCUPADO</c> marcado como caída (log <see cref="EventoOcupado"/>).
+/// Los catálogos y la salud van fuera del cupo.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCubicadorHttp(
@@ -53,7 +59,8 @@ public sealed class clsCubicadorHttp(
     clsCacheCatalogoCubicador<clsTipoMercanciaCubicador> cacheMercancias,
     clsCacheCatalogoCubicador<clsTipoCarroceriaCubicador> cacheCarrocerias,
     clsCacheCatalogoCubicador<clsTipoVehiculoCubicador> cacheVehiculos,
-    ILogger<clsCubicadorHttp> logger) : IClsCubicador
+    ILogger<clsCubicadorHttp> logger,
+    clsCupoLlamadasCubicador? cupo = null) : IClsCubicador
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del cubicador (las pruebas le cambian el manejador primario).</summary>
     public const string NombreCliente = "Cubicador";
@@ -74,8 +81,15 @@ public sealed class clsCubicadorHttp(
 
     public const string MensajeNoAutorizado = "El cubicador rechazó la llave de Cotifly: avisa a soporte (Cubicador:ApiKey).";
 
-    /// <summary>HU-023 (#176): mensaje de un 422 del cubicador (la petición de Cotifly no cumple su esquema).</summary>
+    /// <summary>
+    /// D1 (E2E 2026-10-16): mensaje de un 422 de <c>POST /recomendaciones</c> que no señala una mercancía (<c>CUBICADOR_PETICION_RECHAZADA</c>,
+    /// 400). Un 422 de una consulta (GET) sigue siendo <c>CUBICADOR_RESPUESTA_INVALIDA</c> con <see cref="MensajeConsultaRechazada"/>.
+    /// </summary>
     public const string MensajePeticionRechazada =
+        "El cubicador rechazó los datos de la carga (medidas, peso o cantidad): revísalos y vuelve a intentarlo. No se guardó nada.";
+
+    /// <summary>HU-023 (#176): mensaje de un 422 de una consulta al cubicador (la petición de Cotifly no cumple su esquema).</summary>
+    public const string MensajeConsultaRechazada =
         "El cubicador rechazó el formato de la petición de Cotifly (422): no se guardó nada. Avisa a soporte.";
 
     /// <summary>Reintentos de las consultas GET (los POST no se reintentan nunca).</summary>
@@ -119,6 +133,32 @@ public sealed class clsCubicadorHttp(
 
     public TimeSpan PresupuestoCaptura => TimeSpan.FromSeconds(opciones.Value.PresupuestoCapturaSegundos);
 
+    /// <summary>Opción C: log de una recomendación que no consiguió cupo a tiempo (código estable para alertas).</summary>
+    public static readonly EventId EventoOcupado = new(2102, "CUBICADOR_OCUPADO");
+
+    /// <summary>Opción C: log de una recomendación que esperó el cupo global (cuánto) antes de llamar.</summary>
+    public static readonly EventId EventoEsperaCupo = new(2103, "CUBICADOR_ESPERA_CUPO");
+
+    /// <summary>Mensaje de <c>CUBICADOR_OCUPADO</c> para el comercial.</summary>
+    public const string MensajeOcupado =
+        "El cubicador está calculando otras cargas en este momento: intenta de nuevo en unos segundos.";
+
+    /// <summary>Marca de la petición de reconsulta (su intento usa <c>Cubicador:TiempoEsperaReconsultaSegundos</c>).</summary>
+    public static readonly HttpRequestOptionsKey<bool> OpcionReconsulta = new("Cotifly.Cubicador.Reconsulta");
+
+    private readonly clsCupoLlamadasCubicador _cupo = cupo ?? new clsCupoLlamadasCubicador(opciones);
+
+    /// <summary>
+    /// Opción C: lo más que puede durar una llamada a <see cref="RecomendarAsync"/>: la espera por el cupo, el POST (con su holgura de
+    /// 2 s), la espera antes de reconsultar y la reconsulta. Lo usa la validación del reclamo de la licitación.
+    /// </summary>
+    public static TimeSpan DuracionMaximaLlamada(clsOpcionesCubicador opciones)
+    {
+        ArgumentNullException.ThrowIfNull(opciones);
+        return TimeSpan.FromSeconds(opciones.EsperaMaximaCupoSegundos + opciones.TiempoEsperaRecomendacionSegundos + 2
+                                    + opciones.EsperaAntesReconsultaSegundos + opciones.TiempoEsperaReconsultaSegundos);
+    }
+
     public async Task<clsResultado<clsRecomendacionCubicador>> RecomendarAsync(
         clsPeticionRecomendacion peticion, CancellationToken cancellationToken = default)
     {
@@ -129,6 +169,34 @@ public sealed class clsCubicadorHttp(
             logger.LogWarning("La ruta {IdLineaSolicitud} supera las {Maximo} unidades del cubicador: no se le llama.",
                 peticion.IdLineaSolicitud, clsMercanciaCubicador.MaximoUnidades);
             return new clsErrorDominio(clsCodigosError.CubicacionDemasiadoGrande, clsMercanciaCubicador.MensajeDemasiadoGrande);
+        }
+
+        if (!EstaConfigurado)
+        {
+            return NoDisponible("cubicador sin configurar (Cubicador:UrlBase y Cubicador:ApiKey)");
+        }
+
+        // Opción C: un cupo global para el POST y su reconsulta. La espera cuenta dentro del tiempo de quien llama y se cancela con él.
+        var espera = TimeSpan.FromSeconds(opciones.Value.EsperaMaximaCupoSegundos);
+        var inicioEspera = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var turno = await _cupo.TomarAsync(espera, cancellationToken);
+        var esperado = System.Diagnostics.Stopwatch.GetElapsedTime(inicioEspera);
+        if (turno is null)
+        {
+            logger.LogWarning(EventoOcupado,
+                "CUBICADOR_OCUPADO: la ruta {IdLineaSolicitud} esperó {Segundos} s sin cupo para el cubicador (Cubicador:MaximoConcurrente = {Maximo}): no se le llama.",
+                peticion.IdLineaSolicitud, (int)espera.TotalSeconds, _cupo.Maximo);
+            return new clsErrorDominio(clsCodigosError.CubicadorOcupado, MensajeOcupado,
+                $"sin cupo tras {((int)espera.TotalSeconds).ToString(CultureInfo.InvariantCulture)} s (Cubicador:MaximoConcurrente = {_cupo.Maximo.ToString(CultureInfo.InvariantCulture)})")
+            {
+                Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
+            };
+        }
+
+        if (esperado >= TimeSpan.FromSeconds(1))
+        {
+            logger.LogInformation(EventoEsperaCupo, "La ruta {IdLineaSolicitud} esperó {Milisegundos} ms el cupo del cubicador.",
+                peticion.IdLineaSolicitud, (long)esperado.TotalMilliseconds);
         }
 
         var cuerpo = new clsRecomendacionWire(
@@ -142,7 +210,7 @@ public sealed class clsCubicadorHttp(
         {
             if (!SinRespuesta(respuesta.Error))
             {
-                return respuesta.Error;
+                return ConMercanciaSenalada(respuesta.Error, peticion);
             }
 
             // HU-023 (#176, guía §4 y §7): el POST no se reintenta a ciegas. Sin respuesta (tiempo agotado o red), la corrida pudo quedar
@@ -172,6 +240,54 @@ public sealed class clsCubicadorHttp(
         return await CompletarAsync(peticion, leida.Valor, "POST", cancellationToken);
     }
 
+    /// <summary>Valor de <c>campo</c> en los datos de un rechazo de mercancía (<c>MERCANCIA_DESCONOCIDA</c>, <c>MERCANCIA_NO_CUBICABLE</c>).</summary>
+    public const string CampoCodigoMercancia = "codigo_mercancia";
+
+    /// <summary>
+    /// D-1019-1 (E2E 2026-10-19): un 400 <c>MERCANCIA_DESCONOCIDA</c> o <c>MERCANCIA_NO_CUBICABLE</c> del cubicador llega con la mercancía
+    /// (<c>item</c>, base 0, y <c>campo = codigo_mercancia</c>): la que señala el cuerpo (<c>item</c>/<c>indice</c>, si existe en la petición)
+/// o, si no la señala, la
+    /// única cuyo código cita el mensaje entre comillas (<c>'NO_EXISTE_XYZ' no esta en el catalogo…</c>). Si no se puede saber cuál es
+    /// (ningún código citado, o dos códigos distintos), queda sin ítem como antes.
+    /// </summary>
+    private static clsErrorDominio ConMercanciaSenalada(clsErrorDominio error, clsPeticionRecomendacion peticion)
+    {
+        if (error.Codigo is not (clsCodigosError.MercanciaDesconocida or clsCodigosError.MercanciaNoCubicable))
+        {
+            return error;
+        }
+
+        if (error.Datos?.TryGetValue("item", out var senalado) == true)
+        {
+            // Un índice fuera de la petición no señala nada: se descarta.
+            return senalado is int n && n >= 0 && n < peticion.Mercancias.Count ? error : error with { Datos = null };
+        }
+
+        int? item = null;
+        string? citado = null;
+        for (var i = 0; i < peticion.Mercancias.Count; i++)
+        {
+            var codigo = peticion.Mercancias[i]?.CodigoMercancia?.Trim();
+            if (string.IsNullOrEmpty(codigo) || !error.Mensaje.Contains($"'{codigo}'", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (citado is not null && !string.Equals(citado, codigo, StringComparison.OrdinalIgnoreCase))
+            {
+                return error;
+            }
+
+            citado ??= codigo;
+            item ??= i;
+        }
+
+        return item is { } indice ? error with { Datos = DatosMercancia(indice) } : error;
+    }
+
+    private static Dictionary<string, object?> DatosMercancia(int indice) =>
+        new(StringComparer.Ordinal) { ["item"] = indice, ["campo"] = CampoCodigoMercancia };
+
     /// <summary>Clave de <see cref="clsErrorDominio.Datos"/> que marca un fallo sin respuesta del cubicador (tiempo agotado o red).</summary>
     public const string ClaveSinRespuesta = "sinRespuesta";
 
@@ -186,8 +302,31 @@ public sealed class clsCubicadorHttp(
     /// </summary>
     private async Task<clsRecomendacionCubicador?> ReconsultarAsync(clsPeticionRecomendacion peticion, CancellationToken cancellationToken)
     {
+        // Opción C: el motor del cubicador sigue calculando (bloquea su API); se le da un respiro y la reconsulta espera a que termine
+        // con su propio límite (Cubicador:TiempoEsperaReconsultaSegundos, reintentos incluidos), sin soltar el cupo.
+        var config = opciones.Value;
+        if (config.EsperaAntesReconsultaSegundos > 0)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(config.EsperaAntesReconsultaSegundos), cancellationToken);
+        }
+
         var ruta = RutaReconsulta(peticion.IdLineaSolicitud);
-        var respuesta = await EnviarAsync(HttpMethod.Get, ruta, null, cancellationToken);
+        clsResultado<JsonDocument> respuesta;
+        using (var tope = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            tope.CancelAfter(TimeSpan.FromSeconds(config.TiempoEsperaReconsultaSegundos));
+            try
+            {
+                respuesta = await EnviarAsync(HttpMethod.Get, ruta, null, tope.Token, reconsulta: true);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Reconsulta de la recomendación de {IdLineaSolicitud} sin respuesta en {Segundos} s.",
+                    peticion.IdLineaSolicitud, config.TiempoEsperaReconsultaSegundos);
+                return null;
+            }
+        }
+
         if (respuesta.EsFallo)
         {
             logger.LogWarning("Reconsulta de la recomendación de {IdLineaSolicitud} sin corrida ({Codigo}: {Detalle}).",
@@ -615,21 +754,43 @@ public sealed class clsCubicadorHttp(
     }
 
     /// <summary>
-    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento; en total, lo que caben el intento y los
-    /// <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>; un POST no se reintenta, así que
-    /// su límite real es el del intento). El circuito con una ventana de al menos el doble del intento (lo exige la tubería estándar).
+    /// Tubería del cliente <see cref="NombreCliente"/>: <paramref name="tiempo"/> por intento de cada GET (catálogos, salud),
+    /// <paramref name="tiempoRecomendacion"/> para el POST (D3b, E2E 2026-10-16: <c>Cubicador:TiempoEsperaRecomendacionSegundos</c>; el
+    /// motor tarda hasta ~30 s con cargas grandes) y <paramref name="tiempoReconsulta"/> por intento de la reconsulta (opción C:
+    /// <c>Cubicador:TiempoEsperaReconsultaSegundos</c>; la petición lleva <see cref="OpcionReconsulta"/>). En total, lo que caben el intento
+    /// y los <see cref="ReintentosLectura"/> reintentos de un GET con sus esperas (<see cref="TiempoTotal"/>), el POST o la reconsulta, lo
+    /// que sea mayor (un POST no se reintenta; la reconsulta y los catálogos tienen además su propio tope). El circuito con una ventana de
+    /// al menos el doble del intento más largo (lo exige la tubería estándar). Sin <paramref name="tiempoRecomendacion"/> ni
+    /// <paramref name="tiempoReconsulta"/>, usan <paramref name="tiempo"/>.
     /// </summary>
-    public static void ConfigurarResiliencia(HttpStandardResilienceOptions resiliencia, TimeSpan tiempo)
+    public static void ConfigurarResiliencia(
+        HttpStandardResilienceOptions resiliencia, TimeSpan tiempo, TimeSpan? tiempoRecomendacion = null, TimeSpan? tiempoReconsulta = null)
     {
         ArgumentNullException.ThrowIfNull(resiliencia);
-        resiliencia.TotalRequestTimeout.Timeout = TiempoTotal(tiempo);
+        var post = tiempoRecomendacion ?? tiempo;
+        var reconsulta = tiempoReconsulta ?? tiempo;
+        var totalPost = post + TimeSpan.FromSeconds(2);
+        var total = TiempoTotal(tiempo);
+        total = totalPost > total ? totalPost : total;
+        total = reconsulta > total ? reconsulta : total;
+        resiliencia.TotalRequestTimeout.Timeout = total;
         resiliencia.AttemptTimeout.Timeout = tiempo;
+        resiliencia.AttemptTimeout.TimeoutGenerator = argumentos =>
+        {
+            var mensaje = argumentos.Context.GetRequestMessage();
+            return ValueTask.FromResult(
+                mensaje?.Method == HttpMethod.Post ? post
+                : mensaje is not null && mensaje.Options.TryGetValue(OpcionReconsulta, out var esReconsulta) && esReconsulta ? reconsulta
+                : tiempo);
+        };
         resiliencia.Retry.MaxRetryAttempts = ReintentosLectura;
         resiliencia.Retry.Delay = TimeSpan.FromMilliseconds(300);
         resiliencia.Retry.BackoffType = DelayBackoffType.Exponential;
         resiliencia.Retry.UseJitter = true;
         resiliencia.Retry.DisableForUnsafeHttpMethods();
-        resiliencia.CircuitBreaker.SamplingDuration = tiempo * 2 > TimeSpan.FromSeconds(30) ? tiempo * 2 : TimeSpan.FromSeconds(30);
+        var mayor = post > tiempo ? post : tiempo;
+        mayor = reconsulta > mayor ? reconsulta : mayor;
+        resiliencia.CircuitBreaker.SamplingDuration = mayor * 2 > TimeSpan.FromSeconds(30) ? mayor * 2 : TimeSpan.FromSeconds(30);
     }
 
     /// <summary>Límite total de una petición: el intento más los reintentos de un GET y sus esperas (300 ms, 600 ms y holgura del jitter).</summary>
@@ -694,7 +855,8 @@ public sealed class clsCubicadorHttp(
         return clsResultado<IReadOnlyList<TFila>>.Exito(ordenada);
     }
 
-    private async Task<clsResultado<JsonDocument>> EnviarAsync(HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken)
+    private async Task<clsResultado<JsonDocument>> EnviarAsync(
+        HttpMethod metodo, string ruta, object? cuerpo, CancellationToken cancellationToken, bool reconsulta = false)
     {
         if (!EstaConfigurado)
         {
@@ -702,6 +864,11 @@ public sealed class clsCubicadorHttp(
         }
 
         using var peticion = new HttpRequestMessage(metodo, ConstruirUrl(_urlBase!, ruta));
+        if (reconsulta)
+        {
+            peticion.Options.Set(OpcionReconsulta, true);
+        }
+
         if (cuerpo is not null)
         {
             peticion.Content = JsonContent.Create(cuerpo, cuerpo.GetType(), options: _json);
@@ -728,12 +895,19 @@ public sealed class clsCubicadorHttp(
                 return await RechazoAsync(respuesta, metodo, ruta, cancellationToken);
             }
 
+            if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity && metodo == HttpMethod.Post)
+            {
+                // D1 (E2E 2026-10-16): el 422 del POST es la validación de los DATOS de la carga (medida, peso o cantidad fuera de rango):
+                // un 400 para el comercial con la mercancía, no "avisa a soporte". Cotifly ya valida antes; esto cubre lo que se escape.
+                return await PeticionRechazadaAsync(respuesta, ruta, cancellationToken);
+            }
+
             if (respuesta.StatusCode == HttpStatusCode.UnprocessableEntity)
             {
                 // HU-023 (#176): un 422 es la validación del esquema del cubicador (falta un campo o llega uno viejo): un error de contrato
                 // de Cotifly, visible y nunca al respaldo.
                 logger.LogError("El cubicador respondió 422 a {Metodo} {Ruta}: la petición de Cotifly no cumple su esquema.", metodo, ruta);
-                return new clsErrorDominio(clsCodigosError.CubicadorRespuestaInvalida, MensajePeticionRechazada, $"HTTP 422 en {metodo} {ruta}");
+                return new clsErrorDominio(clsCodigosError.CubicadorRespuestaInvalida, MensajeConsultaRechazada, $"HTTP 422 en {metodo} {ruta}");
             }
 
             if (!respuesta.IsSuccessStatusCode)
@@ -783,6 +957,7 @@ public sealed class clsCubicadorHttp(
     {
         string? codigo = null;
         string? mensaje = null;
+        int? item = null;
         try
         {
             using var documento = await LeerJsonAsync(respuesta, cancellationToken);
@@ -791,6 +966,12 @@ public sealed class clsCubicadorHttp(
                 var error = Propiedad(raiz, "error") is { ValueKind: JsonValueKind.Object } anidado ? anidado : raiz;
                 codigo = Texto(error, "codigo", "code")?.Trim().ToUpperInvariant();
                 mensaje = Recortar(Texto(error, "mensaje", "message"));
+                // D-1019-1: si el cubicador señala la mercancía (hoy no lo hace), se conserva.
+                var senal = Propiedad(error, "detalle", "detail") is { ValueKind: JsonValueKind.Object } detalle ? detalle : error;
+                if (Propiedad(senal, "item", "indice") is { ValueKind: JsonValueKind.Number } numero && numero.TryGetInt32(out var indice) && indice >= 0)
+                {
+                    item = indice;
+                }
             }
         }
         catch (JsonException)
@@ -802,10 +983,76 @@ public sealed class clsCubicadorHttp(
         {
             logger.LogWarning("El cubicador rechazó {Metodo} {Ruta} con {Codigo}.", metodo, ruta, codigo);
             var texto = mensaje is null ? propio : $"{propio} Detalle del cubicador: {(mensaje.Length > LargoMensajeCubicador ? mensaje[..LargoMensajeCubicador] : mensaje)}";
-            return new clsErrorDominio(codigo, texto, $"HTTP 400 {codigo} en {metodo} {ruta}");
+            return new clsErrorDominio(codigo, texto, $"HTTP 400 {codigo} en {metodo} {ruta}")
+            {
+                Datos = item is { } i && codigo is clsCodigosError.MercanciaDesconocida or clsCodigosError.MercanciaNoCubicable ? DatosMercancia(i) : null,
+            };
         }
 
         return NoDisponible($"HTTP 400 ({codigo ?? "sin código"}) en {metodo} {ruta}");
+    }
+
+    /// <summary>
+    /// D1 (E2E 2026-10-16): un 422 de <c>POST /recomendaciones</c> (FastAPI: <c>{"detail": [{"loc": ["body", "mercancias", 0, "largoCm"],
+    /// "msg": "..."}]}</c>). Si señala una mercancía: <c>DIMENSIONES_INVALIDAS</c> (medidas o peso) o <c>POSICION_INVALIDA</c> (cantidad), con
+    /// <c>item</c> (base 0) y <c>campo</c> en los datos; si no, <c>CUBICADOR_PETICION_RECHAZADA</c>. Los tres son 400 para el comercial y
+    /// nunca van al respaldo (no son una caída).
+    /// </summary>
+    private async Task<clsErrorDominio> PeticionRechazadaAsync(HttpResponseMessage respuesta, string ruta, CancellationToken cancellationToken)
+    {
+        int? item = null;
+        string? campo = null;
+        string? motivo = null;
+        try
+        {
+            using var documento = await LeerJsonAsync(respuesta, cancellationToken);
+            if (documento?.RootElement is { ValueKind: JsonValueKind.Object } raiz
+                && Propiedad(raiz, "detail") is { ValueKind: JsonValueKind.Array } detalles && detalles.GetArrayLength() > 0
+                && detalles[0] is { ValueKind: JsonValueKind.Object } primero)
+            {
+                motivo = Recortar(Texto(primero, "msg"));
+                if (Propiedad(primero, "loc") is { ValueKind: JsonValueKind.Array } loc)
+                {
+                    var partes = loc.EnumerateArray().ToList();
+                    var mercancias = partes.FindIndex(p => p.ValueKind == JsonValueKind.String && p.GetString() == "mercancias");
+                    if (mercancias >= 0 && mercancias + 1 < partes.Count && partes[mercancias + 1].ValueKind == JsonValueKind.Number
+                        && partes[mercancias + 1].TryGetInt32(out var indice) && indice >= 0)
+                    {
+                        item = indice;
+                        campo = mercancias + 2 < partes.Count && partes[mercancias + 2].ValueKind == JsonValueKind.String
+                            ? partes[mercancias + 2].GetString()
+                            : null;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Cuerpo ilegible: rechazo sin mercancía.
+        }
+
+        logger.LogWarning("El cubicador rechazó con 422 POST {Ruta} (mercancía {Item}, campo {Campo}).", ruta, item, campo);
+        var detalle = motivo is null ? string.Empty : $" Detalle del cubicador: {(motivo.Length > LargoMensajeCubicador ? motivo[..LargoMensajeCubicador] : motivo)}";
+        if (item is not { } i)
+        {
+            return new clsErrorDominio(clsCodigosError.CubicadorPeticionRechazada, MensajePeticionRechazada + detalle, $"HTTP 422 en POST {ruta}");
+        }
+
+        var esCantidad = string.Equals(campo, "cantidad", StringComparison.OrdinalIgnoreCase);
+        var numero = (i + 1).ToString(CultureInfo.InvariantCulture);
+        var mensaje = esCantidad
+            ? $"El cubicador rechazó la cantidad de la mercancía {numero}: debe ser un entero mayor que 0.{detalle}"
+            : $"El cubicador rechazó las medidas o el peso de la mercancía {numero}{(campo is null ? string.Empty : $" ({campo})")}: deben ser mayores que 0.{detalle}";
+        var datos = new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = i };
+        if (campo is not null)
+        {
+            datos["campo"] = campo;
+        }
+
+        return new clsErrorDominio(esCantidad ? clsCodigosLineaSolicitud.PosicionInvalida : clsCodigosError.DimensionesInvalidas, mensaje, $"HTTP 422 en POST {ruta}")
+        {
+            Datos = datos,
+        };
     }
 
     private static async Task<JsonDocument?> LeerJsonAsync(HttpResponseMessage respuesta, CancellationToken cancellationToken)

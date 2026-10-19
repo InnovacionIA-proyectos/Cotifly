@@ -17,7 +17,10 @@ namespace Cotifly.Aplicacion.Licitaciones.Services;
 /// <summary>Qué pasó al procesar una ruta de la cola de la cubicación en segundo plano (para el log del procesador y las pruebas).</summary>
 public enum ResultadoCubicacionRuta
 {
-    /// <summary>No había cupo libre en el cubicador (P6): la ruta espera a la siguiente vuelta, sin reclamarla.</summary>
+    /// <summary>
+    /// No había cupo libre en el cubicador (P6), o el cupo global del proceso siguió tomado (opción C, <c>CUBICADOR_OCUPADO</c>): la ruta
+    /// espera a la siguiente vuelta sin gastar un intento.
+    /// </summary>
     SinCupo,
 
     /// <summary>Otra réplica (u otra vuelta) ya la había reclamado, o la ruta ya no existe: no se hizo nada.</summary>
@@ -141,6 +144,12 @@ public sealed class clsCubicacionLicitacionService(
             detalle = await CubicarRutaAsync(cotizacion, linea, config, cancellationToken);
         }
 
+        if (detalle.Resultado == ResultadoCubicacionRuta.SinCupo)
+        {
+            // Opción C: el cupo global del cubicador siguió tomado; no se llamó, así que no hay nada que auditar.
+            return ResultadoCubicacionRuta.SinCupo;
+        }
+
         // Fuera del cupo: ni la auditoría ni el envío a Nexo ocupan al cubicador.
         await AuditarRutaAsync(cotizacion, linea, detalle, (int)cronometro.ElapsedMilliseconds);
         if (detalle.Resultado == ResultadoCubicacionRuta.Cubicada)
@@ -188,8 +197,20 @@ public sealed class clsCubicacionLicitacionService(
         var entrada = opcionesCaptura?.Value.AceptarVehiculoCliente == true
             ? linea.ALinea()
             : linea.ALinea() with { TipoVehiculo = null, Carroceria = null };
-        var plan = await planificador.PlanificarAsync(cotizacion.UsuarioId ?? Guid.Empty, linea.Id, entrada, cancellationToken);
+        var plan = await planificador.PlanificarEnSegundoPlanoAsync(cotizacion.UsuarioId ?? Guid.Empty, linea.Id, entrada, cancellationToken);
         var ahora = reloj.AhoraUtc;
+        if (plan.EsFallo && plan.Error.Codigo == clsCodigosError.CubicadorOcupado)
+        {
+            // Opción C (validación de los defectos del 2026-10-16): el cupo global del proceso siguió tomado (por ejemplo, un "Calcular
+            // cubicaje" largo). No es una caída: la ruta no va al respaldo ni gasta un intento; vuelve a la cola para la siguiente vuelta
+            // (sin esperar a que venza el reclamo) y el procesador corta la vuelta como con el cupo de la base.
+            cotizacion.PosponerCubicacionDeRuta(linea.Id, ahora);
+            await unidadTrabajo.GuardarCambiosAsync(CancellationToken.None);
+            logger.LogInformation("El cubicador está ocupado: la ruta {Ruta} de la licitación {Folio} vuelve a la cola sin gastar un intento.",
+                linea.Orden, cotizacion.Folio);
+            return new clsDetalleRuta(ResultadoCubicacionRuta.SinCupo, linea.CubicacionIntentos, clsCodigosError.CubicadorOcupado);
+        }
+
         if (plan.EsExitoso)
         {
             var intento = linea.CubicacionIntentos + 1;

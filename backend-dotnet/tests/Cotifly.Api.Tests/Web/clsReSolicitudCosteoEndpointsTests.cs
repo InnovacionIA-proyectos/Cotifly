@@ -177,8 +177,8 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         (await EscalarAsync<int>($"SELECT COUNT(*) FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}' OR folio LIKE '{folio}-v%'")).Should().Be(2);
 
         using var otroCuerpo = await ReSolicitarAsync(sesion, folio, """{"motivo":"Otro","datos_carga":{"peso_kg":28450}}""", etag, clave);
-        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.BadRequest, "la misma clave con otro cuerpo es un error del cliente");
-        (await otroCuerpo.Content.ReadAsStringAsync(Ct)).Should().Contain("Idempotency-Key");
+        otroCuerpo.StatusCode.Should().Be(HttpStatusCode.Conflict, "D4: la misma clave con otro cuerpo es IDEMPOTENCY_KEY_REUTILIZADA");
+        await VerificarErrorNegocioAsync(otroCuerpo, "IDEMPOTENCY_KEY_REUTILIZADA");
     }
 
     [Fact]

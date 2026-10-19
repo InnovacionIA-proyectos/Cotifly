@@ -49,6 +49,12 @@ public interface IClsCotizacionRepository
     Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// E2E 2026-10-16: el id de la cotización de Nexo (<c>cotizacionNexoId</c>) ya guardado para la solicitud de Nexo
+    /// <paramref name="solicitudNexoId"/>, o <c>null</c>. Con él el polling lee la cotización por su id en lugar de buscarla o crearla.
+    /// </summary>
+    Task<string?> ObtenerCotizacionNexoIdAsync(string solicitudNexoId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Decisión 10 (HU-021.9): agrega un registro del envío diferido de conexos a Nexo (<see cref="clsEnvioConexosNexo"/>) en
     /// <c>EventosHerramienta</c>; se escribe al guardar la unidad de trabajo.
     /// </summary>

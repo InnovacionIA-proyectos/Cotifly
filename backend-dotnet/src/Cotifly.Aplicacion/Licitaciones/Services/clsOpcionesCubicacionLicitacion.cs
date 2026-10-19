@@ -24,10 +24,12 @@ public sealed class clsOpcionesCubicacionLicitacion
 
     /// <summary>
     /// Petición P6: llamadas al cubicador en paralelo como máximo, <b>entre todas las réplicas</b> (un cupo por llamada con
-    /// <c>sp_getapplock</c> en la base). Por defecto 4 mientras el cubicador no confirme su límite.
+    /// <c>sp_getapplock</c> en la base). Opción C (D3, E2E 2026-10-16): por defecto 1, porque el cubicador calcula una carga a la vez; al
+    /// arrancar se valida que no supere el cupo global de este proceso (<c>Cubicador:MaximoConcurrente</c>): más rutas en paralelo solo
+    /// esperarían ese cupo con la ruta ya reclamada.
     /// </summary>
     [Range(1, 64)]
-    public int MaximoParalelo { get; set; } = 4;
+    public int MaximoParalelo { get; set; } = 1;
 
     /// <summary>Cada cuánto revisa la cola cada réplica (s).</summary>
     [Range(1, 300)]
@@ -38,11 +40,14 @@ public sealed class clsOpcionesCubicacionLicitacion
     public int LoteRutas { get; set; } = 50;
 
     /// <summary>
-    /// Cuánto tiene una réplica la ruta reclamada (s). Pasado, otra la puede tomar (la réplica se cayó a mitad). Debe ser mayor que
-    /// <c>Cubicador:TiempoEsperaSegundos</c> (30 por defecto): una llamada en curso no se repite en otra réplica.
+    /// Cuánto tiene una réplica la ruta reclamada (s). Pasado, otra la puede tomar (la réplica se cayó a mitad). Debe ser mayor que lo que
+    /// puede durar la llamada de la ruta más 30 s de margen (opción C: la espera por el cupo global, <c>Cubicador:EsperaMaximaCupoSegundos</c>
+    /// = 60; el POST, <c>Cubicador:TiempoEsperaRecomendacionSegundos</c> = 90 + 2; la espera antes de la reconsulta, 5, y la reconsulta,
+    /// <c>Cubicador:TiempoEsperaReconsultaSegundos</c> = 60: 247 con los valores por defecto): una llamada en curso no se repite en otra
+    /// réplica. Por defecto 300.
     /// </summary>
     [Range(31, 3600)]
-    public int ReclamoSegundos { get; set; } = 120;
+    public int ReclamoSegundos { get; set; } = 300;
 
     /// <summary>
     /// Intentos por ruta cuando el cubicador está caído (sin respaldo, <c>CUBICADOR_NO_DISPONIBLE</c>). Agotados, la ruta queda

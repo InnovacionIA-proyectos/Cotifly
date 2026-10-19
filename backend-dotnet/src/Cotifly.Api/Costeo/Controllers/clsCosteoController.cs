@@ -184,7 +184,8 @@ public sealed class clsCosteoController(
     /// <summary>
     /// HU-013.4 (ADR-018 §5), "Cotizar costo": 200 <c>CotizacionResumen</c> si se reenvió en el mismo folio o 201 con <c>Location</c> si
     /// se creó la versión <c>-vN</c> (los dos con el <c>ETag</c> de la cotización resultante); 400 <c>SOLICITUD_COSTEO_INVALIDA</c> o
-    /// <c>ErrorWeb</c> (<c>Idempotency-Key</c> reutilizada con otro cuerpo); 404; 409 <c>ESTADO_NO_PERMITE</c>, <c>PDF_YA_ENVIADO</c> o
+    /// <c>ErrorWeb</c> (<c>Idempotency-Key</c> fuera de largo); 404; 409 <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (la misma clave con otro
+    /// cuerpo, D4), <c>ESTADO_NO_PERMITE</c>, <c>PDF_YA_ENVIADO</c> o
     /// <c>CONFLICTO_CONCURRENCIA</c>; 428 sin <c>If-Match</c>.
     /// </summary>
     [HttpPost("cotizaciones/{folio}/costeo/re-solicitar")]

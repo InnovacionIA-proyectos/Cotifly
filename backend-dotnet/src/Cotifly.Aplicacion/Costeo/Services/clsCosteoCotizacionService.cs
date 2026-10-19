@@ -188,7 +188,8 @@ public sealed record clsRutaCosteo(
 /// <summary>
 /// <c>CamionCosteo</c> (HU-021.9, #136): un camión de la ruta como lo ve el comercial. Vehículo y carrocería vacíos = sin selección
 /// automática (los resuelve la Mesa de Costeo de Nexo, decisión 7). Sin costos ni ids de Nexo. HU-023.3 (#158): con el cubicador, el
-/// volumen que lleva y qué tan lleno va en volumen y en peso (0 a 100); <c>null</c> sin recomendación.
+/// volumen que lleva y qué tan lleno va en volumen y en peso (0 a 100); <c>null</c> sin recomendación. D2: los porcentajes también son
+/// <c>null</c> si la Mesa de Costeo cambió de verdad el vehículo o la carrocería (eran del vehículo anterior).
 /// </summary>
 public sealed record clsCamionCosteo(
     string? TipoVehiculo, string? Carroceria, decimal? PesoKg, string? EstadoCosteo,
@@ -1201,9 +1202,36 @@ public sealed record clsNombresCatalogoCubicador(IReadOnlyDictionary<string, str
 /// <summary>El nombre del catálogo con respaldo al código (también con el catálogo en <c>null</c>).</summary>
 public static class clsNombresCatalogoCubicadorExtensiones
 {
-    public static string? Vehiculo(this clsNombresCatalogoCubicador? catalogo, string? codigo) =>
-        codigo is not null && catalogo?.Vehiculos?.TryGetValue(codigo, out var nombre) == true ? nombre : codigo;
+    public static string? Vehiculo(this clsNombresCatalogoCubicador? catalogo, string? codigo) => Nombre(catalogo?.Vehiculos, codigo);
 
-    public static string? Carroceria(this clsNombresCatalogoCubicador? catalogo, string? codigo) =>
-        codigo is not null && catalogo?.Carrocerias?.TryGetValue(codigo, out var nombre) == true ? nombre : codigo;
+    public static string? Carroceria(this clsNombresCatalogoCubicador? catalogo, string? codigo) => Nombre(catalogo?.Carrocerias, codigo);
+
+    /// <summary>
+    /// El nombre de <paramref name="codigo"/> en el catálogo del cubicador: por el código exacto o, si no está, por un código o un nombre
+    /// equivalente (<see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>). D2 (2026-10-19): la Mesa de Costeo manda y Nexo puede devolver
+    /// el nombre (<c>Estacas</c>) o el código escrito de otra forma (<c>3s3</c>) en vez del código; el PDF y el Excel muestran igual el nombre
+    /// del catálogo. Sin coincidencia (o sin catálogo) se muestra lo que haya, tal cual.
+    /// </summary>
+    public static string? Nombre(IReadOnlyDictionary<string, string>? catalogo, string? codigo)
+    {
+        if (codigo is null || catalogo is null)
+        {
+            return codigo;
+        }
+
+        if (catalogo.TryGetValue(codigo, out var nombre))
+        {
+            return nombre;
+        }
+
+        foreach (var (clave, valor) in catalogo)
+        {
+            if (clsVehiculoLineaSolicitud.MismoCodigo(clave, codigo) || clsVehiculoLineaSolicitud.MismoCodigo(valor, codigo))
+            {
+                return valor;
+            }
+        }
+
+        return codigo;
+    }
 }

@@ -512,6 +512,8 @@ public sealed class clsLicitacionCubicadorEndpointsTests : IDisposable
         var valores = new Dictionary<string, string?>
         {
             ["Cubicador:MaximoParalelo"] = maximoParalelo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            // Opción C: el paralelo de la licitación no puede superar el cupo global del proceso.
+            ["Cubicador:MaximoConcurrente"] = maximoParalelo.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Nexo:EnviarCodigosCubicador"] = "true",
         };
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())

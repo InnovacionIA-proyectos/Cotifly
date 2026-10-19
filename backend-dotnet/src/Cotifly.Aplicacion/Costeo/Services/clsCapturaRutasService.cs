@@ -243,13 +243,27 @@ public sealed class clsCapturaRutasService(
                 // Todo o nada (HU-023.3): si una ruta falla no se guarda ninguna ni se envía nada a Nexo. Las corridas que el cubicador ya
                 // creó para las rutas anteriores quedan huérfanas allá (se acepta; ADR-019/020).
                 logger.LogWarning("No se pudieron planificar los camiones de la ruta {Ruta} ({Codigo}): no se guarda la captura.", i + 1, plan.Error.Codigo);
-                return new clsRutasPreparadas([], [], plan.Error);
+                return new clsRutasPreparadas([], [], ConRuta(plan.Error, i));
             }
 
             preparadas.Add(new clsRutaCapturada(linea, lineaNegocioId, indiceOrigen, plan.Valor.Camiones, conexos, rutaId, plan.Valor.Cubicacion));
         }
 
         return errores.Count > 0 ? new clsRutasPreparadas([], errores, null) : new clsRutasPreparadas(preparadas, [], null);
+    }
+
+    /// <summary>
+    /// D-1019-1: un rechazo del cubicador que señala la mercancía (<c>detalle.item</c>, base 0) lleva también la ruta (<c>detalle.ruta</c>,
+    /// base 0, como en <c>detalle.errores</c>) para que la UI marque la mercancía de esa ruta. Sin mercancía señalada queda igual.
+    /// </summary>
+    private static clsErrorDominio ConRuta(clsErrorDominio error, int ruta)
+    {
+        if (error.Datos is not { } datos || !datos.ContainsKey("item"))
+        {
+            return error;
+        }
+
+        return error with { Datos = new Dictionary<string, object?>(datos, StringComparer.Ordinal) { ["ruta"] = ruta } };
     }
 
     /// <summary>

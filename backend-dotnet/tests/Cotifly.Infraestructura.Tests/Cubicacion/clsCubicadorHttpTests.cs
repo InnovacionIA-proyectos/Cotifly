@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -65,6 +66,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
         return await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
     }
@@ -221,6 +223,41 @@ public sealed class clsCubicadorHttpTests : IDisposable
         resultado.Error.Codigo.Should().Be(codigo);
         resultado.Error.Mensaje.Should().Be(clsCubicadorHttp.Rechazos[codigo] + $" Detalle del cubicador: Error {codigo} del cubicador falso.");
         clsErroresCubicador.EsCaida(resultado.Error).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// D-1019-1 (E2E 2026-10-19): el 400 MERCANCIA_DESCONOCIDA/MERCANCIA_NO_CUBICABLE del cubicador no trae el índice, pero cita el código
+    /// entre comillas: Cotifly señala esa mercancía (base 0) con <c>campo = codigo_mercancia</c>. Si el cuerpo trae <c>item</c>, manda ese.
+    /// </summary>
+    [Theory]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'bobinas' no esta en el catalogo de tipos de mercancia."}""", 1)]
+    [InlineData("MERCANCIA_NO_CUBICABLE", """{"codigo":"MERCANCIA_NO_CUBICABLE","mensaje":"'CAFE_EN_ESTIBAS' no es cubicable."}""", 0)]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Mercancía desconocida.","item":1}""", 1)]
+    [InlineData("MERCANCIA_DESCONOCIDA", """{"error":{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'CAFE_EN_ESTIBAS'","detalle":{"item":1}}}""", 1)]
+    public async Task UnRechazoDeMercanciaSenalaElItem(string codigo, string cuerpo, int item)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, codigo);
+        _cubicador.CuerpoErrorRecomendacion = cuerpo;
+
+        var resultado = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        resultado.Error.Codigo.Should().Be(codigo);
+        resultado.Error.Datos.Should().BeEquivalentTo(new Dictionary<string, object?> { ["item"] = item, ["campo"] = "codigo_mercancia" });
+    }
+
+    [Theory]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Una mercancía no está en el catálogo."}""")]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"'CAFE_EN_ESTIBAS' y 'BOBINAS' no estan en el catalogo."}""")]
+    [InlineData("""{"codigo":"DIMENSIONES_INVALIDAS","mensaje":"'BOBINAS' mide demasiado."}""")]
+    [InlineData("""{"codigo":"MERCANCIA_DESCONOCIDA","mensaje":"Mercancía desconocida.","item":7}""")]
+    public async Task SiNoSePuedeSaberLaMercanciaElRechazoQuedaSinItem(string cuerpo)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.BadRequest, "MERCANCIA_DESCONOCIDA");
+        _cubicador.CuerpoErrorRecomendacion = cuerpo;
+
+        var resultado = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        resultado.Error.Datos.Should().BeNull();
     }
 
     [Fact]
@@ -398,8 +435,334 @@ public sealed class clsCubicadorHttpTests : IDisposable
         leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Cubicador:RutaSalud");
     }
 
+    /// <summary>
+    /// D3b/D7 y opción C (E2E 2026-10-16): el motor tarda 26-31 s con cargas grandes y bloquea su API. El POST /recomendaciones espera
+    /// 90 s; la reconsulta espera 5 s y tiene 60 s; las consultas (catálogos, salud) siguen cortas (15 s); un solo POST a la vez (cupo
+    /// global y licitación); el presupuesto y el reclamo de la licitación alcanzan; "Calcular cubicaje" espera 8 s antes del 202.
+    /// </summary>
     [Fact]
-    public void ElTiempoDeEsperaPorDefectoEsDe30Segundos() => new clsOpcionesCubicador().TiempoEsperaSegundos.Should().Be(30);
+    public void LosTiemposPorDefectoSonCoherentes()
+    {
+        var opciones = new clsOpcionesCubicador();
+
+        opciones.TiempoEsperaRecomendacionSegundos.Should().Be(90);
+        opciones.TiempoEsperaSegundos.Should().Be(15);
+        opciones.EsperaAntesReconsultaSegundos.Should().Be(5);
+        opciones.TiempoEsperaReconsultaSegundos.Should().Be(60);
+        opciones.MaximoConcurrente.Should().Be(1);
+        opciones.EsperaMaximaCupoSegundos.Should().Be(60);
+        opciones.PresupuestoCapturaSegundos.Should().Be(180);
+        opciones.EsperaSincronaCubicacionSegundos.Should().Be(8);
+        opciones.RetencionCubicacionMinutos.Should().Be(15);
+        opciones.MaximoCubicacionesEnMemoria.Should().Be(500);
+        new clsValidadorOpcionesCubicador().Validate(null, Valido(opciones)).Succeeded.Should().BeTrue();
+        var licitacion = new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion();
+        licitacion.MaximoParalelo.Should().Be(1);
+        licitacion.ReclamoSegundos.Should().Be(300);
+        clsValidadorOpcionesCubicacionLicitacion.Minimo(opciones).Should().Be(60 + 90 + 2 + 5 + 60 + 30);
+        licitacion.ReclamoSegundos.Should().BeGreaterThan(clsValidadorOpcionesCubicacionLicitacion.Minimo(opciones));
+        new clsValidadorOpcionesCubicacionLicitacion(Options.Create(opciones)).Validate(null, licitacion).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Opción D (validación): una cubicación rápida en proceso vence a los <c>RetencionCubicacionMinutos</c> de creada. Si vence antes de lo
+    /// que puede durar la llamada más larga (cupo, POST, espera y reconsulta), el resultado se perdería: no arranca.
+    /// </summary>
+    [Fact]
+    public void LaRetencionDeLasCubicacionesRapidasDebeCubrirLaLlamadaMasLarga()
+    {
+        var corta = Valido(new clsOpcionesCubicador { RetencionCubicacionMinutos = 3 });
+        var resultado = new clsValidadorOpcionesCubicador().Validate(null, corta);
+
+        clsCubicadorHttp.DuracionMaximaLlamada(corta).Should().Be(TimeSpan.FromSeconds(217), "60 + 90 + 2 + 5 + 60");
+        resultado.Failed.Should().BeTrue("3 min = 180 s < 217 s");
+        resultado.FailureMessage.Should().Contain("RetencionCubicacionMinutos");
+        new clsValidadorOpcionesCubicador().Validate(null, Valido(new clsOpcionesCubicador { RetencionCubicacionMinutos = 4 })).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>D7 (E2E 2026-10-16): <c>.env.example</c> decía 15 s y el código usaba 30. Los valores documentados son los del código.</summary>
+    [Fact]
+    public void ElEnvExampleDocumentaLosTiemposDelCodigo()
+    {
+        var directorio = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directorio is not null && !File.Exists(Path.Combine(directorio.FullName, "Cotifly.sln")))
+        {
+            directorio = directorio.Parent;
+        }
+
+        var ejemplo = File.ReadAllText(Path.Combine(directorio!.FullName, ".env.example")).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var opciones = new clsOpcionesCubicador();
+        var licitacion = new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion();
+
+        ejemplo.Should().Contain($"# Cubicador__TiempoEsperaSegundos={opciones.TiempoEsperaSegundos}\n")
+            .And.Contain($"# Cubicador__TiempoEsperaRecomendacionSegundos={opciones.TiempoEsperaRecomendacionSegundos}\n")
+            .And.Contain($"# Cubicador__PresupuestoCapturaSegundos={opciones.PresupuestoCapturaSegundos}\n")
+            .And.Contain($"# Cubicador__ReclamoSegundos={licitacion.ReclamoSegundos}\n")
+            .And.Contain($"# Cubicador__MaximoParalelo={licitacion.MaximoParalelo}\n")
+            .And.Contain($"# Cubicador__MaximoConcurrente={opciones.MaximoConcurrente}\n")
+            .And.Contain($"# Cubicador__EsperaMaximaCupoSegundos={opciones.EsperaMaximaCupoSegundos}\n")
+            .And.Contain($"# Cubicador__EsperaAntesReconsultaSegundos={opciones.EsperaAntesReconsultaSegundos}\n")
+            .And.Contain($"# Cubicador__TiempoEsperaReconsultaSegundos={opciones.TiempoEsperaReconsultaSegundos}\n")
+            .And.Contain($"# Cubicador__EsperaSincronaCubicacionSegundos={opciones.EsperaSincronaCubicacionSegundos}\n")
+            .And.Contain($"# Cubicador__RetencionCubicacionMinutos={opciones.RetencionCubicacionMinutos}\n")
+            .And.Contain($"# Cubicador__MaximoCubicacionesEnMemoria={opciones.MaximoCubicacionesEnMemoria}\n");
+    }
+
+    [Theory]
+    [InlineData(30, 20, 120, "TiempoEsperaRecomendacionSegundos")]
+    [InlineData(15, 60, 45, "PresupuestoCapturaSegundos")]
+    public void TiemposIncoherentesNoArrancan(int espera, int recomendacion, int presupuesto, string clave)
+    {
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = espera.ToString(CultureInfo.InvariantCulture);
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = recomendacion.ToString(CultureInfo.InvariantCulture);
+        valores["Cubicador:PresupuestoCapturaSegundos"] = presupuesto.ToString(CultureInfo.InvariantCulture);
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Cubicador:" + clave);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(301)]
+    public void ElTiempoDeLaRecomendacionVaDe1A300(int segundos)
+    {
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = segundos.ToString(CultureInfo.InvariantCulture);
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("TiempoEsperaRecomendacionSegundos");
+    }
+
+    [Fact]
+    public void UnReclamoMenorQueLaLlamadaMasLentaNoArranca()
+    {
+        // Opción C: 60 s de espera por el cupo + 90 s del POST + 2 + 5 s antes de reconsultar + 60 s de la reconsulta + 30 s de margen = 247.
+        var validador = new clsValidadorOpcionesCubicacionLicitacion(Options.Create(new clsOpcionesCubicador()));
+
+        validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { ReclamoSegundos = 247 }).Failed.Should().BeTrue();
+        validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { ReclamoSegundos = 248 }).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>Opción C: la licitación no puede pedir más llamadas en paralelo que el cupo global del proceso.</summary>
+    [Fact]
+    public void UnaLicitacionConMasParaleloQueElCupoGlobalNoArranca()
+    {
+        var validador = new clsValidadorOpcionesCubicacionLicitacion(Options.Create(new clsOpcionesCubicador { MaximoConcurrente = 2 }));
+
+        var resultado = validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { MaximoParalelo = 3 });
+
+        resultado.Failed.Should().BeTrue();
+        resultado.FailureMessage.Should().Contain("Cubicador:MaximoParalelo").And.Contain("Cubicador:MaximoConcurrente");
+        validador.Validate(null, new Aplicacion.Licitaciones.Services.clsOpcionesCubicacionLicitacion { MaximoParalelo = 2 }).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>Opción C: la reconsulta espera al motor; nunca puede ser más corta que una consulta normal.</summary>
+    [Fact]
+    public void UnaReconsultaMasCortaQueLasConsultasNoArranca()
+    {
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "20";
+        valores["Cubicador:TiempoEsperaReconsultaSegundos"] = "10";
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("Cubicador:TiempoEsperaReconsultaSegundos");
+    }
+
+    [Theory]
+    [InlineData("MaximoConcurrente", "0")]
+    [InlineData("EsperaMaximaCupoSegundos", "601")]
+    [InlineData("EsperaAntesReconsultaSegundos", "61")]
+    [InlineData("TiempoEsperaReconsultaSegundos", "0")]
+    [InlineData("EsperaSincronaCubicacionSegundos", "31")]
+    [InlineData("RetencionCubicacionMinutos", "0")]
+    [InlineData("MaximoCubicacionesEnMemoria", "0")]
+    public void LasClavesNuevasFueraDeRangoNoArrancan(string clave, string valor)
+    {
+        var valores = Configurado();
+        valores["Cubicador:" + clave] = valor;
+        using var proveedor = Proveedor(valores);
+
+        var leer = () => proveedor.GetRequiredService<IOptions<clsOpcionesCubicador>>().Value;
+
+        leer.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain(clave);
+    }
+
+    // ---------------------------------------------------------------- Opción C: cupo global y reconsulta con espera
+
+    /// <summary>Opción C: con un cupo, varias recomendaciones a la vez llegan al cubicador una detrás de otra (nunca dos POST en paralelo).</summary>
+    [Fact]
+    public async Task ConUnCupoLasRecomendacionesNoSeSolapan()
+    {
+        _cubicador.DemoraRecomendacion = TimeSpan.FromMilliseconds(400);
+        using var proveedor = Proveedor(Configurado(), _cubicador);
+
+        var tareas = Enumerable.Range(0, 3)
+            .Select(_ => proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct))
+            .ToList();
+        var resultados = await Task.WhenAll(tareas);
+
+        resultados.Should().OnlyContain(r => r.EsExitoso);
+        _cubicador.Recomendaciones.Should().HaveCount(3);
+        _cubicador.MaximoEnParalelo.Should().Be(1, "Cubicador:MaximoConcurrente = 1 por defecto");
+    }
+
+    /// <summary>Opción C: sin cupo libre a tiempo no se llama al cubicador: CUBICADOR_OCUPADO marcado como caída.</summary>
+    [Fact]
+    public async Task SinCupoATiempoEsCubicadorOcupadoYNoLlama()
+    {
+        var compuerta = _cubicador.CerrarCompuerta();
+        var valores = Configurado();
+        valores["Cubicador:EsperaMaximaCupoSegundos"] = "1";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var primera = proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+        await EsperarAsync(() => _cubicador.RecomendacionesIniciadas == 1);
+
+        var segunda = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+
+        segunda.Error.Codigo.Should().Be(clsCodigosError.CubicadorOcupado);
+        segunda.Error.Mensaje.Should().Be(clsCubicadorHttp.MensajeOcupado);
+        clsErroresCubicador.EsCaida(segunda.Error).Should().BeTrue("la captura y la licitación lo tratan como una caída");
+        _cubicador.RecomendacionesIniciadas.Should().Be(1, "no se llamó al cubicador");
+        compuerta.SetResult();
+        (await primera).EsExitoso.Should().BeTrue();
+        proveedor.GetRequiredService<clsCupoLlamadasCubicador>().Libres.Should().Be(1, "el cupo se soltó");
+    }
+
+    /// <summary>Opción C: la espera por el cupo se cancela con quien llama (no se queda colgada).</summary>
+    [Fact]
+    public async Task LaEsperaPorElCupoSeCancelaConQuienLlama()
+    {
+        var compuerta = _cubicador.CerrarCompuerta();
+        using var proveedor = Proveedor(Configurado(), _cubicador);
+        var primera = proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
+        await EsperarAsync(() => _cubicador.RecomendacionesIniciadas == 1);
+        using var corte = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        corte.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+        var segunda = () => proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), corte.Token);
+
+        await segunda.Should().ThrowAsync<OperationCanceledException>();
+        compuerta.SetResult();
+        (await primera).EsExitoso.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ElCupoGlobalPermiteHastaElMaximoYSeSueltaUnaVez()
+    {
+        using var cupo = new clsCupoLlamadasCubicador(Options.Create(new clsOpcionesCubicador { MaximoConcurrente = 2 }));
+
+        var uno = await cupo.TomarAsync(TimeSpan.Zero, Ct);
+        var dos = await cupo.TomarAsync(TimeSpan.Zero, Ct);
+        var tres = await cupo.TomarAsync(TimeSpan.FromMilliseconds(50), Ct);
+
+        uno.Should().NotBeNull();
+        dos.Should().NotBeNull();
+        tres.Should().BeNull("los dos cupos están tomados");
+        uno!.Dispose();
+        uno.Dispose();
+        cupo.Libres.Should().Be(1, "soltar dos veces el mismo cupo no regala otro");
+        var otro = await cupo.TomarAsync(TimeSpan.Zero, Ct);
+        otro.Should().NotBeNull();
+        var cuarto = cupo.TomarAsync(TimeSpan.FromSeconds(5), Ct);
+        dos!.Dispose();
+        (await cuarto).Should().NotBeNull("la espera recibe el cupo que se suelta");
+    }
+
+    /// <summary>
+    /// Opción C: tras un POST sin respuesta se espera <c>Cubicador:EsperaAntesReconsultaSegundos</c> y la reconsulta tiene su propio límite
+    /// (más largo que el de las consultas): el cubicador la responde cuando el motor termina. La huella se sigue comprobando.
+    /// </summary>
+    [Fact]
+    public async Task LaReconsultaEsperaAntesYTieneSuPropioLimite()
+    {
+        _cubicador.Recomendar = _ => AsignadoDeLaCarga();
+        _cubicador.TiempoAgotadoTrasGuardar = true;
+        _cubicador.DemoraReconsulta = TimeSpan.FromSeconds(2);
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
+        valores["Cubicador:EsperaAntesReconsultaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaReconsultaSegundos"] = "10";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var cronometro = System.Diagnostics.Stopwatch.StartNew();
+
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
+
+        r.EsExitoso.Should().BeTrue("2 s de reconsulta caben en sus 10 s aunque las consultas tengan 1 s");
+        cronometro.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(3.5), "1 s del POST + 1 s de espera + 2 s de la reconsulta");
+        _cubicador.Recomendaciones.Should().ContainSingle();
+        _cubicador.Reconsultas.Should().ContainSingle("respondió en el primer intento");
+    }
+
+    [Fact]
+    public async Task UnaReconsultaQueNoRespondeASuLimiteEsUnaCaida()
+    {
+        _cubicador.Recomendar = _ => AsignadoDeLaCarga();
+        _cubicador.TiempoAgotadoTrasGuardar = true;
+        _cubicador.DemoraReconsulta = TimeSpan.FromSeconds(10);
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
+        valores["Cubicador:EsperaAntesReconsultaSegundos"] = "0";
+        valores["Cubicador:TiempoEsperaReconsultaSegundos"] = "2";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var cronometro = System.Diagnostics.Stopwatch.StartNew();
+
+        var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
+
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeTrue();
+        cronometro.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(8), "la reconsulta se corta a sus 2 s, reintentos incluidos");
+    }
+
+    private static async Task EsperarAsync(Func<bool> condicion)
+    {
+        for (var i = 0; i < 200 && !condicion(); i++)
+        {
+            await Task.Delay(25, Ct);
+        }
+
+        condicion().Should().BeTrue();
+    }
+
+
+    /// <summary>
+    /// D3b: una recomendación que tarda más que el límite de las consultas pero menos que el suyo responde; un catálogo con la misma demora
+    /// agota su límite corto.
+    /// </summary>
+    [Fact]
+    public async Task ElPostTieneSuPropioLimiteYLasConsultasSiguenCortas()
+    {
+        _cubicador.DemoraRecomendacion = TimeSpan.FromSeconds(3);
+        _cubicador.DemoraCatalogo = TimeSpan.FromSeconds(3);
+        var valores = Configurado();
+        valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "10";
+        using var proveedor = Proveedor(valores, _cubicador);
+        var cubicador = proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>();
+
+        var recomendacion = await cubicador.RecomendarAsync(Peticion(), Ct);
+        var catalogo = await cubicador.ListarTiposCarroceriaAsync(Ct);
+
+        recomendacion.EsExitoso.Should().BeTrue("3 s caben en los 10 s del POST");
+        _cubicador.Recomendaciones.Should().ContainSingle();
+        _cubicador.Reconsultas.Should().BeEmpty("el POST respondió a tiempo");
+        catalogo.EsFallo.Should().BeTrue("3 s no caben en el segundo de las consultas");
+    }
+
+    private static clsOpcionesCubicador Valido(clsOpcionesCubicador opciones)
+    {
+        opciones.UrlBase = clsCubicadorFalso.UrlBase;
+        opciones.ApiKey = clsCubicadorFalso.ApiKey;
+        return opciones;
+    }
 
     [Fact]
     public async Task UnPostFallidoNoSeReintenta()
@@ -431,6 +794,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.Demora = TimeSpan.FromSeconds(10);
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var resultado = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
@@ -543,16 +907,39 @@ public sealed class clsCubicadorHttpTests : IDisposable
     }
 
     [Fact]
-    public async Task Un422DelCubicadorEsUnErrorVisibleNoUnaCaida()
+    public async Task Un422DelCubicadorSinMercanciaEsUnRechazoVisibleNoUnaCaida()
     {
         _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
 
         var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
 
-        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorRespuestaInvalida);
-        r.Error.Mensaje.Should().Contain("422");
+        // D1 (E2E 2026-10-16): antes era CUBICADOR_RESPUESTA_INVALIDA (503, "avisa a soporte").
+        r.Error.Codigo.Should().Be(clsCodigosError.CubicadorPeticionRechazada);
+        r.Error.Mensaje.Should().StartWith(clsCubicadorHttp.MensajePeticionRechazada);
+        r.Error.Detalle.Should().Contain("422");
         clsErroresCubicador.EsCaida(r.Error).Should().BeFalse("un 422 nunca va al respaldo");
+        _cubicador.Peticiones.Count(p => p.Metodo == HttpMethod.Post).Should().Be(1, "un 422 no se reintenta");
     }
+
+    /// <summary>D1 (E2E 2026-10-16): el 422 de FastAPI que señala una mercancía llega como 400 con el ítem (base 0) y el campo.</summary>
+    [Theory]
+    [InlineData("largoCm", "DIMENSIONES_INVALIDAS")]
+    [InlineData("pesoKg", "DIMENSIONES_INVALIDAS")]
+    [InlineData("cantidad", "POSICION_INVALIDA")]
+    public async Task Un422QueSenalaUnaMercanciaEsElRechazoDeEsaMercancia(string campo, string codigo)
+    {
+        _cubicador.ErrorRecomendacion = (HttpStatusCode.UnprocessableEntity, "VALIDACION");
+        _cubicador.CuerpoErrorRecomendacion =
+            $$"""{"detail":[{"type":"greater_than","loc":["body","mercancias",1,"{{campo}}"],"msg":"Input should be greater than 0","input":0}]}""";
+
+        var r = await Cubicador().RecomendarAsync(Peticion(), Ct);
+
+        r.Error.Codigo.Should().Be(codigo);
+        r.Error.Mensaje.Should().Contain("mercancía 2").And.Contain("Input should be greater than 0");
+        r.Error.Datos.Should().Contain("item", 1).And.Contain("campo", campo);
+        clsErroresCubicador.EsCaida(r.Error).Should().BeFalse();
+    }
+
 
     [Fact]
     public async Task MasDeDiezMilUnidadesNoLlamaAlCubicadorYDevuelveCubicacionDemasiadoGrande()
@@ -594,6 +981,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoTrasGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(PeticionConPesos(), Ct);
@@ -611,6 +999,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);
@@ -631,6 +1020,7 @@ public sealed class clsCubicadorHttpTests : IDisposable
         _cubicador.TiempoAgotadoSinGuardar = true;
         var valores = Configurado();
         valores["Cubicador:TiempoEsperaSegundos"] = "1";
+        valores["Cubicador:TiempoEsperaRecomendacionSegundos"] = "1";
         using var proveedor = Proveedor(valores, _cubicador);
 
         var r = await proveedor.CreateScope().ServiceProvider.GetRequiredService<IClsCubicador>().RecomendarAsync(Peticion(), Ct);

@@ -24,4 +24,11 @@ public interface IClsCalculoCubicajeService
     /// </remarks>
     Task<clsResultado<clsResultadoCubicacion>> CalcularAsync(
         Guid usuarioId, IReadOnlyList<clsItemCubicacion> items, string? claseViaje, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opción D: lo que se valida sin llamar al cubicador (cubicador configurado; medidas, peso y cantidad de cada ítem, D1), para
+    /// responder esos errores siempre de forma síncrona aunque el cálculo siga en segundo plano. <c>null</c> si todo está bien.
+    /// <see cref="CalcularAsync"/> lo vuelve a revisar.
+    /// </summary>
+    clsErrorDominio? Validar(IReadOnlyList<clsItemCubicacion> items);
 }

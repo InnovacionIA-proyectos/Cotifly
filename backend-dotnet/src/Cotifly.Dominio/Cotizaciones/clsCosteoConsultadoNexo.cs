@@ -284,8 +284,12 @@ public static class clsEmparejadorLineasNexo
                && (camion.PesoKg is not { } peso || nexo.Peso is not { } pesoNexo || Math.Round(peso, 2) == Math.Round(pesoNexo, 2));
     }
 
+    /// <summary>
+    /// Un dato que solo trae un lado no contradice; si los dos lo traen, se comparan sin tildes, mayúsculas ni separadores (D2, E2E
+    /// 2026-10-16: Nexo devuelve <c>Furgón</c> o <c>FURGON REFRIGERADO</c> por los códigos <c>FURGON</c> y <c>FURGON_REFRIGERADO</c>).
+    /// </summary>
     private static bool Compatible(string? cotifly, string? nexo) =>
-        string.IsNullOrWhiteSpace(cotifly) || string.IsNullOrWhiteSpace(nexo) || Normalizar(cotifly) == Normalizar(nexo);
+        string.IsNullOrWhiteSpace(cotifly) || string.IsNullOrWhiteSpace(nexo) || clsVehiculoLineaSolicitud.MismoCodigo(cotifly, nexo);
 
     private static string NormalizarOVacio(string? texto) => string.IsNullOrWhiteSpace(texto) ? string.Empty : Normalizar(texto);
 

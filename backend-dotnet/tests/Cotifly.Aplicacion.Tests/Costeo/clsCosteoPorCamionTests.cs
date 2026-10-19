@@ -110,6 +110,179 @@ public sealed class clsCosteoPorCamionTests
         cotizacion.Vehiculos.Single(v => v.LineaSolicitudNexoId == "N-b").TipoVehiculo.Should().Be("2S2", "la misma sigla no es un cambio");
     }
 
+    /// <summary>
+    /// D2 (E2E 2026-10-16, ajuste del 2026-10-19): Nexo devolvió la carrocería del C2 como <c>Furgón</c>. La misma sigla escrita de otra
+    /// forma no es un cambio: el camión del cubicador conserva su código canónico.
+    /// </summary>
+    [Fact]
+    public void D2_SoloCambiaLaEscrituraSeConservaElCodigoDelCubicador()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var ruta = cotizacion.PrimeraRuta!;
+        var c2 = ruta.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
+        var refrigerado = ruta.AgregarVehiculo("2L2", "FURGON_REFRIGERADO", 1_000m, Guid.NewGuid());
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(c2.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, "c2", "Furgón"),
+            new clsCosteoCamionNexo(refrigerado.Id, EstadoCosteo.Autocosteo, true, 300_000m, null, "2L2", "furgon-refrigerado"),
+        ], _ahora);
+
+        (c2.TipoVehiculo, c2.Carroceria).Should().Be(("C2", "FURGON"), "Furgón es FURGON escrito de otra forma");
+        (refrigerado.TipoVehiculo, refrigerado.Carroceria).Should().Be(("2L2", "FURGON_REFRIGERADO"));
+        c2.CostoFlete.Should().Be(500_000m, "el costo sí se toma de Nexo");
+    }
+
+    /// <summary>D2 (decisión del 2026-10-19): "si la Mesa de Costeo realiza un cambio, nos acogemos a dichos cambios, incluido el tipo de vehículo".</summary>
+    [Fact]
+    public void D2_SiLaMesaCambiaElVehiculoDeUnCamionDelCubicadorSeAdopta()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var recomendacion = Guid.NewGuid();
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", "FURGON", 8_000m, recomendacion);
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 900_000m, null, "3S3", "Furgón")], _ahora)
+            .Valor.Should().BeTrue();
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("3S3", "FURGON"), "la Mesa manda en el vehículo; la carrocería solo cambió de escritura");
+        camion.IdRecomendacionVehiculo.Should().Be(recomendacion, "el vínculo con la línea de Nexo no cambia porque cambie el vehículo");
+    }
+
+    /// <summary>
+    /// D2, validación (punto b): los porcentajes de llenado del cubicador se calcularon para su vehículo. Si la Mesa cambia de verdad el
+    /// vehículo o la carrocería, quedan en <c>null</c> (no se muestra un dato falso); el volumen y el peso de la carga se conservan. Un
+    /// cambio solo de escritura o llenar un camión vacío no los toca, y un ciclo siguiente con lo mismo no vuelve a cambiar nada.
+    /// </summary>
+    [Theory]
+    [InlineData("3S3", "FURGON", true)]
+    [InlineData("C2", "ESTACAS", true)]
+    [InlineData("c2", "Furgón", false)]
+    [InlineData(null, null, false)]
+    public void D2_SiLaMesaCambiaElVehiculoLosPorcentajesDelCubicadorQuedanEnNull(string? vehiculoNexo, string? carroceriaNexo, bool anula)
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", "FURGON", 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
+        var vacio = cotizacion.PrimeraRuta!.AgregarVehiculo(null, null, 2_000m);
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, vehiculoNexo, carroceriaNexo),
+            new clsCosteoCamionNexo(vacio.Id, EstadoCosteo.Autocosteo, true, 300_000m, null, "C2", "FURGON"),
+        ], _ahora);
+
+        camion.PorcentajeLlenadoVolumen.Should().Be(anula ? null : 81.25m);
+        camion.PorcentajeLlenadoPeso.Should().Be(anula ? null : 47.06m);
+        camion.VolumenTotalM3.Should().Be(22.5m, "el volumen de la carga no depende del vehículo");
+        camion.PesoKg.Should().Be(4_000m);
+        (vacio.TipoVehiculo, vacio.PorcentajeLlenadoVolumen).Should().Be(("C2", (decimal?)null));
+
+        // Sin oscilación: el ciclo siguiente con la misma foto de Nexo no cambia nada.
+        var antes = (camion.TipoVehiculo, camion.Carroceria);
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, vehiculoNexo, carroceriaNexo)], _ahora);
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(antes);
+        camion.PorcentajeLlenadoVolumen.Should().Be(anula ? null : 81.25m);
+    }
+
+    [Fact]
+    public void D2_SiLaMesaCambiaLaCarroceriaDeUnCamionDelCubicadorSeAdopta()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, "C2", "ESTACAS")], _ahora);
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("C2", "ESTACAS"));
+    }
+
+    [Fact]
+    public void D2_UnCamionSinVehiculoSeLlenaConLoQueTraeNexo()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var conRecomendacionSinCarroceria = cotizacion.PrimeraRuta!.AgregarVehiculo("2S2", null, 8_000m, Guid.NewGuid());
+        var sinVehiculo = cotizacion.PrimeraRuta!.AgregarVehiculo(null, null, 4_000m);
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(conRecomendacionSinCarroceria.Id, EstadoCosteo.Autocosteo, true, 900_000m, null, "2S2", "ESTACAS"),
+            new clsCosteoCamionNexo(sinVehiculo.Id, EstadoCosteo.Autocosteo, true, 400_000m, null, "C2", "Furgón"),
+        ], _ahora);
+
+        (conRecomendacionSinCarroceria.TipoVehiculo, conRecomendacionSinCarroceria.Carroceria).Should().Be(("2S2", "ESTACAS"));
+        (sinVehiculo.TipoVehiculo, sinVehiculo.Carroceria).Should().Be(("C2", "Furgón"), "un camión vacío toma lo que puso la Mesa tal cual");
+    }
+
+    [Fact]
+    public void D2_UnValorVacioDeNexoNoBorraElDeCotifly()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON", 4_000m, Guid.NewGuid());
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, " ", null)], _ahora);
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("C2", "FURGON"));
+    }
+
+    /// <summary>
+    /// D2: el cruce por <c>grupoRutaId</c> + <c>idRecomendacionVehiculo</c> no depende del vehículo, así que un camión al que la Mesa le
+    /// cambió el vehículo (antes o después de adoptarlo) sigue emparejado con su línea.
+    /// </summary>
+    [Fact]
+    public void D2_CambiarElVehiculoNoRompeElCruceConLaLineaDeNexo()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var ruta = cotizacion.PrimeraRuta!;
+        var recomendacion = Guid.NewGuid();
+        var camion = ruta.AgregarVehiculo("2S2", "FURGON", 8_000m, recomendacion);
+        var linea = new clsLineaSolicitudNexo("N-x", null, null, 8_000m, "3S3", "Estacas")
+        {
+            GrupoRutaId = ruta.Id.ToString("D"),
+            IdRecomendacionVehiculo = recomendacion.ToString("D"),
+            NumeroLinea = 2,
+        };
+
+        // Antes de adoptarlo: el 2S2 de Cotifly contra el 3S3 de Nexo.
+        clsEmparejadorLineasNexo.Emparejar([clsCamionParaEmparejar.Desde(ruta, camion)], [linea]).Should().ContainKey(camion.Id)
+            .WhoseValue.Should().Be("N-x");
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 900_000m, null, "3S3", "Estacas")], _ahora);
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("3S3", "Estacas"));
+        clsEmparejadorLineasNexo.Emparejar([clsCamionParaEmparejar.Desde(ruta, camion)], [linea]).Should().ContainKey(camion.Id)
+            .WhoseValue.Should().Be("N-x");
+    }
+
+    /// <summary>D2: el PDF y el Excel muestran el nombre del catálogo aunque la Mesa haya dejado el nombre o el código escrito distinto.</summary>
+    [Theory]
+    [InlineData("ESTACAS", "Estacas")]
+    [InlineData("Estacas", "Estacas")]
+    [InlineData("furgon refrigerado", "Furgón refrigerado")]
+    [InlineData("Furgon Refrigerado", "Furgón refrigerado")]
+    [InlineData("TANQUE", "TANQUE")]
+    [InlineData(null, null)]
+    public void D2_ElNombreDelCatalogoSeEncuentraPorCodigoONombreEquivalente(string? guardado, string? esperado)
+    {
+        var catalogo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ESTACAS"] = "Estacas",
+            ["FURGON_REFRIGERADO"] = "Furgón refrigerado",
+        };
+
+        clsNombresCatalogoCubicadorExtensiones.Nombre(catalogo, guardado).Should().Be(esperado);
+        new clsNombresCatalogoCubicador(null, catalogo).Carroceria(guardado).Should().Be(esperado);
+        clsNombresCatalogoCubicadorExtensiones.Nombre(null, guardado).Should().Be(guardado, "sin catálogo se muestra tal cual");
+    }
+
+    [Fact]
+    public void EnUnCamionSinRecomendacionLaMismaSiglaEscritaDistintoNoEsUnCambio()
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo("C2", "FURGON_REFRIGERADO", 4_000m);
+
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, "c2", "Furgón refrigerado")], _ahora);
+
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(("C2", "FURGON_REFRIGERADO"));
+    }
+
     [Fact]
     public void SiLaMesaBorraLaLineaEnNexoElCamionQuedaDescartadoYNoFrenaNiRecibeConexos()
     {

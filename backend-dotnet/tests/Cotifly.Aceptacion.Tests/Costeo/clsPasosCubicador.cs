@@ -29,6 +29,8 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             extra: new Dictionary<string, string?>
             {
                 ["IA:TiempoRedaccionSegundos"] = clsPasosCosteo.TiempoRedaccionSegundos.ToString(CultureInfo.InvariantCulture),
+                // Opción D: "Calcular cubicaje" espera 2 s al cubicador antes de responder 202 (8 por defecto).
+                ["Cubicador:EsperaSincronaCubicacionSegundos"] = "2",
             }));
     }
 
@@ -148,7 +150,61 @@ public sealed class clsPasosCubicador(clsPasosCosteo costeo, clsContextoWeb web)
             clsApiWebPruebas.Json(new { items = new[] { item }, clase_viaje = "Contenedor" }));
     }
 
-    public void Dispose() => _cubicador.Dispose();
+    // Opción D (E2E 2026-10-16, D3): "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}).
+
+    private string? _consulta;
+
+    [Given("que el cubicador se demora calculando la carga")]
+    public void DadoQueElCubicadorSeDemora() => _cubicador.CerrarCompuerta();
+
+    [When("el cubicador termina de calcular")]
+    public void CuandoElCubicadorTermina() => _cubicador.CompuertaRecomendacion!.SetResult();
+
+    [Then("la cubicación de {string} está {string}")]
+    public async Task EntoncesLaCubicacionEsta(string comercial, string estado)
+    {
+        _consulta ??= web.UltimaUbicacion ?? throw new InvalidOperationException("El 202 no trajo Location.");
+        _consulta.Should().StartWith("/web/cubicacion/");
+        await web.EnviarAsync(HttpMethod.Get, _consulta, web.Sesion(comercial).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        web.UltimoJson().GetProperty("estado").GetString().Should().Be(estado);
+    }
+
+    [Then("{string} no puede ver la cubicación de {string}")]
+    public async Task EntoncesOtroNoLaVe(string otro, string dueno)
+    {
+        _ = dueno;
+        await web.EnviarAsync(HttpMethod.Get, _consulta!, web.Sesion(otro).Access);
+        web.UltimoEstado.Should().Be(HttpStatusCode.NotFound, "solo el comercial que la pidió la ve");
+    }
+
+    [Then("la cubicación de {string} termina {string} con el vehículo {string}")]
+    public async Task EntoncesLaCubicacionTermina(string comercial, string estado, string vehiculo)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            await web.EnviarAsync(HttpMethod.Get, _consulta!, web.Sesion(comercial).Access);
+            web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+            if (web.UltimoJson().GetProperty("estado").GetString() != "en_proceso")
+            {
+                break;
+            }
+
+            await Task.Delay(100);
+        }
+
+        var json = web.UltimoJson();
+        json.GetProperty("estado").GetString().Should().Be(estado);
+        json.GetProperty("resultado").GetProperty("vehiculos").EnumerateArray().Select(v => v.GetProperty("codigo_vehiculo").GetString())
+            .Should().Equal(vehiculo);
+        _cubicador.Recomendaciones.Should().ContainSingle("un solo POST al cubicador");
+    }
+
+    public void Dispose()
+    {
+        _cubicador.CompuertaRecomendacion?.TrySetResult();
+        _cubicador.Dispose();
+    }
 
     private string DeLaRuta(string cotizacion, int orden) =>
         "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
