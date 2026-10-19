@@ -28,6 +28,40 @@ Característica: Solo códigos de catálogo en el formulario de costeo
     Y Nexo recibió la consulta de "/api/catalogos/tipos-vehiculo" y de "/api/catalogos/clases-viaje"
     Y Nexo no recibió la consulta de "/api/biblioteca-sap-historico/filtros"
 
+  # HU-027.1 (#179): en Nexo la descripcion de clases-contenedor es el código (CNT40.HC); es el valor que valida la captura.
+  Escenario: Los catálogos de flete exponen las clases de contenedor de Nexo sin la lista provisional
+    Cuando "ana" pide los catálogos de flete
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CatalogosFlete" del contrato
+    Y las clases de contenedor son "CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC" y "CNT40.RE" con el mismo texto como etiqueta
+    Y las clases de contenedor no incluyen las provisionales "CNT20.FT", "CNT20.OP", "CNT40.FT" ni "CNT40.OP"
+    Y Nexo recibió la consulta de "/api/catalogos/clases-contenedor" y de "/api/catalogos/clases-viaje"
+
+  Esquema del escenario: Cada clase de contenedor de los catálogos de flete se acepta en la captura y viaja a Nexo tal cual
+    Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor" y la clase de contenedor "<clase>"
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió la solicitud de "C1" con el claseContenedor "<clase>"
+
+    Ejemplos:
+      | clase    |
+      | CNT20.IT |
+      | CNT20.RE |
+      | CNT20.ST |
+      | CNT40.HC |
+      | CNT40.RE |
+
+  Escenario: Si Nexo no tiene clases de contenedor los catálogos de flete responden con la lista vacía
+    Dado que el catálogo maestro de clases de contenedor de Nexo está vacío
+    Cuando "ana" pide los catálogos de flete
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CatalogosFlete" del contrato
+    Y las clases de contenedor vienen vacías
+    Y las clases de viaje son "Contenedor", "Cupo", "Carga Suelta" y "Extradimensionado"
+
+  Escenario: Si falla el catálogo de clases de contenedor los catálogos de flete responden con la lista vacía
+    Dado que el catálogo maestro de clases de contenedor de Nexo falla
+    Cuando "ana" pide los catálogos de flete
+    Entonces la respuesta tiene el estado 200 y cumple el esquema "CatalogosFlete" del contrato
+    Y las clases de contenedor vienen vacías
+
   Escenario: Una clase de viaje del catálogo viaja a Nexo con su código tal cual
     Cuando "ana" envía a costeo el formulario del cliente "900555111" como "C1" con la clase de viaje "Contenedor"
     Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato

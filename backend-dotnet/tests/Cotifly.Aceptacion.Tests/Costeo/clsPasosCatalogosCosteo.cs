@@ -31,6 +31,31 @@ public sealed class clsPasosCatalogosCosteo(clsContextoWeb web, clsPasosCosteo c
         costeo.Nexo.ClasesViaje.AddRange([a, b, c, d]);
     }
 
+    [Given("que el catálogo maestro de clases de contenedor de Nexo está vacío")]
+    public void DadoClasesContenedorVacias() => costeo.Nexo.ClasesContenedor.Clear();
+
+    [Given("que el catálogo maestro de clases de contenedor de Nexo falla")]
+    public void DadoClasesContenedorFalla() => costeo.Nexo.CatalogosFallidos.Add("clases-contenedor");
+
+    [Then("las clases de contenedor son {string}, {string}, {string}, {string} y {string} con el mismo texto como etiqueta")]
+    public void EntoncesLasClasesDeContenedor(string a, string b, string c, string d, string e)
+    {
+        var clases = ClasesContenedor();
+        clases.Select(t => t.Valor).Should().Equal(a, b, c, d, e);
+        clases.Should().OnlyContain(t => t.Valor == t.Etiqueta);
+    }
+
+    [Then("las clases de contenedor no incluyen las provisionales {string}, {string}, {string} ni {string}")]
+    public void EntoncesSinProvisionales(string a, string b, string c, string d) =>
+        ClasesContenedor().Select(t => t.Valor).Should().NotContain([a, b, c, d]);
+
+    [Then("las clases de contenedor vienen vacías")]
+    public void EntoncesClasesContenedorVacias() => ClasesContenedor().Should().BeEmpty();
+
+    private List<(string? Valor, string? Etiqueta)> ClasesContenedor() =>
+        [.. web.UltimoJson().GetProperty("clases_contenedor").EnumerateArray()
+            .Select(t => (t.GetProperty("valor").GetString(), t.GetProperty("etiqueta").GetString()))];
+
     [When("{string} pide los catálogos de flete")]
     public Task CuandoPideLosCatalogos(string alias) =>
         web.EnviarAsync(HttpMethod.Get, "/web/catalogos-flete", web.Sesion(alias).Access);

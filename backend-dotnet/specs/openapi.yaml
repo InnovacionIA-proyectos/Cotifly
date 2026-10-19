@@ -1058,19 +1058,28 @@ paths:
     get:
       operationId: obtenerCatalogosFlete
       tags: [web]
-      summary: Catálogos de tipo de vehículo, tipo de carrocería y clase de viaje
+      summary: Catálogos de tipo de vehículo, tipo de carrocería, clase de viaje y clase de contenedor
       description: |
         Opciones del formulario de captura a partir de los **catálogos maestros de Nexo** (HU-013.10, #106, gap G1; ADR-018;
         `docs/conexion_nexo/MAPEO_CAMPOS_NEXO_COTIFLY.md`). Ya no se usa `GET /api/biblioteca-sap-historico/filtros` (el histórico de
-        tarifas). La forma de la respuesta no cambió:
+        tarifas). HU-027.1 (#179) agrega `clases_contenedor`; el resto de la forma no cambió:
         - `tipos_vehiculo`: `GET /api/catalogos/tipos-vehiculo` (`{codigo, descripcion, esCatalogoOficial}`, códigos SAP
           cortos como `2S3`); `valor` = `codigo`, `etiqueta` = `descripcion`. Filas sin `codigo` se omiten;
         - `clases_viaje`: `GET /api/catalogos/clases-viaje` (`{id, descripcion}`); `valor` = `etiqueta` = `descripcion`
           (`Carga Suelta`, con espacio);
         - `tipos_carroceria`: en código (`ESTACAS` ... `VOLCO`) hasta que Nexo publique su catálogo;
         - tipología: enum de Nexo de 7 valores, en código (ver `SolicitudCosteoWeb.tipologia`);
-        - Cotifly también lee `GET /api/catalogos/clases-contenedor` (acepta sus `descripcion` en `clase_contenedor`) y
-          `GET /api/catalogos/lineas-negocio` (advierte en el log si un `MargenesPolitica.mapeoLineasNexo` no aparece, G11).
+        - `clases_contenedor` (HU-027.1, #179): `GET /api/catalogos/clases-contenedor` (`{id, descripcion, tamanoContenedor,
+          pesoInfCnt, pesoSupCnt}`); `valor` = `etiqueta` = `descripcion`. En Nexo la `descripcion` **es el código**
+          (`CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`): no hay un campo `codigo` aparte. Es el mismo texto con
+          que la captura valida `clase_contenedor`, así que todo `valor` de esta lista se acepta tal cual. Solo trae los valores
+          de Nexo: la lista provisional de extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, G15) **no** se
+          expone aunque la captura la siga aceptando. **Puede venir vacía** (`[]`, nunca 503 por esto): Nexo responde `[]`
+          si su base de SAP no está configurada, y si ese catálogo falla queda vacío con un warning. Con la lista vacía la
+          captura de una ruta `Contenedor` con una clase que no es provisional responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE`
+          (nunca se envía texto sin validar): el frontend deshabilita el selector y ofrece Reintentar;
+        - Cotifly también lee `GET /api/catalogos/lineas-negocio` (advierte en el log si un `MargenesPolitica.mapeoLineasNexo`
+          no aparece, G11).
 
         **Caché y Nexo caído.** Los cuatro catálogos se piden juntos (todo o nada) con el `X-Portal-clsUsuario-Id` del
         comercial y se reutilizan `Nexo:MinutosCacheCatalogos` (30 por defecto). Si Nexo no responde al renovarlos, se usa la
@@ -1078,15 +1087,15 @@ paths:
         503 `CATALOGOS_FLETE_NO_DISPONIBLE`: el formulario nunca ofrece texto libre.
 
         **Catálogos opcionales.** `tipos-vehiculo` y `clases-viaje` son obligatorios (si fallan o quedan vacíos no hay
-        catálogos). Si fallan `clases-contenedor` o `lineas-negocio`, quedan vacíos con un warning y `clase_contenedor` se valida
-        contra la lista fija. Solo se ofrecen los tipos de vehículo con `esCatalogoOficial = true`. Cada respuesta de Nexo se lee
+        catálogos). Si fallan `clases-contenedor` o `lineas-negocio`, quedan vacíos con un warning (ver `clases_contenedor`
+        arriba: ya no hay lista fija de respaldo). Solo se ofrecen los tipos de vehículo con `esCatalogoOficial = true`. Cada respuesta de Nexo se lee
         hasta 1 MB y 5.000 filas; pasarse es "no disponible".
         El valor que el frontend envía a `POST /web/solicitudes-costeo` es siempre `valor` (el código), nunca la etiqueta.
       security:
         - bearer: []
       responses:
         '200':
-          description: Los tres catálogos completos
+          description: Los cuatro catálogos (`clases_contenedor` puede venir vacía)
           content:
             application/json:
               schema:
@@ -4472,7 +4481,7 @@ components:
 
     CatalogosFlete:
       type: object
-      required: [tipos_vehiculo, tipos_carroceria, clases_viaje]
+      required: [tipos_vehiculo, tipos_carroceria, clases_viaje, clases_contenedor]
       properties:
         tipos_vehiculo:
           type: array
@@ -4484,6 +4493,14 @@ components:
             $ref: '#/components/schemas/OpcionCatalogo'
         clases_viaje:
           type: array
+          items:
+            $ref: '#/components/schemas/OpcionCatalogo'
+        clases_contenedor:
+          type: array
+          description: |
+            HU-027.1 (#179). Clases de contenedor de Nexo (`GET /api/catalogos/clases-contenedor`), sin la lista provisional
+            G15. `valor` = `etiqueta` = la `descripcion` de Nexo, que es el código (`CNT40.HC`) y el valor que se envía en
+            `clase_contenedor`. Puede venir vacía (`[]`) si Nexo no tiene la base de SAP configurada o el catálogo falla.
           items:
             $ref: '#/components/schemas/OpcionCatalogo'
 
@@ -5516,9 +5533,10 @@ components:
           maxLength: 20
           description: |
             Línea (`claseContenedor`). Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella (G3). Códigos de
-            Nexo `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`, la lista provisional de extradimensionado
-            nacional (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, G15) o una `descripcion` de
-            `GET /api/catalogos/clases-contenedor`. Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
+            Nexo: un `valor` de `clases_contenedor` de `GET /web/catalogos-flete` (la `descripcion` de
+            `GET /api/catalogos/clases-contenedor`, que es el código: `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`,
+            `CNT40.RE`) o la lista provisional de extradimensionado nacional (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`,
+            `CNT40.OP`, G15). Otro texto es 400 `SOLICITUD_COSTEO_INVALIDA`.
         exclusivo:
           deprecated: true
           type: boolean

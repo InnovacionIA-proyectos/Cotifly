@@ -57,7 +57,7 @@ ClientePro (ya autenticado)
 | `POST /api/auth/logout` | cualquiera | Revoca la sesión, siempre 204 (salvo 429 por el límite de `/api/auth/*`) |
 | `POST /web/chat` | ambos | Turno del agente cotizador (ya no crea cotizaciones, ADR-018) |
 | `POST /web/solicitudes-costeo` | ambos | **Endpoint vigente para crear una cotización** (una línea): formulario ampliado, validación por código de catálogo y envío a costeo en Nexo. Ver §3.2 |
-| `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías y clases de viaje del formulario (catálogos maestros de Nexo). Ver §3.2 |
+| `GET /web/catalogos-flete` | ambos | Tipos de vehículo, carrocerías, clases de viaje y clases de contenedor del formulario (catálogos maestros de Nexo; `clases_contenedor` desde HU-027.1, puede venir vacía). Ver §3.2 |
 | `GET /web/municipios` | ambos | Buscador de origen y destino (`?q=&departamento=`, máx. 50) o catálogo completo sin filtros. 503 `MUNICIPIOS_NO_DISPONIBLE` si Nexo no responde (antes 400). Ver §8.1, fila 5 |
 | `GET /web/mis-cotizaciones` | ambos | Cotizaciones propias (máx. 100) |
 | `GET /web/cotizaciones/regional` | gerente_comercial | HU-016.1 (#154): cotizaciones de los comerciales de su regional (máx. 100), con la forma de `mis-cotizaciones` y el comercial dueño en cada fila. Ver §8.10.1 |
@@ -158,8 +158,9 @@ Reglas para el frontend (HU-013.10, #106):
 - **`tipo_vehiculo` y `carroceria` ya no se envían** (decisión 7 de HU-021: los define el cubicador o la Mesa de Costeo de Nexo;
   si llegan, se ignoran). Lo que sigue aplica a ellos solo con la bandera del servidor `Captura:AceptarVehiculoCliente`.
 - **Solo códigos de catálogo** en `tipo_vehiculo`, `carroceria` y `clase_viaje` (el `valor` de `GET /web/catalogos-flete`,
-  nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (`CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`,
-  `CNT40.RE` y la lista provisional `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`). Otro texto es 400
+  nunca la `etiqueta`), `tipologia` (enum de 7 valores) y `clase_contenedor` (el `valor` de `clases_contenedor` de
+  `GET /web/catalogos-flete`: `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`; más la lista provisional `CNT20.FT`,
+  `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo). Otro texto es 400
   `SOLICITUD_COSTEO_INVALIDA` con el campo en el mensaje. Si los catálogos de Nexo no están disponibles (ni su copia en
   memoria), 503 `CATALOGOS_FLETE_NO_DISPONIBLE` y no se guarda nada. Sin Nexo configurado en el servidor, un formulario con
   `tipo_vehiculo` o `clase_viaje` siempre recibe ese 503.
@@ -172,6 +173,10 @@ Reglas para el frontend (HU-013.10, #106):
 - **Retirados (HU-021, decisión 1):** `valor_estimado` y `referencia` ya no están en el contrato; si llegan, se ignoran.
 - `GET /web/catalogos-flete` responde 503 `CATALOGOS_FLETE_NO_DISPONIBLE` solo si Nexo no responde y no hay una copia de los
   catálogos de menos de 24 horas: en ese caso, deshabilitar los selects y ofrecer reintento (no hay texto libre).
+- **`clases_contenedor` (HU-027.1, #179):** las clases de contenedor de Nexo (`GET /api/catalogos/clases-contenedor`). En Nexo la
+  `descripcion` es el código, así que `valor` = `etiqueta` = `CNT40.HC`, el mismo texto que valida la captura. No trae la lista
+  provisional. Puede venir `[]` con 200 (Nexo sin base de SAP configurada o el catálogo caído): deshabilitar el selector y ofrecer
+  reintento.
 
 ### Reservados para la próxima versión (HU-005)
 

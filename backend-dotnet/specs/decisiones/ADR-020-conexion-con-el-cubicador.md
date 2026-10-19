@@ -72,6 +72,9 @@ fallo silencioso que describe la hoja de ruta.
   `GET /api/catalogos/clases-contenedor` de Nexo (con caché; sin Nexo, `CATALOGOS_FLETE_NO_DISPONIBLE` como la clase de viaje), más la
   lista provisional de extradimensionado (G15) mientras Nexo no la formalice. Como `clases-contenedor` es un catálogo opcional de Nexo
   (si falla llega vacío), una copia sin clases tampoco valida: `CATALOGOS_FLETE_NO_DISPONIBLE`, nunca texto libre hacia Nexo.
+  HU-027.1 (#179): `GET /web/catalogos-flete` expone esa misma lista en `clases_contenedor` (solo los valores de Nexo, sin la
+  provisional). En Nexo la `descripcion` de `clases-contenedor` es el código (`CNT40.HC`, no hay campo `codigo`), así que validar por
+  `descripcion` es validar por código y el `valor` expuesto es exactamente el que acepta la captura. Con `[]` responde 200 y lista vacía.
 
 ### Planificador
 
