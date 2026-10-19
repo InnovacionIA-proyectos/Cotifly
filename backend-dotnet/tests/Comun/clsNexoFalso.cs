@@ -294,6 +294,39 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
     public void Descartar(string solicitudId) => Con(solicitudId, s => s.Estado = "Descartada");
 
+    /// <summary>HU-028 (#186): si tiene valor, <c>POST /api/solicitudes/{id}/rechazar</c> responde este estado (con <see cref="CodigoRechazoFalla"/>).</summary>
+    public HttpStatusCode? RechazoFalla { get; set; }
+
+    /// <summary>Código de Nexo de la respuesta de <see cref="RechazoFalla"/>.</summary>
+    public string CodigoRechazoFalla { get; set; } = "NEXO_CAIDO";
+
+    private readonly List<(string SolicitudId, string Motivo, string? Comentario)> _rechazos = [];
+
+    /// <summary>HU-028: los rechazos que Nexo aplicó (204), en orden, con su motivo y su comentario.</summary>
+    public IReadOnlyList<(string SolicitudId, string Motivo, string? Comentario)> Rechazos
+    {
+        get
+        {
+            lock (_candado)
+            {
+                return [.. _rechazos];
+            }
+        }
+    }
+
+    /// <summary>HU-028: cuántas veces se llamó a <c>POST /api/solicitudes/{id}/rechazar</c> (con éxito o sin él).</summary>
+    public int IntentosRechazo =>
+        Peticiones.Count(p => p.Metodo == HttpMethod.Post && p.Url.AbsolutePath.EndsWith("/rechazar", StringComparison.Ordinal));
+
+    /// <summary>Estado de la solicitud en el Nexo falso (<c>Pendiente</c>, <c>EnCosteo</c>, <c>Entregada</c>, <c>Descartada</c>) o <c>null</c>.</summary>
+    public string? EstadoDe(string solicitudId)
+    {
+        lock (_candado)
+        {
+            return _solicitudes.TryGetValue(solicitudId, out var s) ? s.Estado : null;
+        }
+    }
+
     /// <summary>Olvida la solicitud (Nexo responde 404 "id no reconocido").</summary>
     public void Olvidar(string solicitudId)
     {
@@ -389,6 +422,8 @@ public sealed class clsNexoFalso : HttpMessageHandler
                     ? Error(fallaAnalisis, CodigoAnalisisFalla, "No se pudo leer el archivo Excel (prueba).")
                     : Json(HttpStatusCode.OK, Analisis),
                 ("POST", "/api/captura-solicitudes") => Alta(cuerpo),
+                ("POST", var r) when r.StartsWith("/api/solicitudes/", StringComparison.Ordinal) && r.EndsWith("/rechazar", StringComparison.Ordinal) =>
+                    Rechazar(r["/api/solicitudes/".Length..^"/rechazar".Length], cuerpo),
                 ("GET", var r) when r.StartsWith("/api/solicitudes/", StringComparison.Ordinal) => Solicitud(r["/api/solicitudes/".Length..]),
                 ("POST", "/api/cotizaciones") => CrearORecuperar(cuerpo),
                 ("POST", var r) when r.StartsWith("/api/cotizaciones/", StringComparison.Ordinal) && r.EndsWith("/resultado", StringComparison.Ordinal) =>
@@ -616,6 +651,41 @@ public sealed class clsNexoFalso : HttpMessageHandler
 
         s.Cotizacion ??= new clsCotizacionFalsa(Guid.NewGuid().ToString());
         return Json(HttpStatusCode.Created, Cotizacion(s));
+    }
+
+    /// <summary>
+    /// HU-028 (#186): <c>POST /api/solicitudes/{id}/rechazar</c> como <c>clsRechazarSolicitudCommand</c> de Nexo: motivo de 1 a 100 y
+    /// comentario hasta 500 (400 si no), 404 <c>SOLICITUD_NO_ENCONTRADA</c>, 409 <c>SOLICITUD_YA_DESCARTADA</c>; si no, la deja
+    /// <c>Descartada</c> y responde 204.
+    /// </summary>
+    private HttpResponseMessage Rechazar(string solicitudId, string? cuerpo)
+    {
+        if (RechazoFalla is { } falla)
+        {
+            return Error(falla, CodigoRechazoFalla, "Rechazo no disponible (prueba).");
+        }
+
+        var nodo = JsonNode.Parse(cuerpo ?? "{}");
+        var motivo = nodo?["motivo"]?.GetValue<string>();
+        var comentario = nodo?["comentario"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(motivo) || motivo.Length > 100 || comentario is { Length: > 500 })
+        {
+            return Error(HttpStatusCode.BadRequest, "VALIDATION_ERROR", "motivo (1-100) o comentario (hasta 500) inválido.");
+        }
+
+        if (!_solicitudes.TryGetValue(solicitudId, out var s))
+        {
+            return Error(HttpStatusCode.NotFound, "SOLICITUD_NO_ENCONTRADA", "Solicitud no encontrada.");
+        }
+
+        if (s.Estado == "Descartada")
+        {
+            return Error(HttpStatusCode.Conflict, "SOLICITUD_YA_DESCARTADA", "La solicitud ya está descartada.");
+        }
+
+        s.Estado = "Descartada";
+        _rechazos.Add((solicitudId, motivo, comentario));
+        return new HttpResponseMessage(HttpStatusCode.NoContent);
     }
 
     private HttpResponseMessage MarcarResultado(string cotizacionId, string? cuerpo)
