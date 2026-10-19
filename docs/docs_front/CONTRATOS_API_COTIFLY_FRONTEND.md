@@ -1,0 +1,3146 @@
+# Contratos de la API web de Cotifly: referencia para el frontend
+
+| | |
+|---|---|
+| **Fecha** | 2026-10-19 |
+| **Versión de referencia** | Rama `hu-023-defectos-e2e-1016` hasta `44f25a7` (`4328e4c` más la corrección del apagado de "Calcular cubicaje", B1), sobre PR #178 |
+| **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
+| **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
+
+---
+
+## Índice
+
+1. [Introducción y convenciones](#1-introducción-y-convenciones)
+   - 1.1 Qué es Cotifly · 1.2 Arquitectura · 1.3 URL base · 1.4 Nombres de campos · 1.5 Fechas · 1.6 Números y montos · 1.7 Formatos de error · 1.8 Concurrencia: `row_version`, `ETag`, `If-Match`, 412/428 · 1.9 `Idempotency-Key` · 1.10 CORS · 1.11 Límites de tamaño y de peticiones · 1.12 Folio
+2. [Autenticación y sesión](#2-autenticación-y-sesión)
+3. [Flujo de negocio de punta a punta](#3-flujo-de-negocio-de-punta-a-punta)
+4. [Referencia de endpoints](#4-referencia-de-endpoints)
+   - 4.1 Autenticación · 4.2 Catálogos · 4.3 Cubicación · 4.4 Captura y costeo · 4.5 Cotizaciones · 4.6 Licitaciones · 4.7 PDF · 4.8 Correo · 4.9 Asistente IA · 4.10 Métricas · 4.11 Regional · 4.12 Administración y usuario · 4.13 Health
+5. [Modelos y enums](#5-modelos-y-enums)
+6. [Catálogo completo de códigos de error](#6-catálogo-completo-de-códigos-de-error)
+7. [Cambios recientes que rompen o agregan](#7-cambios-recientes-que-rompen-o-agregan)
+8. [Checklist de integración](#8-checklist-de-integración)
+9. [Notas de versión](#9-notas-de-versión)
+
+---
+
+## 1. Introducción y convenciones
+
+### 1.1 Qué es Cotifly
+
+Cotifly es el cotizador de fletes de Botero Soto. El comercial captura una solicitud de transporte (una o varias **rutas**, cada
+una con sus **mercancías** y sus **servicios conexos**). Cotifly le pide al **cubicador** los camiones que hacen falta, envía la
+solicitud a **NEXO** para que la costee y, con el costo de NEXO, aplica el margen (sugerido por SAP TM o por la política de la línea
+de negocio) y calcula el precio. Luego genera el PDF, lo envía al cliente por correo y registra el resultado (ganada o perdida).
+
+El pipeline es **determinista**: el costo sale de NEXO, el margen sugerido de SAP TM o de la política, y el precio y el PDF los
+calcula el código. La IA solo redacta el asunto y la introducción del PDF y **propone** acciones que el comercial confirma con un
+botón. La IA nunca escribe datos de negocio.
+
+### 1.2 Arquitectura
+
+```
+Angular (módulo Cotifly en ClientePro) ──► API Cotifly (.NET 10) ──► NEXO (clientes, municipios, catálogos, costeo)
+                                                                 ──► Cubicador (tipos de mercancía, vehículos, recomendación)
+                                                                 ──► SAP TM, TRM, proveedor de IA, SMTP
+```
+
+- El navegador **solo** habla con la API de Cotifly. **Nunca** llama a NEXO, al cubicador, a SAP, a la TRM ni a la IA.
+- La API llama a NEXO en nombre del comercial con su identidad corporativa, que el servidor obtiene del token. El frontend no envía
+  ningún dato de identidad de NEXO.
+- El estado del costeo en NEXO lo consulta el servidor (un proceso de polling). El frontend solo consulta la base de Cotifly
+  (`GET /web/cotizaciones/{folio}/costeo`), así que su polling no le cuesta nada a NEXO.
+- Solo REST sobre HTTPS con JSON. No hay WebSocket, SSE ni SignalR.
+
+Contexto de NEXO y del cubicador que conviene conocer (el frontend no habla con ellos, pero ve sus efectos):
+
+| Hecho | Efecto en la UI |
+|---|---|
+| NEXO crea **una línea por camión**. Una ruta puede tener varios camiones (flota mixta). | `rutas[].camiones[]` puede traer varios camiones. |
+| Una línea **sin vehículo** en clase de viaje "Cupo" no se autocostea en NEXO: la costea a mano la Mesa de Costeo. | Esas rutas tardan más en tener precio. Es normal. |
+| NEXO autocostea en la misma petición hasta 10 líneas; con más, el costeo sigue en segundo plano. | La captura puede salir en `autocosteo` con precio o en `pendiente_costeo`. |
+| El cubicador responde `SIN_SELECCION_AUTOMATICA` cuando no puede escoger vehículo. Es una respuesta válida, no un error. | La ruta queda con un camión sin vehículo que resuelve la Mesa de Costeo. |
+| `BUSQUEDA_AGOTADA` es un límite del algoritmo del cubicador, **no de la carga**. | Nunca decirle al comercial que su carga no cabe. |
+| El cubicador acepta como máximo **10.000 unidades** por cálculo y exige peso por unidad **mayor que 0**. | Pedir el peso por unidad y partir cargas grandes en varias rutas. |
+| NEXO no tiene DELETE de servicios conexos. | Quitar un conexo en Cotifly no lo borra en NEXO; el precio al cliente siempre es el de Cotifly. |
+
+### 1.3 URL base
+
+| Ambiente | URL base |
+|---|---|
+| Local (contenedor) | `http://localhost:8080` |
+| QA | `<URL_API_COTIFLY_QA>` (la entrega infraestructura) |
+| Producción | `<URL_API_COTIFLY_PROD>` (la entrega infraestructura) |
+
+Usar una variable propia, por ejemplo `environment.cotiflyApiUrl`, sin barra final y distinta de la URL del backend de ClientePro.
+Las rutas de este documento son relativas a esa URL base (`/web/...`, `/api/auth/...`, `/pdfs/...`, `/health`).
+
+### 1.4 Nombres de campos
+
+| Grupo | Convención | Ejemplos |
+|---|---|---|
+| `/web/*` (petición **y** respuesta) | **snake_case** | `nit_cliente`, `motivo_rechazo`, `linea_orden`, `row_version` |
+| `/api/auth/*` | **camelCase** fijo, con una excepción | `idUsuario`, `nombreUsuario`, `debeCambiarPassword`; excepción: `user.nombre_completo` |
+| `/health`, `/health/ready` | camelCase por defecto | `status`, `servicio`, `entorno`, `detalle` |
+
+Reglas de serialización de `/web/*` (verificadas en el código, `clsJsonWeb`):
+
+- La lectura no distingue mayúsculas, pero el guion bajo sí cuenta: `motivoRechazo` **no** llega a `motivo_rechazo` y se ignora en
+  silencio. Enviar siempre snake_case.
+- Los campos que el contrato declara `nullable` **siempre vienen** en la respuesta, con `null` si no tienen valor. Las excepciones,
+  que se **omiten** cuando no tienen valor, están marcadas en la sección 5 (por ejemplo `comercial`, `cubicacion`, `avisos`,
+  `conexos_conservados`, `avisos_cubicacion`, `sugerencia`).
+- Los números son estrictos: `"margen": "0.2"` (número como texto) es un cuerpo inválido (400).
+- Los enums viajan como texto: `sin_enviar`, `politica_linea`, `pendiente_costeo`, `ASIGNADO`.
+- Las tildes no se escapan.
+
+### 1.5 Fechas
+
+| Tipo | Formato | Ejemplo |
+|---|---|---|
+| Fecha y hora que **escribe** el servidor | ISO-8601 en UTC, con desfase `+00:00` | `"2026-10-09T15:20:11.532+00:00"` |
+| Fecha sola | `AAAA-MM-DD` | `"2026-10-01"` (parámetros de métricas, `vigencia` de conexos) |
+| Mes | `AAAA-MM` | `"2026-09"` (serie mensual de métricas) |
+
+- La zona de negocio es **America/Bogota** (UTC-05:00, sin horario de verano). Mostrar siempre convirtiendo a Bogotá
+  (`Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota' })` o `DatePipe` con `'-0500'`).
+- `deadline` de entrada: ISO-8601. Enviarlo **con desfase** (`"2026-10-15T17:00:00-05:00"`). Si llega sin zona
+  (`"2026-10-15T17:00:00"`) o como fecha sola (`"2026-10-15"`), el servidor lo interpreta en hora de Bogotá; una fecha sola es el
+  **inicio** de ese día en Bogotá. Un texto que no es ISO-8601 es un cuerpo inválido (400).
+- `deadline` de salida: siempre en UTC (`"2026-10-15T22:00:00+00:00"` para las 17:00 de Bogotá).
+- Los parámetros `desde` y `hasta` de métricas son fechas de Bogotá.
+
+### 1.6 Números y montos
+
+**El frontend nunca calcula precios.** Todo monto que se muestra viene del servidor. No se suma, no se aplica margen y no se convierte
+moneda en el cliente.
+
+| Dato | Formato |
+|---|---|
+| Precio en COP | Número entero de pesos (redondeo half-to-even). Mostrar como `$ 8.823.530` (locale `es-CO`, sin decimales) |
+| Precio en USD | Número con 2 decimales. Mostrar como `US$ 996,35` |
+| TRM (`trm_aplicada`) | COP por USD; `0` en COP |
+| Margen | Fracción decimal: `0.18` = 18 %. La UI trabaja en porcentaje y envía la fracción |
+| Medidas, pesos, valores y horas de entrada | Máximo 2 decimales |
+| Métricas | Montos en COP con 2 decimales; fracciones de 0 a 1 con 4 decimales |
+
+Reglas de dinero que la UI debe respetar:
+
+- **`precio_final` de una cotización YA INCLUYE los servicios conexos.** Es la suma de `rutas[].precio_final_linea`, y cada ruta es
+  fletes + retorno + levante + conexos, con el margen de la ruta. **No sumarle** el `precio` de `servicios_conexos`: ese `precio` es
+  solo el desglose. Si se suma, se cobra dos veces.
+- Excepción: en la **licitación** (`Licitacion.precio_final`, `lineas[].precio_final`), el Excel y el PDF del pliego, cada fila es la
+  tarifa del transporte **sin** conexos; los conexos se listan aparte. Tarifa + conexos = precio de la ruta.
+- El costo de NEXO **nunca** llega al frontend (salvo `costo` de `DatosNuevaVersion`, que es informativo, y los agregados de las
+  métricas).
+- En USD, `precio_final` y el `precio` de los conexos llegan en dólares, convertidos con la `trm_aplicada` fijada al crear la
+  cotización.
+
+### 1.7 Formatos de error
+
+Hay dos formas. Distinguirlas por el tipo de `error`:
+
+```json
+{ "error": "Cotización no encontrada o no es tuya." }
+```
+
+```json
+{
+  "error": {
+    "codigo": "SOLICITUD_COSTEO_INVALIDA",
+    "mensaje": "Ruta 1: el municipio 'Cartago' es ambiguo: Cartago, Valle del Cauca (id 76147); Cartago, Cartago (Costa Rica) (id 99001).",
+    "detalle": { "motivo": "MUNICIPIO_AMBIGUO", "errores": [ { "ruta": 0, "campo": "destino", "codigo": "MUNICIPIO_AMBIGUO", "mensaje": "..." } ] }
+  }
+}
+```
+
+```typescript
+export interface ErrorWeb { error: string; }
+export interface ErrorNegocio { error: { codigo: string; mensaje: string; detalle?: Record<string, unknown> }; }
+export const esErrorNegocio = (b: unknown): b is ErrorNegocio =>
+  !!b && typeof (b as any).error === 'object' && typeof (b as any).error?.codigo === 'string';
+```
+
+**`ErrorWeb` (`{"error": "texto"}`), sin código.** Lo usan:
+
+| HTTP | Cuándo | Texto exacto |
+|---|---|---|
+| 400 | Cuerpo inválido (JSON mal formado, tipo erróneo, número como texto, falta un campo obligatorio del esquema) y validaciones simples (teléfono, correo, seguimiento, `Idempotency-Key` fuera de 8 a 64 caracteres). La misma clave con otro cuerpo **no** es 400: es 409 `IDEMPOTENCY_KEY_REUTILIZADA` (sección 1.9) | `Cuerpo inválido.` o `Cuerpo inválido. Revisa: campo1, campo2.`, o el mensaje de la validación |
+| 401 | Sin token, token vencido o revocado | `Inicia sesión de nuevo.` (en el login: `Credenciales inválidas`) |
+| 403 | El rol no permite la operación | `No tienes permiso para esta operación.` |
+| 404 | La cotización no existe **o no es tuya** (indistinguibles a propósito) | `Cotización no encontrada o no es tuya.` |
+| 404 | Ruta inexistente o parámetro con forma inválida (por ejemplo un `id` no entero en `/web/admin/lineas-negocio/{id}`) | `Recurso no encontrado.` |
+| 413 | Cuerpo demasiado grande | `El cuerpo de la petición es demasiado grande.` |
+| 415 | Falta `Content-Type: application/json` | `Cuerpo inválido: envía JSON con Content-Type: application/json.` |
+| 429 | Límite de peticiones | `Demasiadas peticiones. Intenta de nuevo en unos segundos.` |
+
+**`ErrorNegocio` (`{"error": {"codigo", "mensaje", "detalle?"}}`).** Todo error de negocio de `/web/*` que no sea de los casos de
+arriba. `detalle` es opcional y es un objeto: por lo general `{"motivo": "<código o texto>"}` más datos estructurados según el código
+(`errores`, `rutas`, `margen_sugerido`, `folio`, `agregado_en_nexo`...). Se omite si no hay nada. Mapeo HTTP del servidor:
+
+| HTTP | Códigos |
+|---|---|
+| 400 | Todos los códigos de negocio no listados abajo (`SOLICITUD_COSTEO_INVALIDA`, `RUTA_REQUERIDA`, `JUSTIFICACION_REQUERIDA`, `MERCANCIA_DESCONOCIDA`, `TRM_NO_DISPONIBLE`, `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA`...) |
+| 403 | `NEXO_SIN_PERMISO` |
+| 409 | `COSTEO_NO_REINTENTABLE`, `COSTEO_NO_LISTO`, `PDF_YA_GENERADO`, `TEXTOS_EDITADOS`, `RESULTADO_YA_DEFINIDO`, `COTIZACION_NO_ENTREGADA`, `USAR_RESULTADO_NEXO`, `SOLICITUD_NO_TRANSICIONABLE`, `CONFLICTO_CONCURRENCIA`, `PDF_YA_ENVIADO`, `LINEA_SIN_COTIZACION_NEXO`, `ESTADO_NO_PERMITE`, `REGIONAL_NO_ASIGNADA`, `IDEMPOTENCY_KEY_REUTILIZADA` |
+| 428 | `PRECONDICION_REQUERIDA` |
+| 503 | `CORREO_DESHABILITADO`, `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO`, `REGIONAL_NO_DISPONIBLE`, `CATALOGOS_FLETE_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `PDF_RENDER_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `CUBICADOR_RESPUESTA_INVALIDA`, `CUBICADOR_NO_AUTORIZADO`, `SERVICIO_OCUPADO` (con `Retry-After: 1`), `CUBICADOR_OCUPADO` (con `Retry-After: 10`) |
+
+Casos especiales:
+
+- `POST /web/licitaciones` con filas inválidas responde 400 `ReporteLicitacionInvalida`: `{"error": {...LICITACION_INVALIDA...}, "errores": [...]}`.
+  Los errores por fila van en `errores` de la raíz, no en `detalle`.
+- `POST /web/chat` responde **200** con `{"texto", "error": true, "codigo"}` cuando falla el asistente o el proveedor de IA. Solo
+  los errores de la petición (folio, sesión, cuerpo) son HTTP de error.
+- `GET /pdfs/{archivo}` responde los errores como JSON aunque se haya pedido un blob: leer el blob como texto y parsearlo.
+
+### 1.8 Concurrencia: `row_version`, `ETag`, `If-Match`, 412/428
+
+Las mutaciones de la etapa final usan concurrencia optimista sobre la **versión de negocio** de la cotización (`versionNegocio` en
+la base).
+
+| Pieza | Regla |
+|---|---|
+| `row_version` | Campo del cuerpo de `CosteoCotizacion` (`GET .../costeo` y respuestas de margen, conexos y recálculo de vehículos) y de `accion_propuesta` del asistente. Texto opaco (hoy un entero como `"7"`). |
+| `ETag` | Encabezado con el mismo valor entre comillas (`"7"`). Lo envían `GET .../costeo` y las respuestas 2xx de las mutaciones de la etapa final, de `re-solicitar`, de `/resultado`, de `.../costeo/pdf` y de los textos. |
+| `If-Match` | Encabezado de la petición con ese valor, con o sin comillas (también se acepta `W/"7"`). |
+| Cuándo cambia | Solo con cambios de negocio: margen, conexos, textos, re-solicitud, PDF, resultado, o cuando el polling trae un estado, un costo o un precio nuevos. No cambia con cada consulta. |
+
+Uso de `If-Match` por endpoint:
+
+| Endpoint | `If-Match` | Sin él | Si no coincide |
+|---|---|---|---|
+| `PUT .../costeo/margen` | Obligatorio | 428 `PRECONDICION_REQUERIDA` | 409 `CONFLICTO_CONCURRENCIA` |
+| `POST .../costeo/servicios-conexos` | Obligatorio | 428 | 409 |
+| `PUT .../costeo/servicios-conexos` | Obligatorio | 428 | 409 |
+| `POST .../costeo/re-solicitar` | Obligatorio | 428 | 409 |
+| `POST .../costeo/textos/redactar` | Obligatorio | 428 | 409 |
+| `PUT .../costeo/textos` | Obligatorio | 428 | 409 |
+| `POST .../rutas/{rutaId}/recalcular-vehiculos` | Obligatorio | 428 | 409 |
+| `POST .../costeo/pdf` | Opcional | Se genera igual | 409 |
+| `POST .../resultado` | Opcional, salvo en la **perdida sin costeo**, donde es obligatorio | 428 solo en la perdida sin costeo | 409 |
+| `POST .../enviar` | No se usa | — | El servidor confirma internamente; si la cotización cambió o el PDF quedó desactualizado, 409 `CONFLICTO_CONCURRENCIA` |
+
+- **No hay 412.** El servidor nunca responde 412 Precondition Failed: el conflicto es **409 `CONFLICTO_CONCURRENCIA`** y la falta del
+  encabezado es **428 `PRECONDICION_REQUERIDA`**. Un `If-Match` que no es un entero (por ejemplo `*`) siempre responde 409.
+- Ante 409 `CONFLICTO_CONCURRENCIA`: recargar `GET .../costeo`, mostrar el estado nuevo y pedir al comercial que repita la acción
+  (o, si venía del asistente, pedirle una propuesta nueva). Nada cambió en el servidor.
+- Ante 428: es un error de programación del frontend (falta el encabezado). Recargar el costeo y repetir con `If-Match`.
+- **De dónde sacar el `If-Match`:** del encabezado **`ETag` de la última respuesta** de esa cotización. El servidor lo expone por
+  CORS (sección 1.10), así que se lee con `HttpClient` y `observe: 'response'` (`respuesta.headers.get('ETag')`) y se reenvía tal
+  cual, con sus comillas. Así no hace falta volver a leer `GET .../costeo` después de `re-solicitar`, `/resultado`,
+  `.../costeo/pdf` o los textos, cuyas respuestas traen el `ETag` nuevo aunque su cuerpo no tenga `row_version`. En las respuestas
+  `CosteoCotizacion` el `row_version` del cuerpo tiene el mismo valor: cualquiera de los dos sirve.
+- En el 201 de `re-solicitar` (versión `-vN`) el `ETag` es el de la **cotización nueva**; la original no cambia.
+
+```typescript
+this.http.put<CosteoCotizacion>(url, cuerpo, { headers: { 'If-Match': etag }, observe: 'response' })
+  .subscribe(r => { this.etag = r.headers.get('ETag') ?? `"${r.body?.row_version}"`; this.costeo = r.body!; });
+```
+
+### 1.9 `Idempotency-Key`
+
+Encabezado opcional que protege del doble clic y de los reintentos por red.
+
+| Regla | Valor |
+|---|---|
+| Formato | Texto de 8 a 64 caracteres. Usar un UUID (`crypto.randomUUID()`). Fuera de ese largo: 400 `ErrorWeb` |
+| Alcance | Por usuario y por endpoint, durante 24 h |
+| Repetición con la misma clave y el mismo cuerpo | Devuelve la respuesta guardada de la primera petición sin volver a ejecutarla |
+| Misma clave con otro cuerpo | **409** `ErrorNegocio` con `codigo = IDEMPOTENCY_KEY_REUTILIZADA` y `mensaje = Esta Idempotency-Key ya se usó con otra petición: genera una clave nueva para cada intención.` (desde 2026-10-16, D4; antes era 400 `ErrorWeb`). No se ejecuta nada: generar una clave nueva para la nueva intención |
+| Dónde se acepta | `POST /web/solicitudes-costeo`, `POST .../costeo/servicios-conexos`, `POST .../costeo/re-solicitar` |
+| Cuándo generar una nueva | Una clave por **intención** del usuario (al pulsar Enviar o Confirmar). Reutilizarla tal cual en los reintentos de red de esa misma intención |
+
+Diferencias por endpoint:
+
+- **Captura (`POST /web/solicitudes-costeo`)**: toda respuesta 201 consume la clave, también la que quedó en `error_envio` (esa se
+  reintenta con `.../costeo/reintentar`, no repitiendo el POST). Si la primera petición confirmó el folio pero no alcanzó a registrar
+  el envío a NEXO, la repetición responde **409 `ESTADO_NO_PERMITE`** con `detalle.motivo = CAPTURA_EN_CURSO`, `detalle.folio` y
+  `detalle.solicitud_nexo_id`: no reintentar; llevar al comercial a "Mis cotizaciones" con ese folio.
+- **Re-solicitar y agregar conexos**: solo los éxitos consumen la clave. En `re-solicitar`, un 200 con `error_envio` (NEXO falló)
+  tampoco la consume: repetirla vuelve a ejecutar, y con el mismo `If-Match` responde `CONFLICTO_CONCURRENCIA` (recargar y reintentar).
+- La clave vive en la memoria del servidor: se pierde si el servidor se reinicia.
+
+### 1.10 CORS
+
+Configuración actual del servidor (código, `clsSeguridadHttp`):
+
+| Regla | Valor |
+|---|---|
+| Orígenes | Lista exacta por configuración (`https://host[:puerto]`, sin rutas ni comodines). El equipo de frontend debe entregar los dominios de ClientePro por ambiente, incluido el de desarrollo |
+| Métodos | `GET`, `POST`, `PUT` |
+| Encabezados permitidos en la petición | `Authorization`, `Content-Type`, `If-Match` e `Idempotency-Key` (lista explícita, sin comodín) |
+| Encabezados expuestos en la respuesta | `ETag`, `Location`, `Retry-After` y `Content-Disposition` (`Access-Control-Expose-Headers`) |
+| Credenciales | No (sin cookies; `withCredentials: false`) |
+| Caché del preflight | 10 minutos |
+
+Consecuencias:
+
+- Las mutaciones con `If-Match` y las peticiones con `Idempotency-Key` pasan el preflight desde el dominio de ClientePro.
+- El frontend puede leer:
+
+  | Encabezado | Dónde viene | Para qué |
+  |---|---|---|
+  | `ETag` | `GET .../costeo` y las respuestas 2xx de las mutaciones de la etapa final | El `If-Match` de la siguiente mutación (sección 1.8) |
+  | `Location` | 201 de `POST .../costeo/re-solicitar` (versión `-vN`) y 202 de `POST /web/cubicacion` | Ruta del costeo de la versión nueva (`/web/cotizaciones/{folio nuevo}/costeo`) o de la cubicación en proceso (`/web/cubicacion/{id}`) |
+  | `Retry-After` | 429 (segundos de la ventana), 503 `SERVICIO_OCUPADO` (`1`), 503 `CUBICADOR_OCUPADO` (`10`), 202 de `POST /web/cubicacion` y `GET /web/cubicacion/{id}` en proceso (`2`) | Cuánto esperar antes de reintentar o de volver a consultar |
+  | `Content-Disposition` | `GET /pdfs/{archivo}` y `GET /web/licitaciones/{folio}/excel` | Nombre del archivo descargado |
+
+- Los encabezados CORS también van en las respuestas de error (401, 409, 413, 428, 429, 503...): el frontend puede leer el cuerpo
+  y el estado de cualquier error.
+- No enviar **otros** encabezados propios (`X-Request-Id`, `X-Correlation-Id`, encabezados del canal cifrado de ClientePro,
+  `Cache-Control`...): el preflight falla y la petición no sale. Si el interceptor global de ClientePro agrega encabezados, excluir las
+  URL de Cotifly. La API no tiene id de correlación (sección 9).
+- `WWW-Authenticate` no está expuesto: el 401 se reconoce por el estado y el cuerpo (sección 2.7).
+
+### 1.11 Límites de tamaño y de peticiones
+
+| Límite | Valor | Respuesta |
+|---|---|---|
+| Cuerpo de cualquier petición a `/web/*` | 64 KB | 413 `ErrorWeb` |
+| Cuerpo de `/web/licitaciones*` | 12 MB | 413 `ErrorWeb` |
+| Archivo Excel de la licitación | 10 MB menos 64 KB (unos 9,9 MB) | 400 `ARCHIVO_DEMASIADO_GRANDE` |
+| `/api/auth/*` (login, refresh y logout juntos) | 30 peticiones por minuto por IP | 429 `ErrorWeb` |
+| `POST /web/chat` | 20 turnos por minuto por comercial | 429 `ErrorWeb` |
+| Resto de `/web/*` | Sin límite propio | — |
+
+Ante un 429, esperar los segundos de `Retry-After` (CORS lo expone) antes de reintentar; si no viene, esperar la ventana completa (hasta 60 s).
+
+### 1.12 Folio
+
+- Lo genera **siempre** el servidor: `PCN-[{nitCliente}-]{INICIALES}-DDMMAAAA-{NNN}[-vN]`, hasta 50 caracteres. Ejemplos:
+  `PCN-DG-25092026-001`, `PCN-9000472281-DG-25092026-002`, `PCN-9000472281-DG-25092026-002-v2`.
+- Hay folios heredados con otro formato (`PCN-23072026`). **No validar ni parsear el folio**: solo mostrarlo.
+- En las rutas, codificarlo con `encodeURIComponent`.
+- `-vN` marca una versión nueva (v2, v3...), creada con `re-solicitar`.
+
+---
+
+## 2. Autenticación y sesión
+
+### 2.1 Modelo
+
+Cotifly no tiene usuarios ni contraseñas propias. ClientePro ya autenticó a la persona; el frontend le pasa su identidad a Cotifly
+(`POST /api/auth/login-clientepro`) y Cotifly emite su propia sesión:
+
+- un **access token** JWT (`Authorization: Bearer <access>` en toda llamada a `/web/*` y `/pdfs/*`);
+- un **refresh token** opaco para renovarlo.
+
+En el servidor, el login revalida la identidad contra el almacén corporativo de usuarios, traduce sus roles corporativos a un rol de
+Cotifly y ubica o crea al usuario en Cotifly. Cualquier rechazo responde el mismo 401 genérico (anti-enumeración). La verificación se
+repite en cada refresh.
+
+### 2.2 Login con ClientePro
+
+`POST /api/auth/login-clientepro` con `{"idUsuario": "...", "nombreUsuario": "...", "roles": [...]}`. Solo `idUsuario` decide: el
+servidor lo busca primero como nombre de usuario corporativo y, si no aparece y es un entero, como id numérico. `nombreUsuario` y
+`roles` son informativos y **nunca** deciden el acceso. Detalle en la sección 4.1.
+
+### 2.3 JWT
+
+| Propiedad | Valor |
+|---|---|
+| Algoritmo | HS256 |
+| Vigencia del access | 60 minutos (configurable de 1 a 1440). Tolerancia de reloj del servidor: 30 s |
+| Claims propios | `sub` (UUID del usuario en Cotifly, el mismo `user.id`), `jti` (id del token), `username`, `rol` (`comercial` o `gerente_comercial`) |
+| Claims estándar | `iss`, `aud`, `exp` (y los de tiempo que agregue el emisor) |
+| Revocación | Por `jti` en el logout |
+
+El frontend puede decodificar el payload (sin validar la firma) para leer `exp`. El rol autoritativo es `user.rol` de la respuesta del
+login (o el claim `rol`), no los roles de ClientePro.
+
+### 2.4 Refresh y rotación
+
+| Regla | Consecuencia |
+|---|---|
+| El refresh vence a los **30 días del login** (configurable). La rotación **no** extiende la vigencia | A los 30 días hay que volver a hacer login SSO aunque se use a diario |
+| Se rota en cada uso: `POST /api/auth/refresh` devuelve un par nuevo y el refresh anterior deja de servir | Reemplazar **los dos** tokens con la respuesta |
+| Reusar un refresh ya rotado se trata como robo de sesión | 401. Hacer el refresh en *single-flight* (una sola petición en vuelo) y no compartir el refresh entre pestañas sin coordinarlo |
+
+Recomendación de almacenamiento: access en memoria (o `sessionStorage` si debe sobrevivir a un F5) y refresh en `sessionStorage`
+(una sesión por pestaña). Nunca en la URL, en logs ni en cookies. La API no usa cookies.
+
+### 2.5 Logout
+
+`POST /api/auth/logout` con `{"refresh": "..."}` en el cuerpo y, si lo hay, el `Authorization: Bearer` vigente. Responde **siempre
+204** (salvo 429). Revoca el refresh y el `jti` del access. Borrar los tokens locales aunque la llamada falle.
+
+### 2.6 Roles
+
+| Rol | Puede |
+|---|---|
+| `comercial` | Toda la consola del comercial (`/web/*`) sobre **sus** cotizaciones; su tablero (`/web/metricas/comercial`); descargar sus PDF |
+| `gerente_comercial` | Todo lo del comercial (también cotiza y ve lo suyo) **más**: listado de cotizaciones de su regional (`/web/cotizaciones/regional`), tablero de la regional (`/web/metricas/regional`), políticas de margen (`/web/admin/lineas-negocio`) y descargar los PDF de los comerciales de su regional |
+
+**No existe un rol `admin`.** La administración de márgenes es del `gerente_comercial`. Un usuario que no resuelve a uno de estos dos
+roles no puede iniciar sesión (401).
+
+Las acciones sobre una cotización (costeo, margen, conexos, PDF, envío, resultado, nueva versión) exigen ser el **dueño**: el gerente
+recibe 404 sobre una cotización de otro comercial, aunque sea de su regional. La única excepción es la descarga del PDF.
+
+### 2.7 Manejo de 401 y 403
+
+| Respuesta | Qué hacer |
+|---|---|
+| 401 `Inicia sesión de nuevo.` en `/web/*` o `/pdfs/*` | Refresh **una sola vez** (single-flight) y repetir la petición original |
+| 401 en `/api/auth/refresh` | Hacer login SSO silencioso (`login-clientepro` con la identidad de ClientePro) |
+| 401 `Credenciales inválidas` en `/api/auth/login-clientepro` | No reintentar. Mostrar "No tienes acceso a Cotifly con tu usuario de ClientePro" |
+| 403 `No tienes permiso para esta operación.` | No refrescar. Ocultar la opción para ese rol |
+| 503 `CUBICADOR_NO_AUTORIZADO` | **No** es la sesión del comercial (es la llave de Cotifly ante el cubicador). No cerrar sesión |
+
+Refresco proactivo recomendado: si faltan menos de 60 s para `exp`, refrescar antes de enviar.
+
+### 2.8 Sesión actual
+
+**No existe un endpoint `sesion/actual` ni `GET /me`.** Los datos de la sesión son los de la respuesta del login (o del refresh):
+`user.id`, `user.username`, `user.email`, `user.nombre_completo`, `user.rol` y `user.ubicacion` (regional). Guardarlos con los
+tokens. El único dato del usuario que se consulta aparte es el teléfono (`GET /web/usuario/telefono`), que se pide en el primer ingreso
+si viene en `null`.
+
+### 2.9 Secuencia
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CP as ClientePro (Angular)
+    participant API as API Cotifly
+    CP->>API: POST /api/auth/login-clientepro {idUsuario}
+    alt identidad y rol válidos
+        API-->>CP: 200 {access, refresh, user, debeCambiarPassword:false}
+        CP->>API: GET /web/usuario/telefono (Bearer)
+        API-->>CP: 200 {telefono} o {telefono:null}
+        opt telefono es null
+            CP->>API: PUT /web/usuario/telefono
+        end
+    else cualquier rechazo
+        API-->>CP: 401 {"error":"Credenciales inválidas"}
+    end
+    Note over CP,API: access vencido o revocado
+    CP->>API: GET /web/... (Bearer vencido)
+    API-->>CP: 401 Inicia sesión de nuevo.
+    CP->>API: POST /api/auth/refresh {refresh} (single-flight)
+    alt refresh vigente
+        API-->>CP: 200 par nuevo
+        CP->>API: repite la petición original
+    else refresh vencido o reusado
+        API-->>CP: 401
+        CP->>API: POST /api/auth/login-clientepro (SSO silencioso)
+    end
+```
+
+---
+
+## 3. Flujo de negocio de punta a punta
+
+### 3.1 Formulario por rutas
+
+1. **Cargar catálogos** (una vez por sesión, con caché en el cliente): `GET /web/catalogos-flete` (clases de viaje),
+   `GET /web/tipos-mercancia`, `GET /web/tipos-vehiculo`, `GET /web/tipos-carroceria`. El municipio se busca a demanda con
+   `GET /web/municipios?q=` y el cliente con `GET /web/clientes?q=`. Los conexos con `GET /web/servicios-conexos?q=`.
+2. **Capturar** la solicitud: cliente (NIT del buscador), línea de negocio, `deadline`, notas, moneda y una o varias **rutas**. Cada
+   ruta: origen y destino con **id de municipio + nombre**, condiciones del contenedor, horas, valor de la mercancía, peso,
+   **mercancías** (con `codigo_mercancia`, medidas en cm y peso por unidad en kg mayor que 0) y **servicios conexos** (id y cantidad).
+3. **Calcular cubicaje** (opcional, vista previa): `POST /web/cubicacion` con las mercancías de una ruta. Muestra los vehículos que
+   recomendaría el cubicador. No guarda nada. Si el cubicador tarda más de 8 s responde **202** y el resultado se consulta con
+   `GET /web/cubicacion/{id}` cada 2-3 s, con un tope de 4 minutos (sección 4.3.2).
+4. **Enviar a costeo**: `POST /web/solicitudes-costeo` con `Idempotency-Key`. Cotifly cubica cada ruta, guarda todo, envía a NEXO y
+   responde **201 aunque NEXO falle** (`estado_costeo = error_envio`). La respuesta trae `cubicacion[]` con los avisos del cubicador
+   por ruta: mostrarlos en ese momento. La petición es síncrona y puede tardar unos **3,6 minutos** por ruta y hasta unos **6,5 minutos**
+   en el peor caso (varias rutas con el cubicador lento): el cliente HTTP no debe cortar antes (sección 4.4.1).
+5. **Polling del costeo**: `GET /web/cotizaciones/{folio}/costeo` cada 15 a 30 s mientras la vista está abierta y el costeo no está
+   listo (ver 3.4). Si quedó en `error_envio`, ofrecer `POST .../costeo/reintentar`.
+6. **Margen y ajustes** (con `If-Match`): ajustar el margen de una ruta (`PUT .../costeo/margen`), agregar conexos
+   (`POST .../costeo/servicios-conexos`), quitar o cambiar cantidades de conexos (`PUT .../costeo/servicios-conexos`), redactar o
+   editar los textos del PDF (`POST .../costeo/textos/redactar`, `PUT .../costeo/textos`). Antes de enviar a NEXO se pueden recalcular
+   los camiones de una ruta (`POST .../rutas/{rutaId}/recalcular-vehiculos`). El asistente IA (`POST /web/chat`) puede **proponer**
+   estas acciones; el comercial las confirma.
+7. **PDF**: confirmar el teléfono y `POST .../costeo/pdf`. Descargar con `GET /pdfs/{archivo}` como blob. Cada ajuste posterior (antes
+   de enviar) deja `pdf_desactualizado = true` y hay que regenerarlo.
+8. **Enviar al cliente**: `GET /web/clientes/{nit}/destinatarios-previos`, `POST .../correo/vista-previa` y `POST .../enviar`.
+9. **Resultado**: `POST .../resultado` (`ganada` o `perdida`) cuando NEXO entregó la cotización.
+10. **Re-solicitar o versión nueva**: `POST .../costeo/re-solicitar`. En el mismo folio si el costeo venció, se entregó o falló el
+    envío (y no se ha enviado al cliente); como versión `-vN` si cambia la carga, si ya se envió o si tiene resultado.
+
+### 3.2 Secuencia
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Comercial
+    participant F as Frontend
+    participant A as API Cotifly
+    participant C as Cubicador
+    participant N as NEXO
+    F->>A: GET catálogos (flete, tipos de mercancía, vehículos, carrocerías)
+    U->>F: Busca cliente y municipios
+    F->>A: GET /web/clientes?q= y GET /web/municipios?q=
+    opt Calcular cubicaje (vista previa)
+        F->>A: POST /web/cubicacion
+        A->>C: recomendación de prueba (una llamada a la vez)
+        alt el cubicador responde en 8 s
+            A-->>F: 200 vehiculos[] (no se guarda)
+        else sigue calculando
+            A-->>F: 202 {id, estado: en_proceso} + Location
+            loop cada 2-3 s hasta completada o fallida
+                F->>A: GET /web/cubicacion/{id}
+                A-->>F: 200 {estado, resultado?, error?}
+            end
+        end
+    end
+    F->>A: POST /web/solicitudes-costeo (Idempotency-Key)
+    A->>C: recomendación por ruta
+    A->>N: alta de la solicitud (una línea por camión)
+    A-->>F: 201 CotizacionResumen + cubicacion[]
+    loop cada 15 a 30 s mientras no hay precio
+        F->>A: GET /web/cotizaciones/{folio}/costeo
+        A-->>F: estado_costeo, precio_final, rutas[], row_version
+    end
+    U->>F: Ajusta margen o conexos
+    F->>A: PUT .../costeo/margen (If-Match)
+    A-->>F: 200 CosteoCotizacion (row_version nuevo)
+    F->>A: POST .../costeo/pdf (If-Match opcional)
+    A-->>F: 201 {pdf_url}
+    F->>A: GET /pdfs/{archivo} (blob)
+    F->>A: POST .../correo/vista-previa y POST .../enviar
+    A-->>F: 200 {enviado:true}
+    U->>F: Marca ganada o perdida
+    F->>A: POST .../resultado (If-Match)
+    A->>N: resultado
+    A-->>F: 200 CotizacionResumen
+    opt Cambió la carga o hay que rehacerla
+        F->>A: POST .../costeo/re-solicitar (If-Match, Idempotency-Key)
+        A-->>F: 200 mismo folio o 201 versión -vN
+    end
+```
+
+### 3.3 Estados del costeo (`estado_costeo`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> pendiente_envio: captura guardada
+    pendiente_envio --> pendiente_costeo: NEXO la recibió, falta flete
+    pendiente_envio --> autocosteo: NEXO la costeó en la misma petición
+    pendiente_envio --> error_envio: NEXO no la recibió
+    error_envio --> pendiente_costeo: reintentar o re-solicitar
+    error_envio --> autocosteo: reintentar con autocosteo
+    pendiente_costeo --> autocosteo: todas las líneas con flete
+    pendiente_costeo --> entregada: NEXO la entregó
+    pendiente_costeo --> descartada: NEXO la descartó
+    pendiente_costeo --> costeo_vencido: 72 h sin costeo
+    autocosteo --> entregada: NEXO la entrega (o al marcar el resultado)
+    autocosteo --> pendiente_costeo: el costeo cambió en NEXO
+    autocosteo --> descartada
+    entregada --> pendiente_costeo: re-solicitar (mismo folio)
+    costeo_vencido --> pendiente_costeo: re-solicitar (mismo folio)
+```
+
+`null` = cotización antigua del chat (no pasa por NEXO). La versión nueva (`-vN`) arranca su propio ciclo en `pendiente_envio`.
+
+| `estado_costeo` | Etiqueta sugerida | Precio | Acciones habilitadas | Polling |
+|---|---|---|---|---|
+| `null` | "Chat" | `precio_final` | PDF, Enviar, resultado por `/seguimiento` | No |
+| `pendiente_envio` | "Enviando a NEXO" (licitación cubicándose: "Calculando vehículos") | — | Reintentar envío pasados unos minutos (no mientras la licitación se cubica); recalcular vehículos | Sí |
+| `error_envio` | "No llegó a NEXO" + `motivo_estado_costeo` | — | Reintentar o re-solicitar (no si el motivo empieza por "Rechazo definitivo de Nexo"); perdida solo en Cotifly | No |
+| `pendiente_costeo` | "En costeo" | "Pendiente" | Perdida solo en Cotifly; ajustar el margen de una ruta que ya tenga precio | Sí |
+| `autocosteo` | "Costeada" | `precio_final` | Margen, conexos, textos, PDF, enviar | Hasta tener `precio_final` |
+| `entregada` | "Entregada" | `precio_final` | Margen, conexos, textos, PDF, enviar, resultado, re-solicitar | No (solo si `precio_final` es `null`) |
+| `descartada` | "Descartada por NEXO" | — | Resultado por `/seguimiento` (solo en Cotifly) | No |
+| `costeo_vencido` | "Costeo vencido" + motivo | — | Re-solicitar; resultado por `/seguimiento` | No |
+
+### 3.4 Reglas de polling
+
+- **Costeo** (`GET /web/cotizaciones/{folio}/costeo`, o la lista): cada **15 a 30 s**, solo con la vista abierta y la pestaña visible
+  (`document.visibilityState`), mientras `estado_costeo` sea `pendiente_envio` o `pendiente_costeo`, o sea `autocosteo`/`entregada`
+  con `precio_final` en `null` **y** sin `motivo_estado_costeo`. Detenerlo en `error_envio`, `descartada`, `costeo_vencido`, al tener
+  `precio_final`, o tras una perdida solo en Cotifly. El servidor consulta a NEXO con un espaciado que va de 5 s a 15 min durante
+  72 h: consultar más seguido no acelera nada.
+- `autocosteo` o `entregada` **con** `precio_final` en `null` y **con** `motivo_estado_costeo` significa que falta el margen: no esperar
+  que el precio llegue solo; mostrar el motivo.
+- **Cubicación de una licitación** (`GET /web/licitaciones/{folio}`): cada **3 a 5 s** mientras `progreso_cubicacion.estado` sea
+  `en_curso`. Después, pasar al ritmo del costeo.
+- **"Calcular cubicaje" en proceso** (`GET /web/cubicacion/{id}`, tras un 202): cada **2-3 s** (el `Retry-After`) mientras `estado` sea
+  `en_proceso`, con un tope de **4 minutos** (una cubicación puede esperar 60 s el cupo del cubicador, 90 s su respuesta y 65 s la
+  reconsulta: unos 217 s con la configuración por defecto). Detenerlo con `completada`, `fallida` o 404, o si el comercial cambia la carga.
+- Usar el `row_version` de cada respuesta del polling como `If-Match` de la siguiente mutación.
+
+### 3.5 Ciclo comercial (envío y resultado)
+
+```mermaid
+stateDiagram-v2
+    [*] --> sin_enviar
+    sin_enviar --> enviada: POST .../enviar
+    enviada --> reenviada: segundo envío
+    reenviada --> reenviada: envíos siguientes
+    state "resultado (ganada)" as R
+    sin_enviar --> R: POST .../resultado
+    enviada --> R
+    reenviada --> R
+```
+
+- `estado_envio`: `sin_enviar` → `enviada` → `reenviada`.
+- `ganada`: `null` (sin resultado), `true` (ganada, `motivo_rechazo = "No aplica"`) o `false` (perdida, `motivo_rechazo` = el motivo).
+- Una vez enviada o con resultado, margen, conexos, textos, PDF y re-solicitud en el mismo folio responden **409 `PDF_YA_ENVIADO`**:
+  el cambio se hace en una versión nueva (`re-solicitar` con `nueva_version: true`, cuyo cuerpo viene en `detalle`).
+
+### 3.6 Licitación por Excel
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant F as Frontend
+    participant A as API Cotifly
+    participant C as Cubicador
+    participant N as NEXO
+    F->>A: POST /web/licitaciones/analizar-excel (multipart: archivo)
+    A-->>F: 200 hojas, encabezados, filas, filas_excel y mercancias sugeridas
+    Note over F: El comercial mapea columnas y confirma los códigos de mercancía sugeridos
+    F->>A: POST /web/licitaciones (multipart: licitacion JSON + archivo)
+    alt filas inválidas
+        A-->>F: 400 LICITACION_INVALIDA con errores[] por fila
+    else válida y con cubicador
+        A-->>F: 201 Licitacion (pendiente_envio, progreso_cubicacion en_curso)
+        loop cada 3 a 5 s mientras en_curso
+            A->>C: recomendación ruta por ruta (segundo plano)
+            F->>A: GET /web/licitaciones/{folio}
+            A-->>F: progreso_cubicacion, lineas[].camiones
+        end
+        alt completa
+            A->>N: envía la licitación completa
+        else con_fallas
+            F->>A: POST /web/licitaciones/{folio}/cubicacion/reintentar ({usar_respaldo?})
+        end
+    end
+    F->>A: GET /web/licitaciones/{folio}/excel (xlsx con precios)
+    F->>A: POST /web/cotizaciones/{folio}/costeo/pdf (PDF del pliego)
+```
+
+- Sin cubicador configurado, la licitación se envía a NEXO de una vez con un camión sin vehículo por ruta y no trae
+  `progreso_cubicacion`.
+- Con una ruta `fallida`, la licitación **no sale a NEXO** hasta reintentar. `usar_respaldo: true` acepta con un camión sin vehículo
+  solo las rutas que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`); un rechazo
+  de la mercancía o de las medidas no se acepta con respaldo.
+- Las licitaciones no admiten conexos por `POST .../costeo/servicios-conexos` (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
+
+---
+
+## 4. Referencia de endpoints
+
+Convenciones de esta sección:
+
+- **Rol "ambos"** = `comercial` o `gerente_comercial`. "Dueño" = solo el comercial que creó la cotización (una ajena responde 404,
+  igual que una inexistente).
+- Todo `/web/*` y `/pdfs/*` exige `Authorization: Bearer <access>` y responde **401** `ErrorWeb` sin token o con uno vencido. Ese 401
+  no se repite en cada tabla.
+- Todo `/web/*` con cuerpo exige `Content-Type: application/json` (salvo los multipart de licitaciones). Sin él: 415. Un cuerpo de
+  más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
+- `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
+
+Resumen (46 endpoints):
+
+| # | Método y ruta | Rol | Módulo |
+|---|---|---|---|
+| 1 | `POST /api/auth/login-clientepro` | Público | Autenticación |
+| 2 | `POST /api/auth/refresh` | Público | Autenticación |
+| 3 | `POST /api/auth/logout` | Público (Bearer opcional) | Autenticación |
+| 4 | `GET /web/catalogos-flete` | Ambos | Catálogos |
+| 5 | `GET /web/municipios` | Ambos | Catálogos |
+| 6 | `GET /web/clientes` | Ambos | Catálogos |
+| 7 | `GET /web/tipos-mercancia` | Ambos | Catálogos |
+| 8 | `GET /web/tipos-carroceria` | Ambos | Catálogos |
+| 9 | `GET /web/tipos-vehiculo` | Ambos | Catálogos |
+| 10 | `GET /web/servicios-conexos` | Ambos | Catálogos |
+| 11 | `POST /web/cubicacion` | Ambos | Cubicación |
+| 12 | `GET /web/cubicacion/{id}` | Ambos (dueño) | Cubicación |
+| 13 | `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Ambos (dueño) | Cubicación |
+| 14 | `POST /web/solicitudes-costeo` | Ambos | Captura y costeo |
+| 15 | `POST /web/cotizaciones/{folio}/costeo/reintentar` | Ambos (dueño) | Captura y costeo |
+| 16 | `GET /web/cotizaciones/{folio}/costeo` | Ambos (dueño) | Captura y costeo |
+| 17 | `PUT /web/cotizaciones/{folio}/costeo/margen` | Ambos (dueño) | Captura y costeo |
+| 18 | `POST /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | Captura y costeo |
+| 19 | `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos` | Ambos (dueño) | Captura y costeo |
+| 20 | `POST /web/cotizaciones/{folio}/costeo/re-solicitar` | Ambos (dueño) | Captura y costeo |
+| 21 | `POST /web/cotizaciones/{folio}/costeo/textos/redactar` | Ambos (dueño) | Captura y costeo |
+| 22 | `PUT /web/cotizaciones/{folio}/costeo/textos` | Ambos (dueño) | Captura y costeo |
+| 23 | `GET /web/mis-cotizaciones` | Ambos | Cotizaciones |
+| 24 | `POST /web/cotizaciones/{folio}/resultado` | Ambos (dueño) | Cotizaciones |
+| 25 | `POST /web/cotizaciones/{folio}/seguimiento` (obsoleto) | Ambos (dueño) | Cotizaciones |
+| 26 | `GET /web/cotizaciones/{id}/nueva-version` | Ambos (dueño) | Cotizaciones |
+| 27 | `POST /web/licitaciones/analizar-excel` | Ambos | Licitaciones |
+| 28 | `POST /web/licitaciones` | Ambos | Licitaciones |
+| 29 | `GET /web/licitaciones/{folio}` | Ambos (dueño) | Licitaciones |
+| 30 | `POST /web/licitaciones/{folio}/cubicacion/reintentar` | Ambos (dueño) | Licitaciones |
+| 31 | `GET /web/licitaciones/{folio}/excel` | Ambos (dueño) | Licitaciones |
+| 32 | `POST /web/cotizaciones/{folio}/costeo/pdf` | Ambos (dueño) | PDF |
+| 33 | `GET /pdfs/{archivo}` | Dueño o gerente de su regional | PDF |
+| 34 | `GET /web/clientes/{nit}/destinatarios-previos` | Ambos | Correo |
+| 35 | `POST /web/cotizaciones/{folio}/correo/vista-previa` | Ambos (dueño) | Correo |
+| 36 | `POST /web/cotizaciones/{folio}/enviar` | Ambos (dueño) | Correo |
+| 37 | `POST /web/chat` | Ambos | Asistente IA |
+| 38 | `GET /web/metricas/comercial` | Ambos | Métricas |
+| 39 | `GET /web/metricas/regional` | `gerente_comercial` | Regional |
+| 40 | `GET /web/cotizaciones/regional` | `gerente_comercial` | Regional |
+| 41 | `GET /web/admin/lineas-negocio` | `gerente_comercial` | Administración |
+| 42 | `PUT /web/admin/lineas-negocio/{id}` | `gerente_comercial` | Administración |
+| 43 | `GET /web/usuario/telefono` | Ambos | Usuario |
+| 44 | `PUT /web/usuario/telefono` | Ambos | Usuario |
+| 45 | `GET /health` | Público | Health |
+| 46 | `GET /health/ready` | Público | Health |
+
+Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
+
+### 4.1 Autenticación
+
+#### 4.1.1 `POST /api/auth/login-clientepro`
+
+- **Rol:** público. Límite de `/api/auth/*`. **camelCase.**
+- **Headers:** `Content-Type: application/json`.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `idUsuario` | string | Sí | 1 a 100 caracteres. Identidad que el servidor revalida (nombre de usuario corporativo o id numérico) |
+| `nombreUsuario` | string o null | No | Hasta 200. Informativo |
+| `roles` | string[] o null | No | Informativo. Nunca decide el acceso |
+
+```json
+{ "idUsuario": "APEREZ", "nombreUsuario": "Ana Pérez", "roles": ["32"] }
+```
+
+Respuesta **200** (`LoginResponse`):
+
+```json
+{
+  "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh": "fI1FJv7TFUPtgck3URCDw-VCYq0m3u9yY8x0l3yq1sE",
+  "user": {
+    "id": "968c9f61-b1f1-44a8-bb23-7a3d31d7d602",
+    "username": "APEREZ",
+    "email": "aperez@empresa.com",
+    "nombre_completo": "Ana Pérez",
+    "rol": "comercial",
+    "ubicacion": "ANTIOQUIA"
+  },
+  "debeCambiarPassword": false
+}
+```
+
+| HTTP | Cuerpo | UI |
+|---|---|---|
+| 200 | `LoginResponse` | Guardar los tokens y `user`. Si `user.ubicacion` es `null`, el gerente no tiene regional (sus vistas regionales responderán 409) |
+| 400 | `ErrorWeb` (falta `idUsuario`, JSON inválido) | Error de programación |
+| 401 | `{"error":"Credenciales inválidas"}` (cualquier rechazo: usuario inexistente, sin rol autorizado, almacén caído) | "No tienes acceso a Cotifly". No reintentar en bucle |
+| 429 | `ErrorWeb` | Esperar 60 s |
+
+#### 4.1.2 `POST /api/auth/refresh`
+
+- **Rol:** público (no requiere Bearer). Límite de `/api/auth/*`.
+- **Cuerpo:** `{"refresh": "<refresh>"}` (obligatorio, texto no vacío; un cuerpo de más de 4096 bytes se trata como ausente).
+
+| HTTP | Cuerpo | UI |
+|---|---|---|
+| 200 | `LoginResponse` con un par **nuevo** | Reemplazar access **y** refresh |
+| 401 | `{"error":"Inicia sesión de nuevo."}` (vencido, revocado, ya rotado, cuerpo inválido o la revalidación falló) | Login SSO silencioso |
+| 429 | `ErrorWeb` | Esperar |
+
+#### 4.1.3 `POST /api/auth/logout`
+
+- **Rol:** público. **Headers:** `Authorization: Bearer <access>` opcional (si viene y es válido, se revoca su `jti`).
+- **Cuerpo opcional:** `{"refresh": "<refresh>"}`.
+
+| HTTP | UI |
+|---|---|
+| 204 | Siempre (exista o no el token). Borrar los tokens locales |
+| 429 | Borrar los tokens igual |
+
+### 4.2 Catálogos
+
+#### 4.2.1 `GET /web/catalogos-flete`
+
+Opciones del formulario a partir de los catálogos maestros de NEXO. El servidor los guarda en caché (30 min) y, si NEXO cae, usa una
+copia de hasta 24 h.
+
+- **Rol:** ambos. **Parámetros:** ninguno.
+
+```json
+{
+  "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" } ],
+  "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" } ],
+  "clases_viaje": [
+    { "valor": "Contenedor", "etiqueta": "Contenedor" },
+    { "valor": "Cupo", "etiqueta": "Cupo" },
+    { "valor": "Carga Suelta", "etiqueta": "Carga Suelta" },
+    { "valor": "Extradimensionado", "etiqueta": "Extradimensionado" }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CatalogosFlete` | Mostrar `etiqueta`, enviar `valor`. Hoy el formulario solo usa `clases_viaje` (el vehículo y la carrocería los define el cubicador) |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE` | Deshabilitar los selects y ofrecer Reintentar. **Nunca** ofrecer texto libre |
+
+Notas: `tipologia` (7 valores fijos) y `clase_contenedor` (códigos fijos) no vienen aquí; ver la sección 5.4.
+
+#### 4.2.2 `GET /web/municipios`
+
+Buscador de ciudades para origen, destino, devolución y levante. De aquí salen los `*_municipio_id`.
+
+- **Rol:** ambos.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `q` | query | No | Texto dentro del nombre del municipio, sin tildes ni mayúsculas. Se recorta a 100 caracteres |
+| `departamento` | query | No | Departamento exacto, sin tildes ni mayúsculas |
+
+Con `q` o `departamento`: búsqueda en NEXO, solo Colombia, ordenada por nombre, **máximo 50 filas**. Sin filtros: el catálogo completo
+(sin paginar).
+
+```json
+[
+  { "id": 76892, "codigo_dane": "76892", "municipio": "YUMBO", "departamento": "VALLE DEL CAUCA", "pais": "COLOMBIA" },
+  { "id": 11001, "codigo_dane": "11001", "municipio": "BOGOTA, D.C.", "departamento": "BOGOTA, D.C.", "pais": "COLOMBIA" }
+]
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `Municipio[]` (vacío si no hay coincidencias) | Mostrar "Municipio, Departamento" (hay nombres repetidos entre departamentos). Guardar el `id` y el `municipio` elegidos |
+| 503 | `MUNICIPIOS_NO_DISPONIBLE` | Deshabilitar el buscador y ofrecer Reintentar. Reintentar es seguro (no consume cupo en NEXO). **Antes era 400**: tratar 400 y 503 igual mientras conviva el frontend anterior |
+
+UX: autocompletado con debounce (300 ms), desde 3 letras y cancelando la búsqueda anterior (`switchMap`).
+
+#### 4.2.3 `GET /web/clientes`
+
+Buscador de clientes y prospectos del catálogo de NEXO.
+
+- **Rol:** ambos.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `q` | query | Sí | Nombre o NIT tal como lo escribió el comercial (mínimo 1 carácter) |
+
+```json
+{
+  "exacta": false,
+  "candidatos": [
+    { "nit_cliente": "9000472281", "nombre": "ALMACENES EXITO S.A.", "origen_cliente": "cliente", "bp": "1000234" },
+    { "nit_cliente": "9014433221", "nombre": "EXITO LOGISTICA SAS", "origen_cliente": "prospecto", "bp": null }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `ResultadoBusquedaClientes` | `candidatos: []` = sin coincidencias (no es error). `exacta = true` solo si hay un único candidato. **Nunca mostrar `bp`**. El NIT sale solo de `candidatos`, nunca del texto buscado. Etiqueta "Prospecto" si `origen_cliente = prospecto` |
+| 400 | `ErrorWeb` `Falta el texto de búsqueda (q).` | No llamar sin texto |
+| 400 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | "Buscador de clientes no disponible" con Reintentar |
+
+UX: debounce de 300 ms, desde 3 letras. Cada búsqueda llega a NEXO (puede tardar varios segundos). Un prospecto sin BP puede quedar en
+`error_envio` al enviar a costeo: advertirlo.
+
+#### 4.2.4 `GET /web/tipos-mercancia`
+
+Catálogo del cubicador para el desplegable de mercancías. Ordenado por nombre, incluye inactivos.
+
+- **Rol:** ambos.
+
+```json
+[
+  { "codigo": "CAFE_EN_ESTIBAS", "nombre": "Estiba de café", "categoria": "GENERAL", "cubicable": true, "condicionada_cubicacion": false, "comentario_condicion": null, "activo": true, "id": "6f1c2a52-8d1e-4f5b-9a63-0c1b2d3e4f50" },
+  { "codigo": "QUIMICOS", "nombre": "Tambor de químicos", "categoria": "PELIGROSA", "cubicable": true, "condicionada_cubicacion": true, "comentario_condicion": "Requiere aprobación de AdminTarifas", "activo": true, "id": null }
+]
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `TipoMercancia[]` | Ofrecer solo `activo = true` y `cubicable = true`. Si `condicionada_cubicacion = true`, avisar con `comentario_condicion` (la ruta irá a la Mesa de Costeo). Enviar `codigo` en `codigo_mercancia`. `id` está obsoleto |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | El formulario puede seguir con los tipos que ya conoce; sin cubicador la captura acepta mercancías sin código |
+
+#### 4.2.5 `GET /web/tipos-carroceria`
+
+- **Rol:** ambos.
+
+```json
+[ { "codigo": "FURGON", "nombre": "Furgón", "activo": true }, { "codigo": "ESTACAS", "nombre": "Estacas", "activo": true } ]
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `TipoCarroceria[]` | Para mostrar el nombre de `carroceria` de los camiones |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+
+#### 4.2.6 `GET /web/tipos-vehiculo`
+
+Catálogo canónico de vehículos del cubicador. Cotifly no guarda el nombre del vehículo: la pantalla lo saca de aquí por el código.
+
+- **Rol:** ambos.
+
+```json
+[ { "codigo": "3S3", "nombre": "Tractocamión 3S3", "carrocerias": ["FURGON", "ESTACAS"], "activo": true } ]
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `TipoVehiculo[]` | Traducir `tipo_vehiculo` de los camiones a `nombre` (comparar códigos sin distinguir mayúsculas) |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el código |
+
+#### 4.2.7 `GET /web/servicios-conexos`
+
+Catálogo de servicios conexos de NEXO, **sin costos**. Solo servicios activos.
+
+- **Rol:** ambos.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `q` | query | No | Texto en el nombre o el código. Hasta 100 caracteres. Vacío = todos |
+| `categoria` | query | No | `logistico` o `adicional`. Hasta 20 caracteres |
+| `page` | query | No | Entero desde 1. Por defecto 1 |
+| `page_size` | query | No | Entero de 1 a 50. Por defecto 20 |
+
+```json
+{
+  "total": 1,
+  "page": 1,
+  "page_size": 20,
+  "items": [
+    { "id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", "codigo": "ALM-01", "nombre": "Almacenamiento", "categoria": "logistico", "unidad": "Viaje",
+      "origen": null, "destino": null, "puerto": null, "ruta": null, "tipo_maquina": null, "vigencia": null }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `PaginaServiciosConexos` (puede venir vacía) | Usar `id` como `id_servicio_conexo` (captura) o `servicio_id` (agregar) |
+| 400 | `ErrorWeb` | Filtro fuera de límites |
+| 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO: avisar a soporte |
+| 503 | `NEXO_NO_DISPONIBLE` | Reintentar |
+
+### 4.3 Cubicación
+
+#### 4.3.1 `POST /web/cubicacion` ("Calcular cubicaje")
+
+Vista previa: pregunta al cubicador qué vehículos haría falta para unos bultos. **No guarda nada** y no tiene respaldo.
+
+- **Rol:** ambos. **Headers:** `Content-Type: application/json`.
+
+Cuerpo `CubicacionRequest`:
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `items` | `ItemCubicacion[]` | Sí | Al menos uno (si no, 400 `ITEMS_REQUERIDOS`). La suma de `cantidad` no puede pasar de 10.000 (400 `CUBICACION_DEMASIADO_GRANDE`) |
+| `items[].codigo_mercancia` | string o null | Uno de los dos | Código de `GET /web/tipos-mercancia`. Gana sobre `descripcion` |
+| `items[].descripcion` | string o null | Uno de los dos | Texto libre mientras no haya desplegable: el servidor lo resuelve al tipo activo más parecido; si no hay uno claro, 400 `MERCANCIA_DESCONOCIDA` |
+| `items[].cantidad` | entero | Sí | Bultos idénticos, de 1 a 100.000 (si no, 400 `POSICION_INVALIDA` con `detalle.item` y `detalle.campo = "cantidad"`) |
+| `items[].largo_cm`, `ancho_cm`, `alto_cm` | número | Sí | Centímetros, de 0,1 a 999.999 con hasta 2 decimales (si no, 400 `DIMENSIONES_INVALIDAS` con `detalle.item` y `detalle.campo`) |
+| `items[].peso_kg` | número | Sí | Peso **por bulto** en kg, **mayor que 0** (si no, 400 `DIMENSIONES_INVALIDAS` con `detalle.item` y `detalle.campo = "peso_kg"`) |
+| `clase_viaje` | string o null | No | Preferencia para el cubicador (valor de `clases_viaje`) |
+
+D1 (E2E 2026-10-16): las medidas, el peso y la cantidad se validan con **las mismas reglas de la captura** y **antes** de llamar al
+cubicador (después de comprobar que está configurado). `detalle.item` es el índice **base 0** del ítem en `items` y `detalle.campo` el
+campo (`largo_cm`, `ancho_cm`, `alto_cm`, `peso_kg` o `cantidad`): marcar ese campo de ese ítem. Ejemplo de error **400**:
+
+```json
+{
+  "error": {
+    "codigo": "DIMENSIONES_INVALIDAS",
+    "mensaje": "Mercancía 2: el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.",
+    "detalle": { "item": 1, "campo": "peso_kg" }
+  }
+}
+```
+
+Ejemplo de petición:
+
+```json
+{
+  "clase_viaje": "Contenedor",
+  "items": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1000 },
+    { "descripcion": "Bobinas de acero", "cantidad": 2, "largo_cm": 180, "ancho_cm": 180, "alto_cm": 120, "peso_kg": 2250.25 }
+  ]
+}
+```
+
+Respuesta **200** (`ResultadoCubicacion`), con vehículos:
+
+```json
+{
+  "resultado": "ASIGNADO",
+  "motivo_sin_seleccion": null,
+  "condicionada": false,
+  "vehiculos": [
+    {
+      "codigo_vehiculo": "3S3", "nombre_vehiculo": "Tractocamión 3S3", "codigo_carroceria": "FURGON", "nombre_carroceria": "Furgón",
+      "peso_total_kg": 20000, "volumen_total_m3": 36, "porcentaje_llenado_volumen": 46.15, "porcentaje_llenado_peso": 58.82,
+      "numero_vehiculo": 1, "alerta_bajo_llenado": false, "heterogenea": false,
+      "mercancias": [
+        { "indice_posicion": 0, "id_tipo_mercancia": "2B21A9C4-7E55-4D7B-9A10-3C1F0E2D4B6A", "codigo_mercancia": "CAFE_EN_ESTIBAS", "cantidad": 20, "peso_kg": 20000, "volumen_m3": 36 }
+      ]
+    },
+    {
+      "codigo_vehiculo": "C2", "nombre_vehiculo": "Sencillo C2", "codigo_carroceria": "ESTACAS", "nombre_carroceria": "Estacas",
+      "peso_total_kg": 4500.5, "volumen_total_m3": 7.78, "porcentaje_llenado_volumen": 25.5, "porcentaje_llenado_peso": 50.01,
+      "numero_vehiculo": 2, "alerta_bajo_llenado": true, "heterogenea": false,
+      "mercancias": [
+        { "indice_posicion": 1, "id_tipo_mercancia": null, "codigo_mercancia": "BOBINAS_ACERO", "cantidad": 2, "peso_kg": 4500.5, "volumen_m3": 7.78 }
+      ]
+    }
+  ],
+  "mercancias_condicionadas": [],
+  "advertencias": [ { "codigo": "REFRIGERADO", "mensaje": "La mercancía refrigerada va en FURGON: confirmar el equipo de frío." } ],
+  "extradimension": null,
+  "mercancias": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre": null, "descripcion": null, "sugerida": false },
+    { "codigo_mercancia": "BOBINAS_ACERO", "nombre": "Bobinas de acero", "descripcion": "Bobinas de acero", "sugerida": true }
+  ],
+  "mensaje_sin_seleccion": null
+}
+```
+
+Respuesta **200** sin selección automática (es válida, no es un error):
+
+```json
+{
+  "resultado": "SIN_SELECCION_AUTOMATICA",
+  "motivo_sin_seleccion": "EXTRADIMENSIONADO",
+  "condicionada": false,
+  "vehiculos": [],
+  "mercancias_condicionadas": [],
+  "advertencias": [ { "codigo": null, "mensaje": "1 pieza(s) exceden las medidas estándar." } ],
+  "extradimension": {
+    "hay_extradimension": true,
+    "medidas_estandar": { "largo_max_cm": 1220, "ancho_max_cm": 260, "alto_max_cm": 300, "peso_max_kg": 34000 },
+    "piezas": [ { "indice_posicion": 0, "id_tipo_mercancia": "9F2C4A6E-1D3B-4F5A-8C7E-0B1D2F3A4C5E", "codigo_mercancia": "BOBINAS_ACERO", "excesos": ["alto 320.0 cm > 300.0 cm"] } ]
+  },
+  "mercancias": [ { "codigo_mercancia": "BOBINAS_ACERO", "nombre": null, "descripcion": null, "sugerida": false } ],
+  "mensaje_sin_seleccion": "Hay piezas que exceden las medidas estándar: la Mesa de Costeo escoge el vehículo."
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `ResultadoCubicacion` | Una fila por vehículo (pueden ser de tipos distintos). Con `SIN_SELECCION_AUTOMATICA`, mostrar `mensaje_sin_seleccion` tal cual. Con `condicionada = true`, mostrar `mercancias_condicionadas[].comentario`. Con `mercancias[].sugerida = true`, pedir que el comercial confirme la mercancía. Si se agrupa `vehiculos[].mercancias` por código, **sumar** |
+| 400 | `ITEMS_REQUERIDOS` | Deshabilitar el botón sin bultos |
+| 400 | `MERCANCIA_DESCONOCIDA` (`detalle.item` base 0 y `detalle.descripcion` cuando aplica) | Pedir que escoja la mercancía del catálogo en ese ítem |
+| 400 | `DIMENSIONES_INVALIDAS` (`detalle.item` y `detalle.campo`: medida fuera de 0,1 a 999.999 o peso ≤ 0) | Marcar ese campo del ítem. Cotifly no llamó al cubicador |
+| 400 | `POSICION_INVALIDA` (`detalle.item`, `detalle.campo = "cantidad"`) | Marcar la cantidad del ítem (1 a 100.000) |
+| 400 | `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` (con `detalle.item` si el cubicador señala una mercancía) o `CUBICADOR_PETICION_RECHAZADA` (si no la señala) | El cubicador respondió 422 (su validación de esquema). Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA`. Mostrar `mensaje` y pedir que revise la carga; no es una caída, no ofrecer Reintentar sin cambios |
+| 400 | `MERCANCIA_NO_CUBICABLE`, `MERCANCIAS_REQUERIDAS` | Mostrar `mensaje` |
+| 400 | `CUBICACION_DEMASIADO_GRANDE` | "Parte la carga en varias rutas" |
+| 202 | `CubicacionEnProceso` `{id, estado: "en_proceso", consultar_en}` con `Location` y `Retry-After: 2` | El cubicador no terminó en 8 s: mostrar "Calculando…" y consultar `GET /web/cubicacion/{id}` (4.3.2) |
+| 503 | `CUBICADOR_NO_DISPONIBLE` | Mostrar el mensaje y Reintentar. También llega, con el mensaje "Cotifly se está reiniciando…", si la petición entra mientras el servidor se apaga (nunca un 500) |
+| 503 | `CUBICADOR_OCUPADO` (con `Retry-After: 10`) | El cubicador está calculando otras cargas (Cotifly hace una llamada a la vez) o hay demasiadas cubicaciones en curso: esperar el `Retry-After` y Reintentar |
+| 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | "Avisa a soporte". No cerrar sesión |
+
+Respuesta **202** (desde 2026-10-19; el motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API mientras calcula). Los 400
+de los ítems siempre son síncronos; el cálculo sigue en el servidor aunque el navegador corte la conexión:
+
+```json
+{ "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90", "estado": "en_proceso", "consultar_en": "/web/cubicacion/7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90" }
+```
+
+Notas: `sugerencia` (forma anterior) solo aparece si el servidor enciende un plan de contingencia; con la configuración por defecto no
+viene. Ya no llegan clase de viaje ni clase de contenedor sugeridas.
+
+#### 4.3.2 `GET /web/cubicacion/{id}` (cubicación en proceso)
+
+Estado de una cubicación que respondió **202**. Solo la ve el comercial que la pidió. Se guarda en la memoria del servidor **15 minutos**
+desde su último cambio; si Cotifly se reinicia, se pierde.
+
+- **Rol:** ambos (dueño). **Sin cuerpo.**
+
+| Parámetro | En | Reglas |
+|---|---|---|
+| `id` | ruta | UUID del 202 (`id` o el final de `consultar_en`) |
+
+Respuesta **200** (`EstadoCubicacion`): `{id, estado, resultado?, error?}`. `resultado` solo con `completada`; `error` solo con `fallida`.
+
+```json
+{ "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90", "estado": "en_proceso" }
+```
+
+```json
+{
+  "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90",
+  "estado": "fallida",
+  "error": { "codigo": "MERCANCIA_NO_CUBICABLE", "mensaje": "Una de las mercancías no se puede cubicar: revisa el tipo de mercancía." }
+}
+```
+
+| HTTP | `estado` / Código | UI |
+|---|---|---|
+| 200 | `en_proceso` (con `Retry-After: 2`) | Seguir mostrando "Calculando…" y volver a consultar en 2-3 s |
+| 200 | `completada` | Pintar `resultado` igual que el 200 de `POST /web/cubicacion` |
+| 200 | `fallida` | Tratar `error` (`{codigo, mensaje, detalle?}`) como los errores del `POST`: marcar el ítem con `detalle.item` (y `detalle.campo` si viene); con `CUBICADOR_PETICION_RECHAZADA`, pedir que revise la carga; con `CUBICADOR_NO_DISPONIBLE` (también si Cotifly se reinició durante el cálculo) o `CUBICADOR_OCUPADO`, Reintentar |
+| 404 | `ErrorWeb` | No existe, venció, se perdió al reiniciar Cotifly o es de otro comercial: volver a calcular (no es un error del comercial) |
+
+Polling: cada 2-3 s (el `Retry-After`) con un tope de **4 minutos** (sección 3.4). Pasado el tope, mostrar "El cubicador no respondió" y
+ofrecer volver a calcular.
+
+#### 4.3.3 `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos`
+
+Vuelve a pedir al cubicador los camiones de **una** ruta (cuando cambiaron sus mercancías o su peso) y reemplaza los anteriores. Solo
+si la solicitud **nunca llegó a NEXO** y no hay un envío en curso.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Sin cuerpo.**
+
+| Parámetro | En | Reglas |
+|---|---|---|
+| `folio` | ruta | Folio |
+| `rutaId` | ruta | UUID: `rutas[].linea_solicitud_id` del costeo |
+
+Respuesta **200**: `CosteoCotizacion` (sección 4.4.3) con los camiones nuevos; la ruta recalculada trae además `avisos_cubicacion`.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Pintar los camiones nuevos y los avisos. Guardar `row_version` |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` (mercancías antiguas sin código) | Pedir que vuelva a escoger las mercancías |
+| 400 | `RUTA_INEXISTENTE` | Recargar el costeo |
+| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `CUBICACION_DEMASIADO_GRANDE` | Mostrar `mensaje` |
+| 400 | `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` | D1: el cubicador respondió 422 (antes 503 `CUBICADOR_RESPUESTA_INVALIDA`). Mostrar `mensaje`; nada cambió |
+| 404 | `ErrorWeb` | No es tuya o no existe |
+| 409 | `ESTADO_NO_PERMITE` | Ya está en NEXO (o el envío está en curso): usar `re-solicitar` |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar el costeo y repetir |
+| 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
+| 503 | `CUBICADOR_NO_DISPONIBLE`, `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Reintentar o avisar a soporte |
+
+UX: es síncrono y, con el cubicador lento, puede tardar hasta unos **3,6 minutos** (217 s). El cliente HTTP no debe cortar antes. Aquí un
+`CUBICADOR_OCUPADO` no llega como tal: cuenta como una caída del cubicador.
+
+### 4.4 Captura y costeo
+
+#### 4.4.1 `POST /web/solicitudes-costeo`
+
+Crea la cotización con el formulario por rutas y la envía a costeo en NEXO. Es el **único** camino para crear una cotización (fuera de
+la licitación por Excel).
+
+- **Rol:** ambos.
+- **Headers:** `Content-Type: application/json`; `Idempotency-Key` (opcional en el contrato, **muy recomendado**: generarla al pulsar
+  Enviar y reutilizarla en los reintentos de esa captura).
+
+Cuerpo `SolicitudCosteoWeb` (encabezado):
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `tipo` | `"spot"` o `"licitacion"` | Sí | En minúscula |
+| `nit_cliente` | string | Sí | Hasta 20. NIT elegido en `GET /web/clientes`. El servidor resuelve el BP en NEXO |
+| `cliente_nombre` | string o null | No | Hasta 300. Referencia; se reemplaza por el nombre del catálogo |
+| `linea_negocio` | string | Sí, si alguna ruta no trae la suya | Nombre de la línea de negocio de Cotifly (da el margen). Inexistente o inactiva: 400 `MARGEN_LINEA_DESCONOCIDA` |
+| `deadline` | fecha y hora o null | No | ISO-8601 con desfase (sección 1.5) |
+| `notas` | string o null | No | Hasta 2000. Nota para la Mesa de NEXO (no va al PDF) |
+| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240. Valen para las rutas que no traen las suyas |
+| `moneda` | `"COP"`, `"USD"` o null | No | COP por defecto. Sin distinguir mayúsculas. En USD la TRM del día se fija al crear; sin TRM, 400 `TRM_NO_DISPONIBLE` |
+| `rutas` | `RutaCapturaWeb[]` | Sí (formato vigente) | 1 a 100 rutas |
+
+Cada ruta (`RutaCapturaWeb`):
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `linea_negocio` | string o null | No | Sin ella, la del encabezado. Se aceptan líneas distintas por ruta |
+| `origen_municipio_id` | entero | Sí | Id de `GET /web/municipios`. Si falta, el servidor resuelve `origen` y, si es ambiguo, `MUNICIPIO_AMBIGUO` |
+| `origen` | string o null | Recomendado | Hasta 150. Copia del nombre; el nombre que se guarda sale siempre del catálogo por el id |
+| `destino_municipio_id`, `destino` | entero; string | Sí; recomendado | Igual que el origen |
+| `tipologia` | string o null | No | Hasta 50. `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
+| `clase_viaje` | string o null | No | Hasta 50. `valor` de `clases_viaje` de `GET /web/catalogos-flete` (`Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`) |
+| `clase_contenedor` | string o null | Condicional | Hasta 20. **Obligatoria** con `clase_viaje = Contenedor` y **solo** admitida con ella. `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`, `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP` |
+| `exclusivo`, `consolidado` | bool o null | No | — |
+| `retorna_contenedor` | bool o null | No | — |
+| `ciudad_devolucion_municipio_id`, `ciudad_devolucion_contenedor` | entero; string (hasta 150) | Condicional | Con `retorna_contenedor`. Id + nombre, como el origen |
+| `levante_contenedor_diferente` | bool o null | No | — |
+| `ciudad_levante_municipio_id`, `ciudad_levante_contenedor` | entero; string (hasta 150) | Condicional | Con `levante_contenedor_diferente` |
+| `valor_levante_contenedor` | número o null | Condicional | 0 a 9.999.999.999.999,99. Valor de UN levante. **Solo** con una ciudad de levante distinta del origen (si no, `CAMPO_NO_APLICA`) |
+| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
+| `valor_mercancia` | número o null | No | 0 a 9.999.999.999.999,99 |
+| `peso_kg` | número o null | Condicional | 0 a 999.999,99. Peso total de la ruta. Puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno). Si vienen los dos, deben coincidir dentro del 1 % con `sum(cantidad × peso_kg)` (`PESO_INCONSISTENTE`) |
+| `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200 |
+| `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 por ruta, sin repetir el mismo servicio |
+| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo) |
+
+Cada mercancía (`PosicionCargaWeb`):
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `codigo_mercancia` | string o null | **Sí** (con el cubicador configurado) | Hasta 64. `codigo` de `GET /web/tipos-mercancia`, activo y cubicable (`MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`) |
+| `nombre_mercancia` | string o null | No | Hasta 200. Copia del nombre; con catálogo, se toma el del catálogo |
+| `cantidad` | entero | No | 1 a 100.000. Por defecto 1 |
+| `largo_cm`, `ancho_cm`, `alto_cm` | número | Sí | 0,1 a 999.999 |
+| `peso_kg` | número o null | Sí si lleva `codigo_mercancia` | **Por unidad**, 0 a 999.999,99 y **mayor que 0** cuando la mercancía viaja al cubicador (si no, `POSICION_INVALIDA` en `mercancias[i].peso_kg`) |
+| `id_tipo_mercancia` | — | No enviar | Obsoleto (uuid). Se traduce al código durante la transición |
+| `descripcion` | — | No enviar | Nombre anterior de `nombre_mercancia` |
+
+Cada conexo (`ConexoCapturaWeb`):
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `id_servicio_conexo` | string | Sí | Hasta 64. `id` de `GET /web/servicios-conexos` (activo; si no, `CONEXO_NO_ENCONTRADO`) |
+| `cantidad` | número | Sí | Mayor que 0 y hasta 99.999,99, con hasta 2 decimales |
+
+Errores de una mercancía (D6, E2E 2026-10-16): `POSICION_INVALIDA` llega en `detalle.errores[]` con `campo = mercancias[i].<subcampo>`
+(índice **base 0**, igual que `ruta`; `<subcampo>` es `cantidad`, `largo_cm`, `ancho_cm`, `alto_cm`, `peso_kg`, `descripcion` o
+`codigo_mercancia`) y un `mensaje` que nombra la mercancía en **base 1** sin índices (`Mercancía 1: el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige.`).
+`DEMASIADAS_POSICIONES` llega en `mercancias`. Antes el campo era `posiciones[i]`. Para marcar el campo, usar el índice de `campo`, no el
+número del mensaje.
+
+Retirados del contrato: `valor_estimado` y `referencia` (si llegan, se ignoran sin error). El **formato plano** anterior (campos de una
+sola ruta en la raíz: `origen`, `destino`, `posiciones`...) se sigue aceptando sin `rutas`, pero está obsoleto; mezclar `rutas` con
+campos de ruta en la raíz es 400 con `CAMPO_NO_APLICA`.
+
+```json
+{
+  "tipo": "spot",
+  "nit_cliente": "900555111",
+  "cliente_nombre": "Longyin",
+  "linea_negocio": "Importacion",
+  "deadline": "2026-10-15T17:00:00-05:00",
+  "horas_cargue": 4,
+  "horas_descargue": 6.5,
+  "notas": "Cita previa en puerto",
+  "moneda": "COP",
+  "rutas": [
+    {
+      "origen_municipio_id": 76109,
+      "origen": "Buenaventura",
+      "destino_municipio_id": 11001,
+      "destino": "Bogotá D.C.",
+      "tipologia": "Contenedor",
+      "clase_viaje": "Contenedor",
+      "clase_contenedor": "CNT40.HC",
+      "exclusivo": true,
+      "consolidado": false,
+      "retorna_contenedor": true,
+      "ciudad_devolucion_municipio_id": 76109,
+      "ciudad_devolucion_contenedor": "Buenaventura",
+      "levante_contenedor_diferente": false,
+      "peso_kg": 28500,
+      "valor_mercancia": 250000000,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
+      ],
+      "servicios_conexos": [ { "id_servicio_conexo": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "cantidad": 2 } ]
+    },
+    {
+      "linea_negocio": "Nacional",
+      "origen_municipio_id": 76001,
+      "origen": "Cali",
+      "destino_municipio_id": 76892,
+      "destino": "Yumbo",
+      "tipologia": "CargaSeca",
+      "clase_viaje": "Cupo",
+      "horas_cargue": 2,
+      "peso_kg": 9000,
+      "valor_mercancia": 180000000,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de cajas", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 }
+      ]
+    }
+  ]
+}
+```
+
+Respuesta **201** (`CotizacionResumen` + `cubicacion`):
+
+```json
+{
+  "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+  "folio": "PCN-900555111-DG-15102026-001",
+  "version": 1,
+  "nit_cliente": "900555111",
+  "origen_cliente": "cliente",
+  "origen_margen": null,
+  "cliente": "LONGYIN S.A.S.",
+  "linea_negocio": "Varias",
+  "precio_final": null,
+  "margen_aplicado": null,
+  "moneda": "COP",
+  "estado_costeo": "pendiente_costeo",
+  "motivo_estado_costeo": null,
+  "estado_envio": "sin_enviar",
+  "ganada": null,
+  "motivo_rechazo": null,
+  "pdf_url": null,
+  "created_at": "2026-10-15T15:20:11.532+00:00",
+  "trm_aplicada": 0,
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "score_prioridad": 62.5,
+  "cubicacion": [
+    {
+      "linea_orden": 1,
+      "linea_solicitud_id": "0c9e7f3a-5b2d-4c1e-8f6a-9b8c7d6e5f4a",
+      "resultado": "ASIGNADO",
+      "motivo_sin_seleccion": null,
+      "condicionada": false,
+      "mercancias_condicionadas": [],
+      "advertencias": [],
+      "extradimension": null
+    },
+    {
+      "linea_orden": 2,
+      "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d",
+      "resultado": "SIN_SELECCION_AUTOMATICA",
+      "motivo_sin_seleccion": "BUSQUEDA_AGOTADA",
+      "condicionada": false,
+      "mercancias_condicionadas": [],
+      "advertencias": [],
+      "extradimension": null
+    }
+  ]
+}
+```
+
+Error **400** con todos los errores juntos (nada queda guardado):
+
+```json
+{
+  "error": {
+    "codigo": "SOLICITUD_COSTEO_INVALIDA",
+    "mensaje": "Ruta 1: el municipio 'Cartago' es ambiguo: Cartago, Valle del Cauca (id 76147); Cartago, Cartago (Costa Rica) (id 99001).",
+    "detalle": {
+      "motivo": "MUNICIPIO_AMBIGUO",
+      "errores": [
+        { "ruta": 0, "campo": "destino", "codigo": "MUNICIPIO_AMBIGUO", "mensaje": "Ruta 1: el municipio 'Cartago' es ambiguo: Cartago, Valle del Cauca (id 76147); Cartago, Cartago (Costa Rica) (id 99001)." },
+        { "ruta": 1, "campo": "mercancias[0].codigo_mercancia", "codigo": "MERCANCIA_DESCONOCIDA", "mensaje": "Ruta 2: la mercancía 'ACERO' no está activa en el catálogo del cubicador." },
+        { "ruta": 1, "campo": "mercancias[1].peso_kg", "codigo": "POSICION_INVALIDA", "mensaje": "Mercancía 2: el peso por unidad (peso_kg) debe ser mayor que 0: el cubicador lo exige." }
+      ]
+    }
+  }
+}
+```
+
+Error **409** de la clave de idempotencia:
+
+```json
+{
+  "error": {
+    "codigo": "ESTADO_NO_PERMITE",
+    "mensaje": "La captura de esta Idempotency-Key ya creó el folio PCN-900555111-DG-15102026-001 y su envío a Nexo no terminó de registrarse. No la repitas: revisa el folio en Mis cotizaciones.",
+    "detalle": { "folio": "PCN-900555111-DG-15102026-001", "solicitud_nexo_id": null, "motivo": "CAPTURA_EN_CURSO" }
+  }
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 201 | `CotizacionResumen` | Leer `estado_costeo`: `pendiente_costeo` (iniciar polling), `autocosteo` con `precio_final` (listo), `autocosteo` sin precio con `motivo_estado_costeo` (falta el margen: mostrar motivo), `error_envio` (mostrar `motivo_estado_costeo` y Reintentar salvo "Rechazo definitivo de Nexo"). Mostrar los avisos de `cubicacion[]`: no se vuelven a ver igual |
+| 201 con `avisos: ["RESUMEN_INCOMPLETO"]` | — | La cotización **sí** se creó (falta `linea_negocio`). No reenviar: recargar "Mis cotizaciones" |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` con `detalle.errores[]` | Pintar cada error en su ruta (`ruta`, base 0; `null` = encabezado) y campo. `error.mensaje` es solo el primero. Con `MUNICIPIO_AMBIGUO`, ofrecer los candidatos del mensaje y repetir con el id |
+| 400 | `MARGEN_LINEA_DESCONOCIDA` | Marcar la línea de negocio |
+| 400 | `FOLIO_CONSECUTIVO_AGOTADO` | "Límite diario de folios alcanzado. Contacta a soporte" |
+| 400 | `TRM_NO_DISPONIBLE` | "No se pudo obtener la TRM": botones Reintentar y Cambiar a COP |
+| 400 | `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE`, `DIMENSIONES_INVALIDAS`, `CUBICACION_DEMASIADO_GRANDE` | El cubicador rechazó una ruta: mostrar `mensaje`. Nada se guardó |
+| 400 | `POSICION_INVALIDA`, `CUBICADOR_PETICION_RECHAZADA` (como `error.codigo`) | D1: el cubicador respondió 422 a una ruta (antes 503 `CUBICADOR_RESPUESTA_INVALIDA`). Mostrar `mensaje`; nada se guardó. Corregir la carga antes de reenviar |
+| 400 | `ErrorWeb` | JSON inválido, o `Idempotency-Key` fuera de 8 a 64 caracteres |
+| 403 | `NEXO_SIN_PERMISO` | Rol del comercial en NEXO (al leer el costo de los conexos): avisar a soporte |
+| 409 | `ESTADO_NO_PERMITE` + `detalle.motivo = CAPTURA_EN_CURSO` | No reintentar. Llevar a "Mis cotizaciones" con `detalle.folio` |
+| 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave llegó con otro cuerpo (antes 400 `ErrorWeb`). Nada se ejecutó: generar una clave nueva y reenviar |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `NEXO_NO_DISPONIBLE` | Nada se guardó. Reintentar (con la **misma** `Idempotency-Key`) |
+| 503 | `CUBICADOR_NO_DISPONIBLE`, `CUBICADOR_RESPUESTA_INVALIDA`, `CUBICADOR_NO_AUTORIZADO` | Nada se guardó. Reintentar o avisar a soporte |
+| 503 | `SERVICIO_OCUPADO` | Reintentar en 1 s con la misma clave |
+
+UX: la petición es **síncrona** y cubica cada ruta antes de ir a NEXO. Con el cubicador lento (una llamada a la vez, opción C), una ruta
+puede tardar unos **3,6 minutos** (217 s: 60 s de espera por el cupo + 90 s de la recomendación + 5 s + 60 s de la reconsulta) y una
+captura de varias rutas, en el peor caso, el presupuesto de la captura (180 s) más una llamada completa: unos **6,5 minutos**. A eso se
+suma NEXO (hasta unos 30 s). **El cliente HTTP del frontend debe tener un timeout mayor** (por ejemplo 7 minutos con
+`timeout(420000)` en el `HttpClient` de esta llamada) y no reintentar por su cuenta antes. Spinner largo con un texto como "Calculando
+vehículos y enviando a costeo…" y bloqueo del doble clic. Si aun así se corta la conexión, reintentar con la **misma** `Idempotency-Key`.
+Sin `Idempotency-Key`, un segundo POST crea **otra** cotización.
+
+#### 4.4.2 `POST /web/cotizaciones/{folio}/costeo/reintentar`
+
+Reenvía a NEXO la solicitud guardada (no hay que volver a llenar el formulario). Se conserva por compatibilidad: `re-solicitar` lo amplía.
+
+- **Rol:** ambos (dueño). **Sin cuerpo.** No exige `If-Match`.
+- Permitido solo sin resultado y con `estado_costeo = error_envio` (salvo un rechazo definitivo de NEXO) o `pendiente_envio` antiguo.
+  Una licitación que todavía se cubica responde 409.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CotizacionResumen` | Otra vez `pendiente_costeo`/`autocosteo`, o `error_envio` con un motivo nuevo |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` | Lo guardado ya no cumple las reglas: corregir en una versión nueva |
+| 400 | `LICITACION_INVALIDA` + `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` + `detalle.errores[]` | Crear una licitación nueva |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_REINTENTABLE` | Refrescar la fila y ocultar Reintentar |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE` | Reintentar más tarde |
+
+UX: si el motivo anterior fue tiempo agotado, NEXO pudo haber creado la solicitud: advertir "Verifica en NEXO antes de reintentar".
+Si `motivo_estado_costeo` empieza por `Rechazo definitivo de Nexo`, ocultar Reintentar.
+
+#### 4.4.3 `GET /web/cotizaciones/{folio}/costeo`
+
+Estado del costeo, precio final, rutas, camiones, mercancías y conexos de una cotización. Lee la base de Cotifly: es el endpoint del
+polling.
+
+- **Rol:** ambos (dueño). **Respuesta:** encabezado `ETag` y `row_version` en el cuerpo.
+
+```json
+{
+  "folio": "PCN-900555111-DG-15102026-001",
+  "estado_costeo": "autocosteo",
+  "motivo_estado_costeo": null,
+  "costeo_listo_at": "2026-10-15T15:24:40.118+00:00",
+  "precio_final": 8823530,
+  "margen_aplicado": 0.15,
+  "moneda": "COP",
+  "servicios_conexos": [
+    { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+  ],
+  "pdf_url": null,
+  "margen_sugerido": 0.15,
+  "origen_margen": "politica_linea",
+  "pdf_desactualizado": false,
+  "row_version": "7",
+  "textos": null,
+  "trm_aplicada": 0,
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "score_prioridad": 62.5,
+  "rutas": [
+    {
+      "linea_orden": 1,
+      "linea_solicitud_id": "0c9e7f3a-5b2d-4c1e-8f6a-9b8c7d6e5f4a",
+      "origen": "Buenaventura",
+      "destino": "Bogotá D.C.",
+      "estado_costeo": "autocosteo",
+      "precio_final_linea": 5294118,
+      "margen_aplicado": 0.15,
+      "margen_sugerido": 0.15,
+      "origen_margen": "politica_linea",
+      "servicios_conexos": [
+        { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "nombre": "Cargue con montacargas", "categoria": "logistico", "cantidad": 2, "precio": 470588, "incluido": true, "linea_orden": 1, "estado_nexo": "enviado" }
+      ],
+      "linea_negocio_id": 3,
+      "peso_kg": 28500,
+      "camiones": [
+        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500, "estado_costeo": "autocosteo", "volumen_total_m3": 36, "porcentaje_llenado_volumen": 53.1, "porcentaje_llenado_peso": 83.82 }
+      ],
+      "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500 KG)",
+      "mercancias": [
+        { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
+      ],
+      "resultado_cubicacion": "ASIGNADO",
+      "motivo_sin_seleccion": null,
+      "condicionada": false,
+      "mensaje_sin_seleccion": null,
+      "aviso_conexos_nexo": null,
+      "margen_sap_anomalo": false,
+      "aviso_margen": null
+    },
+    {
+      "linea_orden": 2,
+      "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d",
+      "origen": "Cali",
+      "destino": "Yumbo",
+      "estado_costeo": "autocosteo",
+      "precio_final_linea": 3529412,
+      "margen_aplicado": 0.15,
+      "margen_sugerido": 0.18,
+      "origen_margen": "negociado",
+      "servicios_conexos": [],
+      "linea_negocio_id": 1,
+      "peso_kg": 9000,
+      "camiones": [
+        { "tipo_vehiculo": null, "carroceria": null, "peso_kg": 9000, "estado_costeo": "autocosteo", "volumen_total_m3": null, "porcentaje_llenado_volumen": null, "porcentaje_llenado_peso": null }
+      ],
+      "vehiculos": "Vehículo por definir",
+      "mercancias": [
+        { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de cajas", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 450 }
+      ],
+      "resultado_cubicacion": "SIN_SELECCION_AUTOMATICA",
+      "motivo_sin_seleccion": "BUSQUEDA_AGOTADA",
+      "condicionada": false,
+      "mensaje_sin_seleccion": "El cubicador no alcanzó a terminar la búsqueda de vehículos (es un límite de su algoritmo, no de tu carga): la Mesa de Costeo escoge el vehículo.",
+      "aviso_conexos_nexo": null,
+      "margen_sap_anomalo": false,
+      "aviso_margen": null
+    }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Mostrar `precio_final` como total (ya incluye conexos). Mostrar margen y sugerido **por ruta**. Guardar `row_version`. Mostrar `aviso_margen`, `aviso_conexos_nexo` y `mensaje_sin_seleccion` cuando vengan. `pdf_desactualizado = true`: botón "Regenerar PDF" |
+| 404 | `ErrorWeb` | No existe o no es tuya |
+
+Notas:
+
+- `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la **ruta 1** (compatibilidad). Usar los de `rutas[]`.
+- `servicios_conexos` de primer nivel es la lista de todos los conexos; cada ruta trae los suyos.
+- Un camión con `tipo_vehiculo` y `carroceria` en `null` lo resuelve la Mesa de Costeo. Un camión con `estado_costeo = descartada` no
+  cuenta en el precio ni sale en el PDF.
+- **La Mesa manda en el vehículo (decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a dichos cambios,
+  incluido el tipo de vehículo." Lo que la Mesa deje en NEXO se copia a `camiones[]` (y al texto `vehiculos` y al PDF) **también en los
+  camiones que recomendó el cubicador**: si cambia `2S2` por `3S3` o `FURGON` por `ESTACAS`, se muestra lo de la Mesa. Una diferencia
+  solo de escritura (`Furgón` por `FURGON`, `FURGON REFRIGERADO` por `FURGON_REFRIGERADO`) no es un cambio y se conserva el código del
+  cubicador; un valor vacío de NEXO no borra el de Cotifly. Puede llegar el nombre de NEXO (`Estacas`) en vez del código: mostrarlo tal cual.
+- **Porcentajes de llenado en `null` (regla D2: la Mesa manda).** Si la Mesa cambia de verdad el vehículo o la carrocería de un camión
+  que ya tenía, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` de ese camión llegan en **`null`**: el cubicador los calculó
+  para el vehículo anterior. La UI debe mostrar **"—"** (u ocultar la barra de llenado), **nunca 0 %**. `peso_kg` y `volumen_total_m3`
+  siguen con valor (son de la carga). Un cambio solo de escritura o un camión vacío que la Mesa llena no los toca, y si la Mesa vuelve al
+  vehículo original no se recuperan. Tampoco salen en el Excel de la licitación. Lo mismo aplica a `lineas[].camiones[]` de la licitación.
+- `estado_nexo` de un conexo (`pendiente`, `enviado`, `incierto`, `fallido_definitivo`) y `aviso_conexos_nexo` son informativos: no
+  reintentar nada desde el frontend.
+- `avisos_cubicacion` aparece solo si la ruta tiene avisos del cubicador; si no, se omite.
+
+#### 4.4.4 `PUT /web/cotizaciones/{folio}/costeo/margen`
+
+Ajusta el margen de **una ruta** y recalcula el precio de esa ruta y el total.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `margen` | número | Sí | Fracción de 0 a 0,99 (0.18 = 18 %). Fuera de rango o ausente: 400 `AJUSTE_MARGEN_INVALIDO` |
+| `justificacion` | string o null | Condicional | Hasta 500. **Obligatoria** si `margen` queda por debajo del `margen_sugerido` de esa ruta |
+| `linea_orden` | entero o null | Con varias rutas | `rutas[].linea_orden`. Con una sola ruta se puede omitir |
+| `linea_solicitud_id` | UUID o null | Alternativa | `rutas[].linea_solicitud_id` |
+
+```json
+{ "margen": 0.12, "justificacion": "Cliente estratégico; competencia cotizó 8 % por debajo.", "linea_orden": 2 }
+```
+
+Error de ruta requerida:
+
+```json
+{
+  "error": {
+    "codigo": "RUTA_REQUERIDA",
+    "mensaje": "La cotización PCN-900555111-DG-15102026-001 tiene 2 rutas: indica a cuál aplica (linea_orden o linea_solicitud_id).",
+    "detalle": {
+      "rutas": [
+        { "linea_orden": 1, "linea_solicitud_id": "0c9e7f3a-5b2d-4c1e-8f6a-9b8c7d6e5f4a", "origen": "Buenaventura", "destino": "Bogotá D.C." },
+        { "linea_orden": 2, "linea_solicitud_id": "7d6c5b4a-3e2f-4a1b-9c8d-0e1f2a3b4c5d", "origen": "Cali", "destino": "Yumbo" }
+      ]
+    }
+  }
+}
+```
+
+Error `PDF_YA_ENVIADO` (trae la llamada para crear la versión nueva):
+
+```json
+{
+  "error": {
+    "codigo": "PDF_YA_ENVIADO",
+    "mensaje": "La cotización ya se envió al cliente: crea una versión nueva para cambiarla.",
+    "detalle": {
+      "accion": "nueva_version",
+      "metodo": "POST",
+      "endpoint": "/web/cotizaciones/PCN-900555111-DG-15102026-001/costeo/re-solicitar",
+      "cuerpo": { "motivo": "Ajuste de margen después del envío", "nueva_version": true }
+    }
+  }
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar la vista con la respuesta. Guardar `row_version`. Si había PDF, ahora `pdf_desactualizado = true` |
+| 400 | `AJUSTE_MARGEN_INVALIDO` | "El margen debe estar entre 0 % y 99 %" |
+| 400 | `JUSTIFICACION_REQUERIDA` (`detalle.margen_sugerido`, `detalle.linea_orden`, `detalle.linea_solicitud_id`) | Abrir el campo de justificación |
+| 400 | `RUTA_REQUERIDA` (`detalle.rutas`) | Mostrar un selector de ruta y repetir |
+| 400 | `RUTA_INEXISTENTE` | Recargar el costeo |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO` | Esa ruta todavía no tiene precio |
+| 409 | `PDF_YA_ENVIADO` | Ofrecer "Crear versión nueva" con `detalle.metodo`, `detalle.endpoint` y `detalle.cuerpo` (con `If-Match` e `Idempotency-Key`) |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
+| 428 | `PRECONDICION_REQUERIDA` | Falta `If-Match` |
+
+Notas: ajustar al mismo margen vigente responde 200 sin registrar un ajuste ni invalidar el PDF. El margen ajustado deja
+`origen_margen = negociado` (badge "Ajuste fuera de política"). Si otras rutas siguen en costeo, `precio_final` queda en `null` hasta
+que todas tengan precio.
+
+#### 4.4.5 `POST /web/cotizaciones/{folio}/costeo/servicios-conexos`
+
+Agrega conexos del catálogo a una ruta. Se agregan en NEXO (fuente del costo) y vuelven con su precio.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**; `Idempotency-Key` recomendada (un UUID por clic).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `items` | array | Sí | 1 a 20. Todos de la **misma** ruta |
+| `items[].linea_orden` | entero | Con varias rutas | `rutas[].linea_orden` (o `linea_solicitud_id`) |
+| `items[].linea_solicitud_id` | UUID | Alternativa | — |
+| `items[].servicio_id` | string (UUID) | Sí | `id` de `GET /web/servicios-conexos` |
+| `items[].cantidad` | número | Sí | 0,01 a 999.999,99, hasta 2 decimales |
+
+```json
+{ "items": [ { "linea_orden": 1, "servicio_id": "6f1c2a9e-3b7d-4c55-9a0e-1d2f3a4b5c6d", "cantidad": 2 } ] }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar. El conexo nuevo queda en `servicios_conexos` con su `precio` e `incluido = true` |
+| 400 | `ErrorWeb` | `items` vacío, más de 20, fuera de rango o de rutas distintas; `Idempotency-Key` fuera de 8 a 64 caracteres |
+| 400 | `CONEXO_INVALIDO` (`detalle.motivo` = código de NEXO) | El servicio no se pudo agregar. **Recargar el costeo** antes de reintentar (el `row_version` ya cambió) |
+| 400 | `RUTA_REQUERIDA`, `RUTA_INEXISTENTE` | Selector de ruta |
+| 403 | `NEXO_SIN_PERMISO` | Avisar a soporte. Recargar el costeo |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO` | Sin precio todavía |
+| 409 | `LINEA_SIN_COTIZACION_NEXO` | Esa ruta aún no tiene línea en la cotización de NEXO: esperar el costeo |
+| 409 | `PDF_YA_ENVIADO` | Versión nueva |
+| 409 | `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION`) | Las licitaciones no admiten conexos |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar. Si trae `detalle.agregado_en_nexo = true`, no volver a agregar |
+| 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave con otro cuerpo (antes 400 `ErrorWeb`): nada se ejecutó; generar una clave nueva |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+| 503 | `NEXO_NO_DISPONIBLE` | Sin `agregado_en_nexo`: recargar y reintentar. Con `detalle.agregado_en_nexo = true`: "El conexo se agregó; su precio aparecerá en unos segundos", **no** reintentar, seguir el polling. Con `"desconocido"`: "No sabemos si se agregó; revisa en unos minutos", no reintentar hasta recargar |
+
+Nota importante: la versión se reserva **antes** de llamar a NEXO. Tras un 400 `CONEXO_INVALIDO`, un 403 o un 503, el `row_version`
+ya cambió aunque no se haya agregado nada: recargar `GET .../costeo` antes de reintentar.
+
+#### 4.4.6 `PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`
+
+Quita conexos de una ruta o cambia su cantidad. Debe venir **exactamente una** de las dos formas.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `linea_orden` / `linea_solicitud_id` | entero / UUID | Con varias rutas (forma `conexos`) | Ruta a la que aplica |
+| `conexos` | array o null | Una de las dos | Los conexos que **quedan** en la ruta: `{id, cantidad}`. `id` = `servicios_conexos[].id`; `cantidad` 0,01 a 999.999,99. Los que no vienen se **borran** |
+| `incluidos` | string[] o null | Una de las dos | Compatibilidad: ids que se conservan sin cambiar cantidades (con ruta, en esa ruta; sin ruta, en todas). `[]` quita todos |
+
+```json
+{ "linea_orden": 2, "conexos": [ { "id": "3f2b9c1e-7a4d-4e8b-9c6f-1a2b3c4d5e6f", "cantidad": 1 } ] }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CosteoCotizacion` | Refrescar. La misma selección responde 200 sin cambiar nada |
+| 400 | `ErrorWeb` | Las dos formas juntas o ninguna (`{"linea_orden": 2}` solo no borra nada), cantidad fuera de rango o id repetido |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` | Un id no es conexo de esa ruta (para agregar se usa el `POST`) |
+| 400 | `RUTA_REQUERIDA`, `RUTA_INEXISTENTE` | Selector de ruta |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO`, `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Ver la tabla del margen |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+
+Nota: quitar o cambiar un conexo no lo cambia en NEXO; el precio al cliente es el de Cotifly.
+
+#### 4.4.7 `POST /web/cotizaciones/{folio}/costeo/re-solicitar` ("Cotizar costo")
+
+Vuelve a pedir el costeo a NEXO, en el mismo folio o en una versión nueva.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**; `Idempotency-Key` recomendada.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `motivo` | string | Sí | 1 a 300. Queda en la auditoría |
+| `datos_carga` | objeto o null | No | Solo los campos que cambian (al menos uno). Con datos = **siempre versión nueva** |
+| `nueva_version` | bool | No | Por defecto `false`. `true` crea la `-vN` aunque no cambie la carga |
+
+Campos admitidos en `datos_carga` (`DatosCargaWeb`, mismos límites de la captura): `tipologia`, `clase_viaje`, `clase_contenedor`,
+`exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`,
+`ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`, `posiciones`
+(reemplaza todas). `tipo_vehiculo` y `carroceria` se aceptan pero se ignoran. Origen, destino, cliente y línea de negocio **no** se
+cambian aquí (400). Un campo en `null` se borra.
+
+```json
+{ "motivo": "El cliente cambió el peso de la carga", "datos_carga": { "peso_kg": 28400, "valor_mercancia": 150000000 } }
+```
+
+| Modo | Cuándo se permite | Respuesta |
+|---|---|---|
+| Mismo folio (sin `datos_carga` ni `nueva_version`) | `estado_costeo` en `costeo_vencido`, `entregada` o `error_envio`, sin envío al cliente ni resultado | **200** `CotizacionResumen` en `pendiente_costeo` (o `autocosteo`, o `error_envio` si NEXO falla). Precio anterior limpio; conexos y margen ajustado se conservan; el PDF queda desactualizado |
+| Versión nueva (`datos_carga` o `nueva_version: true`) | Cualquier estado salvo `pendiente_envio` y `pendiente_costeo` | **201** `CotizacionResumen` con el folio `-vN`. La original no cambia |
+
+Respuesta (los dos casos traen siempre `conexos_conservados` y `conexos_descartados`):
+
+```json
+{
+  "id": "8e1d2c3b-4a5f-4e6d-9c8b-7a6f5e4d3c2b",
+  "folio": "PCN-900555111-DG-15102026-001-v2",
+  "version": 2,
+  "nit_cliente": "900555111",
+  "origen_cliente": "cliente",
+  "origen_margen": "negociado",
+  "cliente": "LONGYIN S.A.S.",
+  "linea_negocio": "Importacion",
+  "precio_final": null,
+  "margen_aplicado": 0.12,
+  "moneda": "COP",
+  "estado_costeo": "pendiente_costeo",
+  "motivo_estado_costeo": null,
+  "estado_envio": "sin_enviar",
+  "ganada": null,
+  "motivo_rechazo": null,
+  "pdf_url": null,
+  "created_at": "2026-10-15T18:02:10.004+00:00",
+  "trm_aplicada": 0,
+  "conexos_descartados": [],
+  "conexos_conservados": ["Cargue con montacargas"],
+  "deadline": "2026-10-15T22:00:00+00:00",
+  "score_prioridad": 58
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CotizacionResumen` | Mismo folio. Reanudar el polling. Guardar el `ETag` de la respuesta como el `If-Match` siguiente |
+| 201 | `CotizacionResumen` | Navegar a la versión nueva: el encabezado `Location` trae `/web/cotizaciones/{folio nuevo}/costeo` (también se puede armar con `folio`). El `ETag` es el de la versión nueva. Mostrar `conexos_conservados` como aviso informativo |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` | `motivo` vacío o largo, `datos_carga` vacío o con un campo no permitido, o reglas de la captura (peso, contenedor) |
+| 400 | `TRM_NO_DISPONIBLE` | Versión nueva en USD sin TRM: no se creó nada |
+| 400 | `LICITACION_INVALIDA` + `detalle.motivo = LICITACION_REQUIERE_NUEVA_CARGA` | Crear una licitación nueva |
+| 400 | `ErrorWeb` | JSON inválido o `Idempotency-Key` fuera de 8 a 64 caracteres |
+| 404 | `ErrorWeb` | — |
+| 409 | `ESTADO_NO_PERMITE` | Estado que no lo permite. Con `detalle.motivo = VARIAS_RUTAS` (formulario) o `LICITACION`: no se admiten `datos_carga` con varias rutas; usar `nueva_version: true` sin `datos_carga` |
+| 409 | `PDF_YA_ENVIADO` | En el mismo folio tras el envío o con resultado: repetir con `nueva_version: true` |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
+| 409 | `IDEMPOTENCY_KEY_REUTILIZADA` | La misma clave con otro cuerpo (antes 400 `ErrorWeb`): nada se ejecutó; generar una clave nueva |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE` | Licitación que no se pudo revalidar: reintentar |
+| 503 | `SERVICIO_OCUPADO` | Reintentar en 1 s |
+
+UX: antes de confirmar, si la cotización tiene conexos, se puede mostrar "Se conservan los servicios conexos «...» con su costo y siguen
+en el precio" (mismo folio) o "La versión nueva copia los servicios conexos «...»" (versión nueva).
+
+#### 4.4.8 `POST /web/cotizaciones/{folio}/costeo/textos/redactar`
+
+La IA redacta el asunto y la introducción del PDF. Nunca falla por la IA: si tarda más de 15 s, falla o su texto no pasa la validación,
+responde los textos estándar (`fuente = estandar`).
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**. **Sin cuerpo.**
+
+| Parámetro | En | Reglas |
+|---|---|---|
+| `sobrescribir` | query | `true` reemplaza textos editados por el comercial. Por defecto `false` |
+
+```json
+{
+  "asunto": "Cotización de transporte Buenaventura - Bogotá D.C.",
+  "introduccion": "Respetados señores:\n\nNos permitimos presentar nuestra propuesta de transporte de carga para su operación.",
+  "fuente": "ia",
+  "editado": false,
+  "actualizado_at": "2026-10-15T16:10:02.771+00:00"
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `TextosCotizacion` | Mostrar en el editor. Con `fuente = estandar`, avisar que se usó el texto estándar. Guardar el `ETag` de la respuesta |
+| 404 | `ErrorWeb` | — |
+| 409 | `TEXTOS_EDITADOS` | Preguntar "¿Reemplazar tus textos?" y repetir con `?sobrescribir=true` |
+| 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+
+#### 4.4.9 `PUT /web/cotizaciones/{folio}/costeo/textos`
+
+El comercial edita el asunto y la introducción del PDF.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` **obligatorio**.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `asunto` | string | Sí | 1 a 120 caracteres, sin URL ni correos |
+| `introduccion` | string | Sí | 1 a 1100 caracteres, sin URL ni correos. Párrafos separados por una línea en blanco. Los montos sí se permiten |
+
+```json
+{ "asunto": "Propuesta de transporte octubre", "introduccion": "Respetados señores:\n\nAdjuntamos la propuesta solicitada." }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `TextosCotizacion` con `editado = true` | Guardado. Si había PDF, queda desactualizado |
+| 400 | `TEXTOS_COTIZACION_INVALIDOS` | Marcar el campo (vacío, largo, con URL o correo) |
+| 404 | `ErrorWeb` | — |
+| 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
+| 428 | `PRECONDICION_REQUERIDA` | — |
+
+### 4.5 Cotizaciones
+
+#### 4.5.1 `GET /web/mis-cotizaciones`
+
+Cotizaciones del usuario autenticado (también para el gerente: aquí ve solo las suyas). Máximo 100, de la más reciente a la más
+antigua. Sin filtros ni paginación en el servidor: filtrar y ordenar en el cliente.
+
+- **Rol:** ambos.
+
+```json
+{
+  "total": 1,
+  "cotizaciones": [
+    {
+      "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+      "folio": "PCN-900555111-DG-15102026-001",
+      "version": 1,
+      "nit_cliente": "900555111",
+      "origen_cliente": "cliente",
+      "origen_margen": "politica_linea",
+      "cliente": "LONGYIN S.A.S.",
+      "linea_negocio": "Varias",
+      "precio_final": 8823530,
+      "margen_aplicado": 0.15,
+      "moneda": "COP",
+      "estado_costeo": "entregada",
+      "motivo_estado_costeo": null,
+      "estado_envio": "enviada",
+      "ganada": true,
+      "motivo_rechazo": "No aplica",
+      "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf",
+      "created_at": "2026-10-15T15:20:11.532+00:00",
+      "trm_aplicada": 0,
+      "deadline": "2026-10-15T22:00:00+00:00",
+      "score_prioridad": 62.5
+    }
+  ]
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Tabla. `linea_negocio = "Varias"` si las rutas tienen líneas distintas (mostrarlo tal cual). `margen_aplicado` y `origen_margen` son los de la ruta 1. Mostrar "v2", "v3" si `version > 1`. Badge "Ajuste fuera de política" con `origen_margen = negociado`. No trae costo |
+
+Acciones por fila:
+
+| Acción | Habilitada cuando | Endpoint |
+|---|---|---|
+| Ver detalle | Siempre | `GET .../costeo` (o `GET /web/licitaciones/{folio}` si es licitación) |
+| Descargar PDF | `pdf_url` no es `null` | `GET /pdfs/{archivo}` como blob |
+| Enviar correo | `pdf_url` no es `null` | Vista previa y envío |
+| Ganada / Perdida | `ganada` es `null` y `estado_costeo = entregada` | `POST .../resultado` |
+| Perdida solo en Cotifly | `ganada` es `null` y `estado_costeo` en `error_envio` o `pendiente_costeo` | `POST .../resultado` con `perdida`, `motivo` e `If-Match` |
+| Ganada / Perdida (antiguas) | `estado_costeo` es `null`, `descartada` o `costeo_vencido` | `POST .../seguimiento` |
+| Reintentar envío | `error_envio` sin "Rechazo definitivo de Nexo", o `pendiente_envio` antiguo, y `ganada` `null` | `POST .../costeo/reintentar` |
+| Cotizar costo / Versión nueva | Ver 4.4.7 | `POST .../costeo/re-solicitar` |
+
+#### 4.5.2 `POST /web/cotizaciones/{folio}/resultado`
+
+Marca la cotización como ganada o perdida en NEXO y, solo si NEXO responde bien, en Cotifly.
+
+- **Rol:** ambos (dueño).
+- **Headers:** `If-Match` opcional (si viene y no coincide, 409); **obligatorio en la perdida solo en Cotifly**.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `resultado` | `"ganada"` o `"perdida"` | Sí | — |
+| `motivo` | string o null | En la perdida sin costeo | Perdida: hasta 100 caracteres, se guarda en `motivo_rechazo`. Ganada: no se valida ni se guarda (`motivo_rechazo` queda `"No aplica"`) |
+| `comentario` | string o null | No | Hasta 500. Solo viaja a NEXO; no se guarda en Cotifly |
+
+```json
+{ "resultado": "perdida", "motivo": "Precio por encima del presupuesto del cliente", "comentario": "El cliente cerró con otro proveedor." }
+```
+
+Casos:
+
+- **Entregada en NEXO**: se registra en NEXO y en Cotifly. Si NEXO entrega la cotización al marcar el resultado, `estado_costeo` pasa a
+  `entregada`.
+- **Precio aún no leído**: si NEXO ya entregó pero Cotifly no había leído el costeo, la respuesta trae el precio. Si esa lectura falla,
+  el resultado queda igual y `precio_final` llega con el polling: seguir consultando `GET .../costeo` mientras sea `null`.
+- **Perdida solo en Cotifly**: en `error_envio`, o en `pendiente_costeo` cuando NEXO confirma que no la tiene entregada, se admite
+  **solo** `perdida`, con `motivo` obligatorio e `If-Match` obligatorio. No va a NEXO, el polling se detiene y
+  `motivo_estado_costeo` empieza por "Perdida solo en Cotifly". Una `ganada` en esos estados es 409 `COTIZACION_NO_ENTREGADA`.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CotizacionResumen` | Refrescar la fila. Deshabilitar los botones (`ganada` ya tiene valor). Guardar el `ETag` de la respuesta |
+| 400 | `ErrorWeb` | `resultado` inválido, `motivo` de más de 100 en una perdida, `comentario` de más de 500, o `motivo` vacío en la perdida sin costeo |
+| 400 | `COSTEO_NEXO_RECHAZADA` (`detalle.motivo` = código de NEXO) | Mostrar el mensaje. Nada cambió |
+| 404 | `ErrorWeb` | — |
+| 409 | `RESULTADO_YA_DEFINIDO` (`detalle.motivo` = `ganada` o `perdida`, el de NEXO) | Cotifly ya quedó con el resultado de NEXO: mostrar el mensaje y recargar |
+| 409 | `COTIZACION_NO_ENTREGADA` | "NEXO todavía no ha entregado esta cotización" |
+| 409 | `SOLICITUD_NO_TRANSICIONABLE` | Mostrar `mensaje` |
+| 409 | `COSTEO_NO_LISTO` | La cotización no está en NEXO (chat, descartada, costeo vencido o no enviada): usar `/seguimiento` |
+| 409 | `CONFLICTO_CONCURRENCIA` | Recargar y repetir |
+| 428 | `PRECONDICION_REQUERIDA` | Perdida sin costeo sin `If-Match` |
+| 503 | `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` | "NEXO no responde, intenta más tarde". Nada cambió |
+
+#### 4.5.3 `POST /web/cotizaciones/{folio}/seguimiento` (obsoleto)
+
+Marca ganada o perdida **solo** las cotizaciones que no pasan por NEXO: `estado_costeo` `null` (chat anterior), `descartada` o
+`costeo_vencido`. Cualquier otra responde 409 `USAR_RESULTADO_NEXO`.
+
+- **Rol:** ambos (dueño).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `ganada` | bool o null | No | `null` limpia el resultado |
+| `motivo_rechazo` | string o null | No | Hasta 2000. Solo se guarda con `ganada = false` |
+
+```json
+{ "ganada": false, "motivo_rechazo": "El cliente eligió otro proveedor por precio." }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CotizacionResumen` | Refrescar la fila |
+| 400 | `ErrorWeb` | Motivo de más de 2000 o cuerpo inválido |
+| 404 | `ErrorWeb` | — |
+| 409 | `USAR_RESULTADO_NEXO` (`detalle.metodo`, `detalle.endpoint`, `detalle.requiere_if_match`) | Error de ruteo del frontend: llamar a `detalle.endpoint` con `If-Match` |
+
+```json
+{
+  "error": {
+    "codigo": "USAR_RESULTADO_NEXO",
+    "mensaje": "La cotización PCN-900555111-DG-15102026-001 está en Nexo: marca el resultado con POST /web/cotizaciones/PCN-900555111-DG-15102026-001/resultado (con If-Match).",
+    "detalle": { "metodo": "POST", "endpoint": "/web/cotizaciones/PCN-900555111-DG-15102026-001/resultado", "requiere_if_match": true }
+  }
+}
+```
+
+#### 4.5.4 `GET /web/cotizaciones/{id}/nueva-version`
+
+Datos de lectura de una cotización existente para prellenar un formulario. No modifica nada. La versión nueva se crea con
+`POST .../costeo/re-solicitar` (`nueva_version: true` o `datos_carga`).
+
+- **Rol:** ambos (dueño). **Parámetro:** `id` = UUID de la cotización (`CotizacionResumen.id`, no el folio).
+
+```json
+{
+  "cotizacion_origen_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+  "folio_base": "PCN-900555111-DG-15102026-001",
+  "version_siguiente": 2,
+  "cliente_nombre": "LONGYIN S.A.S.",
+  "nit_cliente": "900555111",
+  "origen_cliente": "cliente",
+  "linea_negocio": "Varias",
+  "costo": null,
+  "margen_politica": 0.15,
+  "margen_aplicado": 0.15,
+  "origen_margen": "politica_linea",
+  "metodo_calculo": "margen",
+  "moneda": "COP",
+  "rutas": [
+    { "linea_orden": 1, "linea_negocio_id": 3, "linea_negocio": "Importacion", "origen": "Buenaventura", "destino": "Bogotá D.C.", "margen_politica": 0.15, "margen_aplicado": 0.15, "origen_margen": "politica_linea", "metodo_calculo": "margen" },
+    { "linea_orden": 2, "linea_negocio_id": 1, "linea_negocio": "Nacional", "origen": "Cali", "destino": "Yumbo", "margen_politica": 0.18, "margen_aplicado": 0.15, "origen_margen": "negociado", "metodo_calculo": "margen" }
+  ]
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Prellenar. `version_siguiente` es informativa (la asigna el servidor). Los datos de primer nivel son los de la ruta 1 |
+| 404 | `ErrorWeb`: no existe, no es tuya o el `id` no es un UUID |
+
+### 4.6 Licitaciones
+
+#### 4.6.1 `POST /web/licitaciones/analizar-excel`
+
+Analiza el Excel del pliego para mapear sus columnas. No guarda nada.
+
+- **Rol:** ambos. **Cuerpo:** `multipart/form-data` con la parte `archivo` (`.xlsx` o `.xlsm`, hasta unos 9,9 MB). Límite del cuerpo
+  completo: 12 MB.
+
+```json
+{
+  "archivo": "pliego-octubre.xlsx",
+  "hojas": [
+    {
+      "nombre": "Tarifas",
+      "fila_encabezado": 3,
+      "encabezados": ["Origen", "Destino", "Mercancía", "Peso (kg)"],
+      "filas": [ ["Cali", "Bogotá", "Estibas de café", "12000"] ],
+      "total_filas": 1,
+      "filas_excel": [4],
+      "columna_mercancia": "Mercancía",
+      "columna_codigo_mercancia": null,
+      "mercancias": [
+        { "fila": 0, "texto": "Estibas de café", "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "sugerido": true, "origen": "parecido", "similitud": 0.86 }
+      ]
+    }
+  ],
+  "catalogo_mercancias_disponible": true
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `AnalisisExcel` | Pantalla de mapeo. Mostrar al comercial `filas_excel[i]` (número de fila del Excel), no el índice. Las mercancías con `sugerido = true` se muestran como sugeridas: el comercial las confirma o las cambia. Con `catalogo_mercancias_disponible = false` no hay sugerencias |
+| 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `COSTEO_NEXO_RECHAZADA` | Mostrar `mensaje` |
+| 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO |
+| 413 | `ErrorWeb` | Más de 12 MB |
+| 503 | `COSTEO_NEXO_NO_DISPONIBLE`, `COSTEO_NEXO_TIEMPO_AGOTADO` | Reintentar |
+
+#### 4.6.2 `POST /web/licitaciones`
+
+Crea la licitación con sus líneas mapeadas (cada línea es una ruta) y la envía a NEXO como una sola solicitud. Valida **todas** las
+filas antes de guardar.
+
+- **Rol:** ambos.
+- **Cuerpo:** `multipart/form-data` con la parte `licitacion` (texto JSON `LicitacionWeb`) y, opcional, la parte `archivo` (el Excel
+  original, para exportarlo después con precios); o `application/json` con el `LicitacionWeb` sin archivo.
+
+`LicitacionWeb`:
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `nit_cliente` | string | Sí | Hasta 20 |
+| `cliente_nombre` | string o null | No | Hasta 300 |
+| `linea_negocio` | string | Sí | Línea de Cotifly (da el margen de toda la licitación). "Licitaciones" no es una línea de Cotifly: 400 `MARGEN_LINEA_DESCONOCIDA` con `detalle.motivo = LINEA_DE_NEXO` y `detalle.lineas_validas` |
+| `deadline` | fecha y hora o null | No | ISO-8601 con desfase. En la respuesta (`Licitacion.deadline`) llega **en UTC** (`+00:00`), como en la captura y el costeo (D5, E2E 2026-10-16; antes llegaba con `-05:00`) |
+| `notas` | string o null | No | Hasta 2000 |
+| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
+| `hoja` | string o null | Con archivo | Hasta 31. `hojas[h].nombre` |
+| `moneda` | `"COP"`, `"USD"` o null | No | COP por defecto |
+| `lineas` | `LineaLicitacionWeb[]` | Sí | 1 a 1000 |
+
+`LineaLicitacionWeb` (cada fila; mismas reglas que una ruta de la captura):
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `fila` | entero o null | Con archivo | Índice base 0 en `hojas[h].filas`. Único por licitación |
+| `linea_negocio` | string o null | No | Sin ella, la de la licitación |
+| `origen`, `destino` | string | Sí | Hasta 150. Texto del pliego; sin id, el servidor lo resuelve (`MUNICIPIO_AMBIGUO`, `MUNICIPIO_NO_ENCONTRADO`) |
+| `origen_municipio_id`, `destino_municipio_id` | entero o null | Recomendado | Si vienen, se respetan |
+| `tipologia`, `clase_viaje`, `clase_contenedor` | string o null | No | Códigos de catálogo (texto libre del pliego = `CODIGO_NO_CATALOGO`) |
+| `exclusivo`, `consolidado`, `retorna_contenedor`, `levante_contenedor_diferente` | bool o null | No | — |
+| `ciudad_devolucion_contenedor` + `ciudad_devolucion_municipio_id` | string; entero | Condicional | — |
+| `ciudad_levante_contenedor` + `ciudad_levante_municipio_id` | string; entero | Condicional | — |
+| `valor_levante_contenedor` | número o null | Condicional | Solo con levante distinto del origen. Nombre nuevo de `valor_aprovisionamiento` (si llegan los dos, vale este) |
+| `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
+| `peso_kg`, `valor_mercancia` | número o null | Condicional | Regla de peso como en la captura |
+| `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200. Nombre nuevo de `posiciones` (si llegan las dos, valen estas) |
+| `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 |
+| `tipo_vehiculo`, `carroceria` | — | No enviar | Se ignoran |
+
+```json
+{
+  "nit_cliente": "900555111",
+  "cliente_nombre": "Agencia JF",
+  "linea_negocio": "Nacional",
+  "deadline": "2026-10-20T12:00:00-05:00",
+  "notas": "Pliego de octubre",
+  "hoja": "Tarifas",
+  "moneda": "COP",
+  "lineas": [
+    {
+      "fila": 0,
+      "origen": "Cali",
+      "origen_municipio_id": 76001,
+      "destino": "Bogotá D.C.",
+      "destino_municipio_id": 11001,
+      "tipologia": "CargaSeca",
+      "clase_viaje": "Cupo",
+      "peso_kg": 12000,
+      "mercancias": [
+        { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de cajas", "cantidad": 24, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 500 }
+      ]
+    }
+  ]
+}
+```
+
+Respuesta **201** (`Licitacion`), con el cubicador configurado (cubicación en segundo plano):
+
+```json
+{
+  "folio": "PCN-900555111-DG-15102026-002",
+  "cliente_nombre": "AGENCIA JF S.A.S.",
+  "nit_cliente": "900555111",
+  "deadline": "2026-10-20T17:00:00+00:00",
+  "estado_costeo": "pendiente_envio",
+  "motivo_estado_costeo": null,
+  "moneda": "COP",
+  "trm_aplicada": 0,
+  "precio_final": null,
+  "lineas_costeadas": 0,
+  "lineas_pendientes": 1,
+  "archivo_nombre": null,
+  "hoja": "Tarifas",
+  "lineas": [
+    {
+      "orden": 1, "fila": 0, "origen": "Cali", "destino": "Bogotá D.C.", "tipo_vehiculo": null, "peso_kg": 12000,
+      "estado_costeo": "pendiente_envio", "precio_final": null,
+      "estado_cubicacion": "pendiente", "error_cubicacion": null, "resultado_cubicacion": null, "motivo_sin_seleccion": null,
+      "condicionada": false,
+      "camiones": [
+        { "orden": 1, "tipo_vehiculo": null, "carroceria": null, "peso_kg": 12000, "volumen_total_m3": null, "porcentaje_llenado_volumen": null, "porcentaje_llenado_peso": null }
+      ]
+    }
+  ],
+  "progreso_cubicacion": { "estado": "en_curso", "total": 1, "cubicadas": 0, "pendientes": 1, "fallidas": 0 },
+  "cubicacion": null
+}
+```
+
+Error **400** por filas (`ReporteLicitacionInvalida`, nada queda guardado):
+
+```json
+{
+  "error": { "codigo": "LICITACION_INVALIDA", "mensaje": "Fila 5 del Excel: 'Tractomula' no es un código del catálogo de tipología." },
+  "errores": [
+    { "indice": 0, "fila": 0, "fila_excel": 5, "campo": "tipologia", "codigo": "CODIGO_NO_CATALOGO", "mensaje": "Fila 5 del Excel: 'Tractomula' no es un código del catálogo de tipología." },
+    { "indice": 0, "fila": 0, "fila_excel": 5, "campo": "destino", "codigo": "MUNICIPIO_AMBIGUO", "mensaje": "Fila 5 del Excel: el municipio 'Cartago' es ambiguo: Cartago, Valle del Cauca (id 76147); Cartago, Cartago (Costa Rica) (id 99001)." }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 201 | `Licitacion` | Con `progreso_cubicacion.estado = en_curso`: mostrar el avance (`cubicadas` de `total`) y consultar `GET /web/licitaciones/{folio}` cada 3 a 5 s. Sin `progreso_cubicacion` (sin cubicador): ya salió a NEXO; seguir con el polling del costeo. `estado_costeo = error_envio` (también con un 403 de NEXO): mostrar el motivo y Reintentar |
+| 400 | `LICITACION_INVALIDA` con `errores[]` | Pintar cada error en su fila: usar `fila_excel` (fila que ve el comercial) o, si es `null`, "línea `indice + 1`". `indice = null` = error del encabezado. Si `error.detalle.motivo` trae `CATALOGOS_FLETE_NO_DISPONIBLE` o `MUNICIPIOS_NO_DISPONIBLE`, lo que dependía de ese catálogo se valida al reenviar |
+| 400 | `ARCHIVO_REQUERIDO`, `FORMATO_NO_SOPORTADO`, `ARCHIVO_DEMASIADO_GRANDE`, `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS`, `FOLIO_CONSECUTIVO_AGOTADO`, `TRM_NO_DISPONIBLE` | Mostrar `mensaje` |
+| 400 | `MARGEN_LINEA_DESCONOCIDA` (`detalle.lineas_validas`, `detalle.motivo`) | Ofrecer las líneas válidas |
+| 400 | `ErrorWeb` | JSON inválido |
+| 413 | `ErrorWeb` | Excel + JSON de más de 12 MB |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `SERVICIO_OCUPADO` | Nada se guardó: reintentar |
+
+#### 4.6.3 `GET /web/licitaciones/{folio}`
+
+Estado y precio de cada línea, camiones y progreso de la cubicación. Endpoint del polling de la licitación.
+
+- **Rol:** ambos (dueño). **Respuesta:** `Licitacion` (misma forma del 201). `deadline` en UTC (D5).
+- Si el cubicador está ocupado (otro "Calcular cubicaje" o una captura tienen la única llamada), la ruta **vuelve a la cola** sin gastar
+  un intento y sin pasar al camión de respaldo: el progreso solo avanza más despacio. No es una falla ni aparece como `CUBICADOR_OCUPADO`.
+
+| HTTP | UI |
+|---|---|
+| 200 | `progreso_cubicacion.estado`: `en_curso` (seguir consultando cada 3 a 5 s), `con_fallas` (ofrecer "Reintentar cubicación" y, si el error es de disponibilidad, "Enviar sin vehículo"), `completa` o `null`. `precio_final` total solo cuando todas las líneas tienen flete (sin conexos). `cubicacion[]` trae los avisos del cubicador por ruta ya cubicada |
+| 404 | `ErrorWeb` |
+
+#### 4.6.4 `POST /web/licitaciones/{folio}/cubicacion/reintentar`
+
+Reintenta las rutas con `estado_cubicacion = fallida`. Solo antes de enviar la licitación a NEXO.
+
+- **Rol:** ambos (dueño). **Cuerpo opcional:**
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `usar_respaldo` | bool o null | No | `true` = aceptar con un camión sin vehículo las rutas que fallaron porque el cubicador no respondió (`error_cubicacion` empieza por `CUBICADOR_NO_DISPONIBLE`) y, si no queda nada pendiente, enviar a NEXO en la misma petición. Sin él, las fallidas vuelven a la cola |
+
+```json
+{ "usar_respaldo": true }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `Licitacion` | Volver al polling |
+| 400 | `ErrorWeb` | Cuerpo no es JSON válido |
+| 404 | `ErrorWeb` | No es una licitación tuya |
+| 409 | `ESTADO_NO_PERMITE` | No hay rutas fallidas, ya salió a NEXO, o con `usar_respaldo` las fallidas son rechazos de mercancía o medidas (se corrigen en una versión nueva) |
+
+#### 4.6.5 `GET /web/licitaciones/{folio}/excel`
+
+Descarga el Excel original del cliente con columnas agregadas: `Precio final Cotifly ({moneda})`, `Estado costeo Cotifly`,
+`Servicios conexos Cotifly` y `Camiones Cotifly`, más las hojas `Resumen Cotifly` y `Camiones Cotifly`. Sin archivo original, una hoja
+`Licitación` con los campos mapeados. Nunca incluye costos de NEXO. Se puede exportar en cualquier momento.
+
+- **Rol:** ambos (dueño). **Respuesta:** `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. Descargar como blob. El nombre
+  (`{folio}.xlsx`) viene en `Content-Disposition` (`attachment`), que CORS expone; si no se puede leer, usar `{folio}.xlsx`.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | Binario xlsx | Descargar |
+| 400 | `EXCEL_INVALIDO`, `EXCEL_SIN_DATOS` (JSON) | El original guardado ya no se puede leer |
+| 404 | `ErrorWeb` (JSON) | No es tuya o no es licitación |
+
+### 4.7 PDF
+
+#### 4.7.1 `POST /web/cotizaciones/{folio}/costeo/pdf`
+
+Genera el PDF de la cotización. El servidor arma todo: tarifas, camiones, conexos con su precio y los textos guardados (o los estándar).
+Nunca llama a la IA y nunca imprime costos de NEXO. Con una ruta sale el PDF de una ruta; con varias (formulario o licitación) sale el
+layout de pliego (resumen y una sección por ruta; con más de 20 rutas, solo el resumen). En USD lleva la nota de TRM mínima.
+
+- **Rol:** ambos (dueño). **Headers:** `If-Match` opcional. **Sin cuerpo.**
+
+```json
+{ "cotizacion_id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b", "folio": "PCN-900555111-DG-15102026-001", "pdf_url": "/pdfs/PCN-900555111-DG-15102026-001.pdf", "registrada_en_bd": true }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 201 | `SalidaPdf` | Descargar con `pdf_url`. Guardar el `ETag` de la respuesta (la versión cambió) |
+| 400 | `PDF_PAYLOAD_INVALIDO` | "No se pudo generar el PDF: faltan datos" |
+| 404 | `ErrorWeb` | — |
+| 409 | `COSTEO_NO_LISTO` | Todas las rutas deben tener precio |
+| 409 | `PDF_YA_GENERADO` | Ya hay un PDF vigente: descargarlo. Solo se regenera con `pdf_desactualizado = true` |
+| 409 | `PDF_YA_ENVIADO` | Ya enviada o con resultado: versión nueva |
+| 409 | `CONFLICTO_CONCURRENCIA` | Solo si se envió `If-Match`: recargar |
+| 503 | `PDF_RENDER_NO_DISPONIBLE` | Transitorio (los PDF se generan uno a la vez, con espera de hasta 30 s): Reintentar. No se guardó nada |
+
+UX: antes de generarlo, confirmar el teléfono del comercial (`GET`/`PUT /web/usuario/telefono`), que se imprime como "Cel".
+
+#### 4.7.2 `GET /pdfs/{archivo}`
+
+Descarga el PDF (inline).
+
+- **Rol:** el dueño, o un `gerente_comercial` cuya regional incluye al dueño (si la regional del gerente no se conoce o la fuente está
+  caída, 404 para el gerente).
+- **Parámetro:** `archivo` con patrón `^[A-Za-z0-9_-]+\.pdf$`. Tomarlo de `pdf_url`, nunca construirlo a mano.
+
+| HTTP | Cuerpo | UI |
+|---|---|---|
+| 200 | `application/pdf` | Mostrar con `URL.createObjectURL` o descargar. `Content-Disposition` (`inline`) trae el nombre del archivo; si no, usar `'{folio}.pdf'` |
+| 401 | `ErrorWeb` (JSON) | Refresh |
+| 404 | `ErrorWeb` (JSON) | Leer el blob como texto para ver el error |
+
+Requiere `Authorization`, así que un `<a href>` directo no sirve (401). Además `X-Frame-Options: DENY` impide incrustar la URL de la API
+en un iframe: descargar siempre como blob con `HttpClient` (`responseType: 'blob'`). Si `pdf_url` es relativa, anteponer la URL base.
+
+### 4.8 Correo
+
+#### 4.8.1 `GET /web/clientes/{nit}/destinatarios-previos`
+
+Destinatarios del último envío exitoso **de este comercial** a ese cliente.
+
+- **Rol:** ambos. **Parámetro:** `nit` (hasta 20 caracteres).
+
+```json
+{ "para": ["compras@cliente.com"], "cc": ["gerente@empresa.com"] }
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Prellenar `para` y `cc`. Listas vacías si nunca le envió |
+| 400 | `ErrorWeb`: NIT de más de 20 caracteres |
+
+#### 4.8.2 `POST /web/cotizaciones/{folio}/correo/vista-previa`
+
+Renderiza el correo sin enviarlo.
+
+- **Rol:** ambos (dueño). **Cuerpo opcional:** `EnvioWeb` parcial (lo que el comercial ya escribió).
+
+```json
+{
+  "asunto": "Cotización PCN-900555111-DG-15102026-001 — Botero Soto",
+  "cuerpo": "Buenos días,\n\nAdjunto la cotización ...",
+  "para": ["compras@cliente.com"],
+  "cc": [],
+  "adjunto": "PCN-900555111-DG-15102026-001.pdf"
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Modal de confirmación con `VistaPreviaCorreo` |
+| 404 | `ErrorWeb` |
+
+#### 4.8.3 `POST /web/cotizaciones/{folio}/enviar`
+
+Envía la cotización por correo con el PDF adjunto. El remitente es el comercial del token.
+
+- **Rol:** ambos (dueño).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `para` | string[] | Sí | Al menos uno. Correos de hasta 320 caracteres |
+| `cc` | string[] | No | Por defecto `[]` |
+| `asunto` | string o null | No | Hasta 300. Por defecto "Cotización {folio} — Botero Soto" |
+| `cuerpo` | string o null | No | Hasta 5000 |
+
+```json
+{ "para": ["compras@cliente.com"], "cc": ["gerente@empresa.com"], "asunto": null, "cuerpo": null }
+```
+
+```json
+{ "enviado": true, "message_id": "<id-del-relay@servidor>" }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `RespuestaEnvio` | Refrescar la fila con `GET /web/mis-cotizaciones` (`estado_envio` pasa a `enviada` o `reenviada`) |
+| 400 | `ErrorWeb` | Destinatarios, asunto o cuerpo inválidos: validar en el formulario |
+| 400 | `CORREO_DUPLICADO` | "Ya enviaste esta cotización a esos destinatarios hace menos de 5 minutos" |
+| 400 | `CORREO_PDF_NO_ENCONTRADO` | Sin PDF: deshabilitar Enviar si `pdf_url` es `null` |
+| 400 | `CORREO_ENVIO_FALLIDO` | "No se pudo enviar. Reintenta" |
+| 404 | `ErrorWeb` | — |
+| 409 | `CONFLICTO_CONCURRENCIA` | La cotización cambió o el PDF quedó desactualizado: recargar y regenerar el PDF |
+| 503 | `CORREO_DESHABILITADO` | "El envío de correo no está habilitado en este ambiente" |
+
+### 4.9 Asistente IA
+
+#### 4.9.1 `POST /web/chat`
+
+Un turno del asistente sobre **una** cotización ya creada. El asistente lee la cotización y **propone** acciones (ajustar margen,
+re-solicitar el costeo, agregar un conexo); nunca las ejecuta. No crea cotizaciones, no genera ni envía PDF.
+
+- **Rol:** ambos. **Límite:** 20 turnos por minuto por comercial (429).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `mensaje` | string | Sí | 1 a 8000 caracteres |
+| `sesion_id` | string | Sí | `^[A-Za-z0-9_-]{8,64}$`. La genera el cliente (`crypto.randomUUID().replaceAll('-', '')`), una por conversación |
+| `folio` | string | Sí | Folio de la cotización abierta (hasta 50) |
+| `cotizacion_origen_id`, `moneda` | — | No enviar | Obsoletos: se ignoran |
+
+```json
+{ "mensaje": "Súbele el margen al 18 % porque el cliente acepta el valor", "sesion_id": "3f2a9c1b7e4d4a6f9b0c2d1e5f6a7b8c", "folio": "PCN-900555111-DG-15102026-001" }
+```
+
+Respuesta **200** (`RespuestaChat`):
+
+```json
+{
+  "texto": "Te propongo subir el margen de 15 % a 18 %. Revisa el resumen y, si estás de acuerdo, confírmalo.",
+  "herramientas": ["consultar_cotizacion", "proponer_ajuste_margen"],
+  "precio": null,
+  "margen": null,
+  "pdf": null,
+  "errores": [],
+  "accion_propuesta": {
+    "tipo": "ajustar_margen",
+    "metodo": "PUT",
+    "endpoint": "/web/cotizaciones/PCN-900555111-DG-15102026-001/costeo/margen",
+    "cuerpo": { "margen": 0.18, "justificacion": null, "linea_orden": 1 },
+    "resumen": "Ajustar el margen de 15 % a 18 % (precio estimado 3.109.756 COP).",
+    "row_version": "7"
+  }
+}
+```
+
+Respuesta **200** con fallo controlado (`RespuestaChatError`):
+
+```json
+{ "texto": "El asistente no está disponible en este momento. Intenta de nuevo en unos minutos.", "error": true, "codigo": "IA_NO_DISPONIBLE" }
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `RespuestaChat` | Mostrar `texto` (markdown simple). Si viene `accion_propuesta`, mostrar `resumen` con un botón **Confirmar** (ver abajo). `precio`, `margen` y `pdf` siempre `null`: no leerlos. `errores[]` = `{herramienta, codigo}` informativos |
+| 200 | `RespuestaChatError` (`error: true`) | Burbuja de aviso con `texto`; decidir por `codigo` (sección 5.12) |
+| 400 | `ErrorWeb` `sesion_id inválido`, `folio inválido` (más de 50), `Cuerpo inválido. Revisa: mensaje.` | Error de programación |
+| 400 | `FOLIO_REQUERIDO` | Abrir el asistente solo desde una cotización |
+| 404 | `ErrorWeb` `Sesión no encontrada.` | El `sesion_id` es de otro usuario: generar uno nuevo |
+| 404 | `ErrorWeb` `Cotización no encontrada o no es tuya.` | — |
+| 429 | `ErrorWeb` | Límite de la API (no del proveedor de IA). Esperar |
+
+Patrón **propuesta → Confirmar**:
+
+1. Mostrar `accion_propuesta.resumen` (lo arma el servidor; el `texto` del asistente nunca trae montos). En `ajustar_margen`, dejar
+   editar la `justificacion` antes de confirmar.
+2. Solo al pulsar Confirmar: llamar `accion_propuesta.metodo` sobre `accion_propuesta.endpoint` (relativo a la URL base) con
+   `accion_propuesta.cuerpo` tal cual e `If-Match: "<accion_propuesta.row_version>"`. En `re_solicitar_costeo` y
+   `agregar_servicios_conexos`, agregar `Idempotency-Key` (UUID nuevo por clic).
+3. La respuesta y los errores son los del endpoint normal. Ante 409 `CONFLICTO_CONCURRENCIA`, la cotización cambió: recargar y pedir una
+   propuesta nueva.
+4. Cancelar no llama a nada. Conversar nunca cambia la cotización.
+
+UX: un turno puede tardar de 20 a 75 s (más si el modelo principal falla y pasa al respaldo). Usar un timeout de cliente de al menos
+120 s, mostrar "escribiendo..." y no reenviar mientras el turno está en curso. Un `sesion_id` por cotización abierta.
+
+### 4.10 Métricas
+
+Definiciones comunes (aplican a los dos tableros):
+
+- **Unidad: la cadena de versiones** (mismo comercial y mismo folio base sin `-vN`). Cada cadena cuenta una vez, con los valores de la
+  versión vigente; el periodo y el mes son los de su **primera creación** (Bogotá); el resultado es el más reciente de la cadena.
+- `cantidad = ganadas + perdidas + sin_resultado + pendientes_por_cotizar`, siempre.
+- `conversion = ganadas / cantidad`; `conversion_sobre_cerradas = ganadas / (ganadas + perdidas)`; `null` con denominador 0.
+- Montos en COP con 2 decimales (USD × TRM por fila). `valor_ganado_cop` es valor **cotizado** de las ganadas, no dinero recaudado:
+  rotularlo "Valor ganado (COP)".
+- Conteos por cotización; valores por ruta (`por_linea_negocio` abre por ruta: su suma puede superar `cantidad`).
+
+Parámetros comunes:
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `desde` | query | No | `AAAA-MM-DD`, fecha de Bogotá, incluida. Por defecto el 1 de enero del año en curso |
+| `hasta` | query | No | `AAAA-MM-DD`, incluida. Por defecto hoy. `hasta` no puede ser anterior a `desde` y el rango máximo es 3 años |
+
+#### 4.10.1 `GET /web/metricas/comercial`
+
+Indicadores de las cotizaciones propias.
+
+- **Rol:** ambos (el gerente ve aquí solo las suyas).
+
+```json
+{
+  "periodo": { "desde": "2026-08-01", "hasta": "2026-09-29", "zona_horaria": "America/Bogota" },
+  "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10",
+  "indicadores": {
+    "cantidad": 12, "versiones": 14, "ganadas": 3, "perdidas": 4, "sin_resultado": 3, "pendientes_por_cotizar": 2,
+    "conversion": 0.25, "conversion_sobre_cerradas": 0.4286, "margen_promedio": 0.1542, "margen_ponderado": 0.1561,
+    "costeo_total": 38500000.00, "costeo_ganadas": 10540000.00, "valor_cotizado_cop": 45310000.00, "valor_ganado_cop": 12400000.00,
+    "ganancias": 1860000.00, "cotizaciones_usd": 1, "tiempo_promedio_cotizacion_horas": 5.75,
+    "desviacion_promedio_margen": -0.015, "desviacion_promedio_margen_abs": 0.025, "ajustes_margen": 2, "deadline_vencidas": 1
+  },
+  "serie_mensual": [
+    { "mes": "2026-08", "cantidad": 5, "ganadas": 1, "perdidas": 2, "valor_cotizado_cop": 18200000.00, "valor_ganado_cop": 4100000.00 },
+    { "mes": "2026-09", "cantidad": 7, "ganadas": 2, "perdidas": 2, "valor_cotizado_cop": 27110000.00, "valor_ganado_cop": 8300000.00 }
+  ],
+  "por_linea_negocio": [
+    { "linea_negocio_id": 1, "linea_negocio": "Nacional", "cotizaciones": 10, "ganadas": 3, "perdidas": 3, "rutas": 13,
+      "costeo_total": 30100000.00, "costeo_ganadas": 8200000.00, "valor_cotizado_cop": 35410000.00, "valor_ganado_cop": 9600000.00,
+      "ganancias": 1400000.00, "margen_ponderado": 0.1498, "ajustes_margen": 2, "desviacion_promedio_margen": -0.015 }
+  ]
+}
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Tarjetas, gráfica con `serie_mensual` (trae todos los meses, también en 0) y apertura por línea. Sin cotizaciones: ceros, promedios en `null` ("—") y `por_linea_negocio` vacía |
+| 400 | `ErrorWeb` (por ejemplo `El parámetro 'desde' debe ser una fecha AAAA-MM-DD.`): fechas inválidas, invertidas o rango de más de 3 años |
+
+### 4.11 Regional (solo `gerente_comercial`)
+
+La regional es **siempre** la del gerente autenticado, resuelta en el servidor (no se manda por parámetro). El gerente es miembro de su
+regional: sus cotizaciones también cuentan y salen.
+
+#### 4.11.1 `GET /web/metricas/regional`
+
+- **Rol:** `gerente_comercial`.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `desde`, `hasta` | query | No | Como en 4.10 |
+| `usuario_id` | query | No | UUID de un comercial de la regional: filtra `indicadores`, `serie_mensual`, `concentracion_ciudades` y `por_linea_negocio` |
+
+```json
+{
+  "periodo": { "desde": "2026-08-01", "hasta": "2026-09-29", "zona_horaria": "America/Bogota" },
+  "regional": "ANTIOQUIA",
+  "fuente_regional": "usuarios_web",
+  "usuario_id": null,
+  "lineas_negocio_activas": 8,
+  "indicadores": {
+    "cantidad": 40, "versiones": 46, "ganadas": 9, "perdidas": 11, "sin_resultado": 14, "pendientes_por_cotizar": 6,
+    "conversion": 0.225, "conversion_sobre_cerradas": 0.45, "margen_promedio": 0.1497, "margen_ponderado": 0.1503,
+    "costeo_total": 131000000.00, "costeo_ganadas": 31370000.00, "valor_cotizado_cop": 154100000.00, "valor_ganado_cop": 36900000.00,
+    "ganancias": 5530000.00, "cotizaciones_usd": 3, "tiempo_promedio_cotizacion_horas": 7.2,
+    "desviacion_promedio_margen": -0.0125, "desviacion_promedio_margen_abs": 0.021, "ajustes_margen": 6, "deadline_vencidas": 2
+  },
+  "comerciales": [
+    {
+      "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez", "rol": "comercial",
+      "indicadores": {
+        "cantidad": 12, "versiones": 14, "ganadas": 3, "perdidas": 4, "sin_resultado": 3, "pendientes_por_cotizar": 2,
+        "conversion": 0.25, "conversion_sobre_cerradas": 0.4286, "margen_promedio": 0.1542, "margen_ponderado": 0.1561,
+        "costeo_total": 38500000.00, "costeo_ganadas": 10540000.00, "valor_cotizado_cop": 45310000.00, "valor_ganado_cop": 12400000.00,
+        "ganancias": 1860000.00, "cotizaciones_usd": 1, "tiempo_promedio_cotizacion_horas": 5.75,
+        "desviacion_promedio_margen": -0.015, "desviacion_promedio_margen_abs": 0.025, "ajustes_margen": 2, "deadline_vencidas": 1
+      }
+    }
+  ],
+  "serie_mensual": [
+    { "mes": "2026-08", "cantidad": 18, "ganadas": 4, "perdidas": 5, "valor_cotizado_cop": 70100000.00, "valor_ganado_cop": 16400000.00 }
+  ],
+  "concentracion_ciudades": {
+    "disponible": true,
+    "por_destino": [ { "ciudad": "BOGOTA D.C.", "cantidad": 15, "ganadas": 4, "valor_cotizado_cop": 60200000.00, "valor_ganado_cop": 17100000.00 } ],
+    "por_origen": [ { "ciudad": "MEDELLIN", "cantidad": 30, "ganadas": 7, "valor_cotizado_cop": 118000000.00, "valor_ganado_cop": 28700000.00 } ],
+    "sin_destino": 4,
+    "sin_origen": 4
+  },
+  "por_linea_negocio": [
+    { "linea_negocio_id": 1, "linea_negocio": "Nacional", "cotizaciones": 34, "ganadas": 8, "perdidas": 9, "rutas": 41,
+      "costeo_total": 112000000.00, "costeo_ganadas": 27370000.00, "valor_cotizado_cop": 131700000.00, "valor_ganado_cop": 32100000.00,
+      "ganancias": 4730000.00, "margen_ponderado": 0.1496, "ajustes_margen": 5, "desviacion_promedio_margen": -0.013 }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `MetricasRegional` | `comerciales` trae a **todos** los de la regional (también el gerente), aunque se filtre: usarlo para el selector. Mapa con `concentracion_ciudades.por_destino`; con `disponible = false`, ocultar el mapa |
+| 400 | `ErrorWeb` | Fechas inválidas o `usuario_id` que no es UUID |
+| 403 | `ErrorWeb` | No es gerente: no mostrar la vista |
+| 404 | `ErrorWeb` `Comercial no encontrado en tu regional.` | Quitar el filtro |
+| 409 | `REGIONAL_NO_ASIGNADA` | Estado vacío con el `mensaje` ("Tu usuario no tiene una regional asignada..."). Sin reintento automático |
+| 503 | `REGIONAL_NO_DISPONIBLE` | "No se pudo consultar tu regional" con Reintentar |
+
+UX: la regional se reutiliza 60 s en el servidor; cambiar el selector no la vuelve a consultar.
+
+#### 4.11.2 `GET /web/cotizaciones/regional`
+
+Vista "Todas las cotizaciones" del gerente: las cotizaciones de los comerciales de su regional.
+
+- **Rol:** `gerente_comercial`. Sin parámetros. Máximo 100 **en total**, de la más reciente a la más antigua. Sin filtros ni paginación:
+  filtrar por `comercial.usuario_id` en el cliente.
+
+```json
+{
+  "regional": "ANTIOQUIA",
+  "fuente_regional": "usuarios_web",
+  "total": 1,
+  "cotizaciones": [
+    {
+      "id": "5b0f8a3e-2c1d-4e6f-9a7b-3c2d1e0f9a8b",
+      "folio": "PCN-900555111-AP-15102026-001",
+      "version": 1,
+      "nit_cliente": "900555111",
+      "origen_cliente": "cliente",
+      "origen_margen": "politica_linea",
+      "cliente": "LONGYIN S.A.S.",
+      "linea_negocio": "Nacional",
+      "precio_final": 8823530,
+      "margen_aplicado": 0.15,
+      "moneda": "COP",
+      "estado_costeo": "entregada",
+      "motivo_estado_costeo": null,
+      "estado_envio": "sin_enviar",
+      "ganada": null,
+      "motivo_rechazo": null,
+      "pdf_url": "/pdfs/PCN-900555111-AP-15102026-001.pdf",
+      "created_at": "2026-10-15T15:20:11.532+00:00",
+      "trm_aplicada": 0,
+      "deadline": "2026-10-15T22:00:00+00:00",
+      "score_prioridad": 62.5,
+      "comercial": { "usuario_id": "5f0c2a8e-4b1d-4c55-9a51-2f7d0c1e9b10", "nombre_usuario": "APEREZ", "nombre_completo": "Ana Pérez" }
+    }
+  ]
+}
+```
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `CotizacionesRegional` | Filas de **consulta**: las acciones que exigen ser dueño (costeo, resultado, envío, versión nueva) responden 404 al gerente sobre cotizaciones ajenas. La descarga del PDF sí funciona. Mostrar `comercial.nombre_completo` (o `nombre_usuario` si es `null`) |
+| 403 | `ErrorWeb` | No es gerente |
+| 409 | `REGIONAL_NO_ASIGNADA` | Estado vacío explicativo |
+| 503 | `REGIONAL_NO_DISPONIBLE` | Reintentar |
+
+### 4.12 Administración y usuario
+
+#### 4.12.1 `GET /web/admin/lineas-negocio`
+
+Políticas de margen de todas las líneas de negocio (activas e inactivas).
+
+- **Rol:** `gerente_comercial`.
+
+```json
+[
+  { "id": 1, "linea_negocio": "Nacional", "margen": 0.15, "metodo_calculo": "margen", "is_active": true, "updated_at": "2026-09-28T18:00:00+00:00" },
+  { "id": 4, "linea_negocio": "Almacenamiento 3PL", "margen": 0.2, "metodo_calculo": "markup", "is_active": false, "updated_at": null }
+]
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | Tabla editable (en porcentaje) |
+| 403 | `ErrorWeb`: no es gerente |
+
+No hay un endpoint de líneas de negocio para el comercial: el selector de línea del formulario no puede usar este (403 para `comercial`).
+
+#### 4.12.2 `PUT /web/admin/lineas-negocio/{id}`
+
+Edita margen, método y estado de una línea existente. No crea ni borra líneas. Queda auditado.
+
+- **Rol:** `gerente_comercial`. **Parámetro:** `id` (entero; uno no entero responde 404 `Recurso no encontrado.`).
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `margen` | número | Sí | 0 a 0,99 (fracción) |
+| `metodo_calculo` | `"margen"` o `"markup"` | Sí | — |
+| `is_active` | bool | Sí | — |
+
+```json
+{ "margen": 0.18, "metodo_calculo": "margen", "is_active": true }
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | `LineaNegocio` actualizada |
+| 400 | `ErrorWeb`: falta un campo, fuera de rango, método inválido o número como texto |
+| 403 | `ErrorWeb` |
+| 404 | `ErrorWeb`: la línea no existe |
+
+#### 4.12.3 `GET /web/usuario/telefono`
+
+Teléfono del comercial que imprime el PDF ("Cel").
+
+- **Rol:** ambos.
+
+```json
+{ "telefono": "+57 300 123 4567" }
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | `{"telefono": null}` si nunca se capturó: abrir el modal obligatorio del primer ingreso |
+| 401 | `ErrorWeb`: el usuario del token ya no existe; tratar como sesión vencida |
+
+#### 4.12.4 `PUT /web/usuario/telefono`
+
+- **Rol:** ambos.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `telefono` | string o null | Sí (puede ser `null`) | Patrón `^\+?[0-9 ]{7,20}$`. `null` o vacío lo borra (el PDF omite "Cel") |
+
+```json
+{ "telefono": "3001234567" }
+```
+
+| HTTP | UI |
+|---|---|
+| 200 | `TelefonoComercial` con el valor guardado |
+| 400 | `ErrorWeb`: fuera del patrón |
+| 401 | `ErrorWeb`: usuario inexistente |
+
+### 4.13 Health
+
+No requieren autenticación. El frontend no los necesita para operar; sirven para diagnóstico.
+
+#### 4.13.1 `GET /health`
+
+```json
+{ "status": "ok", "servicio": "cotifly-api", "entorno": "Production" }
+```
+
+#### 4.13.2 `GET /health/ready`
+
+| HTTP | Cuerpo |
+|---|---|
+| 200 | `{"status": "ready"}` |
+| 503 | `{"status": "unavailable", "detalle": "<dependencias que fallan>"}` |
+
+---
+
+## 5. Modelos y enums
+
+Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el campo no viene cuando no tiene valor.
+
+### 5.1 Modelos de respuesta principales
+
+**`CotizacionResumen`** (fila de "Mis cotizaciones", respuesta de captura, reintento, re-solicitud, resultado y seguimiento)
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` | UUID | Para `GET /web/cotizaciones/{id}/nueva-version` |
+| `folio` | string | — |
+| `version` | entero | 1 = original |
+| `nit_cliente` | string? | Para `destinatarios-previos` |
+| `origen_cliente` | enum? | `cliente`, `prospecto` |
+| `origen_margen` | enum? | De la ruta 1 |
+| `cliente` | string? | Nombre del catálogo de NEXO |
+| `linea_negocio` | string? | De la ruta 1, o `Varias` |
+| `precio_final` | número? | Suma de las rutas, con conexos. `null` mientras alguna ruta no tenga precio |
+| `margen_aplicado` | número? | De la ruta 1 |
+| `moneda` | string | `COP` o `USD` |
+| `trm_aplicada` | número | 0 en COP |
+| `estado_costeo` | enum? | Sección 5.2 |
+| `motivo_estado_costeo` | string? | Texto legible; mostrar siempre que venga |
+| `estado_envio` | enum | `sin_enviar`, `enviada`, `reenviada` |
+| `ganada` | bool? | `null` = sin resultado |
+| `motivo_rechazo` | string? | `"No aplica"` si ganada; el motivo si perdida; `null` sin resultado |
+| `pdf_url` | string? | Relativa (`/pdfs/...`) o absoluta |
+| `created_at` | fecha y hora? | UTC |
+| `deadline` | fecha y hora? | UTC. De la cabecera |
+| `score_prioridad` | número? | `scorePrioridad` que NEXO dio al crear la solicitud (hasta 4 decimales, escala de NEXO: mostrar tal cual). No se actualiza |
+| `conexos_conservados` | string[] **(omitible)** | Solo en `re-solicitar` (ahí siempre viene) |
+| `conexos_descartados` | string[] **(omitible)** | Solo en `re-solicitar`, siempre `[]`. Obsoleto |
+| `cubicacion` | `CubicacionRuta[]` **(omitible)** | Solo en la respuesta de la captura, si alguna ruta pasó por el cubicador |
+| `avisos` | string[] **(omitible)** | Solo `RESUMEN_INCOMPLETO` en la captura |
+| `comercial` | `ComercialCotizacion` **(omitible)** | Solo en `GET /web/cotizaciones/regional`: `{usuario_id, nombre_usuario?, nombre_completo?}` |
+
+**`CosteoCotizacion`** (`GET .../costeo` y respuestas de margen, conexos y recálculo)
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `folio` | string | — |
+| `estado_costeo`, `motivo_estado_costeo` | enum?, string? | — |
+| `costeo_listo_at` | fecha y hora? | — |
+| `precio_final` | número? | Total con conexos. No sumarle los conexos |
+| `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | De la ruta 1 (compatibilidad) |
+| `moneda`, `trm_aplicada` | string, número | — |
+| `servicios_conexos` | `ServicioConexoCosteo[]` | Todos los conexos |
+| `pdf_url` | string? | `null` sin PDF o con el PDF desactualizado |
+| `pdf_desactualizado` | bool | `true`: regenerar el PDF |
+| `row_version` | string? | Para `If-Match` |
+| `textos` | `TextosCotizacion`? | `null` si no hay (el PDF usa los estándar) |
+| `deadline`, `score_prioridad` | fecha y hora?, número? | De la cabecera |
+| `rutas` | `RutaCosteo[]` | En orden |
+
+**`RutaCosteo`**
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `linea_orden` | entero ≥ 1 | Para indicar la ruta en margen y conexos |
+| `linea_solicitud_id` | UUID | Alternativa a `linea_orden`; `rutaId` del recálculo |
+| `linea_negocio_id` | entero? | — |
+| `origen`, `destino` | string? | — |
+| `estado_costeo` | enum? | Estado de la ruta |
+| `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
+| `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
+| `peso_kg` | número? | Peso declarado de la ruta |
+| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—" |
+| `vehiculos` | string? | Texto agrupado como en el PDF ("2 × 3S3 - FURGON (20000 KG)", "Vehículo por definir") |
+| `mercancias` | `MercanciaCosteo[]` | `{orden, codigo_mercancia?, nombre_mercancia?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}` |
+| `servicios_conexos` | `ServicioConexoCosteo[]` | Los de la ruta |
+| `resultado_cubicacion` | enum? | `ASIGNADO`, `SIN_SELECCION_AUTOMATICA` o `null` (no pasó por el cubicador) |
+| `motivo_sin_seleccion` | enum? | Sección 5.5 |
+| `mensaje_sin_seleccion` | string? | Texto para el comercial con `SIN_SELECCION_AUTOMATICA` |
+| `condicionada` | bool | La ruta va a la Mesa de Costeo por una mercancía condicionada |
+| `avisos_cubicacion` | `AvisosCubicacion` **(omitible)** | `{mercancias_condicionadas, advertencias, extradimension?}` |
+| `aviso_conexos_nexo` | string? | Algún conexo quedó `incierto` o `fallido_definitivo`: "revisa en NEXO" |
+| `margen_sap_anomalo` | bool | SAP TM propuso un margen fuera de [0, 60 %]: se usó la política |
+| `aviso_margen` | string? | Explicación cuando `margen_sap_anomalo = true` |
+
+**`ServicioConexoCosteo`**: `{id, nombre?, categoria, cantidad, precio, incluido, linea_orden?, estado_nexo?}`. `precio` ya tiene el margen
+de la ruta; nunca trae costo. `incluido` siempre `true`.
+
+**`Licitacion`** (`deadline` en UTC): `{folio, cliente_nombre?, nit_cliente?, deadline?, estado_costeo?, motivo_estado_costeo?, moneda, trm_aplicada,
+precio_final?, lineas_costeadas, lineas_pendientes, archivo_nombre?, hoja?, lineas[], progreso_cubicacion?, cubicacion?}`.
+
+**`LineaLicitacion`**: `{orden, fila?, origen, destino, tipo_vehiculo?, peso_kg?, estado_costeo?, precio_final?, estado_cubicacion?,
+error_cubicacion?, resultado_cubicacion?, motivo_sin_seleccion?, condicionada, camiones?}`. `precio_final` es la tarifa del transporte
+**sin** conexos. `camiones[]`: `{orden, tipo_vehiculo?, carroceria?, peso_kg?, volumen_total_m3?, porcentaje_llenado_volumen?,
+porcentaje_llenado_peso?}` (porcentajes en `null` si la Mesa cambió el vehículo: mostrar "—").
+
+**`ResultadoCubicacion`**: `{resultado, motivo_sin_seleccion?, mensaje_sin_seleccion?, condicionada, vehiculos[], mercancias_condicionadas[],
+advertencias[], extradimension?, mercancias[], sugerencia (omitible)}`.
+
+**`VehiculoCubicacion`**: `{codigo_vehiculo, nombre_vehiculo, codigo_carroceria, nombre_carroceria, peso_total_kg, volumen_total_m3,
+porcentaje_llenado_volumen, porcentaje_llenado_peso, numero_vehiculo?, alerta_bajo_llenado, heterogenea, mercancias[]}`.
+`mercancias[]` (`MercanciaVehiculo`): `{indice_posicion?, id_tipo_mercancia?, codigo_mercancia, cantidad, peso_kg, volumen_m3}`; una fila por
+posición de la petición; dos filas del mismo camión pueden compartir código (al agrupar, **sumar**); `indice_posicion` (base 0) puede ser
+`null` en corridas antiguas.
+
+**`MercanciaCubicada`**: `{codigo_mercancia, nombre?, descripcion?, sugerida}` en el orden de `items`.
+
+**`CubicacionRuta`**: `{linea_orden, linea_solicitud_id, resultado?, motivo_sin_seleccion?, condicionada, mercancias_condicionadas[],
+advertencias[], extradimension?}`.
+
+**`MercanciaCondicionada`**: `{codigo_mercancia, comentario?}`. **`AdvertenciaCubicador`**: `{codigo?, mensaje}`.
+
+**`TextosCotizacion`**: `{asunto, introduccion, fuente, editado, actualizado_at}`.
+
+**`SalidaPdf`**: `{cotizacion_id, folio, pdf_url, registrada_en_bd}`.
+
+**`RespuestaChat`**: `{texto, herramientas[], precio (siempre null), margen (siempre null), pdf (siempre null), errores[{herramienta,
+codigo}], accion_propuesta?}`. **`AccionPropuesta`**: `{tipo, metodo, endpoint, cuerpo, resumen, row_version?}`.
+**`RespuestaChatError`**: `{texto, error: true, codigo}`.
+
+**`LoginResponse`**: `{access, refresh, user: {id, username, email, nombre_completo, rol, ubicacion?}, debeCambiarPassword}`.
+
+**Catálogos**: `OpcionCatalogo {valor, etiqueta}`; `CatalogosFlete {tipos_vehiculo[], tipos_carroceria[], clases_viaje[]}`; `Municipio {id,
+codigo_dane?, municipio?, departamento?, pais?}`; `TipoMercancia {codigo, nombre, categoria?, cubicable, condicionada_cubicacion,
+comentario_condicion?, activo, id? (obsoleto)}`; `TipoCarroceria {codigo, nombre, activo}`; `TipoVehiculo {codigo, nombre, carrocerias[],
+activo}`; `ServicioConexoCatalogo {id, codigo?, nombre?, categoria?, unidad?, origen?, destino?, puerto?, ruta?, tipo_maquina?, vigencia?}`;
+`ResultadoBusquedaClientes {exacta, candidatos[{nit_cliente, nombre, origen_cliente, bp?}]}`.
+
+**Correo**: `VistaPreviaCorreo {asunto, cuerpo, para[], cc[], adjunto}`; `RespuestaEnvio {enviado, message_id?}`; `Destinatarios {para[], cc[]}`.
+
+**Otros**: `DatosNuevaVersion` (4.5.4), `AnalisisExcel` / `HojaExcel` / `CodigoMercanciaFila` (4.6.1), `ErrorFilaLicitacion {indice?, fila?,
+fila_excel?, campo, codigo, mensaje}`, `LineaNegocio {id, linea_negocio, margen, metodo_calculo, is_active, updated_at?}`,
+`TelefonoComercial {telefono?}`, `MetricasComercial` y `MetricasRegional` (4.10 y 4.11).
+
+### 5.2 Estados de la cotización y de NEXO
+
+**`estado_costeo`** (cotización, ruta y camión)
+
+| Valor | Significado |
+|---|---|
+| `null` | La cotización no pasa por NEXO (cotizaciones antiguas del chat) |
+| `pendiente_envio` | Guardada; NEXO todavía no la tiene (envío en curso, o licitación cubicándose) |
+| `error_envio` | NEXO no la recibió. `motivo_estado_costeo` dice por qué. Si empieza por "Rechazo definitivo de Nexo", no se reintenta igual |
+| `pendiente_costeo` | En NEXO; alguna línea sin flete ("En costeo") |
+| `autocosteo` | Todas las líneas con flete; cotización de NEXO en borrador. Con `precio_final` = costeada |
+| `entregada` | NEXO la entregó |
+| `descartada` | NEXO descartó la solicitud |
+| `costeo_vencido` | Se agotó el tiempo máximo (72 h) sin costeo, o NEXO ya no reconoce la solicitud |
+
+"Costeada" = `autocosteo` o `entregada` con `precio_final`. Sin `precio_final` y con `motivo_estado_costeo`: falta el margen.
+
+**`estado_envio`**: `sin_enviar`, `enviada` (primer envío), `reenviada` (envíos siguientes).
+
+**`ganada`**: `null` (sin resultado), `true`, `false`. **`resultado`** (entrada de `/resultado`): `ganada`, `perdida`.
+
+**`estado_nexo`** (envío diferido de un conexo a NEXO): `null` (la solicitud aún no está en NEXO), `pendiente` (se enviará cuando NEXO costee
+la línea del primer camión de la ruta), `enviado`, `incierto` (NEXO no respondió y no lo muestra: revisar en NEXO), `fallido_definitivo`
+(se agotaron los reintentos o el servicio ya no está en el catálogo). El frontend no reintenta nada.
+
+**`estado_cubicacion`** (línea de licitación): `null` (se cubicó al guardar o no hay cubicador), `pendiente`, `cubicada`, `fallida` (ver
+`error_cubicacion`, con formato `CODIGO: mensaje`).
+
+**`progreso_cubicacion.estado`**: `en_curso` (quedan rutas pendientes), `con_fallas` (no quedan pendientes pero alguna falló: no sale a NEXO
+hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pasó por la cubicación en segundo plano.
+
+### 5.3 Margen, moneda y cliente
+
+| Enum | Valores | Significado |
+|---|---|---|
+| `origen_margen` | `sap_tm`, `politica_linea`, `negociado` | Sugerido por SAP TM con el BP; política de la línea; ajustado por el comercial (badge "Ajuste fuera de política") |
+| `metodo_calculo` | `margen`, `markup` | Método de la política de la línea |
+| `moneda` | `COP`, `USD` | Entrada sin distinguir mayúsculas; COP por defecto |
+| `origen_cliente` | `cliente`, `prospecto` | Prospecto: puede fallar el envío a NEXO si no tiene BP |
+| `tipo` | `spot`, `licitacion` | Tipo de solicitud |
+| `rol` | `comercial`, `gerente_comercial` | Rol en Cotifly |
+| `fuente_regional` | `dim_ejecutivo`, `usuarios_web` | De dónde salió la regional del gerente |
+
+### 5.4 Catálogos cerrados de la captura
+
+| Campo | Valores |
+|---|---|
+| `clase_viaje` | `valor` de `clases_viaje` (`GET /web/catalogos-flete`): `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`. Comparación exacta, distingue mayúsculas |
+| `tipologia` | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
+| `clase_contenedor` | `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE` y la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
+
+Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATALOGO` o `SOLICITUD_COSTEO_INVALIDA`).
+
+### 5.5 Cubicación
+
+**`resultado_cubicacion`** / `resultado`
+
+| Valor | Significado |
+|---|---|
+| `ASIGNADO` | El cubicador recomendó vehículos (uno o varios, pueden ser de tipos distintos) |
+| `SIN_SELECCION_AUTOMATICA` | No pudo escoger. Respuesta válida: la ruta queda con un camión sin vehículo que resuelve la Mesa de Costeo de NEXO. Trae `motivo_sin_seleccion` y `mensaje_sin_seleccion` |
+| `null` | La ruta no pasó por el cubicador (sin cubicador configurado, sin mercancías tipadas o respaldo por caída) |
+
+**`motivo_sin_seleccion`** (solo con `SIN_SELECCION_AUTOMATICA`). El servidor ya envía el texto en `mensaje_sin_seleccion`; usar ese texto.
+Mensajes que genera el servidor:
+
+| Valor | Mensaje para el comercial |
+|---|---|
+| `EXTRADIMENSIONADO` | "Hay piezas que exceden las medidas estándar: la Mesa de Costeo escoge el vehículo." |
+| `SIN_CANDIDATOS_DIMENSIONALES` | "Ningún vehículo de la flota cumple las medidas de la carga: la Mesa de Costeo escoge el vehículo." |
+| `SUPERA_K_MAX` | "La carga necesita más vehículos de los que combina el cubicador: la Mesa de Costeo escoge los vehículos." |
+| `SIN_CARROCERIA_COMPATIBLE` | "Ninguna carrocería es compatible con las mercancías: la Mesa de Costeo escoge el vehículo." |
+| `BUSQUEDA_AGOTADA` | "El cubicador no alcanzó a terminar la búsqueda de vehículos (es un límite de su algoritmo, no de tu carga): la Mesa de Costeo escoge el vehículo." |
+| `null` (otro o desconocido) | "El cubicador no seleccionó vehículo: la Mesa de Costeo escoge el vehículo." |
+
+Con `BUSQUEDA_AGOTADA` **nunca** decir que la carga no cabe. Si una base de datos todavía no admite este motivo, `motivo_sin_seleccion`
+llega en `null` y el motivo real queda en una advertencia con `codigo = "MOTIVO_SIN_SELECCION"` (`mensaje` = `"BUSQUEDA_AGOTADA: <texto>"`).
+
+**`extradimension`** (`ExtradimensionCubicador` o `null`):
+
+```json
+{
+  "hay_extradimension": true,
+  "medidas_estandar": { "largo_max_cm": 1220, "ancho_max_cm": 260, "alto_max_cm": 300, "peso_max_kg": 34000 },
+  "piezas": [ { "indice_posicion": 0, "id_tipo_mercancia": null, "codigo_mercancia": "BOBINAS_ACERO", "excesos": ["alto 320.0 cm > 300.0 cm"] } ]
+}
+```
+
+- `hay_extradimension`: alguna pieza excede las medidas estándar.
+- `medidas_estandar` (o `null`): límites con los que se comparó (cm y kg; cada uno puede ser `null`).
+- `piezas[]`: cada pieza que excede, con su posición (base 0) en las mercancías de la ruta o en `items` (`indice_posicion`, `null` en
+  corridas antiguas) y la lista legible de `excesos`. Pintarlas resaltando la mercancía de esa posición.
+
+**`condicionada`** y **`comentario_condicion`**:
+
+- En el catálogo (`TipoMercancia`): `condicionada_cubicacion = true` significa que esa mercancía necesita aprobación; `comentario_condicion`
+  explica por qué. Avisarlo al escogerla.
+- En la ruta o en la cubicación: `condicionada = true` significa que alguna mercancía es condicionada; la ruta va a la Mesa de Costeo,
+  pero **no bloquea** nada y la recomendación es válida. `mercancias_condicionadas[]` trae cada `codigo_mercancia` con su `comentario`
+  (el `comentario_condicion` del catálogo). Mostrarlo como aviso.
+
+**Otros campos del cubicador**: `alerta_bajo_llenado` (el camión va poco lleno), `heterogenea` (el camión lleva mercancías de tipos
+distintos), `numero_vehiculo` (desde 1), `advertencias[]` (`{codigo?, mensaje}`, por ejemplo `REFRIGERADO`).
+
+**`CodigoMercanciaFila.origen`** (análisis del Excel): `excel` (tomado de la columna de código, `sugerido = false`), `parecido` (el más
+parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (sin sugerencia).
+
+### 5.6 Textos, asistente y avisos
+
+| Enum | Valores | Significado |
+|---|---|---|
+| `textos.fuente` | `ia`, `estandar` | Redactados por la IA y validados; o los textos estándar (la IA tardó, falló, no pasó la validación o no se ha redactado) |
+| `accion_propuesta.tipo` | `ajustar_margen`, `re_solicitar_costeo`, `agregar_servicios_conexos` | `PUT .../costeo/margen`; `POST .../costeo/re-solicitar`; `POST .../costeo/servicios-conexos` |
+| `accion_propuesta.metodo` | `PUT`, `POST` | — |
+| `avisos` | `RESUMEN_INCOMPLETO` | La captura se guardó pero falló una lectura secundaria: no reenviar, recargar |
+
+**`RespuestaChatError.codigo`**
+
+| Código | Qué pasó | Qué ofrecer |
+|---|---|---|
+| `IA_NO_DISPONIBLE` | Fallaron todos los modelos de IA | "Asistente no disponible"; los botones del detalle siguen funcionando |
+| `LIMITE_MODELO` | Límite del proveedor de IA o de Cotifly | Reenviar en unos segundos |
+| `TURNO_EN_CURSO` | Otro mensaje de la misma conversación sigue en curso | Esperar la respuesta anterior |
+| `MAX_ITERACIONES` | El asistente necesitó demasiados pasos | Pedir una cosa a la vez |
+| `RESPUESTA_NO_ESTRUCTURADA` | La respuesta del modelo no pasó la validación | Reenviar o reformular |
+| `ERROR_INTERNO` | Otro fallo | Reintentar más tarde |
+
+### 5.7 Valores de `detalle.motivo` que la UI debe reconocer
+
+| Código principal | `detalle.motivo` | Significado |
+|---|---|---|
+| `SOLICITUD_COSTEO_INVALIDA` | Código del primer error (`MUNICIPIO_AMBIGUO`, `PESO_REQUERIDO`, `PESO_INCONSISTENTE`...) o el del catálogo caído | Ver `detalle.errores[]` |
+| `ESTADO_NO_PERMITE` | `CAPTURA_EN_CURSO` | La `Idempotency-Key` ya creó un folio (`detalle.folio`) |
+| `ESTADO_NO_PERMITE` | `LICITACION` | Operación no admitida en una licitación |
+| `ESTADO_NO_PERMITE` | `VARIAS_RUTAS` | `datos_carga` con varias rutas |
+| `LICITACION_INVALIDA` | `LICITACION_REQUIERE_NUEVA_CARGA` | Las filas guardadas ya no cumplen las reglas: crear otra licitación |
+| `MARGEN_LINEA_DESCONOCIDA` | `LINEA_DE_NEXO` (u otro motivo) | Con `detalle.lineas_validas` |
+| `RESULTADO_YA_DEFINIDO` | `ganada` o `perdida` | El resultado que tiene NEXO (Cotifly ya lo guardó) |
+| `COSTEO_NEXO_RECHAZADA`, `CONEXO_INVALIDO`, `COSTEO_NEXO_*` | Código de NEXO (o `HTTP 401`) | Nunca el texto de NEXO |
+
+---
+
+## 6. Catálogo completo de códigos de error
+
+### 6.1 Códigos de `ErrorNegocio` (`error.codigo`)
+
+| Código | HTTP | Significado | Acción recomendada en la UI |
+|---|---|---|---|
+| `AJUSTE_MARGEN_INVALIDO` | 400 | Margen fuera de 0 a 0,99 o ausente | Validar el campo antes de enviar |
+| `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB | "El archivo supera 10 MB" |
+| `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
+| `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
+| `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 | Buscador de clientes no disponible (no es "sin resultados") | "Buscador no disponible", Reintentar |
+| `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
+| `CONFLICTO_CONCURRENCIA` | 409 | El `If-Match` no coincide; nada cambió | Recargar el costeo y repetir |
+| `CORREO_DESHABILITADO` | 503 | Correo apagado en el servidor | "El envío de correo no está habilitado en este ambiente" |
+| `CORREO_DUPLICADO` | 400 | Mismo envío a los mismos destinatarios hace menos de 5 min | Avisar |
+| `CORREO_ENVIO_FALLIDO` | 400 | Falló el relay SMTP | Reintentar |
+| `CORREO_PDF_NO_ENCONTRADO` | 400 | La cotización no tiene PDF | Deshabilitar Enviar sin `pdf_url` |
+| `COSTEO_NEXO_NO_DISPONIBLE` | 503 | NEXO caído, sin configurar o sin permiso del comercial | "NEXO no responde"; nada cambió. En la captura aparece como motivo de `error_envio` |
+| `COSTEO_NEXO_RECHAZADA` | 400 | NEXO respondió 4xx (código en `detalle.motivo`) | Mostrar el mensaje |
+| `COSTEO_NEXO_SOLICITUD_INVALIDA` | (motivo) | NEXO rechazó el alta de forma definitiva | Ocultar Reintentar; corregir en una versión nueva |
+| `COSTEO_NEXO_SOLICITUD_NO_ENCONTRADA` | (motivo) | NEXO ya no reconoce la solicitud (queda `costeo_vencido`) | Mostrar el motivo |
+| `COSTEO_NEXO_TIEMPO_AGOTADO` | 503 | NEXO no respondió a tiempo | En el envío: "verifica en NEXO antes de reintentar" |
+| `COSTEO_NO_LISTO` | 409 | Sin precio con margen; o, en `/resultado`, la cotización no está en NEXO | Deshabilitar hasta tener precio; en resultado usar `/seguimiento` |
+| `COSTEO_NO_REINTENTABLE` | 409 | El estado no permite reintentar el envío | Refrescar y ocultar Reintentar |
+| `COTIZACION_NO_ENTREGADA` | 409 | NEXO exige la cotización entregada | "NEXO aún no la ha entregado" |
+| `CUBICACION_DEMASIADO_GRANDE` | 400 | Más de 10.000 unidades en una ruta o cálculo | "Parte la carga en varias rutas" |
+| `CUBICADOR_NO_AUTORIZADO` | 503 | El cubicador rechazó la llave de Cotifly | "Avisa a soporte". No cerrar sesión |
+| `CUBICADOR_NO_DISPONIBLE` | 503 | Cubicador sin configurar o caído. En "Calcular cubicaje" también si Cotifly se está reiniciando (la petición entró durante el apagado) | Reintentar |
+| `CUBICADOR_OCUPADO` | 503 (con `Retry-After: 10`) o `fallida` en `GET /web/cubicacion/{id}` | Desde 2026-10-19: el cubicador está calculando otras cargas y no se liberó a tiempo (Cotifly hace una llamada a la vez), o hay demasiadas cubicaciones en curso. Solo en "Calcular cubicaje"; en la captura y el recálculo cuenta como una caída (`CUBICADOR_NO_DISPONIBLE` o el camión de respaldo); en la licitación la ruta vuelve a la cola sin gastar intento ni usar el respaldo | Esperar el `Retry-After` y Reintentar |
+| `CUBICADOR_PETICION_RECHAZADA` | 400 | D1 (2026-10-16): el cubicador respondió 422 (su validación de esquema) sin señalar una mercancía. En "Calcular cubicaje", la captura y el recálculo; nada se guardó. Antes era 503 `CUBICADOR_RESPUESTA_INVALIDA` | Mostrar `mensaje` y pedir que revise medidas, peso y cantidades; no reintentar sin cambios |
+| `CUBICADOR_RESPUESTA_INVALIDA` | 503 | Respuesta del cubicador fuera del contrato | "Avisa a soporte" |
+| `DIMENSIONES_INVALIDAS` | 400 | Medida fuera de 0,1 a 999.999 o peso por bulto ≤ 0. En "Calcular cubicaje" con `detalle.item` (base 0) y `detalle.campo` (D1); también por un 422 del cubicador que señala una mercancía | Marcar el campo del ítem |
+| `ERROR_INTERNO` | — | Error no controlado | "Ocurrió un error. Reintenta" |
+| `ESTADO_NO_PERMITE` | 409 | El estado no admite la operación (ver `detalle.motivo`) | Según el motivo (sección 5.7) |
+| `EXCEL_INVALIDO` | 400 | No se pudo leer el Excel | Pedir otro archivo |
+| `EXCEL_SIN_DATOS` | 400 | Ninguna hoja con tabla, o la hoja no existe | Revisar el archivo o la hoja |
+| `FOLIO_CONSECUTIVO_AGOTADO` | 400 | Se usaron los 999 folios del día de esas iniciales | "Contacta a soporte" |
+| `FOLIO_REQUERIDO` | 400 | `/web/chat` sin folio | Abrir el asistente solo desde una cotización |
+| `FORMATO_NO_SOPORTADO` | 400 | Archivo que no es `.xlsx` ni `.xlsm` | Pedir otro archivo |
+| `IDEMPOTENCY_KEY_REUTILIZADA` | 409 | D4 (2026-10-16): la misma `Idempotency-Key` con otro cuerpo en la captura, agregar conexos o re-solicitar (antes 400 `ErrorWeb`). Nada se ejecutó | Generar una clave nueva para la nueva intención |
+| `ITEMS_REQUERIDOS` | 400 | "Calcular cubicaje" sin ítems | Deshabilitar el botón |
+| `JUSTIFICACION_REQUERIDA` | 400 | Margen por debajo del sugerido de la ruta sin justificación | Abrir el campo de justificación |
+| `LICITACION_INVALIDA` | 400 | Filas inválidas (`errores[]`) o filas guardadas que ya no pasan | Pintar errores por fila |
+| `LINEA_SIN_COTIZACION_NEXO` | 409 | La ruta aún no tiene línea en la cotización de NEXO | Esperar el costeo |
+| `MARGEN_LINEA_DESCONOCIDA` | 400 | Línea de negocio inexistente o inactiva | Marcar la línea; ofrecer `detalle.lineas_validas` si vienen |
+| `MERCANCIA_DESCONOCIDA` | 400 | Mercancía sin código ni descripción, sin parecido, inactiva o desconocida | Pedir que la escoja del catálogo |
+| `MERCANCIA_NO_CUBICABLE` | 400 | Tipo con `cubicable = false` | No ofrecerlo |
+| `MERCANCIAS_REQUERIDAS` | 400 | El cubicador recibió una lista vacía | Validar antes de enviar |
+| `MUNICIPIOS_NO_DISPONIBLE` | 503 | El catálogo de municipios no respondió | Deshabilitar el buscador, Reintentar |
+| `NEXO_NO_DISPONIBLE` | 503 | NEXO caído al consultar o agregar conexos (ver `detalle.agregado_en_nexo`) | Según `agregado_en_nexo` (4.4.5) |
+| `NEXO_SIN_PERMISO` | 403 | NEXO rechazó al comercial por su rol | Avisar a soporte |
+| `POSICION_INVALIDA` | 400 | Como `error.codigo`: en "Calcular cubicaje", `cantidad` fuera de 1 a 100.000 (`detalle.item`, `detalle.campo = "cantidad"`) o un 422 del cubicador que señala una mercancía; en la captura y el recálculo, un 422 del cubicador. En la captura también como código por campo (sección 6.2) | Marcar el ítem o mostrar `mensaje` |
+| `PDF_PAYLOAD_INVALIDO` | 400 | Datos incompletos para el PDF | "Faltan datos para el PDF" |
+| `PDF_RENDER_NO_DISPONIBLE` | 503 | Falló el render o no hubo turno | Reintentar |
+| `PDF_YA_ENVIADO` | 409 | Ya enviada o con resultado; `detalle` trae la llamada para la versión nueva | Ofrecer "Crear versión nueva" |
+| `PDF_YA_GENERADO` | 409 | Ya hay un PDF vigente | Descargarlo |
+| `PRECONDICION_REQUERIDA` | 428 | Falta `If-Match` | Error de programación: enviar el encabezado |
+| `REGIONAL_NO_ASIGNADA` | 409 | El gerente no tiene regional | Estado vacío explicativo |
+| `REGIONAL_NO_DISPONIBLE` | 503 | Fuente de la regional caída | Reintentar |
+| `RESULTADO_YA_DEFINIDO` | 409 | NEXO (o Cotifly) ya tiene un resultado | Mostrar y recargar |
+| `RUTA_INEXISTENTE` | 400 | La ruta no es de la cotización | Recargar el costeo |
+| `RUTA_REQUERIDA` | 400 | Varias rutas y no se indicó cuál (`detalle.rutas`) | Selector de ruta |
+| `SERVICIO_OCUPADO` | 503 | Otra operación retiene el folio (con `Retry-After: 1`) | Reintentar en 1 s |
+| `SOLICITUD_COSTEO_INVALIDA` | 400 | Formulario o carga inválidos (`detalle.errores[]` en la captura) | Pintar errores por campo |
+| `SOLICITUD_NO_TRANSICIONABLE` | 409 | NEXO no permite la transición | Mostrar `mensaje` |
+| `TEXTOS_COTIZACION_INVALIDOS` | 400 | Asunto o introducción vacíos, largos o con URL o correos | Marcar el campo |
+| `TEXTOS_EDITADOS` | 409 | Redactar sobre textos editados | Confirmar y repetir con `?sobrescribir=true` |
+| `TRM_NO_DISPONIBLE` | 400 | No hay TRM del día | Reintentar o Cambiar a COP |
+| `USAR_RESULTADO_NEXO` | 409 | `/seguimiento` sobre una cotización de NEXO | Llamar a `detalle.endpoint` con `If-Match` |
+
+Códigos del enum que **no** debería ver la consola web (internos del asistente o del agente retirado): `TARIFA_FUENTE_NO_DISPONIBLE`,
+`TARIFA_CONFIG_INVALIDA`, `MARGEN_FUENTE_NO_DISPONIBLE`, `PRECIO_INVALIDO`, `CONFIRMACION_REQUERIDA`, `AJUSTE_COTIZACION_INVALIDA`,
+`AJUSTE_ID_INVALIDO`, `FOLIO_DUPLICADO`, `HERRAMIENTA_DESCONOCIDA`, `MUNICIPIO_ARGUMENTO_INVALIDO`, `COTIZACION_CHAT_RETIRADA`. Pueden
+aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`). `COTIZACION_NO_ENCONTRADA` se traduce siempre a 404
+`ErrorWeb`; `CORREO_INVALIDO` llega como 400 `ErrorWeb` sin código.
+
+### 6.2 Códigos por campo (`detalle.errores[].codigo` de la captura y `errores[].codigo` de la licitación)
+
+| Código | Significado | Campo típico |
+|---|---|---|
+| `LINEAS_REQUERIDAS` | Sin rutas o líneas | `rutas` / `lineas` |
+| `DEMASIADAS_LINEAS` | Más de 100 rutas o 1000 líneas | `rutas` / `lineas` |
+| `LINEA_INCOMPLETA` | Falta un dato esencial de la ruta | — |
+| `CAMPO_REQUERIDO` | Falta un campo obligatorio (id de municipio, `codigo_mercancia`, `clase_contenedor` con Contenedor) | `origen_municipio_id`, `mercancias[i].codigo_mercancia`... |
+| `CAMPO_DEMASIADO_LARGO` | Texto más largo que el límite | — |
+| `VALOR_FUERA_DE_RANGO` | Número fuera de rango, o `moneda` inválida en la licitación | — |
+| `DEMASIADAS_POSICIONES` | Más de 200 mercancías | `mercancias` (antes `posiciones`) |
+| `POSICION_INVALIDA` | Mercancía inválida (medidas, cantidad, o peso por unidad ≤ 0 con tipo de mercancía). Mensaje con la mercancía en base 1 (`Mercancía 2: ...`) | `mercancias[i].<subcampo>`, base 0 (D6; antes `posiciones[i]`) |
+| `PESO_REQUERIDO` | Ni `peso_kg` > 0 ni mercancías con peso | `peso_kg` |
+| `PESO_INCONSISTENTE` | `peso_kg` difiere más del 1 % de `sum(cantidad × peso_kg)` | `peso_kg` |
+| `FILA_INVALIDA` | `fila` inexistente o repetida en el Excel | `fila` |
+| `CAMPO_NO_APLICA` | Campo que no aplica (clase de contenedor sin Contenedor, valor de levante sin levante distinto, campo plano junto con `rutas`) | — |
+| `CODIGO_NO_CATALOGO` | Valor que no es código de catálogo | `tipologia`, `clase_viaje`, `clase_contenedor` |
+| `MUNICIPIO_AMBIGUO` | El nombre tiene varios candidatos (el mensaje trae los ids) | `origen`, `destino`, ciudades |
+| `MUNICIPIO_NO_ENCONTRADO` | El nombre no coincide con ningún municipio | ídem |
+| `MUNICIPIO_INEXISTENTE` | El id no existe en el catálogo | `*_municipio_id` |
+| `CONEXO_DUPLICADO` | El mismo servicio dos veces en la ruta | `servicios_conexos` |
+| `CONEXO_NO_ENCONTRADO` | Servicio inexistente o inactivo en NEXO | `servicios_conexos` |
+| `DEMASIADOS_CONEXOS` | Más de 20 por ruta | `servicios_conexos` |
+| `TIPO_MERCANCIA_INEXISTENTE` | `id_tipo_mercancia` (obsoleto) fuera del catálogo | `mercancias[i].id_tipo_mercancia` |
+| `MERCANCIA_DESCONOCIDA` | Código inactivo o desconocido | `mercancias[i].codigo_mercancia` |
+| `MERCANCIA_NO_CUBICABLE` | Código no cubicable | `mercancias[i].codigo_mercancia` |
+
+Forma en la captura: `{ruta, campo, codigo, mensaje}` (`ruta` base 0, `null` = encabezado). Forma en la licitación: `{indice, fila,
+fila_excel, campo, codigo, mensaje}`.
+
+### 6.3 Errores HTTP sin código (`ErrorWeb`)
+
+| HTTP | Texto | Acción |
+|---|---|---|
+| 400 | `Cuerpo inválido.` / `Cuerpo inválido. Revisa: ...` / mensaje de validación | Corregir la petición |
+| 401 | `Inicia sesión de nuevo.` | Refresh una vez |
+| 401 | `Credenciales inválidas` (login) | Sin acceso; no reintentar |
+| 403 | `No tienes permiso para esta operación.` | Ocultar la opción |
+| 404 | `Cotización no encontrada o no es tuya.` / `Sesión no encontrada.` / `Comercial no encontrado en tu regional.` / `Recurso no encontrado.` | Según el caso |
+| 413 | `El cuerpo de la petición es demasiado grande.` | Reducir el contenido |
+| 415 | `Cuerpo inválido: envía JSON con Content-Type: application/json.` | Error de programación |
+| 429 | `Demasiadas peticiones. Intenta de nuevo en unos segundos.` | Esperar hasta 60 s |
+
+---
+
+## 7. Cambios recientes que rompen o agregan
+
+| # | Cambio | Tipo | Qué hacer en el frontend |
+|---|---|---|---|
+| 1 | `GET /web/municipios` responde **503** `MUNICIPIOS_NO_DISPONIBLE` cuando NEXO no responde (antes **400**). Un 429 de NEXO también es 503 y reintentar es seguro | Rompe | Tratar 400 y 503 igual mientras conviva el frontend anterior; deshabilitar el buscador y ofrecer Reintentar |
+| 2 | `GET /web/municipios?q=&departamento=` busca en NEXO (máximo 50, solo Colombia); sin filtros, catálogo completo | Agrega | Buscador con `q` desde 3 letras; guardar el `id` elegido |
+| 3 | **Retirados** `GET /web/metricas/actividad` y `GET /web/metricas/ajustes-margen` (404) | Rompe | Usar `/web/metricas/comercial` y `/web/metricas/regional` |
+| 4 | **Nuevo** `GET /web/cotizaciones/regional` (solo gerente) | Agrega | Vista "Todas las cotizaciones" |
+| 5 | `CotizacionResumen` trae `deadline` (UTC) y `score_prioridad` en todo lugar; `comercial` solo en el listado regional. `CosteoCotizacion` trae `deadline` y `score_prioridad` | Agrega | Mostrar en la lista y en el detalle; `score_prioridad` tal cual |
+| 6 | Cubicación: quinto motivo **`BUSQUEDA_AGOTADA`**; `mensaje_sin_seleccion` en `POST /web/cubicacion` y en las rutas del costeo | Agrega | Mostrar `mensaje_sin_seleccion`; nunca decir que la carga no cabe |
+| 7 | `extradimension` cambia de forma: `{hay_extradimension, medidas_estandar, piezas[]}` con `indice_posicion` y `excesos[]` (la forma provisional `{extradimensionado, dimensiones, detalle}` se retira) | Rompe | Pintar las piezas que exceden por posición |
+| 8 | `mercancias_condicionadas[].comentario` sale del `comentario_condicion` del catálogo; `TipoMercancia` trae `condicionada_cubicacion` y `comentario_condicion` | Agrega | Avisar de las condicionadas al escoger y al ver la cubicación |
+| 9 | "Calcular cubicaje": cada vehículo trae `numero_vehiculo`, `alerta_bajo_llenado`, `heterogenea` y `mercancias[]` por posición | Agrega | Al agrupar por código, **sumar** |
+| 10 | `POST /web/cubicacion` responde una **lista de vehículos** (`vehiculos[]`) en vez de `sugerencia`/`sugerencia_flota`; ya no trae clase de viaje ni de contenedor; caída = 503 `CUBICADOR_NO_DISPONIBLE` | Rompe | Pintar `vehiculos[]`; quitar prellenados de clase |
+| 11 | **`peso_kg` > 0** por unidad en cada mercancía con tipo de mercancía (captura: `POSICION_INVALIDA`; "Calcular cubicaje": `DIMENSIONES_INVALIDAS`) y tope de 10.000 unidades (`CUBICACION_DEMASIADO_GRANDE`) | Rompe | Pedir el peso por unidad y validar antes de enviar |
+| 12 | Mercancías con **`codigo_mercancia`** obligatorio (con cubicador); `id_tipo_mercancia` obsoleto | Rompe | Usar el `codigo` del desplegable |
+| 13 | **`Idempotency-Key`** aceptada en `POST /web/solicitudes-costeo` | Agrega | Generarla al pulsar Enviar y reutilizarla en los reintentos |
+| 14 | **409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO`** en la captura repetida | Agrega | No reintentar; llevar a "Mis cotizaciones" con `detalle.folio` |
+| 15 | **`avisos: ["RESUMEN_INCOMPLETO"]`** en el 201 de la captura | Agrega | No reenviar; recargar |
+| 16 | **`/resultado` con `If-Match`** (obligatorio en la perdida solo en Cotifly, 428 sin él); `/seguimiento` responde 409 `USAR_RESULTADO_NEXO` con `detalle.metodo/endpoint/requiere_if_match` | Rompe | Enrutar el botón a `/resultado` |
+| 17 | `motivo_rechazo` de una ganada es `"No aplica"` | Cambia | Mostrar el motivo solo en perdidas |
+| 18 | `precio_final` **incluye los servicios conexos** (suma de rutas) | Rompe | No sumar los conexos |
+| 19 | Captura por **`rutas[]`**; el formato plano queda obsoleto | Rompe | Migrar el formulario |
+| 20 | `tipo_vehiculo` y `carroceria` se ignoran; `valor_estimado` y `referencia` salen del contrato (también `referencia` de `Licitacion`) | Rompe | Dejar de enviarlos y de leerlos |
+| 21 | Municipios con **id obligatorio** (y nombre como copia) en origen, destino, devolución y levante | Rompe | Enviar siempre el id |
+| 22 | Margen y conexos **por ruta** (`linea_orden` o `linea_solicitud_id`); 400 `RUTA_REQUERIDA` / `RUTA_INEXISTENTE` | Rompe | Selector de ruta |
+| 23 | `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Agrega | Mostrar el aviso |
+| 24 | `rutas[].margen_sap_anomalo` y `aviso_margen` | Agrega | Mostrar el aviso de SAP |
+| 25 | `re-solicitar` conserva los conexos (`conexos_conservados`); `conexos_descartados` siempre `[]` | Cambia | Leer `conexos_conservados` |
+| 26 | `datos_carga` solo con una ruta (409 `ESTADO_NO_PERMITE` con `VARIAS_RUTAS` o `LICITACION`) | Rompe | Con varias rutas, `nueva_version: true` sin `datos_carga` |
+| 27 | Licitación con cubicación en segundo plano (`progreso_cubicacion`, `estado_cubicacion`, `camiones`, `cubicacion`) y `POST .../cubicacion/reintentar` | Agrega | Polling de 3 a 5 s; botones de reintento |
+| 28 | Análisis del Excel con `columna_mercancia`, `columna_codigo_mercancia`, `mercancias[]` sugeridas y `catalogo_mercancias_disponible` | Agrega | Mostrar las sugerencias para confirmar |
+| 29 | Nuevo `POST .../rutas/{rutaId}/recalcular-vehiculos` (con `If-Match`) | Agrega | Llamarlo cuando cambian las mercancías o el peso antes de enviar a NEXO |
+| 30 | Nuevos catálogos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Agrega | Traducir códigos a nombres |
+| 31 | **`POST /web/cubicacion` puede responder 202** `{id, estado, consultar_en}` (con `Location` y `Retry-After`) si el cubicador no termina en 8 s; nuevo **`GET /web/cubicacion/{id}`** (`en_proceso`, `completada`, `fallida`; 404 si venció o es ajena) | Rompe | Manejar el 202: "Calculando…", polling cada 2-3 s con tope, 404 = volver a calcular (sección 4.3.2) |
+| 32 | Nuevo **503 `CUBICADOR_OCUPADO`** con `Retry-After: 10` en "Calcular cubicaje" | Agrega | Esperar el `Retry-After` y Reintentar |
+| 33 | **La Mesa manda en el vehículo**: el polling copia el vehículo y la carrocería que la Mesa cambió en NEXO también a los camiones del cubicador (una diferencia solo de escritura no cuenta) | Cambia | Mostrar lo que traiga `camiones[]`; puede llegar el nombre de NEXO en vez del código |
+| 34 | La captura y el recálculo de vehículos siguen síncronos, pero con el cubicador lento una ruta puede tardar unos 3,6 minutos y una captura de varias rutas hasta unos 6,5 minutos | Cambia | Spinner largo; timeout del cliente HTTP mayor (por ejemplo 7 min); no reintentar antes |
+| 35 | **D1:** `POST /web/cubicacion` valida medidas (0,1 a 999.999), peso (> 0) y cantidad (1 a 100.000) como la captura, antes de llamar al cubicador: 400 `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` con `detalle.item` (base 0) y `detalle.campo`. Un 422 del cubicador es **400** (`DIMENSIONES_INVALIDAS`/`POSICION_INVALIDA` o el nuevo `CUBICADOR_PETICION_RECHAZADA`), no 503 `CUBICADOR_RESPUESTA_INVALIDA`; igual en la captura y el recálculo | Rompe | Marcar el campo del ítem; tratar el 422 como dato inválido, no como caída |
+| 36 | **D4:** la misma `Idempotency-Key` con otro cuerpo es **409 `IDEMPOTENCY_KEY_REUTILIZADA`** (`ErrorNegocio`), antes 400 `ErrorWeb`. Una clave fuera de 8 a 64 caracteres sigue siendo 400 `ErrorWeb` | Rompe | Ante ese 409, generar una clave nueva |
+| 37 | **D5:** `Licitacion.deadline` llega en UTC (`+00:00`), como en el resto de la API | Cambia | Convertir a Bogotá al mostrar, igual que los demás `deadline` |
+| 38 | **D6:** `POSICION_INVALIDA` en la captura va en `campo = mercancias[i].<subcampo>` (base 0) y su mensaje nombra la mercancía en base 1 sin índices; `DEMASIADAS_POSICIONES` va en `mercancias` | Rompe | Marcar el campo con el índice de `campo` |
+| 39 | **D2:** si la Mesa cambia el vehículo, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` del camión llegan en `null` | Cambia | Mostrar "—", nunca 0 % |
+| 40 | Tope del polling de `GET /web/cubicacion/{id}`: **4 minutos** | Cambia | Ajustar el tope (antes se sugerían 2-3 minutos) |
+
+---
+
+## 8. Checklist de integración
+
+**Base**
+
+- [ ] `environment.cotiflyApiUrl` propio, sin barra final.
+- [ ] Interceptor que solo toca las URL de Cotifly: agrega `Authorization: Bearer` y **ningún otro encabezado propio**. `If-Match` e
+      `Idempotency-Key` los pone cada petición que los usa; ningún otro encabezado propio pasa CORS.
+- [ ] Todos los cuerpos de `/web/*` en snake_case; números como números; `Content-Type: application/json`.
+- [ ] Parser de errores que distingue `ErrorWeb` (`error` texto) de `ErrorNegocio` (`error.codigo`), más `ReporteLicitacionInvalida`.
+- [ ] Fechas mostradas en America/Bogota; `deadline` enviado con desfase `-05:00`.
+- [ ] Formato de dinero: COP sin decimales, USD con 2; nunca calcular precios en el cliente.
+- [ ] Folio codificado con `encodeURIComponent`, sin parsearlo.
+
+**Sesión**
+
+- [ ] Login SSO con `idUsuario`; 401 = "sin acceso", sin reintento.
+- [ ] Refresh single-flight ante 401 y proactivo a menos de 60 s de `exp`; reemplazar los dos tokens.
+- [ ] Logout con refresh y Bearer; borrar tokens aunque falle.
+- [ ] Guards y menú por `user.rol` (`comercial`, `gerente_comercial`); no hay rol `admin`.
+- [ ] Modal de teléfono si `GET /web/usuario/telefono` devuelve `null`.
+
+**Concurrencia e idempotencia**
+
+- [ ] Guardar `row_version` de cada `CosteoCotizacion` y enviarlo en `If-Match` en margen, conexos (POST y PUT), re-solicitar, textos,
+      redactar y recálculo de vehículos; opcional en PDF y en `/resultado` (obligatorio en la perdida sin costeo).
+- [ ] Leer el `ETag` de cada respuesta (`observe: 'response'`) y usarlo como el `If-Match` siguiente, también tras `re-solicitar`,
+      `/resultado`, PDF y textos (su cuerpo no trae `row_version`).
+- [ ] 409 `CONFLICTO_CONCURRENCIA` → recargar y repetir; 428 → corregir el código.
+- [ ] `Idempotency-Key` (UUID) por intención en captura, agregar conexos y re-solicitar; reutilizarla en los reintentos de red.
+- [ ] 409 `IDEMPOTENCY_KEY_REUTILIZADA` → generar una clave nueva (no es un 400).
+- [ ] Entregar al backend los dominios de ClientePro por ambiente para la lista de orígenes de CORS (sección 1.10).
+
+**Formulario y costeo**
+
+- [ ] Catálogos cargados una vez con caché; 503 → selects deshabilitados y Reintentar.
+- [ ] Buscadores de cliente y municipio con debounce, desde 3 letras, `switchMap`.
+- [ ] Rutas con id de municipio + nombre; mercancías con `codigo_mercancia` y peso por unidad > 0; conexos con id y cantidad.
+- [ ] Validaciones del cliente: condicionales de contenedor, regla de peso (1 %), máximo 2 decimales, 200 mercancías, 20 conexos, 100 rutas,
+      10.000 unidades por ruta.
+- [ ] Spinner largo y timeout del cliente HTTP mayor que la captura (unos 3,6 min por ruta, hasta unos 6,5 min en el peor caso; por
+      ejemplo 7 min) en la captura y el recálculo; bloqueo de doble clic al enviar.
+- [ ] Pintar `detalle.errores[]` por ruta y campo (`mercancias[i].<subcampo>` en base 0); `MUNICIPIO_AMBIGUO` con selector de candidatos.
+- [ ] Mostrar `cubicacion[]` de la respuesta de la captura (avisos, condicionadas, extradimensión).
+- [ ] "Calcular cubicaje": manejar el **202** ("Calculando…", polling de `GET /web/cubicacion/{id}` cada 2-3 s con tope de 4 minutos;
+      `completada`, `fallida` y 404 = volver a calcular), el 503 `CUBICADOR_OCUPADO` con `Retry-After`, los 400 con `detalle.item` y
+      `detalle.campo` y `CUBICADOR_PETICION_RECHAZADA`.
+- [ ] Polling del costeo cada 15 a 30 s con las reglas de 3.4, pausado con la pestaña oculta.
+- [ ] Vista de costeo por ruta: precio total = `precio_final` (no sumar conexos), margen y sugerido por ruta, camiones con nombre del catálogo,
+      `mensaje_sin_seleccion`, `aviso_margen`, `aviso_conexos_nexo`; porcentajes de llenado en `null` → "—".
+- [ ] Ajuste de margen con justificación por debajo del sugerido; selector de ruta con `RUTA_REQUERIDA`.
+- [ ] Conexos: buscador, agregar (POST) y quitar o cambiar cantidad (PUT con `conexos`); manejo de `agregado_en_nexo`.
+- [ ] Textos del PDF: redactar (con `TEXTOS_EDITADOS` → confirmar y `sobrescribir=true`) y editar.
+- [ ] `PDF_YA_ENVIADO` → ofrecer la versión nueva con el cuerpo de `detalle`.
+
+**PDF, correo y resultado**
+
+- [ ] PDF descargado como blob con `HttpClient`; nada de `<a href>` ni iframe a la API.
+- [ ] `pdf_desactualizado = true` → botón "Regenerar PDF"; 503 `PDF_RENDER_NO_DISPONIBLE` → Reintentar.
+- [ ] Correo: destinatarios previos, vista previa, envío; refrescar la fila después.
+- [ ] Ruteo del resultado: `/resultado` para NEXO (`entregada`, y perdida sin costeo en `error_envio`/`pendiente_costeo`); `/seguimiento`
+      solo para `null`, `descartada` y `costeo_vencido`.
+- [ ] Re-solicitar: mismo folio (200) o versión nueva (201, navegar al folio nuevo); mostrar `conexos_conservados`.
+
+**Licitaciones, asistente, tableros**
+
+- [ ] Analizar Excel (multipart `archivo`), mapear columnas, mostrar `filas_excel`, confirmar mercancías sugeridas.
+- [ ] Crear licitación (multipart `licitacion` + `archivo`), pintar `errores[]` por `fila_excel`.
+- [ ] Polling de 3 a 5 s con `progreso_cubicacion.estado = en_curso`; reintentar cubicación con o sin respaldo.
+- [ ] Exportar el Excel como blob.
+- [ ] Asistente con `folio` obligatorio, `sesion_id` por cotización, timeout ≥ 120 s, patrón propuesta → Confirmar.
+- [ ] Tableros: estado vacío, promedios "—", "Valor ganado (COP)", 409/503 del gerente, mapa oculto con `disponible = false`.
+
+---
+
+## 9. Notas de versión
+
+**2026-10-19 (rama `hu-023-defectos-e2e-1016` hasta `44f25a7`: `4328e4c` más la corrección B1 del apagado).** Defectos del E2E real del 2026-10-16:
+
+- **"Calcular cubicaje" asíncrono (D3, opción D).** El motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API mientras
+  calcula. `POST /web/cubicacion` responde **200 como siempre** si el cubicador termina en 8 s; si no, **202**
+  `{id, estado: "en_proceso", consultar_en}` con `Location` y `Retry-After: 2`, y el cálculo sigue en el servidor aunque el navegador
+  corte. Endpoint **nuevo** `GET /web/cubicacion/{id}` (`en_proceso`, `completada` con `resultado`, `fallida` con `error`; 404 si
+  venció a los 15 min, se perdió al reiniciar Cotifly o es de otro comercial). Son **46 endpoints**.
+- **Una llamada a la vez al cubicador (opción C).** Compartida por "Calcular cubicaje", la captura, el recálculo y la licitación. Código
+  **nuevo** `CUBICADOR_OCUPADO` (503 con `Retry-After: 10`, solo en "Calcular cubicaje"). En la licitación, una ruta que encuentra el
+  cubicador ocupado vuelve a la cola sin gastar un intento ni usar el respaldo. La captura y el recálculo siguen síncronos: unos
+  **3,6 minutos** por ruta y hasta unos **6,5 minutos** en el peor caso; el cliente HTTP del frontend debe tener un timeout mayor.
+  Pasarlos a segundo plano es el siguiente paso.
+- **Tope del polling de "Calcular cubicaje": 4 minutos** (lo más que dura una llamada al cubicador con la configuración por defecto).
+- **La Mesa manda en el vehículo (D2).** El vehículo y la carrocería que la Mesa de Costeo cambie en NEXO se adoptan también en los
+  camiones del cubicador; una diferencia solo de escritura (`Furgón` = `FURGON`) no cuenta como cambio. El PDF y el Excel muestran el
+  nombre del catálogo aunque NEXO devuelva el nombre o el código escrito de otra forma. Si la Mesa cambia de verdad el vehículo, los
+  porcentajes de llenado de ese camión llegan en `null`: la UI muestra "—".
+- **D1.** `POST /web/cubicacion` valida medidas, peso y cantidad como la captura (400 con `detalle.item` y `detalle.campo`). Un 422 del
+  cubicador es 400 (`DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA` o el **nuevo** `CUBICADOR_PETICION_RECHAZADA`), no 503.
+- **D4.** `Idempotency-Key` reutilizada con otro cuerpo: **409 `IDEMPOTENCY_KEY_REUTILIZADA`** (`ErrorNegocio`); antes 400 `ErrorWeb`.
+- **D5.** `Licitacion.deadline` en UTC.
+- **D6.** `POSICION_INVALIDA` con `campo = mercancias[i].<subcampo>` (base 0) y mensaje en base 1 sin índices.
+- **Apagado ordenado (B1).** Una petición a "Calcular cubicaje" que llega mientras Cotifly se apaga responde 503
+  `CUBICADOR_NO_DISPONIBLE` ("Cotifly se está reiniciando…") en vez de un 500, y el apagado espera también los cálculos que entraron en
+  ese momento.
+- Cambios con su "qué hacer": sección 7, filas 31 a 40.
+
+**PR #178 (commit `fa96f5e`, 2026-10-15).** Esta versión cierra las diferencias que había entre el código, el openapi y las guías del
+frontend. Este documento ya refleja todo lo siguiente:
+
+- **CORS corregido.** El navegador puede enviar `If-Match` e `Idempotency-Key` (además de `Authorization` y `Content-Type`) y leer
+  `ETag`, `Location`, `Retry-After` y `Content-Disposition`. Las mutaciones de la etapa final ya funcionan desde el dominio de
+  ClientePro, y el `If-Match` se toma del `ETag` de cada respuesta, sin volver a leer el costeo (secciones 1.8 y 1.10).
+- **Contrato alineado con el código** en el openapi y en las guías del frontend:
+  - `CUBICACION_DEMASIADO_GRANDE` está vigente (400 con más de 10.000 unidades). En "Calcular cubicaje", cada ítem debe traer
+    `peso_kg` > 0 (400 `DIMENSIONES_INVALIDAS` con `detalle.item`).
+  - `avisos_cubicacion` se guarda en la ruta y viene en cualquier `CosteoCotizacion` cuando existe; es opcional. Con
+    `SIN_SELECCION_AUTOMATICA`, mostrar siempre `mensaje_sin_seleccion`.
+  - `extradimension` usa una sola forma: `{hay_extradimension, medidas_estandar, piezas[]}`.
+  - Las mercancías usan `codigo_mercancia`; `id_tipo_mercancia` es obsoleto.
+  - `Idempotency-Key` es opcional en la captura, pero el frontend debe enviarla siempre.
+  - Un `deadline` sin zona se interpreta en hora de Bogotá.
+  - La versión nueva se crea con `re-solicitar`; el chat ya no crea versiones.
+  - El PDF se regenera tras un ajuste (`pdf_desactualizado`). `PDF_YA_GENERADO` solo aplica con un PDF vigente.
+  - Un conexo que no viene en `incluidos` se borra de la ruta.
+  - `re-solicitar` conserva los conexos (`conexos_conservados`).
+  - `GET /web/municipios?q=` es la búsqueda de municipios.
+  - El openapi documenta las dos formas de error (`ErrorWeb` y `ErrorNegocio`) y que el servidor nunca responde 412.
+- **Sin cambios de forma:** ningún endpoint, campo ni código de error nuevo o retirado en esta versión. Siguen siendo 45 endpoints.
+  Tampoco existen un rol `admin`, un endpoint de sesión actual ni el estado 412.
+
+**Punto abierto**
+
+| Tema | Situación | Qué hacer en el frontend |
+|---|---|---|
+| Id de correlación | La API no acepta ni genera `X-Correlation-Id` (ni `X-Request-Id`). Enviarlo hace fallar el preflight de CORS | No enviarlo. Para reportar un error a soporte, usar el folio, el endpoint, la hora (en Bogotá) y el `error.codigo` o el texto de la respuesta |
