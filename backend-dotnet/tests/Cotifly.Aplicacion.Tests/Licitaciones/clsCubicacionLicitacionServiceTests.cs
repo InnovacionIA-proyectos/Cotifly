@@ -79,11 +79,11 @@ public sealed class clsCubicacionLicitacionServiceTests
             new clsCubicacionRuta(Guid.NewGuid(), "ASIGNADO", null, false));
 
     private void Responder(clsPlanRuta plan) =>
-        _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _planificador.PlanificarEnSegundoPlanoAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPlanRuta>.Exito(plan));
 
     private void Fallar(string codigo) =>
-        _planificador.PlanificarAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
+        _planificador.PlanificarEnSegundoPlanoAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<clsLineaSolicitudCosteo>(), Arg.Any<CancellationToken>())
             .Returns(clsResultado<clsPlanRuta>.Fallo(new clsErrorDominio(codigo, "fallo de prueba")));
 
     private clsRutaPorCubicar Cola(int orden) =>
@@ -105,7 +105,7 @@ public sealed class clsCubicacionLicitacionServiceTests
         (await Servicio().CubicarAsync(Cola(1), Ct)).Should().Be(ResultadoCubicacionRuta.SinCupo);
 
         await _cotizaciones.DidNotReceiveWithAnyArgs().ReclamarRutaPorCubicarAsync(default, default, default, Ct);
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarEnSegundoPlanoAsync(default, default, default!, Ct);
     }
 
     [Fact]
@@ -116,9 +116,36 @@ public sealed class clsCubicacionLicitacionServiceTests
 
         (await Servicio().CubicarAsync(Cola(1), Ct)).Should().Be(ResultadoCubicacionRuta.NoReclamada);
 
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarEnSegundoPlanoAsync(default, default, default!, Ct);
         await _cupo.Received(1).DisposeAsync();
         await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+    }
+
+    [Fact]
+    public async Task ConElCubicadorOcupadoLaRutaVuelveALaColaSinRespaldoSinGastarIntentoYSinAuditar()
+    {
+        // Opción C, validación de los defectos del 2026-10-16 (punto a): un "Calcular cubicaje" largo tiene el cupo global del proceso y la
+        // ruta de la licitación no lo consigue a tiempo (CUBICADOR_OCUPADO). No es una caída: ni respaldo ni un intento gastado.
+        Fallar(clsCodigosError.CubicadorOcupado);
+        var cola = Cola(1);
+
+        (await Servicio(maximoIntentos: 1).CubicarAsync(cola, Ct)).Should().Be(ResultadoCubicacionRuta.SinCupo);
+
+        Ruta(1).EstadoCubicacion.Should().Be(EstadoCubicacion.Pendiente, "sigue en la cola");
+        Ruta(1).CubicacionIntentos.Should().Be(0, "no gastó un intento (con MaximoIntentos = 1 habría quedado fallida)");
+        Ruta(1).ErrorCubicacion.Should().BeNull();
+        Ruta(1).CubicacionDisponibleAt.Should().Be(_reloj.AhoraUtc, "se toma en la siguiente vuelta, sin esperar a que venza el reclamo");
+        Ruta(1).Vehiculos.Should().ContainSingle().Which.TipoVehiculo.Should().BeNull("conserva el camión provisional");
+        await _unidad.Received(1).GuardarCambiosAsync(Arg.Any<CancellationToken>());
+        await _cupo.Received(1).DisposeAsync();
+        await _auditoria.DidNotReceiveWithAnyArgs().RegistrarAsync(default!, default, default, default, default, default);
+        await EnviosANexo(0);
+
+        // Cuando el cupo se libera, la misma ruta se cubica en la vuelta siguiente.
+        Responder(Plan("3S3"));
+        (await Servicio(maximoIntentos: 1).CubicarAsync(new clsRutaPorCubicar(cola.RutaId, cola.CotizacionId, _reloj.AhoraUtc), Ct))
+            .Should().Be(ResultadoCubicacionRuta.Cubicada);
+        Ruta(1).CubicacionIntentos.Should().Be(0);
     }
 
     [Fact]
@@ -405,7 +432,7 @@ public sealed class clsCubicacionLicitacionServiceTests
 
         (await Servicio().CubicarAsync(Cola(1), Ct)).Should().Be(ResultadoCubicacionRuta.Fallida);
 
-        await _planificador.DidNotReceiveWithAnyArgs().PlanificarAsync(default, default, default!, Ct);
+        await _planificador.DidNotReceiveWithAnyArgs().PlanificarEnSegundoPlanoAsync(default, default, default!, Ct);
     }
 
     // ------------------------------------------------------------------ Reintento del comercial

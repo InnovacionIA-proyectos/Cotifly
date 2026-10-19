@@ -389,6 +389,12 @@ public sealed class clsLineaSolicitud
     }
 
     /// <summary>
+    /// Opción C (validación de los defectos del 2026-10-16): el cubicador estaba ocupado (<c>CUBICADOR_OCUPADO</c>, no se le llamó). La
+    /// ruta sigue pendiente desde <paramref name="disponibleAt"/>, sin gastar un intento ni anotar un error.
+    /// </summary>
+    internal void PosponerCubicacion(DateTimeOffset disponibleAt) => CubicacionDisponibleAt = disponibleAt;
+
+    /// <summary>
     /// HU-023.5: ¿la ruta falló porque el cubicador no respondió (caída o tiempo agotado, <c>CUBICADOR_NO_DISPONIBLE</c>)? Solo esas se
     /// pueden aceptar con el camión sin vehículo: un rechazo de la petición (mercancía desconocida, dimensiones inválidas...) o una
     /// respuesta inválida es un dato malo que el respaldo escondería (HU-023.1, contra el fallo silencioso).

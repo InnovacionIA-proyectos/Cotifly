@@ -281,6 +281,35 @@ public sealed class clsPlanificadorCamionesCubicadorTests
         resultado.Error.Codigo.Should().Be(clsCodigosError.CubicadorRespuestaInvalida);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CubicadorOcupadoEsRespaldoEnLaCapturaYErrorSinRespaldoEnSegundoPlano(bool respaldoSiFalla)
+    {
+        // Opción C, validación de los defectos del 2026-10-16 (punto a): la licitación en segundo plano no convierte CUBICADOR_OCUPADO en
+        // un camión sin vehículo ni en CUBICADOR_NO_DISPONIBLE (que gastaría un intento): lo recibe tal cual y la ruta vuelve a la cola.
+        _cubicador.RespaldoSiFalla.Returns(respaldoSiFalla);
+        var ocupado = new clsErrorDominio(clsCodigosError.CubicadorOcupado, "ocupado", "sin cupo tras 60 s")
+        {
+            Datos = new Dictionary<string, object?> { [clsErroresCubicador.ClaveCaida] = true },
+        };
+        _cubicador.RecomendarAsync(Arg.Any<clsPeticionRecomendacion>(), Arg.Any<CancellationToken>()).Returns(ocupado);
+
+        var enSegundoPlano = await Planificador().PlanificarEnSegundoPlanoAsync(_usuario, _rutaId, Ruta(), Ct);
+        var enLaCaptura = await Planificador().PlanificarAsync(_usuario, _rutaId, Ruta(), Ct);
+
+        enSegundoPlano.Error.Codigo.Should().Be(clsCodigosError.CubicadorOcupado);
+        enSegundoPlano.Error.Detalle.Should().BeNull("el detalle interno solo va al log");
+        if (respaldoSiFalla)
+        {
+            enLaCaptura.Valor.Camiones.Should().Equal(new clsCamionPlaneado(null, null, PesoRuta));
+        }
+        else
+        {
+            enLaCaptura.Error.Codigo.Should().Be(clsCodigosError.CubicadorNoDisponible);
+        }
+    }
+
     private static clsErrorDominio Caida(string detalle) =>
         new(clsCodigosError.CubicadorNoDisponible, "caído", detalle)
         {

@@ -104,8 +104,20 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             description: "Rutas que quedaron con un camión sin vehículo porque el cubicador falló (etiqueta motivo).");
     }
 
-    public async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
-        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default)
+    public Task<clsResultado<clsPlanRuta>> PlanificarAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: false, cancellationToken);
+
+    /// <summary>
+    /// Validación de la rama de los defectos del 2026-10-16 (punto a): en la licitación en segundo plano, <c>CUBICADOR_OCUPADO</c> vuelve tal
+    /// cual (sin respaldo y sin marcar la captura como caída) para que la ruta vuelva a la cola sin gastar un intento.
+    /// </summary>
+    public Task<clsResultado<clsPlanRuta>> PlanificarEnSegundoPlanoAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, CancellationToken cancellationToken = default) =>
+        PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: true, cancellationToken);
+
+    private async Task<clsResultado<clsPlanRuta>> PlanificarAsync(
+        Guid usuarioId, Guid rutaId, clsLineaSolicitudCosteo ruta, bool ocupadoEsError, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         if (_cubicador is not { EstaConfigurado: true } cubicador)
@@ -160,6 +172,13 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         var recomendacion = await cubicador.RecomendarAsync(peticion, cancellationToken);
         if (recomendacion.EsFallo)
         {
+            if (ocupadoEsError && recomendacion.Error.Codigo == clsCodigosError.CubicadorOcupado)
+            {
+                _logger.LogInformation("El cubicador está ocupado para la ruta {RutaId} ({Detalle}): vuelve a la cola sin respaldo.",
+                    rutaId, recomendacion.Error.Detalle);
+                return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje);
+            }
+
             if (CodigosSinRespaldo.Contains(recomendacion.Error.Codigo))
             {
                 _logger.LogWarning("El cubicador no aceptó la ruta {RutaId} ({Codigo}: {Detalle}): no se guarda la captura.",
