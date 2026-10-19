@@ -159,7 +159,7 @@ public sealed class clsLicitacionService(
     {
         ArgumentNullException.ThrowIfNull(ruta);
         static string? Nombre(string? codigo, IReadOnlyDictionary<string, string>? catalogo) =>
-            codigo is null ? null : catalogo is not null && catalogo.TryGetValue(codigo, out var nombre) ? nombre : codigo;
+            clsNombresCatalogoCubicadorExtensiones.Nombre(catalogo, codigo);
         return [.. ruta.VehiculosOrdenados.Select((v, i) => new clsCamionExportacion(
             i + 1, Nombre(v.TipoVehiculo, vehiculos), Nombre(v.Carroceria, carrocerias), v.PesoKg, v.VolumenTotalM3,
             v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
