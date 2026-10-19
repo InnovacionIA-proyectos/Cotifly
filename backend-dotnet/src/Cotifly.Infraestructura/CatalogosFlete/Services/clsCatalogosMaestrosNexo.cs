@@ -25,8 +25,9 @@ namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 /// <remarks>
 /// <para><b>Obligatorios y opcionales.</b> Los cuatro catálogos se piden juntos. <c>tipos-vehiculo</c> y <c>clases-viaje</c> son
 /// obligatorios: si uno falla (o queda vacío) el resultado es <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>. Si fallan
-/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning y el formulario sigue (la clase de contenedor se
-/// valida contra la lista fija de Cotifly). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
+/// <c>clases-contenedor</c> o <c>lineas-negocio</c>, quedan vacíos con un warning y el formulario sigue (ya no hay lista fija de
+/// clases de contenedor: con la lista vacía <c>GET /web/catalogos-flete</c> la entrega vacía y la captura de una clase que no es
+/// provisional responde <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>, HU-023.1 y HU-027.1). Filas sin <c>codigo</c> (tipos de vehículo) o sin <c>descripcion</c> se descartan, y
 /// también los tipos de vehículo con <c>esCatalogoOficial = false</c> (no se ofrecen ni se aceptan).</para>
 /// <para><b>Límites.</b> Cada respuesta se lee hasta <see cref="MaximoBytes"/> y <see cref="MaximoFilas"/>; pasarse es
 /// <c>NoDisponible</c> (no se guarda un catálogo truncado).</para>

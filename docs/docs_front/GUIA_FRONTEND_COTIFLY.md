@@ -1150,7 +1150,7 @@ El formulario pasa a capturar **rutas** (`rutas[]`, hasta 100; ver `RutaCapturaW
 | `carroceria` | — | — | **Retirado (HU-021.6, decisión 7):** se ignora; no enviarlo |
 | `tipologia` | string o null, hasta 50 | No | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
 | `clase_viaje` | string o null, hasta 50 | No | `Contenedor`, `Cupo`, `CargaSuelta`, `Extradimensionado` |
-| `clase_contenedor` | string o null, hasta 20 | No | `CNT20.IT/RE/ST`, `CNT40.HC/RE` (condicional a `clase_viaje = Contenedor`) |
+| `clase_contenedor` | string o null, hasta 20 | No | Un `valor` de `clases_contenedor` de `GET /web/catalogos-flete` (HU-027.1; hoy `CNT20.IT/RE/ST`, `CNT40.HC/RE`) o la lista provisional `CNT20.FT/OP`, `CNT40.FT/OP` (condicional a `clase_viaje = Contenedor`) |
 | `exclusivo`, `consolidado` | bool o null | No | — |
 | `retorna_contenedor` y `ciudad_devolucion_contenedor` | bool o null; string hasta 150 | No | Condicionales |
 | `levante_contenedor_diferente` y `ciudad_levante_contenedor` | bool o null; string hasta 150 | No | Condicionales |
