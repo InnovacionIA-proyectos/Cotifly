@@ -5028,6 +5028,7 @@ components:
     DatosCargaWeb:
       type: object
       minProperties: 1
+      deprecated: true
       description: |
         HU-013.4. Cambios de carga de una re-solicitud: solo los campos que cambian, con los límites de
         `SolicitudCosteoWeb`. Origen, destino, cliente y línea de negocio no se cambian aquí (eso es otra cotización).
@@ -5070,6 +5071,11 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_devolucion_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-028 (#186, defecto B). Id de `GET /web/municipios`; si cambia el nombre sin el id, el id anterior se borra.
         levante_contenedor_diferente:
           type: boolean
           nullable: true
@@ -5077,6 +5083,11 @@ components:
           type: string
           nullable: true
           maxLength: 150
+        ciudad_levante_municipio_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: HU-028 (#186, defecto B). Igual que `ciudad_devolucion_municipio_id`.
         valor_aprovisionamiento:
           type: number
           nullable: true
@@ -5120,7 +5131,12 @@ components:
           maxLength: 300
           description: Por qué se vuelve a pedir el costeo; queda en la auditoría.
         datos_carga:
-          description: Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva.
+          deprecated: true
+          description: |
+            Cambios de carga. Ausente o `null` = sin cambios; con datos = siempre versión nueva. **Obsoleto (HU-028, #186):** usar
+            `PUT /web/cotizaciones/{folio}/solicitud` (varias rutas, todos los campos y el modo según el estado). Se sigue aceptando
+            mientras el frontend migra, con los defectos corregidos: las mercancías conservan `codigo_mercancia` y `nombre_mercancia`,
+            las ciudades de devolución y levante llevan su id de municipio, y un cambio de `clase_viaje` vuelve a cubicar.
           oneOf:
             - $ref: '#/components/schemas/DatosCargaWeb'
             - $ref: '#/components/schemas/Nulo'

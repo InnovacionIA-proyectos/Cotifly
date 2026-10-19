@@ -159,6 +159,13 @@ public sealed class clsReSolicitudCosteoService(
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
+        if (entrada.DatosCarga is not null)
+        {
+            // HU-028 (#186, ADR-021): datos_carga queda obsoleto en favor de PUT /web/cotizaciones/{folio}/solicitud (varias rutas, todos los
+            // campos y el modo según el estado). Se sigue aceptando (con los defectos A, B y C corregidos) mientras el frontend migra.
+            logger.LogWarning("CAMPO_OBSOLETO: re-solicitar de {Folio} trae datos_carga; usar PUT /web/cotizaciones/{{folio}}/solicitud (HU-028).", cotizacion.Folio);
+        }
+
         var entradaAuditoria = new
         {
             folio = cotizacion.Folio,
@@ -358,14 +365,15 @@ public sealed class clsReSolicitudCosteoService(
     }
 
     /// <summary>
-    /// ¿Los cambios de carga cambian el peso o las mercancías de la ruta? Entonces sus camiones ya no sirven: se borran y se vuelven a
-    /// planificar (HU-021.9). Un campo que viene con el mismo valor no cuenta como cambio.
+    /// ¿Los cambios de carga cambian lo que recibe el cubicador (peso, clase de viaje o mercancías)? Entonces sus camiones ya no sirven:
+    /// se borran y se vuelven a planificar (HU-021.9). Un campo que viene con el mismo valor no cuenta como cambio.
     /// </summary>
     public static bool CambiaLaCarga(clsLineaSolicitudCosteo anterior, clsLineaSolicitudCosteo nueva)
     {
         ArgumentNullException.ThrowIfNull(anterior);
         ArgumentNullException.ThrowIfNull(nueva);
-        return anterior.PesoKg != nueva.PesoKg || !anterior.Posiciones.SequenceEqual(nueva.Posiciones);
+        // HU-028 (#186), defecto C: la misma regla de la edición (peso, clase de viaje y mercancías por código, cantidad, medidas y peso).
+        return clsReglaRecubicacion.Exige(anterior, nueva);
     }
 
     /// <summary>
