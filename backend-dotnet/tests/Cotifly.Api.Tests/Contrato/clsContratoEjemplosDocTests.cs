@@ -52,6 +52,10 @@ public sealed partial class clsContratoEjemplosDocTests
             "respuesta: POST /web/cubicacion 200",
             "respuesta: POST /web/cubicacion 400",
             "respuesta: POST /web/cubicacion 503",
+            // Opción D (E2E 2026-10-16, D3): "Calcular cubicaje" asíncrono.
+            "respuesta: POST /web/cubicacion 202",
+            "respuesta: GET /web/cubicacion/{id} 200",
+            "respuesta: GET /web/cubicacion/{id} 404",
         ]);
     }
 

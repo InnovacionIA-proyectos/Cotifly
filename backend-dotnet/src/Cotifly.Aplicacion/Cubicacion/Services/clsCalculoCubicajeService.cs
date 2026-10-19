@@ -61,18 +61,9 @@ public sealed class clsCalculoCubicajeService(
         Guid usuarioId, IReadOnlyList<clsItemCubicacion> items, string? claseViaje, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
-        if (!cubicador.EstaConfigurado)
+        if (Validar(items) is { } invalido)
         {
-            logger.LogWarning("Calcular cubicaje: Cubicador:UrlBase vacía; responde CUBICADOR_NO_DISPONIBLE.");
-            return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoConfigurado);
-        }
-
-        for (var i = 0; i < items.Count; i++)
-        {
-            if (items[i] is { } item && ValidarItem(item, i) is { } invalido)
-            {
-                return invalido;
-            }
+            return invalido;
         }
 
         var mercancias = await ResolverMercanciasAsync(items, cancellationToken);
@@ -113,6 +104,26 @@ public sealed class clsCalculoCubicajeService(
         {
             MensajeSinSeleccion = respuesta.SinSeleccion ? clsMotivosSinSeleccion.Mensaje(respuesta.MotivoSinSeleccion) : null,
         };
+    }
+
+    public clsErrorDominio? Validar(IReadOnlyList<clsItemCubicacion> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (!cubicador.EstaConfigurado)
+        {
+            logger.LogWarning("Calcular cubicaje: Cubicador:UrlBase vacía; responde CUBICADOR_NO_DISPONIBLE.");
+            return new clsErrorDominio(clsCodigosError.CubicadorNoDisponible, MensajeNoConfigurado);
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i] is { } item && ValidarItem(item, i) is { } invalido)
+            {
+                return invalido;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

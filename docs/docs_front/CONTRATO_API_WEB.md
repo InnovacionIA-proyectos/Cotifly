@@ -289,6 +289,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 12 | **`conexos_descartados`** de la re-solicitud es siempre `[]` (`deprecated`; se retira con HU-021-FE). Los conexos se conservan y se avisan en `conexos_conservados`. | Leer `conexos_conservados`. |
 | 13 | **Re-solicitar con `datos_carga`** solo aplica a una cotización de **una** ruta (con varias, 409 `ESTADO_NO_PERMITE` con `detalle.motivo` = `VARIAS_RUTAS` en un formulario o `LICITACION` en una licitación; D9, #139). | Con varias rutas, crear la versión con `nueva_version: true` y sin `datos_carga`. |
 | 14 | **`POST /web/cubicacion` ("Calcular cubicaje") cambia de forma** (HU-023.2, #157): ahora pregunta al cubicador y responde una **lista de vehículos** (`vehiculos[]`) con el resultado, el motivo, la condicionada, las advertencias y la extradimensión. Ya no trae `sugerencia`, `sugerencia_flota`, clase de viaje ni clase de contenedor. Cada ítem lleva `codigo_mercancia`; **un ítem sin `codigo_mercancia` ni `descripcion` (antes se cubicaba) ahora es 400 `MERCANCIA_DESCONOCIDA`**, porque el cubicador necesita el tipo de mercancía. Los errores pasan a ser los del cubicador (503 `CUBICADOR_NO_DISPONIBLE` en vez de 400 `CUBICACION_NO_DISPONIBLE`). | Ver §8.12. Pintar la lista de vehículos y quitar el prellenado de clase de viaje y de contenedor. Mandar `codigo_mercancia` del desplegable (mientras tanto sirve `descripcion`). |
+| 15 | **`POST /web/cubicacion` puede responder 202** (opción D, 2026-10-19): si el cubicador no termina en 8 s, responde 202 con `{id, estado: "en_proceso", consultar_en}` y el resultado se consulta en `GET /web/cubicacion/{id}`. Nuevo 503 `CUBICADOR_OCUPADO` con `Retry-After`. | Ver §8.12.1: "Calculando…", consultar cada 2-3 s, 404 = volver a calcular. |
 
 ### 8.2 Códigos de error nuevos de HU-021
 
@@ -648,6 +649,14 @@ primer nivel son los de la ruta 1:
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
 
+**El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
+dichos cambios, incluido el tipo de vehículo." `rutas[].camiones[].tipo_vehiculo` y `carroceria` nacen con los códigos del cubicador
+(`3S3`, `FURGON`...) o vacíos, y el polling del costeo copia lo que la Mesa deje en Nexo **también en los camiones del cubicador**: si la
+Mesa cambia `2S2` por `3S3`, o `FURGON` por `ESTACAS`, el camión pasa a mostrar lo de la Mesa (y el texto de `vehiculos` y el PDF
+también). Una diferencia solo de escritura no es un cambio: Nexo devuelve `Furgón` o `FURGON REFRIGERADO` por `FURGON` y
+`FURGON_REFRIGERADO`, y se conserva el código del cubicador. Un valor vacío de Nexo no borra el de Cotifly. Puede llegar un nombre de
+Nexo en vez del código (`Estacas`): mostrarlo tal cual. Los porcentajes de llenado siguen siendo los del cubicador.
+
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
 `score_prioridad` es el `scorePrioridad` que Nexo devolvió al crear la solicitud (`201 CapturaResultDto`), con hasta 4 decimales y
@@ -981,6 +990,108 @@ de la captura, validadas antes de llamar al cubicador (E2E 2026-10-16, D1) y la 
 | 400 | `CUBICACION_DEMASIADO_GRANDE` | Vigente (HU-023, #176): más de 10.000 unidades en total (Cotifly no llama al cubicador) | El mensaje: partir la carga |
 | 503 | `CUBICADOR_NO_DISPONIBLE` | Cubicador sin configurar o caído (un POST sin respuesta se reconsulta antes de rendirse; nunca se repite) | El mensaje y un botón Reintentar |
 | 503 | `CUBICADOR_NO_AUTORIZADO`, `CUBICADOR_RESPUESTA_INVALIDA` | Llave rechazada o respuesta fuera del contrato (un 422 del `POST /recomendaciones` ya no cae aquí: es 400, ver arriba) | "Avisa a soporte" |
+| 503 | `CUBICADOR_OCUPADO` | Opción C (2026-10-19): el cubicador está calculando otras cargas (con `Retry-After: 10`). Ver §8.12.1 | "El cubicador está ocupado" y Reintentar |
+
+#### 8.12.1 Cubicación lenta: 202 y `GET /web/cubicacion/{id}` (opción D, E2E 2026-10-16)
+
+El motor del cubicador tarda **26-31 s** con cargas grandes (1.100 unidades) y bloquea su API mientras calcula. Para no colgar la
+pantalla, `POST /web/cubicacion` ahora tiene **dos respuestas buenas**:
+
+- **200** (como siempre) si el cubicador termina dentro de la espera síncrona (`Cubicador:EsperaSincronaCubicacionSegundos`, **8 s** por
+  defecto). La forma no cambia.
+- **202** si no termina a tiempo. El cálculo **sigue en segundo plano** (aunque el navegador corte la conexión) y la respuesta trae el
+  `id` para consultarlo, con `Location: /web/cubicacion/{id}` y `Retry-After: 2`.
+
+Los 400 de los ítems (`ITEMS_REQUERIDOS`, `DIMENSIONES_INVALIDAS`, `POSICION_INVALIDA`) se validan **antes** y siempre llegan de forma
+síncrona.
+
+<!-- respuesta: POST /web/cubicacion 202 -->
+```json
+{ "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90", "estado": "en_proceso", "consultar_en": "/web/cubicacion/7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90" }
+```
+
+`GET /web/cubicacion/{id}` responde 200 con `estado`:
+
+- `en_proceso`, con `Retry-After: 2`;
+- `completada`, con `resultado` (la misma forma del 200 de `POST /web/cubicacion`);
+- `fallida`, con `error` `{codigo, mensaje, detalle?}` y los mismos códigos de la tabla de arriba (por ejemplo `MERCANCIA_NO_CUBICABLE`,
+  `DIMENSIONES_INVALIDAS` con `detalle.item`, `CUBICADOR_NO_DISPONIBLE` o `CUBICADOR_OCUPADO`).
+
+`resultado` y `error` solo vienen cuando aplican.
+
+<!-- respuesta: GET /web/cubicacion/{id} 200 -->
+```json
+{ "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90", "estado": "en_proceso" }
+```
+
+<!-- respuesta: GET /web/cubicacion/{id} 200 -->
+```json
+{
+  "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90",
+  "estado": "completada",
+  "resultado": {
+    "resultado": "ASIGNADO",
+    "motivo_sin_seleccion": null,
+    "mensaje_sin_seleccion": null,
+    "condicionada": false,
+    "vehiculos": [
+      { "codigo_vehiculo": "3S3", "nombre_vehiculo": "Tractocamión 3S3", "codigo_carroceria": "FURGON", "nombre_carroceria": "Furgón", "peso_total_kg": 16000, "volumen_total_m3": 62.5, "porcentaje_llenado_volumen": 81.25, "porcentaje_llenado_peso": 47.06,
+        "numero_vehiculo": 1, "alerta_bajo_llenado": false, "heterogenea": false, "mercancias": [] }
+    ],
+    "mercancias_condicionadas": [],
+    "advertencias": [],
+    "extradimension": null,
+    "mercancias": [ { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre": null, "descripcion": null, "sugerida": false } ]
+  }
+}
+```
+
+<!-- respuesta: GET /web/cubicacion/{id} 200 -->
+```json
+{
+  "id": "7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90",
+  "estado": "fallida",
+  "error": { "codigo": "MERCANCIA_NO_CUBICABLE", "mensaje": "Una de las mercancías no se puede cubicar: revisa el tipo de mercancía." }
+}
+```
+
+<!-- respuesta: GET /web/cubicacion/{id} 404 -->
+```json
+{ "error": "La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje." }
+```
+
+**Cupo del cubicador (opción C).** Cotifly hace **una sola llamada a la vez** al cubicador, compartida con la captura, el recálculo y la
+licitación (`Cubicador:MaximoConcurrente = 1`). Si otra carga ocupa el cubicador más de `Cubicador:EsperaMaximaCupoSegundos` (60 s), la
+cubicación termina con `CUBICADOR_OCUPADO`: **503 con `Retry-After: 10`** si pasa dentro de la espera síncrona, o `fallida` con ese código en
+el `GET`. También responde 503 `CUBICADOR_OCUPADO` si hay demasiadas cubicaciones en curso (`Cubicador:MaximoCubicacionesEnMemoria`).
+
+<!-- respuesta: POST /web/cubicacion 503 -->
+```json
+{
+  "error": {
+    "codigo": "CUBICADOR_OCUPADO",
+    "mensaje": "El cubicador está calculando otras cargas en este momento: intenta de nuevo en unos segundos."
+  }
+}
+```
+
+**Cómo lo maneja el frontend:**
+
+1. `POST /web/cubicacion`. Con **200**, pintar el resultado como hoy. Con **202**, mostrar "Calculando… el cubicador puede tardar hasta
+   un minuto" y guardar `consultar_en`.
+2. Consultar `GET consultar_en` cada **2-3 s** (el `Retry-After`), con un tope de unos **2-3 minutos**. Mientras sea `en_proceso`, seguir
+   mostrando "Calculando…". El comercial puede seguir editando: si cambia la carga, descartar la consulta anterior y volver a calcular.
+3. Con `completada`, pintar `resultado` igual que el 200. Con `fallida`, tratar `error` igual que un error del `POST`: los 400 del cubicador
+   (marcar el ítem si trae `detalle.item`) o "no disponible" con un botón **Reintentar**.
+4. Con **404**, la cubicación venció, no es del comercial o se perdió porque Cotifly se reinició (se guardan en memoria 15 min): volver a
+   calcular sin mostrar un error técnico.
+5. Con **503 `CUBICADOR_OCUPADO`**, esperar los segundos de `Retry-After` y ofrecer **Reintentar**.
+
+| HTTP | Código | Cuándo | Qué mostrar |
+|---|---|---|---|
+| 202 | — | El cubicador no terminó en la espera síncrona (8 s) | "Calculando…" y consultar `GET /web/cubicacion/{id}` cada 2-3 s |
+| 503 | `CUBICADOR_OCUPADO` | El cubicador está calculando otras cargas y no se liberó a tiempo, o hay demasiadas cubicaciones en curso. Trae `Retry-After: 10` | "El cubicador está ocupado" y Reintentar tras el `Retry-After` |
+| 404 (`GET`) | — (`ErrorWeb`) | La cubicación no existe, venció, es de otro usuario o se perdió al reiniciar Cotifly | Volver a calcular |
 
 **Qué cambia para el frontend de hoy** (que ya usa `/web/cubicacion`):
 

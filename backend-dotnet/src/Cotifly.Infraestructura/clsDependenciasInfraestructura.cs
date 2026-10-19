@@ -361,6 +361,13 @@ public static class clsDependenciasInfraestructura
                     TimeSpan.FromSeconds(opciones.Value.TiempoEsperaReconsultaSegundos)));
         servicios.TryAddScoped<IClsCubicador>(clsFabricaCubicador.Crear);
 
+        // Opción D: "Calcular cubicaje" asíncrono (202 y GET /web/cubicacion/{id}). Una réplica de la API (infra/stack.dotnet.*.yml):
+        // las cubicaciones viven en memoria; con más réplicas haría falta una tabla compartida.
+        servicios.TryAddSingleton<IClsAlmacenCubicacionesRapidas, clsAlmacenCubicacionesRapidasMemoria>();
+        servicios.TryAddSingleton<clsCubicacionRapidaService>();
+        servicios.TryAddSingleton<IClsCubicacionRapidaService>(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
+        servicios.AddHostedService(sp => sp.GetRequiredService<clsCubicacionRapidaService>());
+
         // HU-023.5 (#160): cubicación de la licitación en segundo plano, con cupos de llamadas compartidos entre réplicas (P6).
         servicios.TryAddScoped<IClsCupoCubicador, clsCupoCubicadorSql>();
         servicios.AddHostedService<clsWorkerCubicacionLicitacion>();

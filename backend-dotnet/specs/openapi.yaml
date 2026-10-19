@@ -1128,6 +1128,17 @@ paths:
 
         **Sin respaldo** (es solo una vista previa): sin cubicador configurado o con el cubicador caído responde 503
         `CUBICADOR_NO_DISPONIBLE`.
+
+        **Asíncrono (opción D, E2E 2026-10-16, D3).** El motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API
+        mientras calcula. Cotifly valida primero (los 400 de los ítems siempre son síncronos) y lanza el cálculo en segundo plano:
+        si termina dentro de `Cubicador:EsperaSincronaCubicacionSegundos` (8 s por defecto) responde **200 como siempre**; si no,
+        responde **202** `CubicacionEnProceso` con `Location` y `Retry-After: 2`, y el cálculo **sigue** aunque el cliente corte la
+        conexión. El front consulta `GET /web/cubicacion/{id}` cada 2-3 s hasta `completada` o `fallida`.
+
+        **Cupo global (opción C).** Cotifly hace una sola llamada a la vez al cubicador (`Cubicador:MaximoConcurrente`, compartido con
+        la captura, el recálculo y la licitación). Si el cupo no se libera en `Cubicador:EsperaMaximaCupoSegundos` (60 s), la
+        cubicación termina con `CUBICADOR_OCUPADO`: 503 con `Retry-After: 10` si pasa dentro de la espera síncrona, o `fallida` con ese
+        código en el `GET`.
       security:
         - bearer: []
       requestBody:
@@ -1153,11 +1164,30 @@ paths:
                   peso_kg: 2250.25
       responses:
         '200':
-          description: La recomendación del cubicador (no se guarda)
+          description: La recomendación del cubicador (no se guarda), si respondió dentro de la espera síncrona
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ResultadoCubicacion'
+        '202':
+          description: |
+            Opción D: el cubicador sigue calculando. El cálculo continúa en segundo plano (aunque el cliente corte); consultar
+            `consultar_en` (`GET /web/cubicacion/{id}`) cada 2-3 s. Se guarda en memoria `Cubicador:RetencionCubicacionMinutos` (15 min).
+          headers:
+            Location:
+              description: '`/web/cubicacion/{id}`'
+              schema:
+                type: string
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CubicacionEnProceso'
+              example:
+                id: 7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
+                estado: en_proceso
+                consultar_en: /web/cubicacion/7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
         '400':
           description: |
             `ErrorNegocio`: `ITEMS_REQUERIDOS` si `items` falta o viene vacío; `DIMENSIONES_INVALIDAS` con `detalle.item` (índice
@@ -1184,7 +1214,8 @@ paths:
             `CUBICADOR_NO_DISPONIBLE`: el cubicador no está configurado (`Cubicador:UrlBase` vacía) o no respondió (caída, 5xx, tiempo
             agotado); no hay respaldo. `CUBICADOR_NO_AUTORIZADO`: el cubicador rechazó la llave de Cotifly. `CUBICADOR_RESPUESTA_INVALIDA`:
             la respuesta no cumple el contrato. `CUBICADOR_OCUPADO` (opción C, con `Retry-After: 10`): el cubicador está calculando
-            otras cargas y no se liberó el cupo a tiempo; reintentar en unos segundos. El detalle técnico solo queda en el log.
+            otras cargas y no se liberó el cupo a tiempo, o hay demasiadas cubicaciones en curso; reintentar en unos segundos. El
+            detalle técnico solo queda en el log.
           headers:
             Retry-After:
               $ref: '#/components/headers/RetryAfter'
@@ -1192,6 +1223,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorNegocio'
+
+  /web/cubicacion/{id}:
+    get:
+      operationId: consultarCubicacion
+      tags: [web]
+      summary: Estado de una cubicación que siguió en segundo plano (opción D)
+      description: |
+        **Opción D (E2E 2026-10-16, D3).** El `id` del 202 de `POST /web/cubicacion`. `estado`:
+        - `en_proceso`: el cubicador sigue calculando (con `Retry-After: 2`). Volver a consultar en 2-3 s.
+        - `completada`: `resultado` trae la misma forma del 200 de `POST /web/cubicacion` (`ResultadoCubicacion`).
+        - `fallida`: `error` trae `{codigo, mensaje, detalle?}` con los mismos códigos que respondería el `POST` (por ejemplo un
+          rechazo del cubicador como `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` con `detalle.item`, `CUBICADOR_NO_DISPONIBLE` o
+          `CUBICADOR_OCUPADO`).
+
+        Solo el comercial que la pidió la ve. Se guarda en la memoria de Cotifly `Cubicador:RetencionCubicacionMinutos` (15 min)
+        desde su último cambio: vencida, de otro usuario, inexistente o perdida porque Cotifly se reinició, responde **404** igual
+        (sin distinguir): el front vuelve a calcular.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: El estado de la cubicación
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoCubicacion'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+        '404':
+          description: '`ErrorWeb`: la cubicación no existe, venció, se perdió al reiniciar Cotifly o es de otro usuario'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+              example:
+                error: 'La cubicación no existe, ya venció o no es tuya: vuelve a calcular el cubicaje.'
 
   /web/solicitudes-costeo:
     post:
@@ -2885,8 +2962,9 @@ components:
       example: '"7"'
     RetryAfter:
       description: |
-        Segundos que conviene esperar antes de reintentar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con `CUBICADOR_OCUPADO`
-        (opción C) 10. Las demás causas del 503 no lo envían.
+        Segundos que conviene esperar antes de reintentar o volver a consultar. Con `SERVICIO_OCUPADO` (#125) siempre 1; con
+        `CUBICADOR_OCUPADO` (opción C) 10; en el 202 de `POST /web/cubicacion` y en `GET /web/cubicacion/{id}` con `en_proceso`
+        (opción D) 2. Las demás causas del 503 no lo envían.
       schema:
         type: integer
       example: 1
@@ -3017,8 +3095,9 @@ components:
                 `POST /web/licitaciones` solo con `Cubicador:RespaldoSiFalla = false`), `CUBICADOR_NO_AUTORIZADO` (503: el cubicador
                 rechazó la llave de Cotifly; nunca va al respaldo), `CUBICADOR_RESPUESTA_INVALIDA` (503:
                 la respuesta no cumple el contrato, por ejemplo un vehículo sin peso; nunca va al respaldo y no se guarda nada),
-                `CUBICADOR_OCUPADO` (opción C, E2E 2026-10-16: 503 con `Retry-After: 10` en `POST /web/cubicacion`: el cupo global de
-                llamadas al cubicador no se liberó a tiempo; en la captura, el recálculo y la licitación cuenta como una caída) y los
+                `CUBICADOR_OCUPADO` (opción C, E2E 2026-10-16: 503 con `Retry-After: 10` en `POST /web/cubicacion` o `fallida` en
+                `GET /web/cubicacion/{id}`: el cupo global de llamadas al cubicador no se liberó a tiempo o hay demasiadas cubicaciones en
+                curso; en la captura, el recálculo y la licitación cuenta como una caída) y los
                 rechazos 400 del cubicador con su mismo código: `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`,
                 `MERCANCIA_NO_CUBICABLE` y `DIMENSIONES_INVALIDAS` (no se guarda nada). D1 (E2E 2026-10-16): un 422 del cubicador
                 (validación de su esquema en `POST /recomendaciones`) es 400: `DIMENSIONES_INVALIDAS` o `POSICION_INVALIDA` con
@@ -6170,6 +6249,56 @@ components:
         sugerida:
           type: boolean
 
+    CubicacionEnProceso:
+      type: object
+      required: [id, estado, consultar_en]
+      description: Opción D (E2E 2026-10-16, D3). 202 de `POST /web/cubicacion`; el cálculo sigue en segundo plano.
+      properties:
+        id:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          enum: [en_proceso]
+        consultar_en:
+          type: string
+          description: '`/web/cubicacion/{id}` (igual que `Location`)'
+    EstadoCubicacion:
+      type: object
+      required: [id, estado]
+      description: |
+        Opción D. `GET /web/cubicacion/{id}`: `resultado` solo con `completada`, `error` solo con `fallida` (cuando no aplican, no
+        vienen).
+      properties:
+        id:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          enum: [en_proceso, completada, fallida]
+        resultado:
+          $ref: '#/components/schemas/ResultadoCubicacion'
+        error:
+          $ref: '#/components/schemas/ErrorCubicacion'
+      example:
+        id: 7d5c2c9e-1b8a-4f0e-9c3a-2f6b8e1d4a90
+        estado: fallida
+        error:
+          codigo: MERCANCIA_NO_CUBICABLE
+          mensaje: 'Una de las mercancías no se puede cubicar: revisa el tipo de mercancía.'
+    ErrorCubicacion:
+      type: object
+      required: [codigo, mensaje]
+      description: Opción D. Error de una cubicación `fallida`, con los mismos códigos que respondería `POST /web/cubicacion`.
+      properties:
+        codigo:
+          type: string
+        mensaje:
+          type: string
+        detalle:
+          type: object
+          description: '`item` (base 0), `campo` y `descripcion` cuando el error señala un ítem'
+          additionalProperties: true
     ResultadoCubicacion:
       type: object
       required: [resultado, motivo_sin_seleccion, mensaje_sin_seleccion, condicionada, vehiculos, mercancias_condicionadas, advertencias,
