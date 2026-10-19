@@ -523,6 +523,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `MUNICIPIOS_NO_DISPONIBLE` | 503 en `/web/municipios` (antes 400), captura y licitación; chat | Catálogo de Nexo no disponible | Deshabilitar el autocompletado de origen y destino y mostrar reintento. El chat sigue con texto libre | En QA |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 en `/web/catalogos-flete` y en `/web/solicitudes-costeo` | Catálogos maestros de Nexo no disponibles y sin copia de respaldo en el servidor (menos de 24 h, HU-013.10) | Selects vacíos con reintento; no enviar texto libre | En QA |
 | `ITEMS_REQUERIDOS` | 400 en `/web/cubicacion` | Falta `items` o viene vacío | Deshabilitar "Cubicar" sin bultos | En QA |
+| `CUBICADOR_OCUPADO` | 503 en `/web/cubicacion` con `Retry-After: 10`, o `fallida` en `GET /web/cubicacion/{id}` | Opción C (2026-10-19): el cubicador está calculando otras cargas y no se liberó a tiempo, o hay demasiadas cubicaciones en curso | "El cubicador está ocupado": Reintentar tras el `Retry-After` (sección 5.14.1) | Implementado |
 | `CUBICACION_NO_DISPONIBLE` | Retirado (HU-023.2, #157) | La cubicación de Nexo se retiró: `/web/cubicacion` responde los códigos del cubicador (503 `CUBICADOR_NO_DISPONIBLE`, 400 `MERCANCIA_DESCONOCIDA`...) | Ver sección 5.14 | Retirado |
 | `CUBICACION_DEMASIADO_GRANDE` | 400 en `/web/cubicacion`, captura, recálculo de vehículos y licitación (con el cubicador configurado) | Vigente desde HU-023 (#176): las mercancías de la ruta o del cálculo suman más de 10.000 unidades, el tope del cubicador. No se llama al cubicador ni se guarda nada | "Parte la carga en varias rutas" (mostrar `mensaje`) | Vigente |
 | `MUNICIPIO_ARGUMENTO_INVALIDO` | Solo interno del agente | — | Ignorar | En QA |
@@ -1047,6 +1048,38 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
      `Cubicacion:IncluirSugerenciaLegada` (apagada por defecto): la respuesta vuelve a traer `sugerencia` (forma anterior, derivada del
      primer vehículo; sin `sugerencia_flota`). Es temporal.
 
+#### 5.14.1 Cubicación lenta: 202 y polling (opción D, 2026-10-19)
+
+> **Cambio de contrato.** El motor del cubicador tarda 26-31 s con cargas grandes y bloquea su API mientras calcula. `POST /web/cubicacion`
+> ya no espera todo ese tiempo: si el cubicador no termina en **8 s** (`Cubicador:EsperaSincronaCubicacionSegundos`), responde **202** y el
+> cálculo sigue en el servidor. Ejemplos validados: `CONTRATO_API_WEB.md` §8.12.1.
+
+- **200**: igual que siempre (el cubicador respondió a tiempo).
+- **202** `{ "id": "…", "estado": "en_proceso", "consultar_en": "/web/cubicacion/{id}" }`, con `Location` (la misma ruta) y
+  `Retry-After: 2`. El cálculo **no se cancela** si el navegador corta la conexión o el comercial cambia de pantalla.
+- `GET /web/cubicacion/{id}` → 200 `{ id, estado, resultado?, error? }`:
+  - `en_proceso` (con `Retry-After: 2`);
+  - `completada`, con `resultado` igual al 200 del `POST`;
+  - `fallida`, con `error` `{codigo, mensaje, detalle?}` y los mismos códigos del `POST`.
+- **404** (`ErrorWeb`) si no existe, venció (se guarda **15 min**), es de otro comercial o se perdió porque Cotifly se reinició (vive en
+  memoria).
+- **503 `CUBICADOR_OCUPADO`** con `Retry-After: 10` (opción C): Cotifly hace una sola llamada a la vez al cubicador y otra carga lo tuvo
+  ocupado más de 60 s, o hay demasiadas cubicaciones en curso. También puede llegar como `fallida` en el `GET`.
+
+**Qué hacer en el frontend:**
+
+1. Al recibir **202**, mostrar un indicador "Calculando… el cubicador puede tardar hasta un minuto" y deshabilitar otro "Cubicar" de la
+   misma carga.
+2. Consultar `consultar_en` cada **2-3 s** (respetar `Retry-After`), con un tope de unos **2-3 minutos**. Si el comercial cambia la carga,
+   abandonar el polling anterior y volver a cubicar.
+3. `completada`: pintar `resultado` como el 200. `fallida`: tratar `error` como los errores del `POST` (marcar el ítem con `detalle.item`
+   si viene; con `CUBICADOR_NO_DISPONIBLE` o `CUBICADOR_OCUPADO`, botón **Reintentar**).
+4. **404**: no es un error del comercial; volver a cubicar automáticamente una vez o mostrar "La cubicación expiró, vuelve a calcular".
+5. **503 `CUBICADOR_OCUPADO`**: esperar el `Retry-After` (10 s) y ofrecer **Reintentar**.
+
+La captura (`POST /web/solicitudes-costeo`) y el recálculo de vehículos **siguen síncronos** (solo con el cupo y los tiempos nuevos):
+pueden tardar hasta unos 3 minutos con cargas grandes. Pasarlos a segundo plano es el siguiente paso.
+
 ### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En QA
 
 Crea la cotización con el formulario ampliado (folio del servidor con el NIT) y la envía a Nexo. **Responde 201 aunque Nexo falle.**
@@ -1209,6 +1242,13 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
 - **HU-021:** el total es `precio_final` (ya incluye los conexos). **No** sumarle el `precio` de los conexos. Todos los conexos que llegan están incluidos (`incluido` siempre es true): no hay "excluidos"; quitar uno lo borra de la ruta.
 - **HU-021.8 (#135): `rutas[]`.** Cada ruta (`RutaCosteo`) trae `linea_orden`, `linea_solicitud_id`, `origen`, `destino`, `estado_costeo`, `precio_final_linea`, `margen_aplicado`, `margen_sugerido`, `origen_margen` y sus `servicios_conexos` (cada conexo trae también `linea_orden`). El margen es **por ruta**: mostrar el margen y el sugerido de cada ruta y usar su `linea_orden` (o `linea_solicitud_id`) en el ajuste de margen y en los conexos (sección 5.18.1). `margen_aplicado`, `margen_sugerido` y `origen_margen` de primer nivel son los de la ruta 1 (compatibilidad). Nunca trae costos.
 
+- **El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
+  dichos cambios, incluido el tipo de vehículo." Lo que la Mesa deje en Nexo se copia a `rutas[].camiones[]` (y al texto `vehiculos` y al
+  PDF) también en los camiones que recomendó el cubicador: si cambia `2S2` por `3S3` o `FURGON` por `ESTACAS`, se muestra lo de la Mesa.
+  Una diferencia solo de escritura (`Furgón` por `FURGON`, `FURGON REFRIGERADO` por `FURGON_REFRIGERADO`) no es un cambio y se conserva
+  el código del cubicador; un valor vacío de Nexo no borra el de Cotifly. Puede llegar el nombre de Nexo (`Estacas`) en vez del código:
+  mostrarlo tal cual. No refrescar el vehículo desde "Calcular cubicaje": el de la cotización es el de `GET .../costeo`.
+
 ### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En QA
 
 - Request (forma anterior, se mantiene): `{"incluidos": ["<id>", "<id>"]}`: los ids que se **conservan**. Los demás se **borran** de la ruta (no quedan "excluidos": para volver a tenerlos hay que agregarlos con el `POST`). `[]` borra todos. La forma por ruta, con cantidades, es `conexos` (sección 5.18.1).
@@ -1244,7 +1284,7 @@ El resumen completo, los ejemplos JSON de cada endpoint cambiado y la lista de c
 | HU-023.1 (#156): `GET /web/tipos-mercancia` trae `codigo`, `categoria`, `cubicable`, `condicionada_cubicacion`, `comentario_condicion` y `activo` (el `id` queda obsoleto); nuevos `GET /web/tipos-carroceria` y `GET /web/tipos-vehiculo` | Ofrecer solo las mercancías activas y avisar de las condicionadas; mostrar el nombre del vehículo con `GET /web/tipos-vehiculo` (si responde 503, mostrar el código) |
 | HU-023.3 (#158): mercancías con `codigo_mercancia` (obligatorio; `id_tipo_mercancia` obsoleto); la respuesta 201 trae `cubicacion[]` con el resultado y los avisos por ruta; `GET .../costeo` trae `resultado_cubicacion`, `motivo_sin_seleccion`, `condicionada` y, por camión, volumen y porcentajes de llenado; nuevo `POST /web/cotizaciones/{folio}/rutas/{rutaId}/recalcular-vehiculos` | Mandar el código del desplegable; mostrar los avisos al crear (desde HU-023.5 se guardan en la ruta y vuelven en `rutas[].avisos_cubicacion` de `GET .../costeo`, campo opcional); llamar a recalcular cuando cambian las mercancías o el peso de una ruta antes de enviarla |
 | HU-023.1: la captura puede responder 400 `MERCANCIAS_REQUERIDAS`, `MERCANCIA_DESCONOCIDA`, `MERCANCIA_NO_CUBICABLE` o `DIMENSIONES_INVALIDAS` (el cubicador rechazó una ruta) y 503 `CUBICADOR_RESPUESTA_INVALIDA` o `CUBICADOR_NO_AUTORIZADO` | Mostrar `error.mensaje` (trae el detalle del cubicador); no se guardó nada. `CUBICADOR_NO_AUTORIZADO` no es la sesión: no cerrar sesión |
-| HU-023.4 (#159): sin cambios de contrato web. Con el contrato de Nexo #297, por defecto (`Nexo:EnviarCodigosCubicador` apagada) los camiones del cubicador llegan a Nexo sin vehículo y los costea la Mesa: es normal que esas rutas tarden más en `autocosteo`; `GET .../costeo` sigue mostrando el vehículo y la carrocería del cubicador. Con un solo camión, Nexo recibe el **peso declarado de la ruta**; el `peso_kg` del camión en `GET .../costeo` sigue siendo el del cubicador (puede diferir del de la ruta). Un 429 de Nexo (cupo por rol agotado) solo afecta los catálogos: sin copia de respaldo, `CATALOGOS_FLETE_NO_DISPONIBLE` durante unos 30 s | Mostrar el peso del cubicador como dato del camión, no como el peso cotizado; ante "no disponible", ofrecer Reintentar pasado medio minuto |
+| HU-023.4 (#159): sin cambios de contrato web. Con el contrato de Nexo #297, por defecto (`Nexo:EnviarCodigosCubicador` apagada) los camiones del cubicador llegan a Nexo sin vehículo y los costea la Mesa: es normal que esas rutas tarden más en `autocosteo`; `GET .../costeo` muestra el vehículo y la carrocería del cubicador hasta que la Mesa los cambie: **la Mesa manda** (D2, decisión del 2026-10-19; ver la sección 5.17). Con un solo camión, Nexo recibe el **peso declarado de la ruta**; el `peso_kg` del camión en `GET .../costeo` sigue siendo el del cubicador (puede diferir del de la ruta). Un 429 de Nexo (cupo por rol agotado) solo afecta los catálogos: sin copia de respaldo, `CATALOGOS_FLETE_NO_DISPONIBLE` durante unos 30 s | Mostrar el peso del cubicador como dato del camión, no como el peso cotizado; ante "no disponible", ofrecer Reintentar pasado medio minuto |
 | HU-023 (#176), contratos vigentes de NEXO y del cubicador: (1) `BUSQUEDA_AGOTADA` es un quinto `motivo_sin_seleccion` y `GET .../costeo` y `POST /web/cubicacion` traen `mensaje_sin_seleccion`; (2) `extradimension` cambia a `{hay_extradimension, medidas_estandar, piezas[]}` (cada pieza con `indice_posicion` y `excesos[]`); (3) en "Calcular cubicaje" cada vehículo trae `numero_vehiculo`, `alerta_bajo_llenado`, `heterogenea` y `mercancias[]` por posición; (4) cada mercancía con `codigo_mercancia` exige `peso_kg` > 0 y una ruta no pasa de 10.000 unidades (400 `CUBICACION_DEMASIADO_GRANDE`); (5) `mercancias_condicionadas[].comentario` sale del catálogo; (6) `GET /web/municipios?q=&departamento=` busca en `/ciudades` de Nexo (máx. 50); (7) Nexo recibe ahora el vehículo y la carrocería del cubicador (banderas encendidas por defecto) | (1) Mostrar `mensaje_sin_seleccion`; **con `BUSQUEDA_AGOTADA` nunca decir que la carga no cabe**; si `motivo_sin_seleccion` es `null` con `SIN_SELECCION_AUTOMATICA`, el motivo real está en la advertencia `MOTIVO_SIN_SELECCION`. (2) Pintar las piezas que exceden con su posición. (3) Al agrupar `mercancias[]` por código, **sumar**; `indice_posicion` puede ser `null`. (4) Pedir el peso por unidad y partir cargas grandes. (5) Mostrar el comentario de la condicionada. (6) Buscador con `q` (desde 3 letras) y guardar el `id` elegido |
 | Margen y conexos por ruta: 400 `RUTA_REQUERIDA` (con `detalle.rutas`) o `RUTA_INEXISTENTE` | Selector de ruta y repetir |
 | `servicios_conexos[].estado_nexo` y `rutas[].aviso_conexos_nexo` | Mostrar el aviso; no reintentar desde el frontend |
