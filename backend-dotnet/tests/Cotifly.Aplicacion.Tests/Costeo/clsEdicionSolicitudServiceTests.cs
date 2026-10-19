@@ -450,6 +450,40 @@ public sealed class clsEdicionSolicitudServiceTests
     }
 
     [Fact]
+    public async Task UnConexoAgregadoEnNexoSaleConElIdDelCatalogoSumadoYReenviarElGetNoCambiaNada()
+    {
+        // Validación HU-028: un servicio capturado (id del catálogo) y el mismo agregado después en Nexo (id de la fila de Nexo, #124/#135).
+        // El GET los debe mostrar como UNA fila con el id del catálogo (si no, el PUT con ese cuerpo es CONEXO_DUPLICADO), y reenviar el
+        // GET tal cual es sin_cambios: no se rechaza en Nexo ni se pierde el trabajo de la Mesa.
+        var cotizacion = Registrar(EnNexo());
+        var catalogo = Guid.NewGuid().ToString("D");
+        var filaNexo = Guid.NewGuid().ToString("D");
+        clsCotizacionMuestra.ConConexo(cotizacion, catalogo, "Cargue en puerto", 150_000m, 1m);
+        clsCotizacionMuestra.ConConexo(cotizacion, filaNexo, "Cargue en puerto", 150_000m, 2m);
+        _catalogo[catalogo] = new clsCostoConexoNexo(catalogo, "Cargue en puerto", 150_000m);
+        _catalogoNexo.BuscarAsync(_ana, Arg.Is<clsFiltroCatalogoConexos>(f => f.Q == "Cargue en puerto"), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsPaginaCatalogoConexosNexo>.Exito(new clsPaginaCatalogoConexosNexo(1,
+                [new clsServicioConexoNexo(catalogo, "CAR-01", "Cargue en puerto", "logistico", "UND", null, null, null, null, null, null, true)])));
+
+        var editable = (await Servicio().ObtenerAsync(_ana, Folio, Ct)).Valor;
+        var conexos = editable.Rutas.Single().ServiciosConexos;
+        conexos.Should().BeEquivalentTo([new clsConexoEditable("CX-1", "Cargue", 1m), new clsConexoEditable(catalogo, "Cargue en puerto", 3m)]);
+
+        var entrada = EntradaDe(cotizacion) with
+        {
+            Rutas = [.. EntradaDe(cotizacion).Rutas.Select(r => r! with
+            {
+                Ruta = r.Ruta with { Conexos = [.. conexos.Select(c => (clsConexoCapturaEntrada?)new clsConexoCapturaEntrada(c.IdServicioConexo, c.Cantidad))] },
+            })],
+        };
+        var resultado = await Servicio().EditarAsync(_ana, Folio, entrada, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        resultado.Valor.Respuesta.SinCambios.Should().BeTrue();
+        _eventos.Should().BeEmpty("sin cambios no se rechaza en Nexo ni se captura");
+    }
+
+    [Fact]
     public async Task ElModeloDeUnaLicitacionDiceQueNoSePermiteYPorQue()
     {
         var licitacion = clsCotizacionMuestra.LicitacionCosteada([1_000_000m], folio: Folio, usuarioId: _ana);

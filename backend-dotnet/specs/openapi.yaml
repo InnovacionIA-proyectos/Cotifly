@@ -5859,7 +5859,9 @@ components:
     ConexoEditable:
       type: object
       required: [id_servicio_conexo, cantidad]
-      description: HU-028. Un servicio conexo de la ruta con el id del catálogo de Nexo de hoy (se devuelve como `ConexoCapturaWeb`), sin precio.
+      description: |
+        HU-028. Un servicio conexo de la ruta con el id del catálogo de Nexo de hoy (se devuelve como `ConexoCapturaWeb`), sin precio. Una
+        fila por servicio: si el mismo servicio está capturado y además se agregó en Nexo, sale una vez con las cantidades sumadas.
       properties:
         id_servicio_conexo:
           type: string

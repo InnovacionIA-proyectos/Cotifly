@@ -435,8 +435,14 @@ public sealed class clsEdicionSolicitudService(
             }
         }
 
-        // 4. ¿Cambió algo? Sin cambios no se toca nada (ni Nexo, ni el PDF, ni la versión).
-        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas))
+        // 4. ¿Cambió algo? Sin cambios no se toca nada (ni Nexo, ni el PDF, ni la versión). Un conexo agregado en Nexo está guardado con el
+        // id de la fila de Nexo y el GET lo muestra con el del catálogo: se comparan por el id del catálogo (solo se consulta si hace falta).
+        var pedidos = validadas.Lineas.SelectMany(l => l.Conexos ?? []).Select(c => Limpio(c?.IdServicioConexo)).OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var catalogoGuardados = cotizacion.Rutas.SelectMany(r => r.Conexos).All(c => pedidos.Contains(c.IdServicioConexo))
+            ? new Dictionary<string, clsCostoConexoNexo>()
+            : await ConexosDelCatalogoAsync(usuarioId, cotizacion, cancellationToken);
+        if (MismoContenido(cotizacion, encabezado, moneda, entradas, validadas.Lineas, catalogoGuardados))
         {
             return new clsEdicionPreparada(encabezado, [], true, null, null, []);
         }
@@ -740,12 +746,23 @@ public sealed class clsEdicionSolicitudService(
             r.ValorMercancia,
             r.PesoKg,
             [.. r.MercanciasOrdenadas.Select(m => new clsMercanciaEditable(m.CodigoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
-            [.. r.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal).Select(c => catalogo.TryGetValue(c.IdServicioConexo, out var deCatalogo)
-                ? new clsConexoEditable(deCatalogo.Id, deCatalogo.Nombre ?? c.Nombre, c.Cantidad)
-                : new clsConexoEditable(c.IdServicioConexo, c.Nombre, c.Cantidad))],
+            ConexosEditables(r, catalogo),
             r.MargenAplicado,
             r.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
             r.TieneMargenNegociado);
+
+    /// <summary>
+    /// Los conexos de la ruta como los edita el comercial: con el id del catálogo de Nexo (si se resolvió) y UNA fila por servicio. Un
+    /// servicio capturado y el mismo agregado después en Nexo (guardado con el id de la fila de Nexo) se suman, como en la versión nueva de
+    /// la re-solicitud: si no, el GET devolvería el id repetido y el PUT con ese mismo cuerpo respondería <c>CONEXO_DUPLICADO</c>.
+    /// </summary>
+    private static IReadOnlyList<clsConexoEditable> ConexosEditables(clsLineaSolicitud ruta, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo) =>
+        [.. ruta.Conexos.OrderBy(c => c.CreatedAt).ThenBy(c => c.IdServicioConexo, StringComparer.Ordinal)
+            .Select(c => catalogo.TryGetValue(c.IdServicioConexo, out var deCatalogo)
+                ? new clsConexoEditable(deCatalogo.Id, deCatalogo.Nombre ?? c.Nombre, c.Cantidad)
+                : new clsConexoEditable(c.IdServicioConexo, c.Nombre, c.Cantidad))
+            .GroupBy(c => c.IdServicioConexo, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Count() == 1 ? g.First() : g.First() with { Cantidad = g.Sum(c => c.Cantidad) })];
 
     /// <summary>
     /// Los conexos guardados con el id del catálogo de Nexo de hoy (un conexo agregado en Nexo está guardado con el id de la fila de la
@@ -794,7 +811,7 @@ public sealed class clsEdicionSolicitudService(
     /// </summary>
     private static bool MismoContenido(
         clsCotizacionSolicitud cotizacion, clsEncabezadoSolicitudCosteo encabezado, string moneda, IReadOnlyList<clsRutaEdicionEntrada?> entradas,
-        IReadOnlyList<clsLineaLicitacionEntrada> validadas)
+        IReadOnlyList<clsLineaLicitacionEntrada> validadas, IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo)
     {
         var guardadas = cotizacion.RutasOrdenadas;
         if (guardadas.Count != validadas.Count || cotizacion.Deadline != encabezado.Deadline
@@ -818,7 +835,7 @@ public sealed class clsEdicionSolicitudService(
                 HorasDescargue = validadas[i].Linea.HorasDescargue ?? encabezado.HorasDescargue,
             };
             var conexos = (validadas[i].Conexos ?? []).Select(c => (Limpio(c?.IdServicioConexo)?.ToUpperInvariant(), c?.Cantidad));
-            if (Contenido(guardada.ALinea(), guardada.Conexos.Select(c => ((string?)c.IdServicioConexo.ToUpperInvariant(), (decimal?)c.Cantidad)))
+            if (Contenido(guardada.ALinea(), ConexosEditables(guardada, catalogo).Select(c => ((string?)c.IdServicioConexo.ToUpperInvariant(), (decimal?)c.Cantidad)))
                 != Contenido(nueva, conexos))
             {
                 return false;
