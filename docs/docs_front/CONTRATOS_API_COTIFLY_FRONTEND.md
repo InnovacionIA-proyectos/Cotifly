@@ -770,16 +770,35 @@ copia de hasta 24 h.
     { "valor": "Cupo", "etiqueta": "Cupo" },
     { "valor": "Carga Suelta", "etiqueta": "Carga Suelta" },
     { "valor": "Extradimensionado", "etiqueta": "Extradimensionado" }
+  ],
+  "clases_contenedor": [
+    { "valor": "CNT20.IT", "etiqueta": "CNT20.IT" },
+    { "valor": "CNT20.RE", "etiqueta": "CNT20.RE" },
+    { "valor": "CNT20.ST", "etiqueta": "CNT20.ST" },
+    { "valor": "CNT40.HC", "etiqueta": "CNT40.HC" },
+    { "valor": "CNT40.RE", "etiqueta": "CNT40.RE" }
   ]
 }
 ```
 
 | HTTP | Código | UI |
 |---|---|---|
-| 200 | `CatalogosFlete` | Mostrar `etiqueta`, enviar `valor`. Hoy el formulario solo usa `clases_viaje` (el vehículo y la carrocería los define el cubicador) |
+| 200 | `CatalogosFlete` | Mostrar `etiqueta`, enviar `valor`. Hoy el formulario usa `clases_viaje` y `clases_contenedor` (el vehículo y la carrocería los define el cubicador) |
 | 503 | `CATALOGOS_FLETE_NO_DISPONIBLE` | Deshabilitar los selects y ofrecer Reintentar. **Nunca** ofrecer texto libre |
 
-Notas: `tipologia` (7 valores fijos) y `clase_contenedor` (códigos fijos) no vienen aquí; ver la sección 5.4.
+**`clases_contenedor` (HU-027.1, #179).** Sale de `GET /api/catalogos/clases-contenedor` de NEXO. En NEXO la `descripcion` de cada
+clase **es el código** (`CNT40.HC`; no hay un campo `codigo` aparte), así que `valor` = `etiqueta` = ese código, y es exactamente el
+texto con que la captura valida `clase_contenedor`: todo `valor` de la lista se acepta tal cual. El frontend puede mostrar su propio
+texto amigable para cada código, pero debe enviar el `valor`.
+
+- Solo trae los valores de NEXO. La lista provisional de extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`) **no**
+  viene aquí, aunque la captura la sigue aceptando (sección 5.4).
+- **Puede venir vacía** (`[]`) con 200: NEXO responde `[]` si su base de SAP no está configurada, y si ese catálogo falla también
+  queda vacío. No es un error del endpoint. Con la lista vacía, deshabilitar el selector de clase de contenedor y ofrecer Reintentar:
+  una captura `Contenedor` con una clase que no sea provisional respondería 503 `CATALOGOS_FLETE_NO_DISPONIBLE`.
+- Reemplaza el catálogo fijo que tenía el frontend.
+
+Notas: `tipologia` (7 valores fijos) no viene aquí; ver la sección 5.4.
 
 #### 4.2.2 `GET /web/municipios`
 
@@ -2712,7 +2731,7 @@ codigo}], accion_propuesta?}`. **`AccionPropuesta`**: `{tipo, metodo, endpoint, 
 
 **`LoginResponse`**: `{access, refresh, user: {id, username, email, nombre_completo, rol, ubicacion?}, debeCambiarPassword}`.
 
-**Catálogos**: `OpcionCatalogo {valor, etiqueta}`; `CatalogosFlete {tipos_vehiculo[], tipos_carroceria[], clases_viaje[]}`; `Municipio {id,
+**Catálogos**: `OpcionCatalogo {valor, etiqueta}`; `CatalogosFlete {tipos_vehiculo[], tipos_carroceria[], clases_viaje[], clases_contenedor[]}`; `Municipio {id,
 codigo_dane?, municipio?, departamento?, pais?}`; `TipoMercancia {codigo, nombre, categoria?, cubicable, condicionada_cubicacion,
 comentario_condicion?, activo, id? (obsoleto)}`; `TipoCarroceria {codigo, nombre, activo}`; `TipoVehiculo {codigo, nombre, carrocerias[],
 activo}`; `ServicioConexoCatalogo {id, codigo?, nombre?, categoria?, unidad?, origen?, destino?, puerto?, ruta?, tipo_maquina?, vigencia?}`;
@@ -2773,7 +2792,7 @@ hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pas�
 |---|---|
 | `clase_viaje` | `valor` de `clases_viaje` (`GET /web/catalogos-flete`): `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`. Comparación exacta, distingue mayúsculas |
 | `tipologia` | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
-| `clase_contenedor` | `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE` y la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
+| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
 
 Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATALOGO` o `SOLICITUD_COSTEO_INVALIDA`).
 
@@ -3032,6 +3051,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 39 | **D2:** si la Mesa cambia el vehículo, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` del camión llegan en `null` | Cambia | Mostrar "—", nunca 0 % |
 | 40 | Tope del polling de `GET /web/cubicacion/{id}`: **4 minutos** | Cambia | Ajustar el tope (antes se sugerían 2-3 minutos) |
 | 41 | **D-1019-1:** `POST /web/cubicacion` valida `codigo_mercancia` contra el catálogo antes de llamar al cubicador: 400 `MERCANCIA_DESCONOCIDA` (desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE`, ahora con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`; el código se compara sin mayúsculas. En la captura, el rechazo del cubicador trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es | Agrega | Marcar el ítem con `detalle.item`, igual que D1 |
+| 42 | **HU-027.1 (#179):** `GET /web/catalogos-flete` trae **`clases_contenedor`** (los valores de NEXO, `valor` = `etiqueta` = código `CNT..`, sin la lista provisional). Puede venir `[]` con 200 | Agrega | Llenar el selector de clase de contenedor con esta lista (quitar el catálogo fijo); con `[]`, deshabilitarlo y ofrecer Reintentar |
 
 ---
 
@@ -3141,7 +3161,10 @@ fila_excel, campo, codigo, mensaje}`.
   `MERCANCIA_NO_CUBICABLE`, con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`. Antes llegaba sin `detalle.item`. Si el
   catálogo no responde, decide el cubicador como antes; su rechazo trae el ítem cuando se sabe cuál es. En la captura, ese rechazo
   trae también `detalle.ruta`.
-- Cambios con su "qué hacer": sección 7, filas 31 a 41.
+- **HU-027.1 (#179).** `GET /web/catalogos-flete` trae `clases_contenedor`: las clases de contenedor de NEXO, con `valor` = `etiqueta`
+  = el código (`CNT40.HC`), que es lo que valida la captura. No trae la lista provisional de extradimensionado. Puede venir vacía
+  (`[]`) con 200 si NEXO no tiene configurada la base de SAP (sección 4.2.1).
+- Cambios con su "qué hacer": sección 7, filas 31 a 42.
 
 **PR #178 (commit `fa96f5e`, 2026-10-15).** Esta versión cierra las diferencias que había entre el código, el openapi y las guías del
 frontend. Este documento ya refleja todo lo siguiente:

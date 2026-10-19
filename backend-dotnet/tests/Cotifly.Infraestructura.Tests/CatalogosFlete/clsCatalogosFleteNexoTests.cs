@@ -1,8 +1,10 @@
 using System.Net;
 using Cotifly.Aplicacion.CatalogosFlete.DTOs;
 using Cotifly.Aplicacion.CatalogosFlete.Interfaces;
+using Cotifly.Aplicacion.Costeo.Services;
 using Cotifly.Aplicacion.Identidad.Repositories;
 using Cotifly.Dominio.Comun;
+using Cotifly.Dominio.Cotizaciones;
 using Cotifly.Dominio.Identidad;
 using Cotifly.Infraestructura.CatalogosFlete.Services;
 using Cotifly.Infraestructura.Configuracion;
@@ -178,13 +180,68 @@ public sealed class clsCatalogosFleteNexoTests : IDisposable
     {
         var maestros = Substitute.For<IClsCatalogosMaestrosProvider>();
         maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsCatalogosMaestros>.Exito(new clsCatalogosMaestros(
-            [new("3S3", "Tractocamión")], [new("Carga Suelta", "Carga Suelta")], [], [])));
+            [new("3S3", "Tractocamión")], [new("Carga Suelta", "Carga Suelta")], [new("CNT40.HC", "CNT40.HC")], [])));
 
         var resultado = await new clsCatalogosFleteNexo(maestros).ObtenerAsync(_usuarioId, Ct);
 
         resultado.Valor.TiposVehiculo.Should().Equal(new clsOpcionCatalogo("3S3", "Tractocamión"));
         resultado.Valor.ClasesViaje.Should().Equal(new clsOpcionCatalogo("Carga Suelta", "Carga Suelta"));
+        resultado.Valor.ClasesContenedor.Should().Equal(new clsOpcionCatalogo("CNT40.HC", "CNT40.HC"));
         resultado.Valor.TiposCarroceria.Select(c => c.Valor).Should().Contain(["FURGON", "PORTACONTENEDORES", "VOLCO"]).And.HaveCount(9);
+    }
+
+    [Fact]
+    public async Task LosCatalogosDeFleteExponenSoloLasClasesDeContenedorDeNexoConLaDescripcionComoValor()
+    {
+        // HU-027.1 (#179): en Nexo la descripcion de clases-contenedor es el código; el valor expuesto es el que valida la captura.
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().Equal(
+            _nexo.ClasesContenedor.Select(d => new clsOpcionCatalogo(d, d)));
+        resultado.Valor.ClasesContenedor.Select(c => c.Valor).Should().Equal("CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE")
+            .And.NotContain(clsCatalogosCaptura.ClasesContenedorProvisionales);
+    }
+
+    [Fact]
+    public async Task CadaClaseDeContenedorExpuestaLaAceptaLaValidacionDeLaCaptura()
+    {
+        // HU-027.1 (#179): el valor que ofrece GET /web/catalogos-flete es el mismo con que se valida clase_contenedor.
+        var maestros = Maestros();
+        var validador = new clsValidadorCatalogosCaptura(maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
+        var clases = (await new clsCatalogosFleteNexo(maestros).ObtenerAsync(_usuarioId, Ct)).Valor.ClasesContenedor;
+
+        clases.Should().NotBeEmpty();
+        foreach (var clase in clases)
+        {
+            var linea = clsSolicitudCosteoMuestra.Crear().ALinea() with { ClaseViaje = clsCatalogosCaptura.ClaseViajeContenedor, ClaseContenedor = clase.Valor };
+            (await validador.ValidarAsync(_usuarioId, linea, Ct)).Should().BeNull(clase.Valor);
+        }
+    }
+
+    [Fact]
+    public async Task SiNexoDevuelveLasClasesDeContenedorVaciasLosCatalogosDeFleteSiguenConLaListaVacia()
+    {
+        // Nexo responde [] cuando su base de SAP no está configurada.
+        _nexo.ClasesContenedor.Clear();
+
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
+        resultado.Valor.ClasesViaje.Should().NotBeEmpty();
+        resultado.Valor.TiposVehiculo.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task SiFallaElCatalogoDeClasesDeContenedorLosCatalogosDeFleteSiguenConLaListaVacia()
+    {
+        _nexo.CatalogosFallidos.Add("clases-contenedor");
+
+        var resultado = await new clsCatalogosFleteNexo(Maestros()).ObtenerAsync(_usuarioId, Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.ClasesContenedor.Should().BeEmpty();
     }
 
     [Fact]

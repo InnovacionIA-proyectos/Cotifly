@@ -7,7 +7,10 @@ namespace Cotifly.Aplicacion.CatalogosFlete.DTOs;
 /// </summary>
 /// <param name="TiposVehiculo"><c>GET /api/catalogos/tipos-vehiculo</c>: <c>valor</c> = <c>codigo</c> (SAP, ej. <c>2S3</c>), <c>etiqueta</c> = <c>descripcion</c>.</param>
 /// <param name="ClasesViaje"><c>GET /api/catalogos/clases-viaje</c>: <c>valor</c> y <c>etiqueta</c> = <c>descripcion</c> (ej. <c>Carga Suelta</c>).</param>
-/// <param name="ClasesContenedor"><c>GET /api/catalogos/clases-contenedor</c>: <c>valor</c> y <c>etiqueta</c> = <c>descripcion</c>.</param>
+/// <param name="ClasesContenedor">
+/// <c>GET /api/catalogos/clases-contenedor</c>: <c>valor</c> y <c>etiqueta</c> = <c>descripcion</c>. En Nexo la <c>descripcion</c> es el
+/// código (<c>CNT40.HC</c>; no hay campo <c>codigo</c>), así que validar por <c>descripcion</c> es validar por código (HU-027.1, #179).
+/// </param>
 /// <param name="LineasNegocio"><c>GET /api/catalogos/lineas-negocio</c>: solo para revisar <c>MargenesPolitica.mapeoLineasNexo</c> (G11).</param>
 public sealed record clsCatalogosMaestros(
     IReadOnlyList<clsOpcionCatalogo> TiposVehiculo,

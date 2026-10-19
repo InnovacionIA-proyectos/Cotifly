@@ -963,14 +963,16 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 {
   "tipos_vehiculo": [ { "valor": "3S3", "etiqueta": "Tractocamión 3S3" }, { "valor": "2", "etiqueta": "Camión sencillo 2 ejes" } ],
   "tipos_carroceria": [ { "valor": "FURGON", "etiqueta": "Furgón" }, { "valor": "PLATAFORMA", "etiqueta": "Plataforma" } ],
-  "clases_viaje": [ { "valor": "Contenedor", "etiqueta": "Contenedor" }, { "valor": "CargaSuelta", "etiqueta": "Carga suelta" } ]
+  "clases_viaje": [ { "valor": "Contenedor", "etiqueta": "Contenedor" }, { "valor": "Carga Suelta", "etiqueta": "Carga Suelta" } ],
+  "clases_contenedor": [ { "valor": "CNT20.ST", "etiqueta": "CNT20.ST" }, { "valor": "CNT40.HC", "etiqueta": "CNT40.HC" } ]
 }
 ```
 
 (Valores ilustrativos: los reales vienen de los catálogos maestros de Nexo, HU-013.10.)
 
 - Mostrar `etiqueta` y enviar `valor`. 503 `CATALOGOS_FLETE_NO_DISPONIBLE` (reintentar más tarde; no ofrecer texto libre).
-- **No incluye** `tipologia` ni `clase_contenedor`, ni las líneas de negocio. Esos siguen hardcodeados en el frontend con los códigos del mapeo (sección 6.4).
+- **`clases_contenedor` (HU-027.1, #179):** las clases de contenedor de Nexo (`GET /api/catalogos/clases-contenedor`). En Nexo la `descripcion` es el código, así que `valor` = `etiqueta` = `CNT40.HC`, el mismo texto con que la captura valida `clase_contenedor`. Solo trae los valores de Nexo: la lista provisional de extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`) no viene, aunque la captura la acepta. **Puede venir `[]` con 200** (Nexo sin la base de SAP configurada, o el catálogo caído): deshabilitar el selector de clase de contenedor y ofrecer Reintentar. Reemplaza el catálogo fijo del frontend.
+- **No incluye** `tipologia` ni las líneas de negocio. Esos siguen hardcodeados en el frontend con los códigos del mapeo (sección 6.4).
 - **A confirmar** con Nexo: que los `valor` de este catálogo sean los mismos códigos que acepta el alta de la solicitud (`tipo_vehiculo`, `carroceria`, `clase_viaje`).
 
 ### 5.14 Calcular cubicaje (`POST /web/cubicacion`). HU-023.2 (#157): cambia de forma
@@ -1998,7 +2000,7 @@ Responsabilidades del frontend, paso a paso:
 1. **Catálogos** (En QA): cargar `GET /web/municipios` y `GET /web/catalogos-flete` una vez por sesión. Si fallan (`*_NO_DISPONIBLE`), deshabilitar los selects afectados y ofrecer reintento.
 2. **Cliente** (En QA): autocompletado con `GET /web/clientes?q=`. Guardar `nit_cliente` y mostrar la etiqueta "Prospecto". Para prospectos, avisar que Nexo aún no los acepta (el envío quedará en `error_envio`), **Pendiente** con Nexo.
 3. **Origen y destino**: autocompletado con la búsqueda `GET /web/municipios?q=` (sección 5.12). Enviar el `id` elegido (`origen_municipio_id`, `destino_municipio_id`) y una copia del nombre: el servidor guarda el nombre del catálogo por el id y Nexo recibe el id (decisión 2 de HU-021).
-4. **Catálogos cerrados**: `clase_viaje` desde `catalogos-flete` (mostrar `etiqueta`, enviar `valor`). `tipologia` y `clase_contenedor` hardcodeados con los códigos de la sección 5.15, en texto amigable. **HU-021.6:** el formulario ya no pide `tipo_vehiculo` ni `carroceria` y se organiza por **rutas** (sección 5.15.1): cada ruta con su línea de negocio, municipios por id + nombre, mercancías con su tipo y servicios conexos.
+4. **Catálogos cerrados**: `clase_viaje` desde `catalogos-flete` (mostrar `etiqueta`, enviar `valor`). `clase_contenedor` desde `clases_contenedor` de `catalogos-flete` (HU-027.1; con `[]`, selector deshabilitado y Reintentar). `tipologia` hardcodeada con los códigos de la sección 5.15, en texto amigable. **HU-021.6:** el formulario ya no pide `tipo_vehiculo` ni `carroceria` y se organiza por **rutas** (sección 5.15.1): cada ruta con su línea de negocio, municipios por id + nombre, mercancías con su tipo y servicios conexos.
 5. **Línea de negocio**: no existe un endpoint de líneas para el comercial (`GET /web/admin/lineas-negocio` responde 403 a `comercial`). Seguir con la lista hardcodeada y manejar `MARGEN_LINEA_DESCONOCIDA` (**Pendiente**).
 6. **Calcular cubicaje** (opcional, HU-023.2): `POST /web/cubicacion` con las mercancías (`codigo_mercancia`) para ver los vehículos que recomienda el cubicador. Es una vista previa: no llena `tipo_vehiculo` ni `carroceria` (los define el cubicador al guardar). Ver sección 5.14.
 7. **Validación en el cliente** antes de enviar: obligatorios (`tipo`, `nit_cliente`, `linea_negocio`, `origen`, `destino`), regla de peso (peso > 0 o posiciones con peso; 1 % de tolerancia), máximo 2 decimales, rangos, hasta 200 posiciones, condicionales de contenedor.
@@ -2387,7 +2389,7 @@ Ajenos a Cotifly: clientepro-frontend #45 (embarqa; no confundir con el issue #4
 |---|---|---|---|
 | Nexo: formato de origen y destino | ¿Nexo acepta `"MUNICIPIO (DEPARTAMENTO)"` o solo el `municipio` exacto (o `id`/`codigo_dane`)? El backend reenvía el texto tal cual | Duban + equipo Nexo | Qué se envía en `origen`, `destino` y las ciudades del contenedor |
 | Nexo: prospectos | Nexo exige `clienteId` o `clienteBp`; un prospecto sin BP queda en `error_envio` | Duban + equipo Nexo | Advertir o bloquear prospectos en el formulario ampliado |
-| Nexo: códigos de catálogo | Resuelto en HU-013.10 (#106): `catalogos-flete` sale de los catálogos maestros (`GET /api/catalogos/*`) y el backend rechaza lo que no es código | Duban + equipo Nexo | Confirmar si `clases-contenedor` trae los códigos `CNT..` |
+| Nexo: códigos de catálogo | Resuelto en HU-013.10 (#106): `catalogos-flete` sale de los catálogos maestros (`GET /api/catalogos/*`) y el backend rechaza lo que no es código | Duban + equipo Nexo | Resuelto en HU-027.1 (#179): la `descripcion` de `clases-contenedor` es el código `CNT..`; `catalogos-flete` la expone en `clases_contenedor` |
 | Nexo: urgencia | Score de urgencia mayor a 75: **no implementado** (ADR-016). No hay contrato de Nexo. Llegará como campo nuevo de `indicadores` (cambio compatible). El "deadline vencido" sí está (`deadline_vencidas`, calculado por Cotifly; `null` sin el `0004`) | Duban + equipo Nexo | Tablero del gerente (HU-010.3): no mostrar la tarjeta de urgencia todavía |
 | Métricas: servicios conexos | Los montos del tablero no suman conexos todavía; se integran después de #42 | Duban | Aviso "valores sin servicios conexos" si hace falta |
 | Nexo: idempotencia del alta | Sin clave de idempotencia: un reintento tras tiempo agotado puede duplicar | Equipo Nexo | Advertencia en Reintentar |
