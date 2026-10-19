@@ -195,6 +195,29 @@ public sealed class clsMetricasTableroEndpointsTests(clsEntornoApiWeb entorno)
         Cantidad(reemplaza).Should().Be(1);
     }
 
+    [Fact]
+    public async Task ElUltimoInstanteDelMesEnBogotaEsDeEseMesYLas0000DelSiguienteNo()
+    {
+        // HU-010.5 (#187), validación: límites exactos del mes con datetimeoffset (Bogotá, UTC-5) y su equivalente en otra zona.
+        var occidente = Regional();
+        var ana = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial, occidente, "Ana Limite");
+        var gloria = await Api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoGerente, occidente, "Gloria Limite");
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-03-31T23:59:59.9999999-05:00"); // marzo
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-04-01T00:00:00-05:00"); // abril (primer instante)
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-04-30T23:59:59.999-05:00"); // abril (último ms)
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-05-01T04:59:59.9999999+00:00"); // abril en Bogotá
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-05-01T00:00:00-05:00"); // mayo
+        await CrearAsync(ana.UsuarioId, "COP", 1_000_000m, 0m, 850_000m, null, "2026-05-01T05:00:00+00:00"); // mayo (mismo instante)
+
+        var marzo = await RegionalAsync(gloria, "anio=2026&mes=3");
+        var abril = await RegionalAsync(gloria, "anio=2026&mes=4");
+        var mayo = await RegionalAsync(gloria, "anio=2026&mes=5");
+
+        Cantidad(marzo).Should().Be(1);
+        Cantidad(abril).Should().Be(3, "de 00:00 del 1 a las 23:59:59.9999999 del 30 de abril en Bogotá, sin importar el offset guardado");
+        Cantidad(mayo).Should().Be(2, "las 00:00 del 1 de mayo en Bogotá (05:00 UTC) ya no son de abril");
+    }
+
     [Theory]
     [InlineData("mes=4")]
     [InlineData("mes=4&desde=2026-01-01&hasta=2026-12-31")]
