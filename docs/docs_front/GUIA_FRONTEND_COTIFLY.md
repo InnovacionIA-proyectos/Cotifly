@@ -511,6 +511,7 @@ Traducción general del servidor (`clsRespuestasWeb`): `COTIZACION_NO_ENCONTRADA
 | `PDF_RENDER_NO_DISPONIBLE` | chat; 503 en `costeo/pdf` (desde #92) | Falló el render o no hubo turno de render a tiempo (los PDF se generan uno a la vez) | "Reintenta más tarde" con botón Reintentar | En QA |
 | `CONFIRMACION_REQUERIDA` | chat (y `errores`) | Falta confirmar (PDF, o elegir el municipio o el cliente). En `/enviar` no llega: el comercial sale del token | No mostrar alerta: el agente lo pide. Ofrecer el botón "Confirmo" si hay previsualización | En QA |
 | `COTIZACION_NO_ENCONTRADA` | 404 `ErrorWeb` en `/web/*` | No existe o no es tuya | "Cotización no encontrada" y refrescar la lista | En QA |
+| `CAMPO_NO_EDITABLE` | 400 en `PUT /web/cotizaciones/{folio}/solicitud` | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` y dejarlo en solo lectura | Implementado, pendiente de QA |
 | `CORREO_DUPLICADO` | 400 en `/enviar` | Mismo envío a los mismos destinatarios hace menos de 5 min | "Ya enviaste esta cotización a esos destinatarios hace poco" | En QA |
 | `CORREO_PDF_NO_ENCONTRADO` | 400 en `/enviar` | La cotización no tiene PDF | Deshabilitar "Enviar" si `pdf_url` es null | En QA |
 | `CORREO_ENVIO_FALLIDO` | 400 en `/enviar` | Falló el relay SMTP | "No se pudo enviar. Reintenta" | En QA |
@@ -909,6 +910,7 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 }
 ```
 
+- **HU-028 (#186):** para prellenar usar `GET /web/cotizaciones/{folio}/solicitud` (sección 5.28), que trae mercancías, conexos y condiciones por ruta; para editar, `PUT` al mismo recurso (crea la `-vN` sola si la cotización ya se entregó).
 - Uso: solo para **prellenar** la pantalla de la versión nueva. La versión se crea con `POST /web/cotizaciones/{folio}/costeo/re-solicitar` con `nueva_version: true` (o con `datos_carga` si cambia la carga), `If-Match` e `Idempotency-Key`: responde 201 con la `-vN` y `Location` a su costeo (sección 10, "Cotizar costo"). El chat ya no crea versiones: `cotizacion_origen_id` en `POST /web/chat` se ignora. `version_siguiente` es informativa: la definitiva la asigna el servidor.
 - `costo` solo tiene sentido en las cotizaciones del chat anterior (el costo que escribió el comercial); en las de Nexo no se muestra.
 
@@ -1897,6 +1899,26 @@ Una línea puede tener precio aunque la licitación siga en `pendiente_costeo`: 
 - **409 `PDF_YA_GENERADO`** solo con un PDF vigente: como en la cotización, un ajuste sin enviar lo invalida (`pdf_desactualizado`) y se regenera. Los servicios conexos quitados con `PUT .../costeo/servicios-conexos` ya no están en la ruta y no aparecen.
 - En USD las tarifas salen en `US$` y el PDF lleva la nota de TRM mínima con la `trm_aplicada` de la licitación (sección 6.3, punto 7). Ya no responde `PDF_PAYLOAD_INVALIDO` por la moneda.
 
+### 5.28 Editar la solicitud (`GET` y `PUT /web/cotizaciones/{folio}/solicitud`). HU-028 (#186): implementado, pendiente de QA
+
+El comercial corrige la solicitud que ya creó: **todo menos el cliente, el tipo (spot/licitación) y la línea de negocio de cada ruta**.
+Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de pantalla en la sección 6.10.
+
+- **`GET .../solicitud`** (dueño): 200 `SolicitudEditable` con `ETag`. Trae cada ruta con `linea_solicitud_id`, los municipios por id y
+  nombre, las condiciones, las mercancías con `codigo_mercancia`, los conexos con el id del catálogo de NEXO (sin precio) y el margen;
+  `bloqueados` y `campos_bloqueados` (solo lectura); `lineas_negocio_disponibles` (las únicas para una ruta nueva); y `edicion`
+  (`modo`, `permitida`, `motivo_no_permitida`, `mensaje`, `avisos[]`).
+- **`PUT .../solicitud`** (dueño, `If-Match` obligatorio, `Idempotency-Key` recomendada): el mismo JSON del `GET` con los cambios
+  (los campos que no son de entrada se ignoran) más `motivo` (opcional) y `modo_esperado`. Reemplazo completo: una ruta sin
+  `linea_solicitud_id` es nueva y una guardada que no viene se quita. Las rutas que se conservan no se reordenan.
+- **Modos:** `en_sitio` (nunca llegó a NEXO, 200), `reemplazo` (en NEXO sin entregar ni resultado: rechaza la solicitud anterior y
+  captura en el mismo folio, 200; el PDF queda desactualizado) y `nueva_version` (entregada o con resultado: `-vN`, 201 con `Location`).
+  Las licitaciones no se editan todavía (`permitida: false`, `LICITACION`).
+- **Errores:** 400 `CAMPO_NO_EDITABLE` (`detalle.campo`) o `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores`); 409 `ESTADO_NO_PERMITE`
+  (`MODO_CAMBIO`: recargar), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` con
+  `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
+- **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
+
 ## 6. Flujos
 
 ### 6.1 Login y renovación de sesión
@@ -2251,6 +2273,31 @@ Responsabilidades del frontend:
 6. **Seguimiento**: `GET /web/licitaciones/{folio}` cada 15 a 30 s mientras haya líneas sin precio y el estado sea `pendiente_costeo` o `autocosteo`; detener en `entregada`, `descartada`, `costeo_vencido` o `error_envio`.
 7. **Reintento** con `error_envio`: `POST /web/cotizaciones/{folio}/costeo/reintentar` (todas las líneas, con los mismos ids de municipio y horas).
 8. **Exportar** (5.26) y **PDF** (5.19 con layout de pliego).
+
+### 6.10 Editar solicitud (HU-028, #186). Implementado, pendiente de QA
+
+Botón **"Editar solicitud"** en el detalle de la cotización (y en "Mis cotizaciones").
+
+1. Al abrir: `GET /web/cotizaciones/{folio}/solicitud`. Guardar el `ETag`. Si `edicion.permitida` es `false`, mostrar `edicion.mensaje`
+   (por ejemplo "es una licitación: su edición llega en una fase posterior") y no abrir el formulario.
+2. Formulario: el mismo de la captura por rutas, prellenado. Cliente y tipo en solo lectura (`bloqueados`). En cada ruta guardada, la
+   línea de negocio en solo lectura; en una ruta nueva, un select con `lineas_negocio_disponibles`. Se pueden agregar y quitar rutas;
+   las que se conservan quedan en su orden (sin arrastrar para reordenar).
+3. Al guardar, mostrar un cuadro de confirmación según `edicion.modo` y `edicion.avisos`:
+   - `en_sitio`: "Se enviará la solicitud corregida a NEXO".
+   - `reemplazo`: "Se reemplazará la solicitud en NEXO; el costeo actual se pierde y el PDF deberá regenerarse". Con
+     `PIERDE_TRABAJO_MESA`: "La Mesa de Costeo ya está trabajando en esta solicitud: perderá su trabajo".
+   - `nueva_version`: "La cotización ya se entregó al cliente: se creará la versión -vN y la original no cambia".
+   - Campo opcional "Motivo de la edición".
+4. `PUT .../solicitud` con el modelo editado, `If-Match` (el `ETag`), `Idempotency-Key` (un UUID por clic de Confirmar) y
+   `modo_esperado` (el modo que se mostró).
+5. Respuesta:
+   - 200: refrescar la cotización (`cotizacion` trae el resumen; `estado_costeo` en `pendiente_costeo`, o `error_envio` si NEXO no
+     respondió: ofrecer Reintentar como siempre). Si `sin_cambios`, avisar "No hubo cambios".
+   - 201: navegar a la versión nueva (`folio`).
+   - 400: marcar los campos (`detalle.campo` o `detalle.errores`).
+   - 409 `CONFLICTO_CONCURRENCIA` o `ESTADO_NO_PERMITE` con `MODO_CAMBIO`: recargar con el `GET` y volver a confirmar.
+   - 503 `RECHAZO_NEXO_FALLIDO`: "NEXO no respondió; no se cambió nada". Recargar y ofrecer Reintentar.
 
 ## 7. Estados y reglas de UI
 

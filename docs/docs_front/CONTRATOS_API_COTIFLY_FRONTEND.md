@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Fecha** | 2026-10-19 |
-| **Versión de referencia** | Rama `hu-023-defectos-e2e-1016`: `44f25a7` (`4328e4c` más la corrección del apagado de "Calcular cubicaje", B1) más la corrección D-1019-1 (código de mercancía validado antes de llamar al cubicador), sobre PR #178 |
+| **Versión de referencia** | Rama `186-hu-028-editar-solicitud` (HU-028, editar la solicitud) sobre la rama `hu-023-defectos-e2e-1016`: `44f25a7` (`4328e4c` más la corrección del apagado de "Calcular cubicaje", B1) más la corrección D-1019-1 (código de mercancía validado antes de llamar al cubicador), sobre PR #178 |
 | **Audiencia** | Equipo de frontend del módulo Cotifly dentro de ClientePro (Angular 17.3.8) |
 | **Fuente de verdad** | El código del backend .NET y `backend-dotnet/specs/openapi.yaml`. Si este documento y el código no coinciden, manda el código. Los cambios de esta versión están en la sección 9 |
 
@@ -622,6 +622,47 @@ sequenceDiagram
   de la mercancía o de las medidas no se acepta con respaldo.
 - Las licitaciones no admiten conexos por `POST .../costeo/servicios-conexos` (409 `ESTADO_NO_PERMITE`, `detalle.motivo = LICITACION`).
 
+### 3.7 Editar la solicitud (HU-028, #186)
+
+Pantalla **"Editar solicitud"**: reutiliza el formulario por rutas de la captura, prellenado con `GET .../solicitud`, con el cliente, el
+tipo y la línea de negocio de cada ruta guardada en solo lectura.
+
+| Modo (`edicion.modo`) | Cuándo | Qué pasa al guardar | Confirmación sugerida |
+|---|---|---|---|
+| `en_sitio` | La solicitud nunca llegó a NEXO (`error_envio` o `pendiente_envio` abandonado) | Se edita la misma cotización y se envía a NEXO | Ninguna |
+| `reemplazo` | Está en NEXO, sin entregar al cliente y sin resultado | Cotifly rechaza la solicitud anterior en NEXO y captura de nuevo **en el mismo folio**; el precio se limpia y el PDF queda desactualizado | "Se reemplazará la solicitud en NEXO" (+ "la Mesa está costeando: se pierde su trabajo" en `pendiente_costeo`) |
+| `nueva_version` | Ya se envió al cliente o tiene resultado | Se crea la `-vN` con lo editado; la original no cambia | "Se creará la versión -vN" |
+| `permitida: false` | Licitación (fase 2), chat, envío o cubicación en curso | — | Mostrar `edicion.mensaje` y no abrir el formulario |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Frontend
+    participant API as Cotifly
+    participant NX as NEXO
+    UI->>API: GET /web/cotizaciones/{folio}/solicitud
+    API-->>UI: 200 SolicitudEditable + ETag (edicion.modo, avisos)
+    UI->>UI: Editar rutas, mercancías, conexos... y confirmar los avisos
+    UI->>API: PUT .../solicitud (If-Match, Idempotency-Key, modo_esperado)
+    alt reemplazo
+        API->>NX: POST /api/solicitudes/{anterior}/rechazar
+        NX-->>API: 204 (o 409 ya descartada)
+        API->>NX: POST /api/captura-solicitudes
+        API-->>UI: 200 modo=reemplazo, mismo folio
+    else nueva_version
+        API->>NX: POST /api/captura-solicitudes (la -vN)
+        API-->>UI: 201 + Location (folio -vN)
+    else en_sitio
+        API->>NX: POST /api/captura-solicitudes
+        API-->>UI: 200 modo=en_sitio
+    end
+```
+
+Si el rechazo en NEXO falla, **no** se captura otra solicitud (nunca quedan dos vivas): 503 `NEXO_NO_DISPONIBLE` con
+`detalle.motivo = RECHAZO_NEXO_FALLIDO`; la versión subió, así que hay que recargar antes de reintentar. Las rutas que se conservan no se
+reordenan; las nuevas pueden ir en cualquier posición. El margen negociado de una ruta que se conserva sobrevive. Solo se recubican las
+rutas nuevas y las que cambian peso, mercancías o clase de viaje.
+
 ---
 
 ## 4. Referencia de endpoints
@@ -636,7 +677,7 @@ Convenciones de esta sección:
   más de 64 KB: 413. Un JSON mal formado o con tipos erróneos: 400 `ErrorWeb`. Tampoco se repiten.
 - `{folio}` es el folio de la cotización (hasta 50 caracteres), codificado con `encodeURIComponent`.
 
-Resumen (46 endpoints):
+Resumen (48 endpoints):
 
 | # | Método y ruta | Rol | Módulo |
 |---|---|---|---|
@@ -686,6 +727,8 @@ Resumen (46 endpoints):
 | 44 | `PUT /web/usuario/telefono` | Ambos | Usuario |
 | 45 | `GET /health` | Público | Health |
 | 46 | `GET /health/ready` | Público | Health |
+| 47 | `GET /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
+| 48 | `PUT /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -1655,6 +1698,11 @@ Campos admitidos en `datos_carga` (`DatosCargaWeb`, mismos límites de la captur
 (reemplaza todas). `tipo_vehiculo` y `carroceria` se aceptan pero se ignoran. Origen, destino, cliente y línea de negocio **no** se
 cambian aquí (400). Un campo en `null` se borra.
 
+**Obsoleto (HU-028, #186):** para cambiar la carga usar `PUT /web/cotizaciones/{folio}/solicitud` (4.4.10). Mientras el frontend migra,
+`datos_carga` se sigue aceptando: las `posiciones` conservan `codigo_mercancia` y `nombre_mercancia`, se aceptan
+`ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id` (un nombre nuevo sin id borra el id anterior), y un cambio de
+`clase_viaje` vuelve a pedir los camiones al cubicador.
+
 ```json
 { "motivo": "El cliente cambió el peso de la carga", "datos_carga": { "peso_kg": 28400, "valor_mercancia": 150000000 } }
 ```
@@ -1765,6 +1813,56 @@ El comercial edita el asunto y la introducción del PDF.
 | 404 | `ErrorWeb` | — |
 | 409 | `PDF_YA_ENVIADO`, `CONFLICTO_CONCURRENCIA` | Versión nueva / recargar |
 | 428 | `PRECONDICION_REQUERIDA` | — |
+
+#### 4.4.10 `GET` y `PUT /web/cotizaciones/{folio}/solicitud` ("Editar solicitud", HU-028, #186)
+
+El comercial edita la solicitud: **todo menos el cliente, el tipo (spot/licitación) y la línea de negocio de cada ruta**. El modo lo
+decide el servidor según el estado y el `GET` lo anuncia (ver 3.7).
+
+**`GET /web/cotizaciones/{folio}/solicitud`** — Rol: ambos (dueño). **200** `SolicitudEditable` con `ETag`; 404 si es ajena.
+
+| Campo | Qué trae |
+|---|---|
+| `folio`, `version`, `version_negocio` | Identidad y versión de negocio (la misma del `ETag`) |
+| `bloqueados` | `tipo`, `nit_cliente`, `cliente_nombre`, `origen_cliente` con su valor: **solo lectura** |
+| `campos_bloqueados` | `["tipo", "nit_cliente", "cliente_nombre", "origen_cliente", "rutas[].linea_negocio"]` |
+| `edicion` | `modo` (`en_sitio`, `reemplazo`, `nueva_version` o `null`), `permitida`, `motivo_no_permitida` (`LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`), `mensaje` y `avisos[]` (`codigo` y `mensaje`) |
+| `deadline`, `notas`, `moneda`, `linea_negocio` | Encabezado (la línea es la de la ruta 1) |
+| `lineas_negocio_disponibles` | Las líneas de la solicitud: las únicas que puede usar una ruta nueva |
+| `rutas[]` (`RutaEditable`) | `linea_solicitud_id`, `linea_orden`, `linea_negocio` (+ `linea_negocio_bloqueada: true`), origen, destino y ciudades del contenedor **por id y nombre**, condiciones, horas, `valor_levante_contenedor`, `valor_mercancia`, `peso_kg`, `mercancias[]` (con `codigo_mercancia`), `servicios_conexos[]` (`id_servicio_conexo` del catálogo de NEXO, `nombre`, `cantidad`; sin precio), `margen_aplicado`, `origen_margen`, `margen_negociado` |
+
+Sin costos de NEXO ni precios.
+
+**`PUT /web/cotizaciones/{folio}/solicitud`** — Rol: ambos (dueño). **Headers:** `If-Match` **obligatorio** (428 sin él, 409 si es
+viejo); `Idempotency-Key` recomendada.
+
+| Campo | Tipo | Obligatorio | Reglas |
+|---|---|---|---|
+| `rutas[]` | `RutaEdicionWeb` | Sí (1 a 100) | Los campos de `RutaCapturaWeb` más `linea_solicitud_id` (la ruta guardada que se edita; sin él, ruta nueva). Las guardadas que no vienen se quitan. Las que se conservan **no se reordenan** |
+| `tipo`, `nit_cliente`, `cliente_nombre`, `origen_cliente` | string | No | Bloqueados: si vienen, con el valor guardado (si no, 400 `CAMPO_NO_EDITABLE`) |
+| `linea_negocio` | string | No | Línea por defecto de una ruta nueva (una de `lineas_negocio_disponibles`) |
+| `deadline`, `notas`, `horas_cargue`, `horas_descargue` | — | No | Como en la captura. Ausente = vacío (es un reemplazo completo) |
+| `moneda` | `COP` o `USD` | No | Ausente conserva la guardada; si cambia, TRM del día |
+| `motivo` | string | No | Hasta 300. Auditoría y comentario del rechazo en NEXO |
+| `modo_esperado` | string | No | El `edicion.modo` mostrado; si cambió, 409 `ESTADO_NO_PERMITE` (`MODO_CAMBIO`) |
+
+El JSON del `GET` sirve tal cual como cuerpo del `PUT` (los campos que no son de entrada se ignoran).
+
+Respuesta `EdicionSolicitudResultado`: `modo`, `folio` (el resultante), `folio_origen`, `sin_cambios`, `cotizacion`
+(`CotizacionResumen`), `avisos[]`, `rutas_replanificadas[]` (orden de las rutas recubicadas), `rutas_agregadas[]` (orden),
+`rutas_quitadas[]` (ids) y `solicitud_nexo_reemplazada` (`descartada`, `ya_descartada`, `no_encontrada` o `null`).
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `EdicionSolicitudResultado` | `en_sitio`, `reemplazo` o `sin_cambios`: refrescar la cotización. Guardar el `ETag` nuevo |
+| 201 | `EdicionSolicitudResultado` | `nueva_version`: navegar a `folio` (o al `Location`) |
+| 400 | `CAMPO_NO_EDITABLE` | Restaurar el campo de `detalle.campo` (todos en `detalle.campos`) |
+| 400 | `SOLICITUD_COSTEO_INVALIDA` | Marcar `detalle.errores[]` (reglas de la captura, `RUTA_INEXISTENTE`, `RUTA_REPETIDA`, `RUTAS_REORDENADAS`) |
+| 403 | `NEXO_SIN_PERMISO` | NEXO no deja rechazar la solicitud anterior; nada cambió |
+| 409 | `ESTADO_NO_PERMITE` | Mostrar el mensaje; con `MODO_CAMBIO`, recargar y confirmar de nuevo |
+| 409 | `CONFLICTO_CONCURRENCIA`, `IDEMPOTENCY_KEY_REUTILIZADA` | Recargar |
+| 503 | `NEXO_NO_DISPONIBLE` (`detalle.motivo = RECHAZO_NEXO_FALLIDO`) | "NEXO no respondió; no se cambió nada". La versión subió: recargar antes de reintentar |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE`, `MUNICIPIOS_NO_DISPONIBLE`, `CUBICADOR_NO_DISPONIBLE`, `TRM_NO_DISPONIBLE` | Reintentar; nada se guardó |
 
 ### 4.5 Cotizaciones
 
@@ -2859,6 +2957,9 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `ESTADO_NO_PERMITE` | `CAPTURA_EN_CURSO` | La `Idempotency-Key` ya creó un folio (`detalle.folio`) |
 | `ESTADO_NO_PERMITE` | `LICITACION` | Operación no admitida en una licitación |
 | `ESTADO_NO_PERMITE` | `VARIAS_RUTAS` | `datos_carga` con varias rutas |
+| `ESTADO_NO_PERMITE` | `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO` | La solicitud no se puede editar ahora (HU-028) |
+| `ESTADO_NO_PERMITE` | `MODO_CAMBIO` | El modo de la edición cambió desde el `GET`: recargar (HU-028) |
+| `NEXO_NO_DISPONIBLE` | `RECHAZO_NEXO_FALLIDO` | La edición no se aplicó: el rechazo de la solicitud anterior en NEXO falló (HU-028) |
 | `LICITACION_INVALIDA` | `LICITACION_REQUIERE_NUEVA_CARGA` | Las filas guardadas ya no cumplen las reglas: crear otra licitación |
 | `MARGEN_LINEA_DESCONOCIDA` | `LINEA_DE_NEXO` (u otro motivo) | Con `detalle.lineas_validas` |
 | `RESULTADO_YA_DEFINIDO` | `ganada` o `perdida` | El resultado que tiene NEXO (Cotifly ya lo guardó) |
@@ -2875,6 +2976,7 @@ parecido del catálogo, `sugerido = true`, con `similitud` de 0 a 1), `null` (si
 | `AJUSTE_MARGEN_INVALIDO` | 400 | Margen fuera de 0 a 0,99 o ausente | Validar el campo antes de enviar |
 | `ARCHIVO_DEMASIADO_GRANDE` | 400 | Excel de más de unos 9,9 MB | "El archivo supera 10 MB" |
 | `ARCHIVO_REQUERIDO` | 400 | Falta el Excel o está vacío | Pedir el archivo |
+| `CAMPO_NO_EDITABLE` | 400 | La edición cambia el cliente, el tipo o la línea de negocio de una ruta (HU-028) | Restaurar el campo de `detalle.campo` |
 | `CATALOGOS_FLETE_NO_DISPONIBLE` | 503 | Catálogos de NEXO caídos y sin copia de menos de 24 h | Deshabilitar selects, Reintentar; nada se guardó |
 | `CLIENTE_BUSQUEDA_NO_DISPONIBLE` | 400 | Buscador de clientes no disponible (no es "sin resultados") | "Buscador no disponible", Reintentar |
 | `CONEXO_INVALIDO` | 400 | NEXO no aceptó el servicio, o la ruta no existe | Mostrar mensaje; recargar el costeo antes de reintentar |
@@ -2950,6 +3052,8 @@ aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`
 | `DEMASIADAS_LINEAS` | Más de 100 rutas o 1000 líneas | `rutas` / `lineas` |
 | `LINEA_INCOMPLETA` | Falta un dato esencial de la ruta | — |
 | `CAMPO_REQUERIDO` | Falta un campo obligatorio (id de municipio, `codigo_mercancia`, `clase_contenedor` con Contenedor) | `origen_municipio_id`, `mercancias[i].codigo_mercancia`... |
+| `RUTA_REPETIDA` | La edición trae dos veces la misma ruta (HU-028) | `linea_solicitud_id` |
+| `RUTAS_REORDENADAS` | La edición cambia el orden de las rutas que se conservan (HU-028) | `linea_solicitud_id` |
 | `CAMPO_DEMASIADO_LARGO` | Texto más largo que el límite | — |
 | `VALOR_FUERA_DE_RANGO` | Número fuera de rango, o `moneda` inválida en la licitación | — |
 | `DEMASIADAS_POSICIONES` | Más de 200 mercancías | `mercancias` (antes `posiciones`) |
@@ -3032,6 +3136,8 @@ fila_excel, campo, codigo, mensaje}`.
 | 39 | **D2:** si la Mesa cambia el vehículo, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` del camión llegan en `null` | Cambia | Mostrar "—", nunca 0 % |
 | 40 | Tope del polling de `GET /web/cubicacion/{id}`: **4 minutos** | Cambia | Ajustar el tope (antes se sugerían 2-3 minutos) |
 | 41 | **D-1019-1:** `POST /web/cubicacion` valida `codigo_mercancia` contra el catálogo antes de llamar al cubicador: 400 `MERCANCIA_DESCONOCIDA` (desconocido o inactivo) o `MERCANCIA_NO_CUBICABLE`, ahora con `detalle.item` (base 0) y `detalle.campo = "codigo_mercancia"`; el código se compara sin mayúsculas. En la captura, el rechazo del cubicador trae `detalle.ruta`, `detalle.item` y `detalle.campo` cuando se sabe qué mercancía es | Agrega | Marcar el ítem con `detalle.item`, igual que D1 |
+| 42 | **Nuevos** `GET` y `PUT /web/cotizaciones/{folio}/solicitud` (HU-028): editar la solicitud en sitio, como reemplazo en NEXO o en una `-vN` | Agrega | Pantalla "Editar solicitud" (3.7 y 4.4.10) |
+| 43 | `datos_carga` de `re-solicitar` queda obsoleto; acepta `codigo_mercancia`, `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id` | Cambia | Migrar a `PUT .../solicitud` |
 
 ---
 
@@ -3110,6 +3216,19 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-19 (rama `186-hu-028-editar-solicitud`, HU-028, #186).** Editar la solicitud:
+
+- **Nuevos** `GET /web/cotizaciones/{folio}/solicitud` (modelo editable con `ETag`) y `PUT /web/cotizaciones/{folio}/solicitud`
+  (`If-Match` obligatorio, `Idempotency-Key`). Son **48 endpoints**. Ver 3.7 y 4.4.10.
+- Modos `en_sitio`, `reemplazo` (rechaza la solicitud anterior en NEXO y captura en el mismo folio) y `nueva_version` (`-vN`). Las
+  licitaciones no se editan todavía (409 `ESTADO_NO_PERMITE`, `LICITACION`).
+- Código **nuevo** `CAMPO_NO_EDITABLE` (400, `detalle.campo`). Nuevos `detalle.motivo`: `SIN_FORMULARIO`, `ENVIO_EN_CURSO`,
+  `CUBICACION_EN_CURSO`, `MODO_CAMBIO` (409) y `RECHAZO_NEXO_FALLIDO` (503). Nuevos códigos por campo: `RUTA_REPETIDA` y
+  `RUTAS_REORDENADAS`.
+- `datos_carga` de `re-solicitar` queda **obsoleto** (usar el `PUT`); mientras tanto conserva `codigo_mercancia` y `nombre_mercancia`,
+  acepta `ciudad_devolucion_municipio_id` y `ciudad_levante_municipio_id`, y un cambio de `clase_viaje` vuelve a cubicar.
+
 
 **2026-10-19 (rama `hu-023-defectos-e2e-1016`: `44f25a7` —`4328e4c` más la corrección B1 del apagado— más D-1019-1).** Defectos del E2E real del 2026-10-16 y del 2026-10-19:
 
