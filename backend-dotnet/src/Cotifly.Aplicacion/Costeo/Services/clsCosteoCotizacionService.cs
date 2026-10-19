@@ -188,7 +188,8 @@ public sealed record clsRutaCosteo(
 /// <summary>
 /// <c>CamionCosteo</c> (HU-021.9, #136): un camión de la ruta como lo ve el comercial. Vehículo y carrocería vacíos = sin selección
 /// automática (los resuelve la Mesa de Costeo de Nexo, decisión 7). Sin costos ni ids de Nexo. HU-023.3 (#158): con el cubicador, el
-/// volumen que lleva y qué tan lleno va en volumen y en peso (0 a 100); <c>null</c> sin recomendación.
+/// volumen que lleva y qué tan lleno va en volumen y en peso (0 a 100); <c>null</c> sin recomendación. D2: los porcentajes también son
+/// <c>null</c> si la Mesa de Costeo cambió de verdad el vehículo o la carrocería (eran del vehículo anterior).
 /// </summary>
 public sealed record clsCamionCosteo(
     string? TipoVehiculo, string? Carroceria, decimal? PesoKg, string? EstadoCosteo,

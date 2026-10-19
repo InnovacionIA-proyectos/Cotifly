@@ -148,6 +148,41 @@ public sealed class clsCosteoPorCamionTests
         camion.IdRecomendacionVehiculo.Should().Be(recomendacion, "el vínculo con la línea de Nexo no cambia porque cambie el vehículo");
     }
 
+    /// <summary>
+    /// D2, validación (punto b): los porcentajes de llenado del cubicador se calcularon para su vehículo. Si la Mesa cambia de verdad el
+    /// vehículo o la carrocería, quedan en <c>null</c> (no se muestra un dato falso); el volumen y el peso de la carga se conservan. Un
+    /// cambio solo de escritura o llenar un camión vacío no los toca, y un ciclo siguiente con lo mismo no vuelve a cambiar nada.
+    /// </summary>
+    [Theory]
+    [InlineData("3S3", "FURGON", true)]
+    [InlineData("C2", "ESTACAS", true)]
+    [InlineData("c2", "Furgón", false)]
+    [InlineData(null, null, false)]
+    public void D2_SiLaMesaCambiaElVehiculoLosPorcentajesDelCubicadorQuedanEnNull(string? vehiculoNexo, string? carroceriaNexo, bool anula)
+    {
+        var cotizacion = Ruta(("3S3", 10_000m));
+        var camion = cotizacion.PrimeraRuta!.AgregarVehiculo(new clsCamionPlaneado("C2", "FURGON", 4_000m, Guid.NewGuid(), 22.5m, 81.25m, 47.06m));
+        var vacio = cotizacion.PrimeraRuta!.AgregarVehiculo(null, null, 2_000m);
+
+        cotizacion.AplicarFotoNexo(
+        [
+            new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, vehiculoNexo, carroceriaNexo),
+            new clsCosteoCamionNexo(vacio.Id, EstadoCosteo.Autocosteo, true, 300_000m, null, "C2", "FURGON"),
+        ], _ahora);
+
+        camion.PorcentajeLlenadoVolumen.Should().Be(anula ? null : 81.25m);
+        camion.PorcentajeLlenadoPeso.Should().Be(anula ? null : 47.06m);
+        camion.VolumenTotalM3.Should().Be(22.5m, "el volumen de la carga no depende del vehículo");
+        camion.PesoKg.Should().Be(4_000m);
+        (vacio.TipoVehiculo, vacio.PorcentajeLlenadoVolumen).Should().Be(("C2", (decimal?)null));
+
+        // Sin oscilación: el ciclo siguiente con la misma foto de Nexo no cambia nada.
+        var antes = (camion.TipoVehiculo, camion.Carroceria);
+        cotizacion.AplicarFotoNexo([new clsCosteoCamionNexo(camion.Id, EstadoCosteo.Autocosteo, true, 500_000m, null, vehiculoNexo, carroceriaNexo)], _ahora);
+        (camion.TipoVehiculo, camion.Carroceria).Should().Be(antes);
+        camion.PorcentajeLlenadoVolumen.Should().Be(anula ? null : 81.25m);
+    }
+
     [Fact]
     public void D2_SiLaMesaCambiaLaCarroceriaDeUnCamionDelCubicadorSeAdopta()
     {

@@ -655,7 +655,10 @@ dichos cambios, incluido el tipo de vehículo." `rutas[].camiones[].tipo_vehicul
 Mesa cambia `2S2` por `3S3`, o `FURGON` por `ESTACAS`, el camión pasa a mostrar lo de la Mesa (y el texto de `vehiculos` y el PDF
 también). Una diferencia solo de escritura no es un cambio: Nexo devuelve `Furgón` o `FURGON REFRIGERADO` por `FURGON` y
 `FURGON_REFRIGERADO`, y se conserva el código del cubicador. Un valor vacío de Nexo no borra el de Cotifly. Puede llegar un nombre de
-Nexo en vez del código (`Estacas`): mostrarlo tal cual. Los porcentajes de llenado siguen siendo los del cubicador.
+Nexo en vez del código (`Estacas`): mostrarlo tal cual. Si la Mesa cambia de verdad el vehículo o la carrocería de un camión que ya
+tenía, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` pasan a `null` (el cubicador los calculó para el vehículo anterior y ya
+no corresponden; tampoco salen en el Excel de la licitación); `peso_kg` y `volumen_total_m3` se conservan porque son de la carga. Un
+cambio solo de escritura o un camión vacío que la Mesa llena no los toca, y si la Mesa vuelve al vehículo original no se recuperan.
 
 `deadline` y `score_prioridad` (HU-018.1, #155) son de la **cabecera** (toda la solicitud), no de cada ruta, y vienen siempre
 (también en las respuestas de las mutaciones): `deadline` es la fecha límite del formulario en UTC (`null` si no se dio) y
@@ -1079,7 +1082,8 @@ el `GET`. También responde 503 `CUBICADOR_OCUPADO` si hay demasiadas cubicacion
 
 1. `POST /web/cubicacion`. Con **200**, pintar el resultado como hoy. Con **202**, mostrar "Calculando… el cubicador puede tardar hasta
    un minuto" y guardar `consultar_en`.
-2. Consultar `GET consultar_en` cada **2-3 s** (el `Retry-After`), con un tope de unos **2-3 minutos**. Mientras sea `en_proceso`, seguir
+2. Consultar `GET consultar_en` cada **2-3 s** (el `Retry-After`), con un tope de **4 minutos** (una cubicación puede esperar 60 s el cupo
+   del cubicador, 90 s su respuesta y 65 s la reconsulta: unos 217 s con la configuración por defecto). Mientras sea `en_proceso`, seguir
    mostrando "Calculando…". El comercial puede seguir editando: si cambia la carga, descartar la consulta anterior y volver a calcular.
 3. Con `completada`, pintar `resultado` igual que el 200. Con `fallida`, tratar `error` igual que un error del `POST`: los 400 del cubicador
    (marcar el ítem si trae `detalle.item`) o "no disponible" con un botón **Reintentar**.

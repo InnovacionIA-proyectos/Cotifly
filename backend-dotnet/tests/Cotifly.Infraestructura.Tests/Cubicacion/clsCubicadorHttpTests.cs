@@ -429,6 +429,22 @@ public sealed class clsCubicadorHttpTests : IDisposable
         new clsValidadorOpcionesCubicacionLicitacion(Options.Create(opciones)).Validate(null, licitacion).Succeeded.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Opción D (validación): una cubicación rápida en proceso vence a los <c>RetencionCubicacionMinutos</c> de creada. Si vence antes de lo
+    /// que puede durar la llamada más larga (cupo, POST, espera y reconsulta), el resultado se perdería: no arranca.
+    /// </summary>
+    [Fact]
+    public void LaRetencionDeLasCubicacionesRapidasDebeCubrirLaLlamadaMasLarga()
+    {
+        var corta = Valido(new clsOpcionesCubicador { RetencionCubicacionMinutos = 3 });
+        var resultado = new clsValidadorOpcionesCubicador().Validate(null, corta);
+
+        clsCubicadorHttp.DuracionMaximaLlamada(corta).Should().Be(TimeSpan.FromSeconds(217), "60 + 90 + 2 + 5 + 60");
+        resultado.Failed.Should().BeTrue("3 min = 180 s < 217 s");
+        resultado.FailureMessage.Should().Contain("RetencionCubicacionMinutos");
+        new clsValidadorOpcionesCubicador().Validate(null, Valido(new clsOpcionesCubicador { RetencionCubicacionMinutos = 4 })).Succeeded.Should().BeTrue();
+    }
+
     /// <summary>D7 (E2E 2026-10-16): <c>.env.example</c> decía 15 s y el código usaba 30. Los valores documentados son los del código.</summary>
     [Fact]
     public void ElEnvExampleDocumentaLosTiemposDelCodigo()

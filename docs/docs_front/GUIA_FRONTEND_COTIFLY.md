@@ -1070,7 +1070,8 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 
 1. Al recibir **202**, mostrar un indicador "Calculando… el cubicador puede tardar hasta un minuto" y deshabilitar otro "Cubicar" de la
    misma carga.
-2. Consultar `consultar_en` cada **2-3 s** (respetar `Retry-After`), con un tope de unos **2-3 minutos**. Si el comercial cambia la carga,
+2. Consultar `consultar_en` cada **2-3 s** (respetar `Retry-After`), con un tope de **4 minutos** (lo más que dura una llamada al cubicador
+   con la configuración por defecto: 60 s de espera por el cupo + 90 s del POST + 5 s + 60 s de la reconsulta = 217 s). Si el comercial cambia la carga,
    abandonar el polling anterior y volver a cubicar.
 3. `completada`: pintar `resultado` como el 200. `fallida`: tratar `error` como los errores del `POST` (marcar el ítem con `detalle.item`
    si viene; con `CUBICADOR_NO_DISPONIBLE` o `CUBICADOR_OCUPADO`, botón **Reintentar**).
@@ -1078,7 +1079,8 @@ descargarPdf(pdfUrl: string, folio: string): Observable<void> {
 5. **503 `CUBICADOR_OCUPADO`**: esperar el `Retry-After` (10 s) y ofrecer **Reintentar**.
 
 La captura (`POST /web/solicitudes-costeo`) y el recálculo de vehículos **siguen síncronos** (solo con el cupo y los tiempos nuevos):
-pueden tardar hasta unos 3 minutos con cargas grandes. Pasarlos a segundo plano es el siguiente paso.
+una ruta sola puede tardar hasta unos 3,6 minutos (217 s) y una captura de varias rutas, en el peor caso, el presupuesto (180 s) más una
+llamada completa (≈ 6,5 minutos). El cliente HTTP del front no debe cortar antes. Pasarlos a segundo plano es el siguiente paso.
 
 ### 5.15 Solicitud de costeo en Nexo (`POST /web/solicitudes-costeo`). En QA
 
@@ -1248,6 +1250,9 @@ Las reglas condicionales de Nexo (mostrar u ocultar, y requerido u opcional) **n
   Una diferencia solo de escritura (`Furgón` por `FURGON`, `FURGON REFRIGERADO` por `FURGON_REFRIGERADO`) no es un cambio y se conserva
   el código del cubicador; un valor vacío de Nexo no borra el de Cotifly. Puede llegar el nombre de Nexo (`Estacas`) en vez del código:
   mostrarlo tal cual. No refrescar el vehículo desde "Calcular cubicaje": el de la cotización es el de `GET .../costeo`.
+  Si la Mesa cambia de verdad el vehículo o la carrocería, `porcentaje_llenado_volumen` y `porcentaje_llenado_peso` de ese camión llegan en
+  `null`: eran del vehículo anterior. La UI debe ocultar la barra de llenado (o mostrar "—"), nunca un 0 %; `peso_kg` y
+  `volumen_total_m3` siguen con valor. Si la Mesa vuelve al vehículo original, los porcentajes no se recuperan.
 
 ### 5.18 Servicios conexos (`PUT /web/cotizaciones/{folio}/costeo/servicios-conexos`). En QA
 

@@ -146,12 +146,23 @@ public sealed class clsVehiculoLineaSolicitud
     /// </list>
     /// El <see cref="IdRecomendacionVehiculo"/> se conserva: es el vínculo con la línea de Nexo (<c>grupoRutaId</c> +
     /// <c>idRecomendacionVehiculo</c> + <c>numeroLinea</c>), que no cambia porque la Mesa cambie el vehículo. Devuelve <c>true</c> si cambió.
+    /// Si la Mesa cambia de verdad un vehículo o una carrocería que ya tenía el camión (no si llena uno vacío), los porcentajes de llenado
+    /// del cubicador (<see cref="PorcentajeLlenadoVolumen"/>, <see cref="PorcentajeLlenadoPeso"/>) quedan en <c>null</c>: se calcularon
+    /// para el vehículo anterior y mostrarlos sería un dato falso. El peso y el volumen de la carga se conservan (no dependen del vehículo).
+    /// Si después la Mesa vuelve al vehículo original, los porcentajes no se recuperan.
     /// </summary>
     internal bool AsignarVehiculo(string? tipoVehiculo, string? carroceria)
     {
         var antes = (TipoVehiculo, Carroceria);
         TipoVehiculo = Elegir(TipoVehiculo, tipoVehiculo);
         Carroceria = Elegir(Carroceria, carroceria);
+        if ((antes.TipoVehiculo is not null && antes.TipoVehiculo != TipoVehiculo)
+            || (antes.Carroceria is not null && antes.Carroceria != Carroceria))
+        {
+            PorcentajeLlenadoVolumen = null;
+            PorcentajeLlenadoPeso = null;
+        }
+
         return antes != (TipoVehiculo, Carroceria);
     }
 
