@@ -488,7 +488,22 @@ public sealed class clsEnvioConexosNexoEndpointsTests : IDisposable
         nexo.CostearLinea(nexo.SolicitudesCreadas[^1], 0, 1_000_000m);
         await api.ProcesarPollingAsync(folio);
 
-        // Con la caché fría el GET no espera al catálogo de Nexo: responde con la categoría de respaldo y la calienta en segundo plano.
+        // HU-014 (#188, script 05): la captura guardó la categoría del catálogo con el conexo; el costeo la usa sin leer el catálogo.
+        using var guardada = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
+        (await VerificarContratoAsync(guardada, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
+            .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString()
+            .Should().Be("adicional", "se guardó al capturar");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(_entorno.BaseDatos.CadenaCotifly,
+                "SELECT CONCAT(s.idServicioConexoCatalogo, '|', s.categoriaServicioConexo) FROM dbo_cotifly.CotizacionServiciosConexos s "
+                + "JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c "
+                + $"ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'"))
+            .Should().Be($"{Cargue}|adicional");
+
+        // Una fila anterior a #188 (sin categoría guardada): con la caché fría el GET no espera al catálogo de Nexo; responde con la
+        // categoría de respaldo y la calienta en segundo plano.
+        await clsBaseDatosPruebas.EjecutarAsync(_entorno.BaseDatos.CadenaCotifly,
+            "UPDATE s SET categoriaServicioConexo = NULL FROM dbo_cotifly.CotizacionServiciosConexos s JOIN dbo_cotifly.CotizacionLineasSolicitud l "
+            + $"ON l.id = s.lineaSolicitudId JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{folio}'");
         using var frio = await api.EnviarAsync(_get, $"/web/cotizaciones/{folio}/costeo", sesion.Access);
         (await VerificarContratoAsync(frio, "/web/cotizaciones/{folio}/costeo", _get, HttpStatusCode.OK))
             .GetProperty("rutas")[0].GetProperty("servicios_conexos")[0].GetProperty("categoria").GetString()

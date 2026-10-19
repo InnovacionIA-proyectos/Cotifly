@@ -6,7 +6,7 @@ namespace Cotifly.Pruebas.Comun;
 
 /// <summary>
 /// SQL Server 2019 en Testcontainers con el esquema real (ADR-008, ADR-010):
-/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>07</c>, el <c>08</c> (HU-014.3) y el <c>09</c> (HU-018.1) partidos por <c>GO</c> (HU-021: el 0009
+/// crea <c>dbTarifario_Nexo_Pruebas</c>, aplica <c>db/migrations_mssql/0001</c> a <c>0010</c>, <c>db/scripts/02_alter_cubicador.sql</c>, el <c>03</c> (HU-014, #188), la propuesta <c>db/scripts/pendientes/04</c> (HU-023.5), el <c>05</c> (#188), el <c>07</c>, el <c>08</c> (HU-014.3) y el <c>09</c> (HU-018.1) partidos por <c>GO</c> (HU-021: el 0009
 /// reestructura las cotizaciones en rutas y camiones y el 0010 agrega los nombres de municipio; las pruebas de esquema verifican además
 /// que <c>db/scripts/01_crear_esquema.sql</c> deja el mismo esquema, <see cref="CrearBaseInstaladaAsync"/>), y crea una <c>dbsolucionesti</c> falsa con las tres tablas del almacén corporativo y sus tipos reales:
 /// <c>dbo.tblSAPUsuariosApp</c> (ID NUMERIC, incluida la columna CLAVE, que el backend nunca debe leer),
@@ -31,9 +31,15 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
         "0008_horas_por_linea.sql", "0009_reestructuracion_cotizaciones.sql", "0010_nombres_municipio.sql",
         // HU-023.3 (#158): db/scripts/02_alter_cubicador.sql (de @scalderon-bs, sin cambios) va después del 0010.
         Script02,
+        // HU-014 (#188): ordenVehiculo, idServicioConexoCatalogo y el CHECK del motivo con BUSQUEDA_AGOTADA (db/scripts/03; el backend
+        // mapea sus columnas). OJO: deja el mismo CHECK que el 07, así que una base con ScriptsSin07 YA admite BUSQUEDA_AGOTADA; las
+        // pruebas "sin el 07" usan CrearBaseSin07Async, que vuelve al CHECK del 02.
+        Script03,
         // HU-023.5 (#160): cola de la cubicación de la licitación en segundo plano (db/scripts/pendientes/04, pendiente de aprobación;
         // el backend mapea sus columnas, así que las pruebas lo aplican en las dos cadenas).
         Script04,
+        // HU-014 (#188): categoriaServicioConexo (db/scripts/05; el backend la mapea).
+        Script05,
         // HU-018.1 (#155): scorePrioridad en la cabecera (db/scripts/09). Va ANTES del 07 en esta lista (el ejecutador corre 07, 08 y 09
         // por nombre; son independientes) porque el backend mapea scorePrioridad: `ScriptsSin07` (todo hasta el 09) es la base de las
         // pruebas del 07 y la incluye.
@@ -50,8 +56,20 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// <summary>HU-018.1 (#155): el 09 de <c>scorePrioridad</c> (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script09 = "../scripts_bd/09_score_prioridad.sql";
 
-    /// <summary>Scripts hasta el 04 (sin el 09, el 07 ni el 08). <c>Scripts[ScriptsHasta04 - 1]</c> es el 04 (lo verifica <c>clsEsquemaTests</c>).</summary>
-    public const int ScriptsHasta04 = 12;
+    /// <summary>HU-014 (#188): el 03 del orden del camión y el id del catálogo del conexo (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script03 = "../scripts_bd/03_orden_vehiculo_y_conexo_catalogo.sql";
+
+    /// <summary>HU-014 (#188): el 05 de la categoría del conexo (relativa a <c>migrations_mssql</c>).</summary>
+    public const string Script05 = "../scripts_bd/05_categoria_conexo.sql";
+
+    /// <summary>Scripts hasta el 03 (sin el 04, el 05, el 09, el 07 ni el 08). <c>Scripts[ScriptsHasta03 - 1]</c> es el 03.</summary>
+    public const int ScriptsHasta03 = 12;
+
+    /// <summary>Scripts hasta el 04 (sin el 05, el 09, el 07 ni el 08). <c>Scripts[ScriptsHasta04 - 1]</c> es el 04 (lo verifica <c>clsEsquemaTests</c>).</summary>
+    public const int ScriptsHasta04 = 13;
+
+    /// <summary>Scripts hasta el 05 (sin el 09, el 07 ni el 08). <c>Scripts[ScriptsHasta05 - 1]</c> es el 05.</summary>
+    public const int ScriptsHasta05 = 14;
 
     /// <summary>HU-023 (#176): el 07 del quinto motivo (relativa a <c>migrations_mssql</c>).</summary>
     public const string Script07 = "../scripts_bd/07_motivo_busqueda_agotada.sql";
@@ -63,14 +81,47 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
     /// Scripts hasta el 07 incluido (con el 09, sin el 08): la base migrada que todavía tiene las vistas del borrador de métricas.
     /// <c>Scripts[ScriptsHasta07 - 1]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>).
     /// </summary>
-    public const int ScriptsHasta07 = 14;
+    public const int ScriptsHasta07 = 16;
 
     /// <summary>
-    /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después): para probar el 07 sobre una base
-    /// que no lo tiene. <c>Scripts[ScriptsSin07]</c> es el 07 (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el
-    /// backend mapea, va antes del 07 en la lista y este número sube (hoy llega hasta el 09: <c>Scripts[ScriptsSin07 - 1]</c> es el 09).
+    /// Todos los scripts anteriores al 07 en <see cref="Scripts"/> (sin el 07 ni los que van después). <c>Scripts[ScriptsSin07]</c> es el 07
+    /// (lo verifica <c>clsEsquemaTests</c>). Si otra rama agrega un script que el backend mapea, va antes del 07 en la lista y este número
+    /// sube (hoy llega hasta el 09: <c>Scripts[ScriptsSin07 - 1]</c> es el 09). HU-014 (#188): incluye el 03, que deja el CHECK del 07; para
+    /// una base que de verdad no admite BUSQUEDA_AGOTADA, <see cref="CrearBaseSin07Async"/>.
     /// </summary>
-    public const int ScriptsSin07 = 13;
+    public const int ScriptsSin07 = 15;
+
+    /// <summary>
+    /// HU-014 (#188): el CHECK del motivo tal como lo deja el <c>02</c> (4 motivos, sin <c>BUSQUEDA_AGOTADA</c> ni <c>ISNULL</c>). Con el 03
+    /// en la lista, es la única forma de tener una base con las columnas que mapea el backend y SIN el CHECK del 07 (el estado de una base
+    /// que aplicó una versión del 03 anterior a #176, o del 02 sin 03 ni 07).
+    /// </summary>
+    public const string CheckDelMotivoDel02 = """
+        ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud DROP CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion;
+        ALTER TABLE dbo_cotifly.CotizacionLineasSolicitud WITH CHECK ADD CONSTRAINT ck_cotizacionLineasSolicitud_motivoSinSeleccion CHECK (
+            motivoSinSeleccion IS NULL
+            OR (motivoSinSeleccion IN ('EXTRADIMENSIONADO', 'SIN_CANDIDATOS_DIMENSIONALES', 'SUPERA_K_MAX', 'SIN_CARROCERIA_COMPATIBLE')
+                AND resultadoCubicacion = 'SIN_SELECCION_AUTOMATICA'));
+        """;
+
+    /// <summary>
+    /// HU-014 (#188): base aislada con <see cref="ScriptsSin07"/> y el CHECK del motivo vuelto al del <c>02</c> (<see cref="CheckDelMotivoDel02"/>):
+    /// tiene todas las columnas que mapea el backend, pero NO admite <c>BUSQUEDA_AGOTADA</c>. Es la base de las pruebas "sin el 07".
+    /// </summary>
+    public async Task<clsBaseAuxiliarPruebas> CrearBaseSin07Async(string prefijo)
+    {
+        var aislada = await CrearBaseConScriptsAsync(prefijo, ScriptsSin07);
+        try
+        {
+            await EjecutarAsync(aislada.Cadena, CheckDelMotivoDel02);
+            return aislada;
+        }
+        catch
+        {
+            await aislada.DisposeAsync();
+            throw;
+        }
+    }
 
     /// <summary>Scripts hasta el 02 del cubicador (sin el 04).</summary>
     public const int ScriptsHasta02 = 11;
@@ -151,8 +202,12 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion(ScriptInstalacion));
                 // HU-023.3: la instalación desde cero corre el 02 después del 01 (como el ejecutador).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("02_alter_cubicador.sql"));
+                // HU-014 (#188): el 03 va después del 02 por nombre, como en el ejecutador.
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
                 // HU-023.5: la propuesta 04 (pendiente de aprobación) también, porque el backend mapea sus columnas.
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+                // HU-014 (#188): el 05 (categoría del conexo).
+                await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("05_categoria_conexo.sql"));
                 // HU-023 (#176): el 07 corre después del 02 (el ejecutador lo toma solo).
                 await EjecutarScriptAsync(auxiliar.Cadena, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
                 // HU-014.3 (#152): el 08 va después del 07; sobre el 01 actual no hace nada (ya no crea las vistas).
@@ -196,8 +251,10 @@ public sealed partial class clsBaseDatosPruebas : IAsyncLifetime
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion(ScriptInstalacion));
             // HU-023.3 (#158): el 02 del cubicador va después del 01, como lo corre el ejecutador.
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("02_alter_cubicador.sql"));
-            // HU-023.5 (#160): la propuesta pendiente 04 (el backend mapea sus columnas; no fusionar sin aplicarla).
+            // HU-014 (#188): el 03, la propuesta pendiente 04 (HU-023.5, #160) y el 05: el backend mapea sus columnas.
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("03_orden_vehiculo_y_conexo_catalogo.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("pendientes/04_cubicacion_segundo_plano.sql"));
+            await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("05_categoria_conexo.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("07_motivo_busqueda_agotada.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("08_retirar_vistas_actividad.sql"));
             await EjecutarScriptAsync(CadenaCotifly, RutaScriptInstalacion("09_score_prioridad.sql"));

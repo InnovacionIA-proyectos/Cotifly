@@ -351,6 +351,12 @@ public sealed record clsConexoNexo(string Id, string? Nombre, string Categoria, 
     /// ya está en la cotización de Nexo (decisión 10, HU-021.9). <c>null</c> si Nexo no lo trae.
     /// </summary>
     public string? ServicioConexoId { get; init; }
+
+    /// <summary>
+    /// HU-014 (#188): la <c>categoria</c> tal como la mandó Nexo, o <c>null</c> si no la trae (<see cref="Categoria"/> usa entonces
+    /// <c>logistico</c>). Es la que se guarda en <c>categoriaServicioConexo</c> (script 05): un valor por defecto no se guarda como dato.
+    /// </summary>
+    public string? CategoriaInformada { get; init; }
 }
 
 /// <summary>

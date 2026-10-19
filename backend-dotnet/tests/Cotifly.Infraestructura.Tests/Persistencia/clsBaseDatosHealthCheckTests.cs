@@ -51,6 +51,13 @@ public sealed class clsBaseDatosHealthCheckTests
     [InlineData("CotizacionesSolicitud.scorePrioridad", clsBaseDatosHealthCheck.DescripcionEsquemaSin09)]
     [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.estadoCubicacion", clsBaseDatosHealthCheck.DescripcionEsquemaSin04)]
     [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
+    // HU-014 (#188): el 03 y el 05, en su lugar de la cadena (02 → 03 → 04 → 05 → 09).
+    [InlineData("CotizacionVehiculosLineaSolicitud.ordenVehiculo", clsBaseDatosHealthCheck.DescripcionEsquemaSin03)]
+    [InlineData("CotizacionServiciosConexos.idServicioConexoCatalogo|CotizacionServiciosConexos.categoriaServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin03)]
+    [InlineData("CotizacionServiciosConexos.categoriaServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin05)]
+    [InlineData("CotizacionServiciosConexos.categoriaServicioConexo|CotizacionLineasSolicitud.estadoCubicacion", clsBaseDatosHealthCheck.DescripcionEsquemaSin04)]
+    [InlineData("CotizacionesSolicitud.scorePrioridad|CotizacionServiciosConexos.categoriaServicioConexo", clsBaseDatosHealthCheck.DescripcionEsquemaSin05)]
+    [InlineData("CotizacionVehiculosLineaSolicitud.ordenVehiculo|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
     public void HU0181_SinEl09LaSondaPideEl09SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
     {
         var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
@@ -136,10 +143,22 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
-    public async Task ConEl02PeroSinEl04EsUnhealthyPorqueLeFaltaEl04()
+    public async Task HU014_ConEl02PeroSinEl03EsUnhealthyPorqueLeFaltaEl03()
+    {
+        // HU-014 (#188): el modelo EF mapea ordenVehiculo e idServicioConexoCatalogo de db/scripts/03.
+        await using var sin03 = await baseDatos.CrearBaseConScriptsAsync("dbSin03", clsBaseDatosPruebas.ScriptsHasta02);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin03.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 03");
+    }
+
+    [Fact]
+    public async Task ConEl03PeroSinEl04EsUnhealthyPorqueLeFaltaEl04()
     {
         // HU-023.5 (#160): el modelo EF mapea las columnas de la cubicación en segundo plano de la propuesta 04.
-        await using var sin04 = await baseDatos.CrearBaseConScriptsAsync("dbSin04", clsBaseDatosPruebas.ScriptsHasta02);
+        await using var sin04 = await baseDatos.CrearBaseConScriptsAsync("dbSin04", clsBaseDatosPruebas.ScriptsHasta03);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin04.Cadena);
 
@@ -148,10 +167,22 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
     }
 
     [Fact]
-    public async Task HU0181_ConEl04PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
+    public async Task HU014_ConEl04PeroSinEl05EsUnhealthyPorqueLeFaltaEl05()
+    {
+        // HU-014 (#188): el modelo EF mapea CotizacionServiciosConexos.categoriaServicioConexo de db/scripts/05.
+        await using var sin05 = await baseDatos.CrearBaseConScriptsAsync("dbSin05", clsBaseDatosPruebas.ScriptsHasta04);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin05.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 05");
+    }
+
+    [Fact]
+    public async Task HU0181_ConEl05PeroSinEl09EsUnhealthyPorqueLeFaltaEl09()
     {
         // HU-018.1 (#155): el modelo EF mapea CotizacionesSolicitud.scorePrioridad de db/scripts/09_score_prioridad.sql.
-        await using var sin09 = await baseDatos.CrearBaseConScriptsAsync("dbSin09", clsBaseDatosPruebas.ScriptsHasta04);
+        await using var sin09 = await baseDatos.CrearBaseConScriptsAsync("dbSin09", clsBaseDatosPruebas.ScriptsHasta05);
 
         var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin09.Cadena);
 

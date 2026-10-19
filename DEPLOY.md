@@ -115,10 +115,10 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
 | `Cubicador__RutaSalud` | no | no | vacío | manifiesto | ruta del endpoint de salud del cubicador (petición P7, por ejemplo `/health`) para la sonda `cubicador` de `/health/ready`; vacía no lo consulta |
 | `Cubicador__MinutosCacheCatalogos`, `__TiempoMaximoCatalogoSegundos`, `__PresupuestoCapturaSegundos` | no | no | `30`, `10`, `180` | manifiesto | caché de los tres catálogos, tope de cada catálogo y tiempo máximo de llamadas por captura (se revisa antes de cada ruta y la espera por el cupo cuenta; antes `120`, opción C). Una ruta sola puede tardar lo que dura una llamada al cubicador (`EsperaMaximaCupoSegundos` + `TiempoEsperaRecomendacionSegundos` + 2 + `EsperaAntesReconsultaSegundos` + `TiempoEsperaReconsultaSegundos` = 217 s) y una captura de varias rutas, en el peor caso, el presupuesto más esa llamada (180 + 217 ≈ 400 s, 6,5 min): Traefik (sin `respondingTimeouts.writeTimeout` ni `serversTransport.forwardingTimeouts.responseHeaderTimeout` que lo corten), cualquier otro proxy y el cliente del front deben cubrirlo |
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | no | no | `5` (1-100), `5` (1-1440), `24` (1-720) | — (no están en el manifiesto: rige el valor por defecto) | envío diferido de los conexos a Nexo (HU-021.9, decisión 10): intentos fallidos antes de `fallido_definitivo`, espera entre reintentos de una cotización ya entregada y horas máximas esperando el catálogo de conexos o la cotización de Nexo |
-| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `true` | — (no está en el manifiesto) | HU-023.4: manda `grupoRutaId` en las líneas de una ruta con varios camiones (una ruta de un camión va con `null`). HU-023 (#176): encendida por defecto porque Nexo ya lo desplegó; `false` solo como interruptor de emergencia |
-| `Nexo__EnviarDatosCubicador` | no | no | `true` | — (no está en el manifiesto) | HU-023.4: manda `idRecomendacionVehiculo` por línea. Encendida por defecto (#176); `false` = interruptor de emergencia |
-| `Nexo__EnviarCodigosCubicador` | no | no | `true` | — (no está en el manifiesto) | Nexo #297: manda los códigos de vehículo y carrocería del cubicador (un código desconocido nace en cuarentena, 18.4). Encendida por defecto (#176); con `false` esas líneas van sin vehículo a la Mesa |
-| `Captura__AceptarVehiculoCliente` | no | no | `false` | — (no está en el manifiesto) | bandera de respaldo (HU-021-FE.2): encendida, el vehículo y la carrocería que manda el frontend van solo en el camión del respaldo. Apagada rige la decisión 7. Se retira cuando exista el cubicador |
+| `Nexo__EnviarGrupoRutaId` (antes `Nexo__EnviarReferenciaRuta`) | no | no | `true` | manifiesto (HU-014, #188) | HU-023.4: manda `grupoRutaId` en las líneas de una ruta con varios camiones (una ruta de un camión va con `null`). HU-023 (#176): encendida por defecto porque Nexo ya lo desplegó; `false` solo como interruptor de emergencia |
+| `Nexo__EnviarDatosCubicador` | no | no | `true` | manifiesto (#188) | HU-023.4: manda `idRecomendacionVehiculo` por línea. Encendida por defecto (#176); `false` = interruptor de emergencia |
+| `Nexo__EnviarCodigosCubicador` | no | no | **`false`** | manifiesto (#188) | Nexo #297: manda los códigos de vehículo y carrocería del cubicador. **HU-014 (#188, decisión del 2026-10-19): apagada** hasta que Nexo tenga la bandeja para resolver la cuarentena (S5-HU-19.3); entre #176 y #188 estuvo en `true`. Apagada, las líneas de los camiones del cubicador van sin vehículo (con su peso e `idRecomendacionVehiculo`) y las resuelve la Mesa; el polling las empareja igual. Encenderla cuando Nexo despliegue la bandeja |
+| `Captura__AceptarVehiculoCliente` | no | no | **`true`** | manifiesto (#188) | bandera de respaldo (HU-021-FE.2). **HU-014 (#188, decisión del 2026-10-19): encendida**: el vehículo y la carrocería que manda el frontend (validados contra el catálogo de Nexo) van solo en el camión del respaldo (cubicador sin configurar, ruta sin mercancías tipadas o cubicador caído con `Cubicador__RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador. Apagada rige la decisión 7 |
 | `BaseDatos__MotivoBusquedaAgotada` | no | no | `auto` | manifiesto | HU-023 (#176): `auto` detecta `db/scripts/07_motivo_busqueda_agotada.sql` (exige `VIEW DEFINITION` sobre `dbo_cotifly` para `cotifly_app`); `habilitado` asume el 07 aplicado sin consultar (solo con el 07 aplicado: sin él, guardar `BUSQUEDA_AGOTADA` falla); `deshabilitado` guarda el motivo en NULL con un aviso. Otro valor no arranca |
 | `Trm__Proveedor` | no | no | `dolarapi_con_respaldo` | manifiesto | cadena de fuentes de la TRM (ADR-014): `dolarapi_con_respaldo`, `dolarapi` o `superfinanciera`; otro valor no arranca |
 | `Trm__UrlDolarApi` | no | **sí** (vacía no arranca) | `https://co.dolarapi.com/v1/trm` | manifiesto | TRM del día, fuente principal (agregador no oficial); exige salida a `co.dolarapi.com:443` |
@@ -149,10 +149,12 @@ se refiere a `Production`: sin ella (o con un valor de ejemplo) la API no arranc
   - **cómo:** (1) el dueño de OmniRoute emite una clave nueva; (2) actualizar `IA__ApiKey` e `IA__Fallbacks__N__ApiKey` en Dokploy (staging y producción); (3) redesplegar el stack (*Deploy* en Dokploy) y probar un turno de `/web/chat`; (4) revocar la anterior en OmniRoute; (5) anotar la fecha en la bitácora de operaciones.
 - **Datos y términos del proveedor:** pendiente con negocio y legal (ADR-003 "Pendientes"). Hay que confirmar qué credencial tiene cargada OmniRoute, la residencia de los datos y si OmniRoute registra los prompts.
 
-**Variables nuevas de HU-021** (`Cubicador__*`, `Captura__AceptarVehiculoCliente`, `Pdf__PermitirCotizacionChat`,
-`Nexo__EnviarGrupoRutaId`, `Nexo__EnviarDatosCubicador`, `Nexo__EnviarCodigosCubicador` y los tres `CosteoNexo__*Conexos*`): ninguna está todavía en `infra/stack.dotnet.dokploy.yml`
-ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto. HU-023 (#176): las tres `Nexo__Enviar*` quedan
-**encendidas** por defecto (Nexo ya desplegó el contrato); declararlas en `false` solo si hace falta apagarlas de emergencia.
+**Variables nuevas de HU-021** (`Pdf__PermitirCotizacionChat` y los tres `CosteoNexo__*Conexos*`): no están en `infra/stack.dotnet.dokploy.yml`
+ni en `infra/stack.dotnet.staging.yml`, así que rige su valor por defecto. Las `Cubicador__*` ya están en los manifiestos. **HU-014
+(#188, decisión del 2026-10-19):** las tres `Nexo__Enviar*` y `Captura__AceptarVehiculoCliente` se declaran en los dos manifiestos con
+valor explícito (`EnviarGrupoRutaId=true`, `EnviarDatosCubicador=true`, **`EnviarCodigosCubicador=false`** hasta que Nexo tenga la
+bandeja de cuarentena, S5-HU-19.3, y **`AceptarVehiculoCliente=true`**), para que un cambio del valor por defecto en el código no cambie
+un ambiente sin querer. Si Dokploy ya tiene cargada alguna de las cuatro, revisar que tenga ese valor.
 **Base de datos:** antes de desplegar #176 conviene aplicar `db/scripts/07_motivo_busqueda_agotada.sql` (sin él el backend arranca
 igual: guarda `BUSQUEDA_AGOTADA` en NULL con un aviso y `/health/ready` solo lo informa). La autodetección del 07 lee la
 definición del CHECK en `sys.check_constraints`, así que `cotifly_app` necesita `GRANT VIEW DEFINITION ON SCHEMA::dbo_cotifly TO cotifly_app;`
@@ -183,8 +185,8 @@ cargan en Dokploy así:
 | `CosteoNexo__MaximoReintentosConexos`, `__IntervaloReintentoConexosMinutos`, `__EsperaMaximaCatalogoConexosHoras` | por defecto (`5`, `5`, `24`) | por defecto | Solo si hay que ajustarlas |
 | `Nexo__EnviarGrupoRutaId` | por defecto (`true`); `false` solo si Nexo rechaza el alta | por defecto (`true`) | HU-023.4, #176 |
 | `Nexo__EnviarDatosCubicador` | por defecto (`true`); `false` solo como interruptor de emergencia | por defecto (`true`) | HU-023.4, #176 |
-| `Nexo__EnviarCodigosCubicador` | por defecto (`true`); `false` solo como interruptor de emergencia | por defecto (`true`) | Nexo #297, #176 |
-| `Captura__AceptarVehiculoCliente` | `false` (solo `true` si negocio lo pide mientras no hay cubicador) | `false` | HU-021-FE.2; se retira con el cubicador |
+| `Nexo__EnviarCodigosCubicador` | `false` (manifiesto); `true` cuando Nexo despliegue la bandeja de cuarentena (S5-HU-19.3) | `false` (manifiesto) | Nexo #297, #176; decisión del 2026-10-19 (#188) |
+| `Captura__AceptarVehiculoCliente` | `true` (manifiesto) | `true` (manifiesto) | HU-021-FE.2; decisión del 2026-10-19 (#188) |
 | `Pdf__PermitirCotizacionChat` | `false` | `false` | Nunca se enciende fuera de las pruebas |
 
 ### Identidad compartida con Nexo (#172)
@@ -382,7 +384,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/pendientes/04` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -396,6 +398,23 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación en segundo plano,
      HU-023.5; **pendiente de revisión de scalderon-bs y del DBA**). El backend mapea las columnas de los dos: se aplican
      antes de la imagen.
+   - **HU-014 (#188): `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `db/scripts/05_categoria_conexo.sql` van ANTES de la
+     imagen de #188.** Hasta #188 estaban en `db/scripts/pendientes/` sin mapear; ahora el backend mapea `ordenVehiculo` e
+     `idServicioConexoCatalogo` (03) y `categoriaServicioConexo` (05), y el ejecutador los corre por nombre (`02`, `03`, `05`, `07`…).
+     Sin ellos `/health/ready` responde 503 "falta 03" o "falta 05". Los dos son idempotentes; el 03 numera los camiones existentes
+     por `createdAt` y deja el mismo `CHECK` del motivo que el 07. **El DBA confirma antes del despliegue** que están aplicados en la
+     base compartida y en cada ambiente con esta consulta de solo lectura (las tres columnas deben dar un largo, no NULL):
+
+     ```sql
+     SELECT COL_LENGTH('dbo_cotifly.CotizacionVehiculosLineaSolicitud', 'ordenVehiculo')       AS ordenVehiculo_03,
+            COL_LENGTH('dbo_cotifly.CotizacionServiciosConexos', 'idServicioConexoCatalogo')   AS idServicioConexoCatalogo_03,
+            COL_LENGTH('dbo_cotifly.CotizacionServiciosConexos', 'categoriaServicioConexo')    AS categoriaServicioConexo_05,
+            (SELECT COUNT(*) FROM sys.indexes
+              WHERE name = 'uq_cotizacionVehiculosLineaSolicitud_lineaSolicitudId_ordenVehiculo') AS indiceUnico_03;
+     ```
+
+     Si falta alguno, se aplica con `sqlcmd -I` (o el ejecutador) antes de la imagen. Aplicarlos con la imagen anterior en marcha no
+     rompe nada: la versión anterior no lee esas columnas y escribe `ordenVehiculo` en NULL (el índice es filtrado).
    - HU-018.1 (#155): `db/scripts/09_score_prioridad.sql` (`scorePrioridad` de Nexo en la cabecera, idempotente; lo corre el
      ejecutador después del `08`). **El `09` va ANTES de la imagen** que trae la #155: el backend mapea la columna. Si la imagen
      sale sin él, la sonda de vida sigue en 200, Swarm retira la versión anterior y **toda la API queda en 503** en
@@ -420,7 +439,9 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 0009` | La base tiene el esquema anterior a HU-021 (`Cotizaciones`, sin `CotizacionesSolicitud`) | Aplicar `0009_reestructuracion_cotizaciones.sql` (con su respaldo `Respaldo0009_*`) y después el `0010` |
    | `esquema incompleto: falta 0010` | Está el `0009` pero faltan las columnas del `0010` (nombres de municipio, `solicitudNexoId`, `nombreServicioConexo`) o el `CHECK` `ck_cotizaciones_estadoEnvio` | Aplicar `0010_nombres_municipio.sql` |
    | `esquema incompleto: falta 02` | Faltan las columnas del cubicador (HU-023.3) | Aplicar `db/scripts/02_alter_cubicador.sql` |
+   | `esquema incompleto: falta 03` | Faltan `ordenVehiculo` o `idServicioConexoCatalogo` (HU-014, #188) | Aplicar `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` |
    | `esquema incompleto: falta 04` | Faltan las columnas de la cubicación en segundo plano (HU-023.5) | Aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql`, con la aprobación del DBA |
+   | `esquema incompleto: falta 05` | Falta `CotizacionServiciosConexos.categoriaServicioConexo` (HU-014, #188) | Aplicar `db/scripts/05_categoria_conexo.sql` |
    | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 

@@ -166,9 +166,11 @@ public sealed class clsLineaSolicitud
     /// <summary>Servicios conexos de la ruta.</summary>
     public IReadOnlyList<clsServicioConexoRuta> Conexos => _conexos;
 
-    /// <summary>Camiones en un orden estable (creación y luego id): el primero lleva los conexos en Nexo (decisión 3).</summary>
-    public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosOrdenados =>
-        [.. _vehiculos.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id)];
+    /// <summary>
+    /// Camiones en un orden estable (<see cref="clsVehiculoLineaSolicitud.EnOrden"/>: <c>ordenVehiculo</c>, o <c>createdAt</c> en las filas
+    /// anteriores a #188): el primero lleva los conexos en Nexo (decisión 3).
+    /// </summary>
+    public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosOrdenados => [.. clsVehiculoLineaSolicitud.EnOrden(_vehiculos)];
 
     /// <summary>Mercancías en su orden de captura.</summary>
     public IReadOnlyList<clsMercancia> MercanciasOrdenadas => [.. _mercancias.OrderBy(m => m.Orden)];
@@ -273,13 +275,19 @@ public sealed class clsLineaSolicitud
 
     /// <summary>
     /// Camión nuevo de la ruta a partir del plan (HU-023.3: con el volumen y los porcentajes de llenado del cubicador) y con el levante de
-    /// la ruta copiado.
+    /// la ruta copiado. HU-014 (#188): el camión queda numerado en <see cref="clsVehiculoLineaSolicitud.OrdenVehiculo"/> después de los que
+    /// ya tiene la ruta (1..n en una ruta nueva o recalculada, porque <see cref="ReemplazarCamiones"/> la vacía antes); nunca repite un
+    /// número, así que respeta el índice único <c>(lineaSolicitudId, ordenVehiculo)</c> del script 03. En una ruta con camiones sin número
+    /// (escritos antes de #188) queda también sin número: así se ordena por <c>createdAt</c>, detrás de los que ya tiene.
     /// </summary>
     public clsVehiculoLineaSolicitud AgregarVehiculo(clsCamionPlaneado plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        int? siguiente = _vehiculos.Any(v => v.OrdenVehiculo is null)
+            ? null
+            : Math.Max(_vehiculos.Count, _vehiculos.Max(v => v.OrdenVehiculo) ?? 0) + 1;
         var camion = clsVehiculoLineaSolicitud.Crear(
-            Id, plan.TipoVehiculo, plan.Carroceria, plan.PesoKg, ValorLevanteContenedor, plan.IdRecomendacionVehiculo, _vehiculos.Count + 1,
+            Id, plan.TipoVehiculo, plan.Carroceria, plan.PesoKg, ValorLevanteContenedor, plan.IdRecomendacionVehiculo, siguiente,
             plan.VolumenTotalM3, plan.PorcentajeLlenadoVolumen, plan.PorcentajeLlenadoPeso);
         _vehiculos.Add(camion);
         SumarCostos();
@@ -720,16 +728,25 @@ public sealed class clsLineaSolicitud
     /// recalcula: es interno; desde fuera se usa <see cref="clsCotizacionSolicitud.CambiarConexos"/>, que siempre recalcula. Devuelve
     /// <c>true</c> si cambió algo.
     /// </summary>
-    internal bool AgregarOActualizarConexo(string idServicioConexo, string? nombre, decimal precio, decimal cantidad)
+    internal bool AgregarOActualizarConexo(string idServicioConexo, string? nombre, decimal precio, decimal cantidad) =>
+        AgregarOActualizarConexo(new clsCambioConexo(idServicioConexo, nombre, precio, cantidad));
+
+    /// <summary>
+    /// <see cref="AgregarOActualizarConexo(string, string?, decimal, decimal)"/> con el id del catálogo de Nexo y la categoría del conexo
+    /// (HU-014, #188, scripts 03 y 05), si se conocen: se guardan en un conexo nuevo y completan los de una fila que no los tenía.
+    /// </summary>
+    internal bool AgregarOActualizarConexo(clsCambioConexo conexo)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(idServicioConexo);
-        var id = idServicioConexo.Trim();
+        ArgumentNullException.ThrowIfNull(conexo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(conexo.IdServicioConexo);
+        var id = conexo.IdServicioConexo.Trim();
         if (_conexos.FirstOrDefault(c => string.Equals(c.IdServicioConexo, id, StringComparison.OrdinalIgnoreCase)) is { } existente)
         {
-            return existente.Actualizar(nombre, precio, cantidad);
+            return existente.Actualizar(conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria);
         }
 
-        _conexos.Add(clsServicioConexoRuta.Crear(Id, id, nombre, precio, cantidad));
+        _conexos.Add(clsServicioConexoRuta.Crear(
+            Id, id, conexo.Nombre, conexo.Precio, conexo.Cantidad, conexo.IdServicioConexoCatalogo, conexo.Categoria));
         return true;
     }
 

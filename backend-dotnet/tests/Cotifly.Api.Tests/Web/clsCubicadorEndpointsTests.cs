@@ -49,6 +49,16 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     public async Task ConLosCodigosDelCubicadorApagadosLasLineasVanSinVehiculoYCadaCamionRecibeSuFlete() =>
         await EnviarYLeerConBanderasAsync(enviarCodigos: false, leerConCodigos: false);
 
+    /// <summary>
+    /// HU-014 (#188, decisión del 2026-10-19): SIN configurar <c>Nexo:EnviarCodigosCubicador</c> (el valor por defecto, <c>false</c>, hasta
+    /// que Nexo tenga la bandeja de cuarentena) las líneas de los camiones del cubicador llegan a Nexo sin <c>tipoVehiculo</c> ni
+    /// <c>carroceria</c> (con su peso e <c>idRecomendacionVehiculo</c>), Cotifly conserva los códigos del cubicador y el polling empareja cada
+    /// línea con su camión aunque la Mesa le ponga un vehículo.
+    /// </summary>
+    [Fact]
+    public async Task HU014_ConLaBanderaDeCodigosPorDefectoLasLineasVanSinVehiculoYCadaCamionRecibeSuFlete() =>
+        await EnviarYLeerConBanderasAsync(enviarCodigos: null, leerConCodigos: null);
+
     [Theory]
     [InlineData(false, true)]
     [InlineData(true, false)]
@@ -59,15 +69,17 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     /// Validación de #159: envía con <c>Nexo:EnviarCodigosCubicador</c> = <paramref name="enviarCodigos"/> y hace el polling con OTRA API
     /// (otro despliegue) con la bandera en <paramref name="leerConCodigos"/>. El emparejamiento usa lo que viajó (registro del envío).
     /// </summary>
-    private async Task EnviarYLeerConBanderasAsync(bool enviarCodigos, bool leerConCodigos)
+    private async Task EnviarYLeerConBanderasAsync(bool? enviarCodigos, bool? leerConCodigos)
     {
+        // null = sin configurar la bandera (valor por defecto del código, false desde #188).
+        static string? Bandera(bool? valor) => valor is { } v ? (v ? "true" : "false") : null;
         // Contrato de Nexo #297 (por defecto): la línea del camión del cubicador va sin tipoVehiculo ni carroceria (la resuelve la Mesa);
         // Cotifly guarda los códigos y el polling empareja sin compararlos, aunque la Mesa le ponga otro vehículo.
         _cubicador.Recomendar = p => clsCubicadorFalso.PesoTotal(p) == 28_000m
             ? clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m), clsCubicadorFalso.Vehiculo("2S3", "ESTACAS", 12_000m))
             : clsCubicadorFalso.Asignado(clsCubicadorFalso.Vehiculo("2", "FURGON", 12_500m));
-        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = enviarCodigos ? "true" : "false" });
-        var lectura = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = leerConCodigos ? "true" : "false" });
+        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = Bandera(enviarCodigos) });
+        var lectura = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = Bandera(leerConCodigos) });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
 
         using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario(dosRutas: true));
@@ -75,7 +87,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         (await CamionesAsync(folio)).Should().Equal("1|3S3|FURGON|16000.00|R", "1|2S3|ESTACAS|12000.00|R", "2|2|FURGON|12500.00|R");
         var lineas = _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!).ToList();
-        (string?, string?, decimal)[] esperadas = enviarCodigos
+        (string?, string?, decimal)[] esperadas = enviarCodigos == true
             ? [("3S3", "FURGON", 16_000m), ("2S3", "ESTACAS", 12_000m), ("2", "FURGON", 12_500m)]
             : [(null, null, 16_000m), (null, null, 12_000m), (null, null, 12_500m)];
         lineas.Select(l => (l["tipoVehiculo"]?.GetValue<string>(), l["carroceria"]?.GetValue<string>(), l["peso"]!.GetValue<decimal>()))
@@ -84,8 +96,10 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
         var solicitud = _nexo.SolicitudesCreadas[^1];
         _nexo.SemillaOrdenLineas = 20261008;
-        if (!enviarCodigos)
+        if (enviarCodigos != true)
         {
+            lineas.Should().OnlyContain(l => !string.IsNullOrEmpty(l["idRecomendacionVehiculo"]!.GetValue<string>()),
+                "sin los códigos, cada línea lleva el camión del cubicador para emparejarla");
             _nexo.AsignarVehiculo(solicitud, 1, "2S2", "ESTACAS"); // la Mesa le pone vehículo a una línea que iba vacía
         }
 
@@ -605,7 +619,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(l.orden, '|', ISNULL(v.tipoVehiculo, '-'), '|', CAST(v.volumenTotalM3 AS nvarchar(20)), '|', "
             + "CAST(v.porcentajeLlenadoVolumen AS nvarchar(20)), '|', CAST(v.porcentajeLlenadoPeso AS nvarchar(20))), ',') "
-            + $"WITHIN GROUP (ORDER BY l.orden, v.createdAt) {DeLosCamiones(folio)}"))
+            + $"WITHIN GROUP (ORDER BY l.orden, IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id) {DeLosCamiones(folio)}"))
             .Should().Be("1|3S3|62.500|81.25|47.06,1|C2|18.000|60.00|75.00,2|-|||", "sin selección: un camión sin vehículo ni datos de llenado");
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(m.codigoMercancia, ',') FROM dbo_cotifly.CotizacionMercancias m JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = m.lineaSolicitudId "
@@ -879,14 +893,22 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
 
     /// <summary>
     /// API con el cubicador falso. Estas pruebas verifican la cadena completa con los códigos del cubicador en Nexo, así que encienden
-    /// <c>Nexo:EnviarCodigosCubicador</c> (apagada por defecto, contrato de Nexo #297) salvo que <paramref name="extra"/> diga otra cosa.
+    /// <c>Nexo:EnviarCodigosCubicador</c> (apagada por defecto desde #188) salvo que <paramref name="extra"/> diga otra cosa; un valor
+    /// <c>null</c> en <paramref name="extra"/> deja la clave sin configurar (el valor por defecto del código).
     /// </summary>
     private clsApiWebPruebas Api(IDictionary<string, string?>? extra = null)
     {
         var configuracion = new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = "true" };
         foreach (var (clave, valor) in extra ?? new Dictionary<string, string?>())
         {
-            configuracion[clave] = valor;
+            if (valor is null)
+            {
+                configuracion.Remove(clave);
+            }
+            else
+            {
+                configuracion[clave] = valor;
+            }
         }
 
         var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, extra: configuracion, cubicador: _cubicador);
@@ -928,7 +950,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     private async Task<IReadOnlyList<string>> CamionesAsync(string folio) =>
         (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
             "SELECT STRING_AGG(CONCAT(l.orden, '|', v.tipoVehiculo, '|', v.carroceria, '|', CAST(v.pesoKg AS nvarchar(20)), '|', "
-            + "IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R')), ',') WITHIN GROUP (ORDER BY l.orden, v.createdAt, v.id) "
+            + "IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R')), ',') WITHIN GROUP (ORDER BY l.orden, IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id) "
             + DeLosCamiones(folio)))!.Split(',');
 
     /// <summary>

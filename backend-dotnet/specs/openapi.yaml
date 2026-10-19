@@ -1325,8 +1325,8 @@ paths:
           Nexo que no respondió).
         - **Retirados (HU-021.11, #138):** `valor_estimado` y `referencia` (decisión 1) **ya no están en el contrato**; si un
           frontend anterior los manda, se ignoran sin error y queda un aviso `CAMPOS_RETIRADOS` en el log del servidor.
-          `tipo_vehiculo` y `carroceria` (decisión 7) siguen `deprecated`: por defecto se ignoran con un aviso en el log; con la
-          bandera de respaldo `Captura:AceptarVehiculoCliente = true` (apagada por defecto, HU-021-FE.2) se validan contra el
+          `tipo_vehiculo` y `carroceria` (decisión 7) siguen `deprecated`: con la bandera de respaldo `Captura:AceptarVehiculoCliente`
+          apagada se ignoran con un aviso en el log; encendida (el valor por defecto desde #188, HU-021-FE.2) se validan contra el
           catálogo de Nexo y van **solo en el camión del respaldo** (sin cubicador, ruta sin mercancías tipadas o cubicador caído
           con `Cubicador:RespaldoSiFalla`); si el cubicador recomienda, manda el cubicador.
         - **Formato plano anterior (`deprecated`, se retira cuando salga HU-021-FE):** sin `rutas`, los campos de ruta en la raíz
@@ -5348,12 +5348,12 @@ components:
           deprecated: true
           maxLength: 100
           description: |
-            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Por defecto se acepta y se ignora
-            con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con `Captura:AceptarVehiculoCliente =
-            true` (apagada por defecto) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
+            Retirado (decisión 7 de HU-021): lo define el cubicador o la Mesa de Costeo de Nexo. Con la bandera de respaldo apagada
+            se acepta y se ignora con un aviso en el log. **Bandera de respaldo (HU-021.11, #138; HU-021-FE.2):** con
+            `Captura:AceptarVehiculoCliente = true` (el valor por defecto desde #188) se valida contra el catálogo de Nexo (código de `GET /web/catalogos-flete`,
             `CODIGO_NO_CATALOGO` si no) y va **solo en el camión del respaldo** (sin cubicador configurado, ruta sin mercancías
             tipadas o cubicador caído con `Cubicador:RespaldoSiFalla`). Si el cubicador recomienda, manda el cubicador y este
-            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). Cuando el cubicador exista, la bandera se apaga y el campo se retira.
+            valor no se usa (pero igual se valida antes: un código inválido es `CODIGO_NO_CATALOGO`). El campo se retira con HU-021-FE.
         carroceria:
           type: string
           nullable: true

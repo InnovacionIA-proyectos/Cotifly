@@ -132,7 +132,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', ISNULL(v.tipoVehiculo, '-'), '|', ISNULL(v.carroceria, '-'), '|', v.pesoKg, '|', IIF(v.idRecomendacionVehiculo IS NULL, '-', 'R'), '|',
                 v.costoLevanteContenedor, '|', ISNULL(CAST(v.costoFlete AS nvarchar(30)), '-'), '|', IIF(v.lineaSolicitudNexoId IS NULL, '-', 'N'), '|', v.estadoCosteo)
-            {DeLosCamiones(id)} ORDER BY l.orden, v.createdAt, v.id
+            {DeLosCamiones(id)} ORDER BY l.orden, IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id
             """)).Should().Equal(
             "1|3S3|FURGON|16000.00|R|150000.00|-|-|pendiente_costeo",
             "1|2S3|ESTACAS|12000.00|R|150000.00|-|-|pendiente_costeo",
@@ -166,7 +166,7 @@ public sealed class clsRegistrosBdFlujoCompletoTests : IAsyncDisposable
         (await Filas($"""
             SELECT CONCAT(l.orden, '|', v.pesoKg, '|', v.costoFlete, '|', ISNULL(CAST(v.costoRetornoContenedor AS nvarchar(30)), '-'), '|', v.costoLevanteContenedor, '|',
                 IIF(v.lineaSolicitudNexoId IS NULL, '-', 'N'), '|', v.estadoCosteo)
-            {DeLosCamiones(id)} ORDER BY l.orden, v.createdAt, v.id
+            {DeLosCamiones(id)} ORDER BY l.orden, IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id
             """)).Should().Equal(
             "1|16000.00|1000000.00|100000.00|150000.00|N|autocosteo",
             "1|12000.00|800000.00|100000.00|150000.00|N|autocosteo",

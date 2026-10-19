@@ -99,7 +99,8 @@ public sealed class clsOpcionesCubicador
 
     /// <summary>
     /// Si el cubicador configurado falla en la captura (caído, sin respuesta a tiempo, respuesta inválida), ¿la ruta sigue con un camión
-    /// sin vehículo (respaldo, con un warning en el log)? Por defecto <c>true</c> mientras el cubicador real no exista (C1). Con
+    /// sin vehículo (respaldo, con un warning en el log)? Por defecto <c>true</c> (regla del coordinador, ADR-019): el cubicador real ya está
+    /// conectado y una caída no detiene la captura; con <c>Captura:AceptarVehiculoCliente</c> ese camión lleva el vehículo digitado. Con
     /// <c>false</c> la captura falla con <c>CUBICADOR_NO_DISPONIBLE</c> y no se guarda ni se envía nada a Nexo (regla de la issue #133).
     /// </summary>
     public bool RespaldoSiFalla { get; set; } = true;

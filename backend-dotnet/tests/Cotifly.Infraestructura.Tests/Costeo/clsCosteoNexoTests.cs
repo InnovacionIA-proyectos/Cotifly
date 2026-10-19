@@ -471,14 +471,15 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void LasTresBanderasDelContratoDeNexoEstanEncendidasPorDefecto()
+    public void HU014_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorApagadosPorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo, numeroLinea, la cuarentena y la normalización.
+        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-014 (#188, decisión del 2026-10-19): los
+        // códigos del cubicador quedan apagados hasta que Nexo tenga la bandeja de cuarentena (S5-HU-19.3).
         var opciones = new clsOpcionesNexo();
 
         opciones.EnviarGrupoRutaId.Should().BeTrue();
         opciones.EnviarDatosCubicador.Should().BeTrue();
-        opciones.EnviarCodigosCubicador.Should().BeTrue();
+        opciones.EnviarCodigosCubicador.Should().BeFalse();
     }
 
     [Fact]
@@ -512,8 +513,9 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
-        lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
-        lineas.Select(l => l.GetProperty("carroceria").GetString()).Should().Equal("FURGON", "FURGON", "ESTACAS", "FURGON");
+        // HU-014 (#188): por defecto los códigos del cubicador no viajan (Nexo:EnviarCodigosCubicador = false); el camión va por su
+        // idRecomendacionVehiculo y su peso.
+        lineas.Select(l => l.TryGetProperty("tipoVehiculo", out _) || l.TryGetProperty("carroceria", out _)).Should().OnlyContain(conCodigos => !conCodigos);
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
 

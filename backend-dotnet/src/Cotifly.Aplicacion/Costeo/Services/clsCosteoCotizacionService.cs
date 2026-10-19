@@ -861,7 +861,7 @@ public sealed class clsCosteoCotizacionService(
     public static string? Camiones(clsLineaSolicitud ruta, clsNombresCatalogoCubicador? catalogo = null)
     {
         ArgumentNullException.ThrowIfNull(ruta);
-        var camiones = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id).ToList();
+        var camiones = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).ToList();
         if (camiones.Count <= 1)
         {
             var unico = camiones.Count == 1 ? camiones[0] : null;
@@ -963,7 +963,9 @@ public sealed class clsCosteoCotizacionService(
             .Select(x => new clsServicioConexoPrecio(
                 x.Conexo.IdServicioConexo,
                 x.Conexo.Nombre,
-                categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var categoria) ? categoria : CategoriaConexo,
+                // HU-014 (#188): la categoría guardada (script 05); si no la tiene (fila anterior), la del catálogo o la de respaldo.
+                x.Conexo.Categoria
+                ?? (categorias is not null && categorias.TryGetValue(x.Conexo.IdServicioConexo, out var categoria) ? categoria : CategoriaConexo),
                 x.Conexo.Cantidad,
                 x.Precio!.Value,
                 true,
@@ -971,8 +973,8 @@ public sealed class clsCosteoCotizacionService(
     }
 
     /// <summary>
-    /// Categoría por defecto de un conexo cuando no se pudo leer la del catálogo de Nexo (la tabla de HU-021 no la guarda; la columna está
-    /// propuesta en <c>db/scripts/pendientes/05_categoria_conexo.sql</c>, #173).
+    /// Categoría por defecto de un conexo sin categoría guardada (filas anteriores a #188, que no llenaron <c>categoriaServicioConexo</c> del
+    /// script 05) cuando tampoco se pudo leer la del catálogo de Nexo (#173).
     /// </summary>
     public const string CategoriaConexo = "logistico";
 

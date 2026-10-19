@@ -199,7 +199,7 @@ public sealed class clsTextosCosteoService(
         List<clsRutaRedaccion> rutas = [.. ordenadas
             .Where(r => !string.IsNullOrWhiteSpace(r.OrigenNombre) && !string.IsNullOrWhiteSpace(r.DestinoNombre))
             .Select(r => new clsRutaRedaccion(Recortar(r.OrigenNombre)!, Recortar(r.DestinoNombre)!)).Distinct().Take(clsContextoRedaccion.MaximoRutas)];
-        var vehiculos = ordenadas.SelectMany(r => r.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.Id))
+        var vehiculos = ordenadas.SelectMany(r => clsVehiculoLineaSolicitud.EnOrden(r.VehiculosQueCuentan))
             .Select(v => v.TipoVehiculo?.Trim()).OfType<string>().Where(t => t.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var conexos = ordenadas.SelectMany(r => r.Conexos)

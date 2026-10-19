@@ -306,7 +306,7 @@ public sealed class clsCotizacionSolicitud
 
             foreach (var conexo in capturada.Conexos ?? [])
             {
-                ruta.AgregarOActualizarConexo(conexo.IdServicioConexo, conexo.Nombre, conexo.Precio, conexo.Cantidad);
+                ruta.AgregarOActualizarConexo(conexo);
             }
 
             _rutas.Add(ruta);
@@ -884,7 +884,7 @@ public sealed class clsCotizacionSolicitud
     {
         ArgumentNullException.ThrowIfNull(conexos);
         var ruta = RutaDeOrden(ordenRuta);
-        var cambios = conexos.Count(c => ruta.AgregarOActualizarConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
+        var cambios = conexos.Count(ruta.AgregarOActualizarConexo);
         var recalculo = RecalcularRuta(ruta, ahora);
         return recalculo.EsFallo ? recalculo.Error : cambios;
     }

@@ -39,12 +39,16 @@ public sealed class clsOpcionesNexo
 
     /// <summary>
     /// ¿Viajan los códigos de vehículo y carrocería del cubicador (<c>2S2</c>, <c>FURGON</c>...) en <c>tipoVehiculo</c>/<c>carroceria</c>?
-    /// HU-023 (#176): por defecto <c>true</c>. Nexo ya desplegó la cuarentena de vehículos (S5-HU-18.4) y la normalización de S5-HU-20.5
-    /// (#297): un código que no conoce nace en cuarentena y no se duplica. La bandera queda como interruptor de emergencia: con
-    /// <c>false</c>, la línea de un camión del cubicador va sin vehículo ni carrocería y la resuelve la Mesa. No afecta al vehículo
-    /// digitado del respaldo (<c>Captura:AceptarVehiculoCliente</c>), que es del catálogo de Nexo y sí viaja.
+    /// HU-014 (#188, decisión del usuario del 2026-10-19): por defecto <c>false</c> hasta que Nexo tenga la bandeja para resolver la
+    /// cuarentena (S5-HU-19.3; NEXO#322 y administracion#344 abiertas). Nexo ya pone en cuarentena un código que no conoce (S5-HU-18.4) y lo
+    /// normaliza (S5-HU-20.5, #297), pero sin la bandeja nadie puede resolver esa línea. Apagada, la línea de un camión del cubicador (con
+    /// <c>idRecomendacionVehiculo</c>) va sin vehículo ni carrocería y la resuelve la Mesa de Costeo; el polling la empareja por
+    /// <c>grupoRutaId</c> + <c>idRecomendacionVehiculo</c> + <c>numeroLinea</c> y no confunde el vehículo que ponga la Mesa con un cambio del
+    /// cubicador. No afecta al vehículo digitado del respaldo (<c>Captura:AceptarVehiculoCliente</c>), que es del catálogo de Nexo y sí
+    /// viaja. Entre #176 y #188 estuvo en <c>true</c>; se vuelve a encender (<c>Nexo__EnviarCodigosCubicador=true</c>) cuando Nexo despliegue
+    /// la bandeja.
     /// </summary>
-    public bool EnviarCodigosCubicador { get; set; } = true;
+    public bool EnviarCodigosCubicador { get; set; }
 
     /// <summary>
     /// Minutos que se reutiliza en memoria el catálogo de municipios de Nexo (HU-005.13: cambia muy poco y el agente lo consulta

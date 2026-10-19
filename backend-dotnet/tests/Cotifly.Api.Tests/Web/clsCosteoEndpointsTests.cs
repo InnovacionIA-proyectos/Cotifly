@@ -314,13 +314,15 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task ElVehiculoYLaCarroceriaQueLleganSeIgnoranYElCamionVaSinVehiculo()
+    public async Task ConLaBanderaDeRespaldoApagadaElVehiculoYLaCarroceriaQueLleganSeIgnoranYElCamionVaSinVehiculo()
     {
-        // HU-021 (decisión 7): un cliente con el contrato anterior que todavía manda vehículo y carrocería no falla.
-        var ana = await _api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+        // HU-021 (decisión 7): con Captura:AceptarVehiculoCliente apagada (encendida por defecto desde #188), un cliente con el contrato
+        // anterior que todavía manda vehículo y carrocería no falla y el camión va sin vehículo.
+        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "false" });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
 
-        using var envio = await _api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, cuerpo);
         var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
 
         _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"].Should().BeNull("la Mesa de Costeo de Nexo define el vehículo");
@@ -331,11 +333,12 @@ public sealed class clsCosteoEndpointsTests : IDisposable
     }
 
     [Fact]
-    public async Task ConLaBanderaDeRespaldoElVehiculoDelClienteVaEnElCamionDelRespaldo()
+    public async Task HU014_ConLaBanderaDeRespaldoPorDefectoElVehiculoDelClienteVaEnElCamionDelRespaldo()
     {
-        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (HU-021-FE.2) mientras no hay cubicador. El vehículo se valida contra el
-        // catálogo de Nexo y va en el único camión del respaldo; con la bandera apagada (por defecto) se ignora (prueba anterior).
-        using var api = clsApiWebPruebas.ConNexo(_entorno.BaseDatos, _nexo, new Dictionary<string, string?> { ["Captura:AceptarVehiculoCliente"] = "true" });
+        // HU-021.11 (#138): Captura:AceptarVehiculoCliente (HU-021-FE.2). HU-014 (#188): encendida por defecto, así que esta API no la
+        // configura. El vehículo se valida contra el catálogo de Nexo y va en el único camión del respaldo; con la bandera apagada se
+        // ignora (prueba anterior).
+        var api = _api;
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var cuerpo = Formulario().Replace("\"tipologia\":", "\"tipo_vehiculo\":\"3S3\",\"carroceria\":\"FURGON\",\"tipologia\":", StringComparison.Ordinal);
 

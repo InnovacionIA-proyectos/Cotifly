@@ -225,7 +225,8 @@ public sealed class clsCapturaRutasService(
                     continue;
                 }
 
-                conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre, costo.CostoUnitario, pedidos[c]!.Cantidad!.Value));
+                // HU-014 (#188): el id pedido es el del catálogo (scripts 03 y 05: se guardan el id del catálogo y la categoría).
+                conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre, costo.CostoUnitario, pedidos[c]!.Cantidad!.Value, costo.Id, costo.Categoria));
             }
 
             var rutaId = Guid.NewGuid();

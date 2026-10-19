@@ -117,6 +117,14 @@ corre después del 01 (y en `-Auto` sobre una base existente).
   name`) en una base sin el 03 (local, pruebas, producción). Mientras tanto queda **NULL** en las filas nuevas y el orden del cubicador
   sigue en el desfase de `createdAt` (`OrdenCreacion`, ADR-019): es la fuente de verdad y el envío de conexos al primer camión no
   depende de la columna. Al aprobarse el 03: mapear la columna, llenarla con `OrdenCreacion` y exigirla en `/health/ready`.
+- **HU-014 (#188, 2026-10-19): el 03 y el 05 se mapean.** Pasan de `db/scripts/pendientes/` a `db/scripts/` (conservan su número) y
+  `/health/ready` responde "falta 03" o "falta 05" sin ellos; van antes de la imagen y el DBA confirma que están en la base compartida
+  (consulta en DEPLOY.md §4.5). `ordenVehiculo` reemplaza el desfase de 1 ms de `createdAt` (`OrdenCreacion` se retiró): la ruta numera
+  1..n al crear sus camiones (captura, recálculo, re-solicitud, `-vN`, licitación) y ordena por `ordenVehiculo` y, en las filas viejas en
+  NULL, por `createdAt` (`clsVehiculoLineaSolicitud.EnOrden`). `idServicioConexoCatalogo` se guarda al capturar, importar y copiar a una
+  `-vN`, y con él `clsResolutorConexosCatalogo` no busca por nombre; las filas viejas se resuelven como antes. `categoriaServicioConexo`
+  se guarda al capturar (del catálogo), al importar (lo que manda Nexo) y en la `-vN`; el costeo la usa y solo para las filas viejas
+  sigue leyendo el catálogo.
 - **Categoría del conexo (#173).** La tabla `CotizacionServiciosConexos` no guarda la categoría del catálogo de Nexo; el costeo la lee del
   catálogo (`clsCategoriasConexosService`, índice en memoria de 30 min, por id del catálogo o por nombre) y usa `logistico` solo si el
   catálogo no responde o no tiene el conexo. La columna para guardarla está propuesta en `db/scripts/pendientes/05_categoria_conexo.sql`
@@ -489,8 +497,7 @@ normalización de nombres.
 
 | Pendiente | Dueño |
 |---|---|
-| Revisar y aplicar `db/scripts/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql` (orden del camión e id del catálogo del conexo). Hasta entonces `ordenVehiculo` queda NULL y el backend no la mapea (#173) | @scalderon-bs |
-| Revisar y aplicar `db/scripts/pendientes/05_categoria_conexo.sql` (categoría del conexo, #173) y mapearla después | @scalderon-bs y DBA |
+| Confirmar que `db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql` y `db/scripts/05_categoria_conexo.sql` están aplicados en la base compartida y en cada ambiente antes de la imagen de #188, que ya los mapea (consulta `COL_LENGTH` en DEPLOY.md §4.5) | DBA (@scalderon-bs) |
 | Prueba de punta a punta de la solicitud con flota mixta contra el cubicador de QA (reconsultar el `idRecomendacionVehiculo` guardado) | Duban y Kevin, cuando exista P3 |
 | P2 ejemplos reales (en especial la forma de `GET /vehiculos-catalogo` y la respuesta de `GET /recomendaciones` cuando no hay corrida), P3 URL de QA, P7 endpoint de salud | Equipo del cubicador |
 | Aplicar `db/scripts/07_motivo_busqueda_agotada.sql` en la base compartida (#176) | @scalderon-bs |

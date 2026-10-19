@@ -340,7 +340,7 @@ public sealed class clsReSolicitudCosteoEndpointsTests : IDisposable
         {
             "costo" => "l.costoFinal",
             "tipologia" => "l.tipologia",
-            "pesoKg" or "tipoVehiculo" or "carroceria" => $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY v.createdAt, v.id)",
+            "pesoKg" or "tipoVehiculo" or "carroceria" => $"(SELECT TOP 1 v.{columna} FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v WHERE v.lineaSolicitudId = l.id ORDER BY IIF(v.ordenVehiculo IS NULL, 1, 0), v.ordenVehiculo, v.createdAt, v.id)",
             "costeoId" => "c.solicitudNexoId",
             _ => $"c.{columna}",
         };

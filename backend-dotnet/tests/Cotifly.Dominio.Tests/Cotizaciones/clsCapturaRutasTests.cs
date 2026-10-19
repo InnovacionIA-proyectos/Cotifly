@@ -104,9 +104,37 @@ public sealed class clsCapturaRutasTests
 
         rutas[0].Id.Should().Be(rutaId);
         rutas[0].Vehiculos.Select(v => v.IdRecomendacionVehiculo).Should().Equal(recomendacion, null);
-        rutas[0].VehiculosOrdenados.Select(v => (v.OrdenCreacion, v.PesoKg)).Should().Equal([(1, (decimal?)16_000m), (2, (decimal?)12_500m)],
+        rutas[0].VehiculosOrdenados.Select(v => (v.OrdenVehiculo, v.PesoKg)).Should().Equal([((int?)1, (decimal?)16_000m), (2, 12_500m)],
             "sin persistir (createdAt igual) los camiones quedan en el orden de la recomendación, no en el de su id");
         rutas[1].Id.Should().NotBe(Guid.Empty).And.NotBe(rutaId, "sin id fijado la ruta recibe uno nuevo");
+    }
+
+    [Fact]
+    public void HU014_ReemplazarLosCamionesLosVuelveANumerarDesdeUnoYUnoAgregadoVaDespuesDelUltimo()
+    {
+        var ruta = clsCotizacionMuestra.Cabecera().RegistrarCaptura(clsSolicitudCosteoMuestra.CrearCaptura().Encabezado,
+        [
+            new clsRutaCapturada(Ruta(), 3, 0, [new clsCamionPlaneado("3S3", "FURGON", 16_000m), new clsCamionPlaneado("2", "FURGON", 1_000m)], []),
+        ])[0];
+
+        ruta.ReemplazarCamiones([new clsCamionPlaneado("2S3", "ESTACAS", 9_000m)], null);
+        ruta.AgregarVehiculo("4X2", null, 500m);
+
+        ruta.VehiculosOrdenados.Select(v => (v.OrdenVehiculo, v.TipoVehiculo)).Should().Equal([((int?)1, "2S3"), (2, "4X2")]);
+    }
+
+    [Fact]
+    public void HU014_EnOrdenPoneLosNumeradosPorSuNumeroYDespuesLosQueNoTienenOrdenVehiculo()
+    {
+        // Los numerados primero, por su número aunque el id diga otra cosa; las filas sin ordenVehiculo después, por createdAt.
+        var linea = Guid.NewGuid();
+        var tercero = clsVehiculoLineaSolicitud.Crear(linea, "C", null, 1m, null, null, ordenVehiculo: 3);
+        var segundo = clsVehiculoLineaSolicitud.Crear(linea, "B", null, 1m, null, null, ordenVehiculo: 2);
+        var viejo = clsVehiculoLineaSolicitud.Crear(linea, "A", null, 1m, null, null);
+
+        clsVehiculoLineaSolicitud.EnOrden([viejo, tercero, segundo]).Select(v => v.TipoVehiculo).Should().Equal("B", "C", "A");
+        FluentActions.Invoking(() => clsVehiculoLineaSolicitud.Crear(linea, "X", null, 1m, null, null, ordenVehiculo: 0))
+            .Should().Throw<ArgumentOutOfRangeException>("el orden empieza en 1, como el CHECK del script 03");
     }
 
     [Fact]

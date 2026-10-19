@@ -18,7 +18,11 @@ namespace Cotifly.Infraestructura.Comun.Persistence;
 /// nombre del conexo);</item>
 /// <item><see cref="DescripcionEsquemaSin02"/>: solo faltan las columnas del cubicador de <c>db/scripts/02_alter_cubicador.sql</c>
 /// (HU-023.3, #158);</item>
+/// <item><see cref="DescripcionEsquemaSin03"/>: solo faltan <c>ordenVehiculo</c> o <c>idServicioConexoCatalogo</c> de
+/// <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-014, #188);</item>
 /// <item><see cref="DescripcionEsquemaSin04"/>: solo faltan las columnas de la cubicación en segundo plano (HU-023.5, #160);</item>
+/// <item><see cref="DescripcionEsquemaSin05"/>: solo falta <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>
+/// (HU-014, #188);</item>
 /// <item><see cref="DescripcionEsquemaSin09"/>: solo falta <c>CotizacionesSolicitud.scorePrioridad</c> de
 /// <c>db/scripts/09_score_prioridad.sql</c> (HU-018.1, #155);</item>
 /// <item>cualquier otra ausencia: <c>esquema incompleto: falta Tabla.columna</c> (las primeras, sin datos de conexión).</item>
@@ -55,7 +59,17 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.condicionada",
     };
 
-    /// <summary>HU-023.5 (#160): están el 0010 y el 02, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
+    /// <summary>HU-014 (#188): están el 0010 y el 02, pero no las columnas de <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c>.</summary>
+    public const string DescripcionEsquemaSin03 = "esquema incompleto: falta 03";
+
+    /// <summary>Columnas que agrega <c>db/scripts/03_orden_vehiculo_y_conexo_catalogo.sql</c> (HU-023.3; las mapea el backend desde #188).</summary>
+    public static readonly IReadOnlySet<string> Columnas03 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionVehiculosLineaSolicitud.ordenVehiculo",
+        "CotizacionServiciosConexos.idServicioConexoCatalogo",
+    };
+
+    /// <summary>HU-023.5 (#160): están el 0010, el 02 y el 03, pero no las columnas de la cubicación en segundo plano del <c>04</c>.</summary>
     public const string DescripcionEsquemaSin04 = "esquema incompleto: falta 04";
 
     /// <summary>Columnas que agrega <c>db/scripts/pendientes/04_cubicacion_segundo_plano.sql</c> (pendiente de @scalderon-bs y del DBA) (HU-023.5).</summary>
@@ -66,6 +80,15 @@ public sealed class clsBaseDatosHealthCheck(
         "CotizacionLineasSolicitud.cubicacionDisponibleAt",
         "CotizacionLineasSolicitud.errorCubicacion",
         "CotizacionLineasSolicitud.avisosCubicacion",
+    };
+
+    /// <summary>HU-014 (#188): está todo hasta el 04, pero no <c>categoriaServicioConexo</c> de <c>db/scripts/05_categoria_conexo.sql</c>.</summary>
+    public const string DescripcionEsquemaSin05 = "esquema incompleto: falta 05";
+
+    /// <summary>Columnas que agrega <c>db/scripts/05_categoria_conexo.sql</c> (#173; la mapea el backend desde #188).</summary>
+    public static readonly IReadOnlySet<string> Columnas05 = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CotizacionServiciosConexos.categoriaServicioConexo",
     };
 
     /// <summary>HU-018.1 (#155): está todo lo anterior, pero no la columna <c>scorePrioridad</c> de <c>db/scripts/09_score_prioridad.sql</c>.</summary>
@@ -208,13 +231,17 @@ public sealed class clsBaseDatosHealthCheck(
             return HealthCheckResult.Unhealthy(DescripcionEsquemaSin0009);
         }
 
-        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 04 y 09): se pide el primero que falta.
-        if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas04.Contains(f) || Columnas09.Contains(f)))
+        // Faltan columnas de los ajustes que van después del 0009 (0010, 02 del cubicador, 03, 04, 05 y 09): se pide el primero que falta,
+        // en el orden en que se aplican.
+        if (faltantes.All(f => Columnas0010.Contains(f) || Columnas02.Contains(f) || Columnas03.Contains(f) || Columnas04.Contains(f)
+                               || Columnas05.Contains(f) || Columnas09.Contains(f)))
         {
             return HealthCheckResult.Unhealthy(
                 faltantes.Any(Columnas0010.Contains) ? DescripcionEsquemaSin0010
                 : faltantes.Any(Columnas02.Contains) ? DescripcionEsquemaSin02
+                : faltantes.Any(Columnas03.Contains) ? DescripcionEsquemaSin03
                 : faltantes.Any(Columnas04.Contains) ? DescripcionEsquemaSin04
+                : faltantes.Any(Columnas05.Contains) ? DescripcionEsquemaSin05
                 : DescripcionEsquemaSin09);
         }
 

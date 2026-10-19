@@ -502,7 +502,7 @@ public sealed class clsReSolicitudCosteoService(
         // anterior de Nexo: se resuelve por id o por nombre (clsResolutorConexosCatalogo). Sin catálogo no se crea nada (503, antes de
         // reservar). Uno que no se puede resolver conserva lo guardado (con un aviso en el log) y el envío diferido lo deja
         // fallido_definitivo, visible en el costeo.
-        var conexosOriginales = originales.SelectMany(r => r.Conexos).Select(c => (c.IdServicioConexo, c.Nombre)).ToList();
+        var conexosOriginales = originales.SelectMany(r => r.Conexos).Select(c => (c.IdServicioConexo, c.IdServicioConexoCatalogo, c.Nombre)).ToList();
         IReadOnlyDictionary<string, clsCostoConexoNexo> catalogo = new Dictionary<string, clsCostoConexoNexo>();
         if (conexosOriginales.Count > 0)
         {
@@ -521,8 +521,9 @@ public sealed class clsReSolicitudCosteoService(
         {
             var ruta = originales[i];
             var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
-            // En el orden estable de la ruta (createdAt con el desfase de OrdenCreacion, #133): el primero lleva los conexos (decisión 3).
-            var vigentes = ruta.VehiculosQueCuentan.OrderBy(v => v.CreatedAt).ThenBy(v => v.OrdenCreacion).ThenBy(v => v.Id).ToList();
+            // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas anteriores a #188): el primero lleva los conexos
+            // (decisión 3). La versión nueva los numera otra vez 1..n.
+            var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).ToList();
             // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
@@ -579,13 +580,14 @@ public sealed class clsReSolicitudCosteoService(
                         continue;
                     }
 
-                    conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad));
+                    // HU-014 (#188): la versión nueva guarda el id del catálogo y la categoría (scripts 03 y 05).
+                    conexos.Add(new clsCambioConexo(costo.Id, costo.Nombre ?? c.Nombre, costo.CostoUnitario, c.Cantidad, costo.Id, costo.Categoria ?? c.Categoria));
                     continue;
                 }
 
                 logger.LogWarning("El conexo {Conexo} de la ruta {Ruta} de {Folio} no está en el catálogo de Nexo (ni por id ni por nombre): la versión nueva conserva lo guardado.",
                     c.IdServicioConexo, ruta.Orden, original.Folio);
-                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad));
+                conexos.Add(new clsCambioConexo(c.IdServicioConexo, c.Nombre, c.Precio, c.Cantidad, c.IdServicioConexoCatalogo, c.Categoria));
             }
 
             rutas.Add(new clsRutaCapturada(linea, ruta.LineaNegocioId ?? validada.Politica?.Id, ruta.RutaOrigenIndice, camiones, conexos, rutaId, cubicacion));

@@ -222,6 +222,26 @@ public sealed class clsAgregadoRutasTests
         FluentActions.Invoking(() => ruta.AgregarOActualizarConexo("CX-3", null, 1m, 0m)).Should().Throw<ArgumentOutOfRangeException>("la cantidad es mayor que 0");
     }
 
+    [Fact]
+    public void HU014_ElIdDelCatalogoYLaCategoriaSeGuardanAlCrearYCompletanUnaFilaViejaSinPisarLosGuardados()
+    {
+        var ruta = clsCotizacionMuestra.Formulario().PrimeraRuta!;
+        ruta.AgregarOActualizarConexo("FILA-1", "Cargue", 10_000m, 1m);   // fila anterior a #188: sin id del catálogo ni categoría
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-2", "Escolta", 5_000m, 1m, "CAT-2", " adicional "));
+
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("fila-1", null, 10_000m, 1m, "CAT-1", "logistico"))
+            .Should().BeFalse("completar el id del catálogo y la categoría no cambia el precio, la cantidad ni el nombre");
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-2", null, 5_000m, 1m, "OTRO", "otra"));
+        ruta.AgregarOActualizarConexo(new clsCambioConexo("CAT-3", null, 1m, 1m, null, "una-categoria-de-mas-de-20"));
+
+        ruta.Conexos.Select(c => (c.IdServicioConexo, c.IdServicioConexoCatalogo, c.Categoria)).Should().BeEquivalentTo(
+        [
+            ("FILA-1", (string?)"CAT-1", (string?)"logistico"),
+            ("CAT-2", "CAT-2", "adicional"),
+            ("CAT-3", null, null),
+        ], "una categoría que no cabe en la columna no se trunca: queda NULL y el costeo la lee del catálogo");
+    }
+
     // ------------------------------------------------------------------ Margen por ruta (HU-021.8, #135, decisión 6)
 
     [Fact]

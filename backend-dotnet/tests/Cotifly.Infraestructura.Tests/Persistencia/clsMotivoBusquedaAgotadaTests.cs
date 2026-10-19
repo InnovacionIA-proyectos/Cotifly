@@ -13,19 +13,20 @@ namespace Cotifly.Infraestructura.Tests.Persistencia;
 /// HU-023 (#176): el quinto motivo <c>BUSQUEDA_AGOTADA</c> y el script <c>db/scripts/07_motivo_busqueda_agotada.sql</c>, en bases aisladas
 /// (Testcontainers). Con el 07 se guarda el motivo real; sin él, el backend lo detecta en <c>sys.check_constraints</c> y guarda NULL con
 /// un aviso visible en la ruta. El CHECK del 07 rechaza un motivo con resultado <c>ASIGNADO</c> o NULL, se puede correr dos veces y el 03
-/// pendiente no lo pisa.
+/// no lo pisa. HU-014 (#188): el 03 (que deja el mismo CHECK) ya está en la cadena de las pruebas, así que la base "sin el 07" es
+/// <see cref="clsBaseDatosPruebas.CrearBaseSin07Async"/> (CHECK del 02).
 /// </summary>
 [Collection(clsColeccionSqlServer.Nombre)]
 [Trait("Categoria", "Integracion")]
 public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIntegracion(baseDatos)
 {
     private const string Script07 = clsBaseDatosPruebas.Script07;
-    private const string Script03 = "../scripts_bd/pendientes/03_orden_vehiculo_y_conexo_catalogo.sql";
+    private const string Script03 = clsBaseDatosPruebas.Script03;
 
     [Fact]
     public async Task ConEl07SeGuardaBusquedaAgotada()
     {
-        // La base principal de las pruebas tiene 0001-0010 + 02 + 04 + 07.
+        // La base principal de las pruebas tiene 0001-0010 + 02 + 03 + 04 + 05 + 09 + 07 + 08.
         await using var proveedor = clsServiciosPruebas.Crear(BaseDatos.CadenaCotifly, Reloj, BaseDatos.CadenaIdentidad);
         var (folio, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
 
@@ -37,7 +38,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task SinEl07SeGuardaNullConElMotivoRealComoAvisoDeLaRuta()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07", clsBaseDatosPruebas.ScriptsSin07);
+        await using var sin07 = await BaseDatos.CrearBaseSin07Async("dbSin07");
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
 
         var (folio, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
@@ -56,7 +57,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task SinEl07LosCuatroMotivosDelScript02SeGuardanTalCual()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSin07b", clsBaseDatosPruebas.ScriptsSin07);
+        await using var sin07 = await BaseDatos.CrearBaseSin07Async("dbSin07b");
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
 
         var (_, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor, "SUPERA_K_MAX");
@@ -85,7 +86,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task El07CorridoDosVecesNoCambiaNadaYEl03DespuesNoLoPisa()
     {
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem07", clsBaseDatosPruebas.ScriptsSin07);
+        await using var baseAislada = await BaseDatos.CrearBaseSin07Async("dbIdem07");
         var cadena = baseAislada.Cadena;
         const string Definicion = "SELECT definition FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_motivoSinSeleccion'";
         (await clsBaseDatosPruebas.EscalarAsync<string>(cadena, Definicion)).Should().NotContain("BUSQUEDA_AGOTADA", "sin el 07");
@@ -144,8 +145,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
         // La base principal tiene el 07: su definición es la de referencia.
         var esperada = await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly, ConsultaDefinicion);
         esperada.Should().Contain("BUSQUEDA_AGOTADA").And.Contain("isnull");
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbOrden" + orden.Replace(",", "", StringComparison.Ordinal),
-            clsBaseDatosPruebas.ScriptsSin07);
+        await using var baseAislada = await BaseDatos.CrearBaseSin07Async("dbOrden" + orden.Replace(",", "", StringComparison.Ordinal));
         var cadena = baseAislada.Cadena;
 
         foreach (var paso in orden.Split(','))
@@ -170,7 +170,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     public async Task El03ConservaLasRutasConBusquedaAgotadaDeLaVersionSinIsnull()
     {
         // Antes (A1): el 03 volvía a 4 motivos y fallaba entero si ya había rutas con BUSQUEDA_AGOTADA.
-        await using var baseAislada = await BaseDatos.CrearBaseConScriptsAsync("dbSinIsnull03", clsBaseDatosPruebas.ScriptsSin07);
+        await using var baseAislada = await BaseDatos.CrearBaseSin07Async("dbSinIsnull03");
         await AplicarAsync(baseAislada.Cadena, "sinIsnull");
         await using var proveedor = clsServiciosPruebas.Crear(baseAislada.Cadena, Reloj, BaseDatos.CadenaIdentidad);
         var (_, rutaId) = await GuardarRutaSinSeleccionAsync(proveedor);
@@ -194,7 +194,7 @@ public sealed class clsMotivoBusquedaAgotadaTests(clsBaseDatosPruebas baseDatos)
     [Fact]
     public async Task LaSondaDeLaBaseSigueSanaSinEl07ConUnAvisoInformativo()
     {
-        await using var sin07 = await BaseDatos.CrearBaseConScriptsAsync("dbSonda07", clsBaseDatosPruebas.ScriptsSin07);
+        await using var sin07 = await BaseDatos.CrearBaseSin07Async("dbSonda07");
         await using var proveedor = clsServiciosPruebas.Crear(sin07.Cadena, Reloj, BaseDatos.CadenaIdentidad);
         await using var ambito = proveedor.CreateAsyncScope();
         var sonda = ActivatorUtilities.CreateInstance<clsBaseDatosHealthCheck>(ambito.ServiceProvider);

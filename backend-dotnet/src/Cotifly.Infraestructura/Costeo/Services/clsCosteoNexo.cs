@@ -445,6 +445,7 @@ public sealed class clsCosteoNexo(
                     {
                         CotizacionLineaId = Texto(conexo, "cotizacionLineaId"),
                         ServicioConexoId = Texto(conexo, "servicioConexoId"),
+                        CategoriaInformada = Texto(conexo, "categoria"),
                     });
                 }
             }
@@ -507,13 +508,15 @@ public sealed class clsCosteoNexo(
     /// defecto, 4 h + 4 h). <c>deadline</c> viaja en ISO 8601 con su
     /// desplazamiento (G4). Los nulos no viajan. HU-023.4 (#159): con <paramref name="enviarGrupoRutaId"/> (<c>Nexo:EnviarGrupoRutaId</c>)
     /// cada línea lleva <c>grupoRutaId</c> = el id de su ruta de Cotifly; con <paramref name="enviarDatosCubicador"/>
-    /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador). Las dos apagadas por
-    /// defecto: Nexo los tiene en QA pero sin desplegar, y su swagger declara <c>additionalProperties: false</c>. Contrato con Nexo #297
+    /// (<c>Nexo:EnviarDatosCubicador</c>) cada línea lleva <c>idRecomendacionVehiculo</c> (el camión del cubicador). Las dos encendidas por
+    /// defecto desde #176 (Nexo ya las desplegó); quedan como interruptor de emergencia. Contrato con Nexo #297
     /// (S5-HU-20.5): el código de mercancía NO viaja (ni <c>codigoTipoMercancia</c>); no hay campo de orden de entrada: Nexo numera las
     /// líneas por el orden del arreglo (<c>numeroLinea</c> en el GET), que aquí es ruta por ruta y, dentro de cada una, el orden de los
-    /// camiones. Con <paramref name="enviarCodigosCubicador"/> apagada (<c>Nexo:EnviarCodigosCubicador</c>, por defecto) la línea de un
-    /// camión del cubicador (con <c>idRecomendacionVehiculo</c>) va SIN vehículo ni carrocería (la resuelve la Mesa); el vehículo de un
-    /// camión sin recomendación (el digitado del respaldo, <c>Captura:AceptarVehiculoCliente</c>, del catálogo de Nexo) sí viaja.
+    /// camiones. Con <paramref name="enviarCodigosCubicador"/> apagada (<c>Nexo:EnviarCodigosCubicador</c>; apagada por defecto desde #188
+    /// hasta que Nexo tenga la bandeja de cuarentena, S5-HU-19.3) la línea de un camión del cubicador (con <c>idRecomendacionVehiculo</c>) va
+    /// SIN vehículo ni carrocería (la resuelve la Mesa); el vehículo de un camión sin recomendación (el digitado del respaldo,
+    /// <c>Captura:AceptarVehiculoCliente</c>, encendida por defecto desde #188, del catálogo de Nexo) sí viaja. Los valores por defecto de
+    /// los parámetros de este método son para las pruebas; el adaptador pasa siempre los de <see cref="clsOpcionesNexo"/>.
     /// </summary>
     internal static object CuerpoCaptura(
         clsSolicitudNexo solicitud, bool enviarGrupoRutaId = true, bool enviarDatosCubicador = true, bool enviarCodigosCubicador = true)
@@ -555,8 +558,9 @@ public sealed class clsCosteoNexo(
             : null;
 
     /// <summary>
-    /// ¿La línea es de un camión del cubicador (trae <c>idRecomendacionVehiculo</c>) y sus códigos no deben viajar? Mientras Nexo no
-    /// despliegue la cuarentena de vehículos (S5-HU-18.4) y #297, un código que no conoce crea un vehículo duplicado en su catálogo.
+    /// ¿La línea es de un camión del cubicador (trae <c>idRecomendacionVehiculo</c>) y sus códigos no deben viajar? Nexo ya pone en
+    /// cuarentena un código que no conoce (S5-HU-18.4), pero hasta que tenga la bandeja para resolverla (S5-HU-19.3) la bandera va apagada
+    /// por defecto (#188) y la línea viaja sin vehículo ni carrocería para la Mesa de Costeo.
     /// </summary>
     internal static bool SinCodigosCubicador(clsLineaSolicitudCosteo linea, bool enviarCodigosCubicador) =>
         !enviarCodigosCubicador && linea.IdRecomendacionVehiculo is not null;
