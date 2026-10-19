@@ -354,7 +354,16 @@ public sealed class clsEdicionSolicitudService(
                 }
 
                 ordenAnterior = Math.Max(ordenAnterior, guardada.Orden);
-                var propia = guardada.LineaNegocioId is { } lineaId ? politicasRuta.GetValueOrDefault(lineaId) : null;
+                if (guardada.LineaNegocioId is null)
+                {
+                    // Ruta anterior a HU-021 sin línea de negocio guardada: la línea no se edita, así que no hay con qué enviarla.
+                    errores.Add(new clsErrorFilaLicitacion(i, null, "linea_negocio", clsCodigosLineaSolicitud.CampoRequerido,
+                        $"La ruta {guardada.Orden} no tiene línea de negocio guardada y la línea no se edita: crea una solicitud nueva para esta ruta."));
+                    rutasCaptura.Add(ruta);
+                    continue;
+                }
+
+                var propia = politicasRuta.GetValueOrDefault(guardada.LineaNegocioId.Value);
                 if (pedida is not null && propia is not null && !string.Equals(pedida, propia.LineaNegocio, StringComparison.OrdinalIgnoreCase))
                 {
                     bloqueados.Add(new clsErrorFilaLicitacion(i, null, $"rutas[{i}].linea_negocio", clsCodigosError.CampoNoEditable,
