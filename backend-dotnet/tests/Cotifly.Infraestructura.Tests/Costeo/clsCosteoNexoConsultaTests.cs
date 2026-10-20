@@ -294,6 +294,33 @@ public sealed class clsCosteoNexoConsultaTests : IDisposable
         foto.CodigosCubicadorEnviados.Should().Be(esperado);
     }
 
+    [Fact]
+    public async Task HU0311_LaFotoTraeLosVehiculosTraducidosPorAliasQueRegistroElEnvio()
+    {
+        var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
+        cotizaciones.ObtenerEquivalenciasVehiculoAsync("SOL-1", Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, string> { ["C2"] = "2" });
+        _nexo.Responder(HttpStatusCode.OK, Solicitud).Responder(HttpStatusCode.Created, Cotizacion);
+
+        var foto = (await AdaptadorCon(cotizaciones).ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct)).Valor;
+
+        foto.EquivalenciasVehiculo.Should().Equal(new Dictionary<string, string> { ["C2"] = "2" });
+    }
+
+    [Fact]
+    public async Task HU0311_SiNoSePuedenLeerLasEquivalenciasLaFotoSigueSinEllas()
+    {
+        var cotizaciones = Substitute.For<Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository>();
+        cotizaciones.ObtenerEquivalenciasVehiculoAsync("SOL-1", Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyDictionary<string, string>>>(_ => throw new InvalidOperationException("base caída"));
+        _nexo.Responder(HttpStatusCode.OK, Solicitud).Responder(HttpStatusCode.Created, Cotizacion);
+
+        var resultado = await AdaptadorCon(cotizaciones).ConsultarCosteoAsync(_usuarioId, "SOL-1", Ct);
+
+        resultado.EsExitoso.Should().BeTrue();
+        resultado.Valor.EquivalenciasVehiculo.Should().BeEmpty();
+    }
+
     private clsCosteoNexo AdaptadorCon(Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository cotizaciones) =>
         new(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase }), _usuarios, NullLogger<clsCosteoNexo>.Instance, cotizaciones);
 

@@ -815,7 +815,10 @@ public sealed class clsEnvioCosteoService(
 
             // HU-023.4 (#159): lo que viajó (códigos del cubicador o no), en la misma transacción que el solicitudNexoId: el polling compara
             // contra esto y no contra la bandera actual.
-            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados));
+            cotizaciones.RegistrarEnvioNexo(new clsEnvioNexoRegistrado(cotizacion.Folio, creada.Id, creada.CodigosCubicadorEnviados)
+            {
+                EquivalenciasVehiculo = creada.EquivalenciasVehiculo,
+            });
         }
         else
         {

@@ -93,6 +93,13 @@ public sealed record clsSolicitudCreadaNexo(string Id, int Lineas, int FletesCal
     public bool CodigosCubicadorEnviados { get; init; }
 
     /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron con otro código porque el diccionario de alias de Nexo los tradujo
+    /// (código de Cotifly → código enviado, <c>C2</c> → <c>2</c>). Vacío si ninguno. El envío lo registra con
+    /// <see cref="CodigosCubicadorEnviados"/> (<see cref="clsEnvioNexoRegistrado"/>).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> EquivalenciasVehiculo { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
     /// HU-018.1 (#155): <c>scorePrioridad</c> del <c>CapturaResultDto</c> (COTIFLY-CONTRATO.md §5); <c>null</c> si Nexo no lo mandó, vino
     /// en <c>null</c> o no es un número. Se guarda en la cabecera (<c>CotizacionesSolicitud.scorePrioridad</c>, script 09).
     /// </summary>

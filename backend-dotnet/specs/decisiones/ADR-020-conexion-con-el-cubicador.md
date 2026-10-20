@@ -1,6 +1,6 @@
 # ADR-020 — Conexión de Cotifly con el cubicador (HU-023)
 
-- **Estado:** Aceptada (2026-10-09; HU-023.2 y HU-023.4 agregadas el 2026-10-13). Parte de la milestone HU-023 (#156 a #160).
+- **Estado:** Aceptada (2026-10-09; HU-023.2 y HU-023.4 agregadas el 2026-10-13; HU-031.1, alias de Nexo, el 2026-10-20). Parte de la milestone HU-023 (#156 a #160).
 - **Reemplaza:** el contrato provisional de la integración con el cubicador de ADR-019 (sección "Integración con el cubicador",
   HU-021.5, #133). Lo demás de ADR-019 sigue vigente.
 - **Fuentes:** `docs/backlog/2026-10-08_HU_Sprint5_Cotifly_Backend.md` (HU-023, decisiones del 2026-10-08),
@@ -531,6 +531,71 @@ Extradimensionado con el piso SICE-TAC sin revisión (`COTIFLY-CONTRATO.md` §4)
   que aplica §3.4 y §4 (`AutoCostearSegunContrato`), `HU014_SoloViajanLosCodigosQueNexoConoceYElDesconocidoQuedaPorCostearEnCupoSinCuarentena`
   y `HU014_ConSiempreUnCodigoQueNexoNoConoceViajaYNaceEnCuarentena`.
 
+## Decisión — HU-031.1 (#194): alias de Nexo y `siempre` por defecto (decisiones del usuario del 2026-10-20)
+
+Nexo publicó su diccionario de alias (NEXO #315/#321) y la bandeja de normalización de vehículos en cuarentena (NEXO #322). Decisiones:
+(1) **integrar el alias ya**: antes de enviar, Cotifly resuelve con el diccionario los códigos que el catálogo oficial no reconoce y, si
+resuelven a un código oficial, envía ese código y la línea se autocostea; (2) **`Nexo:EnviarCodigosCubicador` pasa a `siempre` por
+defecto** (y en los manifiestos): un código que ni el catálogo ni el alias resuelven viaja igual y queda en cuarentena para que Nexo lo
+normalice. Reemplaza "solo códigos conocidos" (#188) como valor por defecto; `solo_conocidos` queda disponible.
+
+- **Contrato real de Nexo** (rama `320-322` de Nexo, aún no en `QA` al 2026-10-20; leído con `git show`): `GET /api/catalogos/alias?tipo=`
+  (lista; sin `tipo`, los dos), `GET /api/catalogos/alias/resolver?tipo=vehiculo|contenedor&texto=` → `{texto, tipoElemento, reconocido,
+  codigo, alias}` (`tipo` por defecto `vehiculo`; 400 `TIPO_ALIAS_INVALIDO` o `TEXTO_REQUERIDO`), y `POST /api/catalogos/alias`
+  (AdminTarifas/Admin). Lectura y resolver: `[Authorize]` sin rol (cualquier usuario de Nexo) con la política `listados-estandar` (120 por
+  minuto **por rol**). Filas `clsAliasDto {id, alias, aliasNormalizado, tipoElemento ("Vehiculo"|"Contenedor"), codigo, activo}`;
+  `aliasNormalizado` es único en toda la tabla y lo calcula `clsResolucionDeCatalogos.Normalizar`. El diccionario solo cubre tipo de
+  vehículo y clase de contenedor: **la carrocería no pasa por él**. La captura de Nexo también lo aplica (un alias de vehículo se guarda
+  con el código y nace oficial).
+- **Orden de resolución** (`clsResolucionCodigosNexo`, Aplicación; lo usan el envío, la validación de la captura y `GET /web/alias/resolver`):
+  catálogo oficial (con `MismoCodigo`) → alias → según el modo: `siempre`, el código tal cual (cuarentena); `solo_conocidos`, sin vehículo
+  ni carrocería; `nunca`, sin vehículo ni carrocería **y sin consultar el alias** (es el interruptor de emergencia: no debe depender de
+  Nexo). El código de un alias se escribe como en el catálogo si está en él; si no, el del alias (Nexo solo deja crear alias hacia
+  códigos oficiales).
+- **Diccionario completo con caché, no el resolver por texto.** `clsAliasNexo` descarga `GET /api/catalogos/alias` (los dos tipos en una
+  petición, límites de 1 MB y 5.000 filas) y `clsAliasNexoEnCache` lo guarda con las reglas de los catálogos maestros
+  (`Nexo:MinutosCacheCatalogos`, respaldo hasta `Nexo:HorasCatalogosVencidos`, una consulta a la vez) y, tras un fallo, no vuelve a Nexo
+  durante 1 minuto (cada envío con un código desconocido lo pediría y, con Nexo caído, pagaría los reintentos del cliente `Nexo`). Por
+  qué: es pequeño, cambia poco y no es sensible; una petición sirve para todas las líneas y todas las filas de una licitación (el
+  resolver costaría una por texto contra un cupo de 120/min compartido por todos los comerciales); y deja respaldo con Nexo caído. El
+  riesgo (dos normalizadores) se acota: la clave es `aliasNormalizado` calculado por Nexo, y el texto se normaliza con una copia literal
+  de `clsResolucionDeCatalogos.Normalizar` (`clsDiccionarioAliasNexo.Normalizar`, con pruebas sobre sus casos).
+- **Si el alias falla o Nexo está caído**, el envío y la validación **nunca** fallan por esto: siguen con el modo configurado sin alias y
+  dejan un warning. Solo `GET /web/alias/resolver` responde 503 (`CATALOGOS_FLETE_NO_DISPONIBLE`): no puede decir "no reconocido" por una
+  caída.
+- **Qué se guarda: el código original, y se compara contra el enviado.** El camión conserva el código del cubicador (`C2`): es lo que
+  recomendó el cubicador y el PDF y el Excel sacan su nombre del catálogo del cubicador por ese código. El envío registra, en el mismo
+  evento `envio_nexo_registrado` de `EventosHerramienta` y en la misma transacción que el `solicitudNexoId`, las traducciones del alias
+  (`equivalencias_vehiculo: {"C2": "2"}`; solo las que cambian el código, no las de escritura que ya cubre `MismoCodigo`). Sin columna
+  nueva. El polling las lee (`clsCosteoConsultadoNexo.EquivalenciasVehiculo`) y `clsEquivalenciasVehiculo` (Dominio) las aplica en los
+  dos puntos que comparan el vehículo: el emparejamiento por contenido ve el camión con el código **enviado** (`Desde(..., equivalencias)`)
+  y la regla "la Mesa manda" (D2) recibe el código guardado cuando Nexo devuelve exactamente el enviado (`DeNexo`). Así no hay oscilación:
+  la primera lectura no cambia nada (ni borra los porcentajes de llenado) y las siguientes tampoco; un cambio real de la Mesa (`2` →
+  `2S2`) se adopta como siempre. Se descartó guardar el código resuelto: perdía el código del cubicador y su nombre en el PDF. Se
+  descartó volver a resolver el alias en cada lectura: una lectura sin diccionario (Nexo caído) vería un "cambio de la Mesa"; la
+  traducción tiene que quedar fija con el envío. Solicitudes enviadas antes de #194 no tienen equivalencias (se compara como antes).
+  Limitación: si al enviar el diccionario no estaba disponible y la captura de Nexo sí resolvió el alias por su cuenta, Cotifly no conoce
+  esa traducción; el camión del cubicador se sigue emparejando por `grupoRutaId` + `idRecomendacionVehiculo` + `numeroLinea`, y D2
+  adopta el código oficial una sola vez (sin oscilar).
+- **Clases de contenedor**: `clsValidadorCatalogosCaptura` busca en el diccionario una `clase_contenedor` que no está en el catálogo
+  `clases-contenedor` (#179) ni en la lista provisional G15 **antes de rechazarla**; si resuelve a una clase del catálogo o provisional, se
+  acepta y `Canonicas` la guarda con el código oficial ("40 HC" → `CNT40.HC`). Con el catálogo vacío no se resuelve (la captura sigue
+  respondiendo `CATALOGOS_FLETE_NO_DISPONIBLE`). El cuerpo del envío no cambia para el contenedor (el validador ya dejó el código oficial,
+  y Nexo también aplica el alias en su captura).
+- **Vehículo digitado del respaldo (M1)**: se acepta un alias que resuelve a un código oficial ("TB" → `2L2`) y se guarda con ese código
+  (`Canonicas`, como ya se hacía con la escritura de Nexo); el que no resuelve sigue siendo 400 `CODIGO_NO_CATALOGO`. En la re-solicitud con
+  cambios de carga (`ValidarAsync`, sin canónicas) el texto se acepta y se guarda tal cual, y el envío lo traduce y registra la
+  equivalencia.
+- **Proxy para el frontend**: `GET /web/alias/resolver?tipo=vehiculo|contenedor&texto=...` (texto repetible, hasta 200 por llamada, en
+  lote; `{tipo, resultados: [{texto, reconocido, codigo, fuente}]}`), con la misma regla (catálogo → alias). El frontend no puede llamar a
+  Nexo (CORS e identidad por header).
+- **`true` en Dokploy deja de ser un riesgo**: `true` sigue siendo `siempre`, que ahora es el valor buscado. El que quedó con `false` o
+  `solo_conocidos` cargado se queda en `solo_conocidos` (ver DEPLOY.md).
+- **Pruebas**: `clsResolucionAliasTests` (normalizador, orden, servicio), `clsAliasNexoTests` (encontrado, inactivo, error, caída, caché),
+  `clsCodigosConocidosEnvioNexoTests` (tres modos con y sin alias, alias caído o que lanza, respaldo), `clsEquivalenciasVehiculoTests`,
+  `clsCosteoPorCamionTests` (emparejamiento y D2 sin oscilación), `clsValidadorCatalogosCapturaTests` (respaldo y contenedor por alias) y,
+  por HTTP, `clsAliasEndpointsTests` y `HU0311_UnCodigoQueTraduceElAliasViajaOficialSeAutocosteaYNoOscilaEnElPolling`.
+
 ## Consecuencias
 
 - HU-023.4: sin desplegar el encabezado nuevo, **ninguna** llamada a Nexo autentica (401). Es un cambio que hay que desplegar ya.
@@ -555,6 +620,6 @@ Extradimensionado con el piso SICE-TAC sin revisión (`COTIFLY-CONTRATO.md` §4)
 | **Confirmar la fecha real del corte de `POST /api/cubicacion`** (Nexo tampoco consume `/recomendaciones`) y verificar "Calcular cubicaje" contra el cubicador de QA (flota mixta, código desconocido) | Duban con Nexo y el equipo del cubicador, antes del viernes 16 |
 | Frontend: pintar la lista de vehículos de `POST /web/cubicacion` y mandar `codigo_mercancia` (HU-023.2) | Frontend (HU-023-FE) |
 | Llave por ambiente en los secretos de Dokploy (`Cubicador__ApiKey`) | Duban (sin tocar el clúster sin autorización) |
-| HU-014 (#188): revisar en el log los códigos del cubicador que Nexo no conoce ("viajan a Nexo sin vehículo") y pedir a Nexo que los dé de alta o los mapee; pasar a `siempre` cuando Nexo tenga la bandeja de cuarentena (S5-HU-19.3) | Duban con Nexo |
+| HU-031.1 (#194): verificar con el Nexo de QA (cuando `320-322` llegue a `QA`) que `GET /api/catalogos/alias` responde como en la rama y que `C2` tiene alias; revisar en el log los códigos que ni el catálogo ni el alias conocen y mapearlos en la bandeja de Nexo (#322) | Duban con Nexo |
 | Aprobar y aplicar `db/scripts/pendientes/04_cubicacion_segundo_plano.sql` (cola de la cubicación de la licitación, HU-023.5) | DBA |
 | P6: confirmar cuántas llamadas en paralelo aguanta el cubicador y fijar `Cubicador__MaximoParalelo` | Equipo del cubicador |

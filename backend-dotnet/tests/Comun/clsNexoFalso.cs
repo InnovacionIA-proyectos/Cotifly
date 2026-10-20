@@ -100,6 +100,12 @@ public sealed class clsNexoFalso : HttpMessageHandler
     /// <summary>Descripciones de <c>GET /api/catalogos/clases-viaje</c>.</summary>
     public List<string> ClasesViaje { get; } = ["Contenedor", "Cupo", "Carga Suelta", "Extradimensionado"];
 
+    /// <summary>
+    /// HU-031.1 (#194): el diccionario de <c>GET /api/catalogos/alias</c> (NEXO #321): texto, tipo (<c>Vehiculo</c> | <c>Contenedor</c>),
+    /// código oficial y si está activo. Vacío por defecto. Para hacerlo fallar: <c>CatalogosFallidos.Add("alias")</c>.
+    /// </summary>
+    public List<(string Alias, string Tipo, string Codigo, bool Activo)> Alias { get; } = [];
+
     /// <summary>Descripciones de <c>GET /api/catalogos/clases-contenedor</c>.</summary>
     public List<string> ClasesContenedor { get; } = ["CNT20.IT", "CNT20.RE", "CNT20.ST", "CNT40.HC", "CNT40.RE"];
 
@@ -497,6 +503,15 @@ public sealed class clsNexoFalso : HttpMessageHandler
             "clases-viaje" => Json(HttpStatusCode.OK, ClasesViaje.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
             "clases-contenedor" => Json(HttpStatusCode.OK, ClasesContenedor.Select((d, i) => new { id = i + 1, descripcion = d, tamanoContenedor = (int?)null }).ToList()),
             "lineas-negocio" => Json(HttpStatusCode.OK, LineasNegocio.Select((d, i) => new { id = i + 1, descripcion = d }).ToList()),
+            "alias" => Json(HttpStatusCode.OK, Alias.Select((a, i) => new
+            {
+                id = Guid.Parse($"00000000-0000-4000-8000-{i + 1:D12}"),
+                alias = a.Alias,
+                aliasNormalizado = Cotifly.Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo.Normalizar(a.Alias),
+                tipoElemento = a.Tipo,
+                codigo = a.Codigo,
+                activo = a.Activo,
+            }).ToList()),
             _ => Error(HttpStatusCode.NotFound, "RUTA_NO_ENCONTRADA", $"GET /api/catalogos/{nombre}"),
         };
     }

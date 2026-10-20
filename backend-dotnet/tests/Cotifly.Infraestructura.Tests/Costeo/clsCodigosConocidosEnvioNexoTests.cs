@@ -20,10 +20,10 @@ using NSubstitute;
 namespace Cotifly.Infraestructura.Tests.Costeo;
 
 /// <summary>
-/// HU-014 (#188, decisión del usuario del 2026-10-19: "enviar solo códigos conocidos"). <c>Nexo:EnviarCodigosCubicador</c> con tres modos
-/// (<c>solo_conocidos</c> por defecto, <c>siempre</c>, <c>nunca</c>): el vehículo de un camión del cubicador viaja solo si su código está
-/// en <c>GET /api/catalogos/tipos-vehiculo</c> de Nexo (con la equivalencia de <c>MismoCodigo</c>), escrito como en Nexo; la carrocería,
-/// solo con el vehículo y si está en la lista de carrocerías de Nexo. Sin catálogo, ningún código es conocido.
+/// HU-014 (#188) y HU-031.1 (#194). <c>Nexo:EnviarCodigosCubicador</c> con tres modos (<c>siempre</c> por defecto desde #194,
+/// <c>solo_conocidos</c>, <c>nunca</c>): el código se resuelve contra <c>GET /api/catalogos/tipos-vehiculo</c> de Nexo (con la
+/// equivalencia de <c>MismoCodigo</c>) y, si no está, contra el diccionario de alias de Nexo (NEXO #321); lo resuelto viaja escrito como en
+/// Nexo. Con <c>solo_conocidos</c> lo no resuelto va sin vehículo; con <c>siempre</c>, tal cual. Sin catálogo ni alias, nada se resuelve.
 /// </summary>
 public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
 {
@@ -41,6 +41,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     private readonly HttpClient _http;
     private readonly IClsUsuarioWebRepository _usuarios = Substitute.For<IClsUsuarioWebRepository>();
     private readonly IClsCatalogosMaestrosProvider _maestros = Substitute.For<IClsCatalogosMaestrosProvider>();
+    private readonly IClsAliasNexoProvider _alias = Substitute.For<IClsAliasNexoProvider>();
 
     public clsCodigosConocidosEnvioNexoTests()
     {
@@ -49,6 +50,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
             .Returns(clsUsuarioWeb.Crear("mospina", "Mariana Ospina", "mospina@boterosoto.com.co", null, DateTimeOffset.UtcNow, 1007).Valor);
         _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsCatalogosMaestros>.Exito(_catalogos));
         _nexo.Responder(HttpStatusCode.Created, Creada);
+        ConAlias();
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -56,7 +58,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     [Fact]
     public async Task ConSoloConocidosViajanLosCodigosQueNexoConoceEscritosComoEnNexoYLosDemasNo()
     {
-        var creada = await Adaptador(null).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+        var creada = await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
 
         Vehiculos().Should().Equal(
             ("3S3", "FURGON"),
@@ -97,7 +99,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     {
         _maestros.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsCatalogosMaestros>>>(_ => throw new HttpRequestException("red"));
 
-        (await Adaptador(null).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct)).EsExitoso.Should().BeTrue();
+        (await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct)).EsExitoso.Should().BeTrue();
 
         Vehiculos().Take(4).Should().OnlyContain(v => v.Item1 == null && v.Item2 == null);
     }
@@ -129,8 +131,9 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     }
 
     [Theory]
-    [InlineData(null, ModoCodigosCubicador.SoloConocidos)]
-    [InlineData("", ModoCodigosCubicador.SoloConocidos)]
+    [InlineData(null, ModoCodigosCubicador.Siempre)]
+    [InlineData("", ModoCodigosCubicador.Siempre)]
+    [InlineData("  ", ModoCodigosCubicador.Siempre)]
     [InlineData("solo_conocidos", ModoCodigosCubicador.SoloConocidos)]
     [InlineData(" Solo-Conocidos ", ModoCodigosCubicador.SoloConocidos)]
     [InlineData("SOLO CONOCIDOS", ModoCodigosCubicador.SoloConocidos)]
@@ -177,6 +180,109 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
         configuracion.GetSection(clsOpcionesNexo.Seccion).Get<clsOpcionesNexo>()!.ModoCodigosCubicador.Should().Be(esperado);
     }
 
+    [Fact]
+    public async Task HU0311_SinBanderaElModoEsSiempre()
+    {
+        var creada = await Adaptador(null).EnviarSolicitudAsync(_usuarioId, Solicitud(), Ct);
+
+        Vehiculos().Should().Equal(("3S3", "FURGON"), ("2S2", "ESTACAS"), ("CAMA BAJA", "FURGON REFRIGERADO"), ("Tractomula", "TOLVA"), ("3S3", "FURGON"));
+        creada.Valor.CodigosCubicadorEnviados.Should().BeTrue("con siempre viajaron todos los códigos del cubicador");
+    }
+
+    [Theory]
+    [InlineData("siempre")]
+    [InlineData("solo_conocidos")]
+    public async Task HU0311_UnCodigoQueSoloConoceElAliasViajaConElCodigoOficialYQuedaRegistradaLaEquivalencia(string modo)
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "C2", "C2", "2s3"));
+
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON"), ("3S3", "ESTACAS")], respaldo: false), Ct);
+
+        Vehiculos().Should().Equal(("2S3", "FURGON"), ("3S3", "ESTACAS"));
+        creada.Valor.EquivalenciasVehiculo.Should().Equal(new Dictionary<string, string> { ["C2"] = "2S3" },
+            "el alias tradujo C2 al código oficial (escrito como en el catálogo de Nexo); 3S3 no cambió");
+    }
+
+    [Fact]
+    public async Task HU0311_ConNuncaNoSeConsultaElAliasNiViajaElVehiculo()
+    {
+        var creada = await Adaptador("nunca").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+
+        Vehiculos().Should().Equal((null, null));
+        creada.Valor.EquivalenciasVehiculo.Should().BeEmpty();
+        await _alias.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
+    }
+
+    [Fact]
+    public async Task HU0311_SiElCatalogoConoceTodosLosCodigosNoSeConsultaElAlias()
+    {
+        await Adaptador("siempre").EnviarSolicitudAsync(_usuarioId, Solicitud([("3s3", "FURGON")]), Ct);
+
+        await _alias.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
+    }
+
+    [Theory]
+    [InlineData("siempre", "C2", "FURGON")]
+    [InlineData("solo_conocidos", null, null)]
+    public async Task HU0311_UnCodigoQueNiElCatalogoNiElAliasConocenSigueElModo(string modo, string? tipo, string? carroceria)
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "2S3"));
+
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+
+        Vehiculos().Should().Equal((tipo, carroceria));
+        creada.Valor.EquivalenciasVehiculo.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("siempre", "C2", "FURGON")]
+    [InlineData("solo_conocidos", null, null)]
+    public async Task HU0311_SiElAliasNoEstaDisponibleElEnvioSigueSinAlias(string modo, string? tipo, string? carroceria)
+    {
+        _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
+
+        var creada = await Adaptador(modo).EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+
+        creada.EsExitoso.Should().BeTrue("el alias caído nunca impide el envío");
+        Vehiculos().Should().Equal((tipo, carroceria));
+    }
+
+    [Fact]
+    public async Task HU0311_SiLeerElAliasLanzaElEnvioSigue()
+    {
+        _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns<Task<clsResultado<clsDiccionarioAliasNexo>>>(_ => throw new HttpRequestException("red"));
+
+        var creada = await Adaptador("siempre").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+
+        creada.EsExitoso.Should().BeTrue();
+        Vehiculos().Should().Equal(("C2", "FURGON"));
+    }
+
+    [Fact]
+    public async Task HU0311_ElVehiculoDigitadoDelRespaldoTambienSeResuelvePorAlias()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "Turbo", "TURBO", "3S3"));
+
+        var creada = await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud([("3S3", "FURGON")], respaldoTipo: "turbo"), Ct);
+
+        Vehiculos().Should().Equal(("3S3", "FURGON"), ("3S3", "FURGON"));
+        creada.Valor.EquivalenciasVehiculo.Should().Equal(new Dictionary<string, string> { ["turbo"] = "3S3" });
+    }
+
+    [Fact]
+    public async Task HU0311_UnAliasDeContenedorNoResuelveUnVehiculo()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "C2", "C2", "CNT20.ST"));
+
+        await Adaptador("solo_conocidos").EnviarSolicitudAsync(_usuarioId, Solicitud([("C2", "FURGON")], respaldo: false), Ct);
+
+        Vehiculos().Should().Equal((null, null));
+    }
+
+    private void ConAlias(params clsFilaAliasNexo[] filas) =>
+        _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsDiccionarioAliasNexo>.Exito(new clsDiccionarioAliasNexo(filas)));
+
     private static List<ValidationResult> Errores(clsOpcionesNexo opciones)
     {
         var errores = new List<ValidationResult>();
@@ -186,7 +292,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
 
     private clsCosteoNexo Adaptador(string? modo) =>
         new(_http, Options.Create(new clsOpcionesNexo { UrlBase = clsNexoClientesFalso.UrlBase, EnviarCodigosCubicador = modo }), _usuarios,
-            NullLogger<clsCosteoNexo>.Instance, catalogos: _maestros);
+            NullLogger<clsCosteoNexo>.Instance, catalogos: _maestros, alias: _alias);
 
     private List<JsonElement> LineasJson()
     {
@@ -203,7 +309,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
     /// Ruta 1 con cuatro camiones del cubicador (o los de <paramref name="cubicador"/>) y ruta 2 con el camión del respaldo
     /// (vehículo digitado <c>3s3</c> / <c>Furgón</c>, sin recomendación).
     /// </summary>
-    private static clsSolicitudNexo Solicitud((string Tipo, string Carroceria)[]? cubicador = null, bool respaldo = true)
+    private static clsSolicitudNexo Solicitud((string Tipo, string Carroceria)[]? cubicador = null, bool respaldo = true, string respaldoTipo = "3s3")
     {
         cubicador ??= [("3S3", "FURGON"), ("2S2", "ESTACAS"), ("cama_baja", "FURGON_REFRIGERADO"), ("TRACTOMÚLA", "TOLVA")];
 
@@ -213,7 +319,7 @@ public sealed class clsCodigosConocidosEnvioNexoTests : IDisposable
             [new clsRutaCapturada(linea, 1, 0, [.. cubicador.Select(c => new clsCamionPlaneado(c.Tipo, c.Carroceria, 5_000m, Guid.NewGuid()))], [])];
         if (respaldo)
         {
-            rutas.Add(new clsRutaCapturada(linea, 1, 1, [new clsCamionPlaneado("3s3", "Furgón", 28_500.5m)], []));
+            rutas.Add(new clsRutaCapturada(linea, 1, 1, [new clsCamionPlaneado(respaldoTipo, "Furgón", 28_500.5m)], []));
         }
 
         cotizacion.RegistrarCaptura(new clsEncabezadoSolicitudCosteo { Tipo = TipoSolicitud.Spot }, rutas);
