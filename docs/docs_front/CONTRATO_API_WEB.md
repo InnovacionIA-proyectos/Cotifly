@@ -616,7 +616,7 @@ primer nivel son los de la ruta 1:
       "origen_margen": "politica_linea",
       "vehiculos": "1 × 3S3 - PORTACONTENEDORES (28500.5 KG)",
       "camiones": [
-        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500.5, "estado_costeo": "autocosteo" }
+        { "tipo_vehiculo": "3S3", "carroceria": "PORTACONTENEDORES", "peso_kg": 28500.5, "estado_costeo": "autocosteo", "estado_linea_nexo": "auto_resuelta", "motivo_pendiente": null }
       ],
       "mercancias": [
         { "orden": 1, "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
@@ -657,6 +657,17 @@ primer nivel son los de la ruta 1:
 ```
 
 `estado_nexo` y `aviso_conexos_nexo` solo vienen con valor en `GET .../costeo`; en las respuestas de las mutaciones son `null`.
+
+**Por qué un camión sigue pendiente (#181, Nexo #309).** Cada `rutas[].camiones[]` trae `estado_linea_nexo` (`por_costear`,
+`auto_resuelta` o `revisada`: el estado de su línea en Nexo) y `motivo_pendiente` (el texto de Nexo de por qué la línea sigue por
+costear, p. ej. `"Línea sin vehículo: requiere consulta completa"` o `"SICE-TAC no se usa: el período más reciente cargado es AAAAMM y
+el del mes actual es AAAAMM (sin mes de gracia). El Administrador de Tarifas debe validar el flete."`). `motivo_pendiente` solo llega
+con el camión en `estado_costeo = pendiente_costeo`: mostrarlo junto al camión en lugar de un "pendiente de costeo" sin explicación.
+Los dos son **solo de lectura y no se guardan en la base**: los lee el polling del costeo y llegan en `null` si Nexo no los manda
+(versión anterior a su #309), si el camión aún no se asoció a su línea de Nexo o justo después de reiniciar el servicio (vuelven con la
+siguiente consulta del polling, en minutos). `null` = no mostrar nada; nunca es un error. Salen en `GET .../costeo` y en las respuestas
+de `PUT .../costeo/margen` y `PUT .../costeo/servicios-conexos`; en las demás mutaciones del costeo vienen en `null` (volver a pedir el
+`GET`).
 
 **El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
 dichos cambios, incluido el tipo de vehículo." `rutas[].camiones[].tipo_vehiculo` y `carroceria` nacen con los códigos del cubicador

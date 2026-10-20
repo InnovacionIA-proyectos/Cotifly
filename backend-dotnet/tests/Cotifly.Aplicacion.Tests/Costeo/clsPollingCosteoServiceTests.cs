@@ -428,7 +428,55 @@ public sealed class clsPollingCosteoServiceTests
         new(estado, ["L1"], new clsCotizacionNexo("COT-1", estadoCotizacion, "SinDefinir",
             conFlete ? [new clsLineaCosteoNexo("L1", 2_000_000m, null, null)] : [], []));
 
-    private clsPollingCosteoService Servicio() => new(
+    private clsPollingCosteoService Servicio(IClsSituacionLineasNexo? situaciones = null) => new(
         _cotizaciones, _nexo, _unidad, _auditoria, _reloj, Options.Create(_opciones), NullLogger<clsPollingCosteoService>.Instance,
-        new clsPrecioCosteoService());
+        new clsPrecioCosteoService(), situacionesNexo: situaciones);
+
+    /// <summary>Foto sin flete cuya única línea trae (o no, Nexo anterior a #309) el estado y el motivo pendiente.</summary>
+    private static clsCosteoConsultadoNexo FotoConSituacion(string? estadoLinea, string? motivo) =>
+        Foto("EnCosteo", conFlete: false) with
+        {
+            Detalle = [new clsLineaSolicitudNexo("L1", "BUENAVENTURA → BOGOTA, D.C.", null, null, null, null) { EstadoLinea = estadoLinea, MotivoPendiente = motivo }],
+        };
+
+    [Fact]
+    public async Task Hu181_ElPollingDejaAlaVistaElEstadoYElMotivoPendienteDeLaLineaDeCadaCamion()
+    {
+        var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
+        NexoResponde(FotoConSituacion("porCostear", "Línea sin vehículo: requiere consulta completa"));
+
+        (await Servicio(situaciones).ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.SinCambio);
+
+        var camion = _cotizacion.Vehiculos.Single();
+        camion.LineaSolicitudNexoId.Should().Be("L1", "el emparejamiento no cambia");
+        situaciones.Obtener(_cotizacion.Id).Should().BeEquivalentTo(new Dictionary<Guid, clsSituacionLineaNexo>
+        {
+            [camion.Id] = new("por_costear", "Línea sin vehículo: requiere consulta completa"),
+        });
+        _cotizacion.VersionNegocio.Should().Be(0, "el motivo solo se muestra: no es un cambio de negocio ni se guarda");
+    }
+
+    [Fact]
+    public async Task Hu181_ConUnNexoSinLosCamposNoHayNadaQueMostrarNiFalla()
+    {
+        var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
+        NexoResponde(FotoConSituacion(null, null));
+
+        (await Servicio(situaciones).ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.SinCambio);
+
+        _cotizacion.Vehiculos.Single().LineaSolicitudNexoId.Should().Be("L1");
+        situaciones.Obtener(_cotizacion.Id).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Hu181_SiLaFotoNoSeGuardaPorConflictoNoSeMuestraSuMotivo()
+    {
+        var situaciones = new clsSituacionLineasNexoEnMemoria(_reloj);
+        NexoResponde(FotoConSituacion("porCostear", "Consulta completa"));
+        _unidad.GuardarCambiosSiVersionAsync(_cotizacion.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(false);
+
+        (await Servicio(situaciones).ProcesarAsync(_pendiente, Ct)).Should().Be(ResultadoConsultaCosteo.Conflicto);
+
+        situaciones.Obtener(_cotizacion.Id).Should().BeNull();
+    }
 }

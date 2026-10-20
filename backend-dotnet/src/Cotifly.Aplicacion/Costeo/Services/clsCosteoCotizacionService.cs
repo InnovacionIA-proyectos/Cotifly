@@ -4,6 +4,7 @@ using Cotifly.Aplicacion.Comun;
 using Cotifly.Aplicacion.Comun.Exceptions;
 using Cotifly.Aplicacion.Comun.Interfaces;
 using Cotifly.Aplicacion.Costeo.DTOs;
+using Cotifly.Aplicacion.Costeo.Interfaces;
 using Cotifly.Aplicacion.Cotizaciones.Repositories;
 using Cotifly.Aplicacion.Cubicacion.DTOs;
 using Cotifly.Aplicacion.Identidad.Repositories;
@@ -193,7 +194,21 @@ public sealed record clsRutaCosteo(
 /// </summary>
 public sealed record clsCamionCosteo(
     string? TipoVehiculo, string? Carroceria, decimal? PesoKg, string? EstadoCosteo,
-    decimal? VolumenTotalM3 = null, decimal? PorcentajeLlenadoVolumen = null, decimal? PorcentajeLlenadoPeso = null);
+    decimal? VolumenTotalM3 = null, decimal? PorcentajeLlenadoVolumen = null, decimal? PorcentajeLlenadoPeso = null)
+{
+    /// <summary>
+    /// #181 (Nexo #309): estado de la línea del camión en Nexo, en <c>snake_case</c> (<c>por_costear</c>, <c>auto_resuelta</c>,
+    /// <c>revisada</c>), según la última consulta del polling. Solo se muestra (no se guarda en la base): <c>null</c> si Nexo no lo manda,
+    /// si el camión aún no está asociado a su línea o si el servicio se reinició y el polling no ha vuelto a leer.
+    /// </summary>
+    public string? EstadoLineaNexo { get; init; }
+
+    /// <summary>
+    /// #181 (Nexo #309): por qué la línea del camión sigue pendiente en Nexo (consulta completa, línea sin vehículo, SICE-TAC que no es del
+    /// mes actual...), con el texto de Nexo. Solo con el camión en <c>pendiente_costeo</c>; <c>null</c> en los demás casos o sin el dato.
+    /// </summary>
+    public string? MotivoPendiente { get; init; }
+}
 
 /// <summary>
 /// <c>MercanciaCosteo</c> (HU-021.9, #136): una mercancía de la ruta (código del catálogo del cubicador, HU-023.3; nombre, medidas y peso).
@@ -219,7 +234,8 @@ public sealed class clsCosteoCotizacionService(
     ILogger<clsCosteoCotizacionService> logger,
     IClsEnvioConexosNexoService? envioConexos = null,
     Cubicacion.Interfaces.IClsCubicador? cubicador = null,
-    IClsCategoriasConexos? categoriasConexos = null) : IClsCosteoCotizacionService
+    IClsCategoriasConexos? categoriasConexos = null,
+    IClsSituacionLineasNexo? situacionesNexo = null) : IClsCosteoCotizacionService
 {
     public const string HerramientaPdf = "generar_pdf_costeo";
 
@@ -239,7 +255,9 @@ public sealed class clsCosteoCotizacionService(
 
         // Decisión 10 (HU-021.9): el estado del envío diferido de cada conexo a Nexo (incierto o fallido definitivo quedan a la vista).
         var estadosNexo = envioConexos is null ? null : await envioConexos.EstadosAsync(cotizacion, cancellationToken);
-        return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken));
+        // #181: el estado y el motivo pendiente de la línea de Nexo de cada camión, de la última lectura del polling (en memoria).
+        return Vista(cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken),
+            situacionesNexo?.Obtener(cotizacion.Id));
     }
 
     /// <summary>Herramienta de la auditoría de los cambios de conexos (<c>EventosHerramienta.herramienta</c>, HU-021.8).</summary>
@@ -332,13 +350,13 @@ public sealed class clsCosteoCotizacionService(
         if (movimientos.Count == 0)
         {
             // La misma selección y las mismas cantidades no cambian nada (ni invalidan el PDF): idempotente.
-            return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos), [], false);
+            return (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, cancellationToken, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)), [], false);
         }
 
         var pdfInvalidado = clsReglaPdfCosteo.InvalidarPdf(cotizacion, MotivoInvalidacionPdf.ServiciosConexos, usuarioId, cotizaciones);
         cotizacion.IncrementarVersionNegocio();
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, versionEsperada, cancellationToken)
-            ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos), movimientos, pdfInvalidado)
+            ? (await VistaConEstadosAsync(cotizacion, opcionesPdf.Value.BaseUrl, envioConexos, logger, CancellationToken.None, categoriasConexos, situacionesNexo?.Obtener(cotizacion.Id)), movimientos, pdfInvalidado)
             : (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), [], false);
     }
 
@@ -1021,24 +1039,25 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static async Task<clsCosteoCotizacion> VistaConEstadosAsync(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IClsEnvioConexosNexoService? envioConexos, ILogger logger,
-        CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null)
+        CancellationToken cancellationToken = default, IClsCategoriasConexos? categoriasConexos = null,
+        IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(logger);
         var categorias = await CategoriasAsync(categoriasConexos, cotizacion, logger, cancellationToken);
         if (envioConexos is null)
         {
-            return Vista(cotizacion, baseUrlPdf, null, categorias);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones);
         }
 
         try
         {
-            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias);
+            return Vista(cotizacion, baseUrlPdf, await envioConexos.EstadosAsync(cotizacion, cancellationToken), categorias, situaciones);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             _logEstadosNoDisponibles(logger, cotizacion.Folio, ex);
-            return Vista(cotizacion, baseUrlPdf, null, categorias);
+            return Vista(cotizacion, baseUrlPdf, null, categorias, situaciones);
         }
     }
 
@@ -1077,11 +1096,11 @@ public sealed class clsCosteoCotizacionService(
 
     /// <summary>
     /// <c>CosteoCotizacion</c> de la cotización (sin costos de Nexo). La comparten el costeo, el ajuste de margen y las demás acciones de
-    /// la etapa final.
+    /// la etapa final. <paramref name="situaciones"/> (#181) es lo que Nexo dice de la línea de cada camión (por id de camión), si se conoce.
     /// </summary>
     public static clsCosteoCotizacion Vista(
         clsCotizacionSolicitud cotizacion, string? baseUrlPdf, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
-        IReadOnlyDictionary<string, string>? categorias = null)
+        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
 
@@ -1107,7 +1126,7 @@ public sealed class clsCosteoCotizacionService(
             TrmAplicada = cotizacion.TrmAplicada,
             Deadline = cotizacion.Deadline?.ToUniversalTime(),
             ScorePrioridad = cotizacion.ScorePrioridad,
-            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias))],
+            Rutas = [.. cotizacion.RutasOrdenadas.Select(r => RutaCosteo(cotizacion, r, estadosNexo, categorias, situaciones))],
         };
     }
 
@@ -1117,7 +1136,7 @@ public sealed class clsCosteoCotizacionService(
     /// </summary>
     public static clsRutaCosteo RutaCosteo(
         clsCotizacionSolicitud cotizacion, clsLineaSolicitud ruta, IReadOnlyDictionary<(Guid Ruta, string Conexo), string>? estadosNexo = null,
-        IReadOnlyDictionary<string, string>? categorias = null)
+        IReadOnlyDictionary<string, string>? categorias = null, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         ArgumentNullException.ThrowIfNull(ruta);
@@ -1146,9 +1165,7 @@ public sealed class clsCosteoCotizacionService(
                   + "y no los reenvía solo (Nexo no tiene DELETE). El precio en Cotifly ya los incluye.",
             LineaNegocioId = ruta.LineaNegocioId,
             PesoKg = ruta.PesoKg,
-            Camiones = [.. ruta.VehiculosOrdenados.Select(v => new clsCamionCosteo(
-                v.TipoVehiculo, v.Carroceria, v.PesoKg, v.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
-                v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))],
+            Camiones = [.. ruta.VehiculosOrdenados.Select(v => CamionCosteo(v, situaciones))],
             ResultadoCubicacion = ruta.ResultadoCubicacion,
             MotivoSinSeleccion = ruta.MotivoSinSeleccion,
             Condicionada = ruta.Condicionada,
@@ -1159,6 +1176,23 @@ public sealed class clsCosteoCotizacionService(
             Vehiculos = clsCosteoCotizacionService.Camiones(ruta),
             Mercancias = [.. ruta.MercanciasOrdenadas.Select(m => new clsMercanciaCosteo(
                 m.Orden, m.CodigoMercancia, m.NombreMercancia, m.Cantidad, m.LargoCm, m.AnchoCm, m.AltoCm, m.PesoKg))],
+        };
+    }
+
+    /// <summary>
+    /// <c>CamionCosteo</c> del camión <paramref name="camion"/> con lo que Nexo dice de su línea (#181), si se conoce: el estado de la línea
+    /// siempre y el motivo pendiente solo con el camión en <c>pendiente_costeo</c>.
+    /// </summary>
+    public static clsCamionCosteo CamionCosteo(clsVehiculoLineaSolicitud camion, IReadOnlyDictionary<Guid, clsSituacionLineaNexo>? situaciones = null)
+    {
+        ArgumentNullException.ThrowIfNull(camion);
+        var situacion = situaciones is not null && situaciones.TryGetValue(camion.Id, out var deNexo) ? deNexo : null;
+        return new clsCamionCosteo(
+            camion.TipoVehiculo, camion.Carroceria, camion.PesoKg, camion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
+            camion.VolumenTotalM3, camion.PorcentajeLlenadoVolumen, camion.PorcentajeLlenadoPeso)
+        {
+            EstadoLineaNexo = situacion?.EstadoLinea,
+            MotivoPendiente = camion.EstadoCosteo == EstadoCosteo.PendienteCosteo ? situacion?.MotivoPendiente : null,
         };
     }
 

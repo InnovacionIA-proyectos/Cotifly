@@ -42,6 +42,73 @@ public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipo
     /// Desempate fuerte entre camiones idénticos de un mismo <see cref="GrupoRutaId"/>.
     /// </summary>
     public int? NumeroLinea { get; init; }
+
+    /// <summary>
+    /// #181 (Nexo #309): estado de la línea en el costeo de Nexo (<c>estadoLinea</c>: <c>porCostear</c>, <c>autoResuelta</c> o
+    /// <c>revisada</c>), tal como lo manda Nexo, o <c>null</c> si Nexo no lo trae (versión anterior a #309). No se usa para emparejar.
+    /// </summary>
+    public string? EstadoLinea { get; init; }
+
+    /// <summary>
+    /// #181 (Nexo #309): por qué la línea sigue en <c>porCostear</c> (<c>motivoPendiente</c>: consulta completa, línea sin vehículo, SICE-TAC
+    /// que no es del mes actual...), o <c>null</c> si no está pendiente o Nexo no lo trae. Texto para el usuario. No se usa para emparejar.
+    /// </summary>
+    public string? MotivoPendiente { get; init; }
+
+    /// <summary>Lo que Nexo dice de la línea más allá de su contenido (#181; el rechazo de línea, #183, se suma aquí).</summary>
+    public clsSituacionLineaNexo Situacion => clsSituacionLineaNexo.Desde(EstadoLinea, MotivoPendiente);
+}
+
+/// <summary>
+/// #181: la situación de una línea de la solicitud en Nexo que Cotifly muestra por camión en <c>GET .../costeo</c>, sin guardarla en la
+/// base: el estado de la línea en Nexo como código de Cotifly (<see cref="EstadoLinea"/>: <c>por_costear</c>, <c>auto_resuelta</c>,
+/// <c>revisada</c>; un valor nuevo de Nexo pasa con la misma conversión) y el motivo por el que sigue pendiente. Ambos <c>null</c> si Nexo
+/// no los manda. Preparada para crecer: el rechazo de línea (#183) agrega aquí su motivo.
+/// </summary>
+public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPendiente)
+{
+    /// <summary>Sin nada que mostrar (Nexo no mandó ni el estado ni el motivo).</summary>
+    public bool Vacia => EstadoLinea is null && MotivoPendiente is null;
+
+    /// <summary>
+    /// La situación con los valores de Nexo: el estado convertido con <see cref="CodigoEstado"/> y el motivo sin espacios sobrantes (un
+    /// texto vacío cuenta como <c>null</c>).
+    /// </summary>
+    public static clsSituacionLineaNexo Desde(string? estadoLineaNexo, string? motivoPendiente) =>
+        new(CodigoEstado(estadoLineaNexo), string.IsNullOrWhiteSpace(motivoPendiente) ? null : motivoPendiente.Trim());
+
+    /// <summary>
+    /// <c>estadoLinea</c> de Nexo como código de Cotifly en <c>snake_case</c>: <c>porCostear</c> o <c>PorCostear</c> →
+    /// <c>por_costear</c>, <c>autoResuelta</c> → <c>auto_resuelta</c>, <c>revisada</c> → <c>revisada</c>. Vacío o <c>null</c> → <c>null</c>.
+    /// </summary>
+    public static string? CodigoEstado(string? estadoLineaNexo)
+    {
+        if (string.IsNullOrWhiteSpace(estadoLineaNexo))
+        {
+            return null;
+        }
+
+        var texto = estadoLineaNexo.Trim();
+        var codigo = new System.Text.StringBuilder(texto.Length + 4);
+        for (var i = 0; i < texto.Length; i++)
+        {
+            var c = texto[i];
+            if (c is ' ' or '-')
+            {
+                c = '_';
+            }
+
+            // Solo al pasar de minúscula o dígito a mayúscula: "PorCostear" → "por_costear", "PORCOSTEAR" → "porcostear".
+            if (char.IsUpper(c) && i > 0 && char.IsLetterOrDigit(texto[i - 1]) && !char.IsUpper(texto[i - 1]))
+            {
+                codigo.Append('_');
+            }
+
+            codigo.Append(char.ToLowerInvariant(c));
+        }
+
+        return codigo.ToString();
+    }
 }
 
 /// <summary>
