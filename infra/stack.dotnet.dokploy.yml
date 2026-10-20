@@ -202,8 +202,7 @@ services:
       start_period: 30s
     deploy:
       # Una réplica: barrido de sesiones en proceso; volumen local de PDFs (ADR-012).
-      # También la Idempotency-Key (ADR-018 §12, #100/#99) vive en memoria: al subir réplicas, crear antes la tabla de
-      # idempotencia con el script 0008 y cambiar IClsAlmacenIdempotencia a la implementación SQL.
+      # La Idempotency-Key ya no limita (#191: vive en dbo_cotifly.CapturasIdempotentes, db/scripts/06).
       # #181: el estado y el motivo pendiente de la línea de NEXO por camión también viven en memoria (DEPLOY.md, Una réplica).
       replicas: 1
       placement:
