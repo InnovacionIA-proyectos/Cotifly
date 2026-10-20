@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Cotizaciones.Controllers;
 
 /// <summary>
-/// Cotizaciones del comercial (<c>specs/openapi.yaml</c>): listado, seguimiento y datos para una versión nueva. Solo las del
+/// Cotizaciones del comercial (<c>specs/openapi.yaml</c>): listado, detalle, seguimiento y datos para una versión nueva. Solo las del
 /// comercial autenticado; una ajena responde 404 igual que una inexistente. Excepción: <c>GET /web/cotizaciones/regional</c> (HU-016.1),
 /// solo para <c>gerente_comercial</c>, lista las de los miembros de su regional.
 /// </summary>
@@ -20,8 +20,20 @@ public sealed class clsCotizacionesController(
     IClsMisCotizacionesService misCotizaciones,
     IClsSeguimientoService seguimiento,
     IClsNuevaVersionService nuevaVersion,
-    IClsCotizacionesRegionalService regional) : clsControladorWebBase(usuario)
+    IClsCotizacionesRegionalService regional,
+    IClsDetalleCotizacionService detalle) : clsControladorWebBase(usuario)
 {
+    /// <summary>
+    /// HU-027.1 (#179). 200 <c>DetalleCotizacion</c> con el <c>ETag</c>: cabecera, costeo por ruta, rutas capturadas y totales en una llamada
+    /// ("Ver detalle"). El dueño, o un gerente comercial de la regional del dueño en solo consulta; 404 en cualquier otro caso.
+    /// </summary>
+    [HttpGet("cotizaciones/{folio}")]
+    [ProducesResponseType<clsDetalleCotizacion>(StatusCodes.Status200OK)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<clsErrorWeb>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Detalle(string folio, CancellationToken cancellationToken) =>
+        (await detalle.ObtenerAsync(folio, cancellationToken)).Coincidir<IActionResult>(d => Ok(d), Error);
+
     /// <summary>200 <c>MisCotizaciones</c>: máximo 100, de la más reciente a la más antigua.</summary>
     [HttpGet("mis-cotizaciones")]
     [ProducesResponseType<clsMisCotizaciones>(StatusCodes.Status200OK)]

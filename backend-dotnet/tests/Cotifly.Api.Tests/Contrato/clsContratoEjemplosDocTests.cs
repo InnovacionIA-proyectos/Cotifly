@@ -61,6 +61,8 @@ public sealed partial class clsContratoEjemplosDocTests
             "esquema: EdicionSolicitudWeb",
             "respuesta: PUT /web/cotizaciones/{folio}/solicitud 200",
             "respuesta: PUT /web/cotizaciones/{folio}/solicitud 400",
+            // HU-027.1 (#179): detalle por folio.
+            "respuesta: GET /web/cotizaciones/{folio} 200",
             "respuesta: PUT /web/cotizaciones/{folio}/solicitud 503",
         ]);
     }

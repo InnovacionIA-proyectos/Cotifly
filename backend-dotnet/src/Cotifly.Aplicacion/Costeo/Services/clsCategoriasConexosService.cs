@@ -135,6 +135,18 @@ public sealed class clsCategoriasConexosService(
         return Task.FromResult(Resolver(indice ?? almacen.Ultimo(), conexos));
     }
 
+    /// <summary>
+    /// HU-027.1 (#179): las categorías que ya se conocen, sin leer el catálogo de Nexo NI calentarlo en segundo plano (a diferencia de
+    /// <see cref="CategoriasAsync"/>): el detalle por folio solo lee lo que Cotifly tiene guardado o en memoria. Los conexos con la
+    /// categoría guardada (script 05) no la necesitan; los demás que no estén en el índice usan la de respaldo.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> EnMemoria(clsAlmacenCategoriasConexos almacen, clsCotizacionSolicitud cotizacion)
+    {
+        ArgumentNullException.ThrowIfNull(almacen);
+        ArgumentNullException.ThrowIfNull(cotizacion);
+        return Resolver(almacen.Ultimo(), [.. cotizacion.Rutas.SelectMany(r => r.Conexos).Where(c => c.Categoria is null)]);
+    }
+
     private static IReadOnlyDictionary<string, string> Resolver(clsIndiceCategorias? indice, IReadOnlyList<clsServicioConexoRuta> conexos)
     {
         var categorias = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
