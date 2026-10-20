@@ -130,6 +130,8 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
                 "estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_cubicacionIntentos", "cubicacionIntentos >= 0");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_avisosCubicacion", "avisosCubicacion IS NULL OR ISJSON(avisosCubicacion) = 1");
+            // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql.
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_pesoConTaraKg", "pesoConTaraKg IS NULL OR pesoConTaraKg > 0");
         });
 
         builder.HasKey(l => l.Id).HasName("pk_cotizacionLineasSolicitud");
