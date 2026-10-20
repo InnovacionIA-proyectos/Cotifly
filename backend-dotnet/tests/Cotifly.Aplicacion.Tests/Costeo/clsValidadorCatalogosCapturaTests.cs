@@ -233,7 +233,81 @@ public sealed class clsValidadorCatalogosCapturaTests
         await _maestros.DidNotReceiveWithAnyArgs().ObtenerAsync(default, Ct);
     }
 
+    // ------------------------------------------------------------------ HU-031.1 (#194): alias de Nexo
+
+    private readonly IClsAliasNexoProvider _alias = Substitute.For<IClsAliasNexoProvider>();
+
+    private void ConAlias(params clsFilaAliasNexo[] filas) =>
+        _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>()).Returns(clsResultado<clsDiccionarioAliasNexo>.Exito(new clsDiccionarioAliasNexo(filas)));
+
+    [Theory]
+    [InlineData("TB")]
+    [InlineData("T.B")]
+    [InlineData("t .b")]
+    public async Task HU0311_UnVehiculoDigitadoQueResuelveElAliasSeAcepta(string texto)
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "3S3"), new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "T.B", "T.B", "3S3"));
+
+        (await ValidadorConAlias().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = texto }, Ct)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task HU0311_UnVehiculoQueNiElCatalogoNiElAliasConocenSigueRechazandose()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "TB", "TB", "3S3"));
+
+        var error = await ValidadorConAlias().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "Tractomula" }, Ct);
+
+        error!.Mensaje.Should().Contain("tipo_vehiculo");
+    }
+
+    [Fact]
+    public async Task HU0311_SinElDiccionarioSeValidaComoAntesYNoFalla()
+    {
+        _alias.ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>())
+            .Returns(clsResultado<clsDiccionarioAliasNexo>.Fallo(new clsErrorDominio(clsCodigosError.CatalogosFleteNoDisponible, "caído")));
+
+        (await ValidadorConAlias().ValidarAsync(_usuarioId, Linea() with { TipoVehiculo = "TB" }, Ct))!.Mensaje.Should().Contain("tipo_vehiculo");
+        (await ValidadorConAlias().ValidarAsync(_usuarioId, Linea(), Ct)).Should().BeNull("una línea con códigos oficiales no necesita el diccionario");
+        await _alias.Received(1).ObtenerAsync(_usuarioId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HU0311_UnaClaseDeContenedorQueResuelveElAliasSeAceptaYSeGuardaConElCodigoOficial()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "40 HC", "40 HC", "cnt40.hc"), new clsFilaAliasNexo(TipoAliasNexo.Contenedor, "40 FT", "40 FT", "CNT40.FT"));
+        var lineas = new[] { Linea() with { ClaseContenedor = "40 hc" }, Linea() with { ClaseContenedor = "40-FT" }, Linea() with { ClaseContenedor = "45 XX" } };
+
+        var validacion = await ValidadorConAlias().ValidarLineasAsync(_usuarioId, lineas, Ct);
+
+        validacion.Errores[0].Should().BeEmpty();
+        validacion.Errores[1].Should().BeEmpty("el alias apunta a una clase provisional (G15)");
+        validacion.Errores[2].Should().ContainSingle(e => e.Campo == "clase_contenedor");
+        validacion.Canonicas!.Select(l => l.ClaseContenedor).Should().Equal("CNT40.HC", "CNT40.FT", "45 XX");
+    }
+
+    [Fact]
+    public async Task HU0311_ElVehiculoDigitadoPorAliasSeGuardaConElCodigoOficial()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "Turbo", "TURBO", "2s3"));
+
+        var validacion = await ValidadorConAlias().ValidarLineasAsync(_usuarioId, [Linea() with { TipoVehiculo = "turbo" }, Linea() with { TipoVehiculo = "3s3" }], Ct);
+
+        validacion.Errores.Should().OnlyContain(e => e.Count == 0);
+        validacion.Canonicas!.Select(l => l.TipoVehiculo).Should().Equal("2S3", "3S3");
+    }
+
+    [Fact]
+    public async Task HU0311_UnAliasDeVehiculoNoSirveParaLaClaseDeContenedor()
+    {
+        ConAlias(new clsFilaAliasNexo(TipoAliasNexo.Vehiculo, "40HC", "40HC", "3S3"));
+
+        (await ValidadorConAlias().ValidarAsync(_usuarioId, Linea() with { ClaseContenedor = "40HC" }, Ct))!.Mensaje.Should().Contain("clase_contenedor");
+    }
+
     private static clsLineaSolicitudCosteo Linea() => clsSolicitudCosteoMuestra.Crear().ALinea();
 
     private clsValidadorCatalogosCaptura Validador() => new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance);
+
+    private clsValidadorCatalogosCaptura ValidadorConAlias() => new(_maestros, NullLogger<clsValidadorCatalogosCaptura>.Instance, _alias);
 }

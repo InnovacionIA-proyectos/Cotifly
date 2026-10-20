@@ -78,7 +78,7 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
         var porCamion = cotizacion.RutasOrdenadas.SelectMany(r => r.Vehiculos.Select(v => (Ruta: r, Camion: v))).ToDictionary(x => x.Camion.Id);
         var asignados = cotizacion.Vehiculos.Select(c => c.LineaSolicitudNexoId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
         var detalle = foto.Detalle.Where(d => foto.LineasSolicitud.Contains(d.Id, StringComparer.OrdinalIgnoreCase)).ToList();
-        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c, foto.CodigosCubicadorEnviados)).ToList();
+        var candidatos = pendientes.Select(c => clsCamionParaEmparejar.Desde(porCamion[c.Id].Ruta, c, foto.CodigosCubicadorEnviados, foto.EquivalenciasVehiculo)).ToList();
         var emparejamiento = clsEmparejadorLineasNexo.EmparejarConDetalle(candidatos, detalle, asignados);
         foreach (var (camionId, nexoId) in emparejamiento.Pares)
         {
@@ -144,9 +144,11 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
                 costos = null;
             }
 
-            // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia.
+            // La Mesa de Costeo le puso vehículo a una línea que iba vacía (sin selección automática): se copia. HU-031.1 (#194): si Nexo
+            // devuelve el mismo código que viajó traducido por alias (C2 → 2), no es un cambio de la Mesa: el camión conserva el suyo.
             var linea = Detalle(foto, camion.LineaSolicitudNexoId);
-            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, linea?.TipoVehiculo, linea?.Carroceria);
+            var tipoVehiculo = clsEquivalenciasVehiculo.DeNexo(camion.TipoVehiculo, linea?.TipoVehiculo, foto.EquivalenciasVehiculo);
+            return new clsCosteoCamionNexo(camion.Id, estado, ConCostos: true, costos?.Flete, costos?.Retorno, tipoVehiculo, linea?.Carroceria);
         }).ToList();
 
         // Un error del módulo de precio lo reporta AplicarPrecio (que vuelve a recalcular): aquí cuenta como cambio.

@@ -48,7 +48,10 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     {
         ArgumentNullException.ThrowIfNull(envio);
         var entrada = JsonSerializer.Serialize(new { folio = envio.Folio, solicitud_nexo_id = envio.SolicitudNexoId.Trim() });
-        var salida = JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados });
+        // HU-031.1 (#194): equivalencias_vehiculo solo si el alias tradujo algún código (las filas anteriores no la traen: vacío).
+        var salida = envio.EquivalenciasVehiculo.Count == 0
+            ? JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados })
+            : JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados, equivalencias_vehiculo = envio.EquivalenciasVehiculo });
         var evento = clsEventoHerramienta.Registrar(clsEnvioNexoRegistrado.Herramienta, entrada, salida, true, 0);
         contexto.EventosHerramienta.Add(evento.Valor);
     }
@@ -63,15 +66,50 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyDictionary<string, string>> ObtenerEquivalenciasVehiculoAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
+    {
+        var equivalencias = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (await SalidaEnvioNexoAsync(solicitudNexoId, cancellationToken) is not { } salida)
+        {
+            return equivalencias;
+        }
+
+        try
+        {
+            if (JsonNode.Parse(salida)?["equivalencias_vehiculo"] is JsonObject objeto)
+            {
+                foreach (var (codigo, enviado) in objeto)
+                {
+                    if (!string.IsNullOrWhiteSpace(codigo) && enviado is JsonValue valor && valor.TryGetValue<string>(out var texto) && !string.IsNullOrWhiteSpace(texto))
+                    {
+                        equivalencias[codigo] = texto;
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        return equivalencias;
+    }
+
+    /// <summary>El <c>outputResumen</c> del último registro del envío de <paramref name="solicitudNexoId"/>, o <c>null</c>.</summary>
+    private async Task<string?> SalidaEnvioNexoAsync(string solicitudNexoId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(solicitudNexoId);
         var marca = $"\"solicitud_nexo_id\":{JsonSerializer.Serialize(solicitudNexoId.Trim())}";
-        var salida = await contexto.EventosHerramienta.AsNoTracking()
+        return await contexto.EventosHerramienta.AsNoTracking()
             .Where(e => e.Herramienta == clsEnvioNexoRegistrado.Herramienta && e.Input != null && e.Input.Contains(marca))
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => e.OutputResumen)
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<bool?> ObtenerCodigosCubicadorEnviadosAsync(string solicitudNexoId, CancellationToken cancellationToken = default)
+    {
+        var salida = await SalidaEnvioNexoAsync(solicitudNexoId, cancellationToken);
         if (salida is null)
         {
             return null;

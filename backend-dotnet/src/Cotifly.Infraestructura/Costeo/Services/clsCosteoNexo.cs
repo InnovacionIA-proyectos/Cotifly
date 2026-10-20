@@ -37,7 +37,8 @@ namespace Cotifly.Infraestructura.Costeo.Services;
 public sealed class clsCosteoNexo(
     HttpClient http, IOptions<clsOpcionesNexo> opciones, IClsUsuarioWebRepository usuarios, ILogger<clsCosteoNexo> logger,
     Aplicacion.Cotizaciones.Repositories.IClsCotizacionRepository? cotizaciones = null,
-    Aplicacion.CatalogosFlete.Interfaces.IClsCatalogosMaestrosProvider? catalogos = null)
+    Aplicacion.CatalogosFlete.Interfaces.IClsCatalogosMaestrosProvider? catalogos = null,
+    Aplicacion.CatalogosFlete.Interfaces.IClsAliasNexoProvider? alias = null)
     : IClsCosteoNexo
 {
     /// <summary>Nombre del cliente de <c>IHttpClientFactory</c> del costeo (las pruebas le cambian el manejador primario).</summary>
@@ -88,8 +89,9 @@ public sealed class clsCosteoNexo(
     {
         ArgumentNullException.ThrowIfNull(solicitud);
         var vehiculosNexo = await VehiculosNexoAsync(usuarioId, solicitud, cancellationToken);
-        var cuerpo = CuerpoCaptura(solicitud, _enviarGrupoRutaId, _enviarDatosCubicador, _modoCodigosCubicador, vehiculosNexo);
-        AvisarCodigosDesconocidos(solicitud, vehiculosNexo);
+        var diccionario = await AliasAsync(usuarioId, solicitud, vehiculosNexo, cancellationToken);
+        var cuerpo = CuerpoCaptura(solicitud, _enviarGrupoRutaId, _enviarDatosCubicador, _modoCodigosCubicador, vehiculosNexo, diccionario);
+        AvisarCodigosDesconocidos(solicitud, vehiculosNexo, diccionario);
         var respuesta = await EnviarAsync(usuarioId, HttpMethod.Post, "/api/captura-solicitudes", cuerpo, cancellationToken);
         if (respuesta.EsFallo)
         {
@@ -124,6 +126,7 @@ public sealed class clsCosteoNexo(
             // Solo con "siempre" viajaron TODOS los códigos del cubicador. Con "solo_conocidos" unos viajan y otros no: se registra false
             // (el caso seguro, como con la bandera apagada), así el emparejador no compara el vehículo de los camiones del cubicador.
             CodigosCubicadorEnviados = _modoCodigosCubicador == ModoCodigosCubicador.Siempre,
+            EquivalenciasVehiculo = EquivalenciasVehiculo(solicitud, _modoCodigosCubicador, vehiculosNexo, diccionario),
             ScorePrioridad = Decimal(raiz, "scorePrioridad"),
         };
     }
@@ -204,7 +207,31 @@ public sealed class clsCosteoNexo(
         {
             Detalle = contenidoLineas,
             CodigosCubicadorEnviados = await CodigosEnviadosAsync(id, cancellationToken),
+            EquivalenciasVehiculo = await EquivalenciasEnviadasAsync(id, cancellationToken),
         };
+    }
+
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo que viajaron traducidos por el alias en el alta de <paramref name="solicitudId"/> (lo que
+    /// registró el envío). Vacío sin repositorio, sin registro o si la lectura falla: entonces se compara como antes (sin traducción).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, string>> EquivalenciasEnviadasAsync(string solicitudId, CancellationToken cancellationToken)
+    {
+        if (cotizaciones is null)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        try
+        {
+            return await cotizaciones.ObtenerEquivalenciasVehiculoAsync(solicitudId, cancellationToken) ?? new Dictionary<string, string>();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("No se pudieron leer los vehículos traducidos por alias de la solicitud {Solicitud} ({Tipo}): se compara sin ellos.",
+                solicitudId, ex.GetType().Name);
+            return new Dictionary<string, string>();
+        }
     }
 
     /// <summary>El <c>cotizacionNexoId</c> guardado para la solicitud, o <c>null</c> (sin repositorio o si la lectura falla).</summary>
@@ -575,13 +602,14 @@ public sealed class clsCosteoNexo(
     /// (S5-HU-20.5): el código de mercancía NO viaja (ni <c>codigoTipoMercancia</c>); no hay campo de orden de entrada: Nexo numera las
     /// líneas por el orden del arreglo (<c>numeroLinea</c> en el GET), que aquí es ruta por ruta y, dentro de cada una, el orden de los
     /// camiones. El vehículo y la carrocería de cada línea los decide <see cref="VehiculoLinea"/> según <paramref name="modoCodigosCubicador"/>
-    /// (<c>Nexo:EnviarCodigosCubicador</c>, <c>solo_conocidos</c> por defecto desde HU-014 #188) y <paramref name="vehiculosNexo"/> (los
-    /// códigos de <c>GET /api/catalogos/tipos-vehiculo</c>; <c>null</c> si no están disponibles). Los valores por defecto de los parámetros
+    /// (<c>Nexo:EnviarCodigosCubicador</c>, <c>siempre</c> por defecto desde HU-031.1 #194), <paramref name="vehiculosNexo"/> (los
+    /// códigos de <c>GET /api/catalogos/tipos-vehiculo</c>; <c>null</c> si no están disponibles) y <paramref name="alias"/> (el diccionario de alias de Nexo, #194; <c>null</c> si no hace falta o no está disponible). Los valores por defecto de los parámetros
     /// de este método son para las pruebas; el adaptador pasa siempre los de <see cref="clsOpcionesNexo"/> y el catálogo.
     /// </summary>
     internal static object CuerpoCaptura(
         clsSolicitudNexo solicitud, bool enviarGrupoRutaId = true, bool enviarDatosCubicador = true,
-        ModoCodigosCubicador modoCodigosCubicador = ModoCodigosCubicador.Siempre, IReadOnlyCollection<string>? vehiculosNexo = null)
+        ModoCodigosCubicador modoCodigosCubicador = ModoCodigosCubicador.Siempre, IReadOnlyCollection<string>? vehiculosNexo = null,
+        Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo? alias = null)
     {
         var e = solicitud.Encabezado;
         // HU-023 (#176, contrato con Nexo §3.3): una ruta con un solo camión es una "línea suelta" y viaja con grupoRutaId = null.
@@ -596,7 +624,7 @@ public sealed class clsCosteoNexo(
             string.IsNullOrWhiteSpace(e.Notas) ? null : e.Notas.Trim(),
             [.. solicitud.Lineas.Select(s =>
             {
-                var (tipoVehiculo, carroceria) = VehiculoLinea(s, modoCodigosCubicador, vehiculosNexo);
+                var (tipoVehiculo, carroceria) = VehiculoLinea(s, modoCodigosCubicador, vehiculosNexo, alias);
                 return new clsCapturaLineaWire(
                 s.Origen, s.Destino, s.OrigenMunicipioId, s.DestinoMunicipioId,
                 tipoVehiculo,
@@ -624,55 +652,150 @@ public sealed class clsCosteoNexo(
             : null;
 
     /// <summary>
-    /// El <c>tipoVehiculo</c> y la <c>carroceria</c> que viajan en la línea (HU-014, #188, decisión del 2026-10-19: "enviar solo códigos
-    /// conocidos"). "Conocido" = está en el catálogo de Nexo con la equivalencia de <see cref="clsCodigosConocidosNexo"/> (exacto o, sin
-    /// ambigüedad, sin tildes, mayúsculas ni <c>_</c>/<c>-</c>); viaja ESCRITO COMO EN NEXO (así Nexo lo reconoce sin depender de su
-    /// normalización y no nace en cuarentena). Cotifly conserva su código: el emparejamiento y la regla "la Mesa manda" (D2) comparan con
-    /// <see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>, que trata igual las dos escrituras.
+    /// El <c>tipoVehiculo</c> y la <c>carroceria</c> que viajan en la línea (HU-014 #188; HU-031.1 #194, decisión del usuario del
+    /// 2026-10-20). El vehículo se resuelve en este orden: (1) el catálogo oficial de Nexo (<c>GET /api/catalogos/tipos-vehiculo</c>, con la
+    /// equivalencia de <see cref="clsCodigosConocidosNexo"/>: exacto o, sin ambigüedad, sin tildes, mayúsculas ni <c>_</c>/<c>-</c>); (2) el
+    /// diccionario de alias de Nexo (NEXO #321: <c>C2</c> → <c>2</c>, <c>TB</c> → <c>2L2</c>). Lo que se resuelve viaja ESCRITO COMO EN
+    /// NEXO (así Nexo lo reconoce sin depender de su normalización, no nace en cuarentena y la línea se autocostea). Cotifly conserva su
+    /// código (el del cubicador): el emparejamiento y la regla "la Mesa manda" (D2) comparan contra el código que viajó
+    /// (<see cref="clsSolicitudCreadaNexo.EquivalenciasVehiculo"/>, <see cref="EquivalenciasVehiculo"/>).
     /// <list type="bullet">
-    /// <item><b>Camión del cubicador</b> (con <c>idRecomendacionVehiculo</c>): <c>nunca</c> → sin vehículo ni carrocería; <c>siempre</c> →
-    /// los dos, en la forma de Nexo si la conoce y si no tal cual (cuarentena); <c>solo_conocidos</c> → el vehículo solo si Nexo lo conoce
-    /// y, solo entonces, la carrocería si está en la lista de carrocerías de Nexo (<see cref="clsCatalogosCaptura.Carrocerias"/>: Nexo no
-    /// publica un catálogo de carrocerías). Una carrocería sin vehículo no sirve para autocostear (Cupo queda <c>PorCostear</c> igual) y
-    /// la línea debe ir como "sin vehículo", igual que antes.</item>
+    /// <item><b>Camión del cubicador</b> (con <c>idRecomendacionVehiculo</c>): <c>nunca</c> → sin vehículo ni carrocería (interruptor de
+    /// emergencia: ni siquiera se consulta el alias); <c>siempre</c> (por defecto desde #194) → el código resuelto o, si ni el catálogo ni
+    /// el alias lo conocen, tal cual (Nexo lo pone en cuarentena y lo normaliza en su bandeja, NEXO #322); <c>solo_conocidos</c> → el
+    /// vehículo solo si se resolvió y, solo entonces, la carrocería si está en la lista de carrocerías de Nexo
+    /// (<see cref="clsCatalogosCaptura.Carrocerias"/>: Nexo no publica un catálogo de carrocerías y el diccionario no las cubre); si no,
+    /// la línea va sin vehículo ni carrocería (la resuelve la Mesa).</item>
     /// <item><b>Camión sin recomendación</b> (el vehículo digitado del respaldo, <c>Captura:AceptarVehiculoCliente</c>): la captura ya
-    /// exigió que sea un código de Nexo (<c>clsValidadorCatalogosCaptura</c>), así que viaja siempre, en la forma de Nexo si se puede
-    /// resolver y si no tal cual. No se quita: el emparejamiento compara su vehículo con el de la línea de Nexo.</item>
+    /// exigió que sea un código de Nexo o un alias que resuelve a uno (<c>clsValidadorCatalogosCaptura</c>), así que viaja siempre,
+    /// resuelto si se puede y si no tal cual. No se quita: el emparejamiento compara su vehículo con el de la línea de Nexo.</item>
     /// </list>
+    /// La carrocería, en la forma de Nexo si está en su lista y si no tal cual (con <c>siempre</c> o en el respaldo).
     /// </summary>
     internal static (string? TipoVehiculo, string? Carroceria) VehiculoLinea(
-        clsLineaSolicitudCosteo linea, ModoCodigosCubicador modo, IReadOnlyCollection<string>? vehiculosNexo)
+        clsLineaSolicitudCosteo linea, ModoCodigosCubicador modo, IReadOnlyCollection<string>? vehiculosNexo,
+        Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo? alias = null)
     {
         var tipo = string.IsNullOrWhiteSpace(linea.TipoVehiculo) ? null : linea.TipoVehiculo;
         var carroceria = string.IsNullOrWhiteSpace(linea.Carroceria) ? null : linea.Carroceria;
-        var tipoNexo = clsCodigosConocidosNexo.Resolver(vehiculosNexo, tipo);
+        if (linea.IdRecomendacionVehiculo is not null && modo == ModoCodigosCubicador.Nunca)
+        {
+            return (null, null);
+        }
+
+        var tipoNexo = Aplicacion.CatalogosFlete.Services.clsResolucionCodigosNexo.Vehiculo(vehiculosNexo, alias, tipo)?.Codigo;
         var carroceriaNexo = clsCodigosConocidosNexo.Carroceria(carroceria);
         if (linea.IdRecomendacionVehiculo is null || modo == ModoCodigosCubicador.Siempre)
         {
             return (tipoNexo ?? tipo, carroceriaNexo ?? carroceria);
         }
 
-        return modo == ModoCodigosCubicador.SoloConocidos && tipoNexo is not null ? (tipoNexo, carroceriaNexo) : (null, null);
+        return tipoNexo is not null ? (tipoNexo, carroceriaNexo) : (null, null);
     }
 
-    /// <summary>Con <c>solo_conocidos</c>, deja en el log los códigos del cubicador que Nexo no conoce (su línea viajó sin vehículo).</summary>
-    private void AvisarCodigosDesconocidos(clsSolicitudNexo solicitud, IReadOnlyCollection<string>? vehiculosNexo)
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron con OTRO código porque el alias los tradujo (<c>C2</c> → <c>2</c>).
+    /// No incluye la misma sigla escrita de otra forma (<c>2s3</c> → <c>2S3</c>): esa ya la reconoce
+    /// <see cref="clsVehiculoLineaSolicitud.MismoCodigo"/>. El envío la registra con el <c>solicitudNexoId</c>
+    /// (<see cref="clsEnvioNexoRegistrado"/>) y el polling compara contra ella: sin esto, el emparejamiento por contenido no reconocería la
+    /// línea (<c>C2</c> contra <c>2</c>) y la regla "la Mesa manda" (D2) tomaría el <c>2</c> de Nexo como un cambio de la Mesa (y borraría
+    /// los porcentajes de llenado del cubicador).
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> EquivalenciasVehiculo(
+        clsSolicitudNexo solicitud, ModoCodigosCubicador modo, IReadOnlyCollection<string>? vehiculosNexo,
+        Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo? alias)
     {
-        if (_modoCodigosCubicador != ModoCodigosCubicador.SoloConocidos)
+        var equivalencias = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var linea in solicitud.Lineas)
+        {
+            if (string.IsNullOrWhiteSpace(linea.TipoVehiculo)
+                || VehiculoLinea(linea, modo, vehiculosNexo, alias).TipoVehiculo is not { } enviado
+                || clsVehiculoLineaSolicitud.MismoCodigo(linea.TipoVehiculo, enviado))
+            {
+                continue;
+            }
+
+            equivalencias.TryAdd(linea.TipoVehiculo.Trim(), enviado);
+        }
+
+        return equivalencias;
+    }
+
+    /// <summary>
+    /// Deja en el log los códigos del cubicador que ni el catálogo ni el alias de Nexo conocen: con <c>solo_conocidos</c> su línea viajó sin
+    /// vehículo; con <c>siempre</c>, tal cual (Nexo la pone en cuarentena para normalizarla en su bandeja, NEXO #322). Y los que resolvió
+    /// el alias.
+    /// </summary>
+    private void AvisarCodigosDesconocidos(
+        clsSolicitudNexo solicitud, IReadOnlyCollection<string>? vehiculosNexo, Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo? alias)
+    {
+        if (_modoCodigosCubicador == ModoCodigosCubicador.Nunca)
         {
             return;
         }
 
-        var desconocidos = solicitud.Lineas
-            .Where(l => l.IdRecomendacionVehiculo is not null && !string.IsNullOrWhiteSpace(l.TipoVehiculo)
-                && VehiculoLinea(l, _modoCodigosCubicador, vehiculosNexo).TipoVehiculo is null)
-            .Select(l => l.TipoVehiculo!.Trim())
+        var resoluciones = solicitud.Lineas
+            .Where(l => l.IdRecomendacionVehiculo is not null && !string.IsNullOrWhiteSpace(l.TipoVehiculo))
+            .Select(l => (Codigo: l.TipoVehiculo!.Trim(), Resuelto: Aplicacion.CatalogosFlete.Services.clsResolucionCodigosNexo.Vehiculo(vehiculosNexo, alias, l.TipoVehiculo)))
             .ToList();
+        var desconocidos = resoluciones.Where(r => r.Resuelto is null).Select(r => r.Codigo).ToList();
         if (desconocidos.Count > 0)
         {
-            logger.LogInformation(
-                "{Lineas} línea(s) de camiones del cubicador viajan a Nexo sin vehículo: Nexo no conoce el código ({Codigos}; Nexo:EnviarCodigosCubicador = solo_conocidos).",
-                desconocidos.Count, string.Join(", ", desconocidos.Distinct(StringComparer.Ordinal)));
+            var codigos = string.Join(", ", desconocidos.Distinct(StringComparer.Ordinal));
+            if (_modoCodigosCubicador == ModoCodigosCubicador.Siempre)
+            {
+                logger.LogInformation(
+                    "{Lineas} línea(s) de camiones del cubicador viajan a Nexo con un código que ni su catálogo ni su diccionario de alias conocen ({Codigos}; Nexo:EnviarCodigosCubicador = siempre): Nexo las pone en cuarentena.",
+                    desconocidos.Count, codigos);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "{Lineas} línea(s) de camiones del cubicador viajan a Nexo sin vehículo: ni su catálogo ni su diccionario de alias conocen el código ({Codigos}; Nexo:EnviarCodigosCubicador = solo_conocidos).",
+                    desconocidos.Count, codigos);
+            }
+        }
+
+        var porAlias = resoluciones.Where(r => r.Resuelto?.Fuente == Aplicacion.CatalogosFlete.Services.FuenteCodigoNexo.Alias)
+            .Select(r => $"{r.Codigo} → {r.Resuelto!.Codigo}").Distinct(StringComparer.Ordinal).ToList();
+        if (porAlias.Count > 0)
+        {
+            logger.LogInformation("Códigos del cubicador resueltos con el diccionario de alias de Nexo: {Alias}.", string.Join(", ", porAlias));
+        }
+    }
+
+    /// <summary>
+    /// HU-031.1 (#194): el diccionario de alias de Nexo, solo si alguna línea que viaja con vehículo trae un código que el catálogo oficial
+    /// no reconoce. <c>null</c> si no hace falta o no está disponible (Nexo caído y sin copia, Nexo sin #321): el envío NUNCA falla por
+    /// esto; sigue con el modo configurado sin alias y deja un warning.
+    /// </summary>
+    private async Task<Aplicacion.CatalogosFlete.DTOs.clsDiccionarioAliasNexo?> AliasAsync(
+        Guid usuarioId, clsSolicitudNexo solicitud, IReadOnlyCollection<string>? vehiculosNexo, CancellationToken cancellationToken)
+    {
+        if (alias is null || !solicitud.Lineas.Any(l => !string.IsNullOrWhiteSpace(l.TipoVehiculo)
+                && (l.IdRecomendacionVehiculo is null || _modoCodigosCubicador != ModoCodigosCubicador.Nunca)
+                && clsCodigosConocidosNexo.Resolver(vehiculosNexo, l.TipoVehiculo) is null))
+        {
+            return null;
+        }
+
+        try
+        {
+            var resultado = await alias.ObtenerAsync(usuarioId, cancellationToken);
+            if (resultado.EsExitoso)
+            {
+                return resultado.Valor;
+            }
+
+            logger.LogWarning(
+                "Sin el diccionario de alias de Nexo ({Codigo}): los códigos que el catálogo no conoce siguen sin alias (Nexo:EnviarCodigosCubicador = {Modo}).",
+                resultado.Error.Codigo, _modoCodigosCubicador);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Falló la lectura del diccionario de alias de Nexo ({Tipo}): se envía sin alias.", ex.GetType().Name);
+            return null;
         }
     }
 

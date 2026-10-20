@@ -75,6 +75,7 @@ public static class clsDependenciasAplicacion
 
         // Costeo en Nexo (HU-005.5 a HU-005.14, ADR-015): envío de la solicitud y polling (el worker lo registra Infraestructura). El adaptador de Nexo lo registra Infraestructura.
         servicios.AddScoped<IClsValidadorCatalogosCaptura, clsValidadorCatalogosCaptura>();
+        servicios.AddScoped<CatalogosFlete.Services.IClsResolucionAliasService, CatalogosFlete.Services.clsResolucionAliasService>();
         servicios.AddScoped<IClsEnvioCosteoService, clsEnvioCosteoService>();
         servicios.AddScoped<IClsPollingCosteoService, clsPollingCosteoService>();
         servicios.AddSingleton<IClsPrecioCosteoService, clsPrecioCosteoService>();

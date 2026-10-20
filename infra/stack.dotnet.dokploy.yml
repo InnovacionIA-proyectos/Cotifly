@@ -117,14 +117,15 @@ services:
       # Nexo__UrlBase es la RAÍZ del servicio (https://<host-nexo>), sin "/api": el cliente agrega las rutas /api/...
       Nexo__UrlBase: ${Nexo__UrlBase:-}
       Nexo__MinutosCacheMunicipios: ${Nexo__MinutosCacheMunicipios:-60}
-      # HU-014 (#188, decisión del 2026-10-19): banderas de Nexo y de la captura con valor EXPLÍCITO, para que un cambio del valor por
-      # defecto del código no cambie el ambiente sin querer. EnviarCodigosCubicador en solo_conocidos ("enviar solo códigos conocidos":
-      # el vehículo del cubicador viaja solo si Nexo conoce el código; siempre | solo_conocidos | nunca, true = siempre, false =
-      # solo_conocidos; siempre cuando Nexo tenga la bandeja de cuarentena, S5-HU-19.3); AceptarVehiculoCliente en true (el vehículo
-      # digitado solo va en el camión del respaldo y debe ser un código de Nexo). Ver DEPLOY.md.
+      # HU-014 (#188): banderas de Nexo y de la captura con valor EXPLÍCITO, para que un cambio del valor por defecto del código no
+      # cambie el ambiente sin querer. HU-031.1 (#194, decisión del 2026-10-20): EnviarCodigosCubicador en siempre (Nexo ya tiene la
+      # bandeja de normalización, NEXO #322): el código del cubicador se resuelve con el catálogo y el diccionario de alias de Nexo y
+      # viaja oficial; el que ninguno conoce viaja tal cual y Nexo lo normaliza. siempre | solo_conocidos | nunca; true = siempre (un
+      # true que quede en Dokploy ya no es un riesgo), false = solo_conocidos. AceptarVehiculoCliente en true (el vehículo digitado solo
+      # va en el camión del respaldo y debe ser un código de Nexo o un alias que resuelve a uno). Ver DEPLOY.md.
       Nexo__EnviarGrupoRutaId: ${Nexo__EnviarGrupoRutaId:-true}
       Nexo__EnviarDatosCubicador: ${Nexo__EnviarDatosCubicador:-true}
-      Nexo__EnviarCodigosCubicador: ${Nexo__EnviarCodigosCubicador:-solo_conocidos}
+      Nexo__EnviarCodigosCubicador: ${Nexo__EnviarCodigosCubicador:-siempre}
       Captura__AceptarVehiculoCliente: ${Captura__AceptarVehiculoCliente:-true}
       # Polling del costeo en Nexo (HU-005.6/005.8, clsOpcionesCosteoNexo). Encendido en producción; sin Nexo__UrlBase no
       # corre de todos modos. Staging lo trae apagado mientras no se confirme que no comparte dbo_cotifly (DEPLOY.md §2.2).

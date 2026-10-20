@@ -50,13 +50,12 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         await EnviarYLeerConBanderasAsync(enviarCodigos: "nunca", leerConCodigos: "nunca");
 
     /// <summary>
-    /// HU-014 (#188, decisión del 2026-10-19: "enviar solo códigos conocidos"): SIN configurar <c>Nexo:EnviarCodigosCubicador</c> (el
-    /// valor por defecto, <c>solo_conocidos</c>) los códigos del cubicador que están en el catálogo de Nexo (aquí los tres: 3S3, 2S3 y 2)
-    /// viajan con su carrocería; el envío se registra como "no viajaron todos" y el polling empareja cada línea con su camión aunque la
-    /// Mesa le cambie el vehículo.
+    /// HU-031.1 (#194, decisión del 2026-10-20): SIN configurar <c>Nexo:EnviarCodigosCubicador</c> (el valor por defecto, <c>siempre</c>)
+    /// los códigos del cubicador viajan con su carrocería; el envío se registra como "viajaron todos" y el polling empareja cada línea con
+    /// su camión.
     /// </summary>
     [Fact]
-    public async Task HU014_ConLaBanderaDeCodigosPorDefectoViajanLosCodigosConocidosYCadaCamionRecibeSuFlete() =>
+    public async Task HU0311_ConLaBanderaDeCodigosPorDefectoViajanTodosYCadaCamionRecibeSuFlete() =>
         await EnviarYLeerConBanderasAsync(enviarCodigos: null, leerConCodigos: null);
 
     [Theory]
@@ -73,9 +72,9 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
     /// </summary>
     private async Task EnviarYLeerConBanderasAsync(string? enviarCodigos, string? leerConCodigos)
     {
-        // null = sin configurar la bandera (valor por defecto del código, solo_conocidos desde #188); false = solo_conocidos; true = siempre.
+        // null = sin configurar la bandera (valor por defecto del código, siempre desde #194); false = solo_conocidos; true = siempre.
         var viajan = enviarCodigos is not "nunca";
-        var todos = enviarCodigos is "true" or "siempre";
+        var todos = enviarCodigos is null or "true" or "siempre";
         // Los tres códigos (3S3, 2S3, 2) están en el catálogo del Nexo falso: con solo_conocidos viajan como con siempre. Con nunca, la
         // línea del camión del cubicador va sin tipoVehiculo ni carroceria (la resuelve la Mesa). Cotifly guarda los códigos y, si no
         // viajaron todos, el polling empareja sin compararlos, aunque la Mesa le ponga otro vehículo.
@@ -133,7 +132,7 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         _cubicador.RecomendarSiempre(
             clsCubicadorFalso.Vehiculo("3s3", "FURGON_REFRIGERADO", 16_000m),
             clsCubicadorFalso.Vehiculo("2S2", "ESTACAS", 12_000m));
-        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = null });
+        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = "solo_conocidos" });
         var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
         var formulario = JsonNode.Parse(Formulario())!;
         var ruta = formulario["rutas"]![0]!.AsObject();
@@ -174,7 +173,61 @@ public sealed class clsCubicadorEndpointsTests : IDisposable
         await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
 
         _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("2S2");
-        _nexo.Cuarentenas.Should().Be(1, "el modo siempre es para cuando Nexo tenga la bandeja de cuarentena (S5-HU-19.3)");
+        _nexo.Cuarentenas.Should().Be(1, "con siempre, un código que ni el catálogo ni el alias conocen va a la bandeja de normalización de Nexo (#322)");
+    }
+
+    /// <summary>
+    /// HU-031.1 (#194), de punta a punta con la bandera por defecto (<c>siempre</c>): el cubicador recomienda <c>C2</c>, que el catálogo de
+    /// Nexo no conoce pero su diccionario de alias traduce a <c>2</c>. Viaja <c>2</c>, Nexo lo autocostea (sin cuarentena), Cotifly guarda
+    /// <c>C2</c> con sus porcentajes de llenado y varias lecturas del polling no lo cambian (no es un "cambio de la Mesa", sin oscilación).
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("solo_conocidos")]
+    public async Task HU0311_UnCodigoQueTraduceElAliasViajaOficialSeAutocosteaYNoOscilaEnElPolling(string? modo)
+    {
+        _nexo.AutoCostearSegunContrato = true;
+        _nexo.Alias.Add(("C2", "Vehiculo", "2", true));
+        _cubicador.RecomendarSiempre(
+            clsCubicadorFalso.Vehiculo("3S3", "FURGON", 16_000m, 62.5m, 81.25m, 47.06m),
+            clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 12_000m, 18m, 60m, 75m));
+        var api = Api(new Dictionary<string, string?> { ["Nexo:EnviarCodigosCubicador"] = modo });
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        var folio = (await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created)).GetProperty("folio").GetString()!;
+
+        _nexo.UltimaAlta!["lineas"]!.AsArray().Select(l => l!["tipoVehiculo"]!.GetValue<string>()).Should().Equal("3S3", "2");
+        _nexo.Cuarentenas.Should().Be(0, "el alias tradujo C2 a un código oficial");
+        var solicitud = _nexo.SolicitudesCreadas[^1];
+        _nexo.EstadosLinea(solicitud).Should().Equal("AutoResuelta", "AutoResuelta");
+
+        for (var ciclo = 0; ciclo < 3; ciclo++)
+        {
+            await api.ProcesarPollingAsync(folio);
+            (await clsBaseDatosPruebas.EscalarAsync<string>(Cadena,
+                "SELECT STRING_AGG(CONCAT(v.tipoVehiculo, '|', v.carroceria, '|', COALESCE(CAST(v.porcentajeLlenadoPeso AS nvarchar(20)), 'null'), '|', "
+                + "COALESCE(CAST(v.costoFlete AS nvarchar(30)), 'sin costo'), '|', CASE WHEN v.lineaSolicitudNexoId IS NULL THEN 'sin linea' ELSE 'con linea' END), ',') "
+                + "WITHIN GROUP (ORDER BY v.pesoKg DESC) " + DeLosCamiones(folio)))
+                .Should().Be("3S3|FURGON|47.06|2550000.00|con linea,C2|ESTACAS|75.00|2550000.00|con linea",
+                    "Cotifly conserva C2 y su llenado, empareja con la línea que dice 2 y no oscila (ciclo {0})", ciclo);
+        }
+    }
+
+    [Fact]
+    public async Task HU0311_ConElAliasCaidoElEnvioSigueYElCodigoViajaTalCual()
+    {
+        _nexo.AutoCostearSegunContrato = true;
+        _nexo.CatalogosFallidos.Add("alias");
+        _cubicador.RecomendarSiempre(clsCubicadorFalso.Vehiculo("C2", "ESTACAS", 28_000m));
+        var api = Api();
+        var ana = await api.IniciarSesionAsync(clsBaseDatosPruebas.RolExternoComercial);
+
+        using var envio = await api.EnviarAsync(_post, "/web/solicitudes-costeo", ana.Access, Formulario());
+        await VerificarContratoAsync(envio, "/web/solicitudes-costeo", _post, HttpStatusCode.Created);
+
+        _nexo.UltimaAlta!["lineas"]![0]!["tipoVehiculo"]!.GetValue<string>().Should().Be("C2");
+        _nexo.Cuarentenas.Should().Be(1, "sin alias, con siempre, Nexo la normaliza en su bandeja");
     }
 
     [Fact]

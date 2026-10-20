@@ -1187,6 +1187,75 @@ paths:
         '401':
           $ref: '#/components/responses/SesionExpirada'
 
+  /web/alias/resolver:
+    get:
+      operationId: resolverAlias
+      tags: [web]
+      summary: Resolver tipos de vehículo o clases de contenedor escritos a mano (catálogo oficial y diccionario de alias de Nexo)
+      description: |
+        **HU-031.1 (#194).** El frontend no puede llamar a Nexo (CORS e identidad por header): el backend resuelve por él un texto
+        libre (por ejemplo, el de una fila del Excel de una licitación) con la misma regla que la captura y el envío a Nexo:
+        1. el **catálogo oficial** de Nexo (`tipo=vehiculo`: `GET /api/catalogos/tipos-vehiculo`, sin distinguir mayúsculas, tildes
+           ni `_`/`-`; `tipo=contenedor`: `GET /api/catalogos/clases-contenedor` exacto, más la lista provisional G15);
+        2. si no está, el **diccionario de alias** de Nexo (NEXO #321, `GET /api/catalogos/alias`; "TB", "T.B", "Turbo" → `2L2`;
+           "40 HC" → `CNT40.HC`), con la normalización de Nexo (espacios colapsados, sin espacio antes de `.` o `,`, `_` y `-` como
+           espacio, sin tildes, mayúsculas). Un alias inactivo o del otro tipo no resuelve.
+
+        **En lote.** `texto` se repite (`?tipo=vehiculo&texto=TB&texto=3s3`, hasta 200): una sola llamada para todas las filas, en
+        el mismo orden (los repetidos también). Cotifly descarga el diccionario completo una vez (caché `Nexo:MinutosCacheCatalogos`,
+        copia de respaldo hasta `Nexo:HorasCatalogosVencidos`), así que una licitación grande no hace una petición a Nexo por fila.
+        Si todos los textos son códigos del catálogo, ni siquiera se consulta el diccionario.
+
+        `reconocido: false` = ni el catálogo ni el diccionario lo conocen: en la captura, un `tipo_vehiculo` o una
+        `clase_contenedor` así se rechazan (400 `CODIGO_NO_CATALOGO`); un vehículo del cubicador así viaja tal cual a Nexo y queda en
+        su bandeja de normalización (`Nexo:EnviarCodigosCubicador = siempre`).
+      parameters:
+        - name: tipo
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [vehiculo, contenedor]
+          description: '`vehiculo` (o `vehículo`) o `contenedor`, sin distinguir mayúsculas.'
+        - name: texto
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 200
+            items:
+              type: string
+              maxLength: 100
+          description: Uno o varios textos a resolver (se recortan; ninguno vacío).
+      security:
+        - bearer: []
+      responses:
+        '200':
+          description: Un resultado por texto, en el mismo orden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasResueltos'
+        '400':
+          description: '`tipo` inválido, sin `texto`, uno vacío, más de 200 o uno de más de 100 caracteres.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorWeb'
+        '503':
+          description: |
+            `CATALOGOS_FLETE_NO_DISPONIBLE`: hace falta el catálogo de Nexo (o, con `tipo=contenedor`, el de clases de contenedor) o
+            su diccionario de alias y no hay una copia utilizable. Nunca se responde "no reconocido" por una caída.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorNegocio'
+        '401':
+          $ref: '#/components/responses/SesionExpirada'
+
   /web/cubicacion:
     post:
       operationId: cubicar
@@ -4809,6 +4878,39 @@ components:
         etiqueta:
           type: string
           description: Texto legible para mostrar en el formulario.
+
+    AliasResueltos:
+      type: object
+      description: HU-031.1 (#194). Respuesta de `GET /web/alias/resolver`.
+      required: [tipo, resultados]
+      properties:
+        tipo:
+          type: string
+          enum: [vehiculo, contenedor]
+        resultados:
+          type: array
+          items:
+            $ref: '#/components/schemas/AliasResuelto'
+
+    AliasResuelto:
+      type: object
+      required: [texto, reconocido, codigo, fuente]
+      properties:
+        texto:
+          type: string
+          description: El texto pedido, recortado.
+        reconocido:
+          type: boolean
+          description: '`false` si ni el catálogo oficial ni el diccionario de alias de Nexo lo conocen.'
+        codigo:
+          type: string
+          nullable: true
+          description: El código oficial de Nexo (`2L2`, `CNT40.HC`), el que hay que guardar y enviar; `null` si no se reconoce.
+        fuente:
+          type: string
+          nullable: true
+          enum: [catalogo, alias, null]
+          description: '`catalogo` (ya era un código oficial), `alias` (lo tradujo el diccionario) o `null`.'
 
     CatalogosFlete:
       type: object

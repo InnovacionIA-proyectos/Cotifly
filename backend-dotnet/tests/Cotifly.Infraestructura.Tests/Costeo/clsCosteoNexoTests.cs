@@ -502,16 +502,16 @@ public sealed class clsCosteoNexoTests : IDisposable
     }
 
     [Fact]
-    public void HU014_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSoloConocidosPorDefecto()
+    public void HU0311_GrupoRutaYDatosDelCubicadorEncendidosYCodigosDelCubicadorSiemprePorDefecto()
     {
-        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-014 (#188, decisión del 2026-10-19,
-        // "enviar solo códigos conocidos"): los códigos del cubicador viajan solo si Nexo los conoce.
+        // HU-023 (#176): Nexo ya desplegó grupoRutaId, idRecomendacionVehiculo y numeroLinea. HU-031.1 (#194, decisión del 2026-10-20):
+        // los códigos del cubicador viajan siempre (resueltos por catálogo o alias; los demás, a la bandeja de normalización de Nexo).
         var opciones = new clsOpcionesNexo();
 
         opciones.EnviarGrupoRutaId.Should().BeTrue();
         opciones.EnviarDatosCubicador.Should().BeTrue();
         opciones.EnviarCodigosCubicador.Should().BeNull();
-        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.SoloConocidos);
+        opciones.ModoCodigosCubicador.Should().Be(ModoCodigosCubicador.Siempre);
     }
 
     [Fact]
@@ -545,9 +545,8 @@ public sealed class clsCosteoNexoTests : IDisposable
         Guid.TryParse(grupos[1], out _).Should().BeTrue();
         lineas.Select(l => l.GetProperty("idRecomendacionVehiculo").GetString()).Should().Equal(
             r1.ToString("D"), r2a.ToString("D"), r2b.ToString("D"), r3.ToString("D"));
-        // HU-014 (#188): por defecto (solo_conocidos) y sin catálogo de tipos de vehículo de Nexo, ningún código es conocido: no viajan;
-        // el camión va por su idRecomendacionVehiculo y su peso.
-        lineas.Select(l => l.TryGetProperty("tipoVehiculo", out _) || l.TryGetProperty("carroceria", out _)).Should().OnlyContain(conCodigos => !conCodigos);
+        // HU-031.1 (#194): por defecto (siempre) y sin catálogo ni alias de Nexo, los códigos del cubicador viajan tal cual.
+        lineas.Select(l => l.GetProperty("tipoVehiculo").GetString()).Should().Equal("3S3", "3S3", "C2", "2S2");
         lineas.Skip(1).Take(2).Select(l => l.GetProperty("peso").GetDecimal()).Should().Equal([20_000m, 4_000m], "con varios camiones, el peso de cada uno");
     }
 

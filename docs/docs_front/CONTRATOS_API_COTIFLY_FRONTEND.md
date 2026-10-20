@@ -750,6 +750,7 @@ Resumen (49 endpoints):
 | 47 | `GET /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 48 | `PUT /web/cotizaciones/{folio}/solicitud` | Ambos (dueño) | Captura y costeo (HU-028) |
 | 49 | `GET /web/cotizaciones/{folio}` | Dueño o gerente de su regional (solo consulta) | Cotizaciones (HU-027.1, #179) |
+| 50 | `GET /web/alias/resolver` | Ambos | Catálogos (HU-031.1, #194) |
 
 Retirados (responden 404): `GET /web/metricas/actividad`, `GET /web/metricas/ajustes-margen`, `POST /chat/events`, `POST /web/login`.
 
@@ -998,6 +999,48 @@ Catálogo de servicios conexos de NEXO, **sin costos**. Solo servicios activos.
 | 400 | `ErrorWeb` | Filtro fuera de límites |
 | 403 | `NEXO_SIN_PERMISO` | El comercial no tiene el rol requerido en NEXO: avisar a soporte |
 | 503 | `NEXO_NO_DISPONIBLE` | Reintentar |
+
+#### 4.2.8 `GET /web/alias/resolver` (HU-031.1, #194)
+
+Traduce un **tipo de vehículo** o una **clase de contenedor** escritos a mano (por ejemplo, las columnas del Excel de una licitación) al
+código oficial de NEXO, con la misma regla que usa el servidor al validar la captura y al enviar a NEXO: primero el catálogo oficial y,
+si no está, el **diccionario de alias** de NEXO ("TB", "T.B", "Turbo" → `2L2`; "40 HC" → `CNT40.HC`). El frontend no puede llamar a
+NEXO directamente; este endpoint es el intermediario.
+
+- **Rol:** ambos.
+
+| Parámetro | En | Obligatorio | Reglas |
+|---|---|---|---|
+| `tipo` | query | Sí | `vehiculo` o `contenedor` (sin distinguir mayúsculas) |
+| `texto` | query, repetible | Sí | Uno o varios: `?tipo=vehiculo&texto=TB&texto=3s3`. Hasta 200 por llamada, cada uno de hasta 100 caracteres, ninguno vacío |
+
+**En lote:** manda todas las filas en una sola llamada (no una por fila). La respuesta trae un resultado por `texto`, en el mismo orden
+(los repetidos también).
+
+```json
+{
+  "tipo": "vehiculo",
+  "resultados": [
+    { "texto": "TB", "reconocido": true, "codigo": "2L2", "fuente": "alias" },
+    { "texto": "3s3", "reconocido": true, "codigo": "3S3", "fuente": "catalogo" },
+    { "texto": "Tractomula", "reconocido": false, "codigo": null, "fuente": null }
+  ]
+}
+```
+
+- `codigo` es lo que hay que guardar en la fila y enviar en `tipo_vehiculo`/`clase_contenedor`. `fuente`: `catalogo` (ya era un
+  código oficial, quizá con otra escritura), `alias` (lo tradujo el diccionario) o `null`.
+- `reconocido: false`: ni el catálogo ni el diccionario lo conocen. Marcar la celda: la captura lo rechazaría (400
+  `CODIGO_NO_CATALOGO`). Para que el texto se reconozca, el administrador de tarifas de NEXO debe crear el alias.
+- Para el contenedor también reconoce la lista provisional de extradimensionado (`CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`).
+- La captura (`POST /web/solicitudes-costeo`, `POST /web/licitaciones`) ya acepta el alias directamente y lo guarda con el código
+  oficial: llamar a este endpoint sirve para **avisar antes** al comercial, no es obligatorio.
+
+| HTTP | Código | UI |
+|---|---|---|
+| 200 | `AliasResueltos` | Reemplazar el texto por `codigo` cuando `reconocido`; marcar los no reconocidos |
+| 400 | `ErrorWeb` | `tipo` inválido, sin `texto`, uno vacío, más de 200 o uno de más de 100 caracteres: error de programación |
+| 503 | `CATALOGOS_FLETE_NO_DISPONIBLE` | No se pudo consultar NEXO (ni hay copia): no marcar nada como "no reconocido"; ofrecer Reintentar |
 
 ### 4.3 Cubicación
 
@@ -1261,7 +1304,7 @@ Cada ruta (`RutaCapturaWeb`):
 | `peso_con_tara_kg` | número o null | No | **Solo con `clase_viaje = Contenedor`** (HU-030.1, #184). 0 a 999.999,99 con 2 decimales. Peso total de la ruta **con la tara** de los contenedores, que escribe el comercial (campo "Peso total con tara"; valor inicial sugerido: `peso_kg`). No puede ser menor que el peso de carga (`peso_kg` o la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de viaje: `CAMPO_NO_APLICA`. No va al cubicador; va a NEXO como peso de las líneas de la ruta (ver 3.8) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200 |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 por ruta, sin repetir el mismo servicio |
-| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo). Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente` (encendida por defecto) van en el camión del respaldo y **deben ser códigos que NEXO conozca**: `tipo_vehiculo` del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`) y `carroceria` de la lista de carrocerías de NEXO. Se aceptan con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio (`FURGON_REFRIGERADO` = `FURGON REFRIGERADO`). Un código que solo conoce el cubicador (HU-014 #188) es **400** `SOLICITUD_COSTEO_INVALIDA` (`CODIGO_NO_CATALOGO` en `detalle.errores`) con el campo en el mensaje |
+| `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo). Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente` (encendida por defecto) van en el camión del respaldo y **deben ser códigos que NEXO conozca**: `tipo_vehiculo` del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`) y `carroceria` de la lista de carrocerías de NEXO. Se aceptan con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio (`FURGON_REFRIGERADO` = `FURGON REFRIGERADO`). HU-031.1 (#194): también se acepta un **alias** que el diccionario de NEXO traduce a un código oficial ("TB" → `2L2`; ver `GET /web/alias/resolver`), y se guarda con ese código. Un código que solo conoce el cubicador y que no es alias (HU-014 #188) es **400** `SOLICITUD_COSTEO_INVALIDA` (`CODIGO_NO_CATALOGO` en `detalle.errores`) con el campo en el mensaje |
 
 Cada mercancía (`PosicionCargaWeb`):
 
@@ -2957,7 +3000,7 @@ hasta reintentar), `completa`. `progreso_cubicacion = null` si ninguna ruta pas�
 |---|---|
 | `clase_viaje` | `valor` de `clases_viaje` (`GET /web/catalogos-flete`): `Contenedor`, `Cupo`, `Carga Suelta`, `Extradimensionado`. Comparación exacta, distingue mayúsculas |
 | `tipologia` | `Contenedor`, `CargaSuelta`, `GranelSolido`, `GranelLiquido`, `Alimentos`, `Refrigerados`, `CargaSeca` |
-| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
+| `clase_contenedor` | `valor` de `clases_contenedor` (`GET /web/catalogos-flete`, HU-027.1): `CNT20.IT`, `CNT20.RE`, `CNT20.ST`, `CNT40.HC`, `CNT40.RE`. Además, la lista provisional de extradimensionado `CNT20.FT`, `CNT20.OP`, `CNT40.FT`, `CNT40.OP`, que no viene en el catálogo. HU-031.1 (#194): también un **alias** del diccionario de NEXO que traduce a una de ellas ("40 HC" → `CNT40.HC`), que se guarda con el código. Obligatoria con `clase_viaje = Contenedor` y solo admitida con ella |
 
 Enviar siempre el **código**, nunca la etiqueta ni texto libre (`CODIGO_NO_CATALOGO` o `SOLICITUD_COSTEO_INVALIDA`).
 
@@ -3231,6 +3274,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 47 | **Nuevo** `GET /web/cotizaciones/{folio}` (HU-027.1, #179): detalle completo en una llamada (`cotizacion` + `costeo` + `captura` + `totales`), con `ETag`; también para el gerente de la regional, en solo consulta (`solo_lectura`) | Agrega | "Ver detalle" (#75) y su recarga con una sola llamada; con `solo_lectura`, esconder las acciones |
 | 48 | **#191 (HU-026.1):** la `Idempotency-Key` de la captura, los conexos, la re-solicitud y `PUT .../solicitud` se guarda en la base (sobrevive a un reinicio; la comparten las réplicas). Una repetición que cae en otra réplica mientras la primera sigue en curso responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada; en la misma réplica espera y recibe la respuesta de la primera, como antes. Los números del cuerpo se comparan por valor (`1.5` = `1.50`) | Agrega | Tratar `CAPTURA_EN_CURSO` también en conexos, re-solicitud y edición: esperar unos segundos y repetir con la MISMA clave (o recargar el folio) |
 | 49 | **HU-030.1 (#184):** campo nuevo opcional `peso_con_tara_kg` por ruta (captura, licitación, `PUT .../solicitud` y `datos_carga`), **solo con `clase_viaje = Contenedor`**: el peso total con la tara de los contenedores. Va a NEXO como el peso de las líneas de la ruta (repartido por camión) y esas líneas viajan sin posiciones; al cubicador no va. `GET .../costeo` (y el detalle por folio) lo trae en la ruta y, por camión, el peso con tara que viajó. Códigos nuevos: `PESO_CON_TARA_MENOR_QUE_CARGA` y `CAMPO_NO_APLICA` en `peso_con_tara_kg` | Agrega | Campo "Peso total con tara" (#107) visible solo con Contenedor, con valor inicial `peso_kg` y una nota de que incluye la tara de todos los contenedores de la ruta |
+| 50 | **HU-031.1 (#194):** nuevo `GET /web/alias/resolver` (sección 4.2.8) y la captura acepta un alias de NEXO en `tipo_vehiculo` (respaldo) y `clase_contenedor`, guardándolo con el código oficial | Agrega | Al importar el Excel de una licitación, resolver las columnas de vehículo y contenedor en una sola llamada y marcar las celdas con `reconocido: false` |
 
 ---
 
@@ -3317,6 +3361,16 @@ fila_excel, campo, codigo, mensaje}`.
   (la tara repartida por partes iguales entre los camiones) y sin posiciones. Sin él, nada cambia. Al cubicador no va.
 - `GET .../costeo`: `rutas[].peso_con_tara_kg` y `rutas[].camiones[].peso_con_tara_kg`. Cambio con su "qué hacer": sección 7, fila 49
   y 3.8.
+
+**2026-10-20 (rama `194-alias-nexo`, HU-031.1, #194, NEXO #321 y #322).** Diccionario de alias de NEXO:
+
+- **Nuevo** `GET /web/alias/resolver?tipo=vehiculo|contenedor&texto=...` (en lote, hasta 200 textos): traduce un vehículo o una clase de
+  contenedor escritos a mano al código oficial de NEXO (sección 4.2.8).
+- La captura acepta en `tipo_vehiculo` (camión del respaldo) y `clase_contenedor` un **alias** que el diccionario de NEXO traduce a un
+  código oficial, y lo guarda con ese código. Antes era 400 `CODIGO_NO_CATALOGO`; un texto que tampoco es alias sigue siéndolo.
+- Sin cambios de forma en las demás respuestas. En el servidor, el vehículo del cubicador también se traduce con el alias al enviar a
+  NEXO (y `Nexo:EnviarCodigosCubicador` pasa a `siempre`): menos camiones llegan a NEXO sin vehículo, así que más rutas se autocostean.
+  `GET .../costeo` sigue mostrando el código del cubicador. Cambio con su "qué hacer": sección 7, fila 50.
 
 **2026-10-20 (rama `191-idempotencia-persistente`, HU-026.1 parte C, #191).** `Idempotency-Key` persistente:
 

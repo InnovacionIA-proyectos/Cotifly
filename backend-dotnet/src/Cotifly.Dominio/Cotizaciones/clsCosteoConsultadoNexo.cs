@@ -21,6 +21,13 @@ public sealed record clsCosteoConsultadoNexo(string EstadoSolicitud, IReadOnlyLi
     /// <c>false</c>, el emparejador no compara el vehículo de los camiones del cubicador (su línea iba vacía). Por defecto <c>true</c>.
     /// </summary>
     public bool CodigosCubicadorEnviados { get; init; } = true;
+
+    /// <summary>
+    /// HU-031.1 (#194): los códigos de vehículo de Cotifly que viajaron traducidos por el diccionario de alias de Nexo (código de Cotifly →
+    /// código enviado, <c>C2</c> → <c>2</c>), según lo registró el envío. El emparejamiento compara con el código enviado y la regla "la
+    /// Mesa manda" (D2) no toma la traducción como un cambio (<see cref="clsEquivalenciasVehiculo"/>). Vacío si ninguno.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> EquivalenciasVehiculo { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -154,16 +161,18 @@ public sealed record clsCamionParaEmparejar(Guid Id, string Origen, string Desti
     /// <remarks>
     /// Con <paramref name="codigosCubicador"/> en <c>false</c> (<c>Nexo:EnviarCodigosCubicador</c> distinta de <c>siempre</c>) un camión del
     /// cubicador pudo viajar sin vehículo ni carrocería (o con ellos escritos como en Nexo, HU-014 #188): se empareja sin ellos (lo que la
-    /// Mesa le ponga en Nexo no lo contradice).
+    /// Mesa le ponga en Nexo no lo contradice). HU-031.1 (#194): con <paramref name="equivalencias"/> el camión se compara con el código
+    /// que VIAJÓ (la traducción por alias, <see cref="clsEquivalenciasVehiculo.Enviado"/>), no con el que guarda Cotifly.
     /// </remarks>
-    public static clsCamionParaEmparejar Desde(clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion, bool codigosCubicador = true)
+    public static clsCamionParaEmparejar Desde(
+        clsLineaSolicitud ruta, clsVehiculoLineaSolicitud camion, bool codigosCubicador = true, IReadOnlyDictionary<string, string>? equivalencias = null)
     {
         ArgumentNullException.ThrowIfNull(ruta);
         ArgumentNullException.ThrowIfNull(camion);
         var sinCodigos = !codigosCubicador && camion.IdRecomendacionVehiculo is not null;
         return new clsCamionParaEmparejar(
             camion.Id, ruta.OrigenNombre ?? string.Empty, ruta.DestinoNombre ?? string.Empty, ruta.Tipologia,
-            sinCodigos ? null : camion.TipoVehiculo, sinCodigos ? null : camion.Carroceria,
+            sinCodigos ? null : clsEquivalenciasVehiculo.Enviado(camion.TipoVehiculo, equivalencias), sinCodigos ? null : camion.Carroceria,
             ruta.PesoLineaNexo(camion))
         {
             RutaId = ruta.Id,

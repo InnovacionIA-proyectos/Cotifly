@@ -334,6 +334,11 @@ public static class clsDependenciasInfraestructura
         servicios.AddHttpClient<clsCatalogosMaestrosNexo>(clsBuscadorClientesNexo.NombreCliente);
         servicios.TryAddScoped<IClsCatalogosMaestrosProvider>(clsFabricaCatalogosMaestros.Crear);
 
+        // HU-031.1 (#194): diccionario de alias de Nexo (NEXO #321), mismo cliente HTTP y las mismas reglas de caché que los maestros.
+        servicios.TryAddSingleton<clsCacheAliasNexo>();
+        servicios.AddHttpClient<clsAliasNexo>(clsBuscadorClientesNexo.NombreCliente);
+        servicios.TryAddScoped<IClsAliasNexoProvider>(clsFabricaAliasNexo.Crear);
+
         servicios.TryAddScoped<clsCatalogosFleteNoDisponible>();
         servicios.TryAddScoped<clsCatalogosFleteNexo>();
         servicios.TryAddScoped<IClsCatalogosFleteProvider>(clsFabricaCatalogosFlete.Crear);
