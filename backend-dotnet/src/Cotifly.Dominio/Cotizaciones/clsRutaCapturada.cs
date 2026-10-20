@@ -5,7 +5,9 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// vehículo, la carrocería, el peso total del vehículo (C2) y <paramref name="IdRecomendacionVehiculo"/> (C3); sin vehículo ni carrocería
 /// si el cubicador no seleccionó uno (lo resuelve la Mesa de Costeo de Nexo, decisión 7). Sin cubicador (respaldo) es uno solo, sin
 /// vehículo, con el peso total de la ruta. HU-023.1 (#156): con el contrato del cubicador, el camión trae además el volumen que lleva y
-/// los dos porcentajes de llenado (los guarda HU-023.3 con las columnas del script <c>02</c>).
+/// los dos porcentajes de llenado (los guarda HU-023.3 con las columnas del script <c>02</c>). HU-028.1 (#183, decisión del 2026-10-20):
+/// <paramref name="Rechazo"/> es el rechazo de la Mesa de Costeo que el camión trae de la cotización de origen al copiarse a una versión
+/// <c>-vN</c>: nace rechazado, con el mismo motivo y fecha, y NO viaja a Nexo (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>).
 /// </summary>
 public sealed record clsCamionPlaneado(
     string? TipoVehiculo,
@@ -14,7 +16,14 @@ public sealed record clsCamionPlaneado(
     Guid? IdRecomendacionVehiculo = null,
     decimal? VolumenTotalM3 = null,
     decimal? PorcentajeLlenadoVolumen = null,
-    decimal? PorcentajeLlenadoPeso = null);
+    decimal? PorcentajeLlenadoPeso = null,
+    clsRechazoHeredado? Rechazo = null);
+
+/// <summary>
+/// HU-028.1 (#183): el rechazo de la Mesa de Costeo de un camión que se copia a otra cotización (la <c>-vN</c> de la re-solicitud o de la
+/// edición): el motivo y la fecha en que Cotifly lo vio. Es trazabilidad: el camión copiado queda rechazado y fuera del envío.
+/// </summary>
+public sealed record clsRechazoHeredado(string? Motivo, DateTimeOffset? RechazadaAt);
 
 /// <summary>
 /// Una ruta lista para guardarse con <see cref="clsCotizacionSolicitud.RegistrarCaptura"/> (HU-021.6): la línea de la captura ya validada

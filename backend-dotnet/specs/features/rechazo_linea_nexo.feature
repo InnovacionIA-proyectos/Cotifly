@@ -58,3 +58,22 @@ Característica: Rechazo de una línea en la Mesa de Costeo de Nexo
     Y la licitación "L1" no tiene precio final y avisa que la Mesa rechazó todas las rutas
     Cuando "ana" intenta generar el PDF de la licitación "L1"
     Entonces la respuesta tiene el estado 409 con el código de negocio "SIN_RUTAS_COTIZABLES"
+
+  # Decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto". La ruta toda rechazada no viaja (no se manda a Nexo una ruta
+  # sin camiones): queda visible, rechazada y sin precio, y la respuesta lo avisa (aviso_rechazos). Para reconsiderarla, el comercial edita la
+  # solicitud con reincluir_rechazados (PUT /web/cotizaciones/{folio}/solicitud).
+  Escenario: Al re-solicitar, la ruta rechazada no viaja a Nexo, queda rechazada y la respuesta avisa qué se omitió
+    Cuando "ana" crea la licitación "L1" del cliente "900555111" con el pliego de 3 filas mapeadas
+    Y Nexo costea las líneas 1 y 2 de "L1" con un flete de 1000000
+    Y la Mesa de Costeo de Nexo rechaza la línea 3 de "L1" con el motivo "Sin operación en la ruta"
+    Y Nexo entrega la cotización de la licitación "L1"
+    Y el polling consulta a Nexo por "L1"
+    Entonces la licitación "L1" queda en el estado "entregada"
+    Cuando "ana" re-solicita el costeo de la licitación "L1" con el motivo "Actualizar tarifas"
+    Entonces la respuesta avisa que no se reenvió la ruta 3 con el motivo "Sin operación en la ruta"
+    Y Nexo recibió la solicitud nueva de "L1" con 2 líneas
+    Y la línea 3 de "L1" sigue rechazada con el motivo "Sin operación en la ruta" y sin línea en Nexo
+    Cuando Nexo costea las líneas 1 y 2 de "L1" con un flete de 1000000
+    Y el polling consulta a Nexo por "L1"
+    Entonces la licitación "L1" queda en el estado de costeo "autocosteo" con 2 líneas con precio
+    Y la línea 3 de "L1" está rechazada con el motivo "Sin operación en la ruta" y sin precio

@@ -90,6 +90,13 @@ public sealed class clsMetricasRepository(clsCotiflyDbContext contexto) : IClsMe
                    SUM(m.diferencia) AS sumaDiferencias, SUM(ABS(m.diferencia)) AS sumaDiferenciasAbs
             FROM dbo_cotifly.MargenAjustes m
             WHERE m.cotizacionId = v.id
+              -- HU-028.1 (#183, B2): como en SqlRutas, no cuentan los ajustes de una ruta que la Mesa rechazó después, ni (si TODAS las rutas
+              -- están rechazadas) los que no tienen ruta: así la cabecera suma exactamente lo que suman sus rutas.
+              AND NOT EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud x
+                              WHERE x.id = m.lineaSolicitudId AND x.cotizacionSolicitudId = m.cotizacionId AND x.estadoCosteo = N'rechazada')
+              AND (EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud y
+                           WHERE y.cotizacionSolicitudId = v.id AND (y.estadoCosteo IS NULL OR y.estadoCosteo <> N'rechazada'))
+                   OR NOT EXISTS (SELECT 1 FROM dbo_cotifly.CotizacionLineasSolicitud z WHERE z.cotizacionSolicitudId = v.id))
         ) a
         WHERE v.orden = 1 AND v.primeraCreacion >= @desde AND v.primeraCreacion < @hasta
         """;

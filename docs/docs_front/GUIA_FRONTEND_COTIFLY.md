@@ -1282,7 +1282,7 @@ La cotización tiene una o varias rutas y cada una tiene su margen y sus conexos
 - **Asistente:** la acción propuesta `ajustar_margen` trae `linea_orden` en el `cuerpo`: enviarlo tal cual al Confirmar. Si la cotización tiene varias rutas y el comercial no dijo cuál, el asistente pregunta antes de proponer.
 - **Camiones y mercancías de cada ruta (HU-021.9, #136):** `rutas[]` trae también `linea_negocio_id`, `peso_kg`, `camiones[]` (`tipo_vehiculo`, `carroceria`, `peso_kg`, `estado_costeo`; sin costos; vehículo en `null` = lo define la Mesa de Costeo), `vehiculos` (el texto que imprime el PDF, por ejemplo "2 × 3S3 - FURGON (20000 KG)") y `mercancias[]` (`orden`, `codigo_mercancia`, `nombre_mercancia`, `cantidad`, medidas y `peso_kg`). Un camión `descartada` sigue en la lista con su estado, pero no cuenta en el precio ni sale en el PDF.
 - **Por qué un camión sigue pendiente (#181, Nexo #309):** cada `camiones[]` trae además `estado_linea_nexo` (`por_costear`, `auto_resuelta` o `revisada`) y `motivo_pendiente` (texto de Nexo, p. ej. "Línea sin vehículo: requiere consulta completa" o "SICE-TAC no se usa: ..."; solo con el camión en `pendiente_costeo`). Mostrar el motivo junto al camión pendiente en vez de un "pendiente de costeo" sin explicación. Son solo de lectura y **no se guardan**: los lee el polling y llegan en `null` si Nexo no los manda (versión anterior), si el camión aún no se asoció a su línea o justo después de un reinicio del servicio (vuelven con la siguiente consulta). `null` = no mostrar nada, nunca un error. Salen en `GET .../costeo` y en las respuestas de los `PUT` de margen y de conexos; en las demás mutaciones vienen en `null` (volver a pedir el `GET`).
-- **Línea rechazada por la Mesa de Costeo (HU-028.1, #183, Nexo #320):** `estado_costeo` tiene un valor nuevo, `rechazada`, en `rutas[].camiones[]`, en `rutas[]` (todos sus camiones rechazados) y en `lineas[]` de la licitación (y `camiones[].estado_costeo` de la licitación). Cada camión rechazado trae `motivo_rechazo` (texto de NEXO) y `rechazada_at`; la ruta, `motivo_rechazo` (sus motivos unidos con " | "). Mostrar "Rechazada en NEXO" con el motivo; la ruta rechazada no tiene precio, no suma en el total y no admite margen ni conexos (409 `RUTA_RECHAZADA`: deshabilitar esas acciones en ella). Con todas las rutas rechazadas, el PDF responde 409 `SIN_RUTAS_COTIZABLES` (esconder "Generar PDF") y `motivo_estado_costeo` lo explica. `totales` del detalle trae `rutas_rechazadas` y `camiones_rechazados`; la licitación, `lineas_rechazadas` (no son pendientes). Si la Mesa deshace el rechazo antes de entregar, el camión vuelve a `pendiente_costeo` solo. `re-solicitar` puede traer `aviso_rechazos`: mostrarlo.
+- **Línea rechazada por la Mesa de Costeo (HU-028.1, #183, Nexo #320):** `estado_costeo` tiene un valor nuevo, `rechazada`, en `rutas[].camiones[]`, en `rutas[]` (todos sus camiones rechazados) y en `lineas[]` de la licitación (y `camiones[].estado_costeo` de la licitación). Cada camión rechazado trae `motivo_rechazo` (texto de NEXO) y `rechazada_at`; la ruta, `motivo_rechazo` (sus motivos unidos con " | "). Mostrar "Rechazada en NEXO" con el motivo; la ruta rechazada no tiene precio, no suma en el total y no admite margen ni conexos (409 `RUTA_RECHAZADA`: deshabilitar esas acciones en ella). Con todas las rutas rechazadas, el PDF responde 409 `SIN_RUTAS_COTIZABLES` (esconder "Generar PDF") y `motivo_estado_costeo` lo explica. `totales` del detalle trae `rutas_rechazadas` y `camiones_rechazados`; la licitación, `lineas_rechazadas` (no son pendientes). Si la Mesa deshace el rechazo antes de entregar, el camión vuelve a `pendiente_costeo` solo. **Decisión del 2026-10-20: no se reenvían los camiones rechazados por defecto.** Al re-solicitar (mismo folio o `-vN`) o editar la solicitud (`en_sitio`, `reemplazo`, `nueva_version`), un camión que la Mesa rechazó **no viaja** a NEXO: sigue rechazado (con su `motivo_rechazo` y `rechazada_at`) y la `-vN` lo copia como rechazado. Una ruta con todos sus camiones rechazados no se envía (no se manda a NEXO una ruta sin camiones): queda visible, `rechazada` y sin precio. La respuesta trae `aviso_rechazos` con lo que se omitió (rutas, camiones y motivos); en la edición también el aviso `RECHAZADOS_OMITIDOS`. Si no queda ningún camión que viaje: 409 `SIN_RUTAS_COTIZABLES` con `detalle.motivo = TODOS_RECHAZADOS`. Para que la Mesa los reconsidere: `PUT .../solicitud` con `reincluir_rechazados: true` en la ruta (vuelven a viajar tal como están, sin volver a cubicar). Mostrar `aviso_rechazos` tras re-solicitar o editar.
 
 ### 5.18.2 Contrato HU-021 cerrado (HU-021.11, #138): cambios que rompen
 
@@ -1922,8 +1922,12 @@ Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de 
 - **Modos:** `en_sitio` (nunca llegó a NEXO, 200), `reemplazo` (en NEXO sin entregar ni resultado: rechaza la solicitud anterior y
   captura en el mismo folio, 200; el PDF queda desactualizado) y `nueva_version` (entregada o con resultado: `-vN`, 201 con `Location`).
   Las licitaciones no se editan todavía (`permitida: false`, `LICITACION`).
+- **Camiones rechazados (HU-028.1, #183):** cada ruta del `GET` trae `camiones_rechazados` y `motivo_rechazo`. Por defecto esos
+  camiones **no viajan** (decisión del 2026-10-20); con `reincluir_rechazados: true` en la ruta del `PUT` vuelven a viajar sin el
+  rechazo. La respuesta trae `aviso_rechazos` (y el aviso `RECHAZADOS_OMITIDOS`) con lo que se omitió.
 - **Errores:** 400 `CAMPO_NO_EDITABLE` (`detalle.campo`) o `SOLICITUD_COSTEO_INVALIDA` (`detalle.errores`); 409 `ESTADO_NO_PERMITE`
-  (`MODO_CAMBIO`: recargar), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` con
+  (`MODO_CAMBIO`: recargar), `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`: ninguna ruta mandaría camiones; ofrecer reincluir),
+  `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` con
   `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
 - **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
 
@@ -2309,7 +2313,9 @@ Botón **"Editar solicitud"** en el detalle de la cotización (y en "Mis cotizac
    (por ejemplo "es una licitación: su edición llega en una fase posterior") y no abrir el formulario.
 2. Formulario: el mismo de la captura por rutas, prellenado. Cliente y tipo en solo lectura (`bloqueados`). En cada ruta guardada, la
    línea de negocio en solo lectura; en una ruta nueva, un select con `lineas_negocio_disponibles`. Se pueden agregar y quitar rutas;
-   las que se conservan quedan en su orden (sin arrastrar para reordenar).
+   las que se conservan quedan en su orden (sin arrastrar para reordenar). Si una ruta trae `camiones_rechazados > 0`, mostrar
+   "La Mesa de Costeo rechazó N camión(es): {motivo_rechazo}" y una casilla **"Volver a pedirlos a la Mesa"** (`reincluir_rechazados`),
+   desmarcada por defecto: sin marcarla esos camiones no se envían (y una ruta con todos rechazados no viaja).
 3. Al guardar, mostrar un cuadro de confirmación según `edicion.modo` y `edicion.avisos`:
    - `en_sitio`: "Se enviará la solicitud corregida a NEXO".
    - `reemplazo`: "Se reemplazará la solicitud en NEXO; el costeo actual se pierde y el PDF deberá regenerarse". Con
@@ -2320,10 +2326,13 @@ Botón **"Editar solicitud"** en el detalle de la cotización (y en "Mis cotizac
    `modo_esperado` (el modo que se mostró).
 5. Respuesta:
    - 200: refrescar la cotización (`cotizacion` trae el resumen; `estado_costeo` en `pendiente_costeo`, o `error_envio` si NEXO no
-     respondió: ofrecer Reintentar como siempre). Si `sin_cambios`, avisar "No hubo cambios".
+     respondió: ofrecer Reintentar como siempre). Si `sin_cambios`, avisar "No hubo cambios". Si trae `aviso_rechazos`, mostrarlo
+     (qué camiones o rutas rechazados no se enviaron).
    - 201: navegar a la versión nueva (`folio`).
    - 400: marcar los campos (`detalle.campo` o `detalle.errores`).
    - 409 `CONFLICTO_CONCURRENCIA` o `ESTADO_NO_PERMITE` con `MODO_CAMBIO`: recargar con el `GET` y volver a confirmar.
+   - 409 `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`): "La Mesa rechazó todos los camiones: no hay nada que enviar". Ofrecer marcar
+     "Volver a pedirlos a la Mesa" en las rutas.
    - 503 `RECHAZO_NEXO_FALLIDO`: "NEXO no respondió; no se cambió nada". Recargar y ofrecer Reintentar.
 
 ## 7. Estados y reglas de UI

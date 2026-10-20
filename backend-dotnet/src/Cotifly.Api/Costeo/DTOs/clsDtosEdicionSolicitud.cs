@@ -39,7 +39,7 @@ public sealed class clsEdicionSolicitudWebRequest
 
     /// <summary>Entrada del caso de uso.</summary>
     public clsEntradaEdicionSolicitud AEntrada() => new(
-        [.. (Rutas ?? []).Select(r => r is null ? null : new clsRutaEdicionEntrada(r.LineaSolicitudId, r.AEntrada()))],
+        [.. (Rutas ?? []).Select(r => r is null ? null : new clsRutaEdicionEntrada(r.LineaSolicitudId, r.AEntrada(), r.ReincluirRechazados ?? false))],
         Tipo, NitCliente, ClienteNombre, OrigenCliente, LineaNegocio, Deadline, Notas, HorasCargue, HorasDescargue, Moneda, Motivo, ModoEsperado);
 }
 
@@ -50,4 +50,10 @@ public sealed class clsEdicionSolicitudWebRequest
 public sealed class clsRutaEdicionWebRequest : clsRutaCapturaWebRequest
 {
     public Guid? LineaSolicitudId { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183): <c>true</c> = los camiones de esta ruta que rechazó la Mesa de Costeo vuelven a viajar a Nexo, sin el rechazo, para
+    /// que la Mesa los reconsidere. Ausente o <c>false</c> (por defecto): siguen rechazados y no viajan.
+    /// </summary>
+    public bool? ReincluirRechazados { get; init; }
 }

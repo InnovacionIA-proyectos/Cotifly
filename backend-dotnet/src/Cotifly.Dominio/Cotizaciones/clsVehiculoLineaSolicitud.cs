@@ -71,6 +71,15 @@ public sealed class clsVehiculoLineaSolicitud
     /// <summary>HU-028.1 (#183): ¿la Mesa de Costeo de Nexo rechazó la línea de este camión? No cuenta en el precio, en los totales ni en el PDF.</summary>
     public bool Rechazado => EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada;
 
+    /// <summary>
+    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): ¿el camión quedó rechazado por la Mesa de
+    /// Costeo en una solicitud ANTERIOR y no viajó en la actual? Es un camión rechazado sin línea de Nexo: la re-solicitud o la edición lo
+    /// dejan fuera del envío (<see cref="DejarFueraDelEnvio"/>) y la <c>-vN</c> lo copia así (<see cref="clsRechazoHeredado"/>). Un rechazo
+    /// leído de la solicitud actual siempre tiene su línea (el polling lo deriva de ella). El polling no lo lee ni lo empareja: su línea no
+    /// existe en la solicitud nueva. Solo vuelve a viajar si el comercial lo pide al editar (<c>reincluir_rechazados</c>).
+    /// </summary>
+    public bool FueraDelEnvio => Rechazado && LineaSolicitudNexoId is null;
+
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -227,7 +236,7 @@ public sealed class clsVehiculoLineaSolicitud
     /// <summary>
     /// Nexo recibió la solicitud (o falló el envío): el camión toma el estado de la solicitud. HU-028.1 (#183): un camión rechazado conserva
     /// el rechazo (<see cref="ConservaRechazo"/>) salvo <c>descartada</c>; solo lo deshace <see cref="DeshacerRechazo"/>, cuando el detalle de
-    /// Nexo confirma que la línea ya no está rechazada, o el reenvío (<see cref="ReiniciarCosteo"/>).
+    /// Nexo confirma que la línea ya no está rechazada, o la reinclusión que pide el comercial al editar (<see cref="ReiniciarCosteo"/>).
     /// </summary>
     internal bool RegistrarEstado(EstadoCosteo estado)
     {
@@ -353,7 +362,9 @@ public sealed class clsVehiculoLineaSolicitud
 
     /// <summary>
     /// Re-solicitud en el mismo folio (HU-013.4): el camión vuelve a viajar a Nexo como una línea nueva. Se olvidan el id anterior en
-    /// Nexo, el estado y los costos de Nexo (el levante, que es de Cotifly, se conserva).
+    /// Nexo, el estado y los costos de Nexo (el levante, que es de Cotifly, se conserva). HU-028.1 (#183): en un camión rechazado solo se
+    /// llama si el comercial pidió reincluirlo (<see cref="clsLineaSolicitud.ReincluirRechazados"/>): entonces olvida también el rechazo (queda
+    /// en la auditoría) y la Mesa lo evalúa otra vez. Por defecto un rechazado no se reinicia: <see cref="DejarFueraDelEnvio"/>.
     /// </summary>
     internal void ReiniciarCosteo()
     {
@@ -361,10 +372,45 @@ public sealed class clsVehiculoLineaSolicitud
         EstadoCosteo = null;
         CostoFlete = null;
         CostoRetornoContenedor = null;
-        // HU-028.1 (#183): la línea vuelve a viajar a Nexo y la Mesa la evalúa otra vez; el rechazo anterior queda en la auditoría.
         MotivoRechazo = null;
         RechazadaAt = null;
     }
+
+    /// <summary>
+    /// HU-028.1 (#183, decisión del 2026-10-20): la re-solicitud o la edición NO reenvían un camión rechazado. Sigue rechazado, con su motivo y
+    /// su fecha (lo ve el comercial), pero olvida la línea de la solicitud anterior (no existe en la nueva: así el polling no lo lee, no lo
+    /// empareja y no lo da por "línea borrada") y los costos de Nexo que conservaba (un rechazo leído con PDF guarda el flete de la versión;
+    /// en la solicitud nueva ese flete no es de nadie). El levante, de Cotifly, se conserva. Sin efecto si no está rechazado.
+    /// </summary>
+    internal void DejarFueraDelEnvio()
+    {
+        if (!Rechazado)
+        {
+            return;
+        }
+
+        LineaSolicitudNexoId = null;
+        CostoFlete = null;
+        CostoRetornoContenedor = null;
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183): un camión recién copiado a una <c>-vN</c> trae el rechazo de la cotización de origen (<see cref="clsRechazoHeredado"/>):
+    /// nace rechazado, con el mismo motivo y fecha, sin línea de Nexo y sin costos (<see cref="FueraDelEnvio"/>).
+    /// </summary>
+    internal void HeredarRechazo(clsRechazoHeredado rechazo)
+    {
+        ArgumentNullException.ThrowIfNull(rechazo);
+        EstadoCosteo = Cotizaciones.EstadoCosteo.Rechazada;
+        MotivoRechazo = clsSituacionLineaNexo.NormalizarMotivoRechazo(rechazo.Motivo);
+        RechazadaAt = rechazo.RechazadaAt;
+        LineaSolicitudNexoId = null;
+        CostoFlete = null;
+        CostoRetornoContenedor = null;
+    }
+
+    /// <summary>HU-028.1 (#183): el rechazo de este camión para copiarlo a otra cotización, o <c>null</c> si no está rechazado.</summary>
+    public clsRechazoHeredado? RechazoParaCopiar => Rechazado ? new clsRechazoHeredado(MotivoRechazo, RechazadaAt) : null;
 
     private static string? Normalizar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 }

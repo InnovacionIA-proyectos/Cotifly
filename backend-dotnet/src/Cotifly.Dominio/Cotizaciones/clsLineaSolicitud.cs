@@ -289,6 +289,12 @@ public sealed partial class clsLineaSolicitud
         var camion = clsVehiculoLineaSolicitud.Crear(
             Id, plan.TipoVehiculo, plan.Carroceria, plan.PesoKg, ValorLevanteContenedor, plan.IdRecomendacionVehiculo, siguiente,
             plan.VolumenTotalM3, plan.PorcentajeLlenadoVolumen, plan.PorcentajeLlenadoPeso);
+        if (plan.Rechazo is { } rechazo)
+        {
+            // HU-028.1 (#183): copiado a una -vN con el rechazo de la Mesa: nace rechazado y fuera del envío.
+            camion.HeredarRechazo(rechazo);
+        }
+
         _vehiculos.Add(camion);
         SumarCostos();
         return camion;
@@ -511,6 +517,12 @@ public sealed partial class clsLineaSolicitud
     private bool UnSoloCamion => _vehiculos.Count == 1;
 
     /// <summary>
+    /// ¿Las líneas de la ruta viajan a Nexo sin posiciones? (la ruta tiene varios camiones, contando los descartados y los rechazados que no
+    /// viajan: ver <see cref="UnSoloCamion"/>). La nota de camiones por ruta lo explica a la Mesa.
+    /// </summary>
+    public bool LineasSinPosiciones => !UnSoloCamion;
+
+    /// <summary>
     /// Peso que viaja a Nexo en la línea de <paramref name="camion"/> (HU-023.4, #159, decisión 6 del 2026-10-13). Con <b>un solo camión</b>
     /// la línea lleva las posiciones, así que lleva el <b>peso declarado de la ruta</b> (o, sin él, la suma de las posiciones): ese ya cuadra
     /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c>. El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
@@ -596,15 +608,22 @@ public sealed partial class clsLineaSolicitud
     /// Re-solicitud en el mismo folio (HU-013.4): sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
     /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>. HU-021.9: los
     /// camiones <c>descartada</c> en Nexo (la Mesa borró su línea) siguen descartados y no se reenvían, igual que en la <c>-vN</c>; si lo
-    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>).
+    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>). HU-028.1 (#183, decisión del 2026-10-20): los camiones que la
+    /// Mesa de Costeo rechazó NO se reenvían (<see cref="VehiculosQueViajan"/>): siguen rechazados, con su motivo, y quedan fuera del envío
+    /// (<see cref="clsVehiculoLineaSolicitud.DejarFueraDelEnvio"/>); una ruta con todos rechazados queda <c>rechazada</c> y no viaja. Para
+    /// reenviarlos, el comercial edita la solicitud con <c>reincluir_rechazados</c> (<see cref="ReincluirRechazados"/>, antes de esto).
     /// </summary>
     internal void ReiniciarCosteo()
     {
-        // HU-028.1 (#183): los rechazados SÍ se reenvían (VehiculosVigentes): la Mesa de Costeo vuelve a evaluar la línea.
-        foreach (var camion in VehiculosVigentes)
+        foreach (var camion in VehiculosQueViajan)
         {
             camion.ReiniciarCosteo();
             camion.RegistrarEstado(Cotizaciones.EstadoCosteo.PendienteEnvio);
+        }
+
+        foreach (var rechazado in _vehiculos.Where(v => v.Rechazado))
+        {
+            rechazado.DejarFueraDelEnvio();
         }
 
         SumarCostos();
@@ -682,7 +701,7 @@ public sealed partial class clsLineaSolicitud
     /// todos lo estén (entonces cuentan todos y la ruta queda descartada y sin flete). Regla del coordinador del 2026-10-08 (ADR-019).
     /// HU-028.1 (#183): los <c>rechazada</c> por la Mesa de Costeo tampoco cuentan, y SIN excepción: una ruta con todos sus camiones
     /// rechazados (o rechazados y descartados) no tiene camiones que cuenten, queda <c>rechazada</c> y sin precio, y no bloquea la cotización.
-    /// Para lo que viaja a Nexo (envío, re-solicitud, <c>-vN</c>, edición) se usa <see cref="VehiculosVigentes"/>, que sí incluye los rechazados.
+    /// Son también los que viajan a Nexo (<see cref="VehiculosQueViajan"/>, decisión del 2026-10-20).
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueCuentan
     {
@@ -694,9 +713,41 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Camiones que viajan a Nexo y se copian a una versión nueva o a una edición: todos menos los <c>descartada</c> (la Mesa borró su línea,
-    /// #134), salvo que todos lo estén (entonces todos). HU-028.1 (#183): los <c>rechazada</c> SÍ están: al re-solicitar, editar o crear la
-    /// <c>-vN</c> la Mesa de Costeo vuelve a evaluar su línea (decisión conservadora: no se pierde un camión que el comercial pidió).
+    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): los camiones que viajan a Nexo en el envío,
+    /// la re-solicitud (mismo folio o <c>-vN</c>) y la edición: los <see cref="VehiculosQueCuentan"/> (vigentes y no rechazados). Una ruta sin
+    /// ninguno (todos rechazados) no manda líneas a Nexo: queda visible como <c>rechazada</c>, sin precio. Es la base de
+    /// <see cref="clsCotizacionSolicitud.LineasNexo"/>, de la nota de camiones por ruta y del reparto de lo que viaja por camión.
+    /// </summary>
+    public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueViajan => VehiculosQueCuentan;
+
+    /// <summary>HU-028.1 (#183): ¿la ruta manda al menos una línea a Nexo? (no, si todos sus camiones vigentes están rechazados).</summary>
+    public bool ViajaANexo => VehiculosQueViajan.Count > 0;
+
+    /// <summary>HU-028.1 (#183): cuántos camiones de la ruta están rechazados por la Mesa de Costeo (los que no se reenvían por defecto).</summary>
+    public int CamionesRechazados => _vehiculos.Count(v => v.Rechazado);
+
+    /// <summary>
+    /// HU-028.1 (#183): el comercial pidió al editar que la Mesa reconsidere los camiones rechazados de la ruta (<c>reincluir_rechazados</c>).
+    /// Cada rechazado olvida el rechazo, la línea y los costos de Nexo (el rechazo anterior queda en la auditoría, en la instantánea de la
+    /// edición) y vuelve a viajar con su vehículo, su carrocería y su peso tal como están (D2: lo que la Mesa haya puesto se conserva; no se
+    /// vuelve a cubicar). Llamar antes de <see cref="ReiniciarCosteo"/>. Devuelve cuántos reincluyó.
+    /// </summary>
+    internal int ReincluirRechazados()
+    {
+        var rechazados = _vehiculos.Where(v => v.Rechazado).ToList();
+        foreach (var camion in rechazados)
+        {
+            camion.ReiniciarCosteo();
+        }
+
+        return rechazados.Count;
+    }
+
+    /// <summary>
+    /// Camiones de la ruta que se copian a una versión nueva o se conservan en una edición: todos menos los <c>descartada</c> (la Mesa borró
+    /// su línea, #134), salvo que todos lo estén (entonces todos). HU-028.1 (#183): los <c>rechazada</c> están, pero NO viajan
+    /// (<see cref="VehiculosQueViajan"/>): la <c>-vN</c> los copia rechazados (<see cref="clsVehiculoLineaSolicitud.RechazoParaCopiar"/>), salvo
+    /// que el comercial pida reincluirlos al editar.
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosVigentes
     {
@@ -714,8 +765,6 @@ public sealed partial class clsLineaSolicitud
     /// </summary>
     public bool Rechazada => EstadoCosteo == Cotizaciones.EstadoCosteo.Rechazada;
 
-    /// <summary>HU-028.1 (#183): ¿algún camión de la ruta está rechazado? (la ruta puede seguir con precio por los demás).</summary>
-    public bool TieneCamionesRechazados => _vehiculos.Any(v => v.Rechazado);
 
     /// <summary>
     /// HU-028.1 (#183): los motivos del rechazo de sus camiones, distintos y en el orden de los camiones, unidos con <c>" | "</c>; <c>null</c>

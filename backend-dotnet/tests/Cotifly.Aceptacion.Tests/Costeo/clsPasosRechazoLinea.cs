@@ -16,6 +16,8 @@ namespace Cotifly.Aceptacion.Tests.Costeo;
 [Binding]
 public sealed class clsPasosRechazoLinea(clsContextoWeb web, clsPasosCosteo costeo, clsPasosLicitaciones licitaciones)
 {
+    private string? _solicitudAnterior;
+
     [When("la Mesa de Costeo de Nexo rechaza la línea {int} de {string} con el motivo {string}")]
     public async Task CuandoRechaza(int linea, string licitacion, string motivo) =>
         costeo.Nexo.RechazarLinea(await CosteoIdAsync(licitacion), linea - 1, motivo);
@@ -40,6 +42,42 @@ public sealed class clsPasosRechazoLinea(clsContextoWeb web, clsPasosCosteo cost
     [When("{string} intenta generar el PDF de la licitación {string}")]
     public Task CuandoIntentaPdf(string alias, string licitacion) =>
         web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{licitaciones.Folio(licitacion)}/costeo/pdf", web.Sesion(alias).Access);
+
+    [When("{string} re-solicita el costeo de la licitación {string} con el motivo {string}")]
+    public async Task CuandoReSolicita(string alias, string licitacion, string motivo)
+    {
+        var folio = licitaciones.Folio(licitacion);
+        _solicitudAnterior = await CosteoIdAsync(licitacion);
+        var version = await clsBaseDatosPruebas.EscalarAsync<int>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            $"SELECT versionNegocio FROM dbo_cotifly.CotizacionesSolicitud WHERE folio = '{folio}'");
+        await web.EnviarAsync(HttpMethod.Post, $"/web/cotizaciones/{folio}/costeo/re-solicitar", web.Sesion(alias).Access,
+            new System.Text.Json.Nodes.JsonObject { ["motivo"] = motivo }.ToJsonString(), $"\"{version}\"");
+    }
+
+    [Then("la respuesta avisa que no se reenvió la ruta {int} con el motivo {string}")]
+    public void EntoncesAvisaOmitida(int ruta, string motivo)
+    {
+        web.UltimoEstado.Should().Be(HttpStatusCode.OK, web.UltimoCuerpo);
+        web.UltimoJson().GetProperty("aviso_rechazos").GetString().Should()
+            .StartWith("No se volvieron a enviar a Nexo").And.Contain($"ruta {ruta} (").And.Contain("la ruta completa").And.Contain(motivo);
+    }
+
+    [Then("Nexo recibió la solicitud nueva de {string} con {int} líneas")]
+    public async Task EntoncesLineasRecibidas(string licitacion, int lineas)
+    {
+        var nueva = await CosteoIdAsync(licitacion);
+        nueva.Should().NotBe(_solicitudAnterior, "la re-solicitud es una captura nueva en Nexo");
+        costeo.Nexo.LineasDe(nueva).Should().HaveCount(lineas, "el Nexo falso cuenta las líneas que recibió: la rechazada no viaja");
+        costeo.Nexo.LineasDe(_solicitudAnterior!).Should().HaveCount(3);
+    }
+
+    [Then("la línea {int} de {string} sigue rechazada con el motivo {string} y sin línea en Nexo")]
+    public async Task EntoncesSigueRechazada(int ruta, string licitacion, string motivo) =>
+        (await clsBaseDatosPruebas.EscalarAsync<string>(clsEntornoAceptacion.BaseDatos.CadenaCotifly,
+            "SELECT CONCAT(v.estadoCosteo, '|', v.motivoRechazo, '|', COALESCE(v.lineaSolicitudNexoId, 'sin línea'), '|', l.estadoCosteo) "
+            + "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+            + $"JOIN dbo_cotifly.CotizacionesSolicitud c ON c.id = l.cotizacionSolicitudId WHERE c.folio = '{licitaciones.Folio(licitacion)}' AND l.orden = {ruta}"))
+        .Should().Be($"rechazada|{motivo}|sin línea|rechazada");
 
     [Then("la línea {int} de {string} está rechazada con el motivo {string} y sin precio")]
     public async Task EntoncesLineaRechazada(int linea, string licitacion, string motivo)

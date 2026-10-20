@@ -36,8 +36,8 @@ public sealed record clsReSolicitudCosteo(
     public IReadOnlyList<int>? RutasReplanificadas { get; init; }
 
     /// <summary>
-    /// HU-028.1 (#183): aviso al comercial cuando la cotización de origen tenía camiones rechazados por la Mesa de Costeo (se vuelven a
-    /// pedir); <c>null</c> si no tenía. Va en <c>aviso_rechazos</c> de la respuesta.
+    /// HU-028.1 (#183, decisión del 2026-10-20): aviso al comercial de los camiones rechazados por la Mesa de Costeo que NO se reenviaron
+    /// (<see cref="Services.clsReSolicitudCosteoService.AvisoRechazos"/>); <c>null</c> si no se omitió nada. Va en <c>aviso_rechazos</c>.
     /// </summary>
     public string? AvisoRechazos { get; init; }
 }

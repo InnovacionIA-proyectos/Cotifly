@@ -212,6 +212,7 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Ignore(l => l.VehiculosOrdenados);
         builder.Ignore(l => l.VehiculosQueCuentan);
         builder.Ignore(l => l.VehiculosVigentes);
+        builder.Ignore(l => l.VehiculosQueViajan); // HU-028.1 (#183): derivada (los vigentes no rechazados), no es navegación
         builder.Ignore(l => l.MercanciasOrdenadas);
     }
 }
@@ -265,6 +266,7 @@ internal sealed class clsVehiculoLineaSolicitudConfiguracion : IEntityTypeConfig
         // (#320, hasta 500) y cuándo lo vio Cotifly.
         builder.Property(v => v.MotivoRechazo).Columna("motivoRechazo", "nvarchar(500)").HasMaxLength(clsSituacionLineaNexo.LargoMaximoMotivoRechazo);
         builder.Property(v => v.RechazadaAt).Fecha("rechazadaAt");
+        builder.Ignore(v => v.RechazoParaCopiar); // derivada: el rechazo para copiarlo a la -vN (no es una entidad)
 
         builder.HasIndex(v => v.LineaSolicitudId).HasDatabaseName("ix_cotizacionVehiculosLineaSolicitud_lineaSolicitudId");
         // Único por ruta y FILTRADO (las filas viejas en NULL no chocan). Declararlo aquí también le sirve a EF para ordenar un recálculo

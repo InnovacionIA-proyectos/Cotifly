@@ -52,7 +52,8 @@ public sealed class clsRechazoLineaTests
         segunda.PrecioFinalLinea.Should().BeNull();
         segunda.CostoFinal.Should().BeNull();
         segunda.VehiculosQueCuentan.Should().BeEmpty("los rechazados nunca cuentan, ni siquiera si lo están todos");
-        segunda.VehiculosVigentes.Should().HaveCount(2, "pero sí viajan en un reenvío");
+        segunda.VehiculosVigentes.Should().HaveCount(2, "siguen en la ruta (se copian a la -vN como rechazados)");
+        segunda.VehiculosQueViajan.Should().BeEmpty("decisión del 2026-10-20: no se reenvían por defecto");
         segunda.MotivoRechazo.Should().Be("Sin tarifa | Sin cupo");
         cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
         cotizacion.PrecioFinal.Should().Be(1_176_471m, "el total es solo la ruta 1");
@@ -257,22 +258,84 @@ public sealed class clsRechazoLineaTests
     // ------------------------------------------------------------------ Reenvío, -vN y edición
 
     [Fact]
-    public void LaReSolicitudVuelveAEnviarLosCamionesRechazadosSinElRechazoYAvisa()
+    public void LaReSolicitudNoReenviaElCamionRechazadoLoConservaRechazadoYElPollingDeLaSolicitudNuevaNoLoEmpareja()
     {
+        // Decisión del 2026-10-20 ("no reenviar los camiones rechazados por defecto"): la ruta 2 tiene un camión rechazado y otro vigente.
         var cotizacion = DosRutas();
-        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C", rechazo: "Sin tarifa")],
-            [("N-1", 1_000_000m)]));
-
-        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: true).Should().Contain("ruta 2").And.Contain("Sin tarifa").And.Contain("copia");
-        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should().Contain("Se vuelven a pedir");
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C")],
+            [("N-1", 1_000_000m), ("N-3", 500_000m)]));
         var instantanea = System.Text.Json.JsonSerializer.Serialize(clsReSolicitudCosteoService.Instantanea(cotizacion));
-        instantanea.Should().Contain("Sin tarifa", "el rechazo anterior queda en la auditoría");
+        instantanea.Should().Contain("Sin tarifa", "el rechazo queda en la auditoría");
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should().BeNull("antes de re-solicitar no se omitió nada");
 
         cotizacion.PrepararReSolicitud();
 
-        cotizacion.Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.PendienteEnvio && v.MotivoRechazo == null && v.RechazadaAt == null);
-        cotizacion.LineasNexo().Should().HaveCount(3, "los camiones que la Mesa rechazó vuelven a viajar a Nexo");
-        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should().BeNull();
+        var (primero, segunda) = (cotizacion.RutasOrdenadas[0].VehiculosOrdenados[0], cotizacion.RutasOrdenadas[1]);
+        var (rechazado, vigente) = (segunda.VehiculosOrdenados[0], segunda.VehiculosOrdenados[1]);
+        (rechazado.EstadoCosteo, rechazado.MotivoRechazo, rechazado.RechazadaAt, rechazado.LineaSolicitudNexoId, rechazado.FueraDelEnvio).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin tarifa", (DateTimeOffset?)_ahora, (string?)null, true),
+            "sigue rechazado, con su motivo, y olvida la línea de la solicitud anterior");
+        (vigente.EstadoCosteo, vigente.LineaSolicitudNexoId).Should().Be(((EstadoCosteo?)EstadoCosteo.PendienteEnvio, (string?)null));
+        cotizacion.LineasNexo().Select(l => l.Camion).Should().Equal([primero, vigente], "el rechazado no viaja a Nexo");
+        segunda.EstadoCosteo.Should().Be(EstadoCosteo.PendienteEnvio);
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should()
+            .Contain("ruta 2 (C → D): 1 de 2 camiones").And.Contain("Motivo: Sin tarifa").And.Contain("reincluir_rechazados");
+        clsEnvioCosteoService.NotaCamionesPorRuta(cotizacion).Should().Contain("Ruta 2 (C → D): 1 camión.",
+            "la nota dice cuántas líneas viajan por ruta (y que van sin posiciones: la ruta tiene dos camiones)");
+
+        // Polling de la solicitud nueva: solo trae las dos líneas que viajaron. El rechazado no compite por la línea de su ruta (sin esta
+        // regla, dos camiones de C → D para una línea serían un empate sin resolver y la ruta quedaría sin precio).
+        cotizacion.RegistrarEnvioCosteo("SOL-2", false, _ahora, _ahora);
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("M-1", "A"), Linea("M-3", "C")], [("M-1", 1_000_000m), ("M-3", 500_000m)]), _ahora.AddHours(1));
+
+        (primero.LineaSolicitudNexoId, vigente.LineaSolicitudNexoId, rechazado.LineaSolicitudNexoId).Should().Be(("M-1", "M-3", (string?)null));
+        (rechazado.EstadoCosteo, rechazado.MotivoRechazo, rechazado.RechazadaAt).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin tarifa", (DateTimeOffset?)_ahora), "no se lee ni se da por línea borrada");
+        segunda.CostoFletesTotal.Should().Be(500_000m);
+        cotizacion.EstadoCosteo.Should().Be(EstadoCosteo.Autocosteo);
+        cotizacion.MotivoEstadoCosteo.Should().BeNull("no hay camiones sin asociar");
+        cotizacion.PrecioFinal.Should().Be(1_764_706m, "1.500.000 con margen del 15 %: el rechazado no cuenta");
+        clsServiciosConexosCosteoService.PrimerCamion(segunda).Should().BeSameAs(vigente, "los conexos van al primer camión no rechazado");
+    }
+
+    [Fact]
+    public void UnaRutaConTodosSusCamionesRechazadosSeOmiteDelEnvioYQuedaRechazadaVisible()
+    {
+        var cotizacion = DosRutas();
+        Aplicar(cotizacion, Foto("EnCosteo", [Linea("N-1", "A"), Linea("N-2", "C", rechazo: "Sin tarifa"), Linea("N-3", "C", rechazo: "Sin cupo")],
+            [("N-1", 1_000_000m)]));
+
+        cotizacion.PrepararReSolicitud();
+
+        var segunda = cotizacion.RutasOrdenadas[1];
+        cotizacion.LineasNexo().Should().ContainSingle("solo viaja la ruta 1: no se manda a Nexo una ruta sin camiones")
+            .Which.Camion.Should().BeSameAs(cotizacion.RutasOrdenadas[0].VehiculosOrdenados[0]);
+        (segunda.Rechazada, segunda.ViajaANexo, segunda.PrecioFinalLinea).Should().Be((true, false, (decimal?)null));
+        segunda.Vehiculos.Should().OnlyContain(v => v.FueraDelEnvio);
+        cotizacion.TieneLineasQueViajan.Should().BeTrue();
+        cotizacion.RutasCotizables.Should().ContainSingle();
+        clsReSolicitudCosteoService.AvisoRechazos(cotizacion, versionNueva: false).Should()
+            .Contain("ruta 2 (C → D): la ruta completa (2 camiones): no viaja y queda rechazada, sin precio").And.Contain("Sin tarifa | Sin cupo");
+        clsEnvioCosteoService.NotaCamionesPorRuta(cotizacion).Should().BeNull("la única ruta que viaja tiene un camión");
+    }
+
+    [Fact]
+    public void ConTodosLosCamionesRechazadosNoHayNadaQueEnviarHastaQueElComercialLosReincluye()
+    {
+        var cotizacion = DosRutas();
+        var todas = new[] { Linea("N-1", "A", rechazo: "x"), Linea("N-2", "C", rechazo: "y"), Linea("N-3", "C", rechazo: "y") };
+        Aplicar(cotizacion, Foto("EnCosteo", todas, []));
+
+        cotizacion.TieneLineasQueViajan.Should().BeFalse();
+        clsReSolicitudCosteoService.TodosRechazados(cotizacion.Folio).Should().Match<clsErrorDominio>(
+            e => e.Codigo == clsCodigosError.SinRutasCotizables && e.Detalle == clsReSolicitudCosteoService.MotivoTodosRechazados);
+
+        // Reincluir (lo que hace la edición con reincluir_rechazados): el camión olvida el rechazo y vuelve a viajar.
+        cotizacion.RutasOrdenadas[1].ReincluirRechazados().Should().Be(2);
+        cotizacion.PrepararReSolicitud();
+        cotizacion.LineasNexo().Should().HaveCount(2);
+        cotizacion.RutasOrdenadas[1].Vehiculos.Should().OnlyContain(v => v.EstadoCosteo == EstadoCosteo.PendienteEnvio && v.MotivoRechazo == null && v.RechazadaAt == null);
+        cotizacion.RutasOrdenadas[0].VehiculosOrdenados[0].FueraDelEnvio.Should().BeTrue("la ruta 1 no se reincluyó");
     }
 
     [Fact]

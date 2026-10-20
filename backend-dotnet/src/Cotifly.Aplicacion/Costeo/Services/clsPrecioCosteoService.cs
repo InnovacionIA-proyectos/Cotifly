@@ -256,12 +256,15 @@ public sealed class clsPrecioCosteoService(ILogger<clsPrecioCosteoService>? logg
     /// <summary>
     /// Camiones que lee el polling, en el orden de envío: todos menos los <c>descartada</c> (regla del núcleo, ADR-019), salvo que todos lo
     /// estén (entonces se leen todos, como cuentan en la ruta). HU-028.1 (#183): los <c>rechazada</c> SÍ se leen: así se ve si la Mesa
-    /// deshizo el rechazo (vuelven a <c>pendiente_costeo</c>), y su línea sigue existiendo en Nexo (no es una línea "sin dueño").
+    /// deshizo el rechazo (vuelven a <c>pendiente_costeo</c>), y su línea sigue existiendo en Nexo (no es una línea "sin dueño"). Pero NO los
+    /// rechazados en una solicitud anterior que quedaron fuera del envío actual (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>,
+    /// decisión del 2026-10-20): no tienen línea en la solicitud nueva, así que ni se emparejan (tomarían la línea de otro camión), ni se
+    /// leen, ni cuentan como "sin asociar".
     /// </summary>
     public static IReadOnlyList<clsVehiculoLineaSolicitud> Vigentes(clsCotizacionSolicitud cotizacion)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
-        var todos = cotizacion.Vehiculos;
+        var todos = cotizacion.Vehiculos.Where(c => !c.FueraDelEnvio).ToList();
         var vigentes = todos.Where(c => c.EstadoCosteo != EstadoCosteo.Descartada).ToList();
         return vigentes.Count > 0 ? vigentes : todos;
     }

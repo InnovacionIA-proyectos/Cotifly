@@ -389,10 +389,17 @@ public sealed partial class clsCotizacionSolicitud
 
     /// <summary>
     /// Las líneas que viajan a Nexo: una por camión, ruta por ruta y en orden (<c>CAMBIOS_BACKEND</c> §5.3), cada una con el camión al
-    /// que corresponde. HU-028.1 (#183): los camiones rechazados por la Mesa SÍ viajan en un reenvío (<see cref="clsLineaSolicitud.VehiculosVigentes"/>).
+    /// que corresponde. HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa NO viajan
+    /// (<see cref="clsLineaSolicitud.VehiculosQueViajan"/>), y una ruta con todos rechazados no aporta ninguna línea.
     /// </summary>
     public IReadOnlyList<(clsVehiculoLineaSolicitud Camion, clsLineaSolicitudCosteo Linea)> LineasNexo() =>
-        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Where(v => r.VehiculosVigentes.Contains(v)).Select(v => (v, r.ALineaNexo(v))))];
+        [.. RutasOrdenadas.SelectMany(r => r.VehiculosOrdenados.Where(v => r.VehiculosQueViajan.Contains(v)).Select(v => (v, r.ALineaNexo(v))))];
+
+    /// <summary>
+    /// HU-028.1 (#183): ¿alguna ruta manda líneas a Nexo? Con todas sus rutas sin camiones que viajen (todos rechazados por la Mesa de Costeo)
+    /// no hay nada que enviar: la re-solicitud y la edición responden 409 <c>SIN_RUTAS_COTIZABLES</c> antes de escribir.
+    /// </summary>
+    public bool TieneLineasQueViajan => _rutas.Any(r => r.ViajaANexo);
 
     // ------------------------------------------------------------------ Envío y polling (HU-005.5, HU-005.6)
 

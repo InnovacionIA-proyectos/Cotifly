@@ -47,9 +47,10 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
-    /// HU-028.1 (#183): solo en la respuesta de <c>POST .../costeo/re-solicitar</c> cuando la cotización de origen tenía camiones rechazados
-    /// por la Mesa de Costeo de Nexo: qué rutas eran y que se volvieron a pedir (en el mismo folio o copiados a la <c>-vN</c>), para que el
-    /// comercial los quite editando la solicitud si no aplican. En el resto de respuestas es <c>null</c> y no se serializa.
+    /// HU-028.1 (#183, decisión del 2026-10-20): solo en la respuesta de <c>POST .../costeo/re-solicitar</c> y de
+    /// <c>PUT .../solicitud</c> cuando se omitieron del envío camiones rechazados por la Mesa de Costeo de Nexo: qué rutas, cuántos camiones y
+    /// sus motivos (en la <c>-vN</c>, que se copiaron como rechazados). Para reconsiderarlos, la edición con <c>reincluir_rechazados</c>. En el
+    /// resto de respuestas es <c>null</c> y no se serializa.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AvisoRechazos { get; init; }

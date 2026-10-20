@@ -30,8 +30,12 @@ public sealed record clsEntradaEdicionSolicitud(
     public const int LargoMaximoMotivo = 300;
 }
 
-/// <summary>Una ruta de la edición: el id de la ruta guardada que se edita (<c>null</c> = nueva) y su contenido (como en la captura).</summary>
-public sealed record clsRutaEdicionEntrada(Guid? LineaSolicitudId, clsLineaLicitacionEntrada Ruta);
+/// <summary>
+/// Una ruta de la edición: el id de la ruta guardada que se edita (<c>null</c> = nueva) y su contenido (como en la captura). HU-028.1 (#183):
+/// <paramref name="ReincluirRechazados"/> (<c>reincluir_rechazados</c>) pide que los camiones de la ruta que rechazó la Mesa de Costeo
+/// vuelvan a viajar a Nexo sin el rechazo (por defecto no viajan); en una ruta nueva o sin rechazados no hace nada.
+/// </summary>
+public sealed record clsRutaEdicionEntrada(Guid? LineaSolicitudId, clsLineaLicitacionEntrada Ruta, bool ReincluirRechazados = false);
 
 /// <summary>Aviso de la edición para el comercial (<c>AvisoEdicion</c>): código estable y texto.</summary>
 public sealed record clsAvisoEdicion(string Codigo, string Mensaje)
@@ -43,6 +47,9 @@ public sealed record clsAvisoEdicion(string Codigo, string Mensaje)
     public const string CreaVersionNueva = "CREA_VERSION_NUEVA";
     public const string MargenDesvinculado = "MARGEN_RUTA_QUITADA";
     public const string SinCambios = "SIN_CAMBIOS";
+
+    /// <summary>HU-028.1 (#183): la edición dejó fuera del envío camiones (o rutas) que la Mesa de Costeo había rechazado.</summary>
+    public const string RechazadosOmitidos = "RECHAZADOS_OMITIDOS";
 }
 
 /// <summary>
@@ -60,7 +67,15 @@ public sealed record clsResultadoEdicionSolicitud(
     IReadOnlyList<int> RutasReplanificadas,
     IReadOnlyList<int> RutasAgregadas,
     IReadOnlyList<Guid> RutasQuitadas,
-    string? SolicitudNexoReemplazada);
+    string? SolicitudNexoReemplazada)
+{
+    /// <summary>
+    /// HU-028.1 (#183, hallazgo B3): qué camiones y rutas rechazados por la Mesa de Costeo quedaron fuera del envío, con sus motivos (el mismo
+    /// texto que <c>cotizacion.aviso_rechazos</c> y el aviso <c>RECHAZADOS_OMITIDOS</c>); <c>null</c> si ninguno (no se serializa).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AvisoRechazos { get; init; }
+}
 
 /// <summary>Lo que devuelve el caso de uso: la respuesta, la versión de negocio resultante (<c>ETag</c>) y si se creó la <c>-vN</c> (201).</summary>
 public sealed record clsEdicionAplicada(clsResultadoEdicionSolicitud Respuesta, string RowVersion, bool Creada);
@@ -92,7 +107,11 @@ public sealed record clsBloqueadosSolicitud(string? Tipo, string? NitCliente, st
 /// </summary>
 public sealed record clsEstadoEdicion(string? Modo, bool Permitida, string? MotivoNoPermitida, string? Mensaje, IReadOnlyList<clsAvisoEdicion> Avisos);
 
-/// <summary>Una ruta editable (<c>RutaEditable</c>): todo lo que se captura, con los municipios por id y nombre, y su margen.</summary>
+/// <summary>
+/// Una ruta editable (<c>RutaEditable</c>): todo lo que se captura, con los municipios por id y nombre, y su margen. HU-028.1 (#183):
+/// <paramref name="CamionesRechazados"/> y <paramref name="MotivoRechazo"/> (solo lectura) dicen si la Mesa de Costeo rechazó camiones de la
+/// ruta: no se reenvían salvo que el PUT traiga <c>reincluir_rechazados</c> en la ruta.
+/// </summary>
 public sealed record clsRutaEditable(
     Guid LineaSolicitudId,
     int LineaOrden,
@@ -122,7 +141,9 @@ public sealed record clsRutaEditable(
     IReadOnlyList<clsConexoEditable> ServiciosConexos,
     decimal? MargenAplicado,
     string? OrigenMargen,
-    bool MargenNegociado);
+    bool MargenNegociado,
+    int CamionesRechazados = 0,
+    string? MotivoRechazo = null);
 
 /// <summary>Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador.</summary>
 public sealed record clsMercanciaEditable(

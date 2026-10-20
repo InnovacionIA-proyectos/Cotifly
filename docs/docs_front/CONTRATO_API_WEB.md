@@ -314,7 +314,7 @@ contra el contrato, así que un ejemplo desactualizado rompe la compilación de 
 | 400 | `RUTA_REQUERIDA` | Margen y conexos | Varias rutas y la petición no dice cuál. `detalle.rutas` = `[{linea_orden, linea_solicitud_id, origen, destino}]`. |
 | 400 | `RUTA_INEXISTENTE` | Margen y conexos | La ruta no es de la cotización, o `linea_orden` y `linea_solicitud_id` son de rutas distintas. |
 | 409 | `RUTA_RECHAZADA` | Margen y conexos | HU-028.1 (#183): la Mesa de Costeo de NEXO rechazó la ruta (todos sus camiones); `detalle` trae `linea_orden`, `linea_solicitud_id` y `motivo_rechazo`. |
-| 409 | `SIN_RUTAS_COTIZABLES` | `POST .../costeo/pdf` | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; no se genera el PDF. |
+| 409 | `SIN_RUTAS_COTIZABLES` | `POST .../costeo/pdf`, `re-solicitar`, `PUT .../solicitud` | HU-028.1 (#183, D1): la Mesa rechazó todas las rutas; no se genera el PDF. Al re-solicitar o editar (`detalle.motivo = TODOS_RECHAZADOS`): ningún camión viajaría a NEXO (los rechazados no se reenvían); para reconsiderarlos, `reincluir_rechazados` en la edición. |
 | 400 | `JUSTIFICACION_REQUERIDA` | Margen | Por debajo del sugerido **de esa ruta**; `detalle` trae `margen_sugerido`, `linea_orden` y `linea_solicitud_id`. |
 | 409 | `USAR_RESULTADO_NEXO` | `/seguimiento` | `detalle` = `{metodo, endpoint, requiere_if_match}`. |
 | 409 | `ESTADO_NO_PERMITE` | Re-solicitar | `datos_carga` en una cotización de varias rutas: `detalle.motivo` = `VARIAS_RUTAS` (formulario) o `LICITACION` (licitación). |
@@ -693,8 +693,17 @@ Cotifly; NEXO no expone su fecha ni quién rechazó). Reglas:
   (también si en la misma consulta ya viene costeada y entregada); una lectura sin el estado de la línea lo conserva.
 - Si la Mesa rechaza una línea que el PDF ya cotizó, el precio de esa versión se conserva y `motivo_estado_costeo` avisa que el costeo
   cambió después del PDF (genera una versión nueva para cotizar sin ella).
-- Re-solicitar (mismo folio o `-vN`) y editar la solicitud vuelven a pedir los camiones rechazados (la Mesa los evalúa otra vez). La
-  respuesta de `re-solicitar` trae `aviso_rechazos` con las rutas y sus motivos para que el comercial los quite editando si no aplican.
+- **No se reenvían por defecto (decisión del 2026-10-20).** Re-solicitar (mismo folio o `-vN`) y editar la solicitud (`en_sitio`,
+  `reemplazo`, `nueva_version`) **no** mandan a NEXO los camiones rechazados: siguen rechazados, con su motivo y su fecha, y sin línea
+  de NEXO; la `-vN` los copia como rechazados (trazable). Una ruta con todos sus camiones rechazados **no se envía**: queda visible como
+  `rechazada`, sin precio. La respuesta de `re-solicitar` y la de `PUT .../solicitud` traen `aviso_rechazos` (también en
+  `cotizacion.aviso_rechazos`) con lo que se omitió: por ruta, cuántos camiones y su motivo, o "la ruta completa". La edición agrega el
+  aviso `RECHAZADOS_OMITIDOS` (no con `sin_cambios`). Si no queda ningún camión que viaje, 409 **`SIN_RUTAS_COTIZABLES`** con
+  `detalle.motivo = TODOS_RECHAZADOS` (nada cambia).
+- **Reincluir rechazados.** Solo en la edición: la ruta trae `reincluir_rechazados: true` y sus camiones rechazados olvidan el rechazo y
+  vuelven a viajar tal como están (vehículo, carrocería y peso; lo que la Mesa haya cambiado se conserva, D2; no se vuelve a cubicar).
+  Pedirlo en una ruta con rechazados es un cambio (no da `sin_cambios`). `GET .../solicitud` dice en cada ruta `camiones_rechazados` y
+  `motivo_rechazo` para ofrecer la casilla. En `re-solicitar` no existe: quien quiera reincluir usa la edición.
 - Marcar ganada o perdida con rutas rechazadas funciona igual (el precio es el de las demás).
 
 **El vehículo de cada camión: la Mesa manda (D2, decisión del 2026-10-19).** "Si la Mesa de Costeo realiza un cambio, nos acogemos a
@@ -1224,6 +1233,9 @@ Reglas que conviene saber:
   (`rutas_replanificadas`); las demás conservan sus camiones, también el vehículo que la Mesa haya cambiado.
 - `moneda` ausente conserva la guardada; si cambia, se fija la TRM del día.
 - Si el cuerpo no cambia nada, 200 con `sin_cambios: true` y nada se toca.
+- HU-028.1 (#183): los camiones rechazados por la Mesa de Costeo no viajan salvo `reincluir_rechazados: true` en su ruta (ver §8.6,
+  "Línea rechazada por la Mesa de Costeo"); la respuesta trae `aviso_rechazos` y el aviso `RECHAZADOS_OMITIDOS` con lo que se omitió.
+  Si ninguna ruta mandaría camiones: 409 `SIN_RUTAS_COTIZABLES` (`TODOS_RECHAZADOS`).
 
 <!-- respuesta: GET /web/cotizaciones/{folio}/solicitud 200 -->
 ```json
