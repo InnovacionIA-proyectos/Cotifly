@@ -93,8 +93,9 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 05");
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
-        scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 11");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 09 y el 11 (el backend los mapea)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 10 ni el 11");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 2].Should().Be(clsBaseDatosPruebas.Script10, "ScriptsSin07 incluye el 10 (el backend mapea el rechazo)");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 llega hasta el 11 (el backend mapea pesoConTaraKg)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -248,6 +249,62 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                 "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg' "
                 + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud')"))
             .Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HU0281_ElScript10EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCero()
+    {
+        // HU-028.2 (#182) / HU-028.1 (#183): motivoRechazo y rechazadaAt en el camión y 'rechazada' en los tres CHECK de estadoCosteo.
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem10", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script10);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem10Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script10);
+        (await LeerAsync(
+                "SELECT CONCAT(c.name, '|', TYPE_NAME(c.user_type_id), '|', c.max_length, '|', c.is_nullable) FROM sys.columns c "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionVehiculosLineaSolicitud') AND c.name IN (N'motivoRechazo', N'rechazadaAt')",
+                r => r.GetString(0), instalada.Cadena))
+            .Should().BeEquivalentTo(["motivoRechazo|nvarchar|1000|1", "rechazadaAt|datetimeoffset|10|1"]);
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name IN (N'ck_cotizaciones_estadoCosteo', N'ck_cotizacionLineasSolicitud_estadoCosteo', "
+                + "N'ck_cotizacionVehiculosLineaSolicitud_estadoCosteo') AND definition LIKE N'%''rechazada''%'"))
+            .Should().Be(3, "las tres tablas admiten 'rechazada'");
+    }
+
+    [Fact]
+    public async Task HU0281_ElScript10SeAplicaSobreUnaBaseConDatosYElCheckDelRechazoExigeElEstado()
+    {
+        // Sobre una base hasta el 09 con un camión ya escrito: el 10 se aplica sin tocar las filas; después el CHECK del rechazo solo admite
+        // motivo y fecha con el camión en 'rechazada' (también con estadoCosteo NULL: el ISNULL del CHECK) y el de estadoCosteo admite 'rechazada'.
+        await using var baseConDatos = await BaseDatos.CrearBaseConScriptsAsync("dbDatos10", clsBaseDatosPruebas.ScriptsHasta09);
+        var cotizacion = Guid.NewGuid();
+        var ruta = Guid.NewGuid();
+        var camion = Guid.NewGuid();
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"INSERT INTO dbo_cotifly.CotizacionesSolicitud (id, folio, estadoCosteo) VALUES ('{cotizacion}', 'COT-R10', 'pendiente_costeo'); "
+            + $"INSERT INTO dbo_cotifly.CotizacionLineasSolicitud (id, cotizacionSolicitudId, orden, estadoCosteo) VALUES ('{ruta}', '{cotizacion}', 1, 'pendiente_costeo'); "
+            + $"INSERT INTO dbo_cotifly.CotizacionVehiculosLineaSolicitud (id, lineaSolicitudId, estadoCosteo, ordenVehiculo) VALUES ('{camion}', '{ruta}', 'pendiente_costeo', 1);");
+
+        await clsBaseDatosPruebas.AplicarScriptAsync(baseConDatos.Cadena, clsBaseDatosPruebas.Script10);
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+            $"SELECT estadoCosteo FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE id = '{camion}'")).Should().Be("pendiente_costeo");
+        var motivoSinRechazo = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET motivoRechazo = N'x' WHERE id = '{camion}'");
+        (await motivoSinRechazo.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_rechazo");
+        var fechaSinEstado = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = NULL, rechazadaAt = SYSDATETIMEOFFSET() WHERE id = '{camion}'");
+        (await fechaSinEstado.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_rechazo");
+
+        await clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = 'rechazada', motivoRechazo = N'Ruta sin tarifa', rechazadaAt = SYSDATETIMEOFFSET() WHERE id = '{camion}'; "
+            + $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCosteo = 'rechazada' WHERE id = '{ruta}'; "
+            + $"UPDATE dbo_cotifly.CotizacionesSolicitud SET estadoCosteo = 'rechazada' WHERE id = '{cotizacion}';");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(baseConDatos.Cadena,
+            $"SELECT motivoRechazo FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud WHERE id = '{camion}'")).Should().Be("Ruta sin tarifa");
+        var estadoInvalido = () => clsBaseDatosPruebas.EjecutarAsync(baseConDatos.Cadena,
+            $"UPDATE dbo_cotifly.CotizacionVehiculosLineaSolicitud SET estadoCosteo = 'rechazado' WHERE id = '{camion}'");
+        (await estadoInvalido.Should().ThrowAsync<SqlException>()).Which.Message.Should().Contain("ck_cotizacionVehiculosLineaSolicitud_estadoCosteo");
     }
 
     [Fact]

@@ -77,6 +77,9 @@ public static class clsRespuestasWeb
         clsCodigosError.PdfYaEnviado,
         clsCodigosError.LineaSinCotizacionNexo,
         clsCodigosError.EstadoNoPermite,
+        // HU-028.1 (#183): ruta rechazada por la Mesa de Costeo (margen o conexos) y PDF con todas las rutas rechazadas.
+        clsCodigosError.RutaRechazada,
+        clsCodigosError.SinRutasCotizables,
         // D4 (E2E 2026-10-16): la misma Idempotency-Key con otro cuerpo (antes 400 ErrorWeb).
         clsCodigosAplicacion.IdempotencyKeyReutilizada,
     };

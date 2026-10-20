@@ -232,10 +232,58 @@ public sealed class clsReSolicitudCosteoService(
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken)
             : await ReenviarAsync(cotizacion, usuarioId, versionEsperada, v.Lineas, v.Politica,
                 Reserva(entradaAuditoria, instantanea, cronometro), nota, cancellationToken);
+        // HU-028.1 (#183): sobre la cotización resultante (el mismo folio o la -vN): los camiones rechazados que quedaron fuera del envío.
         return (resultado.EsExitoso
-            ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with { ConexosDescartados = [], ConexosConservados = conservados })
+            ? clsResultado<clsReSolicitudCosteo>.Exito(resultado.Valor with
+            {
+                ConexosDescartados = [],
+                ConexosConservados = conservados,
+                AvisoRechazos = resultante is null ? null : AvisoRechazos(resultante, entrada.VersionNueva),
+            })
             : resultado, resultante, pdfInvalidado);
     }
+
+    /// <summary>Motivo (<c>detalle.motivo</c>) de <c>SIN_RUTAS_COTIZABLES</c> al re-solicitar o editar: todos los camiones están rechazados.</summary>
+    public const string MotivoTodosRechazados = "TODOS_RECHAZADOS";
+
+    /// <summary>
+    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): el aviso de lo que se OMITIÓ del envío en
+    /// <paramref name="resultante"/> (la cotización ya re-solicitada o editada, en el mismo folio o la <c>-vN</c>): por ruta, cuántos camiones
+    /// rechazados por la Mesa de Costeo no viajaron y su motivo, y las rutas que no viajaron completas (quedan <c>rechazada</c>, sin precio).
+    /// <c>null</c> si no omitió nada. El rechazo queda en los camiones (y, el anterior, en la auditoría). Lo devuelven la re-solicitud
+    /// (<c>aviso_rechazos</c>) y la edición (<c>aviso_rechazos</c> y el aviso <c>RECHAZADOS_OMITIDOS</c>).
+    /// </summary>
+    public static string? AvisoRechazos(clsCotizacionSolicitud resultante, bool versionNueva)
+    {
+        ArgumentNullException.ThrowIfNull(resultante);
+        var rutas = resultante.RutasOrdenadas.Where(r => r.Vehiculos.Any(v => v.FueraDelEnvio)).ToList();
+        if (rutas.Count == 0)
+        {
+            return null;
+        }
+
+        var detalle = string.Join("; ", rutas.Select(r =>
+        {
+            var omitidos = r.Vehiculos.Count(v => v.FueraDelEnvio);
+            var alcance = r.ViajaANexo
+                ? $"{omitidos} de {r.VehiculosVigentes.Count} {(r.VehiculosVigentes.Count == 1 ? "camión" : "camiones")}"
+                : $"la ruta completa ({omitidos} {(omitidos == 1 ? "camión" : "camiones")}): no viaja y queda rechazada, sin precio";
+            return $"ruta {r.Orden} ({r.OrigenNombre} → {r.DestinoNombre}): {alcance}"
+                + (r.MotivoRechazo is { } motivo ? $". Motivo: {motivo}" : string.Empty);
+        }));
+        return (versionNueva
+                ? "La versión nueva copia como rechazados, sin enviarlos a Nexo, los camiones que la Mesa de Costeo había rechazado: "
+                : "No se volvieron a enviar a Nexo los camiones que la Mesa de Costeo había rechazado: ")
+            + detalle + ". Para que la Mesa los reconsidere, edita la solicitud y marca reincluir_rechazados en la ruta.";
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183): 409 <c>SIN_RUTAS_COTIZABLES</c> (<c>detalle.motivo = TODOS_RECHAZADOS</c>) cuando la Mesa de Costeo rechazó todos los
+    /// camiones que viajarían: no hay nada que enviar a Nexo. Se responde antes de escribir.
+    /// </summary>
+    public static clsErrorDominio TodosRechazados(string folio) => new(clsCodigosError.SinRutasCotizables,
+        $"La Mesa de Costeo de Nexo rechazó todos los camiones de la cotización {folio}: no hay nada que volver a enviar. Para que los "
+        + "reconsidere, edita la solicitud y marca reincluir_rechazados en las rutas (o cambia su carga).", MotivoTodosRechazados);
 
     /// <summary>
     /// Regla de los servicios conexos al re-solicitar (HU-021.9, #136; rehace el aviso de #124 con la decisión 3 del 2026-10-08). Los
@@ -356,6 +404,13 @@ public sealed class clsReSolicitudCosteoService(
         else if (clsEnvioCosteoService.Revalidar(encabezado, lineas) is { } reglas)
         {
             return reglas;
+        }
+
+        // HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa no viajan. Si no queda ninguno que viaje (todas las
+        // rutas rechazadas) no hay nada que enviar: 409 antes de escribir. Una ruta sin camiones en la -vN se vuelve a planificar (viaja).
+        if (!replanificar && !cotizacion.RutasOrdenadas.Any(r => r.ViajaANexo || (entrada.VersionNueva && r.VehiculosVigentes.Count == 0)))
+        {
+            return TodosRechazados(cotizacion.Folio);
         }
 
         return new clsReSolicitudValidada(encabezado, lineas, politica, replanificar);
@@ -528,7 +583,10 @@ public sealed class clsReSolicitudCosteoService(
             var linea = validada.Lineas[i] with { TipoVehiculo = null, Carroceria = null };
             // En el orden estable de la ruta (ordenVehiculo, o createdAt en las filas anteriores a #188): el primero lleva los conexos
             // (decisión 3). La versión nueva los numera otra vez 1..n.
-            var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosQueCuentan).ToList();
+            // HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa se copian COMO RECHAZADOS (con su motivo y su
+            // fecha: trazabilidad) y no viajan a Nexo; la ruta con todos rechazados queda rechazada, visible y sin precio. Copiarlos mantiene
+            // el número de camiones de la ruta, del que depende cómo viajan los demás (con o sin posiciones, PesoLineaNexo).
+            var vigentes = clsVehiculoLineaSolicitud.EnOrden(ruta.VehiculosVigentes).ToList();
             // La ruta de la versión nueva es otra: un id nuevo, el mismo para el cubicador (idLineaSolicitud, #133) y para la ruta guardada.
             var rutaId = Guid.NewGuid();
             IReadOnlyList<clsCamionPlaneado> camiones;
@@ -566,7 +624,8 @@ public sealed class clsReSolicitudCosteoService(
             {
                 // Se copian los camiones con su recomendación, su volumen y sus porcentajes, y el resultado del cubicador de la ruta.
                 camiones = [.. vigentes.Select(v => new clsCamionPlaneado(
-                    v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso))];
+                    v.TipoVehiculo, v.Carroceria, v.PesoKg, v.IdRecomendacionVehiculo, v.VolumenTotalM3, v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso,
+                    v.RechazoParaCopiar))];
                 cubicacion = ruta.ResultadoCubicacion is { } resultado
                     ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada)
                     : null;
@@ -676,6 +735,9 @@ public sealed class clsReSolicitudCosteoService(
                 {
                     linea_solicitud_nexo_id = v.LineaSolicitudNexoId,
                     estado_costeo = v.EstadoCosteo is { } estadoCamion ? clsCodigoEnum.ACodigo(estadoCamion) : null,
+                    // HU-028.1 (#183): el rechazo de la Mesa queda en la auditoría (y en el camión, que no se reenvía salvo reinclusión).
+                    motivo_rechazo = v.MotivoRechazo,
+                    rechazada_at = v.RechazadaAt,
                     costo_flete = v.CostoFlete,
                     costo_retorno_contenedor = v.CostoRetornoContenedor,
                     costo_levante_contenedor = v.CostoLevanteContenedor,

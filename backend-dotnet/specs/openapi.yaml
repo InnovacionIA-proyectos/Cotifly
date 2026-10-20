@@ -1970,7 +1970,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta; `detalle.motivo_rechazo`), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -2048,6 +2048,13 @@ paths:
           (con `nueva_version: true` y sin cambios sí se copia con todas sus líneas). Moneda (decisión del 2026-10-06, ADR-014 §5): en el
           mismo folio se conservan la moneda y la TRM fijadas; la versión nueva copia la moneda y fija la TRM del día antes de
           reservar la original y de llamar a Nexo (sin TRM: 400 `TRM_NO_DISPONIBLE` y no se crea nada). Solo el dueño.
+        - **Camiones rechazados por la Mesa de Costeo (HU-028.1, #183, decisión del 2026-10-20: "no reenviar los camiones rechazados
+          por defecto").** Un camión cuya línea rechazó la Mesa **no viaja** a Nexo: en el mismo folio sigue rechazado (con su
+          `motivo_rechazo` y `rechazada_at`) y sin línea de Nexo; la `-vN` lo copia **como rechazado** (mismo motivo y fecha:
+          trazable). Una ruta con todos sus camiones rechazados **no se envía** (no se manda a Nexo una ruta sin camiones): queda en
+          la cotización visible como `rechazada`, sin precio. La respuesta trae `aviso_rechazos` con lo que se omitió (rutas, camiones
+          y motivos). Si no queda ningún camión que viaje: 409 `SIN_RUTAS_COTIZABLES` (`detalle.motivo = TODOS_RECHAZADOS`). Para que
+          la Mesa los reconsidere, el comercial edita la solicitud con `reincluir_rechazados` en la ruta (`PUT .../solicitud`).
       security:
         - bearer: []
       parameters:
@@ -2101,7 +2108,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
+          description: '`ESTADO_NO_PERMITE` (estado del costeo), `PDF_YA_ENVIADO` (mismo folio tras el envío o con resultado), `SIN_RUTAS_COTIZABLES` (HU-028.1, #183, `detalle.motivo = TODOS_RECHAZADOS`: la Mesa de Costeo rechazó todos los camiones y no hay nada que enviar; para reconsiderarlos, `PUT .../solicitud` con `reincluir_rechazados`), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios. La versión nueva reutiliza el folio base, así que no consume consecutivo'
           content:
             application/json:
               schema:
@@ -2192,6 +2199,16 @@ paths:
         cambiado en Nexo. Los conexos toman el costo unitario del catálogo de Nexo de hoy. `moneda` ausente conserva la guardada; si
         cambia, se fija la TRM del día. Sin cambios reales responde 200 con `sin_cambios = true` y no toca nada.
 
+        **Camiones rechazados por la Mesa de Costeo (HU-028.1, #183, decisión del 2026-10-20).** Por defecto **no viajan** en ningún
+        modo: siguen rechazados en la ruta (`RutaEditable.camiones_rechazados` y `motivo_rechazo` lo dicen) y la `-vN` los copia como
+        rechazados; una ruta con todos rechazados no se envía y queda `rechazada`, visible y sin precio. La respuesta lo avisa en
+        `aviso_rechazos` (y en `cotizacion.aviso_rechazos` y el aviso `RECHAZADOS_OMITIDOS`). Para que la Mesa los reconsidere, la ruta
+        trae `reincluir_rechazados: true`: sus camiones rechazados olvidan el rechazo y **vuelven a viajar tal como están** (mismo
+        vehículo, carrocería y peso; lo que la Mesa haya cambiado se conserva, D2; no se vuelve a cubicar). Pedirlo en una ruta con
+        rechazados es un cambio (no es `sin_cambios`); tener rechazados sin pedirlo no lo es. Una ruta que se vuelve a cubicar estrena
+        camiones (el rechazo no aplica). Si con la edición ninguna ruta manda camiones a Nexo: 409 `SIN_RUTAS_COTIZABLES`
+        (`detalle.motivo = TODOS_RECHAZADOS`), sin tocar nada.
+
         `If-Match` **obligatorio** (428 / 409). `Idempotency-Key` opcional (ámbito `editar_solicitud` por comercial; la misma clave con
         otro cuerpo, 409 `IDEMPOTENCY_KEY_REUTILIZADA`). Si la captura en Nexo falla, la cotización queda en `error_envio` y se responde
         igual. Auditado en `EventosHerramienta` (`editar_solicitud`, sin `ThreadId`). Solo el dueño.
@@ -2249,7 +2266,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`CONFLICTO_CONCURRENCIA`, `ESTADO_NO_PERMITE` (`detalle.motivo`: `LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`, `MODO_CAMBIO`) o `IDEMPOTENCY_KEY_REUTILIZADA`; sin cambios'
+          description: '`CONFLICTO_CONCURRENCIA`, `ESTADO_NO_PERMITE` (`detalle.motivo`: `LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`, `MODO_CAMBIO`), `SIN_RUTAS_COTIZABLES` (HU-028.1, #183, `detalle.motivo = TODOS_RECHAZADOS`: ninguna ruta mandaría camiones a Nexo; marcar `reincluir_rechazados`) o `IDEMPOTENCY_KEY_REUTILIZADA`; sin cambios'
           content:
             application/json:
               schema:
@@ -2432,7 +2449,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
+          description: '`COSTEO_NO_LISTO`, `RUTA_RECHAZADA` (HU-028.1, #183: la Mesa de Costeo rechazó la ruta), `LINEA_SIN_COTIZACION_NEXO`, `PDF_YA_ENVIADO`, `ESTADO_NO_PERMITE` (`detalle.motivo = LICITACION` o `VARIAS_RUTAS`: cambios de carga con más de una ruta), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA` (la misma `Idempotency-Key` con otro cuerpo; antes 400 `ErrorWeb`); sin cambios'
           content:
             application/json:
               schema:
@@ -2519,7 +2536,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO` (todavía sin precio), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
+          description: '`COSTEO_NO_LISTO` (todavía sin precio), `RUTA_RECHAZADA` (HU-028.1, #183: la ruta indicada fue rechazada por la Mesa de Costeo), `PDF_YA_ENVIADO` (ya enviada o con resultado) o `CONFLICTO_CONCURRENCIA`; sin cambios'
           content:
             application/json:
               schema:
@@ -2694,7 +2711,7 @@ paths:
         '404':
           $ref: '#/components/responses/NoEsTuya'
         '409':
-          description: '`COSTEO_NO_LISTO`, `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
+          description: '`SIN_RUTAS_COTIZABLES` (HU-028.1, #183, decisión D1: la Mesa de Costeo rechazó todas las rutas), `COSTEO_NO_LISTO` (alguna ruta NO rechazada sin precio; las rechazadas salen "Sin costeo", sin precio ni motivo, y no suman), `PDF_YA_GENERADO` (PDF vigente), `PDF_YA_ENVIADO` o `CONFLICTO_CONCURRENCIA`'
           content:
             application/json:
               schema:
@@ -3452,6 +3469,10 @@ components:
                 cotización tiene varias rutas y el ajuste de margen o el cambio de conexos no dice a cuál aplica; `detalle.rutas`
                 trae `linea_orden`, `linea_solicitud_id`, `origen` y `destino` de cada una, sin montos) y `RUTA_INEXISTENTE` (400:
                 la ruta indicada no es de la cotización, o `linea_orden` y `linea_solicitud_id` no son la misma ruta).
+                HU-028.1 (#183, Nexo #320): `RUTA_RECHAZADA` (409: la Mesa de Costeo de Nexo rechazó la ruta indicada, todos sus
+                camiones; no admite ajuste de margen ni de conexos; `detalle` trae `linea_orden`, `linea_solicitud_id` y
+                `motivo_rechazo`) y `SIN_RUTAS_COTIZABLES` (409: la Mesa rechazó todas las rutas; `POST .../costeo/pdf` no genera
+                el PDF, decisión D1).
               enum:
                 - TARIFA_FUENTE_NO_DISPONIBLE
                 - TARIFA_CONFIG_INVALIDA
@@ -3529,6 +3550,8 @@ components:
                 - SERVICIO_OCUPADO
                 - RUTA_REQUERIDA
                 - RUTA_INEXISTENTE
+                - RUTA_RECHAZADA
+                - SIN_RUTAS_COTIZABLES
                 - ERROR_INTERNO
             mensaje:
               type: string
@@ -3985,6 +4008,14 @@ components:
             HU-013.15 (#124). Solo en la respuesta de `POST .../costeo/re-solicitar` (siempre presente ahí). **Desde HU-021.9 (#136,
             decisión 3) siempre `[]`**: la re-solicitud ya no descarta conexos (ver `conexos_conservados`). Se conserva por
             compatibilidad (frontend actual) y se retira cuando salga HU-021-FE (#138); el frontend nuevo no lo lee.
+        aviso_rechazos:
+          type: string
+          nullable: true
+          description: |
+            HU-028.1 (#183, decisión del 2026-10-20). Solo en la respuesta de `POST .../costeo/re-solicitar` y de `PUT .../solicitud`, y
+            solo si se **omitieron** del envío camiones rechazados por la Mesa de Costeo de Nexo: por ruta, cuántos camiones no viajaron y
+            su motivo, y las rutas que no viajaron completas (quedan `rechazada`, sin precio). En la `-vN` dice que se copiaron como
+            rechazados. Para que la Mesa los reconsidere: `PUT .../solicitud` con `reincluir_rechazados`. Si no se omitió nada, no viene.
         conexos_conservados:
           type: array
           items:
@@ -4317,7 +4348,9 @@ components:
           type: integer
         camiones:
           type: integer
-          description: Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos los de la ruta).
+          description: |
+            Camiones que cuentan en el precio (los descartados en Nexo no, salvo que lo estén todos los de la ruta; HU-028.1, #183: los
+            rechazados por la Mesa de Costeo nunca).
         peso_kg:
           type: number
           nullable: true
@@ -4334,6 +4367,12 @@ components:
           type: number
           nullable: true
           description: Igual a `costeo.precio_final`.
+        rutas_rechazadas:
+          type: integer
+          description: HU-028.1 (#183). Rutas rechazadas por la Mesa de Costeo de Nexo (todos sus camiones); no cuentan en los precios.
+        camiones_rechazados:
+          type: integer
+          description: HU-028.1 (#183). Camiones rechazados por la Mesa de Costeo de Nexo, de cualquier ruta.
 
     EnvioWeb:
       type: object
@@ -5089,11 +5128,22 @@ components:
         estado_costeo:
           type: string
           nullable: true
-          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, rechazada, null]
+          description: |
+            HU-028.1 (#183): `rechazada` = la Mesa de Costeo de Nexo rechazó TODOS los camiones de la ruta: sin precio
+            (`precio_final_linea = null`), no suma en `precio_final`, sus conexos no salen (ni suman) y el ajuste de margen o de
+            conexos en ella responde 409 `RUTA_RECHAZADA`. Con algunos camiones rechazados la ruta sigue con el estado de los demás
+            y su precio es el de ellos. **Valor nuevo del enum: el frontend debe mostrarlo.**
+        motivo_rechazo:
+          type: string
+          nullable: true
+          description: |
+            HU-028.1 (#183, Nexo #320). Por qué la Mesa de Costeo rechazó camiones de la ruta (los motivos distintos de sus camiones
+            `rechazada`, unidos con " | "); `null` si ninguno está rechazado. Solo para el comercial: el PDF y el Excel no lo llevan.
         precio_final_linea:
           type: number
           nullable: true
-          description: Precio de la ruta (fletes + retorno + levante + conexos, con el margen de la ruta); `null` sin costeo.
+          description: Precio de la ruta (fletes + retorno + levante + conexos, con el margen de la ruta); `null` sin costeo o rechazada (HU-028.1).
         margen_aplicado:
           type: number
           nullable: true
@@ -5140,7 +5190,25 @@ components:
         estado_costeo:
           type: string
           nullable: true
-          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, rechazada, null]
+          description: |
+            HU-028.1 (#183): `rechazada` = la Mesa de Costeo de Nexo rechazó la línea de este camión (Nexo #320): no cuenta en el precio
+            ni en los totales y no lleva conexos. Distinto de `descartada` (la Mesa borró la línea, #134). Mientras la cotización de
+            Nexo no esté entregada la Mesa puede deshacerlo: el camión vuelve a `pendiente_costeo` y `motivo_rechazo` a `null`.
+        motivo_rechazo:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: |
+            HU-028.1 (#183, Nexo #320). Por qué la Mesa de Costeo rechazó la línea del camión, con el texto de Nexo (texto libre, sin
+            catálogo). Se guarda en la base (script 10): sale aunque el servicio se reinicie. `null` si no está rechazado.
+        rechazada_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            HU-028.1 (#183). Cuándo vio Cotifly el rechazo por primera vez (UTC). Nexo no expone en `GET /api/solicitudes/{id}` su fecha
+            ni quién rechazó. `null` si el camión no está rechazado.
         volumen_total_m3:
           type: number
           nullable: true
@@ -5995,14 +6063,22 @@ components:
           nullable: true
           enum: [descartada, ya_descartada, no_encontrada, null]
           description: En el `reemplazo`, cómo quedó la solicitud anterior en Nexo; `null` en los demás modos.
+        aviso_rechazos:
+          type: string
+          nullable: true
+          description: |
+            HU-028.1 (#183, hallazgo B3): qué camiones y rutas rechazados por la Mesa de Costeo quedaron fuera del envío, con sus motivos
+            (el mismo texto de `cotizacion.aviso_rechazos` y del aviso `RECHAZADOS_OMITIDOS`). No viene si no se omitió nada ni con
+            `sin_cambios`.
 
     AvisoEdicion:
       type: object
       required: [codigo, mensaje]
       description: |
         HU-028. Aviso para el comercial: `REEMPLAZA_SOLICITUD_NEXO`, `PIERDE_TRABAJO_MESA` (estaba en `pendiente_costeo`),
-        `PIERDE_COSTEO_ACTUAL`, `INVALIDA_PDF`, `CREA_VERSION_NUEVA`, `MARGEN_RUTA_QUITADA` (se quitó una ruta con margen ajustado) o
-        `SIN_CAMBIOS`.
+        `PIERDE_COSTEO_ACTUAL`, `INVALIDA_PDF`, `CREA_VERSION_NUEVA`, `MARGEN_RUTA_QUITADA` (se quitó una ruta con margen ajustado),
+        `RECHAZADOS_OMITIDOS` (HU-028.1, #183: camiones o rutas rechazados por la Mesa de Costeo que no viajaron; el mensaje es
+        `aviso_rechazos`) o `SIN_CAMBIOS`.
       properties:
         codigo:
           type: string
@@ -6198,6 +6274,16 @@ components:
           enum: [sap_tm, politica_linea, negociado, null]
         margen_negociado:
           type: boolean
+        camiones_rechazados:
+          type: integer
+          minimum: 0
+          description: |
+            HU-028.1 (#183). Camiones de la ruta rechazados por la Mesa de Costeo de Nexo (solo lectura). Con más de 0 la pantalla ofrece
+            `reincluir_rechazados`: si no se marca, esos camiones no viajan en la edición.
+        motivo_rechazo:
+          type: string
+          nullable: true
+          description: HU-028.1 (#183). Los motivos del rechazo de sus camiones (distintos, unidos con " | "); `null` sin rechazados.
 
     MercanciaEditable:
       type: object
@@ -6250,6 +6336,13 @@ components:
           format: uuid
           nullable: true
           description: Id de la ruta guardada (`RutaEditable.linea_solicitud_id`); ausente = ruta nueva.
+        reincluir_rechazados:
+          type: boolean
+          nullable: true
+          description: |
+            HU-028.1 (#183). `true` = los camiones de esta ruta que rechazó la Mesa de Costeo vuelven a viajar a Nexo sin el rechazo (con su
+            vehículo, carrocería y peso tal como están; no se vuelve a cubicar) para que la Mesa los reconsidere. Ausente o `false` (por
+            defecto): siguen rechazados y no viajan. En una ruta nueva, sin rechazados o que se vuelve a cubicar no hace nada.
         linea_negocio:
           type: string
           nullable: true
@@ -7065,13 +7158,20 @@ components:
         estado_costeo:
           type: string
           nullable: true
-          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, null]
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, rechazada, null]
+          description: 'HU-028.1 (#183). `rechazada` = "Rechazada en NEXO" (todos sus camiones): sin precio y no es pendiente.'
+        motivo_rechazo:
+          type: string
+          nullable: true
+          description: |
+            HU-028.1 (#183, Nexo #320). Por qué la Mesa de Costeo rechazó camiones de la línea (los motivos distintos, unidos con
+            " | "); `null` si ninguno. Solo en pantalla: el Excel de la licitación no lo lleva.
         precio_final:
           type: number
           nullable: true
           description: |
             Tarifa del transporte de la línea con su margen, SIN servicios conexos (la misma del Excel y del PDF del pliego;
-            HU-021); `null` mientras no tiene flete. Nunca el costo de Nexo.
+            HU-021); `null` mientras no tiene flete o si está `rechazada` (HU-028.1). Nunca el costo de Nexo.
         estado_cubicacion:
           type: string
           nullable: true
@@ -7124,6 +7224,15 @@ components:
         porcentaje_llenado_peso:
           type: number
           nullable: true
+        estado_costeo:
+          type: string
+          nullable: true
+          enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, rechazada, null]
+          description: HU-028.1 (#183). Estado del costeo del camión (`rechazada` si la Mesa de Costeo rechazó su línea).
+        motivo_rechazo:
+          type: string
+          nullable: true
+          description: HU-028.1 (#183). Por qué la Mesa de Costeo rechazó la línea del camión; `null` si no está rechazado.
 
     Licitacion:
       type: object
@@ -7161,11 +7270,19 @@ components:
         precio_final:
           type: number
           nullable: true
-          description: Suma de los precios de las líneas, en `moneda`; solo cuando todas tienen flete (`autocosteo` o `entregada`).
+          description: |
+            Suma de los precios de las líneas, en `moneda`; solo cuando todas tienen flete (`autocosteo` o `entregada`). HU-028.1
+            (#183): sin las líneas rechazadas por la Mesa de Costeo; con todas rechazadas, `null`.
         lineas_costeadas:
           type: integer
         lineas_pendientes:
           type: integer
+          description: 'Líneas sin precio que todavía esperan a Nexo (HU-028.1, #183: sin las rechazadas).'
+        lineas_rechazadas:
+          type: integer
+          description: |
+            HU-028.1 (#183). Líneas rechazadas por la Mesa de Costeo de Nexo (todos sus camiones): no tienen precio, no son pendientes y
+            no suman en `precio_final`.
         archivo_nombre:
           type: string
           nullable: true

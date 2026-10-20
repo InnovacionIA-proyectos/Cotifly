@@ -62,20 +62,46 @@ public sealed record clsLineaSolicitudNexo(string Id, string? Ruta, string? Tipo
     /// </summary>
     public string? MotivoPendiente { get; init; }
 
-    /// <summary>Lo que Nexo dice de la línea más allá de su contenido (#181; el rechazo de línea, #183, se suma aquí).</summary>
-    public clsSituacionLineaNexo Situacion => clsSituacionLineaNexo.Desde(EstadoLinea, MotivoPendiente);
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): por qué la Mesa de Costeo rechazó la línea (<c>motivoRechazo</c>, hasta 500 caracteres), o <c>null</c> si
+    /// la línea no está rechazada o Nexo no lo trae (versión anterior a #320). Lo que decide el rechazo es <see cref="EstadoLinea"/> =
+    /// <c>rechazada</c>; el motivo solo se muestra.
+    /// </summary>
+    public string? MotivoRechazo { get; init; }
+
+    /// <summary>Lo que Nexo dice de la línea más allá de su contenido (#181; el rechazo de línea, #183).</summary>
+    public clsSituacionLineaNexo Situacion => clsSituacionLineaNexo.Desde(EstadoLinea, MotivoPendiente, MotivoRechazo);
 }
 
 /// <summary>
 /// #181: la situación de una línea de la solicitud en Nexo que Cotifly muestra por camión en <c>GET .../costeo</c>, sin guardarla en la
 /// base: el estado de la línea en Nexo como código de Cotifly (<see cref="EstadoLinea"/>: <c>por_costear</c>, <c>auto_resuelta</c>,
-/// <c>revisada</c>; un valor nuevo de Nexo pasa con la misma conversión) y el motivo por el que sigue pendiente. Ambos <c>null</c> si Nexo
-/// no los manda. Preparada para crecer: el rechazo de línea (#183) agrega aquí su motivo.
+/// <c>revisada</c>, <c>rechazada</c> desde #183; un valor nuevo de Nexo pasa con la misma conversión), el motivo por el que sigue pendiente
+/// y el del rechazo (#183, <see cref="MotivoRechazo"/>). <c>null</c> si Nexo no los manda. El rechazo, a diferencia del resto, SÍ se guarda:
+/// el camión queda <see cref="Cotizaciones.EstadoCosteo.Rechazada"/> con su motivo (<see cref="clsVehiculoLineaSolicitud.MotivoRechazo"/>).
 /// </summary>
 public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPendiente)
 {
-    /// <summary>Sin nada que mostrar (Nexo no mandó ni el estado ni el motivo).</summary>
-    public bool Vacia => EstadoLinea is null && MotivoPendiente is null;
+    /// <summary>Código de Cotifly del estado de una línea rechazada por la Mesa de Costeo (Nexo #320: <c>rechazada</c>).</summary>
+    public const string EstadoRechazada = "rechazada";
+
+    /// <summary>Largo máximo del motivo del rechazo (el de Nexo, <c>tbl_lineas_solicitud.MotivoRechazo nvarchar(500)</c>).</summary>
+    public const int LargoMaximoMotivoRechazo = 500;
+
+    /// <summary>
+    /// HU-028.1 (#183): el motivo del rechazo de la línea (Nexo #320), o <c>null</c> si no está rechazada o Nexo no lo manda. Sin espacios
+    /// sobrantes y recortado a <see cref="LargoMaximoMotivoRechazo"/>.
+    /// </summary>
+    public string? MotivoRechazo { get; init; }
+
+    /// <summary>
+    /// HU-028.1 (#183): ¿la Mesa de Costeo rechazó la línea? (<see cref="EstadoLinea"/> = <c>rechazada</c>.) Un Nexo anterior a #320 no
+    /// manda el estado: nunca es un rechazo.
+    /// </summary>
+    public bool Rechazada => string.Equals(EstadoLinea, EstadoRechazada, StringComparison.Ordinal);
+
+    /// <summary>Sin nada que mostrar (Nexo no mandó ni el estado ni los motivos).</summary>
+    public bool Vacia => EstadoLinea is null && MotivoPendiente is null && MotivoRechazo is null;
 
     /// <summary>
     /// Id de la línea de Nexo de la que se leyó (<see cref="clsLineaSolicitudNexo.Id"/>), o <c>null</c> si no se sabe. La vista solo la
@@ -89,14 +115,33 @@ public sealed record clsSituacionLineaNexo(string? EstadoLinea, string? MotivoPe
         ["porcostear"] = "por_costear",
         ["autoresuelta"] = "auto_resuelta",
         ["revisada"] = "revisada",
+        ["rechazada"] = EstadoRechazada,
     };
 
     /// <summary>
     /// La situación con los valores de Nexo: el estado convertido con <see cref="CodigoEstado"/> y el motivo sin espacios sobrantes (un
     /// texto vacío cuenta como <c>null</c>).
     /// </summary>
-    public static clsSituacionLineaNexo Desde(string? estadoLineaNexo, string? motivoPendiente) =>
-        new(CodigoEstado(estadoLineaNexo), string.IsNullOrWhiteSpace(motivoPendiente) ? null : motivoPendiente.Trim());
+    public static clsSituacionLineaNexo Desde(string? estadoLineaNexo, string? motivoPendiente, string? motivoRechazo = null) =>
+        new(CodigoEstado(estadoLineaNexo), string.IsNullOrWhiteSpace(motivoPendiente) ? null : motivoPendiente.Trim())
+        {
+            MotivoRechazo = NormalizarMotivoRechazo(motivoRechazo),
+        };
+
+    /// <summary>
+    /// HU-028.1 (#183): el motivo del rechazo sin espacios sobrantes (vacío = <c>null</c>) y, si pasa de
+    /// <see cref="LargoMaximoMotivoRechazo"/> (Nexo ya lo limita), recortado con <c>…</c> para que quepa en <c>motivoRechazo</c> (script 10).
+    /// </summary>
+    public static string? NormalizarMotivoRechazo(string? motivo)
+    {
+        if (string.IsNullOrWhiteSpace(motivo))
+        {
+            return null;
+        }
+
+        var limpio = motivo.Trim();
+        return limpio.Length <= LargoMaximoMotivoRechazo ? limpio : limpio[..(LargoMaximoMotivoRechazo - 1)] + "…";
+    }
 
     /// <summary>
     /// <c>estadoLinea</c> de Nexo como código de Cotifly en <c>snake_case</c>: <c>porCostear</c> o <c>PorCostear</c> →
@@ -468,7 +513,10 @@ public static class clsDerivacionEstadoCosteo
     /// <summary>
     /// <c>Descartada</c> → <see cref="EstadoCosteo.Descartada"/>; cotización (o solicitud) <c>Entregada</c> →
     /// <see cref="EstadoCosteo.Entregada"/>; toda línea de la solicitud con flete → <see cref="EstadoCosteo.Autocosteo"/>; si no,
-    /// <see cref="EstadoCosteo.PendienteCosteo"/>. Una solicitud sin líneas nunca es autocosteo.
+    /// <see cref="EstadoCosteo.PendienteCosteo"/>. Una solicitud sin líneas nunca es autocosteo. HU-028.1 (#183): las líneas que la Mesa
+    /// rechazó (<see cref="LineaRechazada"/>) no se esperan: <c>autocosteo</c> cuando todas las NO rechazadas tienen flete. Si todas están
+    /// rechazadas y Nexo aún no entrega, <c>pendiente_costeo</c> (no hay nada que cotizar todavía: la Mesa puede deshacer un rechazo o
+    /// entregar la cotización en $0, y el polling sigue hasta verlo).
     /// </summary>
     public static EstadoCosteo Derivar(clsCosteoConsultadoNexo foto)
     {
@@ -485,22 +533,52 @@ public static class clsDerivacionEstadoCosteo
         }
 
         var costeadas = (foto.Cotizacion?.Lineas ?? []).Select(l => l.LineaSolicitudId).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return foto.LineasSolicitud.Count > 0 && foto.LineasSolicitud.All(costeadas.Contains)
+        var porCostear = foto.LineasSolicitud.Where(id => !LineaRechazada(foto, id)).ToList();
+        return porCostear.Count > 0 && porCostear.All(costeadas.Contains)
             ? EstadoCosteo.Autocosteo
             : EstadoCosteo.PendienteCosteo;
+    }
+
+    /// <summary>
+    /// HU-028.1 (#183, Nexo #320): ¿la Mesa de Costeo rechazó la línea <paramref name="lineaSolicitudNexoId"/>? Lo dice el
+    /// <c>estadoLinea</c> = <c>rechazada</c> del detalle de la foto (<see cref="clsCosteoConsultadoNexo.Detalle"/>). Sin detalle o sin el
+    /// estado (Nexo anterior a #320, o una foto armada con la respuesta del resultado) no hay rechazo.
+    /// </summary>
+    public static bool LineaRechazada(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId) =>
+        SituacionLinea(foto, lineaSolicitudNexoId)?.Rechazada == true;
+
+    /// <summary>Lo que Nexo dice de la línea <paramref name="lineaSolicitudNexoId"/> en el detalle de la foto, o <c>null</c> si no está.</summary>
+    public static clsSituacionLineaNexo? SituacionLinea(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId)
+    {
+        ArgumentNullException.ThrowIfNull(foto);
+        return string.IsNullOrWhiteSpace(lineaSolicitudNexoId)
+            ? null
+            : foto.Detalle.FirstOrDefault(d => string.Equals(d.Id, lineaSolicitudNexoId, StringComparison.OrdinalIgnoreCase))?.Situacion;
     }
 
     /// <summary>
     /// Estado de UNA línea (HU-011.2, ADR-017), con la misma regla: <c>Descartada</c> → <see cref="EstadoCosteo.Descartada"/>;
     /// cotización (o solicitud) <c>Entregada</c> → <see cref="EstadoCosteo.Entregada"/>; la línea con flete →
     /// <see cref="EstadoCosteo.Autocosteo"/>; si no, <see cref="EstadoCosteo.PendienteCosteo"/>. Una entregada sin flete para la
-    /// línea queda <c>entregada</c> sin costo (Nexo la entregó sin esa línea): <see cref="CostoLinea"/> lo distingue.
+    /// línea queda <c>entregada</c> sin costo (Nexo la entregó sin esa línea): <see cref="CostoLinea"/> lo distingue. HU-028.1 (#183): una
+    /// línea que la Mesa rechazó es <see cref="EstadoCosteo.Rechazada"/> (también con la cotización entregada; con la solicitud descartada
+    /// manda <c>descartada</c>).
     /// </summary>
     public static EstadoCosteo DerivarLinea(clsCosteoConsultadoNexo foto, string? lineaSolicitudNexoId)
     {
         ArgumentNullException.ThrowIfNull(foto);
         var cotizacion = Derivar(foto);
-        if (cotizacion is EstadoCosteo.Descartada or EstadoCosteo.Entregada)
+        if (cotizacion is EstadoCosteo.Descartada)
+        {
+            return cotizacion;
+        }
+
+        if (LineaRechazada(foto, lineaSolicitudNexoId))
+        {
+            return EstadoCosteo.Rechazada;
+        }
+
+        if (cotizacion is EstadoCosteo.Entregada)
         {
             return cotizacion;
         }
@@ -540,7 +618,10 @@ public static class clsDerivacionEstadoCosteo
         return lineas.Count == 0 ? null : (lineas.Sum(l => l.ValorFlete), lineas.Sum(l => l.ValorRetornoContenedor ?? 0m));
     }
 
-    /// <summary>¿El polling deja de consultar en este estado? (<c>entregada</c> y <c>descartada</c> son terminales.)</summary>
+    /// <summary>
+    /// ¿El polling deja de consultar en este estado? (<c>entregada</c> y <c>descartada</c> son terminales.) HU-028.1 (#183): <c>rechazada</c>
+    /// NO es terminal (la Mesa puede deshacer el rechazo antes de entregar); además la cabecera nunca queda en ese estado.
+    /// </summary>
     public static bool EsTerminal(EstadoCosteo estado) => estado is EstadoCosteo.Entregada or EstadoCosteo.Descartada or EstadoCosteo.CosteoVencido;
 
     /// <summary>¿El costeo está completo y se puede poner precio? (<c>autocosteo</c> o <c>entregada</c>.)</summary>

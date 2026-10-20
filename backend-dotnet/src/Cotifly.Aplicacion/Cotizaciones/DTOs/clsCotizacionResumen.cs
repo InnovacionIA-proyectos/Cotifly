@@ -47,6 +47,15 @@ public sealed record clsCotizacionResumen(
     public IReadOnlyList<string>? ConexosConservados { get; init; }
 
     /// <summary>
+    /// HU-028.1 (#183, decisión del 2026-10-20): solo en la respuesta de <c>POST .../costeo/re-solicitar</c> y de
+    /// <c>PUT .../solicitud</c> cuando se omitieron del envío camiones rechazados por la Mesa de Costeo de Nexo: qué rutas, cuántos camiones y
+    /// sus motivos (en la <c>-vN</c>, que se copiaron como rechazados). Para reconsiderarlos, la edición con <c>reincluir_rechazados</c>. En el
+    /// resto de respuestas es <c>null</c> y no se serializa.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AvisoRechazos { get; init; }
+
+    /// <summary>
     /// HU-018.1 (#155): fecha límite de la solicitud (cabecera) en UTC, como <c>created_at</c> (se guarda con el desplazamiento con que llegó,
     /// -05:00 si vino sin zona); <c>null</c> si no se dio. Siempre se serializa.
     /// </summary>

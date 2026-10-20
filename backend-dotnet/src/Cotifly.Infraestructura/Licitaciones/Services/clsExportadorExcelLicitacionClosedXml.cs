@@ -26,6 +26,15 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
     public const string HojaResumen = "Resumen Cotifly";
     public const string HojaSinOriginal = "Licitación";
     public const string SinCosteo = "SIN COSTEO";
+
+    /// <summary>HU-028.1 (#183): etiqueta del conteo de líneas rechazadas por la Mesa de Costeo en "Resumen Cotifly".</summary>
+    public const string EtiquetaRechazadas = "Líneas rechazadas en NEXO (sin costeo)";
+
+    /// <summary>HU-028.1 (#183): total de "Resumen Cotifly" cuando la Mesa de Costeo rechazó todas las líneas.</summary>
+    public const string TodasRechazadas = "Sin costeo: todas las líneas fueron rechazadas en NEXO";
+
+    /// <summary>HU-028.1 (#183): columna de la hoja "Camiones Cotifly" que marca el camión rechazado por la Mesa de Costeo.</summary>
+    public const string ColumnaCosteoCamion = "Costeo";
     public const string SinEnviar = "Sin enviar";
     public const string ColumnaEstado = "Estado costeo Cotifly";
     public const string ColumnaConexos = "Servicios conexos Cotifly";
@@ -256,6 +265,7 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         string[] campos =
         [
             "Línea", "Ruta", "Camión", "Vehículo", "Carrocería", "Peso (kg)", "Volumen (m³)", "Llenado volumen (%)", "Llenado peso (%)", "Cubicación",
+            ColumnaCosteoCamion,
         ];
         for (var c = 0; c < campos.Length; c++)
         {
@@ -278,6 +288,8 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
                 Numero(hoja.Cell(fila, 8), camion.PorcentajeLlenadoVolumen, "0.##");
                 Numero(hoja.Cell(fila, 9), camion.PorcentajeLlenadoPeso, "0.##");
                 hoja.Cell(fila, 10).Value = linea.Cubicacion ?? string.Empty;
+                // HU-028.1 (#183): el camión rechazado por la Mesa de Costeo, sin el motivo.
+                hoja.Cell(fila, 11).Value = camion.Rechazado ? clsCamionExportacion.TextoRechazado : string.Empty;
                 fila++;
             }
         }
@@ -322,8 +334,10 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
             f++;
         }
 
-        var costeadas = datos.Lineas.Count(l => l.PrecioFinal is not null);
-        var pendientes = datos.Lineas.Count - costeadas;
+        // HU-028.1 (#183): las rechazadas por la Mesa de Costeo no son pendientes ni suman en el total.
+        var rechazadas = datos.Lineas.Count(l => l.Rechazada);
+        var costeadas = datos.Lineas.Count(l => l.PrecioFinal is not null && !l.Rechazada);
+        var pendientes = datos.Lineas.Count - costeadas - rechazadas;
         Dato("Folio", datos.Folio);
         Dato("Cliente", datos.Cliente ?? "—");
         Dato("NIT", datos.NitCliente ?? "—");
@@ -336,9 +350,15 @@ public sealed class clsExportadorExcelLicitacionClosedXml : IClsExportadorExcelL
         Dato("Líneas", datos.Lineas.Count);
         Dato("Líneas costeadas", costeadas);
         Dato("Líneas sin costeo", pendientes);
+        Dato(EtiquetaRechazadas, rechazadas);
         if (pendientes == 0 && datos.PrecioTotal is { } total)
         {
             Dato(EtiquetaTotal, total, formato);
+        }
+        else if (pendientes == 0 && rechazadas > 0 && costeadas == 0)
+        {
+            Dato(EtiquetaTotal, TodasRechazadas);
+            hoja.Cell(f - 1, 2).Style.Fill.SetBackgroundColor(_pendiente);
         }
         else
         {

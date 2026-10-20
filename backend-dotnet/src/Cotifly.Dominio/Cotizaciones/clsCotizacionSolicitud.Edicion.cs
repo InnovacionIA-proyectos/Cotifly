@@ -145,7 +145,7 @@ public sealed partial class clsCotizacionSolicitud
             var orden = i + 1;
             if (editada.RutaExistenteId is { } id)
             {
-                _rutas.First(r => r.Id == id).AplicarEdicion(orden, editada.Ruta, edicion.Encabezado, editada.Replanificada);
+                _rutas.First(r => r.Id == id).AplicarEdicion(orden, editada.Ruta, edicion.Encabezado, editada.Replanificada, editada.ReincluirRechazados);
                 continue;
             }
 

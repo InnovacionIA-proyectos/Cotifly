@@ -48,6 +48,42 @@ public sealed class clsSituacionLineaNexoTests
     }
 
     [Fact]
+    public void Hu183_LaLineaRechazadaTraeSuMotivoYCuentaComoRechazo()
+    {
+        var rechazada = new clsLineaSolicitudNexo("L1", "A → B", null, 1m, null, null) { EstadoLinea = "Rechazada", MotivoRechazo = "  Sin tarifa  " };
+
+        rechazada.Situacion.Rechazada.Should().BeTrue("el enum de Nexo llega con cualquier mayúscula");
+        rechazada.Situacion.EstadoLinea.Should().Be(clsSituacionLineaNexo.EstadoRechazada);
+        rechazada.Situacion.MotivoRechazo.Should().Be("Sin tarifa");
+        rechazada.Situacion.Vacia.Should().BeFalse();
+        new clsLineaSolicitudNexo("L1", "A → B", null, 1m, null, null) { EstadoLinea = "porCostear", MotivoRechazo = "x" }.Situacion.Rechazada
+            .Should().BeFalse("lo que decide el rechazo es el estado, no el motivo");
+        clsSituacionLineaNexo.NormalizarMotivoRechazo(new string('x', 501))!.Length.Should().Be(clsSituacionLineaNexo.LargoMaximoMotivoRechazo);
+        clsSituacionLineaNexo.NormalizarMotivoRechazo("   ").Should().BeNull();
+    }
+
+    [Fact]
+    public void Hu183_LaDerivacionNoEsperaLasLineasRechazadas()
+    {
+        var detalle = new[]
+        {
+            new clsLineaSolicitudNexo("L1", "A → B", null, null, null, null) { EstadoLinea = "autoResuelta" },
+            new clsLineaSolicitudNexo("L2", "A → B", null, null, null, null) { EstadoLinea = "rechazada", MotivoRechazo = "x" },
+        };
+        var borrador = new clsCosteoConsultadoNexo("EnCosteo", ["L1", "L2"], new clsCotizacionNexo("C", "Borrador", "SinDefinir",
+            [new clsLineaCosteoNexo("L1", 1m, null, null)], [])) { Detalle = detalle };
+
+        clsDerivacionEstadoCosteo.Derivar(borrador).Should().Be(EstadoCosteo.Autocosteo, "todas las NO rechazadas tienen flete");
+        clsDerivacionEstadoCosteo.DerivarLinea(borrador, "L2").Should().Be(EstadoCosteo.Rechazada);
+        clsDerivacionEstadoCosteo.DerivarLinea(borrador with { Cotizacion = borrador.Cotizacion! with { Estado = "Entregada" } }, "L2")
+            .Should().Be(EstadoCosteo.Rechazada, "entregada, la línea sigue rechazada");
+        clsDerivacionEstadoCosteo.DerivarLinea(borrador with { EstadoSolicitud = "Descartada" }, "L2").Should().Be(EstadoCosteo.Descartada);
+        clsDerivacionEstadoCosteo.Derivar(borrador with { Cotizacion = borrador.Cotizacion! with { Lineas = [] }, Detalle = [detalle[1]], LineasSolicitud = ["L2"] })
+            .Should().Be(EstadoCosteo.PendienteCosteo, "con todas rechazadas y sin entregar no hay nada que cotizar todavía");
+        clsDerivacionEstadoCosteo.EsTerminal(EstadoCosteo.Rechazada).Should().BeFalse("la Mesa puede deshacer el rechazo");
+    }
+
+    [Fact]
     public void ElEstadoYElMotivoNoCambianElEmparejamiento()
     {
         var camion = new clsCamionParaEmparejar(Guid.NewGuid(), "A", "B", null, "3S3", null, 10_000m);

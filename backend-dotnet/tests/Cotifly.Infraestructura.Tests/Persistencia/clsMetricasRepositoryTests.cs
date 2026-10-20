@@ -46,4 +46,36 @@ public sealed class clsMetricasRepositoryTests(clsBaseDatosPruebas baseDatos) : 
         Cotifly.Dominio.Metricas.clsCalculadoraMetricas.PorLineaNegocio(datos.Filas).Sum(l => l.ValorGanadoCop)
             .Should().Be(2_000_000m, "la apertura por línea cuadra con el total");
     }
+
+    /// <summary>
+    /// HU-028.1 (#183), hallazgo B2: un ajuste de margen hecho en una ruta que la Mesa de Costeo rechazó después no cuenta en ninguna ruta (la
+    /// ruta rechazada no sale): tampoco en la cabecera. Con todas las rutas rechazadas, un ajuste sin ruta tampoco (no hay ruta que lo lleve).
+    /// </summary>
+    [Fact]
+    public async Task HU0281_LosAjustesDeUnaRutaRechazadaNoCuentanNiEnLaCabeceraNiEnLasRutas()
+    {
+        var ana = await CrearUsuarioAsync();
+        var cotizacion = NuevaCotizacion(ana);
+        await GuardarAsync(cotizacion);
+        var ruta = cotizacion.PrimeraRuta!.Id;
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly, $"""
+            INSERT INTO dbo_cotifly.MargenAjustes (id, cotizacionId, lineaSolicitudId, folio, margenPolitica, margenAplicado, diferencia, motivo, usuarioId, createdAt)
+            VALUES (NEWID(), '{cotizacion.Id}', '{ruta}', '{cotizacion.Folio}', 0.15, 0.20, 0.05, N'En la ruta', '{ana}', SYSDATETIMEOFFSET()),
+                   (NEWID(), '{cotizacion.Id}', NULL, '{cotizacion.Folio}', 0.15, 0.12, -0.03, N'Sin ruta', '{ana}', SYSDATETIMEOFFSET());
+            """);
+
+        var antes = await FilaAsync(ana);
+        (antes.NumAjustes, antes.Rutas.Sum(r => r.NumAjustes)).Should().Be((2, 2), "sin rechazo, la cabecera y las rutas cuadran");
+
+        await clsBaseDatosPruebas.EjecutarAsync(BaseDatos.CadenaCotifly,
+            $"UPDATE dbo_cotifly.CotizacionLineasSolicitud SET estadoCosteo = N'rechazada', costoFinal = NULL, precioFinalLinea = NULL WHERE id = '{ruta}';");
+
+        var despues = await FilaAsync(ana);
+        despues.Rutas.Should().BeEmpty("la ruta rechazada no sale en las métricas");
+        despues.NumAjustes.Should().Be(0, "la cabecera suma lo mismo que sus rutas");
+    }
+
+    private async Task<Cotifly.Dominio.Metricas.clsCotizacionMetrica> FilaAsync(Guid usuario) =>
+        (await ConsultarAsync(s => s.GetRequiredService<IClsMetricasRepository>()
+            .ListarCotizacionesAsync([usuario], Reloj.AhoraUtc.AddDays(-1), Reloj.AhoraUtc.AddDays(1), Ct))).Filas.Should().ContainSingle().Subject;
 }

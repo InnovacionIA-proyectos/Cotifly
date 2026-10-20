@@ -311,6 +311,64 @@ public sealed class clsCotizacionRepositoryTests(clsBaseDatosPruebas baseDatos) 
             .Should().Be("0.1235|1");
     }
 
+    /// <summary>
+    /// HU-028.1 (#183, script 10): el rechazo de la Mesa de Costeo que lee el polling se guarda en el camión (estado <c>rechazada</c>,
+    /// <c>motivoRechazo</c> y <c>rechazadaAt</c>) y en la ruta (<c>rechazada</c>, sin precio); si la Mesa lo deshace, el camión vuelve a
+    /// <c>pendiente_costeo</c> y la base queda sin motivo ni fecha (el CHECK del 10 lo exige).
+    /// </summary>
+    [Fact]
+    public async Task HU0281_ElRechazoDeLaLineaSeGuardaEnElCamionYSeBorraAlDeshacerlo()
+    {
+        var cotizacion = Formulario(null);
+        cotizacion.RegistrarEnvioCosteo($"SOL-{Guid.NewGuid():N}", false, Reloj.AhoraUtc, Reloj.AhoraUtc.AddYears(50));
+        cotizacion.Vehiculos.Single().AsignarLineaNexo("N-1");
+        await GuardarAsync(cotizacion);
+
+        await using (var ambito = NuevoAmbito())
+        {
+            var leida = (await ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+            Cotifly.Aplicacion.Costeo.Services.clsLecturaCosteo.AplicarFoto(leida, Foto("N-1", "Ruta sin operación"), Reloj.AhoraUtc,
+                new Cotifly.Aplicacion.Costeo.Services.clsOpcionesCosteoNexo(), new Cotifly.Aplicacion.Costeo.Services.clsPrecioCosteoService());
+            await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        }
+
+        var rechazada = await ConsultarAsync(s => s.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct));
+        var camion = rechazada!.Vehiculos.Single();
+        (camion.EstadoCosteo, camion.MotivoRechazo, camion.RechazadaAt).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Ruta sin operación", (DateTimeOffset?)Reloj.AhoraUtc));
+        rechazada.PrimeraRuta!.EstadoCosteo.Should().Be(EstadoCosteo.Rechazada);
+        rechazada.EstadoCosteo.Should().Be(EstadoCosteo.PendienteCosteo, "la cabecera no queda rechazada: la Mesa puede deshacer o entregar");
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT CONCAT(v.estadoCosteo, '|', v.motivoRechazo, '|', CASE WHEN v.rechazadaAt IS NULL THEN 0 ELSE 1 END, '|', l.estadoCosteo, '|', "
+                + "COALESCE(CAST(l.precioFinalLinea AS nvarchar(30)), 'sin precio')) FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v "
+                + $"JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("rechazada|Ruta sin operación|1|rechazada|sin precio");
+
+        await using (var ambito = NuevoAmbito())
+        {
+            var leida = (await ambito.ServiceProvider.GetRequiredService<IClsCotizacionRepository>().ObtenerPorIdAsync(cotizacion.Id, Ct))!;
+            Cotifly.Aplicacion.Costeo.Services.clsLecturaCosteo.AplicarFoto(leida, Foto("N-1", null), Reloj.AhoraUtc,
+                new Cotifly.Aplicacion.Costeo.Services.clsOpcionesCosteoNexo(), new Cotifly.Aplicacion.Costeo.Services.clsPrecioCosteoService());
+            await ambito.ServiceProvider.GetRequiredService<IClsUnitOfWork>().GuardarCambiosAsync(Ct);
+        }
+
+        (await clsBaseDatosPruebas.EscalarAsync<string>(BaseDatos.CadenaCotifly,
+                "SELECT CONCAT(v.estadoCosteo, '|', COALESCE(v.motivoRechazo, 'sin motivo'), '|', CASE WHEN v.rechazadaAt IS NULL THEN 0 ELSE 1 END) "
+                + "FROM dbo_cotifly.CotizacionVehiculosLineaSolicitud v JOIN dbo_cotifly.CotizacionLineasSolicitud l ON l.id = v.lineaSolicitudId "
+                + $"WHERE l.cotizacionSolicitudId = '{cotizacion.Id}'"))
+            .Should().Be("pendiente_costeo|sin motivo|0", "deshacer el rechazo borra el motivo y la fecha");
+
+        static clsCosteoConsultadoNexo Foto(string linea, string? motivo) =>
+            new("EnCosteo", [linea], new clsCotizacionNexo("COT-1", "Borrador", "SinDefinir", [], []))
+            {
+                Detalle = [new clsLineaSolicitudNexo(linea, "x", null, null, null, null)
+                {
+                    EstadoLinea = motivo is null ? "porCostear" : "rechazada",
+                    MotivoRechazo = motivo,
+                }],
+            };
+    }
+
     [Fact]
     public async Task LaAgendaDelPollingTraeSoloLasVencidasYElReclamoLaTomaUnaSolaVez()
     {

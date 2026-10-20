@@ -10,7 +10,7 @@
                       puerto 14333 solo en 127.0.0.1 para SSMS o Azure Data Studio)
       3. Esquema      con sqlcmd 18 (/opt/mssql-tools18, incluido en la misma imagen de SQL Server 2019):
                         - bases dbTarifario_Nexo_Pruebas y dbsolucionesti            (scripts/sql/dev-01-bases.sql)
-                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, 03, pendientes/04, 05, 06, 07, 08, 09 y 11): base vacía -> db/scripts/01_crear_esquema.sql;
+                        - dbo_cotifly al esquema vigente (0001 a 0010, y luego 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10 y 11): base vacía -> db/scripts/01_crear_esquema.sql;
                           esquema anterior a HU-021 (Cotizaciones) -> 0002 a 0010; ya migrada -> solo el 0010 (idempotente)
                           y después los ajustes db/scripts/02_*.sql en adelante más el pendientes/04, por nombre (se pueden repetir)
                         - seeders de db/seeder/ (idempotentes: líneas de negocio, mapeo SAP, roles)
@@ -186,11 +186,11 @@ SqlcmdArchivo 'master' '/sql/dev-01-bases.sql'
 # Después van los ajustes db/scripts/02_*.sql en adelante (hoy el 02 del cubicador, HU-023.3; el 03 del orden del camión y el id del
 # catálogo del conexo y el 05 de la categoría del conexo, HU-014 #188: el backend mapea sus columnas, sin ellos /health/ready da 503
 # "falta 03" o "falta 05"; el 07 de BUSQUEDA_AGOTADA, HU-023 #176; el 08 que retira las vistas del borrador de métricas, HU-014.3 #152;
-# el 09 de scorePrioridad, HU-018.1 #155, y el 11 del peso con tara, HU-030.1 #184: el backend mapea sus columnas, sin ellos /health/ready
-# da 503 "falta 09" o "falta 11"), en orden de nombre,
+# el 09 de scorePrioridad, HU-018.1 #155, el 10 del rechazo de la línea, HU-028.1 #183, y el 11 del peso con tara, HU-030.1 #184: el
+# backend mapea sus columnas, sin ellos /health/ready da 503 "falta 09", "falta 10" o "falta 11"), en orden de nombre,
 # igual que db/ejecutar-bd.*: cada uno revisa si su cambio ya está, así que se pueden repetir.
 # De db/scripts/pendientes/ solo entra el 04_cubicacion_segundo_plano.sql (HU-023.5, el backend mapea sus columnas: sin él
-# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, 03, pendientes/04, 05, 06, 07, 08, 09, 11. El resto de pendientes/ no se corre.
+# /health/ready da 503 "falta 04"), intercalado por nombre: queda 02, 03, pendientes/04, 05, 06, 07, 08, 09, 10, 11. El resto de pendientes/ no se corre.
 $tablas = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo_cotifly'"
 $viejo = SqlcmdEscalar 'dbTarifario_Nexo_Pruebas' "SELECT CASE WHEN OBJECT_ID(N'dbo_cotifly.Cotizaciones', N'U') IS NULL THEN 0 ELSE 1 END"
 if ($tablas -eq '0') {

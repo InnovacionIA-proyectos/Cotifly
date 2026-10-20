@@ -578,6 +578,91 @@ public sealed class clsReSolicitudCosteoServiceTests
         return licitacion;
     }
 
+    // --- HU-028.1 (#183, decisión del 2026-10-20): los camiones rechazados por la Mesa de Costeo no se reenvían por defecto ---
+
+    /// <summary>
+    /// <see cref="VencidaDeDosRutas"/> con el segundo camión de la ruta 1 rechazado ("Sin cupo") y, si <paramref name="todaLaRuta2"/>, el
+    /// camión de la ruta 2 ("Sin operación"); con <paramref name="todos"/>, también el primero de la ruta 1.
+    /// </summary>
+    private clsCotizacionSolicitud ConRechazos(bool todaLaRuta2 = true, bool todos = false)
+    {
+        var licitacion = VencidaDeDosRutas();
+        var (ruta1, ruta2) = (licitacion.RutasOrdenadas[0], licitacion.RutasOrdenadas[1]);
+        var lecturas = new List<clsCosteoCamionNexo> { new(ruta1.VehiculosOrdenados[1].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin cupo") };
+        if (todaLaRuta2 || todos)
+        {
+            lecturas.Add(new(ruta2.VehiculosOrdenados[0].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin operación"));
+        }
+
+        if (todos)
+        {
+            lecturas.Add(new(ruta1.VehiculosOrdenados[0].Id, EstadoCosteo.Rechazada, true, MotivoRechazo: "Sin cupo"));
+        }
+
+        licitacion.AplicarFotoNexo(lecturas, DateTimeOffset.UtcNow).EsExitoso.Should().BeTrue();
+        return licitacion;
+    }
+
+    [Fact]
+    public async Task HU0281_EnElMismoFolioLosCamionesRechazadosNoViajanSiguenRechazadosYLaRespuestaAvisaQueSeOmitieron()
+    {
+        var licitacion = ConRechazos();
+        IReadOnlyList<clsVehiculoLineaSolicitud>? enviados = null;
+        _envio.When(e => e.EnviarGuardadaAsync(licitacion, Arg.Any<clsMargenPolitica?>(), Arg.Any<Guid>(), Arg.Any<string?>()))
+            .Do(ci => enviados = [.. licitacion.LineasNexo().Select(l => l.Camion)]);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada(), Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        var (ruta1, ruta2) = (licitacion.RutasOrdenadas[0], licitacion.RutasOrdenadas[1]);
+        enviados.Should().Equal([ruta1.VehiculosOrdenados[0]], "solo viaja el camión no rechazado; la ruta 2 (toda rechazada) se omite");
+        ruta1.VehiculosOrdenados[1].Should().Match<clsVehiculoLineaSolicitud>(v => v.FueraDelEnvio && v.MotivoRechazo == "Sin cupo");
+        (ruta2.Rechazada, ruta2.ViajaANexo).Should().Be((true, false), "la ruta queda visible como rechazada, sin precio");
+        resultado.Valor.AvisoRechazos.Should().StartWith("No se volvieron a enviar a Nexo")
+            .And.Contain("ruta 1 (").And.Contain("1 de 2 camiones. Motivo: Sin cupo")
+            .And.Contain("ruta 2 (").And.Contain("la ruta completa (1 camión)").And.Contain("Motivo: Sin operación");
+    }
+
+    [Fact]
+    public async Task HU0281_LaVersionNuevaCopiaLosRechazadosComoRechazadosSinEnviarlos()
+    {
+        var licitacion = ConRechazos();
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = true }, Version, null, Ct);
+
+        resultado.EsExitoso.Should().BeTrue(resultado.EsFallo ? resultado.Error.Mensaje : null);
+        var nueva = _agregada!;
+        nueva.RutasOrdenadas.Select(r => r.Vehiculos.Count).Should().Equal([2, 1], "se copian todos (el número de camiones decide cómo viajan los demás)");
+        var copiado = nueva.RutasOrdenadas[0].VehiculosOrdenados[1];
+        (copiado.EstadoCosteo, copiado.MotivoRechazo, copiado.RechazadaAt, copiado.FueraDelEnvio).Should().Be(
+            ((EstadoCosteo?)EstadoCosteo.Rechazada, (string?)"Sin cupo", licitacion.RutasOrdenadas[0].VehiculosOrdenados[1].RechazadaAt, true),
+            "trazable: el mismo motivo y la misma fecha");
+        nueva.RutasOrdenadas[1].Rechazada.Should().BeTrue();
+        nueva.LineasNexo().Select(l => l.Camion).Should().Equal([nueva.RutasOrdenadas[0].VehiculosOrdenados[0]]);
+        resultado.Valor.AvisoRechazos.Should().StartWith("La versión nueva copia como rechazados").And.Contain("Sin operación");
+        await _envio.Received(1).EnviarGuardadaAsync(nueva, Arg.Any<clsMargenPolitica?>(), _ana, Arg.Any<string?>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HU0281_ConTodosLosCamionesRechazadosNoHayNadaQueEnviarYResponde409SinTocarNada(bool versionNueva)
+    {
+        var licitacion = ConRechazos(todos: true);
+
+        var resultado = await Servicio().ReSolicitarAsync(_ana, licitacion.Folio, Entrada() with { NuevaVersion = versionNueva }, Version, null, Ct);
+
+        resultado.Error.Codigo.Should().Be(clsCodigosError.SinRutasCotizables);
+        resultado.Error.Detalle.Should().Be(clsReSolicitudCosteoService.MotivoTodosRechazados);
+        resultado.Error.Mensaje.Should().Contain("reincluir_rechazados");
+        licitacion.VersionNegocio.Should().Be(Version);
+        _agregada.Should().BeNull();
+        await _unidad.DidNotReceiveWithAnyArgs().GuardarCambiosSiVersionAsync(default, default, Ct);
+        await _envio.DidNotReceiveWithAnyArgs().EnviarGuardadaAsync(default!, default, default, default);
+        (await Servicio().ValidarAsync(_ana, licitacion, Entrada() with { NuevaVersion = versionNueva }, Ct))!.Codigo
+            .Should().Be(clsCodigosError.SinRutasCotizables, "la propuesta del asistente usa las mismas reglas");
+    }
+
     [Fact]
     public async Task LaVersionNuevaEnUsdFijaLaTrmDelDiaYLaOriginalConservaLaSuya()
     {
