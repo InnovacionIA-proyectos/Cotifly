@@ -93,7 +93,8 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
         scripts[clsBaseDatosPruebas.ScriptsHasta04 - 1].Should().Be(clsBaseDatosPruebas.Script04, "ScriptsHasta04 incluye el 04 y no el 05");
         scripts[clsBaseDatosPruebas.ScriptsHasta05 - 1].Should().Be(clsBaseDatosPruebas.Script05, "ScriptsHasta05 incluye el 05 y no el 06");
         scripts[clsBaseDatosPruebas.ScriptsHasta06 - 1].Should().Be(clsBaseDatosPruebas.Script06, "ScriptsHasta06 incluye el 06 y no el 09");
-        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsSin07 incluye el 09 (el backend mapea scorePrioridad)");
+        scripts[clsBaseDatosPruebas.ScriptsHasta09 - 1].Should().Be(clsBaseDatosPruebas.Script09, "ScriptsHasta09 incluye el 09 y no el 11");
+        scripts[clsBaseDatosPruebas.ScriptsSin07 - 1].Should().Be(clsBaseDatosPruebas.Script11, "ScriptsSin07 incluye el 09 y el 11 (el backend los mapea)");
         scripts[clsBaseDatosPruebas.ScriptsSin07].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsSin07 corta justo antes del 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07 - 1].Should().Be(clsBaseDatosPruebas.Script07, "ScriptsHasta07 incluye el 07");
         scripts[clsBaseDatosPruebas.ScriptsHasta07..].Should().ContainSingle().Which.Should().Be(clsBaseDatosPruebas.Script08, "después del 07 solo va el 08");
@@ -227,6 +228,26 @@ public sealed class clsEsquemaTests(clsBaseDatosPruebas baseDatos) : clsPruebaIn
                 + "JOIN sys.types ty ON ty.user_type_id = c.user_type_id "
                 + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionesSolicitud') AND c.name = N'scorePrioridad'"))
             .Should().Be("decimal(9,4)|1");
+    }
+
+    [Fact]
+    public async Task HU0301_ElScript11EsIdempotenteSobreUnaBaseMigradaYSobreUnaInstalacionDesdeCeroYDejaDecimal122NullConSuCheck()
+    {
+        // HU-030.1 (#184): pesoConTaraKg en la ruta (db/scripts/11; el 01 no lo trae).
+        await using var migrada = await BaseDatos.CrearBaseConScriptsAsync("dbIdem11", clsBaseDatosPruebas.Scripts.Length);
+        await ReaplicarYVerificarIdempotenciaAsync(migrada.Cadena, clsBaseDatosPruebas.Script11);
+
+        await using var instalada = await BaseDatos.CrearBaseInstaladaAsync("dbIdem11Inst");
+        await ReaplicarYVerificarIdempotenciaAsync(instalada.Cadena, clsBaseDatosPruebas.Script11);
+        (await clsBaseDatosPruebas.EscalarAsync<string>(instalada.Cadena,
+                "SELECT CONCAT(ty.name, '(', c.precision, ',', c.scale, ')|', c.is_nullable) FROM sys.columns c "
+                + "JOIN sys.types ty ON ty.user_type_id = c.user_type_id "
+                + "WHERE c.object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud') AND c.name = N'pesoConTaraKg'"))
+            .Should().Be("decimal(12,2)|1");
+        (await clsBaseDatosPruebas.EscalarAsync<int>(instalada.Cadena,
+                "SELECT COUNT(*) FROM sys.check_constraints WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg' "
+                + "AND parent_object_id = OBJECT_ID(N'dbo_cotifly.CotizacionLineasSolicitud')"))
+            .Should().Be(1);
     }
 
     [Fact]

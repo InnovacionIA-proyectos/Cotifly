@@ -53,6 +53,13 @@ public static class clsCodigosLineaSolicitud
 
     /// <summary>HU-023.3 (#158): el catálogo del cubicador marca la mercancía como no cubicable.</summary>
     public const string MercanciaNoCubicable = "MERCANCIA_NO_CUBICABLE";
+
+    /// <summary>
+    /// HU-030.1 (#184): el <c>peso_con_tara_kg</c> de la ruta es menor que su peso de carga (<c>peso_kg</c> o, sin él, la suma de las
+    /// mercancías): el peso con tara es la carga MÁS la tara de los contenedores. Con otra clase de viaje el campo es
+    /// <see cref="CampoNoAplica"/>.
+    /// </summary>
+    public const string PesoConTaraMenorQueCarga = "PESO_CON_TARA_MENOR_QUE_CARGA";
 }
 
 /// <summary>Un error de un campo de la licitación: el campo (snake_case del contrato), su código y un mensaje legible.</summary>
@@ -124,6 +131,20 @@ public sealed record clsLineaSolicitudCosteo
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>
+    /// HU-030.1 (#184): peso total CON la tara de los contenedores que escribe el comercial para la ruta (<c>peso_con_tara_kg</c>, kg);
+    /// <c>null</c> = sin tara (a Nexo va el peso de carga, como antes). Solo con <c>clase_viaje = Contenedor</c> y nunca menor que el peso
+    /// de carga (<see cref="PesoCarga"/>). No va al cubicador (que recibe el peso por mercancía, sin tara): solo cambia el <c>peso</c> de
+    /// las líneas de Nexo de la ruta, que entonces viajan sin posiciones (<see cref="clsLineaSolicitud.PesoLineaNexo"/>).
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
+
+    /// <summary>¿La ruta es de contenedor (<c>clase_viaje = Contenedor</c>, recortado, como se guarda)?</summary>
+    public bool EsContenedor => string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+
+    /// <summary>Peso de la carga (sin tara): <see cref="PesoKg"/> o, sin él, la suma de las mercancías con peso; <c>null</c> si no hay.</summary>
+    public decimal? PesoCarga => PesoKg ?? (SumaPesoPosiciones is var suma && suma > 0 ? suma : null);
 
     /// <summary>
     /// Horas de cargue propias de la línea (<c>horasCargue</c> de <c>CapturaLineaRequest</c>, G5 de HU-013.11); <c>null</c> = las del
@@ -205,6 +226,7 @@ public sealed record clsLineaSolicitudCosteo
         Rango(errores, "valor_aprovisionamiento", ValorAprovisionamiento, 0m, clsSolicitudCosteo.MaximoValor);
         Rango(errores, "peso_kg", PesoKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "valor_mercancia", ValorMercancia, 0m, clsSolicitudCosteo.MaximoValor);
+        Rango(errores, clsSolicitudCosteo.CampoPesoConTara, PesoConTaraKg, 0m, clsSolicitudCosteo.MaximoPeso);
         Rango(errores, "horas_cargue", HorasCargue, 0m, clsSolicitudCosteo.MaximoHoras);
         Rango(errores, "horas_descargue", HorasDescargue, 0m, clsSolicitudCosteo.MaximoHoras);
         errores.AddRange(ErroresCondicionales());
@@ -255,7 +277,7 @@ public sealed record clsLineaSolicitudCosteo
     public IReadOnlyList<clsErrorCampo> ErroresCondicionales()
     {
         var errores = new List<clsErrorCampo>();
-        var esContenedor = string.Equals(ClaseViaje?.Trim(), clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+        var esContenedor = EsContenedor;
         var conClase = !string.IsNullOrWhiteSpace(ClaseContenedor);
         if (conClase && !esContenedor)
         {
@@ -274,7 +296,32 @@ public sealed record clsLineaSolicitudCosteo
                 "El campo 'valor_aprovisionamiento' solo aplica con una ciudad_levante_contenedor distinta del origen."));
         }
 
+        errores.AddRange(ErroresPesoConTara());
         return errores;
+    }
+
+    /// <summary>
+    /// HU-030.1 (#184): <c>peso_con_tara_kg</c> solo con <c>clase_viaje = Contenedor</c> (<see cref="clsCodigosLineaSolicitud.CampoNoAplica"/>)
+    /// y nunca menor que el peso de carga (<see cref="clsCodigosLineaSolicitud.PesoConTaraMenorQueCarga"/>). El tope (Nexo: hasta
+    /// <see cref="clsSolicitudCosteo.MaximoPeso"/> kg con 2 decimales) lo revisa <see cref="Errores"/> con el rango de los demás pesos.
+    /// </summary>
+    private IEnumerable<clsErrorCampo> ErroresPesoConTara()
+    {
+        if (PesoConTaraKg is not { } conTara)
+        {
+            yield break;
+        }
+
+        if (!EsContenedor)
+        {
+            yield return new clsErrorCampo(clsSolicitudCosteo.CampoPesoConTara, clsCodigosLineaSolicitud.CampoNoAplica,
+                $"El campo '{clsSolicitudCosteo.CampoPesoConTara}' (peso total con tara) solo aplica con clase_viaje = {clsCatalogosCaptura.ClaseViajeContenedor}.");
+        }
+        else if (PesoCarga is { } carga && conTara < carga)
+        {
+            yield return new clsErrorCampo(clsSolicitudCosteo.CampoPesoConTara, clsCodigosLineaSolicitud.PesoConTaraMenorQueCarga,
+                $"El peso total con tara ({conTara:0.##} kg) no puede ser menor que el peso de la carga ({carga:0.##} kg): es la carga más la tara de los contenedores.");
+        }
     }
 
     /// <summary>

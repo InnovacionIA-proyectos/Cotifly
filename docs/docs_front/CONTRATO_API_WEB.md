@@ -2,7 +2,7 @@
 
 Contrato congelado que consume el módulo Angular de ClientePro (HU-004, `clientepro-frontend`) y que implementa el backend .NET 10 (HU-003). La fuente de verdad es [`backend-dotnet/specs/openapi.yaml`](../../backend-dotnet/specs/openapi.yaml); este documento resume lo que el frontend necesita saber para integrarse sin leer el código.
 
-> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-19
+> **Estado:** vigente · **Dueño:** Duban Guerra (backend) · **Actualizado:** 2026-10-20
 
 - Fecha de congelamiento: 2026-09-24
 - Issue: #17 (HU-004.1)
@@ -1609,3 +1609,70 @@ frontend ya conoce, con sus mismas reglas y nombres:
   }
 }
 ```
+
+### 8.15 Peso con tara de las cargas contenerizadas (HU-030.1, #184)
+
+Solo para rutas con `clase_viaje = Contenedor` (aclaración del líder técnico del 2026-10-20; las demás clases no cambian). El
+comercial escribe el **peso total de la ruta con la tara de los contenedores** (`peso_con_tara_kg`, campo "Peso total con tara" de
+clientepro-frontend#107). Lo que va al cubicador (el peso por unidad de cada mercancía, sin tara) no cambia; a Nexo va el peso con tara.
+
+**Dónde se escribe.** En la ruta: en la captura (`RutaCapturaWeb`), en la edición (`PUT .../solicitud`, `RutaEdicionWeb`), en cada
+fila de la licitación (`LineaLicitacionWeb`) y en `datos_carga` de la re-solicitud (obsoleta). No por camión: los camiones salen del
+cubicador dentro de la misma captura y el comercial no sabe de antemano cuántos habrá. Valor inicial sugerido: `peso_kg`.
+
+<!-- esquema: RutaCapturaWeb -->
+```json
+{
+  "linea_negocio": "Importacion",
+  "origen_municipio_id": 76109,
+  "origen": "Buenaventura",
+  "destino_municipio_id": 11001,
+  "destino": "Bogotá D.C.",
+  "tipologia": "Contenedor",
+  "clase_viaje": "Contenedor",
+  "clase_contenedor": "CNT40.HC",
+  "peso_kg": 28500.5,
+  "peso_con_tara_kg": 36100.5,
+  "mercancias": [
+    { "codigo_mercancia": "CAFE_EN_ESTIBAS", "nombre_mercancia": "Estiba de café", "cantidad": 20, "largo_cm": 120, "ancho_cm": 100, "alto_cm": 150, "peso_kg": 1425 }
+  ]
+}
+```
+
+**Reglas.** Opcional; 0 a 999.999,99 con 2 decimales (`VALOR_FUERA_DE_RANGO`); nunca menor que el peso de carga (`peso_kg` o, sin él,
+la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`; con otra clase de viaje: `CAMPO_NO_APLICA`. Los dos en `detalle.errores`
+(captura y edición) o en `errores[]` de la fila (licitación):
+
+<!-- respuesta: POST /web/solicitudes-costeo 400 -->
+```json
+{
+  "error": {
+    "codigo": "SOLICITUD_COSTEO_INVALIDA",
+    "mensaje": "Ruta 1: El campo 'peso_con_tara_kg' (peso total con tara) solo aplica con clase_viaje = Contenedor.",
+    "detalle": {
+      "motivo": "CAMPO_NO_APLICA",
+      "errores": [
+        { "ruta": 0, "campo": "peso_con_tara_kg", "codigo": "CAMPO_NO_APLICA", "mensaje": "El campo 'peso_con_tara_kg' (peso total con tara) solo aplica con clase_viaje = Contenedor." }
+      ]
+    }
+  }
+}
+```
+
+**Qué viaja a Nexo.** Con un camión, la línea lleva `peso` = `peso_con_tara_kg`. Con varios, cada línea lleva el peso de carga de su
+camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones; un contenedor por camión, de la misma clase); el último camión en
+orden se queda con el resto del redondeo, así que la suma de las líneas es exactamente `peso_con_tara_kg`. En los dos casos la línea va
+**sin posiciones**: Nexo valida que el peso de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`, confirmado al
+cerrar NEXO#308) y la tara la descuadraría. Sin `peso_con_tara_kg` todo sigue como antes.
+
+**Lectura.** `GET .../costeo` (y `costeo` del detalle por folio) trae `rutas[].peso_con_tara_kg` y, por camión, el peso con tara que
+viajó a Nexo:
+
+<!-- esquema: CamionCosteo -->
+```json
+{ "tipo_vehiculo": "3S3", "carroceria": "FURGON", "peso_kg": 16000, "peso_con_tara_kg": 19800, "estado_costeo": "pendiente_costeo" }
+```
+
+`GET .../solicitud` devuelve `rutas[].peso_con_tara_kg` (`null` = sin tara). En la edición, cambiar solo la tara no vuelve a cubicar
+(no cambia lo que recibe el cubicador), pero sí cambia lo que va a Nexo: según el estado, se aplica en sitio o como reemplazo, igual que
+cualquier otro campo de la ruta. Mandar `null` quita la tara.

@@ -78,3 +78,23 @@ Característica: Captura de la solicitud de costeo por rutas
       | ruta | campo                                 | codigo               |
       | 0    | servicios_conexos[0].id_servicio_conexo | CONEXO_NO_ENCONTRADO |
     Y Nexo no recibió solicitudes
+
+  # HU-030.1 (#184) — Peso con tara de las cargas contenerizadas: el comercial escribe el peso total CON la tara por ruta; viaja a Nexo
+  # como el peso de la línea y sin posiciones (Nexo valida PESO_INCONSISTENTE al 1 % con las posiciones, NEXO#308). Solo en Contenedor.
+  Escenario: Una ruta de contenedor con peso con tara viaja a Nexo con ese peso y sin posiciones
+    Cuando "ana" envía a costeo la solicitud "C1" del cliente "900555111" con estas rutas:
+      | linea_negocio | origen_municipio_id | origen       | destino_municipio_id | destino | tipologia  | clase_viaje | clase_contenedor | peso_kg | peso_con_tara_kg | tipo_mercancia  |
+      | Importacion   | 76109               | Buenaventura | 11001                | Bogotá  | Contenedor | Contenedor  | CNT40.HC         | 1000    | 4800             | CAFE_EN_ESTIBAS |
+    Entonces la respuesta tiene el estado 201 y cumple el esquema "CotizacionResumen" del contrato
+    Y Nexo recibió una línea con el peso 4800 y sin posiciones
+    Y la ruta 1 de "C1" guarda el peso con tara "4800.00" y el peso de carga "1000.00"
+
+  Escenario: El peso con tara solo aplica a las cargas contenerizadas
+    Cuando "ana" envía a costeo la solicitud "C1" del cliente "900555111" con estas rutas:
+      | linea_negocio | origen_municipio_id | origen       | destino_municipio_id | destino | clase_viaje | peso_kg | peso_con_tara_kg |
+      | Importacion   | 76109               | Buenaventura | 11001                | Bogotá  | Cupo        | 1000    | 4800             |
+    Entonces la respuesta tiene el estado 400 con el código de negocio "SOLICITUD_COSTEO_INVALIDA"
+    Y el error trae exactamente estos errores por ruta:
+      | ruta | campo            | codigo          |
+      | 0    | peso_con_tara_kg | CAMPO_NO_APLICA |
+    Y Nexo no recibió solicitudes

@@ -164,6 +164,9 @@ otorga el permiso, con el 07 ya aplicado se declara `BaseDatos__MotivoBusquedaAg
 HU-018.1 (#155): antes de desplegar se aplica `db/scripts/09_score_prioridad.sql` (`CotizacionesSolicitud.scorePrioridad DECIMAL(9,4) NULL`,
 idempotente, sin respaldo porque solo agrega una columna NULL). A diferencia del 07 **sí es obligatorio**: el backend mapea la columna y
 sin ella `/health/ready` responde 503 "esquema incompleto: falta 09" (§4.5). No lleva variable ni permiso nuevo.
+HU-030.1 (#184): antes de desplegar se aplica `db/scripts/11_peso_con_tara.sql` (`CotizacionLineasSolicitud.pesoConTaraKg DECIMAL(12,2) NULL`
+con su `CHECK` > 0; idempotente, sin respaldo porque solo agrega una columna NULL). **Obligatorio**, como el 09: el backend mapea la
+columna y sin ella `/health/ready` responde 503 "esquema incompleto: falta 11" (§4.5). No lleva variable ni permiso nuevo.
 #191 (HU-026.1): antes de desplegar se aplica `db/scripts/06_idempotencia_captura.sql` (tabla `dbo_cotifly.CapturasIdempotentes`: la
 `Idempotency-Key` de la captura, los conexos, la re-solicitud y la edición, persistente y compartida entre réplicas). **Obligatorio**: sin la
 tabla `/health/ready` responde 503 "esquema incompleto: falta 06" (la API no degrada a memoria). No lleva variable ni permiso nuevo (la
@@ -389,7 +392,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
 
 ### 4.5 Release paso a paso
 
-0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06` y `db/scripts/09` aplicados** en la base del ambiente (o la base instalada
+0. **Precondición de esquema: `db/migrations_mssql/0001`–`0010`, `db/scripts/02`, `db/scripts/03`, `db/scripts/pendientes/04`, `db/scripts/05`, `db/scripts/06`, `db/scripts/09` y `db/scripts/11` aplicados** en la base del ambiente (o la base instalada
    desde cero con `db/scripts/01_crear_esquema.sql` y `db/seeder/`, que equivale a `0001`–`0010`). Los aplica el DBA con
    un usuario administrador y `sqlcmd -I`; la app no aplica migraciones. Regla de siempre: **primero el script, después
    la imagen.** Sin el esquema completo, `/health/ready` responde `503` (tabla de abajo), Traefik no manda tráfico a la
@@ -449,6 +452,18 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
      que se use, solo los dos endpoints retirados de la versión anterior (`/web/metricas/actividad` y `/ajustes-margen`, que el
      frontend no consume) responden 500 hasta que sube la imagen nueva.
    - Orden del release con #152 y #155 juntas: `09` → imagen → `08`.
+   - **HU-030.1 (#184): `db/scripts/11_peso_con_tara.sql` va ANTES de la imagen de #184.** Agrega a la ruta
+     (`CotizacionLineasSolicitud`) la columna `pesoConTaraKg DECIMAL(12,2) NULL` y el `CHECK` `ck_cotizacionLineasSolicitud_pesoConTaraKg`
+     (`NULL` o > 0): el peso total con tara que escribe el comercial en una ruta `Contenedor`. Es un `ADD` de columna NULL, idempotente
+     y en una transacción; el ejecutador lo corre por nombre después del `09` (el número `10` es de #183). Sin él, la imagen de #184 queda
+     en 503 "falta 11" (como con el `09`, aplicarlo la recupera sin redesplegar). Aplicarlo con la imagen anterior en marcha no cambia
+     nada (no lee la columna). Verificación de solo lectura (un largo no NULL y `1`):
+
+     ```sql
+     SELECT COL_LENGTH(N'dbo_cotifly.CotizacionLineasSolicitud', N'pesoConTaraKg') AS pesoConTaraKg_11,
+            (SELECT COUNT(*) FROM sys.check_constraints
+              WHERE name = N'ck_cotizacionLineasSolicitud_pesoConTaraKg')          AS check_11;
+     ```
 
    **Errores de `/health/ready` (`503 {"status":"unavailable","detalle":"..."}`)** y qué hacer. La sonda compara las tablas y
    columnas que mapea el modelo EF con la base (más el `CHECK` de `estadoEnvio`); los mensajes viejos `falta 0004` a
@@ -467,6 +482,7 @@ El paquete es privado: los nodos necesitan una credencial de **solo lectura** pa
    | `esquema incompleto: falta 05` | Falta `CotizacionServiciosConexos.categoriaServicioConexo` (HU-014, #188) | Aplicar `db/scripts/05_categoria_conexo.sql` |
    | `esquema incompleto: falta 06` | Falta la tabla `CapturasIdempotentes` (o tiene la forma de la propuesta de #173) (#191) | Aplicar `db/scripts/06_idempotencia_captura.sql`, con la aprobación del DBA |
    | `esquema incompleto: falta 09` | Falta `CotizacionesSolicitud.scorePrioridad` (HU-018.1, #155) | Aplicar `db/scripts/09_score_prioridad.sql` |
+   | `esquema incompleto: falta 11` | Falta `CotizacionLineasSolicitud.pesoConTaraKg` (HU-030.1, #184) | Aplicar `db/scripts/11_peso_con_tara.sql` |
    | `esquema incompleto: falta Tabla.columna, ...` (hasta 5) | Falta otra tabla o columna del modelo (por ejemplo un script intermedio sin aplicar) | Comparar con `db/scripts/01_crear_esquema.sql` y aplicar el script que la trae (lista en `docs/database/ESQUEMA_OBJETIVO_SQLSERVER.md` §A.5) |
 
 1. **Staging.** Merge a `QA` → el pipeline (o `publicar-imagen.sh --canal qa`) publica `sha-<corto>`. En Dokploy, stack

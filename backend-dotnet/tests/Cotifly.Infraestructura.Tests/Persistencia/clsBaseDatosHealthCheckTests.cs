@@ -70,6 +70,20 @@ public sealed class clsBaseDatosHealthCheckTests
         resultado.Description.Should().Be(descripcion);
     }
 
+    [Theory]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg", clsBaseDatosHealthCheck.DescripcionEsquemaSin11)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CotizacionesSolicitud.scorePrioridad", clsBaseDatosHealthCheck.DescripcionEsquemaSin09)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CapturasIdempotentes.resultado", clsBaseDatosHealthCheck.DescripcionEsquemaSin06)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|CotizacionLineasSolicitud.condicionada", clsBaseDatosHealthCheck.DescripcionEsquemaSin02)]
+    [InlineData("CotizacionLineasSolicitud.pesoConTaraKg|Otra.columna", "esquema incompleto: falta CotizacionLineasSolicitud.pesoConTaraKg, Otra.columna")]
+    public void HU0301_SinEl11LaSondaPideEl11SoloCuandoNoFaltaUnScriptAnterior(string faltantes, string descripcion)
+    {
+        var resultado = clsBaseDatosHealthCheck.Clasificar(faltantes.Split('|'), cotizacionesViejas: false);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be(descripcion);
+    }
+
     internal static async Task<HealthCheckResult> EvaluarAsync(string? cadena)
     {
         await using var proveedor = clsServiciosPruebas.Crear(cadena, new clsRelojFalso());
@@ -180,6 +194,18 @@ public sealed class clsBaseDatosHealthCheckIntegracionTests(clsBaseDatosPruebas 
 
         resultado.Status.Should().Be(HealthStatus.Unhealthy);
         resultado.Description.Should().Be("esquema incompleto: falta 05");
+    }
+
+    [Fact]
+    public async Task HU0301_ConEl09PeroSinEl11EsUnhealthyPorqueLeFaltaEl11()
+    {
+        // HU-030.1 (#184): el modelo EF mapea CotizacionLineasSolicitud.pesoConTaraKg de db/scripts/11_peso_con_tara.sql.
+        await using var sin11 = await baseDatos.CrearBaseConScriptsAsync("dbSin11", clsBaseDatosPruebas.ScriptsHasta09);
+
+        var resultado = await clsBaseDatosHealthCheckTests.EvaluarAsync(sin11.Cadena);
+
+        resultado.Status.Should().Be(HealthStatus.Unhealthy);
+        resultado.Description.Should().Be("esquema incompleto: falta 11");
     }
 
     [Fact]

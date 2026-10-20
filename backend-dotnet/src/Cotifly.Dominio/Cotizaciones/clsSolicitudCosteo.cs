@@ -31,6 +31,9 @@ public sealed record clsSolicitudCosteo
     /// <summary>Código de Nexo (va en el detalle): el peso difiere más del 1 % de la suma de las posiciones.</summary>
     public const string PesoInconsistente = "PESO_INCONSISTENTE";
 
+    /// <summary>HU-030.1 (#184): nombre en el contrato del peso total con tara de una ruta de contenedor.</summary>
+    public const string CampoPesoConTara = "peso_con_tara_kg";
+
     public required TipoSolicitud Tipo { get; init; }
     public DateTimeOffset? Deadline { get; init; }
     public decimal? HorasCargue { get; init; }
@@ -62,6 +65,9 @@ public sealed record clsSolicitudCosteo
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
+    /// <summary>HU-030.1 (#184): peso total con tara (ver <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>).</summary>
+    public decimal? PesoConTaraKg { get; init; }
+
     /// <summary>Posiciones de cubicaje (bultos), en el orden del formulario.</summary>
     public IReadOnlyList<clsPosicionCarga> Posiciones { get; init; } = [];
 
@@ -86,6 +92,7 @@ public sealed record clsSolicitudCosteo
             Rango("valor_aprovisionamiento", ValorAprovisionamiento, 0m, MaximoValor),
             Rango("peso_kg", PesoKg, 0m, MaximoPeso),
             Rango("valor_mercancia", ValorMercancia, 0m, MaximoValor),
+            Rango(CampoPesoConTara, PesoConTaraKg, 0m, MaximoPeso),
             Posiciones.Count > MaximoPosiciones
                 ? new clsErrorDominio(CodigoError, $"Una solicitud admite máximo {MaximoPosiciones} posiciones.")
                 : null);
@@ -141,6 +148,7 @@ public sealed record clsSolicitudCosteo
         ValorAprovisionamiento = ValorAprovisionamiento,
         PesoKg = PesoKg,
         ValorMercancia = ValorMercancia,
+        PesoConTaraKg = PesoConTaraKg,
         Posiciones = Posiciones,
     };
 
@@ -176,6 +184,7 @@ public sealed record clsSolicitudCosteo
             ValorAprovisionamiento = linea.ValorAprovisionamiento,
             PesoKg = linea.PesoKg,
             ValorMercancia = linea.ValorMercancia,
+            PesoConTaraKg = linea.PesoConTaraKg,
             Posiciones = linea.Posiciones,
         };
     }

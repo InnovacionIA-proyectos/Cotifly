@@ -1281,6 +1281,9 @@ La cotización tiene una o varias rutas y cada una tiene su margen y sus conexos
 - **Concurrencia y PDF:** como siempre, `If-Match` obligatorio (428/409) y el `ETag` nuevo en la respuesta. Sin enviar, el PDF vigente queda invalidado (`pdf_desactualizado`); enviada o con resultado, 409 `PDF_YA_ENVIADO` con la llamada para crear la versión `-vN`. Sin cambios (mismo margen o mismas cantidades), 200 sin tocar nada.
 - **Asistente:** la acción propuesta `ajustar_margen` trae `linea_orden` en el `cuerpo`: enviarlo tal cual al Confirmar. Si la cotización tiene varias rutas y el comercial no dijo cuál, el asistente pregunta antes de proponer.
 - **Camiones y mercancías de cada ruta (HU-021.9, #136):** `rutas[]` trae también `linea_negocio_id`, `peso_kg`, `camiones[]` (`tipo_vehiculo`, `carroceria`, `peso_kg`, `estado_costeo`; sin costos; vehículo en `null` = lo define la Mesa de Costeo), `vehiculos` (el texto que imprime el PDF, por ejemplo "2 × 3S3 - FURGON (20000 KG)") y `mercancias[]` (`orden`, `codigo_mercancia`, `nombre_mercancia`, `cantidad`, medidas y `peso_kg`). Un camión `descartada` sigue en la lista con su estado, pero no cuenta en el precio ni sale en el PDF.
+- **Peso con tara (HU-030.1, #184):** una ruta `Contenedor` trae `peso_con_tara_kg` (el que escribió el comercial; `null` = sin tara) y
+  cada camión `camiones[].peso_con_tara_kg` (el peso que viajó a Nexo en su línea: su carga más su parte de la tara). Mostrar los dos
+  pesos de la ruta (carga y con tara). Ver 5.30.
 - **Por qué un camión sigue pendiente (#181, Nexo #309):** cada `camiones[]` trae además `estado_linea_nexo` (`por_costear`, `auto_resuelta` o `revisada`) y `motivo_pendiente` (texto de Nexo, p. ej. "Línea sin vehículo: requiere consulta completa" o "SICE-TAC no se usa: ..."; solo con el camión en `pendiente_costeo`). Mostrar el motivo junto al camión pendiente en vez de un "pendiente de costeo" sin explicación. Son solo de lectura y **no se guardan**: los lee el polling y llegan en `null` si Nexo no los manda (versión anterior), si el camión aún no se asoció a su línea o justo después de un reinicio del servicio (vuelven con la siguiente consulta). `null` = no mostrar nada, nunca un error. Salen en `GET .../costeo` y en las respuestas de los `PUT` de margen y de conexos; en las demás mutaciones vienen en `null` (volver a pedir el `GET`).
 
 ### 5.18.2 Contrato HU-021 cerrado (HU-021.11, #138): cambios que rompen
@@ -1925,6 +1928,8 @@ Contrato completo, ejemplos y errores en `CONTRATO_API_WEB.md` §8.13; flujo de 
   (`MODO_CAMBIO`: recargar), `CONFLICTO_CONCURRENCIA` o `IDEMPOTENCY_KEY_REUTILIZADA`; 428 sin `If-Match`; 503 `NEXO_NO_DISPONIBLE` con
   `detalle.motivo = RECHAZO_NEXO_FALLIDO` (no se cambió nada ni se capturó otra solicitud; la versión subió: recargar).
 - **Reemplaza** el uso de `GET .../nueva-version` para prellenar y de `datos_carga` en `re-solicitar` (obsoleto) para cambiar la carga.
+- **Peso con tara (HU-030.1, #184):** cada ruta trae `peso_con_tara_kg` (`null` = sin tara) y se edita como los demás campos; cambiar
+  solo la tara no vuelve a cubicar. Ver 5.30.
 
 ### 5.29 Detalle por folio (`GET /web/cotizaciones/{folio}`). HU-027.1 (#179): implementado, pendiente de QA
 
@@ -1944,6 +1949,24 @@ con `GET .../costeo`. Contrato completo y ejemplo en `CONTRATO_API_WEB.md` §8.1
 - **Una fuente por dato** (tabla en `CONTRATO_API_WEB.md` §8.14): precios, margen, camiones y conexos con precio de `costeo.rutas[]`;
   municipios y condiciones de `captura`; resultado, envío y dueño de `cotizacion`; totales de `totales`. No usar `captura` para
   prellenar "Editar solicitud" (sección 5.28): para eso está `GET .../solicitud`.
+
+### 5.30 Peso total con tara de las cargas contenerizadas (HU-030.1, #184; clientepro-frontend#107). Implementado, pendiente de QA
+
+Contrato completo y ejemplos en `CONTRATO_API_WEB.md` §8.15.
+
+- **Campo:** `peso_con_tara_kg` (number o null, opcional) en cada ruta de la captura (`RutaCapturaWeb`), de la edición
+  (`PUT .../solicitud`) y de cada fila de la licitación (`LineaLicitacionWeb`). **Mostrarlo solo con `clase_viaje = Contenedor`**
+  (etiqueta "Peso total con tara", con una nota: "carga más la tara de todos los contenedores de la ruta, en kg"). Valor inicial
+  sugerido: el `peso_kg` de la ruta. El "Peso (kg)" de cada mercancía no cambia: es el peso por unidad, sin tara, y es el que usa el cubicador.
+- **Por qué por ruta y no por camión:** los camiones salen del cubicador en la misma petición de la captura; el comercial no sabe cuántos
+  habrá. Cotifly reparte la tara por partes iguales entre los camiones (un contenedor por camión) al enviar a Nexo.
+- **Lo que pasa en Nexo:** las líneas de una ruta con tara llevan el peso con tara y **no llevan posiciones** (Nexo valida
+  `PESO_INCONSISTENTE` al 1 % cuando la línea trae posiciones). Sin el campo, nada cambia.
+- **Errores (400 `SOLICITUD_COSTEO_INVALIDA`, `detalle.errores[]` en `peso_con_tara_kg`):** `CAMPO_NO_APLICA` (no es Contenedor: limpiar
+  el campo al cambiar la clase de viaje), `PESO_CON_TARA_MENOR_QUE_CARGA` (menor que el peso de carga) y `VALOR_FUERA_DE_RANGO`
+  (fuera de 0 a 999.999,99 o más de 2 decimales). En la licitación, los mismos códigos en `errores[]` de la fila.
+- **Lectura:** `GET .../costeo` trae `rutas[].peso_con_tara_kg` y `rutas[].camiones[].peso_con_tara_kg`; `GET .../solicitud`,
+  `rutas[].peso_con_tara_kg`.
 
 ## 6. Flujos
 

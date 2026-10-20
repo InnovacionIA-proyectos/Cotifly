@@ -130,6 +130,8 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
                 "estadoCubicacion IS NULL OR estadoCubicacion IN ('pendiente', 'cubicada', 'fallida')");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_cubicacionIntentos", "cubicacionIntentos >= 0");
             t.HasCheckConstraint("ck_cotizacionLineasSolicitud_avisosCubicacion", "avisosCubicacion IS NULL OR ISJSON(avisosCubicacion) = 1");
+            // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql.
+            t.HasCheckConstraint("ck_cotizacionLineasSolicitud_pesoConTaraKg", "pesoConTaraKg IS NULL OR pesoConTaraKg > 0");
         });
 
         builder.HasKey(l => l.Id).HasName("pk_cotizacionLineasSolicitud");
@@ -170,6 +172,8 @@ internal sealed class clsLineaSolicitudConfiguracion : IEntityTypeConfiguration<
         builder.Property(l => l.HorasDescargue).Columna("horasDescargue", "decimal(6,2)");
         builder.Property(l => l.PesoKg).Columna("pesoKg", "decimal(12,2)");
         builder.Property(l => l.ValorMercancia).Columna("valorMercancia", "decimal(18,2)");
+        // HU-030.1 (#184): db/scripts/11_peso_con_tara.sql (sin él, /health/ready dice "falta 11").
+        builder.Property(l => l.PesoConTaraKg).Columna("pesoConTaraKg", "decimal(12,2)");
         builder.Property(l => l.ValorLevanteContenedor).Columna("valorLevanteContenedor", "decimal(18,2)");
         builder.Property(l => l.CostoFletesTotal).Columna("costoFletesTotal", "decimal(18,2)");
         builder.Property(l => l.CostoRetornoContenedorTotal).Columna("costoRetornoContenedorTotal", "decimal(18,2)");

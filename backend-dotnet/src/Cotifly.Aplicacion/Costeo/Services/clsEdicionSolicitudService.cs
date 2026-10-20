@@ -749,7 +749,10 @@ public sealed class clsEdicionSolicitudService(
             ConexosEditables(r, catalogo),
             r.MargenAplicado,
             r.OrigenMargen is { } origen ? clsCodigoEnum.ACodigo(origen) : null,
-            r.TieneMargenNegociado);
+            r.TieneMargenNegociado)
+        {
+            PesoConTaraKg = r.PesoConTaraKg,
+        };
 
     /// <summary>
     /// Los conexos de la ruta como los edita el comercial: con el id del catálogo de Nexo (si se resolvió) y UNA fila por servicio. Un
@@ -883,14 +886,14 @@ public sealed class clsEdicionSolicitudService(
     private sealed record clsClaveRuta(
         int? Origen, int? Destino, string? Tipologia, string? ClaseViaje, string? ClaseContenedor, bool? Exclusivo, bool? Consolidado,
         bool RetornaContenedor, int? CiudadDevolucion, bool LevanteDiferente, int? CiudadLevante, decimal? ValorLevante, decimal? HorasCargue,
-        decimal? HorasDescargue, decimal? PesoKg, decimal? ValorMercancia);
+        decimal? HorasDescargue, decimal? PesoKg, decimal? ValorMercancia, decimal? PesoConTaraKg);
 
     private sealed record clsClaveMercancia(string? Codigo, int Cantidad, decimal LargoCm, decimal AnchoCm, decimal AltoCm, decimal? PesoKg);
 
     private static clsClaveRuta Clave(clsLineaSolicitudCosteo l) =>
         new(l.OrigenMunicipioId, l.DestinoMunicipioId, Texto(l.Tipologia), Texto(l.ClaseViaje), Texto(l.ClaseContenedor), l.Exclusivo, l.Consolidado,
             l.RetornaContenedor ?? false, l.CiudadDevolucionMunicipioId, l.LevanteContenedorDiferente ?? false, l.CiudadLevanteMunicipioId,
-            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg, l.ValorMercancia);
+            l.ValorAprovisionamiento, l.HorasCargue, l.HorasDescargue, l.PesoKg, l.ValorMercancia, l.PesoConTaraKg);
 
     private static clsClaveMercancia? ClaveMercancia(clsPosicionCarga? p) =>
         p is null ? null : new(Texto(p.CodigoMercancia), p.Cantidad, p.LargoCm, p.AnchoCm, p.AltoCm, p.PesoKg);

@@ -137,6 +137,12 @@ public sealed record clsRutaCosteo(
     public decimal? PesoKg { get; init; }
 
     /// <summary>
+    /// HU-030.1 (#184): peso total de la ruta con la tara de los contenedores (solo una ruta <c>Contenedor</c> que la trae); <c>null</c> =
+    /// a Nexo va el peso de carga. Cada camión trae su parte en <see cref="clsCamionCosteo.PesoConTaraKg"/>.
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
+
+    /// <summary>
     /// HU-021.9: los camiones de la ruta en su orden estable (el primero vigente lleva los conexos en Nexo), sin costos ni ids de Nexo.
     /// Los <c>descartada</c> vienen con su estado: no cuentan en el precio.
     /// </summary>
@@ -208,6 +214,13 @@ public sealed record clsCamionCosteo(
     /// mes actual...), con el texto de Nexo. Solo con el camión en <c>pendiente_costeo</c>; <c>null</c> en los demás casos o sin el dato.
     /// </summary>
     public string? MotivoPendiente { get; init; }
+
+    /// <summary>
+    /// HU-030.1 (#184): el peso con tara que viajó (o viajará) a Nexo en la línea del camión: el de la ruta con un camión o, con varios, el
+    /// peso de carga del camión más una parte igual de la tara; <c>null</c> si la ruta no lleva tara (entonces viaja <see cref="PesoKg"/>
+    /// o el de la ruta).
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
 }
 
 /// <summary>
@@ -1165,7 +1178,8 @@ public sealed class clsCosteoCotizacionService(
                   + "y no los reenvía solo (Nexo no tiene DELETE). El precio en Cotifly ya los incluye.",
             LineaNegocioId = ruta.LineaNegocioId,
             PesoKg = ruta.PesoKg,
-            Camiones = [.. ruta.VehiculosOrdenados.Select(v => CamionCosteo(v, situaciones))],
+            PesoConTaraKg = ruta.LlevaTara ? ruta.PesoConTaraKg : null,
+            Camiones = [.. ruta.VehiculosOrdenados.Select(v => CamionCosteo(v, situaciones) with { PesoConTaraKg = ruta.PesoConTaraCamion(v) })],
             ResultadoCubicacion = ruta.ResultadoCubicacion,
             MotivoSinSeleccion = ruta.MotivoSinSeleccion,
             Condicionada = ruta.Condicionada,

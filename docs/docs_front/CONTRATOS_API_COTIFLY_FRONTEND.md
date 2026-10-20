@@ -664,6 +664,25 @@ Si el rechazo en NEXO falla, **no** se captura otra solicitud (nunca quedan dos 
 reordenan; las nuevas pueden ir en cualquier posición. El margen negociado de una ruta que se conserva sobrevive. Solo se recubican las
 rutas nuevas y las que cambian peso, mercancías o clase de viaje.
 
+### 3.8 Peso con tara de las cargas contenerizadas (HU-030.1, #184)
+
+Solo para rutas con `clase_viaje = Contenedor`. NEXO necesita el peso de cada línea **con** la tara de los contenedores (NEXO no la
+suma) y el cubicador necesita el peso de la carga **sin** tara. El comercial escribe en la ruta el **peso total con tara**
+(`peso_con_tara_kg`, campo "Peso total con tara" de clientepro-frontend#107); Cotifly guarda los dos pesos.
+
+- **Dónde se escribe:** en la ruta, no en el camión, porque los camiones salen del cubicador en la misma petición de la captura y el
+  comercial no sabe cuántos habrá. Valor inicial sugerido: `peso_kg` (el comercial le suma la tara de todos los contenedores de la
+  ruta). Se puede corregir después en "Editar solicitud" (`PUT .../solicitud`, sin volver a cubicar) y en una fila de la licitación.
+- **Qué viaja a NEXO:** con un camión, la línea lleva `peso = peso_con_tara_kg`. Con varios, cada línea lleva el peso de carga de su
+  camión más una parte igual de la tara (`peso_con_tara_kg` menos la suma de los pesos de carga de los camiones, un contenedor por camión); el último camión se queda con el resto
+  del redondeo, así que la suma es exactamente `peso_con_tara_kg`. En los dos casos la línea va **sin posiciones**: NEXO valida que el peso
+  de una línea con posiciones coincida al 1 % con su suma (`PESO_INCONSISTENTE`) y la tara la descuadraría.
+- **Qué ve el comercial:** `GET .../costeo` trae `rutas[].peso_con_tara_kg` y, por camión, `camiones[].peso_con_tara_kg` (lo que viajó).
+- **Errores (400 `SOLICITUD_COSTEO_INVALIDA`, en `detalle.errores`):** `CAMPO_NO_APLICA` en `peso_con_tara_kg` con otra clase de viaje;
+  `PESO_CON_TARA_MENOR_QUE_CARGA` si es menor que el peso de carga; `VALOR_FUERA_DE_RANGO` fuera de 0 a 999.999,99 o con más de 2
+  decimales.
+- Sin `peso_con_tara_kg`, todo sigue como antes (con un camión, la línea lleva el peso de carga y las posiciones).
+
 ---
 
 ## 4. Referencia de endpoints
@@ -1239,6 +1258,7 @@ Cada ruta (`RutaCapturaWeb`):
 | `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
 | `valor_mercancia` | número o null | No | 0 a 9.999.999.999.999,99 |
 | `peso_kg` | número o null | Condicional | 0 a 999.999,99. Peso total de la ruta. Puede faltar si las mercancías traen peso (`PESO_REQUERIDO` si ninguno). Si vienen los dos, deben coincidir dentro del 1 % con `sum(cantidad × peso_kg)` (`PESO_INCONSISTENTE`) |
+| `peso_con_tara_kg` | número o null | No | **Solo con `clase_viaje = Contenedor`** (HU-030.1, #184). 0 a 999.999,99 con 2 decimales. Peso total de la ruta **con la tara** de los contenedores, que escribe el comercial (campo "Peso total con tara"; valor inicial sugerido: `peso_kg`). No puede ser menor que el peso de carga (`peso_kg` o la suma de las mercancías): `PESO_CON_TARA_MENOR_QUE_CARGA`. Con otra clase de viaje: `CAMPO_NO_APLICA`. No va al cubicador; va a NEXO como peso de las líneas de la ruta (ver 3.8) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200 |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 por ruta, sin repetir el mismo servicio |
 | `tipo_vehiculo`, `carroceria` | — | **No enviar** | Obsoletos: se ignoran (los define el cubicador o la Mesa de Costeo). Excepción: con la bandera del servidor `Captura:AceptarVehiculoCliente` (encendida por defecto) van en el camión del respaldo y **deben ser códigos que NEXO conozca**: `tipo_vehiculo` del catálogo de tipos de vehículo de NEXO (`GET /web/catalogos-flete`) y `carroceria` de la lista de carrocerías de NEXO. Se aceptan con otras mayúsculas, sin tildes o con `_`/`-` en vez de espacio (`FURGON_REFRIGERADO` = `FURGON REFRIGERADO`). Un código que solo conoce el cubicador (HU-014 #188) es **400** `SOLICITUD_COSTEO_INVALIDA` (`CODIGO_NO_CATALOGO` en `detalle.errores`) con el campo en el mensaje |
@@ -1715,8 +1735,8 @@ Vuelve a pedir el costeo a NEXO, en el mismo folio o en una versión nueva.
 
 Campos admitidos en `datos_carga` (`DatosCargaWeb`, mismos límites de la captura): `tipologia`, `clase_viaje`, `clase_contenedor`,
 `exclusivo`, `consolidado`, `retorna_contenedor`, `ciudad_devolucion_contenedor`, `levante_contenedor_diferente`,
-`ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`, `posiciones`
-(reemplaza todas). `tipo_vehiculo` y `carroceria` se aceptan pero se ignoran. Origen, destino, cliente y línea de negocio **no** se
+`ciudad_levante_contenedor`, `valor_aprovisionamiento`, `horas_cargue`, `horas_descargue`, `peso_kg`, `valor_mercancia`,
+`peso_con_tara_kg` (HU-030.1), `posiciones` (reemplaza todas). `tipo_vehiculo` y `carroceria` se aceptan pero se ignoran. Origen, destino, cliente y línea de negocio **no** se
 cambian aquí (400). Un campo en `null` se borra.
 
 **Obsoleto (HU-028, #186):** para cambiar la carga usar `PUT /web/cotizaciones/{folio}/solicitud` (4.4.10). Mientras el frontend migra,
@@ -1850,7 +1870,7 @@ decide el servidor según el estado y el `GET` lo anuncia (ver 3.7).
 | `edicion` | `modo` (`en_sitio`, `reemplazo`, `nueva_version` o `null`), `permitida`, `motivo_no_permitida` (`LICITACION`, `SIN_FORMULARIO`, `ENVIO_EN_CURSO`, `CUBICACION_EN_CURSO`), `mensaje` y `avisos[]` (`codigo` y `mensaje`) |
 | `deadline`, `notas`, `moneda`, `linea_negocio` | Encabezado (la línea es la de la ruta 1) |
 | `lineas_negocio_disponibles` | Las líneas de la solicitud: las únicas que puede usar una ruta nueva |
-| `rutas[]` (`RutaEditable`) | `linea_solicitud_id`, `linea_orden`, `linea_negocio` (+ `linea_negocio_bloqueada: true`), origen, destino y ciudades del contenedor **por id y nombre**, condiciones, horas, `valor_levante_contenedor`, `valor_mercancia`, `peso_kg`, `mercancias[]` (con `codigo_mercancia`), `servicios_conexos[]` (`id_servicio_conexo` del catálogo de NEXO, `nombre`, `cantidad`; sin precio; una fila por servicio, con las cantidades sumadas si se agregó también en NEXO), `margen_aplicado`, `origen_margen`, `margen_negociado` |
+| `rutas[]` (`RutaEditable`) | `linea_solicitud_id`, `linea_orden`, `linea_negocio` (+ `linea_negocio_bloqueada: true`), origen, destino y ciudades del contenedor **por id y nombre**, condiciones, horas, `valor_levante_contenedor`, `valor_mercancia`, `peso_kg`, `peso_con_tara_kg` (HU-030.1; `null` = sin tara), `mercancias[]` (con `codigo_mercancia`), `servicios_conexos[]` (`id_servicio_conexo` del catálogo de NEXO, `nombre`, `cantidad`; sin precio; una fila por servicio, con las cantidades sumadas si se agregó también en NEXO), `margen_aplicado`, `origen_margen`, `margen_negociado` |
 
 Sin costos de NEXO ni precios.
 
@@ -2163,6 +2183,7 @@ filas antes de guardar.
 | `valor_levante_contenedor` | número o null | Condicional | Solo con levante distinto del origen. Nombre nuevo de `valor_aprovisionamiento` (si llegan los dos, vale este) |
 | `horas_cargue`, `horas_descargue` | número o null | No | 0 a 240 |
 | `peso_kg`, `valor_mercancia` | número o null | Condicional | Regla de peso como en la captura |
+| `peso_con_tara_kg` | número o null | No | HU-030.1 (#184): como en la captura (solo en una fila `Contenedor`, nunca menor que la carga) |
 | `mercancias` | `PosicionCargaWeb[]` o null | No | Hasta 200. Nombre nuevo de `posiciones` (si llegan las dos, valen estas) |
 | `servicios_conexos` | `ConexoCapturaWeb[]` o null | No | Hasta 20 |
 | `tipo_vehiculo`, `carroceria` | — | No enviar | Se ignoran |
@@ -2824,7 +2845,8 @@ Notación: `?` = puede ser `null` (el campo viene igual). **(omitible)** = el ca
 | `precio_final_linea` | número? | Precio de la ruta (con sus conexos) |
 | `margen_aplicado`, `margen_sugerido`, `origen_margen` | número?, número?, enum? | Por debajo del sugerido, el ajuste exige justificación |
 | `peso_kg` | número? | Peso declarado de la ruta |
-| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?}`. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada |
+| `peso_con_tara_kg` | número? | HU-030.1 (#184): peso total con tara de una ruta `Contenedor` (el que escribió el comercial); `null` = sin tara |
+| `camiones` | `CamionCosteo[]` | `{tipo_vehiculo?, carroceria?, peso_kg?, peso_con_tara_kg?, estado_costeo?, volumen_total_m3?, porcentaje_llenado_volumen?, porcentaje_llenado_peso?, estado_linea_nexo?, motivo_pendiente?}`. `peso_con_tara_kg` (HU-030.1) es el peso que viajó a NEXO en la línea del camión (su carga más su parte de la tara); `null` si la ruta no lleva tara. Los porcentajes llegan en `null` si no pasó por el cubicador o si la Mesa cambió el vehículo (D2): mostrar "—". `estado_linea_nexo` (`por_costear`, `auto_resuelta`, `revisada`) y `motivo_pendiente` (#181, texto de NEXO de por qué la línea sigue por costear; solo con el camión en `pendiente_costeo`) son de solo lectura, no se guardan y pueden llegar en `null` (NEXO sin el dato, camión sin asociar o servicio recién reiniciado): `null` = no mostrar nada |
 | `vehiculos` | string? | Texto agrupado como en el PDF ("2 × 3S3 - FURGON (20000 KG)", "Vehículo por definir") |
 | `mercancias` | `MercanciaCosteo[]` | `{orden, codigo_mercancia?, nombre_mercancia?, cantidad, largo_cm, ancho_cm, alto_cm, peso_kg?}` |
 | `servicios_conexos` | `ServicioConexoCosteo[]` | Los de la ruta |
@@ -3124,8 +3146,9 @@ aparecer en `errores[]` del chat: ignorarlos (el asistente lo explica en `texto`
 | `POSICION_INVALIDA` | Mercancía inválida (medidas, cantidad, o peso por unidad ≤ 0 con tipo de mercancía). Mensaje con la mercancía en base 1 (`Mercancía 2: ...`) | `mercancias[i].<subcampo>`, base 0 (D6; antes `posiciones[i]`) |
 | `PESO_REQUERIDO` | Ni `peso_kg` > 0 ni mercancías con peso | `peso_kg` |
 | `PESO_INCONSISTENTE` | `peso_kg` difiere más del 1 % de `sum(cantidad × peso_kg)` | `peso_kg` |
+| `PESO_CON_TARA_MENOR_QUE_CARGA` | HU-030.1 (#184): el peso total con tara es menor que el peso de carga | `peso_con_tara_kg` |
 | `FILA_INVALIDA` | `fila` inexistente o repetida en el Excel | `fila` |
-| `CAMPO_NO_APLICA` | Campo que no aplica (clase de contenedor sin Contenedor, valor de levante sin levante distinto, campo plano junto con `rutas`) | — |
+| `CAMPO_NO_APLICA` | Campo que no aplica (clase de contenedor sin Contenedor, `peso_con_tara_kg` sin Contenedor, valor de levante sin levante distinto, campo plano junto con `rutas`) | — |
 | `CODIGO_NO_CATALOGO` | Valor que no es código de catálogo | `tipologia`, `clase_viaje`, `clase_contenedor` |
 | `MUNICIPIO_AMBIGUO` | El nombre tiene varios candidatos (el mensaje trae los ids) | `origen`, `destino`, ciudades |
 | `MUNICIPIO_NO_ENCONTRADO` | El nombre no coincide con ningún municipio | ídem |
@@ -3207,6 +3230,7 @@ fila_excel, campo, codigo, mensaje}`.
 | 46 | **#181 (NEXO #309):** `rutas[].camiones[]` de `GET .../costeo` (y de `costeo` en `GET /web/cotizaciones/{folio}`, fila 47) trae `estado_linea_nexo` y `motivo_pendiente` (por qué la línea sigue pendiente en NEXO: consulta completa, línea sin vehículo, SICE-TAC que no es del mes actual...). Solo de lectura, no se guardan; `null` si NEXO no los manda | Agrega | Mostrar `motivo_pendiente` junto al camión en `pendiente_costeo`; con `null`, nada |
 | 47 | **Nuevo** `GET /web/cotizaciones/{folio}` (HU-027.1, #179): detalle completo en una llamada (`cotizacion` + `costeo` + `captura` + `totales`), con `ETag`; también para el gerente de la regional, en solo consulta (`solo_lectura`) | Agrega | "Ver detalle" (#75) y su recarga con una sola llamada; con `solo_lectura`, esconder las acciones |
 | 48 | **#191 (HU-026.1):** la `Idempotency-Key` de la captura, los conexos, la re-solicitud y `PUT .../solicitud` se guarda en la base (sobrevive a un reinicio; la comparten las réplicas). Una repetición que cae en otra réplica mientras la primera sigue en curso responde 409 `ESTADO_NO_PERMITE` con `detalle.motivo = CAPTURA_EN_CURSO` sin ejecutar nada; en la misma réplica espera y recibe la respuesta de la primera, como antes. Los números del cuerpo se comparan por valor (`1.5` = `1.50`) | Agrega | Tratar `CAPTURA_EN_CURSO` también en conexos, re-solicitud y edición: esperar unos segundos y repetir con la MISMA clave (o recargar el folio) |
+| 49 | **HU-030.1 (#184):** campo nuevo opcional `peso_con_tara_kg` por ruta (captura, licitación, `PUT .../solicitud` y `datos_carga`), **solo con `clase_viaje = Contenedor`**: el peso total con la tara de los contenedores. Va a NEXO como el peso de las líneas de la ruta (repartido por camión) y esas líneas viajan sin posiciones; al cubicador no va. `GET .../costeo` (y el detalle por folio) lo trae en la ruta y, por camión, el peso con tara que viajó. Códigos nuevos: `PESO_CON_TARA_MENOR_QUE_CARGA` y `CAMPO_NO_APLICA` en `peso_con_tara_kg` | Agrega | Campo "Peso total con tara" (#107) visible solo con Contenedor, con valor inicial `peso_kg` y una nota de que incluye la tara de todos los contenedores de la ruta |
 
 ---
 
@@ -3285,6 +3309,14 @@ fila_excel, campo, codigo, mensaje}`.
 ---
 
 ## 9. Notas de versión
+
+**2026-10-20 (rama `184-tara-contenedor`, HU-030.1, #184).** Peso con tara de las cargas contenerizadas:
+
+- Campo opcional `peso_con_tara_kg` en la ruta (captura, licitación, edición y `datos_carga`), solo con `clase_viaje = Contenedor`;
+  se guarda en la ruta (script `db/scripts/11_peso_con_tara.sql`). Con él, las líneas de la ruta van a NEXO con el peso con tara
+  (la tara repartida por partes iguales entre los camiones) y sin posiciones. Sin él, nada cambia. Al cubicador no va.
+- `GET .../costeo`: `rutas[].peso_con_tara_kg` y `rutas[].camiones[].peso_con_tara_kg`. Cambio con su "qué hacer": sección 7, fila 49
+  y 3.8.
 
 **2026-10-20 (rama `191-idempotencia-persistente`, HU-026.1 parte C, #191).** `Idempotency-Key` persistente:
 

@@ -122,7 +122,14 @@ public sealed record clsRutaEditable(
     IReadOnlyList<clsConexoEditable> ServiciosConexos,
     decimal? MargenAplicado,
     string? OrigenMargen,
-    bool MargenNegociado);
+    bool MargenNegociado)
+{
+    /// <summary>
+    /// HU-030.1 (#184): el peso total con tara de la ruta de contenedor (<c>peso_con_tara_kg</c>), como lo escribió el comercial;
+    /// <c>null</c> = sin tara. Se edita como los demás campos de la ruta: cambiarlo no vuelve a cubicar (el cubicador no usa la tara).
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
+}
 
 /// <summary>Una mercancía editable (<c>MercanciaEditable</c>), con su código del catálogo del cubicador.</summary>
 public sealed record clsMercanciaEditable(

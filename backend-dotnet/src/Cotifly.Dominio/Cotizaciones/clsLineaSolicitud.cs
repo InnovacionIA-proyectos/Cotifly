@@ -88,6 +88,13 @@ public sealed partial class clsLineaSolicitud
     /// <summary>Cuánto vale la mercancía de la ruta (no es un costo).</summary>
     public decimal? ValorMercancia { get; private set; }
 
+    /// <summary>
+    /// HU-030.1 (#184, script <c>db/scripts/11_peso_con_tara.sql</c>): peso total de la ruta CON la tara de los contenedores, tal como lo
+    /// escribió el comercial (solo en una ruta <c>Contenedor</c>); <c>null</c> = sin tara. Es lo que viaja a Nexo como peso (repartido por
+    /// camión, <see cref="PesoLineaNexo"/>); al cubicador nunca va.
+    /// </summary>
+    public decimal? PesoConTaraKg { get; private set; }
+
     /// <summary>Lo que vale UN levante de contenedor en esta ruta (lo digita el comercial; se copia a cada camión, decisión 4).</summary>
     public decimal? ValorLevanteContenedor { get; private set; }
 
@@ -222,6 +229,7 @@ public sealed partial class clsLineaSolicitud
             HorasDescargue = linea.HorasDescargue ?? encabezado?.HorasDescargue,
             PesoKg = linea.PesoKg,
             ValorMercancia = linea.ValorMercancia,
+            PesoConTaraKg = linea.PesoConTaraKg,
             ValorLevanteContenedor = linea.ValorAprovisionamiento,
             CostoServiciosConexos = 0m,
         };
@@ -468,6 +476,7 @@ public sealed partial class clsLineaSolicitud
             ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
+            PesoConTaraKg = PesoConTaraKg,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
             Posiciones = [.. MercanciasOrdenadas.Select(m => m.APosicion())],
@@ -480,7 +489,10 @@ public sealed partial class clsLineaSolicitud
     /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
     /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
     /// reparto lo sabe el cubicador). El peso es <see cref="PesoLineaNexo"/> y el camión del cubicador viaja en
-    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159).
+    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159). HU-030.1 (#184): una ruta de contenedor con
+    /// <see cref="PesoConTaraKg"/> manda el peso con tara y NUNCA posiciones, tampoco con un solo camión: Nexo valida que el peso de una
+    /// línea con posiciones cuadre al 1 % con su suma (<c>PESO_INCONSISTENTE</c>, confirmado al cerrar NEXO#308) y la tara lo
+    /// descuadraría. La línea no lleva <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>: su <c>PesoKg</c> ya es el peso con tara.
     /// </summary>
     public clsLineaSolicitudCosteo ALineaNexo(clsVehiculoLineaSolicitud camion)
     {
@@ -498,10 +510,24 @@ public sealed partial class clsLineaSolicitud
             TipoVehiculo = camion.TipoVehiculo,
             Carroceria = camion.Carroceria,
             PesoKg = PesoLineaNexo(camion),
+            PesoConTaraKg = null,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            Posiciones = UnSoloCamion ? linea.Posiciones : [],
+            Posiciones = UnSoloCamion && !LlevaTara ? linea.Posiciones : [],
         };
     }
+
+    /// <summary>
+    /// HU-030.1 (#184): ¿la ruta manda a Nexo el peso con tara? Solo una ruta <c>Contenedor</c> con <see cref="PesoConTaraKg"/> (la
+    /// captura no la acepta en otra clase; si una ruta guardada cambiara de clase, la tara deja de aplicarse en lugar de viajar).
+    /// </summary>
+    public bool LlevaTara => PesoConTaraKg is not null
+        && string.Equals(ClaseViaje, clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
+
+    /// <summary>
+    /// HU-030.1 (#184): el peso con tara que viaja a Nexo en la línea de <paramref name="camion"/> (<see cref="PesoLineaNexo"/>), o
+    /// <c>null</c> si la ruta no lleva tara. Es lo que el comercial ve por camión en el costeo.
+    /// </summary>
+    public decimal? PesoConTaraCamion(clsVehiculoLineaSolicitud camion) => LlevaTara ? PesoLineaNexo(camion) : null;
 
     /// <summary>
     /// ¿La ruta tiene un solo camión (contando los descartados)? Decide si la línea lleva las posiciones y el peso de la ruta
@@ -517,16 +543,65 @@ public sealed partial class clsLineaSolicitud
     /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión, como antes. El emparejador
     /// compara con este mismo peso, en una sola pasada (<see cref="clsCamionParaEmparejar.Desde"/>).
     /// </summary>
+    /// <remarks>
+    /// HU-030.1 (#184): en una ruta que <see cref="LlevaTara"/> (contenedor con <see cref="PesoConTaraKg"/>) la tara total (peso con tara
+    /// menos la carga que viaja en sus líneas) se reparte <b>por partes iguales</b> entre TODOS sus camiones (uno por contenedor, de la misma
+    /// clase: la misma tara), en céntimos, y el último camión en orden (<see cref="VehiculosOrdenados"/>) se queda con el resto del
+    /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual. Como
+    /// el peso sin tara, cuenta los camiones descartados: lo que ya viajó no cambia y el emparejador vuelve a calcular el mismo peso.
+    /// </remarks>
     public decimal? PesoLineaNexo(clsVehiculoLineaSolicitud camion)
     {
         ArgumentNullException.ThrowIfNull(camion);
+        var sinTara = PesoCargaLineaNexo(camion);
+        return sinTara is { } carga && TaraDelCamion(camion) is { } tara ? carga + tara : sinTara;
+    }
+
+    /// <summary>El peso de la línea de <paramref name="camion"/> SIN tara (HU-023.4, decisión 6): el de la ruta con un camión; si no, el del camión.</summary>
+    private decimal? PesoCargaLineaNexo(clsVehiculoLineaSolicitud camion)
+    {
         if (!UnSoloCamion)
         {
             return camion.PesoKg;
         }
 
-        var suma = MercanciasOrdenadas.Select(m => m.APosicion()).Where(p => p.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+        var suma = SumaPesoMercancias;
         return PesoKg ?? (suma > 0 ? suma : camion.PesoKg);
+    }
+
+    /// <summary>Suma <c>cantidad × pesoKg</c> de las mercancías con peso (la misma de Nexo).</summary>
+    private decimal SumaPesoMercancias =>
+        MercanciasOrdenadas.Select(m => m.APosicion()).Where(p => p.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
+
+    /// <summary>
+    /// HU-030.1 (#184): la parte de la tara que lleva <paramref name="camion"/> (ver <see cref="PesoLineaNexo"/>), o <c>null</c> si la
+    /// ruta no lleva tara o no se conoce su peso de carga. Una tara negativa (dato anterior a la validación) cuenta como 0.
+    /// </summary>
+    /// <remarks>
+    /// La tara es el peso con tara menos la carga que <b>viaja</b> en las líneas (la suma de <see cref="PesoCargaLineaNexo"/> de todos
+    /// los camiones), no la declarada: con varios camiones, la suma de sus pesos del cubicador puede diferir hasta 1 % del <see cref="PesoKg"/>
+    /// declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara (validación #184). Si
+    /// algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
+    /// </remarks>
+    private decimal? TaraDelCamion(clsVehiculoLineaSolicitud camion)
+    {
+        if (!LlevaTara)
+        {
+            return null;
+        }
+
+        var camiones = VehiculosOrdenados;
+        var pesos = camiones.Select(PesoCargaLineaNexo).ToList();
+        var suma = SumaPesoMercancias;
+        var carga = pesos.All(p => p is not null) ? pesos.Sum() : PesoKg ?? (suma > 0 ? suma : null);
+        if (carga is null)
+        {
+            return null;
+        }
+
+        var tara = Math.Max(0m, PesoConTaraKg!.Value - carga.Value);
+        var parte = Math.Round(tara / camiones.Count, clsSolicitudCosteo.Decimales, MidpointRounding.ToZero);
+        return ReferenceEquals(camiones[^1], camion) ? tara - (parte * (camiones.Count - 1)) : parte;
     }
 
     /// <summary>

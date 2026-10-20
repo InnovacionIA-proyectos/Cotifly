@@ -207,6 +207,12 @@ public class clsRutaCapturaWebRequest
     public decimal? ValorLevanteContenedor { get; init; }
     public decimal? ValorMercancia { get; init; }
     public decimal? PesoKg { get; init; }
+
+    /// <summary>
+    /// HU-030.1 (#184): peso total de la ruta CON la tara de los contenedores (kg), opcional y solo con <c>clase_viaje = Contenedor</c>;
+    /// nunca menor que <see cref="PesoKg"/>. Valor inicial sugerido: el peso de carga. Va a Nexo repartido por camión; no al cubicador.
+    /// </summary>
+    public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
 
@@ -240,6 +246,7 @@ public class clsRutaCapturaWebRequest
             ValorAprovisionamiento = ValorLevanteContenedor,
             PesoKg = PesoKg,
             ValorMercancia = ValorMercancia,
+            PesoConTaraKg = PesoConTaraKg,
             HorasCargue = HorasCargue,
             HorasDescargue = HorasDescargue,
             Posiciones = clsPosicionCargaWebRequest.APosiciones(Mercancias),
@@ -372,6 +379,9 @@ public sealed class clsDatosCargaWebRequest
     public decimal? HorasDescargue { get; init; }
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
+
+    /// <summary>HU-030.1 (#184): peso total con tara de la ruta de contenedor (<c>null</c> lo quita).</summary>
+    public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
 
     /// <summary>Cambios de carga del dominio a partir del JSON de <c>datos_carga</c> (nombres snake_case del contrato).</summary>
@@ -431,6 +441,7 @@ public sealed class clsDatosCargaWebRequest
             HorasDescargue = leido.HorasDescargue,
             PesoKg = leido.PesoKg,
             ValorMercancia = leido.ValorMercancia,
+            PesoConTaraKg = leido.PesoConTaraKg,
             Posiciones = leido.Posiciones is null
                 ? null
                 // HU-028 (#186), defecto A: con codigo_mercancia y nombre_mercancia (antes se perdían y la -vN caía en el respaldo).
