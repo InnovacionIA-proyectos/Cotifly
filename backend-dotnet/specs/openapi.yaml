@@ -6948,7 +6948,7 @@ components:
           type: string
           nullable: true
           enum: [pendiente_envio, error_envio, pendiente_costeo, autocosteo, entregada, descartada, costeo_vencido, rechazada, null]
-          description: HU-028.1 (#183). `rechazada` = "Rechazada en NEXO" (todos sus camiones): sin precio y no es pendiente.
+          description: 'HU-028.1 (#183). `rechazada` = "Rechazada en NEXO" (todos sus camiones): sin precio y no es pendiente.'
         motivo_rechazo:
           type: string
           nullable: true
@@ -7066,7 +7066,7 @@ components:
           type: integer
         lineas_pendientes:
           type: integer
-          description: Líneas sin precio que todavía esperan a Nexo (HU-028.1, #183: sin las rechazadas).
+          description: 'Líneas sin precio que todavía esperan a Nexo (HU-028.1, #183: sin las rechazadas).'
         lineas_rechazadas:
           type: integer
           description: |
